@@ -1,9 +1,7 @@
--- parse/bad: the same trap as `ArrowInTupleElement` (language.md §3, Types),
--- but with a function type in EVERY element, so the items after the first
--- arrow end with another `->` instead of with `)`. The first `->` is still
--- read as the parameter list's arrow and the comma after it still has no
--- reading — and this shape used to slip past in silence, parsing as a nested
--- function type nobody wrote. Parenthesise each element.
+-- parse/bad: the same trap as `ArrowInTupleElement` (language.md §3, §12.8),
+-- with a function type in EVERY element, a shape that once slipped past in
+-- silence as a nested function type nobody wrote. It is tuple_type_removed,
+-- the message the product with each element in parentheses (7:5).
 type alias Pair =
     (Int → Int, Bool → Bool)
 

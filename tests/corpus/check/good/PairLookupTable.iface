@@ -1,2 +1,2 @@
 module PairLookupTable
-  value cell : Int, Int -> Int
+  value cell : Int, Int → Int

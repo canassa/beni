@@ -1,5 +1,5 @@
 module Main
-  value back : Local -> RW
+  value back : Local → RW
 module Models
   alias Both
     Both/2
@@ -14,29 +14,29 @@ module Models
   schema Page a
     type Type : { item : a }
     type Encoded : { item : a }
-    value schema : Schema a b -> Schema (Page.Encoded a) (Page.Type b)
-    value parse : Schema a b, String -> Result (List Issue) (Page.Type b)
-    value print : Schema a b, Page.Type b -> Result (List Issue) String
-    value parseWith : Schema a b, Options, String -> Result (List Issue) (Page.Type b)
-    value printWith : Schema a b, Options, Page.Type b -> Result (List Issue) String
+    value schema : Schema a b → Schema (Page.Encoded a) (Page.Type b)
+    value parse : Schema a b, String → Result (List Issue) (Page.Type b)
+    value print : Schema a b, Page.Type b → Result (List Issue) String
+    value parseWith : Schema a b, Options, String → Result (List Issue) (Page.Type b)
+    value printWith : Schema a b, Options, Page.Type b → Result (List Issue) String
   schema R
     type Type : R.Type
     type Encoded : R.Encoded
-    value schema : () -> Schema R.Encoded R.Type
-    value parse : String -> Result (List Issue) R.Type
-    value print : R.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) R.Type
-    value printWith : Options, R.Type -> Result (List Issue) String
-    ctor type.A/1 : { v : Int } -> R.Type
+    value schema : () → Schema R.Encoded R.Type
+    value parse : String → Result (List Issue) R.Type
+    value print : R.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) R.Type
+    value printWith : Options, R.Type → Result (List Issue) String
+    ctor type.A/1 : { v : Int } → R.Type
     ctor type.C : R.Type
-    ctor encoded.A/1 : { v : Int } -> R.Encoded
+    ctor encoded.A/1 : { v : Int } → R.Encoded
     ctor encoded.C : R.Encoded
   schema Rec
     type Type : { x : Int, y : String }
     type Encoded : { x : Int, y : String }
-    value schema : () -> Schema Rec.Encoded Rec.Type
-    value parse : String -> Result (List Issue) Rec.Type
-    value print : Rec.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) Rec.Type
-    value printWith : Options, Rec.Type -> Result (List Issue) String
-  value mkPriv : Int -> PrivW
+    value schema : () → Schema Rec.Encoded Rec.Type
+    value parse : String → Result (List Issue) Rec.Type
+    value print : Rec.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) Rec.Type
+    value printWith : Options, Rec.Type → Result (List Issue) String
+  value mkPriv : Int → PrivW

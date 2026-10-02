@@ -59,6 +59,10 @@ pub const Prec = enum {
     /// An argument of an application: even a bare application needs
     /// parentheses (`Maybe (List a)`).
     app_arg,
+    /// An operand of a product (language.md §12.8): a function and another
+    /// product need parentheses, an application does not
+    /// (`Maybe a × (b × c)`).
+    operand,
 };
 
 /// Fresh variable names for ONE message. Lives on the error path and
@@ -473,12 +477,12 @@ fn write(
             // A bare extension variable that closed: only reachable as a
             // record's tail, where `writeRecord` handles it.
             .empty_record => try w.writeAll("{}"),
-            // `A, B -> C` with the minimal parentheses (checker.md §8.2):
+            // `A, B → C` with the minimal parentheses (checker.md §8.2):
             // a function-typed PARAMETER is always parenthesised, a
             // function-typed RESULT never is, and a 1-ary function over a
-            // tuple prints `(Int, Int) -> Int` — which the tuple's own
-            // `( … )` already does — so that it reads differently from the
-            // 2-ary `Int, Int -> Int`.
+            // tuple prints `Int × Int → Int`, which reads differently from
+            // the 2-ary `Int, Int → Int` because `×` is not a comma
+            // (language.md §12.8).
             .func => |f| {
                 const wrap = prec != .top;
                 if (wrap) try w.writeByte('(');
@@ -486,7 +490,7 @@ fn write(
                     if (i != 0) try w.writeAll(", ");
                     try write(w, cx, namer, param, .arg, depth + 1);
                 }
-                try w.writeAll(" -> ");
+                try w.writeAll(" → ");
                 // The dumps' class of this arrow (§14.7 of
                 // transparent-effects-proposal.md), printed after the result:
                 // a function-typed result is then parenthesised, so its own
@@ -513,18 +517,19 @@ fn write(
                 if (suffix) |t| try w.writeAll(t);
                 if (wrap) try w.writeByte(')');
             },
-            // Elements print at `.arg`, which parenthesises exactly the
-            // function-typed ones. A tuple element may not contain a bare
-            // `->` (language.md §3), so `( Int -> Int, Int )` is not this
-            // type at all — it re-reads as a function — and a type in a
-            // diagnostic has to be one the reader can paste back.
+            // `a × b` (language.md §12.8): parenthesised as a type
+            // argument or an operand of another product and nowhere else —
+            // not as a parameter, a result or a field. Its elements print at
+            // `.operand`, which parenthesises a function and a product, so
+            // the type is one the reader can paste back.
             .tuple => |range| {
-                try w.writeAll("( ");
+                const wrap = prec == .app_arg or prec == .operand;
+                if (wrap) try w.writeByte('(');
                 for (cx.store.vars(range), 0..) |el, i| {
-                    if (i != 0) try w.writeAll(", ");
-                    try write(w, cx, namer, el, .arg, depth + 1);
+                    if (i != 0) try w.writeAll(" × ");
+                    try write(w, cx, namer, el, .operand, depth + 1);
                 }
-                try w.writeAll(" )");
+                if (wrap) try w.writeByte(')');
             },
             .record => |r| try writeRecord(w, cx, namer, r, depth),
         },
@@ -780,7 +785,7 @@ fn writeList(
     while (i < l.prefix + l.suffix) : (i += 1) {
         if (i == l.prefix and l.spread) {
             if (!first) try w.writeAll(", ");
-            try w.writeAll("..._");
+            try w.writeAll("…_");
             first = false;
         }
         if (!first) try w.writeAll(", ");
@@ -789,7 +794,7 @@ fn writeList(
     }
     if (l.spread and l.suffix == 0) {
         if (!first) try w.writeAll(", ");
-        try w.writeAll("..._");
+        try w.writeAll("…_");
     }
     try w.writeAll(" ]");
 }

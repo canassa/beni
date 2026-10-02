@@ -254,7 +254,7 @@ test "dump --stage=interface --platform=node prints the interface of a program" 
     try testing.expectEqualStrings("", r.stderr);
     try testing.expectEqualStrings(
         \\module Main
-        \\  value run : String -> Program
+        \\  value run : String → Program
         \\
     , r.stdout);
 
@@ -692,11 +692,11 @@ fn writeJsCore(w: *World, lower_name: []const u8) !void {
         \\    Js.Value
         \\
         \\
-        \\pub upper : Text -> Text
+        \\pub upper : Text → Text
         \\upper t = Js.call t "toUpperCase" []
         \\
         \\
-        \\pub size : Text -> Int
+        \\pub size : Text → Int
         \\size t = Js.to (Js.get t "length")
         \\
         \\

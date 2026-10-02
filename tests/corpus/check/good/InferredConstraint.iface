@@ -1,3 +1,3 @@
 module InferredConstraint
-  value bigger : a, a -> Bool !e1 where a.compare : a, a -> Order !e1
-  value same : a, a -> Bool !e1 where a.eq : a, a -> Bool !e1
+  value bigger : a, a → Bool !e1 where a.compare : a, a → Order !e1
+  value same : a, a → Bool !e1 where a.eq : a, a → Bool !e1

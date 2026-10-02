@@ -6,4 +6,4 @@ module Ui.Wrap
     Clicked
   type Outer
     Wrapped/1
-  value view : { children : Html Inner } -> Html Outer
+  value view : { children : Html Inner } → Html Outer

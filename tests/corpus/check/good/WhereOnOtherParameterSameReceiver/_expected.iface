@@ -1,12 +1,12 @@
 module Box
   type Box a
     Box/1
-  value describe : Box a, b -> String !e1 where b.describe : b, K -> String !e1
+  value describe : Box a, b → String !e1 where b.describe : b, K → String !e1
 module K
   type K
     K/1
-  value describe : K, K -> String
+  value describe : K, K → String
 module Main
-  value viaParam : Box Int -> String
-  value wrapped : Box Int -> String
-  value wrapped2 : Box Int -> String
+  value viaParam : Box Int → String
+  value wrapped : Box Int → String
+  value wrapped2 : Box Int → String

@@ -6,8 +6,8 @@ module EffectNominal
   type Stream
     Stream/1
   value loudParser : Parser String !impure
-  value nth : (Stream !e1), Int -> Int !e1
-  value openBox : Box (Int -> Int !e1), Int -> Int !e1
-  value run : (Parser a !e1), String -> Maybe a !e1
-  value useLoud : String -> Maybe String !impure
-  value useQuiet : String -> Maybe String
+  value nth : (Stream !e1), Int → Int !e1
+  value openBox : Box (Int → Int !e1), Int → Int !e1
+  value run : (Parser a !e1), String → Maybe a !e1
+  value useLoud : String → Maybe String !impure
+  value useQuiet : String → Maybe String

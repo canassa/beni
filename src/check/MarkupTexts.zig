@@ -285,7 +285,7 @@ pub fn unkeyedFor(r: *Report, region: Bir.Inst.Index, token: u32, item: Var, fie
     if (field) |f| {
         w.print("Hint: key the rows, `keyed={{.{s}}}`, ", .{f}) catch return error.OutOfMemory;
     } else {
-        w.writeAll("Hint: key the rows by a `String` or an `Int` computed from each item, `keyed={\\item -> …}`, ") catch return error.OutOfMemory;
+        w.writeAll("Hint: key the rows by a `String` or an `Int` computed from each item, `keyed={λitem → …}`, ") catch return error.OutOfMemory;
     }
     w.writeAll("or say that identity is meant, `keyed={True}`.") catch return error.OutOfMemory;
     try emit(r, .unkeyed_for, .warning, region, token, &out);

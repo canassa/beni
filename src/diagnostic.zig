@@ -16,8 +16,8 @@ const std = @import("std");
 
 pub const Severity = enum { @"error", warning };
 
-/// 1-based line and column; the column counts bytes from the line start
-/// (language.md §2.1). Tabs are forbidden, so byte column is visual column.
+/// 1-based line and column; the column counts code points from the line
+/// start (language.md §12.7, *columns*), so a symbol is one column.
 pub const Position = struct {
     line: u32,
     col: u32,
@@ -355,6 +355,13 @@ pub const Code = enum {
     let_removed,
     block_ends_in_binding,
     statement_not_unit,
+    /// Appended with the Unicode notation (language.md §12.7–§12.8): an old
+    /// ASCII spelling — `->`, `<-`, `/=`, `<=`, `>=`, `|>`, `<|`,
+    /// `...` — reported at every occurrence, its message naming the symbol;
+    /// and a tuple type written `( a, b )`, whose message is the type
+    /// written with `×`.
+    ascii_symbol_removed,
+    tuple_type_removed,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -519,6 +526,8 @@ pub fn title(code: Code) []const u8 {
         .backslash_lambda_removed => "REMOVED LAMBDA SYNTAX",
         .name_removed => "REMOVED NAME",
         .suspicious_argument_order => "SUSPICIOUS ARGUMENT ORDER",
+        .ascii_symbol_removed => "REMOVED ASCII SYMBOL",
+        .tuple_type_removed => "REMOVED TUPLE TYPE",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

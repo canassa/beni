@@ -1,2 +1,2 @@
 module NestAfterDefault
-  value h : Result String K -> Result String Int
+  value h : Result String K → Result String Int

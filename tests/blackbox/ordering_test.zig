@@ -331,7 +331,7 @@ test "alias names inside a structure show the expansion with the group reversed"
     try s.w.write("GF.beni", head ++ g ++ f);
     const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", "GF.beni" }, .{ .raw_diagnostics = true });
     if (run.exit_code != 0) return s.finish(try s.failed(run));
-    for ([_][]const u8{ "\n  f : number -> List String\n", "\n  g : number -> List String\n", "\n  names : List Name\n", "\n  labels : List Label\n" }) |line| {
+    for ([_][]const u8{ "\n  f : number → List String\n", "\n  g : number → List String\n", "\n  names : List Name\n", "\n  labels : List Label\n" }) |line| {
         if (std.mem.indexOf(u8, run.stdout, line) == null) return s.finish(.{
             .green = false,
             .signature = "order-dependent",
@@ -352,7 +352,7 @@ test "alias names met by an if show the expansion in either branch order" {
     for ([_][]const u8{ "NamesFirst.beni", "LabelsFirst.beni" }) |file| {
         const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
         if (run.exit_code != 0) return s.finish(try s.failed(run));
-        if (std.mem.indexOf(u8, run.stdout, "\n  pick : Bool -> List String\n") == null) return s.finish(.{
+        if (std.mem.indexOf(u8, run.stdout, "\n  pick : Bool → List String\n") == null) return s.finish(.{
             .green = false,
             .signature = "order-dependent",
             .detail = try std.mem.replaceOwned(u8, s.arena(), run.stdout, "\n", " | "),

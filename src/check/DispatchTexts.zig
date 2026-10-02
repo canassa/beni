@@ -1102,7 +1102,7 @@ pub fn whereClauseMismatch(r: *Reporter, region: Bir.Inst.Index, clause: Reporte
     w.print(
         \\
         \\
-        \\Hint: `{s}` means the same thing at every type, `a, a -> {s}`, so a
+        \\Hint: `{s}` means the same thing at every type, `a, a → {s}`, so a
         \\`where` clause that names it has to give it that type.
         \\
     , .{ method, result }) catch return error.OutOfMemory;
@@ -1117,11 +1117,14 @@ pub fn whereClauseMismatch(r: *Reporter, region: Bir.Inst.Index, clause: Reporte
 pub fn operatorSpelling(symbol: Symbol) ?[]const u8 {
     const wk = InternPool.WellKnown;
     const pairs = .{
-        .{ wk.add, "+" },     .{ wk.sub, "-" },     .{ wk.mul, "*" },
-        .{ wk.fdiv, "/" },    .{ wk.idiv, "//" },   .{ wk.pow, "^" },
-        .{ wk.append, "++" }, .{ wk.eq, "==" },     .{ wk.neq, "/=" },
-        .{ wk.lt, "<" },      .{ wk.gt, ">" },      .{ wk.le, "<=" },
-        .{ wk.ge, ">=" },     .{ wk.@"and", "&&" }, .{ wk.@"or", "||" },
+        .{ wk.add, "+" },     .{ wk.sub, "-" },    .{ wk.mul, "*" },
+        .{ wk.fdiv, "/" },    .{ wk.idiv, "//" },  .{ wk.pow, "^" },
+        .{ wk.append, "++" }, .{ wk.eq, "==" },
+        .{ wk.neq, "≠" },
+        .{ wk.lt, "<" },      .{ wk.gt, ">" },
+        .{ wk.le, "≤" },
+        .{ wk.ge, "≥" },
+        .{ wk.@"and", "&&" }, .{ wk.@"or", "||" },
     };
     inline for (pairs) |pair| {
         if (symbol == pair[0].symbol()) return pair[1];

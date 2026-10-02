@@ -50,19 +50,19 @@ fn writeShapes(w: *World) !void {
                 \\    | Empty{d}
                 \\
                 \\
-                \\pub make{d} : Int -> Rec{d}
+                \\pub make{d} : Int → Rec{d}
                 \\make{d} n =
                 \\    {{ zulu = n, alpha = "x", middle = n, bravo = 1.5 }}
                 \\
                 \\
-                \\pub wrap{d} : zeta, alpha -> Wrap{d} zeta alpha
+                \\pub wrap{d} : zeta, alpha → Wrap{d} zeta alpha
                 \\wrap{d} a b =
                 \\    Pair{d} a b
                 \\
                 \\
-                \\pub pick{d} : zeta, zeta, alpha -> zeta
-                \\    where alpha.compare : alpha, alpha -> Order
-                \\    , zeta.eq : zeta, zeta -> Bool
+                \\pub pick{d} : zeta, zeta, alpha → zeta
+                \\    where alpha.compare : alpha, alpha → Order
+                \\    , zeta.eq : zeta, zeta → Bool
                 \\pick{d} a b tag =
                 \\    if a.eq b then a else b
                 \\
@@ -439,7 +439,7 @@ test "a module's hash does not depend on which files the interner saw first" {
         defer source.deinit();
         for (0..200) |i| {
             try source.writer.print(
-                \\pub noise{d} : Int -> Int
+                \\pub noise{d} : Int → Int
                 \\noise{d} unrelatedParameter{d} =
                 \\    unrelatedParameter{d}
                 \\
@@ -919,7 +919,7 @@ test "an alias chain another module names is written once per record, in bytes l
         try b.appendSlice(arena, "import A\n");
         for (1..links + 1) |i| {
             try a.print(arena, "\n\npub type alias R{d} =\n    {{ x : Int, p : R{d} }}\n", .{ i, i - 1 });
-            try b.print(arena, "\n\npub get{d} : A.R{d} -> Int\nget{d} r =\n    r.x\n", .{ i, i, i });
+            try b.print(arena, "\n\npub get{d} : A.R{d} → Int\nget{d} r =\n    r.x\n", .{ i, i, i });
         }
         try w.write("src/A.beni", a.items);
         try w.write("src/B.beni", b.items);

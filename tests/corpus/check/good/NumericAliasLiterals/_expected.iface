@@ -5,8 +5,8 @@ module Local
     Point/1
   alias Ratio
   alias Text
-  value asCount : Int -> Count
-  value chooseCount : Bool -> Count
+  value asCount : Int → Count
+  value chooseCount : Bool → Count
   value count : Count
   value countAgain : CountAgain
   value point : Point

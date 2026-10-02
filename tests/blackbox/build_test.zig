@@ -3331,7 +3331,7 @@ test "a page with no delegated event calls no start and ships no listener" {
         \\    = Clicked
         \\
         \\
-        \\view : Int -> Html Msg
+        \\view : Int → Html Msg
         \\view _ =
         \\
     ;
@@ -3374,16 +3374,16 @@ fn elementPage(comptime cmd: []const u8) []const u8 {
     \\import Time
     \\
     \\
-    \\view : Int -> Html msg
+    \\view : Int → Html msg
     \\view _ =
     \\    <></>
     \\
     \\
     \\main : Browser.Program
     \\main =
-    \\    Tea.element { init = ( 0, Cmd.none ), update = λmsg model -> ( model,
+    \\    Tea.element { init = ( 0, Cmd.none ), update = λmsg model → ( model,
     ++ cmd ++
-        \\ ), view = view, subscriptions = λ_ -> Sub.none }
+        \\ ), view = view, subscriptions = λ_ → Sub.none }
         \\
     ;
 }
@@ -3401,7 +3401,7 @@ test "an element whose commands are all Cmd.none ships no fiber runtime" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("none/Main.beni", elementPage("Cmd.none"));
-    try w.write("waits/Main.beni", elementPage("Cmd.do λ() -> Time.sleep (Time.millis 1)"));
+    try w.write("waits/Main.beni", elementPage("Cmd.do λ() → Time.sleep (Time.millis 1)"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -3430,8 +3430,8 @@ test "an element whose commands never wait ships no fiber runtime" {
     // waits; the keyed body only sends.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) λn -> n"));
-    try w.write("keyed/Main.beni", elementPage("Cmd.keyed () Cmd.Restart λsend -> send 1"));
+    try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) λn → n"));
+    try w.write("keyed/Main.beni", elementPage("Cmd.keyed () Cmd.Restart λsend → send 1"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │

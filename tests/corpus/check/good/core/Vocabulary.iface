@@ -1,8 +1,8 @@
 module Vocabulary
   foreign type Event
   foreign type Html a
-  markup value map : Html a, (a -> b !sync) -> Html b
-  foreign value targetValue : Event -> String
+  markup value map : Html a, (a → b !sync) → Html b
+  foreign value targetValue : Event → String
   element "*-*"
   element "div"
   element "input" void

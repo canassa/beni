@@ -268,7 +268,7 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
             , .{ e.line, e.line, e.left.?, e.right });
             e.temp_end = @intCast(std.mem.count(u8, text.items, "\n"));
             try main.print(arena, "{s} \"core/{s}.beni:{d}\", {s}.docExample_{d} () )\n", .{
-                if (checked == 0) "\n\nentries : List ( String, Bool )\nentries =\n    [ (" else "    , (",
+                if (checked == 0) "\n\nentries : List (String × Bool)\nentries =\n    [ (" else "    , (",
                 e.module,
                 e.line,
                 e.module,

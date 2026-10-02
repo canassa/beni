@@ -3,5 +3,5 @@ module Lib
     Point/2
   value origin : Point
 module Main
-  value atOrigin : Point -> Bool
-  value same : Point, Point -> Bool
+  value atOrigin : Point → Bool
+  value same : Point, Point → Bool

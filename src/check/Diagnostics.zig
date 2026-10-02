@@ -366,8 +366,8 @@ pub const Reporter = struct {
                     }
                 };
                 const spelled: []const u8 = if (is.name(callee, "List.cons"))
-                    " — `[ x, ...xs ]` is `List.cons x xs`"
-                else if (is.name(callee, "List.append")) " — `[ ...xs, y ]` is `List.append xs [ y ]`" else "";
+                    " — `[ x, …xs ]` is `List.cons x xs`"
+                else if (is.name(callee, "List.append")) " — `[ …xs, y ]` is `List.append xs [ y ]`" else "";
                 return .{
                     .intro = std.fmt.allocPrint(scratch, "The {s} argument to {s} is not what I expect{s}:", .{
                         ordinal(scratch, category.index),
@@ -491,7 +491,7 @@ pub const Reporter = struct {
                 if (i != 0) w.writeAll(", ") catch return error.OutOfMemory;
                 Render.writeVar(w, r.cx(), namer, r.env.store.curriedParam(expected, i), .arg) catch return error.OutOfMemory;
             }
-            w.writeAll(" -> ") catch return error.OutOfMemory;
+            w.writeAll(" → ") catch return error.OutOfMemory;
             Render.writeVar(w, r.cx(), namer, r.env.store.curriedResult(expected, found_arrows), .top) catch return error.OutOfMemory;
             w.writeByte('\n') catch return error.OutOfMemory;
             return;
@@ -778,7 +778,7 @@ pub const Reporter = struct {
         if (!try CallStyle.tupleCallHint(r, w, region, arity)) w.writeAll(
             \\
             \\Hint: every call supplies every argument. To make a function out of this one,
-            \\write the missing argument as `_`: `f a _` is `λx -> f a x`.
+            \\write the missing argument as `_`: `f a _` is `λx → f a x`.
             \\
         ) catch return error.OutOfMemory;
         try r.emit(.too_few_args, region, &out);

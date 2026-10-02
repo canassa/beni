@@ -1,6 +1,6 @@
 module SyncOrdinary
-  value hosted : (Int, Int -> Int !(e1 | sync)), Int -> Int !e1
-  foreign value log : String -> () !impure
+  value hosted : (Int, Int → Int !(e1 | sync)), Int → Int !e1
+  foreign value log : String → () !impure
   value page : Int
-  value program : { init : Int, view : Int -> String !sync } -> Int
-  value sandbox : Int, (Int -> String !sync) -> Int
+  value program : { init : Int, view : Int → String !sync } → Int
+  value sandbox : Int, (Int → String !sync) → Int

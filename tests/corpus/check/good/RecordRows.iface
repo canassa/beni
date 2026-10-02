@@ -1,7 +1,7 @@
 module RecordRows
   alias Person
     Person/2
-  value birthday : Person -> Person
-  value bump : { r | count : number } -> { r | count : number }
-  value describe : Person -> String
-  value label : { r | name : a } -> a
+  value birthday : Person → Person
+  value bump : { r | count : number } → { r | count : number }
+  value describe : Person → String
+  value label : { r | name : a } → a

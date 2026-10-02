@@ -1261,8 +1261,8 @@ function of the scheme, not of the store. The whole thing is one line; it is the
 formatter, and the two differ on purpose (§2.5).
 
 ```
-Dict k v, k, v -> Dict k v where k.compare : k, k -> Order
-List a, List b -> List ( a, b ) where a.eq : a, a -> Bool, b.compare : b, b -> Order
+Dict k v, k, v → Dict k v where k.compare : k, k → Order
+List a, List b → List ( a, b ) where a.eq : a, a → Bool, b.compare : b, b → Order
 ```
 
 `writeVar` and `allocType` — the two entry points **every diagnostic** uses, since a diagnostic
@@ -1290,7 +1290,7 @@ failure after §7.2's ordering.
 ```
 module Dict
   value empty : Dict k v
-  value insert : Dict k v, k, v -> Dict k v where k.compare : k, k -> Order
+  value insert : Dict k v, k, v → Dict k v where k.compare : k, k → Order
 ```
 
 ### 6.7 Return-type dispatch in the solver
@@ -2694,7 +2694,7 @@ suggest writing one there — which the parser refuses as UNEXPECTED TOKEN — a
 Hint: a `let` annotation cannot have a `where` clause. Move `g` to the top
 level and annotate it there with:
 
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 
 or remove the annotation of `g` and let its type be inferred.
 ```
@@ -3022,11 +3022,11 @@ type **its module declares** — the only case in which §11's clash is what hap
 ```
 `M.eq` is not the method this call needs:
 
-    Mod, Int -> Bool
+    Mod, Int → Bool
 
 but the call wants:
 
-    Mod, Mod -> Bool
+    Mod, Mod → Bool
 
 A method of `Mod` is a `pub` value of the module that declares it, so
 `M.eq` is the `eq` of `Mod`, and it has to have the type the call wants.
@@ -3046,13 +3046,13 @@ The `where a.compare` clause of `f` does not match the `compare` of `Int`:
 
 With `a` as `Int`, the clause asks for:
 
-    Int, Int -> Int
+    Int, Int → Int
 
 But the `compare` of `Int` is:
 
-    Int, Int -> Order
+    Int, Int → Order
 
-Hint: `compare` means the same thing at every type, `a, a -> Order`, so a
+Hint: `compare` means the same thing at every type, `a, a → Order`, so a
 `where` clause that names it has to give it that type.
 ```
 
@@ -3076,11 +3076,11 @@ I cannot compare these values with `==`:
 
 It holds a `Key`, and comparing that needs the `key` of `Key` at this type:
 
-    Key, () -> Int
+    Key, () → Int
 
 but `Key.key` is:
 
-    Key, () -> String
+    Key, () → String
 
 Hint: give `Key.key` that type, or compare the values another way.
 ```

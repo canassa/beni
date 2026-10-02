@@ -1,1 +1,1 @@
-[{"code":"expected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/WhereConstraintMalformed.beni","start":{"line":4,"col":32},"end":{"line":4,"col":34}},"title":"EXPECTED TOKEN","message":"I was parsing a `where` clause and ran into `.x`, but I was expecting `->` here."}]
+[{"code":"expected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/WhereConstraintMalformed.beni","start":{"line":4,"col":32},"end":{"line":4,"col":34}},"title":"EXPECTED TOKEN","message":"I was parsing a `where` clause and ran into `.x`, but I was expecting `→` here."}]

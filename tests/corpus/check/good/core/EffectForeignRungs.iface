@@ -1,13 +1,13 @@
 module EffectForeignRungs
-  value both : Int -> Int !suspends
-  foreign value compareAll : List a, List a -> Bool !e1 where a.eq : a, a -> Bool !(e1 | sync)
-  foreign value double : Int -> Int
-  value fetch : Int -> Int !suspends
-  foreign value get : Int -> Int !suspends
-  foreign value later : (() -> Int) -> () !impure
-  foreign value makeClock : () -> (() -> Int !impure) !impure
-  foreign value now : () -> Int !impure
-  value quiet : Int -> Int
-  value reading : () -> Int !impure
-  value schedule : () -> () !impure
-  value tick : () -> Int !impure
+  value both : Int → Int !suspends
+  foreign value compareAll : List a, List a → Bool !e1 where a.eq : a, a → Bool !(e1 | sync)
+  foreign value double : Int → Int
+  value fetch : Int → Int !suspends
+  foreign value get : Int → Int !suspends
+  foreign value later : (() → Int) → () !impure
+  foreign value makeClock : () → (() → Int !impure) !impure
+  foreign value now : () → Int !impure
+  value quiet : Int → Int
+  value reading : () → Int !impure
+  value schedule : () → () !impure
+  value tick : () → Int !impure

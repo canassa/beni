@@ -149,8 +149,8 @@ pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.
                 try w.print(
                     \\I found `{s}`, which is not part of the language's syntax.
                     \\
-                    \\The symbols are ( ) [ ] {{ }} , : = -> \ | _ ? ... and the operators are
-                    \\+ - * / // ^ ++ == /= < > <= >= && || |> <|.
+                    \\The symbols are ( ) [ ] {{ }} , : = → ← λ | _ ? … × and the operators are
+                    \\+ - * / // ^ ++ == ≠ < > ≤ ≥ && || ▷ ◁.
                 , .{text});
             }
         },
@@ -394,7 +394,7 @@ test "message: invalid_character distinguishes control bytes, non-ASCII, a stray
         5,
     );
     try expectMessage(
-        "I found `@`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = -> \\ | _ ? ... and the operators are\n+ - * / // ^ ++ == /= < > <= >= && || |> <|.",
+        "I found `@`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = → ← λ | _ ? … × and the operators are\n+ - * / // ^ ++ == ≠ < > ≤ ≥ && || ▷ ◁.",
         .invalid_character,
         "x = @",
         4,

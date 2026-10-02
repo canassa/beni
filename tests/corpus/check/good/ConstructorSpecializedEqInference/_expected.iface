@@ -1,6 +1,6 @@
 module Holder
   type Holder a
     Holder/2
-  value eq : Holder Int, Holder Int -> Bool
+  value eq : Holder Int, Holder Int → Bool
 module Main
-  value same : Int, Int -> Bool
+  value same : Int, Int → Bool

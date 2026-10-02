@@ -1,2 +1,2 @@
 module UnkeyedForHint
-  value view : List Tag, List (List Int) -> Html msg
+  value view : List Tag, List (List Int) → Html msg

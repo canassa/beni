@@ -140,6 +140,16 @@ The `NameRemoved*` fixtures are written in the old names on purpose: **re-runnin
 Slice 16's Elm-order hint is a read-only fit test, not §7.5 speculation (`checker-v2.md` §29.4,
 *As built*).
 
+*As built, Z4 and slices 18–20 (2026-10-02).* Columns count code points first, alone — a caret
+after a `λ` had stood one place right, and eleven files whose hung lambda now fit in 100 columns
+were joined in that commit. Then 18 (both spellings; dumps name operators by their symbols, so the
+BIR goldens moved there and only there), 19 in two commits — the flag alone (`beni fmt
+--migrate-unicode`, 1 413 files, JavaScript byte-identical in both builds, every BIR unchanged)
+and the reviewed-script pass — each preceded by a fix the migration found in a message that read
+source text for `->` or `|>`, and 20, preceded by the source-map column fix the migrated tests needed.
+The one departure from the plan's row for 19: compiler message texts switched in 20, with the
+renderer, as Z12 orders, not in 19. `frontend.md` §11.8 has the *As built* notes.
+
 *As built, slices 10–12 (2026-10-02).* Six commits, each gates-green: 10, two formatter fixes the
 migration's dry runs found (a `λ` measured as one byte, so a lambda could end a 101-byte line; and
 a hung lambda measured with the breaks and parentheses the printer drops, so the migration's output

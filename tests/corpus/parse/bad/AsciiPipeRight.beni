@@ -1,0 +1,6 @@
+-- `|>` left the language for `▷` (language.md §12.7): ascii_symbol_removed
+-- at each stage of a pipeline (5:9, 6:9).
+count xs =
+    xs
+        |> List.reverse
+        |> List.length

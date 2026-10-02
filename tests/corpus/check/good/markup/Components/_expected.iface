@@ -1,7 +1,7 @@
 module Page
-  value view : { count : Int, title : String } -> Html Msg
+  value view : { count : Int, title : String } → Html Msg
 module Ui.Card
-  value counter : { count : Int } -> Html Int
+  value counter : { count : Int } → Html Int
   value defaults : Props msg
-  value header : { title : String } -> Html msg
-  value view : Props msg -> Html msg
+  value header : { title : String } → Html msg
+  value view : Props msg → Html msg

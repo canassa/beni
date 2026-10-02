@@ -1,2 +1,2 @@
 module UnkeyedFor
-  value view : List Todo, List String -> Html msg
+  value view : List Todo, List String → Html msg

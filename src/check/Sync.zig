@@ -397,7 +397,7 @@ const Sync = struct {
                 const decl = cx.bir.decls[d.decl];
                 const name = cx.interner.slice(cx.bir.symbol(decl.name));
                 const type_name = if (d.field != none) cx.interner.slice(@enumFromInt(d.field)) else "its type";
-                const ops = if (std.mem.eql(u8, name, "eq")) "`==` and `/=`" else "`<`, `<=`, `>`, `>=`, `min` and `max`";
+                const ops = if (std.mem.eql(u8, name, "eq")) "`==` and `≠`" else "`<`, `≤`, `>`, `≥`, `min` and `max`";
                 return w.print(
                     "`{s}` must not suspend: it is what {s} call on `{s}`, and a comparison never suspends. `List` compares its elements from JavaScript, where nothing can wait.",
                     .{ name, ops, type_name },
@@ -604,7 +604,7 @@ const Sync = struct {
                 "Hint: `main` only describes the program. A value that may suspend can only be computed by a function the platform runs, never while `main` is evaluated.",
             ),
             .value => try w.writeAll(
-                "Hint: make it a function — `\\() -> …` or a parameter — and call it where waiting is possible, from a function the platform runs.",
+                "Hint: make it a function — `λ() → …` or a parameter — and call it where waiting is possible, from a function the platform runs.",
             ),
             .method => try w.writeAll(
                 "Hint: compare what the values hold, and do the work that suspends before comparing them.",

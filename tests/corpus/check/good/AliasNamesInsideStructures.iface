@@ -2,11 +2,11 @@ module AliasNamesInsideStructures
   alias Label
   alias Name
   alias Pair a
-  value f : number -> List String
-  value g : number -> List String
+  value f : number → List String
+  value g : number → List String
   value labels : List Label
-  value maybe : Bool -> Maybe String
+  value maybe : Bool → Maybe String
   value names : List Name
-  value pair : Bool -> Pair String
-  value pick : Bool -> List String
-  value pickSwapped : Bool -> List String
+  value pair : Bool → Pair String
+  value pick : Bool → List String
+  value pickSwapped : Bool → List String

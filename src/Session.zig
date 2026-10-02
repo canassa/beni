@@ -1124,6 +1124,7 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
         // `fmt --migrate-cons` is the fix for these: it rewrites them.
         if (session.options.migrate_cons and item.code == .cons_removed) continue;
         if (session.options.migrate_lambda and item.code == .backslash_lambda_removed) continue;
+        if (session.options.migrate_unicode and (item.code == .ascii_symbol_removed or item.code == .tuple_type_removed)) continue;
         if (session.options.migrate_let and item.code == .let_removed) continue;
         message.clearRetainingCapacity();
         try ParseDiagnostics.message(item, text, line_starts, &message.writer);

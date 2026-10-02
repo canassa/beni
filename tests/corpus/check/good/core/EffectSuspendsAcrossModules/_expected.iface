@@ -1,10 +1,10 @@
 module Net
-  foreign value get : Int -> String !suspends
+  foreign value get : Int → String !suspends
 module Page
-  value later : List Int -> () -> List String !suspends
-  value names : List Int -> Int !suspends
-  value now : List Int -> List String !suspends
-  value quiet : List Int -> Int
+  value later : List Int → () → List String !suspends
+  value names : List Int → Int !suspends
+  value now : List Int → List String !suspends
+  value quiet : List Int → Int
 module Users
-  value count : List Int -> Int
-  value fetchAll : List Int -> List String !suspends
+  value count : List Int → Int
+  value fetchAll : List Int → List String !suspends

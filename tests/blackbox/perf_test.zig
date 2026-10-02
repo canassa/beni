@@ -94,7 +94,7 @@ test "obligation rows on one variable cost linear time" {
 /// nesting bound).
 fn rowsOnOne(arena: std.mem.Allocator, n: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "snd : ( Int, Int ) -> Int\nsnd ( _, b ) =\n    b\n\n\npub f p =\n    \"");
+    try out.appendSlice(arena, "snd : Int × Int → Int\nsnd ( _, b ) =\n    b\n\n\npub f p =\n    \"");
     for (0..n) |_| try out.appendSlice(arena, "${p}");
     try out.appendSlice(arena, "\" ++ String.fromInt p\n\n\npub g q =\n    ( [ q.0");
     for (1..n) |_| try out.appendSlice(arena, ", q.0");
@@ -183,7 +183,7 @@ test "a cyclic receiver in a `let` reports infinite_type within 500 ms" {
 test "nominal dispatch is linear in the number of declarations" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
-    const nominal = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    T{d} x == T{d} x\n\n\n";
+    const nominal = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int → Bool\nf{d} x =\n    T{d} x == T{d} x\n\n\n";
     try s.w.write("E.beni", try generate(s.arena(), 8_000, nominal, 6));
     try s.w.write("E2.beni", try generate(s.arena(), 16_000, nominal, 6));
     const verdict = try s.ratioWith("E.beni", "E2.beni", 8_000, &.{});
@@ -218,7 +218,7 @@ test "schema property settling is linear in the number of schemas" {
 test "checking is linear in the number of declarations" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
-    const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
+    const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int → Bool\nf{d} x =\n    x == x\n\n\n";
     try s.w.write("X.beni", try generate(s.arena(), 6_000, control, 4));
     try s.w.write("X2.beni", try generate(s.arena(), 12_000, control, 4));
     const verdict = try s.ratioWith("X.beni", "X2.beni", 6_000, &.{});
@@ -237,7 +237,7 @@ test "checking is linear in the number of declarations" {
 test "writing a module's cache entry is linear in its types" {
     var s = try Perf.init(.alone);
     defer s.deinit();
-    const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
+    const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int → Bool\nf{d} x =\n    x == x\n\n\n";
     try s.w.write("X.beni", try generate(s.arena(), 12_000, control, 4));
     try s.w.write("X2.beni", try generate(s.arena(), 24_000, control, 4));
     try s.finish("writing a cache entry", try s.storeRatio("X.beni", "X2.beni", 12_000));
@@ -328,7 +328,7 @@ fn aliasDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "type alias A0 =\n    Int\n\n\n");
     for (1..depth + 1) |i| try out.print(arena, "type alias A{d} =\n    ( A{d}, A{d} )\n\n\n", .{ i, i - 1, i - 1 });
-    try out.print(arena, "f : A{d} -> A{d}\nf x =\n    x\n", .{ depth, depth });
+    try out.print(arena, "f : A{d} → A{d}\nf x =\n    x\n", .{ depth, depth });
     return out.items;
 }
 
@@ -356,7 +356,7 @@ fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "type alias A0 a =\n    Maybe a\n\n\n");
     for (1..depth + 1) |i| try out.print(arena, "type alias A{d} a =\n    ( A{d} a, A{d} (List a) )\n\n\n", .{ i, i - 1, i - 1 });
-    try out.print(arena, "f : A{d} Int -> Int\nf _ =\n    1\n", .{depth});
+    try out.print(arena, "f : A{d} Int → Int\nf _ =\n    1\n", .{depth});
     return out.items;
 }
 
@@ -792,8 +792,8 @@ const Perf = struct {
 test "a derived comparison per declaration checks within 2.5× its a < b control" {
     var s = try Perf.init(.alone);
     defer s.deinit();
-    try s.w.write("Tup.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int -> Bool\nf{d} a b =\n    ( a, [ b ] ) < ( b, [ a ] )\n\n\n", 2));
-    try s.w.write("IntLt.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int -> Bool\nf{d} a b =\n    a < b\n\n\n", 2));
+    try s.w.write("Tup.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int → Bool\nf{d} a b =\n    ( a, [ b ] ) < ( b, [ a ] )\n\n\n", 2));
+    try s.w.write("IntLt.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int → Bool\nf{d} a b =\n    a < b\n\n\n", 2));
     try s.finish("a derived comparison per declaration", try s.controlRatio("Tup.beni", "IntLt.beni", 5, 250));
 }
 
@@ -873,7 +873,7 @@ fn budgetOrders(arena: std.mem.Allocator, g_first: bool) ![]const u8 {
     var g: std.ArrayList(u8) = .empty;
     try g.appendSlice(arena, "g : ");
     for (0..262) |_| try g.appendSlice(arena, "R, R, ");
-    try g.appendSlice(arena, "T, T -> Bool\ng");
+    try g.appendSlice(arena, "T, T → Bool\ng");
     for (0..262) |i| try g.print(arena, " a{d} b{d}", .{ i, i });
     try g.appendSlice(arena, " t u =\n    ");
     for (0..262) |i| try g.print(arena, "(a{d} == b{d}) && ", .{ i, i });
@@ -900,8 +900,8 @@ test "many schemas with `via`s, each compared, cost linear time" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     const head = "import Schema exposing (Conversion)\n\n\n";
-    const measured = "conv{d} : Conversion Int W{d}\nconv{d} =\n    Debug.todo \"c\"\n\n\ntype W{d}\n    = W{d} Int\n\n\npub schema S{d} tagged \"k\" of\n    A as \"a\"\n        p : Int via conv{d}\n\n\nf{d} : S{d}.Type, S{d}.Type -> Bool\nf{d} a b =\n    a == b\n\n\n";
-    const control = "conv{d} : Conversion Int W{d}\nconv{d} =\n    Debug.todo \"c\"\n\n\ntype W{d}\n    = W{d} Int\n\n\npub schema S{d} tagged \"k\" of\n    A as \"a\"\n        p : Int via conv{d}\n\n\nf{d} : S{d}.Type, S{d}.Type -> Bool\nf{d} a b =\n    True\n\n\n";
+    const measured = "conv{d} : Conversion Int W{d}\nconv{d} =\n    Debug.todo \"c\"\n\n\ntype W{d}\n    = W{d} Int\n\n\npub schema S{d} tagged \"k\" of\n    A as \"a\"\n        p : Int via conv{d}\n\n\nf{d} : S{d}.Type, S{d}.Type → Bool\nf{d} a b =\n    a == b\n\n\n";
+    const control = "conv{d} : Conversion Int W{d}\nconv{d} =\n    Debug.todo \"c\"\n\n\ntype W{d}\n    = W{d} Int\n\n\npub schema S{d} tagged \"k\" of\n    A as \"a\"\n        p : Int via conv{d}\n\n\nf{d} : S{d}.Type, S{d}.Type → Bool\nf{d} a b =\n    True\n\n\n";
     for ([_][]const u8{ "M.beni", "M2.beni", "X.beni", "X2.beni" }, [_]usize{ 4_000, 8_000, 4_000, 8_000 }, [_]bool{ true, true, false, false }) |file, n, cmp| {
         const body = if (cmp) try generate(s.arena(), n, measured, 11) else try generate(s.arena(), n, control, 11);
         try s.w.write(file, try std.mem.concat(s.arena(), u8, &.{ head, body }));
@@ -1106,9 +1106,9 @@ test "a case of n literal branches builds in time linear in n" {
 /// branches.
 fn bigCase(arena: std.mem.Allocator, count: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "pub g : Int -> Int\ng k =\n    case k of\n");
-    for (0..count) |i| try out.print(arena, "        {d} ->\n            {d}\n\n", .{ i, i });
-    try out.appendSlice(arena, "        _ ->\n            -1\n");
+    try out.appendSlice(arena, "pub g : Int → Int\ng k =\n    case k of\n");
+    for (0..count) |i| try out.print(arena, "        {d} →\n            {d}\n\n", .{ i, i });
+    try out.appendSlice(arena, "        _ →\n            -1\n");
     return out.items;
 }
 
@@ -1200,7 +1200,7 @@ test "an alias chain's interface is linear in its length" {
 fn aliasChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "pub type alias R0 =\n    { x : Int }\n\n\n");
-    for (1..count + 1) |i| try out.print(arena, "pub type alias R{d} =\n    {{ x : Int, p : R{d} }}\n\n\npub get{d} : R{d} -> Int\nget{d} r =\n    r.x\n\n\n", .{ i, i - 1, i, i, i });
+    for (1..count + 1) |i| try out.print(arena, "pub type alias R{d} =\n    {{ x : Int, p : R{d} }}\n\n\npub get{d} : R{d} → Int\nget{d} r =\n    r.x\n\n\n", .{ i, i - 1, i, i, i });
     return out.items;
 }
 
@@ -1215,7 +1215,7 @@ fn aliasChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
 test "resolving qualified references is linear in their number" {
     var s = try Perf.init(.alone);
     defer s.deinit();
-    const template = "pub s{d} : List Int -> List Int\ns{d} xs =\n    List.map xs negate\n\n\n";
+    const template = "pub s{d} : List Int → List Int\ns{d} xs =\n    List.map xs negate\n\n\n";
     try s.w.write("Q.beni", try generate(s.arena(), 8_000, template, 2));
     try s.w.write("Q2.beni", try generate(s.arena(), 16_000, template, 2));
     try s.finish("resolving qualified references", try s.eventRatio("Q.beni", "Q2.beni", 8_000, "resolve", &.{}));

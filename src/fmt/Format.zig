@@ -885,10 +885,13 @@ pub fn migrateUnicode(
     return null;
 }
 
-/// Whether every syntax error of `tree` is one `--migrate-unicode` rewrites
-/// (none yet: the old spellings still parse).
+/// Whether every syntax error of `tree` is one `--migrate-unicode` rewrites:
+/// an old ASCII spelling or a tuple type written with commas.
 pub fn onlyUnicodeRemoved(tree: *const Ast) bool {
-    return tree.errors.len == 0;
+    for (tree.errors) |e| {
+        if (e.code != .ascii_symbol_removed and e.code != .tuple_type_removed) return false;
+    }
+    return true;
 }
 
 /// `migrateUnicode`'s state: the edits, and how to write a range of the
@@ -1300,13 +1303,13 @@ const Measurer = struct {
                 try out.appendSlice(m.scratch, m.sourceOf(item));
             },
             .pat_var, .pat_wild => {
-                try out.appendSlice(m.scratch, ", ...");
+                try out.appendSlice(m.scratch, ", …");
                 try out.appendSlice(m.scratch, m.sourceOf(bare));
             },
             else => {
                 // A pattern spread's operand is a name or `_` (§6.8).
                 if (tree.nodeTag(n) == .pat_cons) return false;
-                try out.appendSlice(m.scratch, ", ...");
+                try out.appendSlice(m.scratch, ", …");
                 try out.appendSlice(m.scratch, m.sourceOf(tail));
             },
         }
@@ -5043,7 +5046,7 @@ test "a chain of two operands ending in a block keeps the operator at the end of
     );
 }
 
-test "`_` is an ordinary argument, and `<-` bindings print on one line and are never aligned (§9)" {
+test "`_` is an ordinary argument, and `←` bindings print on one line and are never aligned (§9)" {
     try check(
         \\partial xs = List.map (add    1    _) xs
         \\pipeline r =
@@ -5067,7 +5070,7 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
     );
 }
 
-test "`f a <| λx ->` is written as a trailing lambda, whose body is a block below (§12.5)" {
+test "`f a ◁ λx →` is written as a trailing lambda, whose body is a block below (§12.5)" {
     try check(
         \\chain url = Task.attempt (Http.get url) ◁ λresponse → Task.attempt (Json.decode response) ◁ λvalue → renderTheDecodedValue value withSomeContext andAnotherArgument
         \\
@@ -5079,7 +5082,7 @@ test "`f a <| λx ->` is written as a trailing lambda, whose body is a block bel
     );
 }
 
-test "a trailing `<|` lambda that cannot be a trailing lambda keeps its body at the indentation of the `<|` line (§9)" {
+test "a trailing `◁` lambda that cannot be a trailing lambda keeps its body at the indentation of the `◁` line (§9)" {
     try check(
         \\chain url = (Task.attempt (Http.get url)) ◁ λresponse → renderTheDecodedValue response withSomeContext andAnotherArgument
         \\
@@ -5091,7 +5094,7 @@ test "a trailing `<|` lambda that cannot be a trailing lambda keeps its body at 
     );
 }
 
-test "lambdas: `λx y ->` with the body inline when it fits, else on the next line indented 4" {
+test "lambdas: `λx y →` with the body inline when it fits, else on the next line indented 4" {
     try check(
         \\f=λx→x+1
         \\h = λ(a,b) {c} _→
@@ -5282,24 +5285,24 @@ test "migrating `::` writes each chain in brackets and touches nothing else" {
         \\g a b rest = (a :: b :: rest) ++ [ 0 ]
         \\h x y =  x :: [ y ]  -- one literal
         \\k x = case x of
-        \\  a :: (b :: _) -> [ a, b ]
-        \\  y :: [] -> [ y ]
-        \\  _ -> List.foldr x [] (::)
+        \\  a :: (b :: _) → [ a, b ]
+        \\  y :: [] → [ y ]
+        \\  _ → List.foldr x [] (::)
         \\m xs = case xs of
-        \\  x :: (rest as r) -> r
-        \\  _ -> xs
+        \\  x :: (rest as r) → r
+        \\  _ → xs
         \\
     ,
-        \\f x xs = [ x, ...xs ]
-        \\g a b rest = [ a, b, ...rest ] ++ [ 0 ]
+        \\f x xs = [ x, …xs ]
+        \\g a b rest = [ a, b, …rest ] ++ [ 0 ]
         \\h x y =  [ x, y ]  -- one literal
         \\k x = case x of
-        \\  [ a, b, ..._ ] -> [ a, b ]
-        \\  [ y ] -> [ y ]
-        \\  _ -> List.foldr x [] List.cons
+        \\  [ a, b, …_ ] → [ a, b ]
+        \\  [ y ] → [ y ]
+        \\  _ → List.foldr x [] List.cons
         \\m xs = case xs of
-        \\  x :: (rest as r) -> r
-        \\  _ -> xs
+        \\  x :: (rest as r) → r
+        \\  _ → xs
         \\
     , 1);
 }
@@ -5332,16 +5335,16 @@ test "migrating lambdas writes each head `λ` and touches nothing else" {
     // An edit, not a formatting (frontend.md §11.4): the spacing, the
     // layout and a `λ` already written are the author's.
     try expectLambdaMigrated(
-        \\f=\x->x+1
-        \\g = List.map [ 1 ] (\ a ->
+        \\f=\x→x+1
+        \\g = List.map [ 1 ] (\ a →
         \\      a*2)  -- \x
-        \\h = λa -> \b -> \() -> a + b
+        \\h = λa → \b → \() → a + b
         \\
     ,
-        \\f=λx->x+1
-        \\g = List.map [ 1 ] (λ a ->
+        \\f=λx→x+1
+        \\g = List.map [ 1 ] (λ a →
         \\      a*2)  -- \x
-        \\h = λa -> λb -> λ() -> a + b
+        \\h = λa → λb → λ() → a + b
         \\
     );
 }
@@ -5352,18 +5355,18 @@ test "migrating lambdas never touches a multiline string's `\\\\`, an escape or 
     // token a lambda begins with — even when the text after it reads like
     // one.
     try expectLambdaMigrated(
-        \\a = \x ->
-        \\    \\raw \x -> x
+        \\a = \x →
+        \\    \\raw \x → x
         \\    \\\y
-        \\b = "\\x -> \n" ++ "${ f (\y -> y) }"
+        \\b = "\\x → \n" ++ "${ f (\y → y) }"
         \\c = '\\'
         \\d = [ '\'', '\n' ]
         \\
     ,
-        \\a = λx ->
-        \\    \\raw \x -> x
+        \\a = λx →
+        \\    \\raw \x → x
         \\    \\\y
-        \\b = "\\x -> \n" ++ "${ f (λy -> y) }"
+        \\b = "\\x → \n" ++ "${ f (λy → y) }"
         \\c = '\\'
         \\d = [ '\'', '\n' ]
         \\
@@ -5372,10 +5375,10 @@ test "migrating lambdas never touches a multiline string's `\\\\`, an escape or 
 
 test "migrating lambdas reaches markup holes and attribute values" {
     try expectLambdaMigrated(
-        \\v xs = <ul>{List.map xs (\i -> <li onClick={\_ -> i}>{i}</li>)}</ul>
+        \\v xs = <ul>{List.map xs (\i → <li onClick={\_ → i}>{i}</li>)}</ul>
         \\
     ,
-        \\v xs = <ul>{List.map xs (λi -> <li onClick={λ_ -> i}>{i}</li>)}</ul>
+        \\v xs = <ul>{List.map xs (λi → <li onClick={λ_ → i}>{i}</li>)}</ul>
         \\
     );
 }
@@ -5387,13 +5390,13 @@ test "migrating lambdas keeps a `case` branch on the `of` line after a lambda on
     // bytes it moved one right, and the migration had to leave the file.
     try expectLambdaMigrated(
         \\f m =
-        \\    case g (\x -> x) of Just y -> y
-        \\                        Nothing -> 0
+        \\    case g (\x → x) of Just y → y
+        \\                       Nothing → 0
         \\
     ,
         \\f m =
-        \\    case g (λx -> x) of Just y -> y
-        \\                        Nothing -> 0
+        \\    case g (λx → x) of Just y → y
+        \\                       Nothing → 0
         \\
     );
 }
@@ -5401,7 +5404,7 @@ test "migrating lambdas keeps a `case` branch on the `of` line after a lambda on
 test "migrating lambdas leaves a file with a syntax error alone" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    try testing.expectError(error.SyntaxErrors, lambdaOnce(arena_state.allocator(), "f = \\x ->\n"));
+    try testing.expectError(error.SyntaxErrors, lambdaOnce(arena_state.allocator(), "f = \\x →\n"));
 }
 
 /// `migrateUnicode` over `source`: its output and the problem it reports.
@@ -5583,7 +5586,7 @@ test "a pattern that does not fit overflows the guide instead of wrapping" {
 
 test "an annotation whose one-line form is 96 to 100 columns wide stays on one line" {
     // `fits(n)` compares `curCol() + widths[n]` with `max_width`, and
-    // `widths[n]` spans the WHOLE node — `Maybe Int` is 9 bytes, not 4.
+    // `widths[n]` spans the WHOLE node — `Maybe Int` is 9 columns, not 4.
     // Asking it after the head token is printed charged `Maybe` twice, so
     // an annotation 96..100 columns wide had its last type application
     // pushed onto a continuation line (`… -> Maybe` / `    Int`), a shape
@@ -5595,12 +5598,12 @@ test "an annotation whose one-line form is 96 to 100 columns wide stays on one l
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const head = "f : ";
-    const tail = " -> Int -> Maybe Int";
+    const tail = " → Int → Maybe Int";
     for (90..105) |target| {
-        const padding = try arena.alloc(u8, target - head.len - tail.len);
+        const padding = try arena.alloc(u8, target - head.len - diagnostic.codePoints(tail));
         @memset(padding, 'T');
         const line = try std.fmt.allocPrint(arena, "{s}{s}{s}", .{ head, padding, tail });
-        try testing.expectEqual(target, line.len);
+        try testing.expectEqual(target, diagnostic.codePoints(line));
         const input = try std.fmt.allocPrintSentinel(arena, "{s}\nf x y =\n    Nothing\n", .{line}, 0);
         const out = try run(arena, input);
         const first_line = out.text[0..std.mem.indexOfScalar(u8, out.text, '\n').?];
@@ -5922,11 +5925,11 @@ test "the parse/good corpus round-trips: idempotent and structure-preserving" {
 const stress_decls = [_][]const u8{
     "v{d} = 1\n",
     "f{d} a b = a + b * 2 - -a\n",
-    "g{d} : Int -> List Int -> Maybe.Maybe (Result String Int)\ng{d} _ xs = List.head xs |> Maybe.map Ok\n",
+    "g{d} : Int → List Int → Maybe.Maybe (Result String Int)\ng{d} _ xs = List.head xs ▷ Maybe.map Ok\n",
     "type T{d} a = A{d} | B{d} a (List a) | C{d} { x : Int, y : a }\n",
     "type alias P{d} = { x : Int, y : Int, name : String }\n",
     "pub opaque type Q{d} = Q{d} Int\n",
-    "foreign pure h{d} : Int -> Int\n",
+    "foreign pure h{d} : Int → Int\n",
     "foreign type Ft{d} a b\n",
     "c{d} m =\n    case m of\n        Just n →\n            n\n\n        Nothing →\n            0\n",
     "c2{d} m = case m of\n  Just n → n\n  Nothing → 0\n",
@@ -5947,7 +5950,7 @@ const stress_decls = [_][]const u8{
     "u{d} m = { m | count = m.count + 1, aVeryLongFieldNameToMakeItWide = m.aVeryLongFieldNameToMakeItWide + 1 }\n",
     "op{d} = ( + ) 1 2 + (++) [ 1 ] [ …[], 2 ] + ( ^ ) 1 2\n",
     "app{d} = List.foldl (λitem acc → acc + String.length item * 2) 0 [ \"some\", \"long\", \"list\", \"of\", \"strings\", \"here\" ]\n",
-    "ann{d} : { host : String, port : Int, user : String, password : String, timeout : Int } -> Result String { host : String, port : Int } -> Bool\nann{d} _ _ = True\n",
+    "ann{d} : { host : String, port : Int, user : String, password : String, timeout : Int } → Result String { host : String, port : Int } → Bool\nann{d} _ _ = True\n",
     "chain{d} r = String.length r.name > 0 && String.length r.name < 100 && r.age ≥ 0 && r.age < 150 && not (String.isEmpty r.email)\n",
     "cmt{d} x = -- after equals\n    -- before binding\n    y = 1 -- after body\n    -- before the value\n    if x then -- after then\n        y\n        -- before else\n    else\n        -- in else\n        case x of -- after of\n            -- before branch\n            True → 1 -- after branch\n            -- between branches\n            False → [ 1 -- in list\n                     , 2\n                     -- before close\n                     ]\n",
     "str{d} = \"tab\\there \\u{0041} \\$ \\' \\\"q\\\"\" ++ \"${a}\"\n",

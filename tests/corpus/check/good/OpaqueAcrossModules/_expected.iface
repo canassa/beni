@@ -1,8 +1,8 @@
 module App
-  value label : Counter -> String
+  value label : Counter → String
   value twice : Counter
 module Counter
   opaque type Counter
-  value bump : Counter -> Counter
-  value value : Counter -> Int
+  value bump : Counter → Counter
+  value value : Counter → Int
   value zero : Counter

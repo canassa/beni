@@ -1,2 +1,2 @@
 module LookupTable
-  value name : Int -> String
+  value name : Int → String

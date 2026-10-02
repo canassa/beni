@@ -1,0 +1,19 @@
+-- `( a, b )` in a type left the language for `a × b` (language.md §12.8):
+-- tuple_type_removed at its `(`, the message the type written with `×` —
+-- parenthesised as a type argument, a nested tuple an operand in
+-- parentheses, a tuple holding a bare arrow (the old trap) this code and not
+-- arrow_in_tuple_element — and each parses on as the tuple it was
+-- (7:8, 7:26, 12:15, 12:22, 17:8).
+swap : ( Int, String ) → ( String, Int )
+swap ( a, b ) =
+    ( b, a )
+
+
+pairs : Maybe ( Int, ( String, Bool ) ) → Int
+pairs _ =
+    0
+
+
+trap : ( Int → Int, String ) → Int
+trap _ =
+    0

@@ -10,10 +10,10 @@ rebuilds.
 - **Language**: Elm 0.19 with a short list of deliberate departures, all in
   [`language.md`](docs/design/language.md) §0. Two are large. There is **no
   automatic currying**: every call is saturated, function types are n-ary and
-  written `Int, Int -> Int`, and partial application is written `f a _`. And
+  written `Int, Int → Int`, and partial application is written `f a _`. And
   there **is static dispatch**, adopted 2026-09-18: a type's methods are the
   `pub` values of the module declaring it, `x.m a` calls one, a top-level
-  annotation may carry `where a.compare : a, a -> Order`, and `==` and `<` call
+  annotation may carry `where a.compare : a, a → Order`, and `==` and `<` call
   the receiver type's `eq`/`compare`, derived when it declares none. Contract:
   [`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) — the file
   name is historical, the document is normative. A further departure is in progress:
@@ -22,10 +22,14 @@ rebuilds.
   contract and open choices. Record alias and schema declaration bodies accept
   layout sugar for braces; their formatter always emits vertical layout
   (`language.md` §3–§4/§9, `schema.md` §2/A.5). **`::` is gone** (the owner,
-  2026-10-01): lists are written, built and matched with brackets and a `...`
-  spread — `[ x, ...rest ]`, `[ ...init, last ]`, `[ ...a, ...b ]`
+  2026-10-01): lists are written, built and matched with brackets and a `…`
+  spread — `[ x, …rest ]`, `[ …init, last ]`, `[ …a, …b ]`
   (`language.md` §6.8, *The list syntax*); `beni fmt --migrate-cons` rewrites
-  old code.
+  old code. **Unicode notation** (the owner, 2026-10-01; landed 2026-10-02):
+  `→ ← ≠ ≤ ≥ ▷ ◁ …` replace `-> <- /= <= >= |> <| ...`, a tuple type is
+  `Int × String` (`a × b × c` a flat 3-tuple), and a column counts code
+  points; the ASCII is refused and `beni fmt --migrate-unicode` rewrites old
+  code (`language.md` §12.7–§12.9).
 - **Target**: modern JavaScript, ES modules. `Int` is a double. **Beni is primarily a
   browser language, and the browser platform comes before Node** (the owner, 2026-09-19).
   Node is today's only platform because it is what the test harness needs, not because it is
@@ -167,7 +171,7 @@ mounted at `document.body` unless `Browser.mountAt` names an element;
 walks with dom-expressions' own output, every difference listed. The Elm
 Architecture is the `browser-tea` platform layered on it, beni with no
 JavaScript of its own: `Tea.sandbox`, and `Tea.element` whose `update` returns
-`( model, Cmd msg )` — keyed commands run as fibers with Restart/Queue/Ignore/Concurrent
+`model × Cmd msg` — keyed commands run as fibers with Restart/Queue/Ignore/Concurrent
 policies, subscriptions diffed once per render, after-render work — over `Browser.hosted`,
 with `Time`, `Dom`, `Http` and window events (`boundary.md` §9.1, §9.8; pages in
 `tests/corpus/browser/tea/`, whose driver has a virtual clock).
@@ -177,11 +181,11 @@ imports (`backend.md` §9, `src/js/Minify.zig`): the empty mounted page is
 
 **`List` is array-backed** (the owner's decision, 2026-10-01; landed the same day): a plain
 array, an O(1) view for a pattern's `rest`, or a 32-way trie with a claimable head and tail
-(E1tp), so `length` and indexed reads are O(1) or near it, and `List.push` and `[ x, ...xs ]` are
+(E1tp), so `length` and indexed reads are O(1) or near it, and `List.push` and `[ x, …xs ]` are
 amortised O(1) at either end. Every reader outside `core/List.js` uses three facts — `length`,
 `Array.isArray`, `$plain()`; `++` on lists calls `List.append`. Contract: `backend.md` §4 *Lists
 are arrays*, `language.md` §6.8; order of work and measurements: `plans/list-arrays.md`. Since
-2026-10-02 a loop that walks its list with `[ x, ...rest ]` reads it by an offset into its base
+2026-10-02 a loop that walks its list with `[ x, …rest ]` reads it by an offset into its base
 array (scalar views, `backend.md` §8), and `core/List`'s own loops read and write their arrays in
 place; slices 4–5 (markup identity, bytes) are still to come.
 
@@ -195,7 +199,7 @@ adopted on 2026-09-18, reversing two `fast-compiler.md` §3.1 decisions.
 the `_` placeholder, the `let x <- e` bind, n-ary function types through the
 parser, BIR, checker and backend — every emitted call is saturated and there is
 no calling convention (`backend.md` §6) — and `core/` rewritten subject-first
-with `|>` flipped to pipe-first.
+with `▷` (then `|>`) flipped to pipe-first.
 
 ### Owed after the static-dispatch adoption
 

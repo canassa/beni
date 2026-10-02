@@ -208,7 +208,7 @@ fn constructText(c: Construct) []const u8 {
         .binding => "a binding",
         .field_name => "a field name",
         .branch => "a branch",
-        .constraint => "a `where` constraint like `k.compare : k, k -> Order`",
+        .constraint => "a `where` constraint like `k.compare : k, k → Order`",
         .float_pattern => "a pattern",
         .expose_all => "a name to expose",
         .dash_tag, .negated_markup => "an expression",
@@ -230,7 +230,7 @@ fn constructText(c: Construct) []const u8 {
 
 /// The spelling of an expected token, for prose.
 fn tokenText(tag: Token.Tag) []const u8 {
-    return Token.lexeme(tag.ascii() orelse tag) orelse switch (tag) {
+    return Token.lexeme(tag) orelse switch (tag) {
         .lower_ident => "a name",
         .upper_ident => "a capitalised name",
         .int => "an integer",
@@ -273,8 +273,8 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\    import Json.Decode
                     \\    type alias Point = {{ x : Int, y : Int }}
                     \\    type Shape = Circle Float | Rect Float Float
-                    \\    area : Shape -> Float
-                    \\    area shape = ...
+                    \\    area : Shape → Float
+                    \\    area shape = …
                     \\
                     \\Everything that belongs to the previous declaration must be indented by at
                     \\least one space.
@@ -370,11 +370,11 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 try w.print("`{s}` is not {s}.", .{ text, constructText(item.construct) });
             } else if (item.construct == .stray_spread) {
                 try w.writeAll(
-                    \\I found a spread, `...`, outside a list.
+                    \\I found a spread, `…`, outside a list.
                     \\
                     \\A spread puts the elements of one list into another, so it belongs inside the
-                    \\brackets of a list: `[ 0, ...xs ]` as an expression, `[ x, ...rest ]` as a
-                    \\pattern. A component's attributes take one too, as `{...props}` first in its tag.
+                    \\brackets of a list: `[ 0, …xs ]` as an expression, `[ x, …rest ]` as a
+                    \\pattern. A component's attributes take one too, as `{…props}` first in its tag.
                 );
             } else if (item.construct == .binding_head) {
                 try w.print(
@@ -382,7 +382,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\like the start of a binding.
                     \\
                     \\A binding's head — its pattern, or its name and parameters — goes on one line,
-                    \\with its `=` or `<-`, so that the line says what it is:
+                    \\with its `=` or `←`, so that the line says what it is:
                     \\
                     \\    ( a, b ) = pair
                 , .{text});
@@ -395,7 +395,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\body takes the rest of its line, or the block below it, so nothing can follow
                     \\it as another argument. To pass more after a lambda, put it in parentheses:
                     \\
-                    \\    Task.bracket (λ() -> open url) close λconn -> use conn
+                    \\    Task.bracket (λ() → open url) close λconn → use conn
                 , .{ contextText(item.context), text });
             } else if (item.construct == .times_in_expression) {
                 try w.print(
@@ -421,11 +421,11 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 );
             } else if (item.construct == .spread_operand) {
                 try w.print(
-                    \\I was parsing a list pattern and ran into `{s}` after its `...`.
+                    \\I was parsing a list pattern and ran into `{s}` after its `…`.
                     \\
-                    \\A spread in a pattern names the elements it covers, or ignores them: `...rest`
-                    \\or `..._`. The items around the spread match single elements, so a pattern for
-                    \\them goes there: `[ x, y, ...rest ]` rather than `[ x, ...[ y, ..._ ] ]`.
+                    \\A spread in a pattern names the elements it covers, or ignores them: `…rest`
+                    \\or `…_`. The items around the spread match single elements, so a pattern for
+                    \\them goes there: `[ x, y, …rest ]` rather than `[ x, …[ y, …_ ] ]`.
                 , .{text});
             } else if (item.construct == .float_pattern) {
                 try w.print(
@@ -435,7 +435,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\off by a tiny amount and miss the branch. Compare instead, with a tolerance if
                     \\you need one:
                     \\
-                    \\    if x == {s} then ... else ...
+                    \\    if x == {s} then … else …
                 , .{ text, text });
             } else if (item.construct == .declaration and item.context == .module) {
                 try w.print(
@@ -478,7 +478,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\
                     \\An `if` or `case` may end an expression, but as an argument it must be
                     \\wrapped in parentheses: `f (if c then a else b)`. A lambda alone may be the
-                    \\last argument without them: `f a λx -> x`.
+                    \\last argument without them: `f a λx → x`.
                 , .{ contextText(item.context), text });
             } else {
                 try w.print("I was parsing {s} and ran into `{s}`. I was expecting {s}.", .{ contextText(item.context), text, constructText(item.construct) });
@@ -543,15 +543,15 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\An annotation must be immediately followed by the definition it describes
             \\(blank lines and comments in between are fine):
             \\
-            \\    {s} : ...
+            \\    {s} : …
             \\    {s} =
-            \\        ...
+            \\        …
         , .{ text, text, text, text }),
         .pub_on_definition => try w.print(
             \\`pub` is on the definition of `{s}`, but `{s}` also has a type annotation.
             \\
             \\When a definition has an annotation, `pub` goes on the annotation line, like
-            \\`pub {s} : ...`. Remove it from the definition.
+            \\`pub {s} : …`. Remove it from the definition.
         , .{ head, head, head }),
         .foreign_effect_missing => try w.print(
             \\This `foreign` declaration does not say what calling `{s}` may do.
@@ -559,9 +559,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\A `foreign` value has no body to infer that from, so it states it between
             \\`foreign` and its name, as one of three words:
             \\
-            \\    foreign pure {s} : ...        -- total, never throws, no side effect
-            \\    foreign impure {s} : ...      -- a side effect, but never waits
-            \\    foreign suspends {s} : ...    -- may wait: a timer, the network
+            \\    foreign pure {s} : …        -- total, never throws, no side effect
+            \\    foreign impure {s} : …      -- a side effect, but never waits
+            \\    foreign suspends {s} : …    -- may wait: a timer, the network
         , .{ text, text, text, text }),
         .unknown_foreign_effect => try w.print(
             \\`{s}` is not something a `foreign` declaration can say about itself.
@@ -571,7 +571,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\(may wait: a timer, the network).
         , .{text}),
         .opaque_not_on_type => try w.writeAll(
-            \\`opaque` can only go on a custom type: `pub opaque type T = ...`.
+            \\`opaque` can only go on a custom type: `pub opaque type T = …`.
             \\
             \\It hides the constructors of a type from other modules. A type alias or a value
             \\has no constructors to hide, so `opaque` means nothing there.
@@ -584,7 +584,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\A `case` needs at least one branch, indented more than the block it is in:
                     \\
                     \\    case x of
-                    \\        Just n ->
+                    \\        Just n →
                     \\            n
                 );
             } else {
@@ -597,7 +597,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\A `case` needs at least one branch:
                     \\
                     \\    case x of
-                    \\        Just n ->
+                    \\        Just n →
                     \\            n
                 , .{ head, head_col, item.required_col });
             }
@@ -611,7 +611,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .non_associative_chain => {
             if (isPipe(text)) {
                 try w.writeAll(
-                    \\I found `<|` and `|>` mixed in one chain.
+                    \\I found `◁` and `▷` mixed in one chain.
                     \\
                     \\The two pipe operators cannot be combined without parentheses, because it is not
                     \\clear which side applies first. Add parentheses around one of the sides.
@@ -640,56 +640,52 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\I found a `_` where an expression should be.
             \\
             \\`_` is the placeholder for an argument a call does not supply: `f a _ c` is
-            \\`λx -> f a x c`. It is an argument and nothing else, so it cannot stand on its own,
+            \\`λx → f a x c`. It is an argument and nothing else, so it cannot stand on its own,
             \\be an operand, or sit in parentheses. For a value you do not care about, name it.
         ),
         .multiple_placeholders => try w.writeAll(
             \\I found a second `_` in the same call.
             \\
-            \\A call may leave one argument open: `f a _ c` is `λx -> f a x c`. Two open
+            \\A call may leave one argument open: `f a _ c` is `λx → f a x c`. Two open
             \\arguments have no shorter form than the lambda they stand for, so write `f _ b _`
-            \\out in full: `λx y -> f x b y`.
+            \\out in full: `λx y → f x b y`.
         ),
         .operator_not_a_function => try w.print(
             \\I found `({s})`, but `{s}` is not a function.
             \\
-            \\`(+)`, `(++)` and the rest name the 2-ary function the operator desugars to. `|>`
-            \\and `<|` desugar to nothing: they rearrange the call they are written in — `x |> f a`
-            \\is `f x a` and `f <| x` is `f x` — so there is no function to pass around. Write the
+            \\`(+)`, `(++)` and the rest name the 2-ary function the operator desugars to. `▷`
+            \\and `◁` desugar to nothing: they rearrange the call they are written in — `x ▷ f a`
+            \\is `f x a` and `f ◁ x` is `f x` — so there is no function to pass around. Write the
             \\lambda you meant, or name the argument.
         , .{ text, text }),
         .pipe_rhs_not_application => try w.print(
-            \\I was expecting a call after this `|>`, but I ran into `{s}`.
+            \\I was expecting a call after this `▷`, but I ran into `{s}`.
             \\
-            \\`x |> f a` is `f x a`: the value on the left becomes the FIRST argument of the call
-            \\on the right, so the right of `|>` must be that call — a function, or a call it is
+            \\`x ▷ f a` is `f x a`: the value on the left becomes the FIRST argument of the call
+            \\on the right, so the right of `▷` must be that call — a function, or a call it is
             \\one argument short of. An `if`, `case` or lambda has no argument list to
             \\insert into. Parentheses do not hand it over as a value either — they are looked
-            \\through, so `5 |> (λy -> y + 1)` CALLS the lambda on `5` and is `6`. Write that if
+            \\through, so `5 ▷ (λy → y + 1)` CALLS the lambda on `5` and is `6`. Write that if
             \\it is what you meant. When the block is the argument rather than the function, it
-            \\belongs on the right of `<|`, which does carry one: `f a <| case x of ...`.
+            \\belongs on the right of `◁`, which does carry one: `f a ◁ case x of …`.
         , .{text}),
         .bind_rhs_not_application => try w.print(
-            \\I was expecting a call after this `<-`, but I ran into `{s}`.
+            \\I was expecting a call after this `←`, but I ran into `{s}`.
             \\
-            \\`x <- f a` passes the rest of the block to `f a` as its last argument, so the
-            \\right of `<-` must be the call that receives it — a function, or a call missing
+            \\`x ← f a` passes the rest of the block to `f a` as its last argument, so the
+            \\right of `←` must be the call that receives it — a function, or a call missing
             \\exactly its final argument. Wrap what you meant in parentheses, or use `=`.
         , .{text}),
         .arrow_in_tuple_element => try w.writeAll(
-            \\I read the `->` in these parentheses as a function type's arrow, and then found a
+            \\I read the `→` in these parentheses as a function type's arrow, and then found a
             \\comma after it.
             \\
             \\The comma in a type separates PARAMETERS, so inside parentheses the token after
-            \\the items decides what they were: `->` makes them a parameter list and `)` makes
-            \\them a tuple. A tuple element therefore cannot contain a bare `->`, because the
-            \\arrow is read as the parameter list's:
+            \\the items decides what they were: `→` makes them a parameter list and `)` makes
+            \\them a tuple. A tuple type is written with `×` now, and an element that is a
+            \\function type takes parentheses, because `→` binds looser than `×`:
             \\
-            \\    ((Int, Int) -> Int, String)
-            \\
-            \\is not a pair whose first element is a function. Parenthesise the element:
-            \\
-            \\    (((Int, Int) -> Int), String)
+            \\    (Int × Int → Int) × String
         ),
         .refutable_let_pattern => try w.print(
             \\I found `{s}` in a pattern binding, but a block's pattern binding must always match.
@@ -712,10 +708,10 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\    un m =
             \\        case m of
-            \\            Just n ->
+            \\            Just n →
             \\                n
             \\
-            \\            Nothing ->
+            \\            Nothing →
             \\                0
         , .{text}),
         .import_after_declaration => try w.writeAll(
@@ -784,10 +780,10 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\only be markup.
                 \\
                 \\Markup is an operand, never a bare argument. Parenthesise it, or pass it with
-                \\`<|`:
+                \\`◁`:
                 \\
                 \\    f (<{s} … />)
-                \\    f <| <{s} … />
+                \\    f ◁ <{s} … />
             , .{ head, name, head, name, name, name });
         },
         .two_spreads_in_pattern => try w.writeAll(
@@ -797,7 +793,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\and the items after it the last ones, so with two there would be more than one
             \\way to split the list between them. Keep one, and match the rest with items:
             \\
-            \\    [ first, ...middle, last ]
+            \\    [ first, …middle, last ]
         ),
         .cons_removed => if (item.head_end > item.head_start) {
             try w.writeAll(
@@ -811,7 +807,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             try w.writeAll(
                 \\
                 \\
-                \\`[ x, ...xs ]` is `x` followed by the elements of `xs`, and as a pattern it
+                \\`[ x, …xs ]` is `x` followed by the elements of `xs`, and as a pattern it
                 \\matches a list of at least one element, binding its first element and the rest.
                 \\`beni fmt --migrate-cons <file>` writes every `::` of a file this way.
             );
@@ -821,7 +817,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\    List.cons x xs
             \\
-            \\and `[ x, ...xs ]` is the same list written in brackets.
+            \\and `[ x, …xs ]` is the same list written in brackets.
         ),
         .backslash_lambda_removed => if (item.head_end > item.head_start) {
             try w.writeAll(
@@ -848,6 +844,35 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         } else try w.writeAll(
             \\A lambda begins with `λ` now, not `\`: write `λ` where the `\` is.
         ),
+        .ascii_symbol_removed => {
+            const symbol = Token.lexeme(item.expected).?;
+            try w.print(
+                \\`{s}` is written `{s}` now ({s}).
+                \\
+                \\`beni fmt --migrate-unicode <file>` writes every one of a file this way, and an
+                \\editor with beni support turns `{s}` into `{s}` as it is typed.
+            , .{ text, symbol, Token.symbolName(item.expected), text, symbol });
+            if (item.expected == .arrow_left) try w.writeAll(
+                \\
+                \\
+                \\If you meant less than a negative number, write `x < -1`, with a space.
+            );
+        },
+        .tuple_type_removed => {
+            try w.writeAll(
+                \\A tuple type is written with `×` now (U+00D7 MULTIPLICATION SIGN). Write this
+                \\one as:
+                \\
+                \\
+            );
+            try w.writeAll("    ");
+            try writeProduct(w, text, item.construct == .type_expr);
+            try w.writeAll(
+                \\
+                \\
+                \\`beni fmt --migrate-unicode <file>` writes every one of a file this way.
+            );
+        },
         .let_removed => if (item.required_col > item.head_start and item.required_col < item.head_end) {
             try w.writeAll(
                 \\`let … in` is gone: a body is a block now, its bindings one per line and its
@@ -944,7 +969,7 @@ fn writeBracketForm(w: *std.Io.Writer, chain: []const u8) std.Io.Writer.Error!vo
             try writeSpaced(w, inner);
         }
     } else {
-        try w.writeAll(", ...");
+        try w.writeAll(", …");
         try writeSpaced(w, last);
     }
     try w.writeAll(" ]");
@@ -1035,6 +1060,133 @@ fn writeSpaced(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
     }
 }
 
+/// `text`, the source of a tuple type written `( a, b )`, written as the
+/// product that replaces it (language.md §12.8): its elements joined by
+/// ` × `, an element that is itself a product or a function type in
+/// parentheses, and the whole in parentheses when `wrap` — where it stands
+/// as a type argument. Whitespace runs, line breaks included, are one space.
+fn writeProduct(w: *std.Io.Writer, text: []const u8, wrap: bool) std.Io.Writer.Error!void {
+    const trimmed = std.mem.trim(u8, text, " \t\r\n");
+    if (trimmed.len < 2 or trimmed[0] != '(' or trimmed[trimmed.len - 1] != ')') return writeCollapsed(w, trimmed);
+    const inner = trimmed[1 .. trimmed.len - 1];
+    if (wrap) try w.writeByte('(');
+    var depth: usize = 0;
+    var from: usize = 0;
+    var first = true;
+    for (inner, 0..) |c, i| {
+        switch (c) {
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => depth -|= 1,
+            ',' => if (depth == 0) {
+                try writeElement(w, inner[from..i], first);
+                first = false;
+                from = i + 1;
+            },
+            else => {},
+        }
+    }
+    try writeElement(w, inner[from..], first);
+    if (wrap) try w.writeByte(')');
+}
+
+fn writeElement(w: *std.Io.Writer, raw: []const u8, first: bool) std.Io.Writer.Error!void {
+    const element = std.mem.trim(u8, raw, " \t\r\n");
+    if (!first) try w.writeAll(" × ");
+    if (topLevelComma(element)) return writeProduct(w, element, true);
+    const operand = loosest(element);
+    if (operand) try w.writeByte('(');
+    try writeTypeText(w, element);
+    if (operand) try w.writeByte(')');
+}
+
+/// `text`, a type's source, with every tuple type inside it written as a
+/// product in parentheses: a parenthesised group with a comma at its own
+/// level and no arrow there is a tuple; one with an arrow is a function's
+/// parameter list, and keeps its commas.
+fn writeTypeText(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
+    var i: usize = 0;
+    var space = false;
+    while (i < text.len) {
+        const c = text[i];
+        if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
+            space = true;
+            i += 1;
+            continue;
+        }
+        if (space) try w.writeByte(' ');
+        space = false;
+        if (c != '(') {
+            try w.writeByte(c);
+            i += 1;
+            continue;
+        }
+        var depth: usize = 0;
+        var close = i;
+        while (close < text.len) : (close += 1) switch (text[close]) {
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => {
+                depth -|= 1;
+                if (depth == 0) break;
+            },
+            else => {},
+        };
+        if (close >= text.len) {
+            try writeCollapsed(w, text[i..]);
+            return;
+        }
+        const group = text[i .. close + 1];
+        if (topLevelComma(group) and !loosest(group[1 .. group.len - 1])) {
+            try writeProduct(w, group, true);
+        } else {
+            try w.writeByte('(');
+            try writeTypeText(w, group[1 .. group.len - 1]);
+            try w.writeByte(')');
+        }
+        i = close + 1;
+    }
+}
+
+/// Whether `text` holds an arrow or a `×` outside every bracket: a type that
+/// binds looser than a product's operand may.
+fn loosest(text: []const u8) bool {
+    var depth: usize = 0;
+    for (text, 0..) |c, i| switch (c) {
+        '(', '[', '{' => depth += 1,
+        ')', ']', '}' => depth -|= 1,
+        else => if (depth == 0) {
+            const rest = text[i..];
+            if (std.mem.startsWith(u8, rest, "->") or std.mem.startsWith(u8, rest, "→") or std.mem.startsWith(u8, rest, "×")) return true;
+        },
+    };
+    return false;
+}
+
+/// Whether `text` is a parenthesised list with a comma at its own level.
+fn topLevelComma(text: []const u8) bool {
+    if (text.len < 2 or text[0] != '(' or text[text.len - 1] != ')') return false;
+    var depth: usize = 0;
+    for (text[1 .. text.len - 1]) |c| switch (c) {
+        '(', '[', '{' => depth += 1,
+        ')', ']', '}' => depth -|= 1,
+        ',' => if (depth == 0) return true,
+        else => {},
+    };
+    return false;
+}
+
+fn writeCollapsed(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
+    var space = false;
+    for (text) |c| {
+        if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
+            space = true;
+            continue;
+        }
+        if (space) try w.writeByte(' ');
+        space = false;
+        try w.writeByte(c);
+    }
+}
+
 /// Whether `text` is a pipe in any spelling the parser reads as one: `▷`,
 /// `◁`, the old `|>` and `<|`, or a lookalike of either (language.md §12.7).
 fn isPipe(text: []const u8) bool {
@@ -1084,7 +1236,7 @@ test "message: expected_token in and out of layout, and at end of file" {
 
 test "message: layout errors quote both columns" {
     try expectMessage(
-        "I was parsing the branches of this `case` and ran into `else`, which is indented to\ncolumn 10. Branches must be indented more than the block the `case` is in, whose\ncolumn is 5.\n\nA `case` needs at least one branch:\n\n    case x of\n        Just n ->\n            n",
+        "I was parsing the branches of this `case` and ran into `else`, which is indented to\ncolumn 10. Branches must be indented more than the block the `case` is in, whose\ncolumn is 5.\n\nA `case` needs at least one branch:\n\n    case x of\n        Just n →\n            n",
         .{ .code = .case_without_branches, .start = 0, .end = 4, .context = .case_branches, .required_col = 5, .head_start = 9, .head_end = 13 },
         "case of  else",
     );
@@ -1104,19 +1256,19 @@ fn expectBracketForm(source: []const u8, expected: []const u8) !void {
 }
 
 test "message: `cons_removed` writes the chain in brackets" {
-    try expectBracketForm("x :: xs", "[ x, ...xs ]");
-    try expectBracketForm("a :: b :: rest", "[ a, b, ...rest ]");
-    try expectBracketForm("f x :: go rest", "[ f x, ...go rest ]");
+    try expectBracketForm("x :: xs", "[ x, …xs ]");
+    try expectBracketForm("a :: b :: rest", "[ a, b, …rest ]");
+    try expectBracketForm("f x :: go rest", "[ f x, …go rest ]");
     try expectBracketForm("x :: []", "[ x ]");
     try expectBracketForm("x :: [ y, 2 ]", "[ x, y, 2 ]");
     try expectBracketForm("a :: (b :: [])", "[ a, b ]");
-    try expectBracketForm("( a, b ) :: _", "[ ( a, b ), ..._ ]");
+    try expectBracketForm("( a, b ) :: _", "[ ( a, b ), …_ ]");
     // A `::` inside brackets or a string is not the chain's.
-    try expectBracketForm("[ \"a::b\", c ] :: g (x :: y)", "[ [ \"a::b\", c ], ...g (x :: y) ]");
+    try expectBracketForm("[ \"a::b\", c ] :: g (x :: y)", "[ [ \"a::b\", c ], …g (x :: y) ]");
     // Line breaks inside the chain become spaces.
-    try expectBracketForm("x\n        :: xs", "[ x, ...xs ]");
+    try expectBracketForm("x\n        :: xs", "[ x, …xs ]");
     try expectMessage(
-        "`(::)` is no longer part of beni, with the `::` operator it named. The function is\n`List.cons`:\n\n    List.cons x xs\n\nand `[ x, ...xs ]` is the same list written in brackets.",
+        "`(::)` is no longer part of beni, with the `::` operator it named. The function is\n`List.cons`:\n\n    List.cons x xs\n\nand `[ x, …xs ]` is the same list written in brackets.",
         .{ .code = .cons_removed, .start = 1, .end = 3, .context = .parens },
         "(::)",
     );
@@ -1124,14 +1276,14 @@ test "message: `cons_removed` writes the chain in brackets" {
 
 test "message: the soft errors" {
     try expectMessage(
-        "This type annotation for `f` is not followed by a definition of `f`.\n\nAn annotation must be immediately followed by the definition it describes\n(blank lines and comments in between are fine):\n\n    f : ...\n    f =\n        ...",
+        "This type annotation for `f` is not followed by a definition of `f`.\n\nAn annotation must be immediately followed by the definition it describes\n(blank lines and comments in between are fine):\n\n    f : …\n    f =\n        …",
         .{ .code = .annotation_without_definition, .start = 0, .end = 1, .context = .annotation },
         "f : Int",
     );
     try expectMessage(
-        "I found `<|` and `|>` mixed in one chain.\n\nThe two pipe operators cannot be combined without parentheses, because it is not\nclear which side applies first. Add parentheses around one of the sides.",
-        .{ .code = .non_associative_chain, .start = 7, .end = 9, .context = .expression },
-        "x |> g <| y",
+        "I found `◁` and `▷` mixed in one chain.\n\nThe two pipe operators cannot be combined without parentheses, because it is not\nclear which side applies first. Add parentheses around one of the sides.",
+        .{ .code = .non_associative_chain, .start = 8, .end = 11, .context = .expression },
+        "x ▷ g ◁ y",
     );
     try expectMessage(
         "`.00` is not a valid tuple index.\n\nA tuple index is a decimal integer with no leading zeros: `.0`, `.1`, `.12`.",
@@ -1142,18 +1294,18 @@ test "message: the soft errors" {
 
 test "message: the placeholder and the bind (language.md §6.7)" {
     try expectMessage(
-        "I found a `_` where an expression should be.\n\n`_` is the placeholder for an argument a call does not supply: `f a _ c` is\n`λx -> f a x c`. It is an argument and nothing else, so it cannot stand on its own,\nbe an operand, or sit in parentheses. For a value you do not care about, name it.",
+        "I found a `_` where an expression should be.\n\n`_` is the placeholder for an argument a call does not supply: `f a _ c` is\n`λx → f a x c`. It is an argument and nothing else, so it cannot stand on its own,\nbe an operand, or sit in parentheses. For a value you do not care about, name it.",
         .{ .code = .placeholder_outside_argument, .start = 4, .end = 5, .context = .expression },
         "y = _ + 1",
     );
     try expectMessage(
-        "I found a second `_` in the same call.\n\nA call may leave one argument open: `f a _ c` is `λx -> f a x c`. Two open\narguments have no shorter form than the lambda they stand for, so write `f _ b _`\nout in full: `λx y -> f x b y`.",
+        "I found a second `_` in the same call.\n\nA call may leave one argument open: `f a _ c` is `λx → f a x c`. Two open\narguments have no shorter form than the lambda they stand for, so write `f _ b _`\nout in full: `λx y → f x b y`.",
         .{ .code = .multiple_placeholders, .start = 10, .end = 11, .context = .expression },
         "y = f _ b _",
     );
     try expectMessage(
-        "I was expecting a call after this `<-`, but I ran into `+`.\n\n`x <- f a` passes the rest of the block to `f a` as its last argument, so the\nright of `<-` must be the call that receives it — a function, or a call missing\nexactly its final argument. Wrap what you meant in parentheses, or use `=`.",
-        .{ .code = .bind_rhs_not_application, .start = 7, .end = 8, .context = .let_bindings },
-        "x <- a + b",
+        "I was expecting a call after this `←`, but I ran into `+`.\n\n`x ← f a` passes the rest of the block to `f a` as its last argument, so the\nright of `←` must be the call that receives it — a function, or a call missing\nexactly its final argument. Wrap what you meant in parentheses, or use `=`.",
+        .{ .code = .bind_rhs_not_application, .start = 8, .end = 9, .context = .let_bindings },
+        "x ← a + b",
     );
 }

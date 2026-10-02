@@ -1,5 +1,5 @@
 module M
-  value bigger : a, a -> a !e1 where a.compare : a, a -> Order !e1
-  value eqs : a, a -> Bool !e1 where a.eq : a, a -> Bool !e1
-  value equals : a, a -> Bool !e1 where a.eq : a, a -> Bool !e1
+  value bigger : a, a → a !e1 where a.compare : a, a → Order !e1
+  value eqs : a, a → Bool !e1 where a.eq : a, a → Bool !e1
+  value equals : a, a → Bool !e1 where a.eq : a, a → Bool !e1
 module Main

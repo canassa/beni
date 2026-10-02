@@ -108,7 +108,9 @@ pub const magic = "BENIFE\x00\x00";
 /// 18 (2026-10-02): the Unicode notation (language.md §12.7) — `Token.Tag`
 /// gained the symbols, `times` and `lookalike`, and the old ASCII spellings
 /// were renamed `ascii_*`, which shifted every later tag.
-pub const format_version: u32 = 18;
+/// 19 (2026-10-02): the parser has two new codes, `ascii_symbol_removed` and
+/// `tuple_type_removed` (language.md §12.7–§12.8).
+pub const format_version: u32 = 19;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

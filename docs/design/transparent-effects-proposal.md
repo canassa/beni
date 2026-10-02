@@ -1572,7 +1572,7 @@ But it may suspend: it calls `Net.get`, which suspends.
 Hint: a function called synchronously cannot wait for anything. Do the work that
 suspends before handing this function over, and pass it what that work produced.
 
-14|    Page.onInput (λs -> Net.get s)
+14|    Page.onInput (λs → Net.get s)
                     ^
 ```
 

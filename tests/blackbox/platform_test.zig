@@ -406,7 +406,7 @@ test "check --platform=html types a view module against the one Html type" {
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
     try testing.expectEqual(@as(u8, 0), dumped.exit_code);
-    try testing.expectEqualStrings("module View\n  value view : String -> Html msg\n", dumped.stdout);
+    try testing.expectEqualStrings("module View\n  value view : String → Html msg\n", dumped.stdout);
     try testing.expectEqual(@as(u8, 0), under_node.exit_code);
     try testing.expectEqual(@as(usize, 0), under_node.diagnostics.len);
 }

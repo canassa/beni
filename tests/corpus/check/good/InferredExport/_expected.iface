@@ -1,9 +1,9 @@
 module Helpers
-  value firstOf : List a, a -> a
-  value pair : a, b -> ( a, b )
-  value swap : { r | first : a, second : b } -> ( b, a )
+  value firstOf : List a, a → a
+  value pair : a, b → a × b
+  value swap : { r | first : a, second : b } → b × a
 module Main
-  value flipped : ( Int, String )
+  value flipped : Int × String
   value head : Int
-  value numbers : ( Int, String )
-  value words : ( String, Int )
+  value numbers : Int × String
+  value words : String × Int

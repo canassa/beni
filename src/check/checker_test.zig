@@ -211,12 +211,12 @@ fn expectBudgetedCodes(expected: []const diagnostic.Code, source: [:0]const u8, 
 test "inference: the principal type of an unannotated definition" {
     try expectTypes(
         \\module M
-        \\  identity : a -> a
+        \\  identity : a → a
         \\    x : a
-        \\  apply : (a -> b !e1), a -> b !e1
-        \\    f : a -> b !e1
+        \\  apply : (a → b !e1), a → b !e1
+        \\    f : a → b !e1
         \\    x : a
-        \\  count : List a -> Int
+        \\  count : List a → Int
         \\    xs : List a
         \\
     ,
@@ -239,8 +239,8 @@ test "generalisation: a let-bound name is used at two types in one body" {
     // group closes, so the two uses instantiate it independently.
     try expectTypes(
         \\module M
-        \\  both : ( ( number, number ), ( String, String ) )
-        \\    dup : a -> ( a, a )
+        \\  both : (number × number) × (String × String)
+        \\    dup : a → a × a
         \\    y : a
         \\
     ,
@@ -271,8 +271,8 @@ test "sharing: instantiating a scheme with an internal repeat keeps it one varia
     // independent variables and `pair 1` would not force both to `number`.
     try expectTypes(
         \\module M
-        \\  first : ( number, number )
-        \\    pair : a -> ( a, a )
+        \\  first : number × number
+        \\    pair : a → a × a
         \\    y : a
         \\
     ,
@@ -302,9 +302,9 @@ test "annotations: rigid variables hold the body to the promise" {
 test "the kind lattice: number, appendable, and the pair that has no meet" {
     try expectTypes(
         \\module M
-        \\  twice : number -> number
+        \\  twice : number → number
         \\    n : number
-        \\  join : appendable -> appendable
+        \\  join : appendable → appendable
         \\    a : appendable
         \\
     ,
@@ -333,9 +333,9 @@ test "the kind lattice: number, appendable, and the pair that has no meet" {
 test "records: access is open, a literal is closed, an update keeps the base's type" {
     try expectTypes(
         \\module M
-        \\  name : { r | name : a } -> a
+        \\  name : { r | name : a } → a
         \\    r : { r | name : a }
-        \\  bump : { r | count : number } -> { r | count : number }
+        \\  bump : { r | count : number } → { r | count : number }
         \\    r : { r | count : number }
         \\  literal : { a : number, b : String }
         \\
@@ -381,7 +381,7 @@ test "records: the four-way field partition" {
     // one parameter ends up carrying both.
     try expectTypes(
         \\module M
-        \\  merge : { r | a : a, c : b } -> a
+        \\  merge : { r | a : a, c : b } → a
         \\    r : { r | a : a, c : b }
         \\    left : a
         \\    right : b
@@ -405,7 +405,7 @@ test "annotations print aliases by name, and a parameter that met the record sho
     try expectTypes(
         \\module M
         \\  origin : Point
-        \\  shift : Point -> Point
+        \\  shift : Point → Point
         \\    p : { x : Int, y : Int }
         \\
     ,
@@ -503,9 +503,9 @@ test "obligations: equatable, interpolatable and tuple_index" {
 test "binding groups: mutual recursion shares one generalisation" {
     try expectTypes(
         \\module M
-        \\  isEven : number -> Bool
+        \\  isEven : number → Bool
         \\    n : number
-        \\  isOdd : number -> Bool
+        \\  isOdd : number → Bool
         \\    n : number
         \\
     ,
@@ -528,7 +528,7 @@ test "binding groups: mutual recursion shares one generalisation" {
 test "`?` picks Result or Maybe by shape, and refuses when it is neither" {
     try expectTypes(
         \\module M
-        \\  step : Result String Int -> Result String Int
+        \\  step : Result String Int → Result String Int
         \\    r : Result String Int
         \\    v : Int
         \\
@@ -542,7 +542,7 @@ test "`?` picks Result or Maybe by shape, and refuses when it is neither" {
     );
     try expectTypes(
         \\module M
-        \\  step : Maybe Int -> Maybe Int
+        \\  step : Maybe Int → Maybe Int
         \\    m : Maybe Int
         \\    v : Int
         \\
@@ -645,7 +645,7 @@ test "a module with a type error still produces an interface" {
     try testing.expectEqualStrings(
         \\module M
         \\  value bad : <error>
-        \\  value good : Int -> Int
+        \\  value good : Int → Int
         \\
     , out.written());
 }
@@ -683,9 +683,9 @@ test "binding groups are solved dependencies first, so a call to an inferred hel
     // `let`, not the dependency order the groups were solved in.
     try expectTypes(
         \\module M
-        \\  useAfter : ( number, String )
-        \\    both : ( number2, String )
-        \\    idf : a -> a
+        \\  useAfter : number × String
+        \\    both : number2 × String
+        \\    idf : a → a
         \\    x : a
         \\
     ,
@@ -861,12 +861,12 @@ test "exhaustiveness: literals are infinite, so a wildcard is the only way to co
 }
 
 test "exhaustiveness: a list column is split by length" {
-    try expectCodes(&.{}, listCase("[]", "[ x, ...rest ]"));
+    try expectCodes(&.{}, listCase("[]", "[ x, …rest ]"));
     try expectCodes(&.{.missing_patterns}, listCase("[]", "[ x ]"));
     try expectCodes(&.{.missing_patterns}, listCase("[ x ]", "[ x2, y ]"));
     // Items after a spread: every non-empty list ends somewhere.
-    try expectCodes(&.{}, listCase("[]", "[ ...init, last ]"));
-    try expectCodes(&.{.missing_patterns}, listCase("[ ...init, 0 ]", "[]"));
+    try expectCodes(&.{}, listCase("[]", "[ …init, last ]"));
+    try expectCodes(&.{.missing_patterns}, listCase("[ …init, 0 ]", "[]"));
     // `[]`, `[ x ]` and `[ x2, y, ...rest ]` between them are every list.
     try expectCodes(&.{},
         \\pub f : List Int → Int
@@ -905,8 +905,8 @@ test "exhaustiveness: a list column is split by length" {
 /// A `case` over `List Int` with two branch patterns, for the list cases
 /// above. The bodies are constants so nothing but the patterns is in play.
 fn listCase(comptime a: []const u8, comptime b: []const u8) [:0]const u8 {
-    return "pub f : List Int -> Int\nf xs =\n    case xs of\n        " ++ a ++
-        " ->\n            0\n\n        " ++ b ++ " ->\n            1\n";
+    return "pub f : List Int → Int\nf xs =\n    case xs of\n        " ++ a ++
+        " →\n            0\n\n        " ++ b ++ " →\n            1\n";
 }
 
 test "exhaustiveness: tuples, unit and records are products with one shape" {
@@ -1195,10 +1195,10 @@ test "the usefulness budget: many constructors times many branches terminates" {
     const w = &out.writer;
     try w.writeAll("pub type T\n");
     for (0..ctors) |i| try w.print("    {s} C{d} T\n", .{ if (i == 0) "=" else "|", i });
-    try w.writeAll("\n\npub f : T -> Int\nf t =\n    case t of\n");
+    try w.writeAll("\n\npub f : T → Int\nf t =\n    case t of\n");
     for (0..ctors) |i| {
         if (i != 0) try w.writeAll("\n");
-        try w.print("        C{d} (C{d} rest{d}) ->\n            {d}\n", .{ i, (i + 1) % ctors, i, i });
+        try w.print("        C{d} (C{d} rest{d}) →\n            {d}\n", .{ i, (i + 1) % ctors, i, i });
     }
     const text = try gpa.dupeZ(u8, out.written());
     defer gpa.free(text);
@@ -1235,7 +1235,7 @@ test "fuzz: arbitrary bytes as the patterns of a `case` never panic the usefulne
                 \\    | C T T
                 \\
                 \\
-                \\pub f : T -> Int
+                \\pub f : T → Int
                 \\f t =
                 \\    case t of
                 \\
@@ -1244,9 +1244,9 @@ test "fuzz: arbitrary bytes as the patterns of a `case` never panic the usefulne
             // indent, so a line that happens to be a pattern becomes one.
             var it = std.mem.splitScalar(u8, buf[0..len], '\n');
             while (it.next()) |line| {
-                out.writer.print("        {s} ->\n            0\n\n", .{line}) catch return;
+                out.writer.print("        {s} →\n            0\n\n", .{line}) catch return;
             }
-            out.writer.writeAll("        _ ->\n            1\n") catch return;
+            out.writer.writeAll("        _ →\n            1\n") catch return;
             const source = gpa.dupeZ(u8, out.written()) catch return;
             defer gpa.free(source);
             var codes: std.ArrayList(diagnostic.Code) = .empty;

@@ -1,0 +1,15 @@
+-- `...` left the language for `…` (language.md §12.7): ascii_symbol_removed in
+-- a list, a pattern, a component's spread and where no spread may stand —
+-- there it is this code and not the stray spread's unexpected_token
+-- (6:15, 7:14, 15:5).
+rest x xs =
+    case [ x, ...xs ] of
+        [ _, ...tail ] →
+            tail
+
+        [] →
+            []
+
+
+stray xs =
+    ...xs

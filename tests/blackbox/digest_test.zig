@@ -685,7 +685,7 @@ fn expectCoarser(what: []const u8, leaf: []const u8, errors: bool, must_cut_off:
         }
         if (std.mem.eql(u8, new_before, new_after)) continue;
         std.debug.print(
-            "{s}: {s}'s TRANSITIVE key did not move and its key DID ({s} -> {s})\n",
+            "{s}: {s}'s TRANSITIVE key did not move and its key DID ({s} → {s})\n",
             .{ what, old.name, new_before, new_after },
         );
         return error.CutoffKeyIsFiner;
@@ -769,7 +769,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
     );
 
     const before = try w.runWith(&.{ "check", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
-    try testing.expect(std.mem.indexOf(u8, before.stderr, "Pair a -> a where a.compare : a, a -> Order") != null);
+    try testing.expect(std.mem.indexOf(u8, before.stderr, "Pair a → a where a.compare : a, a → Order") != null);
 
     // The alias BODY changes. `L`'s record cannot see an alias body, and neither
     // can the warning: it prints the alias by NAME.
@@ -801,7 +801,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
         \\
     );
     const after = try w.runWith(&.{ "check", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
-    try testing.expect(std.mem.indexOf(u8, after.stderr, "Pair a -> a where a.compare : a, a -> Order") != null);
+    try testing.expect(std.mem.indexOf(u8, after.stderr, "Pair a → a where a.compare : a, a → Order") != null);
 
     // The type's NAME, on the other hand, does reach the prose — and renaming
     // it moves `L`'s record, so the two move together.
@@ -833,7 +833,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
         \\
     );
     const renamed = try w.runWith(&.{ "check", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
-    try testing.expect(std.mem.indexOf(u8, renamed.stderr, "Duo a -> a where a.compare : a, a -> Order") != null);
+    try testing.expect(std.mem.indexOf(u8, renamed.stderr, "Duo a → a where a.compare : a, a → Order") != null);
 }
 
 // ---------------------------------------------------------------------------

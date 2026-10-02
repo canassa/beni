@@ -154,10 +154,10 @@ pub fn refutablePattern(
         \\
         \\    un m =
         \\        case m of
-        \\            Just n ->
+        \\            Just n →
         \\                n
         \\
-        \\            Nothing ->
+        \\            Nothing →
         \\                0
         \\
     , .{what}) catch return error.OutOfMemory;

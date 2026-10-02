@@ -1,0 +1,36 @@
+-- fmt: the symbols (language.md §12.9) are spaced as their ASCII spellings
+-- were, `…` against its operand. A product stays on one line when it fits
+-- and was written on one; one the author broke, or one past 100 columns,
+-- breaks before each `×`, indented 4, the `×` leading. Parentheses the author
+-- wrote around an operand are kept.
+mixed : Int × String → Int × (String × Bool)
+mixed p q = p ≠ p || q ≠ q
+
+
+spreads x xs =
+    case [ x, …xs ] of
+        [ a, …rest ] →
+            a
+        _ →
+            0
+
+
+broken :
+    Int
+        × String
+        × Bool
+broken = ( 1, "a", True )
+
+
+long :
+    SomeRatherLongTypeName
+        × AnotherRatherLongTypeName
+        × YetAnotherRatherLongTypeName
+        × Int
+        × String
+        × Bool
+        × Float
+long = long
+
+
+piped xs = xs ▷ List.reverse ▷ List.length

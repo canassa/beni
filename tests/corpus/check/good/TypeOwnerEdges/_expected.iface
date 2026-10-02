@@ -1,5 +1,5 @@
 module Literals
-  value bigger : a, a -> Bool !e1 where a.compare : a, a -> Order !e1
+  value bigger : a, a → Bool !e1 where a.compare : a, a → Order !e1
   value initial : Char
   value label : String
   value sizes : List number
@@ -8,6 +8,6 @@ module Middle
 module Owner
   type Token
     Token/1
-  value make : Int -> Token
+  value make : Int → Token
 module User
   value again : Token

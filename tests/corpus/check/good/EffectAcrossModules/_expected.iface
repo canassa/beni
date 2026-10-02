@@ -2,20 +2,20 @@ module Lib
   alias Api
     Api/2
   alias Handler
-  value apply : (a -> b !e1), a -> b !e1
-  value callApi : Api -> Int !e1
-  value countEq : List a, a -> Int !e1 where a.eq : a, a -> Bool !e1
-  value logged : a -> a !impure
-  value runHandler : (Handler !e1), Int -> Int !e1
+  value apply : (a → b !e1), a → b !e1
+  value callApi : Api → Int !e1
+  value countEq : List a, a → Int !e1 where a.eq : a, a → Bool !e1
+  value logged : a → a !impure
+  value runHandler : (Handler !e1), Int → Int !e1
 module Main
   type Loud
     Loud/1
-  value countInts : List number -> Int
-  value countLoud : List Loud -> Int !impure
-  value eq : Loud, Loud -> Bool !impure
-  value pureApply : number -> number
-  value quietApi : Int -> Int
-  value twice : a -> a !impure
-  value viaApi : Int -> Int !impure
-  value viaApply : a -> a !impure
-  value viaHandler : Int -> Int !impure
+  value countInts : List number → Int
+  value countLoud : List Loud → Int !impure
+  value eq : Loud, Loud → Bool !impure
+  value pureApply : number → number
+  value quietApi : Int → Int
+  value twice : a → a !impure
+  value viaApi : Int → Int !impure
+  value viaApply : a → a !impure
+  value viaHandler : Int → Int !impure

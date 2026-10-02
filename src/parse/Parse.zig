@@ -191,6 +191,11 @@ in_where: bool = false,
 /// `let` annotation leaves it false; there `sync` is an ordinary type
 /// variable, as it is everywhere else.
 in_signature: bool = false,
+/// Set by a caller of `parseTypeAtom` whose atom is a type application's
+/// argument, a constructor's payload or `sync`'s operand — where a product
+/// must be parenthesised, so `tuple_type_removed`'s message writes it so
+/// (language.md §12.8). `parseTypeAtom` reads and clears it.
+type_argument: bool = false,
 
 /// Deeper nesting than this reports `nesting_too_deep` instead of
 /// recursing: one level per bracket, block form, right-associative operator
@@ -259,6 +264,7 @@ pub fn parse(
     try p.extra.ensureTotalCapacityPrecise(gpa, estimatedExtraCount(tokens.len));
 
     try p.parseModule();
+    try p.reportAsciiSymbols();
 
     // Source order for the report: an `unclosed_delimiter` is detected after
     // the errors inside its brackets, doc-comment errors when the next
@@ -289,6 +295,27 @@ pub fn parse(
 inline fn col(p: *const Parse, i: TokenIndex) u32 {
     if (p.cols.len != 0) return p.cols[i];
     return p.starts[i] - p.line_starts[p.lines[i]] + 1;
+}
+
+/// The old ASCII spellings left the language (language.md §12.7): each one
+/// the lexer read is `ascii_symbol_removed` at its token, every occurrence,
+/// the message naming its symbol — and the parse has already gone on as
+/// that symbol (`readTags`), so one stale token costs one message. A
+/// `...` the parser found where no spread may stand was reported as a stray
+/// spread; that report becomes this one.
+fn reportAsciiSymbols(p: *Parse) Allocator.Error!void {
+    if (p.tags.ptr == p.raw_tags.ptr) return;
+    for (p.raw_tags, 0..) |tag, i| {
+        if (!tag.isAscii()) continue;
+        var item = p.itemAtToken(.ascii_symbol_removed, @intCast(i));
+        item.expected = tag.canonical();
+        for (p.errors.items) |*e| {
+            if (e.start == item.start and e.code == .unexpected_token and e.construct == .stray_spread) {
+                e.* = item;
+                break;
+            }
+        } else try p.errors.append(p.gpa, item);
+    }
 }
 
 /// `raw` as the parser reads it (`Parse.tags`): `raw` itself when no token
@@ -1548,6 +1575,7 @@ fn parseConstructor(p: *Parse) Allocator.Error!Index {
     while (canStartTypeAtom(p.peek())) {
         const before = p.tok_i;
         defer p.assertProgress(before);
+        p.type_argument = true;
         try p.pushScratch(try p.parseTypeAtom());
     }
     return p.rangeNode(.constructor, name, try p.listToRange(p.scratchSince(mark)));
@@ -1710,7 +1738,7 @@ fn parseType(p: *Parse) Allocator.Error!Index {
     defer p.leave();
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
-    try p.parseTypeItems();
+    try p.parseTypeItems(false);
     return p.finishType(mark, .params);
 }
 
@@ -1739,12 +1767,19 @@ const ResultMode = enum { params, single };
 /// parentheses around a field of function type. It costs nothing to apply
 /// it everywhere rather than only inside a record body, and the reason it
 /// is safe is the same reason.
-fn parseTypeItems(p: *Parse) Allocator.Error!void {
+///
+/// `elements`: the items are inside parentheses, where two or more are a
+/// tuple's elements — operands of the product that replaces it, so a
+/// parenthesised element is reported (`tuple_type_removed`) as one that
+/// must stay in parentheses.
+fn parseTypeItems(p: *Parse, elements: bool) Allocator.Error!void {
+    if (elements and p.peek() == .l_paren) p.type_argument = true;
     try p.pushScratch(try p.parseProduct());
     while (p.peek() == .comma and !p.commaEndsFieldType()) {
         const before = p.tok_i;
         defer p.assertProgress(before);
         _ = p.next();
+        if (elements and p.peek() == .l_paren) p.type_argument = true;
         try p.pushScratch(try p.parseProduct());
     }
 }
@@ -1889,6 +1924,7 @@ fn parseTypeApp(p: *Parse) Allocator.Error!Index {
             {
                 const before = p.tok_i;
                 defer p.assertProgress(before);
+                p.type_argument = true;
                 try p.pushScratch(try p.parseTypeAtom());
             }
             return p.rangeNode(.type_con, name, try p.listToRange(p.scratchSince(mark)));
@@ -1903,12 +1939,15 @@ fn parseTypeApp(p: *Parse) Allocator.Error!Index {
 fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.type_expr);
     defer p.context = saved_context;
+    const as_argument = p.type_argument;
+    p.type_argument = false;
     switch (p.peek()) {
         // `sync (…)` in a top-level signature: a contextual word, like the
         // rung, and only there (transparent-effects-proposal.md §15.2).
         // What it may mark, and in which package, is lowering's to decide.
         .lower_ident => if (p.in_signature and p.peekAt(1) == .l_paren and p.isSyncToken(p.tok_i)) {
             const word = p.next();
+            p.type_argument = true;
             return p.unary(.type_sync, word, try p.parseTypeAtom());
         } else return p.typeVar(p.next(), .none),
         .upper_ident, .qualified_upper => return p.rangeNode(.type_con, p.next(), try p.listToRange(&.{})),
@@ -1944,7 +1983,7 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             // grouping at one.
             const mark = p.scratchMark();
             defer p.shrinkScratch(mark);
-            try p.parseTypeItems();
+            try p.parseTypeItems(true);
             if (p.peek() == .arrow) {
                 // `.single`: the arrow settled the items, so the result may
                 // not go on to eat a comma of its own. One that follows it
@@ -1953,7 +1992,9 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
                 // a nested function type nobody wrote.
                 const inner = try p.finishType(mark, .single);
                 if (p.peek() == .comma and !p.commaEndsFieldType()) {
-                    _ = try p.report(p.itemAt(.arrow_in_tuple_element));
+                    // A tuple type written with commas is reported as that
+                    // (language.md §12.8), and the arrow trap with it.
+                    _ = try p.reportTupleType(open, as_argument);
                     // Recover as the tuple that was meant, so the rest of
                     // the declaration still parses. Each further element is
                     // read the same way, arrow and all.
@@ -1967,6 +2008,7 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
                     }
                     const tuple = try p.listToRange(p.scratchSince(mark));
                     try p.expectCloser(.r_paren, open);
+                    p.finishTupleType(open);
                     return p.rangeNode(.type_tuple, open, tuple);
                 }
                 try p.expectCloser(.r_paren, open);
@@ -1979,7 +2021,9 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
                 return p.unary(.type_paren, open, only);
             }
             const elements = try p.listToRange(items);
+            const reported = try p.reportTupleType(open, as_argument);
             try p.expectCloser(.r_paren, open);
+            if (reported != null) p.finishTupleType(open);
             return p.rangeNode(.type_tuple, open, elements);
         },
         .l_brace => {
@@ -2017,6 +2061,33 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             p.recoverUnlessStructural();
             return node;
         },
+    }
+}
+
+/// `( a, b )` in a type left the language (language.md §12.8):
+/// `tuple_type_removed` at its `(`, which then parses as the tuple it was.
+/// `as_argument`: it stands where a product must be parenthesised.
+fn reportTupleType(p: *Parse, open: TokenIndex, as_argument: bool) Allocator.Error!?u32 {
+    @branchHint(.cold);
+    var item = p.itemAtToken(.tuple_type_removed, open);
+    if (as_argument) item.construct = .type_expr;
+    // Reported straight away, not through `report`: a tuple type is one
+    // message whatever was reported just before it.
+    try p.errors.append(p.gpa, item);
+    return @intCast(p.errors.items.len - 1);
+}
+
+/// Stretch the last `tuple_type_removed` report, at `open`, to the `)`
+/// that closes it, so its message can quote the whole type.
+fn finishTupleType(p: *Parse, open: TokenIndex) void {
+    var i = p.errors.items.len;
+    while (i > 0) {
+        i -= 1;
+        const e = &p.errors.items[i];
+        if (e.code == .tuple_type_removed and e.start == p.starts[open]) {
+            e.end = p.tokenEnd(p.tok_i - 1);
+            return;
+        }
     }
 }
 
@@ -4615,10 +4686,10 @@ test "types: the comma is the parameter separator and the arrow right-associates
     // comma inside a record body ends the FIELD when `lower_ident :`
     // follows — one token of lookahead, no backtracking.
     try expectTree(
-        \\a : Int, Int -> Int -> Int
-        \\b : Dict.Dict String (List ( Int, Maybe b )) -> List b
-        \\c : { r | x : Int, y : Int } -> Int
-        \\d : { f : Int, Int -> Int, g : Bool }, ( Int, Int ) -> Int
+        \\a : Int, Int → Int → Int
+        \\b : Dict.Dict String (List (Int × Maybe b)) → List b
+        \\c : { r | x : Int, y : Int } → Int
+        \\d : { f : Int, Int → Int, g : Bool }, Int × Int → Int
         \\
     ,
         \\(module
@@ -4635,10 +4706,11 @@ test "types: the comma is the parameter separator and the arrow right-associates
         \\        (type_con String)
         \\        (type_paren
         \\          (type_con List
-        \\            (type_tuple
-        \\              (type_con Int)
-        \\              (type_con Maybe
-        \\                (type_var b))))))
+        \\            (type_paren
+        \\              (type_tuple
+        \\                (type_con Int)
+        \\                (type_con Maybe
+        \\                  (type_var b)))))))
         \\      (type_con List
         \\        (type_var b))))
         \\  (annotation c
@@ -4735,14 +4807,14 @@ test "precedence and associativity: every case of §6.5" {
         \\a1 a b c = a - b - c
         \\a2 a b c = a ++ b ++ c
         \\a3 a b c = a ^ b ^ c
-        \\a4 f g x = f <| g <| x
-        \\a5 x f g = x |> f |> g
+        \\a4 f g x = f ◁ g ◁ x
+        \\a5 x f g = x ▷ f ▷ g
         \\a8 a b c = a == b == c
-        \\a9 a b c = a <| b |> c
+        \\a9 a b c = a ◁ b ▷ c
         \\b1 a b c = a + b * c
         \\b2 a b c = a || b && c
         \\b3 a b c d = a ++ b == c ++ d
-        \\b4 f x y = x + y |> f
+        \\b4 f x y = x + y ▷ f
         \\b5 a b c = a * b ^ c
         \\b6 f x y = f x + f y
         \\
@@ -4871,9 +4943,9 @@ test "precedence and associativity: every case of §6.5" {
         \\        (ident f)
         \\        (ident y)))))
         \\
-    , &.{ .{ .code = .non_associative_chain, .line = 6, .col = 19 }, .{ .code = .non_associative_chain, .line = 7, .col = 19 } });
+    , &.{ .{ .code = .non_associative_chain, .line = 6, .col = 19 }, .{ .code = .non_associative_chain, .line = 7, .col = 18 } });
     // The other order of mixed pipes.
-    try expectTree("f g x y = g <| x |> y\n",
+    try expectTree("f g x y = g ◁ x ▷ y\n",
         \\(module
         \\  (definition f
         \\    (pat_var g)
@@ -4885,7 +4957,7 @@ test "precedence and associativity: every case of §6.5" {
         \\        (ident x)
         \\        (ident y)))))
         \\
-    , &.{.{ .code = .non_associative_chain, .line = 1, .col = 18 }});
+    , &.{.{ .code = .non_associative_chain, .line = 1, .col = 17 }});
 }
 
 test "negation: every case of §6.5, and `- x` is an error" {
@@ -4952,7 +5024,7 @@ test "negation: every case of §6.5, and `- x` is an error" {
 test "question mark: postfix on applications, in pipelines, with access, and args after it" {
     try expectTree(
         \\q1 s = parse s?
-        \\q2 x f = x? |> f
+        \\q2 x f = x? ▷ f
         \\q3 f a b = f (a?) b
         \\q4 f a b = f a? b
         \\q5 x = x.field?
@@ -5118,22 +5190,22 @@ test "`_` is an argument and only an argument (§6.7)" {
     , &.{ .{ .code = .placeholder_outside_argument, .line = 4, .col = 13 }, .{ .code = .multiple_placeholders, .line = 5, .col = 18 } });
 }
 
-test "`<-` binds the rest of the block; its right-hand side must be a call (§6.7)" {
+test "`←` binds the rest of the block; its right-hand side must be a call (§6.7)" {
     try expectTree(
         \\b1 f rest =
-        \\    x <- f rest
+        \\    x ← f rest
         \\    x
         \\
         \\
         \\b2 f g =
         \\    a = 1
-        \\    ( x, y ) <- f a
+        \\    ( x, y ) ← f a
         \\    b = 2
         \\    g x y b
         \\
         \\
         \\b3 f =
-        \\    x <- f 1 + 2
+        \\    x ← f 1 + 2
         \\    x
         \\
     ,
@@ -5180,10 +5252,10 @@ test "`<-` binds the rest of the block; its right-hand side must be a call (§6.
         \\          (int 2)))
         \\      (ident x))))
         \\
-    , &.{.{ .code = .bind_rhs_not_application, .line = 14, .col = 14 }});
+    , &.{.{ .code = .bind_rhs_not_application, .line = 14, .col = 13 }});
 }
 
-test "`|>` takes only an application, and neither pipe has a parenthesised form (§6.5, §6.7)" {
+test "`▷` takes only an application, and neither pipe has a parenthesised form (§6.5, §6.7)" {
     // `<|` is unaffected and still carries a block, which the chain test
     // below covers; here only `|>` and the two operator-function forms.
     try expectClean(
@@ -5233,11 +5305,11 @@ test "`|>` takes only an application, and neither pipe has a parenthesised form 
     // The tree stays complete after each report, so one bad pipe does not
     // swallow the declarations after it.
     try expectTree(
-        \\e1 xs = xs |> λx -> x
-        \\e2 c a b = a |> if c then b else a
-        \\e3 x f = x |> f 1 + 2
-        \\e4 = (|>)
-        \\e5 = (<|)
+        \\e1 xs = xs ▷ λx → x
+        \\e2 c a b = a ▷ if c then b else a
+        \\e3 x f = x ▷ f 1 + 2
+        \\e4 = (▷)
+        \\e5 = (◁)
         \\
     ,
         \\(module
@@ -5274,9 +5346,9 @@ test "`|>` takes only an application, and neither pipe has a parenthesised form 
         \\    (error operator_not_a_function)))
         \\
     , &.{
-        .{ .code = .pipe_rhs_not_application, .line = 1, .col = 15 },
-        .{ .code = .pipe_rhs_not_application, .line = 2, .col = 17 },
-        .{ .code = .pipe_rhs_not_application, .line = 3, .col = 19 },
+        .{ .code = .pipe_rhs_not_application, .line = 1, .col = 14 },
+        .{ .code = .pipe_rhs_not_application, .line = 2, .col = 16 },
+        .{ .code = .pipe_rhs_not_application, .line = 3, .col = 18 },
         .{ .code = .operator_not_a_function, .line = 4, .col = 7 },
         .{ .code = .operator_not_a_function, .line = 5, .col = 7 },
     });
@@ -5553,7 +5625,7 @@ test "layout errors: a continuation on column 1, misaligned case branches" {
         \\    (int 1)))
         \\
     , &.{.{ .code = .expected_declaration, .line = 3, .col = 1 }});
-    try expectTree("x =\n    case y of\n        A -> 1\n      B -> 2\n",
+    try expectTree("x =\n    case y of\n        A → 1\n      B → 2\n",
         \\(module
         \\  (definition x
         \\    (case
@@ -5585,7 +5657,7 @@ test "layout errors: a continuation on column 1, misaligned case branches" {
         \\A `case` needs at least one branch:
         \\
         \\    case x of
-        \\        Just n ->
+        \\        Just n →
         \\            n
     );
 }
@@ -5730,7 +5802,7 @@ test "let bindings: definitions, annotations, irrefutable patterns, and refutabl
         \\    _ = flag
         \\    Just y = m
         \\    1 = n
-        \\    [ h, ...r ] = l
+        \\    [ h, …r ] = l
         \\    y
         \\
     ,
@@ -6009,7 +6081,7 @@ test "recovery: broken imports, records, interpolations and lambdas keep their s
         \\      (chunk " c"))))
         \\
     , &.{ .{ .code = .unexpected_token, .line = 1, .col = 11 }, .{ .code = .expected_token, .line = 1, .col = 19 } });
-    try expectTree("f = λ -> 1\ng = λx y",
+    try expectTree("f = λ → 1\ng = λx y",
         \\(module
         \\  (definition f
         \\    (lambda
@@ -6162,7 +6234,7 @@ test "fuzz: arbitrary bytes never panic and always yield a well-formed tree" {
         }
     }.testOne, .{ .corpus = &.{
         "x = (1 + 2\n\ng = 3\n",
-        "f x =\n    case x of\n    Just n -> n\n",
+        "f x =\n    case x of\n    Just n → n\n",
         "x = [ 1, , 2 ]\n",
         "--| a\n--! b\nimport\n",
         "x = \"a ${ b\n",
@@ -6174,7 +6246,7 @@ test "fuzz: arbitrary bytes never panic and always yield a well-formed tree" {
         "schema T tagged \"kind\" of\n    A as \"a\"\n        x : Int\n    B\n",
         "schema Page a = { items : List a optional nullable }\n",
         "let in in let\n",
-        "x = \\ -> \\x\n",
+        "x = \\ → \\x\n",
     } });
 }
 

@@ -29,7 +29,7 @@ fn wideRecord(gpa: std.mem.Allocator, n: usize, fn_at: usize, compare: []const u
     try out.writeAll("r =\n    { ");
     for (1..n + 1) |i| {
         if (i != 1) try out.writeAll(", ");
-        if (i == fn_at) try out.print("f{d} = λx -> x", .{i}) else try out.print("f{d} = 1", .{i});
+        if (i == fn_at) try out.print("f{d} = λx → x", .{i}) else try out.print("f{d} = 1", .{i});
     }
     try out.print(" }}\n\n\nsame : Bool\nsame =\n    {s}\n", .{compare});
     return source.toOwnedSlice();
@@ -489,8 +489,8 @@ test "a derived row of more than 65 535 context entries checks" {
     var holder: std.Io.Writer.Allocating = .init(testing.allocator);
     defer holder.deinit();
     const h = &holder.writer;
-    try h.writeAll("pub type Holder a\n    = Holder a\n\n\npub eq : Holder a, Holder a -> Bool\n    where ");
-    for (0..methods) |j| try h.print("{s}a.m{d} : a, () -> Int", .{ if (j == 0) "" else ", ", j });
+    try h.writeAll("pub type Holder a\n    = Holder a\n\n\npub eq : Holder a, Holder a → Bool\n    where ");
+    for (0..methods) |j| try h.print("{s}a.m{d} : a, () → Int", .{ if (j == 0) "" else ", ", j });
     try h.writeAll("\neq (Holder x) (Holder y) =\n    ");
     for (0..methods) |j| try h.print("{s}x.m{d} () == y.m{d} ()", .{ if (j == 0) "" else " && ", j, j });
     try h.writeAll("\n");
@@ -558,9 +558,9 @@ fn wideLiteralCase(flag: []const u8, scrutinee: []const u8, stdout: []const u8) 
     var source: std.Io.Writer.Allocating = .init(testing.allocator);
     defer source.deinit();
     const out = &source.writer;
-    try out.print("import Node exposing (Program)\n\n\ng : Int -> Int\ng k =\n    case {s} of\n", .{scrutinee});
-    for (0..branches) |i| try out.print("        {d} ->\n            {d}\n\n", .{ i, i + 1 });
-    try out.writeAll("        _ ->\n            -1\n\n\n");
+    try out.print("import Node exposing (Program)\n\n\ng : Int → Int\ng k =\n    case {s} of\n", .{scrutinee});
+    for (0..branches) |i| try out.print("        {d} →\n            {d}\n\n", .{ i, i + 1 });
+    try out.writeAll("        _ →\n            -1\n\n\n");
     // Each chunk's first and last label, the default, and a miss past the end.
     try out.writeAll(
         \\main : Program

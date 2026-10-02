@@ -220,7 +220,7 @@ fn expectSameInProject(w: *World, arena: std.mem.Allocator, args: []const []cons
         !std.mem.eql(u8, plain.stderr, flagged.stderr))
     {
         std.debug.print(
-            "--roundtrip-frontend changed `{s} {s}`:\nexit {d} -> {d}\n--- plain ---\n{s}{s}\n--- round-tripped ---\n{s}{s}\n",
+            "--roundtrip-frontend changed `{s} {s}`:\nexit {d} → {d}\n--- plain ---\n{s}{s}\n--- round-tripped ---\n{s}{s}\n",
             .{ args[0], args[args.len - 1], plain.exit_code, flagged.exit_code, plain.stdout, plain.stderr, flagged.stdout, flagged.stderr },
         );
         return error.RoundTripDiffers;

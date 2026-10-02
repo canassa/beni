@@ -172,7 +172,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\`sync` marks a function type, and this is not one written out.
             \\
             \\Write the function type itself inside the parentheses, as in
-            \\`sync (String -> msg)`: the mark belongs to that one arrow. An alias of a
+            \\`sync (String → msg)`: the mark belongs to that one arrow. An alias of a
             \\function type is not enough, because the mark must be where the arrow is.
         ),
         .foreign_outside_platform => try w.writeAll(
@@ -194,7 +194,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\This type variable is already marked `equatable`.
             \\
             \\The prefix marks the VARIABLE, at its first occurrence, not the argument it
-            \\stands in front of: `eq : equatable a -> a -> Bool` is a function of two
+            \\stands in front of: `eq : equatable a, a → Bool` is a function of two
             \\arguments whose type is one marked `a`. Write the marker once.
         ),
         // language.md §12.4: an unqualified `modBy`, `remainderBy` or
@@ -245,16 +245,16 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .annotation_without_definition => try w.print(
             \\This type annotation for `{s}` is not followed by a definition of `{s}`.
             \\
-            \\The next binding is a `<-`, and a bind is not a definition: it takes no
+            \\The next binding is a `←`, and a bind is not a definition: it takes no
             \\annotation, because the type it would name belongs to the callee. Remove the
-            \\annotation, or write `{s} = ...` instead of `{s} <- ...`.
+            \\annotation, or write `{s} = …` instead of `{s} ← …`.
         , .{ text, text, text, text }),
         .bind_rhs_forward_reference => try w.print(
-            \\`{s}` is bound after this `<-`, so the call cannot see it.
+            \\`{s}` is bound after this `←`, so the call cannot see it.
             \\
-            \\`x <- f a` passes everything after it to `f a` as a callback, which means
-            \\the bindings below the `<-` do not exist yet where the call is made. Move the
-            \\binding of `{s}` above the `<-`.
+            \\`x ← f a` passes everything after it to `f a` as a callback, which means
+            \\the bindings below the `←` do not exist yet where the call is made. Move the
+            \\binding of `{s}` above the `←`.
         , .{ text, text }),
         .let_forward_reference => switch (item.forward) {
             .direct => try w.print(
@@ -338,7 +338,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\The type variable `{s}` is not a parameter of this type.
             \\
             \\Every type variable used in a `type` or `type alias` body must be declared as a
-            \\parameter: `type alias Wrapper {s} = ...`.
+            \\parameter: `type alias Wrapper {s} = …`.
         , .{ text, text }),
         // The two well-formedness rules of a `where` clause
         // (static-dispatch-spike.md §2.4, §10.6, §10.7). Both are decided
@@ -405,7 +405,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             );
         },
         .spread_on_element => try w.print(
-            \\`<{s}>` cannot take a spread: a spread `{{...record}}` is the first attribute of a
+            \\`<{s}>` cannot take a spread: a spread `{{…record}}` is the first attribute of a
             \\component, whose record it extends.
             \\
             \\A spread of attributes onto an element is not supported yet. Write the attributes
@@ -415,7 +415,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\This spread is not the first attribute of `<{s}>`.
             \\
             \\A component's spread is the record its other attributes update, so it comes first
-            \\and there is one: `<{s} {{...defaults}} title="x" />`. Move it to the front.
+            \\and there is one: `<{s} {{…defaults}} title="x" />`. Move it to the front.
         , .{ other, other }),
         .invalid_form_children => try w.print(
             \\`<{s}>` takes exactly one child: a hole holding the function that renders {s}.
@@ -425,9 +425,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             other,
             if (std.mem.eql(u8, other, "For")) @as([]const u8, "each item") else "the value",
             if (std.mem.eql(u8, other, "For"))
-                @as([]const u8, "<For each={items}>{λitem -> <li>{item.label}</li>}</For>")
+                @as([]const u8, "<For each={items}>{λitem → <li>{item.label}</li>}</For>")
             else
-                "<Show when={model.user} keyed>{λuser -> <UserEditor user={user} />}</Show>",
+                "<Show when={model.user} keyed>{λuser → <UserEditor user={user} />}</Show>",
         }),
         .unknown_form_attribute => {
             const is_for = std.mem.eql(u8, other, "For");
@@ -439,12 +439,12 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             .missing_each => try w.writeAll(
                 \\This `<For>` has no `each`: the list it renders.
                 \\
-                \\    <For each={items} keyed={.id}>{λitem -> <li>{item.label}</li>}</For>
+                \\    <For each={items} keyed={.id}>{λitem → <li>{item.label}</li>}</For>
             ),
             .missing_when => try w.writeAll(
                 \\This `<Show>` has no `when`: the `Maybe` whose value it shows.
                 \\
-                \\    <Show when={model.user} keyed>{λuser -> <UserEditor user={user} />}</Show>
+                \\    <Show when={model.user} keyed>{λuser → <UserEditor user={user} />}</Show>
             ),
             else => {
                 try w.writeAll(
@@ -523,10 +523,10 @@ fn writeShowCase(w: *std.Io.Writer, source: []const u8, item: Item) std.Io.Write
     const fallback = std.mem.trim(u8, source[item.fallback_start..item.fallback_end], blank);
     if (when.len == 0 or body.len == 0 or std.mem.indexOfScalar(u8, when, '\n') != null) return w.writeAll(
         \\    case model.user of
-        \\        Just user ->
+        \\        Just user →
         \\            <UserEditor user={user} />
         \\
-        \\        Nothing ->
+        \\        Nothing →
         \\            <p>Pick a user</p>
     );
     try w.print("    case {s} of\n", .{when});
@@ -542,17 +542,17 @@ fn writeShowCase(w: *std.Io.Writer, source: []const u8, item: Item) std.Io.Write
         break :blk null;
     };
     if (arrow) |found| {
-        try w.print("        Just {s} ->\n", .{std.mem.trim(u8, body[head..found.at], blank)});
+        try w.print("        Just {s} →\n", .{std.mem.trim(u8, body[head..found.at], blank)});
         try writeBlock(w, source, std.mem.trim(u8, body[found.at + found.len ..], blank), "            ");
     } else if (std.mem.indexOfAny(u8, body, blank) == null) {
-        try w.print("        Just value ->\n            {s} value", .{body});
+        try w.print("        Just value →\n            {s} value", .{body});
     } else if (std.mem.indexOfScalar(u8, body, '\n') == null) {
-        try w.print("        Just value ->\n            ({s}) value", .{body});
+        try w.print("        Just value →\n            ({s}) value", .{body});
     } else {
-        try w.writeAll("        Just value ->\n");
+        try w.writeAll("        Just value →\n");
         try writeBlock(w, source, body, "            ");
     }
-    try w.writeAll("\n\n        Nothing ->\n");
+    try w.writeAll("\n\n        Nothing →\n");
     if (fallback.len == 0) return w.writeAll("            <></>");
     try writeBlock(w, source, fallback, "            ");
 }
@@ -685,7 +685,7 @@ test "message: the payload-free codes" {
         "equatable",
     );
     try expectMessage(
-        "This type variable is already marked `equatable`.\n\nThe prefix marks the VARIABLE, at its first occurrence, not the argument it\nstands in front of: `eq : equatable a -> a -> Bool` is a function of two\narguments whose type is one marked `a`. Write the marker once.",
+        "This type variable is already marked `equatable`.\n\nThe prefix marks the VARIABLE, at its first occurrence, not the argument it\nstands in front of: `eq : equatable a, a → Bool` is a function of two\narguments whose type is one marked `a`. Write the marker once.",
         .{ .code = .equatable_not_first_occurrence, .start = 0, .end = 9 },
         "equatable",
     );

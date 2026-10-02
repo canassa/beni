@@ -545,7 +545,7 @@ const Reader = struct {
                     if (i != 0) try out.appendSlice(gpa, ", ");
                     try r.render(gpa, out);
                 }
-                try out.appendSlice(gpa, " -> ");
+                try out.appendSlice(gpa, " → ");
                 try r.render(gpa, out);
                 try out.append(gpa, ')');
             },
@@ -653,7 +653,7 @@ test "an alias body encodes as its shape, with every name spelled out" {
     try testing.expectEqualStrings(
         \\Pair = { first : var(0), second : var(0) }
         \\Pack = ( var(0), app:L.Pair var(1), () )
-        \\Fn = (var(0), var(0) -> app:L.Pair var(0))
+        \\Fn = (var(0), var(0) → app:L.Pair var(0))
         \\
     , got);
 }

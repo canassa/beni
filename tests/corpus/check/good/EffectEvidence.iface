@@ -1,10 +1,10 @@
 module EffectEvidence
   type Loud
     Loud/1
-  value count : List a, a -> Int !e1 where a.eq : a, a -> Bool !e1
-  value countInts : List Int -> Int
-  value countLoud : List Loud -> Int !impure
-  value eq : Loud, Loud -> Bool !impure
-  value sameList : List Loud, List Loud -> Bool !impure
-  value sameLoud : Loud, Loud -> Bool !impure
-  value sameMaybe : Maybe Loud, Maybe Loud -> Bool !impure
+  value count : List a, a → Int !e1 where a.eq : a, a → Bool !e1
+  value countInts : List Int → Int
+  value countLoud : List Loud → Int !impure
+  value eq : Loud, Loud → Bool !impure
+  value sameList : List Loud, List Loud → Bool !impure
+  value sameLoud : Loud, Loud → Bool !impure
+  value sameMaybe : Maybe Loud, Maybe Loud → Bool !impure

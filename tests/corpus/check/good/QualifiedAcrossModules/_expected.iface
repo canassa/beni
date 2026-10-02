@@ -1,9 +1,9 @@
 module Encode
-  value text : String -> Value
-  value total : List Value -> Int
+  value text : String → Value
+  value total : List Value → Int
 module Json.Value
   type Value
     Text/1
     Number/1
     Items/1
-  value size : Value -> Int
+  value size : Value → Int

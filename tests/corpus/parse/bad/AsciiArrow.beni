@@ -1,0 +1,16 @@
+-- `->` left the language for `→` (language.md §12.7): ascii_symbol_removed at
+-- every one, in a function type, a lambda and a `case` branch, each message
+-- naming `→` and U+2192, and the file parses on as if `→` were written
+-- (5:11, 7:9, 12:16).
+inc : Int -> Int
+inc n =
+    (λx -> x + 1) n
+
+
+pick m =
+    case m of
+        Just n ->
+            n
+
+        Nothing →
+            0

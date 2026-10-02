@@ -142,7 +142,7 @@ test "layout field recovery preserves malformed siblings and the next declaratio
     defer w.deinit();
     try w.write("Recovery.beni",
         \\schema Broken =
-        \\    malformed : ->
+        \\    malformed : →
         \\    missingColon Int
         \\    kept : String
         \\
@@ -165,9 +165,9 @@ test "layout field recovery preserves malformed siblings and the next declaratio
         .{
             .code = .unexpected_token,
             .severity = .@"error",
-            .span = .{ .file = "Recovery.beni", .start = .{ .line = 2, .col = 17 }, .end = .{ .line = 2, .col = 19 } },
+            .span = .{ .file = "Recovery.beni", .start = .{ .line = 2, .col = 17 }, .end = .{ .line = 2, .col = 18 } },
             .title = "UNEXPECTED TOKEN",
-            .message = "I was parsing a record and ran into `->`. I was expecting a type.",
+            .message = "I was parsing a record and ran into `→`. I was expecting a type.",
         },
         .{
             .code = .expected_token,
@@ -1319,8 +1319,8 @@ test "three lexical errors in one file yield exactly three diagnostics in positi
             .title = "INVALID CHARACTER",
             .message = "I found `@`, which is not part of the language's syntax.\n" ++
                 "\n" ++
-                "The symbols are ( ) [ ] { } , : = -> \\ | _ ? ... and the operators are\n" ++
-                "+ - * / // ^ ++ == /= < > <= >= && || |> <|.",
+                "The symbols are ( ) [ ] { } , : = → ← λ | _ ? … × and the operators are\n" ++
+                "+ - * / // ^ ++ == ≠ < > ≤ ≥ && || ▷ ◁.",
         },
     }), r.diagnostics);
 }
@@ -1531,8 +1531,8 @@ test "a layout error quotes both columns, and the text renderer shows the excerp
     try w.write("Main.beni",
         \\x =
         \\    case 1 of
-        \\        1 -> 1
-        \\      _ -> 2
+        \\        1 → 1
+        \\      _ → 2
         \\
     );
 
@@ -1565,7 +1565,7 @@ test "a layout error quotes both columns, and the text renderer shows the excerp
             "Every branch must start on the same column as the first one, `1` on column 9,\n" ++
             "and the branches end at the first token left of that column.\n" ++
             "\n" ++
-            "4|      _ -> 2\n" ++
+            "4|      _ → 2\n" ++
             "        ^\n",
         text.stderr,
     );
@@ -1575,13 +1575,13 @@ test "a column counts code points, so the caret after a λ stands under the char
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // language.md §12.7, *columns*: `λ` is two bytes and one column. The
-    // `é` is the eleventh character of its line and one column wide; by
-    // bytes it was the twelfth, two wide, and the caret stood one place
-    // right of it, under nothing, with two carets.
+    // language.md §12.7, *columns*: `λ` is two bytes and `→` three, one
+    // column each. The `é` is the tenth character of its line and one
+    // column wide; by bytes it was the thirteenth, two wide, and the caret
+    // stood three places right of it, under nothing, with two carets.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni", "f = λa -> é\n");
+    try w.write("Main.beni", "f = λa → é\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -1595,11 +1595,11 @@ test "a column counts code points, so the caret after a λ stands under the char
     try testing.expectEqual(@as(u8, 1), json.exit_code);
     try testing.expectEqual(@as(usize, 1), json.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.invalid_character, json.diagnostics[0].code);
-    try testing.expectEqualDeep(diagnostic.Span{ .file = "Main.beni", .start = .{ .line = 1, .col = 11 }, .end = .{ .line = 1, .col = 12 } }, json.diagnostics[0].span);
+    try testing.expectEqualDeep(diagnostic.Span{ .file = "Main.beni", .start = .{ .line = 1, .col = 10 }, .end = .{ .line = 1, .col = 11 } }, json.diagnostics[0].span);
     try testing.expectEqual(@as(u8, 1), text.exit_code);
-    try testing.expect(std.mem.indexOf(u8, text.stderr, " Main.beni:1:11\n") != null);
-    try testing.expect(std.mem.endsWith(u8, text.stderr, "\n1|f = λa -> é\n" ++
-        "            ^\n"));
+    try testing.expect(std.mem.indexOf(u8, text.stderr, " Main.beni:1:10\n") != null);
+    try testing.expect(std.mem.endsWith(u8, text.stderr, "\n1|f = λa → é\n" ++
+        "           ^\n"));
 }
 
 test "dump --stage=ast on a broken file prints placeholders in the tree, the errors on stderr, and exits 1" {
@@ -1770,7 +1770,7 @@ test "fmt --migrate-cons rewrites a file's `::` in brackets, keeps its layout an
     // reported. `check` on the same file refuses it, one message a chain.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const before = "x xs = 1 :: 2 :: xs\ny   =   case [] of\n  a :: _ -> a\n  _ -> 0\n";
+    const before = "x xs = 1 :: 2 :: xs\ny   =   case [] of\n  a :: _ → a\n  _ → 0\n";
     try w.write("Main.beni", before);
     const refused = try w.run(&.{ "check", "Main.beni" });
     try testing.expectEqual(@as(u8, 1), refused.exit_code);
@@ -1792,7 +1792,7 @@ test "fmt --migrate-cons rewrites a file's `::` in brackets, keeps its layout an
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(
-        "x xs = [ 1, 2, ...xs ]\ny   =   case [] of\n  [ a, ..._ ] -> a\n  _ -> 0\n",
+        "x xs = [ 1, 2, …xs ]\ny   =   case [] of\n  [ a, …_ ] → a\n  _ → 0\n",
         try w.read("Main.beni"),
     );
 }
@@ -1805,7 +1805,7 @@ test "fmt --migrate-lambda writes every lambda's head as λ in place and restyle
     // so; the multiline string's `\\` and the string's escape are not lambdas.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni", "y   =   \\a -> [ \\() -> a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n");
+    try w.write("Main.beni", "y   =   \\a → [ \\() → a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -1821,7 +1821,7 @@ test "fmt --migrate-lambda writes every lambda's head as λ in place and restyle
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings("y   =   λa -> [ λ() -> a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n", try w.read("Main.beni"));
+    try testing.expectEqualStrings("y   =   λa → [ λ() → a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n", try w.read("Main.beni"));
 }
 
 test "fmt --migrate-lambda migrates a case whose first branch shares the of line after a lambda" {
@@ -1832,7 +1832,7 @@ test "fmt --migrate-lambda migrates a case whose first branch shares the of line
     // first branch on the `of` line stays on the column `Nothing` is at.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const source = "f m =\n    case g (\\x -> x) of Just y -> y\n                        Nothing -> 0\n";
+    const source = "f m =\n    case g (\\x → x) of Just y → y\n                       Nothing → 0\n";
     try w.write("Main.beni", source);
 
     // ┌─────────────────────────────────────────┐
@@ -1849,7 +1849,7 @@ test "fmt --migrate-lambda migrates a case whose first branch shares the of line
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings("f m =\n    case g (λx -> x) of Just y -> y\n                        Nothing -> 0\n", try w.read("Main.beni"));
+    try testing.expectEqualStrings("f m =\n    case g (λx → x) of Just y → y\n                       Nothing → 0\n", try w.read("Main.beni"));
 }
 
 test "fmt --migrate-unicode writes the symbols and × in code only and restyles nothing" {
@@ -1916,55 +1916,6 @@ test "fmt --migrate-unicode writes the symbols and × in code only and restyles 
     , try w.read("Main.beni"));
 }
 
-test "a tuple type written with × dumps the AST and BIR its comma spelling does" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // language.md §12.7–§12.8, frontend.md §11.8: the two spellings of every
-    // symbol, and `Int × String` beside `( Int, String )`, build the same
-    // nodes, and the dumps name an operator by its symbol whichever was read.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("a/Main.beni",
-        \\pair : Int × String → Int × String
-        \\pair p =
-        \\    p
-        \\
-        \\
-        \\ops a b xs =
-        \\    ( a ≠ b, a ≤ b, a ≥ b, [ a, …xs ] ▷ List.length, ( (≠), List.length ◁ xs ) )
-        \\
-    );
-    try w.write("b/Main.beni",
-        \\pair : ( Int, String ) -> ( Int, String )
-        \\pair p =
-        \\    p
-        \\
-        \\
-        \\ops a b xs =
-        \\    ( a /= b, a <= b, a >= b, [ a, ...xs ] |> List.length, ( (/=), List.length <| xs ) )
-        \\
-    );
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const ast_a = try w.run(&.{ "dump", "--stage=ast", "a/Main.beni" });
-    const ast_b = try w.run(&.{ "dump", "--stage=ast", "b/Main.beni" });
-    const bir_a = try w.run(&.{ "dump", "--stage=bir", "a/Main.beni" });
-    const bir_b = try w.run(&.{ "dump", "--stage=bir", "b/Main.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), ast_a.exit_code);
-    try testing.expectEqual(@as(u8, 0), bir_a.exit_code);
-    try testing.expectEqualStrings(ast_a.stdout, ast_b.stdout);
-    try testing.expectEqualStrings(bir_a.stdout, bir_b.stdout);
-    try testing.expect(std.mem.indexOf(u8, ast_a.stdout, "(op_fn ≠)") != null);
-    try testing.expect(std.mem.indexOf(u8, bir_a.stdout, "(≤)") != null);
-}
-
 test "fmt --migrate-names rewrites each form of a removed name in place and restyles nothing" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1980,7 +1931,7 @@ test "fmt --migrate-names rewrites each form of a removed name in place and rest
         \\import Debug exposing (todo)
         \\f n = modBy n 2 + Basics.remainderBy n 3 + B.modBy (n.modBy 4) 5
         \\y   =   logBase 100 10
-        \\h n = n |> Basics.modBy 7
+        \\h n = n ▷ Basics.modBy 7
         \\a = .remainderBy
         \\
     );
@@ -2005,7 +1956,7 @@ test "fmt --migrate-names rewrites each form of a removed name in place and rest
         \\import Debug exposing (todo)
         \\f n = Int.mod n 2 + Int.rem n 3 + Int.mod (Int.mod n 4) 5
         \\y   =   Float.log 100 10
-        \\h n = n |> Int.mod 7
+        \\h n = n ▷ Int.mod 7
         \\a = .remainderBy
         \\
     , try w.read("Main.beni"));
@@ -2026,7 +1977,7 @@ test "fmt --migrate-names turns Debug.log round to its label first, once, and na
         \\import Debug as D
         \\a = Debug.log (f x) "label"
         \\b = Debug.log "done" x
-        \\c = x |> Debug.log "p"
+        \\c = x ▷ Debug.log "p"
         \\d = D.log y
         \\    "q"
         \\
@@ -2043,7 +1994,7 @@ test "fmt --migrate-names turns Debug.log round to its label first, once, and na
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), first.exit_code);
-    try testing.expect(std.mem.indexOf(u8, first.stderr, "\"file\":\"Main.beni\",\"start\":{\"line\":4,\"col\":10}") != null);
+    try testing.expect(std.mem.indexOf(u8, first.stderr, "\"file\":\"Main.beni\",\"start\":{\"line\":4,\"col\":9}") != null);
     try testing.expect(std.mem.indexOf(u8, first.stderr, "\"severity\":\"warning\"") != null);
     try testing.expectEqual(@as(u8, 0), second.exit_code);
 
@@ -2054,7 +2005,7 @@ test "fmt --migrate-names turns Debug.log round to its label first, once, and na
         \\import Debug as D
         \\a = Debug.log "label" (f x)
         \\b = Debug.log "done" x
-        \\c = x |> Debug.log "p"
+        \\c = x ▷ Debug.log "p"
         \\d = D.log "q"
         \\    y
         \\
@@ -2114,14 +2065,14 @@ test "fmt --migrate-let writes a let in each position as the block it becomes" {
         \\
         \\branch m =
         \\    case m of
-        \\        Just x ->
+        \\        Just x →
         \\            List.map [ x ]
-        \\                (λy ->
+        \\                (λy →
         \\                    z = y
         \\                    z
         \\                )
         \\
-        \\        Nothing ->
+        \\        Nothing →
         \\            [ max (let k = 1 in k) 2, 2 + let j = 3 in j ]
         \\
     );
@@ -2154,12 +2105,12 @@ test "fmt --migrate-let writes a let in each position as the block it becomes" {
         \\
         \\branch m =
         \\    case m of
-        \\        Just x ->
-        \\            List.map [ x ] λy ->
+        \\        Just x →
+        \\            List.map [ x ] λy →
         \\                z = y
         \\                z
         \\
-        \\        Nothing ->
+        \\        Nothing →
         \\            [ max
         \\                (
         \\                    k = 1
@@ -2194,24 +2145,24 @@ test "fmt --migrate-trailing-lambda drops a last-argument lambda's parentheses o
     try w.write("Main.beni",
         \\pipeline todos =
         \\    todos
-        \\        |> List.filter (λt -> t.done)
-        \\        |> List.length
+        \\        ▷ List.filter (λt → t.done)
+        \\        ▷ List.length
         \\
         \\
         \\first xs =
-        \\    List.map xs (λx -> x)
-        \\        |> List.length
+        \\    List.map xs (λx → x)
+        \\        ▷ List.length
         \\
         \\
-        \\flat xs = xs |> List.filter (λt -> t) |> List.length
+        \\flat xs = xs ▷ List.filter (λt → t) ▷ List.length
         \\
         \\
-        \\question m = Maybe.map m (λx -> x)?
+        \\question m = Maybe.map m (λx → x)?
         \\
         \\
         \\toggle id todos =
         \\    List.map todos
-        \\        (λt ->
+        \\        (λt →
         \\            if t == id then
         \\                0
         \\            else
@@ -2220,18 +2171,18 @@ test "fmt --migrate-trailing-lambda drops a last-argument lambda's parentheses o
         \\
         \\
         \\chain url =
-        \\    Task.attempt (Http.get url) <| λresponse ->
+        \\    Task.attempt (Http.get url) ◁ λresponse →
         \\    render response
         \\
         \\
-        \\rows items = <ul>{List.map items (λi -> <li>{i}</li>)}</ul>
+        \\rows items = <ul>{List.map items (λi → <li>{i}</li>)}</ul>
         \\
         \\
         \\nested people =
         \\    hash
         \\        (List.map
-        \\            (List.sortBy people (λp -> p.age))
-        \\            (λp -> p.age * 1000)
+        \\            (List.sortBy people (λp → p.age))
+        \\            (λp → p.age * 1000)
         \\        )
         \\
     );
@@ -2255,37 +2206,37 @@ test "fmt --migrate-trailing-lambda drops a last-argument lambda's parentheses o
     try testing.expectEqualStrings(
         \\pipeline todos =
         \\    todos
-        \\        |> List.filter λt -> t.done
-        \\        |> List.length
+        \\        ▷ List.filter λt → t.done
+        \\        ▷ List.length
         \\
         \\
         \\first xs =
-        \\    List.map xs (λx -> x)
-        \\        |> List.length
+        \\    List.map xs (λx → x)
+        \\        ▷ List.length
         \\
         \\
-        \\flat xs = xs |> List.filter (λt -> t) |> List.length
+        \\flat xs = xs ▷ List.filter (λt → t) ▷ List.length
         \\
         \\
-        \\question m = Maybe.map m (λx -> x)?
+        \\question m = Maybe.map m (λx → x)?
         \\
         \\
-        \\toggle id todos = List.map todos λt ->
+        \\toggle id todos = List.map todos λt →
         \\    if t == id then
         \\        0
         \\    else
         \\        t
         \\
         \\
-        \\chain url = Task.attempt (Http.get url) λresponse -> render response
+        \\chain url = Task.attempt (Http.get url) λresponse → render response
         \\
         \\
-        \\rows items = <ul>{List.map items λi -> <li>{i}</li>}</ul>
+        \\rows items = <ul>{List.map items λi → <li>{i}</li>}</ul>
         \\
         \\
         \\nested people =
         \\    hash
-        \\        (List.map (List.sortBy people λp -> p.age) λp -> p.age * 1000)
+        \\        (List.map (List.sortBy people λp → p.age) λp → p.age * 1000)
         \\
     , try w.read("Main.beni"));
 }
@@ -3096,7 +3047,7 @@ test "equatable_not_first_occurrence: the prefix marks the variable, once" {
         .message = "This type variable is already marked `equatable`.\n" ++
             "\n" ++
             "The prefix marks the VARIABLE, at its first occurrence, not the argument it\n" ++
-            "stands in front of: `eq : equatable a -> a -> Bool` is a function of two\n" ++
+            "stands in front of: `eq : equatable a, a → Bool` is a function of two\n" ++
             "arguments whose type is one marked `a`. Write the marker once.",
     }, r.diagnostics[0]);
 }
@@ -3143,7 +3094,7 @@ test "dump --stage=interface prints a module's public face, exactly" {
         \\    Circle/1
         \\    Rect/2
         \\    Empty
-        \\  value area : Shape Int -> Int
+        \\  value area : Shape Int → Int
         \\
     , r.stdout);
 }
@@ -3158,7 +3109,7 @@ test "dump --stage=interface on a directory prints every module in path order" {
 
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     try testing.expectEqualStrings("", r.stderr);
-    try testing.expectEqualStrings("module Main\n  value main : Int\nmodule Util\n  value helper : Int -> Int\n", r.stdout);
+    try testing.expectEqualStrings("module Main\n  value main : Int\nmodule Util\n  value helper : Int → Int\n", r.stdout);
 }
 
 test "--core-root replaces the embedded core package" {
@@ -3463,7 +3414,7 @@ test "TOO FEW ARGS names the function, its arity, and the missing argument" {
             "    Model\n" ++
             "\n" ++
             "Hint: every call supplies every argument. To make a function out of this one,\n" ++
-            "write the missing argument as `_`: `f a _` is `λx -> f a x`.\n",
+            "write the missing argument as `_`: `f a _` is `λx → f a x`.\n",
     }, r.diagnostics[0]);
 }
 
@@ -3493,7 +3444,7 @@ test "`==` on functions is a compile error, not a runtime crash" {
         .title = "NOT EQUATABLE",
         .message = "I cannot compare these values with `==`:\n" ++
             "\n" ++
-            "    Int -> Int\n" ++
+            "    Int → Int\n" ++
             "\n" ++
             "There is a function in there, and comparing functions is not decidable:\n" ++
             "deciding whether two functions agree on every input is the halting problem.\n" ++
@@ -3663,14 +3614,14 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     // printed on the local too (transparent-effects-proposal.md §14.7).
     try testing.expectEqualStrings(
         \\module Main
-        \\  shift : Point -> Point
+        \\  shift : Point → Point
         \\    p : { x : Int, y : Int }
-        \\  apply : (a -> b !e1), a -> b !e1
-        \\    f : a -> b !e1
+        \\  apply : (a → b !e1), a → b !e1
+        \\    f : a → b !e1
         \\    x : a
-        \\  total : List number -> number
+        \\  total : List number → number
         \\    xs : List number
-        \\    step : number2, number2 -> number2
+        \\    step : number2, number2 → number2
         \\    a : number2
         \\    b : number2
         \\
@@ -3726,16 +3677,16 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
     try testing.expectEqualStrings("", r.stderr);
     try testing.expectEqualStrings(
         \\module Main
-        \\  logged : a -> a !impure
+        \\  logged : a → a !impure
         \\    x : a
         \\  counter : number  -- evaluates: impure
-        \\  later : () -> number !impure
-        \\  each : (a -> b !e1), List a -> List b !e1
-        \\    f : a -> b !e1
+        \\  later : () → number !impure
+        \\  each : (a → b !e1), List a → List b !e1
+        \\    f : a → b !e1
         \\    xs : List a
-        \\    visit : a -> b !e1
+        \\    visit : a → b !e1
         \\    x : a
-        \\  quiet : List number -> List number
+        \\  quiet : List number → List number
         \\    xs : List number
         \\    x : number
         \\
@@ -4204,7 +4155,7 @@ test "a private eq wins inside its module and is private_method from every other
         \\import Node exposing (Program)
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -4642,7 +4593,7 @@ test "a constraint that rode out on an inferred interface is reported without --
     try testing.expectEqualStrings("CONSTRAINT IN AN INFERRED INTERFACE", d.title);
     // The whole scheme, `where` clause included, is what the reader has to
     // see: it is the thing that changes.
-    try testing.expect(std.mem.indexOf(u8, d.message, "a, a -> Bool where a.compare : a, a -> Order") != null);
+    try testing.expect(std.mem.indexOf(u8, d.message, "a, a → Bool where a.compare : a, a → Order") != null);
     // `annotated` pins its type, so it carries no constraint and is not
     // reported — which is the hint the message gives.
     try testing.expect(std.mem.indexOf(u8, d.message, "annotated") == null);
@@ -4800,8 +4751,8 @@ test "dump --stage=interface prints each value's scheme, and <error> for one tha
     try testing.expectEqualStrings(
         \\module Main
         \\  value bad : <error>
-        \\  value good : Int -> Int
-        \\  value poly : a -> ( a, a )
+        \\  value good : Int → Int
+        \\  value poly : a → a × a
         \\
     , r.stdout);
 }
@@ -4839,19 +4790,19 @@ fn writeRecordShapes(w: *World) !void {
                 \\    | Empty{d}
                 \\
                 \\
-                \\pub make{d} : Int -> Rec{d}
+                \\pub make{d} : Int → Rec{d}
                 \\make{d} n =
                 \\    {{ zulu = n, alpha = "x", middle = n, bravo = 1.5 }}
                 \\
                 \\
-                \\pub wrap{d} : zeta, alpha -> Wrap{d} zeta alpha
+                \\pub wrap{d} : zeta, alpha → Wrap{d} zeta alpha
                 \\wrap{d} a b =
                 \\    Pair{d} a b
                 \\
                 \\
-                \\pub pick{d} : zeta, zeta, alpha -> zeta
-                \\    where alpha.compare : alpha, alpha -> Order
-                \\    , zeta.eq : zeta, zeta -> Bool
+                \\pub pick{d} : zeta, zeta, alpha → zeta
+                \\    where alpha.compare : alpha, alpha → Order
+                \\    , zeta.eq : zeta, zeta → Bool
                 \\pick{d} a b tag =
                 \\    if a.eq b then a else b
                 \\
@@ -4861,10 +4812,10 @@ fn writeRecordShapes(w: *World) !void {
                 \\
                 \\
                 \\pub type alias Api{d} =
-                \\    {{ zulu : Int -> Int, alpha : String -> Int }}
+                \\    {{ zulu : Int → Int, alpha : String → Int }}
                 \\
                 \\
-                \\pub call{d} : Api{d}, String -> Int
+                \\pub call{d} : Api{d}, String → Int
                 \\call{d} api s =
                 \\    Debug.log "call" (api.zulu (api.alpha s))
                 \\
@@ -5417,10 +5368,11 @@ test "a type nested past the checker's reading limit is reported, never silently
     var source: std.ArrayList(u8) = .empty;
     defer source.deinit(testing.allocator);
     try source.appendSlice(testing.allocator, "pub f : ");
-    for (0..600) |_| try source.appendSlice(testing.allocator, "( ");
+    // 600 nested products: `((…(Int × Int) × …) × Int) × Int`.
+    for (0..599) |_| try source.appendSlice(testing.allocator, "(");
     try source.appendSlice(testing.allocator, "Int");
-    for (0..600) |_| try source.appendSlice(testing.allocator, ", Int )");
-    try source.appendSlice(testing.allocator, " -> Int\nf _ =\n    1\n");
+    for (0..599) |_| try source.appendSlice(testing.allocator, " × Int)");
+    try source.appendSlice(testing.allocator, " × Int → Int\nf _ =\n    1\n");
     try w.write("src/Deep.beni", source.items);
     try w.write("src/Main.beni",
         \\import Deep
@@ -5477,10 +5429,11 @@ test "one level under the reading limit checks clean and publishes a real scheme
     var source: std.ArrayList(u8) = .empty;
     defer source.deinit(testing.allocator);
     try source.appendSlice(testing.allocator, "pub f : ");
-    for (0..400) |_| try source.appendSlice(testing.allocator, "( ");
+    // 400 nested products: `((…(Int × Int) × …) × Int) × Int`.
+    for (0..399) |_| try source.appendSlice(testing.allocator, "(");
     try source.appendSlice(testing.allocator, "Int");
-    for (0..400) |_| try source.appendSlice(testing.allocator, ", Int )");
-    try source.appendSlice(testing.allocator, " -> Int\nf _ =\n    1\n");
+    for (0..399) |_| try source.appendSlice(testing.allocator, " × Int)");
+    try source.appendSlice(testing.allocator, " × Int → Int\nf _ =\n    1\n");
     try w.write("Deep.beni", source.items);
 
     // ┌─────────────────────────────────────────┐
@@ -5752,12 +5705,12 @@ test "a `case` the checker could not decide never reaches the default-free decis
 fn flatLiteralTable(arena: std.mem.Allocator, count: u32, dup: ?u32) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
     const w = &out.writer;
-    try w.writeAll("pub name : Int -> Int\nname n =\n    case n of\n");
+    try w.writeAll("pub name : Int → Int\nname n =\n    case n of\n");
     for (0..count) |i| {
         const key: u32 = if (dup != null and dup.? == i) 0 else @intCast(i);
-        try w.print("        {d} ->\n            {d}\n\n", .{ key, i });
+        try w.print("        {d} →\n            {d}\n\n", .{ key, i });
     }
-    try w.writeAll("        _ ->\n            0\n");
+    try w.writeAll("        _ →\n            0\n");
     return out.written();
 }
 
@@ -5768,8 +5721,8 @@ fn flatCtorTable(arena: std.mem.Allocator, count: u32, missing: u32) ![]const u8
     const w = &out.writer;
     try w.writeAll("pub type T\n    = C0\n");
     for (1..count) |i| try w.print("    | C{d}\n", .{i});
-    try w.writeAll("\n\npub f : T -> Int\nf t =\n    case t of\n");
-    for (0..count - missing) |i| try w.print("        C{d} ->\n            {d}\n\n", .{ i, i });
+    try w.writeAll("\n\npub f : T → Int\nf t =\n    case t of\n");
+    for (0..count - missing) |i| try w.print("        C{d} →\n            {d}\n\n", .{ i, i });
     return out.written();
 }
 
@@ -5885,18 +5838,18 @@ test "the flat path still names the redundant branch and the missing constructor
 fn pairLiteralTable(arena: std.mem.Allocator, rows: u32, width: u32, dup: ?u32, open: ?u32) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
     const w = &out.writer;
-    try w.writeAll("pub f : Int, Int -> Int\nf a b =\n    case ( a, b ) of\n");
+    try w.writeAll("pub f : Int, Int → Int\nf a b =\n    case ( a, b ) of\n");
     for (0..rows) |i| {
         const at: u32 = @intCast(i);
         const repeat = dup != null and dup.? == at;
         const row = if (repeat) 0 else at / width;
         if (open != null and open.? == at) {
-            try w.print("        ( {d}, _ ) ->\n            {d}\n\n", .{ row, i });
+            try w.print("        ( {d}, _ ) →\n            {d}\n\n", .{ row, i });
         } else {
-            try w.print("        ( {d}, {d} ) ->\n            {d}\n\n", .{ row, if (repeat) 0 else at % width, i });
+            try w.print("        ( {d}, {d} ) →\n            {d}\n\n", .{ row, if (repeat) 0 else at % width, i });
         }
     }
-    try w.writeAll("        _ ->\n            0\n");
+    try w.writeAll("        _ →\n            0\n");
     return out.written();
 }
 
@@ -5909,10 +5862,10 @@ fn pairCtorTable(arena: std.mem.Allocator, count: u32, missing: u32) ![]const u8
     for (1..count) |i| try w.print("    | P{d}\n", .{i});
     try w.writeAll("\n\npub type Q\n    = Q0\n");
     for (1..count) |i| try w.print("    | Q{d}\n", .{i});
-    try w.writeAll("\n\npub f : P, Q -> Int\nf a b =\n    case ( a, b ) of\n");
+    try w.writeAll("\n\npub f : P, Q → Int\nf a b =\n    case ( a, b ) of\n");
     var i: u32 = 0;
     while (i < count * count - missing) : (i += 1) {
-        try w.print("        ( P{d}, Q{d} ) ->\n            {d}\n\n", .{ i / count, i % count, i });
+        try w.print("        ( P{d}, Q{d} ) →\n            {d}\n\n", .{ i / count, i % count, i });
     }
     return out.written();
 }
@@ -5988,7 +5941,7 @@ test "the key path still names the redundant pair and the missing combinations" 
     try w.write("Full.beni", blk: {
         var out: std.Io.Writer.Allocating = .init(a);
         try out.writer.writeAll(try pairCtorTable(a, 20, 0));
-        try out.writer.writeAll("        _ ->\n            0\n");
+        try out.writer.writeAll("        _ →\n            0\n");
         break :blk out.written();
     });
 
@@ -6249,7 +6202,7 @@ test "schema field recovery keeps the next sibling and top-level declaration" {
         .severity = .@"error",
         .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 30 }, .end = .{ .line = 2, .col = 31 } },
         .title = "INVALID CHARACTER",
-        .message = "I found `@`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = -> \\ | _ ? ... and the operators are\n+ - * / // ^ ++ == /= < > <= >= && || |> <|.",
+        .message = "I found `@`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = → ← λ | _ ? … × and the operators are\n+ - * / // ^ ++ == ≠ < > ≤ ≥ && || ▷ ◁.",
     }}), r.diagnostics);
 }
 
@@ -6524,7 +6477,7 @@ test "the checker writes the annotation escape and the infinite type as checker.
             .severity = .@"error",
             .span = .{ .file = "Texts.beni", .start = .{ .line = 4, .col = 9 }, .end = .{ .line = 4, .col = 10 } },
             .title = "TYPE MISMATCH",
-            .message = "The type annotation of `g` promises more than its body keeps:\n\n    g : a -> a\n\nThe annotation says `a` can be ANY type, but the body ties `a` to a type that\ncomes from `f`, the definition `g` is written inside. That type is fixed for\neach call of `f`, so `g` does not work for every `a`.\n\nHint: write the enclosing definition's type in the annotation instead of `a`,\nor remove the annotation and let the type be inferred.\n",
+            .message = "The type annotation of `g` promises more than its body keeps:\n\n    g : a → a\n\nThe annotation says `a` can be ANY type, but the body ties `a` to a type that\ncomes from `f`, the definition `g` is written inside. That type is fixed for\neach call of `f`, so `g` does not work for every `a`.\n\nHint: write the enclosing definition's type in the annotation instead of `a`,\nor remove the annotation and let the type be inferred.\n",
         },
         .{
             .code = .infinite_type,
@@ -6615,11 +6568,11 @@ test "a merge that gives an `err` class structure voids the acyclicity proofs" {
     try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
-        infiniteType("Main.beni", 1, 3, 1, "for `w`", "a = ( a, a )"),
+        infiniteType("Main.beni", 1, 3, 1, "for `w`", "a = a × a"),
         infiniteType("Main.beni", 2, 5, 2, "for `y4`", "a = { r | a : List a }"),
     }), r.diagnostics);
     // Both cycles poisoned: nothing cyclic reaches the scheme.
-    try testing.expectEqualStrings("module Main\n  f : ? -> List ?\n    w : ?\n    y4 : ?\n    y7 : ?\n    y8 : ?\n", types.stdout);
+    try testing.expectEqualStrings("module Main\n  f : ? → List ?\n    w : ?\n    y4 : ?\n    y7 : ?\n    y8 : ?\n", types.stdout);
 }
 
 test "an infinite type through a schema alias's `err` is still refused" {
@@ -6668,7 +6621,7 @@ test "an infinite type through a schema alias's `err` is still refused" {
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
         // `w` took the name `PrivRecW` and met a tuple, so it shows its
         // expansion, which is the cycle itself (checker-v2.md §7.1).
-        infiniteType("p/Main.beni", 6, 5, 2, "for `z`", "a = ( a, a )"),
+        infiniteType("p/Main.beni", 6, 5, 2, "for `z`", "a = a × a"),
         unknownNope(),
     }), r.diagnostics);
 }
@@ -6806,7 +6759,7 @@ test "an interior node that became `err` and then structure voids the proofs" {
     // that `err` class, closing a cycle inside the proved graph with no
     // proved node gaining successors. The cyclic type must not generalise
     // into `f`'s scheme: the answer is one NAMING ERROR and
-    // `f : a -> ( ?, String )`.
+    // `f : a → ? × String`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6846,7 +6799,7 @@ test "an interior node that became `err` and then structure voids the proofs" {
         .title = "NAMING ERROR",
         .message = "I cannot find a `bogus` variable.\n\nIt is not a local binding, a top-level value of this module, a name from an\n`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
     }}), r.diagnostics);
-    try testing.expectEqualStrings("module Main\n  fst : ( a, b ) -> a\n    a : a\n  f : a -> ( ?, String )\n    v : a\n    q : ( ?, String )\n    z : Int\n    y : Int\n", types.stdout);
+    try testing.expectEqualStrings("module Main\n  fst : a × b → a\n    a : a\n  f : a → ? × String\n    v : a\n    q : ? × String\n    z : Int\n    y : Int\n", types.stdout);
 }
 
 test "a mismatch over a shared or cyclic type prints a bounded message" {
@@ -6856,7 +6809,7 @@ test "a mismatch over a shared or cyclic type prints a bounded message" {
     // `x = ( x, x )` is a DAG; walked as a TREE under `Render.max_depth`
     // alone it is 2^24 leaves, 300 MB of stderr from a two-line program.
     // The namer's node budget (`checker.md` §8.2) bounds one message. The
-    // failure is the cycle's INFINITE TYPE, `a = ( a, a )`, and the printer
+    // failure is the cycle's INFINITE TYPE, `a = a × a`, and the printer
     // elides a cycle where it repeats: a few hundred bytes.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -6878,7 +6831,7 @@ test "a mismatch over a shared or cyclic type prints a bounded message" {
     for ([_]world.Result{ v1, v2 }) |r| {
         try testing.expectEqual(@as(u8, 1), r.exit_code);
         try testing.expect(std.mem.indexOf(u8, r.stderr, "INFINITE TYPE") != null);
-        try testing.expect(std.mem.indexOf(u8, r.stderr, "a = ( a, a )") != null);
+        try testing.expect(std.mem.indexOf(u8, r.stderr, "a = a × a") != null);
         try testing.expect(r.stderr.len < 4 * 1024);
     }
 }
@@ -7042,7 +6995,7 @@ test "a payload's equatable requirement survives a derived context, for == and <
         \\        LT
         \\
     ;
-    const own = "import H\n\n\ntype W a\n    = W (H.Holder a)\n\n\nf : Int -> Int\nf n =\n    n\n\n\nsame : Bool\nsame =\n    W (H.Holder f) {s} W (H.Holder f)\n";
+    const own = "import H\n\n\ntype W a\n    = W (H.Holder a)\n\n\nf : Int → Int\nf n =\n    n\n\n\nsame : Bool\nsame =\n    W (H.Holder f) {s} W (H.Holder f)\n";
     const Case = struct { h: []const u8, main: []const u8, mid: bool, code: diagnostic.Code, line: u32, col: u32 };
     const cases = [_]Case{
         .{ .h = holder_eq, .main = try std.fmt.allocPrint(w.arena.allocator(), own, .{"=="}), .mid = false, .code = .not_equatable, .line = 15, .col = 20 },

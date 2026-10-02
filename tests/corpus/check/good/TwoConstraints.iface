@@ -1,2 +1,2 @@
 module TwoConstraints
-  value choose : a, a, b -> a !(e1 | e2 | e3) where a.eq : a, a -> Bool !e1, a.pick : a, a -> a !e2, b.render : b, Int -> a !e3
+  value choose : a, a, b → a !(e1 | e2 | e3) where a.eq : a, a → Bool !e1, a.pick : a, a → a !e2, b.render : b, Int → a !e3

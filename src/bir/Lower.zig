@@ -5004,7 +5004,7 @@ test "the operator table gives every operator a home module, Basics" {
     try testing.expectEqualDeep(OperatorFunction{ .module = .Basics, .function = .append }, operatorFunction(.op_plus_plus));
 }
 
-test "`|>` inserts at the FIRST argument, `<|` at the last, through grouping parentheses" {
+test "`▷` inserts at the FIRST argument, `◁` at the last, through grouping parentheses" {
     try expectDecls(
         \\f g x =
         \\    ( x ▷ g 1, g ◁ x, x ▷ (g 1) ▷ g, g ◁ g ◁ x )
@@ -5085,7 +5085,7 @@ test "`_` becomes a lambda over the innermost enclosing application (§6.7)" {
     , &.{});
 }
 
-test "`<-` binds the rest of the block as the call's last argument (§6.7)" {
+test "`←` binds the rest of the block as the call's last argument (§6.7)" {
     try expectDecls(
         \\f s =
         \\    n = 1
@@ -6154,8 +6154,8 @@ test "fuzz: arbitrary bytes never panic and always lower in bounds" {
             try checkArbitrary(buf[0..len :0]);
         }
     }.testOne, .{ .corpus = &.{
-        "x = a |> b <| c\n",
-        "f x = let y = x? in λz -> z?\n",
+        "x = a ▷ b ◁ c\n",
+        "f x = let y = x? in λz → z?\n",
         "import A exposing (a, B)\ntype B = B\na = B\n",
         "x = \"a ${ b } \\u{41}\" ++ \\\\raw\n",
         "type alias R = { a : b }\nr = { r | a = .a }\n",

@@ -18,7 +18,8 @@ pub const Token = struct {
     tag: Tag,
     /// Byte offset of the token's first byte.
     start: u32,
-    /// 0-based line index; column is `start - line_starts[line] + 1`.
+    /// 0-based line index. The column is the code points from the line's
+    /// start (`diagnostic.column`, language.md §12.7).
     line: u32,
     /// `@intFromEnum(Symbol)` for the identifier-like tags (`isInterned`:
     /// lower, upper, qualified, dot_lower, whose field name is interned

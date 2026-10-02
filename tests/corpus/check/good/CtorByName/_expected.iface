@@ -3,7 +3,7 @@ module Colors
     Red
     Green
     Blue
-  value next : Color -> Color
+  value next : Color → Color
 module Paint
-  value name : Color -> String
+  value name : Color → String
   value warmest : Color

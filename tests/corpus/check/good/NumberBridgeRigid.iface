@@ -1,4 +1,4 @@
 module NumberBridgeRigid
-  value absolute : number -> number
-  value larger : number, number -> number
-  value sameNum : number, number -> Bool
+  value absolute : number → number
+  value larger : number, number → number
+  value sameNum : number, number → Bool

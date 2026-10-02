@@ -1,7 +1,7 @@
 module ListSpreadExhaustive
-  value endsTrue : List Bool -> Bool
-  value firstJust : Maybe (List Int) -> Int
-  value headOr : List Int -> Int
-  value initOf : List a -> List a
-  value inner : List a -> List a
-  value pairs : List Int -> Int
+  value endsTrue : List Bool → Bool
+  value firstJust : Maybe (List Int) → Int
+  value headOr : List Int → Int
+  value initOf : List a → List a
+  value inner : List a → List a
+  value pairs : List Int → Int

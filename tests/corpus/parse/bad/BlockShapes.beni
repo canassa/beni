@@ -6,7 +6,7 @@
 -- on one line. A body below `=` at the column of its own binding (29:5, B1):
 -- a block is right of the one it is in, so the line begins the next item and
 -- the `=` is left without a body.
-tuple : ( Int, Int )
+tuple : Int × Int
 tuple =
     (
         a = 1

@@ -1647,9 +1647,9 @@ fn schemaBump(comptime bump: []const u8) []const u8 {
     \\
     \\bumped : Conversion Int Int
     \\bumped =
-    \\    Schema.conversion (λn -> Ok (n +
+    \\    Schema.conversion (λn → Ok (n +
     ++ " " ++ bump ++
-        \\)) λn -> Ok n
+        \\)) λn → Ok n
         \\
         \\
         \\pub schema Age =
@@ -1711,7 +1711,7 @@ test "a custom eq's private body edit stops at the firewall, and the cached impo
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
-    const edited = try std.mem.replaceOwned(u8, arena, method_inner, "labelLeft == labelRight", "labelLeft /= labelRight");
+    const edited = try std.mem.replaceOwned(u8, arena, method_inner, "labelLeft == labelRight", "labelLeft ≠ labelRight");
     const warm = try methodEdit(&w, arena, edited);
     try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
     try testing.expectEqual(@as(u64, 1), warm.counters.checked);
@@ -3048,7 +3048,7 @@ fn wideImportProject(w: *World, gpa: std.mem.Allocator, n: usize, extra: []const
         \\
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -4202,7 +4202,7 @@ const k_cases = [_]EditCase{
         \\
         \\pub cmp : String
         \\cmp =
-        \\    if Red < Blue then "red<blue" else "red>=blue"
+        \\    if Red < Blue then "red<blue" else "red≥blue"
         \\
         ,
         .main =
@@ -4227,7 +4227,7 @@ const k_cases = [_]EditCase{
                 \\pub type C = Blue | Red
                 \\
                 ,
-                .expect = .{ .prints = "red>=blue\n" },
+                .expect = .{ .prints = "red≥blue\n" },
             },
         },
     },
@@ -4766,7 +4766,7 @@ fn writeMarkupProject(w: *World, card_class: []const u8) !void {
         \\import Html exposing (Html)
         \\
         \\
-        \\pub view : {{ title : String }} -> Html msg
+        \\pub view : {{ title : String }} → Html msg
         \\view props =
         \\    <h2 class="{s}">{{props.title}}</h2>
         \\

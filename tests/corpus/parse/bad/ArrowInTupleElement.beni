@@ -1,8 +1,8 @@
--- parse/bad: a tuple element may not contain a bare `->` (language.md §3,
--- Types). The comma in a type is the PARAMETER separator, so inside
--- parentheses the arrow is read as the parameter list's and the comma that
--- follows it has no reading at all. This is the example the message has to
--- carry, because it is the one that traps people.
+-- parse/bad: the old tuple-element trap of language.md §3 — a bare arrow in
+-- an element of `( … )`, read as the parameter list's — is a tuple type
+-- written with commas, so it is tuple_type_removed and not
+-- arrow_in_tuple_element (§12.8), its message the type written with `×`, the
+-- function-typed element and the inner tuple in parentheses (7:5, 7:6).
 type alias Handler =
     ((Int, Int) → Int, String)
 

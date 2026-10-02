@@ -1,4 +1,4 @@
 module NumberVariableNamedByKind
-  value f : a -> List number
+  value f : a → List number
   value g : List number
   value h : List number

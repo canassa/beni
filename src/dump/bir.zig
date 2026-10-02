@@ -624,7 +624,7 @@ const Dumper = struct {
                 try d.ref(data.lhs);
                 try d.w.print(" .{s} ", .{d.sym(m.name)});
                 try d.refList(.{ .start = m.args_start, .end = m.args_end });
-                if (m.origin.symbol()) |op| try d.w.print(" ({s})", .{op});
+                if (m.origin.spelling()) |op| try d.w.print(" ({s})", .{op});
             },
             .type_dispatch => {
                 const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);

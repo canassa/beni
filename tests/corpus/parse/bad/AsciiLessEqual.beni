@@ -1,0 +1,4 @@
+-- `<=` left the language for `≤` (language.md §12.7): ascii_symbol_removed
+-- (4:7).
+atMost a b =
+    a <= b

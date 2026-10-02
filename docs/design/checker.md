@@ -1334,7 +1334,7 @@ function type, is a specific rule** and every diagnostic and dump golden depends
 function-typed *parameter* is always parenthesised (`List a, (a -> b) -> List b`), a function-typed
 *result* never is (`a, b -> c -> d`, right-associative), and a 1-ary function over a tuple prints
 `(Int, Int) -> Int` so that it is distinguishable from the 2-ary `Int, Int -> Int`. The rule mirrors
-`language.md` §3's grammar notes. *Amended 2026-10-01 (`language.md` §12.8, specified, not built):*
+`language.md` §3's grammar notes. *Amended 2026-10-01 (`language.md` §12.8, built 2026-10-02):*
 from the Unicode enforce step the renderer prints `→` and a tuple type as `Int × String`,
 parenthesising a product only as a type argument, a constructor payload or another product's
 operand — so the 1-ary function over a pair prints `Int × Int → Int`. The same renderer produces
@@ -1435,7 +1435,7 @@ enclosing definition:
 ```
 The type annotation of `g` promises more than its body keeps:
 
-    g : a -> a
+    g : a → a
 
 The annotation says `a` can be ANY type, but the body ties `a` to a type that
 comes from `f`, the definition `g` is written inside. That type is fixed for
@@ -1464,7 +1464,7 @@ I am inferring a weird self-referential type for `y`:
 Here is my best effort at writing it down, with `a` standing for the whole
 type wherever it repeats inside itself:
 
-    a = a -> b
+    a = a → b
 
 Hint: the type would go on forever, so I gave up. This usually means a
 definition is missing an argument, or is being used with one argument too
@@ -1599,7 +1599,7 @@ mismatch keeps its layout and its place (the body) and replaces the arity hint w
 Hint: this annotation is in Elm's curried form. A beni function takes all
 of its arguments at once, and its type lists them before one arrow:
 
-    Int, Int -> Int
+    Int, Int → Int
 ```
 
 The indented line is the annotation's first *n* parameters, then its *n*th result, printed by

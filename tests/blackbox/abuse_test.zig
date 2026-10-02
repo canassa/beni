@@ -290,7 +290,7 @@ test "recursion THROUGH a hand-written parametric method still grows the native 
             \\    | E
             \\
             \\
-            \\build : Int, T -> T
+            \\build : Int, T → T
             \\build n acc =
             \\    if n == 0 then
             \\        acc
@@ -706,7 +706,7 @@ test "a deeply nested constructor pattern is bounded in every consumer of the tr
     for (0..2_100) |_| try out.writeAll("Just (");
     try out.writeAll("x");
     for (0..2_100) |_| try out.writeAll(")");
-    try out.writeAll(" ->\n            x\n");
+    try out.writeAll(" →\n            x\n");
     try w.write("Deep.beni", source.written());
 
     // ┌─────────────────────────────────────────┐
@@ -764,7 +764,7 @@ test "a pathologically nested expression is EMITTED without a stack overflow, an
     var source: std.ArrayList(u8) = .empty;
     defer source.deinit(testing.allocator);
     const gpa = testing.allocator;
-    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\nf : Int -> Int\nf x =\n    x + 1\n\n\nbig : Int\nbig =\n    ");
+    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\nf : Int → Int\nf x =\n    x + 1\n\n\nbig : Int\nbig =\n    ");
     for (0..depth) |_| try source.appendSlice(gpa, "f (");
     try source.appendSlice(gpa, "1");
     for (0..depth) |_| try source.append(gpa, ')');
@@ -805,7 +805,7 @@ test "functions nested past what Firefox parses are one nesting_too_deep from bu
     for ([_]usize{ 119, 120 }) |depth| {
         var source: std.ArrayList(u8) = .empty;
         try source.appendSlice(a, "import Node exposing (Program)\n\n\nxs : Int\nxs =\n    ");
-        for (0..depth) |i| try source.print(a, "(λx{d} -> ", .{i});
+        for (0..depth) |i| try source.print(a, "(λx{d} → ", .{i});
         try source.appendSlice(a, "1");
         for (0..depth) |_| try source.appendSlice(a, ") 1");
         try source.appendSlice(a, "\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt xs ]\n");
@@ -888,7 +888,7 @@ test "a wide project with a chain of imports checks identically at one worker an
             try body.writer.writeAll("pub step0 : Int → Int\nstep0 n =\n    n + 1\n");
         } else {
             try body.writer.print(
-                "import Chain.C{d} exposing (step{d})\n\n\npub step{d} : Int -> Int\nstep{d} n =\n    step{d} n\n",
+                "import Chain.C{d} exposing (step{d})\n\n\npub step{d} : Int → Int\nstep{d} n =\n    step{d} n\n",
                 .{ i - 1, i - 1, i, i, i - 1 },
             );
         }
@@ -1106,7 +1106,7 @@ test "a wide alias DAG checks on a safety build without re-walking its graph per
     try source.appendSlice(arena, "type alias A0 a b =\n    a × b\n\n\n");
     const depth = 24;
     for (1..depth + 1) |i| {
-        try source.print(arena, "type alias A{d} a b =\n    ( A{d} a b, A{d} (List a) b, A{d} a (List b) )\n\n\n", .{ i, i - 1, i - 1, i - 1 });
+        try source.print(arena, "type alias A{d} a b =\n    A{d} a b × A{d} (List a) b × A{d} a (List b)\n\n\n", .{ i, i - 1, i - 1, i - 1 });
     }
     try source.print(arena, "type Box\n    = Box (A{d} Int Int)\n", .{depth});
     try w.write("Dag.beni", source.items);
@@ -1142,7 +1142,7 @@ test "a flat let past what a summed budget allows is accepted: its bindings are 
     const gpa = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
-    try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n");
+    try src.appendSlice(gpa, "foo : Int → Int\nfoo x0 =\n");
     for (1..66) |i| {
         try src.print(gpa, "    x{d} =\n        x{d}", .{ i, i - 1 });
         for (0..64) |_| try src.appendSlice(gpa, " + 1");
@@ -1175,7 +1175,7 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
     const gpa = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
-    try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    a =\n        1\n\n    b =\n        x0");
+    try src.appendSlice(gpa, "foo : Int → Int\nfoo x0 =\n    a =\n        1\n\n    b =\n        x0");
     for (0..4_097) |_| try src.appendSlice(gpa, " + 1");
     try src.appendSlice(gpa, "\n    b\n");
     try w.write("Main.beni", src.items);
@@ -1283,7 +1283,7 @@ test "a row of glued siblings past the line's width formats to output linear in 
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
-    const item = "<For each={x.rows}>{λr -> <li>{r}</li>}</For>";
+    const item = "<For each={x.rows}>{λr → <li>{r}</li>}</For>";
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
     var want: std.ArrayList(u8) = .empty;
@@ -1355,15 +1355,15 @@ fn wideConstructorCase(variant: WideCaseVariant) !void {
         defer src.deinit(gpa);
         try src.appendSlice(gpa, "type T\n    = C0 Int\n");
         for (1..n) |i| try src.print(gpa, "    | C{d} Int\n", .{i});
-        try src.appendSlice(gpa, "\n\nf : T -> Int\nf t =\n    case t of\n");
+        try src.appendSlice(gpa, "\n\nf : T → Int\nf t =\n    case t of\n");
         const listed: usize = if (variant == .missing_last) n - 1 else n;
         for (0..listed) |i| switch (variant) {
-            .literals_then_default => try src.print(gpa, "        C{d} 0 ->\n            0\n\n", .{i}),
-            else => try src.print(gpa, "        C{d} x ->\n            x\n\n", .{i}),
+            .literals_then_default => try src.print(gpa, "        C{d} 0 →\n            0\n\n", .{i}),
+            else => try src.print(gpa, "        C{d} x →\n            x\n\n", .{i}),
         };
         switch (variant) {
-            .redundant => try src.appendSlice(gpa, "        C7 y ->\n            y\n"),
-            .literals_then_default => try src.appendSlice(gpa, "        _ ->\n            1\n"),
+            .redundant => try src.appendSlice(gpa, "        C7 y →\n            y\n"),
+            .literals_then_default => try src.appendSlice(gpa, "        _ →\n            1\n"),
             .every, .missing_last => {},
         }
         try w.write("Main.beni", src.items);

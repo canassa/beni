@@ -74,7 +74,7 @@ run only on files the `beni fmt --check` gate holds canonical. §11.4–§11.5 a
 six flags are mutually exclusive. And `beni fmt --check` over the repository joins `zig build
 gates` (§11.6).
 
-*Added 2026-10-01 (specified, not built):* one more hidden flag, **`--migrate-unicode`**, an edit
+*Added 2026-10-01 (built 2026-10-02):* one more hidden flag, **`--migrate-unicode`**, an edit
 that writes the Unicode notation (`language.md` §12.7–§12.8) — every ASCII arrow, comparison,
 pipe and spread as its symbol, every parenthesised tuple type with `×`. §11.8 is its contract; it
 is mutually exclusive with the others.
@@ -1643,7 +1643,7 @@ commit, whose diff outside `core/Debug.beni` is mechanical.
 
 ### 11.8 Unicode notation in the front end
 
-*Added 2026-10-01; taught 2026-10-02* (the *As built* note below). How the lexer, parser, formatter and `beni fmt
+*Added 2026-10-01; built 2026-10-02* (the *As built* notes below). How the lexer, parser, formatter and `beni fmt
 --migrate-unicode` build [`language.md`](language.md) §12.7–§12.9, in the order
 [`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 18–20 give.
 
@@ -1750,3 +1750,29 @@ commit: core's doc comments (`--|` examples, which the docs test compiles), code
 sources and generators, and the normative examples of `docs/design/`. The compiler's own message
 texts and the type renderer switch in slice 20, with the removal codes (`language.md` §12.9). Prose that names the ASCII spelling on purpose — this section, the removal
 messages, `language.md` §12.7's tables — is not rewritten.
+
+*As built, the migration (2026-10-02):* the flag over every tracked `.beni` file and the `fmt/`
+goldens, then plain `beni fmt` over the gate's scope — 1 413 files; emitted JavaScript
+byte-identical for every `run/` and `browser/` program in development without source maps and in
+release, and every file's BIR unchanged. The hand pass that followed, by scripts whose output was
+reviewed: core's and the platforms' comments, the beni programs in Zig tests (each through the
+flag, so only what parses moves), the generators (`bench/gen.zig`, the compare printer, `beni
+new`'s templates, the depth sweep), the design documents' code blocks (a block that parses through
+the flag, a fragment token by token through the lexer), and the fixtures that do not parse, by
+their tokens. Two message texts read source by matching `->` and `|>`, and were fixed first: a
+non-keyed `Show`'s suggested `case`, and the mixed-pipes message. Compiler messages that show code
+switched in the enforce step with the renderer, Z12's order, not with this pass.
+
+*As built, the enforce step (2026-10-02):* the parser reports `ascii_symbol_removed` in one pass
+over the lexer's tags after the parse, so every occurrence is reported whatever the parse made of
+it, and a stray spread's `unexpected_token` at the same token becomes this report.
+`tuple_type_removed` is reported where the parenthesised tuple type is built; its message writes
+the product from the tuple's source, a nested tuple in parentheses and a function-typed element
+with them, and parenthesises the whole where it is a type argument, a constructor's payload,
+`sync`'s operand or an element of an enclosing tuple (`Parse.type_argument`). The type renderer
+prints `→` and `×` (`Render.Prec.operand` parenthesises a product's function or product operand),
+`Bir.WellKnown.spelling` and every message that shows code use the symbols, and the dumps' own
+notations — the BIR dump's `lambda [...] -> %n`, the graph dump's edges — stay ASCII. A source
+map's columns no longer rescan a line from its start when the marks on it come out of order: a
+file that holds a symbol is no longer all ASCII, and one line of 4 097 marks went over the test
+budget that way.

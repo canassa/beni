@@ -532,27 +532,17 @@ pub const WellKnown = enum(u8) {
     gt,
     ge,
 
-    /// How the operator is written, or null for a dot-call.
+    /// How the operator is written (language.md §12.7), or null for a
+    /// dot-call.
     pub fn spelling(w: WellKnown) ?[]const u8 {
         return switch (w) {
             .none => null,
             .eq => "==",
-            .neq => "/=",
-            .lt => "<",
-            .le => "<=",
-            .gt => ">",
-            .ge => ">=",
-        };
-    }
-
-    /// The operator's symbol, which the dumps print whichever spelling was
-    /// read (language.md §12.7), or null for a dot-call.
-    pub fn symbol(w: WellKnown) ?[]const u8 {
-        return switch (w) {
             .neq => "≠",
+            .lt => "<",
             .le => "≤",
+            .gt => ">",
             .ge => "≥",
-            else => w.spelling(),
         };
     }
 

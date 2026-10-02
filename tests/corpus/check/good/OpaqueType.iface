@@ -1,4 +1,4 @@
 module OpaqueType
   opaque type Counter
-  value bump : Counter -> Counter
+  value bump : Counter → Counter
   value zero : Counter

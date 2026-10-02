@@ -2,132 +2,132 @@ module Aliased
   value compared : Order
   value count : Message.Type
   value counted : Int
-  value encodedCase : Message.Encoded -> Bool
+  value encodedCase : Message.Encoded → Bool
   value encodedCount : Message.Encoded
-  value programCase : Message.Type -> Bool
+  value programCase : Message.Type → Bool
   value user : User.Type
 module Conversions
   value convert : Conversion Int String
 module Exposed
-  value encodedCase : Message.Encoded -> Bool
+  value encodedCase : Message.Encoded → Bool
   value printed : Result (List Issue) String
-  value programCase : Message.Type -> Bool
+  value programCase : Message.Type → Bool
   value user : User.Type
 module Generic
   value numberPage : Schema (Page.Encoded Int) (Page.Type String)
   value parsed : Result (List Issue) (Page.Type TextId.Type)
-  value parsedWith : Options, String -> Result (List Issue) (Page.Type String)
+  value parsedWith : Options, String → Result (List Issue) (Page.Type String)
   value printed : Result (List Issue) String
-  value printedWith : Options, Page.Type String -> Result (List Issue) String
+  value printedWith : Options, Page.Type String → Result (List Issue) String
   value textPage : Schema (Page.Encoded String) (Page.Type String)
 module MixedDependency
   schema Cyclic
     type Type : String
     type Encoded : Int
-    value schema : () -> Schema Cyclic.Encoded Cyclic.Type
-    value parse : String -> Result (List Issue) Cyclic.Type
-    value print : Cyclic.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) Cyclic.Type
-    value printWith : Options, Cyclic.Type -> Result (List Issue) String
+    value schema : () → Schema Cyclic.Encoded Cyclic.Type
+    value parse : String → Result (List Issue) Cyclic.Type
+    value print : Cyclic.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) Cyclic.Type
+    value printWith : Options, Cyclic.Type → Result (List Issue) String
 module Models
   schema AnnotatedId
     type Type : String
     type Encoded : Int
-    value schema : () -> Schema AnnotatedId.Encoded AnnotatedId.Type
-    value parse : String -> Result (List Issue) AnnotatedId.Type
-    value print : AnnotatedId.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) AnnotatedId.Type
-    value printWith : Options, AnnotatedId.Type -> Result (List Issue) String
+    value schema : () → Schema AnnotatedId.Encoded AnnotatedId.Type
+    value parse : String → Result (List Issue) AnnotatedId.Type
+    value print : AnnotatedId.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) AnnotatedId.Type
+    value printWith : Options, AnnotatedId.Type → Result (List Issue) String
   schema Audit
     type Type : { at : Nullable Int }
     type Encoded : { at : Nullable Int }
-    value schema : () -> Schema Audit.Encoded Audit.Type
-    value parse : String -> Result (List Issue) Audit.Type
-    value print : Audit.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) Audit.Type
-    value printWith : Options, Audit.Type -> Result (List Issue) String
+    value schema : () → Schema Audit.Encoded Audit.Type
+    value parse : String → Result (List Issue) Audit.Type
+    value print : Audit.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) Audit.Type
+    value printWith : Options, Audit.Type → Result (List Issue) String
   schema Finite
     type Type : Float
     type Encoded : Float
-    value schema : () -> Schema Finite.Encoded Finite.Type
-    value parse : String -> Result (List Issue) Finite.Type
-    value print : Finite.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) Finite.Type
-    value printWith : Options, Finite.Type -> Result (List Issue) String
+    value schema : () → Schema Finite.Encoded Finite.Type
+    value parse : String → Result (List Issue) Finite.Type
+    value print : Finite.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) Finite.Type
+    value printWith : Options, Finite.Type → Result (List Issue) String
   schema ImportedId
     type Type : String
     type Encoded : Int
-    value schema : () -> Schema ImportedId.Encoded ImportedId.Type
-    value parse : String -> Result (List Issue) ImportedId.Type
-    value print : ImportedId.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) ImportedId.Type
-    value printWith : Options, ImportedId.Type -> Result (List Issue) String
+    value schema : () → Schema ImportedId.Encoded ImportedId.Type
+    value parse : String → Result (List Issue) ImportedId.Type
+    value print : ImportedId.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) ImportedId.Type
+    value printWith : Options, ImportedId.Type → Result (List Issue) String
   schema Message
     type Type : Message.Type
     type Encoded : Message.Encoded
-    value schema : () -> Schema Message.Encoded Message.Type
-    value parse : String -> Result (List Issue) Message.Type
-    value print : Message.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) Message.Type
-    value printWith : Options, Message.Type -> Result (List Issue) String
-    ctor type.Text/1 : { value : String } -> Message.Type
-    ctor type.Count/1 : { value : Int } -> Message.Type
-    ctor encoded.Text/1 : { value : String } -> Message.Encoded
-    ctor encoded.Count/1 : { value : Int } -> Message.Encoded
+    value schema : () → Schema Message.Encoded Message.Type
+    value parse : String → Result (List Issue) Message.Type
+    value print : Message.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) Message.Type
+    value printWith : Options, Message.Type → Result (List Issue) String
+    ctor type.Text/1 : { value : String } → Message.Type
+    ctor type.Count/1 : { value : Int } → Message.Type
+    ctor encoded.Text/1 : { value : String } → Message.Encoded
+    ctor encoded.Count/1 : { value : Int } → Message.Encoded
   schema NumberId
     type Type : String
     type Encoded : Int
-    value schema : () -> Schema NumberId.Encoded NumberId.Type
-    value parse : String -> Result (List Issue) NumberId.Type
-    value print : NumberId.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) NumberId.Type
-    value printWith : Options, NumberId.Type -> Result (List Issue) String
+    value schema : () → Schema NumberId.Encoded NumberId.Type
+    value parse : String → Result (List Issue) NumberId.Type
+    value print : NumberId.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) NumberId.Type
+    value printWith : Options, NumberId.Type → Result (List Issue) String
   schema OnlyNull
     type Type : Nullable Never
     type Encoded : Nullable Never
-    value schema : () -> Schema OnlyNull.Encoded OnlyNull.Type
-    value parse : String -> Result (List Issue) OnlyNull.Type
-    value print : OnlyNull.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) OnlyNull.Type
-    value printWith : Options, OnlyNull.Type -> Result (List Issue) String
+    value schema : () → Schema OnlyNull.Encoded OnlyNull.Type
+    value parse : String → Result (List Issue) OnlyNull.Type
+    value print : OnlyNull.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) OnlyNull.Type
+    value printWith : Options, OnlyNull.Type → Result (List Issue) String
   schema Page a
     type Type : { item : a }
     type Encoded : { item : a }
-    value schema : Schema a b -> Schema (Page.Encoded a) (Page.Type b)
-    value parse : Schema a b, String -> Result (List Issue) (Page.Type b)
-    value print : Schema a b, Page.Type b -> Result (List Issue) String
-    value parseWith : Schema a b, Options, String -> Result (List Issue) (Page.Type b)
-    value printWith : Schema a b, Options, Page.Type b -> Result (List Issue) String
+    value schema : Schema a b → Schema (Page.Encoded a) (Page.Type b)
+    value parse : Schema a b, String → Result (List Issue) (Page.Type b)
+    value print : Schema a b, Page.Type b → Result (List Issue) String
+    value parseWith : Schema a b, Options, String → Result (List Issue) (Page.Type b)
+    value printWith : Schema a b, Options, Page.Type b → Result (List Issue) String
   schema TextId
     type Type : String
     type Encoded : String
-    value schema : () -> Schema TextId.Encoded TextId.Type
-    value parse : String -> Result (List Issue) TextId.Type
-    value print : TextId.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) TextId.Type
-    value printWith : Options, TextId.Type -> Result (List Issue) String
+    value schema : () → Schema TextId.Encoded TextId.Type
+    value parse : String → Result (List Issue) TextId.Type
+    value print : TextId.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) TextId.Type
+    value printWith : Options, TextId.Type → Result (List Issue) String
   schema Tree
     type Type : Tree.Type
     type Encoded : Tree.Encoded
-    value schema : () -> Schema Tree.Encoded Tree.Type
-    value parse : String -> Result (List Issue) Tree.Type
-    value print : Tree.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) Tree.Type
-    value printWith : Options, Tree.Type -> Result (List Issue) String
-    ctor type.Leaf/1 : { value : Int } -> Tree.Type
-    ctor type.Branch/1 : { children : List Tree.Type } -> Tree.Type
-    ctor encoded.Leaf/1 : { value : Int } -> Tree.Encoded
-    ctor encoded.Branch/1 : { children : List Tree.Encoded } -> Tree.Encoded
+    value schema : () → Schema Tree.Encoded Tree.Type
+    value parse : String → Result (List Issue) Tree.Type
+    value print : Tree.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) Tree.Type
+    value printWith : Options, Tree.Type → Result (List Issue) String
+    ctor type.Leaf/1 : { value : Int } → Tree.Type
+    ctor type.Branch/1 : { children : List Tree.Type } → Tree.Type
+    ctor encoded.Leaf/1 : { value : Int } → Tree.Encoded
+    ctor encoded.Branch/1 : { children : List Tree.Encoded } → Tree.Encoded
   schema User
     type Type : { email : Presence String, id : Int, nickname : Presence (Nullable String) }
     type Encoded : { email : Presence String, id : Int, nickname : Presence (Nullable String) }
-    value schema : () -> Schema User.Encoded User.Type
-    value parse : String -> Result (List Issue) User.Type
-    value print : User.Type -> Result (List Issue) String
-    value parseWith : Options, String -> Result (List Issue) User.Type
-    value printWith : Options, User.Type -> Result (List Issue) String
-  value addCount : Message.Type, Int -> Int
-  value compare : Message.Type, Message.Type -> Order
+    value schema : () → Schema User.Encoded User.Type
+    value parse : String → Result (List Issue) User.Type
+    value print : User.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) User.Type
+    value printWith : Options, User.Type → Result (List Issue) String
+  value addCount : Message.Type, Int → Int
+  value compare : Message.Type, Message.Type → Order
   value finiteEncoded : Finite.Encoded
   value finiteProgram : Finite.Type
   value hiddenInt : Hidden.Type Int
@@ -135,8 +135,8 @@ module Models
   value nullProgram : OnlyNull.Type
 module Qualified
   value description : Schema User.Encoded User.Type
-  value encodedCase : Message.Encoded -> Bool
+  value encodedCase : Message.Encoded → Bool
   value escapedPrivateEndpoint : { value : Int }
   value parsed : Result (List Issue) User.Type
-  value programCase : Message.Type -> Bool
+  value programCase : Message.Type → Bool
   value user : User.Type

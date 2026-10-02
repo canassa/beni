@@ -1,7 +1,7 @@
 -- Two spellings that are no markup (frontend.md §9.5): `<-div>`, where
 -- `<-` is one token and no tag name begins with `-` (6:5), and `-<b />`,
 -- where negation takes a number, not markup (10:6). Each is one
--- unexpected_token.
+-- unexpected_token; `<-` is also ascii_symbol_removed (6:5, §12.7).
 dash =
     <-div>
 

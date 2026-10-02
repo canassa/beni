@@ -1,6 +1,6 @@
 module MutualGroupFiveMembers
-  value m1 : number, ( String, Bool ) -> String
-  value m2 : Bool, number, ( String, Bool ) -> String
-  value m3 : ( String, Bool ), number -> String
-  value m4 : String, Bool, number, ( String, Bool ) -> String
-  value m5 : ( String, Bool ), String, number, Bool -> String
+  value m1 : number, String × Bool → String
+  value m2 : Bool, number, String × Bool → String
+  value m3 : String × Bool, number → String
+  value m4 : String, Bool, number, String × Bool → String
+  value m5 : String × Bool, String, number, Bool → String

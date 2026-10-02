@@ -1,0 +1,10 @@
+-- `<-` left the language for `←` (language.md §12.7): ascii_symbol_removed,
+-- whose message adds that `x < -1` is how a comparison with a negative number
+-- is written (9:7).
+with x k =
+    k x
+
+
+twice n =
+    a <- with n
+    a + a
