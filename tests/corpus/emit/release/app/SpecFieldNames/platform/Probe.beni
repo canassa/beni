@@ -1,0 +1,28 @@
+--! Records handed to JavaScript (`backend.md` §9, *Field names are decided
+--! after specialisation*): one cast only a branch nothing takes reaches,
+--! and one every call makes.
+
+import Js
+
+
+-- Nothing sets it: every branch that reads it is cut.
+probing : Js.Ref Bool
+probing = Js.ref False
+
+
+-- Called twice, so lowering keeps it a function of its own, and only
+-- where `probing` is read: specialisation drops it, and with it its cast
+-- of `{ label, size }` and its two reads by name.
+probe : String, Int → String
+probe label size =
+    o = Js.from { label = label, size = size }
+    Js.to (Js.get o "label") ++ String.fromInt (Js.to (Js.get o "size"))
+
+
+pub describe : String, Int → String
+describe label size = if Js.read probing then probe label size ++ probe label 0 else label
+
+
+-- Always written: its cast keeps `title` as JavaScript reads it.
+pub title : { title : String } → String
+title note = Js.to (Js.get (Js.from note) "title")

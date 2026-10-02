@@ -1,0 +1,43 @@
+-- A field's name is decided after specialisation (`backend.md` §9, *Field
+-- names are decided after specialisation*; `platform/Probe.beni`): `tag`
+-- and `count`, cast only by a function specialisation cuts, are renamed in
+-- a release build; `label`, cast by `Probe.show`, which specialisation
+-- writes where it is called, keeps its name, so the sibling still reads
+-- it. Both builds print the same lines.
+import Node
+import Probe
+
+
+type alias Item =
+    label : String
+    size : Int
+
+
+type alias Thing =
+    tag : String
+    count : Int
+
+
+item : String, Int → Item
+item label size = { label = label, size = size }
+
+
+thing : String, Int → Thing
+thing tag count = { tag = tag, count = count }
+
+
+shown : Item → String
+shown i = Probe.show i ++ " " ++ String.fromInt i.size
+
+
+told : Thing → String
+told t = Probe.describe t.tag t.count ++ " " ++ String.fromInt t.count
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.map [ item "a" 1, item "bb" 2 ] shown
+            ++ List.map [ thing "x" 3, thing "yy" 4 ] told
+            ++ [ Probe.show { label = "c", size = 5 } ]
+        )

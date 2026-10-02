@@ -5017,6 +5017,43 @@ modules, a record passed through a test platform's `foreign` and read by its sib
 golden of the artifact; the whole `run/` and `browser/` corpus's release pass is the differential
 test, and the determinism test runs `--release` at `--jobs=1` and `--jobs=8`.
 
+**Field names are decided after specialisation** (*amended 2026-10-02*). Both pins above were
+taken from more than the build prints. Whole-program specialisation (*Whole-program
+specialisation*, below) rewrites each module's `JsIr` in place and cuts declarations nothing
+reaches any more, but the boundary was closed from elimination's live set, before it ran, and the
+collision scan read every node of the IR, including those a fold or a cut left unreachable. So a
+cast or a `Js.get` the program no longer contains still pinned a field: the fiber runtime's
+`newFiber` builds `Js.from { …, scope = … }` and reads `Js.get fiber "scope"`, and on a page that
+starts no fiber both are cut, yet `Tea`'s own `scope` field kept its five letters. Two changes:
+
+- **The collision scan walks what the module's statements reach** — every child of every statement,
+  each node once, the walk `Spec.peephole` takes — rather than the node array.
+- **The boundary's pins are closed a second time after specialisation**, with the declarations it
+  cut left out. A live declaration is *gone* when every body lowering wrote for it — its own and,
+  when live, its suspendable twin — was a top-level declaration (or an import) before the pass and
+  is not after, and **the pass copied nothing out of it into another statement**: slice 5's
+  function called once, slice 8's small function or assignment, slice 9's producer
+  (`Spec.Stats.copied`; a body reached through a property, whose declaration the pass cannot name,
+  marks its whole module instead). A copy carries the cast with it — a small `show item = read
+  (Js.from item)` written where each call is still hands `item` to JavaScript — so a declaration
+  copied from keeps its rows. A body lowering already wrote into its one caller is not a
+  declaration before the pass, so it is never gone, and its caller's rows are its own. Only the
+  pins are recomputed: integer tags stay as lowering wrote them, and a type that stops being seen
+  keeps its string tags.
+
+What was pinned is a superset of what is pinned now, so no field JavaScript reads is renamed; the
+walk and the second closing are functions of the specialised IR, in module order (rule 5).
+Measured (release, brotli, the whole bundle, against the build before): the `browser-tea element`
+page 1 215 → **1 207** (`scope`, and the counts of fields only cut code named); `bench/size.mjs`'s
+total 741 444 → 741 381, 19 lines smaller and 9 larger — the counts that rank the spellings now
+count printed names only, which reshuffles which field gets which letter (the effects page +4,
+`ApiAndRoutes` +24, `run/SchemaDeclModules` +31; `application` −15, `run/SchemaDeclTagged` −29).
+Fixtures: `emit/release/app/SpecFieldNames` (a record only a cut function casts and reads by name is
+renamed; one a kept function casts keeps its name) — red against the build before;
+`run/SpecializeFieldNames` (the same, and a small function whose cast its copies carry to a sibling
+that reads the field by name: red when copies are not counted, the sibling then reading
+`undefined`).
+
 #### A type of one constructor with one field is its field
 
 *Added 2026-10-02.* `Duration` is `Duration Int`, `Dict` is `Dict (Tree k v)`, `Cmd` is `Cmd (List

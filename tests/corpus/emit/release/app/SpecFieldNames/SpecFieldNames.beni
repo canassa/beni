@@ -1,0 +1,34 @@
+-- emit: a field's name is decided after specialisation (`backend.md` §9,
+-- *Field names are decided after specialisation*; `platform/Probe.beni`):
+--
+--   * `label` and `size`, which only `probe` casts to JavaScript and reads
+--     there by name, get short names: `probe` is cut with the branch that
+--     called it;
+--   * `title`, which `Probe.title` casts on every call, keeps its name.
+import Node
+import Probe
+
+
+type alias Item =
+    label : String
+    size : Int
+
+
+type alias Note =
+    title : String
+
+
+make : String, Int → Item
+make label size = { label = label, size = size }
+
+
+line : Item → String
+line item = Probe.describe item.label item.size ++ " " ++ String.fromInt item.size
+
+
+heading : String → String
+heading text = Probe.title { title = text }
+
+
+main : Node.Program
+main = Node.printLines (List.map [ make "a" 1, make "bb" 2 ] line ++ List.map [ "x", "y" ] heading)

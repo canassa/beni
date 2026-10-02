@@ -1,0 +1,32 @@
+--! Records handed to JavaScript (`backend.md` §9, *Field names are decided
+--! after specialisation*): a cast only a branch nothing takes reaches, and
+--! one a small function makes, which specialisation writes where it is
+--! called.
+
+import Js
+
+
+-- Nothing sets it: every branch that reads it is cut.
+probing : Js.Ref Bool
+probing = Js.ref False
+
+
+--| The sibling reads `v.label` of whatever it is handed.
+foreign pure readLabel : Js.Value → String
+
+
+--| Small: written where each call is, and dropped. The cast lives on in
+--| the copies, so the sibling still finds `label`.
+pub show : { label : String, size : Int } → String
+show item = readLabel (Js.from item)
+
+
+-- Called twice, only where `probing` is read: dropped with its cast.
+probe : String, Int → String
+probe tag count =
+    o = Js.from { tag = tag, count = count }
+    Js.to (Js.get o "tag") ++ String.fromInt (Js.to (Js.get o "count"))
+
+
+pub describe : String, Int → String
+describe tag count = if Js.read probing then probe tag count ++ probe tag 0 else tag

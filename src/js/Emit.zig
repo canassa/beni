@@ -2009,22 +2009,32 @@ const Emitter = struct {
     /// §9, *Item 4, taken up*: every record field's short spelling, from the
     /// optimised trees of every module, in module order. A field keeps its
     /// text when the boundary pins it or when the build also writes it as a
-    /// property that is not a field — one scan of every `member` and
-    /// `property` node.
+    /// property that is not a field — one walk of every `member` and
+    /// `property` node the module's statements still reach. Specialisation
+    /// rewrites in place and leaves what it cut in the node array, where a
+    /// read it removed would still pin a field (§9, *Field names are
+    /// decided after specialisation*).
     fn assignFields(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) !void {
         e.field_table = null;
         const boundary = &(e.boundary orelse return);
         var uses: std.StringArrayHashMapUnmanaged(u32) = .empty;
         var plain: std.StringHashMapUnmanaged(void) = .empty;
+        var stack: std.ArrayList(JsIr.Node.Index) = .empty;
         for (todo) |i| {
             const slot = &slots[i];
             const lowered = &(slot.lowered orelse continue);
             if (lowered.diagnostics.len != 0) continue;
             const ir = &lowered.ir;
-            const tags = ir.nodes.items(.tag);
-            const datas = ir.nodes.items(.data);
-            for (tags, datas) |tag, d| {
-                const index: JsIr.NameIndex = switch (tag) {
+            // Each node once: a fold may leave two parents sharing a child.
+            var seen: std.DynamicBitSetUnmanaged = try .initEmpty(e.scratch, ir.nodes.len);
+            stack.clearRetainingCapacity();
+            try JsIr.pushOperandSlice(e.scratch, &stack, ir.extraSlice(ir.body, JsIr.Node.Index));
+            while (JsIr.popOperand(&stack)) |node| {
+                if (seen.isSet(node.int())) continue;
+                seen.set(node.int());
+                try Spec.pushChildren(e.scratch, ir, node, &stack);
+                const d = ir.data(node);
+                const index: JsIr.NameIndex = switch (ir.tag(node)) {
                     .member => @enumFromInt(d.rhs),
                     .property => @enumFromInt(d.lhs),
                     else => continue,
@@ -2841,6 +2851,12 @@ const Emitter = struct {
         const prop_len = try e.scratch.alloc(u8, props.count());
         var props_it = props.iterator();
         while (props_it.next()) |kv| prop_len[kv.value_ptr.*] = @intCast(@min(kv.key_ptr.len, 255));
+        // Which whole-program names a module declares at its top level
+        // before the pass: what was dropped is what declared them before
+        // and does not after (`refineBoundary`).
+        const declared_before = try e.scratch.alloc(bool, ids.count());
+        @memset(declared_before, false);
+        for (modules.items) |mod| topDeclared(mod.ir, mod.global, declared_before);
         const stats = try Spec.run(e.gpa, e.scratch, .{
             .modules = modules.items,
             .globals = ids.count(),
@@ -2871,6 +2887,110 @@ const Emitter = struct {
             slot.unobserved = tables.unobserved.items;
             slot.mutable = tables.mutable.items;
         }
+        try e.refineBoundary(slots, todo, modules.items, &ids, declared_before, stats);
+    }
+
+    /// Every whole-program name `ir` declares at its top level, or imports:
+    /// set in `out`, by the ids `global` gives its names.
+    fn topDeclared(ir: *const JsIr, global: []const u32, out: []bool) void {
+        for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+            const d = ir.data(stmt);
+            switch (ir.tag(stmt)) {
+                .const_decl, .let_decl, .func_decl, .gen_decl => {
+                    const n: JsIr.NameIndex = @enumFromInt(d.lhs);
+                    if (n.unwrap()) |at| if (at < global.len and global[at] < out.len) {
+                        out[global[at]] = true;
+                    };
+                },
+                .import_stmt => {
+                    const imp = ir.extraData(@enumFromInt(d.lhs), JsIr.Import);
+                    for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                        if (spec.local.unwrap()) |at| if (at < global.len and global[at] < out.len) {
+                            out[global[at]] = true;
+                        };
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    /// §9, *Field names are decided after specialisation*: the boundary's
+    /// pinned fields again, from the declarations whose code is still in
+    /// the output. A declaration is gone when every body lowering wrote for
+    /// it — its own and its suspendable twin — was declared before the pass
+    /// and is not after, and the pass copied nothing out of it into another
+    /// statement (`Spec.Stats.copied`): then nothing it cast to or from
+    /// JavaScript is printed, and the fields only it pinned may be renamed.
+    /// Integer tags stay as lowering wrote them.
+    fn refineBoundary(
+        e: *Emitter,
+        slots: []ModuleSlot,
+        todo: []const u32,
+        modules: []const Spec.Module,
+        ids: *const std.AutoHashMapUnmanaged(Rename.Globals.Key, u32),
+        declared_before: []const bool,
+        stats: Spec.Stats,
+    ) !void {
+        const boundary = &(e.boundary orelse return);
+        const declared_after = try e.scratch.alloc(bool, declared_before.len);
+        @memset(declared_after, false);
+        for (modules) |mod| topDeclared(mod.ir, mod.global, declared_after);
+        const count = e.graph().count();
+        const gone = try e.scratch.alloc(std.DynamicBitSetUnmanaged, count);
+        for (gone) |*g| g.* = .{};
+        var any = false;
+        var k: usize = 0;
+        for (todo) |i| {
+            const lowered = &(slots[i].lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            defer k += 1;
+            if (k < stats.copied_modules.len and stats.copied_modules[k]) continue;
+            const m: Graph.Index = @enumFromInt(i);
+            const b = e.bir(m);
+            const module = e.graph().moduleName(m).toOptional();
+            gone[i] = try .initEmpty(e.scratch, b.decls.len);
+            for (b.decls, 0..) |d, di| {
+                const direct = e.live.decl(m, di);
+                const twin = e.live.twin(m, di);
+                if (!direct and !twin) continue;
+                const base = b.symbol(d.name);
+                const dropped = direct_body: {
+                    if (!direct) break :direct_body true;
+                    const g = ids.get(Rename.Globals.key(.{ .module = module, .base = base, .tag = JsIr.Name.no_tag })) orelse break :direct_body false;
+                    break :direct_body declared_before[g] and !declared_after[g] and !(g < stats.copied.len and stats.copied[g]);
+                } and twin_body: {
+                    if (!twin) break :twin_body true;
+                    const spelled = try std.fmt.allocPrint(e.scratch, "{s}$s", .{e.session.interner.slice(base)});
+                    const twin_base = try e.session.interner.getOrPut(e.gpa, spelled);
+                    const g = ids.get(Rename.Globals.key(.{ .module = module, .base = twin_base, .tag = JsIr.Name.no_tag })) orelse break :twin_body false;
+                    break :twin_body declared_before[g] and !declared_after[g] and !(g < stats.copied.len and stats.copied[g]);
+                };
+                if (dropped) {
+                    gone[i].set(di);
+                    any = true;
+                }
+            }
+        }
+        if (!any) return;
+        const birs = try e.scratch.alloc(*const Bir, count);
+        const tables = try e.scratch.alloc(*const Dispatch, count);
+        for (birs, tables, 0..) |*bb, *dt, i| {
+            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            bb.* = e.bir(m);
+            dt.* = e.dispatchOf(m);
+        }
+        const refined = try Fields.close(.{
+            .arena = e.scratch,
+            .graph = e.graph(),
+            .birs = birs,
+            .dispatch = tables,
+            .live = &e.live,
+            .types = &e.session.checked.types,
+            .interner = &e.session.interner,
+            .gone = gone,
+        }) orelse return;
+        boundary.pinned = refined.pinned;
     }
 
     /// §9 item 2's whole-program namespace, numbered serially and in module

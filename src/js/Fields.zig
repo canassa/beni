@@ -76,6 +76,17 @@ pub const Input = struct {
     live: *const Reach.Result,
     types: *const Types,
     interner: *const InternPool.Global,
+    /// Per module, by `Graph.Index`, one bit per declaration: specialisation
+    /// left none of its bodies in the output, nor a copy of one, so what it
+    /// casts JavaScript no longer sees (`backend.md` §9, *Field names are
+    /// decided after specialisation*). Empty before specialisation.
+    gone: []const std.DynamicBitSetUnmanaged = &.{},
+
+    fn alive(in: Input, m: Graph.Index, decl: usize) bool {
+        if (m.int() >= in.gone.len) return true;
+        const bits = in.gone[m.int()];
+        return decl >= bits.bit_length or !bits.isSet(decl);
+    }
 };
 
 /// Close the boundary (see the header). Null when nothing may be renamed
@@ -93,13 +104,14 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
     for (in.birs, 0..) |bir, mi| {
         const m: Graph.Index = @enumFromInt(@as(u32, @intCast(mi)));
         for (bir.decls, 0..) |d, i| {
-            if (!in.live.decl(m, i)) continue;
+            if (!in.live.decl(m, i) or !in.alive(m, i)) continue;
             if (d.kind == .foreign_value) if (d.annotation.unwrap()) |annotation| try walk.typeAt(m, bir, annotation);
         }
         for (in.dispatch[mi].boundary) |row| {
             // Either body: a declaration that may suspend may be written
             // only as its suspendable twin, which casts what it casts.
             if (!in.live.decl(m, row.decl) and !in.live.twin(m, row.decl)) continue;
+            if (!in.alive(m, row.decl)) continue;
             switch (row.kind) {
                 .field => try walk.pin(in.interner.slice(@enumFromInt(row.value))),
                 .type => try walk.observe(@enumFromInt(row.value)),

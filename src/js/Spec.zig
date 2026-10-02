@@ -316,6 +316,14 @@ pub const Stats = struct {
     /// Statement lists a list sweep (`srList`) copied to rewrite, of those
     /// holding a statement it could act on (`listActs`).
     lists_examined: u64 = 0,
+    /// Per whole-program id of `Input.globals`: a body was copied out of
+    /// that top-level declaration into another statement (slices 5, 8 and
+    /// 9), so what it wrote may live on where it is not. Per module: a body
+    /// was copied out of one of its statements the pass cannot name. Field
+    /// names are decided after the pass from what it left
+    /// (`backend.md` §9, *Field names are decided after specialisation*).
+    copied: []const bool = &.{},
+    copied_modules: []const bool = &.{},
 };
 
 pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
@@ -352,6 +360,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     // only with every argument, has seen them all.
     try s.trimArguments();
     try s.finish();
+    s.stats.copied = s.copied[0..@min(s.copied.len, in.globals)];
+    s.stats.copied_modules = s.copied_modules;
     return s.stats;
 }
 
@@ -545,6 +555,9 @@ const Spec = struct {
     assigned: []bool,
     /// Reads of each whole-program name, for the substitution rule.
     reads: []u32,
+    /// `Stats.copied` and `Stats.copied_modules` (`noteCopy`).
+    copied: []bool,
+    copied_modules: []bool,
     /// How many whole-program names there are: `Input.globals`, and one
     /// more for each top-level binding a body written in another place
     /// declares (`addGlobal`).
@@ -796,7 +809,11 @@ const Spec = struct {
             .assigned = try arena.alloc(bool, in.globals),
             .reads = try arena.alloc(u32, in.globals),
             .globals = in.globals,
+            .copied = try arena.alloc(bool, in.globals),
+            .copied_modules = try arena.alloc(bool, in.modules.len),
         };
+        @memset(s.copied, false);
+        @memset(s.copied_modules, false);
         // Room for every literal the program spells: the table is filled
         // once, and growing it rehashed every key it held.
         var spelled: u32 = 0;
@@ -2840,6 +2857,7 @@ const Spec = struct {
         s.escaped = try growSlice(s.arena, bool, s.escaped, s.globals, false);
         s.assigned = try growSlice(s.arena, bool, s.assigned, s.globals, false);
         s.reads = try growSlice(s.arena, u32, s.reads, s.globals, 0);
+        s.copied = try growSlice(s.arena, bool, s.copied, s.globals, false);
         if (m.global_list.items.len == 0) try m.global_list.appendSlice(s.arena, m.global);
         while (m.global_list.items.len < at.int()) try m.global_list.append(s.arena, none);
         try m.global_list.append(s.arena, g);
@@ -3478,7 +3496,17 @@ const Spec = struct {
     /// `stmts` (and kept by the optimiser when it may do something), then
     /// the body with each parameter its argument or binding. Null when a
     /// name the body needs is not one `m` can write.
+    /// A body of module `module` is being copied out of the top-level
+    /// declaration `owner` (`none`: one the pass cannot name) into another
+    /// statement (`Stats.copied`).
+    fn noteCopy(s: *Spec, module: u32, owner: u32) void {
+        if (owner != none and owner < s.copied.len) {
+            s.copied[owner] = true;
+        } else s.copied_modules[module] = true;
+    }
+
     fn bodyAt(s: *Spec, m: *Mod, top: Index, small: Small, args: []const Index, stmts: *std.ArrayList(u32)) Allocator.Error!?Index {
+        s.noteCopy(small.module, small.owner);
         const fm = &s.mods[small.module];
         const cross = small.module != m.index;
         var c: Copy = .{
@@ -3869,6 +3897,9 @@ const Spec = struct {
     /// A top-level function whose body is one `return e`, as slice 8 sees it.
     const Small = struct {
         module: u32,
+        /// The whole-program id of the top-level declaration the function
+        /// is, or `none` for one a call reaches through a property.
+        owner: u32 = none,
         params: []const NameIndex,
         ret: Index,
         /// Nodes of `e`, the size model's unit.
@@ -4050,6 +4081,7 @@ const Spec = struct {
             .reads = reads,
             .first = &.{},
             .inspects = &.{},
+            .owner = self,
         };
     }
 
@@ -4086,6 +4118,7 @@ const Spec = struct {
     fn inlineStatementAt(s: *Spec, m: *Mod, mi: u32, stmt: Index, small: Small) Allocator.Error!void {
         const call: Index = @enumFromInt(m.ir.data(stmt).lhs);
         const args = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.subRange(@enumFromInt(m.ir.data(call).rhs)), Index));
+        s.noteCopy(small.module, small.owner);
         const fm = &s.mods[small.module];
         const cross = small.module != mi;
         var c: Copy = .{
@@ -4182,6 +4215,7 @@ const Spec = struct {
             .reads = reads,
             .first = first,
             .inspects = inspects,
+            .owner = self orelse none,
         };
     }
 
@@ -4343,6 +4377,7 @@ const Spec = struct {
             }
         };
         if (inlined > call_cost) return false;
+        s.noteCopy(small.module, small.owner);
 
         // Names the body mentions of the whole program, as the caller
         // module spells them.
@@ -5109,6 +5144,7 @@ const Spec = struct {
             bind[i] = scan.assigns[i] or long;
             if (bind[i] and form == .expr) return false;
         }
+        s.noteCopy(decl.module, s.globalOfDecl(decl));
 
         var c: Copy = .{
             .s = s,
@@ -7253,7 +7289,7 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
 
 /// Every child of `node` onto `stack`: a statement's expressions and
 /// statements, an expression's operands, and a function's body.
-fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.ArrayList(Index)) Allocator.Error!void {
+pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.ArrayList(Index)) Allocator.Error!void {
     const d = ir.data(node);
     switch (ir.tag(node)) {
         .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
