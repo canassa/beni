@@ -59,10 +59,14 @@ mechanical commit writes, so they are cheapest to change before slice 7.
 | Y15 | A hanging application's head arguments ignore source breaks; the head line joins `=` only when the hung argument is a lambda | join for lists and records too, or honour source breaks | §12.5 |
 | Y16 | `let` and `in` stay reserved words | release them as identifiers | §12.2 |
 
-### 1.3 Unicode notation (S8) — made by the specification, for the owner to confirm
+### 1.3 Unicode notation (S8) — made by the specification, confirmed by the owner
 
-Slice 17's open choices; the owner confirms them before slice 18. **Confirm first** marks the ones
-that change what slice 19's mechanical commit writes. Sections are `language.md`'s unless named.
+Slice 17's open choices. **Confirmed 2026-10-02: the owner took all fifteen as recommended**, and
+named three explicitly — Z2, `a × b × c` is a flat 3-tuple; Z4, columns count code points
+everywhere (diagnostics, excerpt carets, layout and the formatter's 100-column limit), which also
+removes §12.1's `λ` byte exception; Z9, `▷` U+25B7 and `◁` U+25C1. The Alternative column stays
+as the record of what was weighed. **Confirm first** marked the ones that change what slice 19's
+mechanical commit writes. Sections are `language.md`'s unless named.
 
 | # | Decision | Alternative | Where |
 |---|---|---|---|

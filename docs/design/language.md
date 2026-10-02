@@ -2679,7 +2679,8 @@ stuff"), with one spelling each, as §12.1 made `λ` the only lambda: Lean accep
 and `<=` beside `≤`, beni keeps only the symbol. This subsection is the contract for the tokens,
 §12.8 for tuple types written with `×`, §12.9 for the formatter, the editor and the order of work;
 [`frontend.md`](frontend.md) §11.8 says how the lexer, parser and `beni fmt --migrate-unicode`
-build it. The open choices it made are `plans/syntax-batch.md` §1.3, Z1–Z15.
+build it. The open choices it made are `plans/syntax-batch.md` §1.3, Z1–Z15, all confirmed by the
+owner as recommended on 2026-10-02.
 
 **What does not change.** Every symbol is a new spelling of a token that exists, with that
 token's grammar, binding power and associativity (§3, §6.5); the AST, the BIR and every byte the
