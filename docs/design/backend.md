@@ -5930,6 +5930,57 @@ release run hash, and every `run/` and `browser/` program built by both compiler
 The 100 000 lines spent 23.7 billion in `rewrite` alone: `namedIn` walked a module once per
 name it was asked of, and `inlineOne` counted the whole program once per function it wrote in.
 
+**Added 2026-10-02 — why a later pass is not incremental, and what is cut instead.** A core
+written in beni (`plans/core-in-beni.md` step 3) gives the inline passes something to do in
+almost every program, and each time they change something the whole of `Spec.run` repeats:
+`prune`, a round of facts from ⊥, `rewrite`, and every inline pass again. On `abuse_wide_test`'s
+16 400-arm `case` under `--release` with research 50's `List` in beni, the first inline pass
+changed one module, `List` (173 nodes, 8 statements), and the second pass that followed cost
+about 765 million instructions. Nearly all of it went on re-walking the untouched 16 400-arm
+function. The obvious cure is to redo, after the first pass, only the functions the inline
+passes changed, with their callers and callees. **That cannot print what a full pass prints:**
+
+- *Facts must be able to fall.* Writing a call in removes a call site, so a parameter that was
+  ⊤ may now be a constant. Keeping a clean function's contributions from the last round cannot
+  take that back. This is the worklist note's *rounds still start from ⊥*.
+- *Facts travel further than callers and callees.* They run down call chains (fact 1), through
+  properties and returns (facts 4 and 5) and through fact 3. In the case above, the callback
+  that calls the 16 400-arm function is called from `List`'s loop, so that function's argument
+  is a fact-3 value of the very code the inline pass changed. Any exact delete-and-recompute
+  closure contains it, so even a perfect dirty set saves nothing there.
+- *Fact 3 depends on walk order*, as the worklist note shows on `run/CallbackOrderDict`, and
+  allocates its sites and variables in walk order. Re-walking a subset, starting from the old
+  state, reaches a different, equally sound fixpoint.
+- *The rewriting passes read whole-program facts too*: `dropKeys` and `appendChild` read fact
+  3, and the inline passes read the small-function table, `assigned` and `decl`. A statement
+  whose text did not change can still be rewritten differently.
+
+An exact incremental pass would replay a unit's walk only when every value it reads is
+unchanged. That means recording each walk's reads, writes and allocated ids, for fact 3, the
+sweeps, `rewrite` and each inline pass. It is a re-architecture with a cost on every build, and
+it is not taken. What is taken instead is exact by construction: work that cannot change the
+program is not done, on any pass.
+
+- **A statement list the list sweeps cannot act on is left uncopied** (`Spec.listActs`). The
+  three sweeps that walk every statement list — scalar replacement, constructor folding and
+  `x = x` — copied every list and examined each statement. Each acts only on a `const` or `let`
+  (of an object literal, for scalar replacement), a `return` of a call, or an assignment. A list
+  holding none of these is now walked through for the lists below it and left as it was, in
+  place. `--self-profile`'s `spec_lists_examined` counts the lists still copied, and
+  `build_test`'s *list sweeps do not grow* holds it constant between a 64-arm and a 1 024-arm
+  `case`.
+
+Measured with `abuse_wide_test`'s *16 400 literal branches … under `--release`*, in millions of
+instructions against the 4 300 budget, test harness included:
+
+| step | master | `List` in beni (research 50's prototype) |
+|---|--:|--:|
+| before | 3 846 | 4 782 |
+| lists left uncopied | 3 702 | 4 526 |
+
+Every output is byte for byte as before: `bench/size.mjs`'s 7 101 built files, both builds, and
+every release run hash.
+
 ### Compact statements
 
 ### Compact statements

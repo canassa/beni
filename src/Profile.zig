@@ -216,6 +216,11 @@ pub const Counter = enum {
     /// Bytes of front-end artifact written this run, over the files actually
     /// stored. Zero without `--cache-dir`.
     frontend_bytes,
+    /// `--release`'s whole-program specialisation (`backend.md` §9): the
+    /// statement lists its list sweeps copied to rewrite (`Spec.Stats`).
+    /// A list holding nothing a sweep could act on is not counted, so the
+    /// count does not grow with code the sweeps leave as it was.
+    spec_lists_examined,
 
     pub const count = @typeInfo(Counter).@"enum".fields.len;
 };

@@ -2806,7 +2806,7 @@ const Emitter = struct {
         const prop_len = try e.scratch.alloc(u8, props.count());
         var props_it = props.iterator();
         while (props_it.next()) |kv| prop_len[kv.value_ptr.*] = @intCast(@min(kv.key_ptr.len, 255));
-        try Spec.run(e.gpa, e.scratch, .{
+        const stats = try Spec.run(e.gpa, e.scratch, .{
             .modules = modules.items,
             .globals = ids.count(),
             .props = props.count(),
@@ -2823,6 +2823,7 @@ const Emitter = struct {
                 .append_child = try e.session.interner.getOrPut(e.gpa, "appendChild"),
             } else null,
         });
+        e.session.profile.addCounter(.spec_lists_examined, stats.lists_examined);
         var k: usize = 0;
         for (todo) |i| {
             const slot = &slots[i];

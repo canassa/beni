@@ -4615,3 +4615,59 @@ test "a --core-root core without a core-private List value the emitter calls is 
     // A refused build writes nothing (backend.md §2).
     try testing.expect(!w.exists("refused/Main.mjs"));
 }
+
+test "the release specialiser's list sweeps do not grow with lists they cannot act on" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9, *Whole-program specialisation*, dated note
+    // 2026-10-02: the statement-list sweeps (scalar replacement, constructor
+    // folding, `x = x`) walk the whole program after every round, and a
+    // list holding nothing they could act on is left uncopied. One program
+    // at two sizes of a `case` whose arms hold no candidate — a literal
+    // `return` each — must copy the same number of lists: the count is
+    // `--self-profile`'s `spec_lists_examined`, which every list the sweeps
+    // copied once counted.
+    const small = try specListsExamined(64);
+    const large = try specListsExamined(1024);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(small, large);
+}
+
+/// `spec_lists_examined` of a `--release` build of a `case` of `arms`
+/// literal arms beside a `main` that calls it through `List.map`.
+fn specListsExamined(arms: usize) !u64 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var source: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("import Node exposing (Program)\n\n\ng : Int → Int\ng k =\n    case k of\n");
+    for (0..arms) |i| try out.print("        {d} →\n            {d}\n\n", .{ i, i + 1 });
+    try out.writeAll(
+        \\        _ →
+        \\            -1
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines (List.map [ 0, 1 ] λk → String.fromInt (g k))
+        \\
+    );
+    try w.write("Main.beni", source.written());
+    const r = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--no-cache", "--release", "--self-profile=trace.json", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(r);
+    const Event = struct {
+        ph: []const u8,
+        args: struct { spec_lists_examined: ?u64 = null } = .{},
+    };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    for (parsed.value.traceEvents) |e| {
+        if (std.mem.eql(u8, e.ph, "C")) if (e.args.spec_lists_examined) |v| return v;
+    }
+    return error.NoCounter;
+}

@@ -189,7 +189,15 @@ const max_depth = 200;
 /// On a node index in an evaluating walk's stack: its operands are done.
 const post_bit: u32 = 1 << 31;
 
-pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
+/// What the pass did, for `--self-profile`'s counters: work that must not
+/// grow with code the pass leaves as it was.
+pub const Stats = struct {
+    /// Statement lists a list sweep (`srList`) copied to rewrite, of those
+    /// holding a statement it could act on (`listActs`).
+    lists_examined: u64 = 0,
+};
+
+pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     var s: Spec = try .init(gpa, arena, in);
     s.pts = .init(&s);
     defer s.pts.deinit();
@@ -223,6 +231,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
     // only with every argument, has seen them all.
     try s.trimArguments();
     try s.finish();
+    return s.stats;
 }
 
 /// How many times the inlining passes and the facts after them repeat.
@@ -470,6 +479,7 @@ const Spec = struct {
     narrow: std.ArrayList(NameIndex) = .empty,
     /// What `srList` does to each statement list it reaches.
     list_mode: enum { scalars, constructors, self_assign } = .scalars,
+    stats: Stats = .{},
     /// Slice 9: `smallTable`, for the pass in progress.
     cf_smalls: []?Small = &.{},
     /// `inlineOne`'s counts, per module and for the whole program
@@ -3274,8 +3284,13 @@ const Spec = struct {
             },
             .while_true, .block_stmt, .switch_case => any = try s.srList(m, d.rhs, ir.subRange(@enumFromInt(d.rhs)), top, depth + 1),
             .for_of => any = try s.srList(m, d.rhs + 1, ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).body(), top, depth + 1),
-            .switch_stmt => for (try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index))) |c| {
-                if (try s.srBelow(m, c, top, depth + 1)) any = true;
+            // By position, as `srList` walks its items.
+            .switch_stmt => {
+                const cases = ir.subRange(@enumFromInt(d.rhs));
+                var k: u32 = @intFromEnum(cases.start);
+                while (k < @intFromEnum(cases.end)) : (k += 1) {
+                    if (try s.srBelow(m, @enumFromInt(m.extra.items[k]), top, depth + 1)) any = true;
+                }
             },
             .try_stmt => {
                 if (try s.srList(m, d.rhs, m.ir.extraData(@enumFromInt(d.rhs), JsIr.Try).body(), top, depth + 1)) any = true;
@@ -3305,13 +3320,22 @@ const Spec = struct {
 
     /// One list: the lists below first, then each declaration of it that
     /// can be replaced, written as its bindings.
+    ///
+    /// A list holding no statement the mode could act on is left as it is,
+    /// uncopied (`listActs`): every sweep walks the whole program, and most
+    /// of its lists hold nothing for it.
     fn srList(s: *Spec, m: *Mod, owner: u32, range: JsIr.SubRange, top: Index, depth: u32) Allocator.Error!bool {
         if (depth > max_depth) return false;
-        const items = try s.arena.dupe(u32, m.ir.extraSlice(range, u32));
         var any = false;
-        for (items) |raw| if (try s.srBelow(m, @enumFromInt(raw), top, depth + 1)) {
-            any = true;
-        };
+        // By position: a list below appends to `extra`, which may move, and
+        // writes only its own owner's words, never this list's items.
+        var k: u32 = @intFromEnum(range.start);
+        while (k < @intFromEnum(range.end)) : (k += 1) {
+            if (try s.srBelow(m, @enumFromInt(m.extra.items[k]), top, depth + 1)) any = true;
+        }
+        if (!s.listActs(m, range)) return any;
+        s.stats.lists_examined += 1;
+        const items = try s.arena.dupe(u32, m.ir.extraSlice(range, u32));
         var out: std.ArrayList(u32) = .empty;
         var changed = false;
         switch (s.list_mode) {
@@ -3343,6 +3367,37 @@ const Spec = struct {
         m.extra.items[owner] = start;
         m.extra.items[owner + 1] = start + @as(u32, @intCast(out.items.len));
         return true;
+    }
+
+    /// Whether the list holds a statement `srList`'s mode could act on — a
+    /// superset of where it does, so a list without one is one the mode
+    /// leaves as it was: `replaceScalars` acts only on a `const` or `let`
+    /// of an object literal, `foldAt` only on a `const` or `let`, or on a
+    /// `return` of a call (a fold writes statements in only where one of
+    /// these was, so a list without one gains none), and the self-assign
+    /// mode only on an assignment.
+    fn listActs(s: *Spec, m: *Mod, range: JsIr.SubRange) bool {
+        const ir = m.ir;
+        for (ir.extraSlice(range, Index)) |st| {
+            const d = ir.data(st);
+            switch (s.list_mode) {
+                .scalars => switch (ir.tag(st)) {
+                    .const_decl, .let_decl => if ((@as(Node.OptionalIndex, @enumFromInt(d.rhs))).unwrap()) |v| {
+                        if (ir.tag(v) == .object) return true;
+                    },
+                    else => {},
+                },
+                .constructors => switch (ir.tag(st)) {
+                    .const_decl, .let_decl => return true,
+                    .return_stmt => if ((@as(Node.OptionalIndex, @enumFromInt(d.lhs))).unwrap()) |v| {
+                        if (ir.tag(v) == .call) return true;
+                    },
+                    else => {},
+                },
+                .self_assign => if (ir.tag(st) == .assign_stmt) return true,
+            }
+        }
+        return false;
     }
 
     /// When `stmt` declares an object that can be replaced by its keys, its
