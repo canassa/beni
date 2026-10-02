@@ -532,10 +532,18 @@ fn writeShowCase(w: *std.Io.Writer, source: []const u8, item: Item) std.Io.Write
     try w.print("    case {s} of\n", .{when});
     // A lambda's head is `λ` (two bytes) or the old `\` (language.md §12.1).
     const head: usize = if (std.mem.startsWith(u8, body, "λ")) "λ".len else if (body[0] == '\\') 1 else 0;
-    const arrow = if (head != 0) std.mem.indexOf(u8, body, "->") else null;
-    if (arrow) |at| {
-        try w.print("        Just {s} ->\n", .{std.mem.trim(u8, body[head..at], blank)});
-        try writeBlock(w, source, std.mem.trim(u8, body[at + 2 ..], blank), "            ");
+    // Its arrow is `→` or the old `->` (language.md §12.7), whichever
+    // comes first.
+    const arrow: ?struct { at: usize, len: usize } = if (head == 0) null else blk: {
+        const ascii = std.mem.indexOf(u8, body, "->");
+        const symbol = std.mem.indexOf(u8, body, "→");
+        if (symbol) |s| if (ascii == null or s < ascii.?) break :blk .{ .at = s, .len = "→".len };
+        if (ascii) |a| break :blk .{ .at = a, .len = 2 };
+        break :blk null;
+    };
+    if (arrow) |found| {
+        try w.print("        Just {s} ->\n", .{std.mem.trim(u8, body[head..found.at], blank)});
+        try writeBlock(w, source, std.mem.trim(u8, body[found.at + found.len ..], blank), "            ");
     } else if (std.mem.indexOfAny(u8, body, blank) == null) {
         try w.print("        Just value ->\n            {s} value", .{body});
     } else if (std.mem.indexOfScalar(u8, body, '\n') == null) {

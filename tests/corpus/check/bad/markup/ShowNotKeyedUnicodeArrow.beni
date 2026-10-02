@@ -1,0 +1,11 @@
+-- A non-keyed `Show` whose body is a lambda written with `→` (language.md
+-- §12.7): the message takes the lambda apart as it does one written with
+-- `->`, writing its parameter after `Just` and its body under it (10:10).
+import Html exposing (Html)
+
+
+pub view : Maybe String → Html msg
+view title =
+    <div>
+        <Show when={title}>{λt → <p>{t}</p>}</Show>
+    </div>
