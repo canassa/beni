@@ -1,28 +1,32 @@
 -- run: fibers side by side (docs/design/transparent-effects-proposal.md
--- §16.4, §16.5). Three children sleep different lengths; each logs when it
--- wakes, so the log is the order of the timers, not the order of the
--- spawns. `join` hands each child's value back whatever order they ended
--- in, and joining a child that has already ended answers at once. The
--- values are joined in spawn order, so the result line does not depend on
--- the timers at all.
+-- §16.4, §16.5). Three children each wait their own way and log when they
+-- go on, so the log is the order the scheduler resumes them in, not the
+-- order of the spawns: `b` does not wait, `c` yields once and goes on in
+-- the same turn, and `a` sleeps on a timer, which cannot fire until every
+-- fiber that is ready has run — so a sleep parks only the fiber that
+-- sleeps. No two timers race: the order does not depend on the clock.
+-- `join` hands each child's value back whatever order they ended in, and
+-- joining a child that has already ended answers at once. The values are
+-- joined in spawn order, so the result line does not depend on the
+-- scheduler at all.
 import Debug
 import Io
 import Node exposing (Program)
 import Task
 
 
-worker : String, Int → Int
-worker name ms =
-    _ = Io.sleep ms
+worker : String, Int, (() → ()) → Int
+worker name n pause =
+    _ = pause ()
     _ = Debug.log "woke" name
-    ms * 2
+    n * 2
 
 
 main : Program
 main = Io.run λ() →
-    a = Task.spawn λ() → worker "a" 30
-    b = Task.spawn λ() → worker "b" 10
-    c = Task.spawn λ() → worker "c" 20
+    a = Task.spawn λ() → worker "a" 30 λ() → Io.sleep 1
+    b = Task.spawn λ() → worker "b" 10 λ() → ()
+    c = Task.spawn λ() → worker "c" 20 Task.yieldNow
     total = Task.join a + Task.join b + Task.join c
     again = Task.join b
     Node.print (String.fromInt total ++ " " ++ String.fromInt again)

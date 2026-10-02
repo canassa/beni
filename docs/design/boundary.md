@@ -3268,7 +3268,7 @@ pass needs no exemption), which prints the `Exit` it was given.
 | `DefectEveryProgram` | `Browser.programs` with two `Tea.element`s; a defect in the first's `update` runs the second's releases, and a click on the second does nothing |
 | `DefectInViewReleases` | the synchronous path through the render loop's guard: a throw in `view` closes the root scope as a fiber's throw does |
 | `browser/dom/HostedRootReleases` | a program straight on `Browser.hosted` with a root scope of its own, never handed to the platform, whose fiber's release runs: the registry, not `Tea`, reaches it |
-| `run/TaskShutdown` (Node) | `Task.shutdown` called directly, with a deadline of 100 and a `done` that prints its count: releases in the order (e) gives, a `soon` dropped, a new spawn cancelled before it runs, a second call doing nothing |
+| `run/TaskShutdown` (Node) | `Task.shutdown` called directly, with a deadline of 250 and a `done` that prints its count: releases in the order (e) gives, a `soon` dropped, a new spawn cancelled before it runs, a second call doing nothing |
 | `run/TaskDefectOnNode` (Node, `.crash`) | the unchanged Node path: a fiber's throw exits 1 with the report, its release unrun |
 
 `browser/tea/DefectInFiber`'s golden gains a `timers` step after the throw, now 0 where the timer

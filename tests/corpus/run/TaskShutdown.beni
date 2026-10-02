@@ -5,9 +5,11 @@
 --   - Every fiber of every root scope is cancelled and its releases run,
 --     each once and told `Cancelled`: within a fiber last first, a child's
 --     before its parent's, the fibers in the order they were started.
---   - A release that waits goes on waiting, until the deadline (100 ms):
+--   - A release that waits goes on waiting, until the deadline (250 ms):
 --     one that ends before it finishes; one that does not is cut short
---     there, and the release registered before it in its fiber runs.
+--     there, and the release registered before it in its fiber runs. The
+--     one that ends sleeps 1 ms, so only a stall of nearly the whole
+--     deadline on a loaded machine could push its timer past it.
 --   - Work `soon` queued before the call is dropped unrun, and `soon`
 --     queues nothing after it; a fiber started after it is cancelled
 --     before its first line; a second call does nothing.
@@ -47,7 +49,7 @@ main = Io.run λ() →
         Task.bracket
             (λ() → ())
             (λ_ _ →
-                _ = Io.sleep 50
+                _ = Io.sleep 1
                 say "c released after a wait"
             )
             λ_ → Io.sleep 100000
@@ -72,7 +74,7 @@ main = Io.run λ() →
     _ = Task.yieldNow ()
     _ = Task.yieldNow ()
     _ = Task.soon λ() → say "queued before runs"
-    _ = Task.shutdown 100 λcut → say "done, ${String.fromInt cut} cut short"
+    _ = Task.shutdown 250 λcut → say "done, ${String.fromInt cut} cut short"
     _ = Task.shutdown 5 λ_ → say "the second call's done"
     _ = Task.spawnIn root λ() → say "late runs"
     _ = Task.soon λ() → say "queued after runs"
