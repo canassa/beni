@@ -3223,8 +3223,8 @@ pass needs no exemption), which prints the `Exit` it was given.
 `browser/tea/DefectInFiber`'s golden gains a `timers` step after the throw, now 0 where the timer
 used to fire into a stopped scheduler. Every page also runs under `zig build test-browser` in Chrome.
 
-**(o) Choices for the owner.** Each was taken here as recommended, so the slices can proceed; each
-is reversible until it ships.
+**(o) Choices for the owner.** Each was taken here as recommended, so the slices can proceed.
+*Confirmed 2026-10-02: the owner took all eight as recommended.*
 
 | # | Choice | Recommendation | Alternative |
 |---|---|---|---|

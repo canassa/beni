@@ -1360,8 +1360,8 @@ interface, the layering, markup's BIR and the review's additions, which it did n
 The contract is [`boundary.md`](../docs/design/boundary.md) §9.8.14: a defect closes every root
 scope, every finaliser runs once with `Cancelled`, a finaliser that suspends is bounded by a
 1 000 ms deadline, and one that throws is a separate host report that never replaces the original.
-The eight choices it took for the owner are its table (o); each slice below lands with `zig build
-gates` green and its own fixtures, red first.
+The eight choices it took for the owner are its table (o), all confirmed as recommended by the
+owner on 2026-10-02; each slice below lands with `zig build gates` green and its own fixtures, red first.
 
 | Slice | What | Fixtures |
 |---|---|---|
