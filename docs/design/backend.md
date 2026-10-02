@@ -5672,6 +5672,10 @@ file must defeat it (a DOM node's own `h`, an object passed to a sibling), and e
 - **A folded `if` is spliced into its list** only when no name its arm declares is declared twice
   in the declaration (the compiler's positional names `$in$<i>`, `$m$k` can repeat); otherwise the
   arm stays a block. A negative folded number prints bracketed where a unary would (`(-3)**2`).
+- *Amended 2026-10-02*: **a statement that is a literal alone is not written.** It is what is
+  left when a function written where it is called (*A function called once …*) ends in a value
+  that folds to a literal — `return c ? f() : null` with `c` folded false — which `if (x) null;`
+  printed; it does nothing. Fixture: `emit/release/app/SpecLiteralStatement`.
 
 Measured: `emit/release/split/EmptyPage` **1 043 → 957** brotli (the hand-written runtime's page
 is 980) — `template`'s flags and html folded into `parse`, a slot's constant marker and context;

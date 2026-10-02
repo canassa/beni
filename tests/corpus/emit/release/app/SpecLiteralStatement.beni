@@ -1,0 +1,26 @@
+-- emit: a function written where it is called once (`backend.md` §9,
+-- *Whole-program specialisation*), whose last value folds to a literal,
+-- leaves nothing of that value behind: `roll` is called with `False`, so
+-- its `if` is its `else`, `()`, which is no statement at all — and the
+-- `if` around the call in `main`, its arm empty, is its test alone.
+import Node
+import Random
+
+
+roll : Bool → ()
+roll on =
+    if on then
+        after (Random.value (Random.int 1 6)) ()
+    else
+        ()
+
+
+after : Int, a → a
+after _ value = value
+
+
+main : Node.Program
+main =
+    n = String.length (String.repeat "ab" 2)
+    _ = if n > 3 then roll False else ()
+    Node.print (String.fromInt n)

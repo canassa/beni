@@ -2909,13 +2909,17 @@ const Spec = struct {
         // Then this one.
         var changed = false;
         for (items) |raw| {
-            if (s.decided(m, @enumFromInt(raw)) != null or try s.deadWrite(m, @enumFromInt(raw))) changed = true;
+            if (s.decided(m, @enumFromInt(raw)) != null or try s.deadWrite(m, @enumFromInt(raw)) or literalStmt(m.ir, @enumFromInt(raw))) changed = true;
         }
         if (!changed) return any;
         var out: std.ArrayList(u32) = .empty;
         defer out.deinit(s.arena);
         for (items) |raw| {
             const stmt: Index = @enumFromInt(raw);
+            // A literal standing as a statement does nothing: what is left
+            // of a value folded where nothing reads it (a function written
+            // in whose last `return` folded to `null`).
+            if (literalStmt(m.ir, stmt)) continue;
             // Fact 3: a write of a property no reachable read reaches is not
             // written; its value is still evaluated when it may do something.
             if (try s.deadWrite(m, stmt)) {
@@ -7449,6 +7453,15 @@ fn fallsThrough(ir: *const JsIr, range: JsIr.SubRange) bool {
 /// literal, a name, or an object, array or template of those. Anything
 /// else — a call, a property read (a getter), an operator (`valueOf`), a
 /// spread — may, and a declaration it initialises is kept.
+/// Whether `stmt` is an expression statement of a literal alone.
+fn literalStmt(ir: *const JsIr, stmt: Index) bool {
+    if (ir.tag(stmt) != .expr_stmt) return false;
+    return switch (ir.tag(@enumFromInt(ir.data(stmt).lhs))) {
+        .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+        else => false,
+    };
+}
+
 fn inert(ir: *const JsIr, root: Index) bool {
     var stack: [64]Index = undefined;
     var len: usize = 1;
