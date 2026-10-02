@@ -14,6 +14,7 @@ and the choices the specification had to make that the owner should confirm.
 | a statement is a discard; `Int.mod` stays a call | [`backend.md`](../docs/design/backend.md) §4 |
 | `Int` and `Float` modules beside `Basics`, which keeps both types (amended 2026-10-01) | [`static-dispatch-spike.md`](../docs/design/static-dispatch-spike.md) A.6, [`checker.md`](../docs/design/checker.md) Appendix B |
 | S8 Unicode notation: the symbols, `×` tuple types, lookalikes, removal codes, columns, formatter, editor input | `language.md` §12.7–§12.9, with dated pointers in §0, §2.1, §2.2, §2.4, §3, §6.5, §6.8, §9, §10, §12.1 and Appendix A; `frontend.md` §11.8 (pointers in §1, §3.1); `checker.md` §8.2 for the renderer |
+| S10 `⊤` and `⊥`, `if` without `else`, `_ = e` of a `⊤` | `language.md` §12.10, with dated pointers in §0, §6.1, §10, §12.1 and Appendices A and B; `frontend.md` §11.9; `checker-v2.md` §34; `backend.md` §4 (*A `()` result is not written*, amended) |
 
 Precedent read for it: Roc's blocks and statements (`references/roc/docs/langref/statements.md`,
 `expressions.md`; `src/check/Check.zig:21835-21848` unifies a statement with `{}` and
@@ -86,6 +87,34 @@ mechanical commit writes. Sections are `language.md`'s unless named.
 | Z14 | `--migrate-unicode` touches only tokens and tuple-type nodes, never a comment or string; slice 19 rewrites core's doc comments, Zig test programs, generators and the design docs' examples by a reviewed script in the same commit, joins multi-line tuple types onto one line, then runs plain `beni fmt` over the gate's scope | a comment mode in the flag, or doc comments left in ASCII until the docs test fails | §12.9, `frontend.md` §11.8 |
 | Z15 | The `ast` and `bir` dumps name an operator by its symbol whichever spelling was read, from slice 18, so the two spellings dump byte-identically and the teach slice can prove it | print the spelling read, and prove equivalence some other way | §12.7, `frontend.md` §11.8 |
 
+### 1.4 `⊤`, `⊥` and `if` without `else` (S10) — made by the specification, for the owner to confirm
+
+The owner decided S10 on 2026-10-02 (`browser-decisions.md`): `⊤` U+22A4 is the unit type and its
+value, replacing `()` in both roles; `⊥` U+22A5 is the empty type, today's `Never`; an `if` may
+omit `else` when its `then` branch is `⊤`; every `_ = e` whose `e` is `⊤` becomes a statement
+line. The contract is `language.md` §12.10, `frontend.md` §11.9, `checker-v2.md` §34 and a note
+in `backend.md` §4 (*A `()` result is not written*). These are the choices the specification
+made; **confirm first** marks those that change what slice 23's mechanical commit writes.
+
+| # | Decision | Alternative | Where |
+|---|---|---|---|
+| T1 | `⊥` names core's empty type wherever it stands and cannot be shadowed; `Basics` keeps declaring it as `type Never = JustOneMore ⊥`, a declaration needing an upper identifier, and the name is written only there from the enforce step | make `⊥` a checker built-in with no declaration — `never`, exhaustiveness and the interface format would all move for no user-visible gain | §12.10 |
+| T2 | `⊥` is a type token only; in an expression or a pattern it is `unexpected_token` whose message points at `never` | let `⊥` also be an expression (a second `Debug.todo`), or an absurd pattern | §12.10 |
+| T3 | The `T` lookalike is resolution's: an **unbound** `T`, as a type or a constructor, gets a "did you mean `⊤`" sentence in its existing `unbound_type`/`unbound_constructor` message; a `T` the program declares or imports is never questioned | a warning on every declaration named `T` (`suspicious_name`), which would fire on legitimate code | §12.10 |
+| T4 | Five lexer lookalikes: `⟙` `⫟` `⊺` → `⊤`, `⟘` `⫠` → `⊥` (`invalid_character`, the parse going on as the symbol) | none, or a longer list (box-drawing `┬`/`┴`, which no font confuses in code) | §12.10 |
+| T5 | **Confirm first.** `( )` with whitespace between is `()` and migrates and is refused alike; with a comment between it is refused the same way, and the flag names the file for a hand edit | refuse `( )` now as malformed | §12.10, `frontend.md` §11.9 |
+| T6 | `()` in markup text and quoted attribute values is text and never touched; in a markup hole or `{…}` attribute value it is code and migrates | — (the lexer already separates them) | §12.10 |
+| T7 | Two removal codes, `unit_spelling_removed` (parser, every position) and `never_spelling_removed` (lowering, only a `Never` that names `Basics`'), both going on as the new spelling | one code `ascii_symbol_removed` for `()` too; one code for both | §12.10, §10 |
+| T8 | The prelude keeps exposing `Never` after the enforce step, solely so a stale use gets `never_spelling_removed` and not `unbound_type` | drop it from the prelude and add a hint to `unbound_type` | Appendix A |
+| T9 | **Confirm first.** A dangling `else` goes to the nearest `if` without one inside whose block it stands — layout first, so an `else` at the outer `if`'s column belongs to it; on one line the nearest (OCaml, F#, Rust, Scala) | refuse an `if` without `else` as the `then` branch of an `if` with one unless parenthesised | §12.10 |
+| T10 | The `then` branch of an `if` without `else` must be `⊤`: `if_without_else_not_unit`, title MISSING ELSE, at the `then` branch, its message suggesting `else` | report at the `if`; or give such an `if` a `Maybe` value (a silent default, which rule 7 forbids) | §12.10, `checker-v2.md` §34 |
+| T11 | The missing branch lowers to the `unit` instruction of `else ⊤`, marked by `lhs` 1 for the checker, so no pass but `caseExpr` changes and the JavaScript is byte-identical | a new BIR instruction, which every pass from `Exhaustive` to the emitter would have to learn | `frontend.md` §11.9 |
+| T12 | `_ = e` with `e : ⊤` is the warning `unit_discarded`, root package only — under `--explain` until the enforce step, by default after it | no diagnostic (a migration only, so the norm decays); or an error (taste, not a guarantee — rule 7) | §12.10, `checker-v2.md` §34 |
+| T13 | **Confirm first.** The typed half of the migration is driven by the checker's output: `beni check --explain --diagnostics=json` over every project and fixture, then `beni fmt --migrate-top --discards=<file>`, which deletes `_ = ` at each `unit_discarded` span | a typed rewrite inside `beni check` (a checker that writes files); a script over the `types` dump | `frontend.md` §11.9 |
+| T14 | **Confirm first.** The flag drops `else ⊤` (either spelling) from every `if`, except one that is the `then` branch of an `if` with an `else` (the outer `else` would move to it) or has a comment in the range; plain `beni fmt` never adds or removes an `else` | keep every `else ⊤` and let authors drop them; or have plain `fmt` drop them | §12.10, `frontend.md` §11.9 |
+| T15 | The renderer, every message that quotes code, the call-style hints and `Debug.toString` switch to `⊤`/`⊥` in the enforce step (Z12's order); a type's run-time identity text and the cache's type-body digest keep `()`, being keys and not source | switch in the teach step; or keep `Debug.toString` printing `()` | §12.10, Appendix B, `checker-v2.md` §34 |
+| T16 | **Confirm first.** The flag rewrites a type name `Never` (and `Basics.Never`) to `⊥` unless the file declares or imports by name a `Never` of its own — a per-file syntactic test, since the formatter resolves nothing | a typed rewrite, as for `_ =` | `frontend.md` §11.9 |
+
 ---
 
 ## 2. Slices
@@ -119,6 +148,10 @@ to two days, **L** three to four.
 | 18 | **Unicode taught**: the lexer reads `→ ← ≠ ≤ ≥ ▷ ◁ …` as the tokens they replace and `×` in types, the formatter keeps the spelling it read, `beni fmt --migrate-unicode`; *added by slice 17:* the lookalikes refused, columns and the formatter's measure in code points (`frontend.md` §11.8) | code | S | `parse/good/` and `fmt/` fixtures; a `tokens` golden; the migration on a fixture with `->` in strings, comments and multiline strings left alone; *added:* AST and BIR dumps byte-identical for `Int × String` and `( Int, String )`; a `parse/bad/` fixture per lookalike group; a `.diag` golden whose caret follows a `→` on its line |
 | 19 | **Migrate Unicode** over every `.beni` file, normative doc examples, core doc comments, Zig test programs, generators and message examples, alone in its commit | mechanical | S | emitted JavaScript byte-identical |
 | 20 | **Unicode enforced**: removal diagnostics for `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|`, `...` and a parenthesised tuple type; *added by slice 17:* `ascii_symbol_removed` and `tuple_type_removed`, the type renderer and the compiler's messages in the symbols | code | S | one `parse/bad/` fixture per removed form |
+| 21 | **`⊤` and `⊥` specified** (`browser-decisions.md` S10): `language.md` §12.10, `frontend.md` §11.9, `checker-v2.md` §34, the `backend.md` §4 note; §1.4's T1–T16 | spec | S | the owner confirms the **confirm first** rows before slice 23 |
+| 22 | **`⊤`, `⊥` and `if` without `else` taught**: the `top` and `bottom` tokens and their lookalikes; `⊤` beside `()` in types, expressions and patterns; `⊥` beside `Never`; `if_then` and `if_without_else_not_unit`; `unit_discarded` under `--explain`; the `T` sentence; the formatter; `beni fmt --migrate-top` with `--discards` | code | M | `parse/good/` for each position and the dangling `else` by layout and on one line; `parse/bad/` for `⊥` in an expression and a lookalike; `check/bad/` `IfWithoutElseNotUnit`, an unbound `T`, `unit_discarded` under `--explain`; `run/` for an `if` without `else` as a statement, a last line and a branch; BIR of `⊤` and `()`, `⊥` and `Never`, and `if c then a` and `if c then a else ()` identical; `fmt/` fixtures; the migration on a fixture with `()` in strings, comments and markup text left alone |
+| 23 | **Migrate `⊤`**: `check --explain --diagnostics=json` over every project and fixture, the flag with that file over every `.beni`, plain `beni fmt` over the gate's scope; then the hand pass by reviewed script — doc comments, design-document examples, Zig test programs, generators, message examples | mechanical | M | emitted JavaScript byte-identical for every `run/` and `browser/` program, development without source maps and release, checked by script; run hashes re-recorded; `.diag` goldens moved by position only |
+| 24 | **`⊤` enforced**: `unit_spelling_removed`, `never_spelling_removed`, `unit_discarded` on by default, the renderer, the messages and `Debug.toString` in `⊤` and `⊥`; CLAUDE.md's examples | code | S | one `parse/bad/` or `check/bad/` fixture per removed form; the run hashes `Debug.toString` moves |
 
 *Slice 17, as written (2026-10-01).* The contract is `language.md` §12.7–§12.9 and `frontend.md`
 §11.8; its open choices are §1.3's Z1–Z15. Lean 4's spellings and precedences were read from its
@@ -201,7 +234,8 @@ The mechanical commits touch most of the repository's 1 750 `.beni` files — `c
 - **Turning `_ = e` into a statement line where `e` is `()`.** The migrations keep every `let _ =`
   as `_ =`, which is always correct; finding the ones whose value is `()` needs types, so it is a
   checker-assisted cleanup (an informational hint naming them, or a pass over the `types` dump) left
-  for after slice 9.
+  for after slice 9. *Decided 2026-10-02 (S10, slices 21–24):* the checker's `unit_discarded`
+  warning finds them, and `beni fmt --migrate-top --discards=<file>` removes the `_ =` (T12, T13).
 - **An editor input method for `λ`.** M5's language server is where `\` → `λ` belongs; until then
   the README of the editor support (when there is one) says which key sequence to use.
 - **`Float`'s other functions.** `Float.log` is the one this batch needs; whether `round`, `floor`

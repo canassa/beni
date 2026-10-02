@@ -107,6 +107,8 @@ until the migrate step rewrites the examples.
 | `modBy 2 n`, `remainderBy 3 n`, `logBase 10 x`, `Debug.log "l" v` | `Int.mod n 2`, `Int.rem n 3`, `Float.log x 10`, `Debug.log "l" v` (*2026-10-02; built 2026-10-01, the types staying in `Basics`*) | §12.4 |
 | `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|`, `...` | `→`, `←`, `≠`, `≤`, `≥`, `▷`, `◁`, `…` — one spelling each; `&&`, `\|\|`, `==`, `++` unchanged (*2026-10-01, specified; built 2026-10-02*) | §12.7 |
 | `( Int, String )` as a type | `Int × String`; `a × b × c` is a 3-tuple, and `Int × Int → Int` takes one pair where `Int, Int → Int` takes two arguments (*2026-10-01, specified; built 2026-10-02*) | §12.8 |
+| `()`, the unit type and value; `Never` | `⊤` in both roles — `String → ⊤`, `else ⊤`, `λ⊤ → e`; `⊥` for the empty type (*2026-10-02, specified, not built*) | §12.10 |
+| `if c then a else ()` | `if c then a`: an `if` whose `then` branch is `⊤` may leave out its `else` (*2026-10-02, specified, not built*) | §12.10 |
 
 Everything else — application by juxtaposition, `case … of`, `if … then … else`, records, record
 update, lists, tuples, type aliases, custom types, `as` patterns, `.field` accessors — is Elm's.
@@ -639,7 +641,8 @@ The diagnostic additions at the end of §10's catalogue are specified there in �
 ### 6.1 Literals
 
 `Int`, `Float`, `Char`, `String` literals as lexed. `()` is unit. `[a, b]` is a list literal.
-`(a, b, c)` is a tuple literal; `(a)` is grouping.
+`(a, b, c)` is a tuple literal; `(a)` is grouping. *Amended 2026-10-02 (§12.10; specified, not
+built):* unit is written `⊤`, the type and the value, and `()` is removed (`unit_spelling_removed`).
 
 ### 6.2 Names
 
@@ -1333,6 +1336,7 @@ name_removed  suspicious_argument_order
 ascii_symbol_removed  tuple_type_removed
 core_contract_violation
 invalid_js_object
+unit_spelling_removed  never_spelling_removed  if_without_else_not_unit  unit_discarded
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1369,7 +1373,8 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `backslash_lambda_removed` … `suspicious_argument_order` | the syntax batch | the two lines appended on 2026-10-02, again never inserted, with §12 (specified, not built). Three are the parser's: **`backslash_lambda_removed`** at a `\` that begins a lambda, its message the `λ` head; **`let_removed`** at a `let`, its message the block the bindings become (both parse the old form on, as `cons_removed` does, so one mistake costs one message); and **`block_ends_in_binding`** at a block's last item when it is a binding, an annotation or a bind. **`statement_not_unit`** is the checker's ([`checker-v2.md`](checker-v2.md) §29): a statement whose type is not `()`, naming the type, `_ =` and a binding as the fixes. **`name_removed`** is lowering's for an unqualified name and resolution's for a qualified one: `modBy`, `remainderBy` or `logBase`, its message the call rewritten with `Int.mod`, `Int.rem` or `Float.log` (§12.4). **`suspicious_argument_order`** is a `warning`, the checker's, on by default for the root package only: a call of a function §12.4 keeps with an order Elm does not share, in the shape a call written in Elm's order has (§12.5) |
 | `ascii_symbol_removed`, `tuple_type_removed` | Unicode notation | the next line, appended on 2026-10-01, again never inserted, with §12.7–§12.8 (built 2026-10-02). Both are the parser's, and both parse the old form on as the new one, so one stale spelling costs one message. **`ascii_symbol_removed`** is at each `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|` or `...`, its message the symbol to write, its code point, `beni fmt --migrate-unicode` and the editor input — one code for eight spellings, because the fix and the flag are one. **`tuple_type_removed`** is at the `(` of a parenthesised tuple type, its message the type written with `×`. The lookalikes of §12.7 reuse `invalid_character`, `expected_token` and `unexpected_token`, each with a message naming the symbol |
 | `core_contract_violation` | the backend again | the line before the last, appended on 2026-10-02, again never inserted. A core package that does not declare a value the code generator calls on its own — `Basics.eq` and `String.compare` for a comparison, `List`'s core-private `unsafeGet`, `view`, `base`, `offset` and `close` for a list pattern, a walk or a building loop ([`backend.md`](backend.md) §4, *The emitter's imports of the core-private exports*). Only a `--core-root` core can lack one. Reported where a module first needs the value, once per module and value, and nothing is written; it replaced `internal` for the two comparison values the same day |
-| `invalid_js_object` | `Js` | the last line, appended on 2026-10-02, again never inserted, with `Js.object` ([`boundary.md`](boundary.md) §4.2; [`backend.md`](backend.md) §4, *`Js.object` is an object literal*). The checker's, at a call of core's `Js.object` whose fields are not a list literal of `( "key", value )` pairs, each key a string literal that is a JavaScript identifier other than `__proto__`, no key twice. Only core and a platform package can write one (`js_outside_platform`) |
+| `invalid_js_object` | `Js` | the line before the last, appended on 2026-10-02, again never inserted, with `Js.object` ([`boundary.md`](boundary.md) §4.2; [`backend.md`](backend.md) §4, *`Js.object` is an object literal*). The checker's, at a call of core's `Js.object` whose fields are not a list literal of `( "key", value )` pairs, each key a string literal that is a JavaScript identifier other than `__proto__`, no key twice. Only core and a platform package can write one (`js_outside_platform`) |
+| `unit_spelling_removed` … `unit_discarded` | `⊤` and `⊥` | the last line, appended on 2026-10-02, again never inserted, with §12.10 (specified, not built). **`unit_spelling_removed`** is the parser's, at the `(` of a `()` in a type, an expression or a pattern; **`never_spelling_removed`** lowering's, at a `Never` that names `Basics`' empty type; both go on as `⊤` and `⊥`, so one stale spelling costs one message. **`if_without_else_not_unit`** is the checker's, at the `then` branch of an `if` without `else` whose type is not `⊤`. **`unit_discarded`** is a `warning`, the checker's, for the root package only, at a `_ =` in front of a `⊤` |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment
@@ -2229,7 +2234,7 @@ written with `let`.
 | columns | §2.1's columns count bytes, so a `λ` moves every later token on its line one column right of where an editor shows it. Layout only ever compares the columns of tokens that **begin** a line (§4, §12.2) — with one exception, a `case` whose first branch shares the `of` line — so this matters only there: a branch aligned by eye under a first branch written after a `λ` on the `of` line is one column off, which is the misaligned-branch `unexpected_token` with both columns quoted, never a silent re-reading. The formatter never writes a first branch on the `of` line. *Superseded 2026-10-02* (§12.7's *columns* row, built ahead of the symbols): a column counts code points, so a `λ` is one column and the exception is gone |
 | `\` | **removed.** A `\` outside a string or character literal that does not begin `\\` is still lexed, as the token `backslash`, only so that the parser can report **`backslash_lambda_removed`** at it — once per lambda, with the `λ` spelling of that lambda's head in the message (`λx y ->`) — and then parse the lambda as before, so the rest of the file still checks. The same holds inside a markup hole (`onClick={\_ -> Toggle}`) |
 | multiline strings | unchanged: a line whose first non-space characters are `\\` is a `multiline_line` (§2.7). §2.7's "one byte of lookahead separates it from a lambda" is now a lookahead that separates it from the removed token, and a `\\` can never be read as a lambda, or a lambda as a `\\` |
-| a lambda of no arguments | **`λ() -> e`**, the unit pattern as the one parameter — the spelling that exists today, which `backend.md` §6 *A parameter of type `()`* already compiles to a zero-parameter JavaScript function. There is **no shorthand**: `λ-> e` is `unexpected_token` at `->`, whose message says to write `λ() ->`. *Rejected:* a `λ-> e` thunk form. It would be a second spelling of one thing (the owner: "there is only one way"), it saves two characters, and a thunk passed as a trailing lambda (§12.3) reads `Task.spawn λ() ->` either way |
+| a lambda of no arguments | **`λ() -> e`**, the unit pattern as the one parameter — the spelling that exists today, which `backend.md` §6 *A parameter of type `()`* already compiles to a zero-parameter JavaScript function. There is **no shorthand**: `λ-> e` is `unexpected_token` at `->`, whose message says to write `λ() ->`. *Rejected:* a `λ-> e` thunk form. It would be a second spelling of one thing (the owner: "there is only one way"), it saves two characters, and a thunk passed as a trailing lambda (§12.3) reads `Task.spawn λ() ->` either way. *Amended 2026-10-02 (§12.10):* the unit pattern is written `⊤`, so a thunk is `λ⊤ → e` |
 | typing it | `λ` is not on a keyboard. The language's answer is the formatter's migration (`frontend.md` §11.4) and the editor: an editor mode or the M5 language server turns a typed `\` into `λ`, as Agda and Lean editors do. **`beni fmt` does not**: it formats only valid input (§9), and a file with a `\` lambda is not one |
 
 ### 12.2 Blocks
@@ -2842,6 +2847,94 @@ alongside, by a reviewed script, because the flag does not touch comments), **en
 (`ascii_symbol_removed`, `tuple_type_removed`, the type renderer and every compiler message that
 quotes code switch to the symbols). `plans/syntax-batch.md` slices 18–20.
 
+### 12.10 `⊤` and `⊥`: the trivial and the empty type, and `if` without `else`
+
+*Specified 2026-10-02; not built* (the owner's decision S10,
+[`plans/browser-decisions.md`](../../plans/browser-decisions.md)). **`⊤` is the unit type and its one
+value**, written the same in both roles — `log : String → ⊤`, `else ⊤`, `λ⊤ → e`, `key ⊤` — and
+replacing `()` in both, so a parenthesis means only grouping or a tuple. **`⊥` is the type with no
+values**, today's `Never`. **An `if` may leave out its `else` when its `then` branch is `⊤`**, the
+missing branch being `⊤`. And every `_ = e` whose `e` is `⊤` becomes a plain statement line (§12.2).
+The order of work is §12's: teach, migrate, enforce (§12.9's last row), as
+[`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 21–24 give, with the choices the owner
+should confirm in its §1.4, T1–T16. [`frontend.md`](frontend.md) §11.9 says how the lexer, parser,
+formatter and `beni fmt --migrate-top` build it; [`checker-v2.md`](checker-v2.md) §34 what the
+checker adds.
+
+**What does not change.** `⊤` is the unit `()` was, and `⊥` names the type `Basics` declares as
+`Never`: the BIR of a program is the same in either spelling, the checker sees the same types, and
+every byte the backend emits is the same — **a `⊤` is `null` at run time** (`backend.md` §4, *a
+`()` is `null` or `undefined`*, unchanged). A parameter of type `⊤` still compiles to a
+zero-parameter JavaScript function (`backend.md` §6), a `⊤` result is still not written, and no
+pattern tests a `⊤`.
+
+| Symbol | Code point | UTF-8 | Replaces | Token tag | Where it may stand |
+|---|---|---|---|---|---|
+| `⊤` | U+22A4 DOWN TACK | `E2 8A A4` | `()` in a type, an expression and a pattern | `top` | a type atom (§3 `TypeAtom`), an expression atom (`Atom`, so an argument: `key ⊤`, `f ⊤`), a pattern atom (`λ⊤ → e`, `case u of ⊤ → …`) |
+| `⊥` | U+22A5 UP TACK | `E2 8A A5` | `Never` | `bottom` | a type atom only |
+
+**Grammar** (§3's notation; amendments, nothing renumbered):
+
+```
+TypeAtom    := … | '⊤' | '⊥'                                     -- '(' ')' until the enforce step
+Atom        := … | '⊤'                                           -- '(' ')' until the enforce step
+PatternAtom := … | '⊤'
+Expr        := 'if' Expr 'then' Body ('else' Body)?              -- §12.2's line, the else optional
+```
+
+| Rule | Detail |
+|---|---|
+| **the lexer** | `⊤` and `⊥` are two more of §12.7's non-ASCII tokens, recognised wherever code is lexed (a markup hole, an interpolation hole, an attribute's `{…}` value and a `where` clause included) and never inside a string, a character, a multiline string, a comment or markup text. Neither is ever part of an identifier: `f⊤` is `f` then `⊤`, and the formatter writes `f ⊤` |
+| **`⊤` is one token in three roles** | as `()` was: what it is follows from where it stands — a type in a type, the unit value in an expression, the unit pattern in a pattern. `⊤` is irrefutable, so it may be a parameter (`λ⊤ → e`, `run ⊤ = …`). `(⊤)` is a grouping of `⊤` |
+| **`⊥` is a type only** | in an expression or a pattern it is `unexpected_token`, construct `bottom_outside_type`, whose message says `⊥` is a type with no values and that a value of it is used through `never` (`never v : a`) |
+| **`⊥` is core's empty type, always** | it names the type `Basics` declares, in every module, whatever the module declares or imports under the name `Never`: it cannot be shadowed, as `⊤` cannot. `Basics` keeps declaring the type as `type Never = JustOneMore ⊥` — a declaration needs an upper identifier — and from the enforce step that name is written only inside `Basics`. `never : ⊥ → a` keeps its name |
+| **`T`, the lookalike** | a capital `T` is the one ASCII character a reader may take for `⊤`. The lexer cannot refuse it — `T` is a legal type and constructor name, and a program may declare one — so the hint is resolution's: an **unbound** `T`, as a type (`unbound_type`) or as a constructor in an expression or a pattern (`unbound_constructor`), keeps its code and its message gains one sentence, *did you mean `⊤` (U+22A4 DOWN TACK), the unit type and its value?* A `T` the program declares or imports is that declaration, as any name is: it is never read as `⊤`, and nothing is accepted silently |
+| **lookalikes** | §12.7's *Lookalikes* gain five, each `invalid_character` with the symbol named and the parse going on as that symbol: `⟙` U+27D9 LARGE DOWN TACK, `⫟` U+2ADF SHORT DOWN TACK and `⊺` U+22BA INTERCALATE → `⊤`; `⟘` U+27D8 LARGE UP TACK and `⫠` U+2AE0 SHORT UP TACK → `⊥` |
+| **`( )`** | the unit written with whitespace or a newline between its parentheses is the same `()` (§3 reads two tokens), and is migrated and refused exactly as `()` is. One with a comment between its parentheses is refused the same way; the flag leaves its file alone and names it, for a hand edit |
+| **markup** | `()` in markup text or a quoted attribute value is text, which no rule here reaches. In a markup hole or a `{…}` attribute value it is code, and is `⊤` like any other |
+| **the type renderer** | from the enforce step, prints `⊤` for the unit type and `⊥` for `Basics`' empty type, so a diagnostic, `dump --stage=types` and `--stage=interface` show what the program must write. Neither is ever parenthesised. A type's run-time identity (`checker-v2.md` §33) is a key, not source, and keeps `()` |
+| **`Debug.toString`** | from the enforce step, writes the unit value as `⊤` (Appendix B), as beni source writes it: `Mark ⊤` |
+| **typing it** | §12.9's editor rule: the language server turns a `()` typed in code into `⊤`, and offers `⊥` where `Never` is typed in a type; no backslash abbreviation |
+
+**`if` without `else`.**
+
+| Rule | Detail |
+|---|---|
+| **where it parses** | anywhere an `if` may stand (§3's `TailForm`): a statement line, a block's last line, a branch's or a lambda's body, an operand, an argument in parentheses. It is a whole `if c then body` with no `else` after its body: an `if` whose body ends — at the end of its block (§12.2 B4), at a closing bracket, a comma, `of`, or the end of the file — without an `else` has none. A body that is a block keeps §12.2's layout, so the form most programs write is `if c then` / a block / the next item at the `if`'s column |
+| **which `if` an `else` belongs to** | the nearest `if` before it that has no `else` and whose block the `else` is inside. **Layout decides first**: an `else` at a column left of a block's column ends that block (B4), so an `if` inside the block cannot take it — `if a then` / `    if b then` / `        x` / `else` / `    y` gives the `else` to the outer `if`, as it reads. **On one line** the nearest `if` takes it, as in OCaml, F#, Rust and Scala: `if a then if b then x else y` is `if a then (if b then x else y)`; the other reading is written with its parentheses, which the formatter keeps |
+| **its type** | **the `then` branch must be `⊤`**, and the whole `if` is `⊤` — the missing branch is the value `⊤`. Its condition is `Bool`, as always. A `then` branch of any other type is **`if_without_else_not_unit`** (title MISSING ELSE, `checker-v2.md` §34), at the `then` branch, whose message names the branch's type and says to write the `else` that gives the `if` its value when the condition is false. The `if` is checked against what its context wants like any `⊤`: in `n = if c then f x` / `n + 1` the branch is reported, and `n + 1` is an ordinary mismatch of `⊤` against a number |
+| **why only `⊤`** | an `if` producing any other type has no value to give when its condition is false; inventing one (a default, a `Maybe`) would be the silent wrong answer rule 7 forbids, and OCaml, F#, Rust and Scala all require the missing branch's type to be their unit. `if c then a else ⊤` stays legal; the migration writes it without its `else` |
+| **lowering** | the missing branch is the value `⊤`, so `if c then a` lowers to the `case` that `if c then a else ⊤` lowers to (§8), its `False` branch the unit instruction, and the emitted JavaScript of the two spellings is byte-identical |
+| **evaluation** | the condition, then the `then` branch when it is `True`; nothing when it is `False` |
+| **the formatter** | an `if` without `else` is printed as an `if` with one is, without the `else` half: on one line only when the author wrote it on one line and it fits (§12.5, Y14), otherwise `if c then` and the body indented 4 below. The formatter never adds or removes an `else` |
+
+**`_ = e` where `e` is `⊤`.** A statement line already requires `⊤` (§12.2), so `_ =` in front of a
+`⊤` says nothing the line does not. From the enforce step it is the warning **`unit_discarded`**
+(title UNIT DISCARDED, `checker-v2.md` §34), at the `_ =`, for the root package's modules only, as
+`suspicious_argument_order` is: *this `_ =` throws away a `⊤`, which a statement line does
+already*. A warning and not an error, because the line is redundant, not wrong (rule 7). Until
+the enforce step it is emitted only under `--explain`, which is how the migration finds the lines
+(`frontend.md` §11.9). `_ = e` for any other type is §12.2's explicit discard and is untouched.
+
+**The removed spellings.** From the enforce step:
+
+| Code | Title | At | Message |
+|---|---|---|---|
+| **`unit_spelling_removed`** | REMOVED UNIT SPELLING | the `(` of every `()` (or `( )`) in a type, an expression or a pattern — the parser's | `()` is written `⊤` (U+22A4 DOWN TACK), as the type and as its value; the flag `beni fmt --migrate-top`. The parse goes on as `⊤`, so one stale spelling costs one message |
+| **`never_spelling_removed`** | REMOVED NEVER SPELLING | a type name `Never` that names `Basics`' empty type — through the prelude, an `exposing` list or `Basics.Never` — in any module but `Basics` — lowering's | `Never` is written `⊥` (U+22A5 UP TACK); the flag. Resolution goes on to the same type. A module's own `type Never`, and a `Never` imported from a module other than `Basics`, are other types and are untouched |
+
+The prelude's exposed types keep `Never` (Appendix A), so that a stale `Never` gets the removal
+diagnostic rather than `unbound_type`.
+
+**The migration**, `beni fmt --migrate-top` (`frontend.md` §11.9), is an edit in §12.9's family —
+it keeps the file's layout and reaches its fixed point in one run: `()` → `⊤` in every type,
+expression and pattern; `Never` → `⊥` where the file neither declares nor imports a `Never` of its
+own; `else ⊤` dropped from an `if` whose `else` branch is exactly the unit atom and which is not
+the `then` branch of an `if` with an `else` (dropping it there would hand the outer `else` to the
+inner `if`); and, given the warnings of a `check --explain --diagnostics=json` run as
+`--discards=<file>`, `_ = ` deleted in front of each `unit_discarded` line. Dropping `else ⊤` is
+always type-safe: the two branches were unified, so the `then` branch is already `⊤`.
+
 ## Appendix A. The prelude
 
 These names are in scope in every module without an import. The table is a constant inside the
@@ -2866,7 +2959,9 @@ exposed values, and a use of one is `name_removed`; nothing unqualified replaces
 `Float` join the module aliases, so `Int.mod n 2`, `Int.rem n 3` and `Float.log x 10` need no
 import. The exposed types do not change. *Amended 2026-10-01:* the modules `Int` and `Float` do not
 declare those two types, which stay in `Basics` (§12.4); they are ordinary core modules holding
-`mod` and `rem`, and `log`. Unlike `Int32` below, they are not an escape hatch beside the language
+`mod` and `rem`, and `log`. *Amended 2026-10-02 (§12.10; specified, not built):* the empty type
+is written `⊥`, which names `Basics`' type wherever it stands; `Never` stays among the exposed
+types only so that a stale use is `never_spelling_removed` rather than `unbound_type`. Unlike `Int32` below, they are not an escape hatch beside the language
 everyone writes but the home of three prelude values, which is why they keep a prelude row: an
 edge to either exists only in a module that writes `Int.` or `Float.` (the conditional prelude edge,
 static-dispatch-spike.md §5.1).
@@ -2912,6 +3007,9 @@ beni source writes it**, as Elm's writes Elm, with Elm's spacing:
 | `Set` | `Set.fromList ['a','b']` |
 | function | `<function>` |
 | `foreign type` | `<internals>` |
+
+*Amended 2026-10-02 (§12.10; specified, not built):* from the enforce step the unit value prints
+`⊤`, and `Mark ()` prints `Mark ⊤`, as source writes them.
 
 An opaque type prints its constructor, as Elm's does: `Debug` is for the developer who can read
 the module anyway. The exact text is not a promise (the module's own doc says so), but it is

@@ -5756,3 +5756,46 @@ columns, `identities` and `text`, and two term tags).
 **The dump.** A declaration or `let` with identities prints `identity <i> requirement=<k>` lines
 after its requirement lines; an identity term prints as `identity` with its parts under it, a text
 part as `text "<text>"`. Nothing else moves, so no golden of a module that keys nothing changes.
+
+## 34. Amendment of 2026-10-02: `⊤`, `⊥` and `if` without `else`
+
+*Specified 2026-10-02, not built.* What the checker adds for [`language.md`](language.md) §12.10.
+The unit type keeps its representation in the type store (`.unit`), and `⊥` is the type `Basics`
+declares (`Types.well_known.never`, unchanged): neither spelling reaches the checker, which sees the
+BIR it always saw. What is new is one category, one error, one warning, and two words of the type
+renderer.
+
+**The missing branch.** An `if` without `else` lowers to a `case` whose second branch's body is a
+`unit` instruction with `lhs` 1 (`frontend.md` §11.9). `caseExpr` (§6) recognises it, and for that
+`case` generates, in place of the two branch constraints: the `then` body against a fresh variable
+`t` under the context's category; `t` against `⊤` under the new category **`if_without_else`**,
+owner the `then` body; and the missing branch against the context, as the `⊤` it is. A failure of
+the second is reported as **`if_without_else_not_unit`**, title MISSING ELSE, at the `then` body,
+and never as `type_mismatch`; one inside the body reports first, as a statement's does (§29.1, a
+poisoned type reports once):
+
+> This `if` has no `else`, so it is `⊤` when its condition is false — and then its `then` branch
+> must be `⊤` too, but it is an `Int`.
+>
+> Give the `if` the value it has when the condition is false:
+>
+>     if … then … else …
+
+The type is printed as §15.3 prints any type. A `then` body whose type is a variable is fixed to
+`⊤`, as a statement's is.
+
+**`unit_discarded`.** A `warning`, for the root package's modules only and on a module that
+checked clean, decided where `suspicious_argument_order` is (§29.4): every `let_pattern` whose
+pattern is `_` and whose expression's type is, after solving, `⊤`, at the span from the `_` to the
+end of the `=`:
+
+> This `_ =` throws away a `⊤`, which a statement line does already. Write the line without it.
+
+Until the enforce step it is emitted only under `--explain`, from then by default. Generation
+records each wildcard `let_pattern`'s variable as it declares it, so the pass reads one variable
+per candidate and walks nothing.
+
+**The renderer** (§15.3, `Render.zig`) prints the unit type as `⊤` and `Basics`' empty type as
+`⊥` from the enforce step, in every message, the `types` and `interface` dumps, and the call-style
+hints (`xs.length ⊤`). The text of a type's run-time identity (§33) is a key, not source, and keeps
+`()`; so does the cache's type-body digest.

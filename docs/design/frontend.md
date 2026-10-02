@@ -1785,3 +1785,76 @@ notations — the BIR dump's `lambda [...] -> %n`, the graph dump's edges — st
 map's columns no longer rescan a line from its start when the marks on it come out of order: a
 file that holds a symbol is no longer all ASCII, and one line of 4 097 marks went over the test
 budget that way.
+
+### 11.9 `⊤`, `⊥` and `if` without `else` in the front end
+
+*Added 2026-10-02; not built.* How the front end builds [`language.md`](language.md) §12.10, in
+the order [`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 21–24 give.
+
+**The lexer.** Two tags, **`top`** (`⊤`, `E2 8A A4`) and **`bottom`** (`⊥`, `E2 8A A5`), beside
+§11.8's symbols, recognised by the same lead-byte switch (`Tokenizer.symbols`) and so never inside
+a string, character, multiline string, comment or markup text. Their lexemes are their bytes. The
+five lookalikes of §12.10 join `Token.lookalikes`, each reported as `invalid_character` and lexed
+as a `lookalike` whose payload is `top` or `bottom`; `Token.symbolName` names both. The frontend
+artifact's format version moves for the tags.
+
+**The parser.** `⊤` is a leaf in three places, building the node `()` builds there — `type_unit`
+in `parseTypeAtom`, `unit` in an expression atom, `pat_unit` in a pattern — with the `⊤` as its
+`main_token`, so the AST and BIR dumps of the two spellings are byte-identical but for the token
+column. Every set of tokens that may begin an atom, an argument, a pattern, a type atom or a
+block item (§12.2 B2) gains `top`; the type-atom set gains `bottom`. `⊥` builds the new leaf
+**`type_bottom`**; anywhere else it is `unexpected_token` (construct `bottom_outside_type`).
+
+`parseIf` reads its `else` only when the next token is `else` (§2's block rule already makes a
+token outside the `if`'s block invisible, which is what gives §12.10's layout reading); without
+one it builds the new node **`if_then`**, `lhs` the condition and `rhs` the `then` body. The
+existing `if` node is untouched, so every consumer that handles it handles the old form as before.
+From the enforce step the parser reports `unit_spelling_removed` at the `(` of every unit leaf
+whose `main_token` is `l_paren`, and parses on.
+
+**Lowering.** `type_unit`, `unit` and `pat_unit` lower as they do. `type_bottom` lowers to the
+type `Basics` declares as `Never`: inside core's `Basics`, the module's own type; everywhere else
+the import reference the prelude's `Never` resolves to — never through the module's scope, so no
+declaration or import can shadow it. `if_then` lowers as `if` does, its `False` branch a `unit`
+instruction whose `lhs` is **1**, the mark that the checker reads as "the missing branch"
+(`checker-v2.md` §34); every other pass reads a `unit` as a unit, so the emitted JavaScript is the
+`if c then a else ⊤`'s. From the enforce step lowering reports `never_spelling_removed` at a type
+name `Never` that resolves to `Basics`' — through the prelude, an `exposing` list of an import of
+`Basics`, or `Basics.Never` — in any module but core's `Basics`, and resolves on. An unbound `T`
+gets §12.10's sentence from the texts of `unbound_type` and `unbound_constructor`. The BIR format
+does not change (the mark is a value of a field the instruction already has).
+
+**The formatter** prints a unit leaf from its `main_token` — `⊤`, or `()` until the enforce step
+— and measures it by its token; `type_bottom` as `⊥`; `if_then` as `if` prints, without the
+`else` half: on one line when it was written on one line and fits, otherwise `if c then` and the
+body indented 4. A paren node around an `if_then` that is the `then` branch of an `if` is kept,
+as every paren the author wrote is.
+
+**`beni fmt --migrate-top`** is an edit in §11.4's family: it keeps the layout, may run on every
+`.beni` file including the deliberately unformatted ones, reaches its fixed point in one run,
+accepts a file whose only syntax errors are `unit_spelling_removed` (an error filter), re-parses
+its output and leaves untouched — naming it — a file that no longer parses. Its edits, in one
+source-order walk:
+
+- **Unit.** A unit leaf whose `main_token` is `(` is replaced, from its `(` to its `)`, by `⊤`.
+  One whose parentheses hold a comment leaves its file untouched and named.
+- **`Never`.** A type name `Never` — unqualified, or `Basics.Never` — becomes `⊥`, unless the
+  file declares a type, alias or schema named `Never` or imports one by name from a module other
+  than `Basics`. Lowering's resolution is not needed: the flag works on one file with no project,
+  and the two conditions are what make the file's `Never` the prelude's.
+- **`else ⊤`.** An `if` whose `else` branch is a unit leaf (either spelling) loses its `else`
+  half — from the end of its `then` body to the end of the unit — unless the `if` is the `then`
+  branch of an `if` that has an `else`, or a comment lies in the range; the next line keeps its
+  column, so a vertical `if` loses its last two lines.
+- **`_ = e`**, given **`--discards=<file>`**: the file is the JSON array a `beni check --explain
+  --diagnostics=json` run printed. For each of its `unit_discarded` diagnostics whose `span.file`
+  is the path being formatted, the block item whose `_` begins at the span's start loses
+  everything from its `_` to the first token of its expression. An expression that begins on the
+  line below then begins on the `_`'s line at its column, its later lines keeping theirs, which
+  stays inside the item's layout (B3: they are right of its column); plain `beni fmt` then
+  re-indents them. A diagnostic that names no such item is reported and the file left alone.
+  Without `--discards`, no `_ =` is touched: a `_ = e` is correct for every type, and seeing that
+  `e` is `⊤` needs types, which a per-file formatter does not have.
+
+The slice that runs it runs `beni check --explain --diagnostics=json` over every project and
+fixture first, then the flag with that file, then plain `beni fmt` over the gate's scope.

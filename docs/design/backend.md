@@ -1773,6 +1773,14 @@ the brotli page moves with what it can no longer share, `return G(…)` against 
 `emit/release/core/UnitResults` (a `pub` function ending in a `Js.set`, a loop's `return;`, a
 handler stored on a node, a local function, and an `Int` function that keeps its `return`).
 
+*Amended 2026-10-02 (`language.md` §12.10; specified, not built).* Unit is written `⊤` and the
+empty type `⊥`. **Nothing in this section moves**: the BIR of `⊤` is the BIR of `()`, so a `⊤`
+is `null` (or `undefined` under the rule above), "the literal `()`" above is the literal `⊤`, and
+an `if` without `else` lowers to the `case` its `else ⊤` spelling does, its missing branch the
+unit instruction, so its JavaScript is byte-identical. The one visible change is `Debug`'s
+printer, which writes the unit value as `⊤` from the enforce step (*`Debug.toString` reads the
+argument's type*).
+
 ### A `Js.Ref` that does not escape is a `let`
 
 *Added 2026-10-02 (research 47 §6 item 5; `plans/browser-decisions.md` R47-2; `boundary.md` §4.2).*
