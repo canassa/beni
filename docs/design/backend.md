@@ -860,6 +860,14 @@ made a beni body a program that fails to load. For the same reason each counts a
 result is read (*A result nothing reads*): the emitter's calls are in no module's BIR, and a
 beni-bodied `close` written without its `return` handed every building loop `undefined`.
 
+*Amended 2026-10-02:* **the five are part of the core contract.** A core package that does not
+declare one — only a `--core-root` core can lack it — is refused with `core_contract_violation`
+where a module first needs it (once per module and value), and nothing is written: the import by
+printed name would otherwise name an export `_core/List.mjs` does not have, and the program would
+build with exit 0 and fail to load. A program that never needs the missing value still builds. The
+same code replaces `internal` for the two values a comparison reaches for, `Basics.eq` and
+`String.compare` (`static-dispatch-spike.md` §8), which are the same failure.
+
 #### Identity: what an operation returns unchanged
 
 `language.md` §11.12 promises that a value a program does not rebuild keeps its identity, and the

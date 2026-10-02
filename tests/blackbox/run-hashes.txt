@@ -38,6 +38,7 @@ build_test.test.--release builds and runs with no map, and --release --source-ma
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 dbff31043c346d679447e0360f357c0c480729c2b08d6cbd7136914865b3447a
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 110599ef3150ab965c61e2a8a29aacfaaa094395687c11317f5e54a79fbdf9b0
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 2f8bd46c49a014c5ebf55cf137f4c72ce9884c681199447113bab8039578dcbd
+build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 96fb9ca4a46b57caa1670315078d73bb7b4d01bed85fe4aa414f579401ce9da7
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 28de5e2993ef98950c050250eac107eaadfa88a944c575f1b3fa9ea2a0e154fb
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 08fb441e1c728c219b8743a0cf575f13ab62d21d55135f232054a8d916d004ab

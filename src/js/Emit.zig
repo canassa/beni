@@ -338,6 +338,9 @@ pub fn run(
     defer pool.deinit();
     e.pool = &pool;
     e.extra_roots = try e.coarseRuntimeRoots();
+    // Which of `core/List`'s core-private values this build's core
+    // declares: every module that would import one it lacks says so.
+    if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.core_private = Lower.corePrivateDeclared(e.bir(list));
     try e.eliminate(entry);
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
@@ -434,6 +437,8 @@ const Emitter = struct {
     /// Scratch-owned, filled by `eliminate` before the first module is
     /// lowered.
     live: Reach.Result = .empty,
+    /// `Lower.Input.core_private`, the same for every module of the build.
+    core_private: Lower.CorePrivate = @splat(true),
     /// §9 item 2's whole-program namespace: one table for the BUILD, so that
     /// an `import` specifier in one file and the `export` in another are
     /// given the same short name. Empty and unused in a dev build.
@@ -2560,6 +2565,7 @@ const Emitter = struct {
                 .boundary = if (e.boundary) |*b| b else null,
                 .schemas = if (e.schema_graph) |*g| g else null,
                 .schema_library = e.options.schema_library,
+                .core_private = e.core_private,
             });
             const lowered = &slot.lowered.?;
             if (lowered.diagnostics.len != 0) return;

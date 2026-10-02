@@ -3220,7 +3220,7 @@ test "--core-root without the operators' functions is reported, not emitted as u
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
-    try testing.expectEqual(diagnostic.Code.internal, r.diagnostics[0].code);
+    try testing.expectEqual(diagnostic.Code.core_contract_violation, r.diagnostics[0].code);
     try testing.expectEqual(@as(u32, 6), r.diagnostics[0].span.start.line);
     try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "`String.compare`") != null);
 
@@ -3286,7 +3286,7 @@ test "--core-root without the operators' functions is reported, not emitted as u
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 1), eq.exit_code);
     try testing.expectEqual(@as(usize, 2), eq.diagnostics.len);
-    for (eq.diagnostics) |d| try testing.expectEqual(diagnostic.Code.internal, d.code);
+    for (eq.diagnostics) |d| try testing.expectEqual(diagnostic.Code.core_contract_violation, d.code);
     // Sorted by position, so `same` before `differ` — and both name `eq`.
     for (eq.diagnostics) |d| try testing.expect(std.mem.indexOf(u8, d.message, "`Basics.eq`") != null);
 

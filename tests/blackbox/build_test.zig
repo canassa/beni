@@ -4533,3 +4533,85 @@ test "a core-private List value the emitter calls keeps its result under --relea
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
 }
+
+test "a --core-root core without a core-private List value the emitter calls is refused where a module needs it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A list pattern's `rest` is `List$view`, which the emitter imports
+    // from `core/List` by its printed name (`backend.md` §4, *The
+    // emitter's imports of the core-private exports*). A core without it
+    // built with no diagnostic and exit 0, and the program then failed to
+    // load: `… does not provide an export named 'List$view'`. Here the
+    // value is renamed `viewAt`, so `core/List` itself still builds — its
+    // own code names it and never binds a `rest` — and lacks only the name
+    // the emitter imports.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.copyTreeInto("core", "mycore", "_");
+    var beni = try w.read("mycore/List.beni");
+    for ([_][]const u8{ "foreign pure view : ", "view xs " }) |old| {
+        if (std.mem.count(u8, beni, old) == 0) return error.CoreChanged;
+        const new = try std.mem.replaceOwned(u8, arena, old, "view", "viewAt");
+        beni = try std.mem.replaceOwned(u8, arena, beni, old, new);
+    }
+    try w.write("mycore/List.beni", beni);
+    const js = try w.read("mycore/List.js");
+    const export_view = "export const view = ";
+    if (std.mem.count(u8, js, export_view) != 1) return error.CoreChanged;
+    try w.write("mycore/List.js", try std.mem.replaceOwned(u8, arena, js, export_view, "export const viewAt = "));
+    // Not a tail call, so `rest` is a list of its own: a view.
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\count : List Int → Int
+        \\count xs =
+        \\    case xs of
+        \\        [] →
+        \\            0
+        \\
+        \\        [ _, …rest ] →
+        \\            1 + count rest
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (count [ 1, 2, 3 ]))
+        \\
+    );
+    // The same core builds a program that binds no `rest`.
+    try w.write("Other.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (List.length [ 1, 2, 3 ]))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const refused = try w.run(&.{ "build", "--platform=node", "--core-root=mycore", "--out=refused", "Main.beni" });
+    const other = try w.buildAndRun(&.{ "--core-root=mycore", "Other.beni" }, .{ .stdout = "3\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), refused.exit_code);
+    try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+    const d = refused.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.core_contract_violation, d.code);
+    try testing.expect(std.mem.endsWith(u8, d.span.file, "Main.beni"));
+    try testing.expect(std.mem.indexOf(u8, d.message, "`List.view`") != null);
+    try expectBuilt(other);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY STATE                            │
+    // └─────────────────────────────────────────┘
+    // A refused build writes nothing (backend.md §2).
+    try testing.expect(!w.exists("refused/Main.mjs"));
+}

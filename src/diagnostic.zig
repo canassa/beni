@@ -362,6 +362,15 @@ pub const Code = enum {
     /// written with `×`.
     ascii_symbol_removed,
     tuple_type_removed,
+    /// Appended on 2026-10-02 (`backend.md` §4, *The emitter's imports of
+    /// the core-private exports*): a core package — one `--core-root`
+    /// names, since the embedded one always holds them — that does not
+    /// declare a value the code generator calls on its own: `Basics.eq`,
+    /// `String.compare`, or `core/List`'s `unsafeGet`, `view`, `base`,
+    /// `offset` and `close`. Reported at the code that needs it, because
+    /// the build would otherwise import a name the core does not export
+    /// and the program would fail to load.
+    core_contract_violation,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -528,6 +537,7 @@ pub fn title(code: Code) []const u8 {
         .suspicious_argument_order => "SUSPICIOUS ARGUMENT ORDER",
         .ascii_symbol_removed => "REMOVED ASCII SYMBOL",
         .tuple_type_removed => "REMOVED TUPLE TYPE",
+        .core_contract_violation => "CORE CONTRACT VIOLATION",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

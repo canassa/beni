@@ -226,7 +226,41 @@ pub const Input = struct {
     /// `--schema-library`: every schema root runs through the library
     /// interpreter (`schema.md` §10, the forced library path).
     schema_library: bool = false,
+    /// Per `core_private_values`, whether the build's `core/List` declares
+    /// it (`corePrivateDeclared`). The embedded core declares all five; a
+    /// `--core-root` core that does not is refused where a module needs
+    /// the one it lacks, rather than importing a name `core/List` does not
+    /// export.
+    core_private: CorePrivate = @splat(true),
 };
+
+/// `core/List`'s core-private values the emitter calls from other modules
+/// (`backend.md` §4, *The emitter's imports of the core-private exports*):
+/// in no interface, so no program names them, and imported by their printed
+/// name.
+pub const core_private_values = [_]InternPool.WellKnown{ .unsafeGet, .view, .base, .offset, .close };
+
+/// One flag per `core_private_values`.
+pub const CorePrivate = [core_private_values.len]bool;
+
+/// The index of `symbol` in `core_private_values`, if it is one.
+fn corePrivateSlot(symbol: Symbol) ?usize {
+    for (core_private_values, 0..) |w, i| {
+        if (w.symbol() == symbol) return i;
+    }
+    return null;
+}
+
+/// Which of `core_private_values` `list`, the build's `core/List`, declares
+/// as a value — a `foreign` one or one with a beni body alike.
+pub fn corePrivateDeclared(list: *const Bir) CorePrivate {
+    var out: CorePrivate = @splat(false);
+    for (list.decls) |d| {
+        if (!d.kind.isValue()) continue;
+        if (corePrivateSlot(list.symbol(d.name))) |slot| out[slot] = true;
+    }
+    return out;
+}
 
 pub const Markup = struct {
     lowering: *const beni_markup.Lowering,
@@ -544,6 +578,9 @@ pub const Lowerer = struct {
     /// module's lowering.
     record_names: ?struct { rep: RecordRep, names: []const Symbol } = null,
     diagnostics: std.ArrayList(Item) = .empty,
+    /// Per `core_private_values`, whether this module already reported the
+    /// core lacking it (`corePrivate`).
+    core_private_reported: CorePrivate = @splat(false),
     /// Names the module has to import from another module, in first-use
     /// order so the import list is a function of the source.
     needed: std.ArrayList(Needed) = .empty,
@@ -1842,10 +1879,7 @@ pub const Lowerer = struct {
         if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
         const d = l.bir.decls[index];
         if (!d.kind.isValue()) return false;
-        const symbol = l.bir.symbol(d.name);
-        return symbol == InternPool.WellKnown.unsafeGet.symbol() or symbol == InternPool.WellKnown.view.symbol() or
-            symbol == InternPool.WellKnown.close.symbol() or symbol == InternPool.WellKnown.base.symbol() or
-            symbol == InternPool.WellKnown.offset.symbol();
+        return corePrivateSlot(l.bir.symbol(d.name)) != null;
     }
 
     /// The `import` statements, built once the reference list is complete
@@ -3856,6 +3890,15 @@ pub const Lowerer = struct {
             }
             return l.missingCoreValue(p, "List", l.interner.slice(function.symbol()), "this module IS that module, and it does not declare it");
         }
+        // Imported by its printed name, so a core that does not declare it
+        // would give this module an import `core/List` does not export, and
+        // the program would fail to load: refused here instead.
+        // Once per module and value: a list pattern asks for three of them.
+        if (corePrivateSlot(function.symbol())) |slot| if (!l.in.core_private[slot]) {
+            if (l.core_private_reported[slot]) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            l.core_private_reported[slot] = true;
+            return l.missingCoreValue(p, "List", l.interner.slice(function.symbol()), "that module does not declare it");
+        };
         const entry: Needed = .{ .module = module, .base = function.symbol().toOptional() };
         try l.needName(entry);
         return l.ident(try l.neededName(entry), p);
@@ -7163,24 +7206,27 @@ pub const Lowerer = struct {
         return l.ident(try l.externalName(module, @intFromEnum(index)), p);
     }
 
-    /// The one failure `coreValue` can hit: a core package that does not
-    /// hold a value the emitter needs. `internal`, because a complete core
-    /// package always does and the build cannot continue honestly.
+    /// The one failure `coreValue` and `corePrivate` can hit: a core package
+    /// that does not hold a value the emitter calls on its own.
+    /// `core_contract_violation`, because a complete core package always
+    /// does — only one `--core-root` names can lack it — and the build
+    /// cannot continue honestly.
     fn missingCoreValue(l: *Lowerer, p: u32, owner: []const u8, spelling: []const u8, why: []const u8) !Node.Index {
         // The position is a byte offset, not an instruction, so the
         // diagnostic is attached to the declaration being lowered through
         // the module it names; `region` is what `report` underlines and the
         // nearest instruction is the one the caller was handed.
         try l.report(
-            .internal,
+            .core_contract_violation,
             l.region,
-            \\I cannot find `{s}.{s}`, which the code generator needs.
+            \\I cannot find `{s}.{s}`, which the code generator needs here: {s}.
             \\
-            \\`docs/design/static-dispatch-spike.md` §8 emits a call of it for a
-            \\comparison the checker resolved, but {s}.
-            \\
-            \\A core package replaced with `--core-root` must declare `Basics.eq` and
-            \\`String.compare`.
+            \\The code generator calls it on its own — for a comparison the checker
+            \\resolved (`docs/design/static-dispatch-spike.md` §8), or to read, walk or
+            \\build a list (`docs/design/backend.md` §4) — so every core package must
+            \\declare it. A core package replaced with `--core-root` must declare
+            \\`Basics.eq`, `String.compare`, and `List`'s `unsafeGet`, `view`, `base`,
+            \\`offset` and `close`.
         ,
             .{ owner, spelling, why },
         );
