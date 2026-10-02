@@ -824,6 +824,8 @@ or else measured smaller and its goldens moved with a fixture that is red before
 
 ## 5. Decisions for the owner
 
+*Decided by the owner, 2026-10-02 ("yes to all"):* `run/DerivedPartTypedLater`'s +6 B stands until slice 6 removes its cause (G8), with no special case; `backend.md` §9 *The combined solver* is the normative home of the design and this report's §9 holds the slices' status; **no slice may raise peak RSS by more than 5 %**, measured like the speed bar; size-gated cloning is decided after slice 6.
+
 *Decided 2026-10-02: 1 and 2 adopted, 3 approved with four constraints, 4 deferred until slice 6,
 5 not now — §0.3.*
 

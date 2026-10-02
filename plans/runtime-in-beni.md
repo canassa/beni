@@ -879,3 +879,5 @@ with more spread between runs than between the two; `retap` went from 30–40 ns
 every field TodoMVC never reads included: the relay is beni now, but the value still waits in the
 relay's queue — a program array's `push` — and reaches the tagger through `Js.apply` of a function
 read out of an array, neither of which fact 3 follows.
+
+*Decided by the owner, 2026-10-02:* a `Js` comparison intrinsic (`Js.lt` and its siblings, written in place as JavaScript's `<` and friends, specified in `boundary.md` §4.2 before it is built) so that `Hosted.js`'s last functions, `keyOf` and `compareKeys`, move to beni without reaching `String.compare`.
