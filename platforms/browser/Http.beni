@@ -39,6 +39,7 @@ pub type Problem
     | InvalidHeader String
     | ForbiddenHeader String
     | BodyNotAllowed String
+    | MultipartContentType
 
 
 --| A request header: its name and its value.
@@ -58,6 +59,12 @@ header name value = Header name value
 pub opaque type Body
     = Empty
     | Text String String
+    | Multipart (List Part)
+
+
+--| A part of a `multipartBody`.
+pub opaque type Part
+    = StringPart String String
 
 
 --| No body.
@@ -71,6 +78,22 @@ emptyBody = Empty
 --|     Http.stringBody "text/plain" "hello"
 pub stringBody : String, String -> Body
 stringBody mime text = Text mime text
+
+
+--| Parts, sent as `multipart/form-data` — what a `<form>` with
+--| `enctype="multipart/form-data"` sends — with the host's `Content-Type`
+--| and boundary. A `Content-Type` header of the program's beside it is
+--| refused, `BadRequest MultipartContentType`: the boundary in it would
+--| not be the body's.
+--|
+--|     Http.multipartBody [ Http.stringPart "title" "Notes", Http.stringPart "tag" "work" ]
+pub multipartBody : List Part -> Body
+multipartBody parts = Multipart parts
+
+
+--| A text field of a multipart body: its name, then its value.
+pub stringPart : String, String -> Part
+stringPart name value = StringPart name value
 
 
 --| How the answer is read: what it is turned into, with which errors.
@@ -116,10 +139,41 @@ pub type alias Metadata =
     headers : Dict String String
 
 
---| How far a request has got.
+--| How far a request has got, as its tracker is told (§9.8.12 (e)). `fetch`
+--| reports no upload progress, so a body is `Sending` twice: nothing sent
+--| before the request goes, all of it once the answer's headers arrive.
+--| Then `Receiving`, with the answer's `Content-Length` as its size when
+--| it has one, after each chunk of the body. The bytes counted are those
+--| the host hands over, after it has undone any compression, so `received`
+--| may pass `size`.
 pub type Progress
     = Sending { sent : Int, size : Int }
     | Receiving { received : Int, size : Maybe Int }
+
+
+--| How much of the body has been sent, from 0 to 1; a body of no bytes
+--| is all sent.
+pub fractionSent : { sent : Int, size : Int } -> Float
+fractionSent p =
+    if p.size == 0 then
+        1
+    else
+        clamp (toFloat p.sent / toFloat p.size) 0 1
+
+
+--| How much of the answer has arrived, from 0 to 1: 0 while its size is
+--| not known, and never more than 1.
+pub fractionReceived : { received : Int, size : Maybe Int } -> Float
+fractionReceived p =
+    case p.size of
+        Nothing ->
+            0
+
+        Just n ->
+            if n == 0 then
+                1
+            else
+                clamp (toFloat p.received / toFloat n) 0 1
 
 
 --| A request. It is checked before it is sent: the URL (relative to the
@@ -148,7 +202,16 @@ pub request :
       }
     -> Result x a
 request r =
-    send problemOf "same-origin" r.method r.headers r.url r.body r.expect (timerOf r.timeout)
+    send
+        problemOf
+        "same-origin"
+        r.method
+        r.headers
+        r.url
+        r.body
+        r.expect
+        (timerOf r.timeout)
+        (readingOf r.tracker)
 
 
 --| `request` with the browser's credentials — cookies, authorization —
@@ -164,19 +227,28 @@ pub riskyRequest :
       }
     -> Result x a
 riskyRequest r =
-    send problemOf "include" r.method r.headers r.url r.body r.expect (timerOf r.timeout)
+    send
+        problemOf
+        "include"
+        r.method
+        r.headers
+        r.url
+        r.body
+        r.expect
+        (timerOf r.timeout)
+        (readingOf r.tracker)
 
 
 --| `GET` the URL.
 --|
 --|     Http.get { url = "/api/items", expect = Http.expectString }
 pub get : { url : String, expect : Expect x a } -> Result x a
-get r = send unchecked "same-origin" "GET" [] r.url Empty r.expect NoTimer
+get r = send unchecked "same-origin" "GET" [] r.url Empty r.expect NoTimer Plain
 
 
 --| `POST` the body to the URL.
 pub post : { url : String, body : Body, expect : Expect x a } -> Result x a
-post r = send bodyChecks "same-origin" "POST" [] r.url r.body r.expect NoTimer
+post r = send bodyChecks "same-origin" "POST" [] r.url r.body r.expect NoTimer Plain
 
 
 -- ---- What a request does (§9.8.12 (b)) ------------------------------------
@@ -186,6 +258,24 @@ post r = send bodyChecks "same-origin" "POST" [] r.url r.body r.expect NoTimer
 type Timer
     = NoTimer
     | After Int
+
+
+-- How the body is read: as text at once, or chunk by chunk with the
+-- tracker told of each. Only `request` and `riskyRequest` make a
+-- `Tracked`, so a program that never tracks ships no chunked read.
+type Reading
+    = Plain
+    | Tracked (Progress -> ())
+
+
+readingOf : Maybe (Progress -> ()) -> Reading
+readingOf tracker =
+    case tracker of
+        Just f ->
+            Tracked f
+
+        Nothing ->
+            Plain
 
 
 timerOf : Maybe Duration -> Timer
@@ -210,18 +300,28 @@ unchecked _ _ _ = Nothing
 
 
 bodyChecks : String, List Header, Body -> Maybe Problem
-bodyChecks method _ body = bodyProblem method body
+bodyChecks method _ body = bodyProblem method [] body
 
 
-send : Checks, String, String, List Header, String, Body, Expect x a, Timer -> Result x a
-send checks credentials method headers url body (Expect accept read) timer =
-    read (exchange checks credentials method headers url body accept timer)
+send : Checks, String, String, List Header, String, Body, Expect x a, Timer, Reading -> Result x a
+send checks credentials method headers url body (Expect accept read) timer reading =
+    read (exchange checks credentials method headers url body accept timer reading)
 
 
 -- Steps 1–7: the checks, in order, each a test of the value; then the
 -- request, sent, and its answer.
-exchange : Checks, String, String, List Header, String, Body, String, Timer -> Response String
-exchange checks credentials method headers url body accept timer =
+exchange :
+      Checks
+    , String
+    , String
+    , List Header
+    , String
+    , Body
+    , String
+    , Timer
+    , Reading
+    -> Response String
+exchange checks credentials method headers url body accept timer reading =
     target = resolve url
     if
         Js.isNull target
@@ -235,7 +335,7 @@ exchange checks credentials method headers url body accept timer =
                 BadRequest_ problem
 
             Nothing ->
-                sent credentials method headers target body accept timer
+                sent credentials method headers target body accept timer reading
 
 
 -- The URL resolved against the page, or null: `URL.parse` answers null
@@ -269,7 +369,7 @@ problemOf method headers body =
                 Just problem
 
             [] ->
-                bodyProblem upper body
+                bodyProblem upper headers body
 
 
 -- RFC 9110's `token`: one or more `tchar`.
@@ -348,17 +448,28 @@ overrides : List String
 overrides = [ "x-http-method", "x-http-method-override", "x-method-override" ]
 
 
-bodyProblem : String, Body -> Maybe Problem
-bodyProblem upper body =
+bodyProblem : String, List Header, Body -> Maybe Problem
+bodyProblem upper headers body =
     case body of
         Empty ->
             Nothing
 
-        Text _ _ ->
+        _ ->
             if upper == "GET" || upper == "HEAD" then
                 Just (BodyNotAllowed upper)
             else
-                Nothing
+                case body of
+                    Multipart _ ->
+                        if
+                            List.any headers λ(Header name _) ->
+                                String.toLower name == "content-type"
+                        then
+                            Just MultipartContentType
+                        else
+                            Nothing
+
+                    _ ->
+                        Nothing
 
 
 -- Steps 5–7. The headers in order, then the defaults no header names;
@@ -366,8 +477,8 @@ bodyProblem upper body =
 -- cancelling the fiber does. What the host's `fetch` throws synchronously
 -- is not caught: steps 1–4 found every failure the standard documents for
 -- what this module gives it.
-sent : String, String, List Header, Js.Value, Body, String, Timer -> Response String
-sent credentials method headers target body accept timer =
+sent : String, String, List Header, Js.Value, Body, String, Timer, Reading -> Response String
+sent credentials method headers target body accept timer reading =
     flight = Js.array [ Js.construct (Js.global "AbortController") [], Js.null, Js.null ]
     init =
         Js.from
@@ -385,10 +496,10 @@ sent credentials method headers target body accept timer =
                 Timeout_
             else
                 _ = start flight ms
-                answer flight (Js.get target "href") init
+                answer flight (Js.get target "href") init body reading
 
         NoTimer ->
-            answer flight (Js.get target "href") init
+            answer flight (Js.get target "href") init body reading
 
 
 headersOf : List Header, Body, String -> Js.Value
@@ -401,7 +512,7 @@ headersOf headers body accept =
             Text mime _ ->
                 defaultHeader all "content-type" mime
 
-            Empty ->
+            _ ->
                 ()
     _ =
         if accept == "" then
@@ -427,6 +538,36 @@ payload body =
 
         Text _ text ->
             Js.from text
+
+        Multipart parts ->
+            form = Js.construct (Js.global "FormData") []
+            _ = List.foldl parts () λ(StringPart name value) _ ->
+                Js.to (Js.call form "append" [ Js.from name, Js.from value ])
+            form
+
+
+-- The body's length in UTF-8 bytes, which the tracker's `Sending` reports:
+-- a multipart body's is its parts' names and values.
+size : Body -> Int
+size body =
+    case body of
+        Empty ->
+            0
+
+        Text _ text ->
+            utf8 text
+
+        Multipart parts ->
+            List.foldl parts 0 λ(StringPart name value) n -> n + utf8 name + utf8 value
+
+
+utf8 : String -> Int
+utf8 text =
+    Js.to
+        (Js.get
+            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
+            "length"
+        )
 
 
 -- The request's timer: when it fires, the request is aborted with a
@@ -460,24 +601,100 @@ type Step
     | Defect Js.Value
 
 
--- Send, then read the body as text: its answer, or the failure.
-answer : Js.Value, Js.Value, Js.Value -> Response String
-answer flight href init =
+-- Send, then read the body as text: its answer, or the failure. A tracker
+-- is told the body is unsent before `fetch` is called.
+answer : Js.Value, Js.Value, Js.Value, Body, Reading -> Response String
+answer flight href init body reading =
+    _ =
+        case reading of
+            Tracked f ->
+                f (Sending { sent = 0, size = size body })
+
+            Plain ->
+                ()
     case wait flight λ() -> Js.apply (Js.global "fetch") [ href, init ] of
         Got response ->
-            case wait flight λ() -> Js.call response "text" [] of
-                Got text ->
-                    _ = settled flight
-                    received response (Js.to text)
+            case reading of
+                Plain ->
+                    case wait flight λ() -> Js.call response "text" [] of
+                        Got text ->
+                            _ = settled flight
+                            received response (Js.to text)
 
-                Failed failure ->
-                    failure
+                        Failed failure ->
+                            failure
 
-                Defect error ->
-                    Js.throw error
+                        Defect error ->
+                            Js.throw error
+
+                Tracked f ->
+                    tracked flight response (size body) f
 
         Failed failure ->
             failure
+
+        Defect error ->
+            Js.throw error
+
+
+-- The body read chunk by chunk, the tracker told after each (§9.8.12 (e)):
+-- the bytes decoded as `text()` decodes them, UTF-8 in streaming mode with
+-- a leading BOM dropped. A `null` body (`HEAD`, a 204) is the empty text.
+tracked : Js.Value, Js.Value, Int, (Progress -> ()) -> Response String
+tracked flight response bytes f =
+    _ = f (Sending { sent = bytes, size = bytes })
+    length =
+        String.toInt
+            (orEmpty (Js.call (Js.get response "headers") "get" [ Js.from "content-length" ]))
+    _ = f (Receiving { received = 0, size = length })
+    stream = Js.get response "body"
+    if Js.isNull stream then
+        _ = settled flight
+        received response ""
+    else
+        reader = Js.call stream "getReader" []
+        decoder = Js.construct (Js.global "TextDecoder") []
+        case chunks flight reader decoder f length 0 "" of
+            Ok text ->
+                _ = settled flight
+                received response text
+
+            Err failure ->
+                failure
+
+
+-- What `headers.get` answers, null when the header is absent, as text.
+orEmpty : Js.Value -> String
+orEmpty value =
+    if Js.isNull value then
+        ""
+    else
+        Js.to value
+
+
+chunks :
+      Js.Value
+    , Js.Value
+    , Js.Value
+    , (Progress -> ())
+    , Maybe Int
+    , Int
+    , String
+    -> Result (Response String) String
+chunks flight reader decoder f length count text =
+    case wait flight λ() -> Js.call reader "read" [] of
+        Got chunk ->
+            if Js.to (Js.get chunk "done") then
+                Ok (text ++ Js.to (Js.call decoder "decode" []))
+            else
+                value = Js.get chunk "value"
+                n = count + Js.to (Js.get value "length")
+                more = text ++ Js.to (Js.call decoder "decode" [ value, Js.from { stream = True } ])
+                _ = f (Receiving { received = n, size = length })
+                chunks flight reader decoder f length n more
+
+        Failed failure ->
+            Err failure
 
         Defect error ->
             Js.throw error

@@ -396,8 +396,9 @@ function step(s) {
       entry.reject(new TypeError("Failed to fetch"));
       return null;
     }
-    // A status that carries no body is given none, as a server sends none.
-    const bodyless = [101, 103, 204, 205, 304].includes(s.status);
+    // A status that carries no body, or an answer to `HEAD`, is given none (a
+    // `null` body), as a server sends none.
+    const bodyless = [101, 103, 204, 205, 304].includes(s.status) || entry.request.method === "HEAD";
     const answer = (body) => {
       const response = new Response(bodyless ? null : body, { status: s.status, headers: s.headers });
       Object.defineProperty(response, "url", { value: entry.request.url });

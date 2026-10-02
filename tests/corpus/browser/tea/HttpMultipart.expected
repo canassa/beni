@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="send">"send"</button>
+    <button id="typed">"typed"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #send
+(fetch 1: POST /upload {"content-type":"multipart/form-data; boundary=…"} [["title","Notes"],["tag","wörk"]])
+(the DOM did not change)
+-- respond 1 200 "stored"
+<body>
+  <main>
+    <button id="send">"send"</button>
+    <button id="typed">"typed"</button>
+    <ol>
+      <li>"ok stored"</li>
+    </ol>
+  </main>
+</body>
+-- click #typed
+<body>
+  <main>
+    <button id="send">"send"</button>
+    <button id="typed">"typed"</button>
+    <ol>
+      <li>"ok stored"</li>
+      <li>"MultipartContentType"</li>
+    </ol>
+  </main>
+</body>

@@ -42,6 +42,9 @@ problem p =
         Http.BodyNotAllowed m ->
             "BodyNotAllowed ${m}"
 
+        Http.MultipartContentType ->
+            "MultipartContentType"
+
 
 shown : Result Http.Error String -> String
 shown result =

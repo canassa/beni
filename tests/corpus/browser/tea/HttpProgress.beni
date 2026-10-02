@@ -1,0 +1,89 @@
+-- A request's tracker (boundary.md §9.8.12 (e)): called in the requesting
+-- fiber, in order — `Sending` with nothing sent before the request goes
+-- and all of it once the answer's headers arrive (`fetch` reports no
+-- upload progress), then `Receiving` with the `Content-Length` as its size
+-- and again after each chunk — so each `Progress` sent as a message
+-- arrives before the answer, which comes last. Without a `Content-Length`
+-- the size is `Nothing` and the fraction received 0; with one smaller than
+-- the bytes received the fraction is clamped to 1. A `HEAD` answer has a
+-- `null` body, which is the empty text.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type Msg
+    = Go String String
+    | Progressed Http.Progress
+    | Done (Result Http.Error String)
+
+
+progress : Http.Progress -> String
+progress p =
+    case p of
+        Http.Sending s ->
+            "Sending ${String.fromInt s.sent}/${String.fromInt s.size} = ${String.fromFloat (Http.fractionSent s)}"
+
+        Http.Receiving r ->
+            size =
+                case r.size of
+                    Just n ->
+                        String.fromInt n
+
+                    Nothing ->
+                        "?"
+            "Receiving ${String.fromInt r.received}/${size} = ${String.fromFloat (Http.fractionReceived r)}"
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Go method url ->
+            ( lines
+            , Cmd.perform λsend ->
+                send
+                    (Done
+                        (Http.request
+                            { method = method
+                            , headers = []
+                            , url = url
+                            , body =
+                                if method == "POST" then
+                                    Http.stringBody "text/plain" "héllo"
+                                else
+                                    Http.emptyBody
+                            , expect = Http.expectString
+                            , timeout = Nothing
+                            , tracker = Just λp -> send (Progressed p)
+                            }
+                        )
+                    )
+            )
+
+        Progressed p ->
+            ( lines ++ [ progress p ], Cmd.none )
+
+        Done (Ok text) ->
+            ( lines ++ [ "done: ${text}" ], Cmd.none )
+
+        Done (Err _) ->
+            ( lines ++ [ "failed" ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <button id="sized" onClick={Go "POST" "/sized"}>sized</button>
+        <button id="unsized" onClick={Go "GET" "/unsized"}>unsized</button>
+        <button id="short" onClick={Go "GET" "/short"}>short</button>
+        <button id="head" onClick={Go "HEAD" "/head"}>head</button>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

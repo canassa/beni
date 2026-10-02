@@ -1,0 +1,212 @@
+-- load
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #sized
+(fetch 1: POST /sized {"content-type":"text/plain"} "héllo")
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol>
+      <li>"Sending 0/6 = 0.0"</li>
+    </ol>
+  </main>
+</body>
+-- respond 1 200 chunks "one " "two " "three" Content-Length: "13"
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol>
+      <li>"Sending 0/6 = 0.0"</li>
+      <li>"Sending 6/6 = 1.0"</li>
+      <li>"Receiving 0/13 = 0.0"</li>
+      <li>"Receiving 4/13 = 0.3076923076923077"</li>
+      <li>"Receiving 8/13 = 0.6153846153846154"</li>
+      <li>"Receiving 13/13 = 1.0"</li>
+      <li>"done: one two three"</li>
+    </ol>
+  </main>
+</body>
+-- click #unsized
+(fetch 2: GET /unsized {})
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol>
+      <li>"Sending 0/6 = 0.0"</li>
+      <li>"Sending 6/6 = 1.0"</li>
+      <li>"Receiving 0/13 = 0.0"</li>
+      <li>"Receiving 4/13 = 0.3076923076923077"</li>
+      <li>"Receiving 8/13 = 0.6153846153846154"</li>
+      <li>"Receiving 13/13 = 1.0"</li>
+      <li>"done: one two three"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+    </ol>
+  </main>
+</body>
+-- respond 2 200 chunks "a" "b" "c"
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol>
+      <li>"Sending 0/6 = 0.0"</li>
+      <li>"Sending 6/6 = 1.0"</li>
+      <li>"Receiving 0/13 = 0.0"</li>
+      <li>"Receiving 4/13 = 0.3076923076923077"</li>
+      <li>"Receiving 8/13 = 0.6153846153846154"</li>
+      <li>"Receiving 13/13 = 1.0"</li>
+      <li>"done: one two three"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/? = 0.0"</li>
+      <li>"Receiving 1/? = 0.0"</li>
+      <li>"Receiving 2/? = 0.0"</li>
+      <li>"Receiving 3/? = 0.0"</li>
+      <li>"done: abc"</li>
+    </ol>
+  </main>
+</body>
+-- click #short
+(fetch 3: GET /short {})
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol>
+      <li>"Sending 0/6 = 0.0"</li>
+      <li>"Sending 6/6 = 1.0"</li>
+      <li>"Receiving 0/13 = 0.0"</li>
+      <li>"Receiving 4/13 = 0.3076923076923077"</li>
+      <li>"Receiving 8/13 = 0.6153846153846154"</li>
+      <li>"Receiving 13/13 = 1.0"</li>
+      <li>"done: one two three"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/? = 0.0"</li>
+      <li>"Receiving 1/? = 0.0"</li>
+      <li>"Receiving 2/? = 0.0"</li>
+      <li>"Receiving 3/? = 0.0"</li>
+      <li>"done: abc"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+    </ol>
+  </main>
+</body>
+-- respond 3 200 chunks "abc" "def" Content-Length: "4"
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol>
+      <li>"Sending 0/6 = 0.0"</li>
+      <li>"Sending 6/6 = 1.0"</li>
+      <li>"Receiving 0/13 = 0.0"</li>
+      <li>"Receiving 4/13 = 0.3076923076923077"</li>
+      <li>"Receiving 8/13 = 0.6153846153846154"</li>
+      <li>"Receiving 13/13 = 1.0"</li>
+      <li>"done: one two three"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/? = 0.0"</li>
+      <li>"Receiving 1/? = 0.0"</li>
+      <li>"Receiving 2/? = 0.0"</li>
+      <li>"Receiving 3/? = 0.0"</li>
+      <li>"done: abc"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/4 = 0.0"</li>
+      <li>"Receiving 3/4 = 0.75"</li>
+      <li>"Receiving 6/4 = 1.0"</li>
+      <li>"done: abcdef"</li>
+    </ol>
+  </main>
+</body>
+-- click #head
+(fetch 4: HEAD /head {})
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol>
+      <li>"Sending 0/6 = 0.0"</li>
+      <li>"Sending 6/6 = 1.0"</li>
+      <li>"Receiving 0/13 = 0.0"</li>
+      <li>"Receiving 4/13 = 0.3076923076923077"</li>
+      <li>"Receiving 8/13 = 0.6153846153846154"</li>
+      <li>"Receiving 13/13 = 1.0"</li>
+      <li>"done: one two three"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/? = 0.0"</li>
+      <li>"Receiving 1/? = 0.0"</li>
+      <li>"Receiving 2/? = 0.0"</li>
+      <li>"Receiving 3/? = 0.0"</li>
+      <li>"done: abc"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/4 = 0.0"</li>
+      <li>"Receiving 3/4 = 0.75"</li>
+      <li>"Receiving 6/4 = 1.0"</li>
+      <li>"done: abcdef"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+    </ol>
+  </main>
+</body>
+-- respond 4 200 "" Content-Length: "100"
+<body>
+  <main>
+    <button id="sized">"sized"</button>
+    <button id="unsized">"unsized"</button>
+    <button id="short">"short"</button>
+    <button id="head">"head"</button>
+    <ol>
+      <li>"Sending 0/6 = 0.0"</li>
+      <li>"Sending 6/6 = 1.0"</li>
+      <li>"Receiving 0/13 = 0.0"</li>
+      <li>"Receiving 4/13 = 0.3076923076923077"</li>
+      <li>"Receiving 8/13 = 0.6153846153846154"</li>
+      <li>"Receiving 13/13 = 1.0"</li>
+      <li>"done: one two three"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/? = 0.0"</li>
+      <li>"Receiving 1/? = 0.0"</li>
+      <li>"Receiving 2/? = 0.0"</li>
+      <li>"Receiving 3/? = 0.0"</li>
+      <li>"done: abc"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/4 = 0.0"</li>
+      <li>"Receiving 3/4 = 0.75"</li>
+      <li>"Receiving 6/4 = 1.0"</li>
+      <li>"done: abcdef"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Sending 0/0 = 1.0"</li>
+      <li>"Receiving 0/100 = 0.0"</li>
+      <li>"done: "</li>
+    </ol>
+  </main>
+</body>

@@ -1,0 +1,71 @@
+-- A multipart body (boundary.md §9.8.12 (b)): its string parts are sent
+-- as `FormData`, in order — the fetch log shows them — with the host's
+-- `Content-Type` and boundary and none of the program's; a `Content-Type`
+-- header beside it is refused, `BadRequest MultipartContentType`, and
+-- nothing is sent.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type Msg
+    = Send (List Http.Header)
+    | Got (Result Http.Error String)
+
+
+shown : Result Http.Error String -> String
+shown result =
+    case result of
+        Ok text ->
+            "ok ${text}"
+
+        Err (Http.BadRequest Http.MultipartContentType) ->
+            "MultipartContentType"
+
+        Err _ ->
+            "another error"
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Send headers ->
+            ( lines
+            , Cmd.task
+                (λ() ->
+                    Http.request
+                        { method = "POST"
+                        , headers = headers
+                        , url = "/upload"
+                        , body =
+                            Http.multipartBody
+                                [ Http.stringPart "title" "Notes", Http.stringPart "tag" "wörk" ]
+                        , expect = Http.expectString
+                        , timeout = Nothing
+                        , tracker = Nothing
+                        }
+                )
+                Got
+            )
+
+        Got result ->
+            ( lines ++ [ shown result ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <button id="send" onClick={Send []}>send</button>
+        <button id="typed" onClick={Send [ Http.header "Content-Type" "multipart/form-data" ]}>
+            typed
+        </button>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
