@@ -1,0 +1,7 @@
+Ok [1,2,3]
+Err first
+Ok []
+errors ["a","b"], values [1,2,3]
+errors [], values [4,5]
+errors ["c"], values []
+errors [], values []

@@ -11,6 +11,9 @@
 --!
 --! Everything here is ordinary beni — no `foreign` declarations.
 
+import List
+
+
 --| A `Result` is either `Ok`, meaning the computation succeeded, or it is an
 --| `Err`, meaning there was some failure.
 --|
@@ -233,3 +236,51 @@ fromMaybe maybe err =
 
         Nothing →
             Err err
+
+
+--| `Ok` of every value, in order, when every result is `Ok`; otherwise the
+--| first `Err`. The results after it are not looked at.
+--|
+--|     combine [ Ok 1, Ok 2 ] == Ok [ 1, 2 ]
+--|     combine [ Ok 1, Err "no", Err "never" ] == Err "no"
+--|     combine [] == Ok []
+pub combine : List (Result x a) → Result x (List a)
+combine results = combineHelp results []
+
+
+combineHelp : List (Result x a), List a → Result x (List a)
+combineHelp results values =
+    case results of
+        [] →
+            Ok values
+
+        [ first, …rest ] →
+            case first of
+                Ok value →
+                    combineHelp rest (List.push values value)
+
+                Err x →
+                    Err x
+
+
+--| Every error and every value, each in the order they came: the errors
+--| first, as in Effect's `partition`, whose failures are the first half.
+--|
+--|     partition [ Ok 1, Err "a", Ok 2, Err "b" ] == ( [ "a", "b" ], [ 1, 2 ] )
+pub partition : List (Result x a) → List x × List a
+partition results = partitionHelp results [] []
+
+
+partitionHelp : List (Result x a), List x, List a → List x × List a
+partitionHelp results errors values =
+    case results of
+        [] →
+            ( errors, values )
+
+        [ first, …rest ] →
+            case first of
+                Ok value →
+                    partitionHelp rest errors (List.push values value)
+
+                Err x →
+                    partitionHelp rest (List.push errors x) values

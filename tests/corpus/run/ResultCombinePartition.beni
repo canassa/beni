@@ -1,0 +1,36 @@
+-- run: `Result.combine` and `Result.partition` (docs/design/research/48-effect-parity-ledger.md
+-- §2.9, *Error accumulation*). `combine` answers every value in order, or
+-- the first `Err` — the results after it are never looked at, so the
+-- second error does not appear — and `Ok []` for no results. `partition`
+-- keeps every error and every value, each in the order they came, the
+-- errors first as Effect's `partition` puts its failures.
+import Node exposing (Program)
+
+
+show : Result String (List Int) → String
+show result =
+    case result of
+        Ok values →
+            "Ok ${Debug.toString values}"
+
+        Err x →
+            "Err ${x}"
+
+
+halves : List (Result String Int) → String
+halves results =
+    ( errors, values ) = Result.partition results
+    "errors ${Debug.toString errors}, values ${Debug.toString values}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Result.combine [ Ok 1, Ok 2, Ok 3 ])
+        , show (Result.combine [ Ok 1, Err "first", Ok 2, Err "second" ])
+        , show (Result.combine [])
+        , halves [ Ok 1, Err "a", Ok 2, Err "b", Ok 3 ]
+        , halves [ Ok 4, Ok 5 ]
+        , halves [ Err "c" ]
+        , halves []
+        ]
