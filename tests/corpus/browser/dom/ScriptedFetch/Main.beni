@@ -1,0 +1,29 @@
+-- The driver's scripted `fetch` (tests/corpus/README.md, `browser/`),
+-- driven with no `Http` module: each request is logged as it is made —
+-- method, path, headers by lower-cased name with a repeated one joined, a
+-- text body, a `FormData` body's entries, `credentials` when not
+-- `same-origin` — and is answered only by a step: `respond` with a
+-- status, a body and headers (the answer's `url` the request's), `respond
+-- … chunks` streaming a body a chunk per task, `fail` with the network's
+-- `TypeError`. Aborting a pending request rejects it with the signal's
+-- reason and logs it; a `data:` URL is the host's, neither numbered nor
+-- logged.
+import Browser
+import Html exposing (Html)
+import Requests
+
+
+view : () -> Html String
+view _ =
+    <main>
+        <For
+            each={[ "get", "post", "form", "stream", "slow", "cancel", "down", "data" ]}
+            keyed={False}
+        >
+            {λname -> <button id={name} onClick={name}>{name}</button>}
+        </For>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = (), update = λname _ -> Requests.go name, view = view }

@@ -1,0 +1,6 @@
+--! A test platform that calls the page's `fetch` itself, with no `Http`
+--! module between, so a fixture sees exactly what the driver's scripted
+--! `fetch` hands a caller. Each scenario logs what it was answered.
+
+--| Start the named request; what it is answered is logged when it comes.
+pub foreign impure go : String -> ()

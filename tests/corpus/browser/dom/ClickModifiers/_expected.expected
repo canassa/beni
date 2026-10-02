@@ -1,0 +1,101 @@
+-- load
+<body>
+  <main>
+    <button id="plain">"plain"</button>
+    <button id="prevent">"prevent"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #plain
+<body>
+  <main>
+    <button id="plain">"plain"</button>
+    <button id="prevent">"prevent"</button>
+    <ol>
+      <li>"plain: [] button 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #plain ctrl
+<body>
+  <main>
+    <button id="plain">"plain"</button>
+    <button id="prevent">"prevent"</button>
+    <ol>
+      <li>"plain: [] button 0"</li>
+      <li>"plain: [ctrl] button 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #plain shift alt
+<body>
+  <main>
+    <button id="plain">"plain"</button>
+    <button id="prevent">"prevent"</button>
+    <ol>
+      <li>"plain: [] button 0"</li>
+      <li>"plain: [ctrl] button 0"</li>
+      <li>"plain: [shift alt] button 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #plain meta button:1
+<body>
+  <main>
+    <button id="plain">"plain"</button>
+    <button id="prevent">"prevent"</button>
+    <ol>
+      <li>"plain: [] button 0"</li>
+      <li>"plain: [ctrl] button 0"</li>
+      <li>"plain: [shift alt] button 0"</li>
+      <li>"plain: [meta] button 1"</li>
+    </ol>
+  </main>
+</body>
+-- click #plain ctrl shift alt meta button:2
+<body>
+  <main>
+    <button id="plain">"plain"</button>
+    <button id="prevent">"prevent"</button>
+    <ol>
+      <li>"plain: [] button 0"</li>
+      <li>"plain: [ctrl] button 0"</li>
+      <li>"plain: [shift alt] button 0"</li>
+      <li>"plain: [meta] button 1"</li>
+      <li>"plain: [ctrl shift alt meta] button 2"</li>
+    </ol>
+  </main>
+</body>
+-- click #prevent
+(click's default prevented)
+<body>
+  <main>
+    <button id="plain">"plain"</button>
+    <button id="prevent">"prevent"</button>
+    <ol>
+      <li>"plain: [] button 0"</li>
+      <li>"plain: [ctrl] button 0"</li>
+      <li>"plain: [shift alt] button 0"</li>
+      <li>"plain: [meta] button 1"</li>
+      <li>"plain: [ctrl shift alt meta] button 2"</li>
+      <li>"prevented: [] button 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #prevent alt
+(click's default prevented)
+<body>
+  <main>
+    <button id="plain">"plain"</button>
+    <button id="prevent">"prevent"</button>
+    <ol>
+      <li>"plain: [] button 0"</li>
+      <li>"plain: [ctrl] button 0"</li>
+      <li>"plain: [shift alt] button 0"</li>
+      <li>"plain: [meta] button 1"</li>
+      <li>"plain: [ctrl shift alt meta] button 2"</li>
+      <li>"prevented: [] button 0"</li>
+      <li>"prevented: [alt] button 0"</li>
+    </ol>
+  </main>
+</body>

@@ -1,0 +1,10 @@
+--! A test platform's one reading of a click: which button made it, which
+--! `Html` does not offer.
+
+import Html exposing (Event)
+import Js
+
+
+--| The event's `button`: 0 the main button, 1 the wheel, 2 the secondary.
+pub button : Event -> Int
+button event = Js.to (Js.get (Js.from event) "button")

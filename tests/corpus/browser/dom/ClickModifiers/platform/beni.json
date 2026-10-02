@@ -1,0 +1,1 @@
+{ "platform": true, "name": "mouse", "platforms": ["browser"], "reexports": ["Html", "Browser"] }

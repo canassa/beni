@@ -1,0 +1,56 @@
+-- load
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="post">"post"</button>
+    <button id="form">"form"</button>
+    <button id="stream">"stream"</button>
+    <button id="slow">"slow"</button>
+    <button id="cancel">"cancel"</button>
+    <button id="down">"down"</button>
+    <button id="data">"data"</button>
+  </main>
+</body>
+-- click #get
+(fetch 1: GET /api/items?x=1 {"x-a":"1","x-b":"2, 3"})
+(the DOM did not change)
+-- click #post
+(fetch 2: POST /api/save {"content-type":"text/plain;charset=UTF-8"} "hello" credentials:include)
+(the DOM did not change)
+-- click #form
+(fetch 3: POST /api/form {"content-type":"multipart/form-data; boundary=…"} [["name","beni"],["n","1"]])
+(the DOM did not change)
+-- respond 2 201 "saved" Content-Type: "text/plain" X-Id: "7"
+console.log: post: 201 true "" /api/save [["content-type","text/plain"],["x-id","7"]] "saved"
+(the DOM did not change)
+-- respond 1 200 "[1,2]" Content-Type: "application/json" Set-Cookie: "no" X-Dup: "a" X-Dup: "b"
+console.log: get: 200 true "" /api/items?x=1 [["content-type","application/json"],["x-dup","a, b"]] "[1,2]"
+(the DOM did not change)
+-- respond 3 404 ""
+console.log: form: 404 false "" /api/form [] ""
+(the DOM did not change)
+-- click #stream
+(fetch 4: GET /big {})
+(the DOM did not change)
+-- respond 4 200 chunks "one " "two " "three"
+console.log: stream chunk: "one "
+console.log: stream chunk: "two "
+console.log: stream chunk: "three"
+console.log: stream done
+(the DOM did not change)
+-- click #slow
+(fetch 5: GET /slow {})
+(the DOM did not change)
+-- click #cancel
+(fetch 5 aborted: AbortError)
+console.log: slow: rejected AbortError
+(the DOM did not change)
+-- click #down
+(fetch 6: GET /down {})
+(the DOM did not change)
+-- fail 6
+console.log: down: rejected TypeError
+(the DOM did not change)
+-- click #data
+console.log: data: inline
+(the DOM did not change)

@@ -1,0 +1,7 @@
+click #plain
+click #plain ctrl
+click #plain shift alt
+click #plain meta button:1
+click #plain ctrl shift alt meta button:2
+click #prevent
+click #prevent alt

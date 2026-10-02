@@ -95,7 +95,11 @@ its own by `tests/browser/driver.mjs` — both pages in one Node process, one
 after the other — which runs `<name>.steps` (`_expected.steps` in a
 project) against it, one step per line, `#` for a comment:
 
-    click <selector>            a bubbling `click`
+    click <selector> [ctrl|shift|alt|meta]… [button:<n>]
+                                a bubbling `click` with those modifiers held
+                                and that `button` (default 0); one whose
+                                default a handler prevented logs `(click's
+                                default prevented)`
     click <selector> <n>        `n` clicks in one task, then `(the step's task ended)`
     flush <selector>            a click, then the program runtime's `flush()`
                                 in the same task, then `(flushed)`
@@ -123,6 +127,10 @@ project) against it, one step per line, `#` for a comment:
                                 task, as following a link to the fragment
                                 does (happy-dom's own `location.hash` fires
                                 two `hashchange`s and no `popstate`)
+    back / forward              `history.back()` / `history.forward()`, then
+                                wait for the `popstate` the traversal fires
+    location                    log `(location: <path><?query><#fragment>)`,
+                                the origin left out
     store <local|session> "<key>" "<value>"
                                 `setItem` on that storage
     storage <local|session>     log `(localStorage: {…})`, its items by key
@@ -134,6 +142,17 @@ project) against it, one step per line, `#` for a comment:
                                 page added to that target (for that event)
                                 and has not removed — what a program still
                                 holds of the host, seen without its code
+    respond <n> <status> "<body>" [<name>: "<value>"]…
+                                answer the `n`-th request the page made
+                                (1-based, in the order `fetch` was called)
+                                with a `Response` of that status, body and
+                                headers, its `url` the request's
+    respond <n> <status> chunks "<a>" "<b>"…
+                                the same, its body a stream yielding each
+                                chunk in a task of its own
+    fail <n>                    reject the `n`-th request with `new
+                                TypeError("Failed to fetch")`, the Fetch
+                                standard's network error
     throws <step>               any step above, which must make the page
                                 throw: each uncaught exception is the line
                                 `(threw: <its first line>)`
@@ -157,6 +176,24 @@ page settles — the fibers it resumed run, and may set the next timer —
 before the next fires. A service a program waits on (`Http`, a search API)
 is faked with a record of functions that sleep on this clock
 (`boundary.md` §9.8.9).
+
+**The page's `fetch` is scripted.** The driver replaces `fetch` before the
+program loads, as it replaces the clock. Each call is logged when it is
+made — `(fetch <n>: <METHOD> <path> <headers> [<body>]
+[credentials:<mode>])`, the headers as JSON by lower-cased name (a multipart
+boundary written `…`), a text body as a JSON string and a `FormData` one as
+its entries — and stays pending until a `respond` or `fail` step answers it.
+The request and the answer are the DOM's own `Request` and `Response`. An
+abort of a pending request (or of a body still streaming) rejects it with
+the signal's reason, as the host's `fetch` does, and logs `(fetch <n>
+aborted: <the reason's name>)`, so a cancelled `Restart` and a timeout are
+both visible. A `data:` URL goes to the host's own `fetch` and is neither
+numbered nor logged. A request still pending when the script ends fails the
+case, so no fixture forgets one.
+
+**A successful `load` leaves the page**, which neither DOM can show and the
+driver cannot follow, so no fixture asserts one; a refused `load` is a value
+and is shown.
 
 **The page is an `http` page with fixed entropy.** Its address is
 `http://127.0.0.1:<port>/_page.html` in both DOMs — Chrome loads it, and
@@ -205,7 +242,12 @@ compares instead of `.expected`. The differences known today:
   and there is no `requestAnimationFrame` frame clock; a fixture about
   scheduling order belongs to `test-browser`;
 - layout: happy-dom lays nothing out, so sizes and positions are zero;
-- steps dispatch untrusted events in both DOMs, and `key` types nothing.
+- steps dispatch untrusted events in both DOMs, and `key` types nothing;
+- `Headers`: happy-dom iterates names as they were written, where the Fetch
+  standard and Chrome lower-case them, so a fixture that shows headers
+  lower-cases them itself (the fetch log does);
+- `history.back()`: happy-dom fires the `popstate` at once, in the step's
+  task, Chrome in a later one; the `back` and `forward` steps wait for it.
 
 **Run hashes** work as in `run/`, with the DOM on the line
 (`dev v24.19.0 happy-dom-20.14.5 <sha-256>`) and the digest covering the

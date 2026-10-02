@@ -1,0 +1,13 @@
+click #get
+click #post
+click #form
+respond 2 201 "saved" Content-Type: "text/plain" X-Id: "7"
+respond 1 200 "[1,2]" Content-Type: "application/json" Set-Cookie: "no" X-Dup: "a" X-Dup: "b"
+respond 3 404 ""
+click #stream
+respond 4 200 chunks "one " "two " "three"
+click #slow
+click #cancel
+click #down
+fail 6
+click #data

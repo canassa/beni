@@ -26,7 +26,12 @@
 //
 // The steps file has one step per line; `#` starts a comment line:
 //
-//   click <selector>            a bubbling, cancelable `click` MouseEvent
+//   click <selector> [ctrl|shift|alt|meta]… [button:<n>]
+//                               a bubbling, cancelable `click` MouseEvent with
+//                               those modifiers held and that `button`
+//                               (default 0); one whose default a handler or a
+//                               listener prevented logs `(click's default
+//                               prevented)` when its dispatch returns
 //   click <selector> <n>        `n` of them in one task, then the line
 //                               `(the step's task ended)` in the transcript
 //   flush <selector>            a click, then the program runtime's `flush`
@@ -58,6 +63,9 @@
 //                               in the step's task — what following a link
 //                               to the fragment does, without happy-dom's
 //                               second event
+//   back / forward              `history.back()` / `history.forward()`, then
+//                               wait for the `popstate` the traversal fires
+//   location                    log `(location: <path><?query><#fragment>)`
 //   store <local|session> "<key>" "<value>"
 //                               `setItem` on that storage
 //   storage <local|session>     log `(localStorage: {…})`, every item by key
@@ -67,7 +75,18 @@
 //                               log `(listeners: <n>)`, the listeners the page
 //                               added to that target (for that event) and has
 //                               not removed
-//   throws <step>              any step above, which must make the page
+//   respond <n> <status> "<body>" [<name>: "<value>"]…
+//                               answer the `n`-th request the page made with a
+//                               `Response` of that status, body and headers,
+//                               its `url` the request's
+//   respond <n> <status> chunks "<a>" "<b>"…
+//                               the same, its body a stream that yields each
+//                               chunk in a task of its own, the page settling
+//                               between two
+//   fail <n>                    reject the `n`-th request with `new
+//                               TypeError("Failed to fetch")`, the Fetch
+//                               standard's network error
+//   throws <step>               any step above, which must make the page
 //                               throw: each uncaught exception is the line
 //                               `(threw: <its first line>)` instead of the
 //                               end of the run, and none is a failure
@@ -75,6 +94,16 @@
 // The page's clock is virtual from the start: `Date.now()` is 0 until an
 // `advance` step moves it, and a `setTimeout` callback runs only when an
 // `advance` step reaches its time.
+//
+// The page's `fetch` is scripted from the start: each call is logged as it
+// is made, `(fetch <n>: <METHOD> <path> <headers> [<body>]
+// [credentials:<mode>])` — the headers as JSON, by lower-cased name, a
+// multipart boundary written `…`, a `FormData` body as its entries — and
+// stays pending until a `respond` or `fail` step answers it. Aborting it
+// rejects it with the signal's reason, as the host's `fetch` does, and logs
+// `(fetch <n> aborted: <the reason's name>)`. A `data:` URL is the host's
+// own `fetch`, not numbered or logged. A request still pending when the
+// script ends fails the run, as an uncaught exception does.
 //
 // The two lines are written when the step's own task ends, before any
 // microtask it queued, so what the page logged before and after them says
@@ -135,6 +164,55 @@ function prelude() {
     clock.timers = clock.timers.filter((t) => t.id !== id);
   };
   Date.now = () => clock.now;
+  // The page's `fetch` is scripted: each request is numbered and logged as
+  // it is made, and stays pending until a `respond` or `fail` step answers
+  // it. The request and the answer are the DOM's own `Request` and
+  // `Response`, so header normalisation, `ok`, `text()` and the body's
+  // reader are the DOM's. A `data:` URL is the host's, as before.
+  const hostFetch = globalThis.fetch;
+  const requests = [];
+  record.requests = requests;
+  globalThis.fetch = (input, init = undefined) => {
+    let request;
+    try {
+      request = new Request(input, init);
+    } catch (error) {
+      // The host's `fetch` rejects what `new Request` throws.
+      return Promise.reject(error);
+    }
+    if (request.url.startsWith("data:")) return hostFetch.call(globalThis, input, init);
+    const entry = { n: requests.length + 1, request, signal: init?.signal ?? null, settled: false, resolve: null, reject: null };
+    requests.push(entry);
+    const headers = {};
+    for (const [name, value] of request.headers) headers[name.toLowerCase()] = value.replace(/boundary=\S+/, "boundary=…");
+    const sorted = {};
+    for (const name of Object.keys(headers).sort()) sorted[name] = headers[name];
+    const body = init?.body;
+    const shown = body === undefined || body === null ? "" : ` ${JSON.stringify(body instanceof FormData ? [...body.entries()] : String(body))}`;
+    const where = new URL(request.url);
+    const path = where.origin === location.origin ? where.pathname + where.search + where.hash : where.href;
+    const credentials = request.credentials === "same-origin" ? "" : ` credentials:${request.credentials}`;
+    record.log.push(`(fetch ${entry.n}: ${request.method} ${path} ${JSON.stringify(sorted)}${shown}${credentials})`);
+    return new Promise((resolve, reject) => {
+      entry.resolve = (response) => {
+        entry.settled = true;
+        resolve(response);
+      };
+      entry.reject = (error) => {
+        entry.settled = true;
+        reject(error);
+      };
+      const signal = entry.signal;
+      if (signal === null) return;
+      const aborted = () => {
+        if (entry.settled) return;
+        record.log.push(`(fetch ${entry.n} aborted: ${signal.reason?.name})`);
+        entry.reject(signal.reason);
+      };
+      if (signal.aborted) aborted();
+      else signal.addEventListener("abort", aborted, { once: true });
+    });
+  };
   // The page's entropy is a fixed sequence (an LCG from 1), so a program
   // that seeds `Random` from `crypto.getRandomValues` is deterministic.
   let entropy = 1;
@@ -256,6 +334,96 @@ function step(s) {
     history.replaceState(null, "", s.text);
     return null;
   }
+  if (s.command === "location") {
+    globalThis.__beniHarness.log.push(`(location: ${location.pathname}${location.search}${location.hash})`);
+    return null;
+  }
+  if (s.command === "back" || s.command === "forward") {
+    // A traversal fires its `popstate` later in Chrome and at once in
+    // happy-dom: wait for it either way, a few real turns at most.
+    const clock = globalThis.__beniHarness.clock;
+    let heard = false;
+    const hear = () => {
+      heard = true;
+    };
+    addEventListener("popstate", hear, { once: true });
+    if (s.command === "back") history.back();
+    else history.forward();
+    return new Promise((done) => {
+      let turns = 0;
+      const wait = () => {
+        if (heard) return void done(null);
+        if (++turns > 100) {
+          removeEventListener("popstate", hear);
+          return void done(`\`${s.command}\` fired no \`popstate\`: there is no entry to go to`);
+        }
+        clock.real(wait, 1);
+      };
+      wait();
+    });
+  }
+  if (s.command === "respond" || s.command === "fail") {
+    const entry = globalThis.__beniHarness.requests[s.n - 1];
+    if (entry === undefined) return `the page made no request ${s.n}`;
+    if (entry.settled) return `request ${s.n} was already answered or aborted`;
+    if (s.command === "fail") {
+      entry.reject(new TypeError("Failed to fetch"));
+      return null;
+    }
+    // A status that carries no body is given none, as a server sends none.
+    const bodyless = [101, 103, 204, 205, 304].includes(s.status);
+    const answer = (body) => {
+      const response = new Response(bodyless ? null : body, { status: s.status, headers: s.headers });
+      Object.defineProperty(response, "url", { value: entry.request.url });
+      entry.resolve(response);
+    };
+    if (s.chunks === undefined) {
+      // As bytes, which add no `Content-Type` of their own: the answer
+      // carries the headers the step names and no others, as a server's.
+      answer(new TextEncoder().encode(s.body));
+      return null;
+    }
+    // Each chunk in a task of its own, the page settling between two; an
+    // abort while the body streams errors it with the signal's reason, as
+    // the host's does.
+    let controller = null;
+    let ended = false;
+    const stream = new ReadableStream({
+      start(c) {
+        controller = c;
+      },
+      cancel() {
+        ended = true;
+      },
+    });
+    entry.signal?.addEventListener(
+      "abort",
+      () => {
+        if (ended) return;
+        ended = true;
+        globalThis.__beniHarness.log.push(`(fetch ${entry.n} aborted: ${entry.signal.reason?.name})`);
+        controller.error(entry.signal.reason);
+      },
+      { once: true },
+    );
+    answer(stream);
+    const clock = globalThis.__beniHarness.clock;
+    const turn = () => new Promise((done) => clock.real(done, 0));
+    return (async () => {
+      const encoder = new TextEncoder();
+      for (const chunk of s.chunks) {
+        await turn();
+        if (ended) return null;
+        controller.enqueue(encoder.encode(chunk));
+      }
+      await turn();
+      if (!ended) {
+        ended = true;
+        controller.close();
+      }
+      return null;
+    })();
+  }
   if (s.command === "hash") {
     const oldURL = location.href;
     history.replaceState(null, "", s.text);
@@ -298,7 +466,10 @@ function step(s) {
   const init = { bubbles: true, cancelable: true, composed: true };
   switch (s.command) {
     case "click":
-      for (let n = 0; n < (s.count ?? 1); n++) target.dispatchEvent(new MouseEvent("click", { ...init, button: 0, detail: 1 }));
+      for (let n = 0; n < (s.count ?? 1); n++) {
+        const click = new MouseEvent("click", { ...init, button: s.button ?? 0, detail: 1, ...s.modifiers });
+        if (!target.dispatchEvent(click)) globalThis.__beniHarness.log.push("(click's default prevented)");
+      }
       if (s.count !== undefined) globalThis.__beniHarness.log.push("(the step's task ended)");
       return null;
     case "flush": {
@@ -337,6 +508,11 @@ function step(s) {
 // of the event loop.
 function settle() {
   return new Promise((done) => globalThis.__beniHarness.clock.real(done, 0));
+}
+
+// The numbers of the requests no step answered and nothing aborted.
+function pendingRequests() {
+  return globalThis.__beniHarness.requests.filter((r) => !r.settled).map((r) => r.n);
 }
 
 // What the phase logged and threw, taken out of the record.
@@ -434,6 +610,10 @@ if (stepsPath !== undefined) {
     const throws = written.startsWith("throws ");
     const line = throws ? written.slice("throws ".length).trim() : written;
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
+    if (line === "back" || line === "forward" || line === "location") {
+      steps.push({ line: written, where, command: line, selector: null, throws });
+      return;
+    }
     const m = line.match(/^(\S+)\s+(\S+)(?:\s+(.*))?$/);
     if (!m) usage(`${where}: \`${line}\` is not \`<command> <selector> [<argument>]\``);
     const [, command, selector, argument] = m;
@@ -471,9 +651,55 @@ if (stepsPath !== undefined) {
       }
       s.name = e[1];
       s.count = e[2] === undefined ? 1 : Number(e[2]);
-    } else if (command === "click" && argument !== undefined) {
+    } else if (command === "click" && argument !== undefined && /^[0-9]+$/.test(argument)) {
       if (!/^[1-9][0-9]*$/.test(argument)) usage(`${where}: \`click\` takes a selector and at most a count`);
       s.count = Number(argument);
+    } else if (command === "click" && argument !== undefined) {
+      s.modifiers = {};
+      for (const w of argument.split(/\s+/)) {
+        if (["ctrl", "shift", "alt", "meta"].includes(w)) s.modifiers[`${w}Key`] = true;
+        else if (/^button:[0-4]$/.test(w)) s.button = Number(w.slice("button:".length));
+        else usage(`${where}: \`click\` takes a count, or \`ctrl\`, \`shift\`, \`alt\`, \`meta\` and \`button:<n>\`, not \`${w}\``);
+      }
+    } else if (command === "respond" || command === "fail") {
+      if (!/^[1-9][0-9]*$/.test(selector)) usage(`${where}: \`${command}\` takes the request's number first`);
+      s.n = Number(selector);
+      if (command === "fail") {
+        if (argument !== undefined) usage(`${where}: \`fail\` takes a request's number only`);
+      } else {
+        const r = (argument ?? "").match(/^([1-5][0-9][0-9])\s+(.*)$/);
+        if (r === null) usage(`${where}: \`respond\` takes a request's number, a status from 100 to 599, then a body or \`chunks\``);
+        s.status = Number(r[1]);
+        // JSON strings, one after another; `rest` is what follows them.
+        const strings = (text) => {
+          const found = [];
+          let rest = text.trim();
+          for (;;) {
+            const q = rest.match(/^("(?:[^"\\]|\\.)*")\s*/);
+            if (q === null) return { found, rest };
+            found.push(JSON.parse(q[1]));
+            rest = rest.slice(q[0].length);
+          }
+        };
+        if (/^chunks(\s|$)/.test(r[2])) {
+          const { found, rest } = strings(r[2].slice("chunks".length));
+          if (rest !== "" || found.length === 0) usage(`${where}: \`respond … chunks\` takes one or more JSON strings`);
+          s.chunks = found;
+          s.headers = [];
+        } else {
+          const body = r[2].match(/^("(?:[^"\\]|\\.)*")\s*(.*)$/);
+          if (body === null) usage(`${where}: \`respond\` takes the body as a JSON string`);
+          s.body = JSON.parse(body[1]);
+          s.headers = [];
+          let rest = body[2];
+          while (rest !== "") {
+            const h = rest.match(/^([!#$%&'*+.^_`|~0-9A-Za-z-]+):\s*("(?:[^"\\]|\\.)*")\s*/);
+            if (h === null) usage(`${where}: a header of \`respond\` is \`<name>: "<value>"\`, not \`${rest}\``);
+            s.headers.push([h[1], JSON.parse(h[2])]);
+            rest = rest.slice(h[0].length);
+          }
+        }
+      }
     } else if (command === "click" || command === "focus" || command === "flush") {
       if (argument !== undefined) usage(`${where}: \`${command}\` takes a selector only`);
     } else if (command === "input" || command === "type") {
@@ -654,7 +880,7 @@ async function chromePage(endpoint) {
   });
   await send("Page.navigate", { url: pageUrl }, sessionId);
   await loaded;
-  const helpers = `const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load};`;
+  const helpers = `const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests};`;
   return {
     run: async (fn, arg) => {
       const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;
@@ -760,7 +986,11 @@ async function runPage(entry) {
       }, s.throws);
       if (!ok) break;
     }
-    if (ok) await finish(0);
+    if (ok) {
+      const pending = await page.run(pendingRequests);
+      if (pending.length === 0) await finish(0);
+      else await finish(1, `the script ended with ${pending.length === 1 ? "request" : "requests"} ${pending.join(", ")} never answered`);
+    }
   }
   return result;
 }
