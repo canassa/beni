@@ -607,3 +607,48 @@ conversion — is `run/SchemaLaziness`'s, so `bench/size.mjs` measures the two a
 ships them, field renaming and integer tags on. Release brotli, the same compiler before and
 after: `SchemaFailures` 6 219 → **5 282** (the laziness cases left with the instrument),
 `SchemaDescribe` 4 036 → **3 441**.
+
+*2026-10-02, the cold paths rewritten (the owner's approval of that day).* Still beni over `Js`,
+no `foreign`. Kept, each priced alone over every `bench/size.mjs` line: a primitive node holds
+its `PrimitiveKind`, so `kindOf` is gone (−61 total); `describe` maps fields and variants with
+`List.map` (−200); `duplicateIn` is the host's `map`, `find` and `indexOf` (−80); the
+discriminator clash is `find` and `some` (−120); a variant carries its own construction problem,
+so `tagged` keeps the array it is given and `collectVariants` is gone (−70); a conversion's
+issues are moved with `Js.each` (−534); and a compiled failure reads its `IssueCode` from an array
+instead of a twelve-arm `case` (−197). Tried and dropped, each larger in total: `problemIn` and
+`opaqueIn` through `List.any`, a shared `firstJust`, or the host's `some` (+70 to +476 — the
+four sibling loops compress against each other, and one closure each does not); `call` through
+`conversionAnswer` (−2, an extra frame on a hot path for nothing); and `tagList` as `map` and
+`join` (−233, but the unknown-tag failure retired 19 % more instructions, so it stays a loop).
+`run/SchemaConstruction` gained the precedence cases the rewrite had to keep (first name that
+occurs again, a broken variant before a duplicate tag, tags before names).
+
+Release brotli, master before → after, and the JavaScript engine where the program is the one it
+was measured on:
+
+| program | JavaScript engine | before | after |
+|---|--:|--:|--:|
+| `run/SchemaDescribe` | 3 328 | 3 419 | **3 256** |
+| `run/SchemaTagged` | 5 449 | 5 524 | 5 475 |
+| `run/SchemaConstruction` | 5 902 | 5 960 | **5 809** |
+| `run/SchemaDepth` | 5 338 | 5 444 | 5 367 |
+| `run/SchemaDirections` | 5 402 | 5 360 | **5 327** |
+| `run/SchemaFailures` | — | 5 271 | 5 237 |
+| `run/SchemaJson` | 4 975 | 4 943 | **4 918** |
+| `run/SchemaPresence` | 5 156 | 5 173 | **5 149** |
+| `run/SchemaProtoKeys` | 5 019 | 5 024 | **5 004** |
+| `run/SchemaLaziness` | — | 5 976 | 5 856 |
+| `run/SchemaDecl*`, seven programs | — | 45 661 | 45 245 |
+| `SchemaSize` (`bench/schema-library`) | 4 531 | 4 482 | **4 459** |
+| the release total, 363 programs | | 429 717 | 428 605 |
+
+No other program moved. Speed, in instructions per operation, `(I(N) − I(0)) / N` over whole
+processes, every workload warmed first, three to five processes a side (wall time on this
+machine moved by up to 1.5× with other agents' load; instructions repeat within ±2 %): every
+`bench/schema-library/run.mjs` workload, every `bench/schema-libraries/quick.mjs` cell of the
+`beni` and `beni-library` rows (failure paths included), and a probe of the paths rewritten — an
+unknown tag, a conversion that fails through the library and through a declaration, a compiled
+wrong type — are within that noise; the largest median differences, +2 and +3 % on two library
+cells, came back at +0.75 and +0.5 % when repeated. One thing to know: a `--library` build keeps
+string tags, so in those benches `prim` now switches on `"StringKind"`… rather than on `0`…; a
+shipped program's tags are integers, and the instruction counts show no cost either way.
