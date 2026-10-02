@@ -90,12 +90,12 @@ pub const Pass = struct {
 
     // ---- Reading the builder's nodes ------------------------------------
 
-    fn tag(p: *const Pass, n: Node.Index) Node.Tag {
-        return p.b.nodes.items(.tag)[n.int()];
+    inline fn tag(p: *const Pass, n: Node.Index) Node.Tag {
+        return p.b.tagOf(n);
     }
 
-    fn data(p: *const Pass, n: Node.Index) Node.Data {
-        return p.b.nodes.items(.data)[n.int()];
+    inline fn data(p: *const Pass, n: Node.Index) Node.Data {
+        return p.b.dataOf(n);
     }
 
     fn posOf(p: *const Pass, n: Node.Index) u32 {

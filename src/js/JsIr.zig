@@ -1170,6 +1170,22 @@ pub const Builder = struct {
         return ir;
     }
 
+    /// Node `node`'s tag, read through `cols`: `nodes.items` recomputes
+    /// every column's address for each ask, and Zig's own backend, which
+    /// builds the tests' compiler, does not fold that away (`tag`).
+    pub inline fn tagOf(b: *const Builder, node: Node.Index) Node.Tag {
+        if (node.int() >= b.nodes.len) unreachable;
+        const tags: [*]const Node.Tag = @ptrCast(b.cols.ptrs[@intFromEnum(NodeList.Field.tag)]);
+        return tags[node.int()];
+    }
+
+    /// Node `node`'s data, read as `tagOf` reads its tag.
+    pub inline fn dataOf(b: *const Builder, node: Node.Index) Node.Data {
+        if (node.int() >= b.nodes.len) unreachable;
+        const datas: [*]const Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@intFromEnum(NodeList.Field.data)]));
+        return datas[node.int()];
+    }
+
     pub fn addNode(b: *Builder, node: Node) Allocator.Error!Node.Index {
         return b.addParts(node.tag, node.pos, node.data.lhs, node.data.rhs);
     }

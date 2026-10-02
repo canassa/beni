@@ -2356,13 +2356,13 @@ pub const Lowerer = struct {
                 .marker = try l.fixedName("$$suspend"),
                 .join = try l.fixedName("$$join"),
                 .joined = try l.fixedName("$$joined"),
-                .and_then = @enumFromInt(l.b.nodes.items(.data)[and_then.int()].lhs),
+                .and_then = @enumFromInt(l.b.dataOf(and_then).lhs),
                 .is_waiting = .none,
             };
         };
         if (waiting and names.is_waiting == .none) {
             const is_waiting = try l.coreValue(.Task, .isWaiting, Node.no_pos);
-            names.is_waiting = @enumFromInt(l.b.nodes.items(.data)[is_waiting.int()].lhs);
+            names.is_waiting = @enumFromInt(l.b.dataOf(is_waiting).lhs);
         }
         l.fiber_names = names;
         return names;
@@ -3270,7 +3270,7 @@ pub const Lowerer = struct {
         // `Js.throw` in tail position ends the block itself: its value is
         // the `undefined` no `return` can reach (research 47 §6 item 2).
         if (out.items.len != 0 and l.b.nodes.items(.tag)[out.items[out.items.len - 1].int()] == .throw_stmt and
-            l.b.nodes.items(.tag)[value.int()] == .undefined_lit) return;
+            l.b.tagOf(value) == .undefined_lit) return;
         try l.tailReturn(out, value, loop, l.pos(inst));
     }
 
@@ -3301,7 +3301,7 @@ pub const Lowerer = struct {
             // element by element): its elements read from the tuple. An
             // arm nothing can reach has none.
             .tuple => |names| {
-                if (l.b.nodes.items(.tag)[value.int()] != .undefined_lit) {
+                if (l.b.tagOf(value) != .undefined_lit) {
                     const tuple = try l.bindSubject(out, value, p);
                     for (names, 0..) |n, i| {
                         if (n == .none) continue;
@@ -3865,8 +3865,8 @@ pub const Lowerer = struct {
 
     /// Whether `value` is the literal `[]`: an array literal of nothing.
     fn isEmptyArray(l: *Lowerer, value: Node.Index) bool {
-        if (l.b.nodes.items(.tag)[value.int()] != .array) return false;
-        const d = l.b.nodes.items(.data)[value.int()];
+        if (l.b.tagOf(value) != .array) return false;
+        const d = l.b.dataOf(value);
         return d.lhs == d.rhs;
     }
 
@@ -3878,8 +3878,8 @@ pub const Lowerer = struct {
 
     /// The name an `ident` node spells.
     fn identName(l: *Lowerer, n: Node.Index) JsIr.NameIndex {
-        std.debug.assert(l.b.nodes.items(.tag)[n.int()] == .ident);
-        return @enumFromInt(l.b.nodes.items(.data)[n.int()].lhs);
+        std.debug.assert(l.b.tagOf(n) == .ident);
+        return @enumFromInt(l.b.dataOf(n).lhs);
     }
 
     /// One of `core/List`'s values the emitter calls by well-known symbol:
@@ -4061,24 +4061,30 @@ pub const Lowerer = struct {
     /// and `orderedExprs` ask this of the same node tags for the same
     /// reason.
     fn isAtom(l: *Lowerer, value: Node.Index) bool {
-        return switch (l.b.nodes.items(.tag)[value.int()]) {
-            // A `Js.Ref` written as a `let` is a name a write may rebind
-            // (`findRefs`): a read of one keeps its place like any work.
-            .ident => l.mutable_names.items.len == 0 or !l.isMutable(value),
-            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => true,
-            else => false,
-        };
+        const tag = l.b.tagOf(value);
+        // A `Js.Ref` written as a `let` is a name a write may rebind
+        // (`findRefs`): a read of one keeps its place like any work.
+        if (tag == .ident) return l.mutable_names.items.len == 0 or !l.isMutable(value);
+        return atom_literals[@intFromEnum(tag)];
     }
+
+    /// The literal tags `isAtom` takes, as a table: a switch with an `else`
+    /// prong is a check against every tag first in Zig's own backend.
+    const atom_literals = blk: {
+        var set: [@typeInfo(Node.Tag).@"enum".fields.len]bool = @splat(false);
+        for ([_]Node.Tag{ .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this }) |t| set[@intFromEnum(t)] = true;
+        break :blk set;
+    };
 
     /// Whether `value` is an `ident` of the name `n`.
     fn isIdentOf(l: *Lowerer, value: Node.Index, n: JsIr.NameIndex) bool {
-        return l.b.nodes.items(.tag)[value.int()] == .ident and l.b.nodes.items(.data)[value.int()].lhs == @intFromEnum(n);
+        return l.b.tagOf(value) == .ident and l.b.dataOf(value).lhs == @intFromEnum(n);
     }
 
     /// Whether `value` is an `ident` naming a `Js.Ref` written as a `let`.
     fn isMutable(l: *Lowerer, value: Node.Index) bool {
-        if (l.b.nodes.items(.tag)[value.int()] != .ident) return false;
-        const n: JsIr.NameIndex = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs);
+        if (l.b.tagOf(value) != .ident) return false;
+        const n: JsIr.NameIndex = @enumFromInt(l.b.dataOf(value).lhs);
         return std.mem.indexOfScalar(JsIr.NameIndex, l.mutable_names.items, n) != null;
     }
 
@@ -4763,7 +4769,7 @@ pub const Lowerer = struct {
     /// constant and stays where it is.
     fn bindShared(l: *Lowerer, t: Dispatch.TermIndex, value: Node.Index, p: u32) !Node.Index {
         const into = l.evidence_out orelse return value;
-        if (l.b.nodes.items(.tag)[value.int()] != .arrow) return value;
+        if (l.b.tagOf(value) != .arrow) return value;
         const n = try l.fresh(l.well.temp);
         try l.constDecl(into, n, value, p);
         try l.bound.put(l.scratch, t.int(), n);
@@ -4946,7 +4952,7 @@ pub const Lowerer = struct {
     fn hoistEvidence(l: *Lowerer, value: Node.Index, depth: u32, p: u32) !Node.Index {
         const into = l.evidence_out orelse return value;
         if (depth < evidence_spill) return value;
-        if (l.b.nodes.items(.tag)[value.int()] != .arrow) return value;
+        if (l.b.tagOf(value) != .arrow) return value;
         const n = try l.fresh(l.well.temp);
         try l.constDecl(into, n, value, p);
         return l.ident(n, p);
@@ -5547,8 +5553,8 @@ pub const Lowerer = struct {
     fn rightmost(l: *Lowerer, value: Node.Index) Node.Index {
         var at = value;
         while (true) {
-            const d = l.b.nodes.items(.data)[at.int()];
-            if (l.b.nodes.items(.tag)[at.int()] != .binary or
+            const d = l.b.dataOf(at);
+            if (l.b.tagOf(at) != .binary or
                 @as(JsIr.BinaryOp, @enumFromInt(d.rhs)) != .logical_and) return at;
             at = @enumFromInt(l.b.extra.items[d.lhs + 1]);
         }
@@ -5563,7 +5569,7 @@ pub const Lowerer = struct {
     fn forwardTail(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
         const body = l.derived_body.?;
         const tags = l.b.nodes.items(.tag);
-        const d = l.b.nodes.items(.data)[value.int()];
+        const d = l.b.dataOf(value);
         if (tags[value.int()] == .binary and @as(JsIr.BinaryOp, @enumFromInt(d.rhs)) == .logical_and) {
             const left: Node.Index = @enumFromInt(l.b.extra.items[d.lhs]);
             const right: Node.Index = @enumFromInt(l.b.extra.items[d.lhs + 1]);
@@ -6098,8 +6104,8 @@ pub const Lowerer = struct {
 
     /// `!test`, written `a !== b` for `a === b` and the other way round.
     fn negate(l: *Lowerer, test_expr: Node.Index, p: u32) !Node.Index {
-        if (l.b.nodes.items(.tag)[test_expr.int()] == .binary) {
-            const d = l.b.nodes.items(.data)[test_expr.int()];
+        if (l.b.tagOf(test_expr) == .binary) {
+            const d = l.b.dataOf(test_expr);
             const flipped: ?JsIr.BinaryOp = switch (@as(JsIr.BinaryOp, @enumFromInt(d.rhs))) {
                 .strict_eq => .strict_ne,
                 .strict_ne => .strict_eq,
@@ -7601,7 +7607,7 @@ pub const Lowerer = struct {
                 const value = if (body) |b| try l.expr(&guarded, b) else try l.call(body_value.?, &.{}, p);
                 // A body that ends in `Js.throw` has no value to assign.
                 const ended = guarded.items.len != 0 and l.b.nodes.items(.tag)[guarded.items[guarded.items.len - 1].int()] == .throw_stmt and
-                    l.b.nodes.items(.tag)[value.int()] == .undefined_lit;
+                    l.b.tagOf(value) == .undefined_lit;
                 if (!ended) try guarded.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(result, p)).int(), value.int()));
             },
             .discard => if (body) |b|
@@ -7688,12 +7694,12 @@ pub const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const arrow = try l.expr(out, lambda);
-        if (l.b.nodes.items(.tag)[arrow.int()] != .arrow) {
+        if (l.b.tagOf(arrow) != .arrow) {
             try l.report(.internal, lambda, refused, .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         // The `Func` record's four indexes, in field order.
-        const at = l.b.nodes.items(.data)[arrow.int()].lhs;
+        const at = l.b.dataOf(arrow).lhs;
         const f: JsIr.Func = .{
             .params_start = @enumFromInt(l.b.extra.items[at]),
             .params_end = @enumFromInt(l.b.extra.items[at + 1]),
@@ -7928,7 +7934,7 @@ pub const Lowerer = struct {
                 const value = if (inline_body) |b| try l.expr(block, b) else try l.call(called.?, args, p);
                 // An arm that ends in `Js.throw` has no value to assign.
                 const ended = block.items.len != 0 and l.b.nodes.items(.tag)[block.items[block.items.len - 1].int()] == .throw_stmt and
-                    l.b.nodes.items(.tag)[value.int()] == .undefined_lit;
+                    l.b.tagOf(value) == .undefined_lit;
                 if (!ended) try block.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(result, p)).int(), value.int()));
             },
             .discard => if (inline_body) |b|
@@ -7957,8 +7963,8 @@ pub const Lowerer = struct {
         // later write.
         if ((which == .read or which == .write) and args.len != 0 and l.unboxedRef(args[0])) {
             const target = try l.expr(out, args[0]);
-            if (l.b.nodes.items(.tag)[target.int()] == .ident) {
-                try l.markMutable(@enumFromInt(l.b.nodes.items(.data)[target.int()].lhs));
+            if (l.b.tagOf(target) == .ident) {
+                try l.markMutable(@enumFromInt(l.b.dataOf(target).lhs));
                 if (which == .read) return target;
                 const value = try l.expr(out, args[1]);
                 try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
@@ -8412,10 +8418,10 @@ pub const Lowerer = struct {
                         // `--release`: a binding of a name nothing
                         // reassigns — `y = Js.to x` — is that name, as a
                         // parameter passed one is (`enterInline`).
-                        if (l.in.unit_results and !l.suspendable and l.b.nodes.items(.tag)[value.int()] == .ident and
+                        if (l.in.unit_results and !l.suspendable and l.b.tagOf(value) == .ident and
                             !l.isMutable(value) and !named_before and payload.local < l.local_names.len)
                         {
-                            l.local_names[payload.local] = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs);
+                            l.local_names[payload.local] = @enumFromInt(l.b.dataOf(value).lhs);
                             continue;
                         }
                         try l.constDecl(out, n, value, p);
@@ -8898,7 +8904,7 @@ pub const Lowerer = struct {
                     const local = l.bir.instData(param).lhs;
                     const tags = l.b.nodes.items(.tag);
                     if (tags[value.int()] == .ident and local < l.local_names.len) {
-                        l.local_names[local] = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs);
+                        l.local_names[local] = @enumFromInt(l.b.dataOf(value).lhs);
                     } else try l.constDecl(out, try l.localName(local), value, p);
                 },
                 .pat_wild, .pat_unit => {},
@@ -9093,8 +9099,8 @@ pub const Lowerer = struct {
         const aliased = try l.scratch.alloc(bool, slots.len);
         for (slots, values, bound, aliased) |slot, value, stmt, *alias| {
             alias.* = stmt == null and !slot.carried and !slot.unwritten and slot.local != Loop.no_local and slot.local < l.local_names.len and
-                l.b.nodes.items(.tag)[value.int()] == .ident and !l.isMutable(value);
-            if (alias.*) l.local_names[slot.local] = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs);
+                l.b.tagOf(value) == .ident and !l.isMutable(value);
+            if (alias.*) l.local_names[slot.local] = @enumFromInt(l.b.dataOf(value).lhs);
         }
         const built = try l.loopOf(&loop, body, p);
         var k: usize = 0;
@@ -9393,10 +9399,10 @@ pub const Lowerer = struct {
     /// the expression statement `value;` for anything else.
     fn discardValue(l: *Lowerer, out: *StmtList, value: Node.Index, p: u32) Allocator.Error!void {
         if (l.isRead(value)) return;
-        if (l.b.nodes.items(.tag)[value.int()] != .cond) {
+        if (l.b.tagOf(value) != .cond) {
             return out.append(l.scratch, try l.add(.expr_stmt, p, value.int(), Node.Data.unused));
         }
-        const d = l.b.nodes.items(.data)[value.int()];
+        const d = l.b.dataOf(value);
         const arms = l.b.extra.items[d.rhs..][0..2];
         const test_expr: Node.Index = @enumFromInt(d.lhs);
         var then: StmtList = .empty;
@@ -9436,7 +9442,7 @@ pub const Lowerer = struct {
     /// read and a field of a well-typed value exists.
     fn isRead(l: *Lowerer, value: Node.Index) bool {
         var at = value;
-        while (l.b.nodes.items(.tag)[at.int()] == .member) at = @enumFromInt(l.b.nodes.items(.data)[at.int()].lhs);
+        while (l.b.tagOf(at) == .member) at = @enumFromInt(l.b.dataOf(at).lhs);
         // A read of a `Js.Ref` written as a `let` changes nothing either.
         return l.isAtom(at) or l.isMutable(at);
     }
@@ -10412,8 +10418,8 @@ pub const Lowerer = struct {
     fn trimTrailingBreak(l: *Lowerer, out: *StmtList, label: JsIr.NameIndex) void {
         if (out.items.len == 0) return;
         const last = out.items[out.items.len - 1];
-        if (l.b.nodes.items(.tag)[last.int()] != .break_stmt) return;
-        if (l.b.nodes.items(.data)[last.int()].lhs != @intFromEnum(label)) return;
+        if (l.b.tagOf(last) != .break_stmt) return;
+        if (l.b.dataOf(last).lhs != @intFromEnum(label)) return;
         _ = out.pop();
     }
 
@@ -10592,13 +10598,13 @@ pub const Lowerer = struct {
             };
             const out = if (k < apart.len and apart[k]) apart_out else main_out;
             const value = try l.expr(out, inst);
-            const tag = l.b.nodes.items(.tag)[value.int()];
+            const tag = l.b.tagOf(value);
             st.bound[v] = switch (tag) {
                 .ident => if (l.isMutable(value)) blk: {
                     const n = try l.fresh(l.well.temp);
                     try l.constDecl(out, n, value, l.pos(inst));
                     break :blk .{ .name = n };
-                } else .{ .name = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs) },
+                } else .{ .name = @enumFromInt(l.b.dataOf(value).lhs) },
                 .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => .{ .node = value },
                 else => blk: {
                     const n = try l.fresh(l.well.temp);
@@ -10618,8 +10624,8 @@ pub const Lowerer = struct {
             .inst => switch (st.bound[at]) {
                 .name => |n| return l.ident(n, p),
                 .node => |node| {
-                    const d = l.b.nodes.items(.data)[node.int()];
-                    return l.add(l.b.nodes.items(.tag)[node.int()], p, d.lhs, d.rhs);
+                    const d = l.b.dataOf(node);
+                    return l.add(l.b.tagOf(node), p, d.lhs, d.rhs);
                 },
                 // Asked for outside the root or row that evaluates it: a
                 // defect of the lowering, which gets a value that says so
@@ -11016,7 +11022,7 @@ const markup_vtable: beni_markup.VTable = struct {
         const l = lowerer(impl);
         const base = l.interner.find(hint) orelse return null;
         for (l.mk.?.hoisted.items) |stmt| {
-            const n: JsIr.NameIndex = @enumFromInt(l.b.nodes.items(.data)[stmt.int()].lhs);
+            const n: JsIr.NameIndex = @enumFromInt(l.b.dataOf(stmt).lhs);
             const hoist_name = l.b.names.items[n.int()];
             if (hoist_name.module == l.module_name.toOptional() and hoist_name.base == base) return @enumFromInt(@intFromEnum(n));
         }
