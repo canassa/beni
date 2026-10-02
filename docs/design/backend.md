@@ -5592,7 +5592,9 @@ arguments evaluated once, in order, in both builds).
 ### Whole-program specialisation
 
 *Added 2026-10-02 (research 47 §6 item 8), specified ahead of the build; what is built, and where
-the build departs from the text, is the *As built* note at the end of this section.* A runtime written in beni is compiled WITH the program (`boundary.md` §9.2's runtime module),
+the build departs from the text, is the *As built* note at the end of this section. Since
+2026-10-02 its analysis is being rebuilt as one combined fixpoint, slice by slice: *The combined
+solver*, after this section, is normative for that.* A runtime written in beni is compiled WITH the program (`boundary.md` §9.2's runtime module),
 so the compiler sees every call of every runtime function the page makes — which no copied JavaScript
 file allows (*Hand-written JavaScript under `--release`* cuts whole exports, never a branch). The
 empty page never passes `template` a flag, never mounts a hosted program, never holds a list; this
@@ -6473,7 +6475,7 @@ index parameter). `run/QuestionOrder` and `run/SchemaDeclTagged` lose a dead `re
 (raw +22), is a gap this does not make but now meets: an `if` on the result of an `eq` that is
 `()=>true` folds in the first round now, before the inlining passes would have written `true`
 in, and leaves `let same = eq()`, which `Opt` drops after this pass — so `prune`, which counts
-that read, keeps `eq` (research 52 §8.4, *Spec and Opt disagree on what is dead*). Cost,
+that read, keeps `eq` (research 52 §8.3, G8: `Spec` and `Opt` disagree on what is dead). Cost,
 millions of instructions of the ReleaseSafe compiler, a `--release` build, against the compiler
 before: `browser/tea/TodoMVC` 1 354 → 1 360, `bench --generate=100000` as a library 15 078 →
 15 072 (within the noise of two runs), `abuse_wide_test`'s 16 400 arms 2 468 → 2 486; peak
@@ -6481,6 +6483,241 @@ memory unchanged. A literal's truthiness is read from its digits (`numberTruth`)
 of the 16 400 numbers cost 26 million more. Fixtures: `emit/release/app/SpecTruthiness`
 (red before: `score`'s `n < 0 || true` kept its `if` and its dead statements),
 `run/SpecializeTruthiness` (a decided test that logs keeps its log, in both builds).
+
+### The combined solver
+
+*Specified 2026-10-02, normative for `src/js/Spec.zig`'s analysis from slice 4 of research 52
+§4.5 on; the owner adopted the architecture that day (research 52 §0.3). The review it rests on
+is research 52 §8, whose findings G1–G11 this section cites. Nothing here is built yet: where the
+code and this section disagree before a slice lands, the code is the old design.* It replaces
+*Whole-program specialisation*'s rounds of analyse → rewrite → prune (and the worklist note's
+sweeps) with **one optimistic, combined, sparse fixpoint per structural pass, read once by one
+rewrite**. The facts are the ones above — constants and truthiness, points-to, fields, returns,
+the allocated-once fact, guards, definite initialisation — plus two the rounds approximated by
+repetition: which code is executable, and which local binding is live. What the rewrite does
+with a fact is unchanged unless a slice below says so.
+
+#### Where it runs
+
+Per structural pass of `Spec.run`, in this order:
+
+1. **Extract** (workers, one task per module): walk the module's `JsIr` once and emit its
+   constraints, its cells' local numbering and its statements' name counts (*Extraction*). A
+   module whose `Mod.version` did not change since the last extraction keeps its arrays.
+2. **Merge** (calling thread): number every module's cells and constraints by prefix sums in
+   module order, intern the literals in that order, build the readers index.
+3. **Solve** (calling thread): the worklist to its fixpoint (*The worklist*).
+4. **Read off** (calling thread): executability, reachability and liveness (*Reading off*).
+5. **Rewrite** (workers, one task per module): patch each module from the final facts, which no
+   step of the rewrite changes (*The rewrite*).
+6. **Structural passes** (calling thread, unchanged): small functions, functions called once,
+   constructor folding, scalar replacement, then the `iife` and `self_assign` list modes — moved
+   into this loop (research 52 §8.3, G9) — and, when one changed the program, back to step 1, at
+   most `max_passes` = 3 times, counted (`spec_passes`, `spec_passes_capped`).
+
+`trimArguments`, `releaseKeeps` and the solve after it disappear into steps 4–5 (G9). The
+pipeline around `Spec.run` (`backend.md` §9's *One scope-hoisted file*, `Opt`, `Fields`) is
+unchanged.
+
+#### Cells
+
+A **cell** is a `u32`. Every cell holds a value of the product lattice (*Values*); a cell's id
+is fixed before solving, by its module's extraction and the prefix sums of the merge, so ids
+follow module order and IR order whatever the threads did (rule 5). The kinds, each a dense
+range:
+
+| Kind | One per | Replaces |
+|---|---|---|
+| node | value-producing `JsIr` node of a module (the cell id is the module's base plus the node index) | `Mod.memo`, `Pts.vals` (D1) |
+| name | whole-program name (`Input.globals`, and `addGlobal`'s) | `Pts.globals`, `nameValue`'s module-level reads |
+| local | local binding: (top-level statement, name) in the order extraction meets them; a parameter is its function's local | `Mod.value`, `Spec.params`, `Pts.locals` (D7) |
+| return | function node (arrow, `function`, generator) | `ret_lat`, `Pts.Site.ret` (D2) |
+| site | object, array and function node (allocation site) | `Pts.sites`; its facets are columns: `escaped`, `all_read`, `any_written`, `once`, `prog_any`, `odd_caller` |
+| field | (site, property id), made when a load or store first reaches it, in a pool; per site a sorted run of (property, cell) found by binary search | `prop_lat`, `Pts.Prop` (D2, D3) |
+| exec | function body, and arm: an `if`'s two, a `?:`'s two, a `&&`'s or `||`'s right side, each `case` | — (new, slice 6) |
+
+Values live in **columns indexed by cell**, sized at the merge: `lat: []Lat` (four bytes: state,
+truthiness, literal), `pts: []u8` (the four bits `top`, `prim`, `nul`, `undef`), `set: []SetId` and
+`done: []SetId` (the site set, and the part of it already propagated), and the `exec` bitset.
+A **site set** is an immutable sorted `[]u32` held in a hash-consed set table (content-addressed,
+so its id is the same whichever cell made it first); a cell's set is replaced, never grown in
+place (G2). Field cells, made during the solve, number in solve order; no answer depends on their
+numbering, since every consumer finds one by (site, property).
+
+#### Values
+
+The product of `Spec.Lat` — ⊥ < literal | `name` < *nonnull* < ⊤, with truthiness ⊥ < truthy |
+falsy < either beside it (slice 3) — and fact 3's `Pts.Val` — `top`, `prim`, `nul`, `undef` and a
+site set capped at `max_sites` = 48, past which it is `top` and its sites escape; `top` implies the
+other three bits (slice 2). Each component joins on its own. **Every transfer function is
+monotone, component by component**, and is written as a join over what its operands may be:
+never "a constant while some fact is still false, something else after". The rule bites where
+today's code special-cases: a read `x.p` through objects all of which are the program's own is
+⨆ over `x`'s sites of (the field cell, ⊔ `undefined` where the literal lacks `p` and definite
+initialisation did not find it) — which is `undefined` exactly while nothing is written, as
+`neverWritten` says today, and grows from there — not "`undefined` if never written, else the
+field". Each transfer function has a property test over small lattices (research 52 §4.3), and
+the safety build's order check (*Determinism*) catches any that slips.
+
+#### Extraction
+
+One walk of a module's `JsIr` per extraction, on a worker, reading nothing but the module and
+`Input` (its `global` and `prop` columns): it emits the module's constraints as flat arrays —
+`op: []Op` (a `u8`), `exec: []u32` (the exec cell gating it), `a`, `b`, `out: []u32`, `node: []u32` —
+with variable-length operands (a call's arguments, an object's keys) in a `u32` pool, and per
+top-level statement the names it declares, reads and assigns (the counts `countTop`, `inlineScan`,
+`declCount` and `nameUses` each make today, G7), its guards' σ-copies with their kills, its
+definite-initialisation candidates, and the literal nodes to intern. The kinds, each a `switch`
+arm of the solver:
+
+| Constraint | Meaning | From |
+|---|---|---|
+| `lit n → c` | the literal | literal nodes |
+| `copy a → c` | `c ⊒ a` | a binding's initialiser, an assignment to a name, an argument to a known function's parameter, a `return` to its function's return cell |
+| `op a, b → c` | `unary`, `binary`, `templateValue`, `identity` over the operand cells; `&&`/`||` and `?:` with their truthiness rules | operators, conditionals, templates |
+| `σ a → c` | `a` narrowed by a guard (not `null`, not `undefined`) while every listed kill is a read through program objects | `Pts.narrowed` with `kill`, `guardNames` (G9) |
+| `alloc s → c` | the site, with its literal keys as stores | object, array and function nodes |
+| `load o, p → c`; `store o, p ← v`; `loadAll`; `storeAny`; `spread` | fact 3's reads and writes, on every site `o` holds, through the field cells | member reads and writes, computed ones, `for…of`, spreads |
+| `call f, args → c` | for every function site in `f`: arguments to parameters, return to `c`, the call recorded as a caller, the body made executable; for anything else: the arguments escape, `c` is ⊤ | calls; the entry file's call (`Input.entry`) |
+| `escape v` | `v`'s sites escape | `throw`, a host call's arguments, `Input.escaping`, a value written to ⊤ |
+| `branch t → then, else` | an arm is executable when its parent is and `t`'s truthiness allows it | `if`, `?:`, `&&`, `||`; each `case` arm whenever the `switch` is |
+
+The `escaped`, `assigned` and `reads` columns of today's sweeps are extraction facts (they are
+syntactic). The literals are interned at the merge, in module order, so their ids do not depend
+on the workers.
+
+#### Executability
+
+An exec cell is a bit, false until something makes it true. The roots: every module's top-level
+code; every name `Input.escaping` lists and the entry's call; every function whose site escapes
+(IPSCCP's rule: address-taken means executable, and its parameters are ⊤). A function body becomes
+executable when an executable `call` reaches its site; an arm when its `branch` allows it. **A
+constraint whose exec cell is false contributes nothing** — no argument, no write, no allocation,
+no escape, no caller (Click's mixed functions). A callee that may be ⊤ (a host value) reaches every
+escaped function, which is already executable. Exec bits only become true, and an arm's rule is
+monotone in its test's truthiness, so executability is one more monotone component. Until slice 6
+every exec cell is true from the start, which is today's analysis: both arms of every `if` and
+every body.
+
+#### The worklist
+
+Two queues, rings of `u32` with a bitset of what is queued: changed cells and newly executable
+exec cells. A changed cell wakes the constraints that read it: the static readers, a CSR index
+(offsets and constraint ids) built at the merge by counting sort, and the dynamic ones a `load`,
+`store` or `call` registers on a field cell or a function's parameters as its operand's site set
+grows, in a pool of linked `u32` pairs (today's `Pts.deps`). An exec cell becoming true queues the
+constraints it gates (a CSR index of its own). **Site sets propagate their difference**: a cell's
+`set \ done` is what its `copy` successors and the `load`s, `store`s and `call`s reading it act
+on, and `done` becomes `set` once they have (Pereira & Berlin's wave, SVF's `AndersenWaveDiff`);
+a `lat` change re-evaluates the reader whole, which is a few instructions. The queues are seeded in
+cell order and drained first in, first out; any other fair order reaches the same fixpoint.
+
+**Termination** is the lattice's: a cell's `lat` changes at most 6 times, its bits 4, its set at
+most 48 times before it is `top`, an exec bit once. There is no sweep cap and no round cap. A work
+budget — 64 evaluations per constraint and cell — is an assertion: a safety build that exceeds it
+panics, naming a cell still changing; a release build sets every cell still queued, and every exec
+cell, to ⊤ and drains (⊤ is a fixpoint above any other, so the facts stay sound), and counts it
+(`spec_budget_hit`). Never "rewrite nothing" (research 52 §2.1, *Stopping early*).
+
+#### Calls with known results
+
+*Decision 3 of research 52, approved by the owner 2026-10-02 with four constraints, built as a
+mixed function of the `call` constraint, not as a pass of its own (slice 8a).* When a call's callee
+cell holds exactly one function site, that function is **pure by the checker's inference**
+(`Input` carries the checker's purity bit per whole-program function, `checker-v2.md` §26), and
+every argument cell is a literal, the call is **evaluated**: the function's body is interpreted
+with those literals bound, by the folds the facts already make — integers that are safe, booleans,
+string concatenation and ASCII comparison, `===`, truthiness; nothing else, so no transcendental
+`Math` and no float-to-string, only what the compiler computes exactly as V8 does — following a
+call it makes when that call qualifies in turn. The evaluation is **bounded** (a step budget and a
+depth, both counted when hit): one that finishes yields a literal; one that runs out, meets an
+operation outside the list, or would throw yields nothing, so a call that does not terminate or
+that crashes is never hidden. Results are memoised by (function, arguments). A literal so found is
+the call cell's value — joined, like every value, so a call whose arguments later stop being
+literals is the function's return as before — and the rewrite writes the call as the literal
+**only when the literal prints no longer than the call**. Because the call is pure and was
+evaluated to completion, an expression around it that folds to a literal may drop it, which keeps
+the invariant every fold rests on: a node whose value is a literal does nothing when evaluated.
+The parked prototype (`constantCall`, `foldsTo` on the branch `spec-call-results-parked`) is the
+reference for the evaluator, not code to merge. Cloning (decision 4) is not part of this.
+
+#### Reading off
+
+After the solve, three read-offs, each a function of the final cells:
+
+- **Executability.** An arm whose exec cell is false is not printed; a function body that is not
+  executable belongs to a function nothing live calls (slice 6). The rewrite keeps the arm an
+  `if` takes, as `foldList` does today; a test that may do something stays, before it (slice 3's
+  `T; …arm`).
+- **Reachability** (`prune`, now a read-off): a top-level declaration is live when it is a root
+  (a statement whose evaluation may do something, `Input.escaping`, the entry's call) or an
+  executable read of a live binding names it.
+- **Liveness of bindings**: a local binding is live when an executable read reads it or lowering
+  keeps it for its initialiser's effect (`effect_keep`); only a live binding's initialiser
+  references anything, and a write to a binding nothing live reads goes (master's `unreadName`).
+  This is what `Opt` will conclude, known before `Spec` decides (G8): `deadReads`, `releaseKeeps`
+  and `unreadName` go.
+
+#### The rewrite
+
+One rewrite per solve, on the workers, one module per task: every step reads the final cells and
+the read-offs, and none writes them, so the order modules or statements are patched in cannot
+change the output (G4 — `stale`, `declined`, `folded_reads` and the `now_literal` round go). What
+it does is today's: a node whose value is a literal is written as the literal under the
+substitution rule (5 bytes, or read once — by the extracted read counts, executable reads only); a
+parameter every call passes the same literal, or that nothing reads and no argument for it does
+anything, goes with its arguments; a key nothing reads goes from its literal and a write of it
+from the program; `appendChild`; trailing arguments nothing reads (`trimArguments`); a test decided
+by its truthiness where skipping it loses nothing (`effectFreeTest`, the one purity test the
+rewrite asks, G7); what follows a statement that cannot complete. A name written in a module that
+lacks it is added to that module only, so the tasks share nothing they write.
+
+#### Determinism
+
+By construction: ids come from extraction and the merge in module order; every transfer function
+is monotone, so the fixpoint is the least one whatever order the queues take; the rewrite reads
+only final facts. **Checked** in safety builds on programs of at most `max_checked_nodes` = 1 500
+nodes: the solve is run twice — first in first out, then last in first out from the reversed
+seeding — and every cell's value, every exec bit and every field (by site and property) must agree
+(today's shuffled-order check of fact 3, slice 2, extended to every cell). The determinism test
+(`--jobs=1` against `--jobs=8`, twice each) covers the workers.
+
+#### Memory
+
+Per node about 60 bytes at most for the life of one structural pass: 13 per cell (`lat`, the bits,
+`set`, `done`) for its node cell and its share of the others, 21 per constraint, 8 per reader
+edge; site sets hash-consed, so cells that hold the same set hold one copy. Three arenas: the
+extraction arrays (kept per module across the passes while its version stands), the solve's
+columns and pools (reset after the rewrite), the set table (reset with them). Today every analysis
+allocates new per-node arrays into one arena that lives for the whole pass (D4): a `--release`
+build of `bench --generate=100000` as a library peaks at 377 MB. Each slice reports peak RSS on
+TodoMVC, that build and `abuse_wide_test`, and none may raise it by more than 5%.
+
+#### Building it — research 52 §4.5's slices 4–8
+
+Each slice is gates-green, measured (instructions of the ReleaseSafe compiler and peak RSS on
+`browser/tea/TodoMVC`, `bench --generate=100000` as a `--library` release build with its names
+migrated, and `abuse_wide_test`'s 16 400 arms; `zig build bench`), and compared build by build with
+the compiler before over every `run/` and `browser/` fixture and the `bench/todomvc` app.
+
+4. **Extraction, the merge and the solver, for facts 1, 2, 4, 5, 6 and truthiness, every exec cell
+   true; fact 3 still `Pts`, read as input.** In safety builds on programs of at most 1 500 nodes,
+   the sweeps run too and must agree with the solver on every node value they computed, every
+   parameter, field, return and decided conditional, and the `escaped`, `assigned` and `reads`
+   columns; the panic names the node. Byte-identical. Then the sweeps, `checkedSweeps`,
+   `count_logs` and `max_sweeps` go, with the check.
+5. **Fact 3 into the same cells and constraints**; `prop_lat`, `ret_lat`, `decided_conds` and
+   `Pts`' walker go. The same double run against `Pts` (each site taken for the one its node made,
+   as slice 2's check does). Byte-identical. `max_pts_sweeps` goes.
+6. **Executability, the read-offs and the rewrite once**; rounds go (`max_rounds`), `prune`,
+   `deadReads`, `releaseKeeps`, `unreadName` and `trimArguments` become read-offs, and the `iife`
+   and `self_assign` modes join the pass loop. `emit/release/app/SpecDeepChain` and
+   `SpecSelfGuard` move (research 52's E1 and E2 fold), and so does `run/DerivedPartTypedLater`
+   (G8); every other move is listed and justified. `spec_analyses` becomes `spec_solves`.
+7. **Definite initialisation as a may-fact** in the solver (research 52 §3.5); `max_init_runs` and
+   the restarts go. Byte-identical or smaller.
+8. **Calls with known results** (8a, above, approved); **cloning** (8b) only after the owner
+   decides, which waits for slice 6's measurements.
 
 ### Compact statements
 

@@ -19,7 +19,7 @@ hand-written JavaScript).
    counters and raised caps added to `Spec.run`. That copy was never committed; the scripts are
    described in §7.
 
-**Read §0, then §4.**
+**Read §0, then §4.** Since the owner's decision (§0.3): §8 is the whole-program review, §9 the slices' status, and `backend.md` §9, *The combined solver*, the normative design.
 
 ---
 
@@ -94,6 +94,19 @@ architecture (§3.6):
 | **E4** | Release output of the same 411 programs, searched for folds left undone | `\|\|true` 32 times in 28 files, `null.length`/`null[` 32 times. All 32 are `platforms/browser/Rt.beni`'s `sameInputs` and `sameInputsBut` with `b` folded to `null`: `if(a===null)return true;if(a===null\|\|true\|\|a.length!==null.length)return false;let b=0;while(…a[b]===null[b])…`, where `a=>a===null` is the whole function. Folding both by hand: **−39.5 brotli bytes per page** (−158 raw) on all 28 pages |
 
 ### 0.3 Decisions for the owner
+
+**Decided, 2026-10-02.** The owner adopted decision 1 — the combined fixpoint is the optimiser's
+architecture, built by §4.5's slices, with a whole-program review of the optimiser first (§8) —
+and decision 2. Decision 3 is approved with four constraints: only functions the checker infers
+pure; a call is folded only when evaluating it at compile time finished within a bound, so a
+call that does not terminate or that crashes is never hidden; only operations whose result the
+compiler computes exactly as V8 does (integers, booleans, string concatenation and comparison,
+the folds `Spec` already makes — no transcendental `Math`, no float-to-string); and the
+replacement is no longer than the call. It is built inside the combined solver, not as a sweep
+of its own (§9.8); a prototype that folds a call of literals as a separate step is parked on the
+branch `spec-call-results-parked` as reference and is not merged. Decision 4, cloning, stays
+undecided until slice 6 has landed. The normative design is `backend.md` §9, *The combined
+solver*; §8 is the review it rests on, §9 the status of the slices.
 
 1. **Adopt the combined fixpoint (§4) as the optimiser's architecture.** The alternative is to keep
    the rounds and only fix the three local defects (E1's cliff, fact 3's monotonicity, E5). The
@@ -811,6 +824,9 @@ or else measured smaller and its goldens moved with a fixture that is red before
 
 ## 5. Decisions for the owner
 
+*Decided 2026-10-02: 1 and 2 adopted, 3 approved with four constraints, 4 deferred until slice 6,
+5 not now — §0.3.*
+
 1. **Architecture.** Adopt §4: one optimistic combined fixpoint per structural pass, solve then
    rewrite, sparse cell worklist, no sweep caps. Migrate by §4.5's slices. *Recommended.*
 2. **E5.** Fix the latent undefined read now, with its fixture, independent of decision 1.
@@ -916,3 +932,256 @@ give the same output, since emission is reachability-ordered. Each was built wit
 `tests/corpus/run/*.beni`, `tests/corpus/browser/tea/*.beni` and `bench/todomvc/apps/beni/*.beni`
 (411 builds), comparing raw output bytes. E4's brotli figure is Node 24.19's `brotliCompressSync`
 at quality 11 over each `_main.mjs`, with and without the two bodies replaced by `a=>a===null`.
+
+---
+
+## 8. Whole-program review of the release optimiser
+
+*Added 2026-10-02, after the owner's decision (§0.3), at master `71b75ae9` plus slices 0–3
+(§9). Read-only of `Spec.zig` end to end and of its neighbours (`Opt`, `Reach`, `Minify`,
+`Fields`, and `Emit`'s release pipeline). Functions are named rather than given line numbers:
+`Spec.zig` moves under every slice.* Each finding says what the combined solver (`backend.md`
+§9, *The combined solver*) does instead. Findings marked **fixed** were fixed in slices 0–3;
+**removed by slice N** means the code goes when that slice lands, and must not be extended
+before then.
+
+### 8.1 What the release pipeline is
+
+`Emit.run` under `--release`, in order (the calling thread unless marked *workers*):
+
+1. `Reach` — declaration reachability over BIR and `Dispatch`, its edges built per module on
+   the workers and walked here; twice when the runtime's roots are refined.
+2. `Fields.close` — which record fields JavaScript can see, over BIR, types and `Reach`'s live
+   set, before lowering.
+3. Lowering (*workers*) — `JsIr` per module, and the tables the optimiser reads (`effect_keep`,
+   `pure_discards`, `unobserved`, `mutable`).
+4. `planHoist` — whether the build is one scope-hoisted file (`one_scope`); it tokenizes and cuts
+   every hand-written file (`Minify.hoistableWith`).
+5. **`Spec.run`** — whole-program specialisation, over every module's `JsIr` at once.
+6. Per module (*workers*): `Spec.peephole`, then `Opt.runKeeping` (local dead bindings and
+   single-use inlining, a plan), then `Rename.collectGlobals`.
+7. `planHoist` again (it must agree on `one_scope`), global numbering, `Fields.assign` (field
+   names from the counts of what is left — since master's *field names decided after
+   specialisation*, with `Spec.Stats.copied`), printing (*workers*), `Minify` of the
+   hand-written files, writing.
+
+`Spec.zig` is 8 300 lines, in eight parts:
+
+| Part | What | Size |
+|---|---|--:|
+| Infrastructure | `KeyMap`; the literal table (`lits`, `lit_ids`, `lit_truth`, `plain_ids`, `name_lits`); `Mod` (a module's growable IR columns, per-node `memo`/`lit_of`/`objects`, per-name `stamp`/`decls`/`uses`/`assigned`/`value`/`param`, caches `occ`/`uniq`); `Spec`'s whole-program arrays and caches | ~900 |
+| Facts 1, 2, 4, 5, 6 and truthiness | `analyse` → `sweeps` → `walkAll` → `walkTop` = `countTop` (names) + `evalStmt`/`eval`/`combine` (values), with `guardNames`, `memberValue`, `propValue`, `callValue`, `identity`, `nullTestTaken`, `tagValue`, `templateValue`, `unary`, `binary` | ~1 300 |
+| Fact 3 (`Pts`) | vars, sites, locals; a worklist of units (top-level statements and function bodies) with parent links; guards with kills; `definiteInit`; `propagate` | ~1 700 |
+| The rewrite | `rewrite` (parameter drops, `deadReads`, the re-walk before each patch, `patchStmt`, `foldBelow`/`foldList`, `decided`, `deadTail`, `declined`/`folded_reads`), `rewriteCalls`, `dropKeys`, `deadWrite`/`unreadName`, `appendChild`, `trimArguments` | ~1 200 |
+| Reachability | `prune`, `candidate`, `references` | ~150 |
+| Structural passes | `inlineSmall` (+ `inlineStatementsPass`), `inlineOnce` (`scanBody`, `placeOf`, `inlineAt`, `splice`), `constructors` (`foldAt`, `producer`, `bodyAt`), `scalarReplace`, the list modes `self_assign` and `iife` (`betaReduce`, `inlineIifesIn`), `releaseKeeps`, and `Copy` | ~2 200 |
+| `peephole` | per module, after the pass: a flag test is its bits, `!(a === b)` | ~80 |
+| Helpers | `inert`, `firstUse`, `nodeCount`, `sameChain`, `nullTest`, `fallsThrough`, `completes`, `nameUses`, number folding | ~600 |
+
+### 8.2 Data layout against `fast-compiler.md`
+
+What follows the strategy: every id is an integer (node, name, whole-program name, site, var,
+literal); per-node and per-name state are flat columns of `Mod`; the two worklists keep their
+dependency lists in one array each (`w_deps`, `Pts.deps`) as linked lists of `u32`; `Lat` is one
+packed `u32`; nothing is a pointer graph; the per-module walks that feed the facts run on the
+workers. Where it does not:
+
+- **D1 — two value columns over one IR, from two walks.** `Mod.memo` (facts 1, 2, 4, 5) and
+  `Pts.vals` (fact 3) are each a value per node, filled by `evalStmt` and `Pts.stmt`, two walks of
+  every statement that see the same operands. *Solver:* one cell per value-producing node, whose
+  value is the product of both, filled by one set of constraints extracted once (`backend.md` §9,
+  *Cells*).
+- **D2 — facts kept twice.** Per (site, property): a `Pts.Prop.vals` var *and* a `prop_lat`
+  `KeyMap` entry; per function: `Pts.Site.ret` *and* `ret_lat`. Each pair is written by its own
+  walk and read by the other's consumers. *Solver:* one field cell and one return cell, each
+  holding the product. `prop_lat`, `ret_lat` and `decided_conds` go (**removed by slices 4–5**).
+- **D3 — `Pts.Site` is an array of structs holding four growable lists** (`props`, searched
+  linearly by `prop`; `callers`; `prog_props`), and a property is found by a linear scan per read.
+  *Solver:* a site's fields are a sorted run of (property id, cell) in one pool, found by binary
+  search; callers are constraint ids in a pool.
+- **D4 — memory grows with the number of analyses.** Everything lives in one arena for the whole
+  run: each `Pts.fixpointWith` allocates fresh `vals`, `site_of`, `name_var`, `node_var` and
+  `node_top` for every module, and each analysis new vars and sites; a build of four analyses
+  holds four sets. The 100 000-line library build peaks at 377 MB. *Solver:* extraction arrays
+  live in an arena per structural pass, the solve's state in an arena reset after the rewrite
+  (`backend.md` §9, *Memory*).
+- **D5 — `extra` only grows.** Every rewritten list, argument list and parameter list is appended;
+  the old ranges stay as garbage for the rest of the build. Acceptable while the number of
+  rewrites is bounded (it is: one per solve under the solver), and noted here so that nothing
+  starts depending on compaction.
+- **D6 — caches bolted on with version stamps**: `count_logs`, `assigns_in`, `preorders`,
+  `body_scans`, `io_scans`, `occ`/`uniq`, `name_in`, each a `KeyMap` or column keyed by
+  `Mod.version`. Each was a measured win (`backend.md` §9, *As built — the worklist*), and each
+  exists because a walk of the whole program is repeated per round or per pass. *Solver:* the
+  names a statement counts are extracted once with its constraints; the caches the rewrite and
+  the structural passes still need stay (they are per pass, not per round), `count_logs` goes
+  (**removed by slice 4**).
+- **D7 — hash maps in walks**: `Pts.locals` (keyed by module, top-level statement and name,
+  fronted by the `name_var`/`node_var` columns), `extra_init`, `decl_call`. *Solver:* a local's
+  cell is numbered by extraction, so no map is consulted while solving.
+
+### 8.3 Structural gaps
+
+**G1 — non-monotone transfers.** Fact 3's read of ⊤ dropped the primitive, `null` and
+`undefined` bits the same read had given through a site (§3.3). **Fixed** (slice 2): ⊤ implies
+the other three components, an escaped site is ⊤ for every facet a fact reads, and the safety
+build checks a shuffled order against the worklist. One more found: `yield x` had `x`'s value,
+not what the generator is resumed with. **Fixed** (slice 3, ⊤). Facts 1, 2, 4 and 5 remain
+order-dependent through G4.
+
+**G2 — values that borrow mutable storage (E5).** A `Pts.Val` was a view of its var's growable
+list; a join during the same walk shifted, moved or freed it (§0.2's E5). **Fixed** (slice 0):
+a var's set is replaced, never grown in place. The same class, audited: `Mod.memo` was allocated
+without being initialised, and a node no walk reached was read as whatever the memory held —
+**fixed** (slice 3, ⊤). `Mod.addNode` does not grow `memo`, `lit_of` or `objects`: reading them
+for a copied node before `grow` is out of bounds, an invariant upheld only by "nothing reads them
+after the structural passes" (comment on `addNode`). `KeyMap` hands out pointers that the next
+insertion invalidates (`assignedIn` re-puts after `preorder` for that reason). *Solver:* cell
+values are columns sized before solving and read by id; no value holds a pointer into a growable
+structure.
+
+**G3 — caps that switch facts off.** Classified:
+
+| Cap | Kind | Under the solver |
+|---|---|---|
+| `max_rounds` 4, `max_sweeps` 24, `max_pts_sweeps` 64, `max_init_runs` 3 | iteration caps; a round that hits one rewrites nothing or uses no fact 3 (E1) | **removed by slices 4–7**: no rounds, no sweeps; a work budget that pessimises still-changing cells is an assertion, not a policy |
+| `max_sites` 48 | lattice widening, monotone (§3.3) | stays |
+| `max_passes` 3, `max_inlines` 256, `inlineSmall`'s 4 turns, `foldConstructors`' 32 per list, `replaceScalars`' 1<<16 and 32 keys, `inlineIifesIn`'s 1<<16 | structural-pass bounds | stay, each counted in `--self-profile` (`spec_passes_capped`, `spec_inline_capped`; slice 1) |
+| `max_depth` 200, `max_inline_nodes` 4 096, `max_inline_depth` 150, `smallOf`/`statementOf` 24 nodes, `returnExpr` 8, `producer` 4, the 64-deep walks (`firstUse`, `sameChain`, `fallsThrough`, `harmless`, `completes`, `effectFreeTest`), `inert`'s 4 096 | shape and recursion guards | stay |
+| a template ≤ 256 bytes, a concatenation ≤ 64 | size guards on folds | stay |
+| `max_checked_nodes` 1 500 | which programs the safety build double-checks | stays, for the solver's own check |
+
+**G4 — the rewrite reads facts it is changing.** `rewrite` walks each statement again "with the
+facts at their fixpoint" before patching it, and three bookkeeping devices exist because a patch
+changes what a later walk reads: the `stale` bitset (a module-level constant's initialiser just
+became a literal, so its readers are walked again), `declined` and `folded_reads` (a read the
+substitution rule refused by the count the round began with), and the `now_literal` rule that asks
+for another round. Commit `f2a2e5f1` added the last two after module order changed an output.
+This is Lerner's §6.3 warning in code. *Solver:* solve completely, then rewrite once from final
+facts, which no rewrite step changes (**removed by slice 6**).
+
+**G5 — the unit of re-evaluation is a whole statement.** Facts 1, 2, 4 and 5 re-walk a woken
+top-level statement whole; fact 3 a woken function body. `abuse_wide_test`'s 16 400-arm function
+is walked whole for each change to one parameter. *Solver:* the unit is one constraint.
+
+**G6 — rounds start from ⊥ and number their sites by walk order.** Every analysis rebuilds fact 3
+from nothing, allocating site and var ids in the order the walk meets them; nothing of one
+analysis can be reused by the next. *Solver:* ids come from extraction, in module and IR order,
+before any solving; a module whose IR did not change keeps its constraints between the solves of
+two structural passes (incrementality across builds is still not proposed).
+
+**G7 — five name counts, six purity tests, three reachabilities.** Each was written for one
+consumer:
+
+- *who mentions a name*: `countTop`/`count` (facts' counts), `Opt`'s own per-declaration count,
+  `inlineScan` (whole-program mentions per pass), `occurrences`/`namedIn`/`onlyName` (which name a
+  module has for a whole-program id), `declCount`/`assignedIn`/`nameRead` over `preorder`, and
+  slice 3's `nameUses`;
+- *what does nothing when evaluated*: `inert` (syntactic), `effectFree` (`inert` or
+  `Pts.safeChain`), `Pts.harmless` (definite initialisation's), `Pts.safeChain` itself,
+  `firstUse` (slice 8's ordering), slice 3's `effectFreeTest` (with truthiness and operators on
+  primitives); lowering's `mayHaveEffect` beside them;
+- *what is reachable*: `Reach` over BIR before lowering, `Spec.prune` over `JsIr` after each
+  rewrite, `Minify.cut` over the hand-written files' tokens.
+
+The three reachabilities are at three different levels and each is right where it is. The name
+counts and purity tests are not: *solver* — extraction records, per statement, the names it
+declares, reads and assigns, in the same pass that emits its constraints; one purity predicate,
+`effectFreeTest`'s, reads the final facts and is the only one the rewrite asks (`inert`, which
+needs no facts, stays as its base case). The rest are **removed by slice 6**.
+
+**G8 — `Spec` and `Opt` disagree on what is dead.** `Opt` runs after `Spec` and drops a local
+binding nothing reads whose initialiser the lowering does not keep for an effect. `Spec` does not
+know that while it decides: `prune` counts a read in such a binding's initialiser, so the function
+it reads stays (slice 3's one larger output, `run/DerivedPartTypedLater`, +6 bytes); `smallOf`
+refuses a body that still holds such a binding (`()=>{let a=2,c=2;return true}` is not small);
+and `deadReads` and `releaseKeeps` re-implement `Opt`'s rule to predict it for parameters. *Solver:*
+liveness is a read-off after the solve — a local binding is live when an executable read reads
+it or lowering keeps it for its effect, and only a live binding's initialiser references
+anything — so `prune`, `smallOf` and the parameter drops see what `Opt` will leave
+(`deadReads`, `releaseKeeps` and master's `unreadName` **removed by slice 6**). `Opt` keeps
+item 1 for what lowering leaves and specialisation does not see (a development build, a library's
+locals the pass leaves alone).
+
+**G9 — hand-specialised facts the solver subsumes:**
+
+| Today | Under the solver |
+|---|---|
+| `Pts.narrowed` with `kill`, and `guardNames` (fact 5 past a guard) | a σ-copy per use a guard dominates, extracted with the uses that kill it; its filter applies while every kill is a read through the program's own objects (a monotone mixed function) |
+| `nullTestTaken` and `decided_conds` | a conditional whose test is decided by the facts, read off in the rewrite; the "taken branch reads the same chain first" condition stays a rewrite rule |
+| `identity` (facts 5 and 6) | the binary constraint `===` with a site-set component: decided from the operands' cells |
+| `definiteInit` with up to three restarts | the may-fact "key *k* of site *O* may be read before written" (§3.5; slice 7) |
+| `checkedSweeps` and the shuffled `expectSame` | one safety check: solve twice in two queue orders and compare every cell |
+| `trimArguments` run once after everything | read off in the one rewrite, from the final call graph |
+| `releaseKeeps` and a last solve | the liveness read-off (G8) |
+| the `self_assign` and `iife` list modes after the pass loop | structural passes inside the loop, in its order (they change the IR; they read no fact) |
+
+**G10 — in the wrong place.** `peephole` is per module and reads no fact: it belongs beside
+`Opt` (its own file), not in the whole-program pass. `Fields.close` decides the boundary before
+specialisation and cannot see what it removed; master's fix decides names after it from
+`Stats.copied`, which is a log of the structural passes' copies and stays under the solver as such.
+`Emit.assignFields` counts names over the raw node array, including nodes a fold or a prune left
+unreachable (reported by the review of `Fields`, not yet confirmed by a build): it should count
+what the printer will print, which `Opt`'s plan and the module's body define.
+
+**G11 — what the master fixes of 2026-10-02 become.** *Field names decided after
+specialisation* (`Stats.copied`, `noteCopy`): kept deliberately — a log of where structural
+passes copied bodies, read by `Fields`, independent of how facts are computed. *Writes of a
+variable nothing reads* (`unreadName` in `deadWrite`): subsumed by the liveness read-off (G8),
+**removed by slice 6**. *A function called where it is made* (`betaReduce`, `inlineIifesIn`, the
+`iife` list mode): kept deliberately as a structural pass, moved into the pass loop when slice 6
+reorganises it (G9). The parked *call of literals is its value* (`constantCall`, `foldsTo`) is the
+prototype of the approved decision 3 and is rebuilt as a mixed function of the solver
+(`backend.md` §9, *Calls with known results*).
+
+### 8.4 The neighbours
+
+- **`Opt`** (per module, workers, once): flat per-name arrays reset by stamps, no hash map, no
+  fixpoint (one forward pass). Its declaration counting duplicates `Spec.countTop` (G7) and its
+  dead-binding rule is the one `Spec` predicts (G8). Caps: `scan_limit` 64 and a 64-link chain
+  budget, both declining. Sound as it is.
+- **`Reach`** (BIR, edges per module on workers, walk on the calling thread, once or twice):
+  CSR-style edge arrays, bitsets, one hash map touched only for guarded edges; a monotone
+  worklist whose result does not depend on order. Caps keep more, never less. Sound and in the
+  strategy.
+- **`Minify`** (tokens of hand-written files, calling thread): many `StringHashMap`s keyed by
+  token text in its rename and fact sets; each hand-written file is tokenized and cut by
+  `planHoist` twice and again when printed. Its `cut` is the third reachability (G7), at the
+  right level. Out of this work's scope; noted for `fast-compiler.md` §2's budget.
+- **`Fields`** (`close` before lowering, `assign` after `Opt`): `StringHashMap`s keyed by field
+  text, a monotone worklist over types. See G10.
+
+## 9. The slices, as built and as planned
+
+*Added 2026-10-02.* The normative design of slices 4–8 is `backend.md` §9, *The combined
+solver*; what each landed slice did, and measured, is `backend.md` §9's dated amendments
+*fact 3 is order-free* and *truthiness, and what follows a jump*. In brief:
+
+| Slice | Status | What it did | Output |
+|---|---|---|---|
+| 0 | landed | E5's cause: a `Pts.Val` borrowed its var's growable list, which a join during the same walk shifted or freed; a var's set is now replaced, never grown in place. A unit test reaches it directly (no corpus program does under the passes' cap); with `max_passes` raised to 16 the four pages build | byte-identical |
+| 1 | landed | `--self-profile` counts analyses, sweeps, points-to runs and sweeps, structural passes, and every cap where it stopped work (`spec_analyses_declined`, `spec_points_to_declined`, `spec_rounds_capped`, `spec_passes_capped`, `spec_init_capped`, `spec_inline_capped`); E1 and E2 pinned (`emit/release/app/SpecDeepChain`, `SpecSelfGuard`) | byte-identical |
+| 2 | landed | ⊤ implies `prim`, `null` and `undefined` (TAJS's product); an escaped site is ⊤; the safety build solves fact 3 with its statements shuffled and compares it with the worklist's. With the old read, 18 corpus programs fail that check | byte-identical, 411 builds compared: the research expected some goldens to move, and none did |
+| 3 | landed | truthiness beside each value; decided tests fold where skipping them loses nothing; statements after a jump go; `yield` is ⊤ | 43 of 537 builds change, 42 smaller (the pages with rows by 30–69 brotli bytes), one larger by 6 (§8.3, G8) |
+| 4 | planned | extraction, merge and solver for facts 1, 2, 4, 5, 6 and truthiness, all code executable; double run against the sweeps | byte-identical |
+| 5 | planned | fact 3 into the same solver; double run against `Pts` | byte-identical |
+| 6 | planned | executability, the read-offs, one rewrite; rounds go | E1, E2 and G8's program move, the rest justified one by one |
+| 7 | planned | definite initialisation as a may-fact | byte-identical or smaller |
+| 8a | approved, planned | calls with known results, inside the solver, under the owner's four constraints | smaller |
+| 8b | undecided | cloning | — |
+
+**Compile time and memory** (millions of instructions of the ReleaseSafe compiler and peak RSS,
+a `--release` build in a fresh project, two runs each, master at `71b75ae9` against slices 0–3):
+`browser/tea/TodoMVC` 1 354 → 1 360 (+0.4%), 114 → 114 MB; `bench --generate=100000` as a
+`--library` build with its names migrated 15 078 → 15 072 (noise), 383 → 378 MB;
+`abuse_wide_test`'s 16 400 arms 2 468 → 2 486 (+0.7%), 119 → 119 MB. Slices 0–2 cost nothing
+measurable; slice 3's truthiness costs the rest. `zig build bench` (front-end and development
+emit phases) does not run the specialiser. The new counters on TodoMVC: 7 analyses, 32 sweeps, 7
+points-to runs of 74 sweeps, 3 passes, the pass cap hit once — the shape E3 measured.
+
+**What the slices showed about the plan.** Two things change §4.5's expectations. First, slice
+2 moved nothing: on today's corpus fact 3's order dependence never reached an output, so the
+order-free fact is robustness, not bytes. Second, slice 3 met G8 — a fold made earlier exposes a
+function `Spec` keeps for a read `Opt` then drops — which the rounds hid by accident (the
+inliner usually wrote the call in first). That gap is a reason for slice 6's liveness read-off,
+not for a special case now.
