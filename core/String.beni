@@ -21,7 +21,7 @@
 --!   - `toUpper` `toLower` — Unicode case mapping.
 --!   - `trim` `trimLeft` `trimRight` `words` `lines` — the Unicode
 --!     whitespace and line-terminator classes.
---!   - `split` `indexes` — substring search.
+--!   - `split` `indexes` — substring search; `join` — the array's own `join`.
 --!   - `toInt` `fromInt` `toFloat` `fromFloat` — number parsing and printing.
 --!   - `fromChar` `toList` `fromList` — the character/string boundary.
 --!
@@ -462,13 +462,17 @@ concat strings = join strings ""
 --|
 --|     join [ "cat", "dog" ] ", " == "cat, dog"
 pub join : List String, String → String
-join chunks sep =
-    case chunks of
-        [] →
-            ""
+join chunks sep = Js.pure λ() → Js.to (Js.call (elements (Js.from chunks)) "join" [ Js.from sep ])
 
-        [ first, …rest ] →
-            List.foldl rest first λchunk acc → append (append acc sep) chunk
+
+-- A list's elements as a plain array, which the caller must not write: the
+-- list itself, or its `$plain()` (`backend.md` §4, *Lists are arrays*).
+elements : Js.Value → Js.Value
+elements xs =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
+        xs
+    else
+        Js.call xs "$plain" []
 
 
 --| Take `n` characters from the left side of a string.
