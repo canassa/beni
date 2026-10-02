@@ -90,6 +90,25 @@ const safe_llvm_bin_dir = "safe-llvm/bin";
 const toy_platform_dir = "tests/platforms/toy";
 const toy_bin_dir = "toy/bin";
 
+/// Where the compiler with a variant core is installed under the prefix,
+/// and the module that is its whole difference (`variant_core`).
+const variant_bin_dir = "variant/bin";
+const variant_core: Core = .{ .dir = core_dir, .extra = .{
+    .rel = "BuildVariant.beni",
+    .text =
+    \\--! Embedded only by the compiler `build.zig` installs at
+    \\--! `zig-out/variant/bin/beni`, which differs from the shipped one in this
+    \\--! module alone (`tests/blackbox/build_id_test.zig`).
+    \\
+    \\
+    \\--| What a program built by that compiler can read, and no other can.
+    \\pub marker : String
+    \\marker =
+    \\    "variant"
+    \\
+    ,
+} };
+
 /// How many processes `test-perf` spreads its CPU-time scenarios over.
 const perf_shards = 7;
 
@@ -183,7 +202,7 @@ pub fn build(b: *std.Build) void {
     // list generated from the directory at configure time so adding a core
     // module is dropping in a file. It is part of the compiler, not of a
     // test, so it hangs off the library module every root imports.
-    beni_mod.addImport("core_package", embedCore(b, core_dir));
+    beni_mod.addImport("core_package", embedCore(b, shipped_core));
     // The platform packages (boundary.md §8, B2), embedded the same way:
     // the ones under `platforms/`, and any `-Dplatform=<dir>` adds
     // (`docs/design/boundary.md` §9.5), with their markup lowerings.
@@ -199,7 +218,7 @@ pub fn build(b: *std.Build) void {
     // "which compiler produced this entry". Computed here rather than by
     // hashing the installed binary at run time, which is correct and costs
     // ~2 ms of a 15 ms warm budget.
-    beni_mod.addImport("build_options", buildIdOptions(b, target, optimize, null, platform_sources));
+    beni_mod.addImport("build_options", buildIdOptions(b, target, optimize, null, shipped_core, platform_sources));
 
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -335,7 +354,7 @@ pub fn build(b: *std.Build) void {
     // not a number. The bench harness links its library, and the timing
     // scenarios of `test-perf` and `test-pending-perf` time its binary,
     // `zig-out/perf/bin/beni`.
-    const fast = compiler(b, target, .ReleaseFast, .llvm, .default, platform_sources);
+    const fast = compiler(b, target, .ReleaseFast, .llvm, .default, shipped_core, platform_sources);
     const bench_beni = fast.beni;
     const perf_install = b.addInstallArtifact(fast.exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
     // ReleaseSafe for every black-box suite that is not a timing claim,
@@ -348,14 +367,20 @@ pub fn build(b: *std.Build) void {
     // `zig-out/safe-llvm/bin/beni`: the same safety checks in the shipped
     // code generator's output.
     const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
-    const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted, .default, platform_sources);
+    const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted, .default, shipped_core, platform_sources);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
     // The same compiler with `tests/platforms/toy` compiled in, exactly as
     // `-Dplatform=tests/platforms/toy` would compile it
     // (`docs/design/boundary.md` §9.5), at `zig-out/toy/bin/beni`: the
     // external path, which one black-box scenario builds a program through.
-    const toy = compiler(b, target, .ReleaseSafe, .self_hosted, .default, platformSources(b, &.{toy_platform_dir}));
+    const toy = compiler(b, target, .ReleaseSafe, .self_hosted, .default, shipped_core, platformSources(b, &.{toy_platform_dir}));
     const toy_install = b.addInstallArtifact(toy.exe, .{ .dest_dir = .{ .override = .{ .custom = toy_bin_dir } } });
+    // The same compiler with one more core module embedded, at
+    // `zig-out/variant/bin/beni`: a binary that differs from the safe one in
+    // its embedded core and in nothing else, which `build_id_test.zig` runs
+    // beside it against one cache directory.
+    const variant = compiler(b, target, .ReleaseSafe, .self_hosted, .default, variant_core, platform_sources);
+    const variant_install = b.addInstallArtifact(variant.exe, .{ .dest_dir = .{ .override = .{ .custom = variant_bin_dir } } });
 
     // ---- Black-box suite. ----
     // Spawns the ReleaseSafe `zig-out/safe/bin/beni` (the timing steps below
@@ -404,6 +429,7 @@ pub fn build(b: *std.Build) void {
         .safe_install = &safe_install.step,
         .perf_install = &perf_install.step,
         .toy_install = &toy_install.step,
+        .variant_install = &variant_install.step,
         .budget = budget_env,
         .chrome = b.option([]const u8, "chrome", "The Chrome or Chromium `test-browser` runs pages in (default: the first of chromium, google-chrome-stable and google-chrome on PATH)") orelse "",
     };
@@ -452,6 +478,12 @@ pub fn build(b: *std.Build) void {
     const external_test = bb.artifact(external_file);
     bb.runSharded(bb.fileStep(external_file), external_test, .{ .root = "tests/corpus", .exe = .toy }, 1);
     bb.runSharded(&gate_summary.step, external_test, .{ .root = "tests/corpus", .exe = .toy, .report_dir = gate_counts_dir }, 1);
+    // Two compilers that differ in their embedded core alone, against one
+    // cache directory.
+    const build_id_file = "tests/blackbox/build_id_test.zig";
+    const build_id_test = bb.artifact(build_id_file);
+    bb.runSharded(bb.fileStep(build_id_file), build_id_test, .{ .root = "tests/corpus", .variant = true }, 1);
+    bb.runSharded(&gate_summary.step, build_id_test, .{ .root = "tests/corpus", .variant = true, .report_dir = gate_counts_dir }, 1);
 
     // Record the run hashes: every `run/` program and every program a
     // black-box scenario runs goes under Node. Each fixture's `.run-hash` is
@@ -475,6 +507,7 @@ pub fn build(b: *std.Build) void {
         bb.runSharded(&record_summary.step, t, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir, .budget = false }, suite[1]);
     };
     if (records_scenarios) bb.runSharded(&record_summary.step, external_test, .{ .root = "tests/corpus", .exe = .toy, .run_hashes = "record", .report_dir = record_dir, .budget = false }, 1);
+    if (records_scenarios) bb.runSharded(&record_summary.step, build_id_test, .{ .root = "tests/corpus", .variant = true, .run_hashes = "record", .report_dir = record_dir, .budget = false }, 1);
     b.step("test-run-hashes", "Run every emitted program the black-box suites run under Node, and record the hash of each that did what its test expects").dependOn(&record_summary.step);
 
     // The `browser/` corpus in a real browser: every fixture's pages run in
@@ -733,7 +766,7 @@ pub fn build(b: *std.Build) void {
         // LLVM chose to guard record anything; the report infers the rest
         // from the control-flow graph, and maps blocks to lines through the
         // line table, which leaves out lines the optimiser folded away.
-        const measured = compiler(b, target, .ReleaseSafe, .llvm, .full, platform_sources);
+        const measured = compiler(b, target, .ReleaseSafe, .llvm, .full, shipped_core, platform_sources);
         const runtime_options = b.addOptions();
         runtime_options.addOption([:0]const u8, "hits_path", b.allocator.dupeZ(u8, hits_path) catch @panic("OOM"));
         const instrumented = b.addExecutable(.{
@@ -992,6 +1025,7 @@ fn compiler(
     mode: std.builtin.OptimizeMode,
     backend: Backend,
     debug_info: DebugInfo,
+    core: Core,
     sources: []const PlatformSource,
 ) Compiler {
     // The LLVM ReleaseSafe compiler (`-Dllvm`) is built without debug info:
@@ -1018,13 +1052,13 @@ fn compiler(
         .strip = strip,
         .imports = &.{.{ .name = "diagnostic", .module = diagnostic }},
     });
-    beni.addImport("core_package", embedCore(b, core_dir));
+    beni.addImport("core_package", embedCore(b, core));
     beni.addImport("platform_packages", embedPlatforms(b, sources));
     const markup = markupModules(b, sources, null);
     beni.addImport("beni_markup", markup.interface);
     beni.addImport("markup_lowerings", markup.registry);
     beni.addImport("markup_entity_table", entityTable(b));
-    beni.addImport("build_options", buildIdOptions(b, target, mode, backend, sources));
+    beni.addImport("build_options", buildIdOptions(b, target, mode, backend, core, sources));
     const exe = b.addExecutable(.{
         .name = "beni",
         .use_llvm = backend == .llvm,
@@ -1068,26 +1102,41 @@ fn buildIdOptions(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     backend: ?Backend,
+    core: Core,
     sources: []const PlatformSource,
 ) *std.Build.Module {
     const options = b.addOptions();
-    options.addOption([16]u8, "build_id", compilerBuildId(b, target, optimize, backend, sources));
+    options.addOption([16]u8, "build_id", compilerBuildId(b, target, optimize, backend, core, sources));
     return options.createModule();
 }
 
 /// Bumped whenever the recipe below changes, so that two compilers which
-/// hash the same inputs differently cannot collide on an id.
-const build_id_recipe: []const u8 = "BENIBUILDID\x00v1";
+/// hash the same inputs differently cannot collide on an id. **v2**: the
+/// build script, the embedded core and every file of every platform the
+/// binary carries joined `src/`, so the id is over everything the binary is
+/// built from.
+const build_id_recipe: []const u8 = "BENIBUILDID\x00v2";
 
 /// `SipHash128(1, 3)` — the compiler's one hash function
 /// (`src/resolve/iface_bytes.zig`) — over the recipe tag, the Zig version
 /// string, the optimize mode, the target triple, the backend when it is the
-/// self-hosted one, and every file under `src/`:
-/// path then bytes, in sorted path order, each preceded by its length so that
-/// two different splits of the same concatenation cannot agree.
+/// self-hosted one, this file, every file under `src/`, every file of the
+/// core package the binary embeds, and every file of every platform it
+/// carries: each a name, then its bytes, in sorted path order, each field
+/// preceded by its length so that two different splits of the same
+/// concatenation cannot agree.
 ///
-/// Configure time, not run time: the whole tree is ~2 MB and hashing it costs
-/// under a millisecond, and `build.zig` re-runs on every `zig build` — so the
+/// **Everything the binary is built from**, because the id is the cache's
+/// one term for "this compiler", and a term that left out an input the
+/// binary carries lets two compilers that behave differently serve each
+/// other's entries. The per-module key terms hash each `.beni` and sibling
+/// `.js` a check reads, which is finer, and they stay; but they cannot see
+/// what this script does with the files, a platform's manifest, or a file
+/// of a package no key term names. Folding all of it in here costs nothing
+/// at run time.
+///
+/// Configure time, not run time: the trees are a few MB and hashing them
+/// costs milliseconds, and `build.zig` re-runs on every `zig build` — so the
 /// id is fresh whenever the sources are, which is also exactly when the
 /// compiler is relinked anyway.
 ///
@@ -1097,6 +1146,7 @@ fn compilerBuildId(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     backend: ?Backend,
+    core: Core,
     sources: []const PlatformSource,
 ) [16]u8 {
     var hasher = std.hash.SipHash128(1, 3).init(&@as([16]u8, @splat(0)));
@@ -1108,44 +1158,59 @@ fn compilerBuildId(
     // was before the term existed.
     if (backend == .self_hosted) feed(&hasher, "self_hosted");
 
+    // The build script: what it does with the files below — which it
+    // embeds, under which names — is as much the compiler as they are.
+    feedFile(b, &hasher, "build:", ".", "build.zig");
+
     var paths: std.ArrayList([]const u8) = .empty;
     collectAll(b, "src", "", &paths);
     sortPaths(&paths);
     if (paths.items.len == 0) std.debug.panic("the compiler source tree at src/ is empty", .{});
+    for (paths.items) |rel| feedFile(b, &hasher, "", "src", rel);
 
-    const io = b.graph.io;
-    for (paths.items) |rel| {
-        feed(&hasher, rel);
-        const full = b.pathJoin(&.{ "src", rel });
-        const bytes = b.build_root.handle.readFileAlloc(io, full, b.allocator, .unlimited) catch |err| {
-            std.debug.panic("cannot read compiler source {s}: {t}", .{ full, err });
-        };
-        feed(&hasher, bytes);
-        b.allocator.free(bytes);
+    // The core package, exactly as `embedCore` embeds it.
+    for (coreFiles(b, core)) |file| {
+        feed(&hasher, b.fmt("core:{s}", .{file.rel}));
+        switch (file.origin) {
+            .disk => |full| {
+                const bytes = readBuildFile(b, full);
+                feed(&hasher, bytes);
+                b.allocator.free(bytes);
+            },
+            .text => |text| feed(&hasher, text),
+        }
     }
 
-    // A markup lowering is part of the compiler (`boundary.md` §9.6), so
-    // every platform's Zig is a term too, built in or added by `-Dplatform`.
+    // Every platform the binary carries, built in or added by `-Dplatform`:
+    // its Zig, because a markup lowering is part of the compiler
+    // (`boundary.md` §9.6), and every other file, because the binary embeds
+    // it (`embedPlatforms`).
     for (sources) |source| {
-        if (source.zig == null) continue;
-        var zig_paths: std.ArrayList([]const u8) = .empty;
-        collectAll(b, source.dir, "", &zig_paths);
-        sortPaths(&zig_paths);
-        for (zig_paths.items) |rel| {
-            if (!std.mem.endsWith(u8, rel, ".zig")) continue;
-            feed(&hasher, b.fmt("platform:{s}/{s}", .{ source.name, rel }));
-            const full = b.pathJoin(&.{ source.dir, rel });
-            const bytes = b.build_root.handle.readFileAlloc(io, full, b.allocator, .unlimited) catch |err| {
-                std.debug.panic("cannot read platform source {s}: {t}", .{ full, err });
-            };
-            feed(&hasher, bytes);
-            b.allocator.free(bytes);
-        }
+        var platform_paths: std.ArrayList([]const u8) = .empty;
+        collectAll(b, source.dir, "", &platform_paths);
+        sortPaths(&platform_paths);
+        const label = b.fmt("platform:{s}/", .{source.name});
+        for (platform_paths.items) |rel| feedFile(b, &hasher, label, source.dir, rel);
     }
 
     var out: [16]u8 = undefined;
     hasher.final(&out);
     return out;
+}
+
+/// One file of the digest: `label` and `rel` as its name, then its bytes.
+fn feedFile(b: *std.Build, hasher: *std.hash.SipHash128(1, 3), label: []const u8, dir: []const u8, rel: []const u8) void {
+    feed(hasher, if (label.len == 0) rel else b.fmt("{s}{s}", .{ label, rel }));
+    const bytes = readBuildFile(b, b.pathJoin(&.{ dir, rel }));
+    feed(hasher, bytes);
+    b.allocator.free(bytes);
+}
+
+/// A file the build id hashes: relative to the build root, or absolute.
+fn readBuildFile(b: *std.Build, full: []const u8) []u8 {
+    return b.build_root.handle.readFileAlloc(b.graph.io, full, b.allocator, .unlimited) catch |err| {
+        std.debug.panic("cannot read {s} for the compiler build id: {t}", .{ full, err });
+    };
 }
 
 /// One length-prefixed field of the digest.
@@ -1222,15 +1287,14 @@ fn embedCorpus(b: *std.Build, dir: []const u8) *std.Build.Module {
 /// — but the paths keep their subdirectories, because a `core/Dict/Int.beni`
 /// would be the module `Dict.Int` and the path IS the name. Nothing under
 /// `core/` is nested today; the mechanism outlives the modules that used it.
-fn embedCore(b: *std.Build, dir: []const u8) *std.Build.Module {
-    var paths: std.ArrayList([]const u8) = .empty;
-    var assets: std.ArrayList([]const u8) = .empty;
-    collectFiles(b, dir, "", &paths, &assets);
-    sortPaths(&paths);
-    sortPaths(&assets);
-    if (paths.items.len == 0) std.debug.panic("the core package at {s} is empty", .{dir});
-
+fn embedCore(b: *std.Build, core: Core) *std.Build.Module {
+    const dir = core.dir;
+    const files = coreFiles(b, core);
     const wf = b.addWriteFiles();
+    for (files) |file| switch (file.origin) {
+        .disk => |full| _ = wf.addCopyFile(b.path(full), file.rel),
+        .text => |text| _ = wf.add(file.rel, text),
+    };
     var manifest: std.ArrayList(u8) = .empty;
     manifest.appendSlice(b.allocator,
         \\//! Generated by build.zig: the core package, embedded (checker.md §3,
@@ -1252,17 +1316,75 @@ fn embedCore(b: *std.Build, dir: []const u8) *std.Build.Module {
         \\
     ) catch @panic("OOM");
     manifest.appendSlice(b.allocator, b.fmt("pub const dir = \"{s}\";\npub const files = [_]File{{\n", .{dir})) catch @panic("OOM");
-    for (paths.items) |rel| {
-        _ = wf.addCopyFile(b.path(b.pathJoin(&.{ dir, rel })), rel);
-        manifest.appendSlice(b.allocator, b.fmt("    .{{ .rel = \"{s}\", .source = @embedFile(\"{s}\") }},\n", .{ rel, rel })) catch @panic("OOM");
+    for (files) |file| {
+        if (!file.module) continue;
+        manifest.appendSlice(b.allocator, b.fmt("    .{{ .rel = \"{s}\", .source = @embedFile(\"{s}\") }},\n", .{ file.rel, file.rel })) catch @panic("OOM");
     }
     manifest.appendSlice(b.allocator, "};\npub const assets = [_]Asset{\n") catch @panic("OOM");
-    for (assets.items) |rel| {
-        _ = wf.addCopyFile(b.path(b.pathJoin(&.{ dir, rel })), rel);
-        manifest.appendSlice(b.allocator, b.fmt("    .{{ .path = \"{s}/{s}\", .bytes = @embedFile(\"{s}\") }},\n", .{ dir, rel, rel })) catch @panic("OOM");
+    for (files) |file| {
+        if (file.module) continue;
+        manifest.appendSlice(b.allocator, b.fmt("    .{{ .path = \"{s}/{s}\", .bytes = @embedFile(\"{s}\") }},\n", .{ dir, file.rel, file.rel })) catch @panic("OOM");
     }
     manifest.appendSlice(b.allocator, "};\n") catch @panic("OOM");
     return b.createModule(.{ .root_source_file = wf.add("core_package.zig", manifest.items) });
+}
+
+/// The core package a compiler embeds: the files under `dir`, and `extra`
+/// beside them — which only the variant compiler of `tests/blackbox/
+/// build_id_test.zig` has, to be a binary that differs from the shipped one
+/// in its embedded core and nothing else.
+const Core = struct {
+    dir: []const u8,
+    extra: ?struct { rel: []const u8, text: []const u8 } = null,
+};
+
+/// The core every shipped compiler embeds.
+const shipped_core: Core = .{ .dir = core_dir };
+
+/// One file of a `Core`, as `embedCore` embeds it and the build id hashes it.
+const CoreFile = struct {
+    /// Relative to the core directory, with `/` separators.
+    rel: []const u8,
+    /// A `.beni` module rather than an asset.
+    module: bool,
+    origin: union(enum) {
+        /// Its path relative to the build root.
+        disk: []const u8,
+        /// Its bytes, made by this script.
+        text: []const u8,
+    },
+};
+
+/// Every file of `core`: the modules sorted by path, then the assets sorted
+/// by path — the order `embedCore` writes them in.
+fn coreFiles(b: *std.Build, core: Core) []const CoreFile {
+    var paths: std.ArrayList([]const u8) = .empty;
+    var assets: std.ArrayList([]const u8) = .empty;
+    collectFiles(b, core.dir, "", &paths, &assets);
+    if (core.extra) |extra| {
+        const list = if (std.mem.endsWith(u8, extra.rel, ".beni")) &paths else &assets;
+        for (list.items) |rel| if (std.mem.eql(u8, rel, extra.rel)) std.debug.panic("{s}/{s} exists; a core's extra file must be a new one", .{ core.dir, rel });
+        list.append(b.allocator, extra.rel) catch @panic("OOM");
+    }
+    sortPaths(&paths);
+    sortPaths(&assets);
+    if (paths.items.len == 0) std.debug.panic("the core package at {s} is empty", .{core.dir});
+
+    var out: std.ArrayList(CoreFile) = .empty;
+    for ([_][]const []const u8{ paths.items, assets.items }, [_]bool{ true, false }) |list, module| {
+        for (list) |rel| {
+            const extra_text: ?[]const u8 = if (core.extra) |extra|
+                (if (std.mem.eql(u8, extra.rel, rel)) extra.text else null)
+            else
+                null;
+            out.append(b.allocator, .{
+                .rel = rel,
+                .module = module,
+                .origin = if (extra_text) |text| .{ .text = text } else .{ .disk = b.pathJoin(&.{ core.dir, rel }) },
+            }) catch @panic("OOM");
+        }
+    }
+    return out.items;
 }
 
 /// The HTML character references markup text decodes (`frontend.md` §9.7,
@@ -1665,6 +1787,9 @@ const HarnessEnvironment = struct {
     /// names the ReleaseFast one, or the external platform's scenario the one
     /// with the toy platform compiled in.
     exe: enum { safe, fast, toy } = .safe,
+    /// Whether the run also needs the compiler with a variant core, which
+    /// it finds through `BENI_VARIANT_EXE` (`build_id_test.zig`).
+    variant: bool = false,
     /// The corpus walker's `BENI_RUN_HASHES` (`record`) and
     /// `BENI_RUN_HASH_REPORT` (where its `run/` counts go).
     run_hashes: []const u8 = "",
@@ -1699,6 +1824,8 @@ const Blackbox = struct {
     perf_install: *std.Build.Step,
     /// Install `toy_bin_dir/beni`, the beni with the toy platform compiled in.
     toy_install: *std.Build.Step,
+    /// Install `variant_bin_dir/beni`, the beni with a variant core.
+    variant_install: *std.Build.Step,
     /// `-Dtest-budget`, for every run held to it.
     budget: TestBudget,
     /// `-Dchrome`, pinned as `BENI_CHROME` on every run: the Chrome
@@ -1750,6 +1877,8 @@ const Blackbox = struct {
             .fast => bb.perf_install,
             .toy => bb.toy_install,
         });
+        if (env.variant) r.step.dependOn(bb.variant_install);
+        r.setEnvironmentVariable("BENI_VARIANT_EXE", if (env.variant) bb.b.getInstallPath(.prefix, bb.b.fmt("{s}/beni", .{variant_bin_dir})) else "");
         r.setCwd(bb.b.path("."));
         r.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
         r.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);

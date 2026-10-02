@@ -31,6 +31,9 @@ blackbox_test.test.a pub foreign with a where clause takes its evidence in front
 blackbox_test.test.a type that is not pub still exports the method another module derives for it #0 04af2c4e4ee430f0425ac8d59c1b8be2dc9ed15cfcf7b51cc5cf1b465ebcfca2
 blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it for #0 82f0e3910bcd0042cdd961657bfc519d568187dbfa1289fecfb604eed40d2e3b
 blackbox_test.test.evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess #0 880b27a402b29656ab12779ee4c71bcfb0384503bc8342a0d74af42ccfd451ab
+build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #0 7dba43899e176ec60fd3af56d863ebc115e2c4decd6ec0ef15e79bbeeabbf933
+build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 f34de9690f99e4408b69fa6ae6c44facb8d19c874cc20c65a283ed6ca4b71dc0
+build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 04842a9a4815a31bc494fe5cf203aae62b83da41a442a7afdc81449cf5fed420
 build_test.test.--release builds and runs with no map, and --release --source-maps exits 2 #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 dbff31043c346d679447e0360f357c0c480729c2b08d6cbd7136914865b3447a
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 110599ef3150ab965c61e2a8a29aacfaaa094395687c11317f5e54a79fbdf9b0

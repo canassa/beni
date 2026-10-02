@@ -11,15 +11,20 @@
 //!
 //! **The recipe is `build.zig`'s `compilerBuildId`**, and it is stated there
 //! rather than here because that is where it runs: `SipHash128(1, 3)` over a
-//! recipe tag, the Zig version string, the optimize mode, the target triple
-//! and every file under `src/` — path then bytes, in sorted path order.
+//! recipe tag, the Zig version string, the optimize mode, the target triple,
+//! `build.zig`, every file under `src/`, every file of the embedded core and
+//! every file of every platform the binary carries — name then bytes, in
+//! sorted path order. **Everything the binary is built from**, and nothing
+//! less: until recipe v2 (2026-10-02) the embedded core, the platforms'
+//! files other than their Zig and `build.zig` were left to the per-module
+//! key terms, so two binaries that differed in them alone had one id, and
+//! the only thing keeping one from serving the other's entries was that
+//! every term downstream happened to cover what differed.
 //!
-//! It does **not** cover `core/` or `platforms/`: those are hashed per module
-//! by the key's `core_epoch` term and by its import terms, which is finer
-//! (`fast-compiler.md` §8). It does not cover `build.zig` itself either, and
-//! that is the one gap: a change to the build graph that changed what the
-//! compiler does without touching a byte under `src/` would not move the id.
-//! Nothing does that today, and `--cache-build-id=<s>` is the escape hatch.
+//! The per-module terms still hash each `.beni` and sibling `.js` a check
+//! reads, which is finer, and `--core-root` relies on them: a core read from
+//! disk is not in the id, and an edit to it re-checks only what can observe
+//! it (`fast-compiler.md` §8). `--cache-build-id=<s>` is the escape hatch.
 //!
 //! *Deviation from the spec's letter, recorded deliberately.* §8 lists
 //! `beni.version` as a separate term. It is not hashed separately here,

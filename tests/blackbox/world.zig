@@ -138,7 +138,17 @@ pub const RunOptions = struct {
     /// large enough that the default is measuring the machine rather than
     /// catching a hang — see `bulk_timeout_ms`.
     timeout_ms: i64 = default_timeout_ms,
+    /// Another compiler to run instead of the one under test, by absolute
+    /// path (`variantExePath`).
+    exe: ?[]const u8 = null,
 };
+
+/// The compiler `build.zig` builds with a variant core (`BENI_VARIANT_EXE`,
+/// absolute), set only on the runs that ask for it; null elsewhere.
+pub fn variantExePath(arena: Allocator) ?[]const u8 {
+    const value = std.testing.environ.getAlloc(arena, "BENI_VARIANT_EXE") catch return null;
+    return if (value.len == 0) null else value;
+}
 
 /// Where a world's projects live when the machine has a memory file
 /// system: one directory per user under `/dev/shm`. Every compiler run
@@ -528,7 +538,7 @@ pub const World = struct {
     pub fn runWith(world: *World, args: []const []const u8, options: RunOptions) !Result {
         const arena = world.arena.allocator();
         var argv: std.ArrayList([]const u8) = .empty;
-        try argv.append(arena, world.exe);
+        try argv.append(arena, options.exe orelse world.exe);
         try argv.appendSlice(arena, args);
         const wants_json = !options.raw_diagnostics and args.len > 0 and
             (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check") or

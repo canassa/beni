@@ -861,8 +861,16 @@ built-in or added with `-Dplatform` — because a lowering is part of the compil
 §9.5–§9.6. The table of HTML character references markup text decodes is under `src/` and so
 already covered, `frontend.md` §9.7.)* `beni version` prints it after the version, so a bug report names the compiler
 that wrote a cache. It does **not** cover `core/` or `platforms/`: those are hashed per module by
-`core_epoch` and by the import terms, which is finer. *Rejected: hashing the installed binary at
-runtime — correct, and ~2 ms of a 15 ms budget.* A test forces a different one with the hidden
+`core_epoch` and by the import terms, which is finer. *(Amended 2026-10-02, built: recipe v2 covers
+everything the binary is built from — `build.zig`, `src/`, every file of the embedded core and every
+file of every platform compiled in. Two binaries that differed only in their embedded core, a
+platform's manifest or runtime, or the build script had one id, and nothing but the downstream
+terms stood between them and each other's entries; a binary is rebuilt whenever any of those
+change, so the id moving with it costs no warm build anything. The per-module terms stay and are
+what a `--core-root` core is keyed by: it is not in the id, so an edit to it still re-checks only
+the modules that can observe it. `tests/blackbox/build_id_test.zig` runs two compilers that differ
+in their embedded core alone against one cache directory.)* *Rejected: hashing the installed binary
+at runtime — correct, and ~2 ms of a 15 ms budget.* A test forces a different one with the hidden
 `--cache-build-id=<s>`, whose bytes replace the build-id term; it is hidden for
 `--roundtrip-interfaces`' reasons and is how the "a compiler-build change discards the whole cache"
 fixture is written.
