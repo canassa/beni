@@ -119,7 +119,7 @@ pub const Inst = struct {
     pub const Index = enum(u32) {
         _,
 
-        pub fn int(i: Index) u32 {
+        pub inline fn int(i: Index) u32 {
             return @intFromEnum(i);
         }
 
@@ -134,7 +134,7 @@ pub const Inst = struct {
         none = std.math.maxInt(u32),
         _,
 
-        pub fn unwrap(o: OptionalIndex) ?Index {
+        pub inline fn unwrap(o: OptionalIndex) ?Index {
             return if (o == .none) null else @enumFromInt(@intFromEnum(o));
         }
     };
@@ -497,7 +497,7 @@ pub const SymbolIndex = enum(u32) {
 pub const DeclIndex = enum(u32) {
     _,
 
-    pub fn int(i: DeclIndex) u32 {
+    pub inline fn int(i: DeclIndex) u32 {
         return @intFromEnum(i);
     }
 };
@@ -505,7 +505,7 @@ pub const DeclIndex = enum(u32) {
 pub const CtorIndex = enum(u32) {
     _,
 
-    pub fn int(i: CtorIndex) u32 {
+    pub inline fn int(i: CtorIndex) u32 {
         return @intFromEnum(i);
     }
 };
@@ -1571,12 +1571,21 @@ fn validOptionalInst(index: Inst.OptionalIndex, insts_len: u32) bool {
 
 // ---- Raw access -------------------------------------------------------------
 
+// Every pass asks these per instruction, so they are `inline` and read the
+// column pointer directly, as `JsIr.tag` does: Zig's own backend, which
+// builds the compiler the test suites run, inlines nothing on its own, and
+// `Slice.items` builds a whole slice for each ask. The bounds check stays.
+
 pub inline fn instTag(bir: *const Bir, inst: Inst.Index) Inst.Tag {
-    return bir.insts.items(.tag)[inst.int()];
+    if (inst.int() >= bir.insts.len) unreachable;
+    const tags: [*]const Inst.Tag = @ptrCast(bir.insts.ptrs[@intFromEnum(InstList.Field.tag)]);
+    return tags[inst.int()];
 }
 
 pub inline fn instData(bir: *const Bir, inst: Inst.Index) Inst.Data {
-    return bir.insts.items(.data)[inst.int()];
+    if (inst.int() >= bir.insts.len) unreachable;
+    const datas: [*]const Inst.Data = @ptrCast(@alignCast(bir.insts.ptrs[@intFromEnum(InstList.Field.data)]));
+    return datas[inst.int()];
 }
 
 pub inline fn symbol(bir: *const Bir, index: SymbolIndex) Symbol {
@@ -1584,14 +1593,14 @@ pub inline fn symbol(bir: *const Bir, index: SymbolIndex) Symbol {
 }
 
 /// The elements of a range, viewed as `T` (`Inst.Index`, `u32`, `Field`…).
-pub fn extraSlice(bir: *const Bir, range: SubRange, comptime T: type) []const T {
+pub inline fn extraSlice(bir: *const Bir, range: SubRange, comptime T: type) []const T {
     comptime std.debug.assert(@sizeOf(T) % 4 == 0);
     const words = bir.extra[@intFromEnum(range.start)..@intFromEnum(range.end)];
     return @ptrCast(@alignCast(words));
 }
 
 /// Read a record out of `extra` starting at `index`, field by field.
-pub fn extraData(bir: *const Bir, index: ExtraIndex, comptime T: type) T {
+pub inline fn extraData(bir: *const Bir, index: ExtraIndex, comptime T: type) T {
     var i: usize = @intFromEnum(index);
     var result: T = undefined;
     inline for (std.meta.fields(T)) |field| {
@@ -1611,12 +1620,12 @@ pub fn extraLen(comptime T: type) u32 {
 }
 
 /// The `SubRange` stored at `index`.
-pub fn subRange(bir: *const Bir, index: ExtraIndex) SubRange {
+pub inline fn subRange(bir: *const Bir, index: ExtraIndex) SubRange {
     return bir.extraData(index, SubRange);
 }
 
 /// The range stored inline in `lhs..rhs`.
-pub fn inlineRange(data: Inst.Data) SubRange {
+pub inline fn inlineRange(data: Inst.Data) SubRange {
     return .{ .start = @enumFromInt(data.lhs), .end = @enumFromInt(data.rhs) };
 }
 
@@ -1627,7 +1636,7 @@ pub fn bytes(bir: *const Bir, inst: Inst.Index) []const u8 {
     return bir.string_bytes[d.lhs..][0..d.rhs];
 }
 
-pub fn decl(bir: *const Bir, index: DeclIndex) Decl {
+pub inline fn decl(bir: *const Bir, index: DeclIndex) Decl {
     return bir.decls[index.int()];
 }
 
