@@ -844,7 +844,7 @@ pub const Builder = struct {
         const data = bir.insts.items(.data);
         const marks = try b.scratch.alloc(bool, bir.insts.len);
         @memset(marks, false);
-        for (tags, data, 0..) |tag, d, i| switch (tag) {
+        for (tags, data, 0..) |tag, d, i| if (tag == .call or tag == .ext_value) switch (tag) {
             .call => if (d.lhs < marks.len) {
                 // A `++` on lists calls `List.append` (`listEdges`), and
                 // its `Basics.append` is no reference.
@@ -888,19 +888,17 @@ pub const Builder = struct {
         while (inst < d.inst_end.int() and inst < bir.insts.len) : (inst += 1) {
             const at: Bir.Inst.Index = @enumFromInt(inst);
             const data = bir.instData(at);
-            switch (bir.instTag(at)) {
-                .pat_list => {
-                    pattern = true;
-                    const items = bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
-                    for (items, 0..) |item, k| {
-                        if (bir.instTag(item) == .pat_spread and k + 1 < items.len) end = true;
-                    }
-                },
-                .call => {
-                    if (!append and dispatch.isListAppend(at)) append = true;
-                    if (!cons and list != null) cons = b.isBuildingStep(m, bir, list.?, data);
-                },
-                else => {},
+            // `==`, not a switch with an `else` prong (`Bir.Inst.Tag.set`).
+            const tag = bir.instTag(at);
+            if (tag == .pat_list) {
+                pattern = true;
+                const items = bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
+                for (items, 0..) |item, k| {
+                    if (bir.instTag(item) == .pat_spread and k + 1 < items.len) end = true;
+                }
+            } else if (tag == .call) {
+                if (!append and dispatch.isListAppend(at)) append = true;
+                if (!cons and list != null) cons = b.isBuildingStep(m, bir, list.?, data);
             }
         }
         const picks = [_]struct { bool, ?Node }{
@@ -969,19 +967,19 @@ pub const Builder = struct {
         const start = @min(d.inst_start.int(), bir.insts.len);
         const end = @min(d.inst_end.int(), bir.insts.len);
         for (bir.insts.items(.tag)[start..end], bir.insts.items(.data)[start..end], start..) |tag, data, p| {
-            const ref: SchemaGraph.Ref, const kind: Interface.SchemaMember.Kind = switch (tag) {
-                .schema_member_top => .{ .{ .module = m, .decl = data.lhs }, std.enums.fromInt(Interface.SchemaMember.Kind, data.rhs) orelse continue },
-                .ext_schema_member => blk: {
-                    const owner: Graph.Index = @enumFromInt(data.lhs);
-                    if (owner.int() >= b.in.interfaces.len or owner.int() >= b.in.provenance.len) continue;
-                    const iface = &b.in.interfaces[owner.int()];
-                    if (data.rhs >= iface.schema_members.len) continue;
-                    const member = iface.schema_members[data.rhs];
-                    const decl = b.in.provenance[owner.int()].schemaDecl(@intFromEnum(member.schema)) orelse continue;
-                    break :blk .{ .{ .module = owner, .decl = decl.int() }, member.kind };
-                },
-                else => continue,
-            };
+            // `==`, not a switch with an `else` prong, which Zig's own
+            // backend checks against every tag first, once per instruction.
+            const ref: SchemaGraph.Ref, const kind: Interface.SchemaMember.Kind = if (tag == .schema_member_top)
+                .{ .{ .module = m, .decl = data.lhs }, std.enums.fromInt(Interface.SchemaMember.Kind, data.rhs) orelse continue }
+            else if (tag == .ext_schema_member) blk: {
+                const owner: Graph.Index = @enumFromInt(data.lhs);
+                if (owner.int() >= b.in.interfaces.len or owner.int() >= b.in.provenance.len) continue;
+                const iface = &b.in.interfaces[owner.int()];
+                if (data.rhs >= iface.schema_members.len) continue;
+                const member = iface.schema_members[data.rhs];
+                const decl = b.in.provenance[owner.int()].schemaDecl(@intFromEnum(member.schema)) orelse continue;
+                break :blk .{ .{ .module = owner, .decl = decl.int() }, member.kind };
+            } else continue;
             const member: SchemaGraph.Member = switch (kind) {
                 .schema => .description,
                 .parse, .parse_with => .read,
@@ -1063,6 +1061,10 @@ pub const Builder = struct {
             try g.arms.append(g.b.scratch, .{ .from = arm.lhs + 1, .to = arm.rhs, .start = first, .end = first + 1 });
         }
 
+        /// The tags `declaration`'s walk acts on, tested before its switch
+        /// (`Bir.Inst.Tag.set`).
+        const guard_tags = Bir.Inst.Tag.set(&.{ .top, .pat_ctor, .branch, .case });
+
         fn declaration(g: *Guards, index: u32, d: Bir.Decl) Allocator.Error!void {
             const scratch = g.b.scratch;
             const bir = g.b.in.birOf(g.m);
@@ -1084,7 +1086,7 @@ pub const Builder = struct {
             // Every arm whose pattern names a constructor that can be a
             // guard: its body is `(pattern root, body root]` (`Bir` is
             // post-order; `bir/Lower.lowerBranch`).
-            for (tags[start..end], data[start..end], start..) |tag, payload, p| switch (tag) {
+            for (tags[start..end], data[start..end], start..) |tag, payload, p| if (guard_tags[@intFromEnum(tag)]) switch (tag) {
                 .top => try g.tops.append(scratch, payload.lhs),
                 .pat_ctor => if (payload.lhs >= start and payload.lhs < end) g.heads.set(payload.lhs - start),
                 .branch => {

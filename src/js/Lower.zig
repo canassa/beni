@@ -2998,14 +2998,14 @@ pub const Lowerer = struct {
         const start = if (params.len != 0) @min(@intFromEnum(params[0]), @intFromEnum(body)) else @intFromEnum(body);
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
-        for (tags[start .. @intFromEnum(body) + 1], data[start .. @intFromEnum(body) + 1]) |tag, d| switch (tag) {
-            .lambda => return false,
-            .let_def => {
+        // `==`, not a switch with an `else` prong (`Inst.Tag.set`).
+        for (tags[start .. @intFromEnum(body) + 1], data[start .. @intFromEnum(body) + 1]) |tag, d| {
+            if (tag == .lambda) return false;
+            if (tag == .let_def) {
                 const payload = l.bir.extraData(@enumFromInt(d.lhs), Bir.LetDef);
                 if (payload.params_end != payload.params_start) return false;
-            },
-            else => {},
-        };
+            }
+        }
         return true;
     }
 
@@ -8494,14 +8494,17 @@ pub const Lowerer = struct {
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
         var stack: std.ArrayList(Inst.Index) = .empty;
-        for (tags, data) |tag, d| switch (tag) {
-            .top => if (d.lhs < decls.len) {
-                all[d.lhs] += 1;
-            },
-            .let_pattern => if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_wild) try stack.append(l.scratch, @enumFromInt(d.rhs)),
-            .let_stmt => try stack.append(l.scratch, @enumFromInt(d.rhs)),
-            else => {},
-        };
+        // `==`, not a switch with an `else` prong, which Zig's own backend
+        // checks against every tag first, once per instruction.
+        for (tags, data) |tag, d| {
+            if (tag == .top) {
+                if (d.lhs < decls.len) all[d.lhs] += 1;
+            } else if (tag == .let_pattern) {
+                if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_wild) try stack.append(l.scratch, @enumFromInt(d.rhs));
+            } else if (tag == .let_stmt) {
+                try stack.append(l.scratch, @enumFromInt(d.rhs));
+            }
+        }
         while (stack.pop()) |inst| {
             if (l.tailCallee(inst)) |callee| {
                 discarded[callee] += 1;
@@ -8658,15 +8661,13 @@ pub const Lowerer = struct {
             var at = d.inst_start.int();
             while (at < d.inst_end.int()) : (at += 1) {
                 if (cell[at]) continue;
-                switch (tags[at]) {
-                    .local => {
-                        const local = d.locals_start + data[at].lhs;
-                        if (local < l.unboxed_locals.len) l.unboxed_locals[local] = false;
-                    },
-                    .top => if (data[at].lhs < decls.len) {
-                        l.unboxed_tops[data[at].lhs] = false;
-                    },
-                    else => {},
+                // `==`, not a switch with an `else` prong (`Inst.Tag.set`).
+                const tag = tags[at];
+                if (tag == .local) {
+                    const local = d.locals_start + data[at].lhs;
+                    if (local < l.unboxed_locals.len) l.unboxed_locals[local] = false;
+                } else if (tag == .top) {
+                    if (data[at].lhs < decls.len) l.unboxed_tops[data[at].lhs] = false;
                 }
             }
         }

@@ -424,22 +424,33 @@ pub const Inst = struct {
 
         /// The unresolved `(module symbol, name symbol)` forms lowering
         /// produces, which `Resolve` rewrites and nothing after it sees.
-        pub fn isUnresolved(tag: Tag) bool {
-            return switch (tag) {
-                .import_value,
-                .import_ctor,
-                .qualified,
-                .qualified_ctor,
-                .type_import,
-                .type_qualified,
-                .schema_type_ref,
-                .schema_value_ref,
-                .schema_ctor_ref,
-                .schema_ref,
-                .schema_expr_ref,
-                => true,
-                else => false,
-            };
+        pub inline fn isUnresolved(tag: Tag) bool {
+            return unresolved_tags[@intFromEnum(tag)];
+        }
+
+        const unresolved_tags = set(&.{
+            .import_value,
+            .import_ctor,
+            .qualified,
+            .qualified_ctor,
+            .type_import,
+            .type_qualified,
+            .schema_type_ref,
+            .schema_value_ref,
+            .schema_ctor_ref,
+            .schema_ref,
+            .schema_expr_ref,
+        });
+
+        /// Which tags `tags` lists, as a table indexed by the tag's integer.
+        /// A walk over every instruction tests a tag against it before a
+        /// `switch` with an `else` prong, which Zig's own backend — the one
+        /// that builds the tests' compiler — compiles to a check of the
+        /// operand against every tag, once per instruction.
+        pub fn set(comptime tags: []const Tag) [@typeInfo(Tag).@"enum".fields.len]bool {
+            var out: [@typeInfo(Tag).@"enum".fields.len]bool = @splat(false);
+            for (tags) |t| out[@intFromEnum(t)] = true;
+            return out;
         }
     };
 };
@@ -1329,7 +1340,21 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
     return true;
 }
 
+/// The tags `verifySchemaInst`'s switch names; every other one is valid.
+/// Tested first, because that switch has an `else` prong (`Inst.Tag.set`)
+/// and the load check asks it of every instruction.
+const schema_inst_tags = Inst.Tag.set(&.{
+    .schema_ref,       .schema_expr_ref,   .schema_type_ref,   .schema_value_ref,
+    .schema_ctor_ref,  .schema_member_top, .schema_type_top,   .schema_ctor_top,
+    .schema_parameter, .schema_primitive,  .schema_target_top, .ext_schema_member,
+    .ext_schema_ctor,  .ext_schema_type,   .ext_schema_target, .schema_app,
+    .schema_paren,     .schema_as,         .schema_via,        .schema_record,
+    .schema_field,     .schema_value,      .schema_tagged,     .schema_variant,
+    .schema_optional,  .schema_nullable,
+});
+
 fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32) bool {
+    if (!schema_inst_tags[@intFromEnum(bir.instTag(inst))]) return true;
     const data = bir.instData(inst);
     return switch (bir.instTag(inst)) {
         .schema_ref, .schema_expr_ref, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => data.lhs < symbols_len,

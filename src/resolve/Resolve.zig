@@ -1266,7 +1266,11 @@ const Pass = struct {
             if (tag != .type_app) continue;
             applied[d.lhs] = bir.subRange(@enumFromInt(d.rhs)).len();
         }
+        // The switch's tags tested first: its `else` prong is a check of the
+        // operand against every tag in Zig's own backend (`Inst.Tag.set`).
+        const named = comptime Bir.Inst.Tag.set(&.{ .type_top, .ext_type, .schema_type_top, .ext_schema_type });
         for (tags, data, tokens, applied) |tag, d, token, found| {
+            if (!named[@intFromEnum(tag)]) continue;
             const expected: u32, const name: Symbol = switch (tag) {
                 .type_top => .{ bir.decl(@enumFromInt(d.lhs)).params, bir.symbol(bir.decl(@enumFromInt(d.lhs)).name) },
                 .ext_type => blk: {

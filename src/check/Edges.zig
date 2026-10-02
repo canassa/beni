@@ -201,15 +201,18 @@ fn walkDecl(
     const data = bir.insts.items(.data);
     const start = @min(d.inst_start.int(), bir.insts.len);
     const end = @min(d.inst_end.int(), bir.insts.len);
+    // Tested with `==`, not a switch with an `else` prong: Zig's own backend,
+    // which builds the tests' compiler, checks such a switch's operand
+    // against every tag first, once per instruction of every declaration.
     for (tags[start..end], data[start..end], start..) |tag, payload, position| {
-        switch (tag) {
-            .top => try out.append(scratch, .{ .top = payload.lhs }),
-            .ext_value => try out.append(scratch, .{ .ext = .{
+        if (tag == .top) {
+            try out.append(scratch, .{ .top = payload.lhs });
+        } else if (tag == .ext_value) {
+            try out.append(scratch, .{ .ext = .{
                 .module = @enumFromInt(payload.lhs),
                 .value = payload.rhs,
-            } }),
-            else => continue,
-        }
+            } });
+        } else continue;
         if (at) |list| try list.append(scratch, @intCast(position));
     }
 

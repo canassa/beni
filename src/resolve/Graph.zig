@@ -780,7 +780,10 @@ fn exemptBits(bir: *const Bir, js: Symbol, interner: *const InternPool.Global) u
     var lists: usize = 0;
     var other_string = false;
     var other_list = false;
-    for (tags) |tag| switch (tag) {
+    // The switch's tags tested first: its `else` prong is a check of the
+    // operand against every tag in Zig's own backend (`Inst.Tag.set`).
+    const counted = comptime Bir.Inst.Tag.set(&.{ .string, .list, .chunk, .interp, .pat_string, .pat_list });
+    for (tags) |tag| if (counted[@intFromEnum(tag)]) switch (tag) {
         .string => strings += 1,
         .list => lists += 1,
         .chunk, .interp, .pat_string => other_string = true,
