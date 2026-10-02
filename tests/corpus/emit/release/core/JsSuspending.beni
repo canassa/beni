@@ -4,23 +4,24 @@
 -- comparison. In a value position (`inValue`) and a discarded one
 -- (`discarded`) it is a suspension point: the rest of the function is its
 -- continuation, handed to `Task.andThen`. Passed as a value (`passed`) it
--- is the sibling's function, called with the lambda.
+-- is the sibling's function, called with the lambda. Each body reads a
+-- value the compiler cannot see, so no build folds the suspension away.
 import Js
 
 
-pub park : () → Int
-park () = Js.suspending λ() → 1
+pub park : Js.Value → Int
+park v = Js.suspending λ() → Js.to v
 
 
-pub inValue : () → Int
-inValue () =
-    n = Js.suspending λ() → 2
+pub inValue : Js.Value → Int
+inValue v =
+    n = Js.suspending λ() → Js.to v
     n + 1
 
 
-pub discarded : () → Int
-discarded () =
-    _ = Js.suspending λ() → 3
+pub discarded : Js.Value → Int
+discarded v =
+    _ = Js.suspending λ() → Js.to v
     4
 
 

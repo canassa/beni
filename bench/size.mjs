@@ -443,8 +443,8 @@ function measureFloor(options, beni, work) {
 /// body never waits and so runs with no fiber (§9.8.11).
 /// `reaches_task` says whether the page ships core's fiber runtime — a
 /// fiber's record, the one place `interrupted` is written, in the release
-/// file, or else core's `Task` sibling in the development tree, which is
-/// copied whole once anything of it is reached: neither a `sandbox` nor,
+/// file, or else in the development tree's `_core/Task.mjs` (the runtime is
+/// beni, so only what a page reaches is written): neither a `sandbox` nor,
 /// since `backend.md` §9's *A `case` arm on a constructor nothing builds*,
 /// an `element` that asks for no work may.
 const pageImports = "import Browser\nimport Html exposing (Html)\n";
@@ -525,7 +525,7 @@ function measurePage(options, beni, work, page) {
   const release = measureRelease(options, beni, work, projectDir, ["Page.beni"], false, platform);
   const releaseDir = join(projectDir, "out-release");
   const reachesTask = release === null
-    ? filesUnder(join(projectDir, "out"), ".mjs").some((rel) => rel.split(sep).join("/") === "_core/Task.foreign.mjs")
+    ? filesUnder(join(projectDir, "out"), ".mjs").some((rel) => readFileSync(join(projectDir, "out", rel), "utf8").includes("interrupted"))
     : filesUnder(releaseDir, ".mjs").some((rel) => readFileSync(join(releaseDir, rel), "utf8").includes("interrupted"));
   return {
     page: true,

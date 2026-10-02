@@ -22,3 +22,4 @@ core:String -> core:Js
 core:String -> core:List
 core:String -> core:Maybe
 core:Task -> core:Basics
+core:Task -> core:Js

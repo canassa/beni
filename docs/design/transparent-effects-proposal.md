@@ -1801,7 +1801,12 @@ const Main$fetchSum = (a$1, b$2) =>
 
 One file, core's `Task.js`, shared by every platform: nothing in it is Node's or a browser's
 except the macrotask it escapes to, which it picks by feature (`setImmediate` where it exists, a
-`MessageChannel` otherwise — never `setTimeout(0)`, which a browser clamps).
+`MessageChannel` otherwise — never `setTimeout(0)`, which a browser clamps). *(Amended
+2026-10-02: the runtime is `core/Task.beni`, written in beni over `Js` with no sibling
+(`plans/core-in-beni.md` step 2, research 49); what this section says of `Task.js` it says of that
+module, record for record. Its records are `Js.Value`s read by name, one literal each; every beni
+function it runs is held as a `Js.Value` and called with `Js.apply`, so none of its functions has a
+second body; it parks through `Js.suspending` (§16.1).)*
 
 - **A fiber** is a record of `stack` (its continuations), `outcome`, `observers`, `parent`,
   `children`, `finalizers`, `masks`, `interrupted` and the `parked` registration: §6.4's list, with
