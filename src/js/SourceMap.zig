@@ -135,7 +135,7 @@ fn encodeMappings(
     var prev_source_line: i64 = 0;
     var prev_source_column: i64 = 0;
     var prev_name: i64 = 0;
-    var lines: SourceLines = .init(in.source, in.line_starts);
+    var lines: SourceLines = try .init(scratch, in.source, in.line_starts);
     var segment_on_line = false;
     for (in.mappings) |m| {
         const target = @min(@as(usize, m.generated), in.generated.len);
@@ -210,29 +210,49 @@ const Position = struct { line: i64, column: i64 };
 
 /// The source side: 0-based line and UTF-16 column of a byte offset.
 ///
-/// A column is a byte difference when the source is ASCII, which is
-/// checked once. Otherwise it is counted from a cursor that a later offset
-/// on the same line continues from, so a line of thousands of marks — one
-/// record literal of 4 097 fields — is walked once and not once per mark.
+/// A column is a byte difference less what the bytes past ASCII before it
+/// on its line take back: every such byte is listed once, with the running
+/// total of `1 - utf16Units` up to it (`shrink`), so a column is two binary
+/// searches whatever order the marks come in — one line of 4 097 marks, the
+/// generated order jumping back and forth along it, costs no rescan. An
+/// all-ASCII source lists nothing and a column is the byte difference.
 const SourceLines = struct {
     source: []const u8,
     line_starts: []const u32,
-    ascii: bool,
+    /// The offset of every byte past ASCII, ascending.
+    wide: []const u32,
+    /// `shrink[i]`: the bytes `wide[0..i + 1]` count more than the UTF-16
+    /// units they make. A running total can dip below zero inside a
+    /// four-byte sequence, whose lead byte makes two units.
+    shrink: []const i32,
     /// The line of the last offset asked about.
     hint: usize = 0,
-    /// The last offset counted, its line and its column.
-    at: usize = 0,
-    line: usize = 0,
-    column: i64 = 0,
 
-    fn init(source: []const u8, line_starts: []const u32) SourceLines {
-        var high: Block = @splat(0);
-        var i: usize = 0;
-        while (i + block <= source.len) : (i += block) high |= source[i..][0..block].*;
-        var rest: u8 = 0;
-        for (source[i..]) |c| rest |= c;
-        const ascii = (@reduce(.Or, high) | rest) < 0x80;
-        return .{ .source = source, .line_starts = line_starts, .ascii = ascii };
+    fn init(scratch: Allocator, source: []const u8, line_starts: []const u32) Allocator.Error!SourceLines {
+        var count: usize = 0;
+        for (source) |c| count += @intFromBool(c >= 0x80);
+        const wide = try scratch.alloc(u32, count);
+        const shrink = try scratch.alloc(i32, count);
+        var k: usize = 0;
+        var total: i32 = 0;
+        for (source, 0..) |c, i| {
+            if (c < 0x80) continue;
+            total += 1 - @as(i32, @intCast(utf16Units(c)));
+            wide[k] = @intCast(i);
+            shrink[k] = total;
+            k += 1;
+        }
+        return .{ .source = source, .line_starts = line_starts, .wide = wide, .shrink = shrink };
+    }
+
+    /// What the bytes past ASCII before `offset` take back from a column.
+    fn shrinkBefore(s: *const SourceLines, offset: usize) i64 {
+        const n = std.sort.lowerBound(u32, s.wide, @as(u32, @intCast(offset)), struct {
+            fn order(target: u32, item: u32) std.math.Order {
+                return std.math.order(target, item);
+            }
+        }.order);
+        return if (n == 0) 0 else s.shrink[n - 1];
     }
 
     /// Whether `offset` is on 0-based line `line`.
@@ -260,15 +280,9 @@ const SourceLines = struct {
         s.hint = lo;
         const start = @min(@as(usize, s.line_starts[lo]), s.source.len);
         const end = @max(start, @min(@as(usize, offset), s.source.len));
-        if (s.ascii) return .{ .line = @intCast(lo), .column = @intCast(end - start) };
-        if (s.line != lo or s.at > end or s.at < start) {
-            s.line = lo;
-            s.at = start;
-            s.column = 0;
-        }
-        for (s.source[s.at..end]) |c| s.column += utf16Units(c);
-        s.at = end;
-        return .{ .line = @intCast(lo), .column = s.column };
+        const bytes: i64 = @intCast(end - start);
+        if (s.wide.len == 0) return .{ .line = @intCast(lo), .column = bytes };
+        return .{ .line = @intCast(lo), .column = bytes - (s.shrinkBefore(end) - s.shrinkBefore(start)) };
     }
 };
 
@@ -456,4 +470,32 @@ test "columns count UTF-16 units on both sides, and a line ends at U+2028" {
         "{\"version\":3,\"file\":\"M.mjs\",\"sources\":[\"M.beni\"],\"sourcesContent\":[\"\xc3\xa9\xf0\x9f\x98\x80 z\"],\"names\":[],\"mappings\":\"MAAI;AAAJ\"}\n",
         text,
     );
+}
+
+test "a source column is right whatever order the marks on its line come in" {
+    // `λa → b`: `b` is UTF-16 column 5 and `a` column 1. The marks come
+    // right to left, which once made each one rescan the line from its
+    // start.
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const arena = a.allocator();
+    const nothing = struct {
+        fn f(_: *const anyopaque, _: InternPool.Symbol) []const u8 {
+            return "";
+        }
+    }.f;
+    const text = try write(arena, arena, .{
+        .file = "M.mjs",
+        .source_url = "M.beni",
+        .source = "λa → b",
+        .line_starts = &.{0},
+        .generated = "xy",
+        .mappings = &.{
+            .{ .generated = 0, .source = 8 },
+            .{ .generated = 1, .source = 2 },
+        },
+        .names = &.{},
+        .name_text = .{ .context = undefined, .lookup = nothing },
+    });
+    try testing.expect(std.mem.endsWith(u8, text, "\"mappings\":\"AAAK,CAAJ\"}\n"));
 }
