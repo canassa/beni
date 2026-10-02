@@ -481,6 +481,14 @@ const pages = [
     main: "Tea.sandbox { init = Browser.Navigation.currentUrl (), update = λ_ m -> m, view = view }",
     view: "view : Maybe Url -> Html {}",
   },
+  {
+    name: "browser-tea navigation",
+    platform: "browser-tea",
+    imports: `${teaImports}import Browser.Navigation as Navigation\nimport Cmd\nimport Sub\nimport Url exposing (Url)\n`,
+    main:
+      "Tea.element { init = ( \"\", Cmd.none ), update = λm _ -> ( m, Cmd.task (λ() -> Navigation.pushUrl (Navigation.key ()) m) (λ_ -> \"\") ), view = view, subscriptions = λ_ -> Navigation.onUrlChange Url.toString }",
+    view: "view : String -> Html String",
+  },
 ];
 
 function measurePage(options, beni, work, page) {

@@ -1,0 +1,206 @@
+-- load
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol></ol>
+  </main>
+</body>
+-- location
+(location: /_page.html)
+(the DOM did not change)
+-- click #push
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol>
+      <li>"push /a?x=1#top: ok"</li>
+      <li>"changed to /a?x=1#top"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /a?x=1#top)
+(the DOM did not change)
+-- click #relative
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol>
+      <li>"push /a?x=1#top: ok"</li>
+      <li>"changed to /a?x=1#top"</li>
+      <li>"push b/../e: ok"</li>
+      <li>"changed to /e"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /e)
+(the DOM did not change)
+-- click #replace
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol>
+      <li>"push /a?x=1#top: ok"</li>
+      <li>"changed to /a?x=1#top"</li>
+      <li>"push b/../e: ok"</li>
+      <li>"changed to /e"</li>
+      <li>"replace /r: ok"</li>
+      <li>"changed to /r"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)
+-- click #two
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol>
+      <li>"push /a?x=1#top: ok"</li>
+      <li>"changed to /a?x=1#top"</li>
+      <li>"push b/../e: ok"</li>
+      <li>"changed to /e"</li>
+      <li>"replace /r: ok"</li>
+      <li>"changed to /r"</li>
+      <li>"push /c: ok"</li>
+      <li>"push /d: ok"</li>
+      <li>"changed to /c"</li>
+      <li>"changed to /d"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /d)
+(the DOM did not change)
+-- back
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol>
+      <li>"push /a?x=1#top: ok"</li>
+      <li>"changed to /a?x=1#top"</li>
+      <li>"push b/../e: ok"</li>
+      <li>"changed to /e"</li>
+      <li>"replace /r: ok"</li>
+      <li>"changed to /r"</li>
+      <li>"push /c: ok"</li>
+      <li>"push /d: ok"</li>
+      <li>"changed to /c"</li>
+      <li>"changed to /d"</li>
+      <li>"changed to /c"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /c)
+(the DOM did not change)
+-- back
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol>
+      <li>"push /a?x=1#top: ok"</li>
+      <li>"changed to /a?x=1#top"</li>
+      <li>"push b/../e: ok"</li>
+      <li>"changed to /e"</li>
+      <li>"replace /r: ok"</li>
+      <li>"changed to /r"</li>
+      <li>"push /c: ok"</li>
+      <li>"push /d: ok"</li>
+      <li>"changed to /c"</li>
+      <li>"changed to /d"</li>
+      <li>"changed to /c"</li>
+      <li>"changed to /r"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)
+-- forward
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol>
+      <li>"push /a?x=1#top: ok"</li>
+      <li>"changed to /a?x=1#top"</li>
+      <li>"push b/../e: ok"</li>
+      <li>"changed to /e"</li>
+      <li>"replace /r: ok"</li>
+      <li>"changed to /r"</li>
+      <li>"push /c: ok"</li>
+      <li>"push /d: ok"</li>
+      <li>"changed to /c"</li>
+      <li>"changed to /d"</li>
+      <li>"changed to /c"</li>
+      <li>"changed to /r"</li>
+      <li>"changed to /c"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /c)
+(the DOM did not change)
+-- click #none
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="relative">"relative"</button>
+    <button id="replace">"replace"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <ol>
+      <li>"push /a?x=1#top: ok"</li>
+      <li>"changed to /a?x=1#top"</li>
+      <li>"push b/../e: ok"</li>
+      <li>"changed to /e"</li>
+      <li>"replace /r: ok"</li>
+      <li>"changed to /r"</li>
+      <li>"push /c: ok"</li>
+      <li>"push /d: ok"</li>
+      <li>"changed to /c"</li>
+      <li>"changed to /d"</li>
+      <li>"changed to /c"</li>
+      <li>"changed to /r"</li>
+      <li>"changed to /c"</li>
+      <li>"back 0: ok"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /c)
+(the DOM did not change)

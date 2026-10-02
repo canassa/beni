@@ -24,6 +24,24 @@ each target name read emit = Task.bracket (λ() -> open target name read) (λl _
     pump l emit
 
 
+--| The same over the events of two names on one target, in the order they
+--| fire: one queue, so an event of one name never overtakes an earlier one
+--| of the other.
+pub eachOf2 : String, String, String, sync (Js.Value -> a), Browser.Send a -> ()
+eachOf2 target name other read emit =
+    Task.bracket
+        (λ() ->
+            l = open target name read
+            _ = Js.call (Js.at l 2) "addEventListener" [ Js.from other, Js.at l 4 ]
+            l
+        )
+        (λl _ ->
+            _ = Js.call (Js.at l 2) "removeEventListener" [ Js.from other, Js.at l 4 ]
+            close l
+        )
+        λl -> pump l emit
+
+
 open : String, String, sync (Js.Value -> a) -> Js.Value
 open target name read =
     on = Js.global target

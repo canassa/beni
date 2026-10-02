@@ -1,0 +1,26 @@
+-- load
+<body>
+  <main>
+    <button id="try">"try"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #try
+<body>
+  <main>
+    <button id="try">"try"</button>
+    <ol>
+      <li>"push: BadUrl http://["</li>
+      <li>"push: CrossOrigin https://example.com/x"</li>
+      <li>"push: CrossOrigin http://127.0.0.1:1/x"</li>
+      <li>"replace: CrossOrigin //elsewhere.test/y"</li>
+      <li>"replace: CrossOrigin ftp://127.0.0.1/z"</li>
+      <li>"load: BadUrl javascript:alert(1)"</li>
+      <li>"load: BadUrl JavaScript:void 0"</li>
+      <li>"load: BadUrl http://["</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /_page.html)
+(the DOM did not change)

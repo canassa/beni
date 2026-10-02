@@ -1,0 +1,83 @@
+-- Each way `Browser.Navigation` refuses a change is a value
+-- (boundary.md §9.8.13 (c); CLAUDE.md rule 9): an address that does not
+-- resolve is `BadUrl`, one on another origin — another host, another
+-- port, another scheme — is `CrossOrigin`, and `load` refuses a
+-- `javascript:` address as `BadUrl`, since it would run text as script.
+-- None changes the address or sends `onUrlChange`. `Throttled` cannot be
+-- forced in either DOM, and a successful `load` leaves the page, so
+-- neither is here.
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Try
+    | Done String (Result Navigation.Error ())
+    | Changed Url
+
+
+shown : Result Navigation.Error () -> String
+shown result =
+    case result of
+        Ok () ->
+            "ok"
+
+        Err (Navigation.BadUrl url) ->
+            "BadUrl ${url}"
+
+        Err (Navigation.CrossOrigin url) ->
+            "CrossOrigin ${url}"
+
+        Err Navigation.Throttled ->
+            "Throttled"
+
+
+attempt : String, (() -> Result Navigation.Error ()) -> Cmd Msg
+attempt label work = Cmd.task work (Done label _)
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Try ->
+            key = Navigation.key ()
+            ( lines
+            , Cmd.batch
+                [ attempt "push" λ() -> Navigation.pushUrl key "http://["
+                , attempt "push" λ() -> Navigation.pushUrl key "https://example.com/x"
+                , attempt "push" λ() -> Navigation.pushUrl key "http://127.0.0.1:1/x"
+                , attempt "replace" λ() -> Navigation.replaceUrl key "//elsewhere.test/y"
+                , attempt "replace" λ() -> Navigation.replaceUrl key "ftp://127.0.0.1/z"
+                , attempt "load" λ() -> Navigation.load "javascript:alert(1)"
+                , attempt "load" λ() -> Navigation.load "JavaScript:void 0"
+                , attempt "load" λ() -> Navigation.load "http://["
+                ]
+            )
+
+        Done label result ->
+            ( lines ++ [ "${label}: ${shown result}" ], Cmd.none )
+
+        Changed url ->
+            ( lines ++ [ "changed to ${url.path}" ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <button id="try" onClick={Try}>try</button>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ -> Navigation.onUrlChange Changed
+        }

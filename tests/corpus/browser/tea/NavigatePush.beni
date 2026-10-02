@@ -1,0 +1,113 @@
+-- `Browser.Navigation` changes the page's address (boundary.md §9.8.13
+-- (c)): `pushUrl` adds a history entry and `replaceUrl` replaces one, each
+-- resolved against the page, and every change is announced to the
+-- page's followers, so `onUrlChange` sends one message per push, in order
+-- — two pushes in one command are two messages. The driver's `back` and
+-- `forward` traverse the entries the program pushed, and `onUrlChange`
+-- hears each. `back key 0` does nothing and sends nothing.
+import Browser.Navigation as Navigation exposing (Key)
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Push String
+    | Replace String
+    | PushTwo
+    | BackNone
+    | Done String (Result Navigation.Error ())
+    | Changed Url
+
+
+type alias Model =
+    key : Key
+    lines : List String
+
+
+shown : Result Navigation.Error () -> String
+shown result =
+    case result of
+        Ok () ->
+            "ok"
+
+        Err (Navigation.BadUrl url) ->
+            "bad url ${url}"
+
+        Err (Navigation.CrossOrigin url) ->
+            "cross origin ${url}"
+
+        Err Navigation.Throttled ->
+            "throttled"
+
+
+address : Url -> String
+address url =
+    query =
+        case url.query of
+            Just q ->
+                "?" ++ q
+
+            Nothing ->
+                ""
+
+    fragment =
+        case url.fragment of
+            Just f ->
+                "#" ++ f
+
+            Nothing ->
+                ""
+    url.path ++ query ++ fragment
+
+
+push : Key, String -> Cmd Msg
+push key url = Cmd.task (λ() -> Navigation.pushUrl key url) (Done "push ${url}" _)
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Push url ->
+            ( model, push model.key url )
+
+        Replace url ->
+            ( model
+            , Cmd.task (λ() -> Navigation.replaceUrl model.key url) (Done "replace ${url}" _)
+            )
+
+        PushTwo ->
+            ( model, Cmd.batch [ push model.key "/c", push model.key "/d" ] )
+
+        BackNone ->
+            ( model, Cmd.task (λ() -> Navigation.back model.key 0) (Done "back 0" _) )
+
+        Done label result ->
+            ( { model | lines = model.lines ++ [ "${label}: ${shown result}" ] }, Cmd.none )
+
+        Changed url ->
+            ( { model | lines = model.lines ++ [ "changed to ${address url}" ] }, Cmd.none )
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="push" onClick={Push "/a?x=1#top"}>push</button>
+        <button id="relative" onClick={Push "b/../e"}>relative</button>
+        <button id="replace" onClick={Replace "/r"}>replace</button>
+        <button id="two" onClick={PushTwo}>two</button>
+        <button id="none" onClick={BackNone}>none</button>
+        <ol><For each={model.lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { key = Navigation.key (), lines = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ -> Navigation.onUrlChange Changed
+        }
