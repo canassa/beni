@@ -1368,10 +1368,31 @@ produce a static archive the rest of the build links, which nothing in the build
 time — the owner asked for the result in the binary, and a file beside it is a cache directory with
 another name, which can be missing or stale.*
 
-**What it does not do.** No platform package is pre-checked: a platform the binary carries is
-lowered and checked by every build that reaches it, as before (*Measured*, below, prices that). No
-emitted byte is in the pack: `emit`, and under `--release` the specialiser, run for every module as
-they always did.
+**The platforms the binary carries are in it too** (*amended 2026-10-02*, the owner's decision that
+the H-b wall is fixed in the compiler; *Measured*, below, priced them at about 330 million
+instructions a build). They are part of the compiler exactly as core is — `build.zig` embeds them,
+every one under `platforms/` and each `-Dplatform` adds — so the maker checks them too, and one rule
+changes nothing else: **a module's key is the whole input of its check**. A platform module's key
+carries what its chain says about markup (the vocabulary, the markup type, the lowering;
+`cache/Key.zig`), so the maker runs once per chain an embedded platform tops — `--platform=<name>`
+for each embedded name, exactly as `beni check --platform=<name>` would, every module of the chain a
+root — and a module two chains check alike is one row. Each run after the first reads the rows the
+earlier ones made, so core is checked once. The maker carries no platform of its own: `build.zig`
+stages each platform the target compiler embeds — the same files, under the same relative paths —
+and passes its name, root and directory, from which the maker builds a table of the shape the
+compiler embeds, so the store's paths, the embedded siblings and every key are that compiler's.
+**Which files may be installed from it** is one predicate, `Session.packCovers`: a file the binary
+carries, of the embedded core or of an embedded platform. **A platform read from a directory never
+is**, even a copy whose bytes are the embedded ones (the key would match; it is not asked): like a
+core read with `--core-root`, it is somebody's code under development, lowered and checked by every
+build and cached per module in the directory. An embedded platform beneath it in the chain — a
+directory platform that names `html` — is installed when its key, markup terms and all, is one the
+pack holds. With `--core-root` nothing is installed, the platforms included: their keys fold core's.
+`tests/blackbox/cache_test.zig` holds both halves (*a check on a platform the binary carries…*, *a
+platform read from a directory…*).
+
+**What it does not do.** No emitted byte is in the pack: `emit`, and under `--release` the
+specialiser, run for every module as they always did.
 
 **Measured** (2026-10-02, master `bec44d00` against the same tree with the checked core; instructions,
 user space, because the machine's load moved wall time by 2× between runs). **Output: not one byte

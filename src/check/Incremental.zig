@@ -120,7 +120,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     // The checked core first (`fast-compiler.md` §8, *The checked core,
     // embedded*): the same key, the same validation, the same install — the
     // bytes are in the binary instead of in a file.
-    if (cutoff.pack.count != 0 and d.graph.modulePackage(m) == .core) {
+    if (cutoff.pack.count != 0 and m.int() < cutoff.packable.len and cutoff.packable[m.int()]) {
         if (cutoff.pack.find(.entry, cutoff.keys.of(m))) |bytes| {
             d.options.cached[m.int()] = try CacheEntry.loadFindingBytes(
                 d.gpa,

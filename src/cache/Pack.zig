@@ -1,8 +1,9 @@
 //! The checked core (docs/design/fast-compiler.md §8, *The checked core,
 //! embedded*): every front-end artifact and every cache entry of the core
-//! package, produced once when beni itself is built and carried in the
-//! binary, so that no build re-lexes, re-parses, re-lowers or re-checks an
-//! embedded core module.
+//! package and of the platforms the binary carries — one entry per chain a
+//! platform module can be checked in — produced once when beni itself is
+//! built and carried in the binary, so that no build re-lexes, re-parses,
+//! re-lowers or re-checks an embedded core or platform module.
 //!
 //! **It is a read-only cache directory in one blob, keyed exactly as the
 //! directory is.** A row is `(kind, key)` — the file key of a front-end

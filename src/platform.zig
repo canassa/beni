@@ -141,9 +141,29 @@ pub fn validDirName(name: []const u8) bool {
     return true;
 }
 
+/// A platform the binary carries: one row of the table `build.zig`
+/// generates (`platform_packages`).
+pub const Embedded = platform_packages.Platform;
+pub const EmbeddedFile = platform_packages.File;
+pub const EmbeddedAsset = platform_packages.Asset;
+
 /// Read the chain `requested` selects. Strings are owned by `arena`.
 pub fn resolveChain(arena: Allocator, io: Io, requested: []const u8, failure: *?Failure) (Allocator.Error || error{Failed})!Chain {
-    var r: Resolver = .{ .arena = arena, .io = io, .failure = failure };
+    return resolveChainIn(arena, io, requested, &platform_packages.platforms, failure);
+}
+
+/// `resolveChain`, with `table` standing for the platforms the binary
+/// carries. Only the maker of the checked core passes another table
+/// (`src/core_pack_main.zig`): the platforms of the compiler it makes the
+/// pack for, read from the directories `build.zig` stages for it.
+pub fn resolveChainIn(
+    arena: Allocator,
+    io: Io,
+    requested: []const u8,
+    table: []const Embedded,
+    failure: *?Failure,
+) (Allocator.Error || error{Failed})!Chain {
+    var r: Resolver = .{ .arena = arena, .io = io, .failure = failure, .table = table };
     _ = try r.visit(requested, null);
     // `sees`, bottom-up: every dependency is visited, and its index fixed,
     // before its dependent's `visit` returns, so a pass from the last layer
@@ -184,6 +204,8 @@ const Resolver = struct {
     arena: Allocator,
     io: Io,
     failure: *?Failure,
+    /// The platforms that count as embedded.
+    table: []const Embedded,
     layers: std.ArrayList(Layer) = .empty,
     /// Per layer, the identity it was found under: `embedded:<name>` or its
     /// normalised directory.
@@ -204,7 +226,7 @@ const Resolver = struct {
     fn visit(r: *Resolver, spelling: []const u8, from: ?u32) (Allocator.Error || error{Failed})!u32 {
         const arena = r.arena;
         var embedded: ?*const platform_packages.Platform = null;
-        for (&platform_packages.platforms) |*p| {
+        for (r.table) |*p| {
             if (std.mem.eql(u8, p.name, spelling)) embedded = p;
         }
         // An embedded platform's dependencies are embedded platforms: it has

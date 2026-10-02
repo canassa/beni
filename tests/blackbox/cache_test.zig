@@ -2152,6 +2152,114 @@ test "a core read with --core-root is checked by the build, as before there was 
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
 }
 
+/// A program of the `node` platform that reaches every module of it but
+/// `Io`, and through `Ssr` the `html` platform beneath it.
+const reaches_node =
+    \\import Html exposing (Html)
+    \\import Node
+    \\import Random
+    \\import Ssr
+    \\
+    \\
+    \\view : Int → Html msg
+    \\view n = <b>{String.fromInt n}</b>
+    \\
+    \\
+    \\main : Node.Program
+    \\main =
+    \\    Node.print (Ssr.render (view (Random.value (Random.int 1 1))))
+    \\
+;
+
+test "a check on a platform the binary carries lexes, parses, lowers and checks none of its modules" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The checked core holds the platforms the binary carries too
+    // (`fast-compiler.md` §8, *The checked core, embedded*, amended
+    // 2026-10-02): every module of every chain an embedded platform tops,
+    // checked when beni was built. A program on one checks its own modules
+    // and nothing else.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", reaches_node);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runCounted(&w, arena, &.{ "check", "--no-cache", "--platform=node", "src" }, "trace.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+    try testing.expectEqualStrings("", r.result.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // `Main` alone is checked and lowered; `Node`, `Random`, `Ssr`, `Html`
+    // and core were installed.
+    try testing.expectEqual(@as(u64, 1), r.counters.checked);
+    try testing.expectEqual(r.counters.modules, r.counters.checked + r.counters.embedded_modules);
+    try testing.expectEqual(@as(u64, 1), r.counters.lowered);
+    try testing.expectEqual(r.counters.files, r.counters.lowered + r.counters.embedded_files);
+    try testing.expectEqual(@as(u64, 0), r.counters.hits);
+}
+
+test "a platform read from a directory is checked by the build, and an embedded one beneath it is not" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A platform given as a directory is somebody's code under development,
+    // like a core read with `--core-root`: the checked core says nothing
+    // about it, even a copy whose bytes are the embedded ones. The `html`
+    // platform it depends on by name is the embedded one, and installed.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("platforms/node", "mynode", "_");
+    try w.write("src/Main.beni", reaches_node);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const embedded = try runCounted(&w, arena, &.{ "check", "--no-cache", "--platform=node", "src" }, "embedded.json");
+    const disk = try runCounted(&w, arena, &.{ "check", "--no-cache", "--platform=mynode", "src" }, "disk.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]Run{ embedded, disk }) |r| {
+        try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+        try testing.expectEqualStrings("", r.result.stderr);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Every module of the directory is a root and checked — `Io` too, which
+    // `Main` does not import — beside `Main`; `Html` and core are installed.
+    var node_modules: u64 = 0;
+    for (try w.listFiles("mynode")) |f| {
+        if (std.mem.endsWith(u8, f, ".beni")) node_modules += 1;
+    }
+    try testing.expect(node_modules >= 4);
+    try testing.expectEqual(1 + node_modules, disk.counters.checked);
+    try testing.expectEqual(1 + node_modules, disk.counters.lowered);
+    try testing.expectEqual(disk.counters.modules, disk.counters.checked + disk.counters.embedded_modules);
+    try testing.expect(disk.counters.embedded_modules > 0);
+    // The embedded `node` lazily reaches only what `Main` imports: one module
+    // fewer in its graph, `Io`, and none of them checked.
+    try testing.expectEqual(@as(u64, 1), embedded.counters.checked);
+    try testing.expectEqual(disk.counters.modules, embedded.counters.modules + 1);
+}
+
 test "--no-cache beside --cache-dir reads nothing and writes nothing" {
     // The flag exists before there is a default so a script written today
     // keeps working the day one arrives (`frontend.md` §1) — which is worth

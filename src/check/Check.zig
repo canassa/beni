@@ -235,9 +235,14 @@ pub const Cutoff = struct {
     /// condition a cache bug hides behind.
     dir: ?*const CacheDir = null,
     /// The checked core the binary carries (`fast-compiler.md` §8, *The
-    /// checked core, embedded*), looked up for a core module before `dir`.
-    /// `empty` when the run reads its core from anywhere else.
+    /// checked core, embedded*), looked up before `dir` for a module
+    /// `packable` names. `empty` when the run reads its core from anywhere
+    /// else.
     pack: CorePack.Pack = .empty,
+    /// One slot per module: whether it may be installed from `pack` — a
+    /// module of the embedded core or of a platform the binary carries
+    /// (`Session.packCovers`). A module past the end may not.
+    packable: []const bool = &.{},
     /// One slot per module, beside `hit`: whether the hit came from `pack`
     /// rather than from `dir`.
     embedded: []bool = &.{},

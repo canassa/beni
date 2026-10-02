@@ -220,12 +220,13 @@ pub const Counter = enum {
     frontend_hits,
     frontend_misses,
     /// The checked core the binary carries (`fast-compiler.md` §8, *The
-    /// checked core, embedded*): core files whose front-end artifact, and
-    /// core modules whose cache entry, were installed from it. Counted apart
-    /// from `frontend_hits` and `cache_hits`, which are the cache
+    /// checked core, embedded*): core and platform files whose front-end
+    /// artifact, and core and platform modules whose cache entry, were
+    /// installed from it. Counted apart from `frontend_hits` and
+    /// `cache_hits`, which are the cache
     /// directory's: `cache_hits + embedded_modules + modules_checked` is
     /// every module of the graph, and a build of an ordinary program on the
-    /// embedded core checks no core module at all.
+    /// embedded core and platforms checks none of their modules.
     embedded_files,
     embedded_modules,
     /// Bytes of front-end artifact written this run, over the files actually

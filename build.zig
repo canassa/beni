@@ -240,7 +240,7 @@ pub fn build(b: *std.Build) void {
     exe_beni.addImport("markup_lowerings", markup.registry);
     exe_beni.addImport("markup_entity_table", entityTable(b));
     exe_beni.addImport("build_options", buildIdOptions(b, default_id));
-    exe_beni.addImport("core_pack", corePack(b, shipped_core, default_id));
+    exe_beni.addImport("core_pack", corePack(b, shipped_core, platform_sources, default_id));
 
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -1082,7 +1082,7 @@ fn compiler(
     beni.addImport("markup_entity_table", entityTable(b));
     const id = compilerBuildId(b, target, mode, backend, core, sources);
     beni.addImport("build_options", buildIdOptions(b, id));
-    beni.addImport("core_pack", corePack(b, core, id));
+    beni.addImport("core_pack", corePack(b, core, sources, id));
     const exe = b.addExecutable(.{
         .name = "beni",
         .use_llvm = backend == .llvm,
@@ -1127,22 +1127,31 @@ fn buildIdOptions(b: *std.Build, id: [16]u8) *std.Build.Module {
 /// The checked core a compiler with build id `id` carries, as the module
 /// `core_pack` (`docs/design/fast-compiler.md` §8, *The checked core,
 /// embedded*; `src/cache/Pack.zig`): `src/core_pack_main.zig` run over
-/// `core`'s files with that id, its output embedded.
+/// `core`'s files and the platforms of `sources` with that id, its output
+/// embedded.
 ///
 /// **One maker for every compiler, run once per compiler.** The maker is
 /// built once, ReleaseSafe on the self-hosted backend — every safety check
-/// fires while it checks core — and the pack it writes depends on the core
-/// and on the id, never on the maker's own mode: every key is computed with
-/// `id`, and a check's result does not depend on the code generator that
-/// compiled the checker (§10). Each run is a few hundred milliseconds; the
-/// maker's compile is what an edit under `src/` adds to the path of every
-/// compiler, which is why its root reaches the checker and nothing after it.
-fn corePack(b: *std.Build, core: Core, id: [16]u8) *std.Build.Module {
+/// fires while it checks core — and the pack it writes depends on the core,
+/// the platforms and the id, never on the maker's own mode: every key is
+/// computed with `id`, and a check's result does not depend on the code
+/// generator that compiled the checker (§10). The maker carries no platform:
+/// each one the compiler carries is staged in a directory of its own and
+/// handed to it on the command line (`platformDirectory`). Each run is well
+/// under a second; the maker's compile is what an edit under `src/` adds to
+/// the path of every compiler, which is why its root reaches the checker and
+/// nothing after it.
+fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: [16]u8) *std.Build.Module {
     const run = b.addRunArtifact(corePackMaker(b));
     run.setName(b.fmt("check {s} for the compiler {s}", .{ core.dir, &std.fmt.bytesToHex(id, .lower) }));
     run.addDirectoryArg(coreDirectory(b, core));
     run.addArg(&std.fmt.bytesToHex(id, .lower));
     const pack = run.addOutputFileArg("core.pack");
+    for (sources) |source| {
+        run.addArg(source.name);
+        run.addArg(b.fmt("{s}/{s}", .{ platforms_dir, source.name }));
+        run.addDirectoryArg(platformDirectory(b, source));
+    }
     const wf = b.addWriteFiles();
     _ = wf.addCopyFile(pack, "core.pack");
     const root = wf.add("core_pack.zig",
@@ -1151,6 +1160,22 @@ fn corePack(b: *std.Build, core: Core, id: [16]u8) *std.Build.Module {
         \\
     );
     return b.createModule(.{ .root_source_file = root });
+}
+
+/// `source`'s files in a directory of their own, for the maker: the files
+/// `embedPlatforms` embeds — its `beni.json`, its modules and every other
+/// file but its Zig — under the same relative paths.
+fn platformDirectory(b: *std.Build, source: PlatformSource) std.Build.LazyPath {
+    var files: std.ArrayList([]const u8) = .empty;
+    var assets: std.ArrayList([]const u8) = .empty;
+    collectFiles(b, source.dir, "", &files, &assets);
+    const wf = b.addWriteFiles();
+    for (files.items) |rel| _ = wf.addCopyFile(platformFile(b, source, rel), rel);
+    for (assets.items) |rel| {
+        if (std.mem.endsWith(u8, rel, ".zig")) continue;
+        _ = wf.addCopyFile(platformFile(b, source, rel), rel);
+    }
+    return wf.getDirectory();
 }
 
 /// A `core_pack` that holds nothing: every core module is then checked by

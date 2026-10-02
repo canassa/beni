@@ -171,11 +171,13 @@ wave: []const SourceStore.Index = &.{},
 /// 2026-10-01); those have empty artifacts and are not modules.
 lowered: []bool = &.{},
 /// The checked core this run reads (`fast-compiler.md` §8, *The checked
-/// core, embedded*): the one the binary carries, or `empty` when the run
-/// reads no core, reads it from `--core-root`, or is making a pack.
+/// core, embedded*): the one the binary carries, the rows a pack's maker
+/// has made so far (`Options.pack_in`), or `empty` when the run reads no
+/// core or reads it from `--core-root`. Which files and modules may be
+/// installed from it is `packCovers`'s answer.
 pack: CorePack.Pack = .empty,
 /// Owned, with `Options.pack_out` only: per file, the front-end artifact
-/// its worker wrote for the pack, or null. One writer per slot, the worker
+/// its worker wrote for the pack, or null. One     if (session.options.pack_out) |writer| try session.packEntries(writer, cached); per slot, the worker
 /// that lowered the file, so the slots need no lock and their order is the
 /// file order whatever `--jobs` was.
 pack_frontend: []?[]u8 = &.{},
@@ -312,11 +314,18 @@ pub const Options = struct {
     cache: ?*const CacheDir = null,
     /// Make the checked core instead of reading it (`fast-compiler.md` §8,
     /// *The checked core, embedded*; `src/core_pack_main.zig`, which only
-    /// `build.zig` runs): every module of the core package is a root, none
-    /// left out for want of an import, and each core file's front-end
-    /// artifact and each core module's cache entry is added to this writer.
-    /// Never set by a command a user runs.
+    /// `build.zig` runs): every module of the core package and of the
+    /// chain's platforms is a root, none left out for want of an import,
+    /// and each such file's front-end artifact and each such module's cache
+    /// entry is added to this writer — but for those installed from
+    /// `pack_in`, which already holds them. Never set by a command a user
+    /// runs.
     pack_out: ?*CorePack.Writer = null,
+    /// With `pack_out`: the rows the maker has already made, read as the
+    /// checked core, so that the run over a platform's chain does not check
+    /// core again. Any core or platform file and module may be installed
+    /// from it, whatever directory it was read from.
+    pack_in: ?[]const u8 = null,
     /// With `pack_out`: the build id of the compiler that will carry the
     /// pack, which every key is computed with in place of this one's.
     pack_build_id: ?[16]u8 = null,
@@ -503,8 +512,10 @@ pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
     errdefer session.interner.deinit(gpa);
     session.build_id_bytes = keyBuildId(options);
     // A core read from `--core-root` is not the core the pack was checked
-    // from, and a run that makes a pack must check every module itself.
-    if (options.core_package and options.core_root == null and options.pack_out == null) {
+    // from, and a run that makes a pack reads only the rows it was handed.
+    if (options.pack_out != null) {
+        if (options.pack_in) |bytes| session.pack = CorePack.Pack.init(bytes);
+    } else if (options.core_package and options.core_root == null) {
         session.pack = CorePack.Pack.init(core_pack.bytes);
     }
     session.profile = try Profile.init(gpa, io, .{
@@ -765,6 +776,9 @@ fn lowerNext(session: *Session, waiting: []const SourceStore.Index, name: []cons
 /// (`isPlatformRoot`).
 fn isLazy(session: *const Session, file: SourceStore.Index) bool {
     if (session.store.isNamed(file) or !session.store.modulePathValid(file)) return false;
+    // A pack holds every module of core and of the chain's platforms, so
+    // making one reaches them all.
+    if (session.options.pack_out != null) return false;
     const name = session.store.moduleName(file);
     switch (session.store.package(file)) {
         .app => return false,
@@ -772,8 +786,6 @@ fn isLazy(session: *const Session, file: SourceStore.Index) bool {
             // A run that did not enumerate the core package (the hermetic
             // tests' `TestProject`) has none of its own to leave out.
             if (!session.options.core_package) return false;
-            // A pack holds every core module, so making one reaches them all.
-            if (session.options.pack_out != null) return false;
             for (Graph.implicit_core) |w| {
                 if (std.mem.eql(u8, name, @tagName(w))) return false;
             }
@@ -1199,10 +1211,11 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     // table's re-interning, and it does not have to, because a worker has a
     // `Local` pool to hand where the module cache's entry has only `Global`.
     //
-    // A core file of the embedded core is looked up in the checked core
-    // first (`fast-compiler.md` §8, *The checked core, embedded*), with or
-    // without a cache directory: it is part of the compiler, not a cache.
-    const in_pack = session.pack.count != 0 and session.store.package(file) == .core;
+    // A file of the embedded core or of a platform the binary carries is
+    // looked up in the checked core first (`fast-compiler.md` §8, *The
+    // checked core, embedded*), with or without a cache directory: it is
+    // part of the compiler, not a cache.
+    const in_pack = session.packCovers(file);
     if (session.wantsFileKeys() or in_pack) {
         try readSource(session, worker, file);
         session.file_keys[file.int()] = session.fileKey(file);
@@ -1258,7 +1271,7 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
 
     if (session.options.roundtrip_frontend) try roundTripFrontend(session, worker, file, diagnostics_mark);
     if (session.options.cache) |cache| try storeFrontend(session, worker, cache, file, diagnostics_mark);
-    if (session.options.pack_out != null and session.store.package(file) == .core) {
+    if (session.options.pack_out != null and session.store.package(file) != .app) {
         try packFrontend(session, worker, file, diagnostics_mark);
     }
 }
@@ -1292,11 +1305,11 @@ fn installFrontendBytes(
     return true;
 }
 
-/// Write this core file's front-end artifact into its `pack_frontend` slot,
-/// for the pack `Options.pack_out` is making. A file whose front end
-/// produced an `error` gets none, as `storeFrontend` refuses it a cache
-/// entry; the pack's maker then fails, because a core that does not compile
-/// is not one a compiler can carry.
+/// Write this core or platform file's front-end artifact into its
+/// `pack_frontend` slot, for the pack `Options.pack_out` is making. A file
+/// whose front end produced an `error` gets none, as `storeFrontend` refuses
+/// it a cache entry; the pack's maker then fails, because a core or a
+/// platform that does not compile is not one a compiler can carry.
 fn packFrontend(session: *Session, worker: *Worker, file: SourceStore.Index, diagnostics_mark: usize) anyerror!void {
     const gpa = session.gpa;
     const scratch = worker.arena.allocator();
@@ -1314,6 +1327,19 @@ fn packFrontend(session: *Session, worker: *Worker, file: SourceStore.Index, dia
         .line_starts = session.store.lineStarts(file),
         .diagnostics = rows.items,
     });
+}
+
+/// Whether `file`, and the module it is, may be installed from the checked
+/// core (`fast-compiler.md` §8, *The checked core, embedded*): a file the
+/// binary carries — of the embedded core, or of a platform the binary
+/// carries — and never one read from a directory, which is somebody's code
+/// under development even when its bytes are the embedded ones. A pack's
+/// maker reads back the rows it made (`Options.pack_in`) for every core and
+/// platform file it reads, from whatever directory.
+pub fn packCovers(session: *const Session, file: SourceStore.Index) bool {
+    if (session.pack.count == 0) return false;
+    if (session.options.pack_in != null) return session.store.package(file) != .app;
+    return session.store.isEmbedded(file);
 }
 
 fn freePackFrontend(session: *Session) void {
@@ -2007,11 +2033,15 @@ fn checkSerial(session: *Session) RunError!void {
     const embedded = try gpa.alloc(bool, n);
     defer gpa.free(embedded);
     @memset(embedded, false);
+    const packable = try gpa.alloc(bool, n);
+    defer gpa.free(packable);
+    for (packable, 0..) |*slot, i| slot.* = session.packCovers(session.graph.moduleFile(@enumFromInt(i)));
 
     var cutoff: Check.Cutoff = .{
         .keys = &session.keys,
         .dir = session.options.cache,
         .pack = session.pack,
+        .packable = packable,
         .embedded = embedded,
         .interner = &session.interner,
         .iface_hash = session.iface_hashes,
@@ -2074,7 +2104,7 @@ fn checkSerial(session: *Session) RunError!void {
 /// (`plans/m4-1.md` decision 9 is about reads; this is where the writes'
 /// cost is measurable). Every failure is silent.
 fn storeEntries(session: *Session, cached: []const ?CacheEntry.Loaded) RunError!void {
-    if (session.options.pack_out) |writer| try session.packEntries(writer);
+    if (session.options.pack_out) |writer| try session.packEntries(writer, cached);
     const cache = session.options.cache orelse return;
     const gpa = session.gpa;
     const token = session.profile.begin();
@@ -2120,12 +2150,14 @@ fn storeEntries(session: *Session, cached: []const ?CacheEntry.Loaded) RunError!
     session.profile.end(0, token, .cache_store, Profile.Event.no_file, @intCast(@min(bytes_written, std.math.maxInt(u32))));
 }
 
-/// Add every core file's front-end artifact and every core module's entry to
-/// the pack `Options.pack_out` is making (`fast-compiler.md` §8, *The
-/// checked core, embedded*), under the same keys and with the same "produced
-/// by a clean check" rule as `storeEntries`. A module that does not qualify
-/// is simply absent; `core_pack_main.zig` refuses a pack that lacks one.
-fn packEntries(session: *Session, writer: *CorePack.Writer) RunError!void {
+/// Add every core and platform file's front-end artifact and every core and
+/// platform module's entry to the pack `Options.pack_out` is making
+/// (`fast-compiler.md` §8, *The checked core, embedded*), under the same keys
+/// and with the same "produced by a clean check" rule as `storeEntries` — but
+/// for a module installed from `Options.pack_in` (`cached` holds it), whose
+/// row the pack already has. A module that does not qualify is simply absent;
+/// `core_pack_main.zig` refuses a pack that lacks one.
+fn packEntries(session: *Session, writer: *CorePack.Writer, cached: []const ?CacheEntry.Loaded) RunError!void {
     const gpa = session.gpa;
     for (session.pack_frontend, 0..) |slot, i| {
         const bytes = slot orelse continue;
@@ -2141,7 +2173,8 @@ fn packEntries(session: *Session, writer: *CorePack.Writer) RunError!void {
     }
     for (0..count) |i| {
         const m: Graph.Index = @enumFromInt(i);
-        if (session.graph.modulePackage(m) != .core) continue;
+        if (session.graph.modulePackage(m) == .app) continue;
+        if (i < cached.len and cached[i] != null) continue;
         if (!session.keys.isCacheable(m) or !clean[i]) continue;
         const entry = try session.entryBytes(gpa, m);
         defer gpa.free(entry);
