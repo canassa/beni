@@ -1,0 +1,108 @@
+--! Building URLs (`docs/design/boundary.md` §9.8.13 (b)): elm/url's
+--! `Url.Builder`, with one change — each path segment is percent-encoded,
+--! as query keys and values are, so `absolute [ "tags", "c/c++" ] []` is
+--! `/tags/c%2Fc%2B%2B`, one segment, and `Url.Parser` gives back the
+--! segments a URL was built from.
+
+import Url
+
+
+--| Where a URL built by `custom` starts: `/`, nothing, or another origin.
+pub type Root
+    = Absolute
+    | Relative
+    | CrossOrigin String
+
+
+--| A key and a value of a query, both percent-encoded.
+pub type QueryParameter
+    = QueryParameter String String
+
+
+--| An absolute URL: `/`, the path segments, then the query.
+--|
+--|     absolute [ "packages", "elm", "core" ] [] == "/packages/elm/core"
+--|     absolute [ "products" ] [ int "page" 2 ] == "/products?page=2"
+pub absolute : List String, List QueryParameter -> String
+absolute pathSegments parameters = "/" ++ path pathSegments ++ toQuery parameters
+
+
+--| A relative URL: the path segments, then the query.
+--|
+--|     relative [ "elm", "core" ] [] == "elm/core"
+pub relative : List String, List QueryParameter -> String
+relative pathSegments parameters = path pathSegments ++ toQuery parameters
+
+
+--| A URL on another origin: the origin as given, then the path segments and
+--| the query.
+--|
+--|     crossOrigin "https://example.com" [ "products" ] [] == "https://example.com/products"
+pub crossOrigin : String, List String, List QueryParameter -> String
+crossOrigin prePath pathSegments parameters =
+    prePath ++ "/" ++ path pathSegments ++ toQuery parameters
+
+
+--| Any of the three, and a fragment, written as given.
+--|
+--|     custom Relative [ "there" ] [] (Just "top") == "there#top"
+pub custom : Root, List String, List QueryParameter, Maybe String -> String
+custom root pathSegments parameters maybeFragment =
+    fragmentless = rootToPrePath root ++ path pathSegments ++ toQuery parameters
+    case maybeFragment of
+        Nothing ->
+            fragmentless
+
+        Just fragment ->
+            "${fragmentless}#${fragment}"
+
+
+rootToPrePath : Root -> String
+rootToPrePath root =
+    case root of
+        Absolute ->
+            "/"
+
+        Relative ->
+            ""
+
+        CrossOrigin prePath ->
+            prePath ++ "/"
+
+
+-- The segments, each encoded, joined by `/`.
+path : List String -> String
+path segments = String.join (List.map segments Url.percentEncode) "/"
+
+
+--| A query parameter whose value is a string; both are percent-encoded.
+--|
+--|     absolute [ "products" ] [ string "search" "hat" ] == "/products?search=hat"
+pub string : String, String -> QueryParameter
+string key value = QueryParameter (Url.percentEncode key) (Url.percentEncode value)
+
+
+--| A query parameter whose value is an integer.
+--|
+--|     absolute [ "products" ] [ int "page" 2 ] == "/products?page=2"
+pub int : String, Int -> QueryParameter
+int key value = QueryParameter (Url.percentEncode key) (String.fromInt value)
+
+
+--| The query alone: `""` for no parameters, else `?` and each `key=value`
+--| joined by `&`.
+--|
+--|     toQuery [] == ""
+--|     toQuery [ int "page" 2 ] == "?page=2"
+pub toQuery : List QueryParameter -> String
+toQuery parameters =
+    case parameters of
+        [] ->
+            ""
+
+        _ ->
+            "?" ++ String.join (List.map parameters toQueryPair) "&"
+
+
+toQueryPair : QueryParameter -> String
+toQueryPair (QueryParameter key value) = "${key}=${value}"

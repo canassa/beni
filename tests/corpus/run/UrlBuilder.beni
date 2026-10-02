@@ -1,0 +1,28 @@
+-- `Url.Builder` is elm/url's (boundary.md §9.8.13 (b)) with one change:
+-- each path segment is percent-encoded, as query keys and values are, so
+-- a segment holding `/`, `?`, `#`, `%`, `+` or a space stays one segment.
+-- Every root, empty lists, `int`, `toQuery []` and `custom` with and
+-- without a fragment, which is written as given.
+import Node exposing (Program)
+import Url.Builder exposing (Absolute, CrossOrigin, Relative, int, string)
+
+
+main : Program
+main =
+    Node.printLines
+        [ Url.Builder.absolute [] []
+        , Url.Builder.absolute [ "packages", "elm", "core" ] []
+        , Url.Builder.absolute [ "blog", String.fromInt 42 ] []
+        , Url.Builder.absolute [ "products" ] [ string "search" "hat", int "page" 2 ]
+        , Url.Builder.absolute [ "tags", "c/c++", "a?b#c", "100%", "two words" ] []
+        , Url.Builder.relative [] []
+        , Url.Builder.relative [ "elm", "core" ] []
+        , Url.Builder.relative [ "blog" ] [ int "page" 2 ]
+        , Url.Builder.crossOrigin "https://example.com" [ "products" ] []
+        , Url.Builder.crossOrigin "https://example.com:8042" [] [ string "q" "a&b=c d" ]
+        , Url.Builder.custom Absolute [ "x" ] [] Nothing
+        , Url.Builder.custom Relative [ "there" ] [ string "€" "é" ] (Just "top")
+        , Url.Builder.custom (CrossOrigin "https://example.com") [ "a" ] [] (Just "a b")
+        , Url.Builder.toQuery []
+        , Url.Builder.toQuery [ string "search" "hat", int "page" (-2), string "" "" ]
+        ]

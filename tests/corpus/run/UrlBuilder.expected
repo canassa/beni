@@ -1,0 +1,15 @@
+/
+/packages/elm/core
+/blog/42
+/products?search=hat&page=2
+/tags/c%2Fc%2B%2B/a%3Fb%23c/100%25/two%20words
+
+elm/core
+blog?page=2
+https://example.com/products
+https://example.com:8042/?q=a%26b%3Dc%20d
+/x
+there?%E2%82%AC=%C3%A9#top
+https://example.com/a#a b
+
+?search=hat&page=-2&=
