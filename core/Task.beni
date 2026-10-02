@@ -163,12 +163,11 @@ park w intr = Js.suspending λ() →
 --
 -- A build that makes one — a fiber, or the record of finalisers outside any
 -- — has something to tear down, and so keeps the teardown (`boundary.md`
--- §9.8.14): the two hooks are set here, so a build that makes none keeps
--- none of it.
+-- §9.8.14): `fibered` is set here, so a build that makes none keeps none of
+-- it.
 newFiber : V → V
 newFiber parent =
-    _ = Js.write failure (Js.from failed)
-    _ = Js.write closing (Js.from closeAll)
+    _ = Js.write fibered True
     Js.from
         { children = Js.null
         , finalizers = Js.null
@@ -368,22 +367,18 @@ phase : Js.Ref Int
 phase = Js.ref 0
 
 
--- The teardown's part of a throw out of the drain, and of `shutdown`: set
--- by the first fiber or finaliser record made (`newFiber`), so a build with
--- neither — which has nothing to tear down — keeps none of it.
-failure : Js.Ref V
-failure = Js.ref Js.null
+-- Whether there is anything to tear down: set by the first fiber or
+-- finaliser record made (`newFiber`), so a build with neither keeps none of
+-- the teardown's part of a throw out of the drain, or of `shutdown`.
+fibered : Js.Ref Bool
+fibered = Js.ref False
 
 
-closing : Js.Ref V
-closing = Js.ref Js.null
-
-
--- `shutdown`'s part when the only work is `soon`'s: set by `soon`, so that
--- a build with neither a fiber nor `soon` work keeps nothing of
--- `shutdown` — and a platform's call of it is nothing at all there.
-quitting : Js.Ref V
-quitting = Js.ref Js.null
+-- Whether `soon` has queued work, which `shutdown` drops: so a build with
+-- neither a fiber nor `soon` work keeps nothing of `shutdown` — and a
+-- platform's call of it is nothing at all there.
+soonQueued : Js.Ref Bool
+soonQueued = Js.ref False
 
 
 -- Queued work is dropped from now on (`runSoon`).
@@ -417,13 +412,12 @@ drain () =
 -- The drain saw a throw, which goes on to the host once its cleanup ends.
 guard : () → ()
 guard () =
-    f = Js.read failure
-    if Js.isNull f then
+    if Js.read fibered then
+        failed ()
+    else
         _ = Js.write phase 1
         d = Js.read defect
         if Js.isNull d then () else Js.to (Js.apply d [ Js.null ])
-    else
-        Js.to (Js.apply f [])
 
 
 -- Run ready work until the queue is empty (`True`), or until 64
@@ -460,10 +454,8 @@ drainFrom count =
 --| task — and a second call does nothing.
 pub shutdown : Int, sync (Int → ()) → ()
 shutdown ms over =
-    q = Js.read quitting
-    _ = if Js.isNull q then () else Js.to (Js.apply q [])
-    c = Js.read closing
-    if Js.isNull c then () else Js.to (Js.apply c [ Js.from ms, Js.from over ])
+    _ = if Js.read soonQueued then stopQueue () else ()
+    if Js.read fibered then closeAll ms (Js.from over) else ()
 
 
 -- The drain's guard saw a throw, which goes on to the host once this
@@ -927,7 +919,7 @@ spawnIn sc work = Js.to (fork (Js.read current) (Js.from work) (Js.from sc) (Js.
 --| platform asks to know whether more reports may follow its program's
 --| stop (`boundary.md` §9.8.14 (g)).
 pub cleansUp : () → Bool
-cleansUp () = not (Js.isNull (Js.read closing))
+cleansUp () = Js.read fibered
 
 
 --| Run `work` in a root fiber, and call `done` with how it ended. What a
@@ -1294,8 +1286,7 @@ defer sc cleanup =
     else
         _ = Js.write deferring True
         _ = Js.write deferral (Js.from { roots = Js.from deferRoots, run = Js.from runDeferred })
-        _ = Js.write failure (Js.from failed)
-        _ = Js.write closing (Js.from closeAll)
+        _ = Js.write fibered True
 
         _ =
             if Js.isNullish (Js.get s "deferred") then
@@ -1364,7 +1355,7 @@ runSoon s =
 --| that never suspends runs to its end.
 pub soon : sync (() → ()) → Soon
 soon work =
-    _ = Js.write quitting (Js.from stopQueue)
+    _ = Js.write soonQueued True
     s = Js.from { end = Js.null, kids = Js.null, w = Js.from work }
     _ = schedule (Js.from runSoon) s Js.null Js.null
     Js.to s
