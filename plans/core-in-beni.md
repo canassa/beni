@@ -408,7 +408,7 @@ mapping writes its test out now, as the sibling did.
   or inlining site (`Lower.callsOperator`; `run/BasicsOperatorsAsValues`, red before).
 - **`eq`, `neq`, `append`** ask `typeof` through a new intrinsic, **`Js.typeIs v "name"`**
   (`boundary.md` §4.2, amended; its name is an in-place literal, so `Basics` writes no `String`).
-  Equality is the same loop over a stack of pairs. **Two defects fixed** on the way, both silent
+  **`Js.typeIs` is decided** (the owner confirmed it on 2026-10-02). Equality is the same loop over a stack of pairs. **Two defects fixed** on the way, both silent
   wrong answers of `Basics.eq` called by name (`==` was right): a list compared key by key never
   equalled the same elements in another form (a view, a trie), and a `()` a function returned as
   `undefined` under `--release` never equalled `()` — `run/BasicsEqStructural`, red before in both

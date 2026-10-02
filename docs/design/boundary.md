@@ -473,12 +473,14 @@ and `v instanceof C`. Each is written in place as its operator. `rem` answers `N
 divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
 guards, as `Int32.rem` does.
 
-**`typeIs : Value, name -> bool`** (pure, 2026-10-02, `plans/core-in-beni.md`) is `typeof v ===
+**`typeIs : Value, name -> bool`** (pure, 2026-10-02, `plans/core-in-beni.md`; **decided** — the
+owner confirmed it the same day) is `typeof v ===
 "name"`, the name a string literal written in place: `Js.typeIs v "string"` is `typeof v ===
 "string"`. It is `same (typeOf v) …` with the string the comparison needs written by the backend,
-which is what lets a module below `String` ask it: `Basics`' `append` and `eq` ask whether a value
-is a string and whether it is an object, and a `"string"` handed to `Js.from` would be a `String`
-`Basics` may not hold (rule 2 below). The name is not checked against `typeof`'s eight answers;
+which is what lets a module below `String` ask it: `Basics`' `append` asks whether a value is a
+string (its `eq` asked whether one is an object too, until `eq` dispatched like `==`,
+`static-dispatch-spike.md` §3.1, amended the same day), and a `"string"` handed to `Js.from` would
+be a `String` `Basics` may not hold (rule 2 below). The name is not checked against `typeof`'s eight answers;
 one that is none of them is a test that is never true, as the JavaScript is. A name that is not a
 string literal is refused (`internal`), as a non-literal argument list is.
 
