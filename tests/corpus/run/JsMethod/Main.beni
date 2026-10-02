@@ -1,0 +1,18 @@
+-- `Js.method`, a function JavaScript calls on a receiver, written by a
+-- platform module: a counter's method writing its receiver, a receiver read
+-- through a nested arrow, a method's own object making one with a method of
+-- its own, and a method caching on its receiver.
+import Methods
+import Node
+
+
+main : Node.Program
+main =
+    c = Methods.counter 10
+    Node.printLines
+        [ String.fromInt (Methods.bump c)
+        , String.fromInt (Methods.bump c)
+        , String.fromInt (Methods.nested 21)
+        , Methods.inner ()
+        , Methods.cached ()
+        ]

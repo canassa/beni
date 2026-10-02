@@ -2096,6 +2096,36 @@ literal, one that is no identifier, `__proto__`, a key twice, an argument that i
 literal) and `check_test`'s *Js.object's list, pairs and keys mint no edge* (a module `String`
 imports writes one, and `dump --stage=graph` shows no edge for its literals).
 
+### `Js.method` is a `function`
+
+*Added 2026-10-02, the owner's decision on research 50 §7* (`boundary.md` §4.2). `Js.method
+λself → body` lowers the lambda as an arrow and then makes it a `function` of no parameters whose
+first statement is `const self = this` (`Lower.methodFunc`): JsIr's `arrow` with the flavour
+`arrow_method`, its body read by every pass as an arrow's, and the leaf `this_lit`, handled
+wherever `global_this` is. Both printers write it `function(){…}` with a block body — an arrow's
+`this` is not the receiver's — and `--release`'s single-use inlining may write a `self` read once
+in the method's own statements as `this`, never one read in a nested arrow, whose statements it does
+not enter; an arrow nested in the method reads the receiver through the name. `this_lit` is not an
+atom (`Lower.isAtom`), so no argument substitution can carry it into another function.
+
+**An object holding a method is one object** (the specialiser, §9). A method reads and writes its
+receiver through `this`, which the points-to pass cannot follow to a site, so:
+
+- an object literal one of whose keys may hold an `arrow_method` function, and an object one is
+  written into, **escape**, as does the method's site — no key of it is unread, no call of the
+  method is resolved or inlined (`Pts.holdsMethod`);
+- **scalar replacement** never splits an object whose key holds one, written in place or the value
+  of the top-level `const` it names (`methodValue`), and never one with a key read as a call's
+  callee, `x.k(…)`, unless that key's value is an arrow written in place, which cannot read `this`:
+  splitting it would call the function with no receiver.
+
+Without them, `run/JsMethod`'s release build dropped the counter's `n` and called the methods
+with `this` undefined. Fixtures: `emit/core/JsMethod` and `emit/release/core/JsMethod` (a view's
+`$plain` shape, a method that only reads — `this` in place under `--release` — and one whose
+receiver an arrow reads), `run/JsMethod` (a method writing its receiver, one read through a nested
+arrow, a method making an object with a method of its own, one caching on its receiver; both
+builds), `check/bad/core/MethodSuspends` (`sync_boundary`).
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack

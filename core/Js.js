@@ -43,6 +43,12 @@ export const array = (xs) => args(xs);
 // is an object literal*); passed as a value, the same object from the pairs,
 // each read reflectively (boundary.md §4: a type variable is opaque).
 export const object = (fields) => Object.fromEntries(args(fields).map(Object.values));
+// Passed as a value, a function JavaScript calls as a method, its receiver
+// handed to `f`.
+export const method = (f) =>
+  function () {
+    return f(this);
+  };
 export const each = (xs, f) => {
   for (const x of xs) f(x);
   return null;

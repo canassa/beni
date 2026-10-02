@@ -1748,7 +1748,7 @@ const Printer = struct {
         var budget: u32 = 64;
         while (budget > 0) : (budget -= 1) {
             switch (p.ir.tag(n)) {
-                .ident, .global_this => return true,
+                .ident, .global_this, .this_lit => return true,
                 .member => n = p.resolve(@enumFromInt(p.ir.data(n).lhs)),
                 else => return false,
             }
@@ -2156,6 +2156,7 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
+            .this_lit => try p.push("this"),
             .call, .new_call => {
                 if (p.ir.tag(node) == .new_call) {
                     try p.tok("new ", "new");
@@ -2220,9 +2221,13 @@ const Printer = struct {
             },
             .arrow => {
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
-                try p.arrowParams(f, d.rhs == Node.arrow_depth);
-                try p.tok(" => ", "=>");
-                try p.arrowBody(node, f, level);
+                if (d.rhs == Node.arrow_method) {
+                    try p.methodFunction(node, f, level);
+                } else {
+                    try p.arrowParams(f, d.rhs == Node.arrow_depth);
+                    try p.tok(" => ", "=>");
+                    try p.arrowBody(node, f, level);
+                }
             },
             .cond => {
                 const c = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
@@ -2300,6 +2305,7 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
+            .this_lit => try p.push("this"),
             .call => {
                 // callee, then `call_rest`
                 try p.later(.rest(.call_rest, node));
@@ -2376,9 +2382,13 @@ const Printer = struct {
                 // `run` through `statements`; that is the one recursion
                 // left, one frame per function the source nests.
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
-                try p.arrowParams(f, d.rhs == Node.arrow_depth);
-                try p.tok(" => ", "=>");
-                try p.arrowBody(node, f, level);
+                if (d.rhs == Node.arrow_method) {
+                    try p.methodFunction(node, f, level);
+                } else {
+                    try p.arrowParams(f, d.rhs == Node.arrow_depth);
+                    try p.tok(" => ", "=>");
+                    try p.arrowBody(node, f, level);
+                }
             },
             .cond => {
                 // test ` ? ` consequent ` : ` alternate
@@ -2484,6 +2494,25 @@ const Printer = struct {
         try p.closeBlock();
     }
 
+    /// An `arrow_method`: `function(){…}`, its body always a block, since
+    /// it reads `this` and an arrow's `this` is not the receiver's
+    /// (`backend.md` §4, *`Js.method` is a `function`*).
+    fn methodFunction(p: *Printer, node: Index, f: JsIr.Func, level: u32) Allocator.Error!void {
+        const saved = p.discarding;
+        defer p.discarding = saved;
+        p.discarding = std.mem.indexOfScalar(Index, p.unobserved, node) != null;
+        const saved_last = p.fn_last;
+        defer p.fn_last = saved_last;
+        p.fn_last = p.lastLive(f.body());
+        if (p.discarding) try p.markTails(f.body(), .return_stmt, &p.tail_returns);
+        try p.push("function");
+        try p.paramList(f, false, false);
+        try p.tok(" {\n", "{");
+        try p.statements(f.body(), level + 1);
+        try p.indent(level);
+        try p.closeBlock();
+    }
+
     fn isTailReturn(p: *Printer, node: Index) bool {
         return std.mem.indexOfScalar(Index, p.tail_returns.items, node) != null;
     }
@@ -2494,7 +2523,7 @@ const Printer = struct {
         var n = p.resolve(node);
         while (true) switch (p.ir.tag(n)) {
             .member => n = p.resolve(@enumFromInt(p.ir.data(n).lhs)),
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => return true,
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return true,
             else => return false,
         };
     }

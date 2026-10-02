@@ -1142,7 +1142,7 @@ const Spec = struct {
         const ir = m.ir;
         // A leaf, the most common expression, without the stack.
         switch (ir.tag(root)) {
-            .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => return,
+            .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return,
             .ident => return s.read(m, @enumFromInt(ir.data(root).lhs), false),
             else => {},
         }
@@ -1349,7 +1349,7 @@ const Spec = struct {
         const ir = m.ir;
         // A leaf, the most common expression, without the stack.
         switch (ir.tag(root)) {
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .template_chunk => {
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk => {
                 m.memo[root.int()] = try s.combine(m, root);
                 return m.memo[root.int()];
             },
@@ -1372,7 +1372,7 @@ const Spec = struct {
                         continue;
                     },
                     // A leaf has no operands to wait for.
-                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .template_chunk => {
+                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk => {
                         m.memo[raw] = try s.combine(m, node);
                         continue;
                     },
@@ -2445,7 +2445,7 @@ const Spec = struct {
                 continue;
             }
             switch (tag) {
-                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this => continue,
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit => continue,
                 .arrow => {
                     const f = ir.extraData(@enumFromInt(ir.data(node).lhs), JsIr.Func);
                     for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
@@ -3546,10 +3546,18 @@ const Spec = struct {
             if (id.* == none) return false;
             if (std.mem.indexOfScalar(u32, ids[0..i], id.*) != null) return false;
         }
+        // A key holding a `Js.method` function is read through `this` by
+        // whatever calls it: the object must stay one object.
+        for (props) |p| if (s.methodValue(m, @enumFromInt(ir.data(p).rhs))) return false;
         // Every mention of `x` in its declaration.
         var members: std.ArrayList(Index) = .empty;
         const written = try s.arena.alloc(bool, props.len);
         @memset(written, false);
+        // Keys whose read is a call's callee, `x.k(…)`: a method call, which
+        // hands the function `x` as `this` — kept unless the key's value is
+        // an arrow, which cannot read it.
+        const called = try s.arena.alloc(bool, props.len);
+        @memset(called, false);
         const seen = try s.arena.alloc(bool, props.len);
         @memset(seen, false);
         var decls: u32 = 0;
@@ -3587,6 +3595,16 @@ const Spec = struct {
                         }
                     }
                 },
+                .call => {
+                    const callee: Index = @enumFromInt(d.lhs);
+                    if (ir.tag(callee) == .member) {
+                        const obj: Index = @enumFromInt(ir.data(callee).lhs);
+                        if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) {
+                            const id = s.pts.propId(m.index, @enumFromInt(ir.data(callee).rhs));
+                            if (std.mem.indexOfScalar(u32, ids, id)) |k| called[k] = true;
+                        }
+                    }
+                },
                 else => {},
             }
             switch (ir.tag(node)) {
@@ -3602,6 +3620,9 @@ const Spec = struct {
             try pushChildren(s.arena, ir, node, &stack);
         }
         if (decls != 1) return false;
+        for (props, called) |p, c| {
+            if (c and ir.tag(@enumFromInt(ir.data(p).rhs)) != .arrow) return false;
+        }
 
         const kept = if (m.tables) |t| std.mem.indexOfScalar(Index, t.keep.items, stmt) != null else false;
         // How many reads each key has: a key never written whose value is
@@ -3647,6 +3668,25 @@ const Spec = struct {
             if (atoms[k]) |a| m.copyNode(node, a) else m.setNode(node, .ident, names[k].int(), 0);
         }
         return true;
+    }
+
+    /// Whether `v` is a `Js.method` function (`arrow_method`), written in
+    /// place or the value of a top-level `const` it names.
+    fn methodValue(s: *Spec, m: *Mod, v: Index) bool {
+        const ir = m.ir;
+        switch (ir.tag(v)) {
+            .arrow => return ir.data(v).rhs == Node.arrow_method,
+            .ident => {
+                const g = m.globalOf(@enumFromInt(ir.data(v).lhs)) orelse return false;
+                if (g >= s.decl.len) return false;
+                const d = s.decl[g] orelse return false;
+                const dir = s.mods[d.module].ir;
+                if (dir.tag(d.stmt) != .const_decl) return false;
+                const value: Index = @enumFromInt(dir.data(d.stmt).rhs);
+                return dir.tag(value) == .arrow and dir.data(value).rhs == Node.arrow_method;
+            },
+            else => return false,
+        }
     }
 
     /// A local name no name of the module has.
@@ -4498,7 +4538,7 @@ const Spec = struct {
                 if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try s.scanNode(fm, t, params, out, depth + 1, own);
                 try s.scanList(fm, ir.subRange(@enumFromInt(d.rhs)), params, out, depth, own);
             },
-            .break_stmt, .continue_stmt, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+            .break_stmt, .continue_stmt, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
             .expr_stmt, .throw_stmt => try s.scanNode(fm, @enumFromInt(d.lhs), params, out, depth + 1, own),
             // A `return` in either block is the callee's own: written where
             // the call stood, it leaves the caller from inside the same
@@ -5119,7 +5159,7 @@ const Spec = struct {
                     return c.node(from, .ident, (try c.binding(@enumFromInt(d.lhs))).int(), 0);
                 },
                 .number, .string, .template_chunk, .regex => return c.node(from, tag, try c.bytesOf(from), d.rhs),
-                .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => return c.node(from, tag, 0, 0),
+                .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return c.node(from, tag, 0, 0),
                 .template, .object, .array => {
                     const r = try c.exprs(ir.extraSlice(JsIr.inlineRange(d), Index), depth);
                     return c.node(from, tag, @intFromEnum(r.start), @intFromEnum(r.end));
@@ -5264,7 +5304,7 @@ fn firstUse(ir: *const JsIr, node: Index, p: NameIndex, depth: u32) Use {
     const d = ir.data(node);
     switch (ir.tag(node)) {
         .ident => return if (d.lhs == p.int()) .found else .clean,
-        .number, .string, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this => return .clean,
+        .number, .string, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit => return .clean,
         .member => return seq(&.{firstUse(ir, @enumFromInt(d.lhs), p, depth + 1)}, true),
         .index_get => return seq(&.{ firstUse(ir, @enumFromInt(d.lhs), p, depth + 1), firstUse(ir, @enumFromInt(d.rhs), p, depth + 1) }, true),
         .unary => {
@@ -6010,7 +6050,26 @@ const Pts = struct {
         }
     }
 
+    /// Whether `v` may be a `Js.method` function (`arrow_method`): one
+    /// that reads `this`, which is whatever object it is called on — an
+    /// object holding one may have any of its keys read and written by a
+    /// receiver the pass cannot name (`backend.md` §4, *`Js.method` is a
+    /// `function`*). Such an object, and the method, escape.
+    fn holdsMethod(p: *Pts, v: Val) bool {
+        for (v.sites) |site| {
+            const st = p.sites.items[site];
+            if (st.kind != .func) continue;
+            const ir = p.s.mods[st.module].ir;
+            if (ir.tag(st.node) == .arrow and ir.data(st.node).rhs == Node.arrow_method) return true;
+        }
+        return false;
+    }
+
     fn write(p: *Pts, obj: Val, id: u32, value: Val) Allocator.Error!void {
+        if (p.holdsMethod(value)) {
+            try p.escape(obj);
+            try p.escape(value);
+        }
         try p.progWrite(obj, id);
         if (obj.top or obj.prim) try p.escape(value);
         for (obj.sites) |site| {
@@ -6587,7 +6646,7 @@ const Pts = struct {
         const vals = p.vals[mi];
         // A leaf, the most common expression, without the stack.
         switch (ir.tag(root)) {
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .template_chunk => {
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk => {
                 vals[root.int()] = try p.combine(mi, root);
                 return vals[root.int()];
             },
@@ -6613,7 +6672,7 @@ const Pts = struct {
                         continue;
                     },
                     // A leaf has no operands to wait for.
-                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .template_chunk => {
+                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk => {
                         vals[raw] = try p.combine(mi, node);
                         continue;
                     },
@@ -6637,7 +6696,7 @@ const Pts = struct {
             .number, .string, .template, .template_chunk, .true_lit, .false_lit => Val.prim_val,
             .null_lit => Val.nul_val,
             .undefined_lit => Val.undef_val,
-            .global_this => Val.top_val,
+            .global_this, .this_lit => Val.top_val,
             .ident => p.narrowed(mi, node, try p.view(try p.nodeVar(mi, node, @enumFromInt(d.lhs)))),
             .member => blk: {
                 const v = p.narrowed(mi, node, try p.read(vals[d.lhs], p.propId(mi, @enumFromInt(d.rhs)), true));
@@ -6671,6 +6730,12 @@ const Pts = struct {
                             // ever saw it missing.
                             pr.init = true;
                             try p.join(pr.vals, vals[cd.rhs]);
+                            // A method in the literal reads and writes the
+                            // object through `this` (`holdsMethod`).
+                            if (p.holdsMethod(vals[cd.rhs])) {
+                                try p.escapeSite(site);
+                                try p.escape(vals[cd.rhs]);
+                            }
                         },
                         // `{...x}` copies what `x` holds, reading all of it.
                         else => {
@@ -7175,7 +7240,7 @@ fn inert(ir: *const JsIr, root: Index) bool {
         budget -= 1;
         const d = ir.data(node);
         switch (ir.tag(node)) {
-            .arrow, .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+            .arrow, .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
             .property => {
                 if (len == stack.len) return false;
                 stack[len] = @enumFromInt(d.rhs);

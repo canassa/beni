@@ -83,6 +83,10 @@ pub const Node = struct {
     /// defaults to `0`.
     pub const arrow_plain: u32 = 0;
     pub const arrow_depth: u32 = 1;
+    /// `function () { … }`: a method, whose body may read `this_lit`
+    /// (`Js.method`, `backend.md` §4, *`Js.method` is a `function`*). It
+    /// takes no parameter and is always printed with a block body.
+    pub const arrow_method: u32 = 2;
 
     pub const Index = enum(u32) {
         _,
@@ -214,6 +218,9 @@ pub const Node = struct {
         /// `globalThis`, which only the `Js.global` intrinsic writes (research
         /// 47). A literal and not an `ident`, so no pass renames it.
         global_this,
+        /// `this`: the receiver of an `arrow_method` (`Js.method`, `backend.md`
+        /// §4, *`Js.method` is a `function`*).
+        this_lit,
         /// `f(a, b)`. `lhs` callee, `rhs` extra `SubRange` of arguments.
         call,
         /// `new C(a, b)`, which only the `Js.construct` intrinsic writes.
@@ -718,7 +725,7 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
-        .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .arrow => {},
+        .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .arrow => {},
         .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt, .try_stmt => {},
     }
 }
@@ -918,7 +925,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             }
             for (ir.extraSlice(parts, Node.Index)) |part| try ir.verifyChild(part, .expression);
         },
-        .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+        .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
         .call, .new_call => {
             try ir.verifyChild(@enumFromInt(d.lhs), .expression);
             try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .expression);
@@ -1303,7 +1310,7 @@ pub const Builder = struct {
                 }
             };
             switch (tags[at.node]) {
-                .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+                .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl => try Push.one(&stack, gpa, at, d.rhs, w.statement, 0),
                 .assign_stmt => {
@@ -1411,7 +1418,7 @@ pub const Builder = struct {
                 .ident => if (read != .none and d.lhs == read.int()) {
                     out.reads = true;
                 },
-                .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+                .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl, .property => try stack.append(gpa, d.rhs),
                 .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),

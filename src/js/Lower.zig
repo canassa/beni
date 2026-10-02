@@ -7637,6 +7637,43 @@ pub const Lowerer = struct {
         return l.object(props, p);
     }
 
+    /// `Js.method λself → body`: the lambda lowered as an arrow, then made a
+    /// `function` of no parameters whose first statement binds `self` to
+    /// `this` — the receiver of a method JavaScript calls as `o.m()`
+    /// (`backend.md` §4, *`Js.method` is a `function`*).
+    fn methodFunc(l: *Lowerer, out: *StmtList, lambda: Inst.Index, p: u32) !Node.Index {
+        const refused = "`Js.method` takes a lambda of one parameter, its receiver, written in place.";
+        if (l.bir.instTag(lambda) != .lambda) {
+            try l.report(.internal, lambda, refused, .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const arrow = try l.expr(out, lambda);
+        if (l.b.nodes.items(.tag)[arrow.int()] != .arrow) {
+            try l.report(.internal, lambda, refused, .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        // The `Func` record's four indexes, in field order.
+        const at = l.b.nodes.items(.data)[arrow.int()].lhs;
+        const f: JsIr.Func = .{
+            .params_start = @enumFromInt(l.b.extra.items[at]),
+            .params_end = @enumFromInt(l.b.extra.items[at + 1]),
+            .body_start = @enumFromInt(l.b.extra.items[at + 2]),
+            .body_end = @enumFromInt(l.b.extra.items[at + 3]),
+        };
+        const params = l.b.extra.items[@intFromEnum(f.params_start)..@intFromEnum(f.params_end)];
+        if (params.len != 1) {
+            try l.report(.internal, lambda, refused, .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        var stmts: StmtList = .empty;
+        try l.constDecl(&stmts, @enumFromInt(params[0]), try l.add(.this_lit, p, Node.Data.unused, Node.Data.unused), p);
+        for (l.b.extra.items[@intFromEnum(f.body_start)..@intFromEnum(f.body_end)]) |s| try stmts.append(l.scratch, @enumFromInt(s));
+        const body = try l.b.addRange(stmts.items);
+        const none = try l.b.addNames(&.{});
+        const record = try l.b.addRecord(JsIr.Func{ .params_start = none.start, .params_end = none.end, .body_start = body.start, .body_end = body.end });
+        return l.add(.arrow, p, @intFromEnum(record), Node.arrow_method);
+    }
+
     fn regExpLiteral(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
         if (args.len != 2 or l.bir.instTag(args[0]) != .string or l.bir.instTag(args[1]) != .string) {
             try l.report(.internal, if (args.len != 0) args[0] else @enumFromInt(0), "`Js.regExp` takes its pattern and its flags as string literals.", .{});
@@ -7897,6 +7934,7 @@ pub const Lowerer = struct {
         if (which == .regExp) return l.regExpLiteral(args, p);
         if (which == .typeIs) return l.typeIsTest(out, args, p);
         if (which == .object and args.len == 1) return l.objectLiteral(out, args[0], p);
+        if (which == .method and args.len == 1) return l.methodFunc(out, args[0], p);
         if ((which == .pure or which == .suspending) and args.len == 1) if (l.thunkBody(args[0])) |body| return l.expr(out, body);
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
@@ -7976,9 +8014,9 @@ pub const Lowerer = struct {
             W.apply => l.call(v[0], rest, p),
             // A saturated `each` is `eachLoop`, a saturated `finally`
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
-            // `regExpLiteral`, a `typeIs` `typeIsTest` and an `object`
-            // `objectLiteral`, above.
-            W.each, W.finally, W.catchIf, W.regExp, W.typeIs, W.object => l.nullNode(p),
+            // `regExpLiteral`, a `typeIs` `typeIsTest`, an `object`
+            // `objectLiteral` and a `method` `methodFunc`, above.
+            W.each, W.finally, W.catchIf, W.regExp, W.typeIs, W.object, W.method => l.nullNode(p),
             // `Js.pure` with a function that is not a lambda written in
             // place calls it.
             W.pure, W.suspending => l.call(v[0], &.{}, p),

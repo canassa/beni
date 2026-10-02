@@ -1,0 +1,9 @@
+-- check/bad (core): `Js.method`'s lambda is `sync` (`boundary.md` §4.2):
+-- JavaScript calls a method and waits for nothing, so a method body that
+-- may suspend is `sync_boundary`, at the lambda.
+import Js
+import Task
+
+
+plain : Js.Value
+plain = Js.method λself → Task.yieldNow ()

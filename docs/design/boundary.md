@@ -562,6 +562,19 @@ one. `pure`: making an object changes nothing an observer can see. Passed as a v
 headers, whose `$plain` and `length` a reader of a list relies on by name (`backend.md` §4, *What a
 reader of a list may rely on*).
 
+**`method : sync (Value → a) → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7)
+is a function JavaScript calls as a method: `Js.method λself → body` is `function () { const self
+= this; body }`, so `o.m()` hands `o` to the lambda as `self`. It is written with a lambda in place
+— anything else is refused (`internal`), as a non-literal argument list is — and is printed as a
+`function` expression, never an arrow, whose `this` is not the receiver's, and always with a block
+body; it takes no argument but its receiver. `sync`: JavaScript calls it and waits for nothing, so
+a body that may suspend is `sync_boundary`. `pure`: making a function changes nothing. Its one use
+is a field of a `Js.object` that a reader calls by name — a list header's `$plain`, which the
+protocol makes a field and not a prototype method (`backend.md` §4, *What a reader of a list may
+rely on*) — and the optimiser keeps every object holding one whole, since the method reads and
+writes it through a receiver the optimiser cannot name (`backend.md` §4, *`Js.method` is a
+`function`*). Passed as a value, `Js.js`'s `method f` is `function () { return f(this) }`.
+
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a
 function a platform receives through `Js.from` — an event handler, a render callback — returns

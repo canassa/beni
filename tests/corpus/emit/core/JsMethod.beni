@@ -1,0 +1,28 @@
+-- `Js.method` is a `function` (`backend.md` §4, *`Js.method` is a
+-- `function`*): the lambda's body becomes a `function` of no parameters
+-- whose first statement binds the lambda's parameter to `this`, never an
+-- arrow, whose `this` is not the receiver's, and always with a block body.
+-- An arrow nested in it reads the same `this` through the name. These are
+-- the list headers' `$plain` shapes: a view's, which caches its copy on the
+-- receiver, and a method that only reads.
+-- Built with `--core`, which is what lets a root-package module import `Js`.
+import Js
+
+
+pub viewPlain : Js.Value
+viewPlain = Js.method λself →
+    p = Js.get self "p"
+    if Js.isNull p then
+        c = Js.call (Js.get self "b") "slice" [ Js.get self "o" ]
+        _ = Js.set self "p" c
+        c
+    else
+        p
+
+
+pub size : Js.Value
+size = Js.method λself → Js.get self "length"
+
+
+pub later : Js.Value
+later = Js.method λself → Js.from λ() → Js.get self "length"

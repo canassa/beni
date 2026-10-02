@@ -156,6 +156,13 @@ pub foreign impure array : elements → Value
 pub foreign pure object : fields → Value
 
 
+--| `function () { const self = this; … }`: a function JavaScript calls as
+--| a method, `o.m()`, its receiver handed to the lambda. Written with a
+--| lambda, `Js.method λself → …`, the lambda's body is the function's and
+--| no arrow is made. `sync`: JavaScript calls it and waits for nothing.
+pub foreign pure method : sync (Value → a) → Value
+
+
 --| `for (const x of xs) f(x)`: `f` for each element of an iterable, in
 --| order. Written with a lambda, `Js.each xs λx → …`, the lambda's body
 --| is the loop's body.

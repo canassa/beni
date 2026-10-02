@@ -54,6 +54,10 @@ pub const Which = enum {
     /// list literal of `( "key", value )` pairs (`backend.md` §4, *`Js.object`
     /// is an object literal*).
     object,
+    /// `function () { const self = this; … }`: a method JavaScript calls on
+    /// a receiver, its lambda handed the receiver (`backend.md` §4,
+    /// *`Js.method` is a `function`*).
+    method,
     at,
     setAt,
     throw,
