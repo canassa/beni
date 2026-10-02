@@ -252,6 +252,21 @@ copy : V → V
 copy set = Js.call (Js.global "Array") "from" [ set ]
 
 
+-- Whether `spawn` has run: only it gives a fiber children, or work outside
+-- any fiber a child of its own. Until it has, no fiber has children to
+-- cancel or wait for; a build that never spawns — whose fibers all belong
+-- to a scope or are roots — folds this to `False` and keeps none of what
+-- looks for them.
+spawning : Js.Ref Bool
+spawning = Js.ref False
+
+
+-- The children `spawn` gave `fiber`: null when it has none, and always in a
+-- build that never spawns.
+childrenOf : V → V
+childrenOf fiber = if Js.read spawning then Js.get fiber "children" else Js.null
+
+
 -- Whether a field holding a set or an array holds nothing.
 none : V → Bool
 none set = Js.isNull set || Js.to (Js.get set "size") == 0
@@ -594,7 +609,7 @@ complete fiber outcome =
     _ =
         if not (Js.isNull sc) then
             Js.to (Js.call (Js.get sc "children") "delete" [ fiber ])
-        else if not (Js.isNull parent) then
+        else if Js.read spawning && not (Js.isNull parent) then
             if Js.isNull (Js.get parent "children") then
                 ()
             else
@@ -679,7 +694,7 @@ finish : V → V
 finish value =
     fiber = Js.read current
     _ = Js.set fiber "unwinding" (Js.from True)
-    children = Js.get fiber "children"
+    children = childrenOf fiber
     if none children then
         finished value
     else
@@ -706,7 +721,7 @@ unwind fiber =
     _ = Js.set stack "length" (Js.from 0)
     _ = Js.call stack "push" [ Js.from ended ]
     _ = cleanups fiber
-    Js.to (Js.call stack "push" [ Js.from stopChildren ])
+    if Js.read spawning then Js.to (Js.call stack "push" [ Js.from stopChildren ]) else ()
 
 
 -- Move `fiber`'s finalisers onto its stack, each above a boundary, to run
@@ -832,7 +847,7 @@ fork parent work sc from =
                 else
                     ()
             Js.to (Js.call (Js.get sc "children") "add" [ fiber ])
-        else if not (Js.isNull parent) then
+        else if Js.read spawning && not (Js.isNull parent) then
             _ =
                 if Js.isNull (Js.get parent "children") then
                     Js.set parent "children" (Js.construct (Js.global "Set") [])
@@ -878,6 +893,7 @@ endSoon s = Js.each (Js.get s "kids") λf → halt f
 --| once. The child is cancelled when the current fiber ends.
 pub spawn : (() → a) → Fiber a
 spawn work =
+    _ = Js.write spawning True
     parent = Js.read current
     s = Js.read soonRunning
     if not (Js.isNull parent) then
@@ -1312,8 +1328,15 @@ runSoon s =
         _ = Js.write soonRunning s
         _ = Js.apply w [ Js.null ]
         _ = Js.write soonRunning outer
-        end = Js.get s "end"
-        _ = if Js.isNull end then () else Js.to (Js.apply end [ s ])
+
+        -- Only a `spawn` sets `end`, and the work may have been the first
+        -- to spawn: `spawning` is read after it.
+        _ =
+            if Js.read spawning then
+                end = Js.get s "end"
+                if Js.isNull end then () else Js.to (Js.apply end [ s ])
+            else
+                ()
         True
 
 
@@ -1570,7 +1593,7 @@ recover fiber =
                 Js.call stack "push" [ Js.from ended ]
             else
                 Js.null
-        Js.to (Js.call stack "push" [ Js.from stopChildren ])
+        if Js.read spawning then Js.to (Js.call stack "push" [ Js.from stopChildren ]) else ()
 
 
 -- The deadline (§9.8.14 (f)): each fiber waiting inside a finaliser stops
@@ -2465,7 +2488,7 @@ begin h work arg =
                     Js.set fiber "parked" (Js.get p "wait")
             _ = Js.write started fiber
             Js.null
-        else if none (Js.get fiber "children") then
+        else if none (childrenOf fiber) then
             _ = Js.set h "probe" fiber
             _ = Js.write started Js.null
             r
