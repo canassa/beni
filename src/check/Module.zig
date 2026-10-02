@@ -175,7 +175,9 @@ pub fn check(in: Input) Error!Check.Counters {
     cx.effects = &effects;
     var discards: std.ArrayList(Context.Discard) = .empty;
     defer discards.deinit(scratch);
-    if (in.explain and in.informational and !quiet and in.graph.modulePackage(in.module) == .app) cx.discards = &discards;
+    // Under `--explain`, every package's — the migration reaches core and
+    // the platforms through it (frontend.md §11.9).
+    if (in.explain and in.informational and !quiet) cx.discards = &discards;
     var report: Report = undefined;
     try report.init(&cx, in.diagnostics, quiet, decl_scheme, local_type);
     defer report.deinit();

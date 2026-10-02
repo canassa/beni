@@ -5791,7 +5791,7 @@ end of the `=`:
 
 > This `_ =` throws away a `⊤`, which a statement line does already. Write the line without it.
 
-Until the enforce step it is emitted only under `--explain`, from then by default. Generation
+Until the enforce step it is emitted only under `--explain`, from then by default; under `--explain` it is emitted for every package, the root's or not, which is how the migration reaches core and the platforms. Generation
 records each wildcard `let_pattern`'s variable as it declares it, so the pass reads one variable
 per candidate and walks nothing.
 
