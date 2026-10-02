@@ -3588,6 +3588,68 @@ test "an element whose commands never wait ships no fiber runtime" {
     try testing.expect(std.mem.indexOf(u8, try w.read("keyed-out/_main.mjs"), "interrupted") == null);
 }
 
+fn taskPage(comptime cmd: []const u8) []const u8 {
+    return
+    \\import Browser
+    \\import Cmd
+    \\import Html exposing (Html)
+    \\import Sub
+    \\import Task
+    \\import Tea
+    \\import Time
+    \\
+    \\
+    \\view : Int → Html msg
+    \\view _ =
+    \\    <></>
+    \\
+    \\
+    \\main : Browser.Program
+    \\main =
+    \\    Tea.element { init = ( 0, Cmd.none ), update = λmsg model → ( model,
+    ++ cmd ++
+        \\ ), view = view, subscriptions = λ_ → Sub.none }
+        \\
+    ;
+}
+
+test "a page whose fibers only wait ships no finaliser walk and no children" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The fiber runtime keeps each capability behind a cell only its entry
+    // point writes (`core/Task.beni`): a fiber gets children only from
+    // `Task.spawn`, and holds finalisers only once something registers one
+    // (`bracket`, `scope`). A page whose body only sleeps uses neither, so
+    // its release build keeps `finalizers` only as the fiber record's key,
+    // and never makes a fiber's set of children; the pages that bracket and
+    // that spawn keep each.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("waits/Main.beni", taskPage("Cmd.do λ() → Time.sleep (Time.millis 1)"));
+    try w.write("brackets/Main.beni", taskPage("Cmd.do λ() → Task.bracket (λ() → ()) (λ_ _ → ()) λ_ → Time.sleep (Time.millis 1)"));
+    try w.write("spawns/Main.beni", taskPage("Cmd.do λ() → Task.join (Task.spawn λ() → Time.sleep (Time.millis 1))"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const waits = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=waits-out", "waits/Main.beni" }, .{ .raw_diagnostics = true });
+    const brackets = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=brackets-out", "brackets/Main.beni" }, .{ .raw_diagnostics = true });
+    const spawns = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=spawns-out", "spawns/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(waits);
+    try expectBuilt(brackets);
+    try expectBuilt(spawns);
+    const only_waits = try w.read("waits-out/_main.mjs");
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, only_waits, "finalizers"));
+    try testing.expect(std.mem.indexOf(u8, only_waits, "children=new Set") == null);
+    try testing.expect(std.mem.count(u8, try w.read("brackets-out/_main.mjs"), "finalizers") > 1);
+    try testing.expect(std.mem.indexOf(u8, try w.read("spawns-out/_main.mjs"), "children=new Set") != null);
+}
+
 test "a development build copies hand-written JavaScript byte for byte" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
