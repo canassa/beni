@@ -368,8 +368,7 @@ fn dumpProjectInterfaces(gpa: std.mem.Allocator, session: *Session, stdout: *Io.
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     const dir = storePath(&buffer, arg);
     var printed: u32 = 0;
-    for (0..session.store.count()) |i| {
-        const f: SourceStore.Index = @enumFromInt(i);
+    for (session.store.byPath()) |f| {
         const p = session.store.path(f);
         if (session.store.isEmbedded(f) or !underDir(p, dir)) continue;
         const m = moduleOf(session, f) orelse continue;
@@ -390,8 +389,7 @@ fn dumpProjectDispatch(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Wr
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     const dir = storePath(&buffer, arg);
     var printed: u32 = 0;
-    for (0..session.store.count()) |i| {
-        const f: SourceStore.Index = @enumFromInt(i);
+    for (session.store.byPath()) |f| {
         const p = session.store.path(f);
         if (session.store.isEmbedded(f) or !underDir(p, dir)) continue;
         const m = moduleOf(session, f) orelse continue;

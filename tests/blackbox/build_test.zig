@@ -306,6 +306,84 @@ test "a build is byte-identical at every --jobs" {
     }
 }
 
+test "a build is byte-identical wherever the project lives" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `fast-compiler.md` §10, as amended 2026-10-02: module order must not
+    // depend on where the project is. One project in three places, named
+    // from one working directory, so the paths the compiler sees put the
+    // project's modules before the embedded `core/…` (`aaa/`), between it
+    // and `platforms/…` (`d/e/zzz/`, one level deeper too) and after both
+    // (`zzz/`). Module order was path order until then, so the three were
+    // three programs to every pass that walks modules in order: a
+    // specialiser defect showed on one side of `core` and not the other.
+    // Each output lives inside its project, so even a source map's
+    // relative `sources` path is the same in all three.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const homes = [_][]const u8{ "aaa/app", "zzz/app", "d/e/zzz/app" };
+    for (homes) |home| {
+        const arena = w.arena.allocator();
+        try w.write(try std.fmt.allocPrint(arena, "{s}/Main.beni", .{home}),
+            \\import Bits
+            \\import Int32
+            \\import List
+            \\import Node exposing (Program)
+            \\import Text.Pad
+            \\
+            \\
+            \\main : Program
+            \\main =
+            \\    Node.printLines (List.map (List.range 1 3) (λi → Text.Pad.left (Bits.show (Bits.mix (Int32.fromInt i)))))
+            \\
+        );
+        try w.write(try std.fmt.allocPrint(arena, "{s}/Bits.beni", .{home}),
+            \\import Int32 exposing (Int32)
+            \\import String
+            \\
+            \\
+            \\pub show : Int32 → String
+            \\show n = String.fromInt (Int32.toInt n)
+            \\
+            \\
+            \\pub mix : Int32 → Int32
+            \\mix n = Int32.xor (Int32.rotateLeft n 5) (Int32.mul n (Int32.fromInt 0x9e3779b9))
+            \\
+        );
+        try w.write(try std.fmt.allocPrint(arena, "{s}/Text/Pad.beni", .{home}),
+            \\import String
+            \\
+            \\
+            \\pub left : String → String
+            \\left s = String.padLeft s 12 ' '
+            \\
+        );
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    for (homes) |home| {
+        const arena = w.arena.allocator();
+        try expectBuilt(try w.runWith(&.{ "build", "--platform=node", try std.fmt.allocPrint(arena, "--out={s}/out", .{home}), home }, .{ .raw_diagnostics = true }));
+        try expectBuilt(try w.runWith(&.{ "build", "--platform=node", "--release", try std.fmt.allocPrint(arena, "--out={s}/rel", .{home}), home }, .{ .raw_diagnostics = true }));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Every file, the manifest and the source maps included: the manifest
+    // lists modules in module order, which is what moved.
+    for (homes[1..]) |home| {
+        const arena = w.arena.allocator();
+        try expectSameTree(&w, "aaa/app/out", try std.fmt.allocPrint(arena, "{s}/out", .{home}));
+        try expectSameTree(&w, "aaa/app/rel", try std.fmt.allocPrint(arena, "{s}/rel", .{home}));
+    }
+    try testing.expect((try w.read("aaa/app/out/_manifest.txt")).len > 0);
+    try testing.expect((try w.read("aaa/app/out/Text/Pad.mjs.map")).len > 0);
+}
+
 /// A view module and the program that renders it through the `ssr`
 /// lowering: a component in the other module, a `For` compiled in place,
 /// a `Show`, and holes and attributes of several kinds — enough roots,

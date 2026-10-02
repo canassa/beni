@@ -942,7 +942,11 @@ fn fitWorkers(session: *Session, keep_wanted: u32) Allocator.Error!void {
 fn enumeratePlatform(session: *Session) RunError!void {
     const chain = session.options.chain orelse return;
     const gpa = session.gpa;
-    for (chain.layers) |layer| {
+    // The layer is part of the store's numbering key: a chain's packages
+    // are numbered in chain order, never by where each one lives.
+    defer session.store.layer = 0;
+    for (chain.layers, 0..) |layer, index| {
+        session.store.layer = @intCast(index);
         if (layer.embedded) |platform| {
             var buffer: [std.fs.max_path_bytes]u8 = undefined;
             for (platform.files) |f| {
@@ -1880,7 +1884,7 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
 /// worker's pool merged into `session.interner` in FILE order.
 ///
 /// A symbol's global id is the order its text is first met walking the
-/// files by index — sorted path order — and each file's tokens, then its
+/// files by index (`SourceStore.finish`) and each file's tokens, then its
 /// Bir's symbol column. That is a function of the input alone
 /// (`fast-compiler.md` §10, rule 5). Merging whole pools in WORKER order
 /// would number a symbol by which worker the `next_file` race handed its

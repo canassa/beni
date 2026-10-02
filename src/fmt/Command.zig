@@ -6,7 +6,7 @@
 //! into a session-owned buffer in that file's `Artifacts` column. What is
 //! left here is the part that must happen in a fixed order — compare the
 //! canonical text with the source, then write it, print it, or list the
-//! path — and it walks files by index (sorted paths) after the join. The
+//! path — and it walks files in path order after the join. The
 //! `--check` listing, the `--stdout` product and the bytes written are
 //! therefore a function of the input alone, not of `--jobs`; the
 //! determinism scenario compares all three across `--jobs=1` and `--jobs=8`.
@@ -71,8 +71,7 @@ fn fail(stderr: *Io.Writer, comptime format_string: []const u8, args: anytype) u
 fn emitAll(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, fmt: Cli.Fmt, summary: Session.Summary) Io.Writer.Error!u8 {
     var changed = false;
     var io_failed = false;
-    for (0..session.store.count()) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+    for (session.store.byPath()) |file| {
         // Null means the file has a diagnostic and no canonical form.
         const text = session.artifacts.formatted(file) orelse continue;
         const path = session.store.path(file);

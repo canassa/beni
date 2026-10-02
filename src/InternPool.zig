@@ -9,7 +9,7 @@
 //! Two pools exist because a single shared interner serialises exactly the
 //! phase being parallelised (oxc lost ~30% to that, research/03). Each worker
 //! interns into its own `Local`; after the parallel phase the driver walks
-//! the FILES in index order (sorted path order) and calls `Global.mergeOne`
+//! the FILES in index order (`SourceStore.finish`) and calls `Global.mergeOne`
 //! for each symbol a file's tokens and Bir reference, then `mergeRest` for
 //! the ones none does, by text. That fills each worker's remap table
 //! `local symbol → global symbol`, which it then applies to its token

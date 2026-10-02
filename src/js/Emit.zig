@@ -1612,7 +1612,7 @@ const Emitter = struct {
                 if (b.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
                 if (found) |previous| {
                     // Which of the two is "the first" is the lower MODULE
-                    // INDEX, which comes from the sorted path and never
+                    // INDEX, which comes from the file index and never
                     // from argument or completion order (CLAUDE.md rule 5),
                     // so the message is the same however the build was
                     // invoked.
@@ -1655,7 +1655,7 @@ const Emitter = struct {
             // nothing is: the diagnostic is reported against a FILE at 1:1
             // with no excerpt, and the message says which file and why.
             // Which file is `rule 5` deterministic — the first app module
-            // by module index, which comes from the sorted path and never
+            // by module index, which comes from the file index and never
             // from argument or completion order.
             const app = e.firstAppModule();
             const path = if (app) |a| e.session.store.path(e.graph().moduleFile(a)) else "";
@@ -2091,7 +2091,7 @@ const Emitter = struct {
 
     /// One live declaration's reference to a `pub` value of `core/Debug`.
     /// Flat, and ordered by construction: modules in `Graph.Index` order,
-    /// which is sorted path (CLAUDE.md rule 5), then declarations in source
+    /// which is the file index (CLAUDE.md rule 5), then declarations in source
     /// order, then references in instruction order.
     const DebugSite = struct {
         file: SourceStore.Index,
@@ -4258,7 +4258,7 @@ const Emitter = struct {
     /// It runs over `pending`, which is everything the build produced and
     /// nothing it dropped, and it runs BEFORE `flush`, so a refused build
     /// leaves nothing behind exactly as `boundary.md` §4's checks do.
-    /// `pending` is filled in module order — sorted path, never completion
+    /// `pending` is filled in module order — file index, never completion
     /// order — and the comparison below breaks a tie on that index, so the
     /// pair reported is the same at every `--jobs` (CLAUDE.md rule 5).
     ///

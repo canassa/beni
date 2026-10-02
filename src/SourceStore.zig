@@ -3,7 +3,9 @@
 //! Enumeration is the ONE serial, deterministic step that every later
 //! structure is keyed by: paths are collected, sorted, deduplicated and only
 //! then numbered, so file index `i` means the same file for every `--jobs`
-//! value and every run (frontend.md §1). Everything a file has — its path,
+//! value and every run (frontend.md §1) — and, since 2026-10-02, wherever
+//! the project lives: the numbering key is the package and the path inside
+//! it, never the spelled path (`finish`). Everything a file has — its path,
 //! its module name, its bytes with a sentinel so the tokenizer needs no
 //! bounds check at EOF, and its line-start table — lives in one
 //! `MultiArrayList` column set addressed by that index. No slice into a
@@ -43,6 +45,14 @@ const SourceStore = @This();
 pending: std.ArrayList(Pending) = .empty,
 /// Numbered files. Empty until `finish`.
 files: std.MultiArrayList(File) = .empty,
+/// Owned. Every file's index, sorted by `path`: what `find` searches,
+/// because the index order is not path order (`finish`).
+by_path: []Index = &.{},
+/// The platform layer (`boundary.md` §9.1: its position in the chain) of
+/// every platform path queued from now on. `Session.enumeratePlatform` sets
+/// it per layer. It is part of `finish`'s numbering key, which is why it is
+/// told rather than read off a path.
+layer: u8 = 0,
 
 pub const Index = enum(u32) {
     _,
@@ -98,8 +108,12 @@ const Pending = struct {
     /// path does not lie under its root.
     rel_start: ?u32,
     package: Package,
+    /// `layer` when the path was queued; 0 outside a platform package.
+    layer: u8,
     /// Embedded bytes, for a `core` file compiled into the binary.
     source: ?[:0]const u8,
+    /// `File.named`, decided by `finish`'s collapse.
+    named: bool = false,
 };
 
 pub const extension = ".beni";
@@ -125,6 +139,7 @@ pub fn deinit(store: *SourceStore, gpa: Allocator) void {
         gpa.free(lines);
     }
     store.files.deinit(gpa);
+    gpa.free(store.by_path);
     store.* = undefined;
 }
 
@@ -174,20 +189,32 @@ pub fn lineStarts(store: *const SourceStore, index: Index) []const u32 {
     return store.files.items(.line_starts)[index.int()];
 }
 
-/// Every path, in index order (sorted). For the profile writer and the
-/// renderer's lookup.
+/// Every path, in index order — `finish`'s numbering, which is not path
+/// order. For the profile writer.
 pub fn paths(store: *const SourceStore) []const []const u8 {
     return store.files.items(.path);
 }
 
-/// The index of `file_path`, by binary search over the sorted paths.
-pub fn find(store: *const SourceStore, file_path: []const u8) ?Index {
-    const i = std.sort.binarySearch([]const u8, store.paths(), file_path, comparePath) orelse return null;
-    return @enumFromInt(i);
+/// Every file's index, in path order.
+pub fn byPath(store: *const SourceStore) []const Index {
+    return store.by_path;
 }
 
-fn comparePath(target: []const u8, item: []const u8) std.math.Order {
-    return std.mem.order(u8, target, item);
+/// The index of `file_path`, by binary search over `by_path`.
+pub fn find(store: *const SourceStore, file_path: []const u8) ?Index {
+    const all = store.paths();
+    var lo: usize = 0;
+    var hi: usize = store.by_path.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const index = store.by_path[mid];
+        switch (std.mem.order(u8, file_path, all[index.int()])) {
+            .eq => return index,
+            .lt => hi = mid,
+            .gt => lo = mid + 1,
+        }
+    }
+    return null;
 }
 
 pub const AddPathError = Allocator.Error || Io.Dir.StatFileError || Io.Dir.OpenError || Io.Dir.Reader.Error || error{
@@ -300,7 +327,13 @@ pub fn addEmbedded(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start
 fn addPendingSource(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start: ?u32, pkg: Package, source: ?[:0]const u8) Allocator.Error!void {
     const owned = try gpa.dupe(u8, p);
     errdefer gpa.free(owned);
-    try store.pending.append(gpa, .{ .path = owned, .rel_start = rel_start, .package = pkg, .source = source });
+    try store.pending.append(gpa, .{
+        .path = owned,
+        .rel_start = rel_start,
+        .package = pkg,
+        .layer = if (pkg == .platform) store.layer else 0,
+        .source = source,
+    });
 }
 
 /// Recursive walk in sorted entry order, skipping `.`-prefixed entries and
@@ -372,12 +405,23 @@ fn joinEntry(gpa: Allocator, dir_path: []const u8, name: []const u8) Allocator.E
 /// Sort and deduplicate the pending paths, derive module names, and assign
 /// indices. After this, `count()` files exist and `pending` is empty.
 ///
-/// The sort key is `(path, package)` rather than the path alone, so entries
-/// for one path are adjacent with `app` first and `find` can still binary
-/// search `paths()`. Adjacent entries with the same path collapse, and the
-/// collapse is what implements the "an app file at a core path IS that core
-/// module" rule of the header: the surviving entry keeps the CORE package
-/// and the APP source of bytes, so the on-disk copy is what gets compiled.
+/// **Deduplication is by path.** Pending entries are sorted by `(path,
+/// package)` so entries for one path are adjacent with `app` first, and
+/// adjacent entries with the same path collapse. The collapse is what
+/// implements the "an app file at a core path IS that core module" rule of
+/// the header: the surviving entry keeps the CORE package and the APP source
+/// of bytes, so the on-disk copy is what gets compiled.
+///
+/// **Numbering is not by path** (`fast-compiler.md` §10, as amended
+/// 2026-10-02). A path spells where the project lives — `../aaa/Main.beni`,
+/// `/home/x/zzz/Main.beni` — and the embedded packages' paths are fixed
+/// (`core/…`, `platforms/<name>/…`), so a path order puts the user's
+/// modules before core from one directory and after it from another, and
+/// every phase that walks modules in index order (the checker's schedule,
+/// the interner merge, the backend's whole-program passes) saw a different
+/// program. The index order is instead `numberedBefore`'s: package (app,
+/// core, platform), then platform layer, then the path relative to the
+/// package root — every part of it independent of where anything lives.
 pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
     std.mem.sort(Pending, store.pending.items, {}, struct {
         fn lessThan(_: void, a: Pending, b: Pending) bool {
@@ -388,28 +432,41 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
             };
         }
     }.lessThan);
-    try store.files.ensureUnusedCapacity(gpa, store.pending.items.len);
+
+    // Collapse each path's entries into its first, compacting the
+    // survivors to the front of `pending`.
+    var survivors: usize = 0;
     var i: usize = 0;
     while (i < store.pending.items.len) {
-        const p = &store.pending.items[i];
+        var p = store.pending.items[i];
+        // Sorted `app` first, so the path is an argument path exactly when
+        // its first entry is.
+        p.named = p.package == .app;
         // Fold every later entry for this path into `p`. The strongest
         // package wins (core over app) and a non-embedded source wins over
         // an embedded one, whichever order they arrived in.
-        var pkg = p.package;
-        var source = p.source;
-        var rel_start = p.rel_start;
         var j = i + 1;
         while (j < store.pending.items.len and std.mem.eql(u8, store.pending.items[j].path, p.path)) : (j += 1) {
             const dup = &store.pending.items[j];
-            if (@intFromEnum(dup.package) > @intFromEnum(pkg)) {
-                pkg = dup.package;
-                rel_start = dup.rel_start;
+            if (@intFromEnum(dup.package) > @intFromEnum(p.package)) {
+                p.package = dup.package;
+                p.rel_start = dup.rel_start;
+                p.layer = dup.layer;
             }
-            if (dup.source == null) source = null;
+            if (dup.source == null) p.source = null;
             gpa.free(dup.path);
             dup.path = &.{};
         }
-        const derived: ModuleName = if (rel_start) |start|
+        store.pending.items[survivors] = p;
+        survivors += 1;
+        i = j;
+    }
+    const kept = store.pending.items[0..survivors];
+    std.mem.sort(Pending, kept, {}, numberedBefore);
+
+    try store.files.ensureUnusedCapacity(gpa, kept.len);
+    for (kept) |*p| {
+        const derived: ModuleName = if (p.rel_start) |start|
             try moduleNameFromRelative(gpa, p.path[start..])
         else
             .{ .invalid_segment = p.path };
@@ -421,18 +478,44 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
             .path = p.path,
             .module_name = name,
             .module_path_valid = derived == .valid,
-            .package = pkg,
-            .embedded = source != null,
-            // Sorted `app` first, so `p` is an argument path exactly when
-            // any entry for this path was.
-            .named = p.package == .app,
-            .bytes = source orelse empty_source,
+            .package = p.package,
+            .embedded = p.source != null,
+            .named = p.named,
+            .bytes = p.source orelse empty_source,
             .line_starts = &.{},
         });
         p.path = &.{}; // ownership moved
-        i = j;
     }
     store.pending.clearRetainingCapacity();
+
+    const by_path = try gpa.alloc(Index, store.files.len);
+    for (by_path, 0..) |*slot, k| slot.* = @enumFromInt(k);
+    const all = store.files.items(.path);
+    std.mem.sort(Index, by_path, all, struct {
+        fn lessThan(ps: []const []const u8, a: Index, b: Index) bool {
+            return std.mem.lessThan(u8, ps[a.int()], ps[b.int()]);
+        }
+    }.lessThan);
+    gpa.free(store.by_path);
+    store.by_path = by_path;
+}
+
+/// The numbering order of `finish`: package, then platform layer, then the
+/// path relative to the package's root, then — for a path under no root,
+/// and for two roots holding one relative path, both of which are reported
+/// rather than compiled — the path itself.
+fn numberedBefore(_: void, a: Pending, b: Pending) bool {
+    if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
+    if (a.layer != b.layer) return a.layer < b.layer;
+    if ((a.rel_start == null) != (b.rel_start == null)) return a.rel_start != null;
+    if (a.rel_start) |ra| {
+        switch (std.mem.order(u8, a.path[ra..], b.path[b.rel_start.?..])) {
+            .lt => return true,
+            .gt => return false,
+            .eq => {},
+        }
+    }
+    return std.mem.lessThan(u8, a.path, b.path);
 }
 
 pub const ModuleName = union(enum) {
@@ -543,17 +626,43 @@ test "finish sorts, deduplicates and derives module names; find is exact" {
     try store.finish(testing.allocator);
 
     try testing.expectEqual(@as(u32, 4), store.count());
+    // Under the root by relative path, then the one under no root.
     try testing.expectEqualDeep(@as([]const []const u8, &.{
-        "elsewhere/X.beni", "src/Main.beni", "src/Page/Home.beni", "src/bad name.beni",
+        "src/Main.beni", "src/Page/Home.beni", "src/bad name.beni", "elsewhere/X.beni",
     }), store.paths());
-    try testing.expectEqualStrings("Main", store.moduleName(@enumFromInt(1)));
-    try testing.expectEqualStrings("Page.Home", store.moduleName(@enumFromInt(2)));
-    try testing.expect(!store.modulePathValid(@enumFromInt(0)));
+    try testing.expectEqualStrings("Main", store.moduleName(@enumFromInt(0)));
+    try testing.expectEqualStrings("Page.Home", store.moduleName(@enumFromInt(1)));
+    try testing.expect(!store.modulePathValid(@enumFromInt(2)));
     try testing.expect(!store.modulePathValid(@enumFromInt(3)));
-    try testing.expectEqualStrings("", store.moduleName(@enumFromInt(3)));
-    try testing.expectEqual(@as(?Index, @enumFromInt(2)), store.find("src/Page/Home.beni"));
+    try testing.expectEqualStrings("", store.moduleName(@enumFromInt(2)));
+    try testing.expectEqual(@as(?Index, @enumFromInt(1)), store.find("src/Page/Home.beni"));
+    try testing.expectEqual(@as(?Index, @enumFromInt(3)), store.find("elsewhere/X.beni"));
     try testing.expectEqual(@as(?Index, null), store.find("src/Page"));
     try testing.expectEqual(@as(usize, 0), store.pending.items.len);
+}
+
+test "finish numbers by package, layer and relative path, wherever the project lives" {
+    // One project spelled from two directories, one sorting before `core/`
+    // and `platforms/` and one after: the numbering is the same.
+    for ([_][]const u8{ "aaa/p/", "zzz/p/" }) |prefix| {
+        var store: SourceStore = .{};
+        defer store.deinit(testing.allocator);
+        var buffer: [64]u8 = undefined;
+        try store.addEmbedded(testing.allocator, "core/List.beni", 5, .core, "");
+        store.layer = 1;
+        try store.addEmbedded(testing.allocator, "platforms/node/Io.beni", 15, .platform, "");
+        store.layer = 0;
+        try store.addEmbedded(testing.allocator, "zz/Tea.beni", 3, .platform, "");
+        for ([_][]const u8{ "Main.beni", "A/B.beni" }) |rel| {
+            const p = try std.fmt.bufPrint(&buffer, "{s}{s}", .{ prefix, rel });
+            try store.addPending(testing.allocator, p, @intCast(prefix.len), .app);
+        }
+        try store.finish(testing.allocator);
+        var names: [5][]const u8 = undefined;
+        for (&names, 0..) |*n, i| n.* = store.moduleName(@enumFromInt(i));
+        try testing.expectEqualDeep(@as([]const []const u8, &.{ "A.B", "Main", "List", "Tea", "Io" }), @as([]const []const u8, &names));
+        try testing.expectEqual(@as(?Index, @enumFromInt(3)), store.find("zz/Tea.beni"));
+    }
 }
 
 test "relStart" {

@@ -27,7 +27,7 @@
 //!     bad edge from producing a diagnostic per module in the loop.
 //!   - **Order.** The stable topological order of §4.4: Kahn over the
 //!     CONDENSATION, picking the ready component whose first member is
-//!     lexically smallest, then its members in `(package, path)` order. The
+//!     smallest by file index, then its members in file-index order. The
 //!     condensation is what makes this total even with cycles present, and
 //!     picking by name rather than by discovery makes it a function of the
 //!     input rather than of the traversal.
@@ -414,7 +414,8 @@ pub fn build(
     var cycle_members: std.ArrayList(Index) = .empty;
     errdefer cycle_members.deinit(gpa);
 
-    // 1. Name every module and index it. File order is path order, so the
+    // 1. Name every module and index it. Within a package file order is
+    //    relative-path order (`SourceStore.finish`), so the
     //    FIRST file to claim a `(package, name)` keeps it and any later one
     //    is `duplicate_module` — deterministic without a tie-break rule.
     var name_limit: u32 = 0;
@@ -910,7 +911,7 @@ fn scheduleAndReportCycles(
 
     // Members of each component, grouped: the condensation's node `c` owns
     // `members[starts[c]..starts[c + 1]]`, filled in module-index order,
-    // which is `(package, path)` order because that is how files are
+    // which is `(package, layer, relative path)` order because that is how files are
     // numbered.
     const starts = try scratch.alloc(u32, component_count + 1);
     @memset(starts, 0);
@@ -930,7 +931,7 @@ fn scheduleAndReportCycles(
         const group = members[starts[c]..starts[c + 1]];
         if (group.len < 2) continue;
         for (group) |m| g.modules.items(.poisoned)[m.int()] = true;
-        const first = group[0]; // lexically first: module order is path order
+        const first = group[0]; // first by file index (`SourceStore.finish`)
         const cycle_start: u32 = @intCast(cycle_members.items.len);
         try g.appendCyclePath(gpa, scratch, component, group, first, cycle_members);
         try diagnostics.append(gpa, .{
@@ -952,7 +953,8 @@ fn scheduleAndReportCycles(
     //
     // The ready set is a min-heap keyed by a component's FIRST MEMBER,
     // which is its lexically smallest module — `members` is filled in
-    // file-index order and files are numbered in `(package, path)` order.
+    // file-index order and files are numbered in `(package, layer,
+    // relative path)` order (`SourceStore.finish`).
     // A module belongs to exactly one component, so the key is unique and
     // the heap has no tie to break: the order is a function of the names
     // and never of the traversal (`fast-compiler.md` §10), which is the

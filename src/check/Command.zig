@@ -334,13 +334,12 @@ fn printDependencyDigests(gpa: Allocator, stdout: *Io.Writer, session: *Session)
 ///
 /// Keyed on the PATH and not on the module name, because the front end is per
 /// file: a path that names no module still has tokens and a line table. The
-/// store's paths are already sorted — `SourceStore.finish` numbers them that
-/// way and the file index is that order — so this walks them and asserts
-/// nothing about ordering that enumeration did not already fix.
+/// file index is not path order (`SourceStore.finish`), so this walks the
+/// store's path-sorted view.
 fn printFrontendKeys(stdout: *Io.Writer, session: *Session) !void {
     const FileKey = @import("../cache/FileKey.zig");
-    for (0..session.store.count()) |i| {
-        const file: @TypeOf(session.store).Index = @enumFromInt(i);
+    for (session.store.byPath()) |file| {
+        const i = file.int();
         // A core module no wave reached has no front end and so no key
         // (checker.md §4.1, amended 2026-10-01).
         if (!session.lowered[i]) continue;

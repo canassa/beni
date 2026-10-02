@@ -1617,6 +1617,28 @@ binaries because merge order follows thread timing (04 §5). Rules: stable input
 *before* parallel work starts (module index by sorted path, never completion order); results re-keyed
 by that id before merging; global tables append-then-sort; two-run output diffing in CI.
 
+*Amended 2026-10-02: "input-derived" means the input, not where it lives.* "Module index by sorted
+path" took the path as spelled, and a spelled path carries the project's location: the embedded
+packages' paths are fixed (`core/List.beni`, `platforms/node/Io.beni`), so `beni build aaa/app`
+put the project's modules before core and `beni build zzz/app` put them after it, and every pass
+that walks modules in index order — the checker's schedule and its tie-breaks, the interner merge,
+the backend's whole-program passes, the manifest — saw two different programs. Output differed
+(the manifest's order in every development build; a `--release` single-use inlining in
+`run/Int32Bits`), and a specialiser defect that depended on module order showed from one directory
+and hid from the gates' (`run/SpecializeEscapeThenSpread`). The rule since: **file index is
+`(package, platform layer, path relative to the package root, path)`** — packages in the order
+app, core, platform; a platform chain's packages in chain order (`boundary.md` §9.1, the named
+platform first), never by where each lives; within a package the module path below its root,
+which is what names the module. The spelled path is consulted only to deduplicate (an app file at
+a core file's path IS that core module, `SourceStore`'s header) and as the last tie-break, which
+only paths under no root (no module) and two roots holding one module (`duplicate_module`) reach.
+A lookup by path (`SourceStore.find`) and every listing promised in path order (`fmt`'s, the
+interface and dispatch dumps of a directory, `--frontend-keys`) use a path-sorted view instead of
+the index. The order is the one the corpus harness's paths already produced — the project's
+`Main.beni` sorts before `core/` — so no golden moved. `build_test.zig`'s *a build is
+byte-identical wherever the project lives* builds one project from three directories on either
+side of `core` and at two depths, and compares every file both builds write.
+
 ## 11. What we are deliberately not doing
 
 | Not doing | Why |

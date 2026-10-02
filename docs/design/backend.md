@@ -316,7 +316,7 @@ perform and none is performed.
 
 The check runs over the list of files the build is about to write, **after everything is produced
 and before the first byte is written**, so a refused build leaves nothing behind exactly as
-`boundary.md` §4's checks do. The list is built in module order, which is sorted-path order and
+`boundary.md` §4's checks do. The list is built in module order, which is file-index order (`fast-compiler.md` §10) and
 never completion order (CLAUDE.md rule 5), so the pair reported is the same at every `--jobs`. The
 diagnostic is `output_path_collision`; it names both output paths and the two files they came from,
 because the fault is in neither one alone.
@@ -3711,7 +3711,7 @@ they are: each list is a pure function of that module's `Bir` and dispatch table
 emit workers by one `Reach.Builder` per thread and written only into its own slot.)* The
 **reachability walk is serial**, because a fixpoint over a whole-program graph is, and it is
 nothing: 278 nodes for the null program, O(declarations) at any size, microseconds against §13's
-800 ms budget. Node identity is input-derived end to end — `Graph.Index` comes from the sorted path
+800 ms budget. Node identity is input-derived end to end — `Graph.Index` comes from the file index
 (CLAUDE.md rule 5), a declaration index is source order, a `Derived` index is the sorted-by-name
 order §7.1 of the spike fixes before anything indexes it — and the pass's output is a *set*, so
 visit order cannot reach the bytes. `--jobs=1` against `--jobs=8` covers it with no new machinery.
@@ -6308,7 +6308,7 @@ point that prints a given list of statements into a caller's buffer; it prints `
 ### Determinism, M4 and M5
 
 **Determinism needs no new machinery.** Entry order, node identity, colour order and chunk names are
-all functions of sorted paths and source order (CLAUDE.md rule 5), and the colouring's output is a
+all functions of the file index and source order (CLAUDE.md rule 5), and the colouring's output is a
 *set*. `--jobs=1` against `--jobs=8` covers it exactly as it covers §9, with `--release` in the
 matrix.
 

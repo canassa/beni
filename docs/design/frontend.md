@@ -108,7 +108,10 @@ Options common to all subcommands:
 Paths: a `<path>` is a `.beni` file or a directory. A directory is walked recursively; every
 `.beni` file under it is a module; hidden entries (`.` prefix) are skipped. Files are processed
 in **sorted path order** and numbered before any parallel work starts — that file index is the
-stable id every later structure is keyed by. Module names come from the path relative to
+stable id every later structure is keyed by. *(Amended 2026-10-02, `fast-compiler.md` §10: the
+numbering is by package, platform layer and the path relative to the package root, so it does not
+depend on where the project lives; sorted path order is what deduplication and every listing use.)*
+Module names come from the path relative to
 `--root`; without `--root`, the root is the directory argument for directory paths and the file's
 own directory for file paths (so `beni check Main.beni` names the module `Main`).
 

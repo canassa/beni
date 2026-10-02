@@ -78,7 +78,7 @@
 //! §8.1 key.
 //!
 //! **Determinism.** Every node identity is input-derived end to end: a
-//! `Graph.Index` comes from the sorted path (CLAUDE.md rule 5), a
+//! `Graph.Index` comes from the file index (`fast-compiler.md` §10), a
 //! declaration index is source order, and a `Derived` index is the
 //! sorted-by-name order §7.1 of the spike fixes before anything indexes it.
 //! The output is a SET, so visit order cannot reach the bytes.
