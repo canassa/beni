@@ -1,0 +1,38 @@
+-- run: a loop called from two places, one of which nothing reaches, is
+-- written in its one reachable caller under `--release` (`backend.md` §9,
+-- *A function called once is written where it is called*, amended
+-- 2026-10-02) and computes what the call computed in both builds: its
+-- carried variables start from the arguments, evaluated once each and in
+-- order (`Debug.log` shows the order), and its exits write the binding.
+import Debug
+import Node exposing (Program)
+
+
+collatz : Int, Int → Int
+collatz n steps =
+    if n ≤ 1 then
+        steps
+    else if Int.mod n 2 == 0 then
+        collatz (n // 2) (steps + 1)
+    else
+        collatz (3 * n + 1) (steps + 1)
+
+
+start : String, Int → Int
+start label n = Debug.log label n
+
+
+report : Int → String
+report n =
+    first = start "first" n
+    zero = start "zero" 0
+    total = collatz first zero
+    "${String.fromInt n} takes ${String.fromInt total}"
+
+
+unused : Int → Int
+unused n = collatz n 1
+
+
+main : Program
+main = Node.printLines [ report 6, report 27, report 1 ]

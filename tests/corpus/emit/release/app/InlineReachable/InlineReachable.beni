@@ -1,0 +1,64 @@
+-- emit: a function called once in the program reachability leaves is
+-- written where it is called, however many calls the module's source has
+-- (`backend.md` §9, *A function called once is written where it is
+-- called*, amended 2026-10-02):
+--
+--   * `sumTo` is a loop called twice in this module, from `report` and
+--     from `unused` — but nothing reaches `unused`, so `report`'s call is
+--     its only one: the loop is written in `report`, its exits writing
+--     `total`, and `sumTo` is not written at all;
+--   * `countDown` is called from `report` and from `alsoUsed`, both
+--     reached, and stays a function;
+--   * core's `List.get` is `pub` and its helper `unsafeGet` has callers
+--     in `List` this program does not reach: `unsafeGet` is no loop, so it
+--     is not written into `get`, which stays small enough to be written
+--     into `pick`, where the `Just` it returns is never built — `pick` is
+--     a test and a read.
+import Node exposing (Program)
+
+
+sumTo : Int, Int → Int
+sumTo n acc =
+    if n ≤ 0 then
+        acc
+    else
+        sumTo (n - 1) (acc + n)
+
+
+countDown : Int, Int → Int
+countDown n steps =
+    if n ≤ 1 then
+        steps
+    else
+        countDown (n // 2) (steps + 1)
+
+
+report : Int → String
+report n =
+    total = sumTo n 0
+    halvings = countDown n 0
+    "${String.fromInt total} ${String.fromInt halvings}"
+
+
+alsoUsed : Int → Int
+alsoUsed n = countDown (n * 3) 1
+
+
+unused : Int → Int
+unused n = sumTo n 1
+
+
+pick : List String, Int → String
+pick words i = List.get words i ▷ Maybe.withDefault "none"
+
+
+main : Program
+main =
+    words = String.words "alpha beta gamma"
+    Node.printLines
+        [ report 3
+        , report 40
+        , String.fromInt (alsoUsed 5)
+        , pick words (List.length words - 2)
+        , pick words (alsoUsed 2)
+        ]

@@ -5445,6 +5445,46 @@ change, which keeps each call; `run/BoundLoops` (the same shapes and an exit ins
 argument with an effect evaluated once, in both builds); every `browser/` page's release pass. The
 measurements are step 4's (`plans/runtime-in-beni.md`).
 
+**Amended 2026-10-02: the calls counted are the reachable program's** (`Lower.findInlines`). The
+rule counted every reference in the module, a declaration reachability removed (§9's *Roots*)
+included, so a helper whose other callers no build of this program writes was still "called
+twice": the fiber kernel's run loop paid a call to `pushBack` in every build because `begin`, a
+combinator's, called it too, and `core/Task.beni` carried `takeOn`, a copy for `begin`, to keep the
+loop's call the only one. **A reference counts only when it stands in a declaration whose direct
+or suspendable body survives.** One exception keeps a decision whole-program specialisation makes
+better: a function that is no loop, whose other calls were removed, is **not** written into a
+`pub` function. A `pub` function is the one *Once the whole program is in view* writes into
+another module's caller, which it does only when the body names nothing of its own module that the
+caller's module does not name already — so `List.get` holding `unsafeGet`'s body stayed a call in
+`run/BoundLoops` and `run/SpecializeMaybe`, and the `Just` it returns was built on every call,
+where before it was a test and a read (*Slice 9*). A loop is not held back: no later pass writes a
+loop in place. And `core/List`'s core-private values (`unsafeGet`, `view`, `base`, `offset`,
+`close`; §4) are never candidates: the emitter calls them from a list pattern or a scalar view in
+any module, a call no `Bir` reference stands for, so the one reference counted is never the only
+one — they had kept other callers until this amendment, and `run/TailCallEvidence` and
+`run/QuestionPositions` named a `base` that was no longer written when they lost them.
+
+`takeOn` stays (`core/Task.beni`): in a build that reaches no combinator the two spellings now
+compile to the same bytes, but in one that does — `begin` and the run loop both live — one shared
+`pushBack` would be a function called from both, and the copy keeps each written in place.
+Measured on `bench/fiber/Bench.beni` (`--library --release`, instructions per operation,
+`node --single-threaded`, three rounds): the shared function was 5 brotli bytes smaller and
+`yieldNow` 973 → 978, `forEach` over 16 1 033 → 1 118, `race` 13 704 → 13 739 — never better —
+so the copy keeps its place.
+
+Measured (`bench/size.mjs`, release brotli, the whole bundle): total 747 226 → **747 011**; 39
+programs smaller, 13 larger, 395 equal, no program's raw bytes larger — every larger brotli figure
+is a renaming of equal or fewer bytes (`run/VirtualClockInherited` +31 at equal raw bytes, the
+most). The largest wins are the fiber kernel's helpers, called once in a program that reaches no
+combinator: `run/ScopeDeferLifo` 4 241 → 4 219, `run/MainParkedForever` 3 194 → 3 176,
+`run/VirtualClockNow` 3 712 → 3 694, and the `browser-tea` navigation page 5 841 → 5 823. The
+delegated listener of the `browser` runtime now holds its dispatch loop in place
+(`emit/release/split/HolesPage` 4 059 → 4 032 raw). Without the exception `run/BoundLoops` grew
+1 240 → 1 262 and `run/SpecializeMaybe` 1 684 → 1 696, each building a `Just` per call. Fixtures: `emit/release/app/InlineReachable` (a loop
+whose other caller is unreachable written in place, a loop with two live callers kept, `List.get`
+not grown) — red against the compiler before the change; `run/InlineReachable` (the loop's
+arguments evaluated once, in order, in both builds).
+
 ### Whole-program specialisation
 
 *Added 2026-10-02 (research 47 §6 item 8), specified ahead of the build; what is built, and where

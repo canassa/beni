@@ -2565,9 +2565,12 @@ callAs fiber h work arg =
     r
 
 
--- `pushBack`, for `begin`: a copy, so that the run loop's own call of
--- `pushBack` stays its only one, and is written in place there in a build
--- that never reaches a combinator.
+-- `pushBack`, for `begin`: a copy, so that in a build that reaches a
+-- combinator, where the run loop and `begin` both live, each has a loop of
+-- its own written in place, and the run loop pays no call per park
+-- (`backend.md` §9, *A function called once …*, amended 2026-10-02, has
+-- the measurements). A build that reaches no combinator writes the same
+-- bytes either way.
 takeOn : V, V, Int → ()
 takeOn stack ks i =
     if i < 0 then

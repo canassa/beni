@@ -8684,9 +8684,9 @@ pub const Lowerer = struct {
     /// it is called*): a live function of this module, not `pub`, not the
     /// entry, named by no dispatch answer, with no evidence, no second body
     /// and nothing in it that may suspend, whose every reference in the
-    /// module — and nothing outside the module can name it — is ONE call,
-    /// saturated, with no evidence, that cannot suspend, in another
-    /// declaration that has no second body.
+    /// module's live declarations — and nothing outside the module can name
+    /// it — is ONE call, saturated, with no evidence, that cannot suspend, in
+    /// another declaration that has no second body.
     fn findInlines(l: *Lowerer) !void {
         const decls = l.bir.decls;
         l.inline_candidate = try l.scratch.alloc(bool, decls.len);
@@ -8713,15 +8713,36 @@ pub const Lowerer = struct {
         if (l.in.entry_decl) |index| if (index < decls.len) {
             named[index] = true;
         };
+        // `core/List`'s core-private values: the emitter calls them from
+        // code no `Bir` reference stands for (a list pattern, a scalar
+        // view), here and in other modules, so a reference counted here is
+        // never the only one.
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) == l.in.module) {
+            for (decls, 0..) |d, i| {
+                if (corePrivateSlot(l.bir.symbol(d.name)) != null) named[i] = true;
+            }
+        }
         const uses = try l.scratch.alloc(u32, decls.len);
         @memset(uses, 0);
         const self_uses = try l.scratch.alloc(u32, decls.len);
         @memset(self_uses, 0);
+        // References from declarations reachability removed, which are not
+        // written and so call nothing; and whether the live reference
+        // counted last stands in a `pub` declaration.
+        const dead_uses = try l.scratch.alloc(u32, decls.len);
+        @memset(dead_uses, 0);
+        const pub_caller = try l.scratch.alloc(bool, decls.len);
+        @memset(pub_caller, false);
         const good = try l.scratch.alloc(bool, decls.len);
         @memset(good, false);
         l.inline_loops = try l.scratch.alloc(bool, decls.len);
         @memset(l.inline_loops, false);
         for (decls, 0..) |caller, c| {
+            // A function reachability removed is not written, so its calls
+            // are not calls of the program (`backend.md` §9, *A function
+            // called once …*, amended 2026-10-02): a helper whose other
+            // callers were all removed is called once.
+            const dead = caller.kind == .value and !l.liveDecl(@intCast(c)) and !l.liveTwin(@intCast(c));
             const caller_twin = l.in.dispatch.effectDecl(@intCast(c)).twin;
             var at = caller.inst_start.int();
             while (at < caller.inst_end.int()) : (at += 1) {
@@ -8733,7 +8754,12 @@ pub const Lowerer = struct {
                     self_uses[callee] += 1;
                     continue;
                 }
+                if (dead) {
+                    dead_uses[callee] += 1;
+                    continue;
+                }
                 uses[callee] += 1;
+                pub_caller[callee] = caller.is_pub;
                 const site = call_of[at].unwrap() orelse continue;
                 if (caller_twin) continue;
                 const args = l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)).len();
@@ -8767,6 +8793,14 @@ pub const Lowerer = struct {
                 if (tag == .markup) break true;
             } else false;
             if (returns) continue;
+            // Not a function that is no loop into a `pub` one, when its
+            // other calls were removed: whole-program specialisation writes
+            // a `pub` function into another module's caller only when its
+            // body names nothing of its own module that the caller's module
+            // does not name already, and this body would bring its module's
+            // internals in — `List.get` holding `unsafeGet`'s body stays a
+            // call, and the `Just` it returns is built.
+            if (self_uses[i] == 0 and dead_uses[i] != 0 and pub_caller[i]) continue;
             if (self_uses[i] != 0) {
                 if (self_uses[i] != l.tailSelfCalls(index, l.bodyOf(index))) continue;
                 l.inline_loops[i] = true;
