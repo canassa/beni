@@ -674,6 +674,25 @@ editor case. §4's argument against polling is about *how* to watch, not *when*.
 
 **D9 — Cancellation semantics.** → the cooperative per-module flag, §4.4 option (2).
 
+*Decided 2026-10-03 by the owner*, after [`research/53`](../docs/design/research/53-daemon-prior-art.md)
+(sixteen daemons' choices and failures): **D6–D9 as recommended above, with these additions.**
+- **D6:** the protocol carries unsaved-buffer contents and immutable snapshot handles from its
+  first version. The daemon is keyed by the compiler build id: a client whose id differs replaces
+  the daemon rather than talking to it (Bazel's rule; version skew is the most-reported daemon
+  failure — gopls, tsserver, Gradle, Kotlin, dune). The socket lives inside the project, not in
+  `$TMPDIR` (gopls #41266), and a stale socket or lock is detected and removed, never trusted.
+- **D7:** the ceiling is a flag with a default of 2 GiB, about 20× the measured 100k-line baseline;
+  at the ceiling the daemon restarts cleanly from the on-disk cache.
+- **D8:** when watching arrives with the LSP, the editor's change notifications are the default
+  source (gopls's default); a beni-owned OS watcher, if ever, is opt-in — watchers are research 53's
+  largest source of reported failures (inotify limits, FSEvents rename recrawls, watcher feedback
+  loops, Windows).
+- **D9:** an edit that arrives mid-build may be merged into the running build instead of cancelling
+  it (Sorbet, esbuild); the specification chooses per request. Nothing is ever killed mid-write
+  (Bazel's third Ctrl-C loses its whole cache).
+- **D10 — idle shutdown** (new): the daemon exits after a period with no clients, as every daemon in
+  research 53 does (gopls 1 min, Gradle and Bazel 3 h); the default is the specification's to set.
+
 ---
 
 ## 8. Risks, and what could not be determined
