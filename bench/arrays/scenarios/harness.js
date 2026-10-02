@@ -20,7 +20,10 @@ import { measure, keep, cellLine } from '../lib/measure.js';
 // Inputs, deterministic
 
 const NIL = { $: 0, a: null, b: null };
-const consOf = (arr) => { let l = NIL; for (let i = arr.length - 1; i >= 0; i--) l = { $: 1, a: arr[i], b: l }; return l; };
+// a beni `List`: cons cells from a compiler before the array-backed List (all.mjs's BENI_BEFORE),
+// else the shipped List, whose plain form is a JS array
+const LIST_IS_CONS = typeof LIST_CONS === 'boolean' ? LIST_CONS : true;
+const consOf = (arr) => { if (!LIST_IS_CONS) return arr.slice(); let l = NIL; for (let i = arr.length - 1; i >= 0; i--) l = { $: 1, a: arr[i], b: l }; return l; };
 function jsonText(n) {
   const xs = [];
   let seed = 4242;
@@ -203,7 +206,7 @@ export function run(name, only, skip = [], pick = null) {
 
 const fnv = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
 const dig = (a) => fnv(JSON.stringify(toJs(a)));
-const listDig = (l) => { const xs = []; for (; l.$ === 1; l = l.b) xs.push(l.a); return fnv(JSON.stringify(xs)); };
+const listDig = (l) => { if (!LIST_IS_CONS) return fnv(JSON.stringify(Array.isArray(l) ? l : l.$plain())); const xs = []; for (; l.$ === 1; l = l.b) xs.push(l.a); return fnv(JSON.stringify(xs)); };
 export function test() {
   const out = [];
   const log = (k, v) => out.push(`${k} ${v}`);

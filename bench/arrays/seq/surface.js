@@ -151,8 +151,16 @@ export const compare = FULL && K.compare ? K.compare : (m0, xs, ys) => {
   return n === m ? 'EQ' : n < m ? 'LT' : 'GT';
 };
 const NIL = { $: 0, a: null, b: null };
-export const fromList = FULL && K.fromList ? K.fromList : (l) => { const out = []; for (; l.$ === 1; l = l.b) out.push(l.a); return done(out); };
-export const toList = FULL && K.toList ? K.toList : (x) => { const a = toJs(x); let l = NIL; for (let i = a.length - 1; i >= 0; i--) l = { $: 1, a: a[i], b: l }; return l; };
+// `List` as the compiled program holds it, for §15's `fromList`/`toList`: cons cells from a compiler
+// before the array-backed List (all.mjs's BENI_BEFORE), else the shipped List, read by backend.md
+// §4's protocol and handed back as a fresh plain array.
+const LIST_IS_CONS = typeof LIST_CONS === 'boolean' ? LIST_CONS : true;
+export const fromList = LIST_IS_CONS
+  ? (FULL && K.fromList ? K.fromList : (l) => { const out = []; for (; l.$ === 1; l = l.b) out.push(l.a); return done(out); })
+  : (l) => fromJs((Array.isArray(l) ? l : l.$plain()).slice());
+export const toList = LIST_IS_CONS
+  ? (FULL && K.toList ? K.toList : (x) => { const a = toJs(x); let l = NIL; for (let i = a.length - 1; i >= 0; i--) l = { $: 1, a: a[i], b: l }; return l; })
+  : (x) => toJs(x).slice();
 const order = (f) => (x, y) => { const o = f(x, y); return o === 'LT' ? -1 : o === 'GT' ? 1 : 0; };
 export const sortWith = FULL && K.sortWith ? K.sortWith : FULL
   ? (x, f) => done(toJs(x).slice().sort(order(f)))

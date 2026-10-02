@@ -41,6 +41,15 @@ const beniBin = path.join(repo, 'zig-out/bin/beni');
 // flip, `BENI_BEFORE` names such a compiler (and `BENI_BEFORE_CORE` its core, by default the
 // `core/` two directories above its `zig-out/bin`), so report 46's figures still reproduce. The
 // `beni` candidate is this repository's own compiler and core, unrewritten.
+//
+// Without `BENI_BEFORE` the two rewritten list programs are not built at all: this repository's
+// compiler writes a list as an array, reads a walked list by a scalar view (`List$base`,
+// `List$offset`, `List$view`, which `lists/first-core` does not declare) and builds by `push`,
+// none of which lib/rewrite.js can turn into a candidate's calls. The run is then §15's array
+// scenarios for every candidate (`arr` names `List` only as the shipped one) and the list programs
+// for `beni` alone, `beni` the reference. Report 46's list tables come from a checkout of the
+// commit it was measured at, whose sources the compiler of that day parses.
+const before = Boolean(process.env.BENI_BEFORE);
 const beniBefore = process.env.BENI_BEFORE ? path.resolve(process.env.BENI_BEFORE) : beniBin;
 const coreBefore = process.env.BENI_BEFORE_CORE ? path.resolve(process.env.BENI_BEFORE_CORE)
   : process.env.BENI_BEFORE ? path.resolve(beniBefore, '../../../core') : path.join(repo, 'core');
@@ -116,13 +125,17 @@ function build() {
   for (const f of ['Array.beni', 'Array.js']) fs.copyFileSync(`scenarios/${f}`, `${OUT}/core-arr/${f}`);
   const arrSrc = copySources(['scenarios/src'], `${OUT}/src-arr`);
   beni([`--core-root=${OUT}/core-arr`, `--root=${OUT}/src-arr`, `--out=${OUT}/arr`, ...arrSrc]);
-  // elm: the cons-cell core
-  const elmSrc = copySources(['lists/src', 'ops/elm'], `${OUT}/src-elm`);
-  beni([`--core-root=${coreBefore}`, `--root=${OUT}/src-elm`, `--out=${OUT}/elm-raw`, ...elmSrc]);
   // beni: both list programs as they are, over the shipped core
+  const elmSrc = copySources(['lists/src', 'ops/elm'], `${OUT}/src-elm`);
   beni([`--root=${OUT}/src-elm`, `--out=${OUT}/elm-beni`, ...elmSrc], beniBin);
   const firstSrcBeni = copySources(['lists/first', 'ops/first'], `${OUT}/src-first-beni`);
   beni([`--root=${OUT}/src-first-beni`, `--out=${OUT}/first-beni`, ...firstSrcBeni], beniBin);
+  if (!before) {
+    console.log(`built ${path.relative(here, OUT)}/{arr,elm-beni,first-beni} with ${path.relative(here, beniBin)}; no BENI_BEFORE, so not the rewritten list programs`);
+    return;
+  }
+  // elm: the cons-cell core
+  beni([`--core-root=${coreBefore}`, `--root=${OUT}/src-elm`, `--out=${OUT}/elm-raw`, ...elmSrc]);
   // first: core with the array-first List
   fs.cpSync(coreBefore, `${OUT}/core-first`, { recursive: true });
   for (const f of ['List.beni', 'List.js']) fs.copyFileSync(`lists/first-core/${f}`, `${OUT}/core-first/${f}`);
@@ -157,7 +170,18 @@ function plugin(cand, prog) {
     };
   }
   const tree = path.join(OUT, prog === 'elm-raw' ? 'elm-raw' : prog);
-  const sibling = c.sibling ? path.join(here, c.sibling) : path.join(here, 'seq/surface.js');
+  let sibling = c.sibling ? path.join(here, c.sibling) : path.join(here, 'seq/surface.js');
+  if (c.sibling && !before) {
+    // a hand-written sibling's `fromList`/`toList` speak cons cells; over the shipped List they go
+    // through its own `fromJs`/`toJs` instead (seq/surface.js does the same)
+    const shim = path.join(OUT, `sibling-${cand}.mjs`);
+    fs.writeFileSync(shim, `export * from ${JSON.stringify(sibling)};
+import { fromJs, toJs } from ${JSON.stringify(sibling)};
+export const fromList = (l) => fromJs((Array.isArray(l) ? l : l.$plain()).slice());
+export const toList = (a) => toJs(a).slice();
+`);
+    sibling = shim;
+  }
   const basics = path.join(OUT, `basics-${prog}.mjs`);
   if (prog !== 'arr') fs.writeFileSync(basics, `export * from ${JSON.stringify(path.join(tree, '_core/Basics.foreign.mjs'))};\nexport { basicsAppend as append } from 'list-rt';\n`);
   return {
@@ -188,7 +212,7 @@ else if (P.mode === 'stack') stack(P.cand, P.n, [], of, [P.op]);
 else if (P.mode === 'mem') mem(P.cand, P.op, P.n, of);
 else run(P.cand, P.n, [], of, [P.op]);`,
 };
-const defines = (cand, first) => ({ 'process.env.NODE_ENV': '"production"', ADA_T: '256', HYB_T: '1024', STYLE_FIRST: String(first),
+const defines = (cand, first) => ({ 'process.env.NODE_ENV': '"production"', ADA_T: '256', HYB_T: '1024', STYLE_FIRST: String(first), LIST_CONS: String(before),
   SEQ_FULL: String(!!CANDS[cand]?.full), ...(CANDS[cand]?.define ?? {}) });
 async function bundle(cand, prog, extra = {}) {
   const c = CANDS[cand], file = path.join(OUT, 'b', `${cand}-${prog}.js`);
@@ -212,8 +236,8 @@ const bundleOnce = (cand, prog) => { const k = `${cand}-${prog}`; if (!bundled.h
 async function labels() {
   const f = path.join(OUT, 'labels.json');
   if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
-  const run = async (prog) => JSON.parse(spawnSync(process.execPath, ['--stack-size=4000', await bundleOnce('cow', prog), JSON.stringify({ mode: 'labels' })], { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout);
-  const arr = await run('arr'), l = await run('first');
+  const run = async (prog, cand = 'cow') => JSON.parse(spawnSync(process.execPath, ['--stack-size=4000', await bundleOnce(cand, prog), JSON.stringify({ mode: 'labels' })], { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout);
+  const arr = await run('arr'), l = await run('first', before ? 'cow' : 'beni');
   const res = { arr, list: l.list, ops: l.ops };
   fs.writeFileSync(f, JSON.stringify(res));
   return res;
@@ -222,6 +246,7 @@ function chains(cands, L) {
   const out = [];
   for (const cand of cands) {
     if (CANDS[cand].only === 'elm') {
+      if (!before) continue;
       for (const group of ['list', 'ops']) for (const op of L[group]) out.push({ cand, group, style: 'elm', prog: 'elm', op, sizes: SIZES[group] });
       continue;
     }
@@ -229,6 +254,7 @@ function chains(cands, L) {
     for (const [sc, op, n] of L.arr.filter((c) => c[2] <= ARR_MAX)) { const k = `${sc}|${op}`; if (!byOp.has(k)) byOp.set(k, []); byOp.get(k).push(n); }
     if (CANDS[cand].only !== 'list') for (const [k, ns] of byOp) { const [sc, op] = k.split('|'); out.push({ cand, group: 'arr', style: 'index', prog: 'arr', sc, op, sizes: ns.sort((a, b) => a - b) }); }
     if (CANDS[cand].only === 'arr') continue;
+    if (!before && !CANDS[cand].beni) continue; // the rewritten list programs need BENI_BEFORE
     for (const group of ['list', 'ops']) for (const style of STYLES) for (const op of L[group]) out.push({ cand, group, style, prog: style, op, sizes: SIZES[group] });
   }
   return out;
@@ -436,11 +462,13 @@ async function modeTest() {
   let bad = 0;
   const needs = {};
   for (const prog of ['arr', 'elm', 'first']) {
-    const ref = await run(prog === 'arr' ? 'cow' : 'cons', prog === 'arr' ? 'arr' : 'elm'); // one reference for both list programs
+    // one reference for both list programs: cons cells, or without BENI_BEFORE the shipped List
+    const ref = await run(prog === 'arr' ? 'cow' : before ? 'cons' : 'beni', prog === 'arr' ? 'arr' : 'elm');
     if (ref.fail) throw new Error(`the reference failed: ${ref.fail}`);
     for (const cand of cands) {
       const only = CANDS[cand].only;
       if (only && only !== prog && !(only === 'list' && prog !== 'arr')) continue;
+      if (!before && prog !== 'arr' && !CANDS[cand].beni) continue; // not built without BENI_BEFORE
       const o = await run(cand, prog);
       if (o.fail) { report.push(`${prog} ${cand}: FAILED ${o.fail}`); bad++; continue; }
       // identity lines (§7: does a no-op return its input?) are a property, reported, not a result
@@ -797,7 +825,7 @@ function modeTablesE1tp() {
 if (mode === undefined) {
   // the default run: build if needed, then one quick round in Node (README.md)
   const t0 = Date.now();
-  if (!fs.existsSync(path.join(OUT, 'first'))) build();
+  if (!fs.existsSync(path.join(OUT, before ? 'first' : 'first-beni'))) build();
   if (!fs.existsSync(path.join(OUT, 'needs-persistence.json'))) await modeTest();
   fs.rmSync(process.env.RESULTS ?? 'results/all-quick-node.jsonl', { force: true });
   process.env.WORKERS ??= '8';

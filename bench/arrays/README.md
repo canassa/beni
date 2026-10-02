@@ -29,6 +29,24 @@ cell, 8 workers. **It must stay under 5 minutes. Measured on 2026-09-30: 3 min
 about 9.** (With the three checks and without E1tp it was 4 min 19 s.) Results
 go to `results/all-quick-node.jsonl`; `node all.mjs tables quick` renders them.
 
+**Since the array-backed `List` (2026-10-01), what runs depends on `BENI_BEFORE`.**
+The `elm` and `first` programs below are cons-cell code whose list syntax
+`lib/rewrite.js` turns into each candidate's calls, and only a compiler from
+before the flip writes that syntax: today's writes a list as an array, walks
+it by a scalar view (`List$base`, `List$offset`, `List$view`, which
+`lists/first-core` does not declare) and builds by `push`. So:
+
+- **without `BENI_BEFORE`** (the default) those two programs are not built.
+  Every candidate runs §15's array scenarios (`arr`, whose `List` is the
+  shipped one, handed over as a plain array), and the list programs run for
+  the `beni` candidate alone, which is also their reference in `test`.
+  Measured on 2026-10-02: 77 s of wall time, every check agreeing;
+- **with `BENI_BEFORE=<a pre-flip zig-out/bin/beni>`** (and `BENI_BEFORE_CORE`
+  for its core) every candidate runs every program, as for report 46. The
+  sources here are in today's syntax, which a pre-flip compiler does not
+  parse, so report 46's list tables are reproduced from a checkout of the
+  commit they were measured at.
+
 ### The full sweep (opt-in): `FULL=1`
 
 ```sh
