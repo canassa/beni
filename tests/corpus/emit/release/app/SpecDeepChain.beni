@@ -1,0 +1,208 @@
+-- emit: a chain of 24 functions, each passing its own parameter on to the
+-- next (research 52, E1), pinned at what the release specialiser writes
+-- today. `main` calls `f1 7`, so every `x` is `7` and every test
+-- `x * 3 > 1000` is `false` — but fact 1 runs from caller to callee and the
+-- sweeps walk the program in the order it is written, callee first, so each
+-- level of the chain costs a sweep, and 24 levels reach the cap of 24
+-- sweeps. A round that does not converge rewrites nothing, so nothing is
+-- specialised anywhere, not even `7 * 3 > 1000` in `main`. With 23
+-- functions every parameter folds and goes. A worklist of facts rather than
+-- of ordered sweeps has no such cap (research 52 §4, slices 4–6), and this
+-- golden then moves.
+import Node exposing (Program)
+
+
+f1 : Int → Int
+f1 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f2 x * 2 + f2 x
+
+
+f2 : Int → Int
+f2 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f3 x * 2 + f3 x
+
+
+f3 : Int → Int
+f3 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f4 x * 2 + f4 x
+
+
+f4 : Int → Int
+f4 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f5 x * 2 + f5 x
+
+
+f5 : Int → Int
+f5 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f6 x * 2 + f6 x
+
+
+f6 : Int → Int
+f6 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f7 x * 2 + f7 x
+
+
+f7 : Int → Int
+f7 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f8 x * 2 + f8 x
+
+
+f8 : Int → Int
+f8 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f9 x * 2 + f9 x
+
+
+f9 : Int → Int
+f9 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f10 x * 2 + f10 x
+
+
+f10 : Int → Int
+f10 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f11 x * 2 + f11 x
+
+
+f11 : Int → Int
+f11 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f12 x * 2 + f12 x
+
+
+f12 : Int → Int
+f12 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f13 x * 2 + f13 x
+
+
+f13 : Int → Int
+f13 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f14 x * 2 + f14 x
+
+
+f14 : Int → Int
+f14 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f15 x * 2 + f15 x
+
+
+f15 : Int → Int
+f15 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f16 x * 2 + f16 x
+
+
+f16 : Int → Int
+f16 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f17 x * 2 + f17 x
+
+
+f17 : Int → Int
+f17 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f18 x * 2 + f18 x
+
+
+f18 : Int → Int
+f18 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f19 x * 2 + f19 x
+
+
+f19 : Int → Int
+f19 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f20 x * 2 + f20 x
+
+
+f20 : Int → Int
+f20 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f21 x * 2 + f21 x
+
+
+f21 : Int → Int
+f21 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f22 x * 2 + f22 x
+
+
+f22 : Int → Int
+f22 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f23 x * 2 + f23 x
+
+
+f23 : Int → Int
+f23 x =
+    if x * 3 > 1000 then
+        x
+    else
+        f24 x * 2 + f24 x
+
+
+f24 : Int → Int
+f24 x =
+    if x * 3 > 1000 then
+        x
+    else
+        x + 1
+
+
+main : Program
+main = Node.print (String.fromInt (f1 7))

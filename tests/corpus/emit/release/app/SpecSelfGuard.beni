@@ -1,0 +1,39 @@
+-- emit: a fact a branch hides from itself (research 52, E2), pinned at what
+-- the release specialiser writes today. `go` is only ever called with
+-- `False`, but its `verbose` arm — dead, because `verbose` is `False` —
+-- passes `True` to its own `verbose`, so the facts, which analyse both arms
+-- of every `if` whatever its test, make `verbose` ⊤, and ⊤ keeps the arm
+-- alive: no round of analyse, rewrite and prune can see past it. `quiet`
+-- is the same function with its dead arm passing `verbose` on, and folds
+-- to its `else`, its parameter gone. A combined analysis that only follows
+-- an arm its test can take folds both (research 52 §4, slice 6), and this
+-- golden then moves.
+import Node exposing (Program)
+
+
+go : Bool, Int → Int
+go verbose n =
+    if n ≤ 0 then
+        0
+    else if verbose then
+        100 + go True (n - 1)
+    else
+        1 + go verbose (n - 1)
+
+
+quiet : Bool, Int → Int
+quiet verbose n =
+    if n ≤ 0 then
+        0
+    else if verbose then
+        100 + quiet verbose (n - 1)
+    else
+        1 + quiet verbose (n - 1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (go False 10)
+        , String.fromInt (quiet False 10)
+        ]

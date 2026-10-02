@@ -237,6 +237,24 @@ pub const Counter = enum {
     /// A list holding nothing a sweep could act on is not counted, so the
     /// count does not grow with code the sweeps leave as it was.
     spec_lists_examined,
+    /// The same pass's work and its caps (`Spec.Stats`, research 52 §0.2's
+    /// E3, kept): whole analyses, the sweeps of facts 1, 2, 4 and 5, fact
+    /// 3's fixpoints and their sweeps, and the structural passes that
+    /// changed the program.
+    spec_analyses,
+    spec_sweeps,
+    spec_points_to_runs,
+    spec_points_to_sweeps,
+    spec_passes,
+    /// Each cap where it stopped work that would have gone on: a size
+    /// regression is traced to one of these first. An analysis that did
+    /// not converge rewrites nothing; a fact 3 that did not is not used.
+    spec_analyses_declined,
+    spec_points_to_declined,
+    spec_rounds_capped,
+    spec_passes_capped,
+    spec_init_capped,
+    spec_inline_capped,
 
     pub const count = @typeInfo(Counter).@"enum".fields.len;
 };

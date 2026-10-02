@@ -1,0 +1,1 @@
+import process from"node:process";const f=a=>{if(a.out.length!==0)process.stdout.write(a.out);process.exitCode=a.code};const g=b=>(Array.isArray(b)?b:b.$plain());const a=d=>{let c=g(d);return{code:0,out:c.length===0?"":`${c.join("\n")}\n`}};const b=a=>String(a);const c=(a,b)=>b<=0?0:a?100+c(true,b-1):1+c(a,b-1),d=a=>a<=0?0:1+d(a-1),e=a([b(c(false,10)),b(d(10))]);f(e);

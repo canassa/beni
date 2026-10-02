@@ -4884,3 +4884,82 @@ fn specListsExamined(arms: usize) !u64 {
     }
     return error.NoCounter;
 }
+
+test "the release specialiser counts a call chain deeper than its sweeps as a declined analysis" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Research 52's E1 (`emit/release/app/SpecDeepChain`): each function
+    // passes its parameter to the next, fact 1 runs from caller to callee
+    // and the sweeps walk callees first, so each level costs a sweep. 22
+    // levels converge within the cap of 24 sweeps in every analysis; 24 do
+    // not in the first, which then rewrites nothing. `--self-profile` says
+    // which cap stopped what (`backend.md` §9), so the cliff is a counter,
+    // not a guess.
+    const shallow = try specCounters(22);
+    const deep = try specCounters(24);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(shallow.analyses >= 1);
+    try testing.expectEqual(@as(u64, 0), shallow.analyses_declined);
+    try testing.expect(shallow.sweeps >= 22);
+    try testing.expect(deep.analyses_declined >= 1);
+}
+
+const SpecCounters = struct {
+    analyses: u64 = 0,
+    sweeps: u64 = 0,
+    analyses_declined: u64 = 0,
+};
+
+/// The specialiser's counters of a `--release` build of research 52's E1
+/// chain of `levels` functions.
+fn specCounters(levels: usize) !SpecCounters {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var source: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("import Node exposing (Program)\n\n\n");
+    for (1..levels + 1) |k| {
+        try out.print("f{d} : Int → Int\nf{d} x =\n    if x * 3 > 1000 then\n        x\n    else\n", .{ k, k });
+        if (k < levels) {
+            try out.print("        f{d} x * 2 + f{d} x\n\n\n", .{ k + 1, k + 1 });
+        } else try out.writeAll("        x + 1\n\n\n");
+    }
+    try out.writeAll("main : Program\nmain =\n    Node.print (String.fromInt (f1 7))\n");
+    try w.write("Main.beni", source.written());
+    const r = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--no-cache", "--release", "--self-profile=trace.json", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(r);
+    const Event = struct {
+        ph: []const u8,
+        args: struct {
+            spec_analyses: ?u64 = null,
+            spec_sweeps: ?u64 = null,
+            spec_analyses_declined: ?u64 = null,
+        } = .{},
+    };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var counters: SpecCounters = .{};
+    var seen: u32 = 0;
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        if (e.args.spec_analyses) |v| {
+            counters.analyses = v;
+            seen += 1;
+        }
+        if (e.args.spec_sweeps) |v| {
+            counters.sweeps = v;
+            seen += 1;
+        }
+        if (e.args.spec_analyses_declined) |v| {
+            counters.analyses_declined = v;
+            seen += 1;
+        }
+    }
+    if (seen != 3) return error.NoCounter;
+    return counters;
+}

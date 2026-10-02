@@ -324,6 +324,34 @@ pub const Stats = struct {
     /// (`backend.md` §9, *Field names are decided after specialisation*).
     copied: []const bool = &.{},
     copied_modules: []const bool = &.{},
+    /// Whole analyses (`analyse`): fact 3 to its fixpoint, then facts 1,
+    /// 2, 4 and 5 to theirs, each from ⊥.
+    analyses: u64 = 0,
+    /// Sweeps of facts 1, 2, 4 and 5 (`sweeps`), over every analysis.
+    sweeps: u64 = 0,
+    /// Fact 3's fixpoints (`Pts.fixpoint`: one per analysis, and one more
+    /// each time definite initialisation finds keys) and their sweeps.
+    points_to_runs: u64 = 0,
+    points_to_sweeps: u64 = 0,
+    /// Passes of the structural loop in `run` that changed the program.
+    passes: u64 = 0,
+    /// The caps, each counted where it stopped work that would have gone
+    /// on — the counters to read first when an output grew (research 52
+    /// §3.7). An analysis whose facts 1, 2, 4 and 5 did not converge in
+    /// `max_sweeps`, which rewrites nothing; a fact 3 that did not
+    /// converge in `max_pts_sweeps`, so that no fact 3 is used; `rounds`
+    /// stopped at `max_rounds` after a round that changed the program;
+    /// the structural loop stopped at `max_passes` after a pass that did;
+    /// definite initialisation stopped at `max_init_runs` while it still
+    /// found keys; and an inlining pass stopped at its own cap
+    /// (`max_inlines`, `inlineSmall`'s four turns, `foldConstructors`'
+    /// budget of a list).
+    analyses_declined: u64 = 0,
+    points_to_declined: u64 = 0,
+    rounds_capped: u64 = 0,
+    passes_capped: u64 = 0,
+    init_capped: u64 = 0,
+    inline_capped: u64 = 0,
 };
 
 pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
@@ -344,6 +372,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
         if (try s.constructors()) changed = true;
         if (try s.scalarReplace()) changed = true;
         if (!changed) break;
+        s.stats.passes += 1;
+        if (pass + 1 == max_passes) s.stats.passes_capped += 1;
         _ = try s.prune();
         try s.grow();
         try s.rounds();
@@ -840,6 +870,7 @@ const Spec = struct {
             // longer see.
             const pruned = try s.prune();
             if (!rewrote and !pruned) break;
+            if (round + 1 == max_rounds) s.stats.rounds_capped += 1;
         }
     }
 
@@ -983,14 +1014,20 @@ const Spec = struct {
             }
         }
         // Fact 3 first: a read it proves `undefined` folds like a literal.
+        s.stats.analyses += 1;
         try s.pts.analyse();
         s.spread_sites = try s.arena.alloc(bool, s.pts.sites.items.len);
-        if (std.debug.runtime_safety) {
-            var nodes: usize = 0;
-            for (s.mods) |*m| nodes += m.ir.nodes.len;
-            if (nodes <= Pts.max_checked_nodes) return s.checkedSweeps();
-        }
-        return s.sweeps(false);
+        const converged = converged: {
+            if (std.debug.runtime_safety) {
+                var nodes: usize = 0;
+                for (s.mods) |*m| nodes += m.ir.nodes.len;
+                if (nodes <= Pts.max_checked_nodes) break :converged try s.checkedSweeps();
+            }
+            break :converged try s.sweeps(false);
+        };
+        s.stats.sweeps += s.sweep_count;
+        if (!converged) s.stats.analyses_declined += 1;
+        return converged;
     }
 
     /// Facts 1, 2, 4 and 5 swept to their fixpoint, from what `analyse`
@@ -3300,6 +3337,7 @@ const Spec = struct {
             if (budget > 0 and try s.foldAt(m, top, &work, i)) {
                 changed = true;
                 budget -= 1;
+                if (budget == 0) s.stats.inline_capped += 1;
                 // The statements written in its place may fold again.
                 continue;
             }
@@ -4093,6 +4131,7 @@ const Spec = struct {
             const statements = try s.inlineStatementsPass();
             if (!expressions and !statements) break;
             any = true;
+            if (pass == 3) s.stats.inline_capped += 1;
         }
         return any;
     }
@@ -4599,6 +4638,7 @@ const Spec = struct {
         while (left > 0) : (left -= 1) {
             if (!try s.inlineOne()) break;
             any = true;
+            if (left == 1) s.stats.inline_capped += 1;
         }
         return any;
     }
@@ -6553,10 +6593,22 @@ const Pts = struct {
     /// the next run's call graph is this one's.
     fn analyse(p: *Pts) Allocator.Error!void {
         p.extra_init = .empty;
+        const stats = &p.s.stats;
         var attempt: u32 = 0;
         while (true) : (attempt += 1) {
             try p.fixpoint();
-            if (!p.ok or attempt == max_init_runs) return;
+            stats.points_to_runs += 1;
+            stats.points_to_sweeps += p.sweeps;
+            if (!p.ok) {
+                stats.points_to_declined += 1;
+                return;
+            }
+            // At the cap, asked once more only to count it: what it finds
+            // is no run's, since the next `analyse` starts afresh.
+            if (attempt == max_init_runs) {
+                if (try p.definiteInit()) stats.init_capped += 1;
+                return;
+            }
             if (!try p.definiteInit()) return;
         }
     }
