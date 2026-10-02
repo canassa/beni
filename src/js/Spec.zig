@@ -66,9 +66,28 @@ pub const none: u32 = std.math.maxInt(u32);
 /// them: the pass looks keys up in its innermost walks, where hashing the
 /// key's bytes cost more than the rest of the lookup. No map's order is
 /// ever an answer (`Determinism` above), so the hash is free to be cheap.
+///
+/// Open addressing with linear probing, at most half full, written here
+/// rather than `std.HashMapUnmanaged`: Zig's own backend, which builds the
+/// tests' compiler, inlines none of that map's generic layers, and a probe
+/// cost over a thousand instructions in the specialiser's walks. The
+/// interface is the part of std's the pass uses, with the same rule that
+/// an insertion invalidates every pointer handed out before it.
 fn KeyMap(comptime K: type, comptime V: type) type {
-    const Context = struct {
-        pub fn hash(_: @This(), k: K) u64 {
+    return struct {
+        const Map = @This();
+
+        slots: []Slot = &.{},
+        len: u32 = 0,
+
+        pub const empty: Map = .{};
+
+        const Slot = struct { key: K, value: V, used: bool };
+
+        pub const GetOrPutResult = struct { key_ptr: *K, value_ptr: *V, found_existing: bool };
+        pub const KV = struct { key_ptr: *K, value_ptr: *V };
+
+        inline fn hash(k: K) u64 {
             var h: u64 = 0x9E3779B97F4A7C15;
             inline for (@typeInfo(K).@"struct".fields) |f| {
                 h = (h ^ @as(u32, @field(k, f.name))) *% 0xFF51AFD7ED558CCD;
@@ -76,14 +95,87 @@ fn KeyMap(comptime K: type, comptime V: type) type {
             }
             return h;
         }
-        pub fn eql(_: @This(), a: K, b: K) bool {
+
+        inline fn eql(a: K, b: K) bool {
             inline for (@typeInfo(K).@"struct".fields) |f| {
                 if (@field(a, f.name) != @field(b, f.name)) return false;
             }
             return true;
         }
+
+        /// The slot holding `k`, or the free one it would take. The table
+        /// is never full, so the probe ends.
+        fn find(m: *const Map, k: K) usize {
+            const mask = m.slots.len - 1;
+            var i: usize = @intCast(hash(k) & mask);
+            while (true) : (i = (i + 1) & mask) {
+                const slot = &m.slots[i];
+                if (!slot.used or eql(slot.key, k)) return i;
+            }
+        }
+
+        pub fn count(m: Map) u32 {
+            return m.len;
+        }
+
+        pub fn get(m: Map, k: K) ?V {
+            if (m.len == 0) return null;
+            const slot = &m.slots[m.find(k)];
+            return if (slot.used) slot.value else null;
+        }
+
+        pub fn getOrPut(m: *Map, gpa: Allocator, k: K) Allocator.Error!GetOrPutResult {
+            if ((m.len + 1) * 2 > m.slots.len) try m.grow(gpa);
+            const slot = &m.slots[m.find(k)];
+            if (!slot.used) {
+                slot.* = .{ .key = k, .value = undefined, .used = true };
+                m.len += 1;
+                return .{ .key_ptr = &slot.key, .value_ptr = &slot.value, .found_existing = false };
+            }
+            return .{ .key_ptr = &slot.key, .value_ptr = &slot.value, .found_existing = true };
+        }
+
+        pub fn put(m: *Map, gpa: Allocator, k: K, v: V) Allocator.Error!void {
+            (try m.getOrPut(gpa, k)).value_ptr.* = v;
+        }
+
+        fn grow(m: *Map, gpa: Allocator) Allocator.Error!void {
+            const old = m.slots;
+            m.slots = try gpa.alloc(Slot, if (old.len == 0) 16 else old.len * 2);
+            for (m.slots) |*slot| slot.used = false;
+            for (old) |slot| if (slot.used) {
+                m.slots[m.find(slot.key)] = slot;
+            };
+            gpa.free(old);
+        }
+
+        pub fn clearRetainingCapacity(m: *Map) void {
+            for (m.slots) |*slot| slot.used = false;
+            m.len = 0;
+        }
+
+        pub fn clone(m: Map, gpa: Allocator) Allocator.Error!Map {
+            return .{ .slots = try gpa.dupe(Slot, m.slots), .len = m.len };
+        }
+
+        pub const Iterator = struct {
+            slots: []Slot,
+            i: usize = 0,
+
+            pub fn next(it: *Iterator) ?KV {
+                while (it.i < it.slots.len) {
+                    const slot = &it.slots[it.i];
+                    it.i += 1;
+                    if (slot.used) return .{ .key_ptr = &slot.key, .value_ptr = &slot.value };
+                }
+                return null;
+            }
+        };
+
+        pub fn iterator(m: *const Map) Iterator {
+            return .{ .slots = m.slots };
+        }
     };
-    return std.HashMapUnmanaged(K, V, Context, std.hash_map.default_max_load_percentage);
 }
 
 /// The literals' table's keys (`Spec.intern`), hashed by the same kind of
