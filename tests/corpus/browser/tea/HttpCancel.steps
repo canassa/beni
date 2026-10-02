@@ -1,0 +1,7 @@
+click #a
+click #ab
+respond 1 200 "too late"
+click #stop
+respond 2 200 "too late too"
+click #abc
+respond 3 200 "found"

@@ -1,8 +1,9 @@
--- Every way `Http` answers is a value (boundary.md §4.1, §9.8.8): a body,
--- `BadBody` for text asked for as JSON, and `BadUrl` for a URL `fetch`
--- cannot parse. The requests are to `data:` URLs, so the page needs no
--- network; each result is sent back as a message and shown, sorted,
--- since the order the answers arrive in is the host's.
+-- Every way `Http` answers is a value (boundary.md §4.1, §9.8.12): a body
+-- read as text, an answer read for nothing, and `BadUrl` for a URL that
+-- does not parse. The requests are to `data:` URLs, which the host's own
+-- `fetch` answers, so the page needs no server; each result is sent back as
+-- a message and shown, sorted, since the order the answers arrive in is
+-- the host's.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Http
@@ -24,14 +25,8 @@ show result =
         Err (Http.BadUrl url) ->
             "bad url ${url}"
 
-        Err Http.NetworkError ->
-            "network error"
-
-        Err (Http.BadStatus code) ->
-            "bad status ${String.fromInt code}"
-
-        Err (Http.BadBody why) ->
-            "bad body: ${why}"
+        Err _ ->
+            "another error"
 
 
 update : Msg, List String -> ( List String, Cmd Msg )
@@ -40,10 +35,17 @@ update msg lines =
         Fetch ->
             ( lines
             , Cmd.batch
-                [ Cmd.task (λ() -> Http.get "data:text/plain,hello") (Got "text" _)
-                , Cmd.task (λ() -> Http.getJson "data:application/json,[1,2]") (Got "json" _)
-                , Cmd.task (λ() -> Http.getJson "data:text/plain,hello") (Got "not json" _)
-                , Cmd.task (λ() -> Http.get "http://[::1") (Got "bad url" _)
+                [ Cmd.task
+                    (λ() -> Http.get { url = "data:text/plain,hello", expect = Http.expectString })
+                    (Got "text" _)
+                , Cmd.task
+                    (λ() ->
+                        Http.get { url = "data:text/plain,hello", expect = Http.expectWhatever }
+                    )
+                    λr -> Got "whatever" (Result.map r λ() -> "()")
+                , Cmd.task
+                    (λ() -> Http.get { url = "http://[::1", expect = Http.expectString })
+                    (Got "bad url" _)
                 ]
             )
 

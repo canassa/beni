@@ -1,179 +1,588 @@
---! HTTP requests from a page (`docs/design/boundary.md` §9.8.8). A request
---! waits in the calling fiber only, and a failure is a value: every way a
---! request can fail is a constructor of `Error`. Cancelling the fiber that
---! waits aborts the request, so a `Restart` releases the connection at
---! once rather than ignoring the answer when it comes.
+--! HTTP requests from a page (`docs/design/boundary.md` §9.8.12): elm/http
+--! 2.0, its pieces under their names, as direct forms. A request waits in
+--! the calling fiber and returns its answer as a `Result`, and every way a
+--! request can fail is a value: each failure the URL and Fetch standards
+--! document is one constructor, found by a test of the value where it can
+--! be and by the error's class where it cannot, and anything else stops the
+--! page (CLAUDE.md rule 9). Cancelling the fiber that waits aborts the
+--! request — its connection, its body and its timer — so a keyed
+--! `Restart` releases the old request at once. The command form is
+--! `Cmd.task` over a request:
 --!
---! A program that should be testable without a network takes its requests
---! as a record of functions, and a test passes one that answers itself.
+--!     Search q ->
+--!         ( model, Cmd.keyed SearchKey Cmd.Restart λsend ->
+--!             send (Found (Http.get { url = "/api/search?q=" ++ q, expect = Http.expectString })) )
 
+import Dict exposing (Dict)
 import Js
 import Task exposing (Resume)
+import Time exposing (Duration)
 
 
---| How a request failed: a URL `fetch` refuses, no answer (the network,
---| CORS, an unreachable host), an answer whose status is not 2xx, or a
---| body that is not what was asked for.
+--| How a request failed: an address that does not parse (or holds a user
+--| name or password), a request the host would refuse, found before
+--| anything is sent, the request's own timeout, no answer at all (the
+--| network, DNS, a refused connection, CORS, a body cut off), or an answer
+--| whose status is not 2xx.
 pub type Error
     = BadUrl String
+    | BadRequest Problem
+    | Timeout
     | NetworkError
     | BadStatus Int
-    | BadBody String
 
 
---| `GET` the URL: its body as text.
-pub get : String -> Result Error String
-get url = request "GET" url "" "" False
+--| Why a request was refused before it was sent.
+pub type Problem
+    = InvalidMethod String
+    | ForbiddenMethod String
+    | InvalidHeader String
+    | ForbiddenHeader String
+    | BodyNotAllowed String
 
 
---| `POST` the text to the URL: the answer's body as text.
-pub post : String, String -> Result Error String
-post url body = request "POST" url "text/plain;charset=UTF-8" body False
+--| A request header: its name and its value.
+pub opaque type Header
+    = Header String String
 
 
---| `GET` JSON from the URL: the body's text, once it parses as JSON, and
---| `BadBody` when it does not.
-pub getJson : String -> Result Error String
-getJson url = request "GET" url "" "" True
+--| A header, sent as given; a name given twice is sent once with both
+--| values, joined.
+--|
+--|     Http.header "Authorization" ("Bearer " ++ token)
+pub header : String, String -> Header
+header name value = Header name value
 
 
---| `POST` JSON text to the URL: the answer's body's text, once it parses
---| as JSON, and `BadBody` when it does not.
-pub postJson : String, String -> Result Error String
-postJson url body = request "POST" url "application/json" body True
+--| What a request sends.
+pub opaque type Body
+    = Empty
+    | Text String String
 
 
--- What the waiting fiber is resumed with: the request's `Result`, or a
--- failure no standard documents, thrown here, in the fiber that asked — a
--- defect, which stops the page with the request's stack
--- (`docs/design/boundary.md` §9.8.10 (c); CLAUDE.md rule 9).
-type Answer
-    = Answered (Result Error String)
+--| No body.
+pub emptyBody : Body
+emptyBody = Empty
+
+
+--| Text, sent with its MIME type as the `Content-Type` unless a header
+--| names one.
+--|
+--|     Http.stringBody "text/plain" "hello"
+pub stringBody : String, String -> Body
+stringBody mime text = Text mime text
+
+
+--| How the answer is read: what it is turned into, with which errors.
+pub opaque type Expect x a
+    = Expect String (Response String -> Result x a)
+
+
+--| The body as text; a status that is not 2xx is `BadStatus`.
+pub expectString : Expect Error String
+expectString = Expect "" λresponse -> answered response
+
+
+--| Nothing of the body; a status that is not 2xx is `BadStatus`.
+pub expectWhatever : Expect Error ()
+expectWhatever = Expect "" λresponse -> Result.map (answered response) λ_ -> ()
+
+
+--| The whole answer, as `f` reads it: every failure, and the status, the
+--| headers and the body of an answer whatever its status.
+pub expectStringResponse : (Response String -> Result x a) -> Expect x a
+expectStringResponse f = Expect "" f
+
+
+--| An answer, or why there is none.
+pub type Response body
+    = BadUrl_ String
+    | BadRequest_ Problem
+    | Timeout_
+    | NetworkError_
+    | BadStatus_ Metadata body
+    | GoodStatus_ Metadata body
+
+
+--| What came with an answer: the address that answered, after redirects;
+--| the status and its text (`""` over HTTP/2 and HTTP/3, which carry
+--| none); and the headers, names lower-cased and a repeated header's
+--| values joined with `", "`. A cross-origin answer shows only the headers
+--| its server exposes, and `Set-Cookie` never: that is the host's rule.
+pub type alias Metadata =
+    url : String
+    statusCode : Int
+    statusText : String
+    headers : Dict String String
+
+
+--| How far a request has got.
+pub type Progress
+    = Sending { sent : Int, size : Int }
+    | Receiving { received : Int, size : Maybe Int }
+
+
+--| A request. It is checked before it is sent: the URL (relative to the
+--| page), the method, each header and the body, each failure a
+--| `BadRequest` or `BadUrl`. `credentials` is `same-origin`. The timeout,
+--| when there is one, runs from the moment the request is sent until its
+--| body has been read; zero or less times out at once.
+--|
+--|     Http.request
+--|         { method = "DELETE"
+--|         , headers = [ Http.header "Authorization" token ]
+--|         , url = "/api/items/7"
+--|         , body = Http.emptyBody
+--|         , expect = Http.expectWhatever
+--|         , timeout = Just (Time.seconds 10)
+--|         , tracker = Nothing
+--|         }
+pub request :
+      { method : String
+      , headers : List Header
+      , url : String
+      , body : Body
+      , expect : Expect x a
+      , timeout : Maybe Duration
+      , tracker : Maybe (Progress -> ())
+      }
+    -> Result x a
+request r =
+    send problemOf "same-origin" r.method r.headers r.url r.body r.expect (timerOf r.timeout)
+
+
+--| `request` with the browser's credentials — cookies, authorization —
+--| sent to any origin: `credentials` is `include`.
+pub riskyRequest :
+      { method : String
+      , headers : List Header
+      , url : String
+      , body : Body
+      , expect : Expect x a
+      , timeout : Maybe Duration
+      , tracker : Maybe (Progress -> ())
+      }
+    -> Result x a
+riskyRequest r =
+    send problemOf "include" r.method r.headers r.url r.body r.expect (timerOf r.timeout)
+
+
+--| `GET` the URL.
+--|
+--|     Http.get { url = "/api/items", expect = Http.expectString }
+pub get : { url : String, expect : Expect x a } -> Result x a
+get r = send unchecked "same-origin" "GET" [] r.url Empty r.expect NoTimer
+
+
+--| `POST` the body to the URL.
+pub post : { url : String, body : Body, expect : Expect x a } -> Result x a
+post r = send bodyChecks "same-origin" "POST" [] r.url r.body r.expect NoTimer
+
+
+-- ---- What a request does (§9.8.12 (b)) ------------------------------------
+
+-- The request's own timeout. Only `request` and `riskyRequest` make an
+-- `After`, so a program that only gets and posts ships no timer.
+type Timer
+    = NoTimer
+    | After Int
+
+
+timerOf : Maybe Duration -> Timer
+timerOf timeout =
+    case timeout of
+        Just d ->
+            After (Time.inMillis d)
+
+        Nothing ->
+            NoTimer
+
+
+-- Steps 2–4, as a function: `get` and `post` have a standard method and no
+-- header, so `get`, with no body, checks nothing and `post` only its body,
+-- and a program that only gets and posts ships no method or header check.
+type alias Checks =
+    String, List Header, Body -> Maybe Problem
+
+
+unchecked : String, List Header, Body -> Maybe Problem
+unchecked _ _ _ = Nothing
+
+
+bodyChecks : String, List Header, Body -> Maybe Problem
+bodyChecks method _ body = bodyProblem method body
+
+
+send : Checks, String, String, List Header, String, Body, Expect x a, Timer -> Result x a
+send checks credentials method headers url body (Expect accept read) timer =
+    read (exchange checks credentials method headers url body accept timer)
+
+
+-- Steps 1–7: the checks, in order, each a test of the value; then the
+-- request, sent, and its answer.
+exchange : Checks, String, String, List Header, String, Body, String, Timer -> Response String
+exchange checks credentials method headers url body accept timer =
+    target = resolve url
+    if
+        Js.isNull target
+            || not (Js.same (Js.get target "username") (Js.from ""))
+            || not (Js.same (Js.get target "password") (Js.from ""))
+    then
+        BadUrl_ url
+    else
+        case checks method headers body of
+            Just problem ->
+                BadRequest_ problem
+
+            Nothing ->
+                sent credentials method headers target body accept timer
+
+
+-- The URL resolved against the page, or null: `URL.parse` answers null
+-- for what does not parse, and an engine without it has `new URL`, whose
+-- one documented failure is a `TypeError`.
+resolve : String -> Js.Value
+resolve url =
+    constructor = Js.global "URL"
+    base = Js.get (Js.global "document") "baseURI"
+    if Js.isUndefined (Js.get constructor "parse") then
+        Js.catchIf
+            (λ() -> Js.construct constructor [ Js.from url, base ])
+            (λerror -> Js.instanceOf error (Js.global "TypeError"))
+            λ_ -> Js.null
+    else
+        Js.call constructor "parse" [ Js.from url, base ]
+
+
+-- Steps 2–4: the first problem of the method, the headers in order, then
+-- the body.
+problemOf : String, List Header, Body -> Maybe Problem
+problemOf method headers body =
+    upper = String.toUpper method
+    if not (isToken method) then
+        Just (InvalidMethod method)
+    else if isForbiddenMethod upper then
+        Just (ForbiddenMethod method)
+    else
+        case List.filterMap headers headerProblem of
+            [ problem, ..._ ] ->
+                Just problem
+
+            [] ->
+                bodyProblem upper body
+
+
+-- RFC 9110's `token`: one or more `tchar`.
+isToken : String -> Bool
+isToken text =
+    Js.to (Js.call (Js.regExp "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" "") "test" [ Js.from text ])
+
+
+isForbiddenMethod : String -> Bool
+isForbiddenMethod upper = upper == "CONNECT" || upper == "TRACE" || upper == "TRACK"
+
+
+-- A name that is not a token, or a value that after trimming HTTP
+-- whitespace holds NUL, CR or LF or a character `Headers` cannot hold (one
+-- above U+00FF), is invalid: `Headers` would throw a `TypeError`. A
+-- forbidden request-header name the host would drop.
+headerProblem : Header -> Maybe Problem
+headerProblem (Header name value) =
+    if not (isToken name) || not (isHeaderValue value) then
+        Just (InvalidHeader name)
+    else if isForbiddenHeader (String.toLower name) value then
+        Just (ForbiddenHeader name)
+    else
+        Nothing
+
+
+isHeaderValue : String -> Bool
+isHeaderValue value =
+    trimmed =
+        Js.call
+            (Js.call (Js.from value) "replace" [ Js.regExp "^[\\t\\n\\r ]+" "", Js.from "" ])
+            "replace"
+            [ Js.regExp "[\\t\\n\\r ]+$" "", Js.from "" ]
+    not (Js.to (Js.call (Js.regExp "[\\0\\r\\n\\u0100-\\uffff]" "") "test" [ trimmed ]))
+
+
+-- The Fetch standard's forbidden request-header names, compared without
+-- case.
+isForbiddenHeader : String, String -> Bool
+isForbiddenHeader lower value =
+    List.member forbiddenHeaders lower
+        || String.startsWith lower "proxy-"
+        || String.startsWith lower "sec-"
+        || List.member overrides lower
+            && List.any (String.split value ",") λm ->
+                isForbiddenMethod (String.toUpper (String.trim m))
+
+
+forbiddenHeaders : List String
+forbiddenHeaders =
+    [ "accept-charset"
+    , "accept-encoding"
+    , "access-control-request-headers"
+    , "access-control-request-method"
+    , "connection"
+    , "content-length"
+    , "cookie"
+    , "cookie2"
+    , "date"
+    , "dnt"
+    , "expect"
+    , "host"
+    , "keep-alive"
+    , "origin"
+    , "referer"
+    , "set-cookie"
+    , "te"
+    , "trailer"
+    , "transfer-encoding"
+    , "upgrade"
+    , "via"
+    ]
+
+
+overrides : List String
+overrides = [ "x-http-method", "x-http-method-override", "x-method-override" ]
+
+
+bodyProblem : String, Body -> Maybe Problem
+bodyProblem upper body =
+    case body of
+        Empty ->
+            Nothing
+
+        Text _ _ ->
+            if upper == "GET" || upper == "HEAD" then
+                Just (BodyNotAllowed upper)
+            else
+                Nothing
+
+
+-- Steps 5–7. The headers in order, then the defaults no header names;
+-- sent with an `AbortController` of the request's own, whose abort is what
+-- cancelling the fiber does. What the host's `fetch` throws synchronously
+-- is not caught: steps 1–4 found every failure the standard documents for
+-- what this module gives it.
+sent : String, String, List Header, Js.Value, Body, String, Timer -> Response String
+sent credentials method headers target body accept timer =
+    flight = Js.array [ Js.construct (Js.global "AbortController") [], Js.null, Js.null ]
+    init =
+        Js.from
+            { body = payload body
+            , credentials = credentials
+            , headers = headersOf headers body accept
+            , method = method
+            , mode = "cors"
+            , redirect = "follow"
+            , signal = Js.get (Js.at flight 0) "signal"
+            }
+    case timer of
+        After ms ->
+            if ms <= 0 then
+                Timeout_
+            else
+                _ = start flight ms
+                answer flight (Js.get target "href") init
+
+        NoTimer ->
+            answer flight (Js.get target "href") init
+
+
+headersOf : List Header, Body, String -> Js.Value
+headersOf headers body accept =
+    all = Js.construct (Js.global "Headers") []
+    _ = List.foldl headers () λ(Header name value) _ ->
+        Js.to (Js.call all "append" [ Js.from name, Js.from value ])
+    _ =
+        case body of
+            Text mime _ ->
+                defaultHeader all "content-type" mime
+
+            Empty ->
+                ()
+    _ =
+        if accept == "" then
+            ()
+        else
+            defaultHeader all "accept" accept
+    all
+
+
+defaultHeader : Js.Value, String, String -> ()
+defaultHeader all name value =
+    if Js.to (Js.call all "has" [ Js.from name ]) then
+        ()
+    else
+        Js.to (Js.call all "set" [ Js.from name, Js.from value ])
+
+
+payload : Body -> Js.Value
+payload body =
+    case body of
+        Empty ->
+            Js.undefined
+
+        Text _ text ->
+            Js.from text
+
+
+-- The request's timer: when it fires, the request is aborted with a
+-- `TimeoutError` of its own, which is how its rejection is told from any
+-- other. A flight is `[ controller, timer, reason ]`.
+start : Js.Value, Int -> ()
+start flight ms =
+    reason =
+        Js.construct (Js.global "DOMException")
+            [ Js.from "The request timed out.", Js.from "TimeoutError" ]
+    _ = Js.setAt flight 2 reason
+    timer =
+        Js.apply (Js.global "setTimeout")
+            [ Js.from λ() -> Js.to (Js.call (Js.at flight 0) "abort" [ reason ]), Js.from ms ]
+    Js.setAt flight 1 timer
+
+
+-- Stop the timer, if there is one.
+settled : Js.Value -> ()
+settled flight =
+    if Js.isNull (Js.at flight 1) then
+        ()
+    else
+        Js.to (Js.apply (Js.global "clearTimeout") [ Js.at flight 1 ])
+
+
+-- What a promise of the request gave the fiber that waits on it.
+type Step
+    = Got Js.Value
+    | Failed (Response String)
     | Defect Js.Value
 
 
-request : String, String, String, String, Bool -> Result Error String
-request method url contentType body json =
-    case Task.callback λresume -> start method url contentType body json resume of
-        Answered result ->
-            result
+-- Send, then read the body as text: its answer, or the failure.
+answer : Js.Value, Js.Value, Js.Value -> Response String
+answer flight href init =
+    case wait flight λ() -> Js.apply (Js.global "fetch") [ href, init ] of
+        Got response ->
+            case wait flight λ() -> Js.call response "text" [] of
+                Got text ->
+                    _ = settled flight
+                    received response (Js.to text)
+
+                Failed failure ->
+                    failure
+
+                Defect error ->
+                    Js.throw error
+
+        Failed failure ->
+            failure
 
         Defect error ->
             Js.throw error
 
 
--- Begin one `fetch`, resume the waiting fiber once with its `Answer`, and
--- return what aborts it (transparent-effects-proposal.md §16.5). Each
--- failure the Fetch and URL standards document is one constructor of
--- `Error`, caught by its kind and nothing broader: `new URL` throws a
--- `TypeError` for a URL it cannot parse (`BadUrl`); `fetch` and reading the
--- body reject with a `TypeError` when no answer came (`NetworkError`) and
--- with an `AbortError` after this request's own abort, when the fiber is
--- gone and nothing waits; `JSON.parse` throws a `SyntaxError` (`BadBody`).
-start : String, String, String, String, Bool, Resume Answer -> (() -> ())
-start method url contentType body json resume =
-    if parses url then
-        abort = Js.construct (Js.global "AbortController") []
-        headers = Js.construct (Js.global "Object") []
-
-        _ =
-            if contentType == "" then
-                ()
-            else
-                Js.set headers "Content-Type" (Js.from contentType)
-
-        _ =
-            if json then
-                Js.set headers "Accept" (Js.from "application/json")
-            else
-                ()
-
-        init =
-            { body =
-                if method == "GET" then
-                    Js.undefined
-                else
-                    Js.from body
-            , headers = headers
-            , method = method
-            , signal = Js.get abort "signal"
-            }
-
-        _ =
-            Js.call (Js.apply (Js.global "fetch") [ Js.from url, Js.from init ]) "then"
-                [ Js.from λresponse -> received response json abort resume
-                , Js.from λerror -> failed error abort resume
-                ]
-        λ() -> Js.to (Js.call abort "abort" [])
-    else
-        _ = resumeWith resume (Answered (Err (BadUrl url)))
-        λ() -> ()
-
-
--- Whether `new URL` takes the address, relative to the page's own.
-parses : String -> Bool
-parses url =
-    Js.catchIf
-        (λ() ->
-            _ =
-                Js.construct (Js.global "URL")
-                    [ Js.from url, Js.get (Js.global "location") "href" ]
-            True
-        )
-        (λerror -> Js.instanceOf error (Js.global "TypeError"))
-        λ_ -> False
-
-
--- The response came: read its body, then answer.
-received : Js.Value, Bool, Js.Value, Resume Answer -> ()
-received response json abort resume =
+-- Wait for one promise of the request. A rejection is told apart in this
+-- order (§9.8.12 (c), as amended): the request's own abort, by its
+-- signal — its timeout when the reason is its timer's, else the fiber's
+-- cancellation, when nothing waits and nothing is resumed — then a
+-- `TypeError`, the Fetch standard's network error, and anything else, a
+-- defect thrown in the waiting fiber. Cancelling the fiber aborts the
+-- request and stops its timer.
+wait : Js.Value, (() -> Js.Value) -> Step
+wait flight promise = Task.callback λresume ->
     _ =
-        Js.call (Js.call response "text" []) "then"
-            [ Js.from λtext -> resumeWith resume (answered response json text)
-            , Js.from λerror -> failed error abort resume
+        Js.call (promise ()) "then"
+            [ Js.from λvalue -> resumeWith resume (Got value)
+            , Js.from λerror -> rejected flight resume error
             ]
-    ()
+    λ() ->
+        _ = settled flight
+        Js.to (Js.call (Js.at flight 0) "abort" [])
 
 
-answered : Js.Value, Bool, Js.Value -> Answer
-answered response json text =
-    if not (Js.to (Js.get response "ok")) then
-        Answered (Err (BadStatus (Js.to (Js.get response "status"))))
-    else if json then
-        -- Every throw is answered, and none is swallowed: the `SyntaxError`
-        -- `JSON.parse` documents is `BadBody`, and anything else is the
-        -- defect it is, thrown in the waiting fiber.
-        Js.catchIf
-            (λ() ->
-                _ = Js.call (Js.global "JSON") "parse" [ text ]
-                Answered (Ok (Js.to text))
-            )
-            (λ_ -> True)
-            λerror ->
-                if Js.instanceOf error (Js.global "SyntaxError") then
-                    Answered (Err (BadBody "not JSON"))
-                else
-                    Defect error
+rejected : Js.Value, Resume Step, Js.Value -> ()
+rejected flight resume error =
+    signal = Js.get (Js.at flight 0) "signal"
+    -- Aborted by this request itself: by its timer, whose reason is its
+    -- own, or by the fiber's cancellation, when nothing waits. What the
+    -- host rejects with then is the abort's consequence, whatever its
+    -- class: the reason, or an engine's `TypeError` for a body cut off.
+    if Js.to (Js.get signal "aborted") then
+        if Js.same (Js.get signal "reason") (Js.at flight 2) then
+            resumeWith resume (Failed Timeout_)
+        else
+            ()
     else
-        Answered (Ok (Js.to text))
-
-
--- A rejection: this request's own abort answers nothing, since the fiber
--- that waited is gone; a `TypeError` is `NetworkError`; anything else is a
--- defect.
-failed : Js.Value, Js.Value, Resume Answer -> ()
-failed error abort resume =
-    if
-        Js.instanceOf error (Js.global "Error")
-            && Js.same (Js.get error "name") (Js.from "AbortError")
-            && Js.to (Js.get (Js.get abort "signal") "aborted")
-    then
-        ()
-    else if Js.instanceOf error (Js.global "TypeError") then
-        resumeWith resume (Answered (Err NetworkError))
-    else
-        resumeWith resume (Defect error)
+        _ = settled flight
+        if Js.instanceOf error (Js.global "TypeError") then
+            resumeWith resume (Failed NetworkError_)
+        else
+            resumeWith resume (Defect error)
 
 
 resumeWith : Resume a, a -> ()
 resumeWith resume value = Js.to (Js.apply (Js.from resume) [ Js.from value ])
+
+
+-- Step 7: a status in 200–299 is `GoodStatus_`, any other `BadStatus_`.
+received : Js.Value, String -> Response String
+received response text =
+    metadata =
+        { url = Js.to (Js.get response "url")
+        , statusCode = Js.to (Js.get response "status")
+        , statusText = Js.to (Js.get response "statusText")
+        , headers = headersFrom (Js.get response "headers")
+        }
+    if Js.to (Js.get response "ok") then
+        GoodStatus_ metadata text
+    else
+        BadStatus_ metadata text
+
+
+-- What `response.headers` iterates, each name lower-cased and a name seen
+-- twice its values joined with ", ".
+headersFrom : Js.Value -> Dict String String
+headersFrom headers =
+    all = Js.ref Dict.empty
+    _ = Js.each headers λpair ->
+        name : String
+        name = Js.to (Js.call (Js.at pair 0) "toLowerCase" [])
+        value : String
+        value = Js.to (Js.at pair 1)
+        Js.write all (Dict.update (Js.read all) name λold -> Just (joined old value))
+    Js.read all
+
+
+joined : Maybe String, String -> String
+joined old value =
+    case old of
+        Just before ->
+            "${before}, ${value}"
+
+        Nothing ->
+            value
+
+
+-- Each failure is its `Error`; a 2xx answer is its body.
+answered : Response String -> Result Error String
+answered response =
+    case response of
+        BadUrl_ url ->
+            Err (BadUrl url)
+
+        BadRequest_ problem ->
+            Err (BadRequest problem)
+
+        Timeout_ ->
+            Err Timeout
+
+        NetworkError_ ->
+            Err NetworkError
+
+        BadStatus_ metadata _ ->
+            Err (BadStatus metadata.statusCode)
+
+        GoodStatus_ _ body ->
+            Ok body

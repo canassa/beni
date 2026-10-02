@@ -1,0 +1,115 @@
+-- What `Http` sends (boundary.md §9.8.12 (b)), read from the driver's
+-- fetch log: each method as written (`fetch` upper-cases only the
+-- standard ones, so `patch` goes lower-case), headers appended in order and
+-- a name given twice sent once with both values, `stringBody`'s MIME type
+-- as the `Content-Type` unless the program names one, which wins, no body
+-- and no `Content-Type` for `emptyBody`, and `riskyRequest`'s
+-- credentials. Each answer is shown as it comes.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type Msg
+    = Send String
+    | Got String (Result Http.Error String)
+
+
+shown : Result Http.Error String -> String
+shown result =
+    case result of
+        Ok text ->
+            "ok ${text}"
+
+        Err _ ->
+            "failed"
+
+
+plain : String, String, List Http.Header, Http.Body -> Result Http.Error String
+plain method url headers body =
+    Http.request
+        { method = method
+        , headers = headers
+        , url = url
+        , body = body
+        , expect = Http.expectString
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+work : String -> (() -> Result Http.Error String)
+work name =
+    case name of
+        "get" ->
+            λ() -> Http.get { url = "/items?page=2", expect = Http.expectString }
+
+        "headers" ->
+            λ() ->
+                plain
+                    "GET"
+                    "/headers"
+                    [ Http.header "X-B" "1", Http.header "X-A" "2", Http.header "x-b" "3" ]
+                    Http.emptyBody
+
+        "post" ->
+            λ() ->
+                Http.post
+                    { url = "/notes"
+                    , body = Http.stringBody "text/plain" "hello"
+                    , expect = Http.expectString
+                    }
+
+        "typed" ->
+            λ() ->
+                plain
+                    "PUT"
+                    "/notes/1"
+                    [ Http.header "Content-Type" "application/x-note" ]
+                    (Http.stringBody "text/plain" "hi")
+
+        "patch" ->
+            λ() -> plain "patch" "/notes/1" [] (Http.stringBody "text/plain" "p")
+
+        "delete" ->
+            λ() -> plain "DELETE" "/notes/1" [] Http.emptyBody
+
+        _ ->
+            λ() ->
+                Http.riskyRequest
+                    { method = "GET"
+                    , headers = []
+                    , url = "/me"
+                    , body = Http.emptyBody
+                    , expect = Http.expectString
+                    , timeout = Nothing
+                    , tracker = Nothing
+                    }
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Send name ->
+            ( lines, Cmd.task (work name) (Got name _) )
+
+        Got name result ->
+            ( lines ++ [ "${name}: ${shown result}" ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <For each={[ "get", "headers", "post", "typed", "patch", "delete", "risky" ]} keyed={False}>
+            {λname -> <button id={name} onClick={Send name}>{name}</button>}
+        </For>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

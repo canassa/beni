@@ -1,0 +1,164 @@
+-- load
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="down">"down"</button>
+    <button id="missing">"missing"</button>
+    <button id="slow">"slow"</button>
+    <button id="stall">"stall"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #refused
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="down">"down"</button>
+    <button id="missing">"missing"</button>
+    <button id="slow">"slow"</button>
+    <button id="stall">"stall"</button>
+    <ol>
+      <li>"bad url: BadUrl http://["</li>
+      <li>"user info: BadUrl http://u:p@example.com/"</li>
+      <li>"method: BadRequest (InvalidMethod GE T)"</li>
+      <li>"connect: BadRequest (ForbiddenMethod connect)"</li>
+      <li>"name: BadRequest (InvalidHeader Bad Name)"</li>
+      <li>"newline: BadRequest (InvalidHeader X-Ok)"</li>
+      <li>"euro: BadRequest (InvalidHeader X-Price)"</li>
+      <li>"cookie: BadRequest (ForbiddenHeader Cookie)"</li>
+      <li>"sec: BadRequest (ForbiddenHeader Sec-Fetch-Mode)"</li>
+      <li>"proxy: BadRequest (ForbiddenHeader Proxy-Authorization)"</li>
+      <li>"override: BadRequest (ForbiddenHeader X-HTTP-Method-Override)"</li>
+      <li>"get body: BadRequest (BodyNotAllowed GET)"</li>
+      <li>"zero: Timeout"</li>
+    </ol>
+  </main>
+</body>
+-- click #down
+(fetch 1: GET /down {})
+(the DOM did not change)
+-- fail 1
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="down">"down"</button>
+    <button id="missing">"missing"</button>
+    <button id="slow">"slow"</button>
+    <button id="stall">"stall"</button>
+    <ol>
+      <li>"bad url: BadUrl http://["</li>
+      <li>"user info: BadUrl http://u:p@example.com/"</li>
+      <li>"method: BadRequest (InvalidMethod GE T)"</li>
+      <li>"connect: BadRequest (ForbiddenMethod connect)"</li>
+      <li>"name: BadRequest (InvalidHeader Bad Name)"</li>
+      <li>"newline: BadRequest (InvalidHeader X-Ok)"</li>
+      <li>"euro: BadRequest (InvalidHeader X-Price)"</li>
+      <li>"cookie: BadRequest (ForbiddenHeader Cookie)"</li>
+      <li>"sec: BadRequest (ForbiddenHeader Sec-Fetch-Mode)"</li>
+      <li>"proxy: BadRequest (ForbiddenHeader Proxy-Authorization)"</li>
+      <li>"override: BadRequest (ForbiddenHeader X-HTTP-Method-Override)"</li>
+      <li>"get body: BadRequest (BodyNotAllowed GET)"</li>
+      <li>"zero: Timeout"</li>
+      <li>"down: NetworkError"</li>
+    </ol>
+  </main>
+</body>
+-- click #missing
+(fetch 2: GET /missing {})
+(the DOM did not change)
+-- respond 2 404 "no such thing"
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="down">"down"</button>
+    <button id="missing">"missing"</button>
+    <button id="slow">"slow"</button>
+    <button id="stall">"stall"</button>
+    <ol>
+      <li>"bad url: BadUrl http://["</li>
+      <li>"user info: BadUrl http://u:p@example.com/"</li>
+      <li>"method: BadRequest (InvalidMethod GE T)"</li>
+      <li>"connect: BadRequest (ForbiddenMethod connect)"</li>
+      <li>"name: BadRequest (InvalidHeader Bad Name)"</li>
+      <li>"newline: BadRequest (InvalidHeader X-Ok)"</li>
+      <li>"euro: BadRequest (InvalidHeader X-Price)"</li>
+      <li>"cookie: BadRequest (ForbiddenHeader Cookie)"</li>
+      <li>"sec: BadRequest (ForbiddenHeader Sec-Fetch-Mode)"</li>
+      <li>"proxy: BadRequest (ForbiddenHeader Proxy-Authorization)"</li>
+      <li>"override: BadRequest (ForbiddenHeader X-HTTP-Method-Override)"</li>
+      <li>"get body: BadRequest (BodyNotAllowed GET)"</li>
+      <li>"zero: Timeout"</li>
+      <li>"down: NetworkError"</li>
+      <li>"missing: BadStatus 404"</li>
+    </ol>
+  </main>
+</body>
+-- click #slow
+(fetch 3: GET /slow {})
+(the DOM did not change)
+-- advance 499
+(the DOM did not change)
+-- advance 1
+(fetch 3 aborted: TimeoutError)
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="down">"down"</button>
+    <button id="missing">"missing"</button>
+    <button id="slow">"slow"</button>
+    <button id="stall">"stall"</button>
+    <ol>
+      <li>"bad url: BadUrl http://["</li>
+      <li>"user info: BadUrl http://u:p@example.com/"</li>
+      <li>"method: BadRequest (InvalidMethod GE T)"</li>
+      <li>"connect: BadRequest (ForbiddenMethod connect)"</li>
+      <li>"name: BadRequest (InvalidHeader Bad Name)"</li>
+      <li>"newline: BadRequest (InvalidHeader X-Ok)"</li>
+      <li>"euro: BadRequest (InvalidHeader X-Price)"</li>
+      <li>"cookie: BadRequest (ForbiddenHeader Cookie)"</li>
+      <li>"sec: BadRequest (ForbiddenHeader Sec-Fetch-Mode)"</li>
+      <li>"proxy: BadRequest (ForbiddenHeader Proxy-Authorization)"</li>
+      <li>"override: BadRequest (ForbiddenHeader X-HTTP-Method-Override)"</li>
+      <li>"get body: BadRequest (BodyNotAllowed GET)"</li>
+      <li>"zero: Timeout"</li>
+      <li>"down: NetworkError"</li>
+      <li>"missing: BadStatus 404"</li>
+      <li>"slow: Timeout"</li>
+    </ol>
+  </main>
+</body>
+-- click #stall
+(fetch 4: GET /stall {})
+(the DOM did not change)
+-- respond 4 200 chunks "half of" open
+(the DOM did not change)
+-- advance 500
+(fetch 4 aborted: TimeoutError)
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="down">"down"</button>
+    <button id="missing">"missing"</button>
+    <button id="slow">"slow"</button>
+    <button id="stall">"stall"</button>
+    <ol>
+      <li>"bad url: BadUrl http://["</li>
+      <li>"user info: BadUrl http://u:p@example.com/"</li>
+      <li>"method: BadRequest (InvalidMethod GE T)"</li>
+      <li>"connect: BadRequest (ForbiddenMethod connect)"</li>
+      <li>"name: BadRequest (InvalidHeader Bad Name)"</li>
+      <li>"newline: BadRequest (InvalidHeader X-Ok)"</li>
+      <li>"euro: BadRequest (InvalidHeader X-Price)"</li>
+      <li>"cookie: BadRequest (ForbiddenHeader Cookie)"</li>
+      <li>"sec: BadRequest (ForbiddenHeader Sec-Fetch-Mode)"</li>
+      <li>"proxy: BadRequest (ForbiddenHeader Proxy-Authorization)"</li>
+      <li>"override: BadRequest (ForbiddenHeader X-HTTP-Method-Override)"</li>
+      <li>"get body: BadRequest (BodyNotAllowed GET)"</li>
+      <li>"zero: Timeout"</li>
+      <li>"down: NetworkError"</li>
+      <li>"missing: BadStatus 404"</li>
+      <li>"slow: Timeout"</li>
+      <li>"stall: Timeout"</li>
+    </ol>
+  </main>
+</body>

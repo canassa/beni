@@ -37,14 +37,18 @@ update : Msg, List String -> ( List String, Cmd Msg )
 update msg lines =
     case msg of
         Fetch ->
-            ( lines, Cmd.task (λ() -> Http.get "data:text/plain,hello") Got )
+            ( lines
+            , Cmd.task
+                (λ() -> Http.get { url = "data:text/plain,hello", expect = Http.expectString })
+                Got
+            )
 
         Break ->
             ( lines
             , Cmd.task
                 (λ() ->
                     _ = Fault.breakFetch ()
-                    Http.get "data:text/plain,hello"
+                    Http.get { url = "data:text/plain,hello", expect = Http.expectString }
                 )
                 Got
             )

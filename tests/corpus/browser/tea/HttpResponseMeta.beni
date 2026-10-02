@@ -1,0 +1,69 @@
+-- `expectStringResponse` hands the program the whole answer
+-- (boundary.md §9.8.12 (a), (f)): the status, its text, the headers with
+-- their names lower-cased and a repeated header's values joined with
+-- ", ", the address that answered, and the body — of a 404 too, which is
+-- `BadStatus_` with its body rather than an error without one.
+import Cmd exposing (Cmd)
+import Dict
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+import Url
+
+
+type Msg
+    = Ask String
+    | Got String
+
+
+describe : Http.Response String -> Result String String
+describe response =
+    case response of
+        Http.GoodStatus_ meta body ->
+            Ok ("good " ++ metadata meta body)
+
+        Http.BadStatus_ meta body ->
+            Ok ("bad " ++ metadata meta body)
+
+        _ ->
+            Err "no answer"
+
+
+metadata : Http.Metadata, String -> String
+metadata meta body =
+    headers =
+        String.join
+            (List.map (Dict.toList meta.headers) λ( name, value ) -> "${name}=${value}")
+            "; "
+    path = Maybe.withDefault (Maybe.map (Url.fromString meta.url) λu -> u.path) meta.url
+    "${String.fromInt meta.statusCode} [${meta.statusText}] ${path} {${headers}} ${body}"
+
+
+ask : String -> (() -> Result String String)
+ask url = λ() -> Http.get { url = url, expect = Http.expectStringResponse describe }
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Ask url ->
+            ( lines, Cmd.task (ask url) λresult -> Got (Result.withDefault result "failed") )
+
+        Got line ->
+            ( lines ++ [ line ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <button id="ok" onClick={Ask "/ok"}>ok</button>
+        <button id="missing" onClick={Ask "/missing"}>missing</button>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

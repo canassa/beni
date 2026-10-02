@@ -156,9 +156,13 @@ project) against it, one step per line, `#` for a comment:
                                 (1-based, in the order `fetch` was called)
                                 with a `Response` of that status, body and
                                 headers, its `url` the request's
-    respond <n> <status> chunks "<a>" "<b>"…
+    respond <n> <status> chunks "<a>" "<b>"… [<name>: "<value>"]… [open]
                                 the same, its body a stream yielding each
-                                chunk in a task of its own
+                                chunk in a task of its own; with `open` the
+                                body never ends, as a stalled server's;
+                                answering a request the page aborted logs
+                                `(fetch <n> was aborted: nothing hears the
+                                answer)`
     fail <n>                    reject the `n`-th request with `new
                                 TypeError("Failed to fetch")`, the Fetch
                                 standard's network error
@@ -255,6 +259,10 @@ compares instead of `.expected`. The differences known today:
 - `Headers`: happy-dom iterates names as they were written, where the Fetch
   standard and Chrome lower-case them, so a fixture that shows headers
   lower-cases them itself (the fetch log does);
+- a request's method: the Fetch standard (and Chrome) upper-cases only
+  `DELETE`, `GET`, `HEAD`, `OPTIONS`, `POST` and `PUT`, happy-dom every
+  method, so the fetch log normalises the method the page asked for as the
+  standard does;
 - a link followed: happy-dom follows an `<a href>` when the click bubbles
   through it, before the window's listeners run, so a window listener that
   prevents the default (the link guard of `Browser.Navigation`) is too late

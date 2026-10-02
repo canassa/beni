@@ -463,7 +463,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Http\nimport Sub\nimport Time\n`,
     main:
-      "Tea.element { init = ( {}, Cmd.none ), update = λ_ m -> ( m, Cmd.keyed () Cmd.Restart (λsend -> send (Http.get \"/x\")) ), view = view, subscriptions = λ_ -> Time.every (Time.seconds 1) (λ_ -> Ok \"tick\") }",
+      "Tea.element { init = ( {}, Cmd.none ), update = λ_ m -> ( m, Cmd.keyed () Cmd.Restart (λsend -> send (Http.get { url = \"/x\", expect = Http.expectString })) ), view = view, subscriptions = λ_ -> Time.every (Time.seconds 1) (λ_ -> Ok \"tick\") }",
     view: "view : {} -> Html (Result Http.Error String)",
   },
   {

@@ -87,10 +87,12 @@
 //                               answer the `n`-th request the page made with a
 //                               `Response` of that status, body and headers,
 //                               its `url` the request's
-//   respond <n> <status> chunks "<a>" "<b>"…
+//   respond <n> <status> chunks "<a>" "<b>"… [<name>: "<value>"]… [open]
 //                               the same, its body a stream that yields each
 //                               chunk in a task of its own, the page settling
-//                               between two
+//                               between two; `open` leaves it unfinished. A
+//                               request the page aborted is not answered and
+//                               logs `(fetch <n> was aborted: …)`
 //   fail <n>                    reject the `n`-th request with `new
 //                               TypeError("Failed to fetch")`, the Fetch
 //                               standard's network error
@@ -200,7 +202,11 @@ function prelude() {
     const where = new URL(request.url);
     const path = where.origin === location.origin ? where.pathname + where.search + where.hash : where.href;
     const credentials = request.credentials === "same-origin" ? "" : ` credentials:${request.credentials}`;
-    record.log.push(`(fetch ${entry.n}: ${request.method} ${path} ${JSON.stringify(sorted)}${shown}${credentials})`);
+    // The Fetch standard upper-cases only the six methods it names (Chrome
+    // does), happy-dom every one: the log normalises as the standard says.
+    const asked = init?.method ?? request.method;
+    const method = ["DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT"].includes(asked.toUpperCase()) ? asked.toUpperCase() : asked;
+    record.log.push(`(fetch ${entry.n}: ${method} ${path} ${JSON.stringify(sorted)}${shown}${credentials})`);
     return new Promise((resolve, reject) => {
       entry.resolve = (response) => {
         entry.settled = true;
@@ -215,6 +221,7 @@ function prelude() {
       const aborted = () => {
         if (entry.settled) return;
         record.log.push(`(fetch ${entry.n} aborted: ${signal.reason?.name})`);
+        entry.aborted = true;
         entry.reject(signal.reason);
       };
       if (signal.aborted) aborted();
@@ -380,7 +387,11 @@ function step(s) {
   if (s.command === "respond" || s.command === "fail") {
     const entry = globalThis.__beniHarness.requests[s.n - 1];
     if (entry === undefined) return `the page made no request ${s.n}`;
-    if (entry.settled) return `request ${s.n} was already answered or aborted`;
+    if (entry.aborted) {
+      globalThis.__beniHarness.log.push(`(fetch ${s.n} was aborted: nothing hears the answer)`);
+      return null;
+    }
+    if (entry.settled) return `request ${s.n} was already answered`;
     if (s.command === "fail") {
       entry.reject(new TypeError("Failed to fetch"));
       return null;
@@ -432,7 +443,8 @@ function step(s) {
         controller.enqueue(encoder.encode(chunk));
       }
       await turn();
-      if (!ended) {
+      // `open`: the body stays unfinished, as a server's that stalls.
+      if (!ended && !s.open) {
         ended = true;
         controller.close();
       }
@@ -716,23 +728,28 @@ if (stepsPath !== undefined) {
             rest = rest.slice(q[0].length);
           }
         };
-        if (/^chunks(\s|$)/.test(r[2])) {
-          const { found, rest } = strings(r[2].slice("chunks".length));
-          if (rest !== "" || found.length === 0) usage(`${where}: \`respond … chunks\` takes one or more JSON strings`);
-          s.chunks = found;
+        // `<name>: "<value>"` pairs, then, after chunks, `open` or nothing.
+        const headers = (text) => {
           s.headers = [];
-        } else {
-          const body = r[2].match(/^("(?:[^"\\]|\\.)*")\s*(.*)$/);
-          if (body === null) usage(`${where}: \`respond\` takes the body as a JSON string`);
-          s.body = JSON.parse(body[1]);
-          s.headers = [];
-          let rest = body[2];
-          while (rest !== "") {
+          let rest = text;
+          while (rest !== "" && !(s.chunks !== undefined && rest === "open")) {
             const h = rest.match(/^([!#$%&'*+.^_`|~0-9A-Za-z-]+):\s*("(?:[^"\\]|\\.)*")\s*/);
             if (h === null) usage(`${where}: a header of \`respond\` is \`<name>: "<value>"\`, not \`${rest}\``);
             s.headers.push([h[1], JSON.parse(h[2])]);
             rest = rest.slice(h[0].length);
           }
+          s.open = rest === "open";
+        };
+        if (/^chunks(\s|$)/.test(r[2])) {
+          const { found, rest } = strings(r[2].slice("chunks".length));
+          if (found.length === 0) usage(`${where}: \`respond … chunks\` takes one or more JSON strings`);
+          s.chunks = found;
+          headers(rest);
+        } else {
+          const body = r[2].match(/^("(?:[^"\\]|\\.)*")\s*(.*)$/);
+          if (body === null) usage(`${where}: \`respond\` takes the body as a JSON string`);
+          s.body = JSON.parse(body[1]);
+          headers(body[2]);
         }
       }
     } else if (command === "click" || command === "focus" || command === "flush") {

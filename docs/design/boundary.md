@@ -2545,6 +2545,13 @@ by class, never by message, and nothing broader is caught:
 | no answer, or a body cut off | `NetworkError` | `error instanceof TypeError` — the Fetch standard's *network error* for DNS, a refused or reset connection, a CORS failure, mixed content, a CSP block, a redirect loop, and a stream that errors while the body is read. CORS failures are deliberately indistinguishable from the network's to a page, so beni cannot name them apart either |
 | anything else | a defect (§9.8.10 (c)) | thrown in the fiber that waited, as today: the page stops with the request's stack |
 
+*Amended 2026-10-02, as built:* the first two rows are told apart by the request's own signal,
+not by the rejection: when `signal.aborted`, the request aborted itself, and it is `Timeout` when
+`signal.reason` is its timer's reason and nothing (a cancellation) otherwise, whatever the
+rejection is. An engine may reject a body read cut off by an abort with a `TypeError` rather than
+the reason — Chrome does for a body that is a stream — and that rejection is the abort's
+consequence, not the network's.
+
 Before the fetch: `new URL`'s `TypeError` is `BadUrl` (step 1), every `BadRequest` is a test of a
 value (steps 2–4). After it: a non-2xx status is `BadStatus` (`expectString`, `expectJson`,
 `expectWhatever`) or `BadStatus_` with its body (`expectStringResponse`), and a body the schema

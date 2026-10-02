@@ -1,0 +1,160 @@
+-- load
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #get
+(fetch 1: GET /items?page=2 {})
+(the DOM did not change)
+-- click #headers
+(fetch 2: GET /headers {"x-a":"2","x-b":"1, 3"})
+(the DOM did not change)
+-- click #post
+(fetch 3: POST /notes {"content-type":"text/plain"} "hello")
+(the DOM did not change)
+-- click #typed
+(fetch 4: PUT /notes/1 {"content-type":"application/x-note"} "hi")
+(the DOM did not change)
+-- click #patch
+(fetch 5: patch /notes/1 {"content-type":"text/plain"} "p")
+(the DOM did not change)
+-- click #delete
+(fetch 6: DELETE /notes/1 {})
+(the DOM did not change)
+-- click #risky
+(fetch 7: GET /me {} credentials:include)
+(the DOM did not change)
+-- respond 1 200 "one"
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <ol>
+      <li>"get: ok one"</li>
+    </ol>
+  </main>
+</body>
+-- respond 2 200 "two"
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <ol>
+      <li>"get: ok one"</li>
+      <li>"headers: ok two"</li>
+    </ol>
+  </main>
+</body>
+-- respond 3 201 "three"
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <ol>
+      <li>"get: ok one"</li>
+      <li>"headers: ok two"</li>
+      <li>"post: ok three"</li>
+    </ol>
+  </main>
+</body>
+-- respond 4 200 "four"
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <ol>
+      <li>"get: ok one"</li>
+      <li>"headers: ok two"</li>
+      <li>"post: ok three"</li>
+      <li>"typed: ok four"</li>
+    </ol>
+  </main>
+</body>
+-- respond 5 200 "five"
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <ol>
+      <li>"get: ok one"</li>
+      <li>"headers: ok two"</li>
+      <li>"post: ok three"</li>
+      <li>"typed: ok four"</li>
+      <li>"patch: ok five"</li>
+    </ol>
+  </main>
+</body>
+-- respond 6 204 ""
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <ol>
+      <li>"get: ok one"</li>
+      <li>"headers: ok two"</li>
+      <li>"post: ok three"</li>
+      <li>"typed: ok four"</li>
+      <li>"patch: ok five"</li>
+      <li>"delete: ok "</li>
+    </ol>
+  </main>
+</body>
+-- respond 7 200 "seven"
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <ol>
+      <li>"get: ok one"</li>
+      <li>"headers: ok two"</li>
+      <li>"post: ok three"</li>
+      <li>"typed: ok four"</li>
+      <li>"patch: ok five"</li>
+      <li>"delete: ok "</li>
+      <li>"risky: ok seven"</li>
+    </ol>
+  </main>
+</body>

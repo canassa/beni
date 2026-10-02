@@ -1,0 +1,153 @@
+-- Every way a request fails is one constructor of `Http.Error`
+-- (boundary.md §9.8.12 (b), (c); CLAUDE.md rule 9). Found before anything
+-- is sent, so the fetch log shows no request for them: `BadUrl` for an
+-- address that does not parse and for one holding a user name and
+-- password; `BadRequest` for a method that is not a token, a forbidden
+-- method in any case, a header name that is not a token, a header value
+-- holding a line break or a character `Headers` cannot hold, a forbidden
+-- header (`Cookie`, a `Sec-` or `Proxy-` name, a method override naming
+-- `TRACE`), and a body on `GET`. After it is sent: `NetworkError` when
+-- the request fails, `BadStatus` for a 404, and `Timeout` when the
+-- request's own timer runs out — with no answer yet, and again with the
+-- body half read — each aborting the request; a zero timeout times out at
+-- once, sending nothing.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Run String
+    | Got String (Result Http.Error String)
+
+
+problem : Http.Problem -> String
+problem p =
+    case p of
+        Http.InvalidMethod m ->
+            "InvalidMethod ${m}"
+
+        Http.ForbiddenMethod m ->
+            "ForbiddenMethod ${m}"
+
+        Http.InvalidHeader name ->
+            "InvalidHeader ${name}"
+
+        Http.ForbiddenHeader name ->
+            "ForbiddenHeader ${name}"
+
+        Http.BodyNotAllowed m ->
+            "BodyNotAllowed ${m}"
+
+
+shown : Result Http.Error String -> String
+shown result =
+    case result of
+        Ok text ->
+            "ok ${text}"
+
+        Err (Http.BadUrl url) ->
+            "BadUrl ${url}"
+
+        Err (Http.BadRequest p) ->
+            "BadRequest (${problem p})"
+
+        Err Http.Timeout ->
+            "Timeout"
+
+        Err Http.NetworkError ->
+            "NetworkError"
+
+        Err (Http.BadStatus code) ->
+            "BadStatus ${String.fromInt code}"
+
+
+ask : String, String, List Http.Header, Http.Body, Maybe Int -> Result Http.Error String
+ask method url headers body timeout =
+    Http.request
+        { method = method
+        , headers = headers
+        , url = url
+        , body = body
+        , expect = Http.expectString
+        , timeout = Maybe.map timeout Time.millis
+        , tracker = Nothing
+        }
+
+
+refused : List ( String, (() -> Result Http.Error String) )
+refused =
+    [ ( "bad url", λ() -> ask "GET" "http://[" [] Http.emptyBody Nothing )
+    , ( "user info", λ() -> ask "GET" "http://u:p@example.com/" [] Http.emptyBody Nothing )
+    , ( "method", λ() -> ask "GE T" "/x" [] Http.emptyBody Nothing )
+    , ( "connect", λ() -> ask "connect" "/x" [] Http.emptyBody Nothing )
+    , ( "name", λ() -> ask "GET" "/x" [ Http.header "Bad Name" "v" ] Http.emptyBody Nothing )
+    , ( "newline", λ() -> ask "GET" "/x" [ Http.header "X-Ok" "a\nb" ] Http.emptyBody Nothing )
+    , ( "euro", λ() -> ask "GET" "/x" [ Http.header "X-Price" "5 €" ] Http.emptyBody Nothing )
+    , ( "cookie", λ() -> ask "GET" "/x" [ Http.header "Cookie" "a=1" ] Http.emptyBody Nothing )
+    , ( "sec"
+      , λ() -> ask "GET" "/x" [ Http.header "Sec-Fetch-Mode" "cors" ] Http.emptyBody Nothing
+      )
+    , ( "proxy"
+      , λ() -> ask "GET" "/x" [ Http.header "Proxy-Authorization" "x" ] Http.emptyBody Nothing
+      )
+    , ( "override"
+      , λ() ->
+          ask
+              "POST"
+              "/x"
+              [ Http.header "X-HTTP-Method-Override" "get, trace" ]
+              Http.emptyBody
+              Nothing
+      )
+    , ( "get body", λ() -> ask "get" "/x" [] (Http.stringBody "text/plain" "no") Nothing )
+    , ( "zero", λ() -> ask "GET" "/x" [] Http.emptyBody (Just 0) )
+    ]
+
+
+sentLater : String -> (() -> Result Http.Error String)
+sentLater name =
+    case name of
+        "down" ->
+            λ() -> Http.get { url = "/down", expect = Http.expectString }
+
+        "missing" ->
+            λ() -> Http.get { url = "/missing", expect = Http.expectString }
+
+        "slow" ->
+            λ() -> ask "GET" "/slow" [] Http.emptyBody (Just 500)
+
+        _ ->
+            λ() -> ask "GET" "/stall" [] Http.emptyBody (Just 500)
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Run "refused" ->
+            ( lines, Cmd.batch (List.map refused λ( label, work ) -> Cmd.task work (Got label _)) )
+
+        Run name ->
+            ( lines, Cmd.task (sentLater name) (Got name _) )
+
+        Got label result ->
+            ( lines ++ [ "${label}: ${shown result}" ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <For each={[ "refused", "down", "missing", "slow", "stall" ]} keyed={False}>
+            {λname -> <button id={name} onClick={Run name}>{name}</button>}
+        </For>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

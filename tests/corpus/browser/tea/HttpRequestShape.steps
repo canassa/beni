@@ -1,0 +1,14 @@
+click #get
+click #headers
+click #post
+click #typed
+click #patch
+click #delete
+click #risky
+respond 1 200 "one"
+respond 2 200 "two"
+respond 3 201 "three"
+respond 4 200 "four"
+respond 5 200 "five"
+respond 6 204 ""
+respond 7 200 "seven"
