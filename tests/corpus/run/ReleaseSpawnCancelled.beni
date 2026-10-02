@@ -1,0 +1,65 @@
+-- run: a fiber that a release starts while its own fiber is being
+-- cancelled does not outlive that fiber (`core/Task.beni`: nothing a fiber
+-- starts outlives what started it; transparent-effects-proposal.md §16.4).
+-- The fiber's children are cancelled before its releases run (the owner's
+-- A11); a child a release starts after that is cancelled, and its own
+-- release run, before the fiber ends — so before `Task.cancel` returns.
+-- Effect does the same: it interrupts a fiber's children once its whole
+-- stack has unwound.
+--
+--   - `early` was started by the use: cancelled first, before the release;
+--   - `late` is started by the release, which then waits, so `late`
+--     acquires its own bracket and parks: it is cancelled from there;
+--   - `unstarted` is started by the release's last line and has not run
+--     when the release returns: it is cancelled before its first line.
+--
+-- Before the fix the parent ended at once: `unstarted` ran, `cancel`
+-- returned with `late` still parked, and 50 ms later `late` woke up.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+guarded : String, (() → a) → a
+guarded name body = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    body ()
+
+
+main : Program
+main = Io.run λ() →
+    parent = Task.spawn λ() →
+        _ = Task.spawn λ() → guarded "early" λ() → Io.sleep 100000
+
+        Task.bracket
+            (λ() → ())
+            (λ_ exit →
+                _ = say "parent released: ${outcome exit}"
+                _ = Task.spawn λ() →
+                    guarded "late" λ() →
+                        _ = Io.sleep 50
+                        say "late still running"
+                _ = Io.sleep 1
+                _ = Task.spawn λ() → say "unstarted runs"
+                ()
+            )
+            λ_ → Io.sleep 100000
+
+    _ = Io.sleep 1
+    _ = Task.cancel parent
+    _ = say "cancel returned"
+    _ = Io.sleep 100
+    Node.print "end"

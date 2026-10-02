@@ -446,6 +446,17 @@ const ended = () => {
   return null;
 };
 
+// `ended` for a fiber whose finalisers started children (`spawn`): those
+// are cancelled and waited for first, so that nothing a fiber starts
+// outlives it; looked at again after the wait.
+const reap = () => {
+  const fiber = current;
+  if (fiber.children === null || fiber.children.size === 0) return ended();
+  if (cancelAll([...fiber.children], null) !== Y) return reap();
+  pending.ks.push(reap);
+  return Y;
+};
+
 // ---- The API ----------------------------------------------------------------
 
 const fork = (parent, work, scope) => {
@@ -481,7 +492,18 @@ const endSoon = (s) => {
 };
 
 export const spawn = (work) => {
-  if (current !== null || soonRunning === null) return fork(current, work, null);
+  if (current !== null) {
+    const parent = current;
+    const child = fork(parent, work, null);
+    // Started by a finaliser of a fiber that is unwinding — after
+    // `stopChildren` cancelled its children (A11) — so its end, at the
+    // bottom of its stack, cancels and waits for this one too. Effect
+    // likewise interrupts a fiber's children once its whole stack has
+    // unwound. Here, so that a build that never spawns keeps none of it.
+    if (parent.unwinding) parent.stack[0] = reap;
+    return child;
+  }
+  if (soonRunning === null) return fork(null, work, null);
   const s = soonRunning;
   const child = fork(null, work, null);
   s.kids ??= [];
@@ -539,7 +561,7 @@ export const yieldNow = (unit) => {
 
 export const openScope = (unit) => {
   const scope = { children: new Set(), finalizer: null, closed: false };
-  scope.finalizer = () => cancelAll([...scope.children], null);
+  scope.finalizer = () => shut(scope, null);
   const fiber = here();
   if (fiber.finalizers === null) fiber.finalizers = [];
   fiber.finalizers.push(scope.finalizer);
@@ -553,9 +575,21 @@ const dropFinalizer = (fiber, fin) => {
   if (i >= 0) fins.splice(i, 1);
 };
 
+// Close `scope`: a fiber started in it from now on — by the release of one
+// being cancelled — is cancelled before it runs, as in a closed root, and
+// every fiber in it is cancelled and waited for, again until none is left.
+// Then go on with `value`.
+const shut = (scope, value) => {
+  scope.closed = true;
+  if (scope.children.size === 0) return value;
+  if (cancelAll([...scope.children], value) !== Y) return shut(scope, value);
+  pending.ks.push(() => shut(scope, value));
+  return Y;
+};
+
 export const closeScope = (scope, value) => {
   const fiber = here();
-  const r = cancelAll([...scope.children], value);
+  const r = shut(scope, value);
   if (r !== Y) {
     dropFinalizer(fiber, scope.finalizer);
     return value;

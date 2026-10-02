@@ -1,0 +1,63 @@
+-- run: a fiber started in a scope while the scope closes does not outlive
+-- it (`core/Task.beni`: a scope's fibers are cancelled, and waited for,
+-- when its function returns). A scope's child being cancelled may start
+-- another fiber in the same scope from its release; the scope is closed
+-- from the moment it starts closing, so that fiber is cancelled before its
+-- first line, and the scope waits for it before it lets go — both when the
+-- scope's function returns (`Task.scope`) and when the fiber that owns the
+-- scope is cancelled meanwhile (the scope's own release). Effect's
+-- `forkIn` likewise interrupts a fiber started in a closed scope.
+--
+-- Before the fix the scope waited only for the fibers it held when it
+-- began to close: each `straggler` ran, after the scope had let go.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit, Scope)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+-- A child of `s` whose release starts another fiber in `s`.
+child : String, Scope → Task.Fiber ()
+child name s = Task.spawnIn s λ() →
+    Task.bracket
+        (λ() → ())
+        (λ_ exit →
+            _ = say "${name} released: ${outcome exit}"
+            _ = Task.spawnIn s λ() →
+                _ = say "${name} straggler started"
+                _ = Io.sleep 50
+                say "${name} straggler still running"
+            ()
+        )
+        λ_ → Io.sleep 100000
+
+
+main : Program
+main = Io.run λ() →
+    answer = Task.scope λs →
+        _ = child "returned" s
+        _ = Task.yieldNow ()
+        42
+    _ = say "scope returned ${String.fromInt answer}"
+    owner = Task.spawn λ() →
+        Task.scope λs →
+            _ = child "owner" s
+            Io.sleep 100000
+    _ = Io.sleep 1
+    _ = Task.cancel owner
+    _ = say "cancel returned"
+    _ = Io.sleep 100
+    Node.print "end"
