@@ -6428,6 +6428,60 @@ first. `emit/release/app/SpecDeepChain` (24 levels of pass-through: nothing spec
 `SpecSelfGuard` (a flag a dead branch hides from itself) pin what rounds cannot do, and move
 when the combined solver lands (research 52 §4).
 
+**Amended 2026-10-02 — truthiness, and what follows a jump** (research 52 §3.4, §3.6 and §4.5,
+slice 3). Facts 1, 2, 4 and 5 fold a test only when it is a literal; `x || true` was ⊤, though
+every value it can take is truthy, and E4 counted the cost: `platforms/browser/Rt.beni`'s
+`sameInputs` and `sameInputsBut`, specialised with `b = null`, kept
+`if(a===null||true||a.length!==null.length)return false;` and the loop after it on every page
+that has rows.
+
+- **The value carries its truthiness** (`Spec.Lat`): ⊥, always truthy, always falsy, or either,
+  beside the value and joined on its own — Click's combined lattice for conditions. A literal's
+  is its literal's; an object, an array, a function, a `new` and a DOM node-maker's result are
+  truthy; `!x` is the opposite of `x`; `typeof x` is truthy; `a || b` is truthy when `a` is
+  wherever it ends the operator and `b` is wherever it goes on, `a && b` the other way round; a
+  conditional whose test is decided is its taken branch; a call is what its callees return,
+  and a field what its writes give. `a || b` whose `a` is always truthy has `a`'s value, exactly.
+  A value is a literal only where the expression's evaluation does nothing the literal could
+  lose, as before: truthiness never makes one. `yield x` is now ⊤, what the generator is
+  resumed with; it was `x`'s value, which a comparison of the two could have folded.
+- **The rewrite spends it where what it skips does nothing** (`Spec.effectFreeTest`): a
+  literal, a name, a function, a read through the program's own objects (`effectFree`), `===`,
+  `!==`, `!` and `typeof` of such, an arithmetic or relational operator on values fact 3 says
+  are primitives the program made (no `valueOf` can run), and `&&`, `||` and `?:` whose parts
+  that are evaluated are such — `y` in `x || true || y` is never reached and is not asked
+  about. `a || b` whose `a` is always truthy is `a`; whose `a` is always falsy and does nothing,
+  `b` (and `&&` the other way round). A conditional with such a test is its branch. An `if`
+  with a decided test keeps its arm; when the test may do something it stays, as a statement
+  before the arm (`T; …arm`), in the `if`'s own node.
+- **What follows a statement that cannot complete normally goes** (`Spec.deadTail`): a
+  `return`, `throw`, `break` or `continue`, an `if` neither arm of which completes, or an
+  unlabelled block that does not — when nothing outside the dead statements, in the top-level
+  declaration, declares or names what they declare, so no earlier statement, closure or
+  hoisted `function` can reach it. A module's body is left whole. Each list is cut before the
+  list around it asks whether its last statement completes, so that question reads the last
+  statement only.
+
+Measured (release, brotli, the whole bundle; every `run/` and `browser/` fixture, files and
+projects, and the `bench/todomvc` app, 537 builds, compared with the compiler before): 43 builds
+change, **42 smaller and one larger**, −1 796 bytes in all. The pages with rows, which hold
+research 52's E4 — 27 `browser/tea` pages, the 9 `browser/dom` pages and `bench/todomvc`'s app —
+lose 30–69 bytes each (`sameInputs` is `a=>a===null?true:false`, and `sameInputsBut` loses its
+index parameter). `run/QuestionOrder` and `run/SchemaDeclTagged` lose a dead `return` and a dead
+`switch` after a folded `?` and a derived `compare`; `run/ReleaseFieldsAcrossJs` −65, a derived
+`compare` that is `"LT"`, then written in. **The one larger**, `run/DerivedPartTypedLater` +6
+(raw +22), is a gap this does not make but now meets: an `if` on the result of an `eq` that is
+`()=>true` folds in the first round now, before the inlining passes would have written `true`
+in, and leaves `let same = eq()`, which `Opt` drops after this pass — so `prune`, which counts
+that read, keeps `eq` (research 52 §8.4, *Spec and Opt disagree on what is dead*). Cost,
+millions of instructions of the ReleaseSafe compiler, a `--release` build, against the compiler
+before: `browser/tea/TodoMVC` 1 354 → 1 360, `bench --generate=100000` as a library 15 078 →
+15 072 (within the noise of two runs), `abuse_wide_test`'s 16 400 arms 2 468 → 2 486; peak
+memory unchanged. A literal's truthiness is read from its digits (`numberTruth`): converting each
+of the 16 400 numbers cost 26 million more. Fixtures: `emit/release/app/SpecTruthiness`
+(red before: `score`'s `n < 0 || true` kept its `if` and its dead statements),
+`run/SpecializeTruthiness` (a decided test that logs keeps its log, in both builds).
+
 ### Compact statements
 
 ### Compact statements

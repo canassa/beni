@@ -31,7 +31,11 @@
 //! integer, bitwise operators, comparisons, `===`/`!==`, `!`, `typeof`,
 //! `&&`/`||` with a literal left side, `c ? a : b` and `if (c)` with a literal
 //! `c`: a folded `if` keeps one arm, spliced into its list when no name it
-//! declares is declared twice in the declaration, else as a block.
+//! declares is declared twice in the declaration, else as a block. A test
+//! that is always truthy or always falsy without being a literal (`x ||
+//! true`, `Lat`'s truthiness) folds the same way where skipping it loses
+//! nothing (`effectFreeTest`), and what follows a statement that cannot
+//! complete goes (`deadTail`).
 //!
 //! **Why the pass rewrites the IR rather than handing the printer a plan.**
 //! The spec says a plan; folding makes literals that are in no module's IR
@@ -421,21 +425,56 @@ const Lit = struct {
 /// neither `null` nor `undefined` (slice 4, fact 5) — or ⊤. A literal that is
 /// not nullish is below nonnull; `Spec.join` is the join, which needs to
 /// know the literal's kind.
+///
+/// Beside the value, its truthiness (research 52 §3.4, Click's combined
+/// lattice for conditions): ⊥, always truthy, always falsy, or either. A
+/// literal's is its literal's (`Spec.truthOf`), so `truth` is stored only
+/// for nonnull and ⊤ — `x || true` is ⊤ and always truthy. It is joined on
+/// its own, and only the rewrite spends it, where what it skips evaluating
+/// does nothing (`Spec.effectFreeTest`): a value that is a literal stays one
+/// only where evaluating the expression does nothing the literal could lose.
 const Lat = packed struct(u32) {
     state: State,
-    lit: u30 = 0,
+    truth: Truth = .bot,
+    lit: u28 = 0,
 
     const State = enum(u2) { bot, lit, top, nonnull };
+    const Truth = enum(u2) {
+        bot,
+        yes,
+        no,
+        unknown,
+
+        fn join(a: Truth, b: Truth) Truth {
+            if (a == .bot) return b;
+            if (b == .bot or a == b) return a;
+            return .unknown;
+        }
+
+        fn not(t: Truth) Truth {
+            return switch (t) {
+                .yes => .no,
+                .no => .yes,
+                else => t,
+            };
+        }
+    };
     const bot: Lat = .{ .state = .bot };
-    const top: Lat = .{ .state = .top };
-    const nonnull: Lat = .{ .state = .nonnull };
+    const top: Lat = .{ .state = .top, .truth = .unknown };
+    const nonnull: Lat = .{ .state = .nonnull, .truth = .unknown };
+    /// An object, an array or a function: never `null`, always truthy.
+    const object: Lat = .{ .state = .nonnull, .truth = .yes };
 
     fn of(id: u32) Lat {
         return .{ .state = .lit, .lit = @intCast(id) };
     }
 
     fn eql(a: Lat, b: Lat) bool {
-        return a.state == b.state and (a.state != .lit or a.lit == b.lit);
+        return a.state == b.state and switch (a.state) {
+            .bot => true,
+            .lit => a.lit == b.lit,
+            .top, .nonnull => a.truth == b.truth,
+        };
     }
 };
 
@@ -602,6 +641,8 @@ const Spec = struct {
     /// reads keeps its place and the argument.
     arg_effect: std.ArrayList(bool) = .empty,
     lits: std.ArrayList(Lit) = .empty,
+    /// Per literal: whether it is truthy (`truthOf`), found once.
+    lit_truth: std.ArrayList(Lat.Truth) = .empty,
     lit_ids: std.HashMapUnmanaged([]const u8, u32, LitContext, std.hash_map.default_max_load_percentage) = .empty,
     /// Per `Kind`: the id of its literal without bytes, once interned.
     plain_ids: [@typeInfo(Kind).@"enum".fields.len]u32 = @splat(none),
@@ -717,10 +758,16 @@ const Spec = struct {
     inline fn join(s: *Spec, a: Lat, b: Lat) Lat {
         if (a.state == .bot) return b;
         if (b.state == .bot) return a;
-        if (a.state == .top or b.state == .top) return .top;
         if (a.state == .lit and b.state == .lit and a.lit == b.lit) return a;
-        if (s.maybeNullish(a) or s.maybeNullish(b)) return .top;
-        return .nonnull;
+        const truth = s.truthOf(a).join(s.truthOf(b));
+        if (a.state == .top or b.state == .top) return .{ .state = .top, .truth = truth };
+        if (s.maybeNullish(a) or s.maybeNullish(b)) return .{ .state = .top, .truth = truth };
+        return .{ .state = .nonnull, .truth = truth };
+    }
+
+    /// Whether `v` is always truthy, always falsy, or either (`Lat`).
+    inline fn truthOf(s: *Spec, v: Lat) Lat.Truth {
+        return if (v.state == .lit) s.lit_truth.items[v.lit] else v.truth;
     }
 
     inline fn maybeNullish(s: *Spec, v: Lat) bool {
@@ -735,10 +782,10 @@ const Spec = struct {
     }
 
     /// What a value that must not be written as its literal says: nonnull
-    /// when it is neither `null` nor `undefined`.
+    /// when it is neither `null` nor `undefined`, and its truthiness.
     fn demote(s: *Spec, v: Lat) Lat {
         return switch (v.state) {
-            .lit => if (s.maybeNullish(v)) .top else .nonnull,
+            .lit => .{ .state = if (s.maybeNullish(v)) .top else .nonnull, .truth = s.truthOf(v) },
             else => v,
         };
     }
@@ -831,6 +878,9 @@ const Spec = struct {
                 .objects = try .initEmpty(arena, ir.nodes.len),
             };
             @memset(m.stamp, 0);
+            // A node no walk reached is anything, never what the memory
+            // held (as `grow` fills a copied node's).
+            @memset(m.memo, .top);
             @memset(m.lit_of, none);
         }
         var s: Spec = .{
@@ -922,6 +972,11 @@ const Spec = struct {
             gop.key_ptr.* = key;
             gop.value_ptr.* = @intCast(s.lits.items.len);
             try s.lits.append(s.arena, .{ .kind = lit.kind, .bytes = key[1..] });
+            try s.lit_truth.append(s.arena, switch (s.truthy(lit)) {
+                .yes => .yes,
+                .no => .no,
+                .unknown => .unknown,
+            });
         }
         if (plain) s.plain_ids[@intFromEnum(lit.kind)] = gop.value_ptr.*;
         return gop.value_ptr.*;
@@ -1597,7 +1652,7 @@ const Spec = struct {
                 const node: Index = @enumFromInt(raw);
                 const t = ir.tag(node);
                 if (t == .arrow) {
-                    m.memo[raw] = .nonnull;
+                    m.memo[raw] = .object;
                     try s.evalFunc(m, mi, @enumFromInt(ir.data(node).lhs), node);
                     continue;
                 }
@@ -1627,7 +1682,7 @@ const Spec = struct {
             .unary => blk: {
                 const op: JsIr.UnaryOp = @enumFromInt(d.rhs);
                 const v = try s.unary(op, m.memo[d.lhs]);
-                break :blk if (op != .yield and v.state == .top) .nonnull else v;
+                break :blk if (op != .yield and v.state == .top) .{ .state = .nonnull, .truth = v.truth } else v;
             },
             .binary => blk: {
                 const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
@@ -1641,7 +1696,7 @@ const Spec = struct {
                     break :blk try s.boolean(if (op == .strict_eq) same else !same);
                 };
                 const v = try s.binary(op, l, r);
-                break :blk if (op != .logical_and and op != .logical_or and v.state == .top) .nonnull else v;
+                break :blk if (op != .logical_and and op != .logical_or and v.state == .top) .{ .state = .nonnull, .truth = v.truth } else v;
             },
             .cond => blk: {
                 const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
@@ -1654,6 +1709,14 @@ const Spec = struct {
                         if (try s.nullTestTaken(m, @enumFromInt(d.lhs), c)) |taken| {
                             try s.decided_conds.put(s.arena, .{ .module = m.index, .node = node.int() }, taken);
                             break :undecided m.memo[taken.int()];
+                        }
+                        // A test that is always truthy, or always falsy,
+                        // whatever its value: the branch it takes — never
+                        // as its literal, since the test is still made.
+                        switch (t.truth) {
+                            .yes => break :undecided s.demote(m.memo[c.consequent.int()]),
+                            .no => break :undecided s.demote(m.memo[c.alternate.int()]),
+                            .bot, .unknown => {},
                         }
                         const a = m.memo[c.consequent.int()];
                         const e = m.memo[c.alternate.int()];
@@ -1674,7 +1737,7 @@ const Spec = struct {
             .template => try s.templateValue(m, node),
             .new_call, .object, .array => blk: {
                 if (ir.tag(node) == .object) try s.objectWrites(m, node);
-                break :blk .nonnull;
+                break :blk .object;
             },
             .member => try s.memberValue(m, node),
             else => .top,
@@ -1828,7 +1891,7 @@ const Spec = struct {
             // node or throws, or a primitive, `null` or `undefined`, which
             // has no such method and throws — never `null`, whatever else
             // fact 3 says the receiver may be (`Pts.Val.top_val`).
-            if (host and receiver.sites.len == 0) return .nonnull;
+            if (host and receiver.sites.len == 0) return .object;
         }
         if (vc.top or vc.prim or vc.sites.len == 0) return .top;
         var out: Lat = .bot;
@@ -1838,7 +1901,7 @@ const Spec = struct {
             if (st.kind != .func) return .top;
             const ref: NodeRef = .{ .module = st.module, .node = st.node.int() };
             if (s.mods[st.module].ir.tag(st.node) == .gen_decl) {
-                out = s.join(out, .nonnull);
+                out = s.join(out, .object);
                 continue;
             }
             out = s.join(out, s.ret_lat.get(ref) orelse .bot);
@@ -1965,7 +2028,8 @@ const Spec = struct {
             // Fact 5: an object, an array, a function, a template or a
             // `new` is never `null` (a read before the declaration throws).
             if (v.state == .top) switch (dm.ir.tag(value)) {
-                .object, .array, .arrow, .template, .new_call => return .nonnull,
+                .object, .array, .arrow, .new_call => return .object,
+                .template => return .nonnull,
                 else => {},
             };
             return v;
@@ -1980,7 +2044,7 @@ const Spec = struct {
             break :param s.params.items[f.params + m.param[i]];
         } else m.value[i];
         // Past a guard that proves it (`guardNames`).
-        if (v.state == .top and std.mem.indexOfScalar(NameIndex, s.narrow.items, n) != null) return .nonnull;
+        if (v.state == .top and std.mem.indexOfScalar(NameIndex, s.narrow.items, n) != null) return .{ .state = .nonnull, .truth = v.truth };
         return v;
     }
 
@@ -2023,15 +2087,52 @@ const Spec = struct {
             .true_lit, .name => .yes,
             .false_lit, .null_lit, .undefined_lit => .no,
             .string => if (lit.bytes.len != 0) .yes else .no,
-            .number => {
-                const x = parseNumber(lit.bytes) orelse return .unknown;
-                return if (x != 0 and !std.math.isNan(x)) .yes else .no;
-            },
+            .number => numberTruth(lit.bytes),
         };
     }
 
+    /// Whether a numeric literal is truthy: not zero (no literal is
+    /// `NaN`), which its digits say without converting it — every literal
+    /// the program spells is asked once (`intern`), and a conversion costs
+    /// a thousand instructions. A negative exponent may round a nonzero
+    /// mantissa to zero, and is converted.
+    fn numberTruth(text: []const u8) Truth {
+        if (text.len == 0) return .unknown;
+        if (text.len > 2 and text[0] == '0' and (text[1] == 'x' or text[1] == 'X')) {
+            for (text[2..]) |c| switch (c) {
+                '0' => {},
+                '1'...'9', 'a'...'f', 'A'...'F' => return .yes,
+                else => return .unknown,
+            };
+            return .no;
+        }
+        var nonzero = false;
+        for (text, 0..) |c, i| switch (c) {
+            '0', '.', '-', '+' => {},
+            '1'...'9' => nonzero = true,
+            'e', 'E' => {
+                if (std.mem.indexOfScalar(u8, text[i..], '-') != null) {
+                    const x = parseNumber(text) orelse return .unknown;
+                    return if (x != 0) .yes else .no;
+                }
+                break;
+            },
+            else => return .unknown,
+        };
+        return if (nonzero) .yes else .no;
+    }
+
     fn unary(s: *Spec, op: JsIr.UnaryOp, a: Lat) Allocator.Error!Lat {
-        if (a.state != .lit) return a;
+        if (a.state == .bot) return .bot;
+        if (a.state != .lit) return switch (op) {
+            // A boolean, `true` exactly when its operand is falsy.
+            .not => .{ .state = .nonnull, .truth = s.truthOf(a).not() },
+            // The name of a type: a string that is never empty.
+            .type_of => .{ .state = .nonnull, .truth = .yes },
+            .neg => .nonnull,
+            // What the generator is resumed with, not what it yields.
+            .yield => .top,
+        };
         const lit = s.litOf(a);
         switch (op) {
             .not => return switch (s.truthy(lit)) {
@@ -2052,7 +2153,7 @@ const Spec = struct {
                     .true_lit, .false_lit => "boolean",
                     .null_lit => "object",
                     .undefined_lit => "undefined",
-                    .name => return .top,
+                    .name => return .{ .state = .nonnull, .truth = .yes },
                 };
                 return .of(try s.intern(.{ .kind = .string, .bytes = text }));
             },
@@ -2064,13 +2165,24 @@ const Spec = struct {
         switch (op) {
             .logical_and, .logical_or => {
                 if (a.state == .bot) return .bot;
-                // Either side may be the value, unless a literal left side
-                // decides; nonnull only when both are.
-                if (a.state != .lit) return s.demote(s.join(a, b));
-                const t = s.truthy(s.litOf(a));
-                if (t == .unknown) return .top;
-                const left_wins = (op == .logical_and) == (t == .no);
-                return if (left_wins) a else b;
+                const t = s.truthOf(a);
+                // `a || b` is `a` when `a` is truthy, else `b`; `a && b` is
+                // `a` when `a` is falsy, else `b`.
+                const a_ends: Lat.Truth = if (op == .logical_or) .yes else .no;
+                if (t == a_ends) return a;
+                if (t == a_ends.not()) {
+                    // A literal `a` is evaluated with nothing to lose; any
+                    // other is still evaluated, so the value is not the
+                    // literal `b` may be.
+                    return if (a.state == .lit) b else if (b.state == .bot) .bot else s.demote(b);
+                }
+                if (a.state == .lit) return .top;
+                // Either side may be the value; nonnull only when both are,
+                // and truthy when `a` is wherever it ends the operator and
+                // `b` is wherever it goes on (`x || true`).
+                var v = s.demote(s.join(a, b));
+                v.truth = a_ends.join(s.truthOf(b));
+                return v;
             },
             else => {},
         }
@@ -2731,12 +2843,14 @@ const Spec = struct {
                     continue;
                 }
                 const t = m.memo[d.lhs];
-                if (t.state == .lit) {
+                // A literal test, or one always truthy or always falsy
+                // whose evaluation does nothing.
+                if (t.state == .lit or (s.truthOf(t) != .unknown and try s.effectFreeTest(m, @enumFromInt(d.lhs), 0))) {
                     const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
-                    const taken: ?Index = switch (s.truthy(s.litOf(t))) {
+                    const taken: ?Index = switch (s.truthOf(t)) {
                         .yes => c.consequent,
                         .no => c.alternate,
-                        .unknown => null,
+                        .bot, .unknown => null,
                     };
                     if (taken) |b| {
                         m.copyNode(node, b);
@@ -2749,23 +2863,90 @@ const Spec = struct {
             } else if (tag == .binary) {
                 const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
                 if (op == .logical_and or op == .logical_or) {
+                    // `a || b` is `a` when `a` is always truthy, and `b`
+                    // when `a` is always falsy and evaluating it does
+                    // nothing; `a && b` the other way round.
                     const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
                     const l = m.memo[b.left.int()];
-                    if (l.state == .lit) {
-                        const t = s.truthy(s.litOf(l));
-                        if (t != .unknown and (op == .logical_and) == (t == .yes)) {
-                            m.copyNode(node, b.right);
-                            m.memo[node.int()] = m.memo[b.right.int()];
-                            try JsIr.pushOperand(s.arena, &stack, node);
-                            any = true;
-                            continue;
-                        }
+                    const t = s.truthOf(l);
+                    const a_ends: Lat.Truth = if (op == .logical_or) .yes else .no;
+                    const kept: ?Index = if (t == a_ends and l.state != .lit)
+                        b.left
+                    else if (t == a_ends.not() and (l.state == .lit or try s.effectFreeTest(m, b.left, 0)))
+                        b.right
+                    else
+                        null;
+                    if (kept) |k| {
+                        m.copyNode(node, k);
+                        m.memo[node.int()] = m.memo[k.int()];
+                        try JsIr.pushOperand(s.arena, &stack, node);
+                        any = true;
+                        continue;
                     }
                 }
             }
             try ir.pushOperands(s.arena, &stack, node);
         }
         return any;
+    }
+
+    /// Whether every value `node` may have, by fact 3, is a primitive the
+    /// program made — no object of its own, no host value — so that an
+    /// operator applied to it runs no code.
+    fn primitive(s: *Spec, m: *Mod, node: Index) bool {
+        if (!s.pts.ok) return false;
+        const vals = s.pts.vals[m.index];
+        if (node.int() >= vals.len) return false;
+        const v = vals[node.int()];
+        return !v.top and v.sites.len == 0;
+    }
+
+    /// Whether evaluating `node` does nothing but make its value, so that a
+    /// fold may skip it: `effectFree`'s literal, name, function or read
+    /// through the program's own objects; `===`, `!==`, `!` and `typeof` of
+    /// such; and `&&`, `||` and `?:` whose parts that are evaluated are such
+    /// — a part the facts say is never reached (`y` in `x || true || y`) is
+    /// not asked about.
+    fn effectFreeTest(s: *Spec, m: *Mod, node: Index, depth: u32) Allocator.Error!bool {
+        if (depth > 64) return false;
+        const ir = m.ir;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .unary => return switch (@as(JsIr.UnaryOp, @enumFromInt(d.rhs))) {
+                .not, .type_of => s.effectFreeTest(m, @enumFromInt(d.lhs), depth + 1),
+                .neg => s.primitive(m, @enumFromInt(d.lhs)) and try s.effectFreeTest(m, @enumFromInt(d.lhs), depth + 1),
+                .yield => false,
+            },
+            .binary => {
+                const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
+                switch (op) {
+                    .strict_eq, .strict_ne => return try s.effectFreeTest(m, b.left, depth + 1) and try s.effectFreeTest(m, b.right, depth + 1),
+                    .logical_and, .logical_or => {
+                        if (!try s.effectFreeTest(m, b.left, depth + 1)) return false;
+                        const a_ends: Lat.Truth = if (op == .logical_or) .yes else .no;
+                        if (s.truthOf(m.memo[b.left.int()]) == a_ends) return true;
+                        return s.effectFreeTest(m, b.right, depth + 1);
+                    },
+                    // On primitives the program made, an operator converts
+                    // nothing that could run code (no `valueOf`), and none
+                    // of these throws.
+                    .lt, .le, .gt, .ge, .loose_eq, .add, .sub, .mul, .div, .rem, .pow, .bit_and, .bit_or, .bit_xor, .shl, .sar, .shr => return s.primitive(m, b.left) and s.primitive(m, b.right) and
+                        try s.effectFreeTest(m, b.left, depth + 1) and try s.effectFreeTest(m, b.right, depth + 1),
+                    .instance_of => return false,
+                }
+            },
+            .cond => {
+                const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
+                const test_node: Index = @enumFromInt(d.lhs);
+                if (!try s.effectFreeTest(m, test_node, depth + 1)) return false;
+                const t = s.truthOf(m.memo[test_node.int()]);
+                if (t != .no and !try s.effectFreeTest(m, c.consequent, depth + 1)) return false;
+                if (t != .yes and !try s.effectFreeTest(m, c.alternate, depth + 1)) return false;
+                return true;
+            },
+            else => return s.effectFree(m, node),
+        }
     }
 
     /// Append to `fold_reads` the whole-program id of every name read in
@@ -2972,9 +3153,15 @@ const Spec = struct {
         // Then this one.
         var changed = false;
         for (items) |raw| {
-            if (s.decided(m, @enumFromInt(raw)) != null or try s.deadWrite(m, @enumFromInt(raw)) or literalStmt(m.ir, @enumFromInt(raw))) changed = true;
+            if (try s.decided(m, @enumFromInt(raw)) != null or try s.deadWrite(m, @enumFromInt(raw)) or literalStmt(m.ir, @enumFromInt(raw))) changed = true;
         }
-        if (!changed) return any;
+        if (!changed) {
+            // What follows a statement that cannot complete, when it may go.
+            const keep = try s.deadTail(m, owner, items);
+            if (keep == items.len) return any;
+            try s.setList(m, owner, items[0..keep]);
+            return true;
+        }
         var out: std.ArrayList(u32) = .empty;
         defer out.deinit(s.arena);
         for (items) |raw| {
@@ -2995,10 +3182,18 @@ const Spec = struct {
                 try out.append(s.arena, raw);
                 continue;
             }
-            const arm = s.decided(m, stmt) orelse {
+            const decision = try s.decided(m, stmt) orelse {
                 try out.append(s.arena, raw);
                 continue;
             };
+            const arm = decision.arm;
+            if (decision.test_kept) |t| {
+                // `T; …arm`, the `if` node reused for `T`.
+                m.setNode(stmt, .expr_stmt, t.int(), 0);
+                try out.append(s.arena, raw);
+                try out.appendSlice(s.arena, m.ir.extraSlice(arm, u32));
+                continue;
+            }
             if (arm.len() == 0) continue;
             if (s.spliceable(m, arm)) {
                 try out.appendSlice(s.arena, m.ir.extraSlice(arm, u32));
@@ -3010,14 +3205,65 @@ const Spec = struct {
             m.setNode(stmt, .block_stmt, @intFromEnum(NameIndex.none), at);
             try out.append(s.arena, raw);
         }
-        const start = try m.append(s.gpa, out.items);
-        const end: u32 = start + @as(u32, @intCast(out.items.len));
+        // An arm kept in place of its `if` may end in a jump (`if (x ||
+        // true) return false;`), and what followed the `if` goes with it.
+        try s.setList(m, owner, out.items[0..try s.deadTail(m, owner, out.items)]);
+        return true;
+    }
+
+    /// Write `items` as the statement list whose range lives at `owner`
+    /// (two words of `extra`), or as the module's body when null.
+    fn setList(s: *Spec, m: *Mod, owner: ?u32, items: []const u32) Allocator.Error!void {
+        const start = try m.append(s.gpa, items);
+        const end: u32 = start + @as(u32, @intCast(items.len));
         m.changed();
         if (owner) |o| {
             m.extra.items[o] = start;
             m.extra.items[o + 1] = end;
         } else {
             m.ir.body = .{ .start = @enumFromInt(start), .end = @enumFromInt(end) };
+        }
+    }
+
+    /// How many statements of `list` may run: all of them, or those up to
+    /// the first that cannot complete normally (`completes`) when what
+    /// follows it may go — nothing outside it in the declaration being
+    /// rewritten names or declares what it declares, so no earlier
+    /// statement, no closure and no hoisted `function` can reach it. A
+    /// module's body is kept whole: its names are the program's.
+    fn deadTail(s: *Spec, m: *Mod, owner: ?u32, list: []const u32) Allocator.Error!usize {
+        if (owner == null or list.len < 2) return list.len;
+        for (list[0 .. list.len - 1], 0..) |raw, i| {
+            if (completes(m.ir, @enumFromInt(raw), 0)) continue;
+            return if (try s.tailUnnamed(m, list[i + 1 ..])) i + 1 else list.len;
+        }
+        return list.len;
+    }
+
+    /// Whether nothing outside the statements `tail`, in the top-level
+    /// statement being rewritten (`cur_top`), declares or mentions a name
+    /// `tail` declares.
+    fn tailUnnamed(s: *Spec, m: *Mod, tail: []const u32) Allocator.Error!bool {
+        const names = m.names.items.len;
+        // Per name: its declarations, then its mentions.
+        const in_tail = try s.arena.alloc(u32, 2 * names);
+        @memset(in_tail, 0);
+        var decls_in_tail: std.ArrayList(u32) = .empty;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        for (tail) |raw| try JsIr.pushOperand(s.arena, &stack, @enumFromInt(raw));
+        while (JsIr.popOperand(&stack)) |node| {
+            try nameUses(s.arena, m.ir, node, in_tail, &decls_in_tail);
+            try pushChildren(s.arena, m.ir, node, &stack);
+        }
+        if (decls_in_tail.items.len == 0) return true;
+        const whole = try s.arena.alloc(u32, 2 * names);
+        @memset(whole, 0);
+        var all: std.ArrayList(u32) = .empty;
+        for (try s.preorder(m, s.cur_top)) |node| try nameUses(s.arena, m.ir, node, whole, &all);
+        for (decls_in_tail.items) |x| {
+            if (m.globalOf(@enumFromInt(x)) != null) return false;
+            if (whole[2 * x] != in_tail[2 * x] or whole[2 * x + 1] != in_tail[2 * x + 1]) return false;
         }
         return true;
     }
@@ -3127,26 +3373,49 @@ const Spec = struct {
     }
 
     /// The arm an `if` with a literal test takes, or null.
-    fn decided(s: *Spec, m: *Mod, stmt: Index) ?JsIr.SubRange {
+    const Decided = struct {
+        arm: JsIr.SubRange,
+        /// The test, still evaluated, as a statement before the arm: it is
+        /// always truthy or always falsy, but evaluating it may do
+        /// something. Null when evaluating it does nothing.
+        test_kept: ?Index = null,
+    };
+
+    /// The arm an `if` takes when its test is a literal, or is always
+    /// truthy or always falsy whatever its value (`x || true`, `Lat`'s
+    /// truthiness), or null.
+    fn decided(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!?Decided {
         const ir = m.ir;
         if (ir.tag(stmt) != .if_stmt) return null;
         const d = ir.data(stmt);
         const test_node: Index = @enumFromInt(d.lhs);
-        const lit: Lit = switch (ir.tag(test_node)) {
+        const lit: ?Lit = switch (ir.tag(test_node)) {
             .true_lit => .{ .kind = .true_lit },
             .false_lit => .{ .kind = .false_lit },
             .null_lit => .{ .kind = .null_lit },
             .undefined_lit => .{ .kind = .undefined_lit },
             .number => .{ .kind = .number, .bytes = ir.bytes(test_node) },
             .string => .{ .kind = .string, .bytes = ir.bytes(test_node) },
-            else => return null,
+            else => null,
         };
         const branches = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-        return switch (s.truthy(lit)) {
-            .yes => branches.thenBody(),
-            .no => branches.elseBody(),
+        if (lit) |l| return switch (s.truthy(l)) {
+            .yes => .{ .arm = branches.thenBody() },
+            .no => .{ .arm = branches.elseBody() },
             .unknown => null,
         };
+        // The facts of the statement just patched (`rewrite`).
+        if (test_node.int() >= m.memo.len) return null;
+        const arm = switch (s.truthOf(m.memo[test_node.int()])) {
+            .yes => branches.thenBody(),
+            .no => branches.elseBody(),
+            .bot, .unknown => return null,
+        };
+        if (try s.effectFreeTest(m, test_node, 0)) return .{ .arm = arm };
+        // `T; …arm`, the `if` node reused for `T`: only when the arm may
+        // join the list, since a block would need a node of its own.
+        if (arm.len() != 0 and !s.spliceable(m, arm)) return null;
+        return .{ .arm = arm, .test_kept = test_node };
     }
 
     /// Whether an arm's statements may join the list around it: no name it
@@ -7761,6 +8030,68 @@ fn sameChain(ir: *const JsIr, a: Index, b: Index) bool {
         }
     }
     return false;
+}
+
+/// Whether statement `stmt` may complete normally, so that the statement
+/// after it in its list may run: not a `return`, `throw`, `break` or
+/// `continue`, nor an `if` neither of whose arms may, nor an unlabelled block
+/// that may not. Any other statement may, as far as this says.
+fn completes(ir: *const JsIr, stmt: Index, depth: u32) bool {
+    if (depth > 64) return true;
+    switch (ir.tag(stmt)) {
+        .return_stmt, .throw_stmt, .break_stmt, .continue_stmt => return false,
+        .if_stmt => {
+            const b = ir.extraData(@enumFromInt(ir.data(stmt).rhs), JsIr.If);
+            return completesList(ir, b.thenBody(), depth + 1) or completesList(ir, b.elseBody(), depth + 1);
+        },
+        .block_stmt => {
+            // A labelled block may be left by its `break`.
+            if (@as(NameIndex, @enumFromInt(ir.data(stmt).lhs)) != .none) return true;
+            return completesList(ir, ir.subRange(@enumFromInt(ir.data(stmt).rhs)), depth + 1);
+        },
+        else => return true,
+    }
+}
+
+/// Whether a statement list may complete normally, by its last statement
+/// alone: a jump before it makes the list not complete either, so this may
+/// say "may" where it does not, never the other way — and `foldList` cuts
+/// what follows a jump in each list before it asks of the list around it.
+fn completesList(ir: *const JsIr, range: JsIr.SubRange, depth: u32) bool {
+    const items = ir.extraSlice(range, Index);
+    if (items.len == 0) return true;
+    return completes(ir, items[items.len - 1], depth);
+}
+
+/// Count what node `node` declares (`counts[2 * name]`, each also appended to
+/// `declared`) and the names it mentions (`counts[2 * name + 1]`): an
+/// identifier, and the label of a `break` or `continue`.
+fn nameUses(gpa: Allocator, ir: *const JsIr, node: Index, counts: []u32, declared: *std.ArrayList(u32)) Allocator.Error!void {
+    const d = ir.data(node);
+    const Count = struct {
+        fn decl(c: []u32, out: *std.ArrayList(u32), a: Allocator, n: NameIndex) Allocator.Error!void {
+            const i = n.unwrap() orelse return;
+            if (2 * i >= c.len) return;
+            c[2 * i] += 1;
+            try out.append(a, i);
+        }
+        fn params(c: []u32, out: *std.ArrayList(u32), a: Allocator, f: *const JsIr, record: ExtraIndex) Allocator.Error!void {
+            for (f.extraSlice(f.extraData(record, JsIr.Func).params(), NameIndex)) |p| try decl(c, out, a, p);
+        }
+    };
+    switch (ir.tag(node)) {
+        .ident, .break_stmt, .continue_stmt => if (@as(NameIndex, @enumFromInt(d.lhs)).unwrap()) |i| {
+            if (2 * i + 1 < counts.len) counts[2 * i + 1] += 1;
+        },
+        .const_decl, .let_decl, .for_of, .while_true, .block_stmt => try Count.decl(counts, declared, gpa, @enumFromInt(d.lhs)),
+        .func_decl, .gen_decl => {
+            try Count.decl(counts, declared, gpa, @enumFromInt(d.lhs));
+            try Count.params(counts, declared, gpa, ir, @enumFromInt(d.rhs));
+        },
+        .arrow => try Count.params(counts, declared, gpa, ir, @enumFromInt(d.lhs)),
+        .try_stmt => try Count.decl(counts, declared, gpa, ir.extraData(@enumFromInt(d.rhs), JsIr.Try).catch_name),
+        else => {},
+    }
 }
 
 /// Whether a function body may run off its end, returning `undefined`: its

@@ -1,0 +1,49 @@
+-- emit: a test that is always truthy, or always falsy, without being a
+-- literal (research 52's E4, §3.4 and §3.6). `score` is only ever called
+-- with `True`, so its test is `n < 0 || true`: always truthy, whatever `n`
+-- is, and evaluating it does nothing, so the `if` keeps its first arm, and
+-- the statements after it in the function go — `score` is the constant
+-- `0`. `cap` is only ever called with `False`, so `n > 100 && false` is
+-- always falsy and its first arm goes. `keep` is called with both, and
+-- keeps its test. Before, a test folded only when it was a literal, and
+-- the dead arm and the statements after it stayed.
+import Node exposing (Program)
+
+
+score : Bool, Int → Int
+score strict n =
+    if n < 0 || strict then
+        0
+    else
+        twice = n * 2
+        twice * twice + 1
+
+
+cap : Bool, Int → Int
+cap relaxed n =
+    if n > 100 && relaxed then
+        100
+    else
+        less = n - 1
+        less * 3
+
+
+keep : Bool, Int → Int
+keep strict n =
+    if n < 0 || strict then
+        0
+    else
+        twice = n * 2
+        twice * twice + 1
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (score True 5)
+        , String.fromInt (score True (-3))
+        , String.fromInt (cap False 500)
+        , String.fromInt (cap False 7)
+        , String.fromInt (keep True 4)
+        , String.fromInt (keep False 4)
+        ]

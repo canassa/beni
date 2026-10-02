@@ -1,0 +1,61 @@
+-- Whole-program specialisation folds a test that is always truthy or always
+-- falsy without being a literal (`backend.md` §9, *Whole-program
+-- specialisation*, amended 2026-10-02: truthiness) only where skipping what
+-- it no longer evaluates loses nothing, so both builds print the same lines
+-- in the same order. `score` is always called with `True`: `n < 0 || True`
+-- is always truthy and does nothing, so `score` is `0`. `logged` is too,
+-- but its test logs `n`, which still happens on every call, before `0`.
+-- `pick`'s conditional asks the same of a logged test; `cap` is always
+-- called with `False`, and its `&&` is always falsy.
+import Node exposing (Program)
+
+
+score : Bool, Int → Int
+score strict n =
+    if n < 0 || strict then
+        0
+    else
+        twice = n * 2
+        twice * twice + 1
+
+
+logged : Bool, Int → Int
+logged strict n =
+    if Debug.log "logged" n < 0 || strict then
+        0
+    else
+        twice = n * 2
+        twice * twice + 1
+
+
+pick : Bool, Int → String
+pick strict n =
+    String.fromInt n
+        ++ (if Debug.log "pick" (n > 10) || strict then
+               " big"
+            else
+               " small"
+           )
+
+
+cap : Bool, Int → Int
+cap relaxed n =
+    if n > 100 && relaxed then
+        100
+    else
+        less = n - 1
+        less * 3
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (score True 5)
+        , String.fromInt (score True (-3))
+        , String.fromInt (logged True 4)
+        , String.fromInt (logged True (-4))
+        , pick True 3
+        , pick True 30
+        , String.fromInt (cap False 500)
+        , String.fromInt (cap False 7)
+        ]
