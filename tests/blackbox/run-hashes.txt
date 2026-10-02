@@ -52,7 +52,7 @@ build_test.test.a rebuild into the same --out holds exactly a fresh build's file
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
 build_test.test.a saturated n-ary call emits a direct JavaScript call #0 1bd5d24f7c34630a7a1ce10b0769719447bebab456c3552d6bae2418ff3de5c7
-build_test.test.a schema program's issues get short fields and integer tags under --release #0 9d9b769d93ada76533a9fa8ccd3f5a68e0367fb50eae40a2c39a2f4dda5fec87
+build_test.test.a schema program's issues get short fields and integer tags under --release #0 16123ffdd91a6ca6feb41f2563d57b0101f37a9bca9d0635d9b6f693a71694f7
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 1bd9d5013ea7fd832c7784f2f5d4694f3e6cbce4ee535a10443f0e7eb2285774
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 2022537c75006053bd08ad500c62267748b0c8d263748f9ac1a6ef1a6fb3ed4b
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675
@@ -81,8 +81,8 @@ cache_test.test.a moved derived context rebuilds evidence as a cold build: a pay
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 e9daab7e0e46de4733282c51fbc94f1ad85bd60f6ee38c447c79ac771bc8a3d8
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 d24c29c31d7013f562705704cfae588a786e39e79bce9db1e8270a51d02ebcd1
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 2308194a0b5c3370d615f5526f4cfca9ffbe3e4cd8bf652b934a721bbd9ed6b9
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 edc76e27f587abf07e879912ff7073cc1c7438fb0f3736a0486d59c72ad66ea5
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 dc416e66f4a07add1548b3a22c794bc43426e4070c77dd178b8344ac81490659
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 9d0ea1208ca86677bdaf57a2dcede5c23c609b2b7992d3e0d392d8a204e699e3
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 da1b5573dc84897176986fffeae3fde4da8cbe4b39a98a1b296f43a6b7bdd8d3
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 f6b1e6fe78df5038ab1b41a9c199bf4295a4ae5f7b709aa2cfc559b762190379
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 30e88bb72f3e96ab180374b6bce28a32753d59bc678e808346fa97709393350e
 cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 689631b2d863902f10b2426cea94d132567143aebeec55596e6dca540d9064d8

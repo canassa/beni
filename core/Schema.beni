@@ -247,7 +247,7 @@ defaultOptions =
 -- issues of a run — are host arrays, made and read through `Js`.
 
 type Node
-    = NPrim Int
+    = NPrim PrimitiveKind
     | NList Node
     | NNullable Node
     | NRecord Js.Value Maps
@@ -285,13 +285,14 @@ type alias Pair =
 
 
 -- A variant: its payload is a record node, or none. A union's are a host
--- array of these.
+-- array of these. `problem` is why it is not a variant, when it is not.
 type alias VariantNode =
     name : String
     tag : String
     payload : Maybe Node
     injE : Pair
     injA : Pair
+    problem : Maybe String
 
 
 -- A recursive schema's definition. `state` is 0 unbuilt, 1 building and 2
@@ -388,6 +389,17 @@ variantAt : Js.Value, Int -> VariantNode
 variantAt xs i = fromHost (Js.at xs i)
 
 
+-- A host array of the engine's fields or variants, as the `List` it is: a
+-- plain array is one (`backend.md` §4, *Lists are arrays*), so a walk that
+-- runs once per schema, not once per value, is `List`'s.
+fieldList : Js.Value -> List FieldNode
+fieldList xs = fromHost xs
+
+
+variantList : Js.Value -> List VariantNode
+variantList xs = fromHost xs
+
+
 box : Node -> Schema e a
 box n =
     b : Box
@@ -463,68 +475,54 @@ plain xs =
 -- The first name of the host array `xs`, by `nameOf`, that occurs again
 -- after it.
 duplicateIn : Js.Value, (a -> String) -> Maybe String
-duplicateIn xs nameOf = duplicateFrom xs nameOf 0 (lengthOf xs)
-
-
-duplicateFrom : Js.Value, (a -> String), Int, Int -> Maybe String
-duplicateFrom xs nameOf i n =
-    if i >= n then
+duplicateIn xs nameOf =
+    names = Js.call xs "map" [ toHost nameOf ]
+    found =
+        Js.call names "find"
+            [ toHost λn i -> Js.to (Js.call names "indexOf" [ n, Js.from (i + 1) ]) >= 0 ]
+    if Js.isUndefined found then
         Nothing
     else
-        name = nameOf (fromHost (Js.at xs i))
-        if occursFrom xs nameOf name (i + 1) n then
-            Just name
-        else
-            duplicateFrom xs nameOf (i + 1) n
-
-
-occursFrom : Js.Value, (a -> String), String, Int, Int -> Bool
-occursFrom xs nameOf name i n =
-    if i >= n then
-        False
-    else if nameOf (fromHost (Js.at xs i)) == name then
-        True
-    else
-        occursFrom xs nameOf name (i + 1) n
+        Just (stringOf found)
 
 
 -- ---- Primitives ----------------------------------------------------------
 
 --| A string, both ways.
 pub string : Schema String String
-string = box (NPrim 0)
+string = box (NPrim StringKind)
 
 
 --| `true` or `false`.
 pub bool : Schema Bool Bool
-bool = box (NPrim 1)
+bool = box (NPrim BoolKind)
 
 
 --| A safe integer, both ways: a whole number from −(2⁵³−1) to 2⁵³−1. A
 --| well-typed `Int` outside that range fails to encode.
 pub int : Schema Int Int
-int = box (NPrim 2)
+int = box (NPrim IntKind)
 
 
 --| Any number. Printing NaN or an infinity as JSON fails, because JSON has
 --| no number for it.
 pub float : Schema Float Float
-float = box (NPrim 3)
+float = box (NPrim FloatKind)
 
 
 --| A finite number, both ways.
 pub finiteFloat : Schema Float Float
-finiteFloat = box (NPrim 4)
+finiteFloat = box (NPrim FiniteFloatKind)
 
 
 --| JSON's `null`, whose one value is `Null`.
 pub null : Schema (Nullable Never) (Nullable Never)
-null = box (NPrim 5)
+null = box (NPrim NullKind)
 
 
 --| Any host value, unread: the Encoded value is the Type value.
 pub value : Schema Value Value
-value = box (NPrim 6)
+value = box (NPrim ValueKind)
 
 
 -- ---- Lists and nullability -----------------------------------------------
@@ -689,14 +687,11 @@ pub injection : sync (p -> a), sync (a -> Maybe p) -> Injection p a
 injection inject project = cast (pair (toHost inject) (toHost project))
 
 
-variantNode : String, String, Maybe Node, Pair, Pair -> VariantNode
-variantNode name tag payload injE injA =
-    { name = name, tag = tag, payload = payload, injE = injE, injA = injA }
-
-
--- A `Variant`: the variant, or why it is not one.
-variantBox : Result String VariantNode -> Variant e a
-variantBox r = cast r
+variantNode : String, String, Maybe Node, Pair, Pair, Maybe String -> Variant e a
+variantNode name tag payload injE injA problem =
+    v : VariantNode
+    v = { name = name, tag = tag, payload = payload, injE = injE, injA = injA, problem = problem }
+    cast v
 
 
 --| A variant with a payload: its constructor name, its tag, its payload —
@@ -710,19 +705,26 @@ pub variant :
     , Injection pa a
     -> Variant e a
 variant name tag payload injectE injectA =
-    case nodeOf payload of
-        NRecord _ _ ->
-            variantBox
-                (Ok (variantNode name tag (Just (nodeOf payload)) (cast injectE) (cast injectA)))
+    n = nodeOf payload
+    variantNode
+        name
+        tag
+        (Just n)
+        (cast injectE)
+        (cast injectA)
+        (case n of
+            NRecord _ _ ->
+                Nothing
 
-        _ ->
-            variantBox (Err "the payload of the variant ${name} is not a record schema")
+            _ ->
+                Just "the payload of the variant ${name} is not a record schema"
+        )
 
 
 --| A variant with no payload: only the discriminator is written.
 pub nullary : String, String, Injection () e, Injection () a -> Variant e a
 nullary name tag injectE injectA =
-    variantBox (Ok (variantNode name tag Nothing (cast injectE) (cast injectA)))
+    variantNode name tag Nothing (cast injectE) (cast injectA) Nothing
 
 
 --| A tagged union: the discriminator key, then the variants. A value is an
@@ -730,9 +732,18 @@ nullary name tag injectE injectA =
 --| are that variant's payload.
 pub tagged : String, List (Variant e a) -> Schema e a
 tagged discriminator variants = Js.pure λ() ->
-    given = plain (toHost variants)
-    vs = Js.array []
-    case collectVariants given vs 0 (lengthOf given) of
+    vs = plain (toHost variants)
+    broken =
+        Js.call vs "find"
+            [ toHost λv ->
+                case v.problem of
+                    Just _ ->
+                        True
+
+                    Nothing ->
+                        False
+            ]
+    case if Js.isUndefined broken then Nothing else (asVariant broken).problem of
         Just problem ->
             box (NBroken problem)
 
@@ -750,15 +761,29 @@ tagged discriminator variants = Js.pure λ() ->
                                 box (NBroken "two variants are named ${name}")
 
                             Nothing ->
-                                case clash discriminator vs 0 (lengthOf vs) of
-                                    Just name ->
-                                        box
-                                            (NBroken
-                                                "the variant ${name} has a field on the discriminator \"${discriminator}\""
-                                            )
+                                clash =
+                                    Js.call vs "find"
+                                        [ toHost λv ->
+                                            case v.payload of
+                                                Just (NRecord fs _) ->
+                                                    Js.to
+                                                        (Js.call fs "some"
+                                                            [ toHost λf ->
+                                                                f.key == discriminator
+                                                                    || f.name == discriminator
+                                                            ]
+                                                        )
 
-                                    Nothing ->
-                                        box (NTagged discriminator vs)
+                                                _ ->
+                                                    False
+                                        ]
+                                if Js.isUndefined clash then
+                                    box (NTagged discriminator vs)
+                                else
+                                    box
+                                        (NBroken
+                                            "the variant ${(asVariant clash).name} has a field on the discriminator \"${discriminator}\""
+                                        )
 
 
 variantTag : VariantNode -> String
@@ -769,51 +794,8 @@ variantName : VariantNode -> String
 variantName v = v.name
 
 
--- The variants of `given` pushed onto `vs`, or why the first that could not
--- be built was not.
-collectVariants : Js.Value, Js.Value, Int, Int -> Maybe String
-collectVariants given vs i n =
-    if i >= n then
-        Nothing
-    else
-        case variantResult (Js.at given i) of
-            Err problem ->
-                Just problem
-
-            Ok v ->
-                _ = push vs (toHost v)
-                collectVariants given vs (i + 1) n
-
-
-variantResult : Js.Value -> Result String VariantNode
-variantResult v = cast v
-
-
--- The first variant with a field on the discriminator.
-clash : String, Js.Value, Int, Int -> Maybe String
-clash discriminator vs i n =
-    if i >= n then
-        Nothing
-    else
-        v = variantAt vs i
-        case v.payload of
-            Just (NRecord fs _) ->
-                if fieldOn discriminator fs 0 (lengthOf fs) then
-                    Just v.name
-                else
-                    clash discriminator vs (i + 1) n
-
-            _ ->
-                clash discriminator vs (i + 1) n
-
-
-fieldOn : String, Js.Value, Int, Int -> Bool
-fieldOn discriminator fs i n =
-    if i >= n then
-        False
-    else
-        f = fieldAt fs i
-        f.key == discriminator || f.name == discriminator || fieldOn discriminator fs (i + 1) n
+asVariant : Js.Value -> VariantNode
+asVariant v = fromHost v
 
 
 -- ---- Conversions ---------------------------------------------------------
@@ -1479,22 +1461,22 @@ nonNullOut c x =
         toHost (NonNull x)
 
 
-prim : Context, Int, Int, Path, Js.Value -> Js.Value
+prim : Context, PrimitiveKind, Int, Path, Js.Value -> Js.Value
 prim c p depth path v =
     case p of
-        0 ->
+        StringKind ->
             if isType v "string" then
                 v
             else
                 failAt c path WrongShape "expected a string" v False
 
-        1 ->
+        BoolKind ->
             if isType v "boolean" then
                 v
             else
                 failAt c path WrongShape "expected a boolean" v False
 
-        2 ->
+        IntKind ->
             if not (isType v "number") then
                 failAt c path WrongShape "expected a number" v False
             else if Js.to (Js.call (Js.global "Number") "isSafeInteger" [ v ]) then
@@ -1502,7 +1484,7 @@ prim c p depth path v =
             else
                 failAt c path InvalidValue "expected a safe integer" v False
 
-        3 ->
+        FloatKind ->
             if not (isType v "number") then
                 failAt c path WrongShape "expected a number" v False
             else if c.json && c.dh && not (isFinite v) then
@@ -1510,7 +1492,7 @@ prim c p depth path v =
             else
                 v
 
-        4 ->
+        FiniteFloatKind ->
             if not (isType v "number") then
                 failAt c path WrongShape "expected a number" v False
             else if isFinite v then
@@ -1518,13 +1500,13 @@ prim c p depth path v =
             else
                 failAt c path InvalidValue "expected a finite number" v False
 
-        5 ->
+        NullKind ->
             if c.sh && not (Js.isNull v) then
                 failAt c path WrongShape "expected null" v False
             else
                 nullOut c
 
-        _ ->
+        ValueKind ->
             if c.json && c.dh then
                 case printable v (c.max - depth) of
                     1 ->
@@ -1927,39 +1909,34 @@ call c path fn v =
             a
 
         Err given ->
-            issues = plain given
-            prefix = pathArray path False
-            _ =
-                if lengthOf issues == 0 then
-                    moved
-                        c
-                        prefix
-                        v
-                        (toHost [ issue "the conversion failed without an issue" ])
-                        0
-                        1
-                else
-                    moved c prefix v issues 0 (lengthOf issues)
+            _ = moved c (pathArray path False) v given
             c.fail
 
 
-moved : Context, Js.Value, Js.Value, Js.Value, Int, Int -> ()
-moved c prefix v issues i n =
-    if i >= n then
-        ()
-    else
-        given = issueOf (Js.at issues i)
-        entry : Issue
-        entry =
-            { path = fromHost (Js.call prefix "concat" [ plain (toHost given.path) ])
-            , direction = c.dir
-            , endpoint = c.outE
-            , code = given.code
-            , message = given.message
-            , input = if c.report then Just (cast v) else Nothing
-            }
-        _ = push c.issues (toHost entry)
-        moved c prefix v issues (i + 1) n
+-- A conversion's issues, `given`, each pushed onto the context's with the
+-- engine's path in front of its own; an `Err` with none is one of the
+-- engine's.
+moved : Context, Js.Value, Js.Value, Js.Value -> ()
+moved c prefix v given =
+    issues = plain given
+    Js.each
+        (if lengthOf issues == 0 then
+            toHost [ issue "the conversion failed without an issue" ]
+         else
+            issues
+        )
+        λx ->
+            i = issueOf x
+            entry : Issue
+            entry =
+                { path = fromHost (Js.call prefix "concat" [ plain (toHost i.path) ])
+                , direction = c.dir
+                , endpoint = c.outE
+                , code = i.code
+                , message = i.message
+                , input = if c.report then Just (cast v) else Nothing
+                }
+            push c.issues (toHost entry)
 
 
 -- ---- Running -------------------------------------------------------------
@@ -2206,47 +2183,28 @@ writeSlot s =
 -- one call.
 compiledFail : Context, Path, Js.Value, Js.Value, Int, String, Js.Value, Bool -> Js.Value
 compiledFail c parent input output code message v written =
-    failAt c (pathAt parent input output) (codeOf code) message v written
+    failAt c (pathAt parent input output) (fromHost (Js.at issueCodes code)) message v written
 
 
-codeOf : Int -> IssueCode
-codeOf code =
-    case code of
-        0 ->
-            WrongShape
-
-        1 ->
-            MissingKey
-
-        2 ->
-            UnknownKey
-
-        3 ->
-            UnknownTag
-
-        4 ->
-            InvalidValue
-
-        5 ->
-            DepthExceeded
-
-        6 ->
-            InvalidOptions
-
-        7 ->
-            ConversionFailed
-
-        8 ->
-            CheckFailed
-
-        9 ->
-            ParseFailed
-
-        10 ->
-            PrintFailed
-
-        _ ->
-            InvalidSchema
+-- `IssueCode`'s constructors, a host array in declaration order.
+issueCodes : Js.Value
+issueCodes =
+    plain
+        (toHost
+            [ WrongShape
+            , MissingKey
+            , UnknownKey
+            , UnknownTag
+            , InvalidValue
+            , DepthExceeded
+            , InvalidOptions
+            , ConversionFailed
+            , CheckFailed
+            , ParseFailed
+            , PrintFailed
+            , InvalidSchema
+            ]
+        )
 
 
 -- A `via`'s decoding direction on the value its parent read at `input`:
@@ -2273,19 +2231,7 @@ conversionAnswer answer c parent input output v =
             a
 
         Err given ->
-            issues = plain given
-            prefix = pathArray (pathAt parent input output) False
-            _ =
-                if lengthOf issues == 0 then
-                    moved
-                        c
-                        prefix
-                        v
-                        (toHost [ issue "the conversion failed without an issue" ])
-                        0
-                        1
-                else
-                    moved c prefix v issues 0 (lengthOf issues)
+            _ = moved c (pathArray (pathAt parent input output) False) v given
             c.fail
 
 
@@ -2328,7 +2274,7 @@ shapeOf : Js.Value, Js.Value, Node -> Shape
 shapeOf ids definitions n =
     case n of
         NPrim k ->
-            Primitive (kindOf k)
+            Primitive k
 
         NList child ->
             ListOf (shapeOf ids definitions child)
@@ -2337,14 +2283,24 @@ shapeOf ids definitions n =
             NullableOf (shapeOf ids definitions child)
 
         NRecord fs _ ->
-            out = Js.array []
-            _ = fieldShapes ids definitions fs out 0 (lengthOf fs)
-            RecordOf (fromHost out)
+            RecordOf
+                (List.map (fieldList fs) λf ->
+                    { name = f.name
+                    , key = f.key
+                    , optional = f.optional
+                    , shape = shapeOf ids definitions f.node
+                    }
+                )
 
         NTagged discriminator vs ->
-            out = Js.array []
-            _ = variantShapes ids definitions vs out 0 (lengthOf vs)
-            TaggedOf discriminator (fromHost out)
+            TaggedOf
+                discriminator
+                (List.map (variantList vs) λv ->
+                    { name = v.name
+                    , payload = Maybe.map v.payload (shapeOf ids definitions _)
+                    , tag = v.tag
+                    }
+                )
 
         NConverted child _ _ ->
             Converted (shapeOf ids definitions child)
@@ -2379,61 +2335,3 @@ shapeOf ids definitions n =
 
         NBroken problem ->
             Invalid problem
-
-
-fieldShapes : Js.Value, Js.Value, Js.Value, Js.Value, Int, Int -> ()
-fieldShapes ids definitions fs out i n =
-    if i >= n then
-        ()
-    else
-        f = fieldAt fs i
-        shape : FieldShape
-        shape =
-            { name = f.name
-            , key = f.key
-            , optional = f.optional
-            , shape = shapeOf ids definitions f.node
-            }
-        _ = push out (toHost shape)
-        fieldShapes ids definitions fs out (i + 1) n
-
-
-variantShapes : Js.Value, Js.Value, Js.Value, Js.Value, Int, Int -> ()
-variantShapes ids definitions vs out i n =
-    if i >= n then
-        ()
-    else
-        v = variantAt vs i
-        shape : VariantShape
-        shape =
-            { name = v.name
-            , payload = Maybe.map v.payload (shapeOf ids definitions _)
-            , tag = v.tag
-            }
-        _ = push out (toHost shape)
-        variantShapes ids definitions vs out (i + 1) n
-
-
-kindOf : Int -> PrimitiveKind
-kindOf k =
-    case k of
-        0 ->
-            StringKind
-
-        1 ->
-            BoolKind
-
-        2 ->
-            IntKind
-
-        3 ->
-            FloatKind
-
-        4 ->
-            FiniteFloatKind
-
-        5 ->
-            NullKind
-
-        _ ->
-            ValueKind
