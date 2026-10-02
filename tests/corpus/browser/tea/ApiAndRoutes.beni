@@ -1,0 +1,225 @@
+-- The milestone's acceptance page (plans/http-and-routing.md, *Order*):
+-- an application that routes (boundary.md §9.8.13) and talks to an API
+-- through schemas (§9.8.12). Started at `/login`, it posts the credentials
+-- as JSON (`jsonBody`) and reads a bearer token back (`expectJson`, the
+-- key renamed); with the token it pushes `/items`, and the push, come back
+-- through `onUrlChange`, lists the items with a `GET` that carries the
+-- token in its `Authorization` header and reads a JSON list. Clicked to
+-- `/login` and on to `/items` again, the list is asked for again, and a
+-- 401 there is `BadStatus`, shown and not a crash; `back` returns to
+-- `/login`. The title is the route's.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Schema
+import Sub
+import Tea
+import Url exposing (Url)
+import Url.Parser exposing (Parser, map, oneOf, s)
+
+
+schema Credentials =
+    user : String
+    password : String
+
+
+schema Session =
+    token : String as "access_token"
+
+
+schema Item =
+    id : Int
+    name : String
+
+
+type Route
+    = Login
+    | Items
+    | NotFound
+
+
+route : Parser (Route → a) a
+route = oneOf [ s "login" ▷ map Login, s "items" ▷ map Items ]
+
+
+toRoute : Url → Route
+toRoute url = Maybe.withDefault (Url.Parser.parse route url) NotFound
+
+
+type Msg
+    = ClickedLink Browser.UrlRequest
+    | UrlChanged Url
+    | Navigated (Result Navigation.Error ())
+    | SignIn
+    | GotToken (Result Http.Error String)
+    | GotItems (Result Http.Error (List Item.Type))
+
+
+type alias Model =
+    key : Navigation.Key
+    route : Route
+    token : Maybe String
+    items : List Item.Type
+    log : List String
+
+
+init : Url, Navigation.Key → Model × Cmd Msg
+init url key =
+    ( { key = key, route = toRoute url, token = Nothing, items = [], log = [] }, Cmd.none )
+
+
+-- The items, asked for with the token: the one request that needs headers
+-- of its own, so it is a `request` and not a `get`.
+loadItems : String → Cmd Msg
+loadItems token =
+    Cmd.task
+        (λ() →
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" "Bearer ${token}" ]
+                , url = "/api/items"
+                , body = Http.emptyBody
+                , expect = Http.expectJson (Schema.list (Item.schema ()))
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+        )
+        GotItems
+
+
+failure : Http.Error → String
+failure problem =
+    case problem of
+        Http.BadStatus code →
+            "BadStatus ${String.fromInt code}"
+
+        Http.BadBody _ →
+            "BadBody"
+
+        _ →
+            "another error"
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedLink (Browser.Internal url) →
+            ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Navigated )
+
+        ClickedLink (Browser.External href) →
+            ( { model | log = model.log ++ [ "external ${href}" ] }, Cmd.none )
+
+        UrlChanged url →
+            case ( toRoute url, model.token ) of
+                ( Items, Just token ) →
+                    ( { model | route = Items }, loadItems token )
+
+                ( r, _ ) →
+                    ( { model | route = r }, Cmd.none )
+
+        Navigated (Ok ()) →
+            ( model, Cmd.none )
+
+        Navigated (Err _) →
+            ( { model | log = model.log ++ [ "refused" ] }, Cmd.none )
+
+        SignIn →
+            ( model
+            , Cmd.task
+                (λ() →
+                    Result.map
+                        (Http.post
+                            { url = "/api/login"
+                            , body =
+                                Http.jsonBody (Credentials.schema ())
+                                    { user = "ada", password = "lovelace" }
+                            , expect = Http.expectJson (Session.schema ())
+                            }
+                        )
+                        .token
+                )
+                GotToken
+            )
+
+        GotToken (Ok token) →
+            ( { model | token = Just token, log = model.log ++ [ "signed in" ] }
+            , Cmd.task (λ() → Navigation.pushUrl model.key "/items") Navigated
+            )
+
+        GotToken (Err problem) →
+            ( { model | log = model.log ++ [ "sign in: " ++ failure problem ] }, Cmd.none )
+
+        GotItems (Ok items) →
+            ( { model
+                | items = items
+                , log = model.log ++ [ "${String.fromInt (List.length items)} items" ]
+              }
+            , Cmd.none
+            )
+
+        GotItems (Err problem) →
+            ( { model | items = [], log = model.log ++ [ "items: " ++ failure problem ] }
+            , Cmd.none
+            )
+
+
+title : Route → String
+title r =
+    case r of
+        Login →
+            "Sign in"
+
+        Items →
+            "Items"
+
+        NotFound →
+            "Not found"
+
+
+row : Item.Type → Html Msg
+row item = <li>{"${String.fromInt item.id}: ${item.name}"}</li>
+
+
+page : Model → Html Msg
+page model =
+    case model.route of
+        Login →
+            <button id="signin" onClick={SignIn}>sign in</button>
+
+        Items →
+            <ul>
+                <For each={model.items} keyed={.id}>{row}</For>
+            </ul>
+
+        NotFound →
+            <p>nothing here</p>
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = title model.route
+    , body =
+        <main>
+            <nav>
+                <a id="login" href="/login">login</a>
+                <a id="items" href="/items">items</a>
+            </nav>
+            <h1>{title model.route}</h1>
+            {page model}
+            <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+        </main>
+    }
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = ClickedLink
+        , onUrlChange = UrlChanged
+        }

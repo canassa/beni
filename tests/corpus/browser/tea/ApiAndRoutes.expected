@@ -1,0 +1,135 @@
+-- url "/login"
+-- load
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Sign in"</h1>
+    <button id="signin">"sign in"</button>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Sign in")
+(the DOM did not change)
+-- click #signin
+(fetch 1: POST /api/login {"accept":"application/json","content-type":"application/json"} "{\"user\":\"ada\",\"password\":\"lovelace\"}")
+(the DOM did not change)
+-- respond 1 200 "{\"access_token\":\"t0k3n\"}" Content-Type: "application/json"
+(fetch 2: GET /api/items {"accept":"application/json","authorization":"Bearer t0k3n"})
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Items"</h1>
+    <ul></ul>
+    <ol>
+      <li>"signed in"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /items)
+(the DOM did not change)
+-- title
+(title: "Items")
+(the DOM did not change)
+-- respond 2 200 "[{\"id\":1,\"name\":\"tea\"},{\"id\":2,\"name\":\"cake\"}]" Content-Type: "application/json"
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Items"</h1>
+    <ul>
+      <li>"1: tea"</li>
+      <li>"2: cake"</li>
+    </ul>
+    <ol>
+      <li>"signed in"</li>
+      <li>"2 items"</li>
+    </ol>
+  </main>
+</body>
+-- click #login
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Sign in"</h1>
+    <button id="signin">"sign in"</button>
+    <ol>
+      <li>"signed in"</li>
+      <li>"2 items"</li>
+    </ol>
+  </main>
+</body>
+-- title
+(title: "Sign in")
+(the DOM did not change)
+-- click #items
+(click's default prevented)
+(fetch 3: GET /api/items {"accept":"application/json","authorization":"Bearer t0k3n"})
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Items"</h1>
+    <ul>
+      <li>"1: tea"</li>
+      <li>"2: cake"</li>
+    </ul>
+    <ol>
+      <li>"signed in"</li>
+      <li>"2 items"</li>
+    </ol>
+  </main>
+</body>
+-- respond 3 401 "{\"error\":\"expired\"}" Content-Type: "application/json"
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Items"</h1>
+    <ul></ul>
+    <ol>
+      <li>"signed in"</li>
+      <li>"2 items"</li>
+      <li>"items: BadStatus 401"</li>
+    </ol>
+  </main>
+</body>
+-- back
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Sign in"</h1>
+    <button id="signin">"sign in"</button>
+    <ol>
+      <li>"signed in"</li>
+      <li>"2 items"</li>
+      <li>"items: BadStatus 401"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /login)
+(the DOM did not change)
+-- title
+(title: "Sign in")
+(the DOM did not change)

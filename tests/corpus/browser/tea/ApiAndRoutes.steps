@@ -1,0 +1,14 @@
+url "/login"
+title
+click #signin
+respond 1 200 "{\"access_token\":\"t0k3n\"}" Content-Type: "application/json"
+location
+title
+respond 2 200 "[{\"id\":1,\"name\":\"tea\"},{\"id\":2,\"name\":\"cake\"}]" Content-Type: "application/json"
+click #login
+title
+click #items
+respond 3 401 "{\"error\":\"expired\"}" Content-Type: "application/json"
+back
+location
+title
