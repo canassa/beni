@@ -666,7 +666,7 @@ pub inline fn extraSlice(ir: *const JsIr, range: SubRange, comptime T: type) []c
 }
 
 /// Read a record out of `extra` starting at `index`, field by field.
-pub fn extraData(ir: *const JsIr, index: ExtraIndex, comptime T: type) T {
+pub inline fn extraData(ir: *const JsIr, index: ExtraIndex, comptime T: type) T {
     var i: usize = @intFromEnum(index);
     var result: T = undefined;
     inline for (std.meta.fields(T)) |field| {
@@ -685,7 +685,7 @@ pub fn extraLen(comptime T: type) u32 {
 }
 
 /// The `SubRange` stored at `index`.
-pub fn subRange(ir: *const JsIr, index: ExtraIndex) SubRange {
+pub inline fn subRange(ir: *const JsIr, index: ExtraIndex) SubRange {
     return ir.extraData(index, SubRange);
 }
 
@@ -703,7 +703,7 @@ pub inline fn inlineRange(d: Node.Data) SubRange {
 /// explicit stack and asks this for the children. A leaf pushes nothing, and
 /// so does an `arrow`: its body is a statement list, which each caller walks
 /// in its own way (or, for `Opt.exprUses`, deliberately not at all).
-pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), node: Node.Index) Allocator.Error!void {
+pub inline fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), node: Node.Index) Allocator.Error!void {
     const d = ir.data(node);
     switch (ir.tag(node)) {
         .member, .unary, .spread_property => try pushAll(gpa, stack, &.{@enumFromInt(d.lhs)}),
@@ -743,12 +743,29 @@ inline fn pushAll(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []co
     for (items, 0..) |item, i| stack.items.ptr[at + i] = item;
 }
 
-inline fn pushReversed(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
+pub inline fn pushReversed(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
     const at = stack.items.len;
     if (stack.capacity - at < items.len) try stack.ensureUnusedCapacity(gpa, items.len);
     stack.items.len = at + items.len;
     const into = stack.items[at..];
     for (items, 0..) |item, i| into[items.len - 1 - i] = item;
+}
+
+/// Push one node onto a walker's stack: `append` without its calls.
+pub inline fn pushOperand(gpa: Allocator, stack: *std.ArrayList(Node.Index), node: Node.Index) Allocator.Error!void {
+    const at = stack.items.len;
+    if (stack.capacity == at) try stack.ensureUnusedCapacity(gpa, 1);
+    stack.items.len = at + 1;
+    stack.items.ptr[at] = node;
+}
+
+/// Push `items` in order onto a walker's stack: `appendSlice` without its
+/// calls.
+pub inline fn pushOperandSlice(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
+    const at = stack.items.len;
+    if (stack.capacity - at < items.len) try stack.ensureUnusedCapacity(gpa, items.len);
+    stack.items.len = at + items.len;
+    for (items, 0..) |item, i| stack.items.ptr[at + i] = item;
 }
 
 /// The top of a walker's stack, taken off; null when it is empty. What

@@ -583,15 +583,22 @@ const Spec = struct {
     /// what one grew to is kept for the next instead of grown again.
     fn takeStack(s: *Spec) Allocator.Error!std.ArrayList(Index) {
         s.stacks_out += 1;
-        try s.stacks.ensureTotalCapacity(s.arena, s.stacks.items.len + s.stacks_out);
-        var stack = s.stacks.pop() orelse return .empty;
-        stack.clearRetainingCapacity();
+        // `ArrayList`'s own calls, written out: Zig's backend inlines none
+        // of them, and this runs once per walk.
+        const left = s.stacks.items.len;
+        if (s.stacks.capacity < left + s.stacks_out) try s.stacks.ensureTotalCapacity(s.arena, left + s.stacks_out);
+        if (left == 0) return .empty;
+        s.stacks.items.len = left - 1;
+        var stack = s.stacks.items.ptr[left - 1];
+        stack.items.len = 0;
         return stack;
     }
 
     fn giveStack(s: *Spec, stack: *std.ArrayList(Index)) void {
         s.stacks_out -= 1;
-        s.stacks.appendAssumeCapacity(stack.*);
+        const at = s.stacks.items.len;
+        s.stacks.items.len = at + 1;
+        s.stacks.items[at] = stack.*;
     }
 
     /// Join `v` into `slot`; true when that changed it.
@@ -1140,31 +1147,31 @@ const Spec = struct {
     /// call's callee: those make a function's parameters ⊤.
     fn countExpr(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
         const ir = m.ir;
-        // A leaf, the most common expression, without the stack.
-        switch (ir.tag(root)) {
-            .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return,
-            .ident => return s.read(m, @enumFromInt(ir.data(root).lhs), false),
-            else => {},
-        }
+        // A leaf, the most common expression, without the stack. Tested
+        // with `==` and a table rather than a `switch` with an `else`
+        // prong (`TagSet`).
+        const root_tag = ir.tag(root);
+        if (root_tag == .ident) return s.read(m, @enumFromInt(ir.data(root).lhs), false);
+        if (count_leaves[@intFromEnum(root_tag)]) return;
         const stack = &s.names;
         const base = stack.items.len;
-        defer stack.shrinkRetainingCapacity(base);
-        try stack.append(s.arena, root);
+        defer stack.items.len = base;
+        try JsIr.pushOperand(s.arena, stack, root);
         while (stack.items.len > base) {
             const node = JsIr.popOperand(stack).?;
-            switch (ir.tag(node)) {
-                .ident => try s.read(m, @enumFromInt(ir.data(node).lhs), false),
-                .arrow => try s.countFunc(m, @enumFromInt(ir.data(node).lhs)),
-                .call => {
-                    const d = ir.data(node);
-                    const callee: Index = @enumFromInt(d.lhs);
-                    for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |a| try stack.append(s.arena, a);
-                    if (ir.tag(callee) == .ident) {
-                        try s.read(m, @enumFromInt(ir.data(callee).lhs), true);
-                    } else try stack.append(s.arena, callee);
-                },
-                else => try ir.pushOperands(s.arena, stack, node),
-            }
+            const t = ir.tag(node);
+            if (t == .ident) {
+                try s.read(m, @enumFromInt(ir.data(node).lhs), false);
+            } else if (t == .arrow) {
+                try s.countFunc(m, @enumFromInt(ir.data(node).lhs));
+            } else if (t == .call) {
+                const d = ir.data(node);
+                const callee: Index = @enumFromInt(d.lhs);
+                for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |a| try JsIr.pushOperand(s.arena, stack, a);
+                if (ir.tag(callee) == .ident) {
+                    try s.read(m, @enumFromInt(ir.data(callee).lhs), true);
+                } else try JsIr.pushOperand(s.arena, stack, callee);
+            } else if (!count_leaves[@intFromEnum(t)]) try ir.pushOperands(s.arena, stack, node);
         }
     }
 
@@ -1300,8 +1307,8 @@ const Spec = struct {
             };
             // What this disjunct evaluated, whatever its value.
             stack.clearRetainingCapacity();
-            try stack.append(s.arena, dj);
-            while (stack.pop()) |node| {
+            try JsIr.pushOperand(s.arena, &stack, dj);
+            while (JsIr.popOperand(&stack)) |node| {
                 const d = ir.data(node);
                 switch (ir.tag(node)) {
                     .member, .index_get => {
@@ -1310,13 +1317,13 @@ const Spec = struct {
                     },
                     .binary => switch (@as(JsIr.BinaryOp, @enumFromInt(d.rhs))) {
                         .logical_and, .logical_or => {
-                            try stack.append(s.arena, ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).left);
+                            try JsIr.pushOperand(s.arena, &stack, ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).left);
                             continue;
                         },
                         else => {},
                     },
                     .cond => {
-                        try stack.append(s.arena, @enumFromInt(d.lhs));
+                        try JsIr.pushOperand(s.arena, &stack, @enumFromInt(d.lhs));
                         continue;
                     },
                     else => {},
@@ -1348,37 +1355,32 @@ const Spec = struct {
     fn eval(s: *Spec, m: *Mod, mi: u32, root: Index) Allocator.Error!Lat {
         const ir = m.ir;
         // A leaf, the most common expression, without the stack.
-        switch (ir.tag(root)) {
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk => {
-                m.memo[root.int()] = try s.combine(m, root);
-                return m.memo[root.int()];
-            },
-            else => {},
+        if (isValueLeaf(ir.tag(root))) {
+            m.memo[root.int()] = try s.combine(m, root);
+            return m.memo[root.int()];
         }
         // As `Pts.expr`'s: `post_bit` marks a node whose operands are done.
         const stack = &s.children;
         const base = stack.items.len;
-        defer stack.shrinkRetainingCapacity(base);
-        try stack.append(s.arena, root);
+        defer stack.items.len = base;
+        try JsIr.pushOperand(s.arena, stack, root);
         while (stack.items.len > base) {
             const raw = stack.items[stack.items.len - 1].int();
             stack.items.len -= 1;
             if (raw & post_bit == 0) {
                 const node: Index = @enumFromInt(raw);
-                switch (ir.tag(node)) {
-                    .arrow => {
-                        m.memo[raw] = .nonnull;
-                        try s.evalFunc(m, mi, @enumFromInt(ir.data(node).lhs), node);
-                        continue;
-                    },
-                    // A leaf has no operands to wait for.
-                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk => {
-                        m.memo[raw] = try s.combine(m, node);
-                        continue;
-                    },
-                    else => {},
+                const t = ir.tag(node);
+                if (t == .arrow) {
+                    m.memo[raw] = .nonnull;
+                    try s.evalFunc(m, mi, @enumFromInt(ir.data(node).lhs), node);
+                    continue;
                 }
-                try stack.append(s.arena, @enumFromInt(raw | post_bit));
+                // A leaf has no operands to wait for.
+                if (isValueLeaf(t)) {
+                    m.memo[raw] = try s.combine(m, node);
+                    continue;
+                }
+                try JsIr.pushOperand(s.arena, stack, @enumFromInt(raw | post_bit));
                 try ir.pushOperands(s.arena, stack, node);
                 continue;
             }
@@ -2114,8 +2116,8 @@ const Spec = struct {
             for (body) |top| {
                 s.cur_top = top;
                 stack.clearRetainingCapacity();
-                try stack.append(s.arena, top);
-                while (stack.pop()) |node| {
+                try JsIr.pushOperand(s.arena, &stack, top);
+                while (JsIr.popOperand(&stack)) |node| {
                     if (ir.tag(node) == .call) try s.trimCall(m, vals, node, needs);
                     try pushChildren(s.arena, ir, node, &stack);
                 }
@@ -2167,8 +2169,8 @@ const Spec = struct {
         var need: u32 = 0;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.appendSlice(s.arena, ir.extraSlice(f.body(), Index));
-        while (stack.pop()) |n| {
+        try JsIr.pushOperandSlice(s.arena, &stack, ir.extraSlice(f.body(), Index));
+        while (JsIr.popOperand(&stack)) |n| {
             if (ir.tag(n) == .ident) if (std.mem.indexOfScalar(NameIndex, params, @enumFromInt(ir.data(n).lhs))) |p| {
                 need = @max(need, @as(u32, @intCast(p)) + 1);
             };
@@ -2200,8 +2202,8 @@ const Spec = struct {
         defer s.giveStack(&stack);
         var reads = try s.takeStack();
         defer s.giveStack(&reads);
-        try stack.appendSlice(s.arena, ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).body(), Index));
-        while (stack.pop()) |node| {
+        try JsIr.pushOperandSlice(s.arena, &stack, ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).body(), Index));
+        while (JsIr.popOperand(&stack)) |node| {
             const tag = ir.tag(node);
             if (tag == .const_decl or tag == .let_decl) dead: {
                 const b = @as(NameIndex, @enumFromInt(ir.data(node).lhs)).unwrap() orelse break :dead;
@@ -2348,7 +2350,7 @@ const Spec = struct {
     fn references(s: *Spec, m: *Mod, stmt: Index, referenced: []bool, work: *std.ArrayList(u32)) Allocator.Error!void {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, stmt);
+        try JsIr.pushOperand(s.arena, &stack, stmt);
         while (JsIr.popOperand(&stack)) |node| {
             const ir = m.ir;
             const d = ir.data(node);
@@ -2359,11 +2361,11 @@ const Spec = struct {
                 },
                 .arrow => {
                     const f = ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
-                    for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
+                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
                 },
                 .assign_stmt => {
-                    try stack.append(s.arena, @enumFromInt(d.lhs));
-                    try stack.append(s.arena, @enumFromInt(d.rhs));
+                    try JsIr.pushOperand(s.arena, &stack, @enumFromInt(d.lhs));
+                    try JsIr.pushOperand(s.arena, &stack, @enumFromInt(d.rhs));
                 },
                 .import_stmt, .export_stmt => {},
                 else => if (ir.tag(node).isStatement())
@@ -2378,7 +2380,7 @@ const Spec = struct {
         var seen: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        for (m.ir.extraSlice(m.ir.body, Index)) |stmt| try stack.append(s.arena, stmt);
+        for (m.ir.extraSlice(m.ir.body, Index)) |stmt| try JsIr.pushOperand(s.arena, &stack, stmt);
         while (JsIr.popOperand(&stack)) |node| {
             const ir = m.ir;
             const tag = ir.tag(node);
@@ -2391,7 +2393,7 @@ const Spec = struct {
             switch (tag) {
                 .arrow => {
                     const f = ir.extraData(@enumFromInt(ir.data(node).lhs), JsIr.Func);
-                    for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
+                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
                     continue;
                 },
                 .call => {
@@ -2448,7 +2450,7 @@ const Spec = struct {
                 .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit => continue,
                 .arrow => {
                     const f = ir.extraData(@enumFromInt(ir.data(node).lhs), JsIr.Func);
-                    for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
+                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
                     continue;
                 },
                 // Fact 3: a key no reachable read reaches goes from its
@@ -2501,7 +2503,7 @@ const Spec = struct {
                     if (s.decided_conds.get(.{ .module = m.index, .node = node.int() })) |b| {
                         m.copyNode(node, b);
                         m.memo[node.int()] = m.memo[b.int()];
-                        try stack.append(s.arena, node);
+                        try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
                         continue;
                     }
@@ -2516,7 +2518,7 @@ const Spec = struct {
                         if (taken) |b| {
                             m.copyNode(node, b);
                             m.memo[node.int()] = m.memo[b.int()];
-                            try stack.append(s.arena, node);
+                            try JsIr.pushOperand(s.arena, &stack, node);
                             any = true;
                             continue;
                         }
@@ -2532,7 +2534,7 @@ const Spec = struct {
                             if (t != .unknown and (op == .logical_and) == (t == .yes)) {
                                 m.copyNode(node, b.right);
                                 m.memo[node.int()] = m.memo[b.right.int()];
-                                try stack.append(s.arena, node);
+                                try JsIr.pushOperand(s.arena, &stack, node);
                                 any = true;
                                 continue;
                             }
@@ -2552,7 +2554,7 @@ const Spec = struct {
     fn globalReads(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, root);
+        try JsIr.pushOperand(s.arena, &stack, root);
         while (JsIr.popOperand(&stack)) |node| {
             if (m.ir.tag(node) == .ident) {
                 if (m.globalOf(@enumFromInt(m.ir.data(node).lhs))) |g| try s.fold_reads.append(s.arena, g);
@@ -2568,43 +2570,43 @@ const Spec = struct {
         const ir = m.ir;
         const d = ir.data(stmt);
         switch (ir.tag(stmt)) {
-            .const_decl => try stack.append(s.arena, @enumFromInt(d.rhs)),
-            .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(s.arena, v),
+            .const_decl => try JsIr.pushOperand(s.arena, stack, @enumFromInt(d.rhs)),
+            .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try JsIr.pushOperand(s.arena, stack, v),
             .func_decl, .gen_decl => {
                 const f = ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
-                for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
+                for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
             },
             .assign_stmt => {
                 const target: Index = @enumFromInt(d.lhs);
                 if (ir.tag(target) != .ident) try ir.pushOperands(s.arena, stack, target);
-                try stack.append(s.arena, @enumFromInt(d.rhs));
+                try JsIr.pushOperand(s.arena, stack, @enumFromInt(d.rhs));
             },
-            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(s.arena, v),
+            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try JsIr.pushOperand(s.arena, stack, v),
             .if_stmt => {
-                try stack.append(s.arena, @enumFromInt(d.lhs));
+                try JsIr.pushOperand(s.arena, stack, @enumFromInt(d.lhs));
                 const branches = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-                for (ir.extraSlice(branches.thenBody(), Index)) |b| try stack.append(s.arena, b);
-                for (ir.extraSlice(branches.elseBody(), Index)) |b| try stack.append(s.arena, b);
+                for (ir.extraSlice(branches.thenBody(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
+                for (ir.extraSlice(branches.elseBody(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
             },
             .while_true, .block_stmt, .switch_case => {
-                if (ir.tag(stmt) == .switch_case) if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(s.arena, t);
-                for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |b| try stack.append(s.arena, b);
+                if (ir.tag(stmt) == .switch_case) if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try JsIr.pushOperand(s.arena, stack, t);
+                for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
             },
             .for_of => {
                 const f = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
-                try stack.append(s.arena, f.iterable);
-                for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
+                try JsIr.pushOperand(s.arena, stack, f.iterable);
+                for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
             },
             .switch_stmt => {
-                try stack.append(s.arena, @enumFromInt(d.lhs));
-                for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try stack.append(s.arena, c);
+                try JsIr.pushOperand(s.arena, stack, @enumFromInt(d.lhs));
+                for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try JsIr.pushOperand(s.arena, stack, c);
             },
-            .expr_stmt, .throw_stmt => try stack.append(s.arena, @enumFromInt(d.lhs)),
+            .expr_stmt, .throw_stmt => try JsIr.pushOperand(s.arena, stack, @enumFromInt(d.lhs)),
             .try_stmt => {
                 const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
-                for (ir.extraSlice(t.body(), Index)) |b| try stack.append(s.arena, b);
-                for (ir.extraSlice(t.finalBody(), Index)) |b| try stack.append(s.arena, b);
-                for (ir.extraSlice(t.catchBody(), Index)) |b| try stack.append(s.arena, b);
+                for (ir.extraSlice(t.body(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
+                for (ir.extraSlice(t.finalBody(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
+                for (ir.extraSlice(t.catchBody(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
             },
             else => {},
         }
@@ -2982,7 +2984,7 @@ const Spec = struct {
         var any = false;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, root);
+        try JsIr.pushOperand(s.arena, &stack, root);
         while (JsIr.popOperand(&stack)) |node| {
             if (m.ir.tag(node) == .arrow) {
                 if (try s.foldFunc(m, @enumFromInt(m.ir.data(node).lhs), depth)) any = true;
@@ -3018,7 +3020,7 @@ const Spec = struct {
                 defer s.giveStack(&stack);
                 for (m.ir.extraSlice(m.ir.body, Index)) |top| {
                     stack.clearRetainingCapacity();
-                    try stack.append(s.arena, top);
+                    try JsIr.pushOperand(s.arena, &stack, top);
                     while (JsIr.popOperand(&stack)) |node| {
                         if (node.int() < nodes and kept_set.isSet(node.int())) {
                             top_of[node.int()] = top;
@@ -3146,7 +3148,7 @@ const Spec = struct {
                     var reads: u32 = 0;
                     var stack = try s.takeStack();
                     defer s.giveStack(&stack);
-                    try stack.append(s.arena, top);
+                    try JsIr.pushOperand(s.arena, &stack, top);
                     while (JsIr.popOperand(&stack)) |node| {
                         if (ir.tag(node) == .ident and ir.data(node).lhs == x.int()) reads += 1;
                         try pushChildren(s.arena, ir, node, &stack);
@@ -3199,7 +3201,7 @@ const Spec = struct {
                         var size: u32 = 0;
                         var stack = try s.takeStack();
                         defer s.giveStack(&stack);
-                        try stack.append(s.arena, r);
+                        try JsIr.pushOperand(s.arena, &stack, r);
                         while (JsIr.popOperand(&stack)) |node| {
                             size += 1;
                             if (size > 96) return false;
@@ -3289,7 +3291,7 @@ const Spec = struct {
         if (try declCount(s.arena, ir, top, x) != 1) return false;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, top);
+        try JsIr.pushOperand(s.arena, &stack, top);
         while (JsIr.popOperand(&stack)) |node| {
             const d = ir.data(node);
             switch (ir.tag(node)) {
@@ -3334,7 +3336,7 @@ const Spec = struct {
         if (cross) {
             var stack = try s.takeStack();
             defer s.giveStack(&stack);
-            try stack.append(s.arena, small.ret);
+            try JsIr.pushOperand(s.arena, &stack, small.ret);
             while (JsIr.popOperand(&stack)) |node| {
                 if (fm.ir.tag(node) == .ident) {
                     const x: NameIndex = @enumFromInt(fm.ir.data(node).lhs);
@@ -3432,7 +3434,7 @@ const Spec = struct {
         var any = false;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, root);
+        try JsIr.pushOperand(s.arena, &stack, root);
         while (JsIr.popOperand(&stack)) |node| {
             if (m.ir.tag(node) == .arrow) {
                 const at = m.ir.data(node).lhs;
@@ -3563,7 +3565,7 @@ const Spec = struct {
         var decls: u32 = 0;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, top);
+        try JsIr.pushOperand(s.arena, &stack, top);
         var budget: u32 = 1 << 16;
         while (JsIr.popOperand(&stack)) |node| {
             if (budget == 0) return false;
@@ -3781,8 +3783,8 @@ const Spec = struct {
             const ir = m.ir;
             for (ir.extraSlice(ir.body, Index)) |top| {
                 stack.clearRetainingCapacity();
-                try stack.append(s.arena, top);
-                while (stack.pop()) |node| {
+                try JsIr.pushOperand(s.arena, &stack, top);
+                while (JsIr.popOperand(&stack)) |node| {
                     switch (ir.tag(node)) {
                         .ident => if (m.globalOf(@enumFromInt(ir.data(node).lhs))) |g| if (smalls[g] != null) {
                             mentions[g] += 1;
@@ -3862,7 +3864,7 @@ const Spec = struct {
             .ident, .member => {},
             else => return null,
         }
-        try stack.appendSlice(s.arena, &.{ target, @enumFromInt(d.rhs) });
+        try JsIr.pushOperandSlice(s.arena, &stack, &.{ target, @enumFromInt(d.rhs) });
         var nodes: u32 = 0;
         // `nodeCount` prices `true`, `false` and `null` short; written
         // in, each is its text.
@@ -3948,7 +3950,7 @@ const Spec = struct {
             var stack = try s.takeStack();
             defer s.giveStack(&stack);
             const d = fm.ir.data(small.ret);
-            try stack.appendSlice(s.arena, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) });
+            try JsIr.pushOperandSlice(s.arena, &stack, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) });
             while (JsIr.popOperand(&stack)) |node| {
                 if (fm.ir.tag(node) == .ident) {
                     const x: NameIndex = @enumFromInt(fm.ir.data(node).lhs);
@@ -3988,7 +3990,7 @@ const Spec = struct {
         var cost: u32 = 0;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, ret);
+        try JsIr.pushOperand(s.arena, &stack, ret);
         while (JsIr.popOperand(&stack)) |node| {
             cost += 1;
             if (cost > 24) return null;
@@ -4056,7 +4058,7 @@ const Spec = struct {
             var reads: u32 = 0;
             var stack = try s.takeStack();
             defer s.giveStack(&stack);
-            try stack.append(s.arena, r);
+            try JsIr.pushOperand(s.arena, &stack, r);
             while (JsIr.popOperand(&stack)) |node| {
                 if (ir.tag(node) == .ident and ir.data(node).lhs == v.int()) reads += 1;
                 if (ir.tag(node) == .arrow) return null;
@@ -4125,7 +4127,7 @@ const Spec = struct {
             var calls: std.ArrayList(struct { top: Index, call: Index, small: Small }) = .empty;
             for (ir.extraSlice(ir.body, Index)) |top| {
                 stack.clearRetainingCapacity();
-                try stack.append(s.arena, top);
+                try JsIr.pushOperand(s.arena, &stack, top);
                 while (JsIr.popOperand(&stack)) |node| {
                     if (ir.tag(node) == .call) {
                         const callee: Index = @enumFromInt(ir.data(node).lhs);
@@ -4211,7 +4213,7 @@ const Spec = struct {
         if (cross) {
             var stack = try s.takeStack();
             defer s.giveStack(&stack);
-            try stack.append(s.arena, small.ret);
+            try JsIr.pushOperand(s.arena, &stack, small.ret);
             while (JsIr.popOperand(&stack)) |node| {
                 if (fm.ir.tag(node) == .ident) {
                     const x: NameIndex = @enumFromInt(fm.ir.data(node).lhs);
@@ -4302,7 +4304,7 @@ const Spec = struct {
             const ir = m.ir;
             for (ir.extraSlice(ir.body, Index)) |top| {
                 stack.clearRetainingCapacity();
-                try stack.append(s.arena, top);
+                try JsIr.pushOperand(s.arena, &stack, top);
                 while (JsIr.popOperand(&stack)) |node| {
                     const d = ir.data(node);
                     switch (ir.tag(node)) {
@@ -4584,7 +4586,7 @@ const Spec = struct {
         if (m.globalOf(n)) |g| return !assigned[g];
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, top);
+        try JsIr.pushOperand(s.arena, &stack, top);
         while (JsIr.popOperand(&stack)) |node| {
             if (ir.tag(node) == .assign_stmt) {
                 const target: Index = @enumFromInt(ir.data(node).lhs);
@@ -4601,7 +4603,7 @@ const Spec = struct {
     fn immutableNames(s: *Spec, m: *Mod, root: Index, top: Index, assigned: []const bool) Allocator.Error!bool {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, root);
+        try JsIr.pushOperand(s.arena, &stack, root);
         while (JsIr.popOperand(&stack)) |node| {
             switch (m.ir.tag(node)) {
                 .ident => if (!try s.atomArgument(m, node, top, assigned)) return false,
@@ -4655,7 +4657,7 @@ const Spec = struct {
                 else => {},
             }
             stack.clearRetainingCapacity();
-            try stack.append(s.arena, top);
+            try JsIr.pushOperand(s.arena, &stack, top);
             while (JsIr.popOperand(&stack)) |node| {
                 if (ir.tag(node) == .ident) {
                     const n: NameIndex = @enumFromInt(ir.data(node).lhs);
@@ -4702,7 +4704,7 @@ const Spec = struct {
                 else => {},
             }
             stack.clearRetainingCapacity();
-            try stack.append(s.arena, top);
+            try JsIr.pushOperand(s.arena, &stack, top);
             while (JsIr.popOperand(&stack)) |node| {
                 if (ir.tag(node) == .ident) {
                     const n: NameIndex = @enumFromInt(ir.data(node).lhs);
@@ -4727,7 +4729,7 @@ const Spec = struct {
             if (g == null and other != m) continue;
             const ir = other.ir;
             stack.clearRetainingCapacity();
-            if (g == null) try stack.append(s.arena, top) else try stack.appendSlice(s.arena, ir.extraSlice(ir.body, Index));
+            if (g == null) try JsIr.pushOperand(s.arena, &stack, top) else try JsIr.pushOperandSlice(s.arena, &stack, ir.extraSlice(ir.body, Index));
             while (JsIr.popOperand(&stack)) |node| {
                 if (ir.tag(node) == .ident) {
                     const x: NameIndex = @enumFromInt(ir.data(node).lhs);
@@ -4847,7 +4849,7 @@ const Spec = struct {
     fn placeExpr(s: *Spec, m: *Mod, root: Index, call: Index, depth: u32) Allocator.Error!?Place {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        try stack.append(s.arena, root);
+        try JsIr.pushOperand(s.arena, &stack, root);
         while (JsIr.popOperand(&stack)) |node| {
             if (node == call) return .{ .kind = .expr };
             if (m.ir.tag(node) == .arrow) {
@@ -5467,6 +5469,27 @@ fn growSlice(arena: Allocator, comptime T: type, old: []T, len: usize, fill: T) 
     return out;
 }
 
+/// A set of tags as a table indexed by tag: a test of one is a load, where a
+/// `switch` with an `else` prong first checks, tag by tag, that its operand
+/// is one in Zig's own backend — the hottest walks here make that test a
+/// million times over a page.
+fn TagSet(comptime tags: []const Node.Tag) [@typeInfo(Node.Tag).@"enum".fields.len]bool {
+    var set: [@typeInfo(Node.Tag).@"enum".fields.len]bool = @splat(false);
+    for (tags) |t| set[@intFromEnum(t)] = true;
+    return set;
+}
+
+/// The leaves the evaluating walks (`Spec.eval`, `Pts.expr`) take without
+/// their stack.
+const value_leaves = TagSet(&.{ .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk });
+
+inline fn isValueLeaf(t: Node.Tag) bool {
+    return value_leaves[@intFromEnum(t)];
+}
+
+/// The leaves `Spec.countExpr` has nothing to count in: none is a name.
+const count_leaves = TagSet(&.{ .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit });
+
 /// Whether a node of `tag` is a literal, as `Spec.literalValue` reads one.
 fn isLiteralTag(tag: Node.Tag) bool {
     return switch (tag) {
@@ -5700,7 +5723,7 @@ const Pts = struct {
         p.tmp.deinit();
     }
 
-    fn arena(p: *Pts) Allocator {
+    inline fn arena(p: *Pts) Allocator {
         return p.s.arena;
     }
 
@@ -6645,40 +6668,35 @@ const Pts = struct {
         const ir = p.s.mods[mi].ir;
         const vals = p.vals[mi];
         // A leaf, the most common expression, without the stack.
-        switch (ir.tag(root)) {
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk => {
-                vals[root.int()] = try p.combine(mi, root);
-                return vals[root.int()];
-            },
-            else => {},
+        if (isValueLeaf(ir.tag(root))) {
+            vals[root.int()] = try p.combine(mi, root);
+            return vals[root.int()];
         }
         // A node to evaluate, or, with `post_bit` set, one whose operands
         // are evaluated; operands are pushed straight onto the stack.
         const stack = &p.nodes;
         const base = stack.items.len;
-        defer stack.shrinkRetainingCapacity(base);
-        try stack.append(p.arena(), root);
+        defer stack.items.len = base;
+        try JsIr.pushOperand(p.arena(), stack, root);
         while (stack.items.len > base) {
             const raw = stack.items[stack.items.len - 1].int();
             stack.items.len -= 1;
             if (raw & post_bit == 0) {
                 const node: Index = @enumFromInt(raw);
-                switch (ir.tag(node)) {
-                    .arrow => {
-                        const record: ExtraIndex = @enumFromInt(ir.data(node).lhs);
-                        const site = try p.funcSite(mi, node, record);
-                        try p.body(mi, record, site);
-                        vals[raw] = .{ .sites = p.ones[site..][0..1] };
-                        continue;
-                    },
-                    // A leaf has no operands to wait for.
-                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk => {
-                        vals[raw] = try p.combine(mi, node);
-                        continue;
-                    },
-                    else => {},
+                const t = ir.tag(node);
+                if (t == .arrow) {
+                    const record: ExtraIndex = @enumFromInt(ir.data(node).lhs);
+                    const site = try p.funcSite(mi, node, record);
+                    try p.body(mi, record, site);
+                    vals[raw] = .{ .sites = p.ones[site..][0..1] };
+                    continue;
                 }
-                try stack.append(p.arena(), @enumFromInt(raw | post_bit));
+                // A leaf has no operands to wait for.
+                if (isValueLeaf(t)) {
+                    vals[raw] = try p.combine(mi, node);
+                    continue;
+                }
+                try JsIr.pushOperand(p.arena(), stack, @enumFromInt(raw | post_bit));
                 try ir.pushOperands(p.arena(), stack, node);
                 continue;
             }
@@ -6975,7 +6993,7 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
     defer seen.deinit(gpa);
     var stack: std.ArrayList(Index) = .empty;
     defer stack.deinit(gpa);
-    try stack.appendSlice(gpa, ir.extraSlice(ir.body, Index));
+    try JsIr.pushOperandSlice(gpa, &stack, ir.extraSlice(ir.body, Index));
     while (JsIr.popOperand(&stack)) |node| {
         if (seen.isSet(node.int())) continue;
         seen.set(node.int());
@@ -7047,40 +7065,61 @@ fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.ArrayL
     const d = ir.data(node);
     switch (ir.tag(node)) {
         .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
-        .const_decl => try stack.append(gpa, @enumFromInt(d.rhs)),
-        .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(gpa, v),
-        .func_decl, .gen_decl => try stack.appendSlice(gpa, ir.extraSlice(ir.extraData(@enumFromInt(d.rhs), JsIr.Func).body(), Index)),
-        .arrow => try stack.appendSlice(gpa, ir.extraSlice(ir.extraData(@enumFromInt(d.lhs), JsIr.Func).body(), Index)),
-        .assign_stmt => try stack.appendSlice(gpa, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
-        .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(gpa, v),
+        .const_decl => try JsIr.pushOperand(gpa, stack, @enumFromInt(d.rhs)),
+        .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try JsIr.pushOperand(gpa, stack, v),
+        .func_decl, .gen_decl => try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(ir.extraData(@enumFromInt(d.rhs), JsIr.Func).body(), Index)),
+        .arrow => try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(ir.extraData(@enumFromInt(d.lhs), JsIr.Func).body(), Index)),
+        .assign_stmt => try JsIr.pushOperandSlice(gpa, stack, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
+        .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try JsIr.pushOperand(gpa, stack, v),
         .if_stmt => {
-            try stack.append(gpa, @enumFromInt(d.lhs));
+            try JsIr.pushOperand(gpa, stack, @enumFromInt(d.lhs));
             const b = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-            try stack.appendSlice(gpa, ir.extraSlice(b.thenBody(), Index));
-            try stack.appendSlice(gpa, ir.extraSlice(b.elseBody(), Index));
+            try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(b.thenBody(), Index));
+            try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(b.elseBody(), Index));
         },
-        .while_true, .block_stmt => try stack.appendSlice(gpa, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)),
+        .while_true, .block_stmt => try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)),
         .for_of => {
             const loop = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
-            try stack.append(gpa, loop.iterable);
-            try stack.appendSlice(gpa, ir.extraSlice(loop.body(), Index));
+            try JsIr.pushOperand(gpa, stack, loop.iterable);
+            try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(loop.body(), Index));
         },
         .switch_stmt => {
-            try stack.append(gpa, @enumFromInt(d.lhs));
-            try stack.appendSlice(gpa, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+            try JsIr.pushOperand(gpa, stack, @enumFromInt(d.lhs));
+            try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
         },
         .switch_case => {
-            if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(gpa, t);
-            try stack.appendSlice(gpa, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+            if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try JsIr.pushOperand(gpa, stack, t);
+            try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
         },
-        .expr_stmt, .throw_stmt => try stack.append(gpa, @enumFromInt(d.lhs)),
+        .expr_stmt, .throw_stmt => try JsIr.pushOperand(gpa, stack, @enumFromInt(d.lhs)),
         .try_stmt => {
             const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
-            try stack.appendSlice(gpa, ir.extraSlice(t.body(), Index));
-            try stack.appendSlice(gpa, ir.extraSlice(t.finalBody(), Index));
-            try stack.appendSlice(gpa, ir.extraSlice(t.catchBody(), Index));
+            try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(t.body(), Index));
+            try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(t.finalBody(), Index));
+            try JsIr.pushOperandSlice(gpa, stack, ir.extraSlice(t.catchBody(), Index));
         },
-        else => try ir.pushOperands(gpa, stack, node),
+        // An expression's operands, as `JsIr.pushOperands` pushes them,
+        // written out: the walks that ask for every node's children ask a
+        // million times over a page, and one exhaustive `switch` is one
+        // jump where an `else` prong first checks the tag in Zig's own
+        // backend, and a second call checks it again.
+        .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+        .member, .unary, .spread_property => try JsIr.pushOperand(gpa, stack, @enumFromInt(d.lhs)),
+        .index_get => try JsIr.pushOperandSlice(gpa, stack, &.{ @enumFromInt(d.rhs), @enumFromInt(d.lhs) }),
+        .property => try JsIr.pushOperand(gpa, stack, @enumFromInt(d.rhs)),
+        .call, .new_call => {
+            try JsIr.pushReversed(gpa, stack, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+            try JsIr.pushOperand(gpa, stack, @enumFromInt(d.lhs));
+        },
+        .object, .array, .template => try JsIr.pushReversed(gpa, stack, ir.extraSlice(JsIr.inlineRange(d), Index)),
+        .cond => {
+            const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
+            try JsIr.pushOperandSlice(gpa, stack, &.{ c.alternate, c.consequent, @enumFromInt(d.lhs) });
+        },
+        .binary => {
+            const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+            try JsIr.pushOperandSlice(gpa, stack, &.{ b.right, b.left });
+        },
     }
 }
 
@@ -7090,7 +7129,7 @@ fn declCount(gpa: Allocator, ir: *const JsIr, top: Index, n: NameIndex) Allocato
     var count: u32 = 0;
     var stack: std.ArrayList(Index) = .empty;
     defer stack.deinit(gpa);
-    try stack.append(gpa, top);
+    try JsIr.pushOperand(gpa, &stack, top);
     while (JsIr.popOperand(&stack)) |node| {
         const d = ir.data(node);
         switch (ir.tag(node)) {
