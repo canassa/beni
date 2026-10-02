@@ -1,0 +1,190 @@
+--! URLs (`docs/design/boundary.md` §9.8.13 (a)): Elm's `Url` (elm/url) —
+--! its record, its two protocols, its parser and printer, and percent
+--! encoding. Pure, so a library, a `node` program and a test can use it; a
+--! page gets its own address from `Browser.Navigation.currentUrl`.
+--!
+--! `fromString` is the host's WHATWG URL parser, the one the browser
+--! navigates and `fetch` requests with, so an address means here exactly
+--! what it means to them: its parts are normalised as the URL standard
+--! normalises them. Nothing is decoded: `query` and `fragment` are as the
+--! host escaped them, so a query parser can still tell a `&` that
+--! separates from one that was escaped.
+
+import Js
+
+
+--| A URL, split into its parts.
+--|
+--|     https://example.com:8042/over/there?name=ferret#nose
+--|     \___/   \______/ \__/\_________/ \_________/ \__/
+--|       |        |      |       |           |        |
+--|     scheme   host    port   path        query   fragment
+pub type alias Url =
+    protocol : Protocol
+    host : String
+    port_ : Maybe Int
+    path : String
+    query : Maybe String
+    fragment : Maybe String
+
+
+--| Only `http` and `https`, as Elm's: a page served any other way has no
+--| `Url`.
+pub type Protocol
+    = Http
+    | Https
+
+
+--| The parts of an absolute `http` or `https` URL, or `Nothing` for
+--| anything else: text the URL standard does not parse (no scheme, a port
+--| that is not a number), another scheme, or user information (`tom@`),
+--| which the record cannot hold.
+--|
+--| The parts are the host's, normalised as a browser normalises the
+--| address it goes to: the scheme and host lower-cased, `.` and `..`
+--| resolved, the scheme's default port dropped, and what a URL may not
+--| hold escaped (a space is `%20`). A bare `?` or `#` is `Just ""`.
+--|
+--|     Url.fromString "HTTPS://Example.com:443/hats/../caps?q=top%20hat"
+--|     -- Just { protocol = Https, host = "example.com", port_ = Nothing,
+--|     --        path = "/caps", query = Just "q=top%20hat", fragment = Nothing }
+pub fromString : String -> Maybe Url
+fromString str = Js.pure λ() ->
+    url = parse str
+    if
+        Js.isNull url
+            || not (Js.same (Js.get url "username") (Js.from ""))
+            || not (Js.same (Js.get url "password") (Js.from ""))
+    then
+        Nothing
+    else if Js.same (Js.get url "protocol") (Js.from "http:") then
+        Just (parts Http url)
+    else if Js.same (Js.get url "protocol") (Js.from "https:") then
+        Just (parts Https url)
+    else
+        Nothing
+
+
+-- The host's parse, or null: `URL.parse` answers null for text that does
+-- not parse, so nothing is caught. An engine without it has `new URL`,
+-- whose one documented failure is a `TypeError` (CLAUDE.md rule 9).
+parse : String -> Js.Value
+parse str =
+    url = Js.global "URL"
+    if Js.isUndefined (Js.get url "parse") then
+        Js.catchIf
+            (λ() -> Js.construct url [ Js.from str ])
+            (λerror -> Js.instanceOf error (Js.global "TypeError"))
+            λ_ -> Js.null
+    else
+        Js.call url "parse" [ Js.from str ]
+
+
+-- Elm's record of a parsed URL. `search` and `hash` are "" both for none
+-- and for a bare `?` or `#`, which `href` still shows: the text before the
+-- fragment ends in the `?` of an empty query.
+parts : Protocol, Js.Value -> Url
+parts protocol url =
+    href = Js.get url "href"
+    hash = Js.get url "hash"
+    search = Js.get url "search"
+    port_ : String
+    port_ = Js.to (Js.get url "port")
+
+    bareHash : Bool
+    bareHash = Js.same hash (Js.from "") && Js.to (Js.call href "endsWith" [ Js.from "#" ])
+
+    cut : Int
+    cut =
+        if bareHash then
+            1
+        else
+            Js.to (Js.get hash "length")
+
+    beforeHash = Js.call href "slice" [ Js.from 0, Js.from (Js.to (Js.get href "length") - cut) ]
+    { protocol = protocol
+    , host = Js.to (Js.get url "hostname")
+    , port_ =
+        if port_ == "" then
+            Nothing
+        else
+            String.toInt port_
+    , path = Js.to (Js.get url "pathname")
+    , query =
+        if not (Js.same search (Js.from "")) then
+            Just (Js.to (Js.call search "slice" [ Js.from 1 ]))
+        else if Js.to (Js.call beforeHash "endsWith" [ Js.from "?" ]) then
+            Just ""
+        else
+            Nothing
+    , fragment =
+        if not (Js.same hash (Js.from "")) then
+            Just (Js.to (Js.call hash "slice" [ Js.from 1 ]))
+        else if bareHash then
+            Just ""
+        else
+            Nothing
+    }
+
+
+--| The URL written out again.
+--|
+--|     Url.toString { protocol = Https, host = "example.com", port_ = Just 8042,
+--|                    path = "/over/there", query = Just "name=ferret", fragment = Nothing }
+--|     -- "https://example.com:8042/over/there?name=ferret"
+pub toString : Url -> String
+toString url =
+    scheme =
+        case url.protocol of
+            Http ->
+                "http://"
+
+            Https ->
+                "https://"
+
+    withPort =
+        case url.port_ of
+            Nothing ->
+                scheme ++ url.host
+
+            Just p ->
+                "${scheme}${url.host}:${String.fromInt p}"
+    withPort ++ url.path ++ prefixed "?" url.query ++ prefixed "#" url.fragment
+
+
+prefixed : String, Maybe String -> String
+prefixed prefix segment =
+    case segment of
+        Nothing ->
+            ""
+
+        Just s ->
+            prefix ++ s
+
+
+--| Escape a string for a URL, as JavaScript's `encodeURIComponent` does:
+--| UTF-8, every byte but the unreserved ones as `%XX`. A lone surrogate,
+--| which UTF-8 cannot hold, is written as U+FFFD.
+--|
+--|     percentEncode "to be" == "to%20be"
+--|     percentEncode "€" == "%E2%82%AC"
+pub percentEncode : String -> String
+percentEncode str =
+    Js.to (Js.apply (Js.global "encodeURIComponent") [ Js.call (Js.from str) "toWellFormed" [] ])
+
+
+--| Undo `percentEncode`, or `Nothing` when the string is not percent
+--| encoded UTF-8: a `%` without two hex digits after it, or bytes that are
+--| not UTF-8.
+--|
+--|     percentDecode "to%20be" == Just "to be"
+--|     percentDecode "%C2" == Nothing
+pub percentDecode : String -> Maybe String
+percentDecode str =
+    -- `decodeURIComponent` documents one failure, a `URIError` for text that
+    -- is not percent-encoded UTF-8: that is `Nothing`, and anything else is
+    -- thrown on (CLAUDE.md rule 9).
+    Js.catchIf
+        (λ() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
+        (λerror -> Js.instanceOf error (Js.global "URIError"))
+        λ_ -> Nothing

@@ -1,0 +1,81 @@
+-- `Url` is core (boundary.md §9.8.13 (a)), so a `node` program parses and
+-- prints addresses. `fromString` is the host's WHATWG parser behind Elm's
+-- record: every part read, the standard's normalisation (scheme and host
+-- lower-cased, `..` resolved, the default port dropped, spaces and `ü`
+-- escaped, an IPv6 host in brackets), a bare `?` and `#` kept as `Just ""`,
+-- and `Nothing` for another scheme, user information, a relative text and
+-- a port that is not a number. `toString` writes each one back as the host
+-- wrote it. `percentEncode` writes a lone surrogate as U+FFFD, and
+-- `percentDecode` is `Nothing` for a bad escape and for bytes that are not
+-- UTF-8.
+import Node exposing (Program)
+import Url exposing (Url)
+
+
+describe : Maybe Url -> String
+describe url =
+    case url of
+        Nothing ->
+            "Nothing"
+
+        Just u ->
+            protocol =
+                case u.protocol of
+                    Url.Http ->
+                        "http"
+
+                    Url.Https ->
+                        "https"
+
+            port_ =
+                case u.port_ of
+                    Just p ->
+                        String.fromInt p
+
+                    Nothing ->
+                        "-"
+            "${protocol} ${u.host} ${port_} ${u.path} ${shown u.query} ${shown u.fragment} = ${Url.toString u}"
+
+
+shown : Maybe String -> String
+shown s =
+    case s of
+        Just text ->
+            "[${text}]"
+
+        Nothing ->
+            "-"
+
+
+decoded : String -> String
+decoded s =
+    case Url.percentDecode s of
+        Just text ->
+            "[${text}]"
+
+        Nothing ->
+            "undecodable"
+
+
+main : Program
+main =
+    Node.printLines
+        [ describe (Url.fromString "https://example.com:8042/over/there?name=ferret#nose")
+        , describe (Url.fromString "http://example.com")
+        , describe (Url.fromString "HTTP://Example.COM:80/a/./b/../c")
+        , describe (Url.fromString "https://example.com:443/")
+        , describe (Url.fromString "http://example.com/a b/ü?q=a b#f g")
+        , describe (Url.fromString "http://example.com/?#")
+        , describe (Url.fromString "http://[::1]:3000/x")
+        , describe (Url.fromString "ftp://example.com")
+        , describe (Url.fromString "http://tom@example.com")
+        , describe (Url.fromString "http://tom:secret@example.com")
+        , describe (Url.fromString "example.com")
+        , describe (Url.fromString "/relative/path")
+        , describe (Url.fromString "http://example.com:port")
+        , Url.percentEncode "to be €/?&="
+        , Url.percentEncode (String.fromList [ Char.fromCode 55357 ])
+        , decoded "%E2%82%AC%20"
+        , decoded "%C2"
+        , decoded "%zz"
+        ]

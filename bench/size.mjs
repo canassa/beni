@@ -110,6 +110,7 @@ const usage = `usage: node bench/size.mjs [options]
   --corpus=<path>     a corpus root; repeatable
                       (default: tests/corpus/run and bench/corpus)
   --dev-only          skip the --release column (halves the run)
+  --pages-only        only the page lines: no floor, no corpus, no total
   --keep              leave the temporary build trees on disk
   --help              print this
 
@@ -153,6 +154,9 @@ function parseArgs(argv) {
         break;
       case "--dev-only":
         options.release = false;
+        break;
+      case "--pages-only":
+        options.pagesOnly = true;
         break;
       case "--keep":
         options.keep = true;
@@ -470,6 +474,13 @@ const pages = [
       "Tea.element { init = ( 0, Cmd.none ), update = λn _ -> ( n, Random.generate (Random.int 1 6) (λk -> k) ), view = view, subscriptions = λ_ -> Sub.none }",
     view: "view : Int -> Html Int",
   },
+  {
+    name: "browser-tea url",
+    platform: "browser-tea",
+    imports: `${teaImports}import Browser.Navigation\nimport Url exposing (Url)\n`,
+    main: "Tea.sandbox { init = Browser.Navigation.currentUrl (), update = λ_ m -> m, view = view }",
+    view: "view : Maybe Url -> Html {}",
+  },
 ];
 
 function measurePage(options, beni, work, page) {
@@ -512,6 +523,18 @@ function main() {
   const work = mkdtempSync(join(tmpdir(), "beni-size-"));
   const lines = [];
   let failed = false;
+
+  // The page lines alone, for a change that weighs a browser module: seconds,
+  // where the whole run builds every corpus program twice.
+  if (options.pagesOnly) {
+    for (const spec of pages) {
+      const page = measurePage(options, beni, work, spec);
+      if (page === null) failed = true;
+      else console.log(JSON.stringify(page));
+    }
+    if (!options.keep) rmSync(work, { recursive: true, force: true });
+    process.exit(failed ? 1 : 0);
+  }
 
   const floor = measureFloor(options, beni, work);
   if (floor === null) {

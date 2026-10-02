@@ -107,7 +107,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 f8d5fbf06d3cc841450e819b6e1208f88270c2be2c40d350409cd96128e94006
 devloop_test.test.beni new --platform=node writes a program that runs #0 fa4c2a1b71285cd863f27b939fa6be3c2f526db705bcc6da1455172215673cfa
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 b31a1a1241af146481b0d86eb82e5fed50a0ef103fb5ad35167650612526acee
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 588f8f8b1df0b353ad63951bfc3ce27aee835efd8c507663c42741081ff426ae
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 dfae6d16cec82a689eb53f2b6a582cfe33c708dfac4655d505ff88060beae3fc
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 524251e675fd990301b69f467fd8a6e5046f86a676b17df06ce9665867ddec95
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 12d256d5fd26ce4f6bef7add899fe3385ec1b7c0e41f065282956dccf714a6db

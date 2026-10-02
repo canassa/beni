@@ -1,0 +1,18 @@
+https example.com 8042 /over/there [name=ferret] [nose] = https://example.com:8042/over/there?name=ferret#nose
+http example.com - / - - = http://example.com/
+http example.com - /a/c - - = http://example.com/a/c
+https example.com - / - - = https://example.com/
+http example.com - /a%20b/%C3%BC [q=a%20b] [f%20g] = http://example.com/a%20b/%C3%BC?q=a%20b#f%20g
+http example.com - / [] [] = http://example.com/?#
+http [::1] 3000 /x - - = http://[::1]:3000/x
+Nothing
+Nothing
+Nothing
+Nothing
+Nothing
+Nothing
+to%20be%20%E2%82%AC%2F%3F%26%3D
+%EF%BF%BD
+[€ ]
+undecodable
+undecodable
