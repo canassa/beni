@@ -131,3 +131,49 @@ export const tenHours = () => {
   });
   return Effect.runPromise(program.pipe(Effect.provide(TestClock.layer())));
 };
+
+// `forEach` over `n` items, `concurrency: 16`, each answering its item.
+export const forEachSixteen = (n) =>
+  Effect.runPromise(
+    Effect.forEach(Array.from({ length: n }, (_, i) => i + 1), (i) => Effect.succeed(i), { concurrency: 16 }).pipe(
+      Effect.map((xs) => xs.reduce((a, b) => a + b, 0)),
+    ),
+  );
+
+// `n` times, `all` of two effects that answer at once, run concurrently.
+export const parFast = (n) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      let acc = 0;
+      for (let i = 0; i < n; i++) {
+        const [a, b] = yield* Effect.all([Effect.succeed(1), Effect.succeed(1)], { concurrency: "unbounded" });
+        acc += a + b - 1;
+      }
+      return acc;
+    }),
+  );
+
+// `n` times, `raceFirst` of two branches that each yield once.
+export const raceParked = (n) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      let acc = 0;
+      const branch = Effect.as(Effect.yieldNow, 1);
+      for (let i = 0; i < n; i++) acc += yield* Effect.raceFirst(branch, branch);
+      return acc;
+    }),
+  );
+
+// `n` times, `timeoutOption` of a minute around an effect that answers at
+// once.
+export const timeoutFast = (n) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      let acc = 0;
+      for (let i = 0; i < n; i++) {
+        const got = yield* Effect.timeoutOption(Effect.succeed(1), "1 minute");
+        acc += got._tag === "Some" ? got.value : 0;
+      }
+      return acc;
+    }),
+  );

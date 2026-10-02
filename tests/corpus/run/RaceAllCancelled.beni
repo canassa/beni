@@ -1,0 +1,32 @@
+-- run: `Task.raceAll` (transparent-effects-proposal.md §17.7). A branch
+-- that ends `Cancelled` by itself — it joined a cancelled fiber — never
+-- wins: the race goes on to the branch that returns. When every branch
+-- has ended so, the caller is cancelled.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done)
+
+
+main : Program
+main = Io.run λ() →
+    doomed = Task.spawn λ() → Task.never ()
+    _ = Task.yieldNow ()
+    _ = Task.cancel doomed
+
+    winner =
+        Task.raceAll (λ() → Task.join doomed)
+            [ λ() →
+                _ = Task.yieldNow ()
+                _ = Task.yieldNow ()
+                "the one that returned"
+            ]
+    _ = Debug.log "winner" winner
+
+    loser = Task.spawn λ() → Task.raceAll (λ() → Task.join doomed) [ λ() → Task.join doomed ]
+
+    case Task.wait loser of
+        Cancelled →
+            Node.print "every branch cancelled: the caller is cancelled"
+
+        Done _ →
+            Node.print "done?"

@@ -1,0 +1,36 @@
+-- run: a branch of `Task.par` that ends `Cancelled` by itself — it joined
+-- a cancelled fiber — cancels its sibling, waits for the sibling's
+-- cleanup, and cancels the caller (transparent-effects-proposal.md §17.7,
+-- A2), at once rather than when the sibling would have finished: the
+-- sibling's release prints before the caller is seen cancelled, and its
+-- line after the sleep never does.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done)
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+    doomed = Task.spawn λ() → Task.never ()
+    _ = Task.yieldNow ()
+    _ = Task.cancel doomed
+
+    caller = Task.spawn λ() →
+        Clock.run clock λ() →
+            Task.par
+                (λ() →
+                    Task.bracket (λ() → ()) (λ_ _ → Debug.log "sibling released" ()) λ_ →
+                        _ = Task.sleep (Duration.seconds 10)
+                        Debug.log "sibling finished" ()
+                )
+                λ() → Task.join doomed
+
+    case Task.wait caller of
+        Cancelled →
+            Node.print "caller cancelled"
+
+        Done _ →
+            Node.print "caller done?"

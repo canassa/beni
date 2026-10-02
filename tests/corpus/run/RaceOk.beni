@@ -1,0 +1,58 @@
+-- run: `Task.raceOk` (transparent-effects-proposal.md §17.7; report 23
+-- rows 30–31), on a virtual clock.
+--
+--   - One side fails: an `Err` does not end the race — the fast branch's
+--     `Err` at 5 ms is passed over, and the slow branch's `Ok` at 20 wins.
+--   - Every side fails: the answer is every `Err`, in argument order, not
+--     in the order they arrived; a branch cancelled by itself gives none.
+--   - No branches: `Err []` at once.
+--   - The first `Ok` wins and the rest are cancelled and waited for.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+after : Int, Result String String → Result String String
+after ms answer =
+    _ = Task.sleep (Duration.millis ms)
+    answer
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+    doomed = Task.spawn λ() → Task.never ()
+    _ = Task.yieldNow ()
+    _ = Task.cancel doomed
+
+    caller = Task.spawn λ() →
+        Clock.run clock λ() →
+            _ =
+                Debug.log
+                    "one side fails"
+                    (Task.raceOk
+                        [ λ() → after 5 (Err "fast failed"), λ() → after 20 (Ok "slow won") ]
+                    )
+
+            _ =
+                Debug.log
+                    "every side fails"
+                    (Task.raceOk
+                        [ λ() → after 30 (Err "first")
+                        , λ() → Task.join doomed
+                        , λ() → after 10 (Err "third")
+                        ]
+                    )
+
+            _ = Debug.log "no branches" (Task.raceOk [])
+
+            Task.raceOk
+                [ λ() →
+                    Task.bracket (λ() → ()) (λ_ _ → Debug.log "slower released" ()) λ_ →
+                        after 50 (Ok "slower")
+                , λ() → after 1 (Ok "first Ok")
+                ]
+    _ = Clock.adjust clock (Duration.seconds 1)
+    Node.print (Debug.toString (Task.join caller))

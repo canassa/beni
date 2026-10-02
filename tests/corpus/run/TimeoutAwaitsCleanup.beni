@@ -1,0 +1,40 @@
+-- run: `Task.timeout` (transparent-effects-proposal.md §17.7; report 23
+-- row 32, A10), on a virtual clock.
+--
+--   - Work that returns in time: `Just` its value, at once.
+--   - Work that does not: 50 ms after it starts it is cancelled, and its cleanup —
+--     which itself waits 30 ms — is awaited, so `Nothing` comes 80 ms in, not
+--     50: the release prints first.
+--   - A `zero` duration: `Nothing` without starting the work.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+
+    caller = Task.spawn λ() →
+        Clock.run clock λ() →
+            quick = Task.timeout (Duration.millis 50) λ() →
+                _ = Task.sleep (Duration.millis 10)
+                "quick"
+            _ = Debug.log "in time at ${String.fromInt (Clock.now ())}" quick
+
+            slow = Task.timeout (Duration.millis 50) λ() →
+                Task.bracket
+                    (λ() → ())
+                    (λ_ _ →
+                        _ = Task.sleep (Duration.millis 30)
+                        Debug.log "cleanup done at ${String.fromInt (Clock.now ())}" ()
+                    )
+                    λ_ →
+                        _ = Task.sleep (Duration.seconds 10)
+                        "slow"
+            _ = Debug.log "timed out at ${String.fromInt (Clock.now ())}" slow
+            Task.timeout Duration.zero λ() → Debug.log "never started" "zero"
+    _ = Clock.adjust clock (Duration.seconds 1)
+    Node.print (Debug.toString (Task.join caller))

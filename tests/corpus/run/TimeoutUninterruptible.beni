@@ -1,0 +1,29 @@
+-- run: a timeout is a request, not a guarantee
+-- (transparent-effects-proposal.md §17.7; report 23 row 33). The work is
+-- uninterruptible for 40 ms and the timeout is 10: the cancellation is
+-- latched at 10 ms and delivered at the work's first point of suspension
+-- after the region, so the region runs to its end, the line after it does
+-- not, and `Nothing` comes at 40.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+
+    caller = Task.spawn λ() →
+        Clock.run clock λ() →
+            answer = Task.timeout (Duration.millis 10) λ() →
+                _ = Task.uninterruptible λ() →
+                    _ = Task.sleep (Duration.millis 40)
+                    Debug.log "region finished at ${String.fromInt (Clock.now ())}" ()
+                _ = Task.yieldNow ()
+                Debug.log "after the region" "late"
+            Debug.log "answer at ${String.fromInt (Clock.now ())}" answer
+    _ = Clock.adjust clock (Duration.seconds 1)
+    _ = Task.join caller
+    Node.print "done"

@@ -1,0 +1,23 @@
+-- run: a cancelled fiber's children are cancelled, and their cleanup run,
+-- before its own finalisers (transparent-effects-proposal.md §17.7, the
+-- owner's A11; report 23 row 23 — Effect does the opposite). The parent
+-- runs `Task.par` inside a bracket; cancelling the parent cancels the two
+-- branches first, their releases print, and only then the parent's.
+import Io
+import Node exposing (Program)
+import Task
+
+
+held : String → ()
+held name = Task.bracket (λ() → ()) (λ_ _ → Debug.log "${name} released" ()) λ_ → Task.never ()
+
+
+main : Program
+main = Io.run λ() →
+    parent = Task.spawn λ() →
+        Task.bracket (λ() → ()) (λ_ _ → Debug.log "parent released" ()) λ_ →
+            Task.par (λ() → held "child a") λ() → held "child b"
+    _ = Task.yieldNow ()
+    _ = Task.yieldNow ()
+    _ = Task.cancel parent
+    Node.print "done"

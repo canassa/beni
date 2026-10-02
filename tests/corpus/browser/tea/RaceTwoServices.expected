@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <p>"idle"</p>
+  </main>
+</body>
+-- click #go
+(fetch 1: GET /a/data {})
+(fetch 2: GET /b/data {})
+(the DOM did not change)
+-- respond 1 503 "down"
+(the DOM did not change)
+-- respond 2 200 "from b"
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <p>"from b"</p>
+  </main>
+</body>
+-- click #go
+(fetch 3: GET /a/data {})
+(fetch 4: GET /b/data {})
+(the DOM did not change)
+-- respond 3 200 "from a"
+(fetch 4 aborted: AbortError)
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <p>"from a"</p>
+  </main>
+</body>

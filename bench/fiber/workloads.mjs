@@ -123,6 +123,29 @@ export async function time(beni, effect, sizes = {}, progress = () => {}) {
   return out;
 }
 
+// The structured combinators (transparent-effects-proposal.md §17.7;
+// `plans/effects-plan.md` §8 P3): `node.mjs --group=combinators`.
+export async function combinators(beni, effect, sizes = {}, progress = () => {}) {
+  const f = sizes.items ?? 10_000;
+  const p = sizes.pars ?? 20_000;
+  const r = sizes.races ?? 20_000;
+  const t = sizes.timeouts ?? 20_000;
+  const pairs = [
+    [`forEach over ${f} items, bound 16`, f, () => inFiber(beni, () => beni.Bench$forEachSixteen(f)), () => effect.forEachSixteen(f), (f * (f + 1)) / 2],
+    [`${p} par of two thunks that answer at once`, p, () => inFiber(beni, () => beni.Bench$parFast(p, 0)), () => effect.parFast(p), p],
+    [`${r} races of two branches that each yield once`, r, () => inFiber(beni, () => beni.Bench$raceParked(r, 0)), () => effect.raceParked(r), r],
+    [`${t} timeouts around a body that answers at once`, t, () => inFiber(beni, () => beni.Bench$timeoutFast(t, 0)), () => effect.timeoutFast(t), t],
+  ];
+  const out = [];
+  for (const [label, ops, b, e, expect] of pairs) {
+    out.push(await measure(`beni: ${label}`, ops, b, expect));
+    progress(out[out.length - 1].label);
+    out.push(await measure(`Effect v4: ${label}`, ops, e, expect));
+    progress(out[out.length - 1].label);
+  }
+  return out;
+}
+
 // The coordination workloads (transparent-effects-proposal.md §17.3–§17.4,
 // `plans/effects-plan.md` §8 P1), each beni's and then Effect's: `node.mjs
 // --group=coordination`.

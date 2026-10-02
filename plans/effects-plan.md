@@ -711,3 +711,29 @@ release brotli): programs that use no timer unchanged; programs that call `Io.sl
 (most +40 to +80): the timer chain and, where `Io.sleep` is not specialised to one call, core's
 `Duration` boxed as `{a:n}` — an opaque one-constructor type is not unboxed by the release
 optimiser, a compiler gap rather than this slice's.
+
+*P3 as built (2026-10-02).* `par`, `par3`, `parOk`, `forEach`, `forEachOk`, `race`, `raceAll`,
+`raceOk` and `timeout` are beni in `core/Task.beni`, waiting on the kernel's observers (`firstOf`)
+rather than a `Deferred`, which is a module above `Task`. The measurement asked for the immediate
+start §17.7 left to it, so each child is started at once, core-privately (P2 §17.7's amendment):
+queued, `forEach` cost 904 ns an item against Effect's 84 and `par` 1 578 against 351. A child
+that returns without suspending costs no scope, no queue entry and no new fiber record (the one it
+ran as runs the next), and `timeout` starts no timer for work that answered at once. Fixtures, both
+builds: `run/ParBoth`, `run/ParChildCancelled`, `run/ParOkFailCancelsSibling`, `run/ForEachOrder`,
+`run/ForEachBounded` (with the bound below 1), `run/ForEachOkFailFast`, `run/RaceLosersCancelled`,
+`run/RaceAllCancelled`, `run/RaceOk` (one side failing, all failing, none), `run/TimeoutAwaitsCleanup`
+(with `zero`), `run/TimeoutUninterruptible`, `run/ParentFinalizerOrder`; pages
+`browser/tea/TimeoutAroundRequest` (the request aborted at 500 ms, `timers` 0) and
+`browser/tea/RaceTwoServices`. **Against Effect v4** (`bench/fiber`, `node node.mjs
+--group=combinators` and an instruction count of the same workloads, development library build,
+`node --single-threaded`, `(I(10) − I(0)) / 10·ops`): `forEach` of 10 000 items, bound 16 — 1 153
+instructions an item against 1 470 (wall time, default Node, 20 warm-ups then median of 20, load
+10–17: 42–46 ns against 75–79; with `--single-threaded`, where the scavenger runs on the main
+thread, 87–108 against 72–91 — a reproducible wall-time loss in that mode, reported, not yet
+traced); `par` of two thunks that answer at once 1 328 against 3 971; a race of two branches that
+each yield once 35 464 against 54 988; `timeout` around a body that answers at once 589 against
+8 679. **Bytes**: a program that uses no combinator is byte for byte P2's (`bench/size.mjs`, all
+427 programs and pages equal). One finding on the way, for the compiler: the release optimiser's
+*a function called once* counts callers that reachability has removed — `begin`'s call of the run
+loop's `pushBack` took `pushBack` out of the run loop in every fiber program (+4 to +29 brotli
+bytes) until `begin` got a copy of its own (`takeOn`).

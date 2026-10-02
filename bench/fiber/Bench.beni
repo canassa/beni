@@ -184,3 +184,39 @@ tenHours () =
     _ = Clock.adjust clock (Duration.hours 10)
     _ = Task.join retrying
     Ref.get attempts
+
+
+--| `forEach` over `n` items, at most 16 at once, each call answering its
+--| item without waiting. Answers the sum.
+pub forEachSixteen : Int → Int
+forEachSixteen n = List.sum (Task.forEach (List.range 1 n) 16 λi → i)
+
+
+--| `n` times, `par` of two thunks that answer at once.
+pub parFast : Int, Int → Int
+parFast n acc =
+    if n == 0 then
+        acc
+    else
+        ( a, b ) = Task.par (λ() → 1) λ() → 1
+        parFast (n - 1) (acc + a + b - 1)
+
+
+--| `n` times, `race` of two branches that each yield once.
+pub raceParked : Int, Int → Int
+raceParked n acc =
+    if n == 0 then
+        acc
+    else
+        winner = Task.race (λ() → worker 1) λ() → worker 1
+        raceParked (n - 1) (acc + winner)
+
+
+--| `n` times, `timeout` of a minute around a body that answers at once.
+pub timeoutFast : Int, Int → Int
+timeoutFast n acc =
+    if n == 0 then
+        acc
+    else
+        got = Task.timeout (Duration.minutes 1) λ() → 1
+        timeoutFast (n - 1) (acc + Maybe.withDefault got 0)

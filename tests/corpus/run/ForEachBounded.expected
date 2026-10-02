@@ -1,0 +1,17 @@
+start: 1
+start: 2
+start: 3
+start: 4
+start: 5
+start: 6
+start: 7
+start: 8
+start: 9
+start: 10
+answer: [10,20,30,40,50,60,70,80,90,100]
+peak: 3
+start: 1
+start: 2
+start: 3
+bound 0: answer: [10,20,30]
+bound 0: peak 1

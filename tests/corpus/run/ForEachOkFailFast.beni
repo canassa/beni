@@ -1,0 +1,33 @@
+-- run: `Task.forEachOk` fails fast (transparent-effects-proposal.md
+-- §17.7). Five calls, two at a time, on a virtual clock; the call for 2
+-- answers `Err` at 5 ms while the call for 1 is still sleeping. No call
+-- after it starts, the one in flight is cancelled and its cleanup awaited,
+-- and that `Err` is the answer. All `Ok` answers `Ok` of every result, in
+-- list order.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+check : Int → Result String Int
+check n =
+    _ = Debug.log "start" n
+
+    Task.bracket (λ() → ()) (λ_ _ → Debug.log "released ${String.fromInt n}" ()) λ_ →
+        _ = Task.sleep (Duration.millis (if n == 2 then 5 else 20))
+        if n == 2 then Err "two is bad" else Ok (n * 10)
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+
+    caller = Task.spawn λ() →
+        Clock.run clock λ() →
+            failing = Task.forEachOk [ 1, 2, 3, 4, 5 ] 2 check
+            _ = Debug.log "answer" failing
+            Task.forEachOk [ 1, 3 ] 2 check
+    _ = Clock.adjust clock (Duration.seconds 1)
+    Node.print (Debug.toString (Task.join caller))

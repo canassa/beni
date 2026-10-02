@@ -2549,6 +2549,37 @@ value), `run/RaceAllCancelled`, `run/RaceOkOneSideFails`, `run/RaceOkAllFail`, `
 (a request to the faked slow service under `timeout` 500: after `advance 500`, `Nothing`, and
 `timers` 0) and `browser/tea/RaceTwoServices`.
 
+*Amended 2026-10-02, as P3 was built: the measurement asked for the immediate start.* With
+children queued as `spawnIn` queues them, `bench/fiber`'s combinator group measured `forEach` over
+10 000 items that answer at once at 904 ns an item against Effect's 84, `par` of two such thunks at
+1 578 ns against 351, and `timeout` around one at 3 163 against 1 047. So, as this section foresaw,
+**the combinators start each child at once, core-privately** (`begin` in `core/Task.beni`; no
+program can ask for it): the child's work is called inside the combinator's call, with the child as
+the current fiber, as Effect's `startImmediately`. Four consequences, all within the contract above:
+
+- **A child that returns without suspending, and leaves no child of its own running, has simply
+  ended**: it is never listed in a scope, queued or counted, and the fiber record it ran as is kept
+  to run the next child (it is clean: masks and finalisers are symmetric over a call that returns).
+  A child that suspends becomes a fiber of the combinator's scope like any other, its continuations
+  on its stack, parked where it parked.
+- **The combinator's scope is opened only when a child is still running** when its start returns,
+  and closed — its fibers cancelled and awaited (§17.1 item 2) — when the combinator's body
+  returns. Children that all end at once cost no scope.
+- **"Children start queued … the first runs first" becomes "the first runs first, to its first
+  suspension, before the second starts"** — the order Effect's own children have. Every fixture
+  above prints the same lines either way. `timeout` starts its timer only when the work did not
+  answer at once, so work on the fast path costs one fiber record and no host timer.
+- **A defect in a child started at once** is the drain's, as any other: the throw goes on to the
+  host; first the combinator's own fiber is made current again, so the guard takes it for the
+  culprit, and the child is listed in the scope, set on the road to its end and queued, so the
+  culprit's cleanup reaches it. Nothing is caught.
+
+The combinators wait on the kernel's observers directly (`firstOf`), not on a `Deferred`: `Deferred`
+is a module above `Task`, and the observers are what `Deferred` would have been built over.
+Fixture names as built: `run/ForEachBounded` carries `ForEachBoundBelowOne`'s case, `run/RaceOk`
+carries `RaceOkOneSideFails`, `RaceOkAllFail` and `RaceOkEmpty`, and `run/TimeoutAwaitsCleanup`
+carries `TimeoutZero`.
+
 ### 17.8 `Schedule`, `retry`, `repeat` (P4)
 
 ```elm

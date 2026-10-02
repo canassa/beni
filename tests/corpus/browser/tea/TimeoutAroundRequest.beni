@@ -1,0 +1,49 @@
+-- `Task.timeout` around a request (transparent-effects-proposal.md §17.7):
+-- the request is never answered; after 500 ms on the page's clock the
+-- timeout cancels the fiber that waits for it, which aborts the fetch —
+-- the log shows `(fetch 1 aborted: AbortError)` — and the answer is
+-- `Nothing`. No timer is left behind. `Http`'s own per-request `timeout`
+-- answers `Error.Timeout` instead; this one cancels the work.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Got (Maybe (Result Http.Error String))
+
+
+update : Msg, String → String × Cmd Msg
+update msg _ =
+    case msg of
+        Got Nothing →
+            ( "timed out", Cmd.none )
+
+        Got (Just (Ok text)) →
+            ( text, Cmd.none )
+
+        Got (Just (Err _)) →
+            ( "failed", Cmd.none )
+
+
+fetch : () → Maybe (Result Http.Error String)
+fetch () = Task.timeout (Time.millis 500) λ() →
+    Http.get { url = "/slow", expect = Http.expectString }
+
+
+view : String → Html Msg
+view model = <p>{model}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( "waiting", Cmd.task fetch Got )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

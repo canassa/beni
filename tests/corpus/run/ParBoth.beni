@@ -1,0 +1,28 @@
+-- run: `Task.par` and `Task.par3` (transparent-effects-proposal.md §17.7;
+-- report 23 row 25) run their branches concurrently — on a virtual clock
+-- the branches finish in the order of their sleeps, not of the arguments —
+-- and answer the values in argument order.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+after : Int, String → String
+after ms name =
+    _ = Task.sleep (Duration.millis ms)
+    Debug.log "finished" name
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+
+    both = Task.spawn λ() →
+        Clock.run clock λ() →
+            pair = Task.par (λ() → after 20 "a") λ() → after 10 "b"
+            triple = Task.par3 (λ() → after 5 "x") (λ() → after 15 "y") λ() → after 1 "z"
+            ( pair, triple )
+    _ = Clock.adjust clock (Duration.millis 100)
+    Node.print (Debug.toString (Task.join both))

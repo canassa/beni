@@ -1,0 +1,41 @@
+-- run: `Task.forEach`'s bound is a ceiling (transparent-effects-proposal.md
+-- §17.7; report 23 row 28). Ten calls under a bound of 3, each counting
+-- itself in and out of a `Ref` and recording the peak; the peak is 3,
+-- never more. Each call is started, in list order, as one before it ends:
+-- the start log is 1 to 10 in order. A bound below 1 is 1: one at a time.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+counted : Ref Int, Ref Int, Int → Int
+counted inside peak n =
+    now = Ref.modify inside λk → ( k + 1, k + 1 )
+    _ = Ref.update peak λp → Basics.max p now
+    _ = Debug.log "start" n
+    _ = Task.sleep (Duration.millis (10 + Int.mod n 3))
+    _ = Ref.update inside λk → k - 1
+    n * 10
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+    inside = Ref.make 0
+    peak = Ref.make 0
+
+    caller = Task.spawn λ() →
+        Clock.run clock λ() → Task.forEach (List.range 1 10) 3 λn → counted inside peak n
+    _ = Clock.adjust clock (Duration.seconds 1)
+    _ = Debug.log "answer" (Task.join caller)
+    _ = Debug.log "peak" (Ref.get peak)
+    _ = Ref.set peak 0
+
+    one = Task.spawn λ() →
+        Clock.run clock λ() → Task.forEach [ 1, 2, 3 ] 0 λn → counted inside peak n
+    _ = Clock.adjust clock (Duration.seconds 1)
+    _ = Debug.log "bound 0: answer" (Task.join one)
+    Node.print "bound 0: peak ${String.fromInt (Ref.get peak)}"
