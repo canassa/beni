@@ -1653,6 +1653,14 @@ research 27 §6.11 D), and the form that keeps templates — a record of known a
 needs a design of its own. An element whose tag is chosen at run time (`Html.node`, Solid's
 `<Dynamic>`) waits on the same design, because its attributes cannot be typed against a row either.
 
+*Decided 2026-10-03 by the owner:* **both will be supported, for Solid parity; the design comes
+before code.** A spread of a record whose fields are known at compile time compiles statically —
+`<button {…attrs}>` with `attrs : { type : String, disabled : Bool }` is two ordinary attributes in
+the template, no run-time cost — which covers the component library passing attributes through to
+a native element. Whether a truly open bag of attributes is admitted at all, and its run-time path,
+are the design's to settle. A tag chosen at run time takes a run-time path like Solid's
+`<Dynamic>`, measured against Solid's, never the default.
+
 ### 11.6 Holes: what a `{…}` child may hold
 
 A hole's expression must have one of these types, which the checker knows before any code is
