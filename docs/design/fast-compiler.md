@@ -879,8 +879,26 @@ terms stood between them and each other's entries; a binary is rebuilt whenever 
 change, so the id moving with it costs no warm build anything. The per-module terms stay and are
 what a `--core-root` core is keyed by: it is not in the id, so an edit to it still re-checks only
 the modules that can observe it. `tests/blackbox/build_id_test.zig` runs two compilers that differ
-in their embedded core alone against one cache directory.)* *Rejected: hashing the installed binary
-at runtime — correct, and ~2 ms of a 15 ms budget.* A test forces a different one with the hidden
+in their embedded core alone against one cache directory.)* *(Amended 2026-10-03, built: **the id
+is made by a step of the build, not when the build is configured.** Until now `build.zig` hashed the
+trees while it configured the build graph, and `zig build --watch` does not configure again after an
+edit: the rebuilt binary kept the id of the first build — a compiler claiming to be one that no
+longer existed, its cache entries and its checked core keyed for that one. The id is now the output
+of a program the build runs once per compiler, `src/build_id_main.zig`, whose output file is that
+compiler's `build_options` module and whose hex is the id the checked core's maker is given. **Its
+declared inputs are exactly what it hashes**: the recipe tag, the Zig version, the optimize mode, the
+target triple and the backend as arguments; `build.zig` as a file; and `src/`, the core directory and
+each platform's directory as copies the build system makes of the trees, whose file sets and bytes
+it tracks — so the step re-runs whenever a file the id covers is edited, added or deleted, in a
+one-shot `zig build` and under `--watch` alike. The recipe and its terms are unchanged (the tag stays
+v2, and an unchanged tree has the id it had): name then bytes in sorted path order, every name
+relative to its tree and never absolute, so two checkouts of one tree at different places have one
+id, and a file or directory whose name begins with `.` is not part of a tree, as before. **The
+property: a binary's id is always the hash of the sources that binary was built from.** The one case
+it does not reach is configuration itself — a platform directory added under `platforms/` while
+`--watch` runs is not a platform of the build until it is configured again, and then neither the
+binary nor the id has it.)* *Rejected: hashing the installed binary at runtime — correct, and ~2 ms
+of a 15 ms budget.* A test forces a different one with the hidden
 `--cache-build-id=<s>`, whose bytes replace the build-id term; it is hidden for
 `--roundtrip-interfaces`' reasons and is how the "a compiler-build change discards the whole cache"
 fixture is written.
