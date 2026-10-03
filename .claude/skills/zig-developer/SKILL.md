@@ -1,6 +1,6 @@
 ---
 name: zig-developer
-description: Use when writing, reviewing, debugging, or answering questions about Zig code in beni (an Elm-like language compiled to JavaScript, compiler written in Zig). Provides an offline, section-indexed Zig 0.16 language reference bundled in this skill (zig-langref/) plus the full Zig compiler and std source vendored at references/zig/ — the gold standard both for idiomatic Zig and for the data-oriented compiler architecture beni copies. Invoke for any Zig syntax/semantics/stdlib/build-system question instead of relying on memory, since Zig's API churns between releases.
+description: Use when writing, reviewing, debugging, or answering questions about Zig code in beni (an Elm-like language compiled to JavaScript, compiler written in Zig). Provides a Zig 0.16-to-0.17 change summary, an offline 0.16 language reference, and the vendored Zig compiler source for architecture. Check the installed Zig 0.17 standard library for exact APIs rather than relying on memory.
 ---
 
 # Zig developer for beni
@@ -19,8 +19,10 @@ its evidence base is `docs/design/research/`. Zig breaks API between releases, s
 - **Language reference (offline, split by section):** `zig-langref/` (in this
   skill directory) — one Markdown file per top-level section, converted from
   <https://ziglang.org/documentation/0.16.0/>. ~1–20k tokens per file, ~130k
-  total: **never load the whole thing**; pick the file for the topic (index and
-  topic table in its `README.md`).
+  total. It is now historical: first read [Zig 0.16 → 0.17](zig-0.17-changes.md)
+  for version changes, then use the installed 0.17 std for exact APIs. When the
+  older language reference helps, pick only the relevant section from its
+  `README.md` index; never load the whole thing.
 - **Memory/perf doctrine:** `memory-and-performance.md` (in this skill
   directory) — two-allocator discipline, arena `reset(.retain_capacity)`,
   indexes over pointers. Written for a long-running daemon; beni is one (§4 of
@@ -87,10 +89,11 @@ These are architectural invariants, not style preferences. Flag violations in re
 
 ## Commands
 
-The toolchain is pinned: `flake.nix` + `.envrc` (`use flake`), nixpkgs
-`nixos-26.05` — **Zig 0.16.0**, zls 0.16.0, Node 24 (for the test suite's
-emitted-JS boundary) and jq. direnv puts it on `PATH` on `cd`; if `zig version`
-does not print `0.16.0`, run `direnv allow`.
+The toolchain is pinned: `flake.nix` + `.envrc` (`use flake`) use Zig **0.17.0**
+from `zig-overlay`, with Node 24 and jq from nixpkgs `nixos-26.05`. ZLS is
+absent because Zig 0.17's new build protocol does not yet provide what ZLS
+needs. Direnv puts Zig on `PATH`; `direnv exec . zig version` should print
+`0.17.0`.
 
 **The build graph exists** (M0–M1 shipped: lexer, parser, formatter, BIR lowering;
 see `docs/design/frontend.md` for the contract and `git log` for the milestones).
@@ -111,23 +114,21 @@ use `-Dtest-filter=` or `-Dcorpus=` to iterate on one failing test. See
 CLAUDE.md's *Building* for `-Dllvm`.
 
 **Submodule vs. toolchain — know which to trust for what.** The vendored
-`references/zig` submodule is at master (`0.16.0-2129-gd84959d9e2`), roughly 2,100
-commits *ahead of* the 0.16.0 toolchain we build with and the 0.16.0 langref
-bundled here. So:
+`references/zig` submodule follows master and may differ from the pinned 0.17
+toolchain. The bundled language reference describes 0.16. So:
 
 - **Architecture** (how the compiler is structured — the table above): read the
   submodule. That is what it is for, and master is the better reference.
-- **API signatures** (what compiles against our toolchain): trust the langref, or
-  the installed std, which `zig env` locates. It prints **ZON, not JSON** — do not
-  pipe it to `jq`:
+- **API signatures** (what compiles against our toolchain): trust the installed
+  std, which `zig env` locates. It prints **ZON, not JSON** — do not pipe it to
+  `jq`:
 
   ```sh
   STD=$(zig env | sed -n 's/.*\.std_dir = "\(.*\)".*/\1/p')
   grep -n "pub fn getEmittedDocs" "$STD/Build/Step/Compile.zig"
   ```
 
-  A signature copied from the submodule may not exist in 0.16.0.
+  A signature copied from the submodule or 0.16 langref may not exist in 0.17.
 
-Upgrading the toolchain is deliberate: bump the nixpkgs input, read the release
-notes, fix what breaks, commit — and re-sync the bundled langref if the version
-moves.
+For another toolchain upgrade, update the overlay pin, read the release notes,
+fix what breaks, and update this summary and bundled reference as needed.
