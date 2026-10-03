@@ -86,7 +86,16 @@ exactly one platform, and every line of JavaScript a build runs is in that platf
   `browser-tea` over `browser` over `html` is one platform to the program that selects it, and a
   project platform is one more layer.
 - **The cost, stated:** a binding over a JavaScript library cannot be published as a library.
-  Whether it can be published as a platform layer that project platforms build on is open.
+  Shared bindings are vendored, below.
+- **Bindings are vendored, never depended on** (*decided 2026-10-04 by the owner*). JavaScript in
+  a build is beni's — the shipped platforms — or the project's own; a published platform layer
+  that projects build on would be a library allowed JavaScript, so it is not admitted. A binding is
+  published like any package, but adding it COPIES its source — the `.beni` modules and their
+  `.js` siblings — into the project's platform (`./platform/`), recording where it came from and
+  its content hash. From then on it is the project's code, reviewed and edited like any other, and
+  under rule 9 because the project's platform is; an update is an explicit diff the project takes
+  or leaves, never a version bump. shadcn/ui distributes React components this way. The command's
+  name and the provenance record's format are the specification's, before code.
 
 Ports stay, and stay asynchronous.
 
