@@ -1736,6 +1736,13 @@ followed by a lower-case name is that value.** `<TodoItem todo={t} done />` mean
 qualified name does (§6.2), so `import Ui.TodoItem as TodoItem` is what makes `<TodoItem …/>`
 reachable.
 
+*Amended 2026-10-03 by the owner:* **a module may name itself in a tag.** A tag's module part that
+is the current module's own name resolves to the current module, so `<Main.card title="x" />`
+inside `Main` calls `card` from the same file, and a component used where it is defined is
+spelled as every other component is. Today that is `unknown_module`, and the only way to use it is
+the plain-call form. A module part that is both the module's own name and an import alias in that
+file is one name with two meanings; the specification says which wins or refuses it, before code.
+
 Why this and not the alternatives:
 
 - **A capitalised tag naming a value in scope**, JSX's reading, is not available: a capitalised
@@ -1760,6 +1767,15 @@ and that is how a component has optional props without a new language
 feature (research 28 §6.3). A spread anywhere but first is `spread_not_first`, and a second is the
 same error; the rule-7 check is in §11.16. A missing prop is the record's own `missing_field`, an
 extra one `unknown_field`, both with the checker's existing "did you mean".
+
+*Amended 2026-10-03 by the owner:* **an optional prop is a `Maybe` field a tag may leave out.** When
+the props record has a field of type `Maybe t`, a tag that does not write that attribute passes
+`Nothing`; a quoted or bare value is wrapped as `Just v`; a hole `{e}` must already have type
+`Maybe t` and is not wrapped. A field of any other type is required, as above, so a tag can no
+longer lose a required prop to a defaults record. The leading spread stays, to pass a record of
+props through; it is no longer how optional props are written. A plain call is unchanged: it writes
+every field. Default values for optional props are open, pending research on how ML-family
+languages give them.
 
 **Children are the `children` field**, and what it holds depends on what is written between the
 tags:
