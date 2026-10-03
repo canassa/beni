@@ -882,7 +882,7 @@ the modules that can observe it. `tests/blackbox/build_id_test.zig` runs two com
 in their embedded core alone against one cache directory.)* *(Amended 2026-10-03, built: **the id
 is made by a step of the build, not when the build is configured.** Until now `build.zig` hashed the
 trees while it configured the build graph, and `zig build --watch` does not configure again after an
-edit: the rebuilt binary kept the id of the first build — a compiler claiming to be one that no
+edit (measured on Zig 0.17, with and without `-fincremental`): the rebuilt binary kept the id of the first build — a compiler claiming to be one that no
 longer existed, its cache entries and its checked core keyed for that one. The id is now the output
 of a program the build runs once per compiler, `src/build_id_main.zig`, whose output file is that
 compiler's `build_options` module and whose hex is the id the checked core's maker is given. **Its
@@ -897,7 +897,14 @@ id, and a file or directory whose name begins with `.` is not part of a tree, as
 property: a binary's id is always the hash of the sources that binary was built from.** The one case
 it does not reach is configuration itself — a platform directory added under `platforms/` while
 `--watch` runs is not a platform of the build until it is configured again, and then neither the
-binary nor the id has it.)* *Rejected: hashing the installed binary at runtime — correct, and ~2 ms
+binary nor the id has it. **Not yet under `-fincremental --watch`, and not for a reason of the id's:**
+there Zig 0.17's build runner keeps one compiler process per compiled artifact and sends it only
+"update" after an edit, never the new command line (`lib/compiler/Maker/Step.zig`,
+`evalZigProcess`), so a module whose root file the build has moved to a new cache path keeps the
+file of the first build. The step re-runs and writes the right id, and the binary does not get it —
+nor a new checked core, nor a new embedded core or platform manifest, which move the same way. The
+property holds for every build that starts a compiler: a one-shot build, `--watch` without
+`-fincremental`, and every gate.)* *Rejected: hashing the installed binary at runtime — correct, and ~2 ms
 of a 15 ms budget.* A test forces a different one with the hidden
 `--cache-build-id=<s>`, whose bytes replace the build-id term; it is hidden for
 `--roundtrip-interfaces`' reasons and is how the "a compiler-build change discards the whole cache"
