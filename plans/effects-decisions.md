@@ -39,7 +39,7 @@ All five of §D's questions, and what they settle. Recorded in `plans/queue.md` 
 | **A7** | **(b) now, a LIMITED (c) with the runtime**: records of functions and `where` clauses for services; three fixed per-fiber slots (clock, scheduler, log context), not a general `Context`; the `R = never` concession written down |
 | **A8** | **(a) + (d)** with keep-alive: `main : Program` stays, its body must not suspend; exit 0 / 1 / 130; never a silent exit 0 |
 
-**Still open in tier A:** A4 (`retry` takes a `Schedule` — recommended yes), A9, A12, A13, A14, A15, A16.
+**Still open in tier A:** A4 (`retry` takes a `Schedule` — recommended yes), A9, A12, A13, A14, A15, A16. *Overtaken 2026-10-03: each has since been built or specified (`transparent-effects-proposal.md` §15–§17); see `plans/handover-2026-10-02.md` §2a.*
 Tiers B and C are unchanged.
 
 ---
