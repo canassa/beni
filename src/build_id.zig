@@ -1,6 +1,7 @@
 //! The compiler build id (docs/design/fast-compiler.md §8, *The persistent
 //! cache, and its key*): 16 bytes that change whenever the compiler changes,
-//! computed by `build.zig` and handed in as a build option.
+//! computed by a step of the build (`src/build_id_main.zig`, which `build.zig`
+//! runs once per compiler) and handed in as the module `build_options`.
 //!
 //! It is the term of the cache key that says "these bytes were produced by
 //! THIS compiler". Everything a module's check depends on that is not in its
@@ -9,7 +10,7 @@
 //! different one — the failure mode a cache may not have, because it is a
 //! wrong answer that depends on history.
 //!
-//! **The recipe is `build.zig`'s `compilerBuildId`**, and it is stated there
+//! **The recipe is `src/build_id_main.zig`'s**, and it is stated there
 //! rather than here because that is where it runs: `SipHash128(1, 3)` over a
 //! recipe tag, the Zig version string, the optimize mode, the target triple,
 //! `build.zig`, every file under `src/`, every file of the embedded core and

@@ -215,11 +215,11 @@ pub fn build(b: *std.Build) void {
     // HTML's character references, which markup text decodes (frontend.md §9.7).
     beni_mod.addImport("markup_entity_table", entityTable(b));
     // The compiler build id (`fast-compiler.md` §8): the cache key's term for
-    // "which compiler produced this entry". Computed here rather than by
-    // hashing the installed binary at run time, which is correct and costs
-    // ~2 ms of a 15 ms warm budget.
+    // "which compiler produced this entry". Made by a step of the build
+    // (`compilerBuildId`) rather than by hashing the installed binary at run
+    // time, which is correct and costs ~2 ms of a 15 ms warm budget.
     const default_id = compilerBuildId(b, target, optimize, null, shipped_core, platform_sources);
-    beni_mod.addImport("build_options", buildIdOptions(b, default_id));
+    beni_mod.addImport("build_options", default_id.options);
     // The hermetic suite's library carries no checked core: its tests build
     // their own projects, and the pack is the installed compilers' (below).
     beni_mod.addImport("core_pack", emptyCorePack(b));
@@ -239,7 +239,7 @@ pub fn build(b: *std.Build) void {
     exe_beni.addImport("beni_markup", markup.interface);
     exe_beni.addImport("markup_lowerings", markup.registry);
     exe_beni.addImport("markup_entity_table", entityTable(b));
-    exe_beni.addImport("build_options", buildIdOptions(b, default_id));
+    exe_beni.addImport("build_options", default_id.options);
     exe_beni.addImport("core_pack", corePack(b, shipped_core, platform_sources, default_id));
 
     const exe = b.addExecutable(.{
@@ -1083,7 +1083,7 @@ fn compiler(
     beni.addImport("markup_lowerings", markup.registry);
     beni.addImport("markup_entity_table", entityTable(b));
     const id = compilerBuildId(b, target, mode, backend, core, sources);
-    beni.addImport("build_options", buildIdOptions(b, id));
+    beni.addImport("build_options", id.options);
     beni.addImport("core_pack", corePack(b, core, sources, id));
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -1117,15 +1117,6 @@ const DebugInfo = enum {
     full,
 };
 
-/// The `build_options` module, carrying the 16-byte compiler build id of
-/// `docs/design/fast-compiler.md` §8 — the cache key's term for "which
-/// compiler produced this entry" (`src/build_id.zig` has what it is for).
-fn buildIdOptions(b: *std.Build, id: [16]u8) *std.Build.Module {
-    const options = b.addOptions();
-    options.addOption([16]u8, "build_id", id);
-    return options.createModule();
-}
-
 /// The checked core a compiler with build id `id` carries, as the module
 /// `core_pack` (`docs/design/fast-compiler.md` §8, *The checked core,
 /// embedded*; `src/cache/Pack.zig`): `src/core_pack_main.zig` run over
@@ -1143,11 +1134,11 @@ fn buildIdOptions(b: *std.Build, id: [16]u8) *std.Build.Module {
 /// under a second; the maker's compile is what an edit under `src/` adds to
 /// the path of every compiler, which is why its root reaches the checker and
 /// nothing after it.
-fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: [16]u8) *std.Build.Module {
+fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: BuildId) *std.Build.Module {
     const run = b.addRunArtifact(corePackMaker(b));
-    run.setName(b.fmt("check {s} for the compiler {s}", .{ core.dir, &std.fmt.bytesToHex(id, .lower) }));
+    run.setName(b.fmt("check {s} for a compiler", .{if (core.extra == null) core.dir else "variant core"}));
     run.addDirectoryArg(coreDirectory(b, core));
-    run.addArg(&std.fmt.bytesToHex(id, .lower));
+    run.addFileContentArg(id.hex);
     const pack = run.addOutputFileArg("core.pack");
     for (sources) |source| {
         run.addArg(source.name);
@@ -1217,7 +1208,7 @@ fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
     beni.addImport("markup_entity_table", entityTable(b));
     // Its own id is never a key's term: every key it computes takes the id
     // of the compiler it makes the pack for.
-    beni.addImport("build_options", buildIdOptions(b, compilerBuildId(b, host, mode, .self_hosted, shipped_core, &.{})));
+    beni.addImport("build_options", compilerBuildId(b, host, mode, .self_hosted, shipped_core, &.{}).options);
     beni.addImport("core_pack", emptyCorePack(b));
     const exe = b.addExecutable(.{
         .name = "core_pack",
@@ -1246,35 +1237,27 @@ fn coreDirectory(b: *std.Build, core: Core) std.Build.LazyPath {
     return wf.getDirectory();
 }
 
-/// Bumped whenever the recipe below changes, so that two compilers which
-/// hash the same inputs differently cannot collide on an id. **v2**: the
-/// build script, the embedded core and every file of every platform the
-/// binary carries joined `src/`, so the id is over everything the binary is
-/// built from.
-const build_id_recipe: []const u8 = "BENIBUILDID\x00v2";
-
-/// `SipHash128(1, 3)` — the compiler's one hash function
-/// (`src/resolve/iface_bytes.zig`) — over the recipe tag, the Zig version
-/// string, the optimize mode, the target triple, the backend when it is the
-/// self-hosted one, this file, every file under `src/`, every file of the
-/// core package the binary embeds, and every file of every platform it
-/// carries: each a name, then its bytes, in sorted path order, each field
-/// preceded by its length so that two different splits of the same
-/// concatenation cannot agree.
+/// The compiler build id of `docs/design/fast-compiler.md` §8 — the cache
+/// key's term for "which compiler produced this entry" — as a compiler of
+/// `target`, `optimize` and `backend` built from `core` and `sources` gets
+/// it: the `build_options` module that carries it, and its 32 hex digits in
+/// a file, for the checked core's maker.
 ///
-/// **Everything the binary is built from**, because the id is the cache's
-/// one term for "this compiler", and a term that left out an input the
-/// binary carries lets two compilers that behave differently serve each
-/// other's entries. The per-module key terms hash each `.beni` and sibling
-/// `.js` a check reads, which is finer, and they stay; but they cannot see
-/// what this script does with the files, a platform's manifest, or a file
-/// of a package no key term names. Folding all of it in here costs nothing
-/// at run time.
-///
-/// Configure time, not run time: the trees are a few MB and hashing them
-/// costs milliseconds, and `build.zig` re-runs on every `zig build` — so the
-/// id is fresh whenever the sources are, which is also exactly when the
-/// compiler is relinked anyway.
+/// **Made by a step of the build, not while the build is configured**
+/// (§8, amended 2026-10-03). `zig build --watch` does not configure again
+/// after an edit, so an id this script computed stayed the first build's
+/// while the binary was rebuilt from new sources. The step runs
+/// `src/build_id_main.zig`, which has the recipe; this declares its inputs,
+/// which are exactly what it hashes: the strings as arguments, `build.zig`
+/// as a file, and `src/`, the core and each platform as copies the build
+/// system makes of the trees (`treeCopy`), whose file sets and bytes it
+/// tracks — so an edit, an added file and a deleted one all re-run it, in a
+/// one-shot build and under `--watch` alike. That it does under `--watch`
+/// is checked by hand, as the program's header says; `build_id_test.zig`
+/// runs two compilers whose ids it made from two different cores. Under
+/// `-fincremental --watch` the step re-runs but Zig 0.17 never hands the
+/// live compiler process the output's new path, so the binary keeps the
+/// old id there (§8, the 2026-10-03 note).
 ///
 /// `beni.version` is not a separate term; see `src/build_id.zig`'s header.
 fn compilerBuildId(
@@ -1284,65 +1267,86 @@ fn compilerBuildId(
     backend: ?Backend,
     core: Core,
     sources: []const PlatformSource,
-) [16]u8 {
-    var hasher = std.hash.SipHash128(1, 3).init(&@as([16]u8, @splat(0)));
-    feed(&hasher, build_id_recipe);
-    feed(&hasher, @import("builtin").zig_version_string);
-    feed(&hasher, @tagName(optimize));
-    feed(&hasher, target.result.zigTriple(b.allocator) catch @panic("OOM"));
-    // Only the self-hosted build adds a term, so every other id is what it
-    // was before the term existed.
-    if (backend == .self_hosted) feed(&hasher, "self_hosted");
-
-    // The build script: what it does with the files below — which it
-    // embeds, under which names — is as much the compiler as they are.
-    feedFile(b, &hasher, "build:", ".", "build.zig");
-
-    var paths: std.ArrayList([]const u8) = .empty;
-    collectAll(b, "src", "", &paths);
-    sortPaths(&paths);
-    if (paths.items.len == 0) std.debug.panic("the compiler source tree at src/ is empty", .{});
-    for (paths.items) |rel| feedFile(b, &hasher, "", "src", rel);
-
-    // The core package, exactly as `embedCore` embeds it.
-    for (coreFiles(b, core)) |file| {
-        feed(&hasher, b.fmt("core:{s}", .{file.rel}));
-        switch (file.origin) {
-            .disk => |full| {
-                const bytes = readBuildFile(b, full);
-                feed(&hasher, bytes);
-                b.allocator.free(bytes);
-            },
-            .text => |text| feed(&hasher, text),
-        }
-    }
-
-    // Every platform the binary carries, built in or added by `-Dplatform`:
-    // its Zig, because a markup lowering is part of the compiler
-    // (`boundary.md` §9.6), and every other file, because the binary embeds
-    // it (`embedPlatforms`).
+) BuildId {
+    const run = b.addRunArtifact(buildIdTool(b));
+    run.setName(b.fmt("compiler build id ({s}, {t}{s})", .{
+        if (core.extra == null) core.dir else "variant core",
+        optimize,
+        if (backend == .self_hosted) ", self-hosted" else "",
+    }));
+    const options = run.addOutputFileArg("build_options.zig");
+    const hex = run.addOutputFileArg("build_id.hex");
+    run.addArg(@import("builtin").zig_version_string);
+    run.addArg(@tagName(optimize));
+    run.addArg(target.result.zigTriple(b.allocator) catch @panic("OOM"));
+    run.addArg(if (backend == .self_hosted) "self_hosted" else "-");
+    run.addFileArg(b.path("build.zig"));
+    run.addDirectoryArg(treeCopy(b, "src", b.path("src")));
+    run.addDirectoryArg(coreCopy(b, core));
     for (sources) |source| {
-        var platform_paths: std.ArrayList([]const u8) = .empty;
-        collectAll(b, source.dir, "", &platform_paths);
-        sortPaths(&platform_paths);
-        const label = b.fmt("platform:{s}/", .{source.name});
-        for (platform_paths.items) |rel| feedFile(b, &hasher, label, source.dir, rel);
+        run.addArg(source.name);
+        run.addDirectoryArg(treeCopy(b, source.dir, buildInputPath(b, source.dir)));
     }
-
-    var out: [16]u8 = undefined;
-    hasher.final(&out);
-    return out;
+    return .{ .options = b.createModule(.{ .root_source_file = options }), .hex = hex };
 }
 
-/// One file of the digest: `label` and `rel` as its name, then its bytes.
-fn feedFile(b: *std.Build, hasher: *std.hash.SipHash128(1, 3), label: []const u8, dir: []const u8, rel: []const u8) void {
-    feed(hasher, if (label.len == 0) rel else b.fmt("{s}{s}", .{ label, rel }));
-    const bytes = readBuildFile(b, b.pathJoin(&.{ dir, rel }));
-    feed(hasher, bytes);
-    b.allocator.free(bytes);
+/// What `compilerBuildId` makes.
+const BuildId = struct {
+    /// The `build_options` module: `build_id: [16]u8`.
+    options: *std.Build.Module,
+    /// A file holding the id as 32 lowercase hex digits.
+    hex: std.Build.LazyPath,
+};
+
+/// `src/build_id_main.zig`, built once per `zig build` for the host.
+fn buildIdTool(b: *std.Build) *std.Build.Step.Compile {
+    if (build_id_tool) |exe| return exe;
+    const exe = b.addExecutable(.{
+        .name = "build_id",
+        .use_llvm = false,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/build_id_main.zig"),
+            .target = b.graph.host,
+            .optimize = .safe,
+        }),
+    });
+    build_id_tool = exe;
+    return exe;
 }
 
-/// A file the build id hashes: relative to the build root, or absolute.
+var build_id_tool: ?*std.Build.Step.Compile = null;
+
+/// A copy the build makes of the directory `dir` (relative to the build
+/// root, or absolute): its every file, under the same relative paths. The
+/// copy's path changes whenever a file under `dir` is edited, added or
+/// deleted, and `--watch` watches every directory under `dir`, which is
+/// what makes it the build id step's declaration that it reads the whole
+/// tree. One per directory per `zig build`.
+fn treeCopy(b: *std.Build, key: []const u8, dir: std.Build.LazyPath) std.Build.LazyPath {
+    for (tree_copies.items) |copy| if (std.mem.eql(u8, copy.key, key)) return copy.path;
+    const wf = b.addWriteFiles();
+    const path = wf.addCopyDirectory(dir, "tree", .{});
+    tree_copies.append(b.allocator, .{ .key = b.dupe(key), .path = path }) catch @panic("OOM");
+    return path;
+}
+
+const TreeCopy = struct { key: []const u8, path: std.Build.LazyPath };
+var tree_copies: std.ArrayList(TreeCopy) = .empty;
+
+/// `core`'s files as the build id hashes them: a `treeCopy` of its
+/// directory, with its extra file beside them if it has one.
+fn coreCopy(b: *std.Build, core: Core) std.Build.LazyPath {
+    const extra = core.extra orelse return treeCopy(b, core.dir, b.path(core.dir));
+    // `coreFiles` refuses an extra file that would replace one of the
+    // directory's.
+    _ = coreFiles(b, core);
+    const wf = b.addWriteFiles();
+    _ = wf.addCopyDirectory(b.path(core.dir), "tree", .{});
+    _ = wf.add(b.fmt("tree/{s}", .{extra.rel}), extra.text);
+    return wf.getDirectory().path(b, "tree");
+}
+
+/// A file read while the build is configured: relative to the build root, or absolute.
 fn readBuildFile(b: *std.Build, full: []const u8) []u8 {
     b.dependOnFileContents(buildInputPath(b, full));
     const path = if (std.fs.path.isAbsolute(full)) full else b.root.joinString(b.allocator, full) catch @panic("OOM");
@@ -1362,14 +1366,6 @@ fn sourcePath(b: *std.Build, rel: []const u8) []const u8 {
 
 fn installPath(b: *std.Build, rel: []const u8) []const u8 {
     return sourcePath(b, b.pathJoin(&.{ "zig-out", rel }));
-}
-
-/// One length-prefixed field of the digest.
-fn feed(hasher: *std.hash.SipHash128(1, 3), slice: []const u8) void {
-    var len: [8]u8 = undefined;
-    std.mem.writeInt(u64, &len, slice.len, .little);
-    hasher.update(&len);
-    hasher.update(slice);
 }
 
 /// Every file under `<root>/<prefix>`, recursively, as paths relative to
