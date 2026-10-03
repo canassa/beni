@@ -1457,6 +1457,15 @@ Where this section and §3.2 or §8 disagree, this section is the later position
 modifier (`sync f = …`) is not built — the boundaries below are the platform's and the language's,
 and a user who wants one of their own passes the function to a `sync` position.
 
+*Amended 2026-10-03 by the owner:* **every package may write `sync`.** The restriction below —
+`misplaced_sync`, *"only a platform package may write `sync`"* — is withdrawn: it bought no
+guarantee (rule 7), since a `sync` mark only adds a check. A user package may mark a function
+parameter `sync (A → B)` in an ordinary signature exactly as a platform does, so a library can
+demand callbacks that do not suspend. `sync` stays out of `foreign`, which only platforms write.
+Whether §3.2's declaration modifier (`sync f = …`) is also built is the specification's to
+settle, before code; `misplaced_sync` keeps whatever role is left for it (a mark in a position
+that cannot carry one).
+
 ### 15.1 What is refused, and what is not
 
 **"May suspend", never "must"** (report 43 §9.5). A class whose rung is `suspends` — because it
