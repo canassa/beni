@@ -55,3 +55,14 @@ the existing global cache. The edit was a one-line change under `src/`, reverted
 
 First step before choosing: measure how a post-edit `zig build gates --summary all` splits between
 compiling the test compiler, the unit-test binaries and running the suites.
+
+## Status, 2026-10-03 — incremental parked by the owner
+
+On Zig 0.17 the Run-step panic is gone and `-fincremental --watch` rebuilds beni in ~0.75 s, and
+the build id is now made by a build step (`fast-compiler.md` §8, amended), so one-shot builds and
+plain `--watch` always carry the right id. `-fincremental --watch` still does not: Zig's build
+runner sends a live compiler only "update", never a changed command line, so every generated
+module (the id, the checked core pack, the embedded core and platform files) stays the first
+build's. Options were an upstream patch, generated files at fixed paths, or no incremental for
+beni's compile steps. **The owner stopped the incremental work here**; it is not to be resumed
+without the owner.
