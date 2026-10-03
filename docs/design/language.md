@@ -1735,6 +1735,14 @@ program's: one listener on the document for the events a platform delegates, a l
 element for the rest, exactly as Solid 2 does (research 36 §2.7). A message produced inside markup
 that `Html.map` wraps is passed through the map's function on its way out (§11.13).
 
+*Decided 2026-10-03 by the owner:* **effects have landed, so W34 is carried out and the stopgap
+retired.** A handler is `sync`, receives the event, and calls `preventDefault` or `stopPropagation`
+itself when it wants to (`onSubmit={λe → { Event.preventDefault e; Submitted }}`), so it can decide
+case by case — a `keydown` handler preventing only Tab. The `preventDefault` and `stopPropagation`
+facts of an event declaration (§11.14) are withdrawn: Solid 2 has no such flags, and two ways to say
+one thing are not kept. The handler's exact spelling and the `Event` API are the specification's,
+before code; platforms and programs that rely on the facts migrate.
+
 ### 11.8 Components
 
 **A capitalised tag names a module, and the component is that module's `view`; a module path
