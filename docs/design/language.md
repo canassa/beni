@@ -2156,6 +2156,14 @@ property of the lowering, never a rule of the language. **Not in this specificat
 (rendering into a node outside the component's own place, Solid's `<Portal>`), which wait on the
 browser platform's mount and after-render design; `ref` (research 36 question 6, W44).
 
+*Decided 2026-10-03 by the owner:* **portals and `ref` will both be supported, for Solid parity; the
+design comes before code.** Real programs need modals, tooltips and dropdowns mounted outside their
+component, and a platform wrapping a JavaScript widget needs the element it binds to. Until then,
+focusing and scrolling go through the browser-tea platform's `Dom` tasks by element id, Elm's way.
+The candidate for `ref` under The Elm Architecture is an attribute such as `ref={GotElement}` that
+delivers the element to `update` after render as an opaque handle the model may hold and pass to
+platform functions; the design pass confirms or replaces it.
+
 ### 11.17 Diagnostics
 
 Appended to §10's catalogue, never inserted (§10). Syntax: `unclosed_element`,
