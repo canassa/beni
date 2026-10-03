@@ -868,7 +868,13 @@ test "randomized: Local agrees with a StringHashMap oracle across table growth" 
 }
 
 test "no leak when allocation fails mid-insert" {
-    try testing.checkAllAllocationFailures(testing.allocator, struct {
+    // Every resize and remap refused, so a growing list always takes a fresh
+    // allocation: `testing.allocator` grows a block in place only when it is
+    // the last in its bucket, which depends on what earlier runs left behind,
+    // and `checkAllAllocationFailures` needs the same allocation count on
+    // every run.
+    var no_resize: testing.FailingAllocator = .init(testing.allocator, .{ .resize_fail_index = 0 });
+    try testing.checkAllAllocationFailures(no_resize.allocator(), struct {
         fn run(gpa: Allocator) !void {
             var local: Local = .empty;
             defer local.deinit(gpa);
