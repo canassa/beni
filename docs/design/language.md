@@ -1777,6 +1777,18 @@ props through; it is no longer how optional props are written. A plain call is u
 every field. Default values for optional props are open, pending research on how ML-family
 languages give them.
 
+*Decided 2026-10-03 by the owner:* **a default is written `¿` (U+00BF INVERTED QUESTION MARK), in a
+record pattern and as an expression.** In a pattern, `{ title, subtitle ¿ "None" }` binds `subtitle`
+to the field's value when it is `Just v` and to the default when it is `Nothing`, so the field has
+type `Maybe t` and the binding type `t`; the record's type is untouched, which is why defaults live
+in patterns and never in record types (structural records with different defaults would be equal
+types — Roc met exactly that and kept defaults to nominal records). As an expression,
+`m ¿ d` is `Maybe.withDefault d m`. Every font has the glyph (Latin-1); the editor turns a typed
+`??` into it. Evidence and the spellings considered: [`research/54`](research/54-default-values.md).
+For the specification, before code: the precedence of `¿`; whether a default may be any expression
+and may read the pattern's other fields; whether `¿` is allowed in every record pattern (`case`,
+`let`, parameters) or only in parameters; and whether `¿` also works on `Result`.
+
 **Children are the `children` field**, and what it holds depends on what is written between the
 tags:
 
