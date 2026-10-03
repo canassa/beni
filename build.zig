@@ -259,7 +259,7 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Build and run beni");
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
+    run_cmd.addPassthruArgs();
     run_step.dependOn(&run_cmd.step);
 
     // ---- Hermetic suite. ----
@@ -376,7 +376,7 @@ pub fn build(b: *std.Build) void {
     // not a number. The bench harness links its library, and the timing
     // scenarios of `test-perf` and `test-pending-perf` time its binary,
     // `zig-out/perf/bin/beni`.
-    const fast = compiler(b, target, .ReleaseFast, .llvm, .default, shipped_core, platform_sources);
+    const fast = compiler(b, target, .fast, .llvm, .default, shipped_core, platform_sources);
     const bench_beni = fast.beni;
     const perf_install = b.addInstallArtifact(fast.exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
     // ReleaseSafe for every black-box suite that is not a timing claim,
@@ -389,19 +389,19 @@ pub fn build(b: *std.Build) void {
     // `zig-out/safe-llvm/bin/beni`: the same safety checks in the shipped
     // code generator's output.
     const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
-    const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted, .default, shipped_core, platform_sources);
+    const safe = compiler(b, target, .safe, if (llvm) .llvm else .self_hosted, .default, shipped_core, platform_sources);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
     // The same compiler with `tests/platforms/toy` compiled in, exactly as
     // `-Dplatform=tests/platforms/toy` would compile it
     // (`docs/design/boundary.md` §9.5), at `zig-out/toy/bin/beni`: the
     // external path, which one black-box scenario builds a program through.
-    const toy = compiler(b, target, .ReleaseSafe, .self_hosted, .default, shipped_core, platformSources(b, &.{toy_platform_dir}));
+    const toy = compiler(b, target, .safe, .self_hosted, .default, shipped_core, platformSources(b, &.{toy_platform_dir}));
     const toy_install = b.addInstallArtifact(toy.exe, .{ .dest_dir = .{ .override = .{ .custom = toy_bin_dir } } });
     // The same compiler with one more core module embedded, at
     // `zig-out/variant/bin/beni`: a binary that differs from the safe one in
     // its embedded core and in nothing else, which `build_id_test.zig` runs
     // beside it against one cache directory.
-    const variant = compiler(b, target, .ReleaseSafe, .self_hosted, .default, variant_core, platform_sources);
+    const variant = compiler(b, target, .safe, .self_hosted, .default, variant_core, platform_sources);
     const variant_install = b.addInstallArtifact(variant.exe, .{ .dest_dir = .{ .override = .{ .custom = variant_bin_dir } } });
 
     // ---- Black-box suite. ----
@@ -463,7 +463,9 @@ pub fn build(b: *std.Build) void {
     // to stderr reads as a failed command. The `test-blackbox-<file>` steps
     // run their own processes, which report nothing, except the corpus's,
     // which prints its own line.
-    const counts_dir = b.getInstallPath(.prefix, b.fmt("run-hash-counts/{d}", .{std.posix.system.getpid()}));
+    // The process id makes this configuration specific to one invocation.
+    b.graph.poisonCache();
+    const counts_dir = installPath(b, b.fmt("run-hash-counts/{d}", .{std.posix.system.getpid()}));
     const gate_counts_dir = b.fmt("{s}-all", .{counts_dir});
     const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir, &.{});
     blackbox_step.dependOn(&gate_summary.step);
@@ -564,9 +566,9 @@ pub fn build(b: *std.Build) void {
         const file = "tests/blackbox/run_hash_test.zig";
         const step = bb.fileStep(file);
         const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
-        run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", b.getInstallPath(.prefix, "tools/corpus_test"));
-        run.setEnvironmentVariable("BENI_RUN_HASH_PROBE_EXE", b.getInstallPath(.prefix, "tools/run_hash_probe"));
-        run.setEnvironmentVariable("BENI_RUN_HASH_SUMMARY_EXE", b.getInstallPath(.prefix, "tools/run-hash-summary"));
+        run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", installPath(b, "tools/corpus_test"));
+        run.setEnvironmentVariable("BENI_RUN_HASH_PROBE_EXE", installPath(b, "tools/run_hash_probe"));
+        run.setEnvironmentVariable("BENI_RUN_HASH_SUMMARY_EXE", installPath(b, "tools/run-hash-summary"));
         run.step.dependOn(&corpus_tool_install.step);
         run.step.dependOn(&b.addInstallArtifact(probe, tools).step);
         run.step.dependOn(&b.addInstallArtifact(summary_exe, tools).step);
@@ -583,7 +585,7 @@ pub fn build(b: *std.Build) void {
         const shards = 3;
         for (0..shards) |k| {
             const run = bb.run(t, .{ .root = "tests/corpus", .shard = b.fmt("{d}/{d}", .{ k, shards }) });
-            run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", b.getInstallPath(.prefix, "tools/corpus_test"));
+            run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", installPath(b, "tools/corpus_test"));
             run.step.dependOn(&corpus_tool_install.step);
             step.dependOn(&run.step);
         }
@@ -621,7 +623,7 @@ pub fn build(b: *std.Build) void {
     // harness is built ReleaseSafe: it generates the large inputs and parses
     // the large traces, and in Debug that was half the step.
     const fixed_perf_step = b.step("test-perf", "Time the fixed performance scenarios on a ReleaseFast compiler");
-    const perf_test = bb.artifactAt("tests/blackbox/perf_test.zig", .ReleaseSafe);
+    const perf_test = bb.artifactAt("tests/blackbox/perf_test.zig", .safe);
     const wall_perf = bb.run(perf_test, .{ .root = "tests/corpus", .exe = .fast, .perf_shard = "wall", .budget = false });
     for (0..perf_shards) |k| {
         const shard = bb.run(perf_test, .{ .root = "tests/corpus", .exe = .fast, .perf_shard = b.fmt("cpu:{d}/{d}", .{ k, perf_shards }), .budget = false });
@@ -635,13 +637,13 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/bench.zig"),
             .target = target,
-            .optimize = .ReleaseFast,
+            .optimize = .fast,
             .imports = &.{.{ .name = "beni", .module = bench_beni }},
         }),
     });
     const bench_run = b.addRunArtifact(bench_exe);
     bench_run.setCwd(b.path("."));
-    if (b.args) |args| bench_run.addArgs(args);
+    bench_run.addPassthruArgs();
     const bench_step = b.step("bench", "Measure per-phase throughput over bench/corpus (ReleaseFast)");
     bench_step.dependOn(&bench_run.step);
 
@@ -652,14 +654,14 @@ pub fn build(b: *std.Build) void {
     // The beni it times is the ReleaseFast one of `test-pending-perf`.
     const compare_options = b.addOptions();
     compare_options.addOption([]const u8, "generator_hash", compareGeneratorHash(b));
-    compare_options.addOption([]const u8, "beni_exe", b.getInstallPath(.prefix, perf_bin_dir ++ "/beni"));
-    compare_options.addOption([]const u8, "repo_root", b.pathFromRoot("."));
+    compare_options.addOption([]const u8, "beni_exe", installPath(b, perf_bin_dir ++ "/beni"));
+    compare_options.addOption([]const u8, "repo_root", sourcePath(b, "."));
     const compare_exe = b.addExecutable(.{
         .name = "compare",
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/compare/gen/main.zig"),
             .target = target,
-            .optimize = .ReleaseFast,
+            .optimize = .fast,
             .imports = &.{.{ .name = "compare_options", .module = compare_options.createModule() }},
         }),
     });
@@ -691,7 +693,7 @@ pub fn build(b: *std.Build) void {
         const run = b.addRunArtifact(compare_exe);
         run.addArg(s[1]);
         run.setCwd(b.path("."));
-        if (b.args) |args| run.addArgs(args);
+        run.addPassthruArgs();
         // Timing and acceptance are facts about the machine now, never cached.
         run.has_side_effects = true;
         if (!std.mem.eql(u8, s[1], "gen") and !std.mem.eql(u8, s[1], "render")) run.step.dependOn(&perf_install.step);
@@ -743,7 +745,7 @@ pub fn build(b: *std.Build) void {
     {
         const run = b.addRunArtifact(time_report_exe);
         run.addArg("run");
-        if (b.args) |args| run.addArgs(args);
+        run.addPassthruArgs();
         run.addArgs(&.{ "--", b.graph.zig_exe, "build", time_step_name });
         run.addArgs(child_build_args);
         // `-Dtest-budget=0` measures every test to completion, for a report
@@ -760,8 +762,8 @@ pub fn build(b: *std.Build) void {
         const smoke = bb.artifact("tests/blackbox/time_report_test.zig");
         const smoke_step = bb.fileStep("tests/blackbox/time_report_test.zig");
         const run = bb.run(smoke, .{ .root = "tests/corpus" });
-        run.setEnvironmentVariable("BENI_TIME_REPORT_EXE", b.getInstallPath(.prefix, "tools/time-report"));
-        run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", b.getInstallPath(.prefix, "tools/corpus_test"));
+        run.setEnvironmentVariable("BENI_TIME_REPORT_EXE", installPath(b, "tools/time-report"));
+        run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", installPath(b, "tools/corpus_test"));
         run.step.dependOn(&tool_install.step);
         run.step.dependOn(&corpus_tool_install.step);
         smoke_step.dependOn(&run.step);
@@ -780,30 +782,30 @@ pub fn build(b: *std.Build) void {
     const coverage_step = b.step("coverage", "Run the black-box suites and the corpus on an instrumented beni and report which lines of src/ they execute, into zig-out/coverage/ (not a gate; x86-64 Linux)");
     const coverage_run_step = b.step("coverage-run", "The black-box suites and the corpus on the instrumented beni, without the report; `coverage` runs it (not a gate)");
     if (target.result.cpu.arch == .x86_64 and target.result.os.tag == .linux) {
-        const hits_path = b.getInstallPath(.prefix, coverage_hits_path);
-        const exe_path = b.getInstallPath(.prefix, coverage_bin_dir ++ "/beni");
+        const hits_path = installPath(b, coverage_hits_path);
+        const exe_path = installPath(b, coverage_bin_dir ++ "/beni");
         // The compiler measured is the LLVM ReleaseSafe build with its debug
         // info kept, instrumented by LLVM's SanitizerCoverage: Zig's
         // self-hosted backend has no such instrumentation. Only the blocks
         // LLVM chose to guard record anything; the report infers the rest
         // from the control-flow graph, and maps blocks to lines through the
         // line table, which leaves out lines the optimiser folded away.
-        const measured = compiler(b, target, .ReleaseSafe, .llvm, .full, shipped_core, platform_sources);
+        const measured = compiler(b, target, .safe, .llvm, .full, shipped_core, platform_sources);
         const runtime_options = b.addOptions();
-        runtime_options.addOption([:0]const u8, "hits_path", b.allocator.dupeZ(u8, hits_path) catch @panic("OOM"));
+        runtime_options.addOption([:0]const u8, "hits_path", b.allocator.dupeSentinel(u8, hits_path, 0) catch @panic("OOM"));
         const instrumented = b.addExecutable(.{
             .name = "beni",
             .use_llvm = true,
             .root_module = b.createModule(.{
                 .root_source_file = b.path("tests/coverage/runtime.zig"),
                 .target = target,
-                .optimize = .ReleaseSafe,
+                .optimize = .safe,
                 .strip = false,
                 .imports = &.{
                     .{ .name = "beni_main", .module = b.createModule(.{
                         .root_source_file = b.path("src/main.zig"),
                         .target = target,
-                        .optimize = .ReleaseSafe,
+                        .optimize = .safe,
                         .strip = false,
                         .imports = &.{
                             .{ .name = "beni", .module = measured.beni },
@@ -841,17 +843,17 @@ pub fn build(b: *std.Build) void {
             .root_module = b.createModule(.{
                 .root_source_file = b.path("tests/coverage.zig"),
                 .target = target,
-                .optimize = .ReleaseSafe,
+                .optimize = .safe,
             }),
         });
         const run = b.addRunArtifact(coverage_exe);
         run.addArgs(&.{
             b.fmt("--exe={s}", .{exe_path}),
             b.fmt("--hits={s}", .{hits_path}),
-            b.fmt("--src={s}", .{b.pathFromRoot("src")}),
-            b.fmt("--out={s}", .{b.getInstallPath(.prefix, coverage_report_dir)}),
+            b.fmt("--src={s}", .{sourcePath(b, "src")}),
+            b.fmt("--out={s}", .{installPath(b, coverage_report_dir)}),
         });
-        if (b.args) |args| run.addArgs(args);
+        run.addPassthruArgs();
         run.addArgs(&.{ "--", b.graph.zig_exe, "build", "coverage-run" });
         run.addArgs(child_build_args);
         run.setCwd(b.path("."));
@@ -867,10 +869,10 @@ pub fn build(b: *std.Build) void {
     // ---- Formatting. ----
     const fmt_step = b.step("fmt-check", "Check formatting with `zig fmt --check`");
     fmt_step.dependOn(&b.addFmt(.{
-        .paths = &.{ "src", "build.zig", "tests", "bench", "platforms" },
+        .paths = b.pathList(&.{ "src", "build.zig", "tests", "bench", "platforms" }),
         // The compare benchmark's generated projects and fetched
         // dependencies (Roc's sources among them) are not ours to format.
-        .exclude_paths = &.{"bench/compare/work"},
+        .exclude_paths = b.pathList(&.{"bench/compare/work"}),
         .check = true,
     }).step);
 
@@ -887,7 +889,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    const beni_safe_path = b.getInstallPath(.prefix, b.fmt("{s}/beni", .{safe_dir}));
+    const beni_safe_path = installPath(b, b.fmt("{s}/beni", .{safe_dir}));
     {
         const run = b.addRunArtifact(fmt_check_exe);
         run.addArg(beni_safe_path);
@@ -900,7 +902,7 @@ pub fn build(b: *std.Build) void {
         const file = "tests/blackbox/fmt_check_test.zig";
         const step = bb.fileStep(file);
         const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
-        run.setEnvironmentVariable("BENI_FMT_CHECK_EXE", b.getInstallPath(.prefix, "tools/beni-fmt-check"));
+        run.setEnvironmentVariable("BENI_FMT_CHECK_EXE", installPath(b, "tools/beni-fmt-check"));
         run.step.dependOn(&b.addInstallArtifact(fmt_check_exe, tools).step);
         step.dependOn(&run.step);
         blackbox_step.dependOn(step);
@@ -940,13 +942,13 @@ fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8, 
 /// the same thing: `-Doptimize`, `-Dllvm`, `-Dtest-filter`, `-Dcorpus`.
 fn childBuildArgs(
     b: *std.Build,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.Optimize,
     llvm: bool,
     test_filters: []const []const u8,
     corpus_only: []const u8,
 ) []const []const u8 {
     var args: std.ArrayList([]const u8) = .empty;
-    if (optimize != .Debug) args.append(b.allocator, b.fmt("-Doptimize={t}", .{optimize})) catch @panic("OOM");
+    if (optimize != .debug) args.append(b.allocator, b.fmt("-Doptimize={t}", .{optimize})) catch @panic("OOM");
     if (llvm) args.append(b.allocator, "-Dllvm") catch @panic("OOM");
     for (test_filters) |filter| args.append(b.allocator, b.fmt("-Dtest-filter={s}", .{filter})) catch @panic("OOM");
     if (corpus_only.len != 0) args.append(b.allocator, b.fmt("-Dcorpus={s}", .{corpus_only})) catch @panic("OOM");
@@ -1044,7 +1046,7 @@ const Backend = enum {
 fn compiler(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    mode: std.builtin.OptimizeMode,
+    mode: std.lang.Optimize,
     backend: Backend,
     debug_info: DebugInfo,
     core: Core,
@@ -1059,7 +1061,7 @@ fn compiler(
     // little.
     const strip: ?bool = switch (debug_info) {
         .full => false,
-        .default => if (mode == .ReleaseSafe and backend == .llvm) true else null,
+        .default => if (mode == .safe and backend == .llvm) true else null,
     };
     const diagnostic = b.createModule(.{
         .root_source_file = b.path("src/diagnostic.zig"),
@@ -1195,7 +1197,7 @@ fn emptyCorePack(b: *std.Build) *std.Build.Module {
 fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
     if (core_pack_maker) |exe| return exe;
     const host = b.graph.host;
-    const mode: std.builtin.OptimizeMode = .ReleaseSafe;
+    const mode: std.lang.Optimize = .safe;
     const diagnostic = b.createModule(.{
         .root_source_file = b.path("src/diagnostic.zig"),
         .target = host,
@@ -1278,7 +1280,7 @@ const build_id_recipe: []const u8 = "BENIBUILDID\x00v2";
 fn compilerBuildId(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.Optimize,
     backend: ?Backend,
     core: Core,
     sources: []const PlatformSource,
@@ -1342,9 +1344,24 @@ fn feedFile(b: *std.Build, hasher: *std.hash.SipHash128(1, 3), label: []const u8
 
 /// A file the build id hashes: relative to the build root, or absolute.
 fn readBuildFile(b: *std.Build, full: []const u8) []u8 {
-    return b.build_root.handle.readFileAlloc(b.graph.io, full, b.allocator, .unlimited) catch |err| {
+    b.dependOnFileContents(buildInputPath(b, full));
+    const path = if (std.fs.path.isAbsolute(full)) full else b.root.joinString(b.allocator, full) catch @panic("OOM");
+    defer if (path.ptr != full.ptr) b.allocator.free(path);
+    return std.Io.Dir.cwd().readFileAlloc(b.graph.io, path, b.allocator, .unlimited) catch |err| {
         std.debug.panic("cannot read {s} for the compiler build id: {t}", .{ full, err });
     };
+}
+
+fn buildInputPath(b: *std.Build, path: []const u8) std.Build.LazyPath {
+    return if (std.fs.path.isAbsolute(path)) .{ .cwd_relative = path } else b.path(path);
+}
+
+fn sourcePath(b: *std.Build, rel: []const u8) []const u8 {
+    return b.root.joinString(b.allocator, rel) catch @panic("OOM");
+}
+
+fn installPath(b: *std.Build, rel: []const u8) []const u8 {
+    return sourcePath(b, b.pathJoin(&.{ "zig-out", rel }));
 }
 
 /// One length-prefixed field of the digest.
@@ -1361,7 +1378,8 @@ fn feed(hasher: *std.hash.SipHash128(1, 3), slice: []const u8) void {
 fn collectAll(b: *std.Build, root: []const u8, prefix: []const u8, out: *std.ArrayList([]const u8)) void {
     const io = b.graph.io;
     const full = if (prefix.len == 0) b.dupe(root) else b.pathJoin(&.{ root, prefix });
-    var handle = b.build_root.handle.openDir(io, full, .{ .iterate = true }) catch |err| {
+    b.dependOnDirectoryContents(buildInputPath(b, full));
+    var handle = b.root.openDir(io, full, .{ .iterate = true }) catch |err| {
         std.debug.panic("cannot open compiler source directory {s}: {t}", .{ full, err });
     };
     defer handle.close(io);
@@ -1385,7 +1403,8 @@ fn collectAll(b: *std.Build, root: []const u8, prefix: []const u8, out: *std.Arr
 fn embedCorpus(b: *std.Build, dir: []const u8) *std.Build.Module {
     const io = b.graph.io;
     var names: std.ArrayList([]const u8) = .empty;
-    var handle = b.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch |err| {
+    b.dependOnDirectoryContents(buildInputPath(b, dir));
+    var handle = b.root.openDir(io, dir, .{ .iterate = true }) catch |err| {
         std.debug.panic("cannot open corpus directory {s}: {t}", .{ dir, err });
     };
     defer handle.close(io);
@@ -1530,11 +1549,8 @@ fn coreFiles(b: *std.Build, core: Core) []const CoreFile {
 /// `zig build` and shared by every compiler the graph builds.
 fn entityTable(b: *std.Build) *std.Build.Module {
     if (entity_table_module) |m| return m;
-    const io = b.graph.io;
     const json_path = "src/markup/entities.json";
-    const bytes = b.build_root.handle.readFileAlloc(io, json_path, b.allocator, .unlimited) catch |err| {
-        std.debug.panic("cannot read {s}: {t}", .{ json_path, err });
-    };
+    const bytes = readBuildFile(b, json_path);
     const parsed = std.json.parseFromSlice(std.json.Value, b.allocator, bytes, .{}) catch |err| {
         std.debug.panic("{s} is not JSON: {t}", .{ json_path, err });
     };
@@ -1603,7 +1619,8 @@ fn platformSources(b: *std.Build, added: []const []const u8) []const PlatformSou
     const io = b.graph.io;
     var out: std.ArrayList(PlatformSource) = .empty;
     var names: std.ArrayList([]const u8) = .empty;
-    var handle = b.build_root.handle.openDir(io, platforms_dir, .{ .iterate = true }) catch |err| {
+    b.dependOnDirectoryContents(buildInputPath(b, platforms_dir));
+    var handle = b.root.openDir(io, platforms_dir, .{ .iterate = true }) catch |err| {
         std.debug.panic("cannot open platforms directory {s}: {t}", .{ platforms_dir, err });
     };
     defer handle.close(io);
@@ -1619,7 +1636,7 @@ fn platformSources(b: *std.Build, added: []const []const u8) []const PlatformSou
         out.append(b.allocator, .{ .name = name, .dir = dir, .zig = m.zig, .deps = m.platforms }) catch @panic("OOM");
     }
     for (added) |spelled| {
-        const dir = if (std.fs.path.isAbsolute(spelled)) b.dupe(spelled) else b.pathFromRoot(spelled);
+        const dir = if (std.fs.path.isAbsolute(spelled)) b.dupe(spelled) else sourcePath(b, spelled);
         const m = readPlatformManifest(b, dir);
         const name = m.name orelse std.fs.path.basename(dir);
         out.append(b.allocator, .{ .name = name, .dir = dir, .zig = m.zig, .deps = m.platforms }) catch @panic("OOM");
@@ -1639,11 +1656,9 @@ const PlatformManifest = struct {
 /// The keys of `<dir>/beni.json` the build reads: the platform's name, its
 /// Zig module's root and the platforms it depends on.
 fn readPlatformManifest(b: *std.Build, dir: []const u8) PlatformManifest {
-    const io = b.graph.io;
     const path = b.pathJoin(&.{ dir, "beni.json" });
-    const bytes = b.build_root.handle.readFileAlloc(io, path, b.allocator, .limited(64 * 1024)) catch |err| {
-        std.debug.panic("cannot read the platform manifest {s}: {t}", .{ path, err });
-    };
+    const bytes = readBuildFile(b, path);
+    if (bytes.len > 64 * 1024) std.debug.panic("the platform manifest {s} exceeds 64 KiB", .{path});
     return std.json.parseFromSliceLeaky(PlatformManifest, b.allocator, bytes, .{ .ignore_unknown_fields = true, .allocate = .alloc_always }) catch |err| {
         std.debug.panic("the platform manifest {s} is not a JSON object of the expected shape: {t}", .{ path, err });
     };
@@ -1670,7 +1685,7 @@ fn platformFile(b: *std.Build, source: PlatformSource, rel: []const u8) std.Buil
 fn markupModules(
     b: *std.Build,
     sources: []const PlatformSource,
-    test_build: ?struct { target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode },
+    test_build: ?struct { target: std.Build.ResolvedTarget, optimize: std.lang.Optimize },
 ) MarkupModules {
     const target = if (test_build) |t| t.target else null;
     const optimize = if (test_build) |t| t.optimize else null;
@@ -1786,7 +1801,7 @@ fn zigModuleName(b: *std.Build, name: []const u8) []const u8 {
 /// in `dir`, relative to the depending build's root, compiled in exactly as
 /// `-Dplatform=<dir>` compiles one (`docs/design/boundary.md` §9.5).
 pub fn addPlatform(b: *std.Build, options: struct { dir: []const u8, dependency: []const u8 = "beni" }) *std.Build.Dependency {
-    const dirs: []const []const u8 = &.{b.pathFromRoot(options.dir)};
+    const dirs: []const []const u8 = &.{sourcePath(b, options.dir)};
     return b.dependency(options.dependency, .{ .platform = dirs });
 }
 
@@ -1879,7 +1894,8 @@ fn collectFiles(
 ) void {
     const io = b.graph.io;
     const full = if (prefix.len == 0) b.dupe(root) else b.pathJoin(&.{ root, prefix });
-    var handle = b.build_root.handle.openDir(io, full, .{ .iterate = true }) catch |err| {
+    b.dependOnDirectoryContents(buildInputPath(b, full));
+    var handle = b.root.openDir(io, full, .{ .iterate = true }) catch |err| {
         std.debug.panic("cannot open package directory {s}: {t}", .{ full, err });
     };
     defer handle.close(io);
@@ -1944,7 +1960,7 @@ const Blackbox = struct {
     /// gets it as `--node-version=` (`tests/test_runner.zig`).
     node_version: std.Build.LazyPath,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.Optimize,
     diagnostic: *std.Build.Module,
     /// `-Dtest-filter`, given to every test binary.
     filters: []const []const u8,
@@ -1968,7 +1984,7 @@ const Blackbox = struct {
 
     /// `test-blackbox-<file>`: the step that runs one black-box test file.
     fn fileStep(bb: Blackbox, root: []const u8) *std.Build.Step {
-        var name = bb.b.dupe(std.fs.path.stem(root));
+        var name = bb.b.allocator.dupe(u8, std.fs.path.stem(root)) catch @panic("OOM");
         if (std.mem.endsWith(u8, name, "_test")) name = name[0 .. name.len - "_test".len];
         std.mem.replaceScalar(u8, name, '_', '-');
         return bb.b.step(
@@ -1982,7 +1998,7 @@ const Blackbox = struct {
     }
 
     /// `artifact` with the harness itself built at `mode`.
-    fn artifactAt(bb: Blackbox, root: []const u8, mode: std.builtin.OptimizeMode) *std.Build.Step.Compile {
+    fn artifactAt(bb: Blackbox, root: []const u8, mode: std.lang.Optimize) *std.Build.Step.Compile {
         return bb.b.addTest(.{
             // `blackbox_test`, not `test`: the step names in a build
             // summary say which suite a run is.
@@ -2012,7 +2028,7 @@ const Blackbox = struct {
             .toy => bb.toy_install,
         });
         if (env.variant) r.step.dependOn(bb.variant_install);
-        r.setEnvironmentVariable("BENI_VARIANT_EXE", if (env.variant) bb.b.getInstallPath(.prefix, bb.b.fmt("{s}/beni", .{variant_bin_dir})) else "");
+        r.setEnvironmentVariable("BENI_VARIANT_EXE", if (env.variant) installPath(bb.b, bb.b.fmt("{s}/beni", .{variant_bin_dir})) else "");
         r.setCwd(bb.b.path("."));
         r.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
         r.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);
@@ -2035,7 +2051,7 @@ const Blackbox = struct {
             .fast => perf_bin_dir,
             .toy => toy_bin_dir,
         };
-        r.setEnvironmentVariable("BENI_EXE", bb.b.getInstallPath(.prefix, bb.b.fmt("{s}/beni", .{exe_dir})));
+        r.setEnvironmentVariable("BENI_EXE", installPath(bb.b, bb.b.fmt("{s}/beni", .{exe_dir})));
         r.setName(bb.b.fmt("run {s}{s}{s}{s}{s}{s}{s}", .{
             t.name,
             if (env.part.len != 0) " part " else "",
@@ -2070,16 +2086,13 @@ fn compareGeneratorHash(b: *std.Build) []const u8 {
     collectAll(b, root, "", &paths);
     sortPaths(&paths);
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
-    const io = b.graph.io;
     for (paths.items) |rel| {
         var len: [8]u8 = undefined;
         std.mem.writeInt(u64, &len, rel.len, .little);
         hasher.update(&len);
         hasher.update(rel);
         const full = b.pathJoin(&.{ root, rel });
-        const bytes = b.build_root.handle.readFileAlloc(io, full, b.allocator, .unlimited) catch |err| {
-            std.debug.panic("cannot read generator source {s}: {t}", .{ full, err });
-        };
+        const bytes = readBuildFile(b, full);
         std.mem.writeInt(u64, &len, bytes.len, .little);
         hasher.update(&len);
         hasher.update(bytes);

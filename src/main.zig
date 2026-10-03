@@ -341,7 +341,7 @@ fn dumpExit(summary: Session.Summary, printing: u8) u8 {
 fn dumpTarget(session: *const Session, arg: []const u8) ?SourceStore.Index {
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     if (session.store.find(storePath(&buffer, arg))) |file| return file;
-    return if (session.store.count() == 1) @enumFromInt(0) else null;
+    return if (session.store.count() == 1) @fromBackingInt(@intCast(0)) else null;
 }
 
 /// The argument as the STORE spells it. Enumeration normalises every path
@@ -414,7 +414,7 @@ fn dumpProjectDispatch(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Wr
 
 fn moduleOf(session: *const Session, file: SourceStore.Index) ?beni.resolve.Graph.Index {
     for (0..session.graph.count()) |i| {
-        const m: beni.resolve.Graph.Index = @enumFromInt(i);
+        const m: beni.resolve.Graph.Index = @fromBackingInt(@intCast(i));
         if (session.graph.moduleFile(m) == file) return m;
     }
     return null;

@@ -92,11 +92,11 @@ pub const Node = struct {
         _,
 
         pub inline fn int(i: Index) u32 {
-            return @intFromEnum(i);
+            return @backingInt(i);
         }
 
         pub inline fn toOptional(i: Index) OptionalIndex {
-            const o: OptionalIndex = @enumFromInt(@intFromEnum(i));
+            const o: OptionalIndex = @fromBackingInt(@intCast(@backingInt(i)));
             std.debug.assert(o != .none);
             return o;
         }
@@ -107,7 +107,7 @@ pub const Node = struct {
         _,
 
         pub inline fn unwrap(o: OptionalIndex) ?Index {
-            return if (o == .none) null else @enumFromInt(@intFromEnum(o));
+            return if (o == .none) null else @fromBackingInt(@intCast(@backingInt(o)));
         }
     };
 
@@ -259,7 +259,7 @@ pub const Node = struct {
 
         /// Whether the tag is a statement (the leading run of this enum).
         pub fn isStatement(t: Tag) bool {
-            return @intFromEnum(t) <= @intFromEnum(Tag.try_stmt);
+            return @backingInt(t) <= @backingInt(Tag.try_stmt);
         }
     };
 };
@@ -450,11 +450,11 @@ pub const NameIndex = enum(u32) {
     _,
 
     pub inline fn int(i: NameIndex) u32 {
-        return @intFromEnum(i);
+        return @backingInt(i);
     }
 
     pub inline fn unwrap(i: NameIndex) ?u32 {
-        return if (i == .none) null else @intFromEnum(i);
+        return if (i == .none) null else @backingInt(i);
     }
 };
 
@@ -466,10 +466,10 @@ pub const SubRange = struct {
     start: ExtraIndex,
     end: ExtraIndex,
 
-    pub const empty: SubRange = .{ .start = @enumFromInt(0), .end = @enumFromInt(0) };
+    pub const empty: SubRange = .{ .start = @fromBackingInt(@intCast(0)), .end = @fromBackingInt(@intCast(0)) };
 
     pub fn len(r: SubRange) u32 {
-        return @intFromEnum(r.end) - @intFromEnum(r.start);
+        return @backingInt(r.end) - @backingInt(r.start);
     }
 };
 
@@ -625,13 +625,13 @@ pub fn deinit(ir: *JsIr, gpa: Allocator) void {
 
 pub inline fn tag(ir: *const JsIr, node: Node.Index) Node.Tag {
     if (node.int() >= ir.nodes.len) unreachable;
-    const tags: [*]const Node.Tag = @ptrCast(ir.nodes.ptrs[@intFromEnum(NodeList.Field.tag)]);
+    const tags: [*]const Node.Tag = @ptrCast(ir.nodes.ptrs[@backingInt(NodeList.Field.tag)]);
     return tags[node.int()];
 }
 
 pub inline fn data(ir: *const JsIr, node: Node.Index) Node.Data {
     if (node.int() >= ir.nodes.len) unreachable;
-    const datas: [*]const Node.Data = @ptrCast(@alignCast(ir.nodes.ptrs[@intFromEnum(NodeList.Field.data)]));
+    const datas: [*]const Node.Data = @ptrCast(@alignCast(ir.nodes.ptrs[@backingInt(NodeList.Field.data)]));
     return datas[node.int()];
 }
 
@@ -661,19 +661,19 @@ pub fn bytes(ir: *const JsIr, node: Node.Index) []const u8 {
 /// The elements of a range, viewed as `T` (`Node.Index`, `NameIndex`, `u32`).
 pub inline fn extraSlice(ir: *const JsIr, range: SubRange, comptime T: type) []const T {
     comptime std.debug.assert(@sizeOf(T) % 4 == 0 and @alignOf(T) == 4);
-    const words = ir.extra[@intFromEnum(range.start)..@intFromEnum(range.end)];
+    const words = ir.extra[@backingInt(range.start)..@backingInt(range.end)];
     return @ptrCast(@alignCast(words));
 }
 
 /// Read a record out of `extra` starting at `index`, field by field.
 pub inline fn extraData(ir: *const JsIr, index: ExtraIndex, comptime T: type) T {
-    var i: usize = @intFromEnum(index);
+    var i: usize = @backingInt(index);
     var result: T = undefined;
-    inline for (std.meta.fields(T)) |field| {
-        @field(result, field.name) = switch (@typeInfo(field.type)) {
-            .@"enum" => @enumFromInt(ir.extra[i]),
+    inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+        @field(result, field_name) = switch (@typeInfo(field_type)) {
+            .@"enum" => @fromBackingInt(@intCast(ir.extra[i])),
             .int => ir.extra[i],
-            else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+            else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
         };
         i += 1;
     }
@@ -681,7 +681,7 @@ pub inline fn extraData(ir: *const JsIr, index: ExtraIndex, comptime T: type) T 
 }
 
 pub fn extraLen(comptime T: type) u32 {
-    return @intCast(std.meta.fields(T).len);
+    return @intCast(@typeInfo(T).@"struct".field_names.len);
 }
 
 /// The `SubRange` stored at `index`.
@@ -691,7 +691,7 @@ pub inline fn subRange(ir: *const JsIr, index: ExtraIndex) SubRange {
 
 /// The range stored inline in `lhs..rhs`.
 pub inline fn inlineRange(d: Node.Data) SubRange {
-    return .{ .start = @enumFromInt(d.lhs), .end = @enumFromInt(d.rhs) };
+    return .{ .start = @fromBackingInt(@intCast(d.lhs)), .end = @fromBackingInt(@intCast(d.rhs)) };
 }
 
 /// Push the operand expressions of expression `node` onto `stack` in
@@ -706,20 +706,20 @@ pub inline fn inlineRange(d: Node.Data) SubRange {
 pub inline fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), node: Node.Index) Allocator.Error!void {
     const d = ir.data(node);
     switch (ir.tag(node)) {
-        .member, .unary, .spread_property => try pushAll(gpa, stack, &.{@enumFromInt(d.lhs)}),
-        .index_get => try pushAll(gpa, stack, &.{ @enumFromInt(d.rhs), @enumFromInt(d.lhs) }),
-        .property => try pushAll(gpa, stack, &.{@enumFromInt(d.rhs)}),
+        .member, .unary, .spread_property => try pushAll(gpa, stack, &.{@fromBackingInt(@intCast(d.lhs))}),
+        .index_get => try pushAll(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
+        .property => try pushAll(gpa, stack, &.{@fromBackingInt(@intCast(d.rhs))}),
         .call, .new_call => {
-            try pushReversed(gpa, stack, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Node.Index));
-            try pushAll(gpa, stack, &.{@enumFromInt(d.lhs)});
+            try pushReversed(gpa, stack, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Node.Index));
+            try pushAll(gpa, stack, &.{@fromBackingInt(@intCast(d.lhs))});
         },
         .object, .array, .template => try pushReversed(gpa, stack, ir.extraSlice(inlineRange(d), Node.Index)),
         .cond => {
-            const c = ir.extraData(@enumFromInt(d.rhs), Cond);
-            try pushAll(gpa, stack, &.{ c.alternate, c.consequent, @enumFromInt(d.lhs) });
+            const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), Cond);
+            try pushAll(gpa, stack, &.{ c.alternate, c.consequent, @fromBackingInt(@intCast(d.lhs)) });
         },
         .binary => {
-            const b = ir.extraData(@enumFromInt(d.lhs), Binary);
+            const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), Binary);
             try pushAll(gpa, stack, &.{ b.right, b.left });
         },
         // Leaves; an `arrow`, whose body each caller walks itself; and the
@@ -799,27 +799,27 @@ pub const VerifyError = error{
 /// found in the printer is a crash.
 pub fn verify(ir: *const JsIr) VerifyError!void {
     try ir.verifyRange(ir.body, .statement);
-    for (0..ir.nodes.len) |i| try ir.verifyNode(@enumFromInt(i));
+    for (0..ir.nodes.len) |i| try ir.verifyNode(@fromBackingInt(@intCast(i)));
 }
 
 const Position = enum { statement, expression, either };
 
 fn verifyRange(ir: *const JsIr, range: SubRange, position: Position) VerifyError!void {
-    if (@intFromEnum(range.start) > @intFromEnum(range.end)) return error.OutOfBounds;
-    if (@intFromEnum(range.end) > ir.extra.len) return error.OutOfBounds;
+    if (@backingInt(range.start) > @backingInt(range.end)) return error.OutOfBounds;
+    if (@backingInt(range.end) > ir.extra.len) return error.OutOfBounds;
     for (ir.extraSlice(range, Node.Index)) |child| try ir.verifyChild(child, position);
 }
 
 fn verifySpecs(ir: *const JsIr, range: SubRange) VerifyError!void {
-    if (@intFromEnum(range.start) > @intFromEnum(range.end)) return error.OutOfBounds;
-    if (@intFromEnum(range.end) > ir.extra.len) return error.OutOfBounds;
+    if (@backingInt(range.start) > @backingInt(range.end)) return error.OutOfBounds;
+    if (@backingInt(range.end) > ir.extra.len) return error.OutOfBounds;
     if (range.len() % Specifier.words != 0) return error.OutOfBounds;
     for (ir.extraSlice(range, NameIndex)) |n| try ir.verifyName(n, false);
 }
 
 fn verifyNames(ir: *const JsIr, range: SubRange) VerifyError!void {
-    if (@intFromEnum(range.start) > @intFromEnum(range.end)) return error.OutOfBounds;
-    if (@intFromEnum(range.end) > ir.extra.len) return error.OutOfBounds;
+    if (@backingInt(range.start) > @backingInt(range.end)) return error.OutOfBounds;
+    if (@backingInt(range.end) > ir.extra.len) return error.OutOfBounds;
     for (ir.extraSlice(range, NameIndex)) |n| try ir.verifyName(n, false);
 }
 
@@ -834,7 +834,7 @@ fn verifyChild(ir: *const JsIr, child: Node.Index, position: Position) VerifyErr
 }
 
 fn verifyOptional(ir: *const JsIr, raw: u32, position: Position) VerifyError!void {
-    const o: Node.OptionalIndex = @enumFromInt(raw);
+    const o: Node.OptionalIndex = @fromBackingInt(@intCast(raw));
     if (o.unwrap()) |child| try ir.verifyChild(child, position);
 }
 
@@ -847,7 +847,7 @@ fn verifyName(ir: *const JsIr, n: NameIndex, optional: bool) VerifyError!void {
 }
 
 fn verifyExtra(ir: *const JsIr, index: ExtraIndex, comptime T: type) VerifyError!T {
-    const start: usize = @intFromEnum(index);
+    const start: usize = @backingInt(index);
     if (start + extraLen(T) > ir.extra.len) return error.OutOfBounds;
     return ir.extraData(index, T);
 }
@@ -867,49 +867,49 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
     const d = ir.data(node);
     switch (ir.tag(node)) {
         .import_stmt => {
-            const imp = try ir.verifyExtra(@enumFromInt(d.lhs), Import);
+            const imp = try ir.verifyExtra(@fromBackingInt(@intCast(d.lhs)), Import);
             if (@as(usize, imp.source_start) + imp.source_len > ir.string_bytes.len) return error.OutOfBounds;
             try ir.verifySpecs(imp.specs());
         },
         .export_stmt => try ir.verifyNames(inlineRange(d)),
         .const_decl => {
-            try ir.verifyName(@enumFromInt(d.lhs), false);
-            try ir.verifyChild(@enumFromInt(d.rhs), .expression);
+            try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.rhs)), .expression);
         },
         .let_decl => {
-            try ir.verifyName(@enumFromInt(d.lhs), false);
+            try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false);
             try ir.verifyOptional(d.rhs, .expression);
         },
         .func_decl, .gen_decl => {
-            try ir.verifyName(@enumFromInt(d.lhs), false);
-            try ir.verifyFunc(@enumFromInt(d.rhs));
+            try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false);
+            try ir.verifyFunc(@fromBackingInt(@intCast(d.rhs)));
         },
         .assign_stmt => {
-            try ir.verifyChild(@enumFromInt(d.lhs), .expression);
-            try ir.verifyChild(@enumFromInt(d.rhs), .expression);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.rhs)), .expression);
         },
         .return_stmt => try ir.verifyOptional(d.lhs, .expression),
         .if_stmt => {
-            try ir.verifyChild(@enumFromInt(d.lhs), .expression);
-            const branches = try ir.verifyExtra(@enumFromInt(d.rhs), If);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            const branches = try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), If);
             try ir.verifyRange(branches.thenBody(), .statement);
             try ir.verifyRange(branches.elseBody(), .statement);
         },
         .while_true => {
-            try ir.verifyName(@enumFromInt(d.lhs), true);
-            try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .statement);
+            try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), true);
+            try ir.verifyRange(try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), SubRange), .statement);
         },
         .for_of => {
-            try ir.verifyName(@enumFromInt(d.lhs), false);
-            const f = try ir.verifyExtra(@enumFromInt(d.rhs), ForOf);
+            try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false);
+            const f = try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), ForOf);
             try ir.verifyChild(f.iterable, .expression);
             try ir.verifyRange(f.body(), .statement);
         },
-        .break_stmt, .continue_stmt => try ir.verifyName(@enumFromInt(d.lhs), true),
+        .break_stmt, .continue_stmt => try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), true),
         .switch_stmt => {
-            try ir.verifyChild(@enumFromInt(d.lhs), .expression);
-            const cases = try ir.verifyExtra(@enumFromInt(d.rhs), SubRange);
-            if (@intFromEnum(cases.start) > @intFromEnum(cases.end) or @intFromEnum(cases.end) > ir.extra.len) {
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            const cases = try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), SubRange);
+            if (@backingInt(cases.start) > @backingInt(cases.end) or @backingInt(cases.end) > ir.extra.len) {
                 return error.OutOfBounds;
             }
             for (ir.extraSlice(cases, Node.Index)) |c| {
@@ -919,45 +919,45 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
         },
         .switch_case => {
             try ir.verifyOptional(d.lhs, .expression);
-            try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .statement);
+            try ir.verifyRange(try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), SubRange), .statement);
         },
         .block_stmt => {
-            try ir.verifyName(@enumFromInt(d.lhs), true);
-            try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .statement);
+            try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), true);
+            try ir.verifyRange(try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), SubRange), .statement);
         },
-        .expr_stmt, .throw_stmt => try ir.verifyChild(@enumFromInt(d.lhs), .expression),
+        .expr_stmt, .throw_stmt => try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression),
         .try_stmt => {
-            const t = try ir.verifyExtra(@enumFromInt(d.rhs), Try);
+            const t = try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), Try);
             try ir.verifyRange(t.body(), .statement);
             try ir.verifyRange(t.finalBody(), .statement);
             try ir.verifyRange(t.catchBody(), .statement);
         },
 
-        .ident => try ir.verifyName(@enumFromInt(d.lhs), false),
+        .ident => try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false),
         .number, .string, .template_chunk, .regex => try ir.verifyBytes(d),
         .template => {
             const parts = inlineRange(d);
-            if (@intFromEnum(parts.start) > @intFromEnum(parts.end) or @intFromEnum(parts.end) > ir.extra.len) {
+            if (@backingInt(parts.start) > @backingInt(parts.end) or @backingInt(parts.end) > ir.extra.len) {
                 return error.OutOfBounds;
             }
             for (ir.extraSlice(parts, Node.Index)) |part| try ir.verifyChild(part, .expression);
         },
         .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
         .call, .new_call => {
-            try ir.verifyChild(@enumFromInt(d.lhs), .expression);
-            try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .expression);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            try ir.verifyRange(try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), SubRange), .expression);
         },
         .member => {
-            try ir.verifyChild(@enumFromInt(d.lhs), .expression);
-            try ir.verifyName(@enumFromInt(d.rhs), false);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            try ir.verifyName(@fromBackingInt(@intCast(d.rhs)), false);
         },
         .index_get => {
-            try ir.verifyChild(@enumFromInt(d.lhs), .expression);
-            try ir.verifyChild(@enumFromInt(d.rhs), .expression);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.rhs)), .expression);
         },
         .object => {
             const props = inlineRange(d);
-            if (@intFromEnum(props.start) > @intFromEnum(props.end) or @intFromEnum(props.end) > ir.extra.len) {
+            if (@backingInt(props.start) > @backingInt(props.end) or @backingInt(props.end) > ir.extra.len) {
                 return error.OutOfBounds;
             }
             for (ir.extraSlice(props, Node.Index)) |p| {
@@ -966,33 +966,33 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             }
         },
         .property => {
-            try ir.verifyName(@enumFromInt(d.lhs), false);
-            try ir.verifyChild(@enumFromInt(d.rhs), .expression);
+            try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.rhs)), .expression);
         },
-        .spread_property => try ir.verifyChild(@enumFromInt(d.lhs), .expression),
+        .spread_property => try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression),
         .array => {
             const parts = inlineRange(d);
-            if (@intFromEnum(parts.start) > @intFromEnum(parts.end) or @intFromEnum(parts.end) > ir.extra.len) {
+            if (@backingInt(parts.start) > @backingInt(parts.end) or @backingInt(parts.end) > ir.extra.len) {
                 return error.OutOfBounds;
             }
             for (ir.extraSlice(parts, Node.Index)) |e| try ir.verifyChild(e, .expression);
         },
-        .arrow => try ir.verifyFunc(@enumFromInt(d.lhs)),
+        .arrow => try ir.verifyFunc(@fromBackingInt(@intCast(d.lhs))),
         .cond => {
-            try ir.verifyChild(@enumFromInt(d.lhs), .expression);
-            const c = try ir.verifyExtra(@enumFromInt(d.rhs), Cond);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            const c = try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), Cond);
             try ir.verifyChild(c.consequent, .expression);
             try ir.verifyChild(c.alternate, .expression);
         },
         .binary => {
-            const b = try ir.verifyExtra(@enumFromInt(d.lhs), Binary);
+            const b = try ir.verifyExtra(@fromBackingInt(@intCast(d.lhs)), Binary);
             try ir.verifyChild(b.left, .expression);
             try ir.verifyChild(b.right, .expression);
-            if (d.rhs >= @typeInfo(BinaryOp).@"enum".fields.len) return error.OutOfBounds;
+            if (d.rhs >= @typeInfo(BinaryOp).@"enum".field_names.len) return error.OutOfBounds;
         },
         .unary => {
-            try ir.verifyChild(@enumFromInt(d.lhs), .expression);
-            if (d.rhs >= @typeInfo(UnaryOp).@"enum".fields.len) return error.OutOfBounds;
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            if (d.rhs >= @typeInfo(UnaryOp).@"enum".field_names.len) return error.OutOfBounds;
         },
     }
 }
@@ -1175,14 +1175,14 @@ pub const Builder = struct {
     /// builds the tests' compiler, does not fold that away (`tag`).
     pub inline fn tagOf(b: *const Builder, node: Node.Index) Node.Tag {
         if (node.int() >= b.nodes.len) unreachable;
-        const tags: [*]const Node.Tag = @ptrCast(b.cols.ptrs[@intFromEnum(NodeList.Field.tag)]);
+        const tags: [*]const Node.Tag = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.tag)]);
         return tags[node.int()];
     }
 
     /// Node `node`'s data, read as `tagOf` reads its tag.
     pub inline fn dataOf(b: *const Builder, node: Node.Index) Node.Data {
         if (node.int() >= b.nodes.len) unreachable;
-        const datas: [*]const Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@intFromEnum(NodeList.Field.data)]));
+        const datas: [*]const Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.data)]));
         return datas[node.int()];
     }
 
@@ -1199,18 +1199,18 @@ pub const Builder = struct {
         }
         b.nodes.len = index + 1;
         b.cols.len = index + 1;
-        const tags: [*]Node.Tag = @ptrCast(b.cols.ptrs[@intFromEnum(NodeList.Field.tag)]);
-        const positions: [*]u32 = @ptrCast(@alignCast(b.cols.ptrs[@intFromEnum(NodeList.Field.pos)]));
-        const datas: [*]Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@intFromEnum(NodeList.Field.data)]));
+        const tags: [*]Node.Tag = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.tag)]);
+        const positions: [*]u32 = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.pos)]));
+        const datas: [*]Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.data)]));
         tags[index] = node_tag;
         positions[index] = node_pos;
         datas[index] = .{ .lhs = lhs, .rhs = rhs };
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 
     pub fn intern(b: *Builder, n: Name) Allocator.Error!NameIndex {
         if (n.module == .none and n.tag == Name.no_tag) return b.internLocal(n.base);
-        const key: NameKey = .{ .module = @intFromEnum(n.module), .base = @intFromEnum(n.base), .tag = n.tag };
+        const key: NameKey = .{ .module = @backingInt(n.module), .base = @backingInt(n.base), .tag = n.tag };
         // Most names a module interns are asked for again and again — the
         // parameters of a derived function once per position — so a small
         // table of recent answers, one slot per hash, is asked first. It
@@ -1222,7 +1222,7 @@ pub const Builder = struct {
             slot.* = .{ .key = key, .index = got.value_ptr.* };
             return got.value_ptr.*;
         }
-        const index: NameIndex = @enumFromInt(@as(u32, @intCast(b.names.items.len)));
+        const index: NameIndex = @fromBackingInt(@intCast(@as(u32, @intCast(b.names.items.len))));
         b.names.append(b.gpa, n) catch |err| {
             _ = b.name_index.remove(key);
             return err;
@@ -1235,19 +1235,19 @@ pub const Builder = struct {
     /// `intern` of `Name.local(base)`, through `locals`.
     fn internLocal(b: *Builder, base: Symbol) Allocator.Error!NameIndex {
         if ((b.locals_count + 1) * 2 > b.locals.len) try b.growLocals();
-        const key: u32 = @intFromEnum(base);
+        const key: u32 = @backingInt(base);
         const mask = b.locals.len - 1;
         var i = localSlot(key, b.locals.len);
         while (true) : (i = (i + 1) & mask) {
             const word = b.locals[i];
             if (word == local_empty) break;
-            if (@as(u32, @truncate(word >> 32)) == key) return @enumFromInt(@as(u32, @truncate(word)));
+            if (@as(u32, @truncate(word >> 32)) == key) return @fromBackingInt(@intCast(@as(u32, @truncate(word))));
         }
         const index: u32 = @intCast(b.names.items.len);
         try b.names.append(b.gpa, Name.local(base));
         b.locals[i] = (@as(u64, key) << 32) | index;
         b.locals_count += 1;
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 
     fn growLocals(b: *Builder) Allocator.Error!void {
@@ -1281,7 +1281,7 @@ pub const Builder = struct {
     pub fn addExtra(b: *Builder, words: []const u32) Allocator.Error!SubRange {
         const start: u32 = @intCast(b.extra.items.len);
         try b.extra.appendSlice(b.gpa, words);
-        return .{ .start = @enumFromInt(start), .end = @enumFromInt(start + words.len) };
+        return .{ .start = @fromBackingInt(@intCast(start)), .end = @fromBackingInt(@intCast(start + words.len)) };
     }
 
     /// Append a range of node indices to `extra`.
@@ -1296,16 +1296,16 @@ pub const Builder = struct {
     /// Append a record field by field and return its `ExtraIndex`.
     pub fn addRecord(b: *Builder, value: anytype) Allocator.Error!ExtraIndex {
         const index: u32 = @intCast(b.extra.items.len);
-        inline for (std.meta.fields(@TypeOf(value))) |field| {
-            const v = @field(value, field.name);
-            const word: u32 = switch (@typeInfo(field.type)) {
-                .@"enum" => @intFromEnum(v),
+        inline for (@typeInfo(@TypeOf(value)).@"struct".field_names, @typeInfo(@TypeOf(value)).@"struct".field_types) |field_name, field_type| {
+            const v = @field(value, field_name);
+            const word: u32 = switch (@typeInfo(field_type)) {
+                .@"enum" => @backingInt(v),
                 .int => v,
-                else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+                else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
             };
             try b.extra.append(b.gpa, word);
         }
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 
     /// How deep `stmts` nest, in `nesting`'s units, and how many scopes deep
@@ -1334,7 +1334,7 @@ pub const Builder = struct {
                     try s.append(g, .{ .node = node, .whole = from.whole +| weight, .scopes = from.scopes +| scopes });
                 }
                 fn optional(s: *std.ArrayList(Entry), g: Allocator, from: Entry, raw: u32, weight: u32) Allocator.Error!void {
-                    const o: Node.OptionalIndex = @enumFromInt(raw);
+                    const o: Node.OptionalIndex = @fromBackingInt(@intCast(raw));
                     const child = o.unwrap() orelse return;
                     try one(s, g, from, child.int(), weight, 0);
                 }
@@ -1404,10 +1404,10 @@ pub const Builder = struct {
                 },
                 .binary => {
                     const pair = b.record(d.lhs, Binary);
-                    const op: BinaryOp = @enumFromInt(d.rhs);
+                    const op: BinaryOp = @fromBackingInt(@intCast(d.rhs));
                     const left = pair.left.int();
                     const flat = left < tags.len and tags[left] == .binary and
-                        (@as(BinaryOp, @enumFromInt(datas[left].rhs))).precedence() == op.precedence();
+                        (@as(BinaryOp, @fromBackingInt(@intCast(datas[left].rhs)))).precedence() == op.precedence();
                     try Push.one(&stack, gpa, at, left, if (flat) w.flat else w.operand, 0);
                     try Push.one(&stack, gpa, at, pair.right.int(), w.operand, 0);
                 },
@@ -1455,10 +1455,10 @@ pub const Builder = struct {
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl, .property => try stack.append(gpa, d.rhs),
                 .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),
-                .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(gpa, v.int()),
-                .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(gpa, v.int()),
+                .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try stack.append(gpa, v.int()),
+                .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try stack.append(gpa, v.int()),
                 .unary => {
-                    if (@as(UnaryOp, @enumFromInt(d.rhs)) == .yield) out.call = true;
+                    if (@as(UnaryOp, @fromBackingInt(@intCast(d.rhs))) == .yield) out.call = true;
                     try stack.append(gpa, d.lhs);
                 },
                 .expr_stmt, .throw_stmt, .member, .spread_property => try stack.append(gpa, d.lhs),
@@ -1487,7 +1487,7 @@ pub const Builder = struct {
                     try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
                 },
                 .switch_case => {
-                    if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(gpa, t.int());
+                    if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try stack.append(gpa, t.int());
                     try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
                 },
                 .block_stmt => try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange))),
@@ -1535,8 +1535,8 @@ pub const Builder = struct {
 
     /// The words of `range`, or none when it is not inside `extra`.
     fn rangeWords(b: *const Builder, range: SubRange) []const u32 {
-        const start: usize = @intFromEnum(range.start);
-        const end: usize = @intFromEnum(range.end);
+        const start: usize = @backingInt(range.start);
+        const end: usize = @backingInt(range.end);
         if (start > end or end > b.extra.items.len) return &.{};
         return b.extra.items[start..end];
     }
@@ -1544,12 +1544,12 @@ pub const Builder = struct {
     fn record(b: *const Builder, index: u32, comptime T: type) T {
         var result: T = undefined;
         var i: usize = index;
-        inline for (std.meta.fields(T)) |field| {
+        inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
             const word = if (i < b.extra.items.len) b.extra.items[i] else 0;
-            @field(result, field.name) = switch (@typeInfo(field.type)) {
-                .@"enum" => @enumFromInt(word),
+            @field(result, field_name) = switch (@typeInfo(field_type)) {
+                .@"enum" => @fromBackingInt(@intCast(word)),
                 .int => word,
-                else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+                else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
             };
             i += 1;
         }
@@ -1591,12 +1591,12 @@ test "extraData reads records positionally and extraLen agrees" {
     const words = [_]u32{ 3, 4, 7, 9, 11, 12 };
     var ir: JsIr = empty;
     ir.extra = &words;
-    const f = ir.extraData(@enumFromInt(0), Func);
-    try testing.expectEqual(@as(u32, 3), @intFromEnum(f.params_start));
-    try testing.expectEqual(@as(u32, 9), @intFromEnum(f.body_end));
+    const f = ir.extraData(@fromBackingInt(@intCast(0)), Func);
+    try testing.expectEqual(@as(u32, 3), @backingInt(f.params_start));
+    try testing.expectEqual(@as(u32, 9), @backingInt(f.body_end));
     try testing.expectEqual(@as(u32, 1), f.params().len());
     try testing.expectEqual(@as(u32, 2), f.body().len());
-    const c = ir.extraData(@enumFromInt(4), Cond);
+    const c = ir.extraData(@fromBackingInt(@intCast(4)), Cond);
     try testing.expectEqual(@as(u32, 11), c.consequent.int());
     try testing.expectEqual(@as(u32, 12), c.alternate.int());
 }
@@ -1605,11 +1605,11 @@ test "names are deduplicated by value, so a reference is an integer compare" {
     const gpa = testing.allocator;
     var b: Builder = .init(gpa);
     defer b.deinit();
-    const a = try b.intern(.local(@enumFromInt(7)));
-    const again = try b.intern(.local(@enumFromInt(7)));
-    const other = try b.intern(.local(@enumFromInt(8)));
-    const tagged = try b.intern(.{ .module = .none, .base = @enumFromInt(7), .tag = 1 });
-    const qualified = try b.intern(.qualified(@enumFromInt(3), @enumFromInt(7)));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(7))));
+    const again = try b.intern(.local(@fromBackingInt(@intCast(7))));
+    const other = try b.intern(.local(@fromBackingInt(@intCast(8))));
+    const tagged = try b.intern(.{ .module = .none, .base = @fromBackingInt(@intCast(7)), .tag = 1 });
+    const qualified = try b.intern(.qualified(@fromBackingInt(@intCast(3)), @fromBackingInt(@intCast(7))));
     try testing.expectEqual(a, again);
     try testing.expect(a != other);
     try testing.expect(a != tagged);
@@ -1622,10 +1622,10 @@ test "verify accepts a well-formed module and finds every kind of dangling index
     var b: Builder = .init(gpa);
     defer b.deinit();
 
-    const x = try b.intern(.local(@enumFromInt(0)));
+    const x = try b.intern(.local(@fromBackingInt(@intCast(0))));
     const one_offset, const one_len = try b.addString("1");
     const one = try b.addNode(.{ .tag = .number, .pos = 0, .data = .{ .lhs = one_offset, .rhs = one_len } });
-    const decl = try b.addNode(.{ .tag = .const_decl, .pos = 0, .data = .{ .lhs = @intFromEnum(x), .rhs = one.int() } });
+    const decl = try b.addNode(.{ .tag = .const_decl, .pos = 0, .data = .{ .lhs = @backingInt(x), .rhs = one.int() } });
     const body = try b.addRange(&.{decl});
 
     var ir = try b.toOwned(body);
@@ -1641,7 +1641,7 @@ test "verify accepts a well-formed module and finds every kind of dangling index
     // A name index past the end.
     ir.nodes.items(.data)[decl.int()].lhs = 42;
     try testing.expectError(error.OutOfBounds, ir.verify());
-    ir.nodes.items(.data)[decl.int()].lhs = @intFromEnum(x);
+    ir.nodes.items(.data)[decl.int()].lhs = @backingInt(x);
 
     // A string range past the end.
     ir.nodes.items(.data)[one.int()].rhs = 100;
@@ -1655,15 +1655,15 @@ test "verify refuses a statement where an expression belongs" {
     var b: Builder = .init(gpa);
     defer b.deinit();
 
-    const x = try b.intern(.local(@enumFromInt(0)));
-    const ident = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = 0 } });
+    const x = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const ident = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(x), .rhs = 0 } });
     const ret = try b.addNode(.{ .tag = .return_stmt, .pos = Node.no_pos, .data = .{
-        .lhs = @intFromEnum(ident.toOptional()),
+        .lhs = @backingInt(ident.toOptional()),
         .rhs = 0,
     } });
     // `const x = return x;` — a statement where the value belongs.
     const bad = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{
-        .lhs = @intFromEnum(x),
+        .lhs = @backingInt(x),
         .rhs = ret.int(),
     } });
     const body = try b.addRange(&.{bad});
@@ -1678,8 +1678,8 @@ test "verify refuses an expression where a statement belongs" {
     var b: Builder = .init(gpa);
     defer b.deinit();
 
-    const x = try b.intern(.local(@enumFromInt(0)));
-    const ident = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = 0 } });
+    const x = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const ident = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(x), .rhs = 0 } });
     const body = try b.addRange(&.{ident});
 
     var ir = try b.toOwned(body);
@@ -1716,8 +1716,8 @@ test "measure: a path costs what its constructs cost, a function and declaring b
     const gpa = testing.allocator;
     var b: Builder = .init(gpa);
     defer b.deinit();
-    const x = try b.intern(.local(@enumFromInt(1)));
-    const leaf = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = 0 } });
+    const x = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const leaf = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(x), .rhs = 0 } });
     try testing.expectEqual(Height.zero, try b.measure(gpa, &.{leaf}));
 
     // f(f(f(x))): three calls.
@@ -1725,19 +1725,19 @@ test "measure: a path costs what its constructs cost, a function and declaring b
     for (0..3) |_| {
         const args = try b.addRange(&.{inner});
         const record = try b.addRecord(args);
-        inner = try b.addNode(.{ .tag = .call, .pos = Node.no_pos, .data = .{ .lhs = leaf.int(), .rhs = @intFromEnum(record) } });
+        inner = try b.addNode(.{ .tag = .call, .pos = Node.no_pos, .data = .{ .lhs = leaf.int(), .rhs = @backingInt(record) } });
     }
     try testing.expectEqual(Height{ .whole = 3 * nesting.call, .scopes = 0 }, try b.measure(gpa, &.{inner}));
 
     // `const y = (x) => { const x = f(f(f(x))); return x; };`: one scope for
     // the function and one for the braces its `const` declares in.
-    const decl = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = inner.int() } });
+    const decl = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(x), .rhs = inner.int() } });
     const ret = try b.addNode(.{ .tag = .return_stmt, .pos = Node.no_pos, .data = .{ .lhs = leaf.int(), .rhs = 0 } });
     const params = try b.addNames(&.{x});
     const body = try b.addRange(&.{ decl, ret });
     const func = try b.addRecord(Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
-    const arrow = try b.addNode(.{ .tag = .arrow, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(func), .rhs = 0 } });
-    const top = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = arrow.int() } });
+    const arrow = try b.addNode(.{ .tag = .arrow, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(func), .rhs = 0 } });
+    const top = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(x), .rhs = arrow.int() } });
     try testing.expectEqual(Height{
         .whole = nesting.statement + nesting.arrow + nesting.statement + 3 * nesting.call,
         .scopes = 2,
@@ -1748,16 +1748,16 @@ test "measure: `a && b && c` built to the left is flat, `a && (b && c)` is not" 
     const gpa = testing.allocator;
     var b: Builder = .init(gpa);
     defer b.deinit();
-    const x = try b.intern(.local(@enumFromInt(1)));
-    const leaf = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = 0 } });
-    const op = @intFromEnum(BinaryOp.logical_and);
+    const x = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const leaf = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(x), .rhs = 0 } });
+    const op = @backingInt(BinaryOp.logical_and);
     var left = leaf;
     var right = leaf;
     for (0..10) |_| {
         const l_pair = try b.addRecord(Binary{ .left = left, .right = leaf });
-        left = try b.addNode(.{ .tag = .binary, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(l_pair), .rhs = op } });
+        left = try b.addNode(.{ .tag = .binary, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(l_pair), .rhs = op } });
         const r_pair = try b.addRecord(Binary{ .left = leaf, .right = right });
-        right = try b.addNode(.{ .tag = .binary, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(r_pair), .rhs = op } });
+        right = try b.addNode(.{ .tag = .binary, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(r_pair), .rhs = op } });
     }
     // The first link's left operand is a name; every later one's is the
     // chain so far, which prints without parentheses and nests nothing.

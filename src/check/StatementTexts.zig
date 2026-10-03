@@ -48,7 +48,7 @@ pub fn statementNotUnit(r: *Reporter, region: Bir.Inst.Index, category: Category
     if (category.owner.unwrap()) |call| if (call.int() < bir.insts.len and bir.instTag(call) == .call) {
         const callee = r.calleeOf(call);
         const data = bir.instData(call);
-        const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+        const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
         var new_one = false;
         for (args) |arg| {
             if (bir.instTag(arg) != .local) continue;

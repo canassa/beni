@@ -482,7 +482,7 @@ fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!voi
     const tokens = bir.insts.items(.main_token);
     for (tags, 0..) |tag, i| {
         if (tag != .markup) continue;
-        if (first == null or tokens[i] < tokens[first.?.int()]) first = @enumFromInt(i);
+        if (first == null or tokens[i] < tokens[first.?.int()]) first = @fromBackingInt(@intCast(i));
     }
     const root = first orelse return;
     const lead =
@@ -525,11 +525,11 @@ fn reportJsObjects(report: *Report, cx: *const Context) Error!void {
     const tags = bir.insts.items(.tag);
     for (tags, 0..) |tag, i| {
         if (tag != .call) continue;
-        const d = bir.instData(@enumFromInt(i));
-        const callee: Bir.Inst.Index = @enumFromInt(d.lhs);
+        const d = bir.instData(@fromBackingInt(@intCast(i)));
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
         if (callee.int() >= tags.len or tags[callee.int()] != .ext_value) continue;
         if (JsIntrinsic.of(cx.graph, cx.interfaces, bir, callee, cx.interner) != .object) continue;
-        const args = bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index);
+        const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
         if (args.len != 1) continue;
         const fault = JsIntrinsic.objectFault(bir, args[0]) orelse continue;
         const lead = "`Js.object` writes its fields as an object literal's, so they must be a list\nliteral of pairs, `Js.object [ ( \"key\", value ), … ]`.\n\n";
@@ -953,8 +953,8 @@ fn roundtripTable(in: Input, report: *Report) Error!void {
     defer gpa.free(bytes);
     var loaded = dispatch_bytes.read(gpa, bytes, in.interner) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        error.BadSidecar => return report.internal(@enumFromInt(0), "this module's dispatch table did not load back from its own bytes"),
-        error.UnknownSymbol => return report.internal(@enumFromInt(0), "this module's dispatch table names a string the session's interner does not hold"),
+        error.BadSidecar => return report.internal(@fromBackingInt(@intCast(0)), "this module's dispatch table did not load back from its own bytes"),
+        error.UnknownSymbol => return report.internal(@fromBackingInt(@intCast(0)), "this module's dispatch table names a string the session's interner does not hold"),
     };
     dispatch_bytes.resolve(&loaded, in.graph, in.types);
     in.dispatch.deinit(gpa);
@@ -971,14 +971,14 @@ fn roundtripPlan(in: Input, report: *Report) Error!void {
     defer gpa.free(plan_bytes);
     var loaded = schema_plan_bytes.read(gpa, plan_bytes, in.interner) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        else => return report.internal(@enumFromInt(0), "this module's schema plan did not load back from its own bytes"),
+        else => return report.internal(@fromBackingInt(@intCast(0)), "this module's schema plan did not load back from its own bytes"),
     };
     errdefer loaded.deinit(gpa);
     const canonical = try schema_plan_bytes.write(gpa, &loaded, in.interner);
     defer gpa.free(canonical);
     if (!std.mem.eql(u8, plan_bytes, canonical)) {
         loaded.deinit(gpa);
-        return report.internal(@enumFromInt(0), "this module's schema plan changed across its canonical round trip");
+        return report.internal(@fromBackingInt(@intCast(0)), "this module's schema plan changed across its canonical round trip");
     }
     in.plan.deinit(gpa);
     in.plan.* = loaded;
@@ -1011,6 +1011,6 @@ fn ownIndex(scratch: Allocator, bir: *const Bir) Error![]const Solve.OwnValue {
 }
 
 fn ownLessThan(_: void, a: Solve.OwnValue, b: Solve.OwnValue) bool {
-    if (a.name != b.name) return @intFromEnum(a.name) < @intFromEnum(b.name);
+    if (a.name != b.name) return @backingInt(a.name) < @backingInt(b.name);
     return a.decl < b.decl;
 }

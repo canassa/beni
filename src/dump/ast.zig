@@ -311,8 +311,8 @@ const Dumper = struct {
             .pat_cons => {
                 const data = tree.nodeData(n);
                 try d.openTag(tag, main);
-                try d.child(@enumFromInt(data.lhs), inner);
-                try d.child(@enumFromInt(data.rhs), inner);
+                try d.child(@fromBackingInt(@intCast(data.lhs)), inner);
+                try d.child(@fromBackingInt(@intCast(data.rhs)), inner);
             },
             .chunk => {
                 try d.openTag(tag, main);

@@ -79,13 +79,13 @@ pub const DefinitionIndex = enum(u32) { _ };
 pub const NodeIndex = enum(u32) {
     _,
     pub fn toOptional(i: NodeIndex) Optional {
-        return @enumFromInt(@intFromEnum(i));
+        return @fromBackingInt(@intCast(@backingInt(i)));
     }
     pub const Optional = enum(u32) {
         none = std.math.maxInt(u32),
         _,
         pub fn unwrap(i: Optional) ?NodeIndex {
-            return if (i == .none) null else @enumFromInt(@intFromEnum(i));
+            return if (i == .none) null else @fromBackingInt(@intCast(@backingInt(i)));
         }
     };
 };
@@ -212,7 +212,7 @@ pub const CtorTarget = struct {
 };
 
 pub fn literal(plan: *const SchemaPlan, index: LiteralIndex) ?[]const u8 {
-    const i = @intFromEnum(index);
+    const i = @backingInt(index);
     if (i >= plan.literals.len) return null;
     const l = plan.literals[i];
     const end = @as(u64, l.start) + l.len;
@@ -230,10 +230,10 @@ pub fn verifyAgainstBir(plan: *const SchemaPlan, bir: *const Bir, token_count: u
         if (definition_i >= plan.definitions.len) return false;
         const d = plan.definitions[definition_i];
         definition_i += 1;
-        if (@intFromEnum(d.decl) != decl_i) return false;
-        if (@intFromEnum(d.decl) >= bir.decls.len or d.token >= token_count) return false;
+        if (@backingInt(d.decl) != decl_i) return false;
+        if (@backingInt(d.decl) >= bir.decls.len or d.token >= token_count) return false;
         if (declaration.kind != .schema or declaration.name_token != d.token) return false;
-        if (bir.symbol(declaration.name) != plan.symbols[@intFromEnum(d.name)]) return false;
+        if (bir.symbol(declaration.name) != plan.symbols[@backingInt(d.name)]) return false;
         if (declaration.params != d.params_end - d.params_start) return false;
     }
     if (definition_i != plan.definitions.len) return false;
@@ -243,12 +243,12 @@ pub fn verifyAgainstBir(plan: *const SchemaPlan, bir: *const Bir, token_count: u
     for (plan.fields) |f| if (f.token >= token_count) return false;
     for (plan.variants) |v| if (v.token >= token_count) return false;
     for (plan.conversions) |c| {
-        if (@intFromEnum(c.expr) >= bir.insts.len or c.token >= token_count) return false;
+        if (@backingInt(c.expr) >= bir.insts.len or c.token >= token_count) return false;
         if (!instInSchemaDecl(bir, c.expr)) return false;
     }
     for (plan.checks) |c| {
         if (c.token >= token_count) return false;
-        if (c.call != .none and @intFromEnum(c.call) >= bir.insts.len) return false;
+        if (c.call != .none and @backingInt(c.call) >= bir.insts.len) return false;
     }
     for (plan.annotations) |a| if (a.token >= token_count) return false;
     return true;
@@ -289,9 +289,9 @@ pub fn verifyTargets(
             tagged,
             interner,
         )) return false;
-        if (types.find(graph, current_package, current_module, plan.symbols[@intFromEnum(plan.type_refs[@intFromEnum(definition.type_ref)].name)]) !=
+        if (types.find(graph, current_package, current_module, plan.symbols[@backingInt(plan.type_refs[@backingInt(definition.type_ref)].name)]) !=
             types.ofSchemaDecl(current, definition.decl, .type)) return false;
-        if (types.find(graph, current_package, current_module, plan.symbols[@intFromEnum(plan.type_refs[@intFromEnum(definition.encoded_ref)].name)]) !=
+        if (types.find(graph, current_package, current_module, plan.symbols[@backingInt(plan.type_refs[@backingInt(definition.encoded_ref)].name)]) !=
             types.ofSchemaDecl(current, definition.decl, .encoded)) return false;
     }
     // Conversion target terms may name ordinary private types as well as
@@ -299,8 +299,8 @@ pub fn verifyTargets(
     // may not carry a name which this session cannot resolve.
     if (!allTypeRefsResolve(plan, TypeRefResolver{ .graph = graph, .types = types }, TypeRefResolver.exists)) return false;
     for (plan.schema_targets) |target| {
-        const module_name = plan.symbols[@intFromEnum(target.module)];
-        const schema_name = plan.symbols[@intFromEnum(target.schema)];
+        const module_name = plan.symbols[@backingInt(target.module)];
+        const schema_name = plan.symbols[@backingInt(target.schema)];
         const module = graph.find(target.package, module_name) orelse return false;
         if (module.int() >= interfaces.len) return false;
         if (module == current) {
@@ -308,10 +308,10 @@ pub fn verifyTargets(
         } else if (interfaces[module.int()].findSchema(interner, schema_name) == null) return false;
     }
     for (plan.ctor_targets) |target| {
-        const schema_target = plan.schema_targets[@intFromEnum(target.schema)];
-        const module_name = plan.symbols[@intFromEnum(schema_target.module)];
-        const schema_name = plan.symbols[@intFromEnum(schema_target.schema)];
-        const variant_name = plan.symbols[@intFromEnum(target.variant)];
+        const schema_target = plan.schema_targets[@backingInt(target.schema)];
+        const module_name = plan.symbols[@backingInt(schema_target.module)];
+        const schema_name = plan.symbols[@backingInt(schema_target.schema)];
+        const variant_name = plan.symbols[@backingInt(target.variant)];
         const module = graph.find(schema_target.package, module_name) orelse return false;
         if (module.int() >= interfaces.len) return false;
         if (module == current) {
@@ -321,7 +321,7 @@ pub fn verifyTargets(
         }
         const iface = &interfaces[module.int()];
         const schema = iface.findSchema(interner, schema_name) orelse return false;
-        const endpoint: Interface.SchemaCtor.Endpoint = @enumFromInt(@intFromEnum(target.endpoint));
+        const endpoint: Interface.SchemaCtor.Endpoint = @fromBackingInt(@intCast(@backingInt(target.endpoint)));
         if (iface.findSchemaCtor(schema, endpoint, interner, variant_name) == null) return false;
     }
     return true;
@@ -336,14 +336,14 @@ fn definitionHasStableIdentity(
     tagged: bool,
     interner: *const InternPool.Global,
 ) bool {
-    const program_ref = plan.type_refs[@intFromEnum(definition.type_ref)];
-    const encoded_ref = plan.type_refs[@intFromEnum(definition.encoded_ref)];
+    const program_ref = plan.type_refs[@backingInt(definition.type_ref)];
+    const encoded_ref = plan.type_refs[@backingInt(definition.encoded_ref)];
     if (program_ref.package != package or encoded_ref.package != package) return false;
-    if (plan.symbols[@intFromEnum(program_ref.module)] != module or
-        plan.symbols[@intFromEnum(encoded_ref.module)] != module) return false;
+    if (plan.symbols[@backingInt(program_ref.module)] != module or
+        plan.symbols[@backingInt(encoded_ref.module)] != module) return false;
     const base = interner.slice(declaration_name);
-    if (!endpointSpelling(base, interner.slice(plan.symbols[@intFromEnum(program_ref.name)]), "Type")) return false;
-    if (!endpointSpelling(base, interner.slice(plan.symbols[@intFromEnum(encoded_ref.name)]), "Encoded")) return false;
+    if (!endpointSpelling(base, interner.slice(plan.symbols[@backingInt(program_ref.name)]), "Type")) return false;
+    if (!endpointSpelling(base, interner.slice(plan.symbols[@backingInt(encoded_ref.name)]), "Encoded")) return false;
     const expected: Interface.Term.Tag = if (tagged) .app else .alias;
     return plan.terms.get(definition.program_term.int()).tag == expected and
         plan.terms.get(definition.encoded_term.int()).tag == expected;
@@ -367,8 +367,8 @@ const TypeRefResolver = struct {
 
 fn allTypeRefsResolve(plan: *const SchemaPlan, context: anytype, comptime exists: anytype) bool {
     for (plan.type_refs) |ref| {
-        const module = plan.symbols[@intFromEnum(ref.module)];
-        const name = plan.symbols[@intFromEnum(ref.name)];
+        const module = plan.symbols[@backingInt(ref.module)];
+        const name = plan.symbols[@backingInt(ref.name)];
         if (!exists(context, ref.package, module, name)) return false;
     }
     return true;
@@ -379,7 +379,7 @@ fn findTagged(bir: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
     var budget = bir.insts.len + 1;
     while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) switch (bir.instTag(at)) {
         .schema_tagged => return at,
-        .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+        .schema_value, .schema_paren => at = @fromBackingInt(@intCast(bir.instData(at).lhs)),
         else => return null,
     };
     return null;
@@ -387,7 +387,7 @@ fn findTagged(bir: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
 
 fn findLocalDefinition(plan: *const SchemaPlan, bir: *const Bir, name: Symbol) ?Definition {
     for (plan.definitions) |definition| {
-        if (plan.symbols[@intFromEnum(definition.name)] != name) continue;
+        if (plan.symbols[@backingInt(definition.name)] != name) continue;
         const declaration = bir.decl(definition.decl);
         if (declaration.kind == .schema and bir.symbol(declaration.name) == name) return definition;
     }
@@ -398,9 +398,9 @@ fn localDefinitionHasVariant(bir: *const Bir, decl_index: Bir.DeclIndex, name: S
     const declaration = bir.decl(decl_index);
     var i = declaration.inst_start.int();
     while (i < declaration.inst_end.int()) : (i += 1) {
-        const inst: Bir.Inst.Index = @enumFromInt(i);
+        const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
         if (bir.instTag(inst) != .schema_variant) continue;
-        if (bir.symbol(@enumFromInt(bir.instData(inst).lhs)) == name) return true;
+        if (bir.symbol(@fromBackingInt(@intCast(bir.instData(inst).lhs))) == name) return true;
     }
     return false;
 }
@@ -416,8 +416,8 @@ test "a plan definition owns the exact endpoint identities and kind" {
     const user_encoded = try pool.getOrPut(gpa, "User.Encoded");
     const symbols = [_]Symbol{ module, user, user_type, user_encoded };
     const refs = [_]Interface.TypeRef{
-        .{ .package = .app, .module = @enumFromInt(0), .name = @enumFromInt(2) },
-        .{ .package = .app, .module = @enumFromInt(0), .name = @enumFromInt(3) },
+        .{ .package = .app, .module = @fromBackingInt(@intCast(0)), .name = @fromBackingInt(@intCast(2)) },
+        .{ .package = .app, .module = @fromBackingInt(@intCast(0)), .name = @fromBackingInt(@intCast(3)) },
     };
     var terms: std.MultiArrayList(Interface.Term) = .empty;
     defer terms.deinit(gpa);
@@ -428,15 +428,15 @@ test "a plan definition owns the exact endpoint identities and kind" {
     plan.type_refs = &refs;
     plan.terms = terms.slice();
     var definition: Definition = .{
-        .name = @enumFromInt(1),
-        .decl = @enumFromInt(0),
+        .name = @fromBackingInt(@intCast(1)),
+        .decl = @fromBackingInt(@intCast(0)),
         .params_start = 0,
         .params_end = 0,
-        .root = @enumFromInt(0),
-        .type_ref = @enumFromInt(0),
-        .encoded_ref = @enumFromInt(1),
-        .program_term = @enumFromInt(0),
-        .encoded_term = @enumFromInt(1),
+        .root = @fromBackingInt(@intCast(0)),
+        .type_ref = @fromBackingInt(@intCast(0)),
+        .encoded_ref = @fromBackingInt(@intCast(1)),
+        .program_term = @fromBackingInt(@intCast(0)),
+        .encoded_term = @fromBackingInt(@intCast(1)),
         .token = 0,
         .program_properties = 0,
         .encoded_properties = 0,
@@ -445,9 +445,9 @@ test "a plan definition owns the exact endpoint identities and kind" {
 
     // An in-bounds ref to the other endpoint used to pass the byte-level
     // verifier as long as the canonical term's lhs was changed with it.
-    definition.encoded_ref = @enumFromInt(0);
+    definition.encoded_ref = @fromBackingInt(@intCast(0));
     try testing.expect(!definitionHasStableIdentity(&plan, definition, .app, module, user, false, &pool));
-    definition.encoded_ref = @enumFromInt(1);
+    definition.encoded_ref = @fromBackingInt(@intCast(1));
 
     // Both tags are legal serialized terms, but only aliases belong to a
     // record schema and only nominal applications belong to a tagged one.
@@ -467,8 +467,8 @@ test "a plan rejects a dangling stable type reference" {
     const missing = try pool.getOrPut(gpa, "Missing");
     const symbols = [_]Symbol{ module, present, missing };
     const refs = [_]Interface.TypeRef{
-        .{ .package = .app, .module = @enumFromInt(0), .name = @enumFromInt(1) },
-        .{ .package = .app, .module = @enumFromInt(0), .name = @enumFromInt(2) },
+        .{ .package = .app, .module = @fromBackingInt(@intCast(0)), .name = @fromBackingInt(@intCast(1)) },
+        .{ .package = .app, .module = @fromBackingInt(@intCast(0)), .name = @fromBackingInt(@intCast(2)) },
     };
     var plan = empty;
     plan.symbols = &symbols;

@@ -423,7 +423,7 @@ pub fn deinit(c: *Contexts) void {
 }
 
 fn id(c: *const Contexts, t: u32) Types.TypeId {
-    return @enumFromInt(c.start + t);
+    return @fromBackingInt(@intCast(c.start + t));
 }
 
 /// Whether the module rule answers `kind` for this module's type `type_id`:
@@ -435,7 +435,7 @@ fn id(c: *const Contexts, t: u32) Types.TypeId {
 /// (static-dispatch-spike.md §3.2). Their rows must say so, or an importer
 /// finds no `compare` for `Order` (which `core` itself relies on).
 pub fn moduleRuleAnswers(c: *const Contexts, type_id: Types.TypeId, kind: Kind) bool {
-    if (!c.module_has[@intFromEnum(kind)]) return false;
+    if (!c.module_has[@backingInt(kind)]) return false;
     return tableRow(c.cx.types, type_id, kind) == null;
 }
 
@@ -509,7 +509,7 @@ pub fn paramsOf(c: *Contexts, t: u32) Error![]const Var {
 
 /// The final answer for local type `t` (P5, P8): valid once `settleAll` ran.
 pub fn final(c: *const Contexts, t: u32, kind: Kind) Answer {
-    return c.answers[t * 2 + @intFromEnum(kind)];
+    return c.answers[t * 2 + @backingInt(kind)];
 }
 
 // ---------------------------------------------------------------------------
@@ -588,13 +588,13 @@ pub fn peek(c: *Contexts, s: *const Solve, type_id: Types.TypeId, kind: Kind) Er
     if (u == none) return .{ .status = .absent_other };
     if (c.notDerived(type_id, kind)) return .{ .status = .own_method };
     if (c.readable(s, u)) |ri| {
-        const slot = c.member_of[t] * 2 + @intFromEnum(kind);
+        const slot = c.member_of[t] * 2 + @backingInt(kind);
         try c.noteApprox(s, ri, slot);
         return c.runs.items[ri].approx[slot];
     }
     if (!c.valid(u)) return null;
     c.noteMemo(s, u);
-    return c.answers[t * 2 + @intFromEnum(kind)];
+    return c.answers[t * 2 + @backingInt(kind)];
 }
 
 /// The answer for `(type_id, kind)` for a wanted at `origin` that derives
@@ -616,7 +616,7 @@ pub fn query(s: *Solve, type_id: Types.TypeId, kind: Kind, origin: Bir.Inst.Inde
     try ensure(s, u);
     c.noteMemo(s, u);
     try replay(s, u, kind, origin, asker);
-    return c.answers[t * 2 + @intFromEnum(kind)];
+    return c.answers[t * 2 + @backingInt(kind)];
 }
 
 /// Unit `u`'s result, computed if it is not valid: its dependencies first,
@@ -828,7 +828,7 @@ fn run(s: *Solve, u: u32) Error!void {
         var slot = slots;
         while (slot > 0) {
             slot -= 1;
-            const kind: Kind = @enumFromInt(slot % 2);
+            const kind: Kind = @fromBackingInt(@intCast(slot % 2));
             if (c.notDerived(c.id(members[slot / 2]), kind)) {
                 r.approx[slot] = .{ .status = .own_method };
                 continue;
@@ -857,7 +857,7 @@ fn run(s: *Solve, u: u32) Error!void {
                 if (r.in_flight.items[i].slot == slot) _ = r.in_flight.orderedRemove(i) else i += 1;
             }
         }
-        const got = try pass(s, ri, members[slot / 2], @enumFromInt(slot % 2), slot);
+        const got = try pass(s, ri, members[slot / 2], @fromBackingInt(@intCast(slot % 2)), slot);
         const r = &c.runs.items[ri];
         if (c.same(r.approx[slot], got)) {
             // Keep the newest templates. `same` does not compare them, and
@@ -1189,9 +1189,9 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     if (r.culprit != none) return .{ .status = .needs_annotation, .culprit = r.culprit };
     if (s.resolver.steps >= Resolve.step_budget) return .{ .status = .absent_budget };
     const failed: Answer = if (r.private) |p|
-        .{ .status = .absent_private, .culprit = @intFromEnum(p.type_id), .method = p.method }
+        .{ .status = .absent_private, .culprit = @backingInt(p.type_id), .method = p.method }
     else if (r.requirement) |q|
-        .{ .status = .absent_requirement, .culprit = @intFromEnum(q.type_id), .method = q.method }
+        .{ .status = .absent_requirement, .culprit = @backingInt(q.type_id), .method = q.method }
     else
         .{ .status = if (r.saw_function) .absent_function else .absent_other };
     // A failed position is the answer; a POISONED one only when nothing
@@ -1241,7 +1241,7 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     for (ids) |wid| if (wid.int() >= wanted_start) mine.set(wid.int() - wanted_start);
     for (s.evidence.wanteds.items[wanted_start..], wanted_start..) |w, i| {
         if (w.state != .open and w.state != .ready) continue;
-        const lineage = Resolve.lineageRoot(s, @enumFromInt(@as(u32, @intCast(i))));
+        const lineage = Resolve.lineageRoot(s, @fromBackingInt(@intCast(@as(u32, @intCast(i)))));
         if (lineage.int() < wanted_start or !mine.isSet(lineage.int() - wanted_start)) continue;
         if (w.state == .ready or st.mark(st.find(w.receiver)) != seen) return failed;
     }
@@ -1290,7 +1290,7 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
         try method_types.append(scratch, m);
         if (culprit == none) {
             if (pinCulprit(s, st.find(m), wanted_start)) |p| {
-                culprit = @intFromEnum(p.type_id);
+                culprit = @backingInt(p.type_id);
                 culprit_method = p.method;
             }
         }
@@ -1348,7 +1348,7 @@ fn pinCulprit(s: *Solve, root: Var, wanted_start: u32) ?struct { type_id: Types.
     const st = s.store();
     const c = &s.contexts;
     for (s.evidence.wanteds.items[wanted_start..], wanted_start..) |w, i| {
-        const answer = s.evidence.answer(@enumFromInt(@as(u32, @intCast(i))));
+        const answer = s.evidence.answer(@fromBackingInt(@intCast(@as(u32, @intCast(i)))));
         switch (answer) {
             .top, .ext, .derived => {},
             else => continue,
@@ -1370,8 +1370,8 @@ fn pinCulprit(s: *Solve, root: Var, wanted_start: u32) ?struct { type_id: Types.
                 // culprit, when its own answer knows it.
                 const u = c.local(a.type) orelse continue;
                 if (!Resolve.isWellKnownName(w.method)) continue;
-                const known = c.answers[u * 2 + @intFromEnum(kindOf(w.method))];
-                if (known.status == .present and known.culprit != none) return .{ .type_id = @enumFromInt(known.culprit), .method = known.method };
+                const known = c.answers[u * 2 + @backingInt(kindOf(w.method))];
+                if (known.status == .present and known.culprit != none) return .{ .type_id = @fromBackingInt(@intCast(known.culprit)), .method = known.method };
             },
             else => return .{ .type_id = a.type, .method = w.method },
         }

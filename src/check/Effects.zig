@@ -378,7 +378,7 @@ pub fn applyImported(e: *Effects, iface: *const Interface, scheme: Interface.Sch
     for (0..count) |c| {
         const rep = reps[c].unwrap() orelse continue;
         const class = e.block_classes.items[c];
-        const rung: Rung = @enumFromInt(@min(class.rung, 2));
+        const rung: Rung = @fromBackingInt(@intCast(@min(class.rung, 2)));
         try e.seed(rep, rung);
         // Where a `sync` chain ends (§15.4): this use suspends by itself.
         if (rung == .suspends) try e.terminals.append(e.gpa, .{ .v = rep, .site = site_inst });
@@ -445,7 +445,7 @@ fn importedDemand(e: *const Effects, iface: *const Interface, scheme: Interface.
         for (0..scheme.quantified_count) |q| {
             const quantifier = iface.quantified(scheme, @intCast(q));
             if (left < quantifier.constraints_len) {
-                d.method = @intFromEnum(iface.symbol(iface.quantifiedConstraint(quantifier, left).name));
+                d.method = @backingInt(iface.symbol(iface.quantifiedConstraint(quantifier, left).name));
                 break;
             }
             left -= quantifier.constraints_len;
@@ -461,7 +461,7 @@ fn importedDemand(e: *const Effects, iface: *const Interface, scheme: Interface.
             if (kind != .param) return d;
             d.param = index;
         } else {
-            if (kind == .field and index < iface.symbols.len) d.field = @intFromEnum(iface.symbol(@enumFromInt(index)));
+            if (kind == .field and index < iface.symbols.len) d.field = @backingInt(iface.symbol(@fromBackingInt(@intCast(index))));
             return d;
         }
         seen += 1;
@@ -489,7 +489,7 @@ pub fn follow(e: *Effects, iface: *const Interface, site: Interface.EffectBlock.
         var index = Interface.EffectBlock.stepIndex(word);
         if (kind == .field) {
             if (index >= iface.symbols.len) return null;
-            index = @intFromEnum(iface.symbol(@enumFromInt(index)));
+            index = @backingInt(iface.symbol(@fromBackingInt(@intCast(index))));
         }
         at = Walk.follow(store, store.find(at), kind, index) orelse return null;
     }
@@ -537,7 +537,7 @@ pub fn applyPlain(e: *Effects, iface: *const Interface, scheme: Interface.Scheme
     const c = own orelse return;
     if (c >= e.block_classes.items.len) return;
     const class = e.block_classes.items[c];
-    const rung: Rung = @enumFromInt(@min(class.rung, 2));
+    const rung: Rung = @fromBackingInt(@intCast(@min(class.rung, 2)));
     try e.seed(method_type, rung);
     if (rung == .suspends) try e.terminals.append(e.gpa, .{ .v = method_type, .site = site_inst });
     for (class.deps) |d| {
@@ -768,9 +768,9 @@ pub fn run(e: *Effects, in: Input) Error!void {
     for (e.readings) |rd| {
         if (rd.check_start == none) continue;
         for (0..rd.scheme_end - rd.scheme_start) |i| {
-            const s_var: Var = @enumFromInt(rd.scheme_start + i);
+            const s_var: Var = @fromBackingInt(@intCast(rd.scheme_start + i));
             if (!e.carries(e.store.find(s_var))) continue;
-            try e.unite(s_var, @enumFromInt(rd.check_start + i));
+            try e.unite(s_var, @fromBackingInt(@intCast(rd.check_start + i)));
         }
     }
     for (e.zips.items) |p| try e.zipped(p.a, p.b, scratch);
@@ -933,7 +933,7 @@ fn edgeNodes(e: *Effects, x: u32, y: u32, origin: u32) Error!void {
 
 fn raise(e: *Effects, x: u32, rung: Rung, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
     const s = &e.solved;
-    if (@intFromEnum(rung) <= @intFromEnum(s.level.items[x])) return;
+    if (@backingInt(rung) <= @backingInt(s.level.items[x])) return;
     s.level.items[x] = rung;
     try work.append(scratch, x);
 }
@@ -1101,8 +1101,8 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
             try e.edgeNodes(i, reps[c], none);
             const lr = s.level.items[reps[c]];
             const li = s.level.items[i];
-            if (@intFromEnum(lr) > @intFromEnum(li)) try e.raise(i, lr, work, scratch);
-            if (@intFromEnum(li) > @intFromEnum(lr)) try e.raise(reps[c], li, work, scratch);
+            if (@backingInt(lr) > @backingInt(li)) try e.raise(i, lr, work, scratch);
+            if (@backingInt(li) > @backingInt(lr)) try e.raise(reps[c], li, work, scratch);
         }
     }
     for (classes, 0..) |c, ci| {
@@ -1119,7 +1119,7 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
         // the class sits is read off `target`'s scheme when it is reported.
         if (c.sync) try e.addSource(.{
             .node = rep,
-            .demand = .{ .v = @enumFromInt(none), .kind = .argument, .site = r.site, .decl = r.owner, .holder = try e.nodeIsHolder(r, ci, target) },
+            .demand = .{ .v = @fromBackingInt(@intCast(none)), .kind = .argument, .site = r.site, .decl = r.owner, .holder = try e.nodeIsHolder(r, ci, target) },
             .target = target,
             .class = @intCast(ci),
         });
@@ -1160,7 +1160,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
             // An annotated scheme's variables are its reading's range: no
             // walk (see `readings`).
             for (rd.scheme_start..rd.scheme_end) |i| {
-                const r = e.store.find(@enumFromInt(i));
+                const r = e.store.find(@fromBackingInt(@intCast(i)));
                 if (!e.carries(r)) continue;
                 const nd = try e.nodeFor(r);
                 if (std.mem.indexOfScalar(u32, nodes.items, nd) == null) try nodes.append(e.gpa, nd);

@@ -73,7 +73,7 @@ pub fn readToEnd(
     size_hint: u64,
     limit: Io.Limit,
 ) ReadError!void {
-    const max: usize = @intFromEnum(limit);
+    const max: usize = @backingInt(limit);
     out.clearRetainingCapacity();
     const hint: usize = @intCast(@min(size_hint, max));
     try out.ensureTotalCapacityPrecise(gpa, hint +| 1);

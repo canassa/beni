@@ -258,7 +258,7 @@ fn matchesShell(loaded: *const Interface, shell: *const Interface) bool {
         const names_b = shell.range(b.fields);
         if (names_a.len != names_b.len) return false;
         for (names_a, names_b) |x, y| {
-            if (loaded.symbol(@enumFromInt(x)) != shell.symbol(@enumFromInt(y))) return false;
+            if (loaded.symbol(@fromBackingInt(@intCast(x))) != shell.symbol(@fromBackingInt(@intCast(y)))) return false;
         }
     }
     for (loaded.schemas, shell.schemas) |a, b| {
@@ -296,7 +296,7 @@ test "a record whose shape disagrees with the shell is a miss, not a miscompile"
     const b = try pool.getOrPut(gpa, "beta");
 
     const shell: Interface = .{
-        .values = &.{.{ .name = @enumFromInt(0), .scheme = .none, .is_foreign = false }},
+        .values = &.{.{ .name = @fromBackingInt(@intCast(0)), .scheme = .none, .is_foreign = false }},
         .types = &.{},
         .ctors = &.{},
         .schemas = &.{},
@@ -313,8 +313,8 @@ test "a record whose shape disagrees with the shell is a miss, not a miscompile"
     // One extra value.
     const extra: Interface = .{
         .values = &.{
-            .{ .name = @enumFromInt(0), .scheme = .none, .is_foreign = false },
-            .{ .name = @enumFromInt(1), .scheme = .none, .is_foreign = false },
+            .{ .name = @fromBackingInt(@intCast(0)), .scheme = .none, .is_foreign = false },
+            .{ .name = @fromBackingInt(@intCast(1)), .scheme = .none, .is_foreign = false },
         },
         .types = &.{},
         .ctors = &.{},
@@ -331,7 +331,7 @@ test "a record whose shape disagrees with the shell is a miss, not a miscompile"
 
     // The same count, a different name in the slot.
     const renamed: Interface = .{
-        .values = &.{.{ .name = @enumFromInt(0), .scheme = .none, .is_foreign = false }},
+        .values = &.{.{ .name = @fromBackingInt(@intCast(0)), .scheme = .none, .is_foreign = false }},
         .types = &.{},
         .ctors = &.{},
         .schemas = &.{},
@@ -347,7 +347,7 @@ test "a record whose shape disagrees with the shell is a miss, not a miscompile"
 
     // The same name, a different foreignness.
     const foreign: Interface = .{
-        .values = &.{.{ .name = @enumFromInt(0), .scheme = .none, .is_foreign = true }},
+        .values = &.{.{ .name = @fromBackingInt(@intCast(0)), .scheme = .none, .is_foreign = true }},
         .types = &.{},
         .ctors = &.{},
         .schemas = &.{},

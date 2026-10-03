@@ -910,7 +910,7 @@ test "many schemas with `via`s, each compared, cost linear time" {
     // each file is the best of 3, the four interleaved: a load that comes
     // and goes adds time to a file and its control alike, where four blocks
     // of three runs would hand it to one of them.
-    var cost = [_]u64{std.math.maxInt(u64)} ** 4;
+    var cost: [4]u64 = @splat(std.math.maxInt(u64));
     var unit: Perf.Unit = .instructions;
     for (0..3) |_| {
         for ([_][]const u8{ "M.beni", "X.beni", "M2.beni", "X2.beni" }, &cost) |file, *slot| {

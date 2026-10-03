@@ -96,12 +96,12 @@ pub const State = struct {
         for (s.bir.decls, 0..) |d, i| {
             if (d.kind != .schema) continue;
             const root = d.schema_body.unwrap() orelse continue;
-            if (s.findTagged(root) != null) try s.buildDecl(@enumFromInt(i));
+            if (s.findTagged(root) != null) try s.buildDecl(@fromBackingInt(@intCast(i)));
         }
         for (s.bir.decls, 0..) |d, i| {
             if (d.kind != .schema) continue;
             const root = d.schema_body.unwrap() orelse continue;
-            if (s.findTagged(root) == null) try s.buildDecl(@enumFromInt(i));
+            if (s.findTagged(root) == null) try s.buildDecl(@fromBackingInt(@intCast(i)));
         }
     }
 
@@ -121,7 +121,7 @@ pub const State = struct {
     pub fn payloads(s: *const State, decl: u32, ep: Interface.SchemaCtor.Endpoint, out: *std.ArrayList(Var), gpa: Allocator) Allocator.Error!void {
         const root = s.bir.decls[decl].schema_body.unwrap() orelse return;
         const tagged = s.findTagged(root) orelse return;
-        const variants = s.bir.extraSlice(s.bir.subRange(@enumFromInt(s.bir.instData(tagged).rhs)), Bir.Inst.Index);
+        const variants = s.bir.extraSlice(s.bir.subRange(@fromBackingInt(@intCast(s.bir.instData(tagged).rhs))), Bir.Inst.Index);
         for (variants) |vi| {
             if (vi.int() >= s.variant_built.len or !s.variant_built[vi.int()]) continue;
             const pair = s.variant_payloads[vi.int()];
@@ -130,7 +130,7 @@ pub const State = struct {
     }
 
     pub fn member(s: *const State, decl: u32, kind: Interface.SchemaMember.Kind) ?Var {
-        const at = @as(usize, decl) * 7 + @intFromEnum(kind);
+        const at = @as(usize, decl) * 7 + @backingInt(kind);
         return if (at < s.members.len) s.members[at].unwrap() else null;
     }
 
@@ -168,11 +168,11 @@ pub const State = struct {
     pub fn constructor(s: *State, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint, ordinal: u32) Allocator.Error!?Var {
         const root = s.bir.decl(decl).schema_body.unwrap() orelse return null;
         const tagged = s.findTagged(root) orelse return null;
-        const range = s.bir.extraSlice(s.bir.subRange(@enumFromInt(s.bir.instData(tagged).rhs)), Bir.Inst.Index);
+        const range = s.bir.extraSlice(s.bir.subRange(@fromBackingInt(@intCast(s.bir.instData(tagged).rhs))), Bir.Inst.Index);
         if (ordinal >= range.len) return null;
         const vi = range[ordinal];
         if (s.bir.instTag(vi) != .schema_variant) return null;
-        const variant = s.bir.extraData(@enumFromInt(s.bir.instData(vi).rhs), Bir.SchemaVariant);
+        const variant = s.bir.extraData(@fromBackingInt(@intCast(s.bir.instData(vi).rhs)), Bir.SchemaVariant);
         const result = if (endpoint == .type) s.endpoints[decl.int()].program else s.endpoints[decl.int()].encoded;
         const payload_i = variant.payload.unwrap() orelse return result;
         const payload = if (vi.int() < s.variant_built.len and s.variant_built[vi.int()]) s.variant_payloads[vi.int()] else try s.node(decl, payload_i);
@@ -232,9 +232,9 @@ pub const State = struct {
         const result_schema = try s.applied(s.types.well_known.schema, &.{ pair.encoded, pair.program });
         const unit = try s.store.fresh(.{ .structure = .unit }, TypeStore.generalized);
         const base = di.int() * 7;
-        s.members[base + @intFromEnum(Interface.SchemaMember.Kind.type)] = pair.program.toOptional();
-        s.members[base + @intFromEnum(Interface.SchemaMember.Kind.encoded)] = pair.encoded.toOptional();
-        s.members[base + @intFromEnum(Interface.SchemaMember.Kind.schema)] = (try s.func(if (n == 0) &.{unit} else schema_args, result_schema)).toOptional();
+        s.members[base + @backingInt(Interface.SchemaMember.Kind.type)] = pair.program.toOptional();
+        s.members[base + @backingInt(Interface.SchemaMember.Kind.encoded)] = pair.encoded.toOptional();
+        s.members[base + @backingInt(Interface.SchemaMember.Kind.schema)] = (try s.func(if (n == 0) &.{unit} else schema_args, result_schema)).toOptional();
         const string = try s.applied(s.types.well_known.string, &.{});
         const issue = try s.applied(s.types.well_known.issue, &.{});
         const issues = try s.applied(s.types.well_known.list, &.{issue});
@@ -249,32 +249,32 @@ pub const State = struct {
         defer s.allocator.free(parse_w);
         const print_w = try s.join(schema_args, &.{ options, pair.program });
         defer s.allocator.free(print_w);
-        s.members[base + @intFromEnum(Interface.SchemaMember.Kind.parse)] = (try s.func(parse_p, parse_result)).toOptional();
-        s.members[base + @intFromEnum(Interface.SchemaMember.Kind.print)] = (try s.func(print_p, print_result)).toOptional();
-        s.members[base + @intFromEnum(Interface.SchemaMember.Kind.parse_with)] = (try s.func(parse_w, parse_result)).toOptional();
-        s.members[base + @intFromEnum(Interface.SchemaMember.Kind.print_with)] = (try s.func(print_w, print_result)).toOptional();
+        s.members[base + @backingInt(Interface.SchemaMember.Kind.parse)] = (try s.func(parse_p, parse_result)).toOptional();
+        s.members[base + @backingInt(Interface.SchemaMember.Kind.print)] = (try s.func(print_p, print_result)).toOptional();
+        s.members[base + @backingInt(Interface.SchemaMember.Kind.parse_with)] = (try s.func(parse_w, parse_result)).toOptional();
+        s.members[base + @backingInt(Interface.SchemaMember.Kind.print_with)] = (try s.func(print_w, print_result)).toOptional();
     }
 
     fn node(s: *State, owner: Bir.DeclIndex, inst: Bir.Inst.Index) Allocator.Error!Pair {
         if (inst.int() >= s.bir.insts.len) return s.errPair();
         const d = s.bir.instData(inst);
         return switch (s.bir.instTag(inst)) {
-            .schema_paren => s.node(owner, @enumFromInt(d.lhs)),
-            .schema_value => s.value(owner, @enumFromInt(d.lhs), s.bir.extraSlice(s.bir.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index)),
+            .schema_paren => s.node(owner, @fromBackingInt(@intCast(d.lhs))),
+            .schema_value => s.value(owner, @fromBackingInt(@intCast(d.lhs)), s.bir.extraSlice(s.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index)),
             .schema_parameter => if (d.lhs < s.params_len[owner.int()]) s.params[s.params_start[owner.int()] + d.lhs] else s.errPair(),
             .schema_primitive => s.primitive(d.lhs, inst),
-            .schema_target_top => s.localTarget(@enumFromInt(d.lhs), &.{}, inst),
-            .ext_schema_target => s.externalTarget(@enumFromInt(d.lhs), @enumFromInt(d.rhs), &.{}, inst),
+            .schema_target_top => s.localTarget(@fromBackingInt(@intCast(d.lhs)), &.{}, inst),
+            .ext_schema_target => s.externalTarget(@fromBackingInt(@intCast(d.lhs)), @fromBackingInt(@intCast(d.rhs)), &.{}, inst),
             .schema_app => blk: {
-                const args_i = s.bir.extraSlice(s.bir.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index);
+                const args_i = s.bir.extraSlice(s.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
                 const args = try s.allocator.alloc(Pair, args_i.len);
                 defer s.allocator.free(args);
                 for (args_i, args) |arg, *p| p.* = try s.node(owner, arg);
-                const head: Bir.Inst.Index = @enumFromInt(d.lhs);
+                const head: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
                 const hd = s.bir.instData(head);
                 break :blk switch (s.bir.instTag(head)) {
-                    .schema_target_top => s.localTarget(@enumFromInt(hd.lhs), args, head),
-                    .ext_schema_target => s.externalTarget(@enumFromInt(hd.lhs), @enumFromInt(hd.rhs), args, head),
+                    .schema_target_top => s.localTarget(@fromBackingInt(@intCast(hd.lhs)), args, head),
+                    .ext_schema_target => s.externalTarget(@fromBackingInt(@intCast(hd.lhs)), @fromBackingInt(@intCast(hd.rhs)), args, head),
                     .schema_primitive => s.primitiveApp(hd.lhs, args, head),
                     else => s.errPair(),
                 };
@@ -294,7 +294,7 @@ pub const State = struct {
             .schema_via => {
                 const a = try s.store.freshFlex(TypeStore.generalized);
                 const expected = try s.applied(s.types.well_known.conversion, &.{ pair.program, a });
-                try s.vias.append(s.allocator, .{ .owner = owner, .field = field_name, .expr = @enumFromInt(s.bir.instData(mi).lhs), .expected = expected, .target = a, .region = mi });
+                try s.vias.append(s.allocator, .{ .owner = owner, .field = field_name, .expr = @fromBackingInt(@intCast(s.bir.instData(mi).lhs)), .expected = expected, .target = a, .region = mi });
                 pair.program = a;
             },
             else => {},
@@ -356,8 +356,8 @@ pub const State = struct {
     fn externalTarget(s: *State, module: Graph.Index, schema_i: Interface.SchemaIndex, args: []const Pair, region: Bir.Inst.Index) Allocator.Error!Pair {
         if (module.int() >= s.interfaces.len) return s.errPair();
         const iface = &s.interfaces[module.int()];
-        if (@intFromEnum(schema_i) >= iface.schemas.len) return s.errPair();
-        const schema = iface.schemas[@intFromEnum(schema_i)];
+        if (@backingInt(schema_i) >= iface.schemas.len) return s.errPair();
+        const schema = iface.schemas[@backingInt(schema_i)];
         if (args.len != schema.params_len) {
             try s.arityError(region, s.interner.slice(iface.symbol(schema.name)), schema.params_len, args.len);
             return s.errPair();
@@ -370,8 +370,8 @@ pub const State = struct {
             encoded.* = arg.encoded;
             program.* = arg.program;
         }
-        const type_member = iface.schema_members[schema.members_start + @intFromEnum(Interface.SchemaMember.Kind.type)];
-        const encoded_member = iface.schema_members[schema.members_start + @intFromEnum(Interface.SchemaMember.Kind.encoded)];
+        const type_member = iface.schema_members[schema.members_start + @backingInt(Interface.SchemaMember.Kind.type)];
+        const encoded_member = iface.schema_members[schema.members_start + @backingInt(Interface.SchemaMember.Kind.encoded)];
         if (type_member.scheme == .none or encoded_member.scheme == .none) return s.errPair();
         return .{
             .encoded = try InterfaceTerms.instantiateRoot(iface, s.types.refIds(module), s.store, iface.scheme(encoded_member.scheme).body, encoded_args, TypeStore.generalized, s.allocator),
@@ -479,8 +479,8 @@ pub const State = struct {
                 break;
             };
             const d = s.bir.instData(fi);
-            const f = s.bir.extraData(@enumFromInt(d.rhs), Bir.SchemaField);
-            const name = s.bir.symbol(@enumFromInt(d.lhs));
+            const f = s.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.SchemaField);
+            const name = s.bir.symbol(@fromBackingInt(@intCast(d.lhs)));
             var pair = try s.node(owner, f.operand);
             const modifiers = s.bir.extraSlice(.{ .start = f.modifiers_start, .end = f.modifiers_end }, Bir.Inst.Index);
             var optional = false;
@@ -491,7 +491,7 @@ pub const State = struct {
                 .schema_via => {
                     const a = try s.store.freshFlex(TypeStore.generalized);
                     const expected = try s.applied(s.types.well_known.conversion, &.{ pair.program, a });
-                    try s.vias.append(s.allocator, .{ .owner = owner, .field = name, .expr = @enumFromInt(s.bir.instData(mi).lhs), .expected = expected, .target = a, .region = mi });
+                    try s.vias.append(s.allocator, .{ .owner = owner, .field = name, .expr = @fromBackingInt(@intCast(s.bir.instData(mi).lhs)), .expected = expected, .target = a, .region = mi });
                     pair.program = a;
                 },
                 else => {},
@@ -509,15 +509,15 @@ pub const State = struct {
 
     fn validateTagged(s: *State, tagged: Bir.Inst.Index) Allocator.Error!void {
         const data = s.bir.instData(tagged);
-        const discriminator = s.literal(@enumFromInt(data.lhs));
-        const variants = s.bir.extraSlice(s.bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+        const discriminator = s.literal(@fromBackingInt(@intCast(data.lhs)));
+        const variants = s.bir.extraSlice(s.bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
         for (variants, 0..) |vi, i| {
             const tag = s.variantExternal(vi);
             for (variants[0..i]) |earlier| if (std.mem.eql(u8, tag, s.variantExternal(earlier))) {
                 try s.errors.append(s.allocator, .{ .code = .duplicate_schema_tag, .region = vi, .message = try std.fmt.allocPrint(s.allocator, "Both `{s}` and `{s}` use the tag `{s}` under discriminator `{s}`.\n", .{ s.variantName(earlier), s.variantName(vi), tag, discriminator }) });
                 break;
             };
-            const variant = s.bir.extraData(@enumFromInt(s.bir.instData(vi).rhs), Bir.SchemaVariant);
+            const variant = s.bir.extraData(@fromBackingInt(@intCast(s.bir.instData(vi).rhs)), Bir.SchemaVariant);
             const payload = variant.payload.unwrap() orelse continue;
             if (s.bir.instTag(payload) != .schema_record) continue;
             const fields = s.bir.extraSlice(Bir.inlineRange(s.bir.instData(payload)), Bir.Inst.Index);
@@ -535,9 +535,9 @@ pub const State = struct {
     }
 
     fn buildTaggedPayloads(s: *State, owner: Bir.DeclIndex, tagged: Bir.Inst.Index) Allocator.Error!void {
-        const variants = s.bir.extraSlice(s.bir.subRange(@enumFromInt(s.bir.instData(tagged).rhs)), Bir.Inst.Index);
+        const variants = s.bir.extraSlice(s.bir.subRange(@fromBackingInt(@intCast(s.bir.instData(tagged).rhs))), Bir.Inst.Index);
         for (variants) |vi| {
-            const variant = s.bir.extraData(@enumFromInt(s.bir.instData(vi).rhs), Bir.SchemaVariant);
+            const variant = s.bir.extraData(@fromBackingInt(@intCast(s.bir.instData(vi).rhs)), Bir.SchemaVariant);
             const payload = variant.payload.unwrap() orelse continue;
             s.variant_payloads[vi.int()] = try s.node(owner, payload);
             s.variant_built[vi.int()] = true;
@@ -546,25 +546,25 @@ pub const State = struct {
 
     fn fieldExternal(s: *const State, fi: Bir.Inst.Index) []const u8 {
         const data = s.bir.instData(fi);
-        const field = s.bir.extraData(@enumFromInt(data.rhs), Bir.SchemaField);
+        const field = s.bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaField);
         for (s.bir.extraSlice(.{ .start = field.modifiers_start, .end = field.modifiers_end }, Bir.Inst.Index)) |mi| {
-            if (s.bir.instTag(mi) == .schema_as) return s.literal(@enumFromInt(s.bir.instData(mi).lhs));
+            if (s.bir.instTag(mi) == .schema_as) return s.literal(@fromBackingInt(@intCast(s.bir.instData(mi).lhs)));
         }
-        return s.interner.slice(s.bir.symbol(@enumFromInt(data.lhs)));
+        return s.interner.slice(s.bir.symbol(@fromBackingInt(@intCast(data.lhs))));
     }
 
     fn fieldName(s: *const State, fi: Bir.Inst.Index) []const u8 {
-        return s.interner.slice(s.bir.symbol(@enumFromInt(s.bir.instData(fi).lhs)));
+        return s.interner.slice(s.bir.symbol(@fromBackingInt(@intCast(s.bir.instData(fi).lhs))));
     }
     fn variantName(s: *const State, vi: Bir.Inst.Index) []const u8 {
-        return s.interner.slice(s.bir.symbol(@enumFromInt(s.bir.instData(vi).lhs)));
+        return s.interner.slice(s.bir.symbol(@fromBackingInt(@intCast(s.bir.instData(vi).lhs))));
     }
 
     fn variantExternal(s: *const State, vi: Bir.Inst.Index) []const u8 {
         const data = s.bir.instData(vi);
-        const variant = s.bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+        const variant = s.bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaVariant);
         if (variant.rename.unwrap()) |rename| return s.literal(rename);
-        return s.interner.slice(s.bir.symbol(@enumFromInt(data.lhs)));
+        return s.interner.slice(s.bir.symbol(@fromBackingInt(@intCast(data.lhs))));
     }
 
     fn literal(s: *const State, inst: Bir.Inst.Index) []const u8 {
@@ -612,7 +612,7 @@ pub const State = struct {
         var budget = s.bir.insts.len + 1;
         while (budget > 0 and at.int() < s.bir.insts.len) : (budget -= 1) switch (s.bir.instTag(at)) {
             .schema_tagged => return at,
-            .schema_value, .schema_paren => at = @enumFromInt(s.bir.instData(at).lhs),
+            .schema_value, .schema_paren => at = @fromBackingInt(@intCast(s.bir.instData(at).lhs)),
             else => return null,
         };
         return null;

@@ -241,7 +241,7 @@ test "no hash map is keyed by a dense id outside the allowlist" {
     // The ids every IR is built from are among them.
     for ([_][]const u8{ "Symbol", "Var", "TypeId", "Index" }) |name| try testing.expect(dense.contains(name));
 
-    var used = [_]bool{false} ** allowlist.len;
+    var used: [allowlist.len]bool = @splat(false);
     var bad: usize = 0;
     var starts: std.ArrayList(usize) = .empty;
     defer starts.deinit(gpa);

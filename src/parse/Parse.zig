@@ -328,7 +328,7 @@ fn readTags(scratch: Allocator, raw: []const Tag, payloads: []const u32) Allocat
     const tags = try scratch.alloc(Tag, raw.len);
     @memcpy(tags[0..first], raw[0..first]);
     for (tags[first..], raw[first..], payloads[first..]) |*t, tag, payload| {
-        t.* = if (tag == .lookalike) @enumFromInt(payload) else tag.canonical();
+        t.* = if (tag == .lookalike) @fromBackingInt(@intCast(payload)) else tag.canonical();
     }
     return tags;
 }
@@ -507,7 +507,7 @@ fn assertProgress(p: *const Parse, before: TokenIndex) void {
 // ---------------------------------------------------------------------------
 
 fn addNode(p: *Parse, node: Node) Allocator.Error!Index {
-    const i: Index = @enumFromInt(p.nodes.len);
+    const i: Index = @fromBackingInt(@intCast(p.nodes.len));
     try p.node_appender.append(&p.nodes, p.gpa, node);
     return i;
 }
@@ -519,7 +519,7 @@ fn leaf(p: *Parse, tag: Node.Tag, main_token: TokenIndex) Allocator.Error!Index 
 /// A `type_var` node. `marker` is the `equatable` token in front of it, or
 /// `.none` — which is NOT zero, so it cannot be spelled with `leaf`.
 fn typeVar(p: *Parse, name: TokenIndex, marker: Ast.OptionalTokenIndex) Allocator.Error!Index {
-    return p.addNode(.{ .tag = .type_var, .main_token = name, .data = .{ .lhs = @intFromEnum(marker), .rhs = 0 } });
+    return p.addNode(.{ .tag = .type_var, .main_token = name, .data = .{ .lhs = @backingInt(marker), .rhs = 0 } });
 }
 
 fn unary(p: *Parse, tag: Node.Tag, main_token: TokenIndex, operand: Index) Allocator.Error!Index {
@@ -545,7 +545,7 @@ fn consRemoved(p: *Parse, tag: Node.Tag, op: TokenIndex, lhs: Index, rhs: Index,
     // `a :: (b :: rest)` is one chain too: look through the parentheses.
     var tail = rhs;
     while (p.nodes.items(.tag)[tail.int()] == .paren or p.nodes.items(.tag)[tail.int()] == .pat_paren) {
-        tail = @enumFromInt(p.nodes.items(.data)[tail.int()].lhs);
+        tail = @fromBackingInt(@intCast(p.nodes.items(.data)[tail.int()].lhs));
     }
     if (p.last_cons) |inner| {
         if (inner.node == tail) {
@@ -560,33 +560,33 @@ fn consRemoved(p: *Parse, tag: Node.Tag, op: TokenIndex, lhs: Index, rhs: Index,
 }
 
 fn rangeNode(p: *Parse, tag: Node.Tag, main_token: TokenIndex, range: SubRange) Allocator.Error!Index {
-    return p.addNode(.{ .tag = tag, .main_token = main_token, .data = .{ .lhs = @intFromEnum(range.start), .rhs = @intFromEnum(range.end) } });
+    return p.addNode(.{ .tag = tag, .main_token = main_token, .data = .{ .lhs = @backingInt(range.start), .rhs = @backingInt(range.end) } });
 }
 
 /// Copy `items` (node or token indices) into `extra` as a range.
 fn listToRange(p: *Parse, items: []const u32) Allocator.Error!SubRange {
     const start: u32 = @intCast(p.extra.items.len);
     try p.extra.appendSlice(p.gpa, items);
-    return .{ .start = @enumFromInt(start), .end = @enumFromInt(p.extra.items.len) };
+    return .{ .start = @fromBackingInt(@intCast(start)), .end = @fromBackingInt(@intCast(p.extra.items.len)) };
 }
 
 /// Append a record to `extra`, nested structs flattened in order.
 fn addExtra(p: *Parse, record: anytype) Allocator.Error!Ast.ExtraIndex {
     const T = @TypeOf(record);
     try p.extra.ensureUnusedCapacity(p.gpa, Ast.extraLen(T));
-    const start: Ast.ExtraIndex = @enumFromInt(p.extra.items.len);
+    const start: Ast.ExtraIndex = @fromBackingInt(@intCast(p.extra.items.len));
     p.appendExtraFields(record);
     return start;
 }
 
 fn appendExtraFields(p: *Parse, record: anytype) void {
-    inline for (std.meta.fields(@TypeOf(record))) |field| {
-        const value = @field(record, field.name);
-        switch (@typeInfo(field.type)) {
+    inline for (@typeInfo(@TypeOf(record)).@"struct".field_names, @typeInfo(@TypeOf(record)).@"struct".field_types) |field_name, field_type| {
+        const value = @field(record, field_name);
+        switch (@typeInfo(field_type)) {
             .@"struct" => p.appendExtraFields(value),
-            .@"enum" => p.extra.appendAssumeCapacity(@intFromEnum(value)),
+            .@"enum" => p.extra.appendAssumeCapacity(@backingInt(value)),
             .int => p.extra.appendAssumeCapacity(value),
-            else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+            else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
         }
     }
 }
@@ -660,7 +660,7 @@ fn errorNode(p: *Parse, tag: Node.Tag, item: Diagnostics.Item) Allocator.Error!I
     return p.addNode(.{
         .tag = tag,
         .main_token = p.tok_i,
-        .data = .{ .lhs = @intFromEnum(item.code), .rhs = index orelse std.math.maxInt(u32) },
+        .data = .{ .lhs = @backingInt(item.code), .rhs = index orelse std.math.maxInt(u32) },
     });
 }
 
@@ -698,7 +698,7 @@ fn invalidNode(p: *Parse, tag: Node.Tag) Allocator.Error!Index {
     else
         .invalid_character;
     const token = p.next();
-    return p.addNode(.{ .tag = tag, .main_token = token, .data = .{ .lhs = @intFromEnum(code), .rhs = std.math.maxInt(u32) } });
+    return p.addNode(.{ .tag = tag, .main_token = token, .data = .{ .lhs = @backingInt(code), .rhs = std.math.maxInt(u32) } });
 }
 
 /// Skip `invalid` tokens and markup strays the lexer already reported (`peek` hides the
@@ -864,7 +864,7 @@ fn parseModule(p: *Parse) Allocator.Error!void {
     try p.reportPendingAnnotation(&pending);
     p.drainComments(@intCast(p.tags.len));
     const range = try p.listToRange(p.scratchSince(mark));
-    p.nodes.items(.data)[0] = .{ .lhs = @intFromEnum(range.start), .rhs = @intFromEnum(range.end) };
+    p.nodes.items(.data)[0] = .{ .lhs = @backingInt(range.start), .rhs = @backingInt(range.end) };
 }
 
 /// Top-level resynchronisation: the next column-1 token, or `eof`.
@@ -888,7 +888,7 @@ fn parseImport(p: *Parse) Allocator.Error!Index {
     defer p.endBlock(saved);
     const import_token = p.next();
 
-    var record: Ast.Import = .{ .name = .none, .alias = .none, .exposed_start = @enumFromInt(0), .exposed_end = @enumFromInt(0), .exposing_token = .none };
+    var record: Ast.Import = .{ .name = .none, .alias = .none, .exposed_start = @fromBackingInt(@intCast(0)), .exposed_end = @fromBackingInt(@intCast(0)), .exposing_token = .none };
     switch (p.peek()) {
         .upper_ident, .qualified_upper => record.name = .fromToken(p.next()),
         else => {
@@ -929,7 +929,7 @@ fn parseImport(p: *Parse) Allocator.Error!Index {
         record.exposed_end = range.end;
     }
     const extra = try p.addExtra(record);
-    return p.addNode(.{ .tag = .import, .main_token = import_token, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .import, .main_token = import_token, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 /// An upper name in an `exposing` list, and Elm's `T(..)` after it (the
@@ -971,8 +971,8 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
         .equatable_token = .none,
         .doc_start = docs.start,
         .doc_end = docs.end,
-        .where_start = @enumFromInt(0),
-        .where_end = @enumFromInt(0),
+        .where_start = @fromBackingInt(@intCast(0)),
+        .where_end = @fromBackingInt(@intCast(0)),
     };
     if (p.eat(.keyword_pub)) |pub_token| {
         header.pub_token = .fromToken(pub_token);
@@ -1112,7 +1112,7 @@ fn parseSchemaDecl(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
         .params_end = params.end,
         .body = body,
     });
-    return p.addNode(.{ .tag = .schema_decl, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .schema_decl, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 fn parseSchemaValue(p: *Parse) Allocator.Error!Index {
@@ -1128,7 +1128,7 @@ fn parseSchemaValue(p: *Parse) Allocator.Error!Index {
         .modifiers_start = modifiers.start,
         .modifiers_end = modifiers.end,
     });
-    return p.addNode(.{ .tag = .schema_value, .main_token = p.treeMainToken(operand), .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .schema_value, .main_token = p.treeMainToken(operand), .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 fn treeMainToken(p: *const Parse, node: Index) TokenIndex {
@@ -1204,12 +1204,12 @@ fn parseSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Index {
     }
     const modifiers = try p.listToRange(p.scratchSince(mark));
     const extra = try p.addExtra(Ast.SchemaField{
-        .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @enumFromInt(0), .where_end = @enumFromInt(0) },
+        .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @fromBackingInt(@intCast(0)), .where_end = @fromBackingInt(@intCast(0)) },
         .operand = operand,
         .modifiers_start = modifiers.start,
         .modifiers_end = modifiers.end,
     });
-    return p.addNode(.{ .tag = .schema_field, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .schema_field, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 fn parseLayoutSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Index {
@@ -1243,12 +1243,12 @@ fn parseLayoutSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Ind
     }
     const modifiers = try p.listToRange(p.scratchSince(mark));
     const extra = try p.addExtra(Ast.SchemaField{
-        .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @enumFromInt(0), .where_end = @enumFromInt(0) },
+        .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @fromBackingInt(@intCast(0)), .where_end = @fromBackingInt(@intCast(0)) },
         .operand = operand,
         .modifiers_start = modifiers.start,
         .modifiers_end = modifiers.end,
     });
-    return p.addNode(.{ .tag = .schema_field, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .schema_field, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 fn parseSchemaOperand(p: *Parse) Allocator.Error!Index {
@@ -1322,7 +1322,7 @@ fn parseSchemaString(p: *Parse) Allocator.Error!Index {
     const string = try p.parseString();
     const data = p.nodes.items(.data)[string.int()];
     for (p.extra.items[data.lhs..data.rhs]) |raw_part| {
-        const part: Index = @enumFromInt(raw_part);
+        const part: Index = @fromBackingInt(@intCast(raw_part));
         if (p.nodes.items(.tag)[part.int()] == .interp) {
             var item = p.itemAtToken(.unexpected_token, p.nodes.items(.main_token)[part.int()]);
             item.context = .declaration;
@@ -1363,7 +1363,7 @@ fn parseSchemaTagged(p: *Parse) Allocator.Error!Index {
     }
     const variants = try p.listToRange(p.scratchSince(mark));
     const extra = try p.addExtra(Ast.SchemaTagged{ .discriminator = discriminator, .variants_start = variants.start, .variants_end = variants.end });
-    return p.addNode(.{ .tag = .schema_tagged, .main_token = tagged, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .schema_tagged, .main_token = tagged, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 fn parseSchemaVariant(p: *Parse, layout: bool) Allocator.Error!Index {
@@ -1386,7 +1386,7 @@ fn parseSchemaVariant(p: *Parse, layout: bool) Allocator.Error!Index {
         }
     }
     const extra = try p.addExtra(Ast.SchemaVariant{ .payload = payload, .rename = rename });
-    return p.addNode(.{ .tag = .schema_variant, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .schema_variant, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 /// TopAnnotation := lower_ident ':' Type WhereClause?
@@ -1403,7 +1403,7 @@ fn parseAnnotation(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index {
     header.where_start = clause.start;
     header.where_end = clause.end;
     const extra = try p.addExtra(header);
-    return p.addNode(.{ .tag = .annotation, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = type_expr.int() } });
+    return p.addNode(.{ .tag = .annotation, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = type_expr.int() } });
 }
 
 /// The `Type` of a top-level annotation or `foreign` value: the one
@@ -1483,7 +1483,7 @@ fn parseDefinition(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
     _ = try p.expectToken(.equal);
     const body = try p.parseBody(.opens);
     const extra = try p.addExtra(Ast.Definition{ .header = header, .params_start = params.start, .params_end = params.end });
-    return p.addNode(.{ .tag = .definition, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
+    return p.addNode(.{ .tag = .definition, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = body.int() } });
 }
 
 /// `PatAtom*` into a range.
@@ -1532,7 +1532,7 @@ fn parseTypeAlias(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
     else
         try p.parseType();
     const extra = try p.addExtra(Ast.TypeAlias{ .header = header, .params_start = params.start, .params_end = params.end });
-    return p.addNode(.{ .tag = .type_alias, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
+    return p.addNode(.{ .tag = .type_alias, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = body.int() } });
 }
 
 fn parseLayoutTypeRecord(p: *Parse) Allocator.Error!Index {
@@ -1576,7 +1576,7 @@ fn parseTypeDecl(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
         .ctors_start = ctors.start,
         .ctors_end = ctors.end,
     });
-    return p.addNode(.{ .tag = .type_decl, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .type_decl, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 /// Ctor := upper_ident TypeAtom*
@@ -1629,7 +1629,7 @@ fn parseForeignValue(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index
     header.where_start = clause.start;
     header.where_end = clause.end;
     const extra = try p.addExtra(header);
-    return p.addNode(.{ .tag = .foreign_value, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = type_expr.int() } });
+    return p.addNode(.{ .tag = .foreign_value, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = type_expr.int() } });
 }
 
 /// Foreign := 'foreign' 'type' upper_ident lower_ident*
@@ -1643,7 +1643,7 @@ fn parseForeignType(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
     };
     const params = try p.parseTypeParams();
     const extra = try p.addExtra(Ast.ForeignType{ .header = header, .params_start = params.start, .params_end = params.end });
-    return p.addNode(.{ .tag = .foreign_type, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .foreign_type, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 // ---------------------------------------------------------------------------
@@ -1857,11 +1857,11 @@ fn finishType(p: *Parse, mark: usize, mode: ResultMode) Allocator.Error!Index {
         return p.addNode(.{
             .tag = .type_fn,
             .main_token = arrow,
-            .data = .{ .lhs = @intFromEnum(extra), .rhs = result.int() },
+            .data = .{ .lhs = @backingInt(extra), .rhs = result.int() },
         });
     }
     const items = p.scratchSince(mark);
-    if (items.len == 1) return @enumFromInt(items[0]);
+    if (items.len == 1) return @fromBackingInt(@intCast(items[0]));
     if (p.insideParens()) {
         _ = try p.report(p.itemAt(.arrow_in_tuple_element));
     } else {
@@ -2032,7 +2032,7 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             }
             const items = p.scratchSince(mark);
             if (items.len == 1) {
-                const only: Index = @enumFromInt(items[0]);
+                const only: Index = @fromBackingInt(@intCast(items[0]));
                 try p.expectCloser(.r_paren, open);
                 return p.unary(.type_paren, open, only);
             }
@@ -2065,7 +2065,7 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
                 const fields = try p.parseRecordTypeFields();
                 try p.expectCloser(.r_brace, open);
                 const extra = try p.addExtra(fields);
-                return p.addNode(.{ .tag = .type_record_ext, .main_token = open, .data = .{ .lhs = base, .rhs = @intFromEnum(extra) } });
+                return p.addNode(.{ .tag = .type_record_ext, .main_token = open, .data = .{ .lhs = base, .rhs = @backingInt(extra) } });
             }
             const fields = try p.parseRecordTypeFields();
             try p.expectCloser(.r_brace, open);
@@ -2669,10 +2669,10 @@ fn parseMarkup(p: *Parse) Allocator.Error!Index {
 
     var record: Ast.Markup = .{
         .name = if (name) |n| .fromToken(n) else .none,
-        .attrs_start = @enumFromInt(0),
-        .attrs_end = @enumFromInt(0),
-        .children_start = @enumFromInt(0),
-        .children_end = @enumFromInt(0),
+        .attrs_start = @fromBackingInt(@intCast(0)),
+        .attrs_end = @fromBackingInt(@intCast(0)),
+        .children_start = @fromBackingInt(@intCast(0)),
+        .children_end = @fromBackingInt(@intCast(0)),
         .open_end = .none,
         .close = .none,
     };
@@ -2704,7 +2704,7 @@ fn parseMarkup(p: *Parse) Allocator.Error!Index {
         },
     }
     const extra = try p.addExtra(record);
-    const node = try p.addNode(.{ .tag = kind, .main_token = open, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    const node = try p.addNode(.{ .tag = kind, .main_token = open, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
     if (p.markup_drift > 0 and p.markup_open.items.len == 0) p.skipDrift();
     return node;
 }
@@ -2813,7 +2813,7 @@ fn tree_string_interpolates(p: *const Parse, node: Index) bool {
 /// `name`, or `name=value`.
 fn parseMarkupAttr(p: *Parse, name: TokenIndex) Allocator.Error!Index {
     if (p.peek() != .equal) {
-        return p.addNode(.{ .tag = .markup_attr, .main_token = name, .data = .{ .lhs = @intFromEnum(Node.OptionalIndex.none), .rhs = 0 } });
+        return p.addNode(.{ .tag = .markup_attr, .main_token = name, .data = .{ .lhs = @backingInt(Node.OptionalIndex.none), .rhs = 0 } });
     }
     _ = p.next();
     const brace: u32 = if (p.peek() == .l_brace) p.tok_i else 0;
@@ -2836,7 +2836,7 @@ fn parseEscapeValue(p: *Parse, quoted: TokenIndex, name_node: Index) Allocator.E
         record.value = (try p.parseMarkupValue()).toOptional();
     }
     const extra = try p.addExtra(record);
-    return p.addNode(.{ .tag = .markup_attr_escape, .main_token = quoted, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = .markup_attr_escape, .main_token = quoted, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 /// The expression of the markup `{…}` opened at `open`, and its `}`.
@@ -3232,7 +3232,7 @@ fn parseVocab(p: *Parse, header: Ast.DeclHeader, form: VocabForm) Allocator.Erro
         .markup => .vocab_markup,
     };
     const extra = try p.addExtra(record);
-    return p.addNode(.{ .tag = tag, .main_token = name_token, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    return p.addNode(.{ .tag = tag, .main_token = name_token, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
 }
 
 /// What a fact word takes after it.
@@ -3415,7 +3415,7 @@ fn parseRecord(p: *Parse) Allocator.Error!Index {
         const fields = try p.parseFields();
         try p.expectCloser(.r_brace, open);
         const extra = try p.addExtra(fields);
-        return p.addNode(.{ .tag = .record_update, .main_token = open, .data = .{ .lhs = base, .rhs = @intFromEnum(extra) } });
+        return p.addNode(.{ .tag = .record_update, .main_token = open, .data = .{ .lhs = base, .rhs = @backingInt(extra) } });
     }
     const fields = try p.parseFields();
     try p.expectCloser(.r_brace, open);
@@ -3564,7 +3564,7 @@ fn parseLambdaWith(p: *Parse, trailing_indent: ?u32) Allocator.Error!Index {
         break :body try p.parseExpr();
     } else try p.parseBody(.continues);
     const extra = try p.addExtra(params);
-    return p.addNode(.{ .tag = .lambda, .main_token = head, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
+    return p.addNode(.{ .tag = .lambda, .main_token = head, .data = .{ .lhs = @backingInt(extra), .rhs = body.int() } });
 }
 
 /// 'if' Expr 'then' Expr 'else' Expr
@@ -3584,7 +3584,7 @@ fn parseIf(p: *Parse) Allocator.Error!Index {
     _ = p.next();
     const else_expr = try p.parseBody(.opens);
     const extra = try p.addExtra(Ast.If{ .then_expr = then_expr, .else_expr = else_expr });
-    return p.addNode(.{ .tag = .@"if", .main_token = if_token, .data = .{ .lhs = cond.int(), .rhs = @intFromEnum(extra) } });
+    return p.addNode(.{ .tag = .@"if", .main_token = if_token, .data = .{ .lhs = cond.int(), .rhs = @backingInt(extra) } });
 }
 
 /// 'case' Expr 'of' Branch+   — branches aligned on the first one (§4).
@@ -3636,7 +3636,7 @@ fn parseCase(p: *Parse) Allocator.Error!Index {
     }
     const branches = try p.listToRange(p.scratchSince(mark));
     const extra = try p.addExtra(branches);
-    return p.addNode(.{ .tag = .case, .main_token = case_token, .data = .{ .lhs = scrutinee.int(), .rhs = @intFromEnum(extra) } });
+    return p.addNode(.{ .tag = .case, .main_token = case_token, .data = .{ .lhs = scrutinee.int(), .rhs = @backingInt(extra) } });
 }
 
 /// Branch := Pattern '->' Expr, its own block headed by the pattern.
@@ -3703,7 +3703,7 @@ fn parseLet(p: *Parse) Allocator.Error!Index {
         item.required_col = if (in_token) |t| p.starts[t] else 0;
     }
     const extra = try p.addExtra(bindings);
-    return p.addNode(.{ .tag = .let, .main_token = let_token, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
+    return p.addNode(.{ .tag = .let, .main_token = let_token, .data = .{ .lhs = @backingInt(extra), .rhs = body.int() } });
 }
 
 /// Body := Block | Expr   (language.md §12.2): what follows one of the
@@ -3794,13 +3794,13 @@ fn parseBlock(p: *Parse) Allocator.Error!Index {
     p.endBlock(saved);
     const count = (p.scratch.items.len - mark) / 3;
     const tags = p.nodes.items(.tag);
-    const last: Index = @enumFromInt(p.scratch.items[mark + 3 * (count - 1)]);
+    const last: Index = @fromBackingInt(@intCast(p.scratch.items[mark + 3 * (count - 1)]));
     const last_token: TokenIndex = p.scratch.items[mark + 3 * (count - 1) + 1];
     if (count == 1 and !isBindingItem(tags[last.int()])) return last;
     // The items before the value, in order; every expression among them
     // is a statement.
     for (0..count - 1) |i| {
-        const n: Index = @enumFromInt(p.scratch.items[mark + 3 * i]);
+        const n: Index = @fromBackingInt(@intCast(p.scratch.items[mark + 3 * i]));
         const at: TokenIndex = p.scratch.items[mark + 3 * i + 1];
         p.scratch.items[mark + i] = if (isBindingItem(p.nodes.items(.tag)[n.int()]))
             n.int()
@@ -3814,11 +3814,11 @@ fn parseBlock(p: *Parse) Allocator.Error!Index {
         p.scratch.items[mark + len] = last.int();
         len += 1;
         const index = try p.report(p.itemAtToken(.block_ends_in_binding, last_token));
-        value = try p.addNode(.{ .tag = .error_expr, .main_token = last_token, .data = .{ .lhs = @intFromEnum(diagnostic.Code.block_ends_in_binding), .rhs = index orelse std.math.maxInt(u32) } });
+        value = try p.addNode(.{ .tag = .error_expr, .main_token = last_token, .data = .{ .lhs = @backingInt(diagnostic.Code.block_ends_in_binding), .rhs = index orelse std.math.maxInt(u32) } });
     }
     const range = try p.listToRange(p.scratch.items[mark .. mark + len]);
     const extra = try p.addExtra(range);
-    return p.addNode(.{ .tag = .block, .main_token = first, .data = .{ .lhs = @intFromEnum(extra), .rhs = value.int() } });
+    return p.addNode(.{ .tag = .block, .main_token = first, .data = .{ .lhs = @backingInt(extra), .rhs = value.int() } });
 }
 
 /// The tags a block item has when it is a binding rather than an expression.
@@ -3909,7 +3909,7 @@ fn parseLetBinding(p: *Parse, in: enum { let, block }) Allocator.Error!Index {
                 _ = try p.expectToken(.equal);
                 const body = try p.parseBody(.opens);
                 const extra = try p.addExtra(params);
-                return p.addNode(.{ .tag = .let_def, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
+                return p.addNode(.{ .tag = .let_def, .main_token = name, .data = .{ .lhs = @backingInt(extra), .rhs = body.int() } });
             }
         },
         .invalid => return p.invalidNode(.error_binding),
@@ -3975,14 +3975,14 @@ fn checkBindRhs(p: *Parse, node: Index) Allocator.Error!void {
     var through_pipe = false;
     while (true) {
         switch (tags[n.int()]) {
-            .paren => n = @enumFromInt(data[n.int()].lhs),
+            .paren => n = @fromBackingInt(@intCast(data[n.int()].lhs)),
             .pipe_right => {
                 through_pipe = true;
-                n = @enumFromInt(data[n.int()].rhs);
+                n = @fromBackingInt(@intCast(data[n.int()].rhs));
             },
             .pipe_left => {
                 through_pipe = true;
-                n = @enumFromInt(data[n.int()].lhs);
+                n = @fromBackingInt(@intCast(data[n.int()].lhs));
             },
             else => break,
         }
@@ -4055,10 +4055,10 @@ fn checkIrrefutable(p: *Parse, node: Index, code: diagnostic.Code) Allocator.Err
         .pat_wild, .pat_var, .pat_unit, .pat_record => {},
         // A `::`: already `cons_removed` (language.md §6.8).
         .pat_cons => {},
-        .pat_paren, .pat_as => try p.checkIrrefutable(@enumFromInt(data[node.int()].lhs), code),
+        .pat_paren, .pat_as => try p.checkIrrefutable(@fromBackingInt(@intCast(data[node.int()].lhs)), code),
         .pat_tuple, .pat_ctor => {
-            const range: SubRange = .{ .start = @enumFromInt(data[node.int()].lhs), .end = @enumFromInt(data[node.int()].rhs) };
-            for (p.extra.items[@intFromEnum(range.start)..@intFromEnum(range.end)]) |child| try p.checkIrrefutable(@enumFromInt(child), code);
+            const range: SubRange = .{ .start = @fromBackingInt(@intCast(data[node.int()].lhs)), .end = @fromBackingInt(@intCast(data[node.int()].rhs)) };
+            for (p.extra.items[@backingInt(range.start)..@backingInt(range.end)]) |child| try p.checkIrrefutable(@fromBackingInt(@intCast(child)), code);
         },
         else => {
             @branchHint(.cold);
@@ -4080,9 +4080,9 @@ fn checkIrrefutable(p: *Parse, node: Index, code: diagnostic.Code) Allocator.Err
 /// checked HERE is only the half of the rule that needs no types.
 fn parseParams(p: *Parse) Allocator.Error!SubRange {
     const params = try p.parsePatAtoms();
-    var i = @intFromEnum(params.start);
-    while (i < @intFromEnum(params.end)) : (i += 1) {
-        try p.checkIrrefutable(@enumFromInt(p.extra.items[i]), .refutable_parameter_pattern);
+    var i = @backingInt(params.start);
+    while (i < @backingInt(params.end)) : (i += 1) {
+        try p.checkIrrefutable(@fromBackingInt(@intCast(p.extra.items[i])), .refutable_parameter_pattern);
     }
     return params;
 }
@@ -4411,7 +4411,7 @@ fn checkWellFormed(tree: *const Ast, token_count: usize, comment_count: usize) !
     try testing.expect(tree.nodes.len >= 1);
     try testing.expectEqual(Node.Tag.root, tree.nodeTag(.root));
     for (0..tree.nodes.len) |i| {
-        const n: Index = @enumFromInt(i);
+        const n: Index = @fromBackingInt(@intCast(i));
         try testing.expect(tree.nodeMainToken(n) < token_count);
         try checkNode(tree, n, token_count, comment_count);
     }
@@ -4538,8 +4538,8 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
         },
         .pat_cons => {
             const data = tree.nodeData(n);
-            try checkIndex(tree, @enumFromInt(data.lhs));
-            try checkIndex(tree, @enumFromInt(data.rhs));
+            try checkIndex(tree, @fromBackingInt(@intCast(data.lhs)));
+            try checkIndex(tree, @fromBackingInt(@intCast(data.rhs)));
         },
         .multiline_string => {
             const m = tree.fullMultilineString(n);

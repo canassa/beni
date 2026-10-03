@@ -102,7 +102,7 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
     }
     // The seeds: what a live declaration says or was solved to say.
     for (in.birs, 0..) |bir, mi| {
-        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(mi)));
+        const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
         for (bir.decls, 0..) |d, i| {
             if (!in.live.decl(m, i) or !in.alive(m, i)) continue;
             if (d.kind == .foreign_value) if (d.annotation.unwrap()) |annotation| try walk.typeAt(m, bir, annotation);
@@ -113,8 +113,8 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
             if (!in.live.decl(m, row.decl) and !in.live.twin(m, row.decl)) continue;
             if (!in.alive(m, row.decl)) continue;
             switch (row.kind) {
-                .field => try walk.pin(in.interner.slice(@enumFromInt(row.value))),
-                .type => try walk.observe(@enumFromInt(row.value)),
+                .field => try walk.pin(in.interner.slice(@fromBackingInt(@intCast(row.value)))),
+                .type => try walk.observe(@fromBackingInt(@intCast(row.value))),
             }
         }
     }
@@ -140,7 +140,7 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
     b.integer_tags = try std.DynamicBitSetUnmanaged.initEmpty(in.arena, n);
     for (in.types.entries, 0..) |e, i| {
         if (e.kind != .adt or e.schema_endpoint or observed.isSet(i)) continue;
-        const id: TypeId = @enumFromInt(@as(u32, @intCast(i)));
+        const id: TypeId = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (id == in.types.well_known.bool or id == in.types.well_known.order) continue;
         b.integer_tags.set(i);
     }
@@ -156,19 +156,19 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
 /// every element to the evidence and is not one.
 fn orderedReflectively(in: Input) bool {
     for (in.birs, 0..) |bir, mi| {
-        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(mi)));
+        const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
         for (bir.decls, 0..) |d, i| {
             if (d.kind != .foreign_value or !in.live.decl(m, i)) continue;
             const annotation = d.annotation.unwrap() orelse continue;
             if (bir.instTag(annotation) != .type_fn) continue;
-            const params = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(annotation).lhs)), Bir.Inst.Index);
-            var at: u32 = @intFromEnum(d.where_start);
-            while (at < @intFromEnum(d.where_end)) : (at += Bir.extraLen(Bir.WhereConstraint)) {
-                const w = bir.extraData(@enumFromInt(at), Bir.WhereConstraint);
+            const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(annotation).lhs))), Bir.Inst.Index);
+            var at: u32 = @backingInt(d.where_start);
+            while (at < @backingInt(d.where_end)) : (at += Bir.extraLen(Bir.WhereConstraint)) {
+                const w = bir.extraData(@fromBackingInt(@intCast(at)), Bir.WhereConstraint);
                 if (!std.mem.eql(u8, in.interner.slice(bir.symbol(w.method)), "compare")) continue;
                 for (params) |param| {
                     if (bir.instTag(param) != .type_var) continue;
-                    if (bir.symbol(@enumFromInt(bir.instData(param).lhs)) == bir.symbol(w.variable)) return true;
+                    if (bir.symbol(@fromBackingInt(@intCast(bir.instData(param).lhs))) == bir.symbol(w.variable)) return true;
                 }
             }
         }
@@ -194,7 +194,7 @@ const Walk = struct {
     fn comparedTypes(w: *Walk) Allocator.Error!bool {
         const in = w.in;
         for (in.birs, in.dispatch, 0..) |bir, table, mi| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(mi)));
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
             for (table.derived, 0..) |row, i| {
                 if (row.kind != .compare or !in.live.derivedRow(m, i)) continue;
                 switch (row.shape) {
@@ -210,7 +210,7 @@ const Walk = struct {
                 try w.typeAt(m, bir, annotation);
                 if (d.where_start != d.where_end) continue;
                 if (bir.instTag(annotation) != .type_fn) continue;
-                const params = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(annotation).lhs)), Bir.Inst.Index);
+                const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(annotation).lhs))), Bir.Inst.Index);
                 if (params.len == 0 or bir.instTag(params[0]) != .type_app) continue;
                 return false;
             }
@@ -249,20 +249,20 @@ const Walk = struct {
             switch (tag) {
                 .type_top, .ext_type, .schema_type_top, .ext_schema_type => try w.observe(w.in.types.headId(m, tag, data)),
                 .type_app => {
-                    const head: Bir.Inst.Index = @enumFromInt(data.lhs);
+                    const head: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
                     try w.observe(w.in.types.headId(m, bir.instTag(head), bir.instData(head)));
-                    try w.stack.appendSlice(arena, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index));
+                    try w.stack.appendSlice(arena, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index));
                 },
                 .type_fn => {
-                    try w.stack.appendSlice(arena, bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index));
-                    try w.stack.append(arena, @enumFromInt(data.rhs));
+                    try w.stack.appendSlice(arena, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index));
+                    try w.stack.append(arena, @fromBackingInt(@intCast(data.rhs)));
                 },
                 .type_tuple => try w.stack.appendSlice(arena, bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)),
                 .type_record => for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |f| {
                     try w.pin(w.in.interner.slice(bir.symbol(f.name)));
                     try w.stack.append(arena, f.value);
                 },
-                .type_record_ext => for (bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field)) |f| {
+                .type_record_ext => for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |f| {
                     try w.pin(w.in.interner.slice(bir.symbol(f.name)));
                     try w.stack.append(arena, f.value);
                 },

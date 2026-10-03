@@ -63,7 +63,7 @@ pub fn rows(
                 .structure => |flat| switch (flat) {
                     .app => |app| try out.append(gpa, .{ .decl = cast.decl, .kind = .type, .value = app.type.int() }),
                     .record => |r| for (Walk.recordFields(store, r)) |f| {
-                        try out.append(gpa, .{ .decl = cast.decl, .kind = .field, .value = @intFromEnum(f.name) });
+                        try out.append(gpa, .{ .decl = cast.decl, .kind = .field, .value = @backingInt(f.name) });
                     },
                     else => {},
                 },
@@ -79,9 +79,9 @@ pub fn rows(
 
         fn key(o: @This(), r: Dispatch.Boundary) [3][]const u8 {
             return switch (r.kind) {
-                .field => .{ o.interner.slice(@enumFromInt(r.value)), "", "" },
+                .field => .{ o.interner.slice(@fromBackingInt(@intCast(r.value))), "", "" },
                 .type => blk: {
-                    const named = o.types.named(@enumFromInt(r.value)) orelse break :blk .{ "", "", "" };
+                    const named = o.types.named(@fromBackingInt(@intCast(r.value))) orelse break :blk .{ "", "", "" };
                     break :blk .{ @tagName(named.package), o.interner.slice(named.module), o.interner.slice(named.name) };
                 },
             };
@@ -89,7 +89,7 @@ pub fn rows(
 
         fn lessThan(o: @This(), a: Dispatch.Boundary, b: Dispatch.Boundary) bool {
             if (a.decl != b.decl) return a.decl < b.decl;
-            if (a.kind != b.kind) return @intFromEnum(a.kind) < @intFromEnum(b.kind);
+            if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
             const ka = o.key(a);
             const kb = o.key(b);
             for (ka, kb) |x, y| switch (std.mem.order(u8, x, y)) {

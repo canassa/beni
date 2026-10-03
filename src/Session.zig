@@ -506,7 +506,7 @@ pub const Worker = struct {
     }
 
     pub fn addCounter(worker: *Worker, counter: Profile.Counter, value: u64) void {
-        worker.counters[@intFromEnum(counter)] += value;
+        worker.counters[@backingInt(counter)] += value;
     }
 };
 
@@ -627,7 +627,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     // at all for the phases that never ask a file its module name.
     if (phases.module_names) {
         for (0..session.store.count()) |i| {
-            const file: SourceStore.Index = @enumFromInt(i);
+            const file: SourceStore.Index = @fromBackingInt(@intCast(i));
             if (session.store.modulePathValid(file)) continue;
             try session.reportInvalidModulePath(file);
         }
@@ -671,7 +671,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         gpa.free(remaps);
     }
     for (0..session.store.count()) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+        const file: SourceStore.Index = @fromBackingInt(@intCast(i));
         session.artifacts.applyRemap(file, remaps[session.artifacts.worker(file)]);
     }
     session.profile.end(0, merge_token, .merge_interners, Profile.Event.no_file, 0);
@@ -691,8 +691,8 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     };
 
     for (session.workers) |*worker| {
-        inline for (@typeInfo(Profile.Counter).@"enum".fields) |field| {
-            session.profile.addCounter(@enumFromInt(field.value), worker.counters[field.value]);
+        inline for (@typeInfo(Profile.Counter).@"enum".field_values) |field_value| {
+            session.profile.addCounter(@fromBackingInt(@intCast(field_value)), worker.counters[field_value]);
         }
     }
     session.profile.addCounter(.files, summary.files);
@@ -760,7 +760,7 @@ fn firstWave(session: *Session, phases: Phases, out: *std.ArrayList(SourceStore.
     @memset(session.lowered, false);
     try out.ensureTotalCapacity(gpa, count);
     for (0..count) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+        const file: SourceStore.Index = @fromBackingInt(@intCast(i));
         if (phases.lazy and session.isLazy(file)) continue;
         session.lowered[i] = true;
         out.appendAssumeCapacity(file);
@@ -853,7 +853,7 @@ fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayL
     var waiting: std.ArrayList(SourceStore.Index) = .empty;
     defer waiting.deinit(gpa);
     for (session.lowered, 0..) |lowered, i| {
-        if (!lowered and session.store.package(@enumFromInt(i)) != .app) try waiting.append(gpa, @enumFromInt(i));
+        if (!lowered and session.store.package(@fromBackingInt(@intCast(i))) != .app) try waiting.append(gpa, @fromBackingInt(@intCast(i)));
     }
     if (waiting.items.len == 0) return;
     for (done) |file| {
@@ -893,7 +893,7 @@ fn referencesModule(bir: *const Bir, module: InternPool.Symbol) bool {
             .import_value, .import_ctor, .import_type, .import_schema => {},
             .top_value, .top_ctor, .top_type, .top_schema => continue,
         }
-        if (bir.symbol(@enumFromInt(ref.a)) == module) return true;
+        if (bir.symbol(@fromBackingInt(@intCast(ref.a))) == module) return true;
     }
     return false;
 }
@@ -1002,7 +1002,7 @@ fn assignLayers(session: *Session) Allocator.Error!void {
     const chain = session.options.chain orelse return;
     if (chain.layers.len < 2) return;
     for (session.file_layers, 0..) |*slot, i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+        const file: SourceStore.Index = @fromBackingInt(@intCast(i));
         if (session.store.package(file) != .platform) continue;
         slot.* = @intCast(chain.layerOfPath(session.store.path(file)) orelse 0);
     }
@@ -1329,7 +1329,7 @@ fn packFrontend(session: *Session, worker: *Worker, file: SourceStore.Index, dia
     defer rows.deinit(scratch);
     try frontendDiagnostics(worker, scratch, diagnostics_mark, &rows);
     for (rows.items) |row| {
-        if (row.severity == @intFromEnum(diagnostic.Severity.@"error")) return;
+        if (row.severity == @backingInt(diagnostic.Severity.@"error")) return;
     }
     session.pack_frontend[file.int()] = try artifact_bytes.write(gpa, scratch, .{
         .key = session.file_keys[file.int()],
@@ -1435,8 +1435,8 @@ fn frontendDiagnostics(
 ) Allocator.Error!void {
     for (worker.diagnostics.items[mark..]) |p| {
         try out.append(scratch, .{
-            .code = @intFromEnum(p.diagnostic.code),
-            .severity = @intFromEnum(p.diagnostic.severity),
+            .code = @backingInt(p.diagnostic.code),
+            .severity = @backingInt(p.diagnostic.severity),
             .start_line = p.diagnostic.span.start.line,
             .start_col = p.diagnostic.span.start.col,
             .end_line = p.diagnostic.span.end.line,
@@ -1473,7 +1473,7 @@ fn storeFrontend(
     defer rows.deinit(scratch);
     try frontendDiagnostics(worker, scratch, diagnostics_mark, &rows);
     for (rows.items) |row| {
-        if (row.severity == @intFromEnum(diagnostic.Severity.@"error")) {
+        if (row.severity == @backingInt(diagnostic.Severity.@"error")) {
             session.profile.end(worker.index, token, .frontend_store, file.int(), 0);
             return;
         }
@@ -1931,7 +1931,7 @@ fn resolveModules(session: *Session) RunError!void {
     // second time without the rest rather than filtered in place, so every
     // per-module array keeps one shape and one meaning.
     const roots = try worker.arena.allocator().alloc(bool, session.lowered.len);
-    for (roots, session.lowered, 0..) |*root, lowered, i| root.* = lowered and !session.isLazy(@enumFromInt(i));
+    for (roots, session.lowered, 0..) |*root, lowered, i| root.* = lowered and !session.isLazy(@fromBackingInt(@intCast(i)));
     if (try session.graph.dropUnreached(worker.arena.allocator(), roots, keep)) {
         session.graph.deinit(gpa);
         session.graph = .empty;
@@ -2008,13 +2008,13 @@ fn mergeInterners(session: *Session) Allocator.Error![][]InternPool.Symbol {
         made += 1;
     }
     for (0..session.store.count()) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+        const file: SourceStore.Index = @fromBackingInt(@intCast(i));
         const w = session.artifacts.worker(file);
         const local = &session.workers[w].interner;
         const remap = remaps[w];
         const list = session.artifacts.tokens(file);
         for (list.items(.tag), list.items(.payload)) |tag, payload| {
-            if (tag.isInterned()) try session.interner.mergeOne(gpa, local, remap, @enumFromInt(payload));
+            if (tag.isInterned()) try session.interner.mergeOne(gpa, local, remap, @fromBackingInt(@intCast(payload)));
         }
         for (session.artifacts.bir(file).symbols) |s| try session.interner.mergeOne(gpa, local, remap, s);
     }
@@ -2043,7 +2043,7 @@ fn markQuiet(quiet: []bool, graph: anytype, pending: []const Worker.Pending) voi
     for (pending) |p| {
         if (p.diagnostic.severity != .@"error") continue;
         for (0..graph.count()) |i| {
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             if (graph.moduleFile(m) == p.file) quiet[i] = true;
         }
     }
@@ -2110,7 +2110,7 @@ fn checkSerial(session: *Session) RunError!void {
     @memset(embedded, false);
     const packable = try gpa.alloc(bool, n);
     defer gpa.free(packable);
-    for (packable, 0..) |*slot, i| slot.* = session.packCovers(session.graph.moduleFile(@enumFromInt(i)));
+    for (packable, 0..) |*slot, i| slot.* = session.packCovers(session.graph.moduleFile(@fromBackingInt(@intCast(i))));
 
     var cutoff: Check.Cutoff = .{
         .keys = &session.keys,
@@ -2138,7 +2138,7 @@ fn checkSerial(session: *Session) RunError!void {
         var misses: u64 = 0;
         var from_pack: u64 = 0;
         for (0..n) |i| {
-            if (!session.keys.isCacheable(@enumFromInt(i))) continue;
+            if (!session.keys.isCacheable(@fromBackingInt(@intCast(i)))) continue;
             if (embedded[i]) {
                 from_pack += 1;
             } else if (hit[i]) {
@@ -2155,8 +2155,8 @@ fn checkSerial(session: *Session) RunError!void {
     // By name, so a counter added to `Check.Counters` without a matching
     // `Profile.Counter` is a compile error rather than a number that never
     // reaches the trace.
-    inline for (@typeInfo(Check.Counters).@"struct".fields) |f| {
-        session.profile.addCounter(@field(Profile.Counter, f.name), @field(session.checked.counters, f.name));
+    inline for (@typeInfo(Check.Counters).@"struct".field_names) |field_name| {
+        session.profile.addCounter(@field(Profile.Counter, field_name), @field(session.checked.counters, field_name));
     }
     try session.reportCheckDiagnostics();
     try session.storeEntries(cached);
@@ -2203,7 +2203,7 @@ fn storeEntries(session: *Session, cached: []const ?CacheEntry.Loaded) RunError!
     var written: u64 = 0;
     var bytes_written: u64 = 0;
     for (0..count) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         if (!session.keys.isCacheable(m)) continue;
         if (!clean[i]) continue;
         // A hit is already on disk under this very key, and re-writing it
@@ -2247,7 +2247,7 @@ fn packEntries(session: *Session, writer: *CorePack.Writer, cached: []const ?Cac
         if (item.module.int() < count) clean[item.module.int()] = false;
     }
     for (0..count) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         if (session.graph.modulePackage(m) == .app) continue;
         if (i < cached.len and cached[i] != null) continue;
         if (!session.keys.isCacheable(m) or !clean[i]) continue;
@@ -2278,10 +2278,10 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
     for (session.checked.diagnostics) |item| {
         if (item.module != m) continue;
         try rows.append(gpa, .{
-            .code = @intFromEnum(item.code),
-            .severity = @intFromEnum(item.severity),
+            .code = @backingInt(item.code),
+            .severity = @backingInt(item.severity),
             .has_token = item.token != null,
-            .region = @intFromEnum(item.region),
+            .region = @backingInt(item.region),
             .token = item.token orelse 0,
             .message = item.message,
         });
@@ -2317,7 +2317,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
     const lower_platform = try gpa.alloc(bool, files);
     defer gpa.free(lower_platform);
     for (0..files) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+        const file: SourceStore.Index = @fromBackingInt(@intCast(i));
         lower_core[i] = session.fileIsCore(file);
         lower_platform[i] = session.fileMayDeclareForeign(file);
     }
@@ -2585,7 +2585,7 @@ fn reportGraphDiagnostics(session: *Session) RunError!void {
             },
             .duplicate_module => {
                 cx.name = session.store.moduleName(item.file);
-                cx.other_path = session.store.path(session.graph.moduleFile(@enumFromInt(item.cycle_start)));
+                cx.other_path = session.store.path(session.graph.moduleFile(@fromBackingInt(@intCast(item.cycle_start))));
             },
             else => {
                 cx.name = session.moduleNameOfImport(item.file, item.token);
@@ -2610,7 +2610,7 @@ fn hiddenByChain(session: *const Session, file: SourceStore.Index, name: []const
     const symbol = session.interner.find(name) orelse return;
     const graph = &session.graph;
     const from: Graph.Index = for (0..graph.count()) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         if (graph.moduleFile(m) == file) break m;
     } else return;
     const target = graph.hiddenPlatformModule(from, symbol) orelse return;
@@ -3019,8 +3019,8 @@ test "collectDiagnostics orders by file then comparator regardless of worker" {
     try session.store.addPending(testing.allocator, "a/B.beni", 2, .app);
     try session.store.addPending(testing.allocator, "a/A.beni", 2, .app);
     try session.store.finish(testing.allocator);
-    const file_a: SourceStore.Index = @enumFromInt(0);
-    const file_b: SourceStore.Index = @enumFromInt(1);
+    const file_a: SourceStore.Index = @fromBackingInt(@intCast(0));
+    const file_b: SourceStore.Index = @fromBackingInt(@intCast(1));
 
     // Worker 1 reports on file B first, then A; worker 0 only on B.
     try session.workers[1].report(&session, file_b, .tab_in_source, .{ .line = 2, .col = 1 }, .{ .line = 2, .col = 2 }, "w1-b");
@@ -3054,9 +3054,9 @@ test "markQuiet: an earlier phase's ERROR quiets its module, a WARNING does not"
             return g.files[m.int()];
         }
     };
-    const f0: SourceStore.Index = @enumFromInt(0);
-    const f1: SourceStore.Index = @enumFromInt(1);
-    const f2: SourceStore.Index = @enumFromInt(2);
+    const f0: SourceStore.Index = @fromBackingInt(@intCast(0));
+    const f1: SourceStore.Index = @fromBackingInt(@intCast(1));
+    const f2: SourceStore.Index = @fromBackingInt(@intCast(2));
     // Module i lives in file 2 - i, so a mix-up of the two numberings shows.
     const graph: FakeGraph = .{ .files = &.{ f2, f1, f0 } };
     const span: diagnostic.Span = .{ .file = "x.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 2 } };
@@ -3099,9 +3099,9 @@ test "mergeInterners numbers symbols in file order, whichever worker lexed the f
     };
     for (files, 0..) |f, i| {
         var list: @import("lex/Token.zig").TokenList = .empty;
-        for (f.symbols) |s| try list.append(gpa, .{ .tag = .lower_ident, .start = 0, .line = 0, .payload = @intFromEnum(s) });
+        for (f.symbols) |s| try list.append(gpa, .{ .tag = .lower_ident, .start = 0, .line = 0, .payload = @backingInt(s) });
         try list.append(gpa, .{ .tag = .eof, .start = 0, .line = 0, .payload = 0 });
-        session.artifacts.set(gpa, @enumFromInt(i), .{ .tokens = list, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .formatted = null, .worker = f.worker });
+        session.artifacts.set(gpa, @fromBackingInt(@intCast(i)), .{ .tokens = list, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .formatted = null, .worker = f.worker });
     }
 
     const remaps = try session.mergeInterners();
@@ -3112,18 +3112,18 @@ test "mergeInterners numbers symbols in file order, whichever worker lexed the f
 
     // File A's names come first, in A's token order, then B's new one —
     // however the pools were filled and in whatever order they were built.
-    const shared = remaps[1][@intFromEnum(a_shared)];
-    const from_a = remaps[1][@intFromEnum(a_only)];
-    const from_b = remaps[0][@intFromEnum(b_only)];
-    try testing.expectEqual(shared, remaps[0][@intFromEnum(b_shared)]);
-    try testing.expect(@intFromEnum(shared) < @intFromEnum(from_a));
-    try testing.expect(@intFromEnum(from_a) < @intFromEnum(from_b));
+    const shared = remaps[1][@backingInt(a_shared)];
+    const from_a = remaps[1][@backingInt(a_only)];
+    const from_b = remaps[0][@backingInt(b_only)];
+    try testing.expectEqual(shared, remaps[0][@backingInt(b_shared)]);
+    try testing.expect(@backingInt(shared) < @backingInt(from_a));
+    try testing.expect(@backingInt(from_a) < @backingInt(from_b));
     try testing.expectEqualStrings("fromB", session.interner.slice(from_b));
     // Every slot is filled, the well-known prefix to itself.
     for (remaps) |remap| {
         for (remap, 0..) |g, local| {
             try testing.expect(g != InternPool.unmapped);
-            if (local < InternPool.WellKnown.count) try testing.expectEqual(@as(u32, @intCast(local)), @intFromEnum(g));
+            if (local < InternPool.WellKnown.count) try testing.expectEqual(@as(u32, @intCast(local)), @backingInt(g));
         }
     }
 }

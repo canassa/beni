@@ -58,7 +58,7 @@ pub const Index = enum(u32) {
     _,
 
     pub fn int(i: Index) u32 {
-        return @intFromEnum(i);
+        return @backingInt(i);
     }
 };
 
@@ -428,7 +428,7 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
             return switch (std.mem.order(u8, a.path, b.path)) {
                 .lt => true,
                 .gt => false,
-                .eq => @intFromEnum(a.package) < @intFromEnum(b.package),
+                .eq => @backingInt(a.package) < @backingInt(b.package),
             };
         }
     }.lessThan);
@@ -448,7 +448,7 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
         var j = i + 1;
         while (j < store.pending.items.len and std.mem.eql(u8, store.pending.items[j].path, p.path)) : (j += 1) {
             const dup = &store.pending.items[j];
-            if (@intFromEnum(dup.package) > @intFromEnum(p.package)) {
+            if (@backingInt(dup.package) > @backingInt(p.package)) {
                 p.package = dup.package;
                 p.rel_start = dup.rel_start;
                 p.layer = dup.layer;
@@ -489,7 +489,7 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
     store.pending.clearRetainingCapacity();
 
     const by_path = try gpa.alloc(Index, store.files.len);
-    for (by_path, 0..) |*slot, k| slot.* = @enumFromInt(k);
+    for (by_path, 0..) |*slot, k| slot.* = @fromBackingInt(@intCast(k));
     const all = store.files.items(.path);
     std.mem.sort(Index, by_path, all, struct {
         fn lessThan(ps: []const []const u8, a: Index, b: Index) bool {
@@ -505,7 +505,7 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
 /// and for two roots holding one relative path, both of which are reported
 /// rather than compiled — the path itself.
 fn numberedBefore(_: void, a: Pending, b: Pending) bool {
-    if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
+    if (a.package != b.package) return @backingInt(a.package) < @backingInt(b.package);
     if (a.layer != b.layer) return a.layer < b.layer;
     if ((a.rel_start == null) != (b.rel_start == null)) return a.rel_start != null;
     if (a.rel_start) |ra| {
@@ -630,13 +630,13 @@ test "finish sorts, deduplicates and derives module names; find is exact" {
     try testing.expectEqualDeep(@as([]const []const u8, &.{
         "src/Main.beni", "src/Page/Home.beni", "src/bad name.beni", "elsewhere/X.beni",
     }), store.paths());
-    try testing.expectEqualStrings("Main", store.moduleName(@enumFromInt(0)));
-    try testing.expectEqualStrings("Page.Home", store.moduleName(@enumFromInt(1)));
-    try testing.expect(!store.modulePathValid(@enumFromInt(2)));
-    try testing.expect(!store.modulePathValid(@enumFromInt(3)));
-    try testing.expectEqualStrings("", store.moduleName(@enumFromInt(2)));
-    try testing.expectEqual(@as(?Index, @enumFromInt(1)), store.find("src/Page/Home.beni"));
-    try testing.expectEqual(@as(?Index, @enumFromInt(3)), store.find("elsewhere/X.beni"));
+    try testing.expectEqualStrings("Main", store.moduleName(@fromBackingInt(@intCast(0))));
+    try testing.expectEqualStrings("Page.Home", store.moduleName(@fromBackingInt(@intCast(1))));
+    try testing.expect(!store.modulePathValid(@fromBackingInt(@intCast(2))));
+    try testing.expect(!store.modulePathValid(@fromBackingInt(@intCast(3))));
+    try testing.expectEqualStrings("", store.moduleName(@fromBackingInt(@intCast(2))));
+    try testing.expectEqual(@as(?Index, @fromBackingInt(@intCast(1))), store.find("src/Page/Home.beni"));
+    try testing.expectEqual(@as(?Index, @fromBackingInt(@intCast(3))), store.find("elsewhere/X.beni"));
     try testing.expectEqual(@as(?Index, null), store.find("src/Page"));
     try testing.expectEqual(@as(usize, 0), store.pending.items.len);
 }
@@ -659,9 +659,9 @@ test "finish numbers by package, layer and relative path, wherever the project l
         }
         try store.finish(testing.allocator);
         var names: [5][]const u8 = undefined;
-        for (&names, 0..) |*n, i| n.* = store.moduleName(@enumFromInt(i));
+        for (&names, 0..) |*n, i| n.* = store.moduleName(@fromBackingInt(@intCast(i)));
         try testing.expectEqualDeep(@as([]const []const u8, &.{ "A.B", "Main", "List", "Tea", "Io" }), @as([]const []const u8, &names));
-        try testing.expectEqual(@as(?Index, @enumFromInt(3)), store.find("zz/Tea.beni"));
+        try testing.expectEqual(@as(?Index, @fromBackingInt(@intCast(3))), store.find("zz/Tea.beni"));
     }
 }
 
@@ -728,8 +728,8 @@ test "a source that grows or shrinks while it is read is read whole, never a tra
     const io = fs_read.StaleStat.io();
     for (fs_read.StaleStat.sizes(source.len)) |size| {
         fs_read.StaleStat.reported = size;
-        try store.read(testing.allocator, io, @enumFromInt(0));
-        try testing.expectEqualSlices(u8, &source, store.bytes(@enumFromInt(0)));
-        try testing.expectEqual(@as(u8, 0), store.bytes(@enumFromInt(0))[source.len]);
+        try store.read(testing.allocator, io, @fromBackingInt(@intCast(0)));
+        try testing.expectEqualSlices(u8, &source, store.bytes(@fromBackingInt(@intCast(0))));
+        try testing.expectEqual(@as(u8, 0), store.bytes(@fromBackingInt(@intCast(0)))[source.len]);
     }
 }

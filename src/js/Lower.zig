@@ -399,7 +399,7 @@ pub fn internFixedNames(gpa: Allocator, global: *InternPool.Global) Allocator.Er
         "$l", "$h", "$d", "$e", "$m", "apply", "_derived", "$markup",     "children",
     };
     for (fixed) |text| _ = try global.getOrPut(gpa, text);
-    inline for (@typeInfo(Lowerer.Runtime).@"enum".fields) |field| _ = try global.getOrPut(gpa, field.name);
+    inline for (@typeInfo(Lowerer.Runtime).@"enum".field_names) |field_name| _ = try global.getOrPut(gpa, field_name);
     for (0..26) |i| _ = try global.getOrPut(gpa, &.{@as(u8, 'a') + @as(u8, @intCast(i))});
     // Whether the names above grew the pool depends on the program; a
     // safety build always moves it, so a slice of it the emitter kept from
@@ -640,7 +640,7 @@ pub const Lowerer = struct {
     /// §9.1, and `partEq`'s `err` arm. It is the INNERMOST instruction
     /// reached, not a span the reader chose, which is why only `internal`
     /// uses it.
-    region: Inst.Index = @enumFromInt(0),
+    region: Inst.Index = @fromBackingInt(@intCast(0)),
     /// Set while the body of a WIDE derived function is lowered
     /// (`Convention.derivedEvidence`): its one evidence parameter, the
     /// array `$m`, which `$m$k` then reads as `$m[k]` (static-dispatch
@@ -896,7 +896,7 @@ pub const Lowerer = struct {
     }
 
     pub fn ident(l: *Lowerer, n: JsIr.NameIndex, p: u32) !Node.Index {
-        return l.add(.ident, p, @intFromEnum(n), Node.Data.unused);
+        return l.add(.ident, p, @backingInt(n), Node.Data.unused);
     }
 
     pub fn stringNode(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
@@ -916,31 +916,31 @@ pub const Lowerer = struct {
     pub fn call(l: *Lowerer, callee: Node.Index, args: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(args);
         const record = try l.b.addRecord(range);
-        return l.add(.call, p, callee.int(), @intFromEnum(record));
+        return l.add(.call, p, callee.int(), @backingInt(record));
     }
 
     pub fn member(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.no_tag });
-        return l.add(.member, p, target.int(), @intFromEnum(n));
+        return l.add(.member, p, target.int(), @backingInt(n));
     }
 
     pub fn binary(l: *Lowerer, op: JsIr.BinaryOp, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
         const record = try l.b.addRecord(JsIr.Binary{ .left = left, .right = right });
-        return l.add(.binary, p, @intFromEnum(record), @intFromEnum(op));
+        return l.add(.binary, p, @backingInt(record), @backingInt(op));
     }
 
     pub fn unary(l: *Lowerer, op: JsIr.UnaryOp, operand: Node.Index, p: u32) !Node.Index {
-        return l.add(.unary, p, operand.int(), @intFromEnum(op));
+        return l.add(.unary, p, operand.int(), @backingInt(op));
     }
 
     pub fn object(l: *Lowerer, properties: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(properties);
-        return l.add(.object, p, @intFromEnum(range.start), @intFromEnum(range.end));
+        return l.add(.object, p, @backingInt(range.start), @backingInt(range.end));
     }
 
     pub fn property(l: *Lowerer, key: Symbol, value: Node.Index, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = key, .tag = JsIr.Name.no_tag });
-        return l.add(.property, p, @intFromEnum(n), value.int());
+        return l.add(.property, p, @backingInt(n), value.int());
     }
 
     /// A beni record's field, as a key or a read: the name carries
@@ -952,19 +952,19 @@ pub const Lowerer = struct {
     }
 
     pub fn fieldMember(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
-        return l.add(.member, p, target.int(), @intFromEnum(try l.fieldName(field)));
+        return l.add(.member, p, target.int(), @backingInt(try l.fieldName(field)));
     }
 
     pub fn fieldProperty(l: *Lowerer, key: Symbol, value: Node.Index, p: u32) !Node.Index {
-        return l.add(.property, p, @intFromEnum(try l.fieldName(key)), value.int());
+        return l.add(.property, p, @backingInt(try l.fieldName(key)), value.int());
     }
 
     pub fn constDecl(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, value: Node.Index, p: u32) !void {
-        try out.append(l.scratch, try l.add(.const_decl, p, @intFromEnum(n), value.int()));
+        try out.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), value.int()));
     }
 
     pub fn returnStmt(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
-        return l.add(.return_stmt, p, @intFromEnum(value.toOptional()), Node.Data.unused);
+        return l.add(.return_stmt, p, @backingInt(value.toOptional()), Node.Data.unused);
     }
 
     /// The `a`, `b`, `c`… slot names constructors, tuples and cons cells
@@ -1096,8 +1096,8 @@ pub const Lowerer = struct {
         }
         if (module.int() < l.in.interfaces.len) {
             if (l.in.interfaces[module.int()].findValue(l.interner.global, symbol)) |index| {
-                try l.need(module, @intFromEnum(index));
-                return l.ident(try l.externalName(module, @intFromEnum(index)), p);
+                try l.need(module, @backingInt(index));
+                return l.ident(try l.externalName(module, @backingInt(index)), p);
             }
         }
         if (l.in.schemas) |sg| {
@@ -1127,7 +1127,7 @@ pub const Lowerer = struct {
             _ = try l.missingCoreValue(p, owner, ctor, "that module declares no such constructor");
             return null;
         };
-        return .{ l.ctorRepExternal(module, @intFromEnum(index)), symbol, module, @intFromEnum(index) };
+        return .{ l.ctorRepExternal(module, @backingInt(index)), symbol, module, @backingInt(index) };
     }
 
     /// Core constructor `ctor` of `owner` applied to `args`: a padded
@@ -1196,7 +1196,7 @@ pub const Lowerer = struct {
         // followed nothing out of it, with or without a survivor set.
         for (tags, 0..) |tag, i| {
             if (tag != .case) continue;
-            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @enumFromInt(@as(u32, @intCast(i))), l.interner, !l.in.development) orelse continue;
+            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development) orelse continue;
             const body = l.bir.instData(branch).rhs;
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
@@ -1205,14 +1205,14 @@ pub const Lowerer = struct {
         // answer is no there, `False`'s where it is yes.
         for (tags, 0..) |tag, i| {
             if (tag != .case) continue;
-            const case_inst: Inst.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const case_inst: Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             const probe = JsIntrinsic.probeCall(l.in.graph, l.in.interfaces, l.bir, case_inst, l.interner) orelse continue;
             const answer = l.in.dispatch.effectAt(probe).body;
             for ([_]Variant{ .direct, .twin }) |variant| {
                 const taken = answer == .yes or (answer == .poly and variant == .twin);
                 const branch = JsIntrinsic.armOf(l.in.graph, l.in.interfaces, l.bir, case_inst, l.interner, !taken) orelse continue;
                 const body = l.bir.instData(branch).rhs;
-                const set = &l.probe_dead[@intFromEnum(variant)];
+                const set = &l.probe_dead[@backingInt(variant)];
                 if (set.bit_length == 0) try set.resize(l.scratch, l.bir.insts.len, false);
                 if (body < set.bit_length) set.set(body);
             }
@@ -1220,7 +1220,7 @@ pub const Lowerer = struct {
         const r = l.in.live orelse return;
         for (tags, data) |tag, d| {
             if (tag != .branch) continue;
-            if (!l.patternDead(r, @enumFromInt(d.lhs), 0)) continue;
+            if (!l.patternDead(r, @fromBackingInt(@intCast(d.lhs)), 0)) continue;
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (d.rhs < l.dead_arms.bit_length) l.dead_arms.set(d.rhs);
         }
@@ -1229,20 +1229,20 @@ pub const Lowerer = struct {
     /// Whether `pattern` names, at any depth, a constructor this build
     /// never builds. `core`'s are always reached.
     fn patternDead(l: *Lowerer, r: *const Reach.Result, pattern: Inst.Index, depth: u32) bool {
-        if (depth > 64 or @intFromEnum(pattern) >= l.bir.insts.len) return false;
+        if (depth > 64 or @backingInt(pattern) >= l.bir.insts.len) return false;
         const d = l.bir.instData(pattern);
         switch (l.bir.instTag(pattern)) {
             .pat_ctor => {
-                const ref: Inst.Index = @enumFromInt(d.lhs);
-                if (@intFromEnum(ref) < l.bir.insts.len) {
+                const ref: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                if (@backingInt(ref) < l.bir.insts.len) {
                     const rd = l.bir.instData(ref);
                     switch (l.bir.instTag(ref)) {
                         .ctor => if (!r.ctor(l.in.module, rd.lhs)) return true,
-                        .ext_ctor => if (!r.extCtor(@enumFromInt(rd.lhs), rd.rhs)) return true,
+                        .ext_ctor => if (!r.extCtor(@fromBackingInt(@intCast(rd.lhs)), rd.rhs)) return true,
                         else => {},
                     }
                 }
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |arg| {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
                     if (l.patternDead(r, arg, depth + 1)) return true;
                 }
                 return false;
@@ -1251,7 +1251,7 @@ pub const Lowerer = struct {
                 for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |e| if (l.patternDead(r, e, depth + 1)) return true;
                 return false;
             },
-            .pat_as => return l.patternDead(r, @enumFromInt(d.lhs), depth + 1),
+            .pat_as => return l.patternDead(r, @fromBackingInt(@intCast(d.lhs)), depth + 1),
             else => return false,
         }
     }
@@ -1272,12 +1272,12 @@ pub const Lowerer = struct {
     fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development) orelse
             l.probeDroppedArm(inst) orelse return null;
-        const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index);
+        const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
         for (branches) |branch| {
             if (branch == dropped) continue;
             const b = l.bir.instData(branch);
-            switch (l.bir.instTag(@enumFromInt(b.lhs))) {
-                .pat_ctor, .pat_wild => return @enumFromInt(b.rhs),
+            switch (l.bir.instTag(@fromBackingInt(@intCast(b.lhs)))) {
+                .pat_ctor, .pat_wild => return @fromBackingInt(@intCast(b.rhs)),
                 else => return null,
             }
         }
@@ -1286,9 +1286,9 @@ pub const Lowerer = struct {
 
     /// Whether `inst` is the body of an arm no value takes.
     fn deadArm(l: *const Lowerer, inst: Inst.Index) bool {
-        const i = @intFromEnum(inst);
+        const i = @backingInt(inst);
         if (i < l.dead_arms.bit_length and l.dead_arms.isSet(i)) return true;
-        const probe = &l.probe_dead[@intFromEnum(l.variant)];
+        const probe = &l.probe_dead[@backingInt(l.variant)];
         return i < probe.bit_length and probe.isSet(i);
     }
 
@@ -1334,7 +1334,7 @@ pub const Lowerer = struct {
     fn externalNameChoosing(l: *Lowerer, module: Graph.Index, value: u32, body: Dispatch.Suspend) !JsIr.NameIndex {
         if (l.suspendsHere(body) and l.externalTwin(module, value)) {
             const iface = &l.in.interfaces[module.int()];
-            const base = iface.symbols[@intFromEnum(iface.values[value].name)];
+            const base = iface.symbols[@backingInt(iface.values[value].name)];
             const twin = try l.twinBase(base);
             if (std.debug.runtime_safety) if (l.in.live) |r| try l.requireLive(r.extTwin(module, value), l.text(base));
             try l.needName(.{ .module = module, .base = twin.toOptional() });
@@ -1582,7 +1582,7 @@ pub const Lowerer = struct {
         try SchemaGraph.subtree(plan, l.scratch, def.root, &nodes);
         for (nodes.items) |n| {
             if (SchemaGraph.tag(plan, n) != .reference) continue;
-            const t = sg.target(l.in.module, @enumFromInt(SchemaGraph.lhs(plan, n))) orelse continue;
+            const t = sg.target(l.in.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse continue;
             if (t.module == l.in.module and t.decl != decl) try out.append(l.scratch, t.decl);
         }
     }
@@ -1654,7 +1654,7 @@ pub const Lowerer = struct {
             .params => {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
-                const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
+                const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, own_suspends))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, decl_p);
             },
@@ -1666,9 +1666,9 @@ pub const Lowerer = struct {
             // parameters follow it, as a written parameter list would.
             .lambda => {
                 const ld = l.bir.instData(body);
-                const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
-                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @enumFromInt(ld.rhs), p, l.functionSuspends(body));
-                const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
+                const lambda_params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(ld.lhs))), Inst.Index);
+                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @fromBackingInt(@intCast(ld.rhs)), p, l.functionSuspends(body));
+                const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, l.functionSuspends(body)))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, decl_p);
             },
@@ -1681,13 +1681,13 @@ pub const Lowerer = struct {
                 // module-level `let` of its value (§4).
                 if (l.unboxed_tops.len > index and l.unboxed_tops[index]) {
                     try l.markMutable(n);
-                    const init_inst = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(body).rhs)), Inst.Index)[0];
+                    const init_inst = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(body).rhs))), Inst.Index)[0];
                     const init = try l.expr(&stmts, init_inst);
                     const value = if (stmts.items.len == 0) init else blk: {
                         try stmts.append(l.scratch, try l.returnStmt(init, p));
                         break :blk try l.call(try l.arrowOf(&[_]JsIr.NameIndex{}, stmts.items, p), &.{}, p);
                     };
-                    try out.append(l.scratch, try l.add(.let_decl, decl_p, @intFromEnum(n), @intFromEnum(value.toOptional())));
+                    try out.append(l.scratch, try l.add(.let_decl, decl_p, @backingInt(n), @backingInt(value.toOptional())));
                     return;
                 }
                 const value = try l.expr(&stmts, body);
@@ -1763,10 +1763,10 @@ pub const Lowerer = struct {
         const decl_text = l.text(decl_name);
         for (keys, 0..) |*key, k| {
             key.* = try l.synthesisedName(try std.fmt.allocPrint(l.scratch, "{s}$ev$k{d}", .{ decl_text, k }));
-            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(key.*), @intFromEnum(Node.OptionalIndex.none)));
+            try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(key.*), @backingInt(Node.OptionalIndex.none)));
         }
         const cached = try l.synthesisedName(try std.fmt.allocPrint(l.scratch, "{s}$ev$v", .{decl_text}));
-        try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(cached), @intFromEnum(Node.OptionalIndex.none)));
+        try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(cached), @backingInt(Node.OptionalIndex.none)));
 
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         var k: u16 = 0;
@@ -1878,7 +1878,7 @@ pub const Lowerer = struct {
         }
         if (names.items.len == 0) return;
         const range = try l.b.addNames(names.items);
-        try out.append(l.scratch, try l.add(.export_stmt, Node.no_pos, @intFromEnum(range.start), @intFromEnum(range.end)));
+        try out.append(l.scratch, try l.add(.export_stmt, Node.no_pos, @backingInt(range.start), @backingInt(range.end)));
     }
 
     /// Whether declaration `index` is one of `core/List`'s core-private
@@ -1958,12 +1958,12 @@ pub const Lowerer = struct {
             .specs_start = range.start,
             .specs_end = range.end,
         });
-        return l.add(.import_stmt, Node.no_pos, @intFromEnum(record), Node.Data.unused);
+        return l.add(.import_stmt, Node.no_pos, @backingInt(record), Node.Data.unused);
     }
 
     fn externalName(l: *Lowerer, module: Graph.Index, value: u32) !JsIr.NameIndex {
         const iface = &l.in.interfaces[module.int()];
-        const base = iface.symbols[@intFromEnum(iface.values[value].name)];
+        const base = iface.symbols[@backingInt(iface.values[value].name)];
         return l.name(.{ .module = l.in.graph.moduleName(module).toOptional(), .base = base, .tag = JsIr.Name.no_tag });
     }
 
@@ -1986,7 +1986,7 @@ pub const Lowerer = struct {
         if (module.int() >= l.in.interfaces.len) return "";
         const iface = &l.in.interfaces[module.int()];
         if (value >= iface.values.len) return "";
-        return l.text(iface.symbols[@intFromEnum(iface.values[value].name)]);
+        return l.text(iface.symbols[@backingInt(iface.values[value].name)]);
     }
 
     /// A derived function of another module (§8.5): named by its base text
@@ -2081,7 +2081,7 @@ pub const Lowerer = struct {
             .params => l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index),
             .lambda => blk: {
                 const body = d.body.unwrap() orelse return 0;
-                break :blk l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(body).lhs)), Inst.Index);
+                break :blk l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(body).lhs))), Inst.Index);
             },
             else => return 0,
         };
@@ -2219,7 +2219,7 @@ pub const Lowerer = struct {
                     .else_start = else_range.start,
                     .else_end = else_range.end,
                 });
-                try out.append(l.scratch, try l.add(.if_stmt, p, g.first.int(), @intFromEnum(record)));
+                try out.append(l.scratch, try l.add(.if_stmt, p, g.first.int(), @backingInt(record)));
             },
         }
         l.join = saved;
@@ -2280,9 +2280,9 @@ pub const Lowerer = struct {
     }
 
     fn branchesReach(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
-        for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index)) |branch| {
+        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index)) |branch| {
             if (l.bir.instTag(branch) != .branch) continue;
-            if (l.reaches(@enumFromInt(l.bir.instData(branch).rhs), probe)) return true;
+            if (l.reaches(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), probe)) return true;
         }
         return false;
     }
@@ -2294,49 +2294,49 @@ pub const Lowerer = struct {
         switch (l.bir.instTag(inst)) {
             .call => {
                 if (l.callHits(inst, probe)) return true;
-                if (l.reaches(@enumFromInt(d.lhs), probe)) return true;
-                return l.anyReaches(l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), probe);
+                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
+                return l.anyReaches(l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), probe);
             },
             .method_call => {
                 if (l.callHits(inst, probe)) return true;
-                if (l.reaches(@enumFromInt(d.lhs), probe)) return true;
-                const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
+                const m = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
                 return l.anyReaches(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index), probe);
             },
             .type_dispatch => {
                 if (l.callHits(inst, probe)) return true;
-                const t = l.bir.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
+                const t = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
                 return l.anyReaches(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index), probe);
             },
             .let => {
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index)) |def| {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
                     const dd = l.bir.instData(def);
                     switch (l.bir.instTag(def)) {
                         .let_def => {
-                            const payload = l.bir.extraData(@enumFromInt(dd.lhs), Bir.LetDef);
+                            const payload = l.bir.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
                             if (payload.params_end != payload.params_start) continue;
-                            if (l.reaches(@enumFromInt(dd.rhs), probe)) return true;
+                            if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true;
                         },
-                        .let_pattern => if (l.reaches(@enumFromInt(dd.rhs), probe)) return true,
-                        .let_stmt => if (l.reaches(@enumFromInt(dd.rhs), probe)) return true,
+                        .let_pattern => if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true,
+                        .let_stmt => if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true,
                         else => {},
                     }
                 }
-                return l.reaches(@enumFromInt(d.rhs), probe);
+                return l.reaches(@fromBackingInt(@intCast(d.rhs)), probe);
             },
             .case => {
-                if (l.reaches(@enumFromInt(d.lhs), probe)) return true;
+                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
                 return l.branchesReach(inst, probe);
             },
-            .@"try", .field_access, .tuple_index => return l.reaches(@enumFromInt(d.lhs), probe),
+            .@"try", .field_access, .tuple_index => return l.reaches(@fromBackingInt(@intCast(d.lhs)), probe),
             .tuple, .list, .interp => return l.anyReaches(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), probe),
             .record => {
                 for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
                 return false;
             },
             .record_update => {
-                if (l.reaches(@enumFromInt(d.lhs), probe)) return true;
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
+                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
                 return false;
             },
             // Markup is not walked. For a suspension the answer stays no, as
@@ -2362,13 +2362,13 @@ pub const Lowerer = struct {
                 .marker = try l.fixedName("$$suspend"),
                 .join = try l.fixedName("$$join"),
                 .joined = try l.fixedName("$$joined"),
-                .and_then = @enumFromInt(l.b.dataOf(and_then).lhs),
+                .and_then = @fromBackingInt(@intCast(l.b.dataOf(and_then).lhs)),
                 .is_waiting = .none,
             };
         };
         if (waiting and names.is_waiting == .none) {
             const is_waiting = try l.coreValue(.Task, .isWaiting, Node.no_pos);
-            names.is_waiting = @enumFromInt(l.b.dataOf(is_waiting).lhs);
+            names.is_waiting = @fromBackingInt(@intCast(l.b.dataOf(is_waiting).lhs));
         }
         l.fiber_names = names;
         return names;
@@ -2387,7 +2387,7 @@ pub const Lowerer = struct {
 
     pub fn arrowOf(l: *Lowerer, params: []const JsIr.NameIndex, body: []const Node.Index, p: u32) !Node.Index {
         const record = try l.funcRecord(params, body);
-        return l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
+        return l.add(.arrow, p, @backingInt(record), Node.Data.unused);
     }
 
     /// `((x1, x2) => Ctor(x1, x2))` — an n-ary constructor used as a VALUE
@@ -2644,7 +2644,7 @@ pub const Lowerer = struct {
         var before: Node.Index = undefined;
         if (loop.builds) {
             loop.root = try l.fixedName("$root");
-            before = try l.add(.const_decl, p, @intFromEnum(loop.root), (try l.arrayNode(&.{}, p)).int());
+            before = try l.add(.const_decl, p, @backingInt(loop.root), (try l.arrayNode(&.{}, p)).int());
         }
         // Scalar views (§8): each walked list slot is read through its
         // base array by an offset. Not in a suspendable body, whose
@@ -2691,16 +2691,16 @@ pub const Lowerer = struct {
         const datas = l.b.nodes.items(.data);
         if (l.markers == 0 and !(held.switch_ and jumps.breaks.items.len != 0)) {
             loop_label = .none;
-            for (jumps.continues.items) |c| datas[c.int()].lhs = @intFromEnum(loop_label);
+            for (jumps.continues.items) |c| datas[c.int()].lhs = @backingInt(loop_label);
         }
-        for (jumps.breaks.items) |b| datas[b.int()].lhs = @intFromEnum(loop_label);
+        for (jumps.breaks.items) |b| datas[b.int()].lhs = @backingInt(loop_label);
         if (in_place) {
             const tags = l.b.nodes.items(.tag);
             for (jumps.targets.items) |t| {
                 const slot = slots[t.slot];
                 if (slot.body == .none) continue;
                 std.debug.assert(tags[t.node.int()] == .ident);
-                datas[t.node.int()].lhs = @intFromEnum(slot.body);
+                datas[t.node.int()].lhs = @backingInt(slot.body);
             }
             names.clearRetainingCapacity();
             for (slots) |slot| {
@@ -2717,7 +2717,7 @@ pub const Lowerer = struct {
         const record = try l.b.addRecord(range);
         // Control leaves by `return` or by `continue`, so nothing follows
         // the loop and there is no `break` (§8).
-        const while_node = try l.add(.while_true, p, @intFromEnum(loop_label), @intFromEnum(record));
+        const while_node = try l.add(.while_true, p, @backingInt(loop_label), @backingInt(record));
         // Before the loop, each scalar slot's base, and its offset written
         // into the slot: `const $v = xs;` when a read builds the list the
         // call was entered with, `const $s = List$base(xs); xs =
@@ -2746,9 +2746,9 @@ pub const Lowerer = struct {
     /// parameter and every `rest` of it in `scalars`, and `at[i]` the
     /// parameter's entry.
     fn scalarSlots(l: *Lowerer, loop: *const Loop, body: Inst.Index, at: []?usize) !void {
-        var start = @intFromEnum(body);
+        var start = @backingInt(body);
         for (loop.slots) |slot| {
-            if (slot.pattern.unwrap()) |pattern| start = @min(start, @intFromEnum(pattern));
+            if (slot.pattern.unwrap()) |pattern| start = @min(start, @backingInt(pattern));
         }
         const decl = l.decl_index orelse std.math.maxInt(u32);
         var tails: std.ArrayList(u32) = .empty;
@@ -2756,7 +2756,7 @@ pub const Lowerer = struct {
             if (i < loop.evidence or slot.local == Loop.no_local or !slot.carried or slot.unwritten) continue;
             tails.clearRetainingCapacity();
             try tails.append(l.scratch, slot.local);
-            if (!try l.walkedSlot(@enumFromInt(start), body, &tails)) continue;
+            if (!try l.walkedSlot(@fromBackingInt(@intCast(start)), body, &tails)) continue;
             if (!try l.selfArgsIn(body, loop, i - loop.evidence, tails.items)) continue;
             const base = try l.fresh(l.well.temp);
             at[i] = l.scalars.items.len;
@@ -2783,13 +2783,13 @@ pub const Lowerer = struct {
         var grew = true;
         while (grew) {
             grew = false;
-            var inst = @intFromEnum(start);
-            while (inst <= @intFromEnum(body)) : (inst += 1) {
-                const case_inst: Inst.Index = @enumFromInt(inst);
+            var inst = @backingInt(start);
+            while (inst <= @backingInt(body)) : (inst += 1) {
+                const case_inst: Inst.Index = @fromBackingInt(@intCast(inst));
                 if (l.bir.instTag(case_inst) != .case) continue;
                 const d = l.bir.instData(case_inst);
-                const scrutinee: Inst.Index = @enumFromInt(d.lhs);
-                const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                const scrutinee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
                 // The roots `planCase` reads: the scrutinee, or the elements
                 // of a tuple literal every row matches element-wise.
                 const elements: []const Inst.Index = if (l.bir.instTag(scrutinee) == .tuple)
@@ -2802,19 +2802,19 @@ pub const Lowerer = struct {
                     if (l.bir.instTag(root) != .local) continue;
                     if (std.mem.indexOfScalar(u32, tails.items, l.bir.instData(root).lhs) == null) continue;
                     for (branches) |branch| {
-                        var pattern: Inst.Index = @enumFromInt(l.bir.instData(branch).lhs);
+                        var pattern: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(branch).lhs));
                         if (spread) {
                             if (l.bir.instTag(pattern) != .pat_tuple) continue;
                             pattern = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(pattern)), Inst.Index)[r];
                         }
-                        while (l.bir.instTag(pattern) == .pat_as) pattern = @enumFromInt(l.bir.instData(pattern).lhs);
+                        while (l.bir.instTag(pattern) == .pat_as) pattern = @fromBackingInt(@intCast(l.bir.instData(pattern).lhs));
                         if (l.bir.instTag(pattern) != .pat_list) continue;
                         walked = true;
                         const items = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(pattern)), Inst.Index);
                         for (items, 0..) |item, k| {
                             if (l.bir.instTag(item) != .pat_spread) continue;
                             if (k + 1 != items.len) return false;
-                            const operand: Inst.Index = @enumFromInt(l.bir.instData(item).lhs);
+                            const operand: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(item).lhs));
                             if (l.bir.instTag(operand) != .pat_var) continue;
                             const local = l.bir.instData(operand).lhs;
                             if (std.mem.indexOfScalar(u32, tails.items, local) != null) continue;
@@ -2834,17 +2834,17 @@ pub const Lowerer = struct {
     fn selfArgsIn(l: *Lowerer, inst: Inst.Index, loop: *const Loop, arg: usize, tails: []const u32) Allocator.Error!bool {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
-            .let => return l.selfArgsIn(@enumFromInt(d.rhs), loop, arg, tails),
+            .let => return l.selfArgsIn(@fromBackingInt(@intCast(d.rhs)), loop, arg, tails),
             .case => {
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
                     if (l.bir.instTag(branch) != .branch) continue;
-                    if (!try l.selfArgsIn(@enumFromInt(l.bir.instData(branch).rhs), loop, arg, tails)) return false;
+                    if (!try l.selfArgsIn(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), loop, arg, tails)) return false;
                 }
                 return true;
             },
             .call => {
                 if (l.isSelfCall(inst, loop)) {
-                    const value = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)[arg];
+                    const value = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)[arg];
                     const local = if (l.bir.instTag(value) == .local)
                         l.bir.instData(value).lhs
                     else if (try l.reconsOf(value)) |recons|
@@ -2883,8 +2883,8 @@ pub const Lowerer = struct {
     fn reconsOf(l: *Lowerer, inst: Inst.Index) Allocator.Error!?struct { tail: u32, back: u32 } {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
-        if (!l.isListCons(@enumFromInt(d.lhs)) or l.rootsOf(inst).len != 0) return null;
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (!l.isListCons(@fromBackingInt(@intCast(d.lhs))) or l.rootsOf(inst).len != 0) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         if (args.len != 2 or l.bir.instTag(args[0]) != .local) return null;
         const binds = try l.listBinds();
         var tail: u32 = undefined;
@@ -2913,11 +2913,11 @@ pub const Lowerer = struct {
         const range = l.bir.decls[decl];
         var inst = range.inst_start.int();
         while (inst < range.inst_end.int() and inst < l.bir.insts.len) : (inst += 1) {
-            const at: Inst.Index = @enumFromInt(inst);
+            const at: Inst.Index = @fromBackingInt(@intCast(inst));
             if (l.bir.instTag(at) != .pat_list) continue;
             for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(at)), Inst.Index), 0..) |item, i| {
                 const spread = l.bir.instTag(item) == .pat_spread;
-                const bound: Inst.Index = if (spread) @enumFromInt(l.bir.instData(item).lhs) else item;
+                const bound: Inst.Index = if (spread) @fromBackingInt(@intCast(l.bir.instData(item).lhs)) else item;
                 if (l.bir.instTag(bound) != .pat_var) continue;
                 const local = l.bir.instData(bound).lhs;
                 if (local < l.list_binds.len) l.list_binds[local] = .{ .pattern = at, .index = @intCast(i), .spread = spread };
@@ -2968,7 +2968,7 @@ pub const Lowerer = struct {
             .pat_wild => {},
             .pat_var => try l.constDecl(out, try l.localName(d.lhs), try l.materialise(k, offset, p), p),
             .pat_as => {
-                try l.scalarBindings(out, @enumFromInt(d.lhs), k, offset);
+                try l.scalarBindings(out, @fromBackingInt(@intCast(d.lhs)), k, offset);
                 try l.constDecl(out, try l.localName(d.rhs), try l.materialise(k, offset, p), p);
             },
             .pat_list => {
@@ -2976,7 +2976,7 @@ pub const Lowerer = struct {
                 for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |element, i| {
                     const at = try l.offsetPlus(offset, @intCast(i), p);
                     if (l.bir.instTag(element) == .pat_spread) {
-                        const operand: Inst.Index = @enumFromInt(l.bir.instData(element).lhs);
+                        const operand: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(element).lhs));
                         if (!try l.bindsRead(operand)) continue;
                         if (l.bir.instTag(operand) == .pat_var and l.scalarOf(l.bir.instData(operand).lhs) != null) {
                             try l.constDecl(out, try l.localName(l.bir.instData(operand).lhs), at, p);
@@ -3001,14 +3001,14 @@ pub const Lowerer = struct {
     /// the walk over the JavaScript catches, and what it sees outside the
     /// body costs the jumps their order and nothing else.
     fn mayGoInPlace(l: *Lowerer, params: []const Inst.Index, body: Inst.Index) bool {
-        const start = if (params.len != 0) @min(@intFromEnum(params[0]), @intFromEnum(body)) else @intFromEnum(body);
+        const start = if (params.len != 0) @min(@backingInt(params[0]), @backingInt(body)) else @backingInt(body);
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
         // `==`, not a switch with an `else` prong (`Inst.Tag.set`).
-        for (tags[start .. @intFromEnum(body) + 1], data[start .. @intFromEnum(body) + 1]) |tag, d| {
+        for (tags[start .. @backingInt(body) + 1], data[start .. @backingInt(body) + 1]) |tag, d| {
             if (tag == .lambda) return false;
             if (tag == .let_def) {
-                const payload = l.bir.extraData(@enumFromInt(d.lhs), Bir.LetDef);
+                const payload = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
                 if (payload.params_end != payload.params_start) return false;
             }
         }
@@ -3035,12 +3035,12 @@ pub const Lowerer = struct {
     fn markTails(l: *Lowerer, inst: Inst.Index, loop: *Loop) bool {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
-            .let => return l.markTails(@enumFromInt(d.rhs), loop),
+            .let => return l.markTails(@fromBackingInt(@intCast(d.rhs)), loop),
             .case => {
                 var found = false;
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
                     if (l.bir.instTag(branch) != .branch) continue;
-                    if (l.markTails(@enumFromInt(l.bir.instData(branch).rhs), loop)) found = true;
+                    if (l.markTails(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), loop)) found = true;
                 }
                 return found;
             },
@@ -3071,8 +3071,8 @@ pub const Lowerer = struct {
     fn logicalRight(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
-        _ = l.logicalOp(@enumFromInt(d.lhs)) orelse return null;
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        _ = l.logicalOp(@fromBackingInt(@intCast(d.lhs))) orelse return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         if (args.len != 2) return null;
         return args[1];
     }
@@ -3084,8 +3084,8 @@ pub const Lowerer = struct {
     fn consTail(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
-        if (!l.isListCons(@enumFromInt(d.lhs))) return null;
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (!l.isListCons(@fromBackingInt(@intCast(d.lhs)))) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         if (args.len != 2 or l.rootsOf(inst).len != 0) return null;
         return args[1];
     }
@@ -3100,13 +3100,13 @@ pub const Lowerer = struct {
                 break :blk l.bir.symbol(l.bir.decls[d.lhs].name);
             },
             .ext_value => blk: {
-                const module: Graph.Index = @enumFromInt(d.lhs);
+                const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
                 if (module.int() >= l.in.interfaces.len) return false;
                 if (l.in.graph.modulePackage(module) != .core) return false;
                 if (l.in.graph.moduleName(module) != InternPool.WellKnown.List.symbol()) return false;
                 const iface = &l.in.interfaces[module.int()];
                 if (d.rhs >= iface.values.len) return false;
-                break :blk iface.symbols[@intFromEnum(iface.values[d.rhs].name)];
+                break :blk iface.symbols[@backingInt(iface.values[d.rhs].name)];
             },
             else => return false,
         };
@@ -3123,11 +3123,11 @@ pub const Lowerer = struct {
         while (true) {
             const d = l.bir.instData(at);
             switch (l.bir.instTag(at)) {
-                .let => at = @enumFromInt(d.rhs),
+                .let => at = @fromBackingInt(@intCast(d.rhs)),
                 .case => {
-                    for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                    for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
                         if (l.bir.instTag(branch) != .branch) continue;
-                        if (l.reachesSelf(@enumFromInt(l.bir.instData(branch).rhs), loop)) return true;
+                        if (l.reachesSelf(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), loop)) return true;
                     }
                     return false;
                 },
@@ -3157,13 +3157,13 @@ pub const Lowerer = struct {
     /// a missing one is only a deep stack (§8).
     fn isSelfCall(l: *Lowerer, inst: Inst.Index, loop: *const Loop) bool {
         const d = l.bir.instData(inst);
-        const callee: Inst.Index = @enumFromInt(d.lhs);
+        const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
         const named = switch (loop.self) {
             .top => |decl| l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == decl,
             .local => |index| l.bir.instTag(callee) == .local and l.bir.instData(callee).lhs == index,
         };
         if (!named or l.callsOperator(inst)) return false;
-        if (l.bir.subRange(@enumFromInt(d.rhs)).len() != loop.slots.len - loop.evidence) return false;
+        if (l.bir.subRange(@fromBackingInt(@intCast(d.rhs))).len() != loop.slots.len - loop.evidence) return false;
         return l.rootsOf(inst).len == loop.evidence;
     }
 
@@ -3189,7 +3189,7 @@ pub const Lowerer = struct {
             if (!forwarded) loop.slots[k].carried = true;
         }
         const d = l.bir.instData(inst);
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         for (args, loop.slots[loop.evidence..]) |arg, *slot| {
             if (slot.carried) continue;
             if (l.bir.instTag(arg) == .local and l.bir.instData(arg).lhs == slot.local) continue;
@@ -3219,8 +3219,8 @@ pub const Lowerer = struct {
         }
         switch (l.bir.instTag(inst)) {
             .let => {
-                try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
-                return l.tailStmts(out, @enumFromInt(d.rhs), loop);
+                try l.letBindings(out, l.bir.subRange(@fromBackingInt(@intCast(d.lhs))));
+                return l.tailStmts(out, @fromBackingInt(@intCast(d.rhs)), loop);
             },
             .case => return l.tailCase(out, inst, loop),
             .tuple => if (loop) |lp| switch (lp.exit) {
@@ -3237,8 +3237,8 @@ pub const Lowerer = struct {
                     // return false;`.
                     if (l.logicalRight(inst)) |right| if (l.reachesSelf(right, lp)) {
                         const p = l.pos(inst);
-                        const op = l.logicalOp(@enumFromInt(d.lhs)).?;
-                        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                        const op = l.logicalOp(@fromBackingInt(@intCast(d.lhs))).?;
+                        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
                         const left = try l.expr(out, args[0]);
                         var exit: StmtList = .empty;
                         const answer = try l.add(if (op == .logical_or) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
@@ -3337,7 +3337,7 @@ pub const Lowerer = struct {
     /// bound or discarded; `loopOf` gives it the loop's label when it needs
     /// one.
     fn exitBreak(l: *Lowerer, out: *StmtList, loop: *const Loop, p: u32) !void {
-        const brk = try l.add(.break_stmt, p, @intFromEnum(loop.label), Node.Data.unused);
+        const brk = try l.add(.break_stmt, p, @backingInt(loop.label), Node.Data.unused);
         try loop.jumps.breaks.append(l.scratch, brk);
         try out.append(l.scratch, brk);
     }
@@ -3374,7 +3374,7 @@ pub const Lowerer = struct {
         var at = inst;
         while (true) {
             const p = l.pos(at);
-            const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(at).rhs)), Inst.Index);
+            const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(at).rhs))), Inst.Index);
             const head = try l.expr(out, args[0]);
             const push = try l.call(try l.member(try l.ident(loop.root, p), l.well.push, p), &.{head}, p);
             try out.append(l.scratch, try l.add(.expr_stmt, p, push.int(), Node.Data.unused));
@@ -3400,7 +3400,7 @@ pub const Lowerer = struct {
         // views*).
         const raw_mark = l.scalar_raw.items.len;
         defer l.scalar_raw.shrinkRetainingCapacity(raw_mark);
-        for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), 0..) |arg, j| {
+        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), 0..) |arg, j| {
             const local = if (l.bir.instTag(arg) == .local)
                 l.bir.instData(arg).lhs
             else if (try l.reconsOf(arg)) |recons|
@@ -3411,7 +3411,7 @@ pub const Lowerer = struct {
             const scalar = l.scalars.items[k];
             if (scalar.label == loop.label and scalar.slot == loop.evidence + j) try l.scalar_raw.append(l.scratch, arg);
         }
-        const written = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+        const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
         const values = try l.scratch.alloc(Node.Index, loop.slots.len);
         for (loop.slots, values, 0..) |slot, *value, i| {
             if (!slot.carried) continue;
@@ -3429,7 +3429,7 @@ pub const Lowerer = struct {
                 try l.jumpAssign(out, loop, @intCast(i), value, p);
             }
         }
-        const jump = try l.add(.continue_stmt, p, @intFromEnum(loop.label), Node.Data.unused);
+        const jump = try l.add(.continue_stmt, p, @backingInt(loop.label), Node.Data.unused);
         try loop.jumps.continues.append(l.scratch, jump);
         try out.append(l.scratch, jump);
     }
@@ -3576,7 +3576,7 @@ pub const Lowerer = struct {
                 return Bir.SubRange.len(.{ .start = c.args_start, .end = c.args_end });
             },
             .ext_ctor => {
-                const module: Graph.Index = @enumFromInt(d.lhs);
+                const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
                 if (module.int() >= l.in.interfaces.len) return 0;
                 const iface = &l.in.interfaces[module.int()];
                 if (d.rhs >= iface.ctors.len) return 0;
@@ -3652,7 +3652,7 @@ pub const Lowerer = struct {
                 const iface = &l.in.interfaces[at.module.int()];
                 const words = iface.range(iface.ctors[at.ctor].fields);
                 const names = try l.scratch.alloc(Symbol, words.len);
-                for (words, names) |word, *n| n.* = iface.symbol(@enumFromInt(word));
+                for (words, names) |word, *n| n.* = iface.symbol(@fromBackingInt(@intCast(word)));
                 return names;
             },
         }
@@ -3709,14 +3709,14 @@ pub const Lowerer = struct {
     fn ctorRepExternal(l: *Lowerer, module: Graph.Index, ctor_index: u32) CtorRep {
         const iface = &l.in.interfaces[module.int()];
         const c = iface.ctors[ctor_index];
-        const owner = iface.types[@intFromEnum(c.type)];
+        const owner = iface.types[@backingInt(c.type)];
         var max: u32 = 0;
         for (iface.ctors[owner.ctors_start..owner.ctors_end]) |sibling| max = @max(max, sibling.arity);
         if (l.in.graph.modulePackage(module) == .core and
             l.in.graph.moduleName(module) == InternPool.WellKnown.Basics.symbol() and
-            iface.symbols[@intFromEnum(owner.name)] == InternPool.WellKnown.Bool.symbol())
+            iface.symbols[@backingInt(owner.name)] == InternPool.WellKnown.Bool.symbol())
         {
-            return .{ .boolean = iface.symbols[@intFromEnum(c.name)] == InternPool.WellKnown.True.symbol() };
+            return .{ .boolean = iface.symbols[@backingInt(c.name)] == InternPool.WellKnown.True.symbol() };
         }
         // A record alias's constructor builds the record, whichever module
         // declared it (backend.md §4's row; interface v3 carries the
@@ -3738,11 +3738,11 @@ pub const Lowerer = struct {
                 return .{ l.ctorRepLocal(d.lhs), l.bir.symbol(l.bir.ctors[d.lhs].name) };
             },
             .ext_ctor => {
-                const module: Graph.Index = @enumFromInt(d.lhs);
+                const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
                 if (module.int() >= l.in.interfaces.len) return null;
                 const iface = &l.in.interfaces[module.int()];
                 if (d.rhs >= iface.ctors.len) return null;
-                return .{ l.ctorRepExternal(module, d.rhs), iface.symbols[@intFromEnum(iface.ctors[d.rhs].name)] };
+                return .{ l.ctorRepExternal(module, d.rhs), iface.symbols[@backingInt(iface.ctors[d.rhs].name)] };
             },
             // A tagged schema endpoint's (`schema.md` §6): its variant name
             // is its tag in both families, never an integer.
@@ -3806,7 +3806,7 @@ pub const Lowerer = struct {
         const slot = try l.nullary.getOrPut(l.scratch, key);
         if (slot.found_existing) return slot.value_ptr.name;
         const base = if (key.ext) blk: {
-            const path = l.text(l.in.graph.moduleName(@enumFromInt(key.module)));
+            const path = l.text(l.in.graph.moduleName(@fromBackingInt(@intCast(key.module))));
             const out = try std.fmt.allocPrint(l.scratch, "{s}${s}", .{ path, l.text(tag) });
             for (out[0..path.len]) |*c| {
                 if (c.* == '.') c.* = '$';
@@ -3853,7 +3853,7 @@ pub const Lowerer = struct {
         const out = try l.scratch.alloc(Node.Index, sorted.len);
         for (sorted, out) |c, *slot| {
             const value = try l.ctorValue(c.rep, c.tag, &.{}, Node.no_pos);
-            slot.* = try l.add(.const_decl, Node.no_pos, @intFromEnum(c.name), value.int());
+            slot.* = try l.add(.const_decl, Node.no_pos, @backingInt(c.name), value.int());
         }
         return out;
     }
@@ -3871,7 +3871,7 @@ pub const Lowerer = struct {
     /// no length (§4's list row), so a written list of any size is flat.
     pub fn arrayNode(l: *Lowerer, elements: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(elements);
-        return l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+        return l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
     }
 
     /// Whether `value` is the literal `[]`: an array literal of nothing.
@@ -3890,7 +3890,7 @@ pub const Lowerer = struct {
     /// The name an `ident` node spells.
     fn identName(l: *Lowerer, n: Node.Index) JsIr.NameIndex {
         std.debug.assert(l.b.tagOf(n) == .ident);
-        return @enumFromInt(l.b.dataOf(n).lhs);
+        return @fromBackingInt(@intCast(l.b.dataOf(n).lhs));
     }
 
     /// One of `core/List`'s values the emitter calls by well-known symbol:
@@ -4076,26 +4076,26 @@ pub const Lowerer = struct {
         // A `Js.Ref` written as a `let` is a name a write may rebind
         // (`findRefs`): a read of one keeps its place like any work.
         if (tag == .ident) return l.mutable_names.items.len == 0 or !l.isMutable(value);
-        return atom_literals[@intFromEnum(tag)];
+        return atom_literals[@backingInt(tag)];
     }
 
     /// The literal tags `isAtom` takes, as a table: a switch with an `else`
     /// prong is a check against every tag first in Zig's own backend.
     const atom_literals = blk: {
-        var set: [@typeInfo(Node.Tag).@"enum".fields.len]bool = @splat(false);
-        for ([_]Node.Tag{ .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this }) |t| set[@intFromEnum(t)] = true;
+        var set: [@typeInfo(Node.Tag).@"enum".field_names.len]bool = @splat(false);
+        for ([_]Node.Tag{ .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this }) |t| set[@backingInt(t)] = true;
         break :blk set;
     };
 
     /// Whether `value` is an `ident` of the name `n`.
     fn isIdentOf(l: *Lowerer, value: Node.Index, n: JsIr.NameIndex) bool {
-        return l.b.tagOf(value) == .ident and l.b.dataOf(value).lhs == @intFromEnum(n);
+        return l.b.tagOf(value) == .ident and l.b.dataOf(value).lhs == @backingInt(n);
     }
 
     /// Whether `value` is an `ident` naming a `Js.Ref` written as a `let`.
     fn isMutable(l: *Lowerer, value: Node.Index) bool {
         if (l.b.tagOf(value) != .ident) return false;
-        const n: JsIr.NameIndex = @enumFromInt(l.b.dataOf(value).lhs);
+        const n: JsIr.NameIndex = @fromBackingInt(@intCast(l.b.dataOf(value).lhs));
         return std.mem.indexOfScalar(JsIr.NameIndex, l.mutable_names.items, n) != null;
     }
 
@@ -4196,7 +4196,7 @@ pub const Lowerer = struct {
                     next += 1;
                 }
                 const range = try l.b.addRange(nodes.items);
-                return l.add(.template, p, @intFromEnum(range.start), @intFromEnum(range.end));
+                return l.add(.template, p, @backingInt(range.start), @backingInt(range.end));
             },
             .unit => return l.nullNode(p),
             .tuple => {
@@ -4216,9 +4216,9 @@ pub const Lowerer = struct {
                 // thing that can move an evaluation here is a later field
                 // that hoists statements, which is what `orderedExprs`
                 // pins against.
-                const fields = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Bir.Field);
+                const fields = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field);
                 const insts = try l.scratch.alloc(Inst.Index, fields.len + 1);
-                insts[0] = @enumFromInt(d.lhs);
+                insts[0] = @fromBackingInt(@intCast(d.lhs));
                 for (fields, insts[1..]) |f, *slot| slot.* = f.value;
                 const values = try l.orderedExprs(out, insts, false);
                 var properties: std.ArrayList(Node.Index) = .empty;
@@ -4229,17 +4229,17 @@ pub const Lowerer = struct {
                 return l.object(properties.items, p);
             },
             .field_access => {
-                const target = try l.expr(out, @enumFromInt(d.lhs));
+                const target = try l.expr(out, @fromBackingInt(@intCast(d.lhs)));
                 return l.fieldMember(target, l.bir.symbols[d.rhs], p);
             },
             .tuple_index => {
-                const target = try l.expr(out, @enumFromInt(d.lhs));
+                const target = try l.expr(out, @fromBackingInt(@intCast(d.lhs)));
                 return l.member(target, try l.slotName(d.rhs), p);
             },
             .call => return l.callExpr(out, inst),
             .method_call => return l.methodCallExpr(out, inst),
             .lambda => {
-                const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index);
+                const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index);
                 // The body is bound inside itself, so no expression of it is
                 // taller than `nesting.spill` — but it still nests INSIDE
                 // whatever this lambda is an argument of, so its tallest
@@ -4250,10 +4250,10 @@ pub const Lowerer = struct {
                 const height = l.expr_height;
                 l.expr_height = 0;
                 const suspends = l.functionSuspends(inst);
-                const record = try l.functionOf(0, .none, params, @enumFromInt(d.rhs), suspends);
+                const record = try l.functionOf(0, .none, params, @fromBackingInt(@intCast(d.rhs)), suspends);
                 const body = l.expr_height;
-                const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
-                if (l.in.unit_results and !suspends and l.unitValued(@enumFromInt(d.rhs))) try l.unobserved_arrows.append(l.scratch, arrow);
+                const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
+                if (l.in.unit_results and !suspends and l.unitValued(@fromBackingInt(@intCast(d.rhs)))) try l.unobserved_arrows.append(l.scratch, arrow);
                 if (body < lambda_spill) {
                     l.expr_height = @max(height, body);
                     return arrow;
@@ -4269,9 +4269,9 @@ pub const Lowerer = struct {
                 // Each binding is a statement of its own; only the body is
                 // this expression.
                 const height = l.expr_height;
-                try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
+                try l.letBindings(out, l.bir.subRange(@fromBackingInt(@intCast(d.lhs))));
                 l.expr_height = height;
-                return l.expr(out, @enumFromInt(d.rhs));
+                return l.expr(out, @fromBackingInt(@intCast(d.rhs)));
             },
             .case => return l.caseExpr(out, inst),
             .local, .top, .ctor, .ext_value, .ext_ctor, .schema_ctor_top, .ext_schema_ctor => return l.reference(inst),
@@ -4422,7 +4422,7 @@ pub const Lowerer = struct {
     fn tryExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
-        const subject = try l.bindSubject(out, try l.expr(out, @enumFromInt(d.lhs)), p);
+        const subject = try l.bindSubject(out, try l.expr(out, @fromBackingInt(@intCast(d.lhs))), p);
         const shape = l.in.dispatch.tryShape(inst) orelse {
             try l.reportMissingTryShape(inst);
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -4489,8 +4489,8 @@ pub const Lowerer = struct {
         // site (§4), so nothing is imported for it and §9 has no edge to
         // follow.
         return .{
-            l.ctorRepExternal(module, @intFromEnum(index)),
-            iface.symbols[@intFromEnum(iface.ctors[@intFromEnum(index)].name)],
+            l.ctorRepExternal(module, @backingInt(index)),
+            iface.symbols[@backingInt(iface.ctors[@backingInt(index)].name)],
         };
     }
 
@@ -4583,11 +4583,11 @@ pub const Lowerer = struct {
             else
                 try l.ident(try l.topNameChoosing(d.lhs, l.in.dispatch.effectAt(inst).body), p),
             .ext_value => blk: {
-                const module: Graph.Index = @enumFromInt(d.lhs);
+                const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
                 if (module.int() < l.in.interfaces.len) {
                     const iface = &l.in.interfaces[module.int()];
                     if (d.rhs < iface.values.len and iface.values[d.rhs].is_markup_primitive) {
-                        const base = iface.symbols[@intFromEnum(iface.values[d.rhs].name)];
+                        const base = iface.symbols[@backingInt(iface.values[d.rhs].name)];
                         break :blk try l.ident(try l.primitiveName(l.in.graph.moduleName(module), base), p);
                     }
                 }
@@ -4603,7 +4603,7 @@ pub const Lowerer = struct {
         const d = l.bir.instData(inst);
         return switch (l.bir.instTag(inst)) {
             .top => Convention.ofDecl(l.in.dispatch, l.bir, d.lhs),
-            .ext_value => Convention.ofImport(l.in.interfaces, @enumFromInt(d.lhs), d.rhs),
+            .ext_value => Convention.ofImport(l.in.interfaces, @fromBackingInt(@intCast(d.lhs)), d.rhs),
             .local => if (l.decl_index) |decl| (if (l.in.dispatch.localLet(l.bir, decl, d.lhs)) |i| Convention.ofLet(l.in.dispatch, l.bir, i) else Convention.Use{ .convention = .plain, .evidence = 0, .arity = 0 }) else .{ .convention = .plain, .evidence = 0, .arity = 0 },
             else => .{ .convention = .plain, .evidence = 0, .arity = 0 },
         };
@@ -4678,7 +4678,7 @@ pub const Lowerer = struct {
     fn termArity(l: *Lowerer, t: Dispatch.Term) u32 {
         const use: Convention.Use = switch (t) {
             .top => |u| Convention.ofDecl(l.in.dispatch, l.bir, u.decl.int()),
-            .ext => |e| Convention.ofImport(l.in.interfaces, e.module, @intFromEnum(e.value)),
+            .ext => |e| Convention.ofImport(l.in.interfaces, e.module, @backingInt(e.value)),
             // A derived `eq` or `compare` is binary: the two values being
             // compared, after whatever evidence it takes (§9).
             .derived, .ext_derived => return 2,
@@ -4704,8 +4704,8 @@ pub const Lowerer = struct {
             },
             .ext => |e| blk: {
                 std.debug.assert(e.module.int() < l.in.interfaces.len);
-                std.debug.assert(@intFromEnum(e.value) < l.in.interfaces[e.module.int()].values.len);
-                break :blk try l.ident(try l.externalNameChoosing(e.module, @intFromEnum(e.value), l.term_choice), p);
+                std.debug.assert(@backingInt(e.value) < l.in.interfaces[e.module.int()].values.len);
+                break :blk try l.ident(try l.externalNameChoosing(e.module, @backingInt(e.value), l.term_choice), p);
             },
             // A declaration's `$m$k` and a derived function's are spelled
             // alike: each is the parameter list of the function the term
@@ -5164,7 +5164,7 @@ pub const Lowerer = struct {
         // chose. `nominalArrow` moves this to the type's declaration;
         // resetting it here keeps a leftover from the declaration pass out
         // of the message.
-        l.region = @enumFromInt(0);
+        l.region = @fromBackingInt(@intCast(0));
         for (l.in.dispatch.derived, 0..) |row, index| {
             // §5: only the surviving rows, and the `$$order` table goes
             // with its own `compare` because it is built inside this
@@ -5176,7 +5176,7 @@ pub const Lowerer = struct {
             const bound = try l.synthesisedName(base);
             try list.append(l.scratch, .{
                 .base = base,
-                .node = try l.add(.const_decl, Node.no_pos, @intFromEnum(bound), made.arrow.int()),
+                .node = try l.add(.const_decl, Node.no_pos, @backingInt(bound), made.arrow.int()),
             });
             if (made.steps) |steps| try list.append(l.scratch, .{ .base = try l.stepsBase(base), .node = steps });
             // The `$order` table of §9.4 goes in the OTHER run, and only
@@ -5241,7 +5241,7 @@ pub const Lowerer = struct {
         const value = try l.object(properties.items, p);
         return .{
             .base = base,
-            .node = try l.add(.const_decl, Node.no_pos, @intFromEnum(bound), value.int()),
+            .node = try l.add(.const_decl, Node.no_pos, @backingInt(bound), value.int()),
         };
     }
 
@@ -5257,7 +5257,7 @@ pub const Lowerer = struct {
             const variants = SchemaCtor.taggedVariants(l.bir, d) orelse return &.{};
             const out = try l.scratch.alloc(CtorLite, variants.len);
             for (variants, out) |vi, *slot| slot.* = .{
-                .name = l.bir.symbol(@enumFromInt(l.bir.instData(vi).lhs)),
+                .name = l.bir.symbol(@fromBackingInt(@intCast(l.bir.instData(vi).lhs))),
                 .arity = @intFromBool(SchemaCtor.variantPayload(l.bir, vi)),
             };
             return out;
@@ -5425,7 +5425,7 @@ pub const Lowerer = struct {
                 }
                 if (body.pack > 0) {
                     const range = try l.b.addRange(boxed.items);
-                    try args.insert(l.scratch, 0, try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end)));
+                    try args.insert(l.scratch, 0, try l.add(.array, p, @backingInt(range.start), @backingInt(range.end)));
                 }
                 const steps_name = try l.synthesisedName(try l.stepsBase(body.base));
                 const steps = try l.call(try l.ident(steps_name, p), args.items, p);
@@ -5440,7 +5440,7 @@ pub const Lowerer = struct {
                 try names.appendSlice(l.scratch, params);
                 try names.append(l.scratch, body.depth);
                 const record = try l.funcRecord(names.items, all.items);
-                return l.add(.arrow, p, @intFromEnum(record), Node.arrow_depth);
+                return l.add(.arrow, p, @backingInt(record), Node.arrow_depth);
             },
             .forward => {
                 // A forwarder: the depth, and no prologue (`forwardTail`).
@@ -5448,16 +5448,16 @@ pub const Lowerer = struct {
                 try names.appendSlice(l.scratch, params);
                 try names.append(l.scratch, body.depth);
                 const record = try l.funcRecord(names.items, stmts);
-                return l.add(.arrow, p, @intFromEnum(record), Node.arrow_depth);
+                return l.add(.arrow, p, @backingInt(record), Node.arrow_depth);
             },
             .steps => {
                 // `let $e;` ahead of everything, when a request was awaited.
                 var all: StmtList = .empty;
-                if (body.temp) |e| try all.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(e), @intFromEnum(Node.OptionalIndex.none)));
+                if (body.temp) |e| try all.append(l.scratch, try l.add(.let_decl, p, @backingInt(e), @backingInt(Node.OptionalIndex.none)));
                 try all.appendSlice(l.scratch, stmts);
                 const record = try l.funcRecord(params, all.items);
                 const steps_name = try l.synthesisedName(try l.stepsBase(body.base));
-                return l.add(.gen_decl, p, @intFromEnum(steps_name), @intFromEnum(record));
+                return l.add(.gen_decl, p, @backingInt(steps_name), @backingInt(record));
             },
         }
     }
@@ -5489,7 +5489,7 @@ pub const Lowerer = struct {
                 // frame, which every `yield` would then save.
                 const request = if (all.len > steps_positional) blk: {
                     const range = try l.b.addRange(all);
-                    const array = try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+                    const array = try l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
                     const apply = try l.member(callee, try l.applySymbol(), p);
                     break :blk try l.call(apply, &.{ try l.nullNode(p), array }, p);
                 } else try l.call(callee, all, p);
@@ -5566,8 +5566,8 @@ pub const Lowerer = struct {
         while (true) {
             const d = l.b.dataOf(at);
             if (l.b.tagOf(at) != .binary or
-                @as(JsIr.BinaryOp, @enumFromInt(d.rhs)) != .logical_and) return at;
-            at = @enumFromInt(l.b.extra.items[d.lhs + 1]);
+                @as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs))) != .logical_and) return at;
+            at = @fromBackingInt(@intCast(l.b.extra.items[d.lhs + 1]));
         }
     }
 
@@ -5581,22 +5581,22 @@ pub const Lowerer = struct {
         const body = l.derived_body.?;
         const tags = l.b.nodes.items(.tag);
         const d = l.b.dataOf(value);
-        if (tags[value.int()] == .binary and @as(JsIr.BinaryOp, @enumFromInt(d.rhs)) == .logical_and) {
-            const left: Node.Index = @enumFromInt(l.b.extra.items[d.lhs]);
-            const right: Node.Index = @enumFromInt(l.b.extra.items[d.lhs + 1]);
+        if (tags[value.int()] == .binary and @as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs))) == .logical_and) {
+            const left: Node.Index = @fromBackingInt(@intCast(l.b.extra.items[d.lhs]));
+            const right: Node.Index = @fromBackingInt(@intCast(l.b.extra.items[d.lhs + 1]));
             const tail = try l.forwardTail(right, p);
             return if (tail == right) value else l.binary(.logical_and, left, tail, p);
         }
         if (!body.calls.contains(value.int())) return value;
         // `[f, args…]`: the call's callee and every argument but the depth.
-        const callee: Node.Index = @enumFromInt(d.lhs);
+        const callee: Node.Index = @fromBackingInt(@intCast(d.lhs));
         const range = l.b.extra.items[d.rhs..][0..2];
         const args: []const Node.Index = @ptrCast(l.b.extra.items[range[0]..range[1]]);
         const all = try l.scratch.alloc(Node.Index, args.len);
         all[0] = callee;
         @memcpy(all[1..], args[0 .. args.len - 1]);
         const request_range = try l.b.addRange(all);
-        const request = try l.add(.array, p, @intFromEnum(request_range.start), @intFromEnum(request_range.end));
+        const request = try l.add(.array, p, @backingInt(request_range.start), @backingInt(request_range.end));
         l.needs.deep = true;
         const handoff = try l.call(try l.deepName(p), &.{ request, try l.ident(body.depth, p) }, p);
         const over = try l.binary(.gt, try l.ident(body.depth, p), try l.numberNode(derived_depth_limit, p), p);
@@ -5811,7 +5811,7 @@ pub const Lowerer = struct {
     fn derivedEvidenceArguments(l: *Lowerer, values: []const Node.Index, p: u32) ![]const Node.Index {
         if (Convention.derivedEvidence(values.len) == .positional) return values;
         const range = try l.b.addRange(values);
-        const array = try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+        const array = try l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
         const one = try l.scratch.alloc(Node.Index, 1);
         one[0] = array;
         return one;
@@ -5884,7 +5884,7 @@ pub const Lowerer = struct {
         const range = try l.b.addRange(stmts);
         const record = try l.b.addRecord(range);
         const one = try l.scratch.alloc(Node.Index, 1);
-        one[0] = try l.add(.while_true, p, @intFromEnum(JsIr.NameIndex.none), @intFromEnum(record));
+        one[0] = try l.add(.while_true, p, @backingInt(JsIr.NameIndex.none), @backingInt(record));
         return one;
     }
 
@@ -5939,7 +5939,7 @@ pub const Lowerer = struct {
 
     pub fn condOf(l: *Lowerer, test_expr: Node.Index, consequent: Node.Index, alternate: Node.Index, p: u32) !Node.Index {
         const record = try l.b.addRecord(JsIr.Cond{ .consequent = consequent, .alternate = alternate });
-        return l.add(.cond, p, test_expr.int(), @intFromEnum(record));
+        return l.add(.cond, p, test_expr.int(), @backingInt(record));
     }
 
     /// §9.4's nominal body: the tag test, then a `switch` whose last
@@ -5964,7 +5964,7 @@ pub const Lowerer = struct {
         // constructors would be a `pub opaque type`'s insides in the wrong
         // file.
         if (entry.module != l.in.module or entry.decl.int() >= l.bir.decls.len) {
-            try l.reportDispatchBug(@enumFromInt(0), derived_not_declared_here);
+            try l.reportDispatchBug(@fromBackingInt(@intCast(0)), derived_not_declared_here);
             return null;
         }
         const d = l.bir.decls[entry.decl.int()];
@@ -6071,7 +6071,7 @@ pub const Lowerer = struct {
                     if (row.kind == .eq) try l.guardConjunction(&body, &value, p);
                     try body.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(x, p)).int(), left.int()));
                     try body.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(y, p)).int(), right.int()));
-                    try body.append(l.scratch, try l.add(.continue_stmt, p, @intFromEnum(JsIr.NameIndex.none), Node.Data.unused));
+                    try body.append(l.scratch, try l.add(.continue_stmt, p, @backingInt(JsIr.NameIndex.none), Node.Data.unused));
                     arm_loops = true;
                     looped = true;
                     continue;
@@ -6108,12 +6108,12 @@ pub const Lowerer = struct {
                 (try l.intNode(@intCast(i), p)).toOptional()
             else
                 (try l.stringNode(l.text(ctor.name), p)).toOptional();
-            try arms.append(l.scratch, try l.add(.switch_case, p, @intFromEnum(test_expr), @intFromEnum(record)));
+            try arms.append(l.scratch, try l.add(.switch_case, p, @backingInt(test_expr), @backingInt(record)));
         }
         const arm_range = try l.b.addRange(arms.items);
         const arms_record = try l.b.addRecord(arm_range);
         const discriminant = try l.member(try l.ident(x, p), l.well.tag, p);
-        try stmts.append(l.scratch, try l.add(.switch_stmt, p, discriminant.int(), @intFromEnum(arms_record)));
+        try stmts.append(l.scratch, try l.add(.switch_stmt, p, discriminant.int(), @backingInt(arms_record)));
         return try l.derivedFunction(params, try l.loopIf(looped, stmts.items, p), p);
     }
 
@@ -6121,14 +6121,14 @@ pub const Lowerer = struct {
     fn negate(l: *Lowerer, test_expr: Node.Index, p: u32) !Node.Index {
         if (l.b.tagOf(test_expr) == .binary) {
             const d = l.b.dataOf(test_expr);
-            const flipped: ?JsIr.BinaryOp = switch (@as(JsIr.BinaryOp, @enumFromInt(d.rhs))) {
+            const flipped: ?JsIr.BinaryOp = switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
                 .strict_eq => .strict_ne,
                 .strict_ne => .strict_eq,
                 else => null,
             };
             if (flipped) |op| {
                 const pair = l.b.extra.items[d.lhs..][0..2];
-                return l.binary(op, @enumFromInt(pair[0]), @enumFromInt(pair[1]), p);
+                return l.binary(op, @fromBackingInt(@intCast(pair[0])), @fromBackingInt(@intCast(pair[1])), p);
             }
         }
         return l.unary(.not, test_expr, p);
@@ -6143,7 +6143,7 @@ pub const Lowerer = struct {
             .else_start = else_range.start,
             .else_end = else_range.end,
         });
-        try out.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @intFromEnum(record)));
+        try out.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @backingInt(record)));
     }
 
     /// `EQ(l, r)` for one BODY position (§9's parts table): a comparison of
@@ -6359,9 +6359,9 @@ pub const Lowerer = struct {
             .ext => |e| blk: {
                 if (e.module != list or e.module.int() >= l.in.interfaces.len) return null;
                 const iface = &l.in.interfaces[e.module.int()];
-                const v = @intFromEnum(e.value);
-                if (iface.findValue(l.interner.global, eq)) |i| if (@intFromEnum(i) == v) break :blk eq;
-                if (iface.findValue(l.interner.global, compare)) |i| if (@intFromEnum(i) == v) break :blk compare;
+                const v = @backingInt(e.value);
+                if (iface.findValue(l.interner.global, eq)) |i| if (@backingInt(i) == v) break :blk eq;
+                if (iface.findValue(l.interner.global, compare)) |i| if (@backingInt(i) == v) break :blk compare;
                 return null;
             },
             .top => |use| blk: {
@@ -6576,7 +6576,7 @@ pub const Lowerer = struct {
         const body = try l.binary(.strict_eq, try l.ident(x, p), try l.ident(y, p), p);
         const stmts = [_]Node.Index{try l.returnStmt(body, p)};
         const arrow = try l.arrowOf(&.{ x, y }, &stmts, p);
-        return l.add(.const_decl, p, @intFromEnum(try l.synthesisedName("eq$prim")), arrow.int());
+        return l.add(.const_decl, p, @backingInt(try l.synthesisedName("eq$prim")), arrow.int());
     }
 
     /// `const M$compare$prim = ($x, $y) => ($x < $y ? "LT" : $x > $y ? "GT" : "EQ");`
@@ -6586,7 +6586,7 @@ pub const Lowerer = struct {
         const body = try l.orderOf(try l.ident(x, p), try l.ident(y, p), p);
         const stmts = [_]Node.Index{try l.returnStmt(body, p)};
         const arrow = try l.arrowOf(&.{ x, y }, &stmts, p);
-        return l.add(.const_decl, p, @intFromEnum(try l.synthesisedName("compare$prim")), arrow.int());
+        return l.add(.const_decl, p, @backingInt(try l.synthesisedName("compare$prim")), arrow.int());
     }
 
     /// `const M$compare$char = ($x, $y) => { const $a = …; const $b = …; return … };`
@@ -6604,7 +6604,7 @@ pub const Lowerer = struct {
         const body = try l.orderOf(try l.ident(a, p), try l.ident(b, p), p);
         try stmts.append(l.scratch, try l.returnStmt(body, p));
         const arrow = try l.arrowOf(&.{ x, y }, stmts.items, p);
-        return l.add(.const_decl, p, @intFromEnum(try l.synthesisedName("compare$char")), arrow.int());
+        return l.add(.const_decl, p, @backingInt(try l.synthesisedName("compare$char")), arrow.int());
     }
 
     /// `l < r ? "LT" : l > r ? "GT" : "EQ"` — the `Order` of two values
@@ -6615,12 +6615,12 @@ pub const Lowerer = struct {
             .consequent = try l.stringNode("GT", p),
             .alternate = try l.stringNode("EQ", p),
         });
-        const inner = try l.add(.cond, p, (try l.binary(.gt, left, right, p)).int(), @intFromEnum(gt));
+        const inner = try l.add(.cond, p, (try l.binary(.gt, left, right, p)).int(), @backingInt(gt));
         const lt = try l.b.addRecord(JsIr.Cond{
             .consequent = try l.stringNode("LT", p),
             .alternate = inner,
         });
-        return l.add(.cond, p, (try l.binary(.lt, left, right, p)).int(), @intFromEnum(lt));
+        return l.add(.cond, p, (try l.binary(.lt, left, right, p)).int(), @backingInt(lt));
     }
 
     fn codePointCall(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
@@ -6925,7 +6925,7 @@ pub const Lowerer = struct {
     fn assertFlatCall(l: *Lowerer, t: Dispatch.Term) void {
         const use: Convention.Use = switch (t) {
             .top => |u| Convention.ofDecl(l.in.dispatch, l.bir, u.decl.int()),
-            .ext => |e| Convention.ofImport(l.in.interfaces, e.module, @intFromEnum(e.value)),
+            .ext => |e| Convention.ofImport(l.in.interfaces, e.module, @backingInt(e.value)),
             else => return,
         };
         std.debug.assert(Convention.call(use.convention) == .flat);
@@ -6936,7 +6936,7 @@ pub const Lowerer = struct {
     fn methodCallExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
-        const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+        const m = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
         const args: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
         l.region = inst;
         const saved_choice = l.term_choice;
@@ -6961,7 +6961,7 @@ pub const Lowerer = struct {
                 if (try l.refuseEvidence(inst, roots, 0)) {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
-                const values = try l.exprListWithHead(out, @enumFromInt(d.lhs), args);
+                const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
                 const field_fn = try l.fieldMember(values[0], l.bir.symbol(m.name), p);
                 return l.suspension(out, inst, try l.call(field_fn, values[1..], p));
             },
@@ -6978,12 +6978,12 @@ pub const Lowerer = struct {
                 // with no constructor built and no call (§4).
                 if (roots.len == 0 and Bir.SubRange.len(args) == 1) {
                     const right: Inst.Index = l.bir.extraSlice(args, Inst.Index)[0];
-                    if (try l.ctorEquality(out, callee, @enumFromInt(d.lhs), right, m.origin, p)) |tested| return tested;
+                    if (try l.ctorEquality(out, callee, @fromBackingInt(@intCast(d.lhs)), right, m.origin, p)) |tested| return tested;
                 }
                 const evidence = (try l.derivedCalleeEvidence(inst, callee, roots, p)) orelse
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.derivedName(target, p);
-                const value = try l.receiverCall(out, callee_name, evidence, @enumFromInt(d.lhs), args, p);
+                const value = try l.receiverCall(out, callee_name, evidence, @fromBackingInt(@intCast(d.lhs)), args, p);
                 // `a /= b` is `!eq(a, b)`; an ordering operator wraps the
                 // `Order` the method answers in §8.3's test.
                 return l.orderTest(value, m.origin, p);
@@ -6992,7 +6992,7 @@ pub const Lowerer = struct {
                 if (try l.refuseEvidence(inst, roots, 0)) {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
-                const values = try l.exprListWithHead(out, @enumFromInt(d.lhs), args);
+                const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
                 const receiver = values[0];
                 const rest = values[1..];
                 if (rest.len != 1) {
@@ -7009,7 +7009,7 @@ pub const Lowerer = struct {
                 const evidence = (try l.namedCalleeEvidence(inst, callee, roots, p)) orelse
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.termName(target, p);
-                const called = try l.receiverCall(out, callee_name, evidence, @enumFromInt(d.lhs), args, p);
+                const called = try l.receiverCall(out, callee_name, evidence, @fromBackingInt(@intCast(d.lhs)), args, p);
                 const value = try l.suspension(out, inst, called);
                 // An ordering operator against a non-primitive target is
                 // the `Order` test of §8.3: the method answers `Order` and
@@ -7138,7 +7138,7 @@ pub const Lowerer = struct {
     fn typeDispatchExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
-        const t = l.bir.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
+        const t = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
         const args: Bir.SubRange = .{ .start = t.args_start, .end = t.args_end };
         l.region = inst;
         const saved_choice = l.term_choice;
@@ -7271,8 +7271,8 @@ pub const Lowerer = struct {
         }
         const index = l.in.interfaces[module.int()].findValue(l.interner.global, function.symbol()) orelse
             return l.missingCoreValue(p, @tagName(owner), spelling, "that module does not expose it");
-        try l.need(module, @intFromEnum(index));
-        return l.ident(try l.externalName(module, @intFromEnum(index)), p);
+        try l.need(module, @backingInt(index));
+        return l.ident(try l.externalName(module, @backingInt(index)), p);
     }
 
     /// A use of `Debug.toString` or `Debug.log` the checker gave a type
@@ -7290,14 +7290,14 @@ pub const Lowerer = struct {
             .toString => .{ "toStringAs", 1 },
             .log => .{ "logAs", 2 },
         };
-        const module: Graph.Index = @enumFromInt(l.bir.instData(inst).lhs);
+        const module: Graph.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
         if (module.int() >= l.in.interfaces.len) return null;
         const symbol = l.interner.global.find(spelling) orelse
             return .{ .callee = try l.missingCoreValue(p, "Debug", spelling, "that module does not expose it"), .descriptor = try l.nullNode(p), .arity = arity };
         const index = l.in.interfaces[module.int()].findValue(l.interner.global, symbol) orelse
             return .{ .callee = try l.missingCoreValue(p, "Debug", spelling, "that module does not expose it"), .descriptor = try l.nullNode(p), .arity = arity };
-        try l.need(module, @intFromEnum(index));
-        const callee = try l.ident(try l.externalName(module, @intFromEnum(index)), p);
+        try l.need(module, @backingInt(index));
+        const callee = try l.ident(try l.externalName(module, @backingInt(index)), p);
         const descriptor = try DebugShape.text(l.scratch, cx, l.in.dispatch.debugShape(site));
         return .{ .callee = callee, .descriptor = try l.stringNode(descriptor, p), .arity = arity };
     }
@@ -7336,14 +7336,14 @@ pub const Lowerer = struct {
         const roots = l.rootsOf(inst);
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
-        const callee_inst: Inst.Index = @enumFromInt(d.lhs);
+        const callee_inst: Inst.Index = @fromBackingInt(@intCast(d.lhs));
         // The list has to be as wide as the CALLEE's own evidence, which is
         // the callee's record and not this call's; the two disagreeing is
         // the miscompile §7.2 says the table exists to catch.
         if (try l.refuseEvidence(inst, roots, l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, callee_inst))) {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
-        const arg_insts = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
 
         // A re-cons of a list a loop holds as an offset (§7's re-consing
         // rule, §8's *Scalar views*): the offset it was matched at, or the
@@ -7381,7 +7381,7 @@ pub const Lowerer = struct {
         // reference with nothing to evaluate, so dropping it changes no
         // order.
         if (arg_insts.len == 2 and roots.len == 0 and l.in.dispatch.isListAppend(inst)) {
-            const values = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+            const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             return l.suspension(out, inst, try l.call(try l.coreValue(.List, .append, p), values, p));
         }
         // Under `--release`, a `++` one of whose operands is a string —
@@ -7445,7 +7445,7 @@ pub const Lowerer = struct {
                 .record => |r| isPermuted(try l.fieldOrder(try l.recordNames(r))),
                 else => false,
             };
-            const args = try l.orderedExprs(out, l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), reordered);
+            const args = try l.orderedExprs(out, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), reordered);
             return l.ctorValue(rep, tag, args, p);
         }
 
@@ -7461,7 +7461,7 @@ pub const Lowerer = struct {
         // reads the argument's type*). The reference itself has nothing to
         // evaluate, so dropping it changes no order.
         if (roots.len == 0) if (try l.debugTyped(callee_inst, p)) |typed| if (typed.arity == arg_insts.len) {
-            const values = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+            const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const args = try l.scratch.alloc(Node.Index, values.len + 1);
             args[0] = typed.descriptor;
             @memcpy(args[1..], values);
@@ -7476,7 +7476,7 @@ pub const Lowerer = struct {
         // The evidence arguments (§8.2) go in front of the written ones.
         // They are names and closures with no statements of their own, so
         // building them after the sequence changes no evaluation order.
-        const values = try l.exprListWithHead(out, callee_inst, l.bir.subRange(@enumFromInt(d.rhs)));
+        const values = try l.exprListWithHead(out, callee_inst, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
         const callee = values[0];
         // A trailing `()` the callee does not take is not passed (§6, *A
         // parameter of type `()`*): `f ()` is `f()`.
@@ -7523,7 +7523,7 @@ pub const Lowerer = struct {
     fn eachLoop(l: *Lowerer, out: *StmtList, xs: Inst.Index, f: Inst.Index, p: u32) !Node.Index {
         if (l.bir.instTag(f) == .lambda and !l.functionSuspends(f)) {
             const ld = l.bir.instData(f);
-            const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
+            const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(ld.lhs))), Inst.Index);
             if (params.len == 1) {
                 const iterable = try l.expr(out, xs);
                 var body: StmtList = .empty;
@@ -7537,7 +7537,7 @@ pub const Lowerer = struct {
                         break :blk bound;
                     },
                 };
-                try l.discard(&body, @enumFromInt(ld.rhs), p);
+                try l.discard(&body, @fromBackingInt(@intCast(ld.rhs)), p);
                 return l.forOf(out, n, iterable, body.items, p);
             }
         }
@@ -7557,8 +7557,8 @@ pub const Lowerer = struct {
     fn finallyArgs(l: *Lowerer, inst: Inst.Index) ?[2]Inst.Index {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
-        if ((l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse return null) != .finally) return null;
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if ((l.jsIntrinsicOf(@fromBackingInt(@intCast(d.lhs))) orelse return null) != .finally) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         if (args.len != 2) return null;
         return .{ args[0], args[1] };
     }
@@ -7570,13 +7570,13 @@ pub const Lowerer = struct {
     fn thunkBody(l: *Lowerer, f: Inst.Index) ?Inst.Index {
         if (l.bir.instTag(f) != .lambda or l.functionSuspends(f)) return null;
         const d = l.bir.instData(f);
-        const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index);
+        const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index);
         if (params.len != 1) return null;
         switch (l.bir.instTag(params[0])) {
             .pat_unit, .pat_wild => {},
             else => return null,
         }
-        return @enumFromInt(d.rhs);
+        return @fromBackingInt(@intCast(d.rhs));
     }
 
     /// `Js.finally body cleanup` (`backend.md` §4, *`Js.finally` is `try …
@@ -7619,7 +7619,7 @@ pub const Lowerer = struct {
         switch (use) {
             .value => {
                 result = try l.fresh(l.well.temp);
-                try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(result), @intFromEnum(Node.OptionalIndex.none)));
+                try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(result), @backingInt(Node.OptionalIndex.none)));
                 const value = if (body) |b| try l.expr(&guarded, b) else try l.call(body_value.?, &.{}, p);
                 // A body that ends in `Js.throw` has no value to assign.
                 const ended = guarded.items.len != 0 and l.b.nodes.items(.tag)[guarded.items[guarded.items.len - 1].int()] == .throw_stmt and
@@ -7652,7 +7652,7 @@ pub const Lowerer = struct {
             .catch_end = none_range.end,
             .catch_name = .none,
         });
-        try out.append(l.scratch, try l.add(.try_stmt, p, Node.Data.unused, @intFromEnum(record)));
+        try out.append(l.scratch, try l.add(.try_stmt, p, Node.Data.unused, @backingInt(record)));
         return switch (use) {
             .value => try l.ident(result, p),
             .discard, .tail => null,
@@ -7671,7 +7671,7 @@ pub const Lowerer = struct {
     /// the name written from its literal.
     fn typeIsTest(l: *Lowerer, out: *StmtList, args: []const Inst.Index, p: u32) !Node.Index {
         if (args.len != 2 or l.bir.instTag(args[1]) != .string) {
-            try l.report(.internal, if (args.len != 0) args[0] else @enumFromInt(0), "`Js.typeIs` takes the type's name as a string literal.", .{});
+            try l.report(.internal, if (args.len != 0) args[0] else @fromBackingInt(@intCast(0)), "`Js.typeIs` takes the type's name as a string literal.", .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const value = try l.expr(out, args[0]);
@@ -7717,28 +7717,28 @@ pub const Lowerer = struct {
         // The `Func` record's four indexes, in field order.
         const at = l.b.dataOf(arrow).lhs;
         const f: JsIr.Func = .{
-            .params_start = @enumFromInt(l.b.extra.items[at]),
-            .params_end = @enumFromInt(l.b.extra.items[at + 1]),
-            .body_start = @enumFromInt(l.b.extra.items[at + 2]),
-            .body_end = @enumFromInt(l.b.extra.items[at + 3]),
+            .params_start = @fromBackingInt(@intCast(l.b.extra.items[at])),
+            .params_end = @fromBackingInt(@intCast(l.b.extra.items[at + 1])),
+            .body_start = @fromBackingInt(@intCast(l.b.extra.items[at + 2])),
+            .body_end = @fromBackingInt(@intCast(l.b.extra.items[at + 3])),
         };
-        const params = l.b.extra.items[@intFromEnum(f.params_start)..@intFromEnum(f.params_end)];
+        const params = l.b.extra.items[@backingInt(f.params_start)..@backingInt(f.params_end)];
         if (params.len != 1) {
             try l.report(.internal, lambda, refused, .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         var stmts: StmtList = .empty;
-        try l.constDecl(&stmts, @enumFromInt(params[0]), try l.add(.this_lit, p, Node.Data.unused, Node.Data.unused), p);
-        for (l.b.extra.items[@intFromEnum(f.body_start)..@intFromEnum(f.body_end)]) |s| try stmts.append(l.scratch, @enumFromInt(s));
+        try l.constDecl(&stmts, @fromBackingInt(@intCast(params[0])), try l.add(.this_lit, p, Node.Data.unused, Node.Data.unused), p);
+        for (l.b.extra.items[@backingInt(f.body_start)..@backingInt(f.body_end)]) |s| try stmts.append(l.scratch, @fromBackingInt(@intCast(s)));
         const body = try l.b.addRange(stmts.items);
         const none = try l.b.addNames(&.{});
         const record = try l.b.addRecord(JsIr.Func{ .params_start = none.start, .params_end = none.end, .body_start = body.start, .body_end = body.end });
-        return l.add(.arrow, p, @intFromEnum(record), Node.arrow_method);
+        return l.add(.arrow, p, @backingInt(record), Node.arrow_method);
     }
 
     fn regExpLiteral(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
         if (args.len != 2 or l.bir.instTag(args[0]) != .string or l.bir.instTag(args[1]) != .string) {
-            try l.report(.internal, if (args.len != 0) args[0] else @enumFromInt(0), "`Js.regExp` takes its pattern and its flags as string literals.", .{});
+            try l.report(.internal, if (args.len != 0) args[0] else @fromBackingInt(@intCast(0)), "`Js.regExp` takes its pattern and its flags as string literals.", .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const pattern = l.bir.bytes(args[0]);
@@ -7810,8 +7810,8 @@ pub const Lowerer = struct {
     fn inPlaceBody(l: *Lowerer, inst: Inst.Index, which: JsIntrinsic.Which) ?Inst.Index {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
-        if ((l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse return null) != which) return null;
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if ((l.jsIntrinsicOf(@fromBackingInt(@intCast(d.lhs))) orelse return null) != which) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         if (args.len != 1) return null;
         return l.thunkBody(args[0]);
     }
@@ -7820,8 +7820,8 @@ pub const Lowerer = struct {
     fn catchArgs(l: *Lowerer, inst: Inst.Index) ?[3]Inst.Index {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
-        if ((l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse return null) != .catchIf) return null;
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if ((l.jsIntrinsicOf(@fromBackingInt(@intCast(d.lhs))) orelse return null) != .catchIf) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         if (args.len != 3) return null;
         return .{ args[0], args[1], args[2] };
     }
@@ -7832,7 +7832,7 @@ pub const Lowerer = struct {
     fn caughtLambda(l: *Lowerer, f: Inst.Index) ?Inst.Index {
         if (l.bir.instTag(f) != .lambda or l.functionSuspends(f)) return null;
         const d = l.bir.instData(f);
-        if (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index).len != 1) return null;
+        if (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index).len != 1) return null;
         return f;
     }
 
@@ -7882,7 +7882,7 @@ pub const Lowerer = struct {
         var caught: JsIr.NameIndex = .none;
         for ([_]?Inst.Index{ test_l, handler_l }) |maybe| {
             const f = maybe orelse continue;
-            const param = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(f).lhs)), Inst.Index)[0];
+            const param = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(f).lhs))), Inst.Index)[0];
             if (l.bir.instTag(param) != .pat_var) continue;
             const local = l.bir.instData(param).lhs;
             if (caught == .none) {
@@ -7897,7 +7897,7 @@ pub const Lowerer = struct {
         var result: JsIr.NameIndex = .none;
         if (use == .value) {
             result = try l.fresh(l.well.temp);
-            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(result), @intFromEnum(Node.OptionalIndex.none)));
+            try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(result), @backingInt(Node.OptionalIndex.none)));
         }
         try l.catchArm(&guarded, if (body) |b| b else null, body_value, &.{}, use, result, p);
 
@@ -7905,7 +7905,7 @@ pub const Lowerer = struct {
         // A parameter that is a pattern binds from the caught value.
         for ([_]?Inst.Index{ test_l, handler_l }) |maybe| {
             const f = maybe orelse continue;
-            const param = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(f).lhs)), Inst.Index)[0];
+            const param = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(f).lhs))), Inst.Index)[0];
             switch (l.bir.instTag(param)) {
                 .pat_var => {
                     const named = try l.localName(l.bir.instData(param).lhs);
@@ -7915,11 +7915,11 @@ pub const Lowerer = struct {
                 else => try l.bindings(&handler, param, try l.ident(caught, p)),
             }
         }
-        const holds = if (test_l) |f| try l.expr(&handler, @enumFromInt(l.bir.instData(f).rhs)) else try l.call(test_value.?, &.{try l.ident(caught, p)}, p);
+        const holds = if (test_l) |f| try l.expr(&handler, @fromBackingInt(@intCast(l.bir.instData(f).rhs))) else try l.call(test_value.?, &.{try l.ident(caught, p)}, p);
         const rethrow = try l.add(.throw_stmt, p, (try l.ident(caught, p)).int(), Node.Data.unused);
         try l.ifStatement(&handler, try l.negate(holds, p), &.{rethrow}, p);
         const caught_arg = [_]Node.Index{try l.ident(caught, p)};
-        try l.catchArm(&handler, if (handler_l) |f| @as(Inst.Index, @enumFromInt(l.bir.instData(f).rhs)) else null, handler_value, &caught_arg, use, result, p);
+        try l.catchArm(&handler, if (handler_l) |f| @as(Inst.Index, @fromBackingInt(@intCast(l.bir.instData(f).rhs))) else null, handler_value, &caught_arg, use, result, p);
 
         const body_range = try l.b.addRange(guarded.items);
         const final_range = try l.b.addRange(&[_]Node.Index{});
@@ -7933,7 +7933,7 @@ pub const Lowerer = struct {
             .catch_end = catch_range.end,
             .catch_name = caught,
         });
-        try out.append(l.scratch, try l.add(.try_stmt, p, Node.Data.unused, @intFromEnum(record)));
+        try out.append(l.scratch, try l.add(.try_stmt, p, Node.Data.unused, @backingInt(record)));
         return switch (use) {
             .value => try l.ident(result, p),
             .discard, .tail => null,
@@ -7967,7 +7967,7 @@ pub const Lowerer = struct {
     fn forOf(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, iterable: Node.Index, body: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(body);
         const record = try l.b.addRecord(JsIr.ForOf{ .iterable = iterable, .body_start = range.start, .body_end = range.end });
-        try out.append(l.scratch, try l.add(.for_of, p, @intFromEnum(n), @intFromEnum(record)));
+        try out.append(l.scratch, try l.add(.for_of, p, @backingInt(n), @backingInt(record)));
         return l.nullNode(p);
     }
 
@@ -7980,7 +7980,7 @@ pub const Lowerer = struct {
         if ((which == .read or which == .write) and args.len != 0 and l.unboxedRef(args[0])) {
             const target = try l.expr(out, args[0]);
             if (l.b.tagOf(target) == .ident) {
-                try l.markMutable(@enumFromInt(l.b.dataOf(target).lhs));
+                try l.markMutable(@fromBackingInt(@intCast(l.b.dataOf(target).lhs)));
                 if (which == .read) return target;
                 const value = try l.expr(out, args[1]);
                 try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
@@ -8085,7 +8085,7 @@ pub const Lowerer = struct {
             W.construct => blk: {
                 const range = try l.b.addRange(rest);
                 const record = try l.b.addRecord(range);
-                break :blk l.add(.new_call, p, v[0].int(), @intFromEnum(record));
+                break :blk l.add(.new_call, p, v[0].int(), @backingInt(record));
             },
             W.at => l.add(.index_get, p, v[0].int(), v[1].int()),
             W.setAt => blk: {
@@ -8112,7 +8112,7 @@ pub const Lowerer = struct {
             },
             W.array => blk: {
                 const range = try l.b.addRange(rest);
-                break :blk l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+                break :blk l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
             },
         };
     }
@@ -8127,9 +8127,9 @@ pub const Lowerer = struct {
             .string, .interp => true,
             .call => blk: {
                 const d = l.bir.instData(inst);
-                const callee: Inst.Index = @enumFromInt(d.lhs);
+                const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
                 if (!Operator.isBasicsAppend(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee, l.interner)) break :blk false;
-                const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
                 if (args.len != 2) break :blk false;
                 break :blk l.stringy(args[0], depth + 1) or l.stringy(args[1], depth + 1);
             },
@@ -8148,8 +8148,8 @@ pub const Lowerer = struct {
     /// the tail-call loop (§8) nor the inliner may take it for a call.
     fn callsOperator(l: *Lowerer, site: Inst.Index) bool {
         const d = l.bir.instData(site);
-        const which = l.operatorOf(@enumFromInt(d.lhs)) orelse return false;
-        return which.arity() == l.bir.subRange(@enumFromInt(d.rhs)).len() and l.rootsOf(site).len == 0;
+        const which = l.operatorOf(@fromBackingInt(@intCast(d.lhs))) orelse return false;
+        return which.arity() == l.bir.subRange(@fromBackingInt(@intCast(d.rhs))).len() and l.rootsOf(site).len == 0;
     }
 
     /// A saturated call of an `Operator` as the JavaScript it computes. The
@@ -8229,13 +8229,13 @@ pub const Lowerer = struct {
                 break :blk l.bir.symbol(l.bir.decls[d.lhs].name);
             },
             .ext_value => blk: {
-                const module: Graph.Index = @enumFromInt(d.lhs);
+                const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
                 if (module.int() >= l.in.interfaces.len) return null;
                 if (l.in.graph.modulePackage(module) != .core) return null;
                 if (l.in.graph.moduleName(module) != InternPool.WellKnown.Basics.symbol()) return null;
                 const iface = &l.in.interfaces[module.int()];
                 if (d.rhs >= iface.values.len) return null;
-                break :blk iface.symbols[@intFromEnum(iface.values[d.rhs].name)];
+                break :blk iface.symbols[@backingInt(iface.values[d.rhs].name)];
             },
             else => return null,
         };
@@ -8313,7 +8313,7 @@ pub const Lowerer = struct {
                 try l.guardedAssign(out, op, n, pending.?, acc, pending_p);
             } else {
                 const n = try l.fresh(l.well.temp);
-                try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), @intFromEnum(acc.toOptional())));
+                try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(n), @backingInt(acc.toOptional())));
                 result = n;
             }
             pending = right_stmts.items;
@@ -8340,9 +8340,9 @@ pub const Lowerer = struct {
     fn sameLogical(l: *Lowerer, inst: Inst.Index, op: JsIr.BinaryOp) ?[2]Inst.Index {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         if (args.len != 2) return null;
-        if (l.logicalOp(@enumFromInt(d.lhs)) != op) return null;
+        if (l.logicalOp(@fromBackingInt(@intCast(d.lhs))) != op) return null;
         if (l.rootsOf(inst).len != 0) return null;
         return .{ args[0], args[1] };
     }
@@ -8361,7 +8361,7 @@ pub const Lowerer = struct {
             const p = l.pos(def);
             switch (l.bir.instTag(def)) {
                 .let_def => {
-                    const payload = l.bir.extraData(@enumFromInt(d.lhs), Bir.LetDef);
+                    const payload = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
                     const params = l.bir.extraSlice(
                         .{ .start = payload.params_start, .end = payload.params_end },
                         Inst.Index,
@@ -8376,23 +8376,23 @@ pub const Lowerer = struct {
                     if (params.len == 0) {
                         // §8 again: `go = \i acc -> …` inherits the binding's
                         // name exactly as `go i acc = …` does.
-                        const value_inst: Inst.Index = @enumFromInt(d.rhs);
+                        const value_inst: Inst.Index = @fromBackingInt(@intCast(d.rhs));
                         if (l.bir.instTag(value_inst) == .lambda) {
                             const ld = l.bir.instData(value_inst);
                             const lambda_p = l.pos(value_inst);
-                            const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
+                            const lambda_params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(ld.lhs))), Inst.Index);
                             const lambda_record = try l.functionOrLoop(
                                 n,
                                 self,
                                 evidence,
                                 ev_let,
                                 lambda_params,
-                                @enumFromInt(ld.rhs),
+                                @fromBackingInt(@intCast(ld.rhs)),
                                 lambda_p,
                                 l.functionSuspends(value_inst),
                             );
-                            const lambda = try l.add(.arrow, lambda_p, @intFromEnum(lambda_record), Node.Data.unused);
-                            if (l.in.unit_results and !l.functionSuspends(value_inst) and l.unitValued(@enumFromInt(ld.rhs))) try l.unobserved_arrows.append(l.scratch, lambda);
+                            const lambda = try l.add(.arrow, lambda_p, @backingInt(lambda_record), Node.Data.unused);
+                            if (l.in.unit_results and !l.functionSuspends(value_inst) and l.unitValued(@fromBackingInt(@intCast(ld.rhs)))) try l.unobserved_arrows.append(l.scratch, lambda);
                             try l.constDecl(out, n, lambda, p);
                             continue;
                         }
@@ -8401,9 +8401,9 @@ pub const Lowerer = struct {
                         const local = if (l.decl_index) |index| l.bir.decls[index].locals_start + payload.local else std.math.maxInt(u32);
                         if (local < l.unboxed_locals.len and l.unboxed_locals[local]) {
                             try l.markMutable(n);
-                            const init_inst = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(value_inst).rhs)), Inst.Index)[0];
+                            const init_inst = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(value_inst).rhs))), Inst.Index)[0];
                             const init = try l.expr(out, init_inst);
-                            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), @intFromEnum(init.toOptional())));
+                            try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(n), @backingInt(init.toOptional())));
                             if (l.mayHaveEffect(init_inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
                             continue;
                         }
@@ -8437,7 +8437,7 @@ pub const Lowerer = struct {
                         if (l.in.unit_results and !l.suspendable and l.b.tagOf(value) == .ident and
                             !l.isMutable(value) and !named_before and payload.local < l.local_names.len)
                         {
-                            l.local_names[payload.local] = @enumFromInt(l.b.dataOf(value).lhs);
+                            l.local_names[payload.local] = @fromBackingInt(@intCast(l.b.dataOf(value).lhs));
                             continue;
                         }
                         try l.constDecl(out, n, value, p);
@@ -8450,43 +8450,43 @@ pub const Lowerer = struct {
                     // `function` (§8's cases table), so the loop is
                     // contained; excluding it would leave the language's
                     // most natural loop idiom overflowing.
-                    const record = try l.functionOrLoop(n, self, evidence, ev_let, params, @enumFromInt(d.rhs), p, l.functionSuspends(def));
-                    const func = try l.add(.func_decl, p, @intFromEnum(n), @intFromEnum(record));
+                    const record = try l.functionOrLoop(n, self, evidence, ev_let, params, @fromBackingInt(@intCast(d.rhs)), p, l.functionSuspends(def));
+                    const func = try l.add(.func_decl, p, @backingInt(n), @backingInt(record));
                     // A `function` whose result is `()` is listed like an
                     // arrow: the printer reads the list for both.
-                    if (l.in.unit_results and !l.functionSuspends(def) and l.unitValued(@enumFromInt(d.rhs))) try l.unobserved_arrows.append(l.scratch, func);
+                    if (l.in.unit_results and !l.functionSuspends(def) and l.unitValued(@fromBackingInt(@intCast(d.rhs)))) try l.unobserved_arrows.append(l.scratch, func);
                     try out.append(l.scratch, func);
                 },
                 // A block's statement is emitted as `let _ = e` is (§4, *A
                 // discarded value is a statement*).
-                .let_stmt => try l.discard(out, @enumFromInt(d.rhs), p),
+                .let_stmt => try l.discard(out, @fromBackingInt(@intCast(d.rhs)), p),
                 .let_pattern => {
                     // `let _ = e` is `e` as a statement (§4, *A discarded
                     // value is a statement*).
-                    if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_wild) {
-                        try l.discard(out, @enumFromInt(d.rhs), p);
+                    if (l.bir.instTag(@fromBackingInt(@intCast(d.lhs))) == .pat_wild) {
+                        try l.discard(out, @fromBackingInt(@intCast(d.rhs)), p);
                         continue;
                     }
                     // `( a, b ) = <a loop called once>`: the loop, whose
                     // exits write each element into its name (§9).
-                    if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_tuple) {
+                    if (l.bir.instTag(@fromBackingInt(@intCast(d.lhs))) == .pat_tuple) {
                         // Which names are new, asked before they are made.
-                        const locals = try l.tupleLocals(@enumFromInt(d.lhs));
-                        if (try l.tupleNames(@enumFromInt(d.lhs))) |names| {
-                            if (try l.boundLoop(out, @enumFromInt(d.rhs), .{ .tuple = names }, locals)) continue;
+                        const locals = try l.tupleLocals(@fromBackingInt(@intCast(d.lhs)));
+                        if (try l.tupleNames(@fromBackingInt(@intCast(d.lhs)))) |names| {
+                            if (try l.boundLoop(out, @fromBackingInt(@intCast(d.rhs)), .{ .tuple = names }, locals)) continue;
                         }
                     }
-                    const value = try l.expr(out, @enumFromInt(d.rhs));
+                    const value = try l.expr(out, @fromBackingInt(@intCast(d.rhs)));
                     const before = out.items.len;
                     const subject = try l.bindSubject(out, value, p);
                     // `let _ = <an impure call>` is written for its effect, and a
                     // pattern whose names nothing reads evaluates its right-hand
                     // side all the same: the release optimiser keeps the subject
                     // (transparent-effects-proposal.md §16.5).
-                    if (out.items.len == before + 1 and l.mayHaveEffect(@enumFromInt(d.rhs))) {
+                    if (out.items.len == before + 1 and l.mayHaveEffect(@fromBackingInt(@intCast(d.rhs)))) {
                         try l.effect_keep.append(l.scratch, out.items[before]);
                     }
-                    try l.bindings(out, @enumFromInt(d.lhs), subject);
+                    try l.bindings(out, @fromBackingInt(@intCast(d.lhs)), subject);
                 },
                 else => {},
             }
@@ -8522,9 +8522,9 @@ pub const Lowerer = struct {
             if (tag == .top) {
                 if (d.lhs < decls.len) all[d.lhs] += 1;
             } else if (tag == .let_pattern) {
-                if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_wild) try stack.append(l.scratch, @enumFromInt(d.rhs));
+                if (l.bir.instTag(@fromBackingInt(@intCast(d.lhs))) == .pat_wild) try stack.append(l.scratch, @fromBackingInt(@intCast(d.rhs)));
             } else if (tag == .let_stmt) {
-                try stack.append(l.scratch, @enumFromInt(d.rhs));
+                try stack.append(l.scratch, @fromBackingInt(@intCast(d.rhs)));
             }
         }
         while (stack.pop()) |inst| {
@@ -8542,7 +8542,7 @@ pub const Lowerer = struct {
             const body = d.body.unwrap() orelse continue;
             const start: Inst.Index = switch (Convention.definitionOf(l.in.dispatch, l.bir, @intCast(i))) {
                 .params => body,
-                .lambda => @enumFromInt(l.bir.instData(body).rhs),
+                .lambda => @fromBackingInt(@intCast(l.bir.instData(body).rhs)),
                 else => continue,
             };
             try stack.append(l.scratch, start);
@@ -8557,8 +8557,8 @@ pub const Lowerer = struct {
         const dispatched = try l.scratch.alloc(bool, decls.len);
         @memset(dispatched, false);
         for (l.in.dispatch.terms) |t| switch (t) {
-            .top => |u| if (@intFromEnum(u.decl) < decls.len) {
-                dispatched[@intFromEnum(u.decl)] = true;
+            .top => |u| if (@backingInt(u.decl) < decls.len) {
+                dispatched[@backingInt(u.decl)] = true;
             },
             else => {},
         };
@@ -8636,8 +8636,8 @@ pub const Lowerer = struct {
         @memset(cell, false);
         for (tags, data) |tag, d| {
             if (tag != .call) continue;
-            const which = l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse continue;
-            const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+            const which = l.jsIntrinsicOf(@fromBackingInt(@intCast(d.lhs))) orelse continue;
+            const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
             switch (which) {
                 .read, .write => if (args.len != 0 and args[0].int() < cell.len) {
                     cell[args[0].int()] = true;
@@ -8650,8 +8650,8 @@ pub const Lowerer = struct {
         const named = try l.scratch.alloc(bool, decls.len);
         @memset(named, false);
         for (l.in.dispatch.terms) |t| switch (t) {
-            .top => |u| if (@intFromEnum(u.decl) < decls.len) {
-                named[@intFromEnum(u.decl)] = true;
+            .top => |u| if (@backingInt(u.decl) < decls.len) {
+                named[@backingInt(u.decl)] = true;
             },
             else => {},
         };
@@ -8671,9 +8671,9 @@ pub const Lowerer = struct {
             var at = d.inst_start.int();
             while (at < d.inst_end.int()) : (at += 1) {
                 if (tags[at] != .let_def) continue;
-                const payload = l.bir.extraData(@enumFromInt(data[at].lhs), Bir.LetDef);
+                const payload = l.bir.extraData(@fromBackingInt(@intCast(data[at].lhs)), Bir.LetDef);
                 if (payload.params_start != payload.params_end) continue;
-                if (!l.isRefCall(@enumFromInt(data[at].rhs))) continue;
+                if (!l.isRefCall(@fromBackingInt(@intCast(data[at].rhs)))) continue;
                 const local = d.locals_start + payload.local;
                 if (local < l.unboxed_locals.len) l.unboxed_locals[local] = true;
             }
@@ -8716,13 +8716,13 @@ pub const Lowerer = struct {
         const call_of = try l.scratch.alloc(Inst.OptionalIndex, tags.len);
         @memset(call_of, .none);
         for (tags, data, 0..) |tag, d, i| {
-            if (tag == .call and d.lhs < call_of.len) call_of[d.lhs] = @as(Inst.Index, @enumFromInt(i)).toOptional();
+            if (tag == .call and d.lhs < call_of.len) call_of[d.lhs] = @as(Inst.Index, @fromBackingInt(@intCast(i))).toOptional();
         }
         const named = try l.scratch.alloc(bool, decls.len);
         @memset(named, false);
         for (l.in.dispatch.terms) |t| switch (t) {
-            .top => |u| if (@intFromEnum(u.decl) < decls.len) {
-                named[@intFromEnum(u.decl)] = true;
+            .top => |u| if (@backingInt(u.decl) < decls.len) {
+                named[@backingInt(u.decl)] = true;
             },
             else => {},
         };
@@ -8778,7 +8778,7 @@ pub const Lowerer = struct {
                 pub_caller[callee] = caller.is_pub;
                 const site = call_of[at].unwrap() orelse continue;
                 if (caller_twin) continue;
-                const args = l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)).len();
+                const args = l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(site).rhs))).len();
                 if (args != l.paramsOf(callee).len) continue;
                 if (l.rootsOf(site).len != 0) continue;
                 if (l.in.dispatch.effectAt(site).own != .no) continue;
@@ -8805,7 +8805,7 @@ pub const Lowerer = struct {
             // Markup would be lowered twice (`declarations`), its templates
             // hoisted twice.
             const returns = for (tags[d.inst_start.int()..d.inst_end.int()], data[d.inst_start.int()..d.inst_end.int()]) |tag, x| {
-                if (tag == .@"try" and @as(Inst.OptionalIndex, @enumFromInt(x.rhs)) == .none) break true;
+                if (tag == .@"try" and @as(Inst.OptionalIndex, @fromBackingInt(@intCast(x.rhs))) == .none) break true;
                 if (tag == .markup) break true;
             } else false;
             if (returns) continue;
@@ -8830,17 +8830,17 @@ pub const Lowerer = struct {
     fn tailSelfCalls(l: *Lowerer, index: u32, inst: Inst.Index) u32 {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
-            .let => return l.tailSelfCalls(index, @enumFromInt(d.rhs)),
+            .let => return l.tailSelfCalls(index, @fromBackingInt(@intCast(d.rhs))),
             .case => {
                 var n: u32 = 0;
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
                     if (l.bir.instTag(branch) != .branch) continue;
-                    n += l.tailSelfCalls(index, @enumFromInt(l.bir.instData(branch).rhs));
+                    n += l.tailSelfCalls(index, @fromBackingInt(@intCast(l.bir.instData(branch).rhs)));
                 }
                 return n;
             },
             .call => {
-                const callee: Inst.Index = @enumFromInt(d.lhs);
+                const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
                 return @intFromBool(l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == index and !l.callsOperator(inst));
             },
             else => return 0,
@@ -8853,7 +8853,7 @@ pub const Lowerer = struct {
         const d = l.bir.decls[index];
         return switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
             .params => l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index),
-            .lambda => l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(d.body.unwrap().?).lhs)), Inst.Index),
+            .lambda => l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(d.body.unwrap().?).lhs))), Inst.Index),
             else => &.{},
         };
     }
@@ -8862,7 +8862,7 @@ pub const Lowerer = struct {
     /// of a local or a declaration, or a literal — nothing a body written
     /// in place would have to bind first.
     fn atomArguments(l: *Lowerer, site: Inst.Index) bool {
-        for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index)) |arg| {
+        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(site).rhs))), Inst.Index)) |arg| {
             switch (l.bir.instTag(arg)) {
                 .local, .int, .float, .string, .char, .unit => {},
                 else => return false,
@@ -8885,7 +8885,7 @@ pub const Lowerer = struct {
         const d = l.bir.decls[index];
         const body = d.body.unwrap().?;
         return switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
-            .lambda => @enumFromInt(l.bir.instData(body).rhs),
+            .lambda => @fromBackingInt(@intCast(l.bir.instData(body).rhs)),
             else => body,
         };
     }
@@ -8894,7 +8894,7 @@ pub const Lowerer = struct {
     /// here: a candidate (`findInlines`) not already being written.
     fn inlineTarget(l: *Lowerer, site: Inst.Index) ?u32 {
         if (l.inline_candidate.len == 0) return null;
-        const callee: Inst.Index = @enumFromInt(l.bir.instData(site).lhs);
+        const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(site).lhs));
         if (l.bir.instTag(callee) != .top or l.callsOperator(site)) return null;
         const index = l.bir.instData(callee).lhs;
         if (index >= l.inline_candidate.len or !l.inline_candidate[index]) return null;
@@ -8915,7 +8915,7 @@ pub const Lowerer = struct {
     /// declaration `index`'s parameters, and enter its body's context: its
     /// locals, named past every local named so far in this function.
     fn enterInline(l: *Lowerer, out: *StmtList, site: Inst.Index, index: u32) !InlineSaved {
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index);
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(site).rhs))), Inst.Index);
         // Each argument lowered and bound before the next is lowered: the
         // order the call evaluated them in, with nothing left to pin.
         const values = try l.scratch.alloc(Node.Index, args.len);
@@ -8954,7 +8954,7 @@ pub const Lowerer = struct {
                     const local = l.bir.instData(param).lhs;
                     const tags = l.b.nodes.items(.tag);
                     if (tags[value.int()] == .ident and local < l.local_names.len) {
-                        l.local_names[local] = @enumFromInt(l.b.dataOf(value).lhs);
+                        l.local_names[local] = @fromBackingInt(@intCast(l.b.dataOf(value).lhs));
                     } else try l.constDecl(out, try l.localName(local), value, p);
                 },
                 .pat_wild, .pat_unit => {},
@@ -9007,7 +9007,7 @@ pub const Lowerer = struct {
         // Where the value is bound or discarded, the call is no shorter
         // than the copies: the loop is taken in whatever its arguments are.
         if (exit != .@"return") return loop;
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index);
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(site).rhs))), Inst.Index);
         for (slots, args) |slot, arg| {
             if (!slot.carried or slot.unwritten) continue;
             switch (l.bir.instTag(arg)) {
@@ -9086,16 +9086,16 @@ pub const Lowerer = struct {
     fn tuplesAtExits(l: *Lowerer, inst: Inst.Index, index: u32, arity: usize) bool {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
-            .let => return l.tuplesAtExits(@enumFromInt(d.rhs), index, arity),
+            .let => return l.tuplesAtExits(@fromBackingInt(@intCast(d.rhs)), index, arity),
             .case => {
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
                     if (l.bir.instTag(branch) != .branch) continue;
-                    if (!l.tuplesAtExits(@enumFromInt(l.bir.instData(branch).rhs), index, arity)) return false;
+                    if (!l.tuplesAtExits(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), index, arity)) return false;
                 }
                 return true;
             },
             .call => {
-                const callee: Inst.Index = @enumFromInt(d.lhs);
+                const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
                 return l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == index and !l.callsOperator(inst);
             },
             .tuple => return Bir.inlineRange(d).len() == arity,
@@ -9108,7 +9108,7 @@ pub const Lowerer = struct {
         const slots = loop.slots;
         const params = l.paramsOf(index);
         const body = l.bodyOf(index);
-        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index);
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(site).rhs))), Inst.Index);
         loop.ready = l.mayGoInPlace(params, body);
         loop.label = try l.topName(index);
         // As `enterInline`: each argument lowered, and bound when it is not
@@ -9150,7 +9150,7 @@ pub const Lowerer = struct {
         for (slots, values, bound, aliased) |slot, value, stmt, *alias| {
             alias.* = stmt == null and !slot.carried and !slot.unwritten and slot.local != Loop.no_local and slot.local < l.local_names.len and
                 l.b.tagOf(value) == .ident and !l.isMutable(value);
-            if (alias.*) l.local_names[slot.local] = @enumFromInt(l.b.dataOf(value).lhs);
+            if (alias.*) l.local_names[slot.local] = @fromBackingInt(@intCast(l.b.dataOf(value).lhs));
         }
         const built = try l.loopOf(&loop, body, p);
         var k: usize = 0;
@@ -9161,7 +9161,7 @@ pub const Lowerer = struct {
             // The argument's own binding becomes the slot's: a `const`, or
             // the `let` a jump reassigns.
             if (stmt) |node| {
-                l.b.nodes.items(.data)[node.int()].lhs = @intFromEnum(built.names[k]);
+                l.b.nodes.items(.data)[node.int()].lhs = @backingInt(built.names[k]);
                 if (slot.carried) l.b.nodes.items(.tag)[node.int()] = .let_decl;
                 continue;
             }
@@ -9169,7 +9169,7 @@ pub const Lowerer = struct {
                 try l.constDecl(out, built.names[k], value, p);
                 continue;
             }
-            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(built.names[k]), @intFromEnum(value.toOptional())));
+            try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(built.names[k]), @backingInt(value.toOptional())));
         }
         // The names the exits write, declared before the loop — but for a
         // name every exit gives the value of one loop variable, which IS
@@ -9179,7 +9179,7 @@ pub const Lowerer = struct {
             .assign => |n| &.{n},
             .tuple => |ns| ns,
         };
-        const none = @intFromEnum(Node.OptionalIndex.none);
+        const none = @backingInt(Node.OptionalIndex.none);
         for (names, 0..) |n, i| {
             if (n == .none) continue;
             if (i < locals.len) if (l.exitVariable(&loop, built.names, n)) |variable| {
@@ -9191,12 +9191,12 @@ pub const Lowerer = struct {
                     const datas = l.b.nodes.items(.data);
                     for (loop.jumps.exits.items) |stmt| {
                         const target = datas[stmt.int()].lhs;
-                        if (datas[target].lhs == @intFromEnum(n)) datas[target].lhs = @intFromEnum(variable);
+                        if (datas[target].lhs == @backingInt(n)) datas[target].lhs = @backingInt(variable);
                     }
                     continue;
                 }
             };
-            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), none));
+            try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(n), none));
         }
         try out.appendSlice(l.scratch, built.stmts);
         return true;
@@ -9211,10 +9211,10 @@ pub const Lowerer = struct {
         var found: ?JsIr.NameIndex = null;
         for (loop.jumps.exits.items) |stmt| {
             const target = datas[stmt.int()].lhs;
-            if (datas[target].lhs != @intFromEnum(n)) continue;
+            if (datas[target].lhs != @backingInt(n)) continue;
             const value = datas[stmt.int()].rhs;
             if (tags[value] != .ident) return null;
-            const v: JsIr.NameIndex = @enumFromInt(datas[value].lhs);
+            const v: JsIr.NameIndex = @fromBackingInt(@intCast(datas[value].lhs));
             if (found) |f| if (f != v) return null;
             found = v;
         }
@@ -9243,8 +9243,8 @@ pub const Lowerer = struct {
     fn isRefCall(l: *Lowerer, inst: Inst.Index) bool {
         if (l.bir.instTag(inst) != .call) return false;
         const d = l.bir.instData(inst);
-        if (l.jsIntrinsicOf(@enumFromInt(d.lhs)) != .ref) return false;
-        return l.bir.subRange(@enumFromInt(d.rhs)).len() == 1;
+        if (l.jsIntrinsicOf(@fromBackingInt(@intCast(d.lhs))) != .ref) return false;
+        return l.bir.subRange(@fromBackingInt(@intCast(d.rhs))).len() == 1;
     }
 
     /// Whether the reference `inst` names a `Js.Ref` binding written as a
@@ -9283,7 +9283,7 @@ pub const Lowerer = struct {
         if (l.in.dispatch.effectDecl(index).twin) return false;
         const ty = l.bir.decls[index].annotation.unwrap() orelse return false;
         if (l.bir.instTag(ty) != .type_fn) return false;
-        return l.bir.instTag(@enumFromInt(l.bir.instData(ty).rhs)) == .type_unit;
+        return l.bir.instTag(@fromBackingInt(@intCast(l.bir.instData(ty).rhs))) == .type_unit;
     }
 
     /// Whether every value `inst` can end in is `()`: each of its tails
@@ -9302,34 +9302,34 @@ pub const Lowerer = struct {
             switch (l.bir.instTag(at)) {
                 .unit => {},
                 .let => {
-                    stack[len] = @enumFromInt(d.rhs);
+                    stack[len] = @fromBackingInt(@intCast(d.rhs));
                     len += 1;
                 },
-                .case => for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                .case => for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
                     if (l.bir.instTag(branch) != .branch) return false;
                     if (len == stack.len) return false;
-                    stack[len] = @enumFromInt(l.bir.instData(branch).rhs);
+                    stack[len] = @fromBackingInt(@intCast(l.bir.instData(branch).rhs));
                     len += 1;
                 },
                 .call => {
-                    const callee: Inst.Index = @enumFromInt(d.lhs);
+                    const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
                     switch (l.bir.instTag(callee)) {
                         .top => {
                             const index = l.bir.instData(callee).lhs;
                             if (index >= l.bir.decls.len) return false;
                             const ty = l.bir.decls[index].annotation.unwrap() orelse return false;
                             if (l.bir.instTag(ty) != .type_fn) return false;
-                            if (l.bir.instTag(@enumFromInt(l.bir.instData(ty).rhs)) != .type_unit) return false;
+                            if (l.bir.instTag(@fromBackingInt(@intCast(l.bir.instData(ty).rhs))) != .type_unit) return false;
                         },
                         .ext_value => switch (l.jsIntrinsicOf(callee) orelse return false) {
                             .write, .set, .setAt, .throw, .each => {},
                             // `Js.finally`'s value is its body's: a lambda's
                             // body, whose tails are asked in turn.
                             .finally => {
-                                const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                                const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
                                 if (args.len != 2 or l.bir.instTag(args[0]) != .lambda) return false;
                                 if (len == stack.len) return false;
-                                stack[len] = @enumFromInt(l.bir.instData(args[0]).rhs);
+                                stack[len] = @fromBackingInt(@intCast(l.bir.instData(args[0]).rhs));
                                 len += 1;
                             },
                             else => return false,
@@ -9345,7 +9345,7 @@ pub const Lowerer = struct {
 
     fn tailCallee(l: *Lowerer, inst: Inst.Index) ?u32 {
         if (l.bir.instTag(inst) != .call) return null;
-        const callee: Inst.Index = @enumFromInt(l.bir.instData(inst).lhs);
+        const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
         if (l.bir.instTag(callee) != .top or l.callsOperator(inst)) return null;
         const index = l.bir.instData(callee).lhs;
         return if (index < l.bir.decls.len) index else null;
@@ -9356,9 +9356,9 @@ pub const Lowerer = struct {
     fn pushTails(l: *Lowerer, stack: *std.ArrayList(Inst.Index), inst: Inst.Index) !void {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
-            .let => try stack.append(l.scratch, @enumFromInt(d.rhs)),
-            .case => for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
-                if (l.bir.instTag(branch) == .branch) try stack.append(l.scratch, @enumFromInt(l.bir.instData(branch).rhs));
+            .let => try stack.append(l.scratch, @fromBackingInt(@intCast(d.rhs))),
+            .case => for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
+                if (l.bir.instTag(branch) == .branch) try stack.append(l.scratch, @fromBackingInt(@intCast(l.bir.instData(branch).rhs)));
             },
             else => {},
         }
@@ -9375,8 +9375,8 @@ pub const Lowerer = struct {
         var at = inst;
         while (l.bir.instTag(at) == .let) {
             const d = l.bir.instData(at);
-            try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
-            at = @enumFromInt(d.rhs);
+            try l.letBindings(out, l.bir.subRange(@fromBackingInt(@intCast(d.lhs))));
+            at = @fromBackingInt(@intCast(d.rhs));
         }
         // An arm no value takes writes nothing, and an `if Js.development`
         // is the arm the build takes (`backend.md` §4, *`Js.development` is
@@ -9454,11 +9454,11 @@ pub const Lowerer = struct {
         }
         const d = l.b.dataOf(value);
         const arms = l.b.extra.items[d.rhs..][0..2];
-        const test_expr: Node.Index = @enumFromInt(d.lhs);
+        const test_expr: Node.Index = @fromBackingInt(@intCast(d.lhs));
         var then: StmtList = .empty;
-        try l.discardValue(&then, @enumFromInt(arms[0]), p);
+        try l.discardValue(&then, @fromBackingInt(@intCast(arms[0])), p);
         var otherwise: StmtList = .empty;
-        try l.discardValue(&otherwise, @enumFromInt(arms[1]), p);
+        try l.discardValue(&otherwise, @fromBackingInt(@intCast(arms[1])), p);
         if (then.items.len == 0 and otherwise.items.len == 0) return l.discardValue(out, test_expr, p);
         if (then.items.len == 0) return l.ifStatement(out, try l.negate(test_expr, p), otherwise.items, p);
         const then_range = try l.b.addRange(then.items);
@@ -9469,7 +9469,7 @@ pub const Lowerer = struct {
             .else_start = else_range.start,
             .else_end = else_range.end,
         });
-        try out.append(l.scratch, try l.add(.if_stmt, p, test_expr.int(), @intFromEnum(record)));
+        try out.append(l.scratch, try l.add(.if_stmt, p, test_expr.int(), @backingInt(record)));
     }
 
     /// Bind a value to a name unless it is already something that can be
@@ -9492,7 +9492,7 @@ pub const Lowerer = struct {
     /// read and a field of a well-typed value exists.
     fn isRead(l: *Lowerer, value: Node.Index) bool {
         var at = value;
-        while (l.b.tagOf(at) == .member) at = @enumFromInt(l.b.dataOf(at).lhs);
+        while (l.b.tagOf(at) == .member) at = @fromBackingInt(@intCast(l.b.dataOf(at).lhs));
         // A read of a `Js.Ref` written as a `let` changes nothing either.
         return l.isAtom(at) or l.isMutable(at);
     }
@@ -9619,8 +9619,8 @@ pub const Lowerer = struct {
         if (into.name == .none or into.declare) try out.append(l.scratch, try l.add(
             .let_decl,
             c.p,
-            @intFromEnum(result),
-            @intFromEnum(Node.OptionalIndex.none),
+            @backingInt(result),
+            @backingInt(Node.OptionalIndex.none),
         ));
         // A long `else if` chain — `chain_min` `case`s, each in the last
         // branch of the one before — is written as ONE block of flat tests
@@ -9685,15 +9685,15 @@ pub const Lowerer = struct {
     fn planCase(l: *Lowerer, out: *StmtList, inst: Inst.Index) !?Case {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
-        const scrutinee: Inst.Index = @enumFromInt(d.lhs);
-        const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        const scrutinee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         if (branches.len == 0) return null;
         // A pattern with items after its spread reads the scrutinee's end
         // through `List.length` and `List.drop` (§7, *List patterns with
         // elements after the spread*): more than once, so it is bound.
         var list_end = false;
         for (branches) |branch| {
-            if (l.hasListEnd(@enumFromInt(l.bir.instData(branch).lhs))) list_end = true;
+            if (l.hasListEnd(@fromBackingInt(@intCast(l.bir.instData(branch).lhs)))) list_end = true;
         }
 
         // §7's tuple-literal rule: a `case` on a tuple LITERAL every row
@@ -9712,7 +9712,7 @@ pub const Lowerer = struct {
         @memset(pats, .none);
         const rows = try l.scratch.alloc(Decision.Row, branches.len);
         for (branches, 0..) |branch, i| {
-            const pattern: Inst.Index = @enumFromInt(l.bir.instData(branch).lhs);
+            const pattern: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(branch).lhs));
             const slots = pats[i * roots ..][0..roots];
             if (!spread) {
                 slots[0] = pattern.toOptional();
@@ -9734,7 +9734,7 @@ pub const Lowerer = struct {
         // keeps them all: the arms are what is written.
         var live: usize = 0;
         for (rows) |row| {
-            if (l.deadArm(@enumFromInt(l.bir.instData(branches[row.branch]).rhs))) continue;
+            if (l.deadArm(@fromBackingInt(@intCast(l.bir.instData(branches[row.branch]).rhs)))) continue;
             rows[live] = row;
             live += 1;
         }
@@ -9817,13 +9817,13 @@ pub const Lowerer = struct {
     fn hasListEnd(l: *Lowerer, pattern: Inst.Index) bool {
         const d = l.bir.instData(pattern);
         return switch (l.bir.instTag(pattern)) {
-            .pat_as => l.hasListEnd(@enumFromInt(d.lhs)),
+            .pat_as => l.hasListEnd(@fromBackingInt(@intCast(d.lhs))),
             .pat_tuple, .pat_list => for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |el, i| {
                 if (l.bir.instTag(pattern) == .pat_list and l.bir.instTag(el) == .pat_spread and
                     i + 1 < Bir.inlineRange(d).len()) break true;
                 if (l.hasListEnd(el)) break true;
             } else false,
-            .pat_ctor => for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |el| {
+            .pat_ctor => for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |el| {
                 if (l.hasListEnd(el)) break true;
             } else false,
             else => false,
@@ -9836,7 +9836,7 @@ pub const Lowerer = struct {
     /// that never reaches here.
     fn rowsAreTuples(l: *Lowerer, branches: []const Inst.Index, arity: usize) bool {
         for (branches) |branch| {
-            const pattern: Inst.Index = @enumFromInt(l.bir.instData(branch).lhs);
+            const pattern: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(branch).lhs));
             switch (l.bir.instTag(pattern)) {
                 .pat_wild => {},
                 .pat_tuple => if (Bir.inlineRange(l.bir.instData(pattern)).len() != arity) return false,
@@ -9853,7 +9853,7 @@ pub const Lowerer = struct {
         const d = l.bir.instData(pat);
         return switch (l.bir.instTag(pat)) {
             .pat_var => 1,
-            .pat_as => 1 + l.bindCount(@as(Inst.Index, @enumFromInt(d.lhs)).toOptional()),
+            .pat_as => 1 + l.bindCount(@as(Inst.Index, @fromBackingInt(@intCast(d.lhs))).toOptional()),
             .pat_record => Bir.inlineRange(d).len(),
             .pat_tuple, .pat_list => blk: {
                 var total: u32 = 0;
@@ -9864,12 +9864,12 @@ pub const Lowerer = struct {
             },
             .pat_ctor => blk: {
                 var total: u32 = 0;
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |arg| {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
                     total += l.bindCount(arg.toOptional());
                 }
                 break :blk total;
             },
-            .pat_spread => l.bindCount(@as(Inst.Index, @enumFromInt(d.lhs)).toOptional()),
+            .pat_spread => l.bindCount(@as(Inst.Index, @fromBackingInt(@intCast(d.lhs))).toOptional()),
             else => 0,
         };
     }
@@ -9906,7 +9906,7 @@ pub const Lowerer = struct {
     fn emitLeaf(l: *Lowerer, c: *Case, out: *StmtList, branch: u32) !void {
         if (c.tree.uses[branch] >= 2) {
             const label = try l.sharedLabel(c, branch);
-            try out.append(l.scratch, try l.add(.break_stmt, c.p, @intFromEnum(label), Node.Data.unused));
+            try out.append(l.scratch, try l.add(.break_stmt, c.p, @backingInt(label), Node.Data.unused));
             return;
         }
         try l.leafBody(c, out, branch);
@@ -9925,7 +9925,7 @@ pub const Lowerer = struct {
             };
             try l.bindings(out, pattern, root);
         }
-        const body: Inst.Index = @enumFromInt(l.bir.instData(c.branches[branch]).rhs);
+        const body: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(c.branches[branch]).rhs));
         const p = l.pos(c.branches[branch]);
         // A pre-lowered leaf: the shape decided it was an expression before
         // the bodies were lowered, and then one of them needed a statement
@@ -9948,14 +9948,14 @@ pub const Lowerer = struct {
                     // A leaf `let … x = e … in x`: `x` is the temporary,
                     // written where it is bound (`letBindings`).
                     var fin = body;
-                    while (l.bir.instTag(fin) == .let) fin = @enumFromInt(l.bir.instData(fin).rhs);
+                    while (l.bir.instTag(fin) == .let) fin = @fromBackingInt(@intCast(l.bir.instData(fin).rhs));
                     const saved_bind = l.bind_into;
                     defer l.bind_into = saved_bind;
                     l.bind_into = if (l.bir.instTag(fin) == .local) .{ .local = l.bir.instData(fin).lhs, .name = v.result } else .{};
                     while (l.bir.instTag(at) == .let) {
                         const d = l.bir.instData(at);
-                        try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
-                        at = @enumFromInt(d.rhs);
+                        try l.letBindings(out, l.bir.subRange(@fromBackingInt(@intCast(d.lhs))));
+                        at = @fromBackingInt(@intCast(d.rhs));
                     }
                     if (l.bir.instTag(at) == .case) l.case_into = .{ .name = v.result };
                 }
@@ -9967,7 +9967,7 @@ pub const Lowerer = struct {
             .discard => |v| {
                 try l.discard(out, body, p);
                 if (v.wrapper != .none) {
-                    try out.append(l.scratch, try l.add(.break_stmt, p, @intFromEnum(v.wrapper), Node.Data.unused));
+                    try out.append(l.scratch, try l.add(.break_stmt, p, @backingInt(v.wrapper), Node.Data.unused));
                 }
             },
         }
@@ -9989,13 +9989,13 @@ pub const Lowerer = struct {
     fn chainedLeaf(l: *Lowerer, out: *StmtList, body: Inst.Index, sink: Sink) Allocator.Error!bool {
         if (l.deadArm(body)) return false;
         var inst = body;
-        while (l.bir.instTag(inst) == .let) inst = @enumFromInt(l.bir.instData(inst).rhs);
+        while (l.bir.instTag(inst) == .let) inst = @fromBackingInt(@intCast(l.bir.instData(inst).rhs));
         if (l.bir.instTag(inst) != .case) return false;
         inst = body;
         while (l.bir.instTag(inst) == .let) {
             const d = l.bir.instData(inst);
-            try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
-            inst = @enumFromInt(d.rhs);
+            try l.letBindings(out, l.bir.subRange(@fromBackingInt(@intCast(d.lhs))));
+            inst = @fromBackingInt(@intCast(d.rhs));
         }
         const p = l.pos(inst);
         var c = try l.planCase(out, inst) orelse {
@@ -10029,12 +10029,12 @@ pub const Lowerer = struct {
         var at = inst;
         var n: u32 = 0;
         walk: while (n < chain_min) : (n += 1) {
-            const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(at).rhs)), Inst.Index);
+            const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(at).rhs))), Inst.Index);
             var i = branches.len;
             while (i > 0) {
                 i -= 1;
-                var next: Inst.Index = @enumFromInt(l.bir.instData(branches[i]).rhs);
-                while (l.bir.instTag(next) == .let) next = @enumFromInt(l.bir.instData(next).rhs);
+                var next: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(branches[i]).rhs));
+                while (l.bir.instTag(next) == .let) next = @fromBackingInt(@intCast(l.bir.instData(next).rhs));
                 if (l.bir.instTag(next) != .case) continue;
                 at = next;
                 continue :walk;
@@ -10054,13 +10054,13 @@ pub const Lowerer = struct {
                     try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
                 }
                 if (v.wrapper != .none) {
-                    try out.append(l.scratch, try l.add(.break_stmt, p, @intFromEnum(v.wrapper), Node.Data.unused));
+                    try out.append(l.scratch, try l.add(.break_stmt, p, @backingInt(v.wrapper), Node.Data.unused));
                 }
             },
             .discard => |v| {
                 try l.discardValue(out, value, p);
                 if (v.wrapper != .none) {
-                    try out.append(l.scratch, try l.add(.break_stmt, p, @intFromEnum(v.wrapper), Node.Data.unused));
+                    try out.append(l.scratch, try l.add(.break_stmt, p, @backingInt(v.wrapper), Node.Data.unused));
                 }
             },
         }
@@ -10123,7 +10123,7 @@ pub const Lowerer = struct {
                 .else_start = else_range.start,
                 .else_end = else_range.end,
             });
-            try out.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @intFromEnum(record)));
+            try out.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @backingInt(record)));
             return;
         }
 
@@ -10150,8 +10150,8 @@ pub const Lowerer = struct {
             try cases.append(l.scratch, try l.add(
                 .switch_case,
                 p,
-                @intFromEnum(key.toOptional()),
-                @intFromEnum(record),
+                @backingInt(key.toOptional()),
+                @backingInt(record),
             ));
         }
         {
@@ -10164,8 +10164,8 @@ pub const Lowerer = struct {
             try cases.append(l.scratch, try l.add(
                 .switch_case,
                 c.p,
-                @intFromEnum(Node.OptionalIndex.none),
-                @intFromEnum(record),
+                @backingInt(Node.OptionalIndex.none),
+                @backingInt(record),
             ));
         }
         // At most `max_switch_cases` labels a `switch`: a longer fan
@@ -10179,7 +10179,7 @@ pub const Lowerer = struct {
             const cases_range = try l.b.addRange(cases.items[from..to]);
             const cases_record = try l.b.addRecord(cases_range);
             const discriminant = try l.fanDiscriminant(c, fan);
-            try out.append(l.scratch, try l.add(.switch_stmt, c.p, discriminant.int(), @intFromEnum(cases_record)));
+            try out.append(l.scratch, try l.add(.switch_stmt, c.p, discriminant.int(), @backingInt(cases_record)));
             from = to;
         }
     }
@@ -10203,7 +10203,7 @@ pub const Lowerer = struct {
                 else
                     edges[1].child);
                 const record = try l.b.addRecord(JsIr.Cond{ .consequent = consequent, .alternate = alternate });
-                return l.add(.cond, l.edgePos(c, edges[0]), condition.int(), @intFromEnum(record));
+                return l.add(.cond, l.edgePos(c, edges[0]), condition.int(), @backingInt(record));
             },
         }
     }
@@ -10390,7 +10390,7 @@ pub const Lowerer = struct {
             for (0..c.roots.len) |r| {
                 if (l.bindCount(c.pats[i * c.roots.len + r]) != 0) return false;
             }
-            const body: Inst.Index = @enumFromInt(l.bir.instData(branch).rhs);
+            const body: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(branch).rhs));
             switch (l.bir.instTag(body)) {
                 // Under `--release`, a nested `case` whose value is wanted
                 // may be a conditional itself (`backend.md` §9, *Compact
@@ -10436,7 +10436,7 @@ pub const Lowerer = struct {
         for (c.branches, 0..) |branch, i| {
             if (c.tree.uses[i] == 0) continue;
             var stmts: StmtList = .empty;
-            const body: Inst.Index = @enumFromInt(l.bir.instData(branch).rhs);
+            const body: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(branch).rhs));
             if (into != .none and l.bir.instTag(body) == .case and !l.deadArm(body)) l.case_into = .{ .name = into };
             const value = try l.expr(&stmts, body);
             l.case_into = .{};
@@ -10476,7 +10476,7 @@ pub const Lowerer = struct {
     fn blockStmt(l: *Lowerer, label: JsIr.NameIndex, body: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(body);
         const record = try l.b.addRecord(range);
-        return l.add(.block_stmt, p, @intFromEnum(label), @intFromEnum(record));
+        return l.add(.block_stmt, p, @backingInt(label), @backingInt(record));
     }
 
     /// The `break $c$<d>` on the textually last leaf is omitted (§7): there
@@ -10487,7 +10487,7 @@ pub const Lowerer = struct {
         if (out.items.len == 0) return;
         const last = out.items[out.items.len - 1];
         if (l.b.tagOf(last) != .break_stmt) return;
-        if (l.b.dataOf(last).lhs != @intFromEnum(label)) return;
+        if (l.b.dataOf(last).lhs != @backingInt(label)) return;
         _ = out.pop();
     }
 
@@ -10500,7 +10500,7 @@ pub const Lowerer = struct {
             .pat_wild, .pat_unit, .pat_int, .pat_char, .pat_string => {},
             .pat_var => try l.constDecl(out, try l.localName(d.lhs), subject, p),
             .pat_as => {
-                try l.bindings(out, @enumFromInt(d.lhs), subject);
+                try l.bindings(out, @fromBackingInt(@intCast(d.lhs)), subject);
                 try l.constDecl(out, try l.localName(d.rhs), subject, p);
             },
             .pat_tuple => {
@@ -10509,8 +10509,8 @@ pub const Lowerer = struct {
                 }
             },
             .pat_ctor => {
-                const ref: Inst.Index = @enumFromInt(d.lhs);
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), 0..) |arg, i| {
+                const ref: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), 0..) |arg, i| {
                     try l.bindings(out, arg, try l.argMember(subject, ref, @intCast(i), p));
                 }
             },
@@ -10529,7 +10529,7 @@ pub const Lowerer = struct {
                 const after: u32 = if (spread) |s| @intCast(elements.len - s - 1) else 0;
                 for (elements, 0..) |element, i| {
                     if (spread) |s| if (i == s) {
-                        const operand: Inst.Index = @enumFromInt(l.bir.instData(element).lhs);
+                        const operand: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(element).lhs));
                         if (!try l.bindsRead(operand)) continue;
                         const from = try l.intNode(@intCast(s), p);
                         const value = if (after == 0)
@@ -10607,7 +10607,7 @@ pub const Lowerer = struct {
         // A hoisted name is `<Module>$<hint>`, which a declaration of the
         // same name is too.
         const names = try l.scratch.alloc(u32, l.bir.decls.len);
-        for (l.bir.decls, names) |d, *n| n.* = @intFromEnum(l.bir.symbol(d.name));
+        for (l.bir.decls, names) |d, *n| n.* = @backingInt(l.bir.symbol(d.name));
         std.mem.sort(u32, names, {}, std.sort.asc(u32));
         st.decl_names = names;
         // A tree that uses a feature newer than the lowering was written
@@ -10615,7 +10615,7 @@ pub const Lowerer = struct {
         // Every feature of version 1.0 is available to every lowering, so
         // this cannot happen until a later minor version gates one.
         if (!mk.lowering.targets.covers(built.tree.requires)) {
-            try l.report(.internal, @enumFromInt(built.root_insts[0]), "The markup lowering `{s}` targets interface {d}.{d}, and this module's markup needs {d}.{d}.", .{
+            try l.report(.internal, @fromBackingInt(@intCast(built.root_insts[0])), "The markup lowering `{s}` targets interface {d}.{d}, and this module's markup needs {d}.{d}.", .{
                 mk.lowering.name,
                 mk.lowering.targets.major,
                 mk.lowering.targets.minor,
@@ -10645,7 +10645,7 @@ pub const Lowerer = struct {
             error.OutOfMemory => return error.OutOfMemory,
             error.Reported => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-        return @enumFromInt(@intFromEnum(result));
+        return @fromBackingInt(@intCast(@backingInt(result)));
     }
 
     /// Evaluate a root's instruction values into `out`, in order, each
@@ -10672,7 +10672,7 @@ pub const Lowerer = struct {
                     const n = try l.fresh(l.well.temp);
                     try l.constDecl(out, n, value, l.pos(inst));
                     break :blk .{ .name = n };
-                } else .{ .name = @enumFromInt(l.b.dataOf(value).lhs) },
+                } else .{ .name = @fromBackingInt(@intCast(l.b.dataOf(value).lhs)) },
                 .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => .{ .node = value },
                 else => blk: {
                     const n = try l.fresh(l.well.temp);
@@ -10687,7 +10687,7 @@ pub const Lowerer = struct {
     fn markupValue(l: *Lowerer, v: beni_markup.Value.Index) Allocator.Error!Node.Index {
         const st = l.mk.?;
         const p = st.pos;
-        const at = @intFromEnum(v);
+        const at = @backingInt(v);
         switch (st.built.values[at]) {
             .inst => switch (st.bound[at]) {
                 .name => |n| return l.ident(n, p),
@@ -10741,7 +10741,7 @@ pub const Lowerer = struct {
             .call => |c| {
                 const args = try l.scratch.alloc(Node.Index, c.args.len);
                 for (args, 0..) |*a, k| a.* = try l.markupValue(c.args.at(@intCast(k)));
-                return l.call(try l.markupValue(@enumFromInt(c.callee)), args, p);
+                return l.call(try l.markupValue(@fromBackingInt(@intCast(c.callee))), args, p);
             },
         }
     }
@@ -10809,7 +10809,7 @@ pub const Lowerer = struct {
     ) Allocator.Error!?Node.Index {
         const st = l.mk.?;
         const row = st.built.tree.row(row_index);
-        const source = st.built.rows[@intFromEnum(row_index)];
+        const source = st.built.rows[@backingInt(row_index)];
         var stmts: StmtList = .empty;
         // A new function is a new label scope (§7).
         const depth = l.case_depth;
@@ -10818,11 +10818,11 @@ pub const Lowerer = struct {
         const p = st.pos;
 
         const lambda = l.bir.instData(source.function);
-        const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(lambda.lhs)), Inst.Index);
+        const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(lambda.lhs))), Inst.Index);
         for (params, 0..) |param, k| {
             const bound: JsIr.NameIndex = if (k == 0)
-                @enumFromInt(@intFromEnum(item))
-            else if (position) |n| @enumFromInt(@intFromEnum(n)) else try l.fresh(l.well.param);
+                @fromBackingInt(@intCast(@backingInt(item)))
+            else if (position) |n| @fromBackingInt(@intCast(@backingInt(n))) else try l.fresh(l.well.param);
             switch (l.bir.instTag(param)) {
                 .pat_var => {
                     const local = l.bir.instData(param).lhs;
@@ -10840,7 +10840,7 @@ pub const Lowerer = struct {
                 const local = st.built.values[row.captures.start + k].capture;
                 if (local >= l.local_names.len) continue;
                 s.* = l.local_names[local];
-                l.local_names[local] = @enumFromInt(@intFromEnum(n));
+                l.local_names[local] = @fromBackingInt(@intCast(@backingInt(n)));
             }
         }
         defer if (captures.len == row.captures.len) for (saved, 0..) |s, k| {
@@ -10848,7 +10848,7 @@ pub const Lowerer = struct {
             if (local < l.local_names.len) l.local_names[local] = s;
         };
         for (l.bir.extraSlice(source.lets, Inst.Index)) |let| {
-            try l.letBindings(&stmts, l.bir.subRange(@enumFromInt(l.bir.instData(let).lhs)));
+            try l.letBindings(&stmts, l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(let).lhs))));
         }
         const body = st.built.tree.root(row.body);
         var apart_stmts: StmtList = .empty;
@@ -10860,8 +10860,8 @@ pub const Lowerer = struct {
             mv.* = apart_block != null and st.built.tree.itemOnly(v) and std.mem.indexOfScalar(beni_markup.Value.Index, apart, v) != null;
         }
         try l.markupValuesSplit(&stmts, &apart_stmts, body, moved);
-        try st.blocks.items[@intFromEnum(block)].appendSlice(l.scratch, stmts.items);
-        if (apart_block) |ab| try st.blocks.items[@intFromEnum(ab)].appendSlice(l.scratch, apart_stmts.items);
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        if (apart_block) |ab| try st.blocks.items[@backingInt(ab)].appendSlice(l.scratch, apart_stmts.items);
         if (row.kind != .lambda) return null;
         return try l.markupValue(body.values.at(body.values.len - 1));
     }
@@ -10873,7 +10873,7 @@ pub const Lowerer = struct {
         const st = l.mk.?;
         const tree = &st.built.tree;
         const p = st.pos;
-        const at = tree.nodes[@intFromEnum(node)].payload;
+        const at = tree.nodes[@backingInt(node)].payload;
         const c = tree.components[at];
         const source = st.built.components[at];
         const props = tree.propsOf(c.props);
@@ -10967,7 +10967,7 @@ pub const Lowerer = struct {
             .code = .markup_restructured,
             .module = l.in.module,
             .region = l.region,
-            .token = st.built.node_tokens[@intFromEnum(node)],
+            .token = st.built.node_tokens[@backingInt(node)],
             .message = owned,
         });
     }
@@ -11016,15 +11016,15 @@ const markup_vtable: beni_markup.VTable = struct {
     }
 
     fn expr(n: Node.Index) M.Expr {
-        return @enumFromInt(n.int());
+        return @fromBackingInt(@intCast(n.int()));
     }
 
     fn node(e: M.Expr) Node.Index {
-        return @enumFromInt(@intFromEnum(e));
+        return @fromBackingInt(@intCast(@backingInt(e)));
     }
 
     fn nameOf(n: M.Name) JsIr.NameIndex {
-        return @enumFromInt(@intFromEnum(n));
+        return @fromBackingInt(@intCast(@backingInt(n)));
     }
 
     pub fn pos(l: *Lowerer) u32 {
@@ -11038,13 +11038,13 @@ const markup_vtable: beni_markup.VTable = struct {
     fn at(impl: *anyopaque, n: M.Node.Index) void {
         const l = lowerer(impl);
         const st = l.mk.?;
-        const token = st.built.node_tokens[@intFromEnum(n)];
+        const token = st.built.node_tokens[@backingInt(n)];
         st.pos = if (token < l.in.token_starts.len) l.in.token_starts[token] else Node.no_pos;
     }
 
     fn fresh(impl: *anyopaque, hint: []const u8) E!M.Name {
         const l = lowerer(impl);
-        return @enumFromInt(@intFromEnum(try l.fresh(try symbolOf(l, hint))));
+        return @fromBackingInt(@intCast(@backingInt(try l.fresh(try symbolOf(l, hint)))));
     }
 
     /// A module-level name `<Module>$<hint>`, told apart by a tag when the
@@ -11053,7 +11053,7 @@ const markup_vtable: beni_markup.VTable = struct {
     fn hoistName(l: *Lowerer, hint: []const u8) E!JsIr.NameIndex {
         const st = l.mk.?;
         const base = try symbolOf(l, hint);
-        const declared = std.sort.binarySearch(u32, st.decl_names, @intFromEnum(base), struct {
+        const declared = std.sort.binarySearch(u32, st.decl_names, @backingInt(base), struct {
             fn order(key: u32, item: u32) std.math.Order {
                 return std.math.order(key, item);
             }
@@ -11076,32 +11076,32 @@ const markup_vtable: beni_markup.VTable = struct {
     fn hoist(impl: *anyopaque, hint: []const u8, init: M.Expr) E!M.Name {
         const l = lowerer(impl);
         const n = try hoistName(l, hint);
-        try l.mk.?.hoisted.append(l.scratch, try l.add(.const_decl, pos(l), @intFromEnum(n), node(init).int()));
-        return @enumFromInt(@intFromEnum(n));
+        try l.mk.?.hoisted.append(l.scratch, try l.add(.const_decl, pos(l), @backingInt(n), node(init).int()));
+        return @fromBackingInt(@intCast(@backingInt(n)));
     }
 
     fn hoistFunction(impl: *anyopaque, hint: []const u8, params: []const M.Name, body: M.Block) E!M.Name {
         const l = lowerer(impl);
         const n = try hoistName(l, hint);
-        const record = try l.funcRecord(@ptrCast(params), l.mk.?.blocks.items[@intFromEnum(body)].items);
-        try l.mk.?.hoisted.append(l.scratch, try l.add(.func_decl, pos(l), @intFromEnum(n), @intFromEnum(record)));
-        return @enumFromInt(@intFromEnum(n));
+        const record = try l.funcRecord(@ptrCast(params), l.mk.?.blocks.items[@backingInt(body)].items);
+        try l.mk.?.hoisted.append(l.scratch, try l.add(.func_decl, pos(l), @backingInt(n), @backingInt(record)));
+        return @fromBackingInt(@intCast(@backingInt(n)));
     }
 
     fn hoisted(impl: *anyopaque, hint: []const u8) ?M.Name {
         const l = lowerer(impl);
         const base = l.interner.find(hint) orelse return null;
         for (l.mk.?.hoisted.items) |stmt| {
-            const n: JsIr.NameIndex = @enumFromInt(l.b.dataOf(stmt).lhs);
+            const n: JsIr.NameIndex = @fromBackingInt(@intCast(l.b.dataOf(stmt).lhs));
             const hoist_name = l.b.names.items[n.int()];
-            if (hoist_name.module == l.module_name.toOptional() and hoist_name.base == base) return @enumFromInt(@intFromEnum(n));
+            if (hoist_name.module == l.module_name.toOptional() and hoist_name.base == base) return @fromBackingInt(@intCast(@backingInt(n)));
         }
         return null;
     }
 
     fn runtime(impl: *anyopaque, export_name: []const u8) E!M.Name {
         const l = lowerer(impl);
-        return @enumFromInt(@intFromEnum(try l.markupRuntime(export_name)));
+        return @fromBackingInt(@intCast(@backingInt(try l.markupRuntime(export_name))));
     }
 
     fn value(impl: *anyopaque, v: M.Value.Index) E!M.Expr {
@@ -11198,7 +11198,7 @@ const markup_vtable: beni_markup.VTable = struct {
             .expr => |e| try nodes.append(l.scratch, node(e)),
         };
         const range = try l.b.addRange(nodes.items);
-        return expr(try l.add(.template, p, @intFromEnum(range.start), @intFromEnum(range.end)));
+        return expr(try l.add(.template, p, @backingInt(range.start), @backingInt(range.end)));
     }
 
     fn name(impl: *anyopaque, n: M.Name) E!M.Expr {
@@ -11232,12 +11232,12 @@ const markup_vtable: beni_markup.VTable = struct {
     fn array(impl: *anyopaque, elements: []const M.Expr) E!M.Expr {
         const l = lowerer(impl);
         const range = try l.b.addRange(@ptrCast(elements));
-        return expr(try l.add(.array, pos(l), @intFromEnum(range.start), @intFromEnum(range.end)));
+        return expr(try l.add(.array, pos(l), @backingInt(range.start), @backingInt(range.end)));
     }
 
     fn arrow(impl: *anyopaque, params: []const M.Name, body: M.Block) E!M.Expr {
         const l = lowerer(impl);
-        return expr(try l.arrowOf(@ptrCast(params), l.mk.?.blocks.items[@intFromEnum(body)].items, pos(l)));
+        return expr(try l.arrowOf(@ptrCast(params), l.mk.?.blocks.items[@backingInt(body)].items, pos(l)));
     }
 
     fn cond(impl: *anyopaque, test_: M.Expr, consequent: M.Expr, alternate: M.Expr) E!M.Expr {
@@ -11272,7 +11272,7 @@ const markup_vtable: beni_markup.VTable = struct {
         const l = lowerer(impl);
         const st = l.mk.?;
         try st.blocks.append(l.scratch, .empty);
-        return @enumFromInt(st.blocks.items.len - 1);
+        return @fromBackingInt(@intCast(st.blocks.items.len - 1));
     }
 
     fn statement(impl: *anyopaque, into: M.Block, s: M.Statement) E!void {
@@ -11280,29 +11280,29 @@ const markup_vtable: beni_markup.VTable = struct {
         const st = l.mk.?;
         const p = pos(l);
         const stmt: Node.Index = switch (s) {
-            .constant => |c| try l.add(.const_decl, p, @intFromEnum(nameOf(c.name)), node(c.value).int()),
-            .let => |c| try l.add(.let_decl, p, @intFromEnum(nameOf(c.name)), if (c.value) |v| node(v).int() else @intFromEnum(Node.OptionalIndex.none)),
+            .constant => |c| try l.add(.const_decl, p, @backingInt(nameOf(c.name)), node(c.value).int()),
+            .let => |c| try l.add(.let_decl, p, @backingInt(nameOf(c.name)), if (c.value) |v| node(v).int() else @backingInt(Node.OptionalIndex.none)),
             .assign => |a| try l.add(.assign_stmt, p, node(a.target).int(), node(a.value).int()),
             .@"if" => |i| blk: {
-                const then_range = try l.b.addRange(st.blocks.items[@intFromEnum(i.then)].items);
-                const else_range = if (i.otherwise) |o| try l.b.addRange(st.blocks.items[@intFromEnum(o)].items) else JsIr.SubRange.empty;
+                const then_range = try l.b.addRange(st.blocks.items[@backingInt(i.then)].items);
+                const else_range = if (i.otherwise) |o| try l.b.addRange(st.blocks.items[@backingInt(o)].items) else JsIr.SubRange.empty;
                 const record = try l.b.addRecord(JsIr.If{
                     .then_start = then_range.start,
                     .then_end = then_range.end,
                     .else_start = else_range.start,
                     .else_end = else_range.end,
                 });
-                break :blk try l.add(.if_stmt, p, node(i.condition).int(), @intFromEnum(record));
+                break :blk try l.add(.if_stmt, p, node(i.condition).int(), @backingInt(record));
             },
-            .@"return" => |r| try l.add(.return_stmt, p, if (r) |v| @intFromEnum(node(v).toOptional()) else @intFromEnum(Node.OptionalIndex.none), Node.Data.unused),
+            .@"return" => |r| try l.add(.return_stmt, p, if (r) |v| @backingInt(node(v).toOptional()) else @backingInt(Node.OptionalIndex.none), Node.Data.unused),
             .expression => |e| try l.add(.expr_stmt, p, node(e).int(), Node.Data.unused),
             .block => |inner| blk: {
-                const range = try l.b.addRange(st.blocks.items[@intFromEnum(inner)].items);
+                const range = try l.b.addRange(st.blocks.items[@backingInt(inner)].items);
                 const record = try l.b.addRecord(range);
-                break :blk try l.add(.block_stmt, p, @intFromEnum(JsIr.NameIndex.none), @intFromEnum(record));
+                break :blk try l.add(.block_stmt, p, @backingInt(JsIr.NameIndex.none), @backingInt(record));
             },
         };
-        try st.blocks.items[@intFromEnum(into)].append(l.scratch, stmt);
+        try st.blocks.items[@backingInt(into)].append(l.scratch, stmt);
     }
 
     const vtable: beni_markup.VTable = .{
@@ -11449,7 +11449,7 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
 
     const specifiers = try arena.alloc([]const u8, count);
     for (specifiers, 0..) |*specifier, i| {
-        const index: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        const index: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         specifier.* = try std.fmt.allocPrint(arena, "./{s}.mjs", .{session.store.moduleName(session.graph.moduleFile(index))});
     }
     const file = session.graph.moduleFile(m);
@@ -11930,7 +11930,7 @@ test "the evidence-count assert counts the roots and every term's arguments, in 
     // threw `TypeError: $m$0 is not a function`. The build exited 0 both
     // times.
     const requirements = [_]Dispatch.Requirement{
-        .{ .quantified = 0, .var_name = .none, .method = @enumFromInt(0) },
+        .{ .quantified = 0, .var_name = .none, .method = @fromBackingInt(@intCast(0)) },
     };
     // Declaration 0 takes one evidence parameter of its own; declaration 1
     // takes none. Nothing else about either is read.
@@ -11940,15 +11940,15 @@ test "the evidence-count assert counts the roots and every term's arguments, in 
     // one short. Term 4: `field`, which is never evidence. Term 5:
     // `undetermined`. Term 6: `top 0` whose argument points BACK at itself.
     const terms = [_]Dispatch.Term{
-        .{ .top = .{ .decl = @enumFromInt(1) } },
-        .{ .top = .{ .decl = @enumFromInt(0), .args = .{ .start = 0, .len = 1 } } },
-        .{ .top = .{ .decl = @enumFromInt(1) } },
-        .{ .top = .{ .decl = @enumFromInt(0) } },
+        .{ .top = .{ .decl = @fromBackingInt(@intCast(1)) } },
+        .{ .top = .{ .decl = @fromBackingInt(@intCast(0)), .args = .{ .start = 0, .len = 1 } } },
+        .{ .top = .{ .decl = @fromBackingInt(@intCast(1)) } },
+        .{ .top = .{ .decl = @fromBackingInt(@intCast(0)) } },
         .field,
         .undetermined,
-        .{ .top = .{ .decl = @enumFromInt(0), .args = .{ .start = 1, .len = 1 } } },
+        .{ .top = .{ .decl = @fromBackingInt(@intCast(0)), .args = .{ .start = 1, .len = 1 } } },
     };
-    const args = [_]Dispatch.TermIndex{ @enumFromInt(2), @enumFromInt(6) };
+    const args = [_]Dispatch.TermIndex{ @fromBackingInt(@intCast(2)), @fromBackingInt(@intCast(6)) };
     const table: Dispatch = .{ .terms = &terms, .args = &args, .decls = &decls, .requirements = &requirements };
     const types: Types = .empty;
 
@@ -11972,7 +11972,7 @@ test "the evidence-count assert counts the roots and every term's arguments, in 
 
     const t = struct {
         fn at(i: u32) Dispatch.TermIndex {
-            return @enumFromInt(i);
+            return @fromBackingInt(@intCast(i));
         }
     }.at;
 
@@ -12019,11 +12019,11 @@ test "a derived function with no body is a table bug in value position, either k
     // is WRONG — and the test asserts that symmetry.
     const gpa = testing.allocator;
     const terms = [_]Dispatch.Term{
-        .{ .ext_derived = .{ .module = @enumFromInt(0), .type = .none, .kind = .compare } },
+        .{ .ext_derived = .{ .module = @fromBackingInt(@intCast(0)), .type = .none, .kind = .compare } },
         // A `derived` row that is not in the table at all.
         .{ .derived = .{ .index = 0 } },
         // The `eq` that used to go through A.51's door.
-        .{ .ext_derived = .{ .module = @enumFromInt(0), .type = .none, .kind = .eq } },
+        .{ .ext_derived = .{ .module = @fromBackingInt(@intCast(0)), .type = .none, .kind = .eq } },
     };
     const table: Dispatch = .{ .terms = &terms };
     const types: Types = .empty;
@@ -12044,15 +12044,15 @@ test "a derived function with no body is a table bug in value position, either k
     l.bound = .{};
     l.bound_out = null;
     l.in.interfaces = &.{};
-    l.in.module = @enumFromInt(0);
+    l.in.module = @fromBackingInt(@intCast(0));
     l.diagnostics = .empty;
-    l.region = @enumFromInt(0);
+    l.region = @fromBackingInt(@intCast(0));
     defer {
         for (l.diagnostics.items) |d| gpa.free(d.message);
         l.diagnostics.deinit(gpa);
     }
 
-    _ = try l.derivedValue(@enumFromInt(0), Node.no_pos);
+    _ = try l.derivedValue(@fromBackingInt(@intCast(0)), Node.no_pos);
     try testing.expectEqual(@as(usize, 1), l.diagnostics.items.len);
     try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[0].code);
     try testing.expect(std.mem.indexOf(
@@ -12061,11 +12061,11 @@ test "a derived function with no body is a table bug in value position, either k
         "a derived method of a type whose module emits no",
     ) != null);
 
-    _ = try l.derivedValue(@enumFromInt(1), Node.no_pos);
+    _ = try l.derivedValue(@fromBackingInt(@intCast(1)), Node.no_pos);
     try testing.expectEqual(@as(usize, 2), l.diagnostics.items.len);
     try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[1].code);
 
-    _ = try l.derivedValue(@enumFromInt(2), Node.no_pos);
+    _ = try l.derivedValue(@fromBackingInt(@intCast(2)), Node.no_pos);
     try testing.expectEqual(@as(usize, 3), l.diagnostics.items.len);
     try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[2].code);
 }
@@ -12080,7 +12080,7 @@ test "fuzz: arbitrary bytes reach the emitter without a panic" {
             const gpa = testing.allocator;
             var buf: [2048]u8 = undefined;
             const len = smith.sliceWithHash(&buf, 0x3E4117);
-            const source = try gpa.dupeZ(u8, buf[0..len]);
+            const source = try gpa.dupeSentinel(u8, buf[0..len], 0);
             defer gpa.free(source);
 
             var modules: std.ArrayList(TestProject.Module) = .empty;

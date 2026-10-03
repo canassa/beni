@@ -280,7 +280,7 @@ pub const Joiner = struct {
 
 /// 64 spaces: indentation is pushed as a borrowed slice of this, so nesting
 /// costs no allocation. Deeper than 32 levels repeats the slice.
-const spaces = " " ** 64;
+const spaces: [64]u8 = @splat(' ');
 
 /// Precedence used for "this needs no brackets at all": above every
 /// operator, below a call's callee position.
@@ -554,7 +554,7 @@ const Printer = struct {
     fn indent(p: *Printer, level: u32) Allocator.Error!void {
         if (p.compact) return;
         var left: usize = @as(usize, level) * 2;
-        while (left > spaces.len) : (left -= spaces.len) try p.push(spaces);
+        while (left > spaces.len) : (left -= spaces.len) try p.push(&spaces);
         try p.push(spaces[0..left]);
     }
 
@@ -698,10 +698,10 @@ const Printer = struct {
     /// after it reads the variable. Null for any other.
     fn forHead(p: *Printer, decl: Index, loop: Index, after: []const Index) Allocator.Error!?BreakShape {
         if (p.ir.tag(decl) != .let_decl or p.ir.tag(loop) != .while_true) return null;
-        if (@as(JsIr.NameIndex, @enumFromInt(p.ir.data(loop).lhs)) != .none) return null;
-        const n: JsIr.NameIndex = @enumFromInt(p.ir.data(decl).lhs);
+        if (@as(JsIr.NameIndex, @fromBackingInt(@intCast(p.ir.data(loop).lhs))) != .none) return null;
+        const n: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(decl).lhs));
         if (n == .none or p.plan.isRepeated(n)) return null;
-        const body = p.ir.subRange(@enumFromInt(p.ir.data(loop).rhs));
+        const body = p.ir.subRange(@fromBackingInt(@intCast(p.ir.data(loop).rhs)));
         try p.markLoopTail(body);
         var shape = p.breakShape(loop) orelse return null;
         // The update: an assignment of the variable among the assignments
@@ -715,16 +715,16 @@ const Printer = struct {
             const s = stmts[k];
             if (p.skipped(s)) continue;
             if (p.ir.tag(s) != .assign_stmt) return null;
-            const target = p.resolve(@enumFromInt(p.ir.data(s).lhs));
-            if (p.ir.tag(target) == .ident and p.ir.data(target).lhs == @intFromEnum(n)) break s;
+            const target = p.resolve(@fromBackingInt(@intCast(p.ir.data(s).lhs)));
+            if (p.ir.tag(target) == .ident and p.ir.data(target).lhs == @backingInt(n)) break s;
             if (try p.mentions(s, n)) return null;
         } else return null;
         // Nor may the update read what an assignment after it writes.
         for (stmts[k + 1 ..]) |s| {
             if (p.skipped(s)) continue;
-            const target = p.resolve(@enumFromInt(p.ir.data(s).lhs));
+            const target = p.resolve(@fromBackingInt(@intCast(p.ir.data(s).lhs)));
             if (p.ir.tag(target) != .ident) return null;
-            if (try p.mentions(u, @enumFromInt(p.ir.data(target).lhs))) return null;
+            if (try p.mentions(u, @fromBackingInt(@intCast(p.ir.data(target).lhs)))) return null;
         }
         // Nor may it read a name the body declares: in the head it runs
         // outside the body's block, where that name is another binding or
@@ -745,17 +745,17 @@ const Printer = struct {
         while (stack.pop()) |at| {
             const d = p.ir.data(at);
             switch (p.ir.tag(at)) {
-                .const_decl, .let_decl, .func_decl, .gen_decl => if (try p.mentions(u, @enumFromInt(d.lhs))) return true,
+                .const_decl, .let_decl, .func_decl, .gen_decl => if (try p.mentions(u, @fromBackingInt(@intCast(d.lhs)))) return true,
                 .if_stmt => {
-                    const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                    const b = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(b.thenBody(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(b.elseBody(), Index));
                 },
-                .while_true, .block_stmt, .switch_case => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
-                .switch_stmt => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
-                .for_of => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).body(), Index)),
+                .while_true, .block_stmt, .switch_case => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)),
+                .switch_stmt => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)),
+                .for_of => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf).body(), Index)),
                 .try_stmt => {
-                    const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    const t = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.catchBody(), Index));
@@ -774,7 +774,7 @@ const Printer = struct {
         try p.declarator(decl, level);
         try p.push(";");
         const guard = p.ir.data(shape.guard).lhs;
-        if (shape.exits_then) try p.negatedTest(@enumFromInt(guard), level) else try p.expression(@enumFromInt(guard), 0, level);
+        if (shape.exits_then) try p.negatedTest(@fromBackingInt(@intCast(guard)), level) else try p.expression(@fromBackingInt(@intCast(guard)), 0, level);
         try p.push(";");
         try p.assignment(shape.update.?, level);
         try p.push(")");
@@ -799,39 +799,39 @@ const Printer = struct {
                         try stack.append(p.spelled, r);
                         continue;
                     }
-                    if (d.lhs == @intFromEnum(n)) return true;
+                    if (d.lhs == @backingInt(n)) return true;
                 },
-                .arrow => try p.pushFunc(&stack, @enumFromInt(d.lhs)),
-                .func_decl, .gen_decl => try p.pushFunc(&stack, @enumFromInt(d.rhs)),
-                .const_decl => try stack.append(p.spelled, @enumFromInt(d.rhs)),
-                .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(p.spelled, v),
-                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
-                .return_stmt, .expr_stmt, .throw_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .arrow => try p.pushFunc(&stack, @fromBackingInt(@intCast(d.lhs))),
+                .func_decl, .gen_decl => try p.pushFunc(&stack, @fromBackingInt(@intCast(d.rhs))),
+                .const_decl => try stack.append(p.spelled, @fromBackingInt(@intCast(d.rhs))),
+                .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try stack.append(p.spelled, v),
+                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @fromBackingInt(@intCast(d.lhs)), @fromBackingInt(@intCast(d.rhs)) }),
+                .return_stmt, .expr_stmt, .throw_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try stack.append(p.spelled, v),
                 .if_stmt => {
-                    const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-                    try stack.append(p.spelled, @enumFromInt(d.lhs));
+                    const b = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                    try stack.append(p.spelled, @fromBackingInt(@intCast(d.lhs)));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(b.thenBody(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(b.elseBody(), Index));
                 },
-                .while_true, .block_stmt => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
+                .while_true, .block_stmt => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)),
                 .for_of => {
-                    const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                    const f = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
                     try stack.append(p.spelled, f.iterable);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(f.body(), Index));
                 },
                 .try_stmt => {
-                    const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    const t = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.catchBody(), Index));
                 },
                 .switch_stmt => {
-                    try stack.append(p.spelled, @enumFromInt(d.lhs));
-                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
+                    try stack.append(p.spelled, @fromBackingInt(@intCast(d.lhs)));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
                 },
                 .switch_case => {
-                    if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(p.spelled, t);
-                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
+                    if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try stack.append(p.spelled, t);
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
                 },
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 else => try p.ir.pushOperands(p.spelled, &stack, at),
@@ -862,34 +862,34 @@ const Printer = struct {
             switch (p.ir.tag(at)) {
                 .arrow, .func_decl, .gen_decl => return true,
                 .continue_stmt => if (!inner and !p.skipped(at)) return true,
-                .const_decl => try stack.append(p.spelled, @enumFromInt(d.rhs)),
-                .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(p.spelled, v),
-                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
-                .return_stmt, .expr_stmt, .throw_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .const_decl => try stack.append(p.spelled, @fromBackingInt(@intCast(d.rhs))),
+                .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try stack.append(p.spelled, v),
+                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @fromBackingInt(@intCast(d.lhs)), @fromBackingInt(@intCast(d.rhs)) }),
+                .return_stmt, .expr_stmt, .throw_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try stack.append(p.spelled, v),
                 .if_stmt => {
-                    const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-                    try stack.append(p.spelled, @enumFromInt(d.lhs));
+                    const b = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                    try stack.append(p.spelled, @fromBackingInt(@intCast(d.lhs)));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(b.thenBody(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(b.elseBody(), Index));
                 },
-                .block_stmt, .switch_case => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
+                .block_stmt, .switch_case => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)),
                 .try_stmt => {
-                    const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    const t = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.catchBody(), Index));
                 },
                 .switch_stmt => {
-                    try stack.append(p.spelled, @enumFromInt(d.lhs));
-                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
+                    try stack.append(p.spelled, @fromBackingInt(@intCast(d.lhs)));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
                 },
                 .while_true => {
-                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
                     try nested.appendNTimes(p.spelled, true, stack.items.len - before);
                     continue;
                 },
                 .for_of => {
-                    const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                    const f = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
                     try stack.append(p.spelled, f.iterable);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(f.body(), Index));
                     try nested.appendNTimes(p.spelled, true, stack.items.len - before);
@@ -905,7 +905,7 @@ const Printer = struct {
 
     /// Assignment statement `node` as an expression, for a `for` head.
     fn assignment(p: *Printer, node: Index, level: u32) Allocator.Error!void {
-        try p.expression(@enumFromInt(p.ir.data(node).lhs), prec_call, level);
+        try p.expression(@fromBackingInt(@intCast(p.ir.data(node).lhs)), prec_call, level);
         try p.assignmentValue(node, level);
     }
 
@@ -914,8 +914,8 @@ const Printer = struct {
         const d = p.ir.data(node);
         // `x = x + e` is `x += e` under `--release`: for a name, the two read
         // `x`, then `e`, then write, in that order.
-        if (p.compound(@enumFromInt(d.lhs), @enumFromInt(d.rhs))) |b| {
-            const op: JsIr.BinaryOp = @enumFromInt(p.ir.data(p.resolve(@enumFromInt(d.rhs))).rhs);
+        if (p.compound(@fromBackingInt(@intCast(d.lhs)), @fromBackingInt(@intCast(d.rhs)))) |b| {
+            const op: JsIr.BinaryOp = @fromBackingInt(@intCast(p.ir.data(p.resolve(@fromBackingInt(@intCast(d.rhs)))).rhs));
             // `x += 1` is `x++`: `+` with a number is a number's (a string is
             // appended to another string only), so the two agree.
             const right = p.resolve(b.right);
@@ -926,13 +926,13 @@ const Printer = struct {
             return p.expression(b.right, 0, level);
         }
         try p.tok(" = ", "=");
-        try p.expression(@enumFromInt(d.rhs), 0, level);
+        try p.expression(@fromBackingInt(@intCast(d.rhs)), 0, level);
     }
 
     /// A declaration whose value is a literal, or nothing: evaluating it
     /// before or after anything else is the same.
     fn literalDecl(p: *Printer, node: Index) bool {
-        const v = @as(Node.OptionalIndex, @enumFromInt(p.ir.data(node).rhs)).unwrap() orelse return true;
+        const v = @as(Node.OptionalIndex, @fromBackingInt(@intCast(p.ir.data(node).rhs))).unwrap() orelse return true;
         return switch (p.ir.tag(p.resolve(v))) {
             .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
             else => false,
@@ -1004,8 +1004,8 @@ const Printer = struct {
     /// `name=value`, or a `let`'s `name` alone when it has no value.
     fn declarator(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         const d = p.ir.data(node);
-        try p.name(@enumFromInt(d.lhs), .binding);
-        const value: Node.OptionalIndex = @enumFromInt(d.rhs);
+        try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
+        const value: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
         const v = value.unwrap() orelse return;
         try p.push("=");
         try p.expression(v, 0, level);
@@ -1055,12 +1055,12 @@ const Printer = struct {
         const single = p.single;
         p.single = false;
         try p.indent(level);
-        if (p.ir.tag(node) == .func_decl or p.ir.tag(node) == .gen_decl) try p.nameFunction(@enumFromInt(p.ir.data(node).lhs));
+        if (p.ir.tag(node) == .func_decl or p.ir.tag(node) == .gen_decl) try p.nameFunction(@fromBackingInt(@intCast(p.ir.data(node).lhs)));
         try p.mark(node);
         p.function_name = SourceMap.Mapping.no_name;
         switch (p.ir.tag(node)) {
             .import_stmt => {
-                const imp = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Import);
+                const imp = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
                 try p.tok("import { ", "import{");
                 const specs = p.ir.extraSlice(imp.specs(), JsIr.Specifier);
                 for (specs, 0..) |spec, i| {
@@ -1108,19 +1108,19 @@ const Printer = struct {
                 // the name, and in compact mode the adjacency guard puts that
                 // one back — `const` then `a` cannot run together.
                 try p.tok("const ", "let");
-                try p.markName(node, @enumFromInt(d.lhs));
-                try p.name(@enumFromInt(d.lhs), .binding);
+                try p.markName(node, @fromBackingInt(@intCast(d.lhs)));
+                try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
                 try p.tok(" = ", "=");
-                if (p.ir.tag(@enumFromInt(d.rhs)) == .arrow) try p.nameFunction(@enumFromInt(d.lhs));
-                try p.expression(@enumFromInt(d.rhs), 0, level);
+                if (p.ir.tag(@fromBackingInt(@intCast(d.rhs))) == .arrow) try p.nameFunction(@fromBackingInt(@intCast(d.lhs)));
+                try p.expression(@fromBackingInt(@intCast(d.rhs)), 0, level);
                 p.function_name = SourceMap.Mapping.no_name;
                 try p.terminate();
                 try p.endLine(level);
             },
             .let_decl => {
                 try p.tok("let ", "let");
-                try p.name(@enumFromInt(d.lhs), .binding);
-                if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |value| {
+                try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |value| {
                     try p.tok(" = ", "=");
                     try p.expression(value, 0, level);
                 }
@@ -1130,9 +1130,9 @@ const Printer = struct {
             .func_decl, .gen_decl => {
                 const generator = p.ir.tag(node) == .gen_decl;
                 try p.tok(if (generator) "function* " else "function ", if (generator) "function*" else "function");
-                try p.markName(node, @enumFromInt(d.lhs));
-                try p.name(@enumFromInt(d.lhs), .binding);
-                const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
+                try p.markName(node, @fromBackingInt(@intCast(d.lhs)));
+                try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
+                const f = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Func);
                 try p.params(f);
                 try p.tok(" {\n", "{");
                 const saved = p.discarding;
@@ -1148,7 +1148,7 @@ const Printer = struct {
                 try p.endLine(level);
             },
             .assign_stmt => {
-                try p.statementExpression(@enumFromInt(d.lhs), level);
+                try p.statementExpression(@fromBackingInt(@intCast(d.lhs)), level);
                 try p.assignmentValue(node, level);
                 try p.terminate();
                 try p.endLine(level);
@@ -1157,7 +1157,7 @@ const Printer = struct {
                 // A function whose result nothing reads (§4, *A result
                 // nothing reads*): at its end, what the `return` evaluates
                 // as a statement; elsewhere, `return` alone for `null`.
-                if (p.discarding) if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| {
+                if (p.discarding) if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |value| {
                     if (p.isTailReturn(node)) {
                         try p.discardedValue(value, level);
                         try p.terminate();
@@ -1172,7 +1172,7 @@ const Printer = struct {
                     }
                 };
                 try p.push("return");
-                if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |value| {
                     try p.tok(" ", "");
                     try p.expression(value, 0, level);
                 }
@@ -1180,8 +1180,8 @@ const Printer = struct {
                 try p.endLine(level);
             },
             .if_stmt => {
-                const branches = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-                const test_expr: Index = @enumFromInt(d.lhs);
+                const branches = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                const test_expr: Index = @fromBackingInt(@intCast(d.lhs));
                 // An arm left with nothing to print (a `continue` that ends
                 // a loop body, a tail `return` of a result nothing reads, a
                 // dropped binding) is not written: `if (c) {} else { x; }` is
@@ -1232,25 +1232,25 @@ const Printer = struct {
                 }
             },
             .while_true => {
-                if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) == .none) {
+                if (@as(JsIr.NameIndex, @fromBackingInt(@intCast(d.lhs))) == .none) {
                     if (try p.whileLoop(node, level)) return;
                     if (p.compact and try p.breakLoop(node, level)) return;
                 }
-                if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
-                    try p.name(@enumFromInt(d.lhs), .binding);
+                if (@as(JsIr.NameIndex, @fromBackingInt(@intCast(d.lhs))) != .none) {
+                    try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
                     try p.tok(": ", ":");
                 }
                 try p.tok("for (;;) {\n", "for(;;){");
-                try p.markLoopTail(p.ir.subRange(@enumFromInt(d.rhs)));
-                try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
+                try p.markLoopTail(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))));
+                try p.statements(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), level + 1);
                 try p.indent(level);
                 try p.closeBlock();
                 try p.endLine(level);
             },
             .for_of => {
-                const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                const f = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
                 try p.tok("for (const ", "for(let");
-                try p.name(@enumFromInt(d.lhs), .binding);
+                try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
                 try p.tok(" of ", "of");
                 try p.expression(f.iterable, 0, level);
                 try p.push(")");
@@ -1263,18 +1263,18 @@ const Printer = struct {
             },
             .break_stmt, .continue_stmt => {
                 try p.push(if (p.ir.tag(node) == .break_stmt) "break" else "continue");
-                if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
+                if (@as(JsIr.NameIndex, @fromBackingInt(@intCast(d.lhs))) != .none) {
                     try p.tok(" ", "");
-                    try p.name(@enumFromInt(d.lhs), .binding);
+                    try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
                 }
                 try p.terminate();
                 try p.endLine(level);
             },
             .switch_stmt => {
                 try p.tok("switch (", "switch(");
-                try p.expression(@enumFromInt(d.lhs), 0, level);
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), 0, level);
                 try p.tok(") {\n", "){");
-                for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| {
+                for (p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| {
                     try p.statement(c, level + 1);
                 }
                 try p.indent(level);
@@ -1282,40 +1282,40 @@ const Printer = struct {
                 try p.endLine(level);
             },
             .switch_case => {
-                if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |test_expr| {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |test_expr| {
                     try p.tok("case ", "case");
                     try p.expression(test_expr, 0, level);
                     try p.tok(":\n", ":");
                 } else {
                     try p.tok("default:\n", "default:");
                 }
-                try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
+                try p.statements(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), level + 1);
             },
             .block_stmt => {
-                if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
-                    try p.name(@enumFromInt(d.lhs), .binding);
+                if (@as(JsIr.NameIndex, @fromBackingInt(@intCast(d.lhs))) != .none) {
+                    try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
                     try p.tok(": ", ":");
                 }
                 try p.tok("{\n", "{");
-                try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
+                try p.statements(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), level + 1);
                 try p.indent(level);
                 try p.closeBlock();
                 try p.endLine(level);
             },
             .expr_stmt => {
-                try p.discardedValue(@enumFromInt(d.lhs), level);
+                try p.discardedValue(@fromBackingInt(@intCast(d.lhs)), level);
                 try p.terminate();
                 try p.endLine(level);
             },
             .throw_stmt => {
                 try p.tok("throw ", "throw");
-                try p.expression(@enumFromInt(d.lhs), 0, level);
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), 0, level);
                 try p.terminate();
                 try p.endLine(level);
             },
             // Both blocks are always braced: JavaScript requires it.
             .try_stmt => {
-                const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                const t = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
                 try p.tok("try {\n", "try{");
                 try p.statements(t.body(), level + 1);
                 try p.indent(level);
@@ -1354,7 +1354,7 @@ const Printer = struct {
     /// and its other arm after it — when it is not itself a single
     /// statement's body.
     fn splitsIf(p: *Printer, node: Index) bool {
-        const branches = p.ir.extraData(@enumFromInt(p.ir.data(node).rhs), JsIr.If);
+        const branches = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(node).rhs)), JsIr.If);
         if (p.returnsBoth(branches)) return false;
         if (!p.anyLive(branches.thenBody()) or !p.anyLive(branches.elseBody())) return false;
         return (p.jumps(branches.thenBody()) and p.spliceable(branches.elseBody())) or
@@ -1417,7 +1417,7 @@ const Printer = struct {
     /// that computes its exit value inside the body measurably slower.
     /// False, printing nothing, for any other loop.
     fn whileLoop(p: *Printer, node: Index, level: u32) Allocator.Error!bool {
-        const body = p.ir.subRange(@enumFromInt(p.ir.data(node).rhs));
+        const body = p.ir.subRange(@fromBackingInt(@intCast(p.ir.data(node).rhs)));
         const items = p.ir.extraSlice(body, Index);
         var first: ?usize = null;
         for (items, 0..) |s, i| if (!p.skipped(s)) {
@@ -1427,7 +1427,7 @@ const Printer = struct {
         const at = first orelse return false;
         const guard = items[at];
         if (p.ir.tag(guard) != .if_stmt) return false;
-        const branches = p.ir.extraData(@enumFromInt(p.ir.data(guard).rhs), JsIr.If);
+        const branches = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(guard).rhs)), JsIr.If);
         // The exit is either arm: `if(!c)return x;…` for an exit the
         // lowering wrote first, `if(c){…}else return x` for one it wrote
         // second, the shape of a source `if` whose `else` ends the loop.
@@ -1437,11 +1437,11 @@ const Printer = struct {
         // lowering writes the rest of the iteration into, then what follows
         // the guard.
         const arm = if (exits_then) branches.elseBody() else branches.thenBody();
-        const rest: JsIr.SubRange = .{ .start = @enumFromInt(@intFromEnum(body.start) + @as(u32, @intCast(at + 1))), .end = body.end };
+        const rest: JsIr.SubRange = .{ .start = @fromBackingInt(@intCast(@backingInt(body.start) + @as(u32, @intCast(at + 1)))), .end = body.end };
         for (p.ir.extraSlice(arm, Index)) |s| if (p.breaksOut(s)) return false;
         for (p.ir.extraSlice(rest, Index)) |s| if (p.breaksOut(s)) return false;
         try p.markLoopTail(body);
-        const test_expr: Index = @enumFromInt(p.ir.data(guard).lhs);
+        const test_expr: Index = @fromBackingInt(@intCast(p.ir.data(guard).lhs));
         if (p.compact) {
             try p.push("while(");
             if (exits_then) try p.negatedTest(test_expr, level) else try p.expression(test_expr, 0, level);
@@ -1479,7 +1479,7 @@ const Printer = struct {
     /// tree of exits from the function (`exitTree`).
     fn loopExit(p: *Printer, range: JsIr.SubRange) ?Index {
         const exit = p.onlyLive(range) orelse return null;
-        if (p.ir.tag(exit) == .break_stmt) return if (@as(JsIr.NameIndex, @enumFromInt(p.ir.data(exit).lhs)) == .none) exit else null;
+        if (p.ir.tag(exit) == .break_stmt) return if (@as(JsIr.NameIndex, @fromBackingInt(@intCast(p.ir.data(exit).lhs))) == .none) exit else null;
         return if (p.exitTree(exit, 0)) exit else null;
     }
 
@@ -1495,7 +1495,7 @@ const Printer = struct {
             .return_stmt => !(p.discarding and p.isTailReturn(node)),
             .throw_stmt => true,
             .if_stmt => blk: {
-                const b = p.ir.extraData(@enumFromInt(p.ir.data(node).rhs), JsIr.If);
+                const b = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(node).rhs)), JsIr.If);
                 const then_only = p.onlyLive(b.thenBody()) orelse break :blk false;
                 const else_only = p.onlyLive(b.elseBody()) orelse break :blk false;
                 break :blk p.exitTree(then_only, depth + 1) and p.exitTree(else_only, depth + 1);
@@ -1514,10 +1514,10 @@ const Printer = struct {
     /// False, printing nothing, for any other loop.
     fn breakLoop(p: *Printer, node: Index, level: u32) Allocator.Error!bool {
         const shape = p.breakShape(node) orelse return false;
-        try p.markLoopTail(p.ir.subRange(@enumFromInt(p.ir.data(node).rhs)));
+        try p.markLoopTail(p.ir.subRange(@fromBackingInt(@intCast(p.ir.data(node).rhs))));
         try p.push("while(");
         const guard = p.ir.data(shape.guard).lhs;
-        if (shape.exits_then) try p.negatedTest(@enumFromInt(guard), level) else try p.expression(@enumFromInt(guard), 0, level);
+        if (shape.exits_then) try p.negatedTest(@fromBackingInt(@intCast(guard)), level) else try p.expression(@fromBackingInt(@intCast(guard)), 0, level);
         try p.push(")");
         try p.loopBody(shape, level);
         return true;
@@ -1535,7 +1535,7 @@ const Printer = struct {
     };
 
     fn breakShape(p: *Printer, node: Index) ?BreakShape {
-        const body = p.ir.subRange(@enumFromInt(p.ir.data(node).rhs));
+        const body = p.ir.subRange(@fromBackingInt(@intCast(p.ir.data(node).rhs)));
         const items = p.ir.extraSlice(body, Index);
         var first: ?usize = null;
         for (items, 0..) |s, i| if (!p.skipped(s)) {
@@ -1545,11 +1545,11 @@ const Printer = struct {
         const at = first orelse return null;
         const guard = items[at];
         if (p.ir.tag(guard) != .if_stmt) return null;
-        const branches = p.ir.extraData(@enumFromInt(p.ir.data(guard).rhs), JsIr.If);
+        const branches = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(guard).rhs)), JsIr.If);
         const Exit = struct {
             fn is(pr: *Printer, range: JsIr.SubRange) bool {
                 const only = pr.onlyLive(range) orelse return false;
-                return pr.ir.tag(only) == .break_stmt and @as(JsIr.NameIndex, @enumFromInt(pr.ir.data(only).lhs)) == .none;
+                return pr.ir.tag(only) == .break_stmt and @as(JsIr.NameIndex, @fromBackingInt(@intCast(pr.ir.data(only).lhs))) == .none;
             }
         };
         const exits_then = Exit.is(p, branches.thenBody());
@@ -1558,7 +1558,7 @@ const Printer = struct {
             .guard = guard,
             .exits_then = exits_then,
             .arm = if (exits_then) branches.elseBody() else branches.thenBody(),
-            .rest = .{ .start = @enumFromInt(@intFromEnum(body.start) + @as(u32, @intCast(at + 1))), .end = body.end },
+            .rest = .{ .start = @fromBackingInt(@intCast(@backingInt(body.start) + @as(u32, @intCast(at + 1)))), .end = body.end },
         };
     }
 
@@ -1585,11 +1585,11 @@ const Printer = struct {
         const t = p.resolve(target);
         const v = p.resolve(value);
         if (p.ir.tag(t) != .ident or p.ir.tag(v) != .binary) return null;
-        switch (@as(JsIr.BinaryOp, @enumFromInt(p.ir.data(v).rhs))) {
+        switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(p.ir.data(v).rhs)))) {
             .add, .sub, .mul, .div, .rem, .pow, .bit_or, .bit_and, .bit_xor, .shl, .sar, .shr => {},
             else => return null,
         }
-        const b = p.ir.extraData(@enumFromInt(p.ir.data(v).lhs), JsIr.Binary);
+        const b = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(v).lhs)), JsIr.Binary);
         const left = p.resolve(b.left);
         if (p.ir.tag(left) != .ident or p.ir.data(left).lhs != p.ir.data(t).lhs) return null;
         return b;
@@ -1610,7 +1610,7 @@ const Printer = struct {
     /// reads does not write.
     fn returnsAtEnd(p: *Printer, node: Index, exit: Index) bool {
         if (p.fn_last != node.toOptional()) return false;
-        const value = @as(Node.OptionalIndex, @enumFromInt(p.ir.data(exit).lhs)).unwrap() orelse return true;
+        const value = @as(Node.OptionalIndex, @fromBackingInt(@intCast(p.ir.data(exit).lhs))).unwrap() orelse return true;
         return p.discarding and p.ir.tag(p.resolve(value)) == .null_lit;
     }
 
@@ -1620,19 +1620,19 @@ const Printer = struct {
     fn breaksOut(p: *Printer, node: Index) bool {
         const d = p.ir.data(node);
         return switch (p.ir.tag(node)) {
-            .break_stmt => @as(JsIr.NameIndex, @enumFromInt(d.lhs)) == .none,
+            .break_stmt => @as(JsIr.NameIndex, @fromBackingInt(@intCast(d.lhs))) == .none,
             .if_stmt => blk: {
-                const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                const b = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
                 for (p.ir.extraSlice(b.thenBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
                 for (p.ir.extraSlice(b.elseBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
                 break :blk false;
             },
             .block_stmt => blk: {
-                for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)) |s| if (p.breaksOut(s)) break :blk true;
+                for (p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |s| if (p.breaksOut(s)) break :blk true;
                 break :blk false;
             },
             .try_stmt => blk: {
-                const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                const t = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
                 for (p.ir.extraSlice(t.body(), Index)) |s| if (p.breaksOut(s)) break :blk true;
                 for (p.ir.extraSlice(t.finalBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
                 for (p.ir.extraSlice(t.catchBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
@@ -1656,9 +1656,9 @@ const Printer = struct {
         const only = p.onlyLive(range) orelse return false;
         const d = p.ir.data(only);
         return switch (p.ir.tag(only)) {
-            .return_stmt => @as(Node.OptionalIndex, @enumFromInt(d.lhs)) != .none and !(p.discarding and p.isTailReturn(only)),
+            .return_stmt => @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))) != .none and !(p.discarding and p.isTailReturn(only)),
             .if_stmt => blk: {
-                const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                const b = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
                 break :blk p.returnTree(b.thenBody(), depth + 1) and p.returnTree(b.elseBody(), depth + 1);
             },
             else => false,
@@ -1678,8 +1678,8 @@ const Printer = struct {
     fn armValue(p: *Printer, range: JsIr.SubRange, level: u32) Allocator.Error!void {
         const only = p.onlyLive(range).?;
         const d = p.ir.data(only);
-        if (p.ir.tag(only) == .return_stmt) return p.expression(@enumFromInt(d.lhs), prec_arrow, level);
-        return p.returnValue(@enumFromInt(d.lhs), p.ir.extraData(@enumFromInt(d.rhs), JsIr.If), level);
+        if (p.ir.tag(only) == .return_stmt) return p.expression(@fromBackingInt(@intCast(d.lhs)), prec_arrow, level);
+        return p.returnValue(@fromBackingInt(@intCast(d.lhs)), p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If), level);
     }
 
     /// An `if` or `else` body: its one statement unbraced when that is
@@ -1721,7 +1721,7 @@ const Printer = struct {
             .return_stmt => !(p.discarding and p.isTailReturn(node)),
             .throw_stmt, .break_stmt, .continue_stmt => true,
             .if_stmt => blk: {
-                const branches = p.ir.extraData(@enumFromInt(p.ir.data(node).rhs), JsIr.If);
+                const branches = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(node).rhs)), JsIr.If);
                 break :blk p.anyLive(branches.thenBody()) and p.anyLive(branches.elseBody()) and
                     p.jumps(branches.thenBody()) and p.jumps(branches.elseBody());
             },
@@ -1734,7 +1734,7 @@ const Printer = struct {
     fn spliceable(p: *Printer, range: JsIr.SubRange) bool {
         for (p.ir.extraSlice(range, Index)) |node| {
             switch (p.ir.tag(node)) {
-                .const_decl, .let_decl, .func_decl, .gen_decl => if (p.plan.isRepeated(@enumFromInt(p.ir.data(node).lhs))) return false,
+                .const_decl, .let_decl, .func_decl, .gen_decl => if (p.plan.isRepeated(@fromBackingInt(@intCast(p.ir.data(node).lhs)))) return false,
                 else => {},
             }
         }
@@ -1749,7 +1749,7 @@ const Printer = struct {
         while (budget > 0) : (budget -= 1) {
             switch (p.ir.tag(n)) {
                 .ident, .global_this, .this_lit => return true,
-                .member => n = p.resolve(@enumFromInt(p.ir.data(n).lhs)),
+                .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
                 else => return false,
             }
         }
@@ -1759,8 +1759,8 @@ const Printer = struct {
     /// Whether `node` is `globalThis.x` for a host global written bare.
     fn bareGlobal(p: *Printer, node: Index) bool {
         if (!p.bare_globals) return false;
-        if (p.ir.tag(@enumFromInt(p.ir.data(node).lhs)) != .global_this) return false;
-        const key: JsIr.NameIndex = @enumFromInt(p.ir.data(node).rhs);
+        if (p.ir.tag(@fromBackingInt(@intCast(p.ir.data(node).lhs))) != .global_this) return false;
+        const key: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(node).rhs));
         const text = p.names.text(p.ir.name(key).base);
         if (!Rename.isBareGlobal(text)) return false;
         for (p.bare_blocked) |b| {
@@ -1797,44 +1797,44 @@ const Printer = struct {
             const d = ir.data(node);
             switch (ir.tag(node)) {
                 .ident => {
-                    const n: JsIr.NameIndex = @enumFromInt(d.lhs);
+                    const n: JsIr.NameIndex = @fromBackingInt(@intCast(d.lhs));
                     for (names[kept..], kept..) |m, i| if (m == n) {
                         kept = i + 1;
                         if (kept == names.len) return kept;
                         break;
                     };
                 },
-                .arrow => try stack.appendSlice(p.spelled, ir.extraSlice(ir.extraData(@enumFromInt(d.lhs), JsIr.Func).body(), Index)),
-                .const_decl, .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(p.spelled, v),
-                .func_decl, .gen_decl => try stack.appendSlice(p.spelled, ir.extraSlice(ir.extraData(@enumFromInt(d.rhs), JsIr.Func).body(), Index)),
-                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
-                .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .arrow => try stack.appendSlice(p.spelled, ir.extraSlice(ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Func).body(), Index)),
+                .const_decl, .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try stack.append(p.spelled, v),
+                .func_decl, .gen_decl => try stack.appendSlice(p.spelled, ir.extraSlice(ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Func).body(), Index)),
+                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @fromBackingInt(@intCast(d.lhs)), @fromBackingInt(@intCast(d.rhs)) }),
+                .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try stack.append(p.spelled, v),
                 .if_stmt => {
-                    try stack.append(p.spelled, @enumFromInt(d.lhs));
-                    const branches = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                    try stack.append(p.spelled, @fromBackingInt(@intCast(d.lhs)));
+                    const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
                     try stack.appendSlice(p.spelled, ir.extraSlice(branches.thenBody(), Index));
                     try stack.appendSlice(p.spelled, ir.extraSlice(branches.elseBody(), Index));
                 },
                 .while_true, .block_stmt, .switch_case => {
-                    if (ir.tag(node) == .switch_case) if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(p.spelled, t);
-                    try stack.appendSlice(p.spelled, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+                    if (ir.tag(node) == .switch_case) if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try stack.append(p.spelled, t);
+                    try stack.appendSlice(p.spelled, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
                 },
                 .for_of => {
-                    const loop = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                    const loop = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
                     try stack.append(p.spelled, loop.iterable);
                     try stack.appendSlice(p.spelled, ir.extraSlice(loop.body(), Index));
                 },
                 .try_stmt => {
-                    const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    const t = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
                     try stack.appendSlice(p.spelled, ir.extraSlice(t.body(), Index));
                     try stack.appendSlice(p.spelled, ir.extraSlice(t.finalBody(), Index));
                     try stack.appendSlice(p.spelled, ir.extraSlice(t.catchBody(), Index));
                 },
                 .switch_stmt => {
-                    try stack.append(p.spelled, @enumFromInt(d.lhs));
-                    try stack.appendSlice(p.spelled, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+                    try stack.append(p.spelled, @fromBackingInt(@intCast(d.lhs)));
+                    try stack.appendSlice(p.spelled, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
                 },
-                .expr_stmt, .throw_stmt => try stack.append(p.spelled, @enumFromInt(d.lhs)),
+                .expr_stmt, .throw_stmt => try stack.append(p.spelled, @fromBackingInt(@intCast(d.lhs))),
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 else => try ir.pushOperands(p.spelled, &stack, node),
             }
@@ -1941,7 +1941,7 @@ const Printer = struct {
         }
 
         fn piece(which: Piece) Work {
-            return .{ .kind = .piece, .aux = @intFromEnum(which) };
+            return .{ .kind = .piece, .aux = @backingInt(which) };
         }
     };
 
@@ -2026,7 +2026,7 @@ const Printer = struct {
                     // a member chain, so this can only ever relax a bracket —
                     // except for a number, which `precedence` puts below a
                     // member access on purpose.
-                    const resolved = p.resolve(@enumFromInt(w.value));
+                    const resolved = p.resolve(@fromBackingInt(@intCast(w.value)));
                     if (p.precedence(resolved) < min_prec) {
                         try p.push("(");
                         try p.later(.piece(.close_paren));
@@ -2035,34 +2035,34 @@ const Printer = struct {
                 },
                 .raw => {
                     if (w.aux & Work.separator != 0) try p.tok(", ", ",");
-                    next = try p.expand(@enumFromInt(w.value), level);
+                    next = try p.expand(@fromBackingInt(@intCast(w.value)), level);
                 },
                 .piece => {
-                    const piece: Piece = @enumFromInt(w.aux);
+                    const piece: Piece = @fromBackingInt(@intCast(w.aux));
                     const text = piece.text(p.compact);
                     if (piece.inner()) try p.pushInner(text) else try p.push(text);
                 },
-                .chunk => try p.templateChunk(p.ir.bytes(@enumFromInt(w.value))),
+                .chunk => try p.templateChunk(p.ir.bytes(@fromBackingInt(@intCast(w.value)))),
                 .binary_rest => {
                     // ` op ` right, at `rightPrecedence`: one above the operator
                     // for all but `**`, so `a - (b - c)` keeps its brackets.
-                    const d = p.ir.data(@enumFromInt(w.value));
-                    const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
+                    const d = p.ir.data(@fromBackingInt(@intCast(w.value)));
+                    const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
                     try p.tok(" ", "");
                     try p.push(op.text());
                     try p.tok(" ", "");
-                    next = .expr(p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).right, op.rightPrecedence());
+                    next = .expr(p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary).right, op.rightPrecedence());
                 },
                 .member_rest => {
                     try p.push(".");
-                    try p.name(@enumFromInt(p.ir.data(@enumFromInt(w.value)).rhs), .fixed);
+                    try p.name(@fromBackingInt(@intCast(p.ir.data(@fromBackingInt(@intCast(w.value))).rhs)), .fixed);
                 },
                 .call_rest => {
                     // `(` arg `, ` arg … `)`
                     try p.push("(");
                     try p.later(.piece(.close_paren));
-                    const d = p.ir.data(@enumFromInt(w.value));
-                    const args = p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index);
+                    const d = p.ir.data(@fromBackingInt(@intCast(w.value)));
+                    const args = p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index);
                     var i = args.len;
                     while (i > 1) {
                         i -= 1;
@@ -2072,7 +2072,7 @@ const Printer = struct {
                 },
                 .cond_rest => {
                     // ` ? ` consequent ` : ` alternate
-                    const c = p.ir.extraData(@enumFromInt(p.ir.data(@enumFromInt(w.value)).rhs), JsIr.Cond);
+                    const c = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(@fromBackingInt(@intCast(w.value))).rhs)), JsIr.Cond);
                     try p.tok(" ? ", "?");
                     try p.later(.expr(c.alternate, prec_arrow));
                     try p.later(.piece(.colon));
@@ -2104,8 +2104,8 @@ const Printer = struct {
 
     fn precedence(p: *Printer, node: Index) u8 {
         return switch (p.ir.tag(node)) {
-            .binary => JsIr.BinaryOp.precedence(@enumFromInt(p.ir.data(node).rhs)),
-            .unary => if (@as(JsIr.UnaryOp, @enumFromInt(p.ir.data(node).rhs)) == .yield) prec_arrow else prec_unary,
+            .binary => JsIr.BinaryOp.precedence(@fromBackingInt(@intCast(p.ir.data(node).rhs))),
+            .unary => if (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(p.ir.data(node).rhs))) == .yield) prec_arrow else prec_unary,
             .cond => prec_cond,
             .arrow => prec_arrow,
             .call, .new_call, .member, .index_get => prec_call,
@@ -2131,7 +2131,7 @@ const Printer = struct {
         try p.mark(node);
         const d = p.ir.data(node);
         switch (p.ir.tag(node)) {
-            .ident => try p.name(@enumFromInt(d.lhs), .binding),
+            .ident => try p.name(@fromBackingInt(@intCast(d.lhs)), .binding),
             .number, .regex => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
             .template => {
@@ -2160,33 +2160,33 @@ const Printer = struct {
             .call, .new_call => {
                 if (p.ir.tag(node) == .new_call) {
                     try p.tok("new ", "new");
-                    if (p.newSafe(@enumFromInt(d.lhs))) {
-                        try p.expression(@enumFromInt(d.lhs), prec_call, level);
+                    if (p.newSafe(@fromBackingInt(@intCast(d.lhs)))) {
+                        try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_call, level);
                     } else {
                         try p.push("(");
-                        try p.expression(@enumFromInt(d.lhs), 0, level);
+                        try p.expression(@fromBackingInt(@intCast(d.lhs)), 0, level);
                         try p.push(")");
                     }
-                } else try p.expression(@enumFromInt(d.lhs), prec_call, level);
+                } else try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_call, level);
                 try p.push("(");
-                for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index), 0..) |arg, i| {
+                for (p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index), 0..) |arg, i| {
                     if (i != 0) try p.tok(", ", ",");
                     try p.expression(arg, prec_arrow, level);
                 }
                 try p.push(")");
             },
             .member => {
-                if (p.bareGlobal(node)) return p.name(@enumFromInt(d.rhs), .fixed);
+                if (p.bareGlobal(node)) return p.name(@fromBackingInt(@intCast(d.rhs)), .fixed);
                 // A numeric literal needs a bracket before `.` (`1.a` is a
                 // syntax error), and so does an arrow or a conditional.
-                try p.expression(@enumFromInt(d.lhs), prec_call, level);
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_call, level);
                 try p.push(".");
-                try p.name(@enumFromInt(d.rhs), .fixed);
+                try p.name(@fromBackingInt(@intCast(d.rhs)), .fixed);
             },
             .index_get => {
-                try p.expression(@enumFromInt(d.lhs), prec_call, level);
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_call, level);
                 try p.push("[");
-                try p.expression(@enumFromInt(d.rhs), 0, level);
+                try p.expression(@fromBackingInt(@intCast(d.rhs)), 0, level);
                 try p.push("]");
             },
             .object => {
@@ -2203,13 +2203,13 @@ const Printer = struct {
                 try p.tok(" }", "}");
             },
             .property => {
-                try p.name(@enumFromInt(d.lhs), .fixed);
+                try p.name(@fromBackingInt(@intCast(d.lhs)), .fixed);
                 try p.tok(": ", ":");
-                try p.expression(@enumFromInt(d.rhs), prec_arrow, level);
+                try p.expression(@fromBackingInt(@intCast(d.rhs)), prec_arrow, level);
             },
             .spread_property => {
                 try p.push("...");
-                try p.expression(@enumFromInt(d.lhs), prec_arrow, level);
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_arrow, level);
             },
             .array => {
                 try p.push("[");
@@ -2220,7 +2220,7 @@ const Printer = struct {
                 try p.push("]");
             },
             .arrow => {
-                const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
+                const f = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Func);
                 if (d.rhs == Node.arrow_method) {
                     try p.methodFunction(node, f, level);
                 } else {
@@ -2230,16 +2230,16 @@ const Printer = struct {
                 }
             },
             .cond => {
-                const c = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
-                try p.expression(@enumFromInt(d.lhs), prec_cond + 1, level);
+                const c = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_cond + 1, level);
                 try p.tok(" ? ", "?");
                 try p.expression(c.consequent, prec_arrow, level);
                 try p.tok(" : ", ":");
                 try p.expression(c.alternate, prec_arrow, level);
             },
             .binary => {
-                const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
-                const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
+                const b = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
                 try p.expression(b.left, op.leftPrecedence(), level);
                 try p.tok(" ", "");
                 try p.push(op.text());
@@ -2253,12 +2253,12 @@ const Printer = struct {
                 try p.expression(b.right, op.rightPrecedence(), level);
             },
             .unary => {
-                const op: JsIr.UnaryOp = @enumFromInt(d.rhs);
+                const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
                 // `typeof ` carries its own trailing space; in compact mode
                 // the guard supplies one only where it is needed, so
                 // `typeof x` keeps it and `typeof(a)` would not.
                 try p.tok(op.text(), op.compactText());
-                try p.expression(@enumFromInt(d.lhs), unaryOperand(op), level);
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), unaryOperand(op), level);
             },
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
@@ -2275,7 +2275,7 @@ const Printer = struct {
         try p.mark(node);
         const d = p.ir.data(node);
         switch (p.ir.tag(node)) {
-            .ident => try p.name(@enumFromInt(d.lhs), .binding),
+            .ident => try p.name(@fromBackingInt(@intCast(d.lhs)), .binding),
             .number, .regex => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
             .template => {
@@ -2309,35 +2309,35 @@ const Printer = struct {
             .call => {
                 // callee, then `call_rest`
                 try p.later(.rest(.call_rest, node));
-                return .expr(@enumFromInt(d.lhs), prec_call);
+                return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);
             },
             .new_call => {
                 // `new ` callee, then `call_rest`; a callee that could hold
                 // a call is bracketed, or its `(` would be `new`'s.
                 try p.tok("new ", "new");
                 try p.later(.rest(.call_rest, node));
-                if (p.newSafe(@enumFromInt(d.lhs))) return .expr(@enumFromInt(d.lhs), prec_call);
+                if (p.newSafe(@fromBackingInt(@intCast(d.lhs)))) return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);
                 try p.push("(");
                 try p.later(.piece(.close_paren));
-                return .expr(@enumFromInt(d.lhs), 0);
+                return .expr(@fromBackingInt(@intCast(d.lhs)), 0);
             },
             .member => {
                 if (p.bareGlobal(node)) {
-                    try p.name(@enumFromInt(d.rhs), .fixed);
+                    try p.name(@fromBackingInt(@intCast(d.rhs)), .fixed);
                     return null;
                 }
                 // object `.` key. A numeric literal needs a bracket before
                 // `.` (`1.a` is a syntax error), and so does an arrow or a
                 // conditional.
                 try p.later(.rest(.member_rest, node));
-                return .expr(@enumFromInt(d.lhs), prec_call);
+                return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);
             },
             .index_get => {
                 // object `[` index `]`
                 try p.later(.piece(.close_bracket));
-                try p.later(.expr(@enumFromInt(d.rhs), 0));
+                try p.later(.expr(@fromBackingInt(@intCast(d.rhs)), 0));
                 try p.later(.piece(.open_bracket));
-                return .expr(@enumFromInt(d.lhs), prec_call);
+                return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);
             },
             .object => {
                 // `{ ` property `, ` property … ` }`
@@ -2357,13 +2357,13 @@ const Printer = struct {
             },
             .property => {
                 // key `: ` value
-                try p.name(@enumFromInt(d.lhs), .fixed);
+                try p.name(@fromBackingInt(@intCast(d.lhs)), .fixed);
                 try p.tok(": ", ":");
-                return .expr(@enumFromInt(d.rhs), prec_arrow);
+                return .expr(@fromBackingInt(@intCast(d.rhs)), prec_arrow);
             },
             .spread_property => {
                 try p.push("...");
-                return .expr(@enumFromInt(d.lhs), prec_arrow);
+                return .expr(@fromBackingInt(@intCast(d.lhs)), prec_arrow);
             },
             .array => {
                 // `[` element `, ` element … `]`
@@ -2381,7 +2381,7 @@ const Printer = struct {
                 // printed here and not stacked. A block body re-enters
                 // `run` through `statements`; that is the one recursion
                 // left, one frame per function the source nests.
-                const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
+                const f = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Func);
                 if (d.rhs == Node.arrow_method) {
                     try p.methodFunction(node, f, level);
                 } else {
@@ -2393,7 +2393,7 @@ const Printer = struct {
             .cond => {
                 // test ` ? ` consequent ` : ` alternate
                 try p.later(.rest(.cond_rest, node));
-                return .expr(@enumFromInt(d.lhs), prec_cond + 1);
+                return .expr(@fromBackingInt(@intCast(d.lhs)), prec_cond + 1);
             },
             .binary => {
                 // left ` ` op ` ` right. The space after the operator is the
@@ -2402,8 +2402,8 @@ const Printer = struct {
                 // else does not. The right operand is at `rightPrecedence`, one
                 // above the operator for all but the right-associative `**`, so
                 // `a - (b - c)` keeps its brackets.
-                const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
-                const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
+                const b = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
                 try p.later(.rest(.binary_rest, node));
                 return .expr(b.left, op.leftPrecedence());
             },
@@ -2411,9 +2411,9 @@ const Printer = struct {
                 // `typeof ` carries its own trailing space; in compact mode
                 // the guard supplies one only where it is needed, so
                 // `typeof x` keeps it and `typeof(a)` would not.
-                const op: JsIr.UnaryOp = @enumFromInt(d.rhs);
+                const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
                 try p.tok(op.text(), op.compactText());
-                return .expr(@enumFromInt(d.lhs), unaryOperand(op));
+                return .expr(@fromBackingInt(@intCast(d.lhs)), unaryOperand(op));
             },
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
@@ -2443,17 +2443,17 @@ const Printer = struct {
             // conditional, `(a)=>c?x:y` (`returnsBoth`).
             if (p.ir.tag(only) == .if_stmt) {
                 const d = p.ir.data(only);
-                const branches = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                const branches = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
                 if (p.returnsBoth(branches)) {
-                    const braced = p.startsWithBrace(@enumFromInt(d.lhs), prec_cond + 1);
+                    const braced = p.startsWithBrace(@fromBackingInt(@intCast(d.lhs)), prec_cond + 1);
                     if (braced) try p.push("(");
-                    try p.returnValue(@enumFromInt(d.lhs), branches, level);
+                    try p.returnValue(@fromBackingInt(@intCast(d.lhs)), branches, level);
                     if (braced) try p.push(")");
                     return;
                 }
             }
             if (p.ir.tag(only) == .return_stmt) concise: {
-                if (@as(Node.OptionalIndex, @enumFromInt(p.ir.data(only).lhs)).unwrap()) |value| {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(p.ir.data(only).lhs))).unwrap()) |value| {
                     const resolved = p.resolve(value);
                     // A conditional nothing reads is an `if` in a block
                     // (`discardedValue`), the shape hand-written JavaScript
@@ -2464,7 +2464,7 @@ const Printer = struct {
                             _ = try p.optionalCall(resolved, level, true);
                             return;
                         }
-                        const c = p.ir.extraData(@enumFromInt(p.ir.data(resolved).rhs), JsIr.Cond);
+                        const c = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(resolved).rhs)), JsIr.Cond);
                         if (p.inertValue(c.alternate) or p.inertValue(c.consequent)) break :concise;
                     }
                     if (p.ir.tag(resolved) == .object) {
@@ -2522,7 +2522,7 @@ const Printer = struct {
     fn readsOnly(p: *Printer, node: Index) bool {
         var n = p.resolve(node);
         while (true) switch (p.ir.tag(n)) {
-            .member => n = p.resolve(@enumFromInt(p.ir.data(n).lhs)),
+            .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
             .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return true,
             else => return false,
         };
@@ -2536,11 +2536,11 @@ const Printer = struct {
         const n = p.resolve(node);
         const d = p.ir.data(n);
         switch (p.ir.tag(n)) {
-            .unary => return @as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .not and p.testReadsOnly(@enumFromInt(d.lhs)),
+            .unary => return @as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs))) == .not and p.testReadsOnly(@fromBackingInt(@intCast(d.lhs))),
             .binary => {
-                const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                const b = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
                 if (!p.readsOnly(b.left) or !p.readsOnly(b.right)) return false;
-                return switch (@as(JsIr.BinaryOp, @enumFromInt(d.rhs))) {
+                return switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
                     .strict_eq, .strict_ne => true,
                     .loose_eq => p.isNullish(b.left) or p.isNullish(b.right),
                     else => false,
@@ -2580,16 +2580,16 @@ const Printer = struct {
             switch (p.ir.tag(n)) {
                 .object => return true,
                 .call, .member, .index_get => {
-                    n = p.resolve(@enumFromInt(d.lhs));
+                    n = p.resolve(@fromBackingInt(@intCast(d.lhs)));
                     prec = prec_call;
                 },
                 .binary => {
-                    const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
-                    n = p.resolve(p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).left);
+                    const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
+                    n = p.resolve(p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary).left);
                     prec = op.leftPrecedence();
                 },
                 .cond => {
-                    n = p.resolve(@enumFromInt(d.lhs));
+                    n = p.resolve(@fromBackingInt(@intCast(d.lhs)));
                     prec = prec_cond + 1;
                 },
                 else => return false,
@@ -2612,8 +2612,8 @@ const Printer = struct {
             const n = p.resolve(node);
             if (p.ir.tag(n) == .cond) {
                 if (try p.optionalCall(n, level, true)) return;
-                const c = p.ir.extraData(@enumFromInt(p.ir.data(n).rhs), JsIr.Cond);
-                const test_expr: Index = @enumFromInt(p.ir.data(n).lhs);
+                const c = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(n).rhs)), JsIr.Cond);
+                const test_expr: Index = @fromBackingInt(@intCast(p.ir.data(n).lhs));
                 if (p.inertValue(c.alternate)) {
                     try p.push("if(");
                     try p.expression(test_expr, 0, level);
@@ -2637,10 +2637,10 @@ const Printer = struct {
     fn printsAsIf(p: *Printer, node: Index) bool {
         if (!p.compact) return false;
         const value: Index = switch (p.ir.tag(node)) {
-            .expr_stmt => @enumFromInt(p.ir.data(node).lhs),
+            .expr_stmt => @fromBackingInt(@intCast(p.ir.data(node).lhs)),
             .return_stmt => blk: {
                 if (!(p.discarding and p.isTailReturn(node))) return false;
-                break :blk (@as(Node.OptionalIndex, @enumFromInt(p.ir.data(node).lhs)).unwrap() orelse return false);
+                break :blk (@as(Node.OptionalIndex, @fromBackingInt(@intCast(p.ir.data(node).lhs))).unwrap() orelse return false);
             },
             else => return false,
         };
@@ -2649,7 +2649,7 @@ const Printer = struct {
         // Asked without writing: an error can only come from writing, and
         // braces are the safe answer.
         if (p.optionalCall(n, 0, false) catch false) return false;
-        const c = p.ir.extraData(@enumFromInt(p.ir.data(n).rhs), JsIr.Cond);
+        const c = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(n).rhs)), JsIr.Cond);
         return p.inertValue(c.alternate) or p.inertValue(c.consequent);
     }
 
@@ -2667,41 +2667,41 @@ const Printer = struct {
     /// `null` nor `undefined`, which is what `==` tests. False, printing
     /// nothing, for any other conditional.
     fn optionalCall(p: *Printer, cond: Index, level: u32, write: bool) Allocator.Error!bool {
-        const c = p.ir.extraData(@enumFromInt(p.ir.data(cond).rhs), JsIr.Cond);
-        var test_expr = p.resolve(@enumFromInt(p.ir.data(cond).lhs));
+        const c = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(cond).rhs)), JsIr.Cond);
+        var test_expr = p.resolve(@fromBackingInt(@intCast(p.ir.data(cond).lhs)));
         var skip = c.consequent;
         var call = p.resolve(c.alternate);
-        if (p.ir.tag(test_expr) == .unary and @as(JsIr.UnaryOp, @enumFromInt(p.ir.data(test_expr).rhs)) == .not) {
-            test_expr = p.resolve(@enumFromInt(p.ir.data(test_expr).lhs));
+        if (p.ir.tag(test_expr) == .unary and @as(JsIr.UnaryOp, @fromBackingInt(@intCast(p.ir.data(test_expr).rhs))) == .not) {
+            test_expr = p.resolve(@fromBackingInt(@intCast(p.ir.data(test_expr).lhs)));
             skip = c.alternate;
             call = p.resolve(c.consequent);
         }
         if (!p.inertValue(skip) or p.ir.tag(p.resolve(skip)) == .ident) return false;
-        if (p.ir.tag(test_expr) != .binary or @as(JsIr.BinaryOp, @enumFromInt(p.ir.data(test_expr).rhs)) != .loose_eq) return false;
-        const b = p.ir.extraData(@enumFromInt(p.ir.data(test_expr).lhs), JsIr.Binary);
+        if (p.ir.tag(test_expr) != .binary or @as(JsIr.BinaryOp, @fromBackingInt(@intCast(p.ir.data(test_expr).rhs))) != .loose_eq) return false;
+        const b = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(test_expr).lhs)), JsIr.Binary);
         const l = p.resolve(b.left);
         const r = p.resolve(b.right);
         const subject = if (p.ir.tag(r) == .null_lit) l else if (p.ir.tag(l) == .null_lit) r else return false;
         if (p.ir.tag(subject) != .ident) return false;
-        const x: JsIr.NameIndex = @enumFromInt(p.ir.data(subject).lhs);
+        const x: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(subject).lhs));
         if (p.ir.tag(call) != .call) return false;
-        const callee = p.resolve(@enumFromInt(p.ir.data(call).lhs));
+        const callee = p.resolve(@fromBackingInt(@intCast(p.ir.data(call).lhs)));
         var method: ?JsIr.NameIndex = null;
         const base = switch (p.ir.tag(callee)) {
             .ident => callee,
             .member => blk: {
-                method = @enumFromInt(p.ir.data(callee).rhs);
-                break :blk p.resolve(@enumFromInt(p.ir.data(callee).lhs));
+                method = @fromBackingInt(@intCast(p.ir.data(callee).rhs));
+                break :blk p.resolve(@fromBackingInt(@intCast(p.ir.data(callee).lhs)));
             },
             else => return false,
         };
-        if (p.ir.tag(base) != .ident or @as(JsIr.NameIndex, @enumFromInt(p.ir.data(base).lhs)) != x) return false;
+        if (p.ir.tag(base) != .ident or @as(JsIr.NameIndex, @fromBackingInt(@intCast(p.ir.data(base).lhs))) != x) return false;
         if (!write) return true;
         try p.name(x, .binding);
         try p.push("?.");
         if (method) |m| try p.name(m, .fixed);
         try p.push("(");
-        for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(p.ir.data(call).rhs)), Index), 0..) |arg, i| {
+        for (p.ir.extraSlice(p.ir.subRange(@fromBackingInt(@intCast(p.ir.data(call).rhs))), Index), 0..) |arg, i| {
             if (i != 0) try p.push(",");
             try p.expression(arg, prec_arrow, level);
         }
@@ -2750,18 +2750,18 @@ const Printer = struct {
                 if (p.ir.tag(node) == tag) try into.append(p.spelled, node);
                 switch (p.ir.tag(node)) {
                     .if_stmt => {
-                        const branches = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                        const branches = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
                         try pending.append(p.spelled, branches.thenBody());
                         try pending.append(p.spelled, branches.elseBody());
                     },
-                    .block_stmt => try pending.append(p.spelled, p.ir.subRange(@enumFromInt(d.rhs))),
+                    .block_stmt => try pending.append(p.spelled, p.ir.subRange(@fromBackingInt(@intCast(d.rhs)))),
                     // A `try`'s guarded block, whose end runs the cleanup
                     // and then reaches the end of the run anyway; never the
                     // cleanup, where a jump would replace how the body
                     // ended (a throw's among them). A `catch` block's end
                     // reaches it the same way.
                     .try_stmt => {
-                        const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                        const t = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
                         try pending.append(p.spelled, t.body());
                         if (t.catches()) try pending.append(p.spelled, t.catchBody());
                     },
@@ -2786,13 +2786,13 @@ const Printer = struct {
             .assign_stmt => {
                 if (!p.compact) return false;
                 const d = p.ir.data(node);
-                const target = p.resolve(@enumFromInt(d.lhs));
-                const value = p.resolve(@enumFromInt(d.rhs));
+                const target = p.resolve(@fromBackingInt(@intCast(d.lhs)));
+                const value = p.resolve(@fromBackingInt(@intCast(d.rhs)));
                 return p.ir.tag(target) == .ident and p.ir.tag(value) == .ident and p.ir.data(target).lhs == p.ir.data(value).lhs;
             },
             .return_stmt => {
                 if (!p.discarding or !p.isTailReturn(node)) return false;
-                const value = @as(Node.OptionalIndex, @enumFromInt(p.ir.data(node).lhs)).unwrap() orelse return true;
+                const value = @as(Node.OptionalIndex, @fromBackingInt(@intCast(p.ir.data(node).lhs))).unwrap() orelse return true;
                 return p.readsOnly(value);
             },
             else => return false,
@@ -2813,18 +2813,18 @@ const Printer = struct {
         const n = p.resolve(node);
         const d = p.ir.data(n);
         switch (p.ir.tag(n)) {
-            .unary => if (@as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .not) {
-                return p.expression(@enumFromInt(d.lhs), 0, level);
+            .unary => if (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs))) == .not) {
+                return p.expression(@fromBackingInt(@intCast(d.lhs)), 0, level);
             },
             .binary => {
-                const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
+                const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
                 const flipped: ?JsIr.BinaryOp = switch (op) {
                     .strict_eq => .strict_ne,
                     .strict_ne => .strict_eq,
                     else => null,
                 };
                 if (flipped) |f| {
-                    const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                    const b = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
                     try p.expression(b.left, f.leftPrecedence(), level);
                     try p.tok(" ", "");
                     try p.push(f.text());
@@ -2834,7 +2834,7 @@ const Printer = struct {
                 // `a != b` for `a == b` (`Js.isNullish`), which `JsIr` has
                 // no operator of its own for.
                 if (op == .loose_eq) {
-                    const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                    const b = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
                     try p.expression(b.left, op.leftPrecedence(), level);
                     try p.tok(" != ", "!=");
                     return p.expression(b.right, op.rightPrecedence(), level);
@@ -2990,7 +2990,7 @@ const Fixture = struct {
     }
 
     fn ident(f: *Fixture, text: []const u8) !Index {
-        return f.node(.ident, @intFromEnum(try f.name(text)), 0);
+        return f.node(.ident, @backingInt(try f.name(text)), 0);
     }
 
     fn number(f: *Fixture, text: []const u8) !Index {
@@ -3005,11 +3005,11 @@ const Fixture = struct {
 
     fn binary(f: *Fixture, op: JsIr.BinaryOp, l: Index, r: Index) !Index {
         const record = try f.b.addRecord(JsIr.Binary{ .left = l, .right = r });
-        return f.node(.binary, @intFromEnum(record), @intFromEnum(op));
+        return f.node(.binary, @backingInt(record), @backingInt(op));
     }
 
     fn constDecl(f: *Fixture, out: *std.ArrayList(Index), n: []const u8, value: Index) !void {
-        try out.append(f.gpa, try f.node(.const_decl, @intFromEnum(try f.name(n)), value.int()));
+        try out.append(f.gpa, try f.node(.const_decl, @backingInt(try f.name(n)), value.int()));
     }
 
     fn func(f: *Fixture, params: []const JsIr.NameIndex, body: []const Index) !Index {
@@ -3021,7 +3021,7 @@ const Fixture = struct {
             .body_start = body_range.start,
             .body_end = body_range.end,
         });
-        return f.node(.arrow, @intFromEnum(record), 0);
+        return f.node(.arrow, @backingInt(record), 0);
     }
 
     /// Print `statements` as the module body. Owned by the caller.
@@ -3037,7 +3037,7 @@ const Fixture = struct {
     fn loop(f: *Fixture, label: JsIr.NameIndex, body: []const Index) !Index {
         const range = try f.b.addRange(body);
         const record = try f.b.addRecord(range);
-        return f.node(.while_true, @intFromEnum(label), @intFromEnum(record));
+        return f.node(.while_true, @backingInt(label), @backingInt(record));
     }
 };
 
@@ -3088,22 +3088,22 @@ test "imports, exports and the three declaration forms" {
             try out.append(gpa, try importOf(f, "../other/Other.mjs", &cross));
 
             const one = try f.qualified("M", "one");
-            try out.append(gpa, try f.node(.const_decl, @intFromEnum(one), (try f.number("1")).int()));
+            try out.append(gpa, try f.node(.const_decl, @backingInt(one), (try f.number("1")).int()));
             const two = try f.qualified("M", "two");
-            try out.append(gpa, try f.node(.let_decl, @intFromEnum(two), @intFromEnum(Node.OptionalIndex.none)));
+            try out.append(gpa, try f.node(.let_decl, @backingInt(two), @backingInt(Node.OptionalIndex.none)));
 
             const a = try f.name("a");
             const b = try f.name("b");
-            const ret = try f.node(.return_stmt, @intFromEnum((try f.ident("a")).toOptional()), 0);
+            const ret = try f.node(.return_stmt, @backingInt((try f.ident("a")).toOptional()), 0);
             const arrow = try f.func(&.{ a, b }, &.{ret});
             const fname = try f.qualified("M", "f");
             // A `func_decl` and an `arrow` share the `Func` payload, which
             // is why `Func` is a record rather than two inline halves.
             const record = f.b.nodes.items(.data)[arrow.int()].lhs;
-            try out.append(gpa, try f.node(.func_decl, @intFromEnum(fname), record));
+            try out.append(gpa, try f.node(.func_decl, @backingInt(fname), record));
 
             const exported = try f.b.addNames(&.{ one, fname });
-            try out.append(gpa, try f.node(.export_stmt, @intFromEnum(exported.start), @intFromEnum(exported.end)));
+            try out.append(gpa, try f.node(.export_stmt, @backingInt(exported.start), @backingInt(exported.end)));
         }
 
         fn importOf(f: *Fixture, source: []const u8, specs: []const JsIr.Specifier) !Index {
@@ -3115,7 +3115,7 @@ test "imports, exports and the three declaration forms" {
                 .specs_start = range.start,
                 .specs_end = range.end,
             });
-            return f.node(.import_stmt, @intFromEnum(record), 0);
+            return f.node(.import_stmt, @backingInt(record), 0);
         }
     }.go);
 }
@@ -3127,7 +3127,7 @@ test "a module name's dots become dollars, so a stack trace reads" {
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const n = try f.qualified("Json.Decode", "map");
-            try out.append(f.gpa, try f.node(.const_decl, @intFromEnum(n), (try f.number("1")).int()));
+            try out.append(f.gpa, try f.node(.const_decl, @backingInt(n), (try f.number("1")).int()));
         }
     }.go);
 }
@@ -3142,8 +3142,8 @@ test "a local whose text is a JavaScript reserved word is escaped; a property ke
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const target = try f.ident("class");
             const key = try f.name("new");
-            const access = try f.node(.member, target.int(), @intFromEnum(key));
-            try out.append(f.gpa, try f.node(.const_decl, @intFromEnum(key), access.int()));
+            const access = try f.node(.member, target.int(), @backingInt(key));
+            try out.append(f.gpa, try f.node(.const_decl, @backingInt(key), access.int()));
         }
     }.go);
 }
@@ -3171,8 +3171,8 @@ test "if, labelled while, break, continue, switch and throw" {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const gpa = f.gpa;
             const label = try f.name("loop");
-            const cont = try f.node(.continue_stmt, @intFromEnum(label), 0);
-            const brk = try f.node(.break_stmt, @intFromEnum(JsIr.NameIndex.none), 0);
+            const cont = try f.node(.continue_stmt, @backingInt(label), 0);
+            const brk = try f.node(.break_stmt, @backingInt(JsIr.NameIndex.none), 0);
             const then_body = try f.b.addRange(&.{cont});
             const else_body = try f.b.addRange(&.{brk});
             const branches = try f.b.addRecord(JsIr.If{
@@ -3181,23 +3181,23 @@ test "if, labelled while, break, continue, switch and throw" {
                 .else_start = else_body.start,
                 .else_end = else_body.end,
             });
-            const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @intFromEnum(branches));
+            const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @backingInt(branches));
             const after = try f.node(.expr_stmt, (try f.ident("g")).int(), 0);
             const loop_body = try f.b.addRange(&.{ if_stmt, after });
             const loop_record = try f.b.addRecord(loop_body);
-            try out.append(gpa, try f.node(.while_true, @intFromEnum(label), @intFromEnum(loop_record)));
+            try out.append(gpa, try f.node(.while_true, @backingInt(label), @backingInt(loop_record)));
 
             const assign = try f.node(.assign_stmt, (try f.ident("x")).int(), (try f.number("2")).int());
             const case_body = try f.b.addRange(&.{assign});
             const case_record = try f.b.addRecord(case_body);
-            const one_case = try f.node(.switch_case, @intFromEnum((try f.number("1")).toOptional()), @intFromEnum(case_record));
+            const one_case = try f.node(.switch_case, @backingInt((try f.number("1")).toOptional()), @backingInt(case_record));
             const throw = try f.node(.throw_stmt, (try f.ident("t")).int(), 0);
             const default_body = try f.b.addRange(&.{throw});
             const default_record = try f.b.addRecord(default_body);
-            const default_case = try f.node(.switch_case, @intFromEnum(Node.OptionalIndex.none), @intFromEnum(default_record));
+            const default_case = try f.node(.switch_case, @backingInt(Node.OptionalIndex.none), @backingInt(default_record));
             const cases = try f.b.addRange(&.{ one_case, default_case });
             const cases_record = try f.b.addRecord(cases);
-            try out.append(gpa, try f.node(.switch_stmt, (try f.ident("t")).int(), @intFromEnum(cases_record)));
+            try out.append(gpa, try f.node(.switch_stmt, (try f.ident("t")).int(), @backingInt(cases_record)));
         }
     }.go);
 }
@@ -3213,20 +3213,20 @@ test "objects, arrays, spreads, calls, member access and indexing" {
             const gpa = f.gpa;
             const inner = try callOf(f, try f.ident("g"), &.{try f.ident("x")});
             const elements = try f.b.addRange(&.{ try f.number("1"), try f.number("2") });
-            const array = try f.node(.array, @intFromEnum(elements.start), @intFromEnum(elements.end));
+            const array = try f.node(.array, @backingInt(elements.start), @backingInt(elements.end));
             const call = try callOf(f, try f.ident("f"), &.{ inner, array });
             const indexed = try f.node(.index_get, call.int(), (try f.number("0")).int());
-            const field = try f.node(.member, indexed.int(), @intFromEnum(try f.name("field")));
+            const field = try f.node(.member, indexed.int(), @backingInt(try f.name("field")));
             try f.constDecl(out, "v", field);
 
             const spread = try f.node(.spread_property, (try f.ident("base")).int(), 0);
-            const property = try f.node(.property, @intFromEnum(try f.name("a")), (try f.number("1")).int());
+            const property = try f.node(.property, @backingInt(try f.name("a")), (try f.number("1")).int());
             const properties = try f.b.addRange(&.{ spread, property });
-            const object = try f.node(.object, @intFromEnum(properties.start), @intFromEnum(properties.end));
+            const object = try f.node(.object, @backingInt(properties.start), @backingInt(properties.end));
             try f.constDecl(out, "o", object);
 
             const nothing = try f.b.addRange(&.{});
-            const empty_object = try f.node(.object, @intFromEnum(nothing.start), @intFromEnum(nothing.end));
+            const empty_object = try f.node(.object, @backingInt(nothing.start), @backingInt(nothing.end));
             try f.constDecl(out, "empty", empty_object);
             _ = gpa;
         }
@@ -3234,7 +3234,7 @@ test "objects, arrays, spreads, calls, member access and indexing" {
         fn callOf(f: *Fixture, callee: Index, args: []const Index) !Index {
             const range = try f.b.addRange(args);
             const record = try f.b.addRecord(range);
-            return f.node(.call, callee.int(), @intFromEnum(record));
+            return f.node(.call, callee.int(), @backingInt(record));
         }
     }.go);
 }
@@ -3266,8 +3266,8 @@ test "precedence decides the brackets, and every binary operator but `**` is lef
             const both = try f.binary(.logical_and, eq_a, eq_b);
             try f.constDecl(out, "e", try f.binary(.logical_or, both, try f.ident("c")));
 
-            try f.constDecl(out, "g", try f.node(.unary, plus.int(), @intFromEnum(JsIr.UnaryOp.neg)));
-            try f.constDecl(out, "h", try f.node(.unary, (try f.ident("a")).int(), @intFromEnum(JsIr.UnaryOp.not)));
+            try f.constDecl(out, "g", try f.node(.unary, plus.int(), @backingInt(JsIr.UnaryOp.neg)));
+            try f.constDecl(out, "h", try f.node(.unary, (try f.ident("a")).int(), @backingInt(JsIr.UnaryOp.not)));
         }
     }.go);
 }
@@ -3288,11 +3288,11 @@ test "`**` is right-associative, takes no unary left operand, and is no unary op
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const two = try f.number("2");
             const three = try f.number("3");
-            const neg = try f.node(.unary, (try f.ident("a")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+            const neg = try f.node(.unary, (try f.ident("a")).int(), @backingInt(JsIr.UnaryOp.neg));
             try f.constDecl(out, "a", try f.binary(.pow, two, try f.binary(.pow, three, two)));
             try f.constDecl(out, "b", try f.binary(.pow, try f.binary(.pow, two, three), two));
             try f.constDecl(out, "c", try f.binary(.pow, neg, two));
-            try f.constDecl(out, "d", try f.node(.unary, (try f.binary(.pow, try f.ident("a"), two)).int(), @intFromEnum(JsIr.UnaryOp.neg)));
+            try f.constDecl(out, "d", try f.node(.unary, (try f.binary(.pow, try f.ident("a"), two)).int(), @backingInt(JsIr.UnaryOp.neg)));
             try f.constDecl(out, "e", try f.binary(.pow, try f.ident("a"), neg));
             try f.constDecl(out, "g", try f.binary(.mul, two, try f.binary(.pow, three, two)));
         }
@@ -3312,20 +3312,20 @@ test "an arrow with one return prints concisely; an object body is bracketed" {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const a = try f.name("a");
             {
-                const ret = try f.node(.return_stmt, @intFromEnum((try f.ident("a")).toOptional()), 0);
+                const ret = try f.node(.return_stmt, @backingInt((try f.ident("a")).toOptional()), 0);
                 try f.constDecl(out, "f", try f.func(&.{a}, &.{ret}));
             }
             {
-                const property = try f.node(.property, @intFromEnum(a), (try f.number("1")).int());
+                const property = try f.node(.property, @backingInt(a), (try f.number("1")).int());
                 const properties = try f.b.addRange(&.{property});
-                const object = try f.node(.object, @intFromEnum(properties.start), @intFromEnum(properties.end));
-                const ret = try f.node(.return_stmt, @intFromEnum(object.toOptional()), 0);
+                const object = try f.node(.object, @backingInt(properties.start), @backingInt(properties.end));
+                const ret = try f.node(.return_stmt, @backingInt(object.toOptional()), 0);
                 try f.constDecl(out, "g", try f.func(&.{}, &.{ret}));
             }
             {
                 const b = try f.name("b");
-                const bind = try f.node(.const_decl, @intFromEnum(b), (try f.ident("a")).int());
-                const ret = try f.node(.return_stmt, @intFromEnum((try f.ident("b")).toOptional()), 0);
+                const bind = try f.node(.const_decl, @backingInt(b), (try f.ident("a")).int());
+                const ret = try f.node(.return_stmt, @backingInt((try f.ident("b")).toOptional()), 0);
                 try f.constDecl(out, "h", try f.func(&.{a}, &.{ bind, ret }));
             }
         }
@@ -3338,23 +3338,23 @@ test "an arrow with one return prints concisely; an object body is bracketed" {
 /// and one whose leftmost operand is bracketed anyway, which needs nothing.
 const LeftmostBrace = struct {
     fn object(f: *Fixture) !Index {
-        const property = try f.node(.property, @intFromEnum(try f.name("a")), (try f.number("1")).int());
+        const property = try f.node(.property, @backingInt(try f.name("a")), (try f.number("1")).int());
         const properties = try f.b.addRange(&.{property});
-        return f.node(.object, @intFromEnum(properties.start), @intFromEnum(properties.end));
+        return f.node(.object, @backingInt(properties.start), @backingInt(properties.end));
     }
 
     fn member(f: *Fixture, target: Index, key: []const u8) !Index {
-        return f.node(.member, target.int(), @intFromEnum(try f.name(key)));
+        return f.node(.member, target.int(), @backingInt(try f.name(key)));
     }
 
     fn callOf(f: *Fixture, callee: Index, args: []const Index) !Index {
         const range = try f.b.addRange(args);
         const record = try f.b.addRecord(range);
-        return f.node(.call, callee.int(), @intFromEnum(record));
+        return f.node(.call, callee.int(), @backingInt(record));
     }
 
     fn body(f: *Fixture, out: *std.ArrayList(Index), n: []const u8, value: Index) !void {
-        const ret = try f.node(.return_stmt, @intFromEnum(value.toOptional()), 0);
+        const ret = try f.node(.return_stmt, @backingInt(value.toOptional()), 0);
         try f.constDecl(out, n, try f.func(&.{}, &.{ret}));
     }
 
@@ -3364,7 +3364,7 @@ const LeftmostBrace = struct {
         try body(f, out, "s", try f.binary(.add, try member(f, try object(f), "a"), try f.ident("b")));
         {
             const record = try f.b.addRecord(JsIr.Cond{ .consequent = try f.number("1"), .alternate = try f.number("2") });
-            try body(f, out, "q", try f.node(.cond, (try member(f, try object(f), "a")).int(), @intFromEnum(record)));
+            try body(f, out, "q", try f.node(.cond, (try member(f, try object(f), "a")).int(), @backingInt(record)));
         }
         // `b * ({ a: 1 }.a + 1)`: the brace is inside a bracket already.
         try body(f, out, "k", try f.binary(.mul, try f.ident("b"), try f.binary(.add, try member(f, try object(f), "a"), try f.number("1"))));
@@ -3406,9 +3406,9 @@ test "conditionals, the four literals, and the disambiguator suffix" {
             const yes = try f.node(.true_lit, 0, 0);
             const no = try f.node(.false_lit, 0, 0);
             const record = try f.b.addRecord(JsIr.Cond{ .consequent = yes, .alternate = no });
-            const cond = try f.node(.cond, (try f.ident("a")).int(), @intFromEnum(record));
+            const cond = try f.node(.cond, (try f.ident("a")).int(), @backingInt(record));
             const tagged = try f.b.intern(.{ .module = .none, .base = try f.sym("x"), .tag = 3 });
-            try out.append(gpa, try f.node(.const_decl, @intFromEnum(tagged), cond.int()));
+            try out.append(gpa, try f.node(.const_decl, @backingInt(tagged), cond.int()));
             try f.constDecl(out, "y", try f.node(.null_lit, 0, 0));
             try f.constDecl(out, "z", try f.node(.undefined_lit, 0, 0));
         }
@@ -3438,7 +3438,7 @@ test "a template literal escapes only what would end it" {
                 const after_offset, const after_len = try f.b.addString(" c` d${e} f");
                 const after = try f.node(.template_chunk, after_offset, after_len);
                 const parts = try f.b.addRange(&.{ before, middle, after });
-                const template = try f.node(.template, @intFromEnum(parts.start), @intFromEnum(parts.end));
+                const template = try f.node(.template, @backingInt(parts.start), @backingInt(parts.end));
                 try f.constDecl(out, "t", template);
             }
         }.go,
@@ -3478,16 +3478,16 @@ test "compact: a binary minus before a negation keeps one space and nothing else
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
-            const neg_y = try f.node(.unary, (try f.ident("y")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+            const neg_y = try f.node(.unary, (try f.ident("y")).int(), @backingInt(JsIr.UnaryOp.neg));
             try f.constDecl(out, "a", try f.binary(.sub, try f.ident("x"), neg_y));
-            const neg_y2 = try f.node(.unary, (try f.ident("y")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+            const neg_y2 = try f.node(.unary, (try f.ident("y")).int(), @backingInt(JsIr.UnaryOp.neg));
             try f.constDecl(out, "b", try f.binary(.add, try f.ident("x"), neg_y2));
             try f.constDecl(out, "c", try f.binary(.sub, try f.ident("x"), try f.ident("y")));
             // A negation at the START of an initialiser needs nothing: `=`
             // and `-` do not merge, so `const d=-x-y;` is right. The rule is
             // about the pair of characters and never about which construct
             // produced them, which is why it is one function and not seven.
-            const neg_x = try f.node(.unary, (try f.ident("x")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+            const neg_x = try f.node(.unary, (try f.ident("x")).int(), @backingInt(JsIr.UnaryOp.neg));
             try f.constDecl(out, "d", try f.binary(.sub, neg_x, try f.ident("y")));
         }
     }.go);
@@ -3504,19 +3504,19 @@ test "compact: every keyword keeps exactly the space that separates it from what
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const throw = try f.node(.throw_stmt, (try f.ident("a")).int(), 0);
             const case_body = try f.b.addRange(&.{throw});
-            const case_block = try f.node(.block_stmt, @intFromEnum(JsIr.NameIndex.none), @intFromEnum(try f.b.addRecord(case_body)));
-            const one_case = try f.node(.switch_case, @intFromEnum((try f.number("1")).toOptional()), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{case_block}))));
+            const case_block = try f.node(.block_stmt, @backingInt(JsIr.NameIndex.none), @backingInt(try f.b.addRecord(case_body)));
+            const one_case = try f.node(.switch_case, @backingInt((try f.number("1")).toOptional()), @backingInt(try f.b.addRecord(try f.b.addRange(&.{case_block}))));
 
-            const brk = try f.node(.break_stmt, @intFromEnum(try f.name("L")), 0);
-            const default_block = try f.node(.block_stmt, @intFromEnum(JsIr.NameIndex.none), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{brk}))));
-            const default_case = try f.node(.switch_case, @intFromEnum(Node.OptionalIndex.none), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{default_block}))));
+            const brk = try f.node(.break_stmt, @backingInt(try f.name("L")), 0);
+            const default_block = try f.node(.block_stmt, @backingInt(JsIr.NameIndex.none), @backingInt(try f.b.addRecord(try f.b.addRange(&.{brk}))));
+            const default_case = try f.node(.switch_case, @backingInt(Node.OptionalIndex.none), @backingInt(try f.b.addRecord(try f.b.addRange(&.{default_block}))));
 
             const cases = try f.b.addRecord(try f.b.addRange(&.{ one_case, default_case }));
-            const sw = try f.node(.switch_stmt, (try f.ident("a")).int(), @intFromEnum(cases));
+            const sw = try f.node(.switch_stmt, (try f.ident("a")).int(), @backingInt(cases));
             try f.constDecl(out, "f", try f.func(&.{try f.name("a")}, &.{sw}));
 
-            const type_of = try f.node(.unary, (try f.ident("a")).int(), @intFromEnum(JsIr.UnaryOp.type_of));
-            const ret = try f.node(.return_stmt, @intFromEnum(type_of.toOptional()), 0);
+            const type_of = try f.node(.unary, (try f.ident("a")).int(), @backingInt(JsIr.UnaryOp.type_of));
+            const ret = try f.node(.return_stmt, @backingInt(type_of.toOptional()), 0);
             try f.constDecl(out, "g", try f.func(&.{try f.name("a")}, &.{ret}));
         }
     }.go);
@@ -3537,7 +3537,7 @@ test "compact: a string literal is one token however many pieces it takes to wri
                 const after_offset, const after_len = try f.b.addString("c");
                 const after = try f.node(.template_chunk, after_offset, after_len);
                 const parts = try f.b.addRange(&.{ before, try f.ident("b"), after });
-                try f.constDecl(out, "t", try f.node(.template, @intFromEnum(parts.start), @intFromEnum(parts.end)));
+                try f.constDecl(out, "t", try f.node(.template, @backingInt(parts.start), @backingInt(parts.end)));
             }
         }.go,
     );
@@ -3556,13 +3556,13 @@ test "compact: a run of declarations joins, a local const is a let, and the modu
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
-            const b1 = try f.node(.const_decl, @intFromEnum(try f.name("b")), (try f.number("1")).int());
-            const c2 = try f.node(.const_decl, @intFromEnum(try f.name("c")), (try f.number("2")).int());
-            const d = try f.node(.let_decl, @intFromEnum(try f.name("d")), @intFromEnum(Node.OptionalIndex.none));
-            const ret = try f.node(.return_stmt, @intFromEnum((try f.ident("b")).toOptional()), 0);
+            const b1 = try f.node(.const_decl, @backingInt(try f.name("b")), (try f.number("1")).int());
+            const c2 = try f.node(.const_decl, @backingInt(try f.name("c")), (try f.number("2")).int());
+            const d = try f.node(.let_decl, @backingInt(try f.name("d")), @backingInt(Node.OptionalIndex.none));
+            const ret = try f.node(.return_stmt, @backingInt((try f.ident("b")).toOptional()), 0);
             try f.constDecl(out, "f", try f.func(&.{try f.name("a")}, &.{ b1, c2, d, ret }));
             try f.constDecl(out, "g", try f.number("2"));
-            const read = try f.node(.return_stmt, @intFromEnum((try f.ident("a")).toOptional()), 0);
+            const read = try f.node(.return_stmt, @backingInt((try f.ident("a")).toOptional()), 0);
             try f.constDecl(out, "h", try f.func(&.{try f.name("a")}, &.{read}));
         }
     }.go);
@@ -3577,9 +3577,9 @@ test "compact: a labelled loop, an if/else chain and an assignment" {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const label = try f.name("L");
             const assign = try f.node(.assign_stmt, (try f.ident("a")).int(), (try f.number("1")).int());
-            const cont = try f.node(.continue_stmt, @intFromEnum(label), 0);
+            const cont = try f.node(.continue_stmt, @backingInt(label), 0);
             const then_body = try f.b.addRange(&.{ assign, cont });
-            const ret = try f.node(.return_stmt, @intFromEnum((try f.ident("a")).toOptional()), 0);
+            const ret = try f.node(.return_stmt, @backingInt((try f.ident("a")).toOptional()), 0);
             const else_body = try f.b.addRange(&.{ret});
             const branches = try f.b.addRecord(JsIr.If{
                 .then_start = then_body.start,
@@ -3587,7 +3587,7 @@ test "compact: a labelled loop, an if/else chain and an assignment" {
                 .else_start = else_body.start,
                 .else_end = else_body.end,
             });
-            const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @intFromEnum(branches));
+            const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @backingInt(branches));
             const loop = try f.loop(label, &.{if_stmt});
             try f.constDecl(out, "f", try f.func(&.{try f.name("a")}, &.{loop}));
         }
@@ -3614,18 +3614,18 @@ test "compact: an import keeps its `as`, and an object and a call lose every spa
                 .specs_start = range.start,
                 .specs_end = range.end,
             });
-            try out.append(gpa, try f.node(.import_stmt, @intFromEnum(record), 0));
+            try out.append(gpa, try f.node(.import_stmt, @backingInt(record), 0));
 
-            const property = try f.node(.property, @intFromEnum(try f.name("a")), (try f.number("1")).int());
+            const property = try f.node(.property, @backingInt(try f.name("a")), (try f.number("1")).int());
             const spread = try f.node(.spread_property, (try f.ident("rest")).int(), 0);
             const props = try f.b.addRange(&.{ property, spread });
-            try f.constDecl(out, "o", try f.node(.object, @intFromEnum(props.start), @intFromEnum(props.end)));
+            try f.constDecl(out, "o", try f.node(.object, @backingInt(props.start), @backingInt(props.end)));
 
             const args = try f.b.addRecord(try f.b.addRange(&.{ try f.number("1"), try f.number("2") }));
-            try f.constDecl(out, "c", try f.node(.call, (try f.ident("f")).int(), @intFromEnum(args)));
+            try f.constDecl(out, "c", try f.node(.call, (try f.ident("f")).int(), @backingInt(args)));
 
             const exported = try f.b.addNames(&.{ try f.name("o"), try f.name("c") });
-            try out.append(gpa, try f.node(.export_stmt, @intFromEnum(exported.start), @intFromEnum(exported.end)));
+            try out.append(gpa, try f.node(.export_stmt, @backingInt(exported.start), @backingInt(exported.end)));
         }
     }.go);
 }
@@ -3643,7 +3643,7 @@ test "a numeric literal in a member position is bracketed, in both modes" {
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const one = try f.number("1");
-            try f.constDecl(out, "a", try f.node(.member, one.int(), @intFromEnum(try f.name("b"))));
+            try f.constDecl(out, "a", try f.node(.member, one.int(), @backingInt(try f.name("b"))));
             const two = try f.number("1");
             try f.constDecl(out, "c", try f.node(.index_get, two.int(), (try f.number("0")).int()));
         }
@@ -3681,14 +3681,14 @@ fn printDeepChains() !void {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
     const a = try f.name("a");
-    var chain = try f.node(.ident, @intFromEnum(a), 0);
-    for (1..depth) |_| chain = try f.binary(.logical_and, chain, try f.node(.ident, @intFromEnum(a), 0));
+    var chain = try f.node(.ident, @backingInt(a), 0);
+    for (1..depth) |_| chain = try f.binary(.logical_and, chain, try f.node(.ident, @backingInt(a), 0));
     const b = try f.name("b");
     var list = try f.node(.null_lit, 0, 0);
     for (0..depth) |_| {
-        const property = try f.node(.property, @intFromEnum(b), list.int());
+        const property = try f.node(.property, @backingInt(b), list.int());
         const range = try f.b.addRange(&.{property});
-        list = try f.node(.object, @intFromEnum(range.start), @intFromEnum(range.end));
+        list = try f.node(.object, @backingInt(range.start), @backingInt(range.end));
     }
     var out: std.ArrayList(Index) = .empty;
     defer out.deinit(testing.allocator);
@@ -3734,40 +3734,40 @@ test "the recursive and the iterative printer write the same bytes" {
     defer out.deinit(gpa);
 
     // Calls, arrays, indexing, members, and a number that needs a bracket.
-    const g = try f.node(.call, (try f.ident("g")).int(), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{try f.ident("x")}))));
+    const g = try f.node(.call, (try f.ident("g")).int(), @backingInt(try f.b.addRecord(try f.b.addRange(&.{try f.ident("x")}))));
     const elements = try f.b.addRange(&.{ try f.number("1"), try f.number("2") });
-    const array = try f.node(.array, @intFromEnum(elements.start), @intFromEnum(elements.end));
-    const call = try f.node(.call, (try f.ident("f")).int(), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{ g, array }))));
+    const array = try f.node(.array, @backingInt(elements.start), @backingInt(elements.end));
+    const call = try f.node(.call, (try f.ident("f")).int(), @backingInt(try f.b.addRecord(try f.b.addRange(&.{ g, array }))));
     const indexed = try f.node(.index_get, call.int(), (try f.number("0")).int());
-    try f.constDecl(&out, "v", try f.node(.member, indexed.int(), @intFromEnum(try f.name("field"))));
-    try f.constDecl(&out, "n", try f.node(.member, (try f.number("1")).int(), @intFromEnum(try f.name("a"))));
+    try f.constDecl(&out, "v", try f.node(.member, indexed.int(), @backingInt(try f.name("field"))));
+    try f.constDecl(&out, "n", try f.node(.member, (try f.number("1")).int(), @backingInt(try f.name("a"))));
     // Objects with a spread, and an empty one.
     const spread = try f.node(.spread_property, (try f.ident("base")).int(), 0);
-    const property = try f.node(.property, @intFromEnum(try f.name("a")), (try f.number("1")).int());
+    const property = try f.node(.property, @backingInt(try f.name("a")), (try f.number("1")).int());
     const properties = try f.b.addRange(&.{ spread, property });
-    const object = try f.node(.object, @intFromEnum(properties.start), @intFromEnum(properties.end));
+    const object = try f.node(.object, @backingInt(properties.start), @backingInt(properties.end));
     try f.constDecl(&out, "o", object);
     const nothing = try f.b.addRange(&.{});
-    try f.constDecl(&out, "e", try f.node(.object, @intFromEnum(nothing.start), @intFromEnum(nothing.end)));
+    try f.constDecl(&out, "e", try f.node(.object, @backingInt(nothing.start), @backingInt(nothing.end)));
     // Precedence both ways, a negation after a minus, `typeof`, a conditional.
     const bc = try f.binary(.sub, try f.ident("b"), try f.ident("c"));
     const abc = try f.binary(.sub, try f.ident("a"), bc);
-    const neg = try f.node(.unary, (try f.number("1")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+    const neg = try f.node(.unary, (try f.number("1")).int(), @backingInt(JsIr.UnaryOp.neg));
     const minus = try f.binary(.sub, abc, neg);
-    const type_of = try f.node(.unary, (try f.ident("t")).int(), @intFromEnum(JsIr.UnaryOp.type_of));
+    const type_of = try f.node(.unary, (try f.ident("t")).int(), @backingInt(JsIr.UnaryOp.type_of));
     const cond_record = try f.b.addRecord(JsIr.Cond{ .consequent = minus, .alternate = type_of });
     const test_expr = try f.binary(.logical_or, try f.ident("p"), try f.ident("q"));
-    try f.constDecl(&out, "c", try f.node(.cond, test_expr.int(), @intFromEnum(cond_record)));
+    try f.constDecl(&out, "c", try f.node(.cond, test_expr.int(), @backingInt(cond_record)));
     // A template with a chunk that needs escaping and an interpolation.
     const before_offset, const before_len = try f.b.addString("a`${");
     const before = try f.node(.template_chunk, before_offset, before_len);
     const parts = try f.b.addRange(&.{ before, try f.binary(.add, try f.ident("x"), try f.number("1")) });
-    try f.constDecl(&out, "t", try f.node(.template, @intFromEnum(parts.start), @intFromEnum(parts.end)));
+    try f.constDecl(&out, "t", try f.node(.template, @backingInt(parts.start), @backingInt(parts.end)));
     // Arrows: a concise object body, and a block body holding an `if`.
     const a = try f.name("a");
-    const ret_object = try f.node(.return_stmt, @intFromEnum(object.toOptional()), 0);
+    const ret_object = try f.node(.return_stmt, @backingInt(object.toOptional()), 0);
     try f.constDecl(&out, "k", try f.func(&.{a}, &.{ret_object}));
-    const ret = try f.node(.return_stmt, @intFromEnum((try f.binary(.strict_eq, try f.ident("a"), try f.string("s\"q"))).toOptional()), 0);
+    const ret = try f.node(.return_stmt, @backingInt((try f.binary(.strict_eq, try f.ident("a"), try f.string("s\"q"))).toOptional()), 0);
     const then_body = try f.b.addRange(&.{ret});
     const else_body = try f.b.addRange(&.{});
     const branches = try f.b.addRecord(JsIr.If{
@@ -3776,9 +3776,9 @@ test "the recursive and the iterative printer write the same bytes" {
         .else_start = else_body.start,
         .else_end = else_body.end,
     });
-    const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @intFromEnum(branches));
-    const inner = try f.func(&.{a}, &.{ if_stmt, try f.node(.return_stmt, @intFromEnum((try f.node(.undefined_lit, 0, 0)).toOptional()), 0) });
-    try f.constDecl(&out, "h", try f.node(.call, inner.int(), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{ try f.node(.true_lit, 0, 0), try f.node(.null_lit, 0, 0) })))));
+    const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @backingInt(branches));
+    const inner = try f.func(&.{a}, &.{ if_stmt, try f.node(.return_stmt, @backingInt((try f.node(.undefined_lit, 0, 0)).toOptional()), 0) });
+    try f.constDecl(&out, "h", try f.node(.call, inner.int(), @backingInt(try f.b.addRecord(try f.b.addRange(&.{ try f.node(.true_lit, 0, 0), try f.node(.null_lit, 0, 0) })))));
 
     const body = try f.b.addRange(out.items);
     var ir = try f.b.toOwned(body);
@@ -3812,9 +3812,9 @@ fn randomExpr(f: *Fixture, random: std.Random, budget: u32) !Index {
             var args: [3]Index = undefined;
             for (args[0..count]) |*arg| arg.* = try randomExpr(f, random, sub);
             const callee = try randomExpr(f, random, sub);
-            return f.node(.call, callee.int(), @intFromEnum(try f.b.addRecord(try f.b.addRange(args[0..count]))));
+            return f.node(.call, callee.int(), @backingInt(try f.b.addRecord(try f.b.addRange(args[0..count]))));
         },
-        7 => return f.node(.member, (try randomExpr(f, random, sub)).int(), @intFromEnum(try f.name(names[random.uintLessThan(usize, names.len)]))),
+        7 => return f.node(.member, (try randomExpr(f, random, sub)).int(), @backingInt(try f.name(names[random.uintLessThan(usize, names.len)]))),
         8 => {
             const target = try randomExpr(f, random, sub);
             return f.node(.index_get, target.int(), (try randomExpr(f, random, sub)).int());
@@ -3827,27 +3827,27 @@ fn randomExpr(f: *Fixture, random: std.Random, budget: u32) !Index {
                 prop.* = if (random.boolean())
                     try f.node(.spread_property, value.int(), 0)
                 else
-                    try f.node(.property, @intFromEnum(try f.name(names[random.uintLessThan(usize, names.len)])), value.int());
+                    try f.node(.property, @backingInt(try f.name(names[random.uintLessThan(usize, names.len)])), value.int());
             }
             const range = try f.b.addRange(props[0..count]);
-            return f.node(.object, @intFromEnum(range.start), @intFromEnum(range.end));
+            return f.node(.object, @backingInt(range.start), @backingInt(range.end));
         },
         10 => {
             const count = random.uintLessThan(usize, 4);
             var elements: [3]Index = undefined;
             for (elements[0..count]) |*e| e.* = try randomExpr(f, random, sub);
             const range = try f.b.addRange(elements[0..count]);
-            return f.node(.array, @intFromEnum(range.start), @intFromEnum(range.end));
+            return f.node(.array, @backingInt(range.start), @backingInt(range.end));
         },
         11 => {
             // A concise body, or a block with a `const`, an `if` and a `return`.
             const a = try f.name("a");
             if (random.boolean()) {
-                const ret = try f.node(.return_stmt, @intFromEnum((try randomExpr(f, random, sub)).toOptional()), 0);
+                const ret = try f.node(.return_stmt, @backingInt((try randomExpr(f, random, sub)).toOptional()), 0);
                 return f.func(&.{a}, &.{ret});
             }
-            const bind = try f.node(.const_decl, @intFromEnum(try f.name("b")), (try randomExpr(f, random, sub)).int());
-            const inner = try f.node(.return_stmt, @intFromEnum((try randomExpr(f, random, sub)).toOptional()), 0);
+            const bind = try f.node(.const_decl, @backingInt(try f.name("b")), (try randomExpr(f, random, sub)).int());
+            const inner = try f.node(.return_stmt, @backingInt((try randomExpr(f, random, sub)).toOptional()), 0);
             const then_body = try f.b.addRange(&.{inner});
             const else_body = try f.b.addRange(&.{});
             const branches = try f.b.addRecord(JsIr.If{
@@ -3856,14 +3856,14 @@ fn randomExpr(f: *Fixture, random: std.Random, budget: u32) !Index {
                 .else_start = else_body.start,
                 .else_end = else_body.end,
             });
-            const if_stmt = try f.node(.if_stmt, (try randomExpr(f, random, sub)).int(), @intFromEnum(branches));
-            const ret = try f.node(.return_stmt, @intFromEnum((try randomExpr(f, random, sub)).toOptional()), 0);
+            const if_stmt = try f.node(.if_stmt, (try randomExpr(f, random, sub)).int(), @backingInt(branches));
+            const ret = try f.node(.return_stmt, @backingInt((try randomExpr(f, random, sub)).toOptional()), 0);
             return f.func(&.{a}, &.{ bind, if_stmt, ret });
         },
         12 => {
             const consequent = try randomExpr(f, random, sub);
             const record = try f.b.addRecord(JsIr.Cond{ .consequent = consequent, .alternate = try randomExpr(f, random, sub) });
-            return f.node(.cond, (try randomExpr(f, random, sub)).int(), @intFromEnum(record));
+            return f.node(.cond, (try randomExpr(f, random, sub)).int(), @backingInt(record));
         },
         13, 14 => {
             const ops = std.enums.values(JsIr.BinaryOp);
@@ -3872,13 +3872,13 @@ fn randomExpr(f: *Fixture, random: std.Random, budget: u32) !Index {
         },
         15 => {
             const ops = std.enums.values(JsIr.UnaryOp);
-            return f.node(.unary, (try randomExpr(f, random, sub)).int(), @intFromEnum(ops[random.uintLessThan(usize, ops.len)]));
+            return f.node(.unary, (try randomExpr(f, random, sub)).int(), @backingInt(ops[random.uintLessThan(usize, ops.len)]));
         },
         16 => {
             const offset, const len = try f.b.addString("t`${\\");
             const chunk = try f.node(.template_chunk, offset, len);
             const parts = try f.b.addRange(&.{ chunk, try randomExpr(f, random, sub) });
-            return f.node(.template, @intFromEnum(parts.start), @intFromEnum(parts.end));
+            return f.node(.template, @backingInt(parts.start), @backingInt(parts.end));
         },
         17 => return f.node(.false_lit, 0, 0),
         else => {

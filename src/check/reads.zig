@@ -96,7 +96,7 @@ pub const Kind = enum(u8) {
 /// No allocation and no atomics on the recording path: one thread-local load,
 /// one bit test and one bit set. The two arrays are sized once per worker.
 pub const Recorder = struct {
-    reader: Graph.Index = @enumFromInt(0),
+    reader: Graph.Index = @fromBackingInt(@intCast(0)),
     /// One bit per graph module: was it read during this module's check?
     read: std.DynamicBitSetUnmanaged = .{},
     /// The kind of the FIRST read recorded for each module, so a violation's
@@ -175,7 +175,7 @@ pub const Coverage = struct {
         if (!enabled) return .{};
         const n = graph.count();
         for (0..n) |i| {
-            if (graph.isPoisoned(@enumFromInt(i))) return .{};
+            if (graph.isPoisoned(@fromBackingInt(@intCast(i)))) return .{};
         }
         var out: Coverage = .{ .rows = try gpa.alloc(std.DynamicBitSetUnmanaged, n) };
         errdefer out.deinit(gpa);
@@ -186,7 +186,7 @@ pub const Coverage = struct {
         // (`Graph.implicit_core`), so every module's key sees those move;
         // any other core module it reads must be an edge, like any import.
         for (0..n) |i| {
-            if (!graph.isImplicitCore(@enumFromInt(i))) continue;
+            if (!graph.isImplicitCore(@fromBackingInt(@intCast(i)))) continue;
             for (out.rows) |*row| row.set(i);
         }
         for (graph.order) |m| {
@@ -231,7 +231,7 @@ pub fn firstUncovered(r: *const Recorder, coverage: *const Coverage) ?Violation 
     var it = r.read.iterator(.{});
     while (it.next()) |i| {
         if (row.isSet(i)) continue;
-        return .{ .read = @enumFromInt(@as(u32, @intCast(i))), .kind = r.kind[i] };
+        return .{ .read = @fromBackingInt(@intCast(@as(u32, @intCast(i)))), .kind = r.kind[i] };
     }
     return null;
 }
@@ -247,15 +247,15 @@ test "a recorder keeps the first kind per module and nothing else" {
     const gpa = testing.allocator;
     var r: Recorder = try .init(gpa, 4);
     defer r.deinit(gpa);
-    begin(&r, @enumFromInt(0));
+    begin(&r, @fromBackingInt(@intCast(0)));
     defer end();
 
-    note(.iface, @enumFromInt(2));
-    note(.types_entry, @enumFromInt(2)); // the first kind wins
-    note(.bir, @enumFromInt(3));
+    note(.iface, @fromBackingInt(@intCast(2)));
+    note(.types_entry, @fromBackingInt(@intCast(2))); // the first kind wins
+    note(.bir, @fromBackingInt(@intCast(3)));
     // Out of range is dropped rather than trapping: a poisoned index must not
     // crash a self-check.
-    note(.iface, @enumFromInt(99));
+    note(.iface, @fromBackingInt(@intCast(99)));
 
     try testing.expect(!r.read.isSet(1));
     try testing.expect(r.read.isSet(2));
@@ -283,15 +283,15 @@ test "an uncovered read is found, in module index order, and a covered one is no
     var r: Recorder = try .init(gpa, 4);
     defer r.deinit(gpa);
 
-    begin(&r, @enumFromInt(0));
-    note(.iface, @enumFromInt(1));
+    begin(&r, @fromBackingInt(@intCast(0)));
+    note(.iface, @fromBackingInt(@intCast(1)));
     try testing.expectEqual(@as(?Violation, null), firstUncovered(&r, &coverage));
 
     // Two uncovered reads: the LOWER module index is reported, because the
     // message may not depend on which read happened first — the scan is over
     // indices assigned before any thread started (`fast-compiler.md` §10).
-    note(.bir, @enumFromInt(3));
-    note(.types_alias_body, @enumFromInt(2));
+    note(.bir, @fromBackingInt(@intCast(3)));
+    note(.types_alias_body, @fromBackingInt(@intCast(2)));
     const bad = firstUncovered(&r, &coverage).?;
     try testing.expectEqual(@as(u32, 2), bad.read.int());
     try testing.expectEqual(Kind.types_alias_body, bad.kind);
@@ -300,9 +300,9 @@ test "an uncovered read is found, in module index order, and a covered one is no
     // A coverage that was never built — a cyclic project, or a release
     // build — says nothing rather than saying everything is uncovered.
     var unbuilt: Coverage = .empty;
-    begin(&r, @enumFromInt(0));
+    begin(&r, @fromBackingInt(@intCast(0)));
     defer end();
-    note(.bir, @enumFromInt(3));
+    note(.bir, @fromBackingInt(@intCast(3)));
     try testing.expectEqual(@as(?Violation, null), firstUncovered(&r, &unbuilt));
 }
 
@@ -311,8 +311,8 @@ test "recording stops outside a module's check" {
     const gpa = testing.allocator;
     var r: Recorder = try .init(gpa, 2);
     defer r.deinit(gpa);
-    begin(&r, @enumFromInt(0));
+    begin(&r, @fromBackingInt(@intCast(0)));
     end();
-    note(.iface, @enumFromInt(1));
+    note(.iface, @fromBackingInt(@intCast(1)));
     try testing.expect(!r.read.isSet(1));
 }

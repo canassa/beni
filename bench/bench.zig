@@ -225,7 +225,7 @@ pub fn main(init: std.process.Init) !u8 {
     // Every phase runs on it, so only when every phase was asked for.
     if (!phases.eql(.full)) return 0;
     for (0..store.count()) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+        const file: SourceStore.Index = @fromBackingInt(@intCast(i));
         const p = store.path(file);
         if (std.mem.indexOf(u8, p, pathological_marker) == null and options.pathological == null) continue;
         try printFileLine(gpa, io, stdout, &store, file, options.iterations);
@@ -368,7 +368,7 @@ fn measureRead(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations: 
         var lines: u64 = 0;
         const start = Io.Timestamp.now(io, .awake);
         for (0..store.count()) |i| {
-            const file: SourceStore.Index = @enumFromInt(i);
+            const file: SourceStore.Index = @fromBackingInt(@intCast(i));
             try store.read(gpa, io, file);
             const text = store.bytes(file);
             bytes += text.len;
@@ -400,7 +400,7 @@ fn measureLex(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations: u
         var tokens: u64 = 0;
         const start = Io.Timestamp.now(io, .awake);
         for (0..store.count()) |i| {
-            const file: SourceStore.Index = @enumFromInt(i);
+            const file: SourceStore.Index = @fromBackingInt(@intCast(i));
             const text = store.bytes(file);
             var out: Tokenizer.Output = .empty;
             defer out.deinit(gpa);
@@ -432,7 +432,7 @@ fn measureParse(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations:
     defer for (outputs[0..lexed]) |*out| out.deinit(gpa);
     for (outputs, 0..) |*out, i| {
         out.* = .empty;
-        try Tokenizer.tokenize(gpa, store.bytes(@enumFromInt(i)), &interner, out);
+        try Tokenizer.tokenize(gpa, store.bytes(@fromBackingInt(@intCast(i))), &interner, out);
         lexed += 1;
     }
 
@@ -448,7 +448,7 @@ fn measureParse(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations:
         var nodes: u64 = 0;
         const start = Io.Timestamp.now(io, .awake);
         for (outputs, 0..) |*out, i| {
-            const file: SourceStore.Index = @enumFromInt(i);
+            const file: SourceStore.Index = @fromBackingInt(@intCast(i));
             const text = store.bytes(file);
             var tree = try Parse.parse(gpa, arena.allocator(), text, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
             defer tree.deinit(gpa);
@@ -489,7 +489,7 @@ fn measureLower(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations:
     var arena: Arena = .init(std.heap.page_allocator);
     defer arena.deinit();
     for (outputs, trees, 0..) |*out, *tree, i| {
-        const text = store.bytes(@enumFromInt(i));
+        const text = store.bytes(@fromBackingInt(@intCast(i)));
         out.* = .empty;
         try Tokenizer.tokenize(gpa, text, &interner, out);
         lexed += 1;
@@ -509,7 +509,7 @@ fn measureLower(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations:
         var insts: u64 = 0;
         const start = Io.Timestamp.now(io, .awake);
         for (outputs, trees, 0..) |*out, *tree, i| {
-            const file: SourceStore.Index = @enumFromInt(i);
+            const file: SourceStore.Index = @fromBackingInt(@intCast(i));
             const text = store.bytes(file);
             var bir = try Lower.lower(gpa, arena.allocator(), text, out.tokens.slice(), tree, &interner, .{
                 .core = false,
@@ -643,8 +643,8 @@ fn coldCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32
         counts.modules = session.graph.count();
         // By name: `CheckMeasurement` mirrors `Check.Counters`, and a
         // counter added there but not copied here would print as zero.
-        inline for (@typeInfo(@TypeOf(session.checked.counters)).@"struct".fields) |f| {
-            @field(counts, f.name) = @field(session.checked.counters, f.name);
+        inline for (@typeInfo(@TypeOf(session.checked.counters)).@"struct".field_names) |field_name| {
+            @field(counts, field_name) = @field(session.checked.counters, field_name);
         }
         counts.diagnostics = session.diagnostics.items.len;
     }
@@ -691,7 +691,7 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
     var made: usize = 0;
     errdefer for (specifiers[0..made]) |s| gpa.free(s);
     for (birs, specifiers, 0..) |*b, *specifier, i| {
-        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         const file = session.graph.moduleFile(m);
         b.* = session.artifacts.bir(file);
         specifier.* = try std.fmt.allocPrint(gpa, "./{s}.mjs", .{session.store.moduleName(file)});
@@ -708,7 +708,7 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
         var map_bytes: u64 = 0;
         const start = Io.Timestamp.now(io, .awake);
         for (0..count) |i| {
-            const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const module: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             const file = session.graph.moduleFile(module);
             const tokens = session.artifacts.spans(file);
             var overlay: InternPool.Overlay = .init(&session.interner);
@@ -837,7 +837,7 @@ fn measureIface(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: 
     m.modules = interfaces.len;
     if (m.modules == 0) return m;
     for (0..session.store.count()) |i| {
-        m.source_bytes += session.store.bytes(@enumFromInt(i)).len;
+        m.source_bytes += session.store.bytes(@fromBackingInt(@intCast(i))).len;
     }
 
     const sizes = try gpa.alloc(u64, interfaces.len);
@@ -929,13 +929,13 @@ fn printCheckLine(writer: *Io.Writer, m: CheckMeasurement) !void {
     const seconds = @as(f64, @floatFromInt(@max(m.ns, 1))) / 1e9;
     const loc_per_s: u64 = @intFromFloat(@as(f64, @floatFromInt(m.lines)) / seconds);
     try writer.writeAll("{\"phase\":\"check\"");
-    inline for (@typeInfo(CheckMeasurement).@"struct".fields) |f| {
+    inline for (@typeInfo(CheckMeasurement).@"struct".field_names) |field_name| {
         // `ns` and `total_ns` are reported below as `ms` and
         // `cold_check_ms`. Matched EXACTLY: a suffix test on "ns" also
         // matches `unifications`, `generalisations`, `instantiations` and
         // `obligations`, and silently dropped all four from the line.
-        if (comptime !std.mem.eql(u8, f.name, "ns") and !std.mem.eql(u8, f.name, "total_ns")) {
-            try writer.print(",\"{s}\":{d}", .{ f.name, @field(m, f.name) });
+        if (comptime !std.mem.eql(u8, field_name, "ns") and !std.mem.eql(u8, field_name, "total_ns")) {
+            try writer.print(",\"{s}\":{d}", .{ field_name, @field(m, field_name) });
         }
     }
     try writer.print(

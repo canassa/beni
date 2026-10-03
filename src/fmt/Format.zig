@@ -238,9 +238,9 @@ pub fn formatWith(
     const tail_op = try scratch.alloc(u32, n);
     @memset(tail_op, no_node);
     for (tree.nodes.items(.tag), 0..) |tag, i| {
-        const follower: Index = @enumFromInt(i);
+        const follower: Index = @fromBackingInt(@intCast(i));
         var s: Index = if (tag.isBinop())
-            @enumFromInt(tree.nodeData(follower).lhs)
+            @fromBackingInt(@intCast(tree.nodeData(follower).lhs))
         else if (tag == .question)
             tree.operand(follower)
         else
@@ -248,7 +248,7 @@ pub fn formatWith(
         while (true) {
             const s_tag = tree.nodeTag(s);
             if (s_tag.isBinop()) {
-                s = @enumFromInt(tree.nodeData(s).rhs);
+                s = @fromBackingInt(@intCast(tree.nodeData(s).rhs));
             } else {
                 if (s_tag == .apply) tail_op[s.int()] = @intCast(i);
                 break;
@@ -353,7 +353,7 @@ pub fn migrateCons(
     const Chain = struct { node: Index, start: u32, end: u32 };
     var chains: std.ArrayList(Chain) = .empty;
     for (0..n) |i| {
-        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         const tag = tree.nodeTag(node);
         const is_cons = tag == .cons or tag == .pat_cons or
             (tag == .op_fn and tags[tree.nodeMainToken(node)] == .op_colon_colon);
@@ -421,7 +421,7 @@ pub fn migrateLambda(
     const starts = tokens.items(.start);
     var heads: std.ArrayList(u32) = .empty;
     for (0..tree.nodes.len) |i| {
-        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (tree.nodeTag(node) != .lambda) continue;
         const head = tree.nodeMainToken(node);
         if (tags[head] == .backslash) try heads.append(scratch, starts[head]);
@@ -443,7 +443,7 @@ pub fn migrateLambda(
     out.appendSliceAssumeCapacity(source[at..]);
     const text = out.items;
 
-    if (try reparseProblem(scratch, try scratch.dupeZ(u8, text))) |offset_and_code| {
+    if (try reparseProblem(scratch, try scratch.dupeSentinel(u8, text, 0))) |offset_and_code| {
         // Map the offset back: each rewrite before it added one byte.
         var shift: u32 = 0;
         for (heads.items) |start| {
@@ -563,7 +563,7 @@ pub fn migrateNames(
     @memset(applied, std.math.maxInt(u32));
     const apply_of = try scratch.alloc(u32, n);
     for (0..n) |i| {
-        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         switch (tree.nodeTag(node)) {
             .ident, .field_access => |tag| {
                 const t = tree.nodeMainToken(node);
@@ -657,7 +657,7 @@ pub fn migrateNames(
                         try notes.append(scratch, .{ .start = starts[t], .kind = .debug_shape, .name = full });
                         continue;
                     }
-                    const args = tree.fullApply(@enumFromInt(apply_of[call])).args;
+                    const args = tree.fullApply(@fromBackingInt(@intCast(apply_of[call]))).args;
                     const value_literal = isStringLiteral(tree, args[0]);
                     const label_literal = isStringLiteral(tree, args[1]);
                     if (value_literal and !label_literal) continue; // label first already
@@ -699,7 +699,7 @@ pub fn migrateNames(
                     try notes.append(scratch, .{ .start = starts[t], .kind = .method_shape, .name = r.old });
                     continue;
                 }
-                const target: Index = @enumFromInt(tree.nodeData(@enumFromInt(access)).lhs);
+                const target: Index = @fromBackingInt(@intCast(tree.nodeData(@fromBackingInt(@intCast(access))).lhs));
                 const target_start = starts[m.first(target)];
                 try edits.append(scratch, .{
                     .start = target_start,
@@ -761,7 +761,7 @@ pub fn migrateNames(
         at = e.end;
     }
     try out.appendSlice(scratch, source[at..]);
-    if (try reparseProblem(scratch, try scratch.dupeZ(u8, out.items))) |problem| {
+    if (try reparseProblem(scratch, try scratch.dupeSentinel(u8, out.items, 0))) |problem| {
         try w.writeAll(source);
         // Offsets move with the rewrite; the line of the first edit is
         // where to look.
@@ -845,7 +845,7 @@ pub fn migrateUnicode(
     u.atom = try scratch.alloc(bool, n);
     @memset(u.atom, false);
     for (0..n) |i| {
-        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         switch (tree.nodeTag(node)) {
             .type_con, .constructor, .type_tuple => for (tree.children(node)) |c| {
                 u.atom[c.int()] = true;
@@ -858,7 +858,7 @@ pub fn migrateUnicode(
         if (tag.isAscii()) try u.tokens.append(scratch, start);
     }
     for (0..n) |i| {
-        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (tree.nodeTag(node) != .type_tuple or tags[tree.nodeMainToken(node)] != .l_paren) continue;
         if (m.commentIn(m.first(node), m.last(node))) return u.leaveAlone(w, source, .{ .code = null, .start = m.starts[m.first(node)] });
         try u.tuples.append(scratch, node);
@@ -981,7 +981,7 @@ pub fn migrateTop(
     @memset(matched, false);
 
     for (0..n) |i| {
-        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         const main = tree.nodeMainToken(node);
         switch (tree.nodeTag(node)) {
             .unit, .type_unit, .pat_unit => if (tags[main] == .l_paren) {
@@ -1408,10 +1408,10 @@ fn lambdaInParens(tree: *const Ast, comments: []const Token.Comment, lasts: []co
 /// comment sits at the `<|`.
 fn pipeConvertible(tree: *const Ast, comments: []const Token.Comment, n: Index) bool {
     const d = tree.nodeData(n);
-    if (tree.nodeTag(@enumFromInt(d.rhs)) != .lambda) return false;
+    if (tree.nodeTag(@fromBackingInt(@intCast(d.rhs))) != .lambda) return false;
     const op = tree.nodeMainToken(n);
     if (commentsBefore(comments, op).len != 0 or commentsBefore(comments, op + 1).len != 0) return false;
-    const lhs: Index = @enumFromInt(d.lhs);
+    const lhs: Index = @fromBackingInt(@intCast(d.lhs));
     return switch (tree.nodeTag(lhs)) {
         .apply => for (tree.fullApply(lhs).args) |arg| {
             if (tree.nodeTag(arg) == .placeholder) break false;
@@ -1486,8 +1486,8 @@ const Measurer = struct {
             const tag = tree.nodeTag(tail);
             if (tag == .cons or tag == .pat_cons) {
                 const d = tree.nodeData(tail);
-                try items.append(m.scratch, @enumFromInt(d.lhs));
-                tail = @enumFromInt(d.rhs);
+                try items.append(m.scratch, @fromBackingInt(@intCast(d.lhs)));
+                tail = @fromBackingInt(@intCast(d.rhs));
             } else if ((tag == .paren or tag == .pat_paren) and
                 (tree.nodeTag(tree.operand(tail)) == .cons or tree.nodeTag(tree.operand(tail)) == .pat_cons))
             {
@@ -1970,7 +1970,7 @@ const Measurer = struct {
             },
             .pat_cons => {
                 const d = tree.nodeData(n);
-                try m.pair(n, @enumFromInt(d.lhs), @enumFromInt(d.rhs), 4);
+                try m.pair(n, @fromBackingInt(@intCast(d.lhs)), @fromBackingInt(@intCast(d.rhs)), 4);
             },
             .pat_as => {
                 const a = tree.fullPatAs(n);
@@ -2167,7 +2167,7 @@ const Measurer = struct {
         try m.stack.append(m.scratch, node.int());
         while (true) {
             const d = m.tree.nodeData(node);
-            const next: Index = @enumFromInt(if (right) d.rhs else d.lhs);
+            const next: Index = @fromBackingInt(@intCast(if (right) d.rhs else d.lhs));
             const next_tag = m.tree.nodeTag(next);
             if (!next_tag.isBinop() or precedence(next_tag) != prec) break;
             try m.stack.append(m.scratch, next.int());
@@ -2178,22 +2178,22 @@ const Measurer = struct {
         // innermost node's on-spine operand. Nested chains may grow the
         // stack, so every spine entry is re-read through the index.
         for (0..count) |i| {
-            const s: Index = @enumFromInt(m.stack.items[mark + i]);
+            const s: Index = @fromBackingInt(@intCast(m.stack.items[mark + i]));
             const d = m.tree.nodeData(s);
-            try m.measure(@enumFromInt(if (right) d.lhs else d.rhs));
+            try m.measure(@fromBackingInt(@intCast(if (right) d.lhs else d.rhs)));
         }
         {
-            const innermost: Index = @enumFromInt(m.stack.items[mark + count - 1]);
+            const innermost: Index = @fromBackingInt(@intCast(m.stack.items[mark + count - 1]));
             const d = m.tree.nodeData(innermost);
-            try m.measure(@enumFromInt(if (right) d.rhs else d.lhs));
+            try m.measure(@fromBackingInt(@intCast(if (right) d.rhs else d.lhs)));
         }
         var i = count;
         while (i > 0) {
             i -= 1;
-            const s: Index = @enumFromInt(m.stack.items[mark + i]);
+            const s: Index = @fromBackingInt(@intCast(m.stack.items[mark + i]));
             const d = m.tree.nodeData(s);
-            const lhs: Index = @enumFromInt(d.lhs);
-            const rhs: Index = @enumFromInt(d.rhs);
+            const lhs: Index = @fromBackingInt(@intCast(d.lhs));
+            const rhs: Index = @fromBackingInt(@intCast(d.rhs));
             const op_tok = m.tree.nodeMainToken(s);
             const op_line = m.tok_lines[op_tok];
             const broken = op_line != m.tok_lines[m.last(lhs)] or op_line != m.tok_lines[m.first(rhs)] or
@@ -2204,8 +2204,8 @@ const Measurer = struct {
         // `f a <| λx -> e` printed as `f a λx -> e` (`Printer.pipePlan`).
         if (tag == .pipe_left and pipeConvertible(m.tree, m.comments, top)) {
             const d = m.tree.nodeData(top);
-            const lhs: Index = @enumFromInt(d.lhs);
-            const lambda: Index = @enumFromInt(d.rhs);
+            const lhs: Index = @fromBackingInt(@intCast(d.lhs));
+            const lambda: Index = @fromBackingInt(@intCast(d.rhs));
             m.widths[top.int()] = if (m.tok_lines[m.last(lhs)] != m.tok_lines[m.first(lambda)])
                 no_fit
             else
@@ -2594,7 +2594,7 @@ const Printer = struct {
         std.mem.sort(u32, imports, p, importLessThan);
         for (imports, 0..) |item, i| {
             if (i > 0) p.newline(0);
-            try p.import(@enumFromInt(item));
+            try p.import(@fromBackingInt(@intCast(item)));
         }
 
         var prev: ?Index = null;
@@ -2621,8 +2621,8 @@ const Printer = struct {
     }
 
     fn importLessThan(p: *Printer, a: u32, b: u32) bool {
-        const ia = p.tree.fullImport(@enumFromInt(a));
-        const ib = p.tree.fullImport(@enumFromInt(b));
+        const ia = p.tree.fullImport(@fromBackingInt(@intCast(a)));
+        const ib = p.tree.fullImport(@fromBackingInt(@intCast(b)));
         const na = if (ia.name) |t| p.text(t) else "";
         const nb = if (ib.name) |t| p.text(t) else "";
         return std.mem.order(u8, na, nb) == .lt;
@@ -3366,8 +3366,8 @@ const Printer = struct {
         const tree = p.tree;
         if (!pipeConvertible(tree, p.comments, n)) return null;
         const d = tree.nodeData(n);
-        const lhs: Index = @enumFromInt(d.lhs);
-        const lambda: Index = @enumFromInt(d.rhs);
+        const lhs: Index = @fromBackingInt(@intCast(d.lhs));
+        const lambda: Index = @fromBackingInt(@intCast(d.rhs));
         var callee = lhs;
         var head_args: []const Index = &.{};
         if (tree.nodeTag(lhs) == .apply) {
@@ -3413,7 +3413,7 @@ const Printer = struct {
     fn followSafe(p: *const Printer, n: Index, lambda_line: u32) bool {
         const follower = p.tail_op[n.int()];
         if (follower == no_node) return true;
-        if (p.tree.nodeTag(@enumFromInt(follower)) == .question) return false;
+        if (p.tree.nodeTag(@fromBackingInt(@intCast(follower))) == .question) return false;
         const place = p.op_place[follower];
         if (place == place_unknown or place == place_same_line) return false;
         return place <= lambda_line;
@@ -3957,7 +3957,7 @@ const Printer = struct {
         try p.stack.append(p.scratch, node_i.int());
         while (true) {
             const d = p.tree.nodeData(node_i);
-            const next: Index = @enumFromInt(if (right) d.rhs else d.lhs);
+            const next: Index = @fromBackingInt(@intCast(if (right) d.rhs else d.lhs));
             const next_tag = p.tree.nodeTag(next);
             if (!next_tag.isBinop() or precedence(next_tag) != prec) break;
             try p.stack.append(p.scratch, next.int());
@@ -3967,26 +3967,26 @@ const Printer = struct {
         // Operands in source order, then the operator tokens in source
         // order, appended after the spine.
         if (right) {
-            for (0..count) |i| try p.stack.append(p.scratch, p.tree.nodeData(@enumFromInt(p.stack.items[mark + i])).lhs);
-            try p.stack.append(p.scratch, p.tree.nodeData(@enumFromInt(p.stack.items[mark + count - 1])).rhs);
-            for (0..count) |i| try p.stack.append(p.scratch, p.tree.nodeMainToken(@enumFromInt(p.stack.items[mark + i])));
+            for (0..count) |i| try p.stack.append(p.scratch, p.tree.nodeData(@fromBackingInt(@intCast(p.stack.items[mark + i]))).lhs);
+            try p.stack.append(p.scratch, p.tree.nodeData(@fromBackingInt(@intCast(p.stack.items[mark + count - 1]))).rhs);
+            for (0..count) |i| try p.stack.append(p.scratch, p.tree.nodeMainToken(@fromBackingInt(@intCast(p.stack.items[mark + i]))));
         } else {
-            try p.stack.append(p.scratch, p.tree.nodeData(@enumFromInt(p.stack.items[mark + count - 1])).lhs);
+            try p.stack.append(p.scratch, p.tree.nodeData(@fromBackingInt(@intCast(p.stack.items[mark + count - 1]))).lhs);
             var i = count;
             while (i > 0) {
                 i -= 1;
-                try p.stack.append(p.scratch, p.tree.nodeData(@enumFromInt(p.stack.items[mark + i])).rhs);
+                try p.stack.append(p.scratch, p.tree.nodeData(@fromBackingInt(@intCast(p.stack.items[mark + i]))).rhs);
             }
             i = count;
             while (i > 0) {
                 i -= 1;
-                try p.stack.append(p.scratch, p.tree.nodeMainToken(@enumFromInt(p.stack.items[mark + i])));
+                try p.stack.append(p.scratch, p.tree.nodeMainToken(@fromBackingInt(@intCast(p.stack.items[mark + i]))));
             }
         }
         const operands_at = mark + count;
         const ops_at = operands_at + count + 1;
         const one_line = p.fits(top);
-        const tail_tag = p.tree.nodeTag(@enumFromInt(p.stack.items[operands_at + 1]));
+        const tail_tag = p.tree.nodeTag(@fromBackingInt(@intCast(p.stack.items[operands_at + 1])));
         // A `let` under `--migrate-let` is a parenthesised block, which is
         // an operand like any other.
         const block_tail = !one_line and count == 1 and isBlockForm(tail_tag) and !(p.migrate_let and tail_tag == .let);
@@ -3996,16 +3996,16 @@ const Printer = struct {
         // (`trailingPlan`). Operator `i` is the spine node's main token,
         // the spine stored outermost first.
         for (0..count) |i| {
-            const spine: Index = @enumFromInt(p.stack.items[if (right) mark + i else mark + count - 1 - i]);
-            const operand_tag = p.tree.nodeTag(@enumFromInt(p.stack.items[operands_at + 1 + i]));
+            const spine: Index = @fromBackingInt(@intCast(p.stack.items[if (right) mark + i else mark + count - 1 - i]));
+            const operand_tag = p.tree.nodeTag(@fromBackingInt(@intCast(p.stack.items[operands_at + 1 + i])));
             const flat_lambda = i + 1 == count and tag == .pipe_left and operand_tag == .lambda;
             p.op_place[spine.int()] = if (one_line or block_tail or flat_lambda) place_same_line else indent + indent_step;
         }
 
-        try p.expr(@enumFromInt(p.stack.items[operands_at]), indent);
+        try p.expr(@fromBackingInt(@intCast(p.stack.items[operands_at])), indent);
         for (0..count) |i| {
             const op_tok: TokenIndex = p.stack.items[ops_at + i];
-            const operand: Index = @enumFromInt(p.stack.items[operands_at + 1 + i]);
+            const operand: Index = @fromBackingInt(@intCast(p.stack.items[operands_at + 1 + i]));
             // §9: a trailing `<|` followed by a lambda does not indent. The
             // `\x ->` stays on the operator's line and the body continues at
             // that line's own indentation, so a chain of binds stays flat
@@ -4531,11 +4531,11 @@ const Printer = struct {
             },
             .pat_cons => {
                 const d = tree.nodeData(n);
-                try p.pat(@enumFromInt(d.lhs), indent);
+                try p.pat(@fromBackingInt(@intCast(d.lhs)), indent);
                 try p.space();
                 try p.tok(main);
                 try p.space();
-                try p.pat(@enumFromInt(d.rhs), indent);
+                try p.pat(@fromBackingInt(@intCast(d.rhs)), indent);
             },
             .pat_as => {
                 const a = tree.fullPatAs(n);
@@ -4607,7 +4607,7 @@ fn runWith(arena: Allocator, source: [:0]const u8, want_dump: bool) !Run {
 /// otherwise their lines as a sorted multiset (the formatter sorts
 /// imports, which the dump lists in source order).
 fn expectStable(arena: Allocator, first: Run, exact_dump: bool) !void {
-    const again = try run(arena, try arena.dupeZ(u8, first.text));
+    const again = try run(arena, try arena.dupeSentinel(u8, first.text, 0));
     try testing.expectEqualStrings(first.text, again.text);
     // A text run's bytes move under formatting while what it says does
     // not (language.md §11.15); the black-box `fmt/` corpus compares what
@@ -6057,21 +6057,21 @@ test "CRLF, trailing whitespace, missing trailing newline and extra blank lines 
 
 test "the 100-column boundary: a line of exactly 100 fits, 101 does not" {
     // `xs = [ ` + 91 + ` ]` = 100 columns: the body stays on the `=` line.
-    const item_91 = "\"" ++ "a" ** 89 ++ "\"";
+    const item_91 = "\"" ++ @as([89]u8, @splat('a')) ++ "\"";
     try check("xs =\n    [ " ++ item_91 ++ " ]\n", "xs = [ " ++ item_91 ++ " ]\n");
     // One more is 101 there, so the body goes below, where
     // `    [ ` + 92 + ` ]` = 100 columns still fits on one line.
-    const item_92 = "\"" ++ "a" ** 90 ++ "\"";
+    const item_92 = "\"" ++ @as([90]u8, @splat('a')) ++ "\"";
     try check("xs = [ " ++ item_92 ++ " ]\n", "xs =\n    [ " ++ item_92 ++ " ]\n");
-    const item_93 = "\"" ++ "a" ** 91 ++ "\"";
+    const item_93 = "\"" ++ @as([91]u8, @splat('a')) ++ "\"";
     try check("xs = [ " ++ item_93 ++ " ]\n", "xs =\n    [ " ++ item_93 ++ "\n    ]\n");
     // The same width measured at the deeper indentation of a binding:
     // `        x = [ ` + 84 + ` ]` is exactly 100, and one more breaks the
     // list, as `            [ ` + 85 + ` ]` is 101 on the line below. The
     // binding is in a block nested in a block, at column 9.
-    const wide_84 = "\"" ++ "b" ** 82 ++ "\"";
+    const wide_84 = "\"" ++ @as([82]u8, @splat('b')) ++ "\"";
     try check("f =\n  g =\n   x = [ " ++ wide_84 ++ " ]\n   x\n  g\n", "f =\n    g =\n        x = [ " ++ wide_84 ++ " ]\n        x\n    g\n");
-    const wide_85 = "\"" ++ "b" ** 83 ++ "\"";
+    const wide_85 = "\"" ++ @as([83]u8, @splat('b')) ++ "\"";
     try check("f =\n  g =\n   x = [ " ++ wide_85 ++ " ]\n   x\n  g\n", "f =\n    g =\n        x =\n            [ " ++ wide_85 ++ "\n            ]\n        x\n    g\n");
 }
 
@@ -6093,8 +6093,8 @@ test "4 000 nested parentheses, as deep as the parser admits, format without exh
     try src.append(arena, '\n');
     // Idempotence alone: the AST dump indents each level, so at this depth
     // it is quadratic text, and the structure check is the corpus's job.
-    const first = try runWith(arena, try arena.dupeZ(u8, src.items), false);
-    const again = try runWith(arena, try arena.dupeZ(u8, first.text), false);
+    const first = try runWith(arena, try arena.dupeSentinel(u8, src.items, 0), false);
+    const again = try runWith(arena, try arena.dupeSentinel(u8, first.text, 0), false);
     try testing.expectEqualStrings(first.text, again.text);
 }
 
@@ -6123,8 +6123,8 @@ fn formatLongChains() !void {
         try src.appendSlice(arena, "x = a");
         for (0..long_chain) |_| try src.appendSlice(arena, piece);
         try src.append(arena, '\n');
-        const first = try runWith(arena, try arena.dupeZ(u8, src.items), false);
-        const again = try runWith(arena, try arena.dupeZ(u8, first.text), false);
+        const first = try runWith(arena, try arena.dupeSentinel(u8, src.items, 0), false);
+        const again = try runWith(arena, try arena.dupeSentinel(u8, first.text, 0), false);
         try testing.expectEqualStrings(first.text, again.text);
     }
 }
@@ -6239,7 +6239,7 @@ test "stress: random modules of every construct round-trip" {
             }
         }
         if (random.boolean()) try src.appendSlice(arena, "\n-- at the end\n");
-        checkRoundTrip(arena, try arena.dupeZ(u8, src.items)) catch |err| {
+        checkRoundTrip(arena, try arena.dupeSentinel(u8, src.items, 0)) catch |err| {
             std.debug.print("stress iteration {d} failed ({t}):\n{s}\n", .{ iteration, err, src.items });
             return err;
         };
@@ -6270,5 +6270,5 @@ test "one module of every stress construct, each behind every kind of trivia, ro
         }
     }
     try src.appendSlice(arena, "\n-- at the end\n");
-    try checkRoundTrip(arena, try arena.dupeZ(u8, src.items));
+    try checkRoundTrip(arena, try arena.dupeSentinel(u8, src.items, 0));
 }

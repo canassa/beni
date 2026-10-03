@@ -66,7 +66,7 @@ pub const GroundMemo = struct {
     }
 
     fn bit(kind: Kind) u8 {
-        return @as(u8, 1) << @as(u3, @intCast(@intFromEnum(kind)));
+        return @as(u8, 1) << @as(u3, @intCast(@backingInt(kind)));
     }
 };
 
@@ -127,7 +127,7 @@ fn encode(s: *Solve, root: Var, kind: Kind) Error!?Ground {
             return isWellKnownType(h.s, a) or h.s.cx.types.entry(a.type).module != h.s.cx.module;
         }
     };
-    const found = (try Walk.encodeGround(s.store(), s.cx.gpa, &sh.words, &sh.stack, root, @intFromEnum(kind), shape_cap, Heads{ .s = s })) orelse return null;
+    const found = (try Walk.encodeGround(s.store(), s.cx.gpa, &sh.words, &sh.stack, root, @backingInt(kind), shape_cap, Heads{ .s = s })) orelse return null;
     return .{ .key = std.mem.sliceAsBytes(sh.words.items), .kept = found.kept };
 }
 
@@ -584,8 +584,8 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
             .absent_other, .foreign => return .opaque_type,
             .absent_budget => return .budget,
             .poisoned => return .poisoned,
-            .absent_private => return .{ .private_method = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } },
-            .absent_requirement => return .{ .requirement = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method, .site = if (answer.payload != Contexts.none) .{ .owner = a.type, .payload = answer.payload } else null } },
+            .absent_private => return .{ .private_method = .{ .type_id = @fromBackingInt(@intCast(answer.culprit)), .method = answer.method } },
+            .absent_requirement => return .{ .requirement = .{ .type_id = @fromBackingInt(@intCast(answer.culprit)), .method = answer.method, .site = if (answer.payload != Contexts.none) .{ .owner = a.type, .payload = answer.payload } else null } },
             .own_method => {},
             .needs_annotation => return .{ .needs_annotation = .{ .type_id = a.type, .decl = answer.culprit } },
         }
@@ -612,14 +612,14 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
         .private_method => {
             const p = iface.privateCulprit(row.context) orelse return .opaque_type;
             const refs = cx.types.refIds(entry.module);
-            const culprit = if (@intFromEnum(p.type_ref) < refs.len) refs[@intFromEnum(p.type_ref)] else return .opaque_type;
+            const culprit = if (@backingInt(p.type_ref) < refs.len) refs[@backingInt(p.type_ref)] else return .opaque_type;
             return .{ .private_method = .{ .type_id = culprit, .method = iface.symbol(p.method) } };
         },
         // The row names the type whose method failed (§14.2).
         .requirement => {
             const p = iface.privateCulprit(row.context) orelse return .opaque_type;
             const refs = cx.types.refIds(entry.module);
-            const culprit = if (@intFromEnum(p.type_ref) < refs.len) refs[@intFromEnum(p.type_ref)] else return .opaque_type;
+            const culprit = if (@backingInt(p.type_ref) < refs.len) refs[@backingInt(p.type_ref)] else return .opaque_type;
             return .{ .requirement = .{ .type_id = culprit, .method = iface.symbol(p.method) } };
         },
         .unchecked, .primitive, .own_method, .alias => {},
@@ -700,21 +700,21 @@ fn ownBoundary(s: *Solve, w: *Walker, scheme: Var, type_id: Types.TypeId, args: 
 /// quantifier's constraint block.
 fn importedBoundary(s: *Solve, w: *Walker, iface: *const Interface, module: @import("../resolve/Graph.zig").Index, value: Interface.ValueIndex, type_id: Types.TypeId, args: []const Var, kind: Kind) Error!void {
     const scratch = s.cx.scratch;
-    const index = iface.values[@intFromEnum(value)].scheme;
-    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return;
+    const index = iface.values[@backingInt(value)].scheme;
+    if (index == .none or @backingInt(index) >= iface.schemes.len) return;
     const scheme = iface.scheme(index);
     const body = iface.term(scheme.body);
     if (body.tag != .func) return;
     const params = iface.range(body.lhs);
     if (params.len != 2) return;
-    const first = iface.term(@enumFromInt(params[0]));
+    const first = iface.term(@fromBackingInt(@intCast(params[0])));
     if (first.tag != .app) return;
     const refs = s.cx.types.refIds(module);
     if (first.lhs >= refs.len or refs[first.lhs] != type_id) return;
     const arg_terms = iface.range(first.rhs);
     if (arg_terms.len != args.len) return;
     for (arg_terms, args) |t, arg| {
-        const term = iface.term(@enumFromInt(t));
+        const term = iface.term(@fromBackingInt(@intCast(t)));
         if (term.tag != .@"var" or term.lhs >= scheme.quantified_count) continue;
         const q = iface.quantified(scheme, term.lhs);
         if (q.equatable) try boundaryStep(w, scratch, arg, null, kind);

@@ -22,7 +22,7 @@ pub fn Context(comptime K: type) type {
 
         fn toInt(key: K) u32 {
             return switch (@typeInfo(K)) {
-                .@"enum" => @intFromEnum(key),
+                .@"enum" => @backingInt(key),
                 else => key,
             };
         }
@@ -38,7 +38,7 @@ test "an id and a u32 hash apart and compare by value" {
     const Id = enum(u32) { _ };
     var map: Map(Id, u32) = .empty;
     defer map.deinit(std.testing.allocator);
-    for (0..1000) |i| try map.put(std.testing.allocator, @enumFromInt(i), @intCast(i * 2));
-    for (0..1000) |i| try std.testing.expectEqual(@as(u32, @intCast(i * 2)), map.get(@enumFromInt(i)).?);
-    try std.testing.expectEqual(null, map.get(@enumFromInt(1000)));
+    for (0..1000) |i| try map.put(std.testing.allocator, @fromBackingInt(@intCast(i)), @intCast(i * 2));
+    for (0..1000) |i| try std.testing.expectEqual(@as(u32, @intCast(i * 2)), map.get(@fromBackingInt(@intCast(i))).?);
+    try std.testing.expectEqual(null, map.get(@fromBackingInt(@intCast(1000))));
 }

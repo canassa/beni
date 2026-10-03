@@ -57,7 +57,7 @@ pub fn of(bir: *const Bir, module: Graph.Index, interfaces: []const Interface, i
                 .count = @intCast(variants.len),
                 .arity = @intFromBool(variantPayload(bir, variants[ref.variant])),
                 .padded = padded,
-                .name = bir.symbol(@enumFromInt(bir.instData(variants[ref.variant]).lhs)),
+                .name = bir.symbol(@fromBackingInt(@intCast(bir.instData(variants[ref.variant]).lhs))),
                 .schema = bir.symbol(d.name),
                 .module = module,
                 .ext = false,
@@ -69,7 +69,7 @@ pub fn of(bir: *const Bir, module: Graph.Index, interfaces: []const Interface, i
             const iface = &interfaces[data.lhs];
             if (data.rhs >= iface.schema_ctors.len) return null;
             const ctor = iface.schema_ctors[data.rhs];
-            const si = @intFromEnum(ctor.schema);
+            const si = @backingInt(ctor.schema);
             if (si >= iface.schemas.len) return null;
             const schema = iface.schemas[si];
             const from, const to = switch (ctor.endpoint) {
@@ -86,7 +86,7 @@ pub fn of(bir: *const Bir, module: Graph.Index, interfaces: []const Interface, i
                 .padded = padded,
                 .name = iface.symbol(ctor.name),
                 .schema = iface.symbol(schema.name),
-                .module = @enumFromInt(data.lhs),
+                .module = @fromBackingInt(@intCast(data.lhs)),
                 .ext = true,
                 .owner = si,
             };
@@ -101,14 +101,14 @@ pub fn taggedVariants(bir: *const Bir, d: Bir.Decl) ?[]const Bir.Inst.Index {
     var at = d.schema_body.unwrap() orelse return null;
     var budget = bir.insts.len + 1;
     while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) switch (bir.instTag(at)) {
-        .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+        .schema_value, .schema_paren => at = @fromBackingInt(@intCast(bir.instData(at).lhs)),
         else => break,
     };
     if (at.int() >= bir.insts.len or bir.instTag(at) != .schema_tagged) return null;
-    return bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(at).rhs)), Bir.Inst.Index);
+    return bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(at).rhs))), Bir.Inst.Index);
 }
 
 pub fn variantPayload(bir: *const Bir, variant: Bir.Inst.Index) bool {
-    const v = bir.extraData(@enumFromInt(bir.instData(variant).rhs), Bir.SchemaVariant);
+    const v = bir.extraData(@fromBackingInt(@intCast(bir.instData(variant).rhs)), Bir.SchemaVariant);
     return v.payload != .none;
 }

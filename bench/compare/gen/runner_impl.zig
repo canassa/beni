@@ -162,7 +162,7 @@ pub fn run(c0: Ctx) !u8 {
                 var nodes: u64 = 0;
                 for (prog.tree.modules.items, prog.info.sizes) |m, s| {
                     if (m.kind == .unit) nodes += s.nodes;
-                    if (m.kind == .unit and proj == .family and size == sizes[sizes.len - 1] and mode == o.modes[0]) unit_nodes[@intFromEnum(m.family) - 1] += s.nodes;
+                    if (m.kind == .unit and proj == .family and size == sizes[sizes.len - 1] and mode == o.modes[0]) unit_nodes[@backingInt(m.family) - 1] += s.nodes;
                 }
                 for (o.langs) |lang| {
                     const dir = try std.fmt.allocPrint(c.a, "{s}/{t}/{t}/{s}-{d}", .{ run_dir, mode, lang, proj.name(), size });

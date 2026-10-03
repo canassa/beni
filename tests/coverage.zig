@@ -285,9 +285,9 @@ fn loadBinary(arena: Allocator, io: Io, path: []const u8) !Binary {
         } else if (s.flags.shf.ALLOC and !s.flags.shf.EXECINSTR and s.type != .NOBITS and !s.flags.shf.TLS) {
             try segments.append(arena, .{ .address = s.addr, .bytes = try sectionBytes(bytes, s) });
         } else if (std.mem.startsWith(u8, name, ".debug_")) {
-            inline for (@typeInfo(Dwarf.Section.Id).@"enum".fields) |field| {
-                if (std.mem.eql(u8, name[1..], field.name)) {
-                    binary.dwarf.sections[field.value] = .{ .data = try sectionBytes(bytes, s), .owned = false };
+            inline for (@typeInfo(Dwarf.Section.Id).@"enum".field_names, @typeInfo(Dwarf.Section.Id).@"enum".field_values) |field_name, field_value| {
+                if (std.mem.eql(u8, name[1..], field_name)) {
+                    binary.dwarf.sections[field_value] = .{ .data = try sectionBytes(bytes, s), .owned = false };
                 }
             }
         }

@@ -92,7 +92,7 @@ pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.E
     std.mem.writeInt(u32, &word, key_version, .little);
     try out.appendSlice(gpa, &word);
     try out.appendSlice(gpa, &t.build_id);
-    try out.append(gpa, @intFromEnum(t.package));
+    try out.append(gpa, @backingInt(t.package));
     try out.append(gpa, lowerBits(t.core, t.platform));
     std.mem.writeInt(u32, &word, @intCast(t.name.len), .little);
     try out.appendSlice(gpa, &word);
@@ -118,7 +118,7 @@ pub fn compute(t: Terms) FileKey {
     at += 4;
     @memcpy(buffer[at..][0..16], &t.build_id);
     at += 16;
-    buffer[at] = @intFromEnum(t.package);
+    buffer[at] = @backingInt(t.package);
     at += 1;
     buffer[at] = lowerBits(t.core, t.platform);
     at += 1;
@@ -181,7 +181,7 @@ test "the file key's byte string is the recipe, field by field" {
     at += 4;
     try testing.expectEqualSlices(u8, &sample_build_id, bytes.items[at..][0..16]);
     at += 16;
-    try testing.expectEqual(@as(u8, @intFromEnum(SourceStore.Package.app)), bytes.items[at]);
+    try testing.expectEqual(@as(u8, @backingInt(SourceStore.Package.app)), bytes.items[at]);
     at += 1;
     try testing.expectEqual(@as(u8, 0b11), bytes.items[at]);
     at += 1;

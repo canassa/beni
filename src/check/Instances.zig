@@ -287,7 +287,7 @@ fn importedMethod(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, ent
     s.instantiate.origin = w.origin;
     s.instantiate.parent = id.toOptional();
     defer s.instantiate.parent = .none;
-    const copy = (try s.instantiate.importedValue(entry.module, @intFromEnum(value))) orelse
+    const copy = (try s.instantiate.importedValue(entry.module, @backingInt(value))) orelse
         return Resolve.reject(s, id, true);
     try s.paired(w.origin);
     // The sub-wanteds are the use's: its declaration owns their failures.
@@ -352,8 +352,8 @@ fn plainImported(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entr
     // taking it never changes a bit (checker-v2.md §26).
     if (s.cx.effects) |e| {
         const iface = s.cx.iface(entry.module);
-        const index = iface.values[@intFromEnum(value)].scheme;
-        if (index != .none) try e.applyPlain(iface, iface.scheme(index), w.method_type, sub_types, @intFromEnum(w.origin));
+        const index = iface.values[@backingInt(value)].scheme;
+        if (index != .none) try e.applyPlain(iface, iface.scheme(index), w.method_type, sub_types, @backingInt(w.origin));
     }
     // Readied as the binding of each quantifier would ready it, in order.
     for (made.items) |sub| {
@@ -391,16 +391,16 @@ fn readPlain(s: *Solve, type_id: Types.TypeId, entry: Types.Entry, value: Interf
     const iface = cx.iface(entry.module);
     const refs = cx.types.refIds(entry.module);
     const result_type = Resolve.wellKnownResult(s, name);
-    if (result_type == .none or @intFromEnum(value) >= iface.values.len) return null;
-    const index = iface.values[@intFromEnum(value)].scheme;
-    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return null;
+    if (result_type == .none or @backingInt(value) >= iface.values.len) return null;
+    const index = iface.values[@backingInt(value)].scheme;
+    if (index == .none or @backingInt(index) >= iface.schemes.len) return null;
     const scheme = iface.scheme(index);
     const body = iface.term(scheme.body);
     if (body.tag != .func) return null;
     const params = iface.range(body.lhs);
-    if (params.len != 2 or !isNullaryRef(iface, refs, @enumFromInt(body.rhs), result_type)) return null;
-    const p0 = iface.term(@enumFromInt(params[0]));
-    const p1 = iface.term(@enumFromInt(params[1]));
+    if (params.len != 2 or !isNullaryRef(iface, refs, @fromBackingInt(@intCast(body.rhs)), result_type)) return null;
+    const p0 = iface.term(@fromBackingInt(@intCast(params[0])));
+    const p1 = iface.term(@fromBackingInt(@intCast(params[1])));
     if (p0.tag != .app or p1.tag != .app or p0.lhs != p1.lhs) return null;
     if (p0.lhs >= refs.len or refs[p0.lhs] != type_id) return null;
     const a0 = iface.range(p0.rhs);
@@ -408,14 +408,14 @@ fn readPlain(s: *Solve, type_id: Types.TypeId, entry: Types.Entry, value: Interf
     if (a0.len != a1.len or a0.len > 64 or a0.len != scheme.quantified_count) return null;
     var mask: u64 = 0;
     for (a0, a1, 0..) |t0, t1, i| {
-        const v0 = iface.term(@enumFromInt(t0));
-        const v1 = iface.term(@enumFromInt(t1));
+        const v0 = iface.term(@fromBackingInt(@intCast(t0)));
+        const v1 = iface.term(@fromBackingInt(@intCast(t1)));
         // Argument `i` must be quantifier `i`: the sub-wanteds are made in
         // argument order and must be the scheme's canonical order, so a
         // scheme numbered any other way takes the slow path.
         if (v0.tag != .@"var" or v1.tag != .@"var" or v0.lhs != v1.lhs or v0.lhs != i) return null;
         const q = iface.quantified(scheme, v0.lhs);
-        if (q.kind != @intFromEnum(TypeStore.Kind.any) or q.equatable or q.constraints_len > 1) return null;
+        if (q.kind != @backingInt(TypeStore.Kind.any) or q.equatable or q.constraints_len > 1) return null;
         if (q.constraints_len == 0) continue;
         const c = iface.quantifiedConstraint(q, 0);
         if (iface.symbol(c.name) != name) return null;
@@ -424,10 +424,10 @@ fn readPlain(s: *Solve, type_id: Types.TypeId, entry: Types.Entry, value: Interf
         const cps = iface.range(ct.lhs);
         if (cps.len != 2) return null;
         for (cps) |cp| {
-            const cv = iface.term(@enumFromInt(cp));
+            const cv = iface.term(@fromBackingInt(@intCast(cp)));
             if (cv.tag != .@"var" or cv.lhs != v0.lhs) return null;
         }
-        if (!isNullaryRef(iface, refs, @enumFromInt(ct.rhs), result_type)) return null;
+        if (!isNullaryRef(iface, refs, @fromBackingInt(@intCast(ct.rhs)), result_type)) return null;
         mask |= @as(u64, 1) << @intCast(i);
     }
     return .{ .arity = @intCast(a0.len), .mask = mask };
@@ -586,10 +586,10 @@ pub fn demandWellKnown(s: *Solve) Error!void {
         try e.demand(.{
             .v = scheme,
             .kind = .method,
-            .site = @intFromEnum(d.inst_start),
+            .site = @backingInt(d.inst_start),
             .decl = decl,
-            .field = @intFromEnum(cx.types.entry(t).name),
-            .method = @intFromEnum(method),
+            .field = @backingInt(cx.types.entry(t).name),
+            .method = @backingInt(method),
         });
     }
 }
@@ -621,9 +621,9 @@ fn reportedAtDeclaration(s: *Solve, t: Types.TypeId, entry: Types.Entry, value: 
     if (!Resolve.isWellKnownName(method) or entry.module == cx.module) return false;
     const iface = cx.iface(entry.module);
     const refs = cx.types.refIds(entry.module);
-    if (@intFromEnum(value) >= iface.values.len) return false;
-    const index = iface.values[@intFromEnum(value)].scheme;
-    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return false;
+    if (@backingInt(value) >= iface.values.len) return false;
+    const index = iface.values[@backingInt(value)].scheme;
+    if (index == .none or @backingInt(index) >= iface.schemes.len) return false;
     const judge: WrittenFor = .{ .iface = iface, .refs = refs, .t = t, .result = Resolve.wellKnownResult(s, method) };
     return iface.through(iface.scheme(index).body, null, &judge, WrittenFor.body);
 }
@@ -644,13 +644,13 @@ const WrittenFor = struct {
         if (seen.term.tag != .func) return false;
         const params = j.iface.range(seen.term.lhs);
         if (params.len == 0) return false;
-        if (j.iface.through(@enumFromInt(params[0]), seen.frame, j, shape) != .own) return false;
+        if (j.iface.through(@fromBackingInt(@intCast(params[0])), seen.frame, j, shape) != .own) return false;
         // `fitsWellKnown`, on terms.
         if (params.len != 2) return true;
         for (params) |p| {
-            if (j.iface.through(@enumFromInt(p), seen.frame, j, shape) == .other) return true;
+            if (j.iface.through(@fromBackingInt(@intCast(p)), seen.frame, j, shape) == .other) return true;
         }
-        return j.iface.through(@enumFromInt(seen.term.rhs), seen.frame, j, unfit);
+        return j.iface.through(@fromBackingInt(@intCast(seen.term.rhs)), seen.frame, j, unfit);
     }
 
     /// An application of `t`, a variable or `err`, or anything else.
@@ -717,7 +717,7 @@ pub fn ownSignatures(s: *Solve) Error!void {
             return switch (std.mem.order(u8, an, bn)) {
                 .lt => true,
                 .gt => false,
-                .eq => @intFromEnum(a.key.type_id) < @intFromEnum(b.key.type_id),
+                .eq => @backingInt(a.key.type_id) < @backingInt(b.key.type_id),
             };
         }
     };
@@ -860,7 +860,7 @@ fn allNullary(s: *Solve, id: Types.TypeId) bool {
     if (entry.module.int() >= cx.interfaces.len) return false;
     const iface = cx.iface(entry.module);
     const index = iface.findType(cx.interner, entry.name) orelse return false;
-    const t = iface.types[@intFromEnum(index)];
+    const t = iface.types[@backingInt(index)];
     if (t.ctors_start == t.ctors_end) return false;
     for (iface.ctors[t.ctors_start..t.ctors_end]) |ctor| {
         if (ctor.arity != 0) return false;
@@ -902,8 +902,8 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
                 try Messages.derivedNeedsAnnotation(s.report, w.origin, root, w.method, cx.bir.decls[answer.culprit].kind == .schema, cx.bir.symbol(cx.bir.decls[answer.culprit].name), Contexts.schemaConversion(cx, answer.culprit));
                 return Resolve.reject(s, id, true);
             },
-            .absent_private => return refusePrivate(s, id, @enumFromInt(answer.culprit), answer.method),
-            .absent_requirement => return refuseRequirement(s, id, @enumFromInt(answer.culprit), answer.method, null),
+            .absent_private => return refusePrivate(s, id, @fromBackingInt(@intCast(answer.culprit)), answer.method),
+            .absent_requirement => return refuseRequirement(s, id, @fromBackingInt(@intCast(answer.culprit)), answer.method, null),
             .absent_budget => {
                 try Messages.derivedBudget(s.report, w.origin, root, w.method);
                 return Resolve.reject(s, id, true);
@@ -945,7 +945,7 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
             const pinned = try s.fresh(.{ .structure = .{ .app = .{ .type = a.type, .args = try s.store().addVars(wanted) } } });
             for (pins) |p| {
                 if (try s.unifyQuiet(args[p.param], types[p.slot], w.origin)) continue;
-                const culprit: ?Messages.PinCulprit = if (answer.culprit != Contexts.none) .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } else null;
+                const culprit: ?Messages.PinCulprit = if (answer.culprit != Contexts.none) .{ .type_id = @fromBackingInt(@intCast(answer.culprit)), .method = answer.method } else null;
                 return refusePinned(s, id, pinned, culprit);
             }
         }
@@ -977,15 +977,15 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
         .private_method => {
             const p = iface.privateCulprit(row.context) orelse return refuseDerived(s, id, root, .opaque_type);
             const refs = cx.types.refIds(entry.module);
-            if (@intFromEnum(p.type_ref) >= refs.len) return refuseDerived(s, id, root, .opaque_type);
-            return refusePrivate(s, id, refs[@intFromEnum(p.type_ref)], iface.symbol(p.method));
+            if (@backingInt(p.type_ref) >= refs.len) return refuseDerived(s, id, root, .opaque_type);
+            return refusePrivate(s, id, refs[@backingInt(p.type_ref)], iface.symbol(p.method));
         },
         // The row says which method failed (§14.2).
         .requirement => {
             const p = iface.privateCulprit(row.context) orelse return refuseDerived(s, id, root, .opaque_type);
             const refs = cx.types.refIds(entry.module);
-            if (@intFromEnum(p.type_ref) >= refs.len) return refuseDerived(s, id, root, .opaque_type);
-            return refuseRequirement(s, id, refs[@intFromEnum(p.type_ref)], iface.symbol(p.method), null);
+            if (@backingInt(p.type_ref) >= refs.len) return refuseDerived(s, id, root, .opaque_type);
+            return refuseRequirement(s, id, refs[@backingInt(p.type_ref)], iface.symbol(p.method), null);
         },
         else => return refuseDerived(s, id, root, .opaque_type),
     }
@@ -1053,9 +1053,9 @@ fn finishDerived(s: *Solve, id: WantedId, type_id: Types.TypeId, subs: []const W
 /// entries whose `slot` it is.
 fn publishedMethodTypes(s: *Solve, id: WantedId, iface: *const Interface, module: Graph.Index, scheme: Interface.SchemeIndex, args: []const Var, w: Evidence.Wanted) Error!PublishedTypes {
     const cx = s.cx;
-    if (@intFromEnum(scheme) >= iface.schemes.len) return .malformed;
+    if (@backingInt(scheme) >= iface.schemes.len) return .malformed;
     const mark = cx.store.count();
-    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), s.frame().rank, cx.scratch, &s.instantiate.term_memo, cx.gpa, null);
+    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @backingInt(scheme), s.frame().rank, cx.scratch, &s.instantiate.term_memo, cx.gpa, null);
     try s.instantiate.adoptSince(mark);
     if (s.store().resolvedContent(v) == .err) return .poisoned;
     const elements = try cx.scratch.dupe(Var, Walk.positions(s.store(), v));
@@ -1171,7 +1171,7 @@ fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
     const range = try st.addFields(&pairs);
     const ext = try s.fresh(.{ .flex = .{} });
     const required = try s.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
-    _ = try s.unify(required, root, origin, .{ .tag = .field_access, .index = @intFromEnum(w.method) });
+    _ = try s.unify(required, root, origin, .{ .tag = .field_access, .index = @backingInt(w.method) });
     Resolve.answer(s, id, .field);
     const given: u32 = @intCast(rest.len);
     switch (st.resolvedContent(callee)) {

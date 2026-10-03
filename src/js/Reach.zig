@@ -143,7 +143,7 @@ pub const Live = struct {
 
     /// Whether member `member` of schema declaration `decl` survived.
     pub fn schema(l: *const Live, at: usize, member: SchemaGraph.Member) bool {
-        const index = at * SchemaGraph.Member.count + @intFromEnum(member);
+        const index = at * SchemaGraph.Member.count + @backingInt(member);
         return index < l.schemas.bit_length and l.schemas.isSet(index);
     }
 
@@ -355,7 +355,7 @@ pub const Input = struct {
             return;
         }
         for (0..in.graph.count()) |i| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             if (in.store.package(in.graph.moduleFile(m)) != .app) continue;
             const bir = in.birOf(m);
             for (bir.interface) |index| {
@@ -363,7 +363,7 @@ pub const Input = struct {
                 // A `pub schema` exports all three of its members.
                 if (d.kind == .schema) {
                     inline for (0..SchemaGraph.Member.count) |k| {
-                        try out.append(scratch, schemaNode(.{ .module = m, .decl = index.int() }, @enumFromInt(k)));
+                        try out.append(scratch, schemaNode(.{ .module = m, .decl = index.int() }, @fromBackingInt(@intCast(k))));
                     }
                     continue;
                 }
@@ -386,7 +386,7 @@ pub const Input = struct {
 /// that module's `Bir.ctors`.
 /// The node of member `member` of schema declaration `ref`.
 pub fn schemaNode(ref: SchemaGraph.Ref, member: SchemaGraph.Member) Node {
-    return .{ .module = ref.module, .kind = .schema, .index = ref.decl * SchemaGraph.Member.count + @intFromEnum(member) };
+    return .{ .module = ref.module, .kind = .schema, .index = ref.decl * SchemaGraph.Member.count + @backingInt(member) };
 }
 
 fn ctorOfExt(provenance: []const Interface.Provenance, m: Graph.Index, iface_ctor: u32) ?u32 {
@@ -412,7 +412,7 @@ pub fn mainOf(bir: *const Bir) ?u32 {
 pub fn run(scratch: Allocator, in: Input) Allocator.Error!Result {
     const edges = try scratch.alloc(ModuleEdges, in.graph.count());
     var b: Builder = .init(in, scratch);
-    for (edges, 0..) |*slot, i| slot.* = try b.module(@enumFromInt(@as(u32, @intCast(i))));
+    for (edges, 0..) |*slot, i| slot.* = try b.module(@fromBackingInt(@intCast(@as(u32, @intCast(i)))));
     return walk(scratch, in, edges);
 }
 
@@ -424,7 +424,7 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
     const count = in.graph.count();
     const modules = try scratch.alloc(Live, count);
     for (modules, 0..) |*slot, i| {
-        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         slot.* = .{
             .decls = try .initEmpty(scratch, in.birOf(m).decls.len),
             .derived = try .initEmpty(scratch, in.dispatchOf(m).derived.len),
@@ -495,12 +495,12 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
     const count = in.graph.count();
     var all = in.library;
     if (!all) for (0..count) |i| {
-        for (in.birOf(@enumFromInt(@as(u32, @intCast(i)))).decls) |d| {
+        for (in.birOf(@fromBackingInt(@intCast(@as(u32, @intCast(i))))).decls) |d| {
             if (d.kind == .schema) all = true;
         }
     };
     for (modules, 0..) |*live, i| {
-        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (all or in.store.package(in.graph.moduleFile(m)) == .core) live.ctors.setAll();
     }
     if (all) return;
@@ -508,10 +508,10 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
     // Type declarations whose constructors hand-written code may build: a
     // worklist over `(module, declaration)`, each looked at once.
     const seen = try scratch.alloc(std.DynamicBitSetUnmanaged, count);
-    for (seen, 0..) |*s, i| s.* = try .initEmpty(scratch, in.birOf(@enumFromInt(@as(u32, @intCast(i)))).decls.len);
+    for (seen, 0..) |*s, i| s.* = try .initEmpty(scratch, in.birOf(@fromBackingInt(@intCast(@as(u32, @intCast(i))))).decls.len);
     var work: std.ArrayList(TypeDecl) = .empty;
     for (0..count) |i| {
-        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         for (in.birOf(m).decls, 0..) |d, index| switch (d.kind) {
             .foreign_value, .foreign_type, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => try typesNamed(in, scratch, m, @intCast(index), &work),
             else => {},
@@ -547,7 +547,7 @@ fn typesNamed(in: Input, scratch: Allocator, m: Graph.Index, decl: u32, work: *s
     for (tags[start..end], data[start..end]) |tag, payload| switch (tag) {
         .type_top => try work.append(scratch, .{ .module = m, .decl = payload.lhs }),
         .ext_type => {
-            const owner: Graph.Index = @enumFromInt(payload.lhs);
+            const owner: Graph.Index = @fromBackingInt(@intCast(payload.lhs));
             if (owner.int() >= in.provenance.len) continue;
             const t = in.provenance[owner.int()].typeDecl(payload.rhs) orelse continue;
             try work.append(scratch, .{ .module = owner, .decl = t.int() });
@@ -768,7 +768,7 @@ pub const Builder = struct {
                 // with two bodies whose every use suspends keeps one, and
                 // what only its direct body needs — an `if Js.maySuspend`
                 // arm — is not kept for it.
-                const takes_twin = position != Edges.no_position and dispatch.effectAt(@enumFromInt(position)).body == .yes;
+                const takes_twin = position != Edges.no_position and dispatch.effectAt(@fromBackingInt(@intCast(position))).body == .yes;
                 for (nodes.items) |node| {
                     if (takes_twin and node.kind == .decl and node.module.int() < b.in.graph.count() and
                         b.in.dispatchOf(node.module).effectDecl(node.index).twin) continue;
@@ -788,7 +788,7 @@ pub const Builder = struct {
         for (bir.decls, 0..) |d, i| {
             inline for (0..SchemaGraph.Member.count) |k| {
                 schema_at[i * SchemaGraph.Member.count + k] = @intCast(schema_targets.items.len);
-                if (d.kind == .schema) try b.memberEdges(m, @intCast(i), @enumFromInt(k), &schema_targets);
+                if (d.kind == .schema) try b.memberEdges(m, @intCast(i), @fromBackingInt(@intCast(k)), &schema_targets);
             }
         }
         schema_at[bir.decls.len * SchemaGraph.Member.count] = @intCast(schema_targets.items.len);
@@ -848,18 +848,18 @@ pub const Builder = struct {
             .call => if (d.lhs < marks.len) {
                 // A `++` on lists calls `List.append` (`listEdges`), and
                 // its `Basics.append` is no reference.
-                if (dispatch.isListAppend(@enumFromInt(i))) {
+                if (dispatch.isListAppend(@fromBackingInt(@intCast(i)))) {
                     marks[d.lhs] = true;
-                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(d.lhs), interner) != null) {
+                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner) != null) {
                     marks[d.lhs] = true;
-                } else if (Operator.of(b.in.graph, b.in.interfaces, bir, m, @enumFromInt(d.lhs), interner)) |which| {
+                } else if (Operator.of(b.in.graph, b.in.interfaces, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
                     // An operator is written in place when the call passes
                     // its arity (`Lower.callExpr`), which a saturated call
                     // always does.
-                    if (bir.subRange(@enumFromInt(d.rhs)).len() == which.arity()) marks[d.lhs] = true;
+                    if (bir.subRange(@fromBackingInt(@intCast(d.rhs))).len() == which.arity()) marks[d.lhs] = true;
                 }
             },
-            .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(i), interner)) |which| {
+            .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(i)), interner)) |which| {
                 if (which == .null or which == .undefined or which == .development) marks[i] = true;
             },
             else => {},
@@ -886,7 +886,7 @@ pub const Builder = struct {
         const list = b.in.graph.lookup(.core, InternPool.WellKnown.List.symbol());
         var inst = d.inst_start.int();
         while (inst < d.inst_end.int() and inst < bir.insts.len) : (inst += 1) {
-            const at: Bir.Inst.Index = @enumFromInt(inst);
+            const at: Bir.Inst.Index = @fromBackingInt(@intCast(inst));
             const data = bir.instData(at);
             // `==`, not a switch with an `else` prong (`Bir.Inst.Tag.set`).
             const tag = bir.instTag(at);
@@ -924,12 +924,12 @@ pub const Builder = struct {
     /// so a program that only prepends onto what it holds ships no `close`.
     fn isBuildingStep(b: *Builder, m: Graph.Index, bir: *const Bir, list: Graph.Index, data: Bir.Inst.Data) bool {
         const cons_node = b.list_cons orelse return false;
-        const callee: Bir.Inst.Index = @enumFromInt(data.lhs);
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
         if (callee.int() >= bir.insts.len) return false;
         const named = switch (bir.instTag(callee)) {
             .ext_value => blk: {
                 const d = bir.instData(callee);
-                if (d.lhs != @intFromEnum(list)) break :blk false;
+                if (d.lhs != @backingInt(list)) break :blk false;
                 const t = b.twinOfExt(list, d.rhs) orelse break :blk false;
                 break :blk t.index == cons_node.index;
             },
@@ -937,7 +937,7 @@ pub const Builder = struct {
             else => false,
         };
         if (!named) return false;
-        const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+        const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
         if (args.len != 2) return false;
         return switch (bir.instTag(args[1])) {
             .call, .let, .case => true,
@@ -972,12 +972,12 @@ pub const Builder = struct {
             const ref: SchemaGraph.Ref, const kind: Interface.SchemaMember.Kind = if (tag == .schema_member_top)
                 .{ .{ .module = m, .decl = data.lhs }, std.enums.fromInt(Interface.SchemaMember.Kind, data.rhs) orelse continue }
             else if (tag == .ext_schema_member) blk: {
-                const owner: Graph.Index = @enumFromInt(data.lhs);
+                const owner: Graph.Index = @fromBackingInt(@intCast(data.lhs));
                 if (owner.int() >= b.in.interfaces.len or owner.int() >= b.in.provenance.len) continue;
                 const iface = &b.in.interfaces[owner.int()];
                 if (data.rhs >= iface.schema_members.len) continue;
                 const member = iface.schema_members[data.rhs];
-                const decl = b.in.provenance[owner.int()].schemaDecl(@intFromEnum(member.schema)) orelse continue;
+                const decl = b.in.provenance[owner.int()].schemaDecl(@backingInt(member.schema)) orelse continue;
                 break :blk .{ .{ .module = owner, .decl = decl.int() }, member.kind };
             } else continue;
             const member: SchemaGraph.Member = switch (kind) {
@@ -1086,7 +1086,7 @@ pub const Builder = struct {
             // Every arm whose pattern names a constructor that can be a
             // guard: its body is `(pattern root, body root]` (`Bir` is
             // post-order; `bir/Lower.lowerBranch`).
-            for (tags[start..end], data[start..end], start..) |tag, payload, p| if (guard_tags[@intFromEnum(tag)]) switch (tag) {
+            for (tags[start..end], data[start..end], start..) |tag, payload, p| if (guard_tags[@backingInt(tag)]) switch (tag) {
                 .top => try g.tops.append(scratch, payload.lhs),
                 .pat_ctor => if (payload.lhs >= start and payload.lhs < end) g.heads.set(payload.lhs - start),
                 .branch => {
@@ -1094,7 +1094,7 @@ pub const Builder = struct {
                     const body = payload.rhs;
                     if (!(pattern >= start and pattern < body and body < p)) continue;
                     const first: u32 = @intCast(g.chain_ctors.items.len);
-                    try g.patternCtors(@enumFromInt(pattern), 0);
+                    try g.patternCtors(@fromBackingInt(@intCast(pattern)), 0);
                     if (g.chain_ctors.items.len == first) continue;
                     try g.arms.append(scratch, .{ .from = pattern + 1, .to = body, .start = first, .end = @intCast(g.chain_ctors.items.len) });
                 },
@@ -1103,7 +1103,7 @@ pub const Builder = struct {
                 // mode*): guarded by a constructor no build reaches, so no
                 // edge out of it is ever followed.
                 .case => if (g.b.in.interner) |interner| {
-                    const case_inst: Bir.Inst.Index = @enumFromInt(@as(u32, @intCast(p)));
+                    const case_inst: Bir.Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(p))));
                     const never: Node = .{ .module = g.m, .kind = .ctor, .index = std.math.maxInt(u32) };
                     if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release)) |branch| {
                         try g.guardArm(branch, never, start, @intCast(p));
@@ -1196,11 +1196,11 @@ pub const Builder = struct {
             const d = bir.instData(pattern);
             switch (bir.instTag(pattern)) {
                 .pat_ctor => {
-                    if (g.ctorNode(@enumFromInt(d.lhs))) |node| try g.chain_ctors.append(g.b.scratch, node);
-                    for (bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index)) |arg| try g.patternCtors(arg, depth + 1);
+                    if (g.ctorNode(@fromBackingInt(@intCast(d.lhs)))) |node| try g.chain_ctors.append(g.b.scratch, node);
+                    for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index)) |arg| try g.patternCtors(arg, depth + 1);
                 },
                 .pat_tuple, .pat_list => for (bir.extraSlice(Bir.inlineRange(d), Bir.Inst.Index)) |e| try g.patternCtors(e, depth + 1),
-                .pat_as => try g.patternCtors(@enumFromInt(d.lhs), depth + 1),
+                .pat_as => try g.patternCtors(@fromBackingInt(@intCast(d.lhs)), depth + 1),
                 else => {},
             }
         }
@@ -1214,7 +1214,7 @@ pub const Builder = struct {
             const d = bir.instData(ref);
             const owner: Graph.Index, const index: u32 = switch (bir.instTag(ref)) {
                 .ctor => .{ g.m, d.lhs },
-                .ext_ctor => .{ @enumFromInt(d.lhs), ctorOfExt(in.provenance, @enumFromInt(d.lhs), d.rhs) orelse return null },
+                .ext_ctor => .{ @fromBackingInt(@intCast(d.lhs)), ctorOfExt(in.provenance, @fromBackingInt(@intCast(d.lhs)), d.rhs) orelse return null },
                 else => return null,
             };
             if (owner.int() >= in.graph.count()) return null;
@@ -1232,7 +1232,7 @@ pub const Builder = struct {
             for (tags[start..end], start..) |tag, p| {
                 if (tag != .ctor and tag != .ext_ctor) continue;
                 if (g.heads.isSet(p - start)) continue;
-                const node = g.ctorNode(@enumFromInt(p)) orelse continue;
+                const node = g.ctorNode(@fromBackingInt(@intCast(p))) orelse continue;
                 try out.append(g.b.scratch, .{ .node = node, .chain = g.chain_of.items[p - start] });
             }
         }
@@ -1288,13 +1288,13 @@ pub const Builder = struct {
         const data = bir.instData(inst);
         return switch (bir.instTag(inst)) {
             .top => .{ .module = m, .kind = .twin, .index = data.lhs },
-            .ext_value => b.twinOfExt(@enumFromInt(data.lhs), data.rhs),
+            .ext_value => b.twinOfExt(@fromBackingInt(@intCast(data.lhs)), data.rhs),
             .method_call, .type_dispatch => blk: {
                 const site = dispatch.siteOf(inst) orelse break :blk null;
                 const callee = site.callee.unwrap() orelse break :blk null;
                 break :blk switch (dispatch.term(callee)) {
                     .top => |u| .{ .module = m, .kind = .twin, .index = u.decl.int() },
-                    .ext => |e| b.twinOfExt(e.module, @intFromEnum(e.value)),
+                    .ext => |e| b.twinOfExt(e.module, @backingInt(e.value)),
                     else => null,
                 };
             },
@@ -1412,7 +1412,7 @@ test "a node outside its module's tables is dropped rather than followed" {
     defer live[0].decls.deinit(testing.allocator);
     defer live[0].derived.deinit(testing.allocator);
 
-    const m: Graph.Index = @enumFromInt(0);
+    const m: Graph.Index = @fromBackingInt(@intCast(0));
     try testing.expect(mark(&live, .{ .module = m, .kind = .decl, .index = 1 }));
     // Twice is once: the walk pushes a node only on the call that set it,
     // which is what stops a cycle.
@@ -1421,7 +1421,7 @@ test "a node outside its module's tables is dropped rather than followed" {
     // index is refused, not followed into memory that is not there.
     try testing.expect(!mark(&live, .{ .module = m, .kind = .decl, .index = 2 }));
     try testing.expect(!mark(&live, .{ .module = m, .kind = .derived, .index = 1 }));
-    try testing.expect(!mark(&live, .{ .module = @enumFromInt(7), .kind = .decl, .index = 0 }));
+    try testing.expect(!mark(&live, .{ .module = @fromBackingInt(@intCast(7)), .kind = .decl, .index = 0 }));
 
     try testing.expect(live[0].decl(1));
     try testing.expect(!live[0].decl(0));
@@ -1447,14 +1447,14 @@ test "a module with no survivor answers `any` false, and an absent one answers n
     // `Result` eliminates everything, so it can only ever be the state of a
     // build that writes nothing.
     const r: Result = .empty;
-    try testing.expect(!r.decl(@enumFromInt(0), 0));
-    try testing.expect(!r.derivedRow(@enumFromInt(0), 0));
-    try testing.expect(!r.of(@enumFromInt(0)).any());
+    try testing.expect(!r.decl(@fromBackingInt(@intCast(0)), 0));
+    try testing.expect(!r.derivedRow(@fromBackingInt(@intCast(0)), 0));
+    try testing.expect(!r.of(@fromBackingInt(@intCast(0))).any());
     // The two self-check questions answer TRUE on a table they cannot read,
     // because the wall reports what it is sure of and never invents a bug
     // out of a missing record.
-    try testing.expect(r.extValue(@enumFromInt(0), 0));
-    try testing.expect(r.extDerived(@enumFromInt(0), .none, .eq));
+    try testing.expect(r.extValue(@fromBackingInt(@intCast(0)), 0));
+    try testing.expect(r.extDerived(@fromBackingInt(@intCast(0)), .none, .eq));
 }
 
 test "a guarded edge waits on the first guard it lacks and is followed when the last arrives" {
@@ -1463,7 +1463,7 @@ test "a guarded edge waits on the first guard it lacks and is followed when the 
     defer arena.deinit();
     const scratch = arena.allocator();
 
-    const m: Graph.Index = @enumFromInt(0);
+    const m: Graph.Index = @fromBackingInt(@intCast(0));
     var live = [_]Live{.{
         .decls = try .initEmpty(scratch, 2),
         .derived = try .initEmpty(scratch, 0),
@@ -1506,7 +1506,7 @@ test "an edge waits on the innermost four guarded arms around it, and no more" {
     defer arena.deinit();
     const scratch = arena.allocator();
 
-    const m: Graph.Index = @enumFromInt(0);
+    const m: Graph.Index = @fromBackingInt(@intCast(0));
     var live = [_]Live{.{
         .decls = try .initEmpty(scratch, 1),
         .derived = try .initEmpty(scratch, 0),

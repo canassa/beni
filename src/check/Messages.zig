@@ -638,11 +638,11 @@ fn clashesByName(r: *Report, culprit: Types.TypeId, need: Symbol) bool {
         if (entry.module.int() >= env.interfaces.len) return false;
         const iface = env.iface(entry.module);
         const value = iface.findValue(env.interner, need) orelse return false;
-        const body = iface.term(iface.scheme(iface.values[@intFromEnum(value)].scheme).body);
+        const body = iface.term(iface.scheme(iface.values[@backingInt(value)].scheme).body);
         if (body.tag != .func) return false;
         const params = iface.range(body.lhs);
         if (params.len == 0) return false;
-        const t = iface.term(@enumFromInt(params[0]));
+        const t = iface.term(@fromBackingInt(@intCast(params[0])));
         if (t.tag != .app) return false;
         const refs = env.types.refIds(entry.module);
         if (t.lhs >= refs.len) return false;

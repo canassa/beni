@@ -26,7 +26,7 @@ const Report = @import("Report.zig");
 const Error = Check.Error;
 
 fn digestImportLessThan(_: void, a: Digest.Import, b: Digest.Import) bool {
-    if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
+    if (a.package != b.package) return @backingInt(a.package) < @backingInt(b.package);
     return std.mem.lessThan(u8, a.name, b.name);
 }
 
@@ -57,7 +57,7 @@ pub fn closeCoreSurface(d: *Driver, scratch: *Arena) Error!void {
     var entries: std.ArrayList(Digest.CoreEntry) = .empty;
     defer entries.deinit(scratch.allocator());
     for (0..d.graph.count()) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         if (!d.graph.isImplicitCore(m)) continue;
         try entries.append(scratch.allocator(), .{
             .name = d.interner.slice(d.graph.moduleName(m)),
@@ -72,7 +72,7 @@ pub fn closeCoreSurface(d: *Driver, scratch: *Arena) Error!void {
     var old: std.ArrayList(Key.CoreEntry) = .empty;
     defer old.deinit(scratch.allocator());
     for (0..d.graph.count()) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         if (d.graph.modulePackage(m) != .core) continue;
         try old.append(scratch.allocator(), .{
             .name = d.interner.slice(d.graph.moduleName(m)),
@@ -91,7 +91,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     // the load cost once it was on the DAG?" is a number the slice owes.
     const token = if (d.options.profile) |p| p.begin() else null;
     defer if (d.options.profile) |p| {
-        p.end(tid, token.?, .cache_load, @intFromEnum(d.graph.moduleFile(m)), 0);
+        p.end(tid, token.?, .cache_load, @backingInt(d.graph.moduleFile(m)), 0);
     };
     var pairs: std.ArrayList(Key.ImportPair) = .empty;
     defer pairs.deinit(scratch.allocator());
@@ -185,7 +185,7 @@ pub fn publish(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void
     // on every checking run, cache directory or not.
     const token = if (d.options.profile) |p| p.begin() else null;
     defer if (d.options.profile) |p| {
-        p.end(tid, token.?, .dep_digest, @intFromEnum(d.graph.moduleFile(m)), 0);
+        p.end(tid, token.?, .dep_digest, @backingInt(d.graph.moduleFile(m)), 0);
     };
     const record = try iface_bytes.write(scratch.allocator(), &d.interfaces[m.int()], d.interner);
     cutoff.iface_hash[m.int()] = iface_bytes.hash(record);
@@ -249,7 +249,7 @@ pub fn verifyReads(d: *Driver, m: Graph.Index, recorder: *const reads.Recorder) 
     try Report.appendTo(d.gpa, &d.per_module[m.int()], false, .{
         .code = .internal,
         .module = m,
-        .region = @enumFromInt(0),
+        .region = @fromBackingInt(@intCast(0)),
         .message = message,
     });
 }
@@ -314,10 +314,10 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
         const message = try gpa.dupe(u8, row.message);
         errdefer gpa.free(message);
         list.appendAssumeCapacity(.{
-            .code = @enumFromInt(row.code),
+            .code = @fromBackingInt(@intCast(row.code)),
             .module = m,
-            .region = @enumFromInt(row.region),
-            .severity = @enumFromInt(row.severity),
+            .region = @fromBackingInt(@intCast(row.region)),
+            .severity = @fromBackingInt(@intCast(row.severity)),
             .token = if (row.has_token) row.token else null,
             .message = message,
         });

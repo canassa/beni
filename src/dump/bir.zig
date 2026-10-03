@@ -112,7 +112,7 @@ const Dumper = struct {
     }
 
     fn symRaw(d: *const Dumper, index: u32) []const u8 {
-        return d.sym(@enumFromInt(index));
+        return d.sym(@fromBackingInt(@intCast(index)));
     }
 
     fn declName(d: *const Dumper, index: u32) []const u8 {
@@ -256,7 +256,7 @@ const Dumper = struct {
             try d.w.writeAll("  ");
             try d.ref(i);
             try d.w.writeAll(" = ");
-            try d.writeInst(@enumFromInt(i));
+            try d.writeInst(@fromBackingInt(@intCast(i)));
             try d.w.writeByte('\n');
         }
 
@@ -309,7 +309,7 @@ const Dumper = struct {
                     try d.w.writeAll("  facts");
                     var f_at: usize = 0;
                     while (f_at < facts.len) : (f_at += Bir.extraLen(Bir.VocabFact)) {
-                        const f = d.bir.extraData(@enumFromInt(@intFromEnum(decl_.params_start) + f_at), Bir.VocabFact);
+                        const f = d.bir.extraData(@fromBackingInt(@intCast(@backingInt(decl_.params_start) + f_at)), Bir.VocabFact);
                         try d.w.print(" {s}", .{f.word.spelling()});
                         if (f.arg.unwrap()) |_| {
                             try d.w.writeByte(' ');
@@ -494,12 +494,12 @@ const Dumper = struct {
             },
             .schema_ref, .schema_expr_ref, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => try d.w.print(" {s}", .{d.symRaw(data.lhs)}),
             .schema_parameter => try d.w.print(" param {d}", .{data.lhs}),
-            .schema_primitive => try d.w.print(" {t}", .{@as(Bir.SchemaPrimitive, @enumFromInt(data.lhs))}),
+            .schema_primitive => try d.w.print(" {t}", .{@as(Bir.SchemaPrimitive, @fromBackingInt(@intCast(data.lhs)))}),
             .schema_app => {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.rhs))));
             },
             .schema_paren, .schema_as, .schema_via => {
                 try d.w.writeByte(' ');
@@ -510,7 +510,7 @@ const Dumper = struct {
                 try d.refList(Bir.inlineRange(data));
             },
             .schema_field => {
-                const field = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaField);
+                const field = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaField);
                 try d.w.print(" {s} : ", .{d.symRaw(data.lhs)});
                 try d.refIndex(field.operand);
                 try d.w.writeByte(' ');
@@ -532,16 +532,16 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.rhs))));
             },
             .schema_tagged => {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.rhs))));
             },
             .schema_variant => {
-                const variant = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+                const variant = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaVariant);
                 try d.w.print(" {s}", .{d.symRaw(data.lhs)});
                 if (variant.payload.unwrap()) |payload| {
                     try d.w.writeByte(' ');
@@ -557,11 +557,11 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.rhs))));
             },
             .type_fn => {
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.lhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.lhs))));
                 try d.w.writeAll(" -> ");
                 try d.ref(data.rhs);
             },
@@ -578,7 +578,7 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.fieldList(bir.subRange(@enumFromInt(data.rhs)), " : ");
+                try d.fieldList(bir.subRange(@fromBackingInt(@intCast(data.rhs))), " : ");
             },
             .int, .float, .pat_int => try d.w.print(" {s}", .{bir.bytes(i)}),
             .char, .pat_char => {
@@ -597,7 +597,7 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.fieldList(bir.subRange(@enumFromInt(data.rhs)), " = ");
+                try d.fieldList(bir.subRange(@fromBackingInt(@intCast(data.rhs))), " = ");
             },
             .field_access => {
                 try d.w.writeByte(' ');
@@ -613,13 +613,13 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.rhs))));
             },
             // `method_call %0 .insert [%1, %2]`, and for one of the six
             // operators the form it was written as: `method_call %0 .eq
             // [%1] (==)` (static-dispatch-spike.md §1.3, §3.1).
             .method_call => {
-                const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
+                const m = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.print(" .{s} ", .{d.sym(m.name)});
@@ -627,24 +627,24 @@ const Dumper = struct {
                 if (m.origin.spelling()) |op| try d.w.print(" ({s})", .{op});
             },
             .type_dispatch => {
-                const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+                const t = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.TypeDispatch);
                 try d.w.print(" {s}.{s} ", .{ d.symRaw(data.lhs), d.sym(t.name) });
                 try d.refList(.{ .start = t.args_start, .end = t.args_end });
             },
             .lambda => {
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.lhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.lhs))));
                 try d.w.writeAll(" -> ");
                 try d.ref(data.rhs);
             },
             .let => {
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.lhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.lhs))));
                 try d.w.writeAll(" in ");
                 try d.ref(data.rhs);
             },
             .let_def => {
-                const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+                const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
                 try d.w.writeByte(' ');
                 try d.local(def.local, true);
                 if (def.annotation.unwrap()) |a| {
@@ -670,7 +670,7 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.rhs))));
             },
             .branch => {
                 try d.w.writeByte(' ');
@@ -681,7 +681,7 @@ const Dumper = struct {
             .@"try" => {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
-                const target: Inst.OptionalIndex = @enumFromInt(data.rhs);
+                const target: Inst.OptionalIndex = @fromBackingInt(@intCast(data.rhs));
                 if (target.unwrap()) |t| {
                     try d.w.writeAll(" (returns from let_def ");
                     try d.refIndex(t);
@@ -698,7 +698,7 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
-                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+                try d.refList(bir.subRange(@fromBackingInt(@intCast(data.rhs))));
             },
             .pat_record => {
                 try d.w.writeAll(" [");
@@ -719,10 +719,10 @@ const Dumper = struct {
                 try d.ref(data.lhs);
             },
             .@"error" => {
-                const code: @import("diagnostic").Code = @enumFromInt(data.lhs);
+                const code: @import("diagnostic").Code = @fromBackingInt(@intCast(data.lhs));
                 try d.w.print(" {t}", .{code});
             },
-            .markup => try d.markupNode(@enumFromInt(data.lhs), 4),
+            .markup => try d.markupNode(@fromBackingInt(@intCast(data.lhs)), 4),
         }
     }
 
@@ -796,7 +796,7 @@ const Dumper = struct {
                     try d.w.writeAll(" fallback ");
                     try d.refIndex(v);
                 }
-                if (f.row != Bir.none_extra) try d.row(bir.extraData(@enumFromInt(f.row), Bir.MarkupRow), indent + 2);
+                if (f.row != Bir.none_extra) try d.row(bir.extraData(@fromBackingInt(@intCast(f.row)), Bir.MarkupRow), indent + 2);
             },
         }
     }
@@ -880,10 +880,10 @@ const Dumper = struct {
             try d.local(captured, false);
         }
         try d.w.writeAll("] inputs [");
-        var at = @intFromEnum(r.inputs_start);
+        var at = @backingInt(r.inputs_start);
         var k: usize = 0;
-        while (at < @intFromEnum(r.inputs_end)) : (at += Bir.extraLen(Bir.MarkupInput)) {
-            const input = bir.extraData(@enumFromInt(at), Bir.MarkupInput);
+        while (at < @backingInt(r.inputs_end)) : (at += Bir.extraLen(Bir.MarkupInput)) {
+            const input = bir.extraData(@fromBackingInt(@intCast(at)), Bir.MarkupInput);
             if (k != 0) try d.w.writeAll(", ");
             k += 1;
             const name = d.locals[input.local].name;

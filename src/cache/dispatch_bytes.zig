@@ -113,7 +113,7 @@ pub const Column = enum(u32) {
     type_refs,
     strings,
 
-    pub const count: u32 = @typeInfo(Column).@"enum".fields.len;
+    pub const count: u32 = @typeInfo(Column).@"enum".field_names.len;
 
     /// Bytes per element. `strings` is the one column whose `len` is a BYTE
     /// count rather than an element count, so its width is 1 by definition.
@@ -221,8 +221,8 @@ pub fn write(
     defer gpa.free(sites);
     for (d.sites, 0..) |s, i| {
         const row = sites[i * 16 ..][0..16];
-        std.mem.writeInt(u32, row[0..4], @intFromEnum(s.inst), .little);
-        std.mem.writeInt(u32, row[4..8], @intFromEnum(s.callee), .little);
+        std.mem.writeInt(u32, row[0..4], @backingInt(s.inst), .little);
+        std.mem.writeInt(u32, row[4..8], @backingInt(s.callee), .little);
         writeRange(row[8..16], s.evidence);
     }
 
@@ -233,7 +233,7 @@ pub fn write(
         const row = decls[i * 20 ..][0..20];
         writeRange(row[0..8], info.requirements);
         std.mem.writeInt(u16, row[8..10], info.value_arity, .little);
-        row[10] = @intFromEnum(info.convention);
+        row[10] = @backingInt(info.convention);
         writeRange(row[12..20], info.identities);
     }
 
@@ -241,7 +241,7 @@ pub fn write(
     defer gpa.free(lets);
     for (d.lets, 0..) |let, i| {
         const row = lets[i * 20 ..][0..20];
-        std.mem.writeInt(u32, row[0..4], @intFromEnum(let.inst), .little);
+        std.mem.writeInt(u32, row[0..4], @backingInt(let.inst), .little);
         writeRange(row[4..12], let.requirements);
         writeRange(row[12..20], let.identities);
     }
@@ -274,7 +274,7 @@ pub fn write(
     @memset(derived, 0);
     for (d.derived, 0..) |row_in, i| {
         const row = derived[i * 32 ..][0..32];
-        row[0] = @intFromEnum(row_in.kind);
+        row[0] = @backingInt(row_in.kind);
         try w.writeShape(row[4..16], row_in.shape);
         writeRange(row[16..24], row_in.context);
         writeRange(row[24..32], row_in.body);
@@ -289,21 +289,21 @@ pub fn write(
     @memset(tries, 0);
     for (d.tries, 0..) |t, i| {
         const row = tries[i * 8 ..][0..8];
-        std.mem.writeInt(u32, row[0..4], @intFromEnum(t.inst), .little);
-        row[4] = @intFromEnum(t.shape);
+        std.mem.writeInt(u32, row[0..4], @backingInt(t.inst), .little);
+        row[4] = @backingInt(t.shape);
     }
 
     const appends = try gpa.alloc(u8, d.appends.len * Column.appends.width());
     defer gpa.free(appends);
-    for (d.appends, 0..) |inst, i| std.mem.writeInt(u32, appends[i * 4 ..][0..4], @intFromEnum(inst), .little);
+    for (d.appends, 0..) |inst, i| std.mem.writeInt(u32, appends[i * 4 ..][0..4], @backingInt(inst), .little);
 
     const markup = try gpa.alloc(u8, d.markup.len * Column.markup.width());
     defer gpa.free(markup);
     for (d.markup, 0..) |n, i| {
         const row = markup[i * 20 ..][0..20];
-        std.mem.writeInt(u32, row[0..4], @intFromEnum(n.root), .little);
+        std.mem.writeInt(u32, row[0..4], @backingInt(n.root), .little);
         std.mem.writeInt(u32, row[4..8], n.node, .little);
-        row[8] = @intFromEnum(n.kind);
+        row[8] = @backingInt(n.kind);
         row[9] = n.detail;
         row[10] = n.arity;
         row[11] = @as(u8, @intFromBool(n.primitive)) | @as(u8, @intFromBool(n.url)) << 1;
@@ -316,9 +316,9 @@ pub fn write(
     @memset(effect_sites, 0);
     for (d.effect_sites, 0..) |s, i| {
         const row = effect_sites[i * 8 ..][0..8];
-        std.mem.writeInt(u32, row[0..4], @intFromEnum(s.inst), .little);
-        row[4] = @intFromEnum(s.own);
-        row[5] = @intFromEnum(s.body);
+        std.mem.writeInt(u32, row[0..4], @backingInt(s.inst), .little);
+        row[4] = @backingInt(s.own);
+        row[5] = @backingInt(s.body);
         row[6] = @intFromBool(s.impure);
     }
     const effect_decls = try gpa.alloc(u8, d.effect_decls.len * Column.effect_decls.width());
@@ -326,7 +326,7 @@ pub fn write(
     @memset(effect_decls, 0);
     for (d.effect_decls, 0..) |e, i| {
         const row = effect_decls[i * 4 ..][0..4];
-        row[0] = @intFromEnum(e.own);
+        row[0] = @backingInt(e.own);
         row[1] = @intFromBool(e.twin);
     }
     const boundary = try gpa.alloc(u8, d.boundary.len * Column.boundary.width());
@@ -335,10 +335,10 @@ pub fn write(
     for (d.boundary, 0..) |b, i| {
         const row = boundary[i * 12 ..][0..12];
         std.mem.writeInt(u32, row[0..4], b.decl, .little);
-        row[4] = @intFromEnum(b.kind);
+        row[4] = @backingInt(b.kind);
         const value = switch (b.kind) {
-            .field => try w.string(@enumFromInt(b.value)),
-            .type => try w.typeRef(@enumFromInt(b.value)),
+            .field => try w.string(@fromBackingInt(@intCast(b.value))),
+            .type => try w.typeRef(@fromBackingInt(@intCast(b.value))),
         };
         std.mem.writeInt(u32, row[8..12], value, .little);
     }
@@ -347,8 +347,8 @@ pub fn write(
     @memset(debug, 0);
     for (d.debug, 0..) |s, i| {
         const row = debug[i * 16 ..][0..16];
-        std.mem.writeInt(u32, row[0..4], @intFromEnum(s.inst), .little);
-        row[4] = @intFromEnum(s.which);
+        std.mem.writeInt(u32, row[0..4], @backingInt(s.inst), .little);
+        row[4] = @backingInt(s.which);
         writeRange(row[8..16], s.shape);
     }
     const debug_nodes = try gpa.alloc(u8, d.debug_nodes.len * Column.debug_nodes.width());
@@ -356,11 +356,11 @@ pub fn write(
     @memset(debug_nodes, 0);
     for (d.debug_nodes, 0..) |n, i| {
         const row = debug_nodes[i * 12 ..][0..12];
-        row[0] = @intFromEnum(n.kind);
+        row[0] = @backingInt(n.kind);
         std.mem.writeInt(u32, row[4..8], n.count, .little);
         const value = switch (n.kind) {
-            .field => try w.string(@enumFromInt(n.value)),
-            .named => try w.typeRef(@enumFromInt(n.value)),
+            .field => try w.string(@fromBackingInt(@intCast(n.value))),
+            .named => try w.typeRef(@fromBackingInt(@intCast(n.value))),
             else => 0,
         };
         std.mem.writeInt(u32, row[8..12], value, .little);
@@ -373,7 +373,7 @@ pub fn write(
     @memset(module_refs, 0);
     for (w.module_refs.items, 0..) |r, i| {
         const row = module_refs[i * 8 ..][0..8];
-        row[0] = @intFromEnum(r.package);
+        row[0] = @backingInt(r.package);
         std.mem.writeInt(u32, row[4..8], r.name_offset, .little);
     }
     const type_refs = try gpa.alloc(u8, w.type_refs.items.len * Column.type_refs.width());
@@ -381,7 +381,7 @@ pub fn write(
     @memset(type_refs, 0);
     for (w.type_refs.items, 0..) |r, i| {
         const row = type_refs[i * 12 ..][0..12];
-        row[0] = @intFromEnum(r.package);
+        row[0] = @backingInt(r.package);
         std.mem.writeInt(u32, row[4..8], r.module_offset, .little);
         std.mem.writeInt(u32, row[8..12], r.name_offset, .little);
     }
@@ -538,26 +538,26 @@ const Writer = struct {
 
     fn writeTerm(w: *Writer, row: *[term_bytes]u8, t: Dispatch.Term) Allocator.Error!void {
         @memset(row, 0);
-        row[0] = @intFromEnum(std.meta.activeTag(t));
+        row[0] = @backingInt(std.meta.activeTag(t));
         switch (t) {
             .param => |p| {
-                row[1] = @intFromEnum(std.meta.activeTag(p.binder));
+                row[1] = @backingInt(std.meta.activeTag(p.binder));
                 std.mem.writeInt(u32, row[8..12], p.k, .little);
                 switch (p.binder) {
                     .decl => {},
-                    .let => |inst| std.mem.writeInt(u32, row[4..8], @intFromEnum(inst), .little),
+                    .let => |inst| std.mem.writeInt(u32, row[4..8], @backingInt(inst), .little),
                     .derived => |index| std.mem.writeInt(u32, row[4..8], index, .little),
                 }
             },
-            .top => |u| std.mem.writeInt(u32, row[4..8], @intFromEnum(u.decl), .little),
+            .top => |u| std.mem.writeInt(u32, row[4..8], @backingInt(u.decl), .little),
             .ext => |e| {
                 std.mem.writeInt(u32, row[4..8], try w.moduleRef(e.module), .little);
-                std.mem.writeInt(u32, row[8..12], @intFromEnum(e.value), .little);
+                std.mem.writeInt(u32, row[8..12], @backingInt(e.value), .little);
             },
-            .primitive => |p| std.mem.writeInt(u32, row[4..8], @intFromEnum(p), .little),
+            .primitive => |p| std.mem.writeInt(u32, row[4..8], @backingInt(p), .little),
             .derived => |u| std.mem.writeInt(u32, row[4..8], u.index, .little),
             .ext_derived => |u| {
-                row[1] = @intFromEnum(u.kind);
+                row[1] = @backingInt(u.kind);
                 std.mem.writeInt(u32, row[4..8], try w.moduleRef(u.module), .little);
                 std.mem.writeInt(u32, row[8..12], try w.typeRef(u.type), .little);
             },
@@ -569,7 +569,7 @@ const Writer = struct {
 
     fn writeShape(w: *Writer, row: *[12]u8, shape: Dispatch.Shape) Allocator.Error!void {
         @memset(row, 0);
-        row[0] = @intFromEnum(std.meta.activeTag(shape));
+        row[0] = @backingInt(std.meta.activeTag(shape));
         switch (shape) {
             .nominal => |id| std.mem.writeInt(u32, row[4..8], try w.typeRef(id), .little),
             .record => |r| writeRange(row[4..12], r),
@@ -635,7 +635,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     var offsets: [Column.count]u32 = undefined;
     var lengths: [Column.count]u32 = undefined;
     for (0..Column.count) |i| {
-        const c: Column = @enumFromInt(i);
+        const c: Column = @fromBackingInt(@intCast(i));
         const row = bytes[header_bytes + i * 8 ..][0..8];
         const offset = std.mem.readInt(u32, row[0..4], .little);
         const len = std.mem.readInt(u32, row[4..8], .little);
@@ -644,10 +644,10 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         offsets[i] = offset;
         lengths[i] = len;
     }
-    const blob = bytes[offsets[@intFromEnum(Column.strings)]..][0..lengths[@intFromEnum(Column.strings)]];
+    const blob = bytes[offsets[@backingInt(Column.strings)]..][0..lengths[@backingInt(Column.strings)]];
     const col = struct {
         fn at(b: []const u8, o: [Column.count]u32, c: Column) []const u8 {
-            return b[o[@intFromEnum(c)]..];
+            return b[o[@backingInt(c)]..];
         }
     }.at;
 
@@ -658,7 +658,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     // needs them whole.
     {
         const in_bytes = col(bytes, offsets, .module_refs);
-        const refs = try gpa.alloc(ModuleRef, lengths[@intFromEnum(Column.module_refs)]);
+        const refs = try gpa.alloc(ModuleRef, lengths[@backingInt(Column.module_refs)]);
         out.module_refs = refs;
         for (refs, 0..) |*r, i| {
             const row = in_bytes[i * 8 ..][0..8];
@@ -670,7 +670,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .type_refs);
-        const refs = try gpa.alloc(TypeRef, lengths[@intFromEnum(Column.type_refs)]);
+        const refs = try gpa.alloc(TypeRef, lengths[@backingInt(Column.type_refs)]);
         out.type_refs = refs;
         for (refs, 0..) |*r, i| {
             const row = in_bytes[i * 12 ..][0..12];
@@ -687,7 +687,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
 
     {
         const in_bytes = col(bytes, offsets, .symbols);
-        const symbols = try gpa.alloc(Symbol, lengths[@intFromEnum(Column.symbols)]);
+        const symbols = try gpa.alloc(Symbol, lengths[@backingInt(Column.symbols)]);
         out.table.symbols = symbols;
         for (symbols, 0..) |*s, i| {
             s.* = try symbolAt(blob, std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little), in) orelse
@@ -696,7 +696,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .terms);
-        const terms = try gpa.alloc(Dispatch.Term, lengths[@intFromEnum(Column.terms)]);
+        const terms = try gpa.alloc(Dispatch.Term, lengths[@backingInt(Column.terms)]);
         out.table.terms = terms;
         for (terms, 0..) |*t, i| {
             t.* = try readTerm(in_bytes[i * term_bytes ..][0..term_bytes], module_ref_count, type_ref_count);
@@ -704,26 +704,26 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .args);
-        const args = try gpa.alloc(Dispatch.TermIndex, lengths[@intFromEnum(Column.args)]);
+        const args = try gpa.alloc(Dispatch.TermIndex, lengths[@backingInt(Column.args)]);
         out.table.args = args;
-        for (args, 0..) |*a, i| a.* = @enumFromInt(std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little));
+        for (args, 0..) |*a, i| a.* = @fromBackingInt(@intCast(std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little)));
     }
     {
         const in_bytes = col(bytes, offsets, .sites);
-        const sites = try gpa.alloc(Dispatch.Site, lengths[@intFromEnum(Column.sites)]);
+        const sites = try gpa.alloc(Dispatch.Site, lengths[@backingInt(Column.sites)]);
         out.table.sites = sites;
         for (sites, 0..) |*s, i| {
             const row = in_bytes[i * 16 ..][0..16];
             s.* = .{
-                .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
-                .callee = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
+                .inst = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
+                .callee = @fromBackingInt(@intCast(std.mem.readInt(u32, row[4..8], .little))),
                 .evidence = readRange(row[8..16]),
             };
         }
     }
     {
         const in_bytes = col(bytes, offsets, .decls);
-        const decls = try gpa.alloc(Dispatch.DeclInfo, lengths[@intFromEnum(Column.decls)]);
+        const decls = try gpa.alloc(Dispatch.DeclInfo, lengths[@backingInt(Column.decls)]);
         out.table.decls = decls;
         for (decls, 0..) |*info, i| {
             const row = in_bytes[i * 20 ..][0..20];
@@ -737,12 +737,12 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .lets);
-        const lets = try gpa.alloc(Dispatch.LetInfo, lengths[@intFromEnum(Column.lets)]);
+        const lets = try gpa.alloc(Dispatch.LetInfo, lengths[@backingInt(Column.lets)]);
         out.table.lets = lets;
         for (lets, 0..) |*let, i| {
             const row = in_bytes[i * 20 ..][0..20];
             let.* = .{
-                .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .inst = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .requirements = readRange(row[4..12]),
                 .identities = readRange(row[12..20]),
             };
@@ -750,14 +750,14 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .identities);
-        const identities = try gpa.alloc(u32, lengths[@intFromEnum(Column.identities)]);
+        const identities = try gpa.alloc(u32, lengths[@backingInt(Column.identities)]);
         out.table.identities = identities;
         for (identities, 0..) |*j, i| j.* = std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little);
     }
-    out.table.text = try gpa.dupe(u8, col(bytes, offsets, .text)[0..lengths[@intFromEnum(Column.text)]]);
+    out.table.text = try gpa.dupe(u8, col(bytes, offsets, .text)[0..lengths[@backingInt(Column.text)]]);
     {
         const in_bytes = col(bytes, offsets, .requirements);
-        const requirements = try gpa.alloc(Dispatch.Requirement, lengths[@intFromEnum(Column.requirements)]);
+        const requirements = try gpa.alloc(Dispatch.Requirement, lengths[@backingInt(Column.requirements)]);
         out.table.requirements = requirements;
         for (requirements, 0..) |*e, i| {
             const row = in_bytes[i * 12 ..][0..12];
@@ -775,7 +775,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .contexts);
-        const contexts = try gpa.alloc(Dispatch.ContextEntry, lengths[@intFromEnum(Column.contexts)]);
+        const contexts = try gpa.alloc(Dispatch.ContextEntry, lengths[@backingInt(Column.contexts)]);
         out.table.contexts = contexts;
         for (contexts, 0..) |*c, i| {
             const row = in_bytes[i * 8 ..][0..8];
@@ -788,7 +788,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .derived);
-        const derived = try gpa.alloc(Dispatch.Derived, lengths[@intFromEnum(Column.derived)]);
+        const derived = try gpa.alloc(Dispatch.Derived, lengths[@backingInt(Column.derived)]);
         out.table.derived = derived;
         for (derived, 0..) |*row_out, i| {
             const row = in_bytes[i * 32 ..][0..32];
@@ -802,31 +802,31 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .tries);
-        const tries = try gpa.alloc(Dispatch.Try, lengths[@intFromEnum(Column.tries)]);
+        const tries = try gpa.alloc(Dispatch.Try, lengths[@backingInt(Column.tries)]);
         out.table.tries = tries;
         for (tries, 0..) |*t, i| {
             const row = in_bytes[i * 8 ..][0..8];
             t.* = .{
-                .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .inst = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .shape = std.enums.fromInt(Dispatch.Try.Kind, row[4]) orelse return error.BadSidecar,
             };
         }
     }
     {
         const in_bytes = col(bytes, offsets, .appends);
-        const appends = try gpa.alloc(Bir.Inst.Index, lengths[@intFromEnum(Column.appends)]);
+        const appends = try gpa.alloc(Bir.Inst.Index, lengths[@backingInt(Column.appends)]);
         out.table.appends = appends;
-        for (appends, 0..) |*a, i| a.* = @enumFromInt(std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little));
+        for (appends, 0..) |*a, i| a.* = @fromBackingInt(@intCast(std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little)));
     }
     {
         const in_bytes = col(bytes, offsets, .markup);
-        const markup = try gpa.alloc(Dispatch.Markup, lengths[@intFromEnum(Column.markup)]);
+        const markup = try gpa.alloc(Dispatch.Markup, lengths[@backingInt(Column.markup)]);
         out.table.markup = markup;
         for (markup, 0..) |*n, i| {
             const row = in_bytes[i * 20 ..][0..20];
             if (row[11] > 3) return error.BadSidecar;
             n.* = .{
-                .root = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .root = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .node = std.mem.readInt(u32, row[4..8], .little),
                 .kind = std.enums.fromInt(Dispatch.Markup.Kind, row[8]) orelse return error.BadSidecar,
                 .detail = row[9],
@@ -840,12 +840,12 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .effect_sites);
-        const sites = try gpa.alloc(Dispatch.EffectSite, lengths[@intFromEnum(Column.effect_sites)]);
+        const sites = try gpa.alloc(Dispatch.EffectSite, lengths[@backingInt(Column.effect_sites)]);
         out.table.effect_sites = sites;
         for (sites, 0..) |*s, i| {
             const row = in_bytes[i * 8 ..][0..8];
             s.* = .{
-                .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .inst = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .own = std.enums.fromInt(Dispatch.Suspend, row[4]) orelse return error.BadSidecar,
                 .body = std.enums.fromInt(Dispatch.Suspend, row[5]) orelse return error.BadSidecar,
                 .impure = switch (row[6]) {
@@ -858,7 +858,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .effect_decls);
-        const decls = try gpa.alloc(Dispatch.EffectDecl, lengths[@intFromEnum(Column.effect_decls)]);
+        const decls = try gpa.alloc(Dispatch.EffectDecl, lengths[@backingInt(Column.effect_decls)]);
         out.table.effect_decls = decls;
         for (decls, 0..) |*e, i| {
             const row = in_bytes[i * 4 ..][0..4];
@@ -872,7 +872,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     {
         // A type row's value is a `type_refs` index until `resolve`.
         const in_bytes = col(bytes, offsets, .boundary);
-        const rows = try gpa.alloc(Dispatch.Boundary, lengths[@intFromEnum(Column.boundary)]);
+        const rows = try gpa.alloc(Dispatch.Boundary, lengths[@backingInt(Column.boundary)]);
         out.table.boundary = rows;
         for (rows, 0..) |*b, i| {
             const row = in_bytes[i * 12 ..][0..12];
@@ -882,7 +882,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
                 .decl = std.mem.readInt(u32, row[0..4], .little),
                 .kind = kind,
                 .value = switch (kind) {
-                    .field => @intFromEnum(try symbolAt(blob, raw, in) orelse return error.BadSidecar),
+                    .field => @backingInt(try symbolAt(blob, raw, in) orelse return error.BadSidecar),
                     .type => if (raw != no_ref and raw >= type_ref_count) return error.BadSidecar else raw,
                 },
             };
@@ -890,12 +890,12 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     }
     {
         const in_bytes = col(bytes, offsets, .debug);
-        const sites = try gpa.alloc(Dispatch.DebugSite, lengths[@intFromEnum(Column.debug)]);
+        const sites = try gpa.alloc(Dispatch.DebugSite, lengths[@backingInt(Column.debug)]);
         out.table.debug = sites;
         for (sites, 0..) |*s, i| {
             const row = in_bytes[i * 16 ..][0..16];
             s.* = .{
-                .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .inst = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .which = std.enums.fromInt(Dispatch.DebugSite.Which, row[4]) orelse return error.BadSidecar,
                 .shape = readRange(row[8..16]),
             };
@@ -904,7 +904,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     {
         // A named node's value is a `type_refs` index until `resolve`.
         const in_bytes = col(bytes, offsets, .debug_nodes);
-        const nodes = try gpa.alloc(Dispatch.DebugNode, lengths[@intFromEnum(Column.debug_nodes)]);
+        const nodes = try gpa.alloc(Dispatch.DebugNode, lengths[@backingInt(Column.debug_nodes)]);
         out.table.debug_nodes = nodes;
         for (nodes, 0..) |*n, i| {
             const row = in_bytes[i * 12 ..][0..12];
@@ -914,7 +914,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
                 .kind = kind,
                 .count = std.mem.readInt(u32, row[4..8], .little),
                 .value = switch (kind) {
-                    .field => @intFromEnum(try symbolAt(blob, raw, in) orelse return error.BadSidecar),
+                    .field => @backingInt(try symbolAt(blob, raw, in) orelse return error.BadSidecar),
                     .named => if (raw != no_ref and raw >= type_ref_count) return error.BadSidecar else raw,
                     else => if (raw != 0) return error.BadSidecar else 0,
                 },
@@ -961,15 +961,15 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
             const binder_tag = std.enums.fromInt(std.meta.Tag(Dispatch.Binder), row[1]) orelse return error.BadSidecar;
             const binder: Dispatch.Binder = switch (binder_tag) {
                 .decl => .decl,
-                .let => .{ .let = @enumFromInt(a) },
+                .let => .{ .let = @fromBackingInt(@intCast(a)) },
                 .derived => .{ .derived = a },
             };
             break :blk .{ .param = .{ .binder = binder, .k = b } };
         },
-        .top => .{ .top = .{ .decl = @enumFromInt(a), .args = args } },
+        .top => .{ .top = .{ .decl = @fromBackingInt(@intCast(a)), .args = args } },
         .ext => blk: {
             if (a != no_ref and a >= module_refs) return error.BadSidecar;
-            break :blk .{ .ext = .{ .module = @enumFromInt(a), .value = @enumFromInt(b), .args = args } };
+            break :blk .{ .ext = .{ .module = @fromBackingInt(@intCast(a)), .value = @fromBackingInt(@intCast(b)), .args = args } };
         },
         .primitive => .{
             .primitive = std.enums.fromInt(Dispatch.Primitive, std.math.cast(u8, a) orelse
@@ -980,8 +980,8 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
             if (a != no_ref and a >= module_refs) return error.BadSidecar;
             if (b != no_ref and b >= type_refs) return error.BadSidecar;
             break :blk .{ .ext_derived = .{
-                .module = @enumFromInt(a),
-                .type = @enumFromInt(b),
+                .module = @fromBackingInt(@intCast(a)),
+                .type = @fromBackingInt(@intCast(b)),
                 .kind = std.enums.fromInt(Dispatch.Derived.Kind, row[1]) orelse return error.BadSidecar,
                 .args = args,
             } };
@@ -999,7 +999,7 @@ fn readShape(row: *const [12]u8, type_refs: u32) ReadError!Dispatch.Shape {
         .nominal => blk: {
             const at = std.mem.readInt(u32, row[4..8], .little);
             if (at != no_ref and at >= type_refs) return error.BadSidecar;
-            break :blk .{ .nominal = @enumFromInt(at) };
+            break :blk .{ .nominal = @fromBackingInt(@intCast(at)) };
         },
         .record => .{ .record = readRange(row[4..12]) },
         .tuple => .{ .tuple = row[1] },
@@ -1147,7 +1147,7 @@ pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
     for (@constCast(l.table.terms)) |*t| resolveTerm(t, l, graph, types, modules, type_count);
     for (@constCast(l.table.derived)) |*row| {
         switch (row.shape) {
-            .nominal => |at| row.shape = .{ .nominal = resolveType(l, graph, types, @intFromEnum(at), type_count) },
+            .nominal => |at| row.shape = .{ .nominal = resolveType(l, graph, types, @backingInt(at), type_count) },
             else => {},
         }
     }
@@ -1169,13 +1169,13 @@ fn resolveTerm(
 ) void {
     switch (t.*) {
         .ext => |e| t.* = .{ .ext = .{
-            .module = resolveModule(l, graph, @intFromEnum(e.module), modules),
+            .module = resolveModule(l, graph, @backingInt(e.module), modules),
             .value = e.value,
             .args = e.args,
         } },
         .ext_derived => |u| t.* = .{ .ext_derived = .{
-            .module = resolveModule(l, graph, @intFromEnum(u.module), modules),
-            .type = resolveType(l, graph, types, @intFromEnum(u.type), type_count),
+            .module = resolveModule(l, graph, @backingInt(u.module), modules),
+            .type = resolveType(l, graph, types, @backingInt(u.type), type_count),
             .kind = u.kind,
             .args = u.args,
         } },
@@ -1186,7 +1186,7 @@ fn resolveTerm(
 fn resolveModule(l: *const Loaded, graph: *const Graph, at: u32, modules: u32) Graph.Index {
     // `graph.count()` is the "not here" index: out of range for every
     // per-module array, which every accessor already guards.
-    const absent: Graph.Index = @enumFromInt(graph.count());
+    const absent: Graph.Index = @fromBackingInt(@intCast(graph.count()));
     if (at >= modules) return absent;
     const ref = l.module_refs[at];
     return graph.find(ref.package, ref.name) orelse absent;
@@ -1243,7 +1243,7 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
         try testing.expectEqual(x.kind, y.kind);
         try testing.expectEqual(x.count, y.count);
         if (x.kind == .field) {
-            try testing.expectEqualStrings(interner.slice(@enumFromInt(x.value)), interner.slice(@enumFromInt(y.value)));
+            try testing.expectEqualStrings(interner.slice(@fromBackingInt(@intCast(x.value))), interner.slice(@fromBackingInt(@intCast(y.value))));
         } else {
             try testing.expectEqual(x.value, y.value);
         }
@@ -1356,7 +1356,7 @@ test "every table of a project round-trips: sites, evidence, derived, tries and 
     var any_derived = false;
     var any_evidence = false;
     for (0..p.session.graph.count()) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         try expectRoundTrip(&p, m);
         const table = &p.session.checked.dispatch[i];
         if (table.sites.len != 0) any_sites = true;
@@ -1375,7 +1375,7 @@ test "the appends column round-trips" {
     const gpa = testing.allocator;
     var global = try InternPool.Global.init(gpa);
     defer global.deinit(gpa);
-    const table: Dispatch = .{ .appends = &.{ @enumFromInt(3), @enumFromInt(17) } };
+    const table: Dispatch = .{ .appends = &.{ @fromBackingInt(@intCast(3)), @fromBackingInt(@intCast(17)) } };
     const graph: Graph = .empty;
     const types: Types = .empty;
     const bytes = try write(gpa, &table, &graph, &types, &global);
@@ -1383,8 +1383,8 @@ test "the appends column round-trips" {
     var loaded = try read(gpa, bytes, &global);
     defer loaded.deinit(gpa);
     try testing.expectEqualSlices(Bir.Inst.Index, table.appends, loaded.table.appends);
-    try testing.expect(loaded.table.isListAppend(@enumFromInt(17)));
-    try testing.expect(!loaded.table.isListAppend(@enumFromInt(4)));
+    try testing.expect(loaded.table.isListAppend(@fromBackingInt(@intCast(17))));
+    try testing.expect(!loaded.table.isListAppend(@fromBackingInt(@intCast(4))));
 }
 
 test "the debug columns round-trip, and a node range that is not one tree is a miss" {
@@ -1396,12 +1396,12 @@ test "the debug columns round-trip, and a node range that is not one tree is a m
     const x = try global.getOrPut(gpa, "x");
     const nodes = [_]Dispatch.DebugNode{
         .{ .kind = .record, .count = 1 },
-        .{ .kind = .field, .count = 1, .value = @intFromEnum(x) },
+        .{ .kind = .field, .count = 1, .value = @backingInt(x) },
         .{ .kind = .tuple, .count = 2 },
         .{ .kind = .unit },
         .{ .kind = .function },
     };
-    const sites = [_]Dispatch.DebugSite{.{ .inst = @enumFromInt(9), .which = .log, .shape = .{ .start = 0, .len = 5 } }};
+    const sites = [_]Dispatch.DebugSite{.{ .inst = @fromBackingInt(@intCast(9)), .which = .log, .shape = .{ .start = 0, .len = 5 } }};
     const table: Dispatch = .{ .debug = &sites, .debug_nodes = &nodes };
     const graph: Graph = .empty;
     const types: Types = .empty;
@@ -1411,11 +1411,11 @@ test "the debug columns round-trip, and a node range that is not one tree is a m
     defer loaded.deinit(gpa);
     try testing.expectEqualSlices(Dispatch.DebugSite, table.debug, loaded.table.debug);
     try testing.expectEqualSlices(Dispatch.DebugNode, table.debug_nodes, loaded.table.debug_nodes);
-    try testing.expect(loaded.table.debugAt(@enumFromInt(9)) != null);
-    try testing.expect(loaded.table.debugAt(@enumFromInt(8)) == null);
+    try testing.expect(loaded.table.debugAt(@fromBackingInt(@intCast(9))) != null);
+    try testing.expect(loaded.table.debugAt(@fromBackingInt(@intCast(8))) == null);
 
     // One node short of the tuple's second element: not a tree.
-    const short = [_]Dispatch.DebugSite{.{ .inst = @enumFromInt(9), .which = .log, .shape = .{ .start = 0, .len = 4 } }};
+    const short = [_]Dispatch.DebugSite{.{ .inst = @fromBackingInt(@intCast(9)), .which = .log, .shape = .{ .start = 0, .len = 4 } }};
     const broken: Dispatch = .{ .debug = &short, .debug_nodes = &nodes };
     const bad = try write(gpa, &broken, &graph, &types, &global);
     defer gpa.free(bad);
@@ -1510,12 +1510,12 @@ const mutation_fixture: TestProject.Module = .{ .path = "F.beni", .source =
 
 /// Where column `c`'s first row starts in `bytes`, from the column table.
 fn columnAt(bytes: []const u8, c: Column) u32 {
-    return std.mem.readInt(u32, bytes[header_bytes + @intFromEnum(c) * 8 ..][0..4], .little);
+    return std.mem.readInt(u32, bytes[header_bytes + @backingInt(c) * 8 ..][0..4], .little);
 }
 
 /// The length word of column `c` in the column table.
 fn columnLen(bytes: []u8, c: Column) *[4]u8 {
-    return bytes[header_bytes + @intFromEnum(c) * 8 + 4 ..][0..4];
+    return bytes[header_bytes + @backingInt(c) * 8 + 4 ..][0..4];
 }
 
 test "each check the reader makes refuses the one mutation aimed at it" {
@@ -1560,7 +1560,7 @@ test "each check the reader makes refuses the one mutation aimed at it" {
         /// A second word, for a mutation that is two writes.
         also: ?struct { at: u32, word: u32 } = null,
     };
-    const tries_row = header_bytes + @intFromEnum(Column.tries) * 8;
+    const tries_row = header_bytes + @backingInt(Column.tries) * 8;
     const mutations = [_]Mutation{
         // The first three go on the empty `tries`, so nothing but the column
         // table's checks stands between them and a sidecar that loads; the
@@ -1715,10 +1715,10 @@ test "an argument that does not follow its owner is BadSidecar, not a cycle hand
     const types: Types = .empty;
 
     const good_terms = [_]Dispatch.Term{
-        .{ .top = .{ .decl = @enumFromInt(0), .args = .{ .start = 0, .len = 1 } } },
+        .{ .top = .{ .decl = @fromBackingInt(@intCast(0)), .args = .{ .start = 0, .len = 1 } } },
         .{ .primitive = .strict_eq },
     };
-    const good_args = [_]Dispatch.TermIndex{@enumFromInt(1)};
+    const good_args = [_]Dispatch.TermIndex{@fromBackingInt(@intCast(1))};
     const decls = [_]Dispatch.DeclInfo{.{}};
     const good: Dispatch = .{ .terms = &good_terms, .args = &good_args, .decls = &decls };
     const bytes = try write(gpa, &good, &graph, &types, &global);
@@ -1726,7 +1726,7 @@ test "an argument that does not follow its owner is BadSidecar, not a cycle hand
     var loaded = try read(gpa, bytes, &global);
     loaded.deinit(gpa);
 
-    const cyclic_args = [_]Dispatch.TermIndex{@enumFromInt(0)};
+    const cyclic_args = [_]Dispatch.TermIndex{@fromBackingInt(@intCast(0))};
     const cyclic: Dispatch = .{ .terms = &good_terms, .args = &cyclic_args, .decls = &decls };
     const bad = try write(gpa, &cyclic, &graph, &types, &global);
     defer gpa.free(bad);
@@ -1746,14 +1746,14 @@ test "a top term naming a declaration past the module's is BadSidecar" {
     const types: Types = .empty;
     const decls = [_]Dispatch.DeclInfo{ .{}, .{} };
 
-    const inside = [_]Dispatch.Term{.{ .top = .{ .decl = @enumFromInt(1) } }};
+    const inside = [_]Dispatch.Term{.{ .top = .{ .decl = @fromBackingInt(@intCast(1)) } }};
     const ok: Dispatch = .{ .terms = &inside, .decls = &decls };
     const bytes = try write(gpa, &ok, &graph, &types, &global);
     defer gpa.free(bytes);
     var loaded = try read(gpa, bytes, &global);
     loaded.deinit(gpa);
 
-    const past = [_]Dispatch.Term{.{ .top = .{ .decl = @enumFromInt(2) } }};
+    const past = [_]Dispatch.Term{.{ .top = .{ .decl = @fromBackingInt(@intCast(2)) } }};
     const bad_table: Dispatch = .{ .terms = &past, .decls = &decls };
     const bad = try write(gpa, &bad_table, &graph, &types, &global);
     defer gpa.free(bad);
@@ -1803,7 +1803,7 @@ test "a decl row whose convention finish could not have written is BadSidecar" {
     const table: Dispatch = .{ .decls = &decls };
     const bytes = try write(gpa, &table, &graph, &types, &global);
     defer gpa.free(bytes);
-    const at = std.mem.readInt(u32, bytes[header_bytes + 8 * @intFromEnum(Column.decls) ..][0..4], .little);
+    const at = std.mem.readInt(u32, bytes[header_bytes + 8 * @backingInt(Column.decls) ..][0..4], .little);
     bytes[at + 10] = 3;
     try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
 }

@@ -112,7 +112,7 @@ pub const SymbolIndex = enum(u32) {
     _,
 
     pub fn toOptional(i: SymbolIndex) Optional {
-        return @enumFromInt(@intFromEnum(i));
+        return @fromBackingInt(@intCast(@backingInt(i)));
     }
 
     pub const Optional = enum(u32) {
@@ -120,7 +120,7 @@ pub const SymbolIndex = enum(u32) {
         _,
 
         pub fn unwrap(o: Optional) ?SymbolIndex {
-            return if (o == .none) null else @enumFromInt(@intFromEnum(o));
+            return if (o == .none) null else @fromBackingInt(@intCast(@backingInt(o)));
         }
     };
 };
@@ -167,7 +167,7 @@ pub const TypeRefIndex = enum(u32) {
     _,
 
     pub fn int(i: TypeRefIndex) u32 {
-        return @intFromEnum(i);
+        return @backingInt(i);
     }
 };
 
@@ -177,7 +177,7 @@ pub const TermIndex = enum(u32) {
     _,
 
     pub fn int(t: TermIndex) u32 {
-        return @intFromEnum(t);
+        return @backingInt(t);
     }
 };
 
@@ -390,7 +390,7 @@ pub const Quantified = struct {
             .kind = @truncate(flag_word),
             .equatable = (flag_word >> 8) & 1 == 1,
             .identity = (flag_word >> 9) & 1 == 1,
-            .name = @enumFromInt(name_word),
+            .name = @fromBackingInt(@intCast(name_word)),
             .constraints_start = start,
             .constraints_len = len,
         };
@@ -477,7 +477,7 @@ pub const VocabRow = struct {
     pub const pattern_bit: u32 = 1 << 31;
 
     pub fn has(row: VocabRow, word: Bir.FactWord) bool {
-        return row.facts & (@as(u32, 1) << @intCast(@intFromEnum(word))) != 0;
+        return row.facts & (@as(u32, 1) << @intCast(@backingInt(word))) != 0;
     }
 };
 
@@ -627,7 +627,7 @@ pub const context_words = 3;
 pub fn contextScheme(iface: *const Interface, context: u32) SchemeIndex {
     const words = iface.range(context);
     if (words.len == 0) return .none;
-    return @enumFromInt(words[0]);
+    return @fromBackingInt(@intCast(words[0]));
 }
 
 /// A `private_method` row's culprit (`Derived.Status.private_method`): the
@@ -638,7 +638,7 @@ pub fn privateCulprit(iface: *const Interface, context: u32) ?struct { type_ref:
     if (context == no_terms) return null;
     const words = iface.range(context);
     if (words.len != 2) return null;
-    return .{ .type_ref = @enumFromInt(words[0]), .method = @enumFromInt(words[1]) };
+    return .{ .type_ref = @fromBackingInt(@intCast(words[0])), .method = @fromBackingInt(@intCast(words[1])) };
 }
 
 /// Entry `i` of a context range (`Derived.context`), or null past its end.
@@ -648,7 +648,7 @@ pub fn contextEntry(iface: *const Interface, context: u32, i: usize) ?ContextEnt
     const at = 1 + i * context_words;
     return .{
         .param = @intCast(@min(words[at], std.math.maxInt(u16))),
-        .method = @enumFromInt(words[at + 1]),
+        .method = @fromBackingInt(@intCast(words[at + 1])),
         .slot = words[at + 2],
     };
 }
@@ -983,7 +983,7 @@ fn throughAt(
     switch (t.tag) {
         .@"var" => if (frame) |f| {
             if (t.lhs >= f.args.len) return visit(context, err);
-            return throughAt(iface, @enumFromInt(f.args[t.lhs]), f.outer, context, visit, depth + 1);
+            return throughAt(iface, @fromBackingInt(@intCast(f.args[t.lhs])), f.outer, context, visit, depth + 1);
         },
         .alias => {
             const body = iface.aliasBody(t.lhs);
@@ -1001,16 +1001,16 @@ fn throughAt(
 /// body, which is what a value with no scheme already means to every
 /// reader. Bounds-checked for `range`'s reason.
 pub fn scheme(iface: *const Interface, index: SchemeIndex) Scheme {
-    if (index == .none or @intFromEnum(index) >= iface.schemes.len) {
+    if (index == .none or @backingInt(index) >= iface.schemes.len) {
         return .{ .quantified_start = 0, .quantified_count = 0, .body = .none };
     }
-    return iface.schemes[@intFromEnum(index)];
+    return iface.schemes[@backingInt(index)];
 }
 
 /// The interner symbol a quantifier's name index points at, or none.
 pub fn quantifiedSymbol(iface: *const Interface, q: Quantified) Symbol.Optional {
     const index = q.name.unwrap() orelse return .none;
-    if (@intFromEnum(index) >= iface.symbols.len) return .none;
+    if (@backingInt(index) >= iface.symbols.len) return .none;
     return iface.symbol(index).toOptional();
 }
 
@@ -1026,8 +1026,8 @@ pub fn quantified(iface: *const Interface, s: Scheme, i: u32) Quantified {
 /// cannot trap.
 pub fn quantifiedConstraint(iface: *const Interface, q: Quantified, j: u32) QuantifiedConstraint {
     const at = q.constraints_start + j * 2;
-    if (at + 1 >= iface.extra.len) return .{ .name = @enumFromInt(0), .type = .none };
-    return .{ .name = @enumFromInt(iface.extra[at]), .type = @enumFromInt(iface.extra[at + 1]) };
+    if (at + 1 >= iface.extra.len) return .{ .name = @fromBackingInt(@intCast(0)), .type = .none };
+    return .{ .name = @fromBackingInt(@intCast(iface.extra[at])), .type = @fromBackingInt(@intCast(iface.extra[at + 1])) };
 }
 
 /// The `i`th parameter of the type that declares `c`, as a quantifier.
@@ -1044,8 +1044,8 @@ pub fn ctorQuantified(iface: *const Interface, c: Ctor, i: u32) Quantified {
 /// failed to check, a module that was never checked, or a value index this
 /// record does not describe (`range`'s reason).
 pub fn valueScheme(iface: *const Interface, value: ValueIndex) ?Scheme {
-    if (@intFromEnum(value) >= iface.values.len) return null;
-    const s = iface.values[@intFromEnum(value)].scheme;
+    if (@backingInt(value) >= iface.values.len) return null;
+    const s = iface.values[@backingInt(value)].scheme;
     if (s == .none) return null;
     return iface.scheme(s);
 }
@@ -1056,32 +1056,32 @@ pub fn valueScheme(iface: *const Interface, value: ValueIndex) ?Scheme {
 /// reading past the column. Bounds-checked for `range`'s reason; every
 /// caller of this is on the path a record mapped from disk reaches.
 pub fn symbol(iface: *const Interface, index: SymbolIndex) Symbol {
-    if (@intFromEnum(index) >= iface.symbols.len) return @enumFromInt(0);
-    return iface.symbols[@intFromEnum(index)];
+    if (@backingInt(index) >= iface.symbols.len) return @fromBackingInt(@intCast(0));
+    return iface.symbols[@backingInt(index)];
 }
 
 pub fn valueName(iface: *const Interface, index: ValueIndex) Symbol {
-    return iface.symbol(iface.values[@intFromEnum(index)].name);
+    return iface.symbol(iface.values[@backingInt(index)].name);
 }
 
 pub fn typeName(iface: *const Interface, index: TypeIndex) Symbol {
-    return iface.symbol(iface.types[@intFromEnum(index)].name);
+    return iface.symbol(iface.types[@backingInt(index)].name);
 }
 
 pub fn ctorName(iface: *const Interface, index: CtorIndex) Symbol {
-    return iface.symbol(iface.ctors[@intFromEnum(index)].name);
+    return iface.symbol(iface.ctors[@backingInt(index)].name);
 }
 
 /// The `pub` value named `name`, or null. `interner` is the pool `name`
 /// and the record's symbols both come from.
 pub fn findValue(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?ValueIndex {
     const i = find(iface, interner, Value, iface.values, name) orelse return null;
-    return @enumFromInt(i);
+    return @fromBackingInt(@intCast(i));
 }
 
 pub fn findType(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?TypeIndex {
     const i = find(iface, interner, Type, iface.types, name) orelse return null;
-    return @enumFromInt(i);
+    return @fromBackingInt(@intCast(i));
 }
 
 /// The visible constructor named `name`, or null. Constructors are grouped
@@ -1092,14 +1092,14 @@ pub fn findType(iface: *const Interface, interner: *const InternPool.Global, nam
 /// three `find*` functions are interchangeable at a call site.
 pub fn findCtor(iface: *const Interface, _: *const InternPool.Global, name: Symbol) ?CtorIndex {
     for (iface.ctors, 0..) |c, i| {
-        if (iface.symbol(c.name) == name) return @enumFromInt(i);
+        if (iface.symbol(c.name) == name) return @fromBackingInt(@intCast(i));
     }
     return null;
 }
 
 pub fn findSchema(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?SchemaIndex {
     const i = find(iface, interner, Schema, iface.schemas, name) orelse return null;
-    return @enumFromInt(i);
+    return @fromBackingInt(@intCast(i));
 }
 
 pub fn findSchemaMember(
@@ -1109,12 +1109,12 @@ pub fn findSchemaMember(
     name: Symbol,
     kind: ?SchemaMember.Kind,
 ) ?SchemaMemberIndex {
-    if (@intFromEnum(schema_index) >= iface.schemas.len) return null;
-    const schema = iface.schemas[@intFromEnum(schema_index)];
+    if (@backingInt(schema_index) >= iface.schemas.len) return null;
+    const schema = iface.schemas[@backingInt(schema_index)];
     if (schema.members_start > schema.members_end or schema.members_end > iface.schema_members.len) return null;
     for (iface.schema_members[schema.members_start..schema.members_end], schema.members_start..) |member, i| {
         if (kind != null and member.kind != kind.?) continue;
-        if (iface.symbol(member.name) == name) return @enumFromInt(i);
+        if (iface.symbol(member.name) == name) return @fromBackingInt(@intCast(i));
     }
     _ = interner;
     return null;
@@ -1127,15 +1127,15 @@ pub fn findSchemaCtor(
     interner: *const InternPool.Global,
     name: Symbol,
 ) ?SchemaCtorIndex {
-    if (@intFromEnum(schema_index) >= iface.schemas.len) return null;
-    const schema = iface.schemas[@intFromEnum(schema_index)];
+    if (@backingInt(schema_index) >= iface.schemas.len) return null;
+    const schema = iface.schemas[@backingInt(schema_index)];
     const start, const end = switch (endpoint) {
         .type => .{ schema.program_ctors_start, schema.program_ctors_end },
         .encoded => .{ schema.encoded_ctors_start, schema.encoded_ctors_end },
     };
     if (start > end or end > iface.schema_ctors.len) return null;
     for (iface.schema_ctors[start..end], start..) |ctor, i| {
-        if (iface.symbol(ctor.name) == name) return @enumFromInt(i);
+        if (iface.symbol(ctor.name) == name) return @fromBackingInt(@intCast(i));
     }
     _ = interner;
     return null;
@@ -1252,8 +1252,8 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
                     .{ .nominal, no_terms };
                 try b.ctors.append(gpa, .{
                     .name = name,
-                    .type = @enumFromInt(i),
-                    .arity = @intFromEnum(c.args_end) - @intFromEnum(c.args_start),
+                    .type = @fromBackingInt(@intCast(i)),
+                    .arity = @backingInt(c.args_end) - @backingInt(c.args_start),
                     .result = result,
                     .fields = fields,
                 });
@@ -1305,7 +1305,7 @@ const Builder = struct {
             if (std.mem.indexOfScalar(u8, b.interner.slice(name), '*') != null) row.facts |= VocabRow.pattern_bit;
             on.clearRetainingCapacity();
             for (bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.VocabFact)) |f| {
-                row.facts |= @as(u32, 1) << @intCast(@intFromEnum(f.word));
+                row.facts |= @as(u32, 1) << @intCast(@backingInt(f.word));
                 if (f.arg == .none) continue;
                 const arg = bir.symbol(f.arg);
                 switch (f.word) {
@@ -1319,7 +1319,7 @@ const Builder = struct {
                 std.mem.sort(Symbol, on.items, b.interner, textLessThan);
                 row.on = @intCast(b.extra.items.len);
                 try b.extra.append(b.gpa, @intCast(on.items.len));
-                for (on.items) |s| try b.extra.append(b.gpa, @intFromEnum(try b.symbolIndex(s)));
+                for (on.items) |s| try b.extra.append(b.gpa, @backingInt(try b.symbolIndex(s)));
             }
             try rows.append(b.gpa, row);
             try decls.append(b.gpa, di);
@@ -1353,8 +1353,8 @@ const Builder = struct {
 
     /// §25.8's row order: name text, then the `on` set as a list of texts.
     fn vocabLessThan(b: *const Builder, x: VocabRow, y: VocabRow) bool {
-        const nx = b.interner.slice(b.symbols.items[@intFromEnum(x.name)]);
-        const ny = b.interner.slice(b.symbols.items[@intFromEnum(y.name)]);
+        const nx = b.interner.slice(b.symbols.items[@backingInt(x.name)]);
+        const ny = b.interner.slice(b.symbols.items[@backingInt(y.name)]);
         switch (std.mem.order(u8, nx, ny)) {
             .lt => return true,
             .gt => return false,
@@ -1401,7 +1401,7 @@ const Builder = struct {
     fn symbolIndex(b: *Builder, s: Symbol) Allocator.Error!SymbolIndex {
         const i: u32 = @intCast(b.symbols.items.len);
         try b.symbols.append(b.gpa, s);
-        return @enumFromInt(i);
+        return @fromBackingInt(@intCast(i));
     }
 
     /// The `extra` range of a record alias's field names in declaration
@@ -1415,7 +1415,7 @@ const Builder = struct {
         const body = owner.annotation.unwrap() orelse return start;
         if (b.bir.instTag(body) != .type_record) return start;
         const fields = b.bir.extraSlice(Bir.inlineRange(b.bir.instData(body)), Bir.Field);
-        for (fields) |f| try b.extra.append(b.gpa, @intFromEnum(try b.symbolIndex(b.bir.symbol(f.name))));
+        for (fields) |f| try b.extra.append(b.gpa, @backingInt(try b.symbolIndex(b.bir.symbol(f.name))));
         b.extra.items[start] = @intCast(fields.len);
         return start;
     }
@@ -1423,8 +1423,8 @@ const Builder = struct {
     fn nameLessThan(b: *const Builder, a: SymbolIndex, c: SymbolIndex) bool {
         return std.mem.lessThan(
             u8,
-            b.interner.slice(b.symbols.items[@intFromEnum(a)]),
-            b.interner.slice(b.symbols.items[@intFromEnum(c)]),
+            b.interner.slice(b.symbols.items[@backingInt(a)]),
+            b.interner.slice(b.symbols.items[@backingInt(c)]),
         );
     }
 
@@ -1512,7 +1512,7 @@ const Builder = struct {
             schema.members_start = @intCast(b.schema_members.items.len);
             for (member_names, 0..) |text, kind_i| {
                 const member_symbol = b.interner.find(text) orelse unreachable; // Lower pre-interns every fixed member.
-                const kind: SchemaMember.Kind = @enumFromInt(kind_i);
+                const kind: SchemaMember.Kind = @fromBackingInt(@intCast(kind_i));
                 const n = d.params;
                 const arity: u8 = std.math.cast(u8, switch (kind) {
                     .type, .encoded => n,
@@ -1522,7 +1522,7 @@ const Builder = struct {
                 }) orelse std.math.maxInt(u8);
                 try b.schema_members.append(b.gpa, .{
                     .name = try b.symbolIndex(member_symbol),
-                    .schema = @enumFromInt(schema_i),
+                    .schema = @fromBackingInt(@intCast(schema_i)),
                     .kind = kind,
                     .arity = arity,
                 });
@@ -1539,12 +1539,12 @@ const Builder = struct {
             schema.encoded_ctors_end = @intCast(b.schema_ctors.items.len);
             const root = d.schema_body.unwrap() orelse continue;
             const tagged = schemaTagged(b.bir, root) orelse continue;
-            const variants = b.bir.extraSlice(b.bir.subRange(@enumFromInt(b.bir.instData(tagged).rhs)), Bir.Inst.Index);
+            const variants = b.bir.extraSlice(b.bir.subRange(@fromBackingInt(@intCast(b.bir.instData(tagged).rhs))), Bir.Inst.Index);
             schema.program_ctors_start = @intCast(b.schema_ctors.items.len);
-            try b.appendSchemaCtors(@enumFromInt(schema_i), .type, variants);
+            try b.appendSchemaCtors(@fromBackingInt(@intCast(schema_i)), .type, variants);
             schema.program_ctors_end = @intCast(b.schema_ctors.items.len);
             schema.encoded_ctors_start = @intCast(b.schema_ctors.items.len);
-            try b.appendSchemaCtors(@enumFromInt(schema_i), .encoded, variants);
+            try b.appendSchemaCtors(@fromBackingInt(@intCast(schema_i)), .encoded, variants);
             schema.encoded_ctors_end = @intCast(b.schema_ctors.items.len);
         }
     }
@@ -1553,9 +1553,9 @@ const Builder = struct {
         for (variants) |variant_inst| {
             if (b.bir.instTag(variant_inst) != .schema_variant) continue;
             const data = b.bir.instData(variant_inst);
-            const variant = b.bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+            const variant = b.bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaVariant);
             try b.schema_ctors.append(b.gpa, .{
-                .name = try b.symbolIndex(b.bir.symbol(@enumFromInt(data.lhs))),
+                .name = try b.symbolIndex(b.bir.symbol(@fromBackingInt(@intCast(data.lhs)))),
                 .schema = schema,
                 .endpoint = endpoint,
                 .arity = if (variant.payload == .none) 0 else 1,
@@ -1570,7 +1570,7 @@ fn schemaTagged(bir: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
     while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) {
         switch (bir.instTag(at)) {
             .schema_tagged => return at,
-            .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+            .schema_value, .schema_paren => at = @fromBackingInt(@intCast(bir.instData(at).lhs)),
             else => return null,
         }
     }
@@ -1704,16 +1704,16 @@ test "a module with no pub declarations has an empty interface" {
 
 test "an empty record's accessors answer instead of trapping" {
     const iface: Interface = .empty;
-    try testing.expectEqual(Term.Tag.err, iface.term(@enumFromInt(0)).tag);
+    try testing.expectEqual(Term.Tag.err, iface.term(@fromBackingInt(@intCast(0))).tag);
     try testing.expectEqual(Term.Tag.err, iface.term(.none).tag);
-    try testing.expectEqual(Term.Tag.err, iface.term(@enumFromInt(std.math.maxInt(u32) - 1)).tag);
+    try testing.expectEqual(Term.Tag.err, iface.term(@fromBackingInt(@intCast(std.math.maxInt(u32) - 1))).tag);
 
-    try testing.expectEqual(TermIndex.none, iface.scheme(@enumFromInt(0)).body);
-    try testing.expectEqual(@as(u32, 0), iface.scheme(@enumFromInt(7)).quantified_count);
+    try testing.expectEqual(TermIndex.none, iface.scheme(@fromBackingInt(@intCast(0))).body);
+    try testing.expectEqual(@as(u32, 0), iface.scheme(@fromBackingInt(@intCast(7))).quantified_count);
     try testing.expectEqual(TermIndex.none, iface.scheme(.none).body);
 
-    try testing.expectEqual(@as(?Scheme, null), iface.valueScheme(@enumFromInt(0)));
-    try testing.expectEqual(@as(Symbol, @enumFromInt(0)), iface.symbol(@enumFromInt(9)));
+    try testing.expectEqual(@as(?Scheme, null), iface.valueScheme(@fromBackingInt(@intCast(0))));
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(0))), iface.symbol(@fromBackingInt(@intCast(9))));
 }
 
 test "a record whose indices leave their columns still answers" {
@@ -1724,38 +1724,38 @@ test "a record whose indices leave their columns still answers" {
     // One value naming a scheme that is not there, one scheme whose body is
     // not there, and a symbol column of length one.
     const iface: Interface = .{
-        .values = &.{.{ .name = @enumFromInt(4), .is_foreign = false, .scheme = @enumFromInt(3) }},
+        .values = &.{.{ .name = @fromBackingInt(@intCast(4)), .is_foreign = false, .scheme = @fromBackingInt(@intCast(3)) }},
         .types = &.{},
         .ctors = &.{},
         .schemas = &.{},
         .schema_members = &.{},
         .schema_ctors = &.{},
-        .schemes = &.{.{ .quantified_start = 100, .quantified_count = 2, .body = @enumFromInt(50) }},
+        .schemes = &.{.{ .quantified_start = 100, .quantified_count = 2, .body = @fromBackingInt(@intCast(50)) }},
         .terms = terms.slice(),
         .extra = &.{},
         .type_refs = &.{},
-        .symbols = &.{@enumFromInt(0)},
+        .symbols = &.{@fromBackingInt(@intCast(0))},
     };
 
     // The one real term is readable; one past it is `err`.
-    try testing.expectEqual(Term.Tag.unit, iface.term(@enumFromInt(0)).tag);
-    try testing.expectEqual(Term.Tag.err, iface.term(@enumFromInt(1)).tag);
+    try testing.expectEqual(Term.Tag.unit, iface.term(@fromBackingInt(@intCast(0))).tag);
+    try testing.expectEqual(Term.Tag.err, iface.term(@fromBackingInt(@intCast(1))).tag);
 
     // `values[0].scheme` is 3 and there is one scheme: the degraded scheme,
     // not a read past `schemes`.
-    const s = iface.valueScheme(@enumFromInt(0)).?;
+    const s = iface.valueScheme(@fromBackingInt(@intCast(0))).?;
     try testing.expectEqual(TermIndex.none, s.body);
     try testing.expectEqual(@as(u32, 0), s.quantified_count);
     // And a value index past the column is "no scheme" rather than a trap.
-    try testing.expectEqual(@as(?Scheme, null), iface.valueScheme(@enumFromInt(1)));
+    try testing.expectEqual(@as(?Scheme, null), iface.valueScheme(@fromBackingInt(@intCast(1))));
 
     // The scheme that IS there has a body index that is not, and quantifiers
     // past the end of `extra`; both are already the six accessors' business.
-    const real = iface.scheme(@enumFromInt(0));
+    const real = iface.scheme(@fromBackingInt(@intCast(0)));
     try testing.expectEqual(Term.Tag.err, iface.term(real.body).tag);
     try testing.expectEqual(SymbolIndex.Optional.none, iface.quantified(real, 0).name);
 
     // `values[0].name` is 4 over a one-entry symbol column.
-    try testing.expectEqual(@as(Symbol, @enumFromInt(0)), iface.symbol(@enumFromInt(4)));
-    try testing.expectEqual(@as(Symbol, @enumFromInt(0)), iface.symbol(@enumFromInt(1)));
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(0))), iface.symbol(@fromBackingInt(@intCast(4))));
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(0))), iface.symbol(@fromBackingInt(@intCast(1))));
 }

@@ -174,7 +174,7 @@ pub const Counter = struct {
         const linux = std.os.linux;
         var attr: linux.perf_event_attr = .{
             .type = .HARDWARE,
-            .config = @intFromEnum(linux.PERF.COUNT.HW.INSTRUCTIONS),
+            .config = @backingInt(linux.PERF.COUNT.HW.INSTRUCTIONS),
             .flags = .{ .inherit = true, .exclude_kernel = true, .exclude_hv = true },
         };
         const rc = linux.perf_event_open(&attr, 0, -1, -1, linux.PERF.FLAG.FD_CLOEXEC);

@@ -259,11 +259,11 @@ pub fn deinit(types: *Types, gpa: Allocator) void {
 /// `ofInterface`, but the checker must not crash on a poisoned one.
 pub inline fn entry(types: *const Types, id: TypeId) Entry {
     if (id == .none or id.int() >= types.entries.len) return .{
-        .module = @enumFromInt(0),
-        .decl = @enumFromInt(0),
-        .name = @enumFromInt(0),
+        .module = @fromBackingInt(@intCast(0)),
+        .decl = @fromBackingInt(@intCast(0)),
+        .name = @fromBackingInt(@intCast(0)),
         .package = .app,
-        .module_name = @enumFromInt(0),
+        .module_name = @fromBackingInt(@intCast(0)),
         .arity = 0,
         .kind = .foreign,
         .equatable = true,
@@ -312,15 +312,15 @@ pub inline fn ofInterface(types: *const Types, module: Graph.Index, index: Inter
     if (module.int() + 1 >= types.interface_offsets.len) return .none;
     const base = types.interface_offsets[module.int()];
     const limit = types.interface_offsets[module.int() + 1];
-    if (@intFromEnum(index) >= limit - base) return .none;
-    return types.by_interface[base + @intFromEnum(index)];
+    if (@backingInt(index) >= limit - base) return .none;
+    return types.by_interface[base + @backingInt(index)];
 }
 
 pub fn ofSchema(types: *const Types, module: Graph.Index, index: Interface.SchemaIndex, endpoint: Interface.SchemaCtor.Endpoint) TypeId {
     if (module.int() + 1 >= types.schema_offsets.len) return .none;
     const base = types.schema_offsets[module.int()];
     const limit = types.schema_offsets[module.int() + 1];
-    const at = @as(u64, @intFromEnum(index)) * 2 + @intFromEnum(endpoint);
+    const at = @as(u64, @backingInt(index)) * 2 + @backingInt(endpoint);
     if (at >= limit - base) return .none;
     return types.by_schema[base + @as(u32, @intCast(at))];
 }
@@ -434,7 +434,7 @@ pub fn find(types: *const Types, graph: *const Graph, package: SourceStore.Packa
         entries: []const Entry,
         name: Symbol,
         fn order(cx: @This(), id: TypeId) std.math.Order {
-            return std.math.order(@intFromEnum(cx.name), @intFromEnum(cx.entries[id.int()].name));
+            return std.math.order(@backingInt(cx.name), @backingInt(cx.entries[id.int()].name));
         }
     };
     const at = std.sort.lowerBound(TypeId, sorted, Ctx{ .entries = types.entries, .name = type_name }, Ctx.order);
@@ -443,8 +443,8 @@ pub fn find(types: *const Types, graph: *const Graph, package: SourceStore.Packa
 }
 
 fn nameLessThan(entries: []const Entry, a: TypeId, b: TypeId) bool {
-    const na = @intFromEnum(entries[a.int()].name);
-    const nb = @intFromEnum(entries[b.int()].name);
+    const na = @backingInt(entries[a.int()].name);
+    const nb = @backingInt(entries[b.int()].name);
     return na < nb or (na == nb and a.int() < b.int());
 }
 
@@ -505,7 +505,7 @@ pub fn build(
     // First pass: number the declarations, module by module in INDEX order
     // so the offset arrays can be filled in one sweep.
     for (0..modules) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         decl_offsets[i] = @intCast(by_decl.items.len);
         interface_offsets[i] = @intCast(by_interface.items.len);
         schema_offsets[i] = @intCast(by_schema.items.len);
@@ -523,10 +523,10 @@ pub fn build(
                     const full = try std.fmt.allocPrint(gpa, "{s}.{s}", .{ interner.slice(bir.symbol(d.name)), suffix });
                     defer gpa.free(full);
                     const endpoint_name = interner.find(full) orelse unreachable;
-                    const id: TypeId = @enumFromInt(entries.items.len);
+                    const id: TypeId = @fromBackingInt(@intCast(entries.items.len));
                     try entries.append(gpa, .{
                         .module = m,
-                        .decl = @enumFromInt(di),
+                        .decl = @fromBackingInt(@intCast(di)),
                         .name = endpoint_name,
                         .package = package,
                         .module_name = module_name,
@@ -547,10 +547,10 @@ pub fn build(
                 try by_decl.append(gpa, .none);
                 continue;
             }
-            const id: TypeId = @enumFromInt(entries.items.len);
+            const id: TypeId = @fromBackingInt(@intCast(entries.items.len));
             try entries.append(gpa, .{
                 .module = m,
-                .decl = @enumFromInt(@as(u32, @intCast(di))),
+                .decl = @fromBackingInt(@intCast(@as(u32, @intCast(di)))),
                 .name = bir.symbol(d.name),
                 .package = package,
                 .module_name = module_name,
@@ -611,7 +611,7 @@ pub fn build(
     types.entry_offsets = entry_offsets;
     types.ref_ids = ref_ids;
     types.by_name = try gpa.alloc(TypeId, types.entries.len);
-    for (types.by_name, 0..) |*slot, i| slot.* = @enumFromInt(i);
+    for (types.by_name, 0..) |*slot, i| slot.* = @fromBackingInt(@intCast(i));
     for (0..modules) |i| std.mem.sort(TypeId, types.by_name[entry_offsets[i]..entry_offsets[i + 1]], types.entries, nameLessThan);
 
     // The table of §3.2 FIRST: `TypeFacts.settle` settles `comparable`
@@ -633,7 +633,7 @@ fn schemaTagged(bir: *const Bir, root: Bir.Inst.Index) bool {
     var budget: usize = bir.insts.len + 1;
     while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) switch (bir.instTag(at)) {
         .schema_tagged => return true,
-        .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+        .schema_value, .schema_paren => at = @fromBackingInt(@intCast(bir.instData(at).lhs)),
         else => return false,
     };
     return false;
@@ -642,11 +642,11 @@ fn schemaTagged(bir: *const Bir, root: Bir.Inst.Index) bool {
 /// The `TypeId` a resolved type reference names.
 pub fn headId(types: *const Types, module: Graph.Index, tag: Bir.Inst.Tag, data: Bir.Inst.Data) TypeId {
     return switch (tag) {
-        .type_top => types.ofDecl(module, @enumFromInt(data.lhs)),
-        .ext_type => types.ofInterface(@enumFromInt(data.lhs), @enumFromInt(data.rhs)),
-        .schema_type_top => types.ofSchemaDecl(module, @enumFromInt(data.lhs), if (data.rhs == 0) .type else .encoded),
+        .type_top => types.ofDecl(module, @fromBackingInt(@intCast(data.lhs))),
+        .ext_type => types.ofInterface(@fromBackingInt(@intCast(data.lhs)), @fromBackingInt(@intCast(data.rhs))),
+        .schema_type_top => types.ofSchemaDecl(module, @fromBackingInt(@intCast(data.lhs)), if (data.rhs == 0) .type else .encoded),
         .ext_schema_type => blk: {
-            const owner: Graph.Index = @enumFromInt(data.lhs);
+            const owner: Graph.Index = @fromBackingInt(@intCast(data.lhs));
             if (owner.int() >= types.interfaces.len) break :blk .none;
             const iface = &types.interfaces[owner.int()];
             for (iface.schemas, 0..) |schema, i| {
@@ -656,7 +656,7 @@ pub fn headId(types: *const Types, module: Graph.Index, tag: Bir.Inst.Tag, data:
                     .encoded => .encoded,
                     else => break :blk .none,
                 };
-                break :blk types.ofSchema(owner, @enumFromInt(i), endpoint);
+                break :blk types.ofSchema(owner, @fromBackingInt(@intCast(i)), endpoint);
             }
             break :blk .none;
         },
@@ -876,15 +876,15 @@ pub const Builder = struct {
         const tag = bir.instTag(inst);
         const data = bir.instData(inst);
         switch (tag) {
-            .type_var => return b.typeVar(bir.symbol(@enumFromInt(data.lhs)), Bir.TypeVarInfo.unpack(data.rhs)),
+            .type_var => return b.typeVar(bir.symbol(@fromBackingInt(@intCast(data.lhs))), Bir.TypeVarInfo.unpack(data.rhs)),
             .type_unit => return b.store.fresh(.{ .structure = .unit }, b.varRank()),
             .type_fn => {
-                const params = bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index);
+                const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index);
                 const vars = try b.scratch.alloc(Var, params.len);
                 defer b.scratch.free(vars);
                 for (params, vars) |param, *v| v.* = try b.read(param);
                 const range = try b.store.addVars(vars);
-                const result = try b.read(@enumFromInt(data.rhs));
+                const result = try b.read(@fromBackingInt(@intCast(data.rhs)));
                 const v = try b.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, b.varRank());
                 if (b.syncs) |list| if (b.sync_bir == bir) {
                     const token = bir.insts.items(.main_token)[inst.int()];
@@ -902,16 +902,16 @@ pub const Builder = struct {
             },
             .type_record => return b.record(bir.extraSlice(Bir.inlineRange(data), Bir.Field), null),
             .type_record_ext => return b.record(
-                bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field),
-                @as(Bir.Inst.Index, @enumFromInt(data.lhs)),
+                bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field),
+                @as(Bir.Inst.Index, @fromBackingInt(@intCast(data.lhs))),
             ),
             .type_top, .ext_type, .schema_type_top, .ext_schema_type => return b.named(tag, data, &.{}),
             .type_app => {
-                const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+                const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
                 const vars = try b.scratch.alloc(Var, args.len);
                 defer b.scratch.free(vars);
                 for (args, vars) |arg, *v| v.* = try b.read(arg);
-                const head: Bir.Inst.Index = @enumFromInt(data.lhs);
+                const head: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
                 return b.named(bir.instTag(head), bir.instData(head), vars);
             },
             // A type that did not resolve, or a parser placeholder. Poison
@@ -973,10 +973,10 @@ pub const Builder = struct {
             if (id == .none) return b.store.freshErr(b.varRank());
             return b.apply(id, args);
         }
-        if (tag == .ext_schema_type) return b.schemaMember(@enumFromInt(data.lhs), data.rhs, args);
+        if (tag == .ext_schema_type) return b.schemaMember(@fromBackingInt(@intCast(data.lhs)), data.rhs, args);
         const id: TypeId = switch (tag) {
-            .type_top => b.types.ofDecl(b.module, @enumFromInt(data.lhs)),
-            .ext_type => b.types.ofInterface(@enumFromInt(data.lhs), @enumFromInt(data.rhs)),
+            .type_top => b.types.ofDecl(b.module, @fromBackingInt(@intCast(data.lhs))),
+            .ext_type => b.types.ofInterface(@fromBackingInt(@intCast(data.lhs)), @fromBackingInt(@intCast(data.rhs))),
             .schema_type_top => blk: {
                 if (b.schema_context) |ctx| if (b.schema_lookup) |lookup| if (try lookup(ctx, data.lhs, data.rhs != 0, args)) |root| return root;
                 // An alias body read from the module that declares it
@@ -985,16 +985,16 @@ pub const Builder = struct {
                 // interface.
                 if (b.schema_context == null) {
                     const endpoint: Interface.SchemaCtor.Endpoint = if (data.rhs == 0) .type else .encoded;
-                    if (b.types.schemaMemberOfDecl(b.module, @enumFromInt(data.lhs), endpoint)) |member| {
+                    if (b.types.schemaMemberOfDecl(b.module, @fromBackingInt(@intCast(data.lhs)), endpoint)) |member| {
                         return b.schemaMember(b.module, member, args);
                     }
                     // A private schema is in no interface. Its tagged
                     // endpoint is a nominal type, whole in its `TypeId`;
                     // a record endpoint's shape is its module's resolved
                     // schema plan's.
-                    const id = b.types.ofSchemaDecl(b.module, @enumFromInt(data.lhs), endpoint);
+                    const id = b.types.ofSchemaDecl(b.module, @fromBackingInt(@intCast(data.lhs)), endpoint);
                     if (id != .none and b.types.entry(id).kind == .adt) break :blk id;
-                    if (try b.planEndpoint(b.module, @enumFromInt(data.lhs), endpoint, args, false)) |v| return v;
+                    if (try b.planEndpoint(b.module, @fromBackingInt(@intCast(data.lhs)), endpoint, args, false)) |v| return v;
                 }
                 break :blk .none;
             },
@@ -1115,7 +1115,7 @@ pub const Builder = struct {
         // made only once its expansion is finished, so an alias inside its
         // own expansion is never found here and reaches the test below.
         const key = try b.scratch.alloc(u32, args.len + 1);
-        key[0] = @intFromEnum(id);
+        key[0] = @backingInt(id);
         for (args, key[1..]) |arg, *k| k.* = b.store.find(arg).int();
         const table = b.memo();
         if (table.get(key)) |v| {

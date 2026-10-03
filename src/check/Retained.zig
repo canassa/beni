@@ -160,7 +160,7 @@ test "a frame's lists come back cleared and are lent again at their depth" {
     var r: Retained = .{};
     defer r.deinit(gpa);
     var lists = r.takeFrame(2);
-    try lists.pool.append(gpa, @enumFromInt(7));
+    try lists.pool.append(gpa, @fromBackingInt(@intCast(7)));
     const buffer = lists.pool.items.ptr;
     r.giveFrame(gpa, 2, lists);
     const again = r.takeFrame(2);

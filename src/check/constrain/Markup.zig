@@ -48,7 +48,7 @@ pub fn root(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
     g.markup_roots += 1;
     defer g.markup_roots -= 1;
     try w.add(try g.equal(expected, try w.html(), inst, category));
-    try w.node(@enumFromInt(g.cx.bir.instData(inst).lhs));
+    try w.node(@fromBackingInt(@intCast(g.cx.bir.instData(inst).lhs)));
     return g.conj(w.parts.items);
 }
 
@@ -90,14 +90,14 @@ const Walker = struct {
             .token = token,
             .name = name,
             .tag = tag,
-            .type = if (t) |v| @intFromEnum(v) else 0,
+            .type = if (t) |v| @backingInt(v) else 0,
         });
         try w.add(try w.g.add(.markup_fault, w.inst, payload, 0, .{}));
     }
 
     fn obligation(w: *Walker, kind: Obligations.Kind, region: Bir.Inst.Index, vars: []const Var, index: u32) Error!void {
         const payload = try w.g.addExtra(Tree.MarkupObligation{
-            .kind = @intFromEnum(kind),
+            .kind = @backingInt(kind),
             .count = @intCast(vars.len),
             .v0 = vars[0],
             .v1 = if (vars.len > 1) vars[1] else vars[0],
@@ -122,7 +122,7 @@ const Walker = struct {
         // The parser bounds how deep markup nests, counting elements and
         // holes; this also counts each hole's expression, so a file it
         // accepted can reach it (`Generator.depth`).
-        if (g.depth > Generator.max_depth) return g.cx.noteTooDeepAs(w.inst, @intFromEnum(g.decl), .markup);
+        if (g.depth > Generator.max_depth) return g.cx.noteTooDeepAs(w.inst, @backingInt(g.decl), .markup);
         const b = w.bir();
         switch (b.markupKind(at)) {
             .element => try w.element(b.extraData(at, Bir.MarkupElement)),
@@ -146,7 +146,7 @@ const Walker = struct {
         const h = w.bir().extraData(at, Bir.MarkupHole);
         const t = try w.g.freshFlex();
         try w.expr(h.value, t, .{ .tag = .general });
-        try w.obligation(.renderable, h.value, &.{ t, w.m }, @intFromEnum(at));
+        try w.obligation(.renderable, h.value, &.{ t, w.m }, @backingInt(at));
     }
 
     fn element(w: *Walker, e: Bir.MarkupElement) Error!void {
@@ -188,7 +188,7 @@ const Walker = struct {
                     return w.free(it.value);
                 }
                 const v = it.value.unwrap() orelse return;
-                return w.expr(v, try g.primitive(g.cx.types.well_known.string), .{ .tag = .markup_attribute, .index = @intFromEnum(name) });
+                return w.expr(v, try g.primitive(g.cx.types.well_known.string), .{ .tag = .markup_attribute, .index = @backingInt(name) });
             },
             .attr => {},
         }
@@ -217,7 +217,7 @@ const Walker = struct {
                     return w.free(it.value);
                 }
                 const v = it.value.unwrap() orelse return;
-                try w.expr(v, try g.primitive(g.cx.types.well_known.string), .{ .tag = .markup_attribute, .index = @intFromEnum(name) });
+                try w.expr(v, try g.primitive(g.cx.types.well_known.string), .{ .tag = .markup_attribute, .index = @backingInt(name) });
             },
             .bare => if (class != .bool) try w.fault(.bare_value, it.token, name, name, row.type.unwrap()),
             .braced => {
@@ -226,10 +226,10 @@ const Walker = struct {
                     const t = try g.freshFlex();
                     try w.expr(v, t, .{ .tag = .general });
                     const flag: u32 = if (row.has(.styles)) Obligations.markup_flag else 0;
-                    return w.obligation(.attr_form, v, &.{t}, @intFromEnum(at) | flag);
+                    return w.obligation(.attr_form, v, &.{t}, @backingInt(at) | flag);
                 }
                 const t = try w.rowType(row) orelse return w.free(it.value);
-                try w.expr(v, t, .{ .tag = .markup_attribute, .index = @intFromEnum(name) });
+                try w.expr(v, t, .{ .tag = .markup_attribute, .index = @backingInt(name) });
             },
         }
     }
@@ -244,14 +244,14 @@ const Walker = struct {
         if (it.value.unwrap()) |v| {
             try w.expr(v, handler, .{ .tag = .general });
         } else {
-            try w.add(try g.equal(handler, try g.primitive(if (it.form == .bare) wk.bool else wk.string), w.inst, .{ .tag = .markup_handler, .index = @intFromEnum(name) }));
+            try w.add(try g.equal(handler, try g.primitive(if (it.form == .bare) wk.bool else wk.string), w.inst, .{ .tag = .markup_handler, .index = @backingInt(name) }));
         }
         const payload = try w.rowType(row) orelse try g.fresh(.err);
-        try w.obligation(.handler, it.value.unwrap() orelse w.inst, &.{ handler, payload, w.m }, @intFromEnum(at));
+        try w.obligation(.handler, it.value.unwrap() orelse w.inst, &.{ handler, payload, w.m }, @backingInt(at));
         // The page calls a handler's function form while it dispatches the
         // event: `sync` (checker-v2.md §25.6, transparent-effects-proposal.md
         // §15.2 item 4). The value form carries no class, and demands nothing.
-        if (g.cx.effects) |e| if (it.value.unwrap()) |v| try e.demand(.{ .v = handler, .kind = .handler, .site = @intFromEnum(v) });
+        if (g.cx.effects) |e| if (it.value.unwrap()) |v| try e.demand(.{ .v = handler, .kind = .handler, .site = @backingInt(v) });
     }
 
     /// A component is typed exactly as the call it means (§25.5): the
@@ -288,7 +288,7 @@ const Walker = struct {
         } else try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = try g.fresh(.{ .structure = .empty_record }) } } });
 
         const args_start: u32 = @intCast(g.tree.extra.items.len);
-        try g.tree.extra.append(g.gpa, @intFromEnum(argument));
+        try g.tree.extra.append(g.gpa, @backingInt(argument));
         const call = try g.addExtra(Tree.Call{ .callee = callee, .args_start = args_start, .args_len = 1, .result = try w.html(), .flavor = .call });
         try w.add(try g.add(.call, c.callee, call, 0, .{}));
 
@@ -296,7 +296,7 @@ const Walker = struct {
             const it = b.extraData(at, Bir.MarkupItem);
             const field = b.symbol(it.name);
             const v = fieldIn(g, range, field) orelse continue;
-            const category: Category = .{ .tag = if (c.spread != .none) .record_update else .record_field, .index = @intFromEnum(field) };
+            const category: Category = .{ .tag = if (c.spread != .none) .record_update else .record_field, .index = @backingInt(field) };
             if (it.value.unwrap()) |value| {
                 try w.expr(value, v, category);
             } else {
@@ -311,7 +311,7 @@ const Walker = struct {
                 // Exactly one hole: `children` is its value.
                 .hole => {
                     const h = b.extraData(kids[0], Bir.MarkupHole);
-                    try w.expr(h.value, v, .{ .tag = .record_field, .index = @intFromEnum(children_symbol.?) });
+                    try w.expr(h.value, v, .{ .tag = .record_field, .index = @backingInt(children_symbol.?) });
                 },
                 // Anything else: one markup value, the children as a
                 // fragment — a root of its own, whose messages are the
@@ -357,18 +357,18 @@ const Walker = struct {
                 const key_function = try g.func(&.{a}, k);
                 try w.expr(keyed, key_function, formCategory(.keyed));
                 // Called by the page while it renders: `sync` (§25.6).
-                if (g.cx.effects) |e| try e.demand(.{ .v = key_function, .kind = .key, .site = @intFromEnum(keyed) });
-                try w.obligation(.key, keyed, &.{k}, @intFromEnum(at));
+                if (g.cx.effects) |e| try e.demand(.{ .v = key_function, .kind = .key, .site = @backingInt(keyed) });
+                try w.obligation(.key, keyed, &.{k}, @backingInt(at));
             },
             // A mode, not a value: the literal is the prelude's `Bool`.
             else => try w.expr(keyed, try g.primitive(wk.bool), formCategory(.keyed)),
         };
-        if (f.row != Bir.none_extra) try w.rowFunction(@enumFromInt(f.row), a, is_for);
+        if (f.row != Bir.none_extra) try w.rowFunction(@fromBackingInt(@intCast(f.row)), a, is_for);
         // Whether the item is a primitive-`eq` type, which the record says,
         // and which a `For` that does not say how it is keyed is warned
         // about in a module of the root package.
         const warn = is_for and f.mode == .absent and g.cx.graph.modulePackage(g.cx.module) == .app;
-        try w.obligation(.item, w.inst, &.{a}, @intFromEnum(at) | if (warn) Obligations.markup_flag else 0);
+        try w.obligation(.item, w.inst, &.{a}, @backingInt(at) | if (warn) Obligations.markup_flag else 0);
     }
 
     /// A row function: a lambda meets `a -> H m`, or `a, Int -> H m` in a
@@ -382,28 +382,28 @@ const Walker = struct {
         switch (r.shape) {
             .markup, .lambda => {
                 const lambda = b.instData(r.function);
-                const params = b.extraSlice(b.subRange(@enumFromInt(lambda.lhs)), Bir.Inst.Index).len;
+                const params = b.extraSlice(b.subRange(@fromBackingInt(@intCast(lambda.lhs))), Bir.Inst.Index).len;
                 const wanted = if (is_for and params == 2)
                     try g.func(&.{ a, try g.primitive(g.cx.types.well_known.int) }, try w.html())
                 else
                     try g.func(&.{a}, try w.html());
                 try w.expr(r.function, wanted, category);
-                if (g.cx.effects) |e| try e.demand(.{ .v = wanted, .kind = .row, .site = @intFromEnum(r.function) });
+                if (g.cx.effects) |e| try e.demand(.{ .v = wanted, .kind = .row, .site = @backingInt(r.function) });
             },
             .function => {
                 const f = try g.freshFlex();
                 try w.expr(r.function, f, .{ .tag = .general });
                 // A row function is called by the page while it renders: `sync`
                 // (§25.6), whichever shape it has.
-                if (g.cx.effects) |e| try e.demand(.{ .v = f, .kind = .row, .site = @intFromEnum(r.function) });
-                try w.obligation(.row, r.function, &.{ f, a, w.m }, @intFromEnum(at) | if (is_for) Obligations.markup_flag else 0);
+                if (g.cx.effects) |e| try e.demand(.{ .v = f, .kind = .row, .site = @backingInt(r.function) });
+                try w.obligation(.row, r.function, &.{ f, a, w.m }, @backingInt(at) | if (is_for) Obligations.markup_flag else 0);
             },
         }
     }
 };
 
 fn formCategory(which: FormAttribute) Category {
-    return .{ .tag = .markup_form, .index = @intFromEnum(which) };
+    return .{ .tag = .markup_form, .index = @backingInt(which) };
 }
 
 fn fieldIn(g: *Generator, range: TypeStore.Range, name: Symbol) ?Var {
@@ -413,5 +413,5 @@ fn fieldIn(g: *Generator, range: TypeStore.Range, name: Symbol) ?Var {
 /// The token a node's record starts with: every node record holds one
 /// after its kind.
 pub fn nodeToken(b: *const Bir, at: Bir.ExtraIndex) u32 {
-    return b.extra[@intFromEnum(at) + 1];
+    return b.extra[@backingInt(at) + 1];
 }

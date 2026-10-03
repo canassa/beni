@@ -312,8 +312,8 @@ test "a key of all zeroes and a key of all ones both name a file" {
     // The two keys most likely to be produced by a bug, and the two a path
     // builder is most likely to get wrong.
     var buffer: [name_len]u8 = undefined;
-    try testing.expectEqualStrings("v1/00/" ++ "0" ** 30 ++ ".bec", entryPath(&buffer, @splat(0)));
-    try testing.expectEqualStrings("v1/ff/" ++ "f" ** 30 ++ ".bec", entryPath(&buffer, @splat(0xFF)));
+    try testing.expectEqualStrings("v1/00/" ++ @as([30]u8, @splat('0')) ++ ".bec", entryPath(&buffer, @splat(0)));
+    try testing.expectEqualStrings("v1/ff/" ++ @as([30]u8, @splat('f')) ++ ".bec", entryPath(&buffer, @splat(0xFF)));
 }
 
 const StaleStat = fs_read.StaleStat;

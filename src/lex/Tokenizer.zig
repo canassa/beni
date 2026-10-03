@@ -129,12 +129,12 @@ pub const Mode = enum(u8) {
 
     /// The four modes that only markup enters.
     fn isMarkup(mode: Mode) bool {
-        return @intFromEnum(mode) >= @intFromEnum(Mode.hole);
+        return @backingInt(mode) >= @backingInt(Mode.hole);
     }
 
     /// The three modes `nextMarkup` lexes rather than `next`.
     fn hasOwnStates(mode: Mode) bool {
-        return @intFromEnum(mode) >= @intFromEnum(Mode.tag);
+        return @backingInt(mode) >= @backingInt(Mode.tag);
     }
 };
 
@@ -343,7 +343,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
                 // language has no use for.
                 if (src[t.index + 1] == '=') {
                     try t.report(.invalid_character, t.index, t.index + 2);
-                    payload = @intFromEnum(Tag.op_ne);
+                    payload = @backingInt(Tag.op_ne);
                     break :state t.take(2, .lookalike);
                 }
                 try t.report(.invalid_character, t.index, t.index + 1);
@@ -363,7 +363,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
                 // parser as the token it stands for.
                 if (Token.lookalikeAt(src, t.index)) |look| {
                     try t.report(.invalid_character, t.index, t.index + @as(u32, @intCast(look.bytes.len)));
-                    payload = @intFromEnum(look.tag);
+                    payload = @backingInt(look.tag);
                     break :state t.take(@intCast(look.bytes.len), .lookalike);
                 }
                 // Non-ASCII outside a string, char or comment (§2.4); a
@@ -862,12 +862,12 @@ const operand_enders = blk: {
         // In `normal` or `hole` mode a `markup_gt` is always a closing tag's:
         // an opening tag's `>` leads into `children`.
         .markup_gt,       .invalid,
-    }) |tag| table[@intFromEnum(tag)] = true;
+    }) |tag| table[@backingInt(tag)] = true;
     break :blk table;
 };
 
 fn endsOperand(tag: Tag) bool {
-    return operand_enders[@intFromEnum(tag)];
+    return operand_enders[@backingInt(tag)];
 }
 
 /// Push `mode` with brace depth `depth` over the current top. Past the
@@ -1012,7 +1012,7 @@ fn reportAt(t: *Tokenizer, code: diagnostic.Code, start: u32, end: u32, where: D
 
 fn intern(t: *Tokenizer, hash: u64, from: u32, to: u32) Allocator.Error!u32 {
     const symbol = try t.interner.getOrPutHashed(t.gpa, hash, t.source[from..to]);
-    return @intFromEnum(symbol);
+    return @backingInt(symbol);
 }
 
 /// The string being scanned hit the end of its line or the file: report it
@@ -1543,7 +1543,7 @@ fn expectLex(source: [:0]const u8, expected: Expected) !void {
         const text = slice(source, tag, start);
         try actual.append(testing.allocator, .{ .tag = tag, .start = start, .line = line, .text = text });
         if (tag.isInterned()) {
-            const interned = interner.slice(@enumFromInt(payload));
+            const interned = interner.slice(@fromBackingInt(@intCast(payload)));
             try testing.expectEqualStrings(if (tag == .dot_lower) text[1..] else text, interned);
         } else if (tag == .dot_index) {
             try testing.expectEqual(std.fmt.parseInt(u32, text[1..], 10) catch std.math.maxInt(u32), payload);
@@ -2312,7 +2312,7 @@ test "the Unicode symbols are tokens of their own; a lookalike is reported and k
     var out: Output = .empty;
     defer out.deinit(testing.allocator);
     try tokenize(testing.allocator, "⇒ != −", &interner, &out);
-    try testing.expectEqualSlices(u32, &.{ @intFromEnum(Tag.arrow), @intFromEnum(Tag.op_ne), @intFromEnum(Tag.op_minus), 0 }, out.tokens.items(.payload));
+    try testing.expectEqualSlices(u32, &.{ @backingInt(Tag.arrow), @backingInt(Tag.op_ne), @backingInt(Tag.op_minus), 0 }, out.tokens.items(.payload));
 }
 
 test "non-ASCII outside a string is invalid_character covering the whole character; control bytes too" {
@@ -2619,11 +2619,11 @@ test "markup: closing more than was opened past the frame never underflows the s
 }
 
 test "slice agrees with lexeme for every fixed-spelling tag" {
-    inline for (@typeInfo(Tag).@"enum".fields) |field| {
-        const tag: Tag = @enumFromInt(field.value);
+    inline for (@typeInfo(Tag).@"enum".field_values) |field_value| {
+        const tag: Tag = @fromBackingInt(@intCast(field_value));
         if (Token.lexeme(tag)) |text| {
             var buf: [32:0]u8 = undefined;
-            const padded = try std.fmt.bufPrintZ(&buf, "  {s} rest", .{text});
+            const padded = try std.mem.printSentinel(&buf, "  {s} rest", .{text}, 0);
             try testing.expectEqualStrings(text, slice(padded, tag, 2));
         }
     }

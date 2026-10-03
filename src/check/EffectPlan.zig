@@ -379,18 +379,18 @@ fn answers(p: *Plan) Error!Result {
             // something that is — a `poly` callee, or one a `sync` class
             // reaches, which is never `poly` because it cannot suspend.
             const impure = level(p, c[1]) != .pure or a != .no or p.tainted[c[1]] == tag;
-            if (a != .no or impure) try sites.append(gpa, .{ .inst = @enumFromInt(c[0]), .own = a, .impure = impure });
+            if (a != .no or impure) try sites.append(gpa, .{ .inst = @fromBackingInt(@intCast(c[0])), .own = a, .impure = impure });
         }
         for (p.fns[d].items) |f| {
             const a = answer(p, f[1], tag);
-            if (a != .no) try sites.append(gpa, .{ .inst = @enumFromInt(f[0]), .own = a });
+            if (a != .no) try sites.append(gpa, .{ .inst = @fromBackingInt(@intCast(f[0])), .own = a });
         }
         // A `Js.maySuspend` call's value is its argument's answer, carried
         // as the call's choice of body (no reference reads `body` on a
         // `call`): `true` in a body that takes the answer as yes.
         for (p.probes[d].items) |f| {
             const a = answer(p, f[1], tag);
-            if (a != .no) try sites.append(gpa, .{ .inst = @enumFromInt(f[0]), .body = a });
+            if (a != .no) try sites.append(gpa, .{ .inst = @fromBackingInt(@intCast(f[0])), .body = a });
         }
         for (p.choices[d].items) |c| {
             if (!isTwinTarget(p, c)) continue;
@@ -405,7 +405,7 @@ fn answers(p: *Plan) Error!Result {
                     .no => {},
                 }
             }
-            if (a != .no) try sites.append(gpa, .{ .inst = @enumFromInt(c.site), .body = a });
+            if (a != .no) try sites.append(gpa, .{ .inst = @fromBackingInt(@intCast(c.site)), .body = a });
         }
         // A reference to a member of one's own binding group has no copy:
         // it follows the enclosing body when the target has two.
@@ -419,7 +419,7 @@ fn answers(p: *Plan) Error!Result {
                 if (target >= bir.decls.len or !p.twin[target]) continue;
                 const tu = if (target < p.in.unit.len) p.in.unit[target] else none;
                 if (tu != unit) continue;
-                try sites.append(gpa, .{ .inst = @enumFromInt(i), .body = .poly });
+                try sites.append(gpa, .{ .inst = @fromBackingInt(@intCast(i)), .body = .poly });
             }
         }
         var own: Suspend = .no;
@@ -432,7 +432,7 @@ fn answers(p: *Plan) Error!Result {
     std.mem.sort(Dispatch.EffectSite, sites.items, {}, struct {
         fn lessThan(_: void, a: Dispatch.EffectSite, b: Dispatch.EffectSite) bool {
             if (a.inst != b.inst) return a.inst.int() < b.inst.int();
-            return @intFromEnum(a.own) < @intFromEnum(b.own) or (a.own == b.own and @intFromEnum(a.body) < @intFromEnum(b.body));
+            return @backingInt(a.own) < @backingInt(b.own) or (a.own == b.own and @backingInt(a.body) < @backingInt(b.body));
         }
     }.lessThan);
     var out: std.ArrayList(Dispatch.EffectSite) = .empty;

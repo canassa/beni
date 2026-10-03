@@ -1200,7 +1200,7 @@ test "the usefulness budget: many constructors times many branches terminates" {
         if (i != 0) try w.writeAll("\n");
         try w.print("        C{d} (C{d} rest{d}) →\n            {d}\n", .{ i, (i + 1) % ctors, i, i });
     }
-    const text = try gpa.dupeZ(u8, out.written());
+    const text = try gpa.dupeSentinel(u8, out.written(), 0);
     defer gpa.free(text);
 
     for ([_]u32{ Session.default_pattern_budget, 64 }) |budget| {
@@ -1247,7 +1247,7 @@ test "fuzz: arbitrary bytes as the patterns of a `case` never panic the usefulne
                 out.writer.print("        {s} →\n            0\n\n", .{line}) catch return;
             }
             out.writer.writeAll("        _ →\n            1\n") catch return;
-            const source = gpa.dupeZ(u8, out.written()) catch return;
+            const source = gpa.dupeSentinel(u8, out.written(), 0) catch return;
             defer gpa.free(source);
             var codes: std.ArrayList(diagnostic.Code) = .empty;
             defer codes.deinit(gpa);
@@ -1268,7 +1268,7 @@ test "fuzz: the whole pipeline through the checker never panics" {
         fn testOne(_: void, smith: *std.testing.Smith) anyerror!void {
             var buf: [1024]u8 = undefined;
             const len = smith.sliceWithHash(&buf, 0xC4EC6);
-            const source = try testing.allocator.dupeZ(u8, buf[0..len]);
+            const source = try testing.allocator.dupeSentinel(u8, buf[0..len], 0);
             defer testing.allocator.free(source);
             var codes: std.ArrayList(diagnostic.Code) = .empty;
             defer codes.deinit(testing.allocator);

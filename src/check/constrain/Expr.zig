@@ -53,7 +53,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
     // (`Generator.depth`); noted, never silent. What was not read is
     // poisoned, so nothing that meets it says a second thing about it.
     if (g.depth > Generator.max_depth) {
-        try g.cx.noteTooDeepAs(inst, @intFromEnum(g.decl), if (g.markup_roots != 0) .markup else .type);
+        try g.cx.noteTooDeepAs(inst, @backingInt(g.decl), if (g.markup_roots != 0) .markup else .type);
         return g.equal(expected, try g.fresh(.err), inst, category);
     }
 
@@ -77,17 +77,17 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         .top => {
             // A group checked out of SCC order (nested, §10.2) may name one
             // that is not `done`: the solver demands it at this node.
-            if (g.demands(data.lhs)) return g.add(.demand, inst, @intFromEnum(expected), data.lhs, category);
+            if (g.demands(data.lhs)) return g.add(.demand, inst, @backingInt(expected), data.lhs, category);
             const scheme = if (data.lhs < g.decl_scheme.len) g.decl_scheme[data.lhs].unwrap() else null;
             const v = scheme orelse return g.equal(expected, try g.fresh(.err), inst, category);
             return g.instantiate(expected, v, inst, category);
         },
         .schema_member_top, .schema_ctor_top => {
-            if (g.demands(data.lhs)) return g.add(.demand, inst, @intFromEnum(expected), data.lhs, category);
-            return g.add(.reference, inst, @intFromEnum(expected), 0, category);
+            if (g.demands(data.lhs)) return g.add(.demand, inst, @backingInt(expected), data.lhs, category);
+            return g.add(.reference, inst, @backingInt(expected), 0, category);
         },
         .ctor, .ext_value, .ext_ctor, .ext_schema_member, .ext_schema_ctor => {
-            return g.add(.reference, inst, @intFromEnum(expected), 0, category);
+            return g.add(.reference, inst, @backingInt(expected), 0, category);
         },
 
         .tuple => {
@@ -136,7 +136,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             for (written) |f| {
                 const name = bir.symbol(f.name);
                 const v = Walk.fieldIn(g.cx.store, range, name) orelse try g.freshFlex();
-                try parts.append(g.cx.scratch, try expr(g, f.value, v, .{ .tag = .record_field, .index = @intFromEnum(name) }));
+                try parts.append(g.cx.scratch, try expr(g, f.value, v, .{ .tag = .record_field, .index = @backingInt(name) }));
             }
             const fields = try g.conj(parts.items);
             const payload = try g.addExtra(Tree.RecordLiteral{ .expected = expected, .record = record_var, .fields = fields });
@@ -144,7 +144,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         },
 
         .record_update => {
-            const written = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field);
+            const written = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field);
             const base = try g.freshFlex();
             const pairs = try g.cx.scratch.alloc(TypeStore.Field, written.len);
             defer g.cx.scratch.free(pairs);
@@ -154,7 +154,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             const required = try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
             var parts: std.ArrayList(Constraint) = .empty;
             defer parts.deinit(g.cx.scratch);
-            try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.lhs), base, .{ .tag = .general }));
+            try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.lhs)), base, .{ .tag = .general }));
             // The base must HAVE every updated field; the result is the
             // base's own type, so an update never widens a record.
             try parts.append(g.cx.scratch, try g.equal(required, base, inst, .{ .tag = .record_update, .index = Category.no_field }));
@@ -162,21 +162,21 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             for (written) |f| {
                 const name = bir.symbol(f.name);
                 const v = Walk.fieldIn(g.cx.store, range, name) orelse try g.freshFlex();
-                try parts.append(g.cx.scratch, try expr(g, f.value, v, .{ .tag = .record_update, .index = @intFromEnum(name) }));
+                try parts.append(g.cx.scratch, try expr(g, f.value, v, .{ .tag = .record_update, .index = @backingInt(name) }));
             }
             return g.conj(parts.items);
         },
 
         .field_access => {
-            const name = bir.symbol(@enumFromInt(data.rhs));
+            const name = bir.symbol(@fromBackingInt(@intCast(data.rhs)));
             var pairs = [_]TypeStore.Field{.{ .name = name, .value = expected }};
             const range = try g.cx.store.addFields(&pairs);
             const ext = try g.freshFlex();
             const required = try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
             const target = try g.freshFlex();
             return g.conj(&.{
-                try expr(g, @enumFromInt(data.lhs), target, .{ .tag = .general }),
-                try g.equal(required, target, inst, .{ .tag = .field_access, .index = @intFromEnum(name) }),
+                try expr(g, @fromBackingInt(@intCast(data.lhs)), target, .{ .tag = .general }),
+                try g.equal(required, target, inst, .{ .tag = .field_access, .index = @backingInt(name) }),
             });
         },
 
@@ -190,7 +190,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
                 if (bir.instTag(part) == .chunk) continue;
                 const t = try g.freshFlex();
                 try parts.append(g.cx.scratch, try expr(g, part, t, .{ .tag = .interp_part }));
-                try parts.append(g.cx.scratch, try g.add(.interpolatable, part, @intFromEnum(t), 0, .{ .tag = .interp_part }));
+                try parts.append(g.cx.scratch, try g.add(.interpolatable, part, @backingInt(t), 0, .{ .tag = .interp_part }));
             }
             return g.conj(parts.items);
         },
@@ -200,8 +200,8 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             const target = try g.freshFlex();
             const payload = try g.addExtra(Tree.TupleIndex{ .index = data.rhs, .result = expected });
             return g.conj(&.{
-                try expr(g, @enumFromInt(data.lhs), target, .{ .tag = .general }),
-                try g.add(.tuple_index, inst, @intFromEnum(target), payload, category),
+                try expr(g, @fromBackingInt(@intCast(data.lhs)), target, .{ .tag = .general }),
+                try g.add(.tuple_index, inst, @backingInt(target), payload, category),
             });
         },
 
@@ -209,10 +209,10 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         // result of the definition it returns from (§8.6).
         .@"try" => {
             const subject = try g.freshFlex();
-            const target = g.targetResult(@enumFromInt(data.rhs)) orelse try g.fresh(.err);
+            const target = g.targetResult(@fromBackingInt(@intCast(data.rhs))) orelse try g.fresh(.err);
             const payload = try g.addExtra(Tree.Try{ .subject = subject, .target = target, .value = expected });
             return g.conj(&.{
-                try expr(g, @enumFromInt(data.lhs), subject, .{ .tag = .general }),
+                try expr(g, @fromBackingInt(@intCast(data.lhs)), subject, .{ .tag = .general }),
                 try g.add(.try_, inst, payload, 0, category),
             });
         },
@@ -234,7 +234,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         // A form the generator has no rule for, or no expression at all:
         // the compiler says so, never a silent poison: no failure to decide
         // is answered as success.
-        else => return g.add(.internal, inst, @intFromEnum(expected), 0, category),
+        else => return g.add(.internal, inst, @backingInt(expected), 0, category),
     }
 }
 
@@ -247,9 +247,9 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
 /// receiver already known is resolved before the arguments are checked).
 fn methodCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
-    const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
+    const m = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
     const args = bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
-    const receiver: Bir.Inst.Index = @enumFromInt(data.lhs);
+    const receiver: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
     if (m.origin != .none) return wellKnownCall(g, inst, receiver, args, m.origin, expected, category);
 
     const recv = try g.freshFlex();
@@ -267,8 +267,8 @@ fn methodCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected
         .name = bir.symbol(m.name),
         .receiver = recv,
         .method_type = method_type,
-        .kind = @intFromEnum(Evidence.Kind.dot_call),
-        .var_name = @intFromEnum(Tree.Symbol.Optional.none),
+        .kind = @backingInt(Evidence.Kind.dot_call),
+        .var_name = @backingInt(Tree.Symbol.Optional.none),
     });
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
@@ -309,8 +309,8 @@ fn wellKnownCall(
         .name = name,
         .receiver = operand,
         .method_type = method_type,
-        .kind = @intFromEnum(Evidence.Kind.well_known),
-        .var_name = @intFromEnum(Tree.Symbol.Optional.none),
+        .kind = @backingInt(Evidence.Kind.well_known),
+        .var_name = @backingInt(Tree.Symbol.Optional.none),
     });
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
@@ -336,7 +336,7 @@ fn wellKnownCall(
 /// case, and a poisoned annotation poisons the expression here.
 fn typeDispatch(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
-    const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+    const t = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.TypeDispatch);
     const args = bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Bir.Inst.Index);
     const var_symbol = bir.symbols[data.lhs];
     const rigid = blk: {
@@ -355,8 +355,8 @@ fn typeDispatch(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expect
         .name = bir.symbol(t.name),
         .receiver = rigid,
         .method_type = method_type,
-        .kind = @intFromEnum(Evidence.Kind.type_dispatch),
-        .var_name = @intFromEnum(var_symbol.toOptional()),
+        .kind = @backingInt(Evidence.Kind.type_dispatch),
+        .var_name = @backingInt(var_symbol.toOptional()),
     });
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
@@ -373,7 +373,7 @@ fn typeDispatch(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expect
 
 fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
-    const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+    const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
     const callee = try g.freshFlex();
     try g.called(callee, inst);
     const arg_vars = try g.cx.scratch.alloc(Var, args.len);
@@ -395,9 +395,9 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     // The callee first, so the solver knows its arrows; then the call, so
     // §8.3 sees both the arrows and what the result was wanted for; then
     // the arguments, against a callee that is already concrete.
-    try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.lhs), callee, .{ .tag = .general }));
+    try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.lhs)), callee, .{ .tag = .general }));
     try parts.append(g.cx.scratch, try g.add(.call, inst, payload, 0, category));
-    const which = jsIntrinsic(g, @enumFromInt(data.lhs));
+    const which = jsIntrinsic(g, @fromBackingInt(@intCast(data.lhs)));
     const in_place = if (which) |w| JsIntrinsic.inPlaceLiterals(w) else 0;
     for (args, arg_vars, 0..) |arg, v, i| {
         if (i < 8 and in_place & (@as(u8, 1) << @intCast(i)) != 0) {
@@ -427,13 +427,13 @@ fn jsIntrinsic(g: *Generator, callee: Bir.Inst.Index) ?JsIntrinsic.Which {
     const bir = g.cx.bir;
     if (callee.int() >= bir.insts.len or bir.instTag(callee) != .ext_value) return null;
     const d = bir.instData(callee);
-    const module: Graph.Index = @enumFromInt(d.lhs);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= g.cx.graph.count()) return null;
     if (g.cx.graph.modulePackage(module) != .core) return null;
     if (!std.mem.eql(u8, g.cx.interner.slice(g.cx.graph.moduleName(module)), "Js")) return null;
     const iface = g.cx.iface(module);
     if (d.rhs >= iface.values.len) return null;
-    return std.meta.stringToEnum(JsIntrinsic.Which, g.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
+    return std.meta.stringToEnum(JsIntrinsic.Which, g.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
 }
 
 /// `Js.object`'s fields, written in place (checker-v2.md §30, amended
@@ -477,7 +477,7 @@ fn inPlaceLiteral(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
 
 fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
-    const params = bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index);
+    const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index);
     const param_vars = try g.cx.scratch.alloc(Var, params.len);
     defer g.cx.scratch.free(param_vars);
     for (param_vars) |*v| v.* = try g.freshFlex();
@@ -505,13 +505,13 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
     const outer = g.ambient;
     const outer_site = g.ambient_site;
     g.ambient = arrow;
-    g.ambient_site = @intFromEnum(inst);
-    if (g.cx.effects) |e| try e.function(@intFromEnum(inst), arrow);
+    g.ambient_site = @backingInt(inst);
+    if (g.cx.effects) |e| try e.function(@backingInt(inst), arrow);
     defer {
         g.ambient = outer;
         g.ambient_site = outer_site;
     }
-    try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.rhs), result, .{ .tag = .general }));
+    try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.rhs)), result, .{ .tag = .general }));
     // Elm's placement: the lambda's own header, checked before anything
     // outside it meets the lambda's type (§6.3).
     if (try g.bindersEnd(binders)) |end| try parts.append(g.cx.scratch, end);
@@ -522,17 +522,17 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
 /// second's body the `unit` lowering marks with `lhs` 1 (frontend.md §11.9).
 fn missingElse(bir: *const Bir, branches: []const Bir.Inst.Index) bool {
     if (branches.len != 2) return false;
-    const body: Bir.Inst.Index = @enumFromInt(bir.instData(branches[1]).rhs);
+    const body: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(branches[1]).rhs));
     return bir.instTag(body) == .unit and bir.instData(body).lhs == 1;
 }
 
 fn caseExpr(g: *Generator, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
-    const branches = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+    const branches = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
     const scrutinee = try g.freshFlex();
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
-    try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.lhs), scrutinee, .{ .tag = .general }));
+    try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.lhs)), scrutinee, .{ .tag = .general }));
     if (missingElse(bir, branches)) {
         // An `if` without `else` (checker-v2.md §34): the `then` body is
         // checked on its own, then held to `⊤` under `if_without_else`, so
@@ -541,9 +541,9 @@ fn caseExpr(g: *Generator, data: Bir.Inst.Data, expected: Var, category: Categor
         // branch already failed, its type poisoned (§15.2). A `True` or
         // `False` pattern binds nothing and can fail no constraint but the
         // scrutinee's.
-        for (branches) |b| try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @enumFromInt(bir.instData(b).lhs), scrutinee));
-        const then_body: Bir.Inst.Index = @enumFromInt(bir.instData(branches[0]).rhs);
-        const missing: Bir.Inst.Index = @enumFromInt(bir.instData(branches[1]).rhs);
+        for (branches) |b| try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @fromBackingInt(@intCast(bir.instData(b).lhs)), scrutinee));
+        const then_body: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(branches[0]).rhs));
+        const missing: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(branches[1]).rhs));
         const t = try g.freshFlex();
         try parts.append(g.cx.scratch, try expr(g, then_body, t, .{}));
         const unit = try g.fresh(.{ .structure = .unit });
@@ -557,10 +557,10 @@ fn caseExpr(g: *Generator, data: Bir.Inst.Data, expected: Var, category: Categor
     for (branches, 0..) |b, i| {
         const bd = bir.instData(b);
         const binders: u32 = @intCast(g.tree.binders.items.len);
-        try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @enumFromInt(bd.lhs), scrutinee));
+        try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @fromBackingInt(@intCast(bd.lhs)), scrutinee));
         // The FIRST branch is measured against the context, every later one
         // against the branches before it (Elm's split).
-        try parts.append(g.cx.scratch, try expr(g, @enumFromInt(bd.rhs), expected, if (i == 0) category else .{
+        try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(bd.rhs)), expected, if (i == 0) category else .{
             .tag = .case_branch,
             .index = @intCast(i + 1),
         }));

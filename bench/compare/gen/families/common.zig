@@ -83,15 +83,15 @@ pub const Unit = struct {
 
     pub fn fnName(u: *Unit) ![]const u8 {
         defer u.fn_count += 1;
-        return std.fmt.allocPrint(u.arena(), "f{d}{d:0>3}{d:0>2}", .{ @intFromEnum(u.family), u.unit, u.fn_count });
+        return std.fmt.allocPrint(u.arena(), "f{d}{d:0>3}{d:0>2}", .{ @backingInt(u.family), u.unit, u.fn_count });
     }
 
     pub fn typeName(u: *Unit) ![]const u8 {
-        return std.fmt.allocPrint(u.arena(), "T{d}{d:0>3}{d:0>2}", .{ @intFromEnum(u.family), u.unit, u.type_count });
+        return std.fmt.allocPrint(u.arena(), "T{d}{d:0>3}{d:0>2}", .{ @backingInt(u.family), u.unit, u.type_count });
     }
 
     pub fn ctorName(u: *Unit, k: u32) ![]const u8 {
-        return std.fmt.allocPrint(u.arena(), "C{d}{d:0>3}{d:0>2}x{d}", .{ @intFromEnum(u.family), u.unit, u.type_count, k });
+        return std.fmt.allocPrint(u.arena(), "C{d}{d:0>3}{d:0>2}x{d}", .{ @backingInt(u.family), u.unit, u.type_count, k });
     }
 
     // ---- declarations ----

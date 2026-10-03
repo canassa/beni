@@ -410,14 +410,14 @@ pub fn occursMerged(s: *Solve, run: *Walk.Occurs, binders: []const u32) Error!vo
 }
 
 fn binderLessThan(_: void, a: Generalize.Binder, b: Generalize.Binder) bool {
-    if (a.kind != b.kind) return @intFromEnum(a.kind) < @intFromEnum(b.kind);
+    if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
     if (a.region != b.region) return a.region.int() < b.region.int();
     // Ties, which binders sharing a region would be, by declaration and
     // name: a total order, so the unstable sort cannot reorder them.
     const ad = a.decl orelse std.math.maxInt(u32);
     const bd = b.decl orelse std.math.maxInt(u32);
     if (ad != bd) return ad < bd;
-    return @intFromEnum(a.name) < @intFromEnum(b.name);
+    return @backingInt(a.name) < @backingInt(b.name);
 }
 
 /// A `demand` node (§10.2, §10.3): a reference to a declaration of a group
@@ -428,7 +428,7 @@ fn binderLessThan(_: void, a: Generalize.Binder, b: Generalize.Binder) bool {
 /// typed as any other (`Instantiate.reference`), which copies what is
 /// generalised and shares what is in flight.
 pub fn demanded(s: *Solve, node: Tree.Node) Error!void {
-    const target: Var = @enumFromInt(node.a);
+    const target: Var = @fromBackingInt(@intCast(node.a));
     const bir = s.cx.bir;
     const d = bir.decls[node.b];
     // First: a nested check uses the instantiator's state too.

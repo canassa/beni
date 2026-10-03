@@ -69,7 +69,7 @@ pub const Index = enum(u32) {
     _,
 
     pub fn toOptional(i: Index) OptionalIndex {
-        return @enumFromInt(@intFromEnum(i));
+        return @fromBackingInt(@intCast(@backingInt(i)));
     }
 };
 
@@ -78,7 +78,7 @@ pub const OptionalIndex = enum(u32) {
     _,
 
     pub fn unwrap(i: OptionalIndex) ?Index {
-        return if (i == .none) null else @enumFromInt(@intFromEnum(i));
+        return if (i == .none) null else @fromBackingInt(@intCast(@backingInt(i)));
     }
 };
 
@@ -260,15 +260,15 @@ pub const Tag = enum(u8) {
 
     /// True for `keyword_*`.
     pub fn isKeyword(tag: Tag) bool {
-        return @intFromEnum(tag) >= @intFromEnum(Tag.keyword_if) and
-            @intFromEnum(tag) <= @intFromEnum(Tag.keyword_foreign);
+        return @backingInt(tag) >= @backingInt(Tag.keyword_if) and
+            @backingInt(tag) <= @backingInt(Tag.keyword_foreign);
     }
 
     /// True for the binary operators of language.md §6.5 (`op_*`), in
     /// either spelling.
     pub fn isOperator(tag: Tag) bool {
-        return @intFromEnum(tag) >= @intFromEnum(Tag.op_plus) and
-            @intFromEnum(tag) <= @intFromEnum(Tag.ascii_pipe_left);
+        return @backingInt(tag) >= @backingInt(Tag.op_plus) and
+            @backingInt(tag) <= @backingInt(Tag.ascii_pipe_left);
     }
 
     /// The symbol an old ASCII spelling stands for (language.md §12.7):
@@ -517,8 +517,8 @@ comptime {
 }
 
 test "keyword table and lexeme agree for every keyword" {
-    inline for (@typeInfo(Tag).@"enum".fields) |field| {
-        const tag: Tag = @enumFromInt(field.value);
+    inline for (@typeInfo(Tag).@"enum".field_values) |field_value| {
+        const tag: Tag = @fromBackingInt(@intCast(field_value));
         if (tag.isKeyword()) {
             const text = lexeme(tag).?;
             try std.testing.expectEqual(tag, keywords.get(text).?);
@@ -529,11 +529,11 @@ test "keyword table and lexeme agree for every keyword" {
 }
 
 test "every operator and symbol has a lexeme; no variable-text tag does" {
-    inline for (@typeInfo(Tag).@"enum".fields) |field| {
-        const tag: Tag = @enumFromInt(field.value);
+    inline for (@typeInfo(Tag).@"enum".field_values) |field_value| {
+        const tag: Tag = @fromBackingInt(@intCast(field_value));
         const fixed = tag.isKeyword() or tag.isOperator() or
-            (@intFromEnum(tag) >= @intFromEnum(Tag.l_paren) and @intFromEnum(tag) <= @intFromEnum(Tag.question)) or
-            (@intFromEnum(tag) >= @intFromEnum(Tag.markup_open) and @intFromEnum(tag) <= @intFromEnum(Tag.markup_self_close)) or
+            (@backingInt(tag) >= @backingInt(Tag.l_paren) and @backingInt(tag) <= @backingInt(Tag.question)) or
+            (@backingInt(tag) >= @backingInt(Tag.markup_open) and @backingInt(tag) <= @backingInt(Tag.markup_self_close)) or
             tag == .ellipsis or tag == .ascii_ellipsis;
         try std.testing.expectEqual(fixed, lexeme(tag) != null);
     }
@@ -541,8 +541,8 @@ test "every operator and symbol has a lexeme; no variable-text tag does" {
 
 test "canonical and ascii pair every old spelling with its symbol" {
     var pairs: usize = 0;
-    inline for (@typeInfo(Tag).@"enum".fields) |field| {
-        const tag: Tag = @enumFromInt(field.value);
+    inline for (@typeInfo(Tag).@"enum".field_values) |field_value| {
+        const tag: Tag = @fromBackingInt(@intCast(field_value));
         if (tag.ascii()) |old| {
             pairs += 1;
             try std.testing.expectEqual(tag, old.canonical());
@@ -558,7 +558,7 @@ test "canonical and ascii pair every old spelling with its symbol" {
 }
 
 test "optional index round trip" {
-    const i: Index = @enumFromInt(7);
+    const i: Index = @fromBackingInt(@intCast(7));
     try std.testing.expectEqual(i, i.toOptional().unwrap().?);
     try std.testing.expectEqual(@as(?Index, null), OptionalIndex.none.unwrap());
 }

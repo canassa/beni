@@ -168,7 +168,7 @@ pub fn create(s: *Solve, name: Symbol, receiver: Var, method_type: Var, origin: 
 /// receiver is known, else riding on it.
 pub fn method(s: *Solve, node: Tree.Node) Error!void {
     const info = s.tree.extraData(node.a, Tree.Method);
-    const id = try create(s, info.name, info.receiver, info.method_type, node.region, @enumFromInt(info.kind), .none);
+    const id = try create(s, info.name, info.receiver, info.method_type, node.region, @fromBackingInt(@intCast(info.kind)), .none);
     // A hand-written dot-call's own wanted may become a field call (§11).
     if (s.evidence.get(id).kind == .dot_call) s.evidence.ptr(id).field_ok = true;
     try s.evidence.callees.append(s.cx.gpa, .{ .inst = node.region, .wanted = id });
@@ -817,10 +817,10 @@ fn letBinding(s: *const Solve, b: Tree.Binder) LetBinding {
     const bir = s.cx.bir;
     if (b.region.int() >= bir.insts.len or bir.instTag(b.region) != .let_def) return .value;
     const data = bir.instData(b.region);
-    const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+    const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
     if (def.annotation != .none) return .annotated;
     if (def.params_end != def.params_start) return .function;
-    const rhs: Bir.Inst.Index = @enumFromInt(data.rhs);
+    const rhs: Bir.Inst.Index = @fromBackingInt(@intCast(data.rhs));
     return if (rhs.int() < bir.insts.len and bir.instTag(rhs) == .lambda) .function else .value;
 }
 
@@ -998,7 +998,7 @@ pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
         const root = st.find(v);
         if (listed.contains(root)) continue;
         if (st.content(root) != .flex or !carriesOpen(s, root)) continue;
-        const region: Bir.Inst.Index = if (binders.len != 0) s.tree.binders.items[binders[0]].region else @enumFromInt(0);
+        const region: Bir.Inst.Index = if (binders.len != 0) s.tree.binders.items[binders[0]].region else @fromBackingInt(@intCast(0));
         _ = try s.expect(false, region, "a `let` quantified a constrained variable no function binding lists (checker-v2.md §8.4)");
         break;
     };

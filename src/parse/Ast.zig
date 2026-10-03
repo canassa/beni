@@ -75,7 +75,7 @@ pub const SubRange = struct {
     end: ExtraIndex,
 
     pub fn len(r: SubRange) u32 {
-        return @intFromEnum(r.end) - @intFromEnum(r.start);
+        return @backingInt(r.end) - @backingInt(r.start);
     }
 };
 
@@ -85,11 +85,11 @@ pub const OptionalTokenIndex = enum(u32) {
     _,
 
     pub fn unwrap(i: OptionalTokenIndex) ?TokenIndex {
-        return if (i == .none) null else @intFromEnum(i);
+        return if (i == .none) null else @backingInt(i);
     }
 
     pub fn fromToken(t: TokenIndex) OptionalTokenIndex {
-        return @enumFromInt(t);
+        return @fromBackingInt(@intCast(t));
     }
 };
 
@@ -116,13 +116,13 @@ pub const Node = struct {
         _,
 
         pub fn toOptional(i: Index) OptionalIndex {
-            const result: OptionalIndex = @enumFromInt(@intFromEnum(i));
+            const result: OptionalIndex = @fromBackingInt(@intCast(@backingInt(i)));
             std.debug.assert(result != .none);
             return result;
         }
 
         pub fn int(i: Index) u32 {
-            return @intFromEnum(i);
+            return @backingInt(i);
         }
     };
 
@@ -133,7 +133,7 @@ pub const Node = struct {
         _,
 
         pub fn unwrap(i: OptionalIndex) ?Index {
-            return if (i == .none) null else @enumFromInt(@intFromEnum(i));
+            return if (i == .none) null else @fromBackingInt(@intCast(@backingInt(i)));
         }
     };
 
@@ -565,11 +565,11 @@ pub const Node = struct {
         error_field,
 
         pub fn isError(tag: Tag) bool {
-            return @intFromEnum(tag) >= @intFromEnum(Tag.error_decl);
+            return @backingInt(tag) >= @backingInt(Tag.error_decl);
         }
 
         pub fn isBinop(tag: Tag) bool {
-            return @intFromEnum(tag) >= @intFromEnum(Tag.add) and @intFromEnum(tag) <= @intFromEnum(Tag.pipe_right);
+            return @backingInt(tag) >= @backingInt(Tag.add) and @backingInt(tag) <= @backingInt(Tag.pipe_right);
         }
 
         pub fn isDecl(tag: Tag) bool {
@@ -656,8 +656,8 @@ pub const DeclHeader = struct {
         .equatable_token = .none,
         .doc_start = 0,
         .doc_end = 0,
-        .where_start = @enumFromInt(0),
-        .where_end = @enumFromInt(0),
+        .where_start = @fromBackingInt(@intCast(0)),
+        .where_end = @fromBackingInt(@intCast(0)),
     };
 
     /// The `where` clause's constraints, empty when there is none.
@@ -1065,32 +1065,32 @@ pub inline fn nodeData(tree: *const Ast, node: Node.Index) Node.Data {
 /// The elements of a range, viewed as `T` (`Node.Index` or `TokenIndex`).
 pub fn extraSlice(tree: *const Ast, range: SubRange, comptime T: type) []const T {
     comptime std.debug.assert(@sizeOf(T) == 4);
-    return @ptrCast(tree.extra[@intFromEnum(range.start)..@intFromEnum(range.end)]);
+    return @ptrCast(tree.extra[@backingInt(range.start)..@backingInt(range.end)]);
 }
 
 /// Read a record out of `extra` starting at `index`, field by field. Nested
 /// structs (`DeclHeader` inside a `Definition`) are flattened in order.
 pub fn extraData(tree: *const Ast, index: ExtraIndex, comptime T: type) T {
-    var i: usize = @intFromEnum(index);
+    var i: usize = @backingInt(index);
     return readExtra(tree.extra, &i, T);
 }
 
 fn readExtra(extra: []const u32, i: *usize, comptime T: type) T {
     var result: T = undefined;
-    inline for (std.meta.fields(T)) |field| {
-        @field(result, field.name) = switch (@typeInfo(field.type)) {
-            .@"struct" => readExtra(extra, i, field.type),
+    inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+        @field(result, field_name) = switch (@typeInfo(field_type)) {
+            .@"struct" => readExtra(extra, i, field_type),
             .@"enum" => blk: {
-                const v: field.type = @enumFromInt(extra[i.*]);
+                const v: field_type = @fromBackingInt(@intCast(extra[i.*]));
                 i.* += 1;
                 break :blk v;
             },
             .int => blk: {
-                const v: field.type = extra[i.*];
+                const v: field_type = extra[i.*];
                 i.* += 1;
                 break :blk v;
             },
-            else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+            else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
         };
     }
     return result;
@@ -1099,9 +1099,9 @@ fn readExtra(extra: []const u32, i: *usize, comptime T: type) T {
 /// Number of `u32` words `T` occupies in `extra`.
 pub fn extraLen(comptime T: type) u32 {
     var n: u32 = 0;
-    inline for (std.meta.fields(T)) |field| {
-        n += switch (@typeInfo(field.type)) {
-            .@"struct" => extraLen(field.type),
+    inline for (@typeInfo(T).@"struct".field_types) |field_type| {
+        n += switch (@typeInfo(field_type)) {
+            .@"struct" => extraLen(field_type),
             else => 1,
         };
     }
@@ -1109,11 +1109,11 @@ pub fn extraLen(comptime T: type) u32 {
 }
 
 fn rangeOf(data: Node.Data) SubRange {
-    return .{ .start = @enumFromInt(data.lhs), .end = @enumFromInt(data.rhs) };
+    return .{ .start = @fromBackingInt(@intCast(data.lhs)), .end = @fromBackingInt(@intCast(data.rhs)) };
 }
 
 fn rangeAt(tree: *const Ast, index: u32) SubRange {
-    return tree.extraData(@enumFromInt(index), SubRange);
+    return tree.extraData(@fromBackingInt(@intCast(index)), SubRange);
 }
 
 // ---- Views ------------------------------------------------------------------
@@ -1142,7 +1142,7 @@ pub fn children(tree: *const Ast, node: Node.Index) []const Node.Index {
 /// attach to tokens, and a bool would lose the one in `-- why\nequatable a`.
 pub fn typeVarMarker(tree: *const Ast, node: Node.Index) ?TokenIndex {
     std.debug.assert(tree.nodeTag(node) == .type_var);
-    const o: OptionalTokenIndex = @enumFromInt(tree.nodeData(node).lhs);
+    const o: OptionalTokenIndex = @fromBackingInt(@intCast(tree.nodeData(node).lhs));
     return o.unwrap();
 }
 
@@ -1158,19 +1158,19 @@ pub fn fullWhereConstraint(tree: *const Ast, node: Node.Index) full.WhereConstra
     return .{
         .variable = variable,
         .method = variable + 1,
-        .type_expr = @enumFromInt(tree.nodeData(node).lhs),
+        .type_expr = @fromBackingInt(@intCast(tree.nodeData(node).lhs)),
     };
 }
 
 /// The visibility and doc range of any declaration tag.
 pub fn declHeader(tree: *const Ast, node: Node.Index) DeclHeader {
     std.debug.assert(tree.nodeTag(node).isDecl());
-    return tree.extraData(@enumFromInt(tree.nodeData(node).lhs), DeclHeader);
+    return tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), DeclHeader);
 }
 
 pub fn fullImport(tree: *const Ast, node: Node.Index) full.Import {
     std.debug.assert(tree.nodeTag(node) == .import);
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), Import);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), Import);
     return .{
         .import_token = tree.nodeMainToken(node),
         .name = d.name.unwrap(),
@@ -1184,39 +1184,39 @@ pub fn fullAnnotation(tree: *const Ast, node: Node.Index) full.Annotation {
     std.debug.assert(tree.nodeTag(node) == .annotation);
     const data = tree.nodeData(node);
     return .{
-        .header = tree.extraData(@enumFromInt(data.lhs), DeclHeader),
+        .header = tree.extraData(@fromBackingInt(@intCast(data.lhs)), DeclHeader),
         .name = tree.nodeMainToken(node),
-        .type_expr = @enumFromInt(data.rhs),
+        .type_expr = @fromBackingInt(@intCast(data.rhs)),
     };
 }
 
 pub fn fullDefinition(tree: *const Ast, node: Node.Index) full.Definition {
     std.debug.assert(tree.nodeTag(node) == .definition);
     const data = tree.nodeData(node);
-    const d = tree.extraData(@enumFromInt(data.lhs), Definition);
+    const d = tree.extraData(@fromBackingInt(@intCast(data.lhs)), Definition);
     return .{
         .header = d.header,
         .name = tree.nodeMainToken(node),
         .params = tree.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Node.Index),
-        .body = @enumFromInt(data.rhs),
+        .body = @fromBackingInt(@intCast(data.rhs)),
     };
 }
 
 pub fn fullTypeAlias(tree: *const Ast, node: Node.Index) full.TypeAlias {
     std.debug.assert(tree.nodeTag(node) == .type_alias);
     const data = tree.nodeData(node);
-    const d = tree.extraData(@enumFromInt(data.lhs), TypeAlias);
+    const d = tree.extraData(@fromBackingInt(@intCast(data.lhs)), TypeAlias);
     return .{
         .header = d.header,
         .name = tree.nodeMainToken(node),
         .params = tree.extraSlice(.{ .start = d.params_start, .end = d.params_end }, TokenIndex),
-        .body = @enumFromInt(data.rhs),
+        .body = @fromBackingInt(@intCast(data.rhs)),
     };
 }
 
 pub fn fullTypeDecl(tree: *const Ast, node: Node.Index) full.TypeDecl {
     std.debug.assert(tree.nodeTag(node) == .type_decl);
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), TypeDecl);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), TypeDecl);
     return .{
         .header = d.header,
         .name = tree.nodeMainToken(node),
@@ -1229,15 +1229,15 @@ pub fn fullForeignValue(tree: *const Ast, node: Node.Index) full.ForeignValue {
     std.debug.assert(tree.nodeTag(node) == .foreign_value);
     const data = tree.nodeData(node);
     return .{
-        .header = tree.extraData(@enumFromInt(data.lhs), DeclHeader),
+        .header = tree.extraData(@fromBackingInt(@intCast(data.lhs)), DeclHeader),
         .name = tree.nodeMainToken(node),
-        .type_expr = @enumFromInt(data.rhs),
+        .type_expr = @fromBackingInt(@intCast(data.rhs)),
     };
 }
 
 pub fn fullForeignType(tree: *const Ast, node: Node.Index) full.ForeignType {
     std.debug.assert(tree.nodeTag(node) == .foreign_type);
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), ForeignType);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), ForeignType);
     return .{
         .header = d.header,
         .name = tree.nodeMainToken(node),
@@ -1247,7 +1247,7 @@ pub fn fullForeignType(tree: *const Ast, node: Node.Index) full.ForeignType {
 
 pub fn fullSchemaDecl(tree: *const Ast, node: Node.Index) full.SchemaDecl {
     std.debug.assert(tree.nodeTag(node) == .schema_decl);
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), SchemaDecl);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), SchemaDecl);
     return .{
         .header = d.header,
         .name = tree.nodeMainToken(node),
@@ -1258,7 +1258,7 @@ pub fn fullSchemaDecl(tree: *const Ast, node: Node.Index) full.SchemaDecl {
 
 pub fn fullSchemaField(tree: *const Ast, node: Node.Index) full.SchemaField {
     std.debug.assert(tree.nodeTag(node) == .schema_field or tree.nodeTag(node) == .schema_value);
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), SchemaField);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), SchemaField);
     return .{
         .header = d.header,
         .name = tree.nodeMainToken(node),
@@ -1269,7 +1269,7 @@ pub fn fullSchemaField(tree: *const Ast, node: Node.Index) full.SchemaField {
 
 pub fn fullSchemaTagged(tree: *const Ast, node: Node.Index) full.SchemaTagged {
     std.debug.assert(tree.nodeTag(node) == .schema_tagged);
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), SchemaTagged);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), SchemaTagged);
     return .{
         .discriminator = d.discriminator,
         .variants = tree.extraSlice(.{ .start = d.variants_start, .end = d.variants_end }, Node.Index),
@@ -1278,7 +1278,7 @@ pub fn fullSchemaTagged(tree: *const Ast, node: Node.Index) full.SchemaTagged {
 
 pub fn fullSchemaVariant(tree: *const Ast, node: Node.Index) full.SchemaVariant {
     std.debug.assert(tree.nodeTag(node) == .schema_variant);
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), SchemaVariant);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), SchemaVariant);
     return .{
         .name = tree.nodeMainToken(node),
         .payload = d.payload.unwrap(),
@@ -1302,7 +1302,7 @@ pub fn fullTypeFn(tree: *const Ast, node: Node.Index) full.TypeFn {
     return .{
         .arrow = tree.nodeMainToken(node),
         .params = tree.extraSlice(tree.rangeAt(data.lhs), Node.Index),
-        .result = @enumFromInt(data.rhs),
+        .result = @fromBackingInt(@intCast(data.rhs)),
     };
 }
 
@@ -1335,7 +1335,7 @@ pub fn fullApply(tree: *const Ast, node: Node.Index) full.Apply {
 pub fn fullBinop(tree: *const Ast, node: Node.Index) full.Binop {
     std.debug.assert(tree.nodeTag(node).isBinop());
     const data = tree.nodeData(node);
-    return .{ .op_token = tree.nodeMainToken(node), .lhs = @enumFromInt(data.lhs), .rhs = @enumFromInt(data.rhs) };
+    return .{ .op_token = tree.nodeMainToken(node), .lhs = @fromBackingInt(@intCast(data.lhs)), .rhs = @fromBackingInt(@intCast(data.rhs)) };
 }
 
 pub fn fullLambda(tree: *const Ast, node: Node.Index) full.Lambda {
@@ -1344,7 +1344,7 @@ pub fn fullLambda(tree: *const Ast, node: Node.Index) full.Lambda {
     return .{
         .head = tree.nodeMainToken(node),
         .params = tree.extraSlice(tree.rangeAt(data.lhs), Node.Index),
-        .body = @enumFromInt(data.rhs),
+        .body = @fromBackingInt(@intCast(data.rhs)),
     };
 }
 
@@ -1354,15 +1354,15 @@ pub fn fullIf(tree: *const Ast, node: Node.Index) full.If {
     const data = tree.nodeData(node);
     if (tree.nodeTag(node) == .if_then) return .{
         .if_token = tree.nodeMainToken(node),
-        .cond = @enumFromInt(data.lhs),
-        .then_expr = @enumFromInt(data.rhs),
+        .cond = @fromBackingInt(@intCast(data.lhs)),
+        .then_expr = @fromBackingInt(@intCast(data.rhs)),
         .else_expr = null,
     };
     std.debug.assert(tree.nodeTag(node) == .@"if");
-    const d = tree.extraData(@enumFromInt(data.rhs), If);
+    const d = tree.extraData(@fromBackingInt(@intCast(data.rhs)), If);
     return .{
         .if_token = tree.nodeMainToken(node),
-        .cond = @enumFromInt(data.lhs),
+        .cond = @fromBackingInt(@intCast(data.lhs)),
         .then_expr = d.then_expr,
         .else_expr = d.else_expr,
     };
@@ -1376,7 +1376,7 @@ pub fn fullLet(tree: *const Ast, node: Node.Index) full.Let {
     return .{
         .let_token = tree.nodeMainToken(node),
         .bindings = tree.extraSlice(tree.rangeAt(data.lhs), Node.Index),
-        .body = @enumFromInt(data.rhs),
+        .body = @fromBackingInt(@intCast(data.rhs)),
     };
 }
 
@@ -1386,7 +1386,7 @@ pub fn fullLetDef(tree: *const Ast, node: Node.Index) full.LetDef {
     return .{
         .name = tree.nodeMainToken(node),
         .params = tree.extraSlice(tree.rangeAt(data.lhs), Node.Index),
-        .body = @enumFromInt(data.rhs),
+        .body = @fromBackingInt(@intCast(data.rhs)),
     };
 }
 
@@ -1395,7 +1395,7 @@ pub fn fullLetDef(tree: *const Ast, node: Node.Index) full.LetDef {
 pub fn fullLetPattern(tree: *const Ast, node: Node.Index) full.LetPattern {
     std.debug.assert(tree.nodeTag(node) == .let_pattern or tree.nodeTag(node) == .let_bind);
     const data = tree.nodeData(node);
-    return .{ .pattern = @enumFromInt(data.lhs), .value = @enumFromInt(data.rhs) };
+    return .{ .pattern = @fromBackingInt(@intCast(data.lhs)), .value = @fromBackingInt(@intCast(data.rhs)) };
 }
 
 pub fn fullCase(tree: *const Ast, node: Node.Index) full.Case {
@@ -1403,7 +1403,7 @@ pub fn fullCase(tree: *const Ast, node: Node.Index) full.Case {
     const data = tree.nodeData(node);
     return .{
         .case_token = tree.nodeMainToken(node),
-        .scrutinee = @enumFromInt(data.lhs),
+        .scrutinee = @fromBackingInt(@intCast(data.lhs)),
         .branches = tree.extraSlice(tree.rangeAt(data.rhs), Node.Index),
     };
 }
@@ -1411,7 +1411,7 @@ pub fn fullCase(tree: *const Ast, node: Node.Index) full.Case {
 pub fn fullBranch(tree: *const Ast, node: Node.Index) full.Branch {
     std.debug.assert(tree.nodeTag(node) == .branch);
     const data = tree.nodeData(node);
-    return .{ .pattern = @enumFromInt(data.lhs), .body = @enumFromInt(data.rhs) };
+    return .{ .pattern = @fromBackingInt(@intCast(data.lhs)), .body = @fromBackingInt(@intCast(data.rhs)) };
 }
 
 pub fn fullString(tree: *const Ast, node: Node.Index) full.String {
@@ -1437,12 +1437,12 @@ pub fn fullPatRecord(tree: *const Ast, node: Node.Index) full.PatRecord {
 pub fn fullPatAs(tree: *const Ast, node: Node.Index) full.PatAs {
     std.debug.assert(tree.nodeTag(node) == .pat_as);
     const data = tree.nodeData(node);
-    return .{ .pattern = @enumFromInt(data.lhs), .name = data.rhs };
+    return .{ .pattern = @fromBackingInt(@intCast(data.lhs)), .name = data.rhs };
 }
 
 pub fn fullMarkup(tree: *const Ast, node: Node.Index) full.Markup {
     std.debug.assert(tree.nodeTag(node).isMarkup());
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), Markup);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), Markup);
     return .{
         .open = tree.nodeMainToken(node),
         .name = d.name.unwrap(),
@@ -1457,7 +1457,7 @@ pub fn fullMarkup(tree: *const Ast, node: Node.Index) full.Markup {
 pub fn fullMarkupAttr(tree: *const Ast, node: Node.Index) full.MarkupAttr {
     const data = tree.nodeData(node);
     if (tree.nodeTag(node) == .markup_attr_escape) {
-        const d = tree.extraData(@enumFromInt(data.lhs), MarkupAttrEscape);
+        const d = tree.extraData(@fromBackingInt(@intCast(data.lhs)), MarkupAttrEscape);
         return .{
             .name = tree.nodeMainToken(node),
             .name_string = d.name,
@@ -1466,7 +1466,7 @@ pub fn fullMarkupAttr(tree: *const Ast, node: Node.Index) full.MarkupAttr {
         };
     }
     std.debug.assert(tree.nodeTag(node) == .markup_attr);
-    const value: Node.OptionalIndex = @enumFromInt(data.lhs);
+    const value: Node.OptionalIndex = @fromBackingInt(@intCast(data.lhs));
     return .{
         .name = tree.nodeMainToken(node),
         .name_string = null,
@@ -1477,7 +1477,7 @@ pub fn fullMarkupAttr(tree: *const Ast, node: Node.Index) full.MarkupAttr {
 
 pub fn fullVocab(tree: *const Ast, node: Node.Index) full.VocabDecl {
     std.debug.assert(tree.nodeTag(node).isVocab());
-    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), VocabDecl);
+    const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), VocabDecl);
     const name = tree.nodeMainToken(node);
     return .{
         .header = d.header,
@@ -1495,7 +1495,7 @@ pub fn fullError(tree: *const Ast, node: Node.Index) full.ErrorNode {
     const data = tree.nodeData(node);
     return .{
         .token = tree.nodeMainToken(node),
-        .code = @enumFromInt(data.lhs),
+        .code = @fromBackingInt(@intCast(data.lhs)),
         .error_index = if (data.rhs == std.math.maxInt(u32)) null else data.rhs,
     };
 }
@@ -1509,7 +1509,7 @@ pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
         .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .stmt, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
         else => unreachable, // not a one-operand node
     }
-    return @enumFromInt(tree.nodeData(node).lhs);
+    return @fromBackingInt(@intCast(tree.nodeData(node).lhs));
 }
 
 // ---------------------------------------------------------------------------
@@ -1529,19 +1529,19 @@ test "extraData flattens nested headers and extraLen agrees" {
     const words = [_]u32{ 7, none_token, 3, 2, 5, 0, 0, 10, 12 };
     var tree: Ast = empty;
     tree.extra = &words;
-    const d = tree.extraData(@enumFromInt(0), Definition);
+    const d = tree.extraData(@fromBackingInt(@intCast(0)), Definition);
     try testing.expectEqual(@as(?TokenIndex, 7), d.header.pub_token.unwrap());
     try testing.expectEqual(@as(?TokenIndex, null), d.header.opaque_token.unwrap());
     try testing.expectEqual(@as(?TokenIndex, 3), d.header.equatable_token.unwrap());
     try testing.expectEqual(@as(u32, 2), d.header.doc_start);
     try testing.expectEqual(@as(u32, 5), d.header.doc_end);
-    try testing.expectEqual(@as(u32, 10), @intFromEnum(d.params_start));
-    try testing.expectEqual(@as(u32, 12), @intFromEnum(d.params_end));
+    try testing.expectEqual(@as(u32, 10), @backingInt(d.params_start));
+    try testing.expectEqual(@as(u32, 12), @backingInt(d.params_end));
 }
 
 test "every operator token maps to a binop tag and back" {
-    inline for (@typeInfo(Token.Tag).@"enum".fields) |field| {
-        const token: Token.Tag = @enumFromInt(field.value);
+    inline for (@typeInfo(Token.Tag).@"enum".field_values) |field_value| {
+        const token: Token.Tag = @fromBackingInt(@intCast(field_value));
         const mapped = Node.Tag.fromOperator(token);
         try testing.expectEqual(token.isOperator(), mapped != null);
         if (mapped) |tag| try testing.expect(tag.isBinop());

@@ -84,7 +84,7 @@ pub fn graph(p: *const TestProject) *const Graph {
 /// The module named `name`, whatever package it is in.
 pub fn module(p: *const TestProject, name: []const u8) ?Graph.Index {
     for (0..p.session.graph.count()) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         if (std.mem.eql(u8, p.session.interner.slice(p.session.graph.moduleName(m)), name)) return m;
     }
     return null;

@@ -124,26 +124,26 @@ pub const Tree = struct {
 
     /// Whether value `v` is the same on every evaluation (`constant`).
     pub fn isConstant(t: *const Tree, v: Value.Index) bool {
-        const at = @intFromEnum(v);
+        const at = @backingInt(v);
         return at < t.constant.len and t.constant[at];
     }
 
     /// Whether value `v` reads only its row's item (`item_only`).
     pub fn itemOnly(t: *const Tree, v: Value.Index) bool {
-        const at = @intFromEnum(v);
+        const at = @backingInt(v);
         return at < t.item_only.len and t.item_only[at];
     }
 
     pub fn root(t: *const Tree, i: Root.Index) Root {
-        return t.roots[@intFromEnum(i)];
+        return t.roots[@backingInt(i)];
     }
 
     pub fn row(t: *const Tree, i: Row.Index) Row {
-        return t.rows[@intFromEnum(i)];
+        return t.rows[@backingInt(i)];
     }
 
     pub fn kind(t: *const Tree, n: Node.Index) Node.Kind {
-        return t.nodes[@intFromEnum(n)].kind;
+        return t.nodes[@backingInt(n)].kind;
     }
 
     pub fn element(t: *const Tree, n: Node.Index) Element {
@@ -195,19 +195,19 @@ pub const Tree = struct {
     }
 
     pub fn elementFacts(t: *const Tree, r: ElementRow) ElementFacts {
-        return t.vocabulary.elements[@intFromEnum(r)];
+        return t.vocabulary.elements[@backingInt(r)];
     }
 
     pub fn attributeFacts(t: *const Tree, r: AttributeRow) AttributeFacts {
-        return t.vocabulary.attributes[@intFromEnum(r)];
+        return t.vocabulary.attributes[@backingInt(r)];
     }
 
     pub fn eventFacts(t: *const Tree, r: EventRow) EventFacts {
-        return t.vocabulary.events[@intFromEnum(r)];
+        return t.vocabulary.events[@backingInt(r)];
     }
 
     fn payload(t: *const Tree, n: Node.Index, expected: Node.Kind) u32 {
-        const node = t.nodes[@intFromEnum(n)];
+        const node = t.nodes[@backingInt(n)];
         std.debug.assert(node.kind == expected);
         return node.payload;
     }
@@ -394,7 +394,7 @@ pub const Value = struct {
 
         pub fn at(r: Value.Range, i: u32) Value.Index {
             std.debug.assert(i < r.len);
-            return @enumFromInt(r.start + i);
+            return @fromBackingInt(@intCast(r.start + i));
         }
     };
 };
@@ -409,7 +409,7 @@ pub const Strings = struct {
     pub const Span = struct { start: u32, len: u32 };
 
     pub fn get(s: *const Strings, i: Index) []const u8 {
-        const span = s.spans[@intFromEnum(i)];
+        const span = s.spans[@backingInt(i)];
         return s.bytes[span.start..][0..span.len];
     }
 };

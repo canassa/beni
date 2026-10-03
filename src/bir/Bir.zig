@@ -120,11 +120,11 @@ pub const Inst = struct {
         _,
 
         pub inline fn int(i: Index) u32 {
-            return @intFromEnum(i);
+            return @backingInt(i);
         }
 
         pub fn toOptional(i: Index) OptionalIndex {
-            const o: OptionalIndex = @enumFromInt(@intFromEnum(i));
+            const o: OptionalIndex = @fromBackingInt(@intCast(@backingInt(i)));
             std.debug.assert(o != .none);
             return o;
         }
@@ -135,7 +135,7 @@ pub const Inst = struct {
         _,
 
         pub inline fn unwrap(o: OptionalIndex) ?Index {
-            return if (o == .none) null else @enumFromInt(@intFromEnum(o));
+            return if (o == .none) null else @fromBackingInt(@intCast(@backingInt(o)));
         }
     };
 
@@ -415,17 +415,17 @@ pub const Inst = struct {
         @"error",
 
         pub fn isPattern(tag: Tag) bool {
-            return @intFromEnum(tag) >= @intFromEnum(Tag.pat_wild) and @intFromEnum(tag) <= @intFromEnum(Tag.pat_as);
+            return @backingInt(tag) >= @backingInt(Tag.pat_wild) and @backingInt(tag) <= @backingInt(Tag.pat_as);
         }
 
         pub fn isType(tag: Tag) bool {
-            return @intFromEnum(tag) >= @intFromEnum(Tag.type_var) and @intFromEnum(tag) <= @intFromEnum(Tag.type_record_ext);
+            return @backingInt(tag) >= @backingInt(Tag.type_var) and @backingInt(tag) <= @backingInt(Tag.type_record_ext);
         }
 
         /// The unresolved `(module symbol, name symbol)` forms lowering
         /// produces, which `Resolve` rewrites and nothing after it sees.
         pub inline fn isUnresolved(tag: Tag) bool {
-            return unresolved_tags[@intFromEnum(tag)];
+            return unresolved_tags[@backingInt(tag)];
         }
 
         const unresolved_tags = set(&.{
@@ -447,9 +447,9 @@ pub const Inst = struct {
         /// `switch` with an `else` prong, which Zig's own backend — the one
         /// that builds the tests' compiler — compiles to a check of the
         /// operand against every tag, once per instruction.
-        pub fn set(comptime tags: []const Tag) [@typeInfo(Tag).@"enum".fields.len]bool {
-            var out: [@typeInfo(Tag).@"enum".fields.len]bool = @splat(false);
-            for (tags) |t| out[@intFromEnum(t)] = true;
+        pub fn set(comptime tags: []const Tag) [@typeInfo(Tag).@"enum".field_names.len]bool {
+            var out: [@typeInfo(Tag).@"enum".field_names.len]bool = @splat(false);
+            for (tags) |t| out[@backingInt(t)] = true;
             return out;
         }
     };
@@ -488,10 +488,10 @@ pub const SubRange = struct {
     start: ExtraIndex,
     end: ExtraIndex,
 
-    pub const empty: SubRange = .{ .start = @enumFromInt(0), .end = @enumFromInt(0) };
+    pub const empty: SubRange = .{ .start = @fromBackingInt(@intCast(0)), .end = @fromBackingInt(@intCast(0)) };
 
     pub fn len(r: SubRange) u32 {
-        return @intFromEnum(r.end) - @intFromEnum(r.start);
+        return @backingInt(r.end) - @backingInt(r.start);
     }
 };
 
@@ -501,7 +501,7 @@ pub const SymbolIndex = enum(u32) {
     _,
 
     pub fn unwrap(s: SymbolIndex) ?u32 {
-        return if (s == .none) null else @intFromEnum(s);
+        return if (s == .none) null else @backingInt(s);
     }
 };
 
@@ -509,7 +509,7 @@ pub const DeclIndex = enum(u32) {
     _,
 
     pub inline fn int(i: DeclIndex) u32 {
-        return @intFromEnum(i);
+        return @backingInt(i);
     }
 };
 
@@ -517,7 +517,7 @@ pub const CtorIndex = enum(u32) {
     _,
 
     pub inline fn int(i: CtorIndex) u32 {
-        return @intFromEnum(i);
+        return @backingInt(i);
     }
 };
 
@@ -894,7 +894,7 @@ pub const FactWord = enum(u32) {
 
 /// The kind of the markup node record at `index`.
 pub fn markupKind(bir: *const Bir, index: ExtraIndex) MarkupKind {
-    return @enumFromInt(bir.extra[@intFromEnum(index)]);
+    return @fromBackingInt(@intCast(bir.extra[@backingInt(index)]));
 }
 
 /// Append the value instructions of the markup tree whose root record is
@@ -925,7 +925,7 @@ pub fn markupValues(bir: *const Bir, gpa: Allocator, root: ExtraIndex, out: *std
             for ([_]Inst.OptionalIndex{ f.list, f.keyed, f.fallback }) |v| {
                 if (v.unwrap()) |i| try out.append(gpa, i);
             }
-            if (f.row != none_extra) try out.append(gpa, bir.extraData(@enumFromInt(f.row), MarkupRow).function);
+            if (f.row != none_extra) try out.append(gpa, bir.extraData(@fromBackingInt(@intCast(f.row)), MarkupRow).function);
         },
     }
 }
@@ -956,7 +956,7 @@ pub const Rung = enum(u8) {
     }
 
     pub fn join(a: Rung, b: Rung) Rung {
-        return @enumFromInt(@max(@intFromEnum(a), @intFromEnum(b)));
+        return @fromBackingInt(@intCast(@max(@backingInt(a), @backingInt(b))));
     }
 };
 
@@ -1246,7 +1246,7 @@ pub fn deinit(bir: *Bir, gpa: Allocator) void {
 /// session's global one (frontend.md §3.3). One loop, because `symbols` is
 /// the only column that holds a symbol.
 pub fn applyRemap(bir: *Bir, remap: []const Symbol) void {
-    for (bir.symbols) |*s| s.* = remap[@intFromEnum(s.*)];
+    for (bir.symbols) |*s| s.* = remap[@backingInt(s.*)];
 }
 
 // ---- Invariants -------------------------------------------------------------
@@ -1296,8 +1296,8 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
         if (!inRange(d.refs_start, d.refs_end, bir.refs.len)) return false;
         if (!inRange(d.ctors_start, d.ctors_end, bir.ctors.len)) return false;
         if (!inRange(d.type_params_start, d.type_params_end, bir.symbols.len)) return false;
-        if (!inRange(@intFromEnum(d.params_start), @intFromEnum(d.params_end), bir.extra.len)) return false;
-        if (!inRange(@intFromEnum(d.where_start), @intFromEnum(d.where_end), bir.extra.len)) return false;
+        if (!inRange(@backingInt(d.params_start), @backingInt(d.params_end), bir.extra.len)) return false;
+        if (!inRange(@backingInt(d.where_start), @backingInt(d.where_end), bir.extra.len)) return false;
         if (!validSymbol(d.name, symbols_len)) return false;
         if (!validOptionalInst(d.annotation, insts_len)) return false;
         if (!validOptionalInst(d.body, insts_len)) return false;
@@ -1305,9 +1305,9 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
         if (d.name_token >= token_count) return false;
         var schema_i = d.inst_start.int();
         while (schema_i < d.inst_end.int()) : (schema_i += 1) {
-            if (!verifySchemaInst(bir, d, @enumFromInt(schema_i), symbols_len)) return false;
-            if (bir.instTag(@enumFromInt(schema_i)) == .markup and
-                !verifyMarkup(bir, d, bir.instData(@enumFromInt(schema_i)).lhs, 0)) return false;
+            if (!verifySchemaInst(bir, d, @fromBackingInt(@intCast(schema_i)), symbols_len)) return false;
+            if (bir.instTag(@fromBackingInt(@intCast(schema_i))) == .markup and
+                !verifyMarkup(bir, d, bir.instData(@fromBackingInt(@intCast(schema_i))).lhs, 0)) return false;
         }
         if (d.kind.isVocab() and !verifyFacts(bir, d, symbols_len)) return false;
     }
@@ -1315,7 +1315,7 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
     for (bir.ctors) |c| {
         if (!validSymbol(c.name, symbols_len)) return false;
         if (c.decl.int() >= bir.decls.len) return false;
-        if (!inRange(@intFromEnum(c.args_start), @intFromEnum(c.args_end), bir.extra.len)) return false;
+        if (!inRange(@backingInt(c.args_start), @backingInt(c.args_end), bir.extra.len)) return false;
         if (c.name_token >= token_count) return false;
     }
     for (bir.locals) |l| {
@@ -1354,7 +1354,7 @@ const schema_inst_tags = Inst.Tag.set(&.{
 });
 
 fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32) bool {
-    if (!schema_inst_tags[@intFromEnum(bir.instTag(inst))]) return true;
+    if (!schema_inst_tags[@backingInt(bir.instTag(inst))]) return true;
     const data = bir.instData(inst);
     return switch (bir.instTag(inst)) {
         .schema_ref, .schema_expr_ref, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => data.lhs < symbols_len,
@@ -1368,7 +1368,7 @@ fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32
             break :blk ref.variant < schemaVariantCount(bir, bir.decls[data.lhs]);
         },
         .schema_parameter => data.lhs < d.params,
-        .schema_primitive => data.lhs <= @intFromEnum(SchemaPrimitive.list),
+        .schema_primitive => data.lhs <= @backingInt(SchemaPrimitive.list),
         .schema_target_top => validSchemaDecl(bir, data.lhs),
         .ext_schema_member, .ext_schema_ctor, .ext_schema_type, .ext_schema_target => true,
         .schema_app => inDecl(d, data.lhs) and verifyInstRangeAt(bir, d, data.rhs),
@@ -1376,13 +1376,13 @@ fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32
         .schema_record => verifyInstRange(bir, d, inlineRange(data)),
         .schema_field => blk: {
             if (data.lhs >= symbols_len or data.rhs > bir.extra.len or extraLen(SchemaField) > bir.extra.len - data.rhs) break :blk false;
-            const field = bir.extraData(@enumFromInt(data.rhs), SchemaField);
+            const field = bir.extraData(@fromBackingInt(@intCast(data.rhs)), SchemaField);
             break :blk inDecl(d, field.operand.int()) and verifyInstRange(bir, d, .{ .start = field.modifiers_start, .end = field.modifiers_end });
         },
         .schema_value, .schema_tagged => inDecl(d, data.lhs) and verifyInstRangeAt(bir, d, data.rhs),
         .schema_variant => blk: {
             if (data.lhs >= symbols_len or data.rhs > bir.extra.len or extraLen(SchemaVariant) > bir.extra.len - data.rhs) break :blk false;
-            const variant = bir.extraData(@enumFromInt(data.rhs), SchemaVariant);
+            const variant = bir.extraData(@fromBackingInt(@intCast(data.rhs)), SchemaVariant);
             if (variant.payload.unwrap()) |p| if (!inDecl(d, p.int())) break :blk false;
             if (variant.rename.unwrap()) |r| if (!inDecl(d, r.int())) break :blk false;
             break :blk true;
@@ -1397,9 +1397,9 @@ fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32
 /// makes `extraData` safe to call on it.
 fn recordFits(bir: *const Bir, at: u32, comptime T: type) bool {
     if (at > bir.extra.len or extraLen(T) > bir.extra.len - at) return false;
-    inline for (std.meta.fields(T), 0..) |f, k| {
-        switch (@typeInfo(f.type)) {
-            .@"enum" => |e| if (e.is_exhaustive and !validEnum(f.type, bir.extra[at + k])) return false,
+    inline for (@typeInfo(T).@"struct".field_types, 0..) |field_type, k| {
+        switch (@typeInfo(field_type)) {
+            .@"enum" => |e| if (e.mode == .exhaustive and !validEnum(field_type, bir.extra[at + k])) return false,
             else => {},
         }
     }
@@ -1407,8 +1407,8 @@ fn recordFits(bir: *const Bir, at: u32, comptime T: type) bool {
 }
 
 fn validEnum(comptime E: type, raw: u32) bool {
-    inline for (@typeInfo(E).@"enum".fields) |f| {
-        if (f.value == raw) return true;
+    inline for (@typeInfo(E).@"enum".field_values) |field_value| {
+        if (field_value == raw) return true;
     }
     return false;
 }
@@ -1434,55 +1434,55 @@ fn verifyMarkup(bir: *const Bir, d: Decl, at: u32, depth: u32) bool {
     const symbols_len: u32 = @intCast(bir.symbols.len);
     const raw_kind = bir.extra[at];
     if (!validEnum(MarkupKind, raw_kind)) return false;
-    switch (@as(MarkupKind, @enumFromInt(raw_kind))) {
+    switch (@as(MarkupKind, @fromBackingInt(@intCast(raw_kind)))) {
         .element => {
             if (!recordFits(bir, at, MarkupElement)) return false;
-            const e = bir.extraData(@enumFromInt(at), MarkupElement);
+            const e = bir.extraData(@fromBackingInt(@intCast(at)), MarkupElement);
             return validSymbol(e.name, symbols_len) and verifyItems(bir, d, e.items_start, e.items_end) and
                 verifyChildren(bir, d, e.children_start, e.children_end, depth);
         },
         .fragment => {
             if (!recordFits(bir, at, MarkupFragment)) return false;
-            const f = bir.extraData(@enumFromInt(at), MarkupFragment);
+            const f = bir.extraData(@fromBackingInt(@intCast(at)), MarkupFragment);
             return verifyChildren(bir, d, f.children_start, f.children_end, depth);
         },
         .text => {
             if (!recordFits(bir, at, MarkupText)) return false;
-            return validSymbol(bir.extraData(@enumFromInt(at), MarkupText).text, symbols_len);
+            return validSymbol(bir.extraData(@fromBackingInt(@intCast(at)), MarkupText).text, symbols_len);
         },
         .hole => {
             if (!recordFits(bir, at, MarkupHole)) return false;
-            return inDecl(d, bir.extraData(@enumFromInt(at), MarkupHole).value.int());
+            return inDecl(d, bir.extraData(@fromBackingInt(@intCast(at)), MarkupHole).value.int());
         },
         .component => {
             if (!recordFits(bir, at, MarkupComponent)) return false;
-            const c = bir.extraData(@enumFromInt(at), MarkupComponent);
+            const c = bir.extraData(@fromBackingInt(@intCast(at)), MarkupComponent);
             return inDecl(d, c.callee.int()) and validOptionalIn(d, c.spread) and
-                validEnum(ChildrenForm, @intFromEnum(c.children_form)) and
+                validEnum(ChildrenForm, @backingInt(c.children_form)) and
                 verifyItems(bir, d, c.props_start, c.props_end) and
                 verifyChildren(bir, d, c.children_start, c.children_end, depth);
         },
         .@"for", .show => {
             if (!recordFits(bir, at, MarkupForm)) return false;
-            const f = bir.extraData(@enumFromInt(at), MarkupForm);
+            const f = bir.extraData(@fromBackingInt(@intCast(at)), MarkupForm);
             if (!validOptionalIn(d, f.list) or !validOptionalIn(d, f.keyed) or !validOptionalIn(d, f.fallback)) return false;
-            if (!validEnum(KeyMode, @intFromEnum(f.mode))) return false;
+            if (!validEnum(KeyMode, @backingInt(f.mode))) return false;
             if (f.row == none_extra) return true;
             if (!recordFits(bir, f.row, MarkupRow)) return false;
-            const r = bir.extraData(@enumFromInt(f.row), MarkupRow);
-            if (!inDecl(d, r.function.int()) or !validOptionalIn(d, r.body) or !validEnum(RowShape, @intFromEnum(r.shape))) return false;
+            const r = bir.extraData(@fromBackingInt(@intCast(f.row)), MarkupRow);
+            if (!inDecl(d, r.function.int()) or !validOptionalIn(d, r.body) or !validEnum(RowShape, @backingInt(r.shape))) return false;
             if (!verifyInstRange(bir, d, .{ .start = r.lets_start, .end = r.lets_end })) return false;
             const locals = d.locals_end -| d.locals_start;
-            const cs = @intFromEnum(r.captures_start);
-            const ce = @intFromEnum(r.captures_end);
+            const cs = @backingInt(r.captures_start);
+            const ce = @backingInt(r.captures_end);
             if (!inRange(cs, ce, bir.extra.len)) return false;
             for (bir.extra[cs..ce]) |local| if (local >= locals) return false;
-            const is = @intFromEnum(r.inputs_start);
-            const ie = @intFromEnum(r.inputs_end);
+            const is = @backingInt(r.inputs_start);
+            const ie = @backingInt(r.inputs_end);
             if (!inRange(is, ie, bir.extra.len) or (ie - is) % extraLen(MarkupInput) != 0) return false;
             var i = is;
             while (i < ie) : (i += extraLen(MarkupInput)) {
-                const input = bir.extraData(@enumFromInt(i), MarkupInput);
+                const input = bir.extraData(@fromBackingInt(@intCast(i)), MarkupInput);
                 if (input.local >= locals or input.len > max_input_links) return false;
                 for (0..input.len) |k| {
                     const link = input.link(k);
@@ -1495,32 +1495,32 @@ fn verifyMarkup(bir: *const Bir, d: Decl, at: u32, depth: u32) bool {
 }
 
 fn verifyChildren(bir: *const Bir, d: Decl, start: ExtraIndex, end: ExtraIndex, depth: u32) bool {
-    const s = @intFromEnum(start);
-    const e = @intFromEnum(end);
+    const s = @backingInt(start);
+    const e = @backingInt(end);
     if (!inRange(s, e, bir.extra.len)) return false;
     for (bir.extra[s..e]) |c| if (!verifyMarkup(bir, d, c, depth + 1)) return false;
     return true;
 }
 
 fn verifyItems(bir: *const Bir, d: Decl, start: ExtraIndex, end: ExtraIndex) bool {
-    const s = @intFromEnum(start);
-    const e = @intFromEnum(end);
+    const s = @backingInt(start);
+    const e = @backingInt(end);
     if (!inRange(s, e, bir.extra.len)) return false;
     const symbols_len: u32 = @intCast(bir.symbols.len);
     for (bir.extra[s..e]) |at| {
         if (!recordFits(bir, at, MarkupItem)) return false;
-        const item = bir.extraData(@enumFromInt(at), MarkupItem);
-        if (!validEnum(ItemKind, @intFromEnum(item.kind)) or !validEnum(ValueForm, @intFromEnum(item.form)) or
-            !validEnum(Constant, @intFromEnum(item.constant))) return false;
+        const item = bir.extraData(@fromBackingInt(@intCast(at)), MarkupItem);
+        if (!validEnum(ItemKind, @backingInt(item.kind)) or !validEnum(ValueForm, @backingInt(item.form)) or
+            !validEnum(Constant, @backingInt(item.constant))) return false;
         if (!validSymbol(item.name, symbols_len) or !validOptionalIn(d, item.value)) return false;
         if (!inRange(item.constant_offset, item.constant_offset +| item.constant_len, bir.string_bytes.len)) return false;
-        const es = @intFromEnum(item.entries_start);
-        const ee = @intFromEnum(item.entries_end);
+        const es = @backingInt(item.entries_start);
+        const ee = @backingInt(item.entries_end);
         if (!inRange(es, ee, bir.extra.len)) return false;
         for (bir.extra[es..ee]) |e_at| {
             if (!recordFits(bir, e_at, MarkupEntry)) return false;
-            const entry = bir.extraData(@enumFromInt(e_at), MarkupEntry);
-            if (!inDecl(d, entry.value.int()) or !validEnum(Constant, @intFromEnum(entry.constant))) return false;
+            const entry = bir.extraData(@fromBackingInt(@intCast(e_at)), MarkupEntry);
+            if (!inDecl(d, entry.value.int()) or !validEnum(Constant, @backingInt(entry.constant))) return false;
             if (!inRange(entry.name_offset, entry.name_offset +| entry.name_len, bir.string_bytes.len)) return false;
             if (!inRange(entry.constant_offset, entry.constant_offset +| entry.constant_len, bir.string_bytes.len)) return false;
         }
@@ -1531,12 +1531,12 @@ fn verifyItems(bir: *const Bir, d: Decl, start: ExtraIndex, end: ExtraIndex) boo
 /// A vocabulary declaration's facts: whole `VocabFact` records, each word a
 /// fact and each argument a symbol.
 fn verifyFacts(bir: *const Bir, d: Decl, symbols_len: u32) bool {
-    const s = @intFromEnum(d.params_start);
-    const e = @intFromEnum(d.params_end);
+    const s = @backingInt(d.params_start);
+    const e = @backingInt(d.params_end);
     if ((e - s) % extraLen(VocabFact) != 0) return false;
     var i = s;
     while (i < e) : (i += extraLen(VocabFact)) {
-        if (!validEnum(FactWord, bir.extra[i]) or !validSymbol(@enumFromInt(bir.extra[i + 1]), symbols_len)) return false;
+        if (!validEnum(FactWord, bir.extra[i]) or !validSymbol(@fromBackingInt(@intCast(bir.extra[i + 1])), symbols_len)) return false;
     }
     return true;
 }
@@ -1549,13 +1549,13 @@ fn schemaVariantCount(bir: *const Bir, d: Decl) u32 {
     var at = d.schema_body.unwrap() orelse return 0;
     var budget = bir.insts.len + 1;
     while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) switch (bir.instTag(at)) {
-        .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+        .schema_value, .schema_paren => at = @fromBackingInt(@intCast(bir.instData(at).lhs)),
         .schema_tagged => {
             const raw = bir.instData(at).rhs;
             if (raw > bir.extra.len or extraLen(SubRange) > bir.extra.len - raw) return 0;
-            const range = bir.extraData(@enumFromInt(raw), SubRange);
-            const start = @intFromEnum(range.start);
-            const end = @intFromEnum(range.end);
+            const range = bir.extraData(@fromBackingInt(@intCast(raw)), SubRange);
+            const start = @backingInt(range.start);
+            const end = @backingInt(range.end);
             if (!inRange(start, end, bir.extra.len)) return 0;
             return @intCast(end - start);
         },
@@ -1570,12 +1570,12 @@ fn inDecl(d: Decl, raw: u32) bool {
 
 fn verifyInstRangeAt(bir: *const Bir, d: Decl, raw: u32) bool {
     if (raw > bir.extra.len or extraLen(SubRange) > bir.extra.len - raw) return false;
-    return verifyInstRange(bir, d, bir.subRange(@enumFromInt(raw)));
+    return verifyInstRange(bir, d, bir.subRange(@fromBackingInt(@intCast(raw))));
 }
 
 fn verifyInstRange(bir: *const Bir, d: Decl, range: SubRange) bool {
-    const start = @intFromEnum(range.start);
-    const end = @intFromEnum(range.end);
+    const start = @backingInt(range.start);
+    const end = @backingInt(range.end);
     if (!inRange(start, end, bir.extra.len)) return false;
     for (bir.extra[start..end]) |raw| if (!inDecl(d, raw)) return false;
     return true;
@@ -1586,7 +1586,7 @@ fn inRange(start: u32, end: u32, len: usize) bool {
 }
 
 fn validSymbol(index: SymbolIndex, symbols_len: u32) bool {
-    return index == .none or @intFromEnum(index) < symbols_len;
+    return index == .none or @backingInt(index) < symbols_len;
 }
 
 fn validOptionalInst(index: Inst.OptionalIndex, insts_len: u32) bool {
@@ -1603,36 +1603,36 @@ fn validOptionalInst(index: Inst.OptionalIndex, insts_len: u32) bool {
 
 pub inline fn instTag(bir: *const Bir, inst: Inst.Index) Inst.Tag {
     if (inst.int() >= bir.insts.len) unreachable;
-    const tags: [*]const Inst.Tag = @ptrCast(bir.insts.ptrs[@intFromEnum(InstList.Field.tag)]);
+    const tags: [*]const Inst.Tag = @ptrCast(bir.insts.ptrs[@backingInt(InstList.Field.tag)]);
     return tags[inst.int()];
 }
 
 pub inline fn instData(bir: *const Bir, inst: Inst.Index) Inst.Data {
     if (inst.int() >= bir.insts.len) unreachable;
-    const datas: [*]const Inst.Data = @ptrCast(@alignCast(bir.insts.ptrs[@intFromEnum(InstList.Field.data)]));
+    const datas: [*]const Inst.Data = @ptrCast(@alignCast(bir.insts.ptrs[@backingInt(InstList.Field.data)]));
     return datas[inst.int()];
 }
 
 pub inline fn symbol(bir: *const Bir, index: SymbolIndex) Symbol {
-    return bir.symbols[@intFromEnum(index)];
+    return bir.symbols[@backingInt(index)];
 }
 
 /// The elements of a range, viewed as `T` (`Inst.Index`, `u32`, `Field`…).
 pub inline fn extraSlice(bir: *const Bir, range: SubRange, comptime T: type) []const T {
     comptime std.debug.assert(@sizeOf(T) % 4 == 0);
-    const words = bir.extra[@intFromEnum(range.start)..@intFromEnum(range.end)];
+    const words = bir.extra[@backingInt(range.start)..@backingInt(range.end)];
     return @ptrCast(@alignCast(words));
 }
 
 /// Read a record out of `extra` starting at `index`, field by field.
 pub inline fn extraData(bir: *const Bir, index: ExtraIndex, comptime T: type) T {
-    var i: usize = @intFromEnum(index);
+    var i: usize = @backingInt(index);
     var result: T = undefined;
-    inline for (std.meta.fields(T)) |field| {
-        @field(result, field.name) = switch (@typeInfo(field.type)) {
-            .@"enum" => @enumFromInt(bir.extra[i]),
+    inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+        @field(result, field_name) = switch (@typeInfo(field_type)) {
+            .@"enum" => @fromBackingInt(@intCast(bir.extra[i])),
             .int => bir.extra[i],
-            else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+            else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
         };
         i += 1;
     }
@@ -1641,7 +1641,7 @@ pub inline fn extraData(bir: *const Bir, index: ExtraIndex, comptime T: type) T 
 
 /// Number of `u32` words `T` occupies in `extra`.
 pub fn extraLen(comptime T: type) u32 {
-    return @intCast(std.meta.fields(T).len);
+    return @intCast(@typeInfo(T).@"struct".field_names.len);
 }
 
 /// The `SubRange` stored at `index`.
@@ -1651,7 +1651,7 @@ pub inline fn subRange(bir: *const Bir, index: ExtraIndex) SubRange {
 
 /// The range stored inline in `lhs..rhs`.
 pub inline fn inlineRange(data: Inst.Data) SubRange {
-    return .{ .start = @enumFromInt(data.lhs), .end = @enumFromInt(data.rhs) };
+    return .{ .start = @fromBackingInt(@intCast(data.lhs)), .end = @fromBackingInt(@intCast(data.rhs)) };
 }
 
 /// The bytes of a `string`, `chunk`, `pat_string`, `int`, `float` or
@@ -1691,16 +1691,16 @@ pub fn declRefs(bir: *const Bir, d: Decl) []const Ref {
 pub fn operatorSection(bir: *const Bir, inst: Inst.Index, locals_base: u32) ?WellKnown {
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .lambda) return null;
     const data = bir.instData(inst);
-    const params = bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Inst.Index);
+    const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Inst.Index);
     if (params.len != 2) return null;
-    const body: Inst.Index = @enumFromInt(data.rhs);
+    const body: Inst.Index = @fromBackingInt(@intCast(data.rhs));
     if (body.int() >= bir.insts.len or bir.instTag(body) != .method_call) return null;
     for (params) |p| {
         if (p.int() >= bir.insts.len or bir.instTag(p) != .pat_var) return null;
         const local = locals_base + bir.instData(p).lhs;
         if (local >= bir.locals.len or bir.locals[local].kind != .fresh) return null;
     }
-    const m = bir.extraData(@enumFromInt(bir.instData(body).rhs), MethodCall);
+    const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(body).rhs)), MethodCall);
     return if (m.origin == .none) null else m.origin;
 }
 
@@ -1734,27 +1734,27 @@ test "extraData reads records positionally and extraLen agrees" {
     const words = [_]u32{ 3, std.math.maxInt(u32), 7, 9, 5, 6 };
     var bir: Bir = empty;
     bir.extra = &words;
-    const d = bir.extraData(@enumFromInt(0), LetDef);
+    const d = bir.extraData(@fromBackingInt(@intCast(0)), LetDef);
     try testing.expectEqual(@as(u32, 3), d.local);
     try testing.expectEqual(@as(?Inst.Index, null), d.annotation.unwrap());
-    try testing.expectEqual(@as(u32, 7), @intFromEnum(d.params_start));
-    try testing.expectEqual(@as(u32, 9), @intFromEnum(d.params_end));
-    const r = bir.subRange(@enumFromInt(4));
+    try testing.expectEqual(@as(u32, 7), @backingInt(d.params_start));
+    try testing.expectEqual(@as(u32, 9), @backingInt(d.params_end));
+    const r = bir.subRange(@fromBackingInt(@intCast(4)));
     try testing.expectEqual(@as(u32, 1), r.len());
-    const fields = bir.extraSlice(.{ .start = @enumFromInt(2), .end = @enumFromInt(4) }, Field);
+    const fields = bir.extraSlice(.{ .start = @fromBackingInt(@intCast(2)), .end = @fromBackingInt(@intCast(4)) }, Field);
     try testing.expectEqual(@as(usize, 1), fields.len);
-    try testing.expectEqual(@as(u32, 7), @intFromEnum(fields[0].name));
+    try testing.expectEqual(@as(u32, 7), @backingInt(fields[0].name));
     try testing.expectEqual(@as(u32, 9), fields[0].value.int());
 }
 
 test "applyRemap rewrites the symbol column and nothing else needs to know" {
-    var symbols = [_]Symbol{ @enumFromInt(0), @enumFromInt(2), @enumFromInt(1) };
+    var symbols = [_]Symbol{ @fromBackingInt(@intCast(0)), @fromBackingInt(@intCast(2)), @fromBackingInt(@intCast(1)) };
     var bir: Bir = empty;
     bir.symbols = &symbols;
-    bir.applyRemap(&.{ @enumFromInt(10), @enumFromInt(11), @enumFromInt(12) });
-    try testing.expectEqual(@as(Symbol, @enumFromInt(10)), bir.symbol(@enumFromInt(0)));
-    try testing.expectEqual(@as(Symbol, @enumFromInt(12)), bir.symbol(@enumFromInt(1)));
-    try testing.expectEqual(@as(Symbol, @enumFromInt(11)), bir.symbol(@enumFromInt(2)));
+    bir.applyRemap(&.{ @fromBackingInt(@intCast(10)), @fromBackingInt(@intCast(11)), @fromBackingInt(@intCast(12)) });
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(10))), bir.symbol(@fromBackingInt(@intCast(0))));
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(12))), bir.symbol(@fromBackingInt(@intCast(1))));
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(11))), bir.symbol(@fromBackingInt(@intCast(2))));
 }
 
 test "pattern and type tag ranges" {

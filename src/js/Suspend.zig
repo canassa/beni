@@ -108,39 +108,39 @@ pub const Pass = struct {
 
     /// The `SubRange` record at `at`.
     fn rangeAt(p: *const Pass, at: u32) JsIr.SubRange {
-        return .{ .start = @enumFromInt(p.word(at)), .end = @enumFromInt(p.word(at + 1)) };
+        return .{ .start = @fromBackingInt(@intCast(p.word(at))), .end = @fromBackingInt(@intCast(p.word(at + 1))) };
     }
 
     /// A range's nodes, copied: the builder's `extra` moves as it grows.
     fn nodesOf(p: *const Pass, r: JsIr.SubRange) Error![]Node.Index {
-        const words = p.b.extra.items[@intFromEnum(r.start)..@intFromEnum(r.end)];
+        const words = p.b.extra.items[@backingInt(r.start)..@backingInt(r.end)];
         const out = try p.scratch.alloc(Node.Index, words.len);
-        for (out, words) |*o, w| o.* = @enumFromInt(w);
+        for (out, words) |*o, w| o.* = @fromBackingInt(@intCast(w));
         return out;
     }
 
     fn namesOf(p: *const Pass, r: JsIr.SubRange) Error![]NameIndex {
-        const words = p.b.extra.items[@intFromEnum(r.start)..@intFromEnum(r.end)];
+        const words = p.b.extra.items[@backingInt(r.start)..@backingInt(r.end)];
         const out = try p.scratch.alloc(NameIndex, words.len);
-        for (out, words) |*o, w| o.* = @enumFromInt(w);
+        for (out, words) |*o, w| o.* = @fromBackingInt(@intCast(w));
         return out;
     }
 
     fn func(p: *const Pass, at: u32) JsIr.Func {
         return .{
-            .params_start = @enumFromInt(p.word(at)),
-            .params_end = @enumFromInt(p.word(at + 1)),
-            .body_start = @enumFromInt(p.word(at + 2)),
-            .body_end = @enumFromInt(p.word(at + 3)),
+            .params_start = @fromBackingInt(@intCast(p.word(at))),
+            .params_end = @fromBackingInt(@intCast(p.word(at + 1))),
+            .body_start = @fromBackingInt(@intCast(p.word(at + 2))),
+            .body_end = @fromBackingInt(@intCast(p.word(at + 3))),
         };
     }
 
     fn ifOf(p: *const Pass, at: u32) JsIr.If {
         return .{
-            .then_start = @enumFromInt(p.word(at)),
-            .then_end = @enumFromInt(p.word(at + 1)),
-            .else_start = @enumFromInt(p.word(at + 2)),
-            .else_end = @enumFromInt(p.word(at + 3)),
+            .then_start = @fromBackingInt(@intCast(p.word(at))),
+            .then_end = @fromBackingInt(@intCast(p.word(at + 1))),
+            .else_start = @fromBackingInt(@intCast(p.word(at + 2))),
+            .else_end = @fromBackingInt(@intCast(p.word(at + 3))),
         };
     }
 
@@ -151,13 +151,13 @@ pub const Pass = struct {
     }
 
     fn ident(p: *Pass, n: NameIndex, at: u32) Error!Node.Index {
-        return p.add(.ident, at, @intFromEnum(n), 0);
+        return p.add(.ident, at, @backingInt(n), 0);
     }
 
     fn call(p: *Pass, callee: Node.Index, args: []const Node.Index, at: u32) Error!Node.Index {
         const range = try p.b.addRange(args);
         const record = try p.b.addRecord(range);
-        return p.add(.call, at, callee.int(), @intFromEnum(record));
+        return p.add(.call, at, callee.int(), @backingInt(record));
     }
 
     fn arrow(p: *Pass, params: []const NameIndex, body: []const Node.Index, at: u32) Error!Node.Index {
@@ -169,17 +169,17 @@ pub const Pass = struct {
             .body_start = body_range.start,
             .body_end = body_range.end,
         });
-        return p.add(.arrow, at, @intFromEnum(record), Node.arrow_plain);
+        return p.add(.arrow, at, @backingInt(record), Node.arrow_plain);
     }
 
     fn ret(p: *Pass, value: Node.Index, at: u32) Error!Node.Index {
-        return p.add(.return_stmt, at, @intFromEnum(value.toOptional()), 0);
+        return p.add(.return_stmt, at, @backingInt(value.toOptional()), 0);
     }
 
     fn block(p: *Pass, t: Node.Tag, at: u32, lhs: u32, body: []const Node.Index) Error!Node.Index {
         const range = try p.b.addRange(body);
         const record = try p.b.addRecord(range);
-        return p.add(t, at, lhs, @intFromEnum(record));
+        return p.add(t, at, lhs, @backingInt(record));
     }
 
     // ---- Markers ----------------------------------------------------------
@@ -187,10 +187,10 @@ pub const Pass = struct {
     /// The marker call's arguments when `n` is `expr_stmt($$<which>(…))`.
     fn markerArgs(p: *const Pass, n: Node.Index, which: NameIndex) ?JsIr.SubRange {
         if (p.tag(n) != .expr_stmt) return null;
-        const e: Node.Index = @enumFromInt(p.data(n).lhs);
+        const e: Node.Index = @fromBackingInt(@intCast(p.data(n).lhs));
         if (p.tag(e) != .call) return null;
-        const callee: Node.Index = @enumFromInt(p.data(e).lhs);
-        if (p.tag(callee) != .ident or p.data(callee).lhs != @intFromEnum(which)) return null;
+        const callee: Node.Index = @fromBackingInt(@intCast(p.data(e).lhs));
+        if (p.tag(callee) != .ident or p.data(callee).lhs != @backingInt(which)) return null;
         return p.rangeAt(p.data(e).rhs);
     }
 
@@ -199,11 +199,11 @@ pub const Pass = struct {
     }
 
     fn argNode(p: *const Pass, r: JsIr.SubRange, i: u32) Node.Index {
-        return @enumFromInt(p.word(@intFromEnum(r.start) + i));
+        return @fromBackingInt(@intCast(p.word(@backingInt(r.start) + i)));
     }
 
     fn argName(p: *const Pass, r: JsIr.SubRange, i: u32) NameIndex {
-        return @enumFromInt(p.data(p.argNode(r, i)).lhs);
+        return @fromBackingInt(@intCast(p.data(p.argNode(r, i)).lhs));
     }
 
     /// Whether statement `n` holds a marker, or — `continues` — a `continue`
@@ -213,7 +213,7 @@ pub const Pass = struct {
         if (p.isMarker(n)) return true;
         const d = p.data(n);
         switch (p.tag(n)) {
-            .continue_stmt => return continues and p.loop != null and d.lhs == @intFromEnum(p.loop.?.label),
+            .continue_stmt => return continues and p.loop != null and d.lhs == @backingInt(p.loop.?.label),
             .if_stmt => {
                 const i = p.ifOf(d.rhs);
                 return try p.listHolds(try p.nodesOf(i.thenBody()), continues) or try p.listHolds(try p.nodesOf(i.elseBody()), continues);
@@ -252,7 +252,7 @@ pub const Pass = struct {
             // always leaves takes the `try` with it — when nothing catches
             // what it throws, or when the `catch` block always leaves too.
             .try_stmt => {
-                const catches: JsIr.NameIndex = @enumFromInt(p.word(d.rhs + 6));
+                const catches: JsIr.NameIndex = @fromBackingInt(@intCast(p.word(d.rhs + 6)));
                 const body = try p.terminates(try p.nodesOf(p.rangeAt(d.rhs)));
                 const caught = catches == .none or try p.terminates(try p.nodesOf(p.rangeAt(d.rhs + 4)));
                 return (body and caught) or try p.terminates(try p.nodesOf(p.rangeAt(d.rhs + 2)));
@@ -260,7 +260,7 @@ pub const Pass = struct {
             .switch_stmt => {
                 var has_default = false;
                 for (try p.nodesOf(p.rangeAt(d.rhs))) |c| {
-                    if (p.data(c).lhs == @intFromEnum(Node.OptionalIndex.none)) has_default = true;
+                    if (p.data(c).lhs == @backingInt(Node.OptionalIndex.none)) has_default = true;
                     if (!try p.terminates(try p.nodesOf(p.rangeAt(p.data(c).rhs)))) return false;
                 }
                 return has_default;
@@ -304,7 +304,7 @@ pub const Pass = struct {
                     .loop => {
                         // The fast path goes on in place; the slow path's
                         // continuation is a copy that re-enters the loop.
-                        try out.append(p.scratch, try p.add(.const_decl, at, @intFromEnum(temp), call_node.int()));
+                        try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(temp), call_node.int()));
                         const slow_rest = try p.cloneList(rest);
                         const slow = try p.rewrite(slow_rest, .closure);
                         const k = try p.arrow(&.{temp}, slow, at);
@@ -319,7 +319,7 @@ pub const Pass = struct {
                             .else_start = else_range.start,
                             .else_end = else_range.end,
                         });
-                        try out.append(p.scratch, try p.add(.if_stmt, at, parked.int(), @intFromEnum(if_record)));
+                        try out.append(p.scratch, try p.add(.if_stmt, at, parked.int(), @backingInt(if_record)));
                         try out.appendSlice(p.scratch, try p.rewrite(rest, .loop));
                         return out.items;
                     },
@@ -342,7 +342,7 @@ pub const Pass = struct {
                     .closure => {
                         const body = try p.rewrite(rest, .closure);
                         const k = try p.arrow(&.{param}, body, at);
-                        try out.append(p.scratch, try p.add(.const_decl, at, @intFromEnum(j), k.int()));
+                        try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(j), k.int()));
                         try out.appendSlice(p.scratch, try p.rewrite(tree, .closure));
                         return out.items;
                     },
@@ -360,9 +360,9 @@ pub const Pass = struct {
 
     fn isReturnOf(p: *const Pass, n: Node.Index, temp: NameIndex) bool {
         if (p.tag(n) != .return_stmt) return false;
-        const v: Node.OptionalIndex = @enumFromInt(p.data(n).lhs);
+        const v: Node.OptionalIndex = @fromBackingInt(@intCast(p.data(n).lhs));
         const value = v.unwrap() orelse return false;
-        return p.tag(value) == .ident and p.data(value).lhs == @intFromEnum(temp);
+        return p.tag(value) == .ident and p.data(value).lhs == @backingInt(temp);
     }
 
     /// One statement, its lists rewritten when they hold a marker — or, in
@@ -403,7 +403,7 @@ pub const Pass = struct {
                     .else_start = else_range.start,
                     .else_end = else_range.end,
                 });
-                return p.add(.if_stmt, at, d.lhs, @intFromEnum(record));
+                return p.add(.if_stmt, at, d.lhs, @backingInt(record));
             },
             .switch_stmt, .switch_case, .block_stmt => {
                 const body = try p.rewrite(try p.nodesOf(p.rangeAt(d.rhs)), mode);
@@ -423,7 +423,7 @@ pub const Pass = struct {
         for (tree) |n| {
             if (p.joinValue(n, j)) |value| {
                 const at = p.posOf(n);
-                try out.append(p.scratch, try p.add(.const_decl, at, @intFromEnum(param), value.int()));
+                try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(param), value.int()));
                 try out.appendSlice(p.scratch, try p.cloneList(rest));
                 continue;
             }
@@ -442,7 +442,7 @@ pub const Pass = struct {
                         .else_start = else_range.start,
                         .else_end = else_range.end,
                     });
-                    try out.append(p.scratch, try p.add(.if_stmt, at, d.lhs, @intFromEnum(record)));
+                    try out.append(p.scratch, try p.add(.if_stmt, at, d.lhs, @backingInt(record)));
                 },
                 .switch_stmt, .switch_case, .block_stmt => {
                     const body = try p.substituteJoin(try p.nodesOf(p.rangeAt(d.rhs)), j, param, rest);
@@ -457,11 +457,11 @@ pub const Pass = struct {
     /// `value` when `n` is `return $j(value)`.
     fn joinValue(p: *const Pass, n: Node.Index, j: NameIndex) ?Node.Index {
         if (p.tag(n) != .return_stmt) return null;
-        const v: Node.OptionalIndex = @enumFromInt(p.data(n).lhs);
+        const v: Node.OptionalIndex = @fromBackingInt(@intCast(p.data(n).lhs));
         const e = v.unwrap() orelse return null;
         if (p.tag(e) != .call) return null;
-        const callee: Node.Index = @enumFromInt(p.data(e).lhs);
-        if (p.tag(callee) != .ident or p.data(callee).lhs != @intFromEnum(j)) return null;
+        const callee: Node.Index = @fromBackingInt(@intCast(p.data(e).lhs));
+        if (p.tag(callee) != .ident or p.data(callee).lhs != @backingInt(j)) return null;
         const args = p.rangeAt(p.data(e).rhs);
         if (args.len() != 1) return null;
         return p.argNode(args, 0);
@@ -518,30 +518,30 @@ pub const Pass = struct {
             switch (p.tag(x)) {
                 .ident => if (d.lhs < into.bit_length) into.set(d.lhs),
                 .const_decl, .assign_stmt, .index_get => {
-                    if (p.tag(x) != .const_decl) try stack.append(p.scratch, @enumFromInt(d.lhs));
-                    try stack.append(p.scratch, @enumFromInt(d.rhs));
+                    if (p.tag(x) != .const_decl) try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(d.rhs)));
                 },
                 .let_decl, .return_stmt => {
-                    const v: Node.OptionalIndex = @enumFromInt(if (p.tag(x) == .let_decl) d.rhs else d.lhs);
+                    const v: Node.OptionalIndex = @fromBackingInt(@intCast(if (p.tag(x) == .let_decl) d.rhs else d.lhs));
                     if (v.unwrap()) |e| try stack.append(p.scratch, e);
                 },
-                .expr_stmt, .throw_stmt, .spread_property => try stack.append(p.scratch, @enumFromInt(d.lhs)),
-                .member, .unary => try stack.append(p.scratch, @enumFromInt(d.lhs)),
-                .property => try stack.append(p.scratch, @enumFromInt(d.rhs)),
+                .expr_stmt, .throw_stmt, .spread_property => try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs))),
+                .member, .unary => try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs))),
+                .property => try stack.append(p.scratch, @fromBackingInt(@intCast(d.rhs))),
                 .func_decl => try stack.appendSlice(p.scratch, try p.nodesOf(p.func(d.rhs).body())),
                 .arrow => try stack.appendSlice(p.scratch, try p.nodesOf(p.func(d.lhs).body())),
                 .if_stmt => {
                     const i = p.ifOf(d.rhs);
-                    try stack.append(p.scratch, @enumFromInt(d.lhs));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
                     try stack.appendSlice(p.scratch, try p.nodesOf(i.thenBody()));
                     try stack.appendSlice(p.scratch, try p.nodesOf(i.elseBody()));
                 },
                 .switch_stmt => {
-                    try stack.append(p.scratch, @enumFromInt(d.lhs));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
                 },
                 .switch_case => {
-                    const t: Node.OptionalIndex = @enumFromInt(d.lhs);
+                    const t: Node.OptionalIndex = @fromBackingInt(@intCast(d.lhs));
                     if (t.unwrap()) |e| try stack.append(p.scratch, e);
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
                 },
@@ -552,22 +552,22 @@ pub const Pass = struct {
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs + 4)));
                 },
                 .for_of => {
-                    try stack.append(p.scratch, @enumFromInt(p.word(d.rhs)));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(p.word(d.rhs))));
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs + 1)));
                 },
                 .call, .new_call => {
-                    try stack.append(p.scratch, @enumFromInt(d.lhs));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
                 },
                 .object, .array, .template => try stack.appendSlice(p.scratch, try p.nodesOf(JsIr.inlineRange(d))),
                 .cond => {
-                    try stack.append(p.scratch, @enumFromInt(d.lhs));
-                    try stack.append(p.scratch, @enumFromInt(p.word(d.rhs)));
-                    try stack.append(p.scratch, @enumFromInt(p.word(d.rhs + 1)));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(p.word(d.rhs))));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(p.word(d.rhs + 1))));
                 },
                 .binary => {
-                    try stack.append(p.scratch, @enumFromInt(p.word(d.lhs)));
-                    try stack.append(p.scratch, @enumFromInt(p.word(d.lhs + 1)));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(p.word(d.lhs))));
+                    try stack.append(p.scratch, @fromBackingInt(@intCast(p.word(d.lhs + 1))));
                 },
                 else => {},
             }
@@ -603,7 +603,7 @@ pub const Pass = struct {
     }
 
     fn opt(p: *Pass, raw: u32) Error!u32 {
-        const o: Node.OptionalIndex = @enumFromInt(raw);
+        const o: Node.OptionalIndex = @fromBackingInt(@intCast(raw));
         const n = o.unwrap() orelse return raw;
         return (try p.clone(n)).int();
     }
@@ -615,25 +615,25 @@ pub const Pass = struct {
         switch (t) {
             .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .break_stmt, .continue_stmt => return p.add(t, at, d.lhs, d.rhs),
             .const_decl => {
-                const copy = try p.add(t, at, d.lhs, (try p.clone(@enumFromInt(d.rhs))).int());
+                const copy = try p.add(t, at, d.lhs, (try p.clone(@fromBackingInt(@intCast(d.rhs)))).int());
                 if (p.keep) |keep| if (std.mem.indexOfScalar(Node.Index, keep.items, n) != null) try keep.append(p.scratch, copy);
                 return copy;
             },
-            .property => return p.add(t, at, d.lhs, (try p.clone(@enumFromInt(d.rhs))).int()),
+            .property => return p.add(t, at, d.lhs, (try p.clone(@fromBackingInt(@intCast(d.rhs)))).int()),
             .let_decl => return p.add(t, at, d.lhs, try p.opt(d.rhs)),
             .return_stmt => return p.add(t, at, try p.opt(d.lhs), d.rhs),
             .assign_stmt, .index_get => {
-                const lhs = try p.clone(@enumFromInt(d.lhs));
-                const rhs = try p.clone(@enumFromInt(d.rhs));
+                const lhs = try p.clone(@fromBackingInt(@intCast(d.lhs)));
+                const rhs = try p.clone(@fromBackingInt(@intCast(d.rhs)));
                 return p.add(t, at, lhs.int(), rhs.int());
             },
-            .expr_stmt, .throw_stmt, .spread_property => return p.add(t, at, (try p.clone(@enumFromInt(d.lhs))).int(), d.rhs),
-            .member, .unary => return p.add(t, at, (try p.clone(@enumFromInt(d.lhs))).int(), d.rhs),
-            .func_decl, .gen_decl => return p.add(t, at, d.lhs, @intFromEnum(try p.cloneFunc(d.rhs))),
-            .arrow => return p.add(t, at, @intFromEnum(try p.cloneFunc(d.lhs)), d.rhs),
+            .expr_stmt, .throw_stmt, .spread_property => return p.add(t, at, (try p.clone(@fromBackingInt(@intCast(d.lhs)))).int(), d.rhs),
+            .member, .unary => return p.add(t, at, (try p.clone(@fromBackingInt(@intCast(d.lhs)))).int(), d.rhs),
+            .func_decl, .gen_decl => return p.add(t, at, d.lhs, @backingInt(try p.cloneFunc(d.rhs))),
+            .arrow => return p.add(t, at, @backingInt(try p.cloneFunc(d.lhs)), d.rhs),
             .if_stmt => {
                 const i = p.ifOf(d.rhs);
-                const cond = try p.clone(@enumFromInt(d.lhs));
+                const cond = try p.clone(@fromBackingInt(@intCast(d.lhs)));
                 const then = try p.cloneRange(i.thenBody());
                 const otherwise = try p.cloneRange(i.elseBody());
                 const record = try p.b.addRecord(JsIr.If{
@@ -642,21 +642,21 @@ pub const Pass = struct {
                     .else_start = otherwise.start,
                     .else_end = otherwise.end,
                 });
-                return p.add(t, at, cond.int(), @intFromEnum(record));
+                return p.add(t, at, cond.int(), @backingInt(record));
             },
             .switch_stmt => {
-                const disc = try p.clone(@enumFromInt(d.lhs));
+                const disc = try p.clone(@fromBackingInt(@intCast(d.lhs)));
                 const body = try p.cloneRange(p.rangeAt(d.rhs));
-                return p.add(t, at, disc.int(), @intFromEnum(try p.b.addRecord(body)));
+                return p.add(t, at, disc.int(), @backingInt(try p.b.addRecord(body)));
             },
             .switch_case => {
                 const test_raw = try p.opt(d.lhs);
                 const body = try p.cloneRange(p.rangeAt(d.rhs));
-                return p.add(t, at, test_raw, @intFromEnum(try p.b.addRecord(body)));
+                return p.add(t, at, test_raw, @backingInt(try p.b.addRecord(body)));
             },
             .block_stmt, .while_true => {
                 const body = try p.cloneRange(p.rangeAt(d.rhs));
-                return p.add(t, at, d.lhs, @intFromEnum(try p.b.addRecord(body)));
+                return p.add(t, at, d.lhs, @backingInt(try p.b.addRecord(body)));
             },
             .try_stmt => {
                 const body = try p.cloneRange(p.rangeAt(d.rhs));
@@ -669,37 +669,37 @@ pub const Pass = struct {
                     .final_end = final.end,
                     .catch_start = caught.start,
                     .catch_end = caught.end,
-                    .catch_name = @enumFromInt(p.word(d.rhs + 6)),
+                    .catch_name = @fromBackingInt(@intCast(p.word(d.rhs + 6))),
                 });
-                return p.add(t, at, d.lhs, @intFromEnum(record));
+                return p.add(t, at, d.lhs, @backingInt(record));
             },
             .for_of => {
-                const iterable = try p.clone(@enumFromInt(p.word(d.rhs)));
+                const iterable = try p.clone(@fromBackingInt(@intCast(p.word(d.rhs))));
                 const body = try p.cloneRange(p.rangeAt(d.rhs + 1));
                 const record = try p.b.addRecord(JsIr.ForOf{ .iterable = iterable, .body_start = body.start, .body_end = body.end });
-                return p.add(t, at, d.lhs, @intFromEnum(record));
+                return p.add(t, at, d.lhs, @backingInt(record));
             },
             .call, .new_call => {
-                const callee = try p.clone(@enumFromInt(d.lhs));
+                const callee = try p.clone(@fromBackingInt(@intCast(d.lhs)));
                 const args = try p.cloneRange(p.rangeAt(d.rhs));
-                return p.add(t, at, callee.int(), @intFromEnum(try p.b.addRecord(args)));
+                return p.add(t, at, callee.int(), @backingInt(try p.b.addRecord(args)));
             },
             .object, .array, .template => {
                 const r = try p.cloneRange(JsIr.inlineRange(d));
-                return p.add(t, at, @intFromEnum(r.start), @intFromEnum(r.end));
+                return p.add(t, at, @backingInt(r.start), @backingInt(r.end));
             },
             .cond => {
-                const test_node = try p.clone(@enumFromInt(d.lhs));
-                const yes = try p.clone(@enumFromInt(p.word(d.rhs)));
-                const no = try p.clone(@enumFromInt(p.word(d.rhs + 1)));
+                const test_node = try p.clone(@fromBackingInt(@intCast(d.lhs)));
+                const yes = try p.clone(@fromBackingInt(@intCast(p.word(d.rhs))));
+                const no = try p.clone(@fromBackingInt(@intCast(p.word(d.rhs + 1))));
                 const record = try p.b.addRecord(JsIr.Cond{ .consequent = yes, .alternate = no });
-                return p.add(t, at, test_node.int(), @intFromEnum(record));
+                return p.add(t, at, test_node.int(), @backingInt(record));
             },
             .binary => {
-                const left = try p.clone(@enumFromInt(p.word(d.lhs)));
-                const right = try p.clone(@enumFromInt(p.word(d.lhs + 1)));
+                const left = try p.clone(@fromBackingInt(@intCast(p.word(d.lhs))));
+                const right = try p.clone(@fromBackingInt(@intCast(p.word(d.lhs + 1))));
                 const record = try p.b.addRecord(JsIr.Binary{ .left = left, .right = right });
-                return p.add(t, at, @intFromEnum(record), d.rhs);
+                return p.add(t, at, @backingInt(record), d.rhs);
             },
             .import_stmt, .export_stmt => return n,
         }

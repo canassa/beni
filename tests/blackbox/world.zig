@@ -287,7 +287,7 @@ pub const World = struct {
     /// not carry permissions — so a scenario can say so instead of
     /// asserting something the machine will not do.
     pub fn makeUnreadable(world: *World, rel_path: []const u8) !bool {
-        try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0), .{});
+        try world.tmp.dir.setFilePermissions(world.io, rel_path, @fromBackingInt(@intCast(0)), .{});
         _ = world.tmp.dir.readFileAlloc(world.io, rel_path, world.arena.allocator(), .limited(1)) catch return true;
         return false;
     }
@@ -302,7 +302,7 @@ pub const World = struct {
     /// directory exists, so it is not the usage failure, and every write
     /// inside it fails, which is the silent path.
     pub fn makeDirUnwritable(world: *World, rel_path: []const u8) !bool {
-        try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0o555), .{});
+        try world.tmp.dir.setFilePermissions(world.io, rel_path, @fromBackingInt(@intCast(0o555)), .{});
         var probe: [64]u8 = undefined;
         const inside = try std.fmt.bufPrint(&probe, "{s}/probe", .{rel_path});
         world.tmp.dir.writeFile(world.io, .{ .sub_path = inside, .data = "x" }) catch return true;
@@ -317,7 +317,7 @@ pub const World = struct {
     /// Silent on failure, because a test that already failed must not fail
     /// again on the way out.
     pub fn restoreDirMode(world: *World, rel_path: []const u8) void {
-        world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0o755), .{}) catch {};
+        world.tmp.dir.setFilePermissions(world.io, rel_path, @fromBackingInt(@intCast(0o755)), .{}) catch {};
     }
 
     /// Make `rel_path` executable (chmod 755), so a scenario can point a
@@ -325,7 +325,7 @@ pub const World = struct {
     /// plain data file, and a harness that takes a `--beni=<path>` checks
     /// the executable bit before it runs anything.
     pub fn makeExecutable(world: *World, rel_path: []const u8) !void {
-        try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0o755), .{});
+        try world.tmp.dir.setFilePermissions(world.io, rel_path, @fromBackingInt(@intCast(0o755)), .{});
     }
 
     /// The absolute path of the project directory: the SAME directory the
@@ -344,14 +344,14 @@ pub const World = struct {
     /// mode it had" is a claim about an output and belongs in this harness.
     pub fn mode(world: *World, rel_path: []const u8) !u32 {
         const stat = try world.tmp.dir.statFile(world.io, rel_path, .{});
-        return @as(u32, @intCast(@intFromEnum(stat.permissions))) & 0o7777;
+        return @as(u32, @intCast(@backingInt(stat.permissions))) & 0o7777;
     }
 
     /// Set the mode bits of `rel_path`. Returns false when the filesystem
     /// did not take them (a mount without permissions, or root), so a
     /// scenario says so instead of asserting what the machine will not do.
     pub fn setMode(world: *World, rel_path: []const u8, bits: u32) !bool {
-        try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(bits), .{});
+        try world.tmp.dir.setFilePermissions(world.io, rel_path, @fromBackingInt(@intCast(bits)), .{});
         return try world.mode(rel_path) == bits;
     }
 

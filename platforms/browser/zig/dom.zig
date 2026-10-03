@@ -386,7 +386,7 @@ const Gen = struct {
 
     fn names(g: *Gen, site: u32, sub: ?m.Node.Index) !Names {
         if (sub) |n| {
-            const at = @intFromEnum(n);
+            const at = @backingInt(n);
             return .{
                 .kind = try g.print("k{d}n{d}", .{ site, at }),
                 .template = try g.print("t{d}n{d}", .{ site, at }),

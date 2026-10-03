@@ -119,7 +119,7 @@ pub fn write(
             try w.writeByte('\n');
         }
         for (iface.schema_ctors) |ctor| {
-            if (@intFromEnum(ctor.schema) != schema_i) continue;
+            if (@backingInt(ctor.schema) != schema_i) continue;
             try w.print("    ctor {t}.{s}", .{ ctor.endpoint, interner.slice(iface.symbol(ctor.name)) });
             if (ctor.arity != 0) try w.print("/{d}", .{ctor.arity});
             if (ctor.scheme != .none) {
@@ -136,7 +136,7 @@ pub fn write(
         try w.print("value {s}", .{interner.slice(iface.symbol(v.name))});
         if (v.scheme != .none) {
             try w.writeAll(" : ");
-            try writeScheme(w, gpa, iface, type_ids, @enumFromInt(i), types, interner);
+            try writeScheme(w, gpa, iface, type_ids, @fromBackingInt(@intCast(i)), types, interner);
         }
         try w.writeByte('\n');
     }
@@ -156,13 +156,13 @@ pub fn write(
 }
 
 fn writeFacts(w: *std.Io.Writer, iface: *const Interface, interner: *const InternPool.Global, row: Interface.VocabRow) Error!void {
-    inline for (@typeInfo(Bir.FactWord).@"enum".fields) |f| {
-        const word: Bir.FactWord = @enumFromInt(f.value);
+    inline for (@typeInfo(Bir.FactWord).@"enum".field_values) |field_value| {
+        const word: Bir.FactWord = @fromBackingInt(@intCast(field_value));
         if (row.has(word)) {
             try w.print(" {s}", .{word.spelling()});
             switch (word) {
                 .on => for (iface.range(row.on)) |name| {
-                    try w.print(" \"{s}\"", .{interner.slice(iface.symbol(@enumFromInt(name)))});
+                    try w.print(" \"{s}\"", .{interner.slice(iface.symbol(@fromBackingInt(@intCast(name))))});
                 },
                 .property, .name => if (row.arg.unwrap()) |s| try w.print(" \"{s}\"", .{interner.slice(iface.symbol(s))}),
                 .via => if (row.via.unwrap()) |s| try w.print(" {s}", .{interner.slice(iface.symbol(s))}),
@@ -179,10 +179,10 @@ fn writeContext(w: *std.Io.Writer, iface: *const Interface, interner: *const Int
     if (d.status == .private_method or d.status == .requirement) {
         const p = iface.privateCulprit(d.context) orelse return;
         const what = if (d.status == .private_method) "private" else "requirement";
-        return w.print("  {s} {s} type_ref={d} method={s}\n", .{ what, kind, @intFromEnum(p.type_ref), interner.slice(iface.symbol(p.method)) });
+        return w.print("  {s} {s} type_ref={d} method={s}\n", .{ what, kind, @backingInt(p.type_ref), interner.slice(iface.symbol(p.method)) });
     }
     const scheme = iface.contextScheme(d.context);
-    if (scheme != .none) try w.print("  context {s} scheme={d}\n", .{ kind, @intFromEnum(scheme) });
+    if (scheme != .none) try w.print("  context {s} scheme={d}\n", .{ kind, @backingInt(scheme) });
     var k: usize = 0;
     while (Interface.contextEntry(iface, d.context, k)) |entry| : (k += 1) {
         try w.print("  context {s} param={d} method={s}", .{ kind, entry.param, interner.slice(iface.symbol(entry.method)) });
@@ -211,7 +211,7 @@ pub fn writeRaw(
             i,
             interner.slice(iface.symbol(v.name)),
             v.is_foreign,
-            @intFromEnum(v.scheme),
+            @backingInt(v.scheme),
         });
         if (v.is_markup_primitive) try w.writeAll(" markup_primitive=true");
         try w.writeByte('\n');
@@ -224,7 +224,7 @@ pub fn writeRaw(
                 interner.slice(iface.symbol(row.name)),
                 row.facts,
                 row.on,
-                @intFromEnum(row.scheme),
+                @backingInt(row.scheme),
             });
             try writeFacts(w, iface, interner, row);
             try w.writeByte('\n');
@@ -290,7 +290,7 @@ pub fn writeRaw(
         try w.print("ctor {d} {s} type={d} arity={d} arg_terms={d} quantified={d} result={t}\n", .{
             i,
             interner.slice(iface.symbol(c.name)),
-            @intFromEnum(c.type),
+            @backingInt(c.type),
             c.arity,
             c.arg_terms,
             c.quantified_start,
@@ -299,12 +299,12 @@ pub fn writeRaw(
         // A record alias's field names, argument `i` being field `i`
         // (interface v3).
         for (iface.range(c.fields), 0..) |word, f| {
-            try w.print("  field {d} {s}\n", .{ f, interner.slice(iface.symbol(@enumFromInt(word))) });
+            try w.print("  field {d} {s}\n", .{ f, interner.slice(iface.symbol(@fromBackingInt(@intCast(word)))) });
         }
         if (c.arg_terms == Interface.no_terms) continue;
         for (iface.range(c.arg_terms), 0..) |word, a| try w.print("  arg {d} term={d}\n", .{ a, word });
         for (0..t: {
-            const owner = @intFromEnum(c.type);
+            const owner = @backingInt(c.type);
             break :t if (owner < iface.types.len) iface.types[owner].arity else 0;
         }) |q| {
             const info = iface.ctorQuantified(c, @intCast(q));
@@ -329,26 +329,26 @@ pub fn writeRaw(
         try w.print("schema_member {d} {s} schema={d} kind={t} arity={d} visible={} scheme={d}\n", .{
             i,
             interner.slice(iface.symbol(member.name)),
-            @intFromEnum(member.schema),
+            @backingInt(member.schema),
             member.kind,
             member.arity,
             member.visible,
-            @intFromEnum(member.scheme),
+            @backingInt(member.scheme),
         });
     }
     for (iface.schema_ctors, 0..) |ctor, i| {
         try w.print("schema_ctor {d} {s} schema={d} endpoint={t} arity={d} visible={} scheme={d}\n", .{
             i,
             interner.slice(iface.symbol(ctor.name)),
-            @intFromEnum(ctor.schema),
+            @backingInt(ctor.schema),
             ctor.endpoint,
             ctor.arity,
             ctor.visible,
-            @intFromEnum(ctor.scheme),
+            @backingInt(ctor.scheme),
         });
     }
     for (iface.schemes, 0..) |sch, i| {
-        try w.print("scheme {d} body={d} quantified={d}", .{ i, @intFromEnum(sch.body), sch.quantified_count });
+        try w.print("scheme {d} body={d} quantified={d}", .{ i, @backingInt(sch.body), sch.quantified_count });
         // The effect block's offset (transparent-effects-proposal.md §14.6);
         // its words are the `extra` lines below.
         if (sch.effects != Interface.no_terms) try w.print(" effects={d}", .{sch.effects});
@@ -366,7 +366,7 @@ pub fn writeRaw(
             // `--jobs=1` vs `--jobs=8` byte comparison covers it.
             for (0..info.constraints_len) |c| {
                 const qc = iface.quantifiedConstraint(info, @intCast(c));
-                try w.print("    where {s} term={d}\n", .{ interner.slice(iface.symbol(qc.name)), @intFromEnum(qc.type) });
+                try w.print("    where {s} term={d}\n", .{ interner.slice(iface.symbol(qc.name)), @backingInt(qc.type) });
             }
         }
     }
@@ -397,7 +397,7 @@ pub fn writeRaw(
         const words = iface.range(l);
         var f: usize = 0;
         while (f + 1 < words.len) : (f += 2) {
-            try w.print("  field {s} term={d}\n", .{ interner.slice(iface.symbol(@enumFromInt(words[f]))), words[f + 1] });
+            try w.print("  field {s} term={d}\n", .{ interner.slice(iface.symbol(@fromBackingInt(@intCast(words[f])))), words[f + 1] });
         }
     }
     for (iface.extra, 0..) |word, i| try w.print("extra {d} {d}\n", .{ i, word });
@@ -421,7 +421,7 @@ fn writeScheme(
     types: *const Types,
     interner: *const InternPool.Global,
 ) Error!void {
-    const index = iface.values[@intFromEnum(value)].scheme;
+    const index = iface.values[@backingInt(value)].scheme;
     if (index == .none) return w.writeAll("<error>");
     return writeSchemeIndexMaybeExpanded(w, gpa, iface, type_ids, index, types, interner, false);
 }
@@ -448,8 +448,8 @@ fn writeSchemeIndexMaybeExpanded(
     interner: *const InternPool.Global,
     expand_outer_alias: bool,
 ) Error!void {
-    if (@intFromEnum(index) >= iface.schemes.len) return w.writeAll("<error>");
-    const scheme = iface.schemes[@intFromEnum(index)];
+    if (@backingInt(index) >= iface.schemes.len) return w.writeAll("<error>");
+    const scheme = iface.schemes[@backingInt(index)];
     if (iface.term(scheme.body).tag == .err) return w.writeAll("<error>");
     var store: TypeStore = .init(gpa);
     defer store.deinit();
@@ -462,7 +462,7 @@ fn writeSchemeIndexMaybeExpanded(
         iface,
         type_ids,
         &store,
-        @intFromEnum(index),
+        @backingInt(index),
         TypeStore.generalized,
         arena.allocator(),
         &memo,

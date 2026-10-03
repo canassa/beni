@@ -41,7 +41,7 @@ rebuilds.
   Node is today's only platform because it is what the test harness needs, not because it is
   the goal: weigh every design choice — the fiber runtime's scheduler, output size, chunking,
   source maps, what `main` is — by what it does in a browser first.
-- **Compiler**: Zig 0.16, pinned with Node 24 by `flake.nix`; `direnv allow`
+- **Compiler**: Zig 0.17, pinned with Node 24 by `flake.nix`; `direnv allow`
   puts both on `PATH`.
 - **Budgets**: >250k LOC/s cold per core for checking, an 800 ms cold build for
   100k lines ([`fast-compiler.md`](docs/design/fast-compiler.md) §2).
@@ -329,7 +329,7 @@ shortens. Run `zig build gates -Dllvm` when a change could make the two code
 generators disagree (safety checks, undefined-behaviour-shaped code, layouts,
 atomics, recursion depth), before a release, or when the owner asks.
 `test-perf` and `bench` always time a ReleaseFast LLVM beni. Never share one
-Zig cache between git worktrees: with Zig 0.16 a worktree was handed a stale
+Zig cache between git worktrees: a worktree was handed a stale
 binary built from another worktree's sources.
 
 **Every test has a budget of 4 300 million instructions** (about one second of

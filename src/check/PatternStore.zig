@@ -16,7 +16,7 @@ pub const PatIndex = enum(u32) {
     _,
 
     pub fn int(p: PatIndex) u32 {
-        return @intFromEnum(p);
+        return @backingInt(p);
     }
 };
 

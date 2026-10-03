@@ -86,7 +86,7 @@ pub fn write(
             if (number[d] != none) try deps.append(gpa, number[d]);
         }
         std.mem.sort(u32, deps.items, {}, std.sort.asc(u32));
-        try extra.append(extra_gpa, @as(u32, @intFromEnum(class.rung)) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
+        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
         try extra.append(extra_gpa, @intCast(deps.items.len));
         try extra.appendSlice(extra_gpa, deps.items);
     }
@@ -146,8 +146,8 @@ fn walkSites(
             const Sorter = struct {
                 interner: *const InternPool.Global,
                 fn lessThan(ctx: @This(), a: Walk.Stepped, b: Walk.Stepped) bool {
-                    if (a.kind != .field or b.kind != .field) return @intFromEnum(a.kind) < @intFromEnum(b.kind);
-                    return std.mem.lessThan(u8, ctx.interner.slice(@enumFromInt(a.index)), ctx.interner.slice(@enumFromInt(b.index)));
+                    if (a.kind != .field or b.kind != .field) return @backingInt(a.kind) < @backingInt(b.kind);
+                    return std.mem.lessThan(u8, ctx.interner.slice(@fromBackingInt(@intCast(a.index))), ctx.interner.slice(@fromBackingInt(@intCast(b.index))));
                 }
             };
             std.mem.sort(Walk.Stepped, kids.items, Sorter{ .interner = e.interner }, Sorter.lessThan);
@@ -156,12 +156,12 @@ fn walkSites(
             while (i > 0) {
                 i -= 1;
                 const c = kids.items[i];
-                const index: u32 = if (c.kind == .field) try symbol_index(context, @enumFromInt(c.index)) else c.index;
+                const index: u32 = if (c.kind == .field) try symbol_index(context, @fromBackingInt(@intCast(c.index))) else c.index;
                 const path_start: u32 = @intCast(paths.items.len);
                 // Grown first: the parent's path is a run of this same list.
                 try paths.ensureUnusedCapacity(gpa, f.path_len + 1);
                 paths.appendSliceAssumeCapacity(paths.items[f.path_start..][0..f.path_len]);
-                paths.appendAssumeCapacity((@as(u32, @intFromEnum(c.kind)) << 28) | index);
+                paths.appendAssumeCapacity((@as(u32, @backingInt(c.kind)) << 28) | index);
                 try stack.append(gpa, .{ .v = c.v, .path_start = path_start, .path_len = f.path_len + 1 });
             }
         }

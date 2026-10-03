@@ -48,7 +48,7 @@ pub const Constraint = enum(u32) {
     _,
 
     pub fn int(c: Constraint) u32 {
-        return @intFromEnum(c);
+        return @backingInt(c);
     }
 };
 
@@ -234,11 +234,11 @@ pub const Tree = struct {
     pub fn extraData(t: *const Tree, index: u32, comptime T: type) T {
         var i: usize = index;
         var result: T = undefined;
-        inline for (std.meta.fields(T)) |field| {
-            @field(result, field.name) = switch (@typeInfo(field.type)) {
-                .@"enum" => @enumFromInt(t.extra.items[i]),
+        inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+            @field(result, field_name) = switch (@typeInfo(field_type)) {
+                .@"enum" => @fromBackingInt(@intCast(t.extra.items[i])),
                 .int => t.extra.items[i],
-                else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+                else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
             };
             i += 1;
         }
@@ -289,7 +289,7 @@ pub const Generator = struct {
     /// member of the group being generated — its monomorphic variable.
     decl_scheme: []Var.Optional,
     /// The declaration being generated.
-    decl: Bir.DeclIndex = @enumFromInt(0),
+    decl: Bir.DeclIndex = @fromBackingInt(@intCast(0)),
     locals_base: u32 = 0,
     /// The generator's recursion guard: the parser bounds a
     /// declaration at `Parse.max_depth` levels, so a file it accepted
@@ -330,7 +330,7 @@ pub const Generator = struct {
     pub fn called(g: *Generator, callee: Var, site: Bir.Inst.Index) Error!void {
         const ambient = g.ambient orelse return;
         const effects = g.cx.effects orelse return;
-        try effects.call(callee, ambient, .{ .call = @intFromEnum(site), .ambient = g.ambient_site });
+        try effects.call(callee, ambient, .{ .call = @backingInt(site), .ambient = g.ambient_site });
     }
 
     pub const max_depth = Parse.max_depth + 104;
@@ -338,17 +338,17 @@ pub const Generator = struct {
     // ---- Tree building ---------------------------------------------------
 
     pub fn add(g: *Generator, tag: Node.Tag, region: Bir.Inst.Index, a: u32, b: u32, category: Category) Error!Constraint {
-        const index: Constraint = @enumFromInt(g.tree.nodes.len);
+        const index: Constraint = @fromBackingInt(@intCast(g.tree.nodes.len));
         try g.tree.nodes.append(g.gpa, .{ .tag = tag, .category = category, .region = region, .a = a, .b = b });
         return index;
     }
 
     pub fn true_(g: *Generator) Error!Constraint {
-        return g.add(.true_, @enumFromInt(0), 0, 0, .{});
+        return g.add(.true_, @fromBackingInt(@intCast(0)), 0, 0, .{});
     }
 
     pub fn equal(g: *Generator, expected: Var, actual: Var, region: Bir.Inst.Index, category: Category) Error!Constraint {
-        return g.add(.equal, region, @intFromEnum(expected), @intFromEnum(actual), category);
+        return g.add(.equal, region, @backingInt(expected), @backingInt(actual), category);
     }
 
     pub fn conj(g: *Generator, items: []const Constraint) Error!Constraint {
@@ -356,17 +356,17 @@ pub const Generator = struct {
         if (items.len == 1) return items[0];
         const start: u32 = @intCast(g.tree.extra.items.len);
         try g.tree.extra.appendSlice(g.gpa, @ptrCast(items));
-        return g.add(.and_, @enumFromInt(0), start, @intCast(items.len), .{});
+        return g.add(.and_, @fromBackingInt(@intCast(0)), start, @intCast(items.len), .{});
     }
 
     pub fn addExtra(g: *Generator, value: anytype) Error!u32 {
         const T = @TypeOf(value);
         const start: u32 = @intCast(g.tree.extra.items.len);
-        inline for (std.meta.fields(T)) |field| {
-            const word: u32 = switch (@typeInfo(field.type)) {
-                .@"enum" => @intFromEnum(@field(value, field.name)),
-                .int => @field(value, field.name),
-                else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+        inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+            const word: u32 = switch (@typeInfo(field_type)) {
+                .@"enum" => @backingInt(@field(value, field_name)),
+                .int => @field(value, field_name),
+                else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
             };
             try g.tree.extra.append(g.gpa, word);
         }
@@ -375,7 +375,7 @@ pub const Generator = struct {
 
     /// Copy `v`'s scheme into `target` at the use.
     pub fn instantiate(g: *Generator, target: Var, v: Var, region: Bir.Inst.Index, category: Category) Error!Constraint {
-        return g.add(.instantiate, region, @intFromEnum(target), @intFromEnum(v), category);
+        return g.add(.instantiate, region, @backingInt(target), @backingInt(v), category);
     }
 
     // ---- Variables -------------------------------------------------------
@@ -422,7 +422,7 @@ pub const Generator = struct {
     pub fn adoptSince(g: *Generator, mark: u32) Error!void {
         var i = mark;
         while (i < g.cx.store.count()) : (i += 1) {
-            const v: Var = @enumFromInt(i);
+            const v: Var = @fromBackingInt(@intCast(i));
             if (g.cx.store.rank(v) == g.rank) try g.pool.append(g.gpa, v);
         }
     }
@@ -444,7 +444,7 @@ pub const Generator = struct {
 
     fn binderOf(g: *Generator, kind: Binder.Kind, v: Var, region: Bir.Inst.Index, name: Symbol.Optional) Error!u32 {
         const index: u32 = @intCast(g.tree.binders.items.len);
-        try g.tree.binders.append(g.gpa, .{ .v = v, .region = region, .name = name, .kind = kind, .decl = @intFromEnum(g.decl) });
+        try g.tree.binders.append(g.gpa, .{ .v = v, .region = region, .name = name, .kind = kind, .decl = @backingInt(g.decl) });
         try g.frame_binders.append(g.gpa, index);
         return index;
     }
@@ -454,7 +454,7 @@ pub const Generator = struct {
         const end: u32 = @intCast(g.tree.binders.items.len);
         if (end == start) return null;
         for (g.tree.binders.items[start..end]) |*b| b.kind = .ended;
-        return try g.add(.binders_end, @enumFromInt(0), start, end - start, .{});
+        return try g.add(.binders_end, @fromBackingInt(@intCast(0)), start, end - start, .{});
     }
 
     /// A local's name. `index` is relative to the declaration.

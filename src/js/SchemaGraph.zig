@@ -111,7 +111,7 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
                 } else {
                     try out.appendSlice(scratch, &.{ "compiledBackward", "belowBackward" });
                 },
-                .primitive => if (member == .write and lhs(plan, n) == @intFromEnum(SchemaPlan.Primitive.value)) try out.append(scratch, "printableWithin"),
+                .primitive => if (member == .write and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.value)) try out.append(scratch, "printableWithin"),
                 else => {},
             };
         },
@@ -132,7 +132,7 @@ pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member,
     try subtree(plan, scratch, d.root, &nodes);
     for (nodes.items) |n| {
         if (tag(plan, n) != .reference) continue;
-        const t = g.target(r.module, @enumFromInt(lhs(plan, n))) orelse continue;
+        const t = g.target(r.module, @fromBackingInt(@intCast(lhs(plan, n)))) orelse continue;
         try out.append(scratch, .{ t, member });
     }
 }
@@ -162,7 +162,7 @@ pub fn birOf(g: SchemaGraph, m: Graph.Index) *const Bir {
 pub fn definition(g: SchemaGraph, m: Graph.Index, decl: u32) ?*const SchemaPlan.Definition {
     const plan = g.planOf(m);
     for (plan.definitions) |*d| {
-        if (@intFromEnum(d.decl) == decl) return d;
+        if (@backingInt(d.decl) == decl) return d;
     }
     return null;
 }
@@ -174,13 +174,13 @@ pub fn paramCount(g: SchemaGraph, r: Ref) u32 {
 }
 
 pub fn symbol(plan: *const SchemaPlan, index: SchemaPlan.SymbolIndex) InternPool.Symbol {
-    return plan.symbols[@intFromEnum(index)];
+    return plan.symbols[@backingInt(index)];
 }
 
 /// The declaration a reference node of `m`'s plan names.
 pub fn target(g: SchemaGraph, m: Graph.Index, index: SchemaPlan.SchemaTargetIndex) ?Ref {
     const plan = g.planOf(m);
-    const i = @intFromEnum(index);
+    const i = @backingInt(index);
     if (i >= plan.schema_targets.len) return null;
     const t = plan.schema_targets[i];
     const module_name = symbol(plan, t.module);
@@ -198,20 +198,20 @@ pub fn target(g: SchemaGraph, m: Graph.Index, index: SchemaPlan.SchemaTargetInde
     }
     if (owner.int() >= g.interfaces.len or owner.int() >= g.provenance.len) return null;
     const schema = g.interfaces[owner.int()].findSchema(g.interner, schema_name) orelse return null;
-    const decl = g.provenance[owner.int()].schemaDecl(@intFromEnum(schema)) orelse return null;
+    const decl = g.provenance[owner.int()].schemaDecl(@backingInt(schema)) orelse return null;
     return .{ .module = owner, .decl = decl.int() };
 }
 
 pub fn tag(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) SchemaPlan.Node.Tag {
-    return plan.nodes.items(.tag)[@intFromEnum(n)];
+    return plan.nodes.items(.tag)[@backingInt(n)];
 }
 
 pub fn lhs(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) u32 {
-    return plan.nodes.items(.lhs)[@intFromEnum(n)];
+    return plan.nodes.items(.lhs)[@backingInt(n)];
 }
 
 pub fn rhs(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) u32 {
-    return plan.nodes.items(.rhs)[@intFromEnum(n)];
+    return plan.nodes.items(.rhs)[@backingInt(n)];
 }
 
 /// The words of an `extra` range: a length, then the words.
@@ -251,18 +251,18 @@ pub fn subtree(plan: *const SchemaPlan, scratch: Allocator, root: SchemaPlan.Nod
     defer stack.deinit(scratch);
     try stack.append(scratch, root);
     while (stack.pop()) |n| {
-        if (@intFromEnum(n) >= plan.nodes.len) continue;
+        if (@backingInt(n) >= plan.nodes.len) continue;
         try out.append(scratch, n);
         const start = stack.items.len;
         switch (tag(plan, n)) {
             .parameter, .primitive => {},
-            .reference => for (args(plan, n)) |a| try stack.append(scratch, @enumFromInt(a)),
+            .reference => for (args(plan, n)) |a| try stack.append(scratch, @fromBackingInt(@intCast(a))),
             .record => for (fields(plan, n)) |f| try stack.append(scratch, f.child),
             .tagged => for (variants(plan, n)) |vi| {
                 if (vi >= plan.variants.len) continue;
                 if (plan.variants[vi].payload.unwrap()) |p| try stack.append(scratch, p);
             },
-            .list, .conversion, .check, .annotation, .nullable => try stack.append(scratch, @enumFromInt(lhs(plan, n))),
+            .list, .conversion, .check, .annotation, .nullable => try stack.append(scratch, @fromBackingInt(@intCast(lhs(plan, n)))),
         }
         // Pushed in order, popped in reverse: turn the new run around so the
         // first child is visited first.
@@ -308,7 +308,7 @@ fn paramsAt(
     active: *std.ArrayList(Ref),
 ) Allocator.Error!void {
     const plan = g.planOf(m);
-    if (@intFromEnum(n) >= plan.nodes.len) return;
+    if (@backingInt(n) >= plan.nodes.len) return;
     switch (tag(plan, n)) {
         .primitive => {},
         .parameter => {
@@ -323,12 +323,12 @@ fn paramsAt(
             }
         },
         .reference => {
-            const callee = g.target(m, @enumFromInt(lhs(plan, n))) orelse return;
+            const callee = g.target(m, @fromBackingInt(@intCast(lhs(plan, n)))) orelse return;
             for (active.items) |s| if (s.module == callee.module and s.decl == callee.decl) return;
             const d = g.definition(callee.module, callee.decl) orelse return;
             const words = args(plan, n);
             const inner = try scratch.alloc(Arg, words.len);
-            for (words, inner) |a, *slot| slot.* = .{ .node = .{ .module = m, .node = @enumFromInt(a), .binding = binding } };
+            for (words, inner) |a, *slot| slot.* = .{ .node = .{ .module = m, .node = @fromBackingInt(@intCast(a)), .binding = binding } };
             try active.append(scratch, callee);
             defer _ = active.pop();
             try g.paramsAt(scratch, callee.module, d.root, inner, out, active);
@@ -338,7 +338,7 @@ fn paramsAt(
             if (vi >= plan.variants.len) continue;
             if (plan.variants[vi].payload.unwrap()) |p| try g.paramsAt(scratch, m, p, binding, out, active);
         },
-        .list, .conversion, .check, .annotation, .nullable => try g.paramsAt(scratch, m, @enumFromInt(lhs(plan, n)), binding, out, active),
+        .list, .conversion, .check, .annotation, .nullable => try g.paramsAt(scratch, m, @fromBackingInt(@intCast(lhs(plan, n))), binding, out, active),
     }
 }
 
@@ -367,7 +367,7 @@ pub fn recursive(g: SchemaGraph, scratch: Allocator, m: Graph.Index, decl: u32) 
         try subtree(plan, scratch, d.root, &nodes);
         for (nodes.items) |n| {
             if (tag(plan, n) != .reference) continue;
-            const t = g.target(m, @enumFromInt(lhs(plan, n))) orelse continue;
+            const t = g.target(m, @fromBackingInt(@intCast(lhs(plan, n)))) orelse continue;
             if (t.module != m) continue;
             try stack.append(scratch, t.decl);
         }

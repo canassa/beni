@@ -161,28 +161,28 @@ pub const Terms = struct {
 pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.Error!void {
     try out.appendSlice(gpa, magic);
     try appendInt(gpa, out, u32, digest_version);
-    try out.append(gpa, @intFromEnum(t.package));
+    try out.append(gpa, @backingInt(t.package));
     try appendText(gpa, out, t.name);
 
     try appendInt(gpa, out, u32, @intCast(t.types.len));
     for (t.types) |ty| {
         try appendText(gpa, out, ty.name);
         try appendInt(gpa, out, u16, ty.arity);
-        try out.append(gpa, @intFromEnum(ty.kind));
+        try out.append(gpa, @backingInt(ty.kind));
         try out.append(gpa, flags(ty));
         try appendText(gpa, out, ty.body);
     }
 
     try appendInt(gpa, out, u32, @intCast(t.derived.len));
     for (t.derived) |d| {
-        try out.append(gpa, @intFromEnum(d.kind));
+        try out.append(gpa, @backingInt(d.kind));
         try appendText(gpa, out, d.module);
         try appendText(gpa, out, d.name);
     }
 
     try appendInt(gpa, out, u32, @intCast(t.imports.len));
     for (t.imports) |i| {
-        try out.append(gpa, @intFromEnum(i.package));
+        try out.append(gpa, @backingInt(i.package));
         try appendText(gpa, out, i.name);
         try out.appendSlice(gpa, &i.iface_hash);
         try out.appendSlice(gpa, &i.digest);
@@ -409,11 +409,11 @@ fn interfaceBodyContext(s: Session, module: Graph.Index, iface: *const Interface
 /// reason an ordinary reachable private type is present in `type_refs`.
 fn schemaEndpointExpansion(plan: *const SchemaPlan, entry: Types.Entry) ?Interface.TermIndex {
     for (plan.definitions) |definition| {
-        const program_ref = plan.type_refs[@intFromEnum(definition.type_ref)];
-        const encoded_ref = plan.type_refs[@intFromEnum(definition.encoded_ref)];
-        const endpoint = if (plan.symbols[@intFromEnum(program_ref.name)] == entry.name)
+        const program_ref = plan.type_refs[@backingInt(definition.type_ref)];
+        const encoded_ref = plan.type_refs[@backingInt(definition.encoded_ref)];
+        const endpoint = if (plan.symbols[@backingInt(program_ref.name)] == entry.name)
             definition.program_term
-        else if (plan.symbols[@intFromEnum(encoded_ref.name)] == entry.name)
+        else if (plan.symbols[@backingInt(encoded_ref.name)] == entry.name)
             definition.encoded_term
         else
             continue;
@@ -512,7 +512,7 @@ const IdSet = struct {
 /// row and is not opaque, it is invisible.
 fn isOpaque(iface: *const Interface, interner: *const InternPool.Global, name: InternPool.Symbol) bool {
     const index = iface.findType(interner, name) orelse return false;
-    return iface.types[@intFromEnum(index)].is_opaque;
+    return iface.types[@backingInt(index)].is_opaque;
 }
 
 fn typeLessThan(_: void, a: Type, b: Type) bool {
@@ -565,7 +565,7 @@ test "the digest's byte string is the recipe, field by field" {
     at += 8;
     try testing.expectEqual(digest_version, std.mem.readInt(u32, bytes.items[at..][0..4], .little));
     at += 4;
-    try testing.expectEqual(@as(u8, @intFromEnum(SourceStore.Package.app)), bytes.items[at]);
+    try testing.expectEqual(@as(u8, @backingInt(SourceStore.Package.app)), bytes.items[at]);
     at += 1;
     try testing.expectEqual(@as(u32, 4), std.mem.readInt(u32, bytes.items[at..][0..4], .little));
     at += 4;
@@ -580,7 +580,7 @@ test "the digest's byte string is the recipe, field by field" {
     at += 6;
     try testing.expectEqual(@as(u16, 0), std.mem.readInt(u16, bytes.items[at..][0..2], .little)); // arity
     at += 2;
-    try testing.expectEqual(@as(u8, @intFromEnum(Interface.TypeKind.adt)), bytes.items[at]);
+    try testing.expectEqual(@as(u8, @backingInt(Interface.TypeKind.adt)), bytes.items[at]);
     at += 1;
     try testing.expectEqual(@as(u8, 2 | 4), bytes.items[at]); // equatable | comparable
     at += 1;
@@ -589,14 +589,14 @@ test "the digest's byte string is the recipe, field by field" {
     // derived
     try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, bytes.items[at..][0..4], .little));
     at += 4;
-    try testing.expectEqual(@as(u8, @intFromEnum(Dispatch.Derived.Kind.eq)), bytes.items[at]);
+    try testing.expectEqual(@as(u8, @backingInt(Dispatch.Derived.Kind.eq)), bytes.items[at]);
     at += 1;
     at += 4 + 4; // "Leaf"
     at += 4 + 6; // "Hidden"
     // imports
     try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, bytes.items[at..][0..4], .little));
     at += 4;
-    try testing.expectEqual(@as(u8, @intFromEnum(SourceStore.Package.core)), bytes.items[at]);
+    try testing.expectEqual(@as(u8, @backingInt(SourceStore.Package.core)), bytes.items[at]);
     at += 1;
     at += 4 + 6; // "Basics"
     try testing.expectEqualSlices(u8, &@as([16]u8, @splat(0xAA)), bytes.items[at..][0..16]);

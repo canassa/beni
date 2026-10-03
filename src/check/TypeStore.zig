@@ -61,11 +61,11 @@ pub const Var = enum(u32) {
     _,
 
     pub inline fn int(v: Var) u32 {
-        return @intFromEnum(v);
+        return @backingInt(v);
     }
 
     pub fn toOptional(v: Var) Optional {
-        const o: Optional = @enumFromInt(@intFromEnum(v));
+        const o: Optional = @fromBackingInt(@intCast(@backingInt(v)));
         std.debug.assert(o != .none);
         return o;
     }
@@ -75,7 +75,7 @@ pub const Var = enum(u32) {
         _,
 
         pub fn unwrap(o: Optional) ?Var {
-            return if (o == .none) null else @enumFromInt(@intFromEnum(o));
+            return if (o == .none) null else @fromBackingInt(@intCast(@backingInt(o)));
         }
     };
 };
@@ -89,7 +89,7 @@ pub const TypeId = enum(u32) {
     _,
 
     pub fn int(t: TypeId) u32 {
-        return @intFromEnum(t);
+        return @backingInt(t);
     }
 };
 
@@ -206,11 +206,11 @@ pub const ConstraintSet = enum(u32) {
     _,
 
     pub fn int(c: ConstraintSet) u32 {
-        return @intFromEnum(c);
+        return @backingInt(c);
     }
 
     pub fn toOptional(c: ConstraintSet) Optional {
-        return @enumFromInt(@intFromEnum(c));
+        return @fromBackingInt(@intCast(@backingInt(c)));
     }
 
     pub const Optional = enum(u32) {
@@ -218,7 +218,7 @@ pub const ConstraintSet = enum(u32) {
         _,
 
         pub fn unwrap(o: Optional) ?ConstraintSet {
-            return if (o == .none) null else @enumFromInt(@intFromEnum(o));
+            return if (o == .none) null else @fromBackingInt(@intCast(@backingInt(o)));
         }
     };
 };
@@ -383,7 +383,7 @@ pub inline fn count(store: *const TypeStore) u32 {
 /// A new root with `content` at `rank`. The caller is responsible for
 /// putting it in the pool of that rank (`Solve` does).
 pub inline fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Allocator.Error!Var {
-    const v: Var = @enumFromInt(store.descriptors.len);
+    const v: Var = @fromBackingInt(@intCast(store.descriptors.len));
     // The capacity test inline and the growth out of line: every
     // variable the checker makes comes through here, and `append` made a
     // call for the test alone.
@@ -800,8 +800,8 @@ pub fn addFields(store: *TypeStore, items: []Field) Allocator.Error!Range {
     try store.extra.ensureUnusedCapacity(store.gpa(), items.len * 2);
     const words = store.extra.addManyAsSliceAssumeCapacity(items.len * 2);
     for (items, 0..) |f, i| {
-        words[i * 2] = @intFromEnum(f.name);
-        words[i * 2 + 1] = @intFromEnum(f.value);
+        words[i * 2] = @backingInt(f.name);
+        words[i * 2 + 1] = @backingInt(f.value);
     }
     return .{ .start = start, .len = @intCast(items.len) };
 }
@@ -821,7 +821,7 @@ pub fn sortById(comptime T: type, scratch: Allocator, items: []T) Allocator.Erro
     if (sortedById(T, items)) return;
     const keyed = try scratch.alloc(Keyed, items.len);
     defer scratch.free(keyed);
-    for (items, keyed, 0..) |item, *k, i| k.* = .{ .key = @intFromEnum(item.name), .at = @intCast(i) };
+    for (items, keyed, 0..) |item, *k, i| k.* = .{ .key = @backingInt(item.name), .at = @intCast(i) };
     const tmp = try scratch.alloc(Keyed, items.len);
     defer scratch.free(tmp);
     try permute(T, scratch, items, sortKeyed(keyed, tmp));
@@ -830,7 +830,7 @@ pub fn sortById(comptime T: type, scratch: Allocator, items: []T) Allocator.Erro
 fn sortedById(comptime T: type, items: []const T) bool {
     if (items.len < 2) return true;
     for (items[0 .. items.len - 1], items[1..]) |a, b| {
-        if (@intFromEnum(a.name) > @intFromEnum(b.name)) return false;
+        if (@backingInt(a.name) > @backingInt(b.name)) return false;
     }
     return true;
 }
@@ -893,10 +893,10 @@ pub fn rankByText(allocator: Allocator, interner: *InternPool.Global) Allocator.
     const n = interner.count();
     const names = try allocator.alloc(Named, n);
     defer allocator.free(names);
-    for (names, 0..) |*named, i| named.* = .{ .name = @enumFromInt(i) };
+    for (names, 0..) |*named, i| named.* = .{ .name = @fromBackingInt(@intCast(i)) };
     try sortByText(Named, allocator, interner, names);
     const positions = try allocator.alloc(u32, n);
-    for (names, 0..) |named, position| positions[@intFromEnum(named.name)] = @intCast(position);
+    for (names, 0..) |named, position| positions[@backingInt(named.name)] = @intCast(position);
     interner.setTextRank(allocator, positions);
 }
 
@@ -990,7 +990,7 @@ pub fn addConstraints(store: *TypeStore, items: []const MethodConstraint) Alloca
     try store.constraints.appendSlice(store.gpa(), items);
     const index: u32 = @intCast(store.constraint_sets.items.len);
     try store.constraint_sets.append(store.gpa(), .{ .start = start, .len = @intCast(items.len) });
-    return @enumFromInt(index);
+    return @fromBackingInt(@intCast(index));
 }
 
 /// `set` with `c` appended, as a new set.
@@ -1012,7 +1012,7 @@ pub fn extendConstraints(
         try store.constraints.append(store.gpa(), c);
         const index: u32 = @intCast(store.constraint_sets.items.len);
         try store.constraint_sets.append(store.gpa(), .{ .start = range.start, .len = range.len + 1 });
-        return (@as(ConstraintSet, @enumFromInt(index))).toOptional();
+        return (@as(ConstraintSet, @fromBackingInt(@intCast(index)))).toOptional();
     }
     // Capacity first: `appendSlice` from the list into itself would read a
     // slice the growth had already moved.
@@ -1022,7 +1022,7 @@ pub fn extendConstraints(
     store.constraints.appendAssumeCapacity(c);
     const index: u32 = @intCast(store.constraint_sets.items.len);
     try store.constraint_sets.append(store.gpa(), .{ .start = start, .len = range.len + 1 });
-    return (@as(ConstraintSet, @enumFromInt(index))).toOptional();
+    return (@as(ConstraintSet, @fromBackingInt(@intCast(index)))).toOptional();
 }
 
 /// How many constraints `set` holds. Prefer this and `constraintAt` to
@@ -1109,23 +1109,23 @@ test "the kind lattice: any is the top, number and appendable do not meet" {
 test "resolved looks through an alias chain to the expansion" {
     var store: TypeStore = .init(testing.allocator);
     defer store.deinit();
-    const int = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(7), .args = .empty } } }, 1);
-    const inner = try store.fresh(.{ .alias = .{ .type = @enumFromInt(1), .args = .empty, .actual = int } }, 1);
-    const outer = try store.fresh(.{ .alias = .{ .type = @enumFromInt(2), .args = .empty, .actual = inner } }, 1);
+    const int = try store.fresh(.{ .structure = .{ .app = .{ .type = @fromBackingInt(@intCast(7)), .args = .empty } } }, 1);
+    const inner = try store.fresh(.{ .alias = .{ .type = @fromBackingInt(@intCast(1)), .args = .empty, .actual = int } }, 1);
+    const outer = try store.fresh(.{ .alias = .{ .type = @fromBackingInt(@intCast(2)), .args = .empty, .actual = inner } }, 1);
     // The alias is still what the descriptor says — it is never expanded
     // away — but `resolved` reaches the structure under it.
     try testing.expect(store.content(outer) == .alias);
     const root, const c = store.resolved(outer);
     try testing.expectEqual(int, root);
-    try testing.expectEqual(@as(TypeId, @enumFromInt(7)), c.structure.app.type);
+    try testing.expectEqual(@as(TypeId, @fromBackingInt(@intCast(7))), c.structure.app.type);
 }
 
 test "resolved walks an alias chain of any length and compresses it" {
     var store: TypeStore = .init(testing.allocator);
     defer store.deinit();
-    const int = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(7), .args = .empty } } }, 1);
+    const int = try store.fresh(.{ .structure = .{ .app = .{ .type = @fromBackingInt(@intCast(7)), .args = .empty } } }, 1);
     var at = int;
-    for (0..3000) |_| at = try store.fresh(.{ .alias = .{ .type = @enumFromInt(1), .args = .empty, .actual = at } }, 1);
+    for (0..3000) |_| at = try store.fresh(.{ .alias = .{ .type = @fromBackingInt(@intCast(1)), .args = .empty, .actual = at } }, 1);
     // Past the old guard of 1 024 links: the structure, never `err`.
     const root, const c = store.resolved(at);
     try testing.expectEqual(int, root);
@@ -1141,15 +1141,15 @@ test "record fields are stored sorted and read back as pairs" {
     const x = try store.freshFlex(1);
     const y = try store.freshFlex(1);
     var input = [_]Field{
-        .{ .name = @enumFromInt(9), .value = x },
-        .{ .name = @enumFromInt(4), .value = y },
+        .{ .name = @fromBackingInt(@intCast(9)), .value = x },
+        .{ .name = @fromBackingInt(@intCast(4)), .value = y },
     };
     const r = try store.addFields(&input);
     const read = store.fields(r);
     try testing.expectEqual(@as(usize, 2), read.len);
-    try testing.expectEqual(@as(Symbol, @enumFromInt(4)), read[0].name);
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(4))), read[0].name);
     try testing.expectEqual(y, read[0].value);
-    try testing.expectEqual(@as(Symbol, @enumFromInt(9)), read[1].name);
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(9))), read[1].name);
     try testing.expectEqual(x, read[1].value);
 }
 

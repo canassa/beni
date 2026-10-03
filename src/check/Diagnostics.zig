@@ -156,7 +156,7 @@ pub const Reporter = struct {
         // what failed, so the message shows it against the type the code
         // needs, rather than saying the record lacks the field.
         if (category.tag == .field_access and category.index != Category.no_field) {
-            const name: InternPool.Symbol = @enumFromInt(category.index);
+            const name: InternPool.Symbol = @fromBackingInt(@intCast(category.index));
             if (recordField(r.env.store, actual, name)) |found| if (recordField(r.env.store, expected, name)) |wanted| {
                 const text = r.fieldText(category.index);
                 w.print("This record has {s} `{s}` field, but not of the type I need:\n\n", .{ article(text), text }) catch return error.OutOfMemory;
@@ -222,7 +222,7 @@ pub const Reporter = struct {
         const bir = r.env.bir;
         if (call.int() >= bir.insts.len) return false;
         const callee: Bir.Inst.Index = switch (bir.instTag(call)) {
-            .call => @enumFromInt(bir.instData(call).lhs),
+            .call => @fromBackingInt(@intCast(bir.instData(call).lhs)),
             else => return false,
         };
         if (callee.int() >= bir.insts.len or bir.instTag(callee) != .local) return false;
@@ -460,7 +460,7 @@ pub const Reporter = struct {
 
     fn fieldText(r: *const Reporter, packed_symbol: u32) []const u8 {
         if (packed_symbol == Category.no_field) return "";
-        return r.env.interner.slice(@enumFromInt(packed_symbol));
+        return r.env.interner.slice(@fromBackingInt(@intCast(packed_symbol)));
     }
 
     // ---- Hints -----------------------------------------------------------
@@ -645,7 +645,7 @@ pub const Reporter = struct {
         const arity = st.paramCount(actual);
         const bir = r.env.bir;
         if (call.int() >= bir.insts.len or bir.instTag(call) != .call) return null;
-        const callee: Bir.Inst.Index = @enumFromInt(bir.instData(call).lhs);
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
         if (callee.int() >= bir.insts.len) return null;
         const data = bir.instData(callee);
         switch (bir.instTag(callee)) {
@@ -667,12 +667,12 @@ pub const Reporter = struct {
             },
             .ext_value => {
                 if (data.lhs >= r.env.interfaces.len) return null;
-                const iface = r.env.iface(@enumFromInt(data.lhs));
+                const iface = r.env.iface(@fromBackingInt(@intCast(data.lhs)));
                 if (data.rhs >= iface.values.len) return null;
                 const body = iface.term(iface.scheme(iface.values[data.rhs].scheme).body);
                 if (body.tag != .func) return null;
                 for (iface.range(body.lhs), 0..) |p, j| {
-                    const t = iface.term(@enumFromInt(p));
+                    const t = iface.term(@fromBackingInt(@intCast(p)));
                     if (j != at and t.tag == .func and iface.range(t.lhs).len == arity) return @intCast(j + 1);
                 }
             },
@@ -1220,7 +1220,7 @@ pub const Reporter = struct {
         if (region.int() >= bir.insts.len) return .anonymous;
         const tag = bir.instTag(region);
         const reference: Bir.Inst.Index = switch (tag) {
-            .call, .pat_ctor => @enumFromInt(bir.instData(region).lhs),
+            .call, .pat_ctor => @fromBackingInt(@intCast(bir.instData(region).lhs)),
             else => region,
         };
         // A method call names the METHOD, or — when it came from one of the
@@ -1228,7 +1228,7 @@ pub const Reporter = struct {
         // (static-dispatch-spike.md §1.3, "diagnostics name the operator").
         // Its `lhs` is the receiver, so it cannot go through `describe`.
         if (tag == .method_call) {
-            const m = bir.extraData(@enumFromInt(bir.instData(region).rhs), Bir.MethodCall);
+            const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(region).rhs)), Bir.MethodCall);
             if (m.origin.spelling()) |op| return .{ .kind = .operator, .name = op };
             return .{ .kind = .value, .name = r.env.interner.slice(bir.symbol(m.name)) };
         }
@@ -1259,21 +1259,21 @@ pub const Reporter = struct {
             },
             .ext_value => {
                 if (data.lhs >= r.env.interfaces.len) return .anonymous;
-                const iface = r.env.iface(@enumFromInt(data.lhs));
+                const iface = r.env.iface(@fromBackingInt(@intCast(data.lhs)));
                 if (data.rhs >= iface.values.len) return .anonymous;
-                const symbol = iface.valueName(@enumFromInt(data.rhs));
+                const symbol = iface.valueName(@fromBackingInt(@intCast(data.rhs)));
                 // Every operator of language.md §6.5 desugars to a call of
                 // a core function nobody writes by hand, so naming the
                 // function would name something the author never typed.
-                if (r.operatorCallee(@enumFromInt(data.lhs), symbol)) |op| return .{ .kind = .operator, .name = op };
-                if (r.listSyntaxCallee(@enumFromInt(data.lhs), symbol)) |name| return .{ .kind = .function, .name = name };
+                if (r.operatorCallee(@fromBackingInt(@intCast(data.lhs)), symbol)) |op| return .{ .kind = .operator, .name = op };
+                if (r.listSyntaxCallee(@fromBackingInt(@intCast(data.lhs)), symbol)) |name| return .{ .kind = .function, .name = name };
                 return .{ .kind = .function, .name = r.env.interner.slice(symbol) };
             },
             .ext_ctor => {
                 if (data.lhs >= r.env.interfaces.len) return .anonymous;
-                const iface = r.env.iface(@enumFromInt(data.lhs));
+                const iface = r.env.iface(@fromBackingInt(@intCast(data.lhs)));
                 if (data.rhs >= iface.ctors.len) return .anonymous;
-                return .{ .kind = .ctor, .name = r.env.interner.slice(iface.ctorName(@enumFromInt(data.rhs))) };
+                return .{ .kind = .ctor, .name = r.env.interner.slice(iface.ctorName(@fromBackingInt(@intCast(data.rhs)))) };
             },
             // `s.retries 2`: the field is what the author wrote, so it is
             // what the message names.

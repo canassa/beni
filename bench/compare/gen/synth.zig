@@ -171,7 +171,7 @@ pub const Gen = struct {
     pub fn mkGlobal(g: *Gen, f: u32, targs: []const Type, ty: Type) !u32 {
         var buf: [9]u32 = undefined;
         buf[0] = @intCast(targs.len);
-        for (targs, 0..) |a, i| buf[1 + i] = @intFromEnum(a);
+        for (targs, 0..) |a, i| buf[1 + i] = @backingInt(a);
         const x = try g.t.addExtra(buf[0 .. 1 + targs.len]);
         return g.mk(.{ .tag = .global, .ty = ty, .a = f, .b = x });
     }
@@ -353,17 +353,17 @@ pub const Gen = struct {
             },
             else => {},
         }
-        var weights: [@typeInfo(Prod).@"enum".fields.len]u32 = undefined;
-        inline for (@typeInfo(Prod).@"enum".fields, 0..) |f, i| weights[i] = @field(g.w, f.name);
+        var weights: [@typeInfo(Prod).@"enum".field_names.len]u32 = undefined;
+        inline for (@typeInfo(Prod).@"enum".field_names, 0..) |field_name, i| weights[i] = @field(g.w, field_name);
         g.gate(want, &weights);
         var tries: u32 = 0;
         while (tries < 8) : (tries += 1) {
             var any = false;
             for (weights) |x| any = any or x > 0;
             if (!any) break;
-            const p: Prod = @enumFromInt(g.rng.weighted(&weights));
+            const p: Prod = @fromBackingInt(@intCast(g.rng.weighted(&weights)));
             if (try g.produce(p, want, depth)) |e| return e;
-            weights[@intFromEnum(p)] = 0;
+            weights[@backingInt(p)] = 0;
         }
         return g.leaf(want);
     }
@@ -374,7 +374,7 @@ pub const Gen = struct {
         const tag = s.tag(want);
         const W = struct {
             fn off(ws: []u32, p: Prod) void {
-                ws[@intFromEnum(p)] = 0;
+                ws[@backingInt(p)] = 0;
             }
         };
         if (tag != .named) W.off(weights, .ctor);

@@ -86,8 +86,8 @@ pub fn settle(
             // answers `<` only through §3.2's table or through a `pub
             // compare` of its own module (A.50). A `foreign type` with
             // neither makes `xs < ys` an honest `unknown_method`.
-            e.comparable = inWellKnownTable(types, @enumFromInt(i)) or
-                declaresPubCompare(types, e.module, bir, @enumFromInt(i));
+            e.comparable = inWellKnownTable(types, @fromBackingInt(@intCast(i))) or
+                declaresPubCompare(types, e.module, bir, @fromBackingInt(@intCast(i)));
             if (!e.comparable) try order_queue.append(gpa, @intCast(i));
             continue;
         }
@@ -206,7 +206,7 @@ fn declaresPubMethod(types: *const Types, module: Graph.Index, bir: *const Bir, 
         if (bir.symbol(d.name) != method_name) continue;
         const annotation = d.annotation.unwrap() orelse continue;
         if (bir.instTag(annotation) != .type_fn) continue;
-        const params = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(annotation).lhs)), Bir.Inst.Index);
+        const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(annotation).lhs))), Bir.Inst.Index);
         if (params.len == 0) continue;
         if (writtenHead(types, module, bir, params[0]) == id) return true;
     }
@@ -219,7 +219,7 @@ fn declaresPubMethod(types: *const Types, module: Graph.Index, bir: *const Bir, 
 fn writtenHead(types: *const Types, module: Graph.Index, bir: *const Bir, inst: Bir.Inst.Index) TypeId {
     const tag = bir.instTag(inst);
     if (tag == .type_app) {
-        const head: Bir.Inst.Index = @enumFromInt(bir.instData(inst).lhs);
+        const head: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(inst).lhs));
         return types.headId(module, bir.instTag(head), bir.instData(head));
     }
     return types.headId(module, tag, bir.instData(inst));
@@ -282,10 +282,10 @@ const BodyWalk = struct {
                 .type_var, .type_unit, .@"error" => {},
                 .type_top, .ext_type, .schema_type_top, .ext_schema_type => try out.append(w.gpa, types.headId(frame.module, tag, data)),
                 .type_app => {
-                    const head_tag = b.instTag(@enumFromInt(data.lhs));
-                    const head_data = b.instData(@enumFromInt(data.lhs));
+                    const head_tag = b.instTag(@fromBackingInt(@intCast(data.lhs)));
+                    const head_data = b.instData(@fromBackingInt(@intCast(data.lhs)));
                     try out.append(w.gpa, types.headId(frame.module, head_tag, head_data));
-                    for (b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)) |arg| {
+                    for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index)) |arg| {
                         try w.stack.append(w.gpa, .{ .module = frame.module, .bir = b, .inst = arg });
                     }
                 },
@@ -295,7 +295,7 @@ const BodyWalk = struct {
                 .type_record => for (b.extraSlice(Bir.inlineRange(data), Bir.Field)) |f| {
                     try w.stack.append(w.gpa, .{ .module = frame.module, .bir = b, .inst = f.value });
                 },
-                .type_record_ext => for (b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Field)) |f| {
+                .type_record_ext => for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |f| {
                     try w.stack.append(w.gpa, .{ .module = frame.module, .bir = b, .inst = f.value });
                 },
                 else => {},

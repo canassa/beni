@@ -128,7 +128,7 @@ pub const Built = struct {
             const mid = (lo + hi) / 2;
             if (b.root_insts[mid] < inst) lo = mid + 1 else hi = mid;
         }
-        if (lo < b.root_insts.len and b.root_insts[lo] == inst) return @enumFromInt(lo);
+        if (lo < b.root_insts.len and b.root_insts[lo] == inst) return @fromBackingInt(@intCast(lo));
         return null;
     }
 };
@@ -143,7 +143,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
     // A markup root's slot in `roots` is its instruction's rank, fixed
     // before any is built, because a row finds its body's root by it.
     b.roots = try arena.alloc(m.Root, b.root_insts.items.len);
-    for (0..b.roots.len) |i| try b.buildRoot(@intCast(i), @enumFromInt(b.root_insts.items[i]));
+    for (0..b.roots.len) |i| try b.buildRoot(@intCast(i), @fromBackingInt(@intCast(b.root_insts.items[i])));
     try b.lambdaRoots();
     try b.selectors();
     const item_only = try b.itemOnly();
@@ -295,7 +295,7 @@ const Builder = struct {
         // A root that is the body of a row compiled in place is placed by
         // the lowering in the row's function; every other one is evaluated
         // where it stands.
-        const top = try b.node(@enumFromInt(b.bir().instData(inst).lhs));
+        const top = try b.node(@fromBackingInt(@intCast(b.bir().instData(inst).lhs)));
         b.roots[index] = .{
             .site = .{ .module = b.in.module, .inst = inst.int() },
             .kind = if (std.mem.indexOfScalar(u32, b.row_bodies.items, inst.int()) != null) .row_markup else .expression,
@@ -322,7 +322,7 @@ const Builder = struct {
                 .values = .{ .start = start, .len = 1 },
             };
             try b.root_insts.append(b.arena, none);
-            b.tree_rows.items[row_index].body = @enumFromInt(at);
+            b.tree_rows.items[row_index].body = @fromBackingInt(@intCast(at));
         }
         b.roots = grown;
     }
@@ -330,14 +330,14 @@ const Builder = struct {
     fn value(b: *Builder, v: Value) !m.Value.Index {
         const at: u32 = @intCast(b.values.items.len);
         try b.values.append(b.arena, v);
-        return @enumFromInt(at);
+        return @fromBackingInt(@intCast(at));
     }
 
     fn string(b: *Builder, bytes: []const u8) !m.Strings.Index {
         const at: u32 = @intCast(b.spans.items.len);
         try b.spans.append(b.arena, .{ .start = @intCast(b.string_bytes.items.len), .len = @intCast(bytes.len) });
         try b.string_bytes.appendSlice(b.arena, bytes);
-        return @enumFromInt(at);
+        return @fromBackingInt(@intCast(at));
     }
 
     fn symbolText(b: *const Builder, s: Bir.SymbolIndex) []const u8 {
@@ -345,14 +345,14 @@ const Builder = struct {
     }
 
     fn ifaceText(b: *const Builder, s: Interface.SymbolIndex) []const u8 {
-        return b.in.interner.slice(b.in.vocabulary.symbols[@intFromEnum(s)]);
+        return b.in.interner.slice(b.in.vocabulary.symbols[@backingInt(s)]);
     }
 
     fn addNode(b: *Builder, kind: m.Node.Kind, payload: usize, token: u32) !m.Node.Index {
         const at: u32 = @intCast(b.nodes.items.len);
         try b.nodes.append(b.arena, .{ .kind = kind, .payload = @intCast(payload) });
         try b.node_tokens.append(b.arena, token);
-        return @enumFromInt(at);
+        return @fromBackingInt(@intCast(at));
     }
 
     fn childList(b: *Builder, start: Bir.ExtraIndex, end: Bir.ExtraIndex) !m.Range {
@@ -371,7 +371,7 @@ const Builder = struct {
         switch (bir_.markupKind(at)) {
             .element => {
                 const e = bir_.extraData(at, Bir.MarkupElement);
-                const row = b.rowOf(@intFromEnum(at));
+                const row = b.rowOf(@backingInt(at));
                 const element_row = if (row) |r| try b.elementRow(r.row, b.symbolText(e.name)) else .none;
                 const items = try b.itemList(e.items_start, e.items_end);
                 const children = try b.childList(e.children_start, e.children_end);
@@ -391,18 +391,18 @@ const Builder = struct {
             },
             .hole => {
                 const h = bir_.extraData(at, Bir.MarkupHole);
-                const kind: m.HoleKind = if (b.rowOf(@intFromEnum(at))) |r| @enumFromInt(r.detail) else .html;
+                const kind: m.HoleKind = if (b.rowOf(@backingInt(at))) |r| @fromBackingInt(@intCast(r.detail)) else .html;
                 if (kind == .html) if (b.helperCallee(h.value)) |callee| {
                     // The arguments are the root's values, evaluated where
                     // the call's would have been; the call is made where
                     // the lowering asks for the hole's value (§11.6).
                     const d = bir_.instData(h.value);
-                    const args = bir_.extraSlice(bir_.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                    const args = bir_.extraSlice(bir_.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
                     const args_start: u32 = @intCast(b.values.items.len);
                     for (args) |arg| _ = try b.value(.{ .inst = arg });
                     const range: m.Value.Range = .{ .start = args_start, .len = @intCast(args.len) };
                     const callee_value = try b.value(.{ .callee = callee });
-                    const call = try b.value(.{ .call = .{ .callee = @intFromEnum(callee_value), .args = range } });
+                    const call = try b.value(.{ .call = .{ .callee = @backingInt(callee_value), .args = range } });
                     try b.holes.append(b.arena, .{ .value = call, .kind = kind, .call = .{ .callee = callee_value, .args = range } });
                     return b.addNode(.hole, b.holes.items.len - 1, h.token);
                 };
@@ -442,7 +442,7 @@ const Builder = struct {
             .@"for", .show => {
                 const is_for = bir_.markupKind(at) == .@"for";
                 const f = bir_.extraData(at, Bir.MarkupForm);
-                const row = b.rowOf(@intFromEnum(at));
+                const row = b.rowOf(@backingInt(at));
                 const list = try b.value(.{ .inst = f.list.unwrap().? });
                 const key: ?m.Value.Index = if (f.mode == .key_function) try b.value(.{ .inst = f.keyed.unwrap().? }) else null;
                 const fallback: ?m.Value.Index = if (f.fallback.unwrap()) |v| try b.value(.{ .inst = v }) else null;
@@ -452,7 +452,7 @@ const Builder = struct {
                     try b.fors.append(b.arena, .{
                         .each = list,
                         .fallback = fallback,
-                        .mode = if (row) |r| @enumFromInt(r.detail) else .reference,
+                        .mode = if (row) |r| @fromBackingInt(@intCast(r.detail)) else .reference,
                         .key = key,
                         .item_is_primitive = if (row) |r| r.primitive else false,
                         .row = row_index,
@@ -462,7 +462,7 @@ const Builder = struct {
                 try b.shows.append(b.arena, .{
                     .when = list,
                     .fallback = fallback,
-                    .mode = if (row) |r| @enumFromInt(r.detail) else .identity,
+                    .mode = if (row) |r| @fromBackingInt(@intCast(r.detail)) else .identity,
                     .key = key,
                     .value_is_primitive = if (row) |r| r.primitive else false,
                     .body = row_index,
@@ -539,7 +539,7 @@ const Builder = struct {
         if (b.in.comparison == null) return;
         const bir_ = b.bir();
         for (b.fors.items) |f| {
-            const row_index = @intFromEnum(f.row);
+            const row_index = @backingInt(f.row);
             const row = &b.tree_rows.items[row_index];
             if (row.kind != .markup or row.inputs.len == 0) continue;
             const key: Path = switch (f.mode) {
@@ -550,7 +550,7 @@ const Builder = struct {
             const source = b.row_sources.items[row_index];
             const decl = b.declOf(source.function.int()) orelse continue;
             const lambda = bir_.instData(source.function);
-            const params = bir_.extraSlice(bir_.subRange(@enumFromInt(lambda.lhs)), Inst.Index);
+            const params = bir_.extraSlice(bir_.subRange(@fromBackingInt(@intCast(lambda.lhs))), Inst.Index);
             if (params.len == 0) continue;
             // The row function's instructions: the run from the lowest its
             // operands reach to the function itself, as `readsOnly` finds
@@ -589,7 +589,7 @@ const Builder = struct {
 
     fn inputLink(b: *const Builder, link: u32) Link {
         if (link & Bir.tuple_link != 0) return tuple_bit | (link & ~Bir.tuple_link);
-        return @intFromEnum(b.bir().symbols[link]);
+        return @backingInt(b.bir().symbols[link]);
     }
 
     /// The declaration an instruction belongs to.
@@ -603,13 +603,13 @@ const Builder = struct {
     /// A key function's path through its item: `\r -> r.a.b`, or `.a`.
     fn keyPath(b: *Builder, v: m.Value.Index) ?Path {
         const bir_ = b.bir();
-        const inst = switch (b.values.items[@intFromEnum(v)]) {
+        const inst = switch (b.values.items[@backingInt(v)]) {
             .inst => |i| i,
             else => return null,
         };
         if (bir_.instTag(inst) != .lambda) return null;
         const d = bir_.instData(inst);
-        const params = bir_.extraSlice(bir_.subRange(@enumFromInt(d.lhs)), Inst.Index);
+        const params = bir_.extraSlice(bir_.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index);
         if (params.len != 1 or bir_.instTag(params[0]) != .pat_var) return null;
         const env = [_]Bind{.{ .local = bir_.instData(params[0]).lhs, .item = true, .path = .{} }};
         return b.itemPath(d.rhs, &env);
@@ -626,7 +626,7 @@ const Builder = struct {
         var cur = inst;
         while (true) : (cur = datas[cur].lhs) {
             const link: Link = switch (tags[cur]) {
-                .field_access => @intFromEnum(bir_.symbols[datas[cur].rhs]),
+                .field_access => @backingInt(bir_.symbols[datas[cur].rhs]),
                 .tuple_index => tuple_bit | datas[cur].rhs,
                 else => break,
             };
@@ -653,8 +653,8 @@ const Builder = struct {
     /// no comparison against them is its key.
     fn bindPattern(b: *Builder, env: *std.ArrayList(Bind), decl: u32, pattern: u32, item: bool, path: Path) Allocator.Error!bool {
         const bir_ = b.bir();
-        const d = bir_.instData(@enumFromInt(pattern));
-        switch (bir_.instTag(@enumFromInt(pattern))) {
+        const d = bir_.instData(@fromBackingInt(@intCast(pattern)));
+        switch (bir_.instTag(@fromBackingInt(@intCast(pattern)))) {
             .pat_var => try env.append(b.arena, .{ .local = d.lhs, .item = item, .path = path }),
             .pat_wild => {},
             .pat_record => {
@@ -662,7 +662,7 @@ const Builder = struct {
                 for (bir_.extraSlice(Bir.inlineRange(d), u32)) |local| {
                     if (base + local >= bir_.locals.len) return item;
                     const name = bir_.locals[base + local].name.unwrap() orelse return item;
-                    const field = path.append(@intFromEnum(bir_.symbols[name])) orelse return item;
+                    const field = path.append(@backingInt(bir_.symbols[name])) orelse return item;
                     try env.append(b.arena, .{ .local = local, .item = item, .path = field });
                 }
             },
@@ -718,7 +718,7 @@ const Builder = struct {
                 const p = parents[top - base];
                 if (p.inst == none or p.pos != 0) break;
                 path = switch (tags[p.inst]) {
-                    .field_access => path.append(@intFromEnum(bir_.symbols[datas[p.inst].rhs])),
+                    .field_access => path.append(@backingInt(bir_.symbols[datas[p.inst].rhs])),
                     .tuple_index => path.append(tuple_bit | datas[p.inst].rhs),
                     else => break,
                 } orelse return false;
@@ -744,13 +744,13 @@ const Builder = struct {
         const datas = bir_.insts.items(.data);
         if (tags[at.inst] != .method_call or at.pos > 1) return false;
         const d = datas[at.inst];
-        const mc = bir_.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+        const mc = bir_.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
         if (mc.origin != .eq and mc.origin != .neq) return false;
         const args = bir_.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index);
         if (args.len != 1) return false;
         const other: u32 = if (at.pos == 0) args[0].int() else d.lhs;
         const c = b.in.comparison.?;
-        const operand: u32 = switch (c.classify(c.ctx, @enumFromInt(at.inst), @enumFromInt(other))) {
+        const operand: u32 = switch (c.classify(c.ctx, @fromBackingInt(@intCast(at.inst)), @fromBackingInt(@intCast(other)))) {
             .none => return false,
             .strict => blk: {
                 if (h.strict == false) return false;
@@ -759,7 +759,7 @@ const Builder = struct {
             },
             .ctor => |ctor| blk: {
                 if (h.strict == true or tags[other] != .call or datas[other].lhs != ctor.int()) return false;
-                const fields = bir_.extraSlice(bir_.subRange(@enumFromInt(datas[other].rhs)), Inst.Index);
+                const fields = bir_.extraSlice(bir_.subRange(@fromBackingInt(@intCast(datas[other].rhs))), Inst.Index);
                 if (fields.len != 1) return false;
                 if (h.ctor) |first| {
                     if (tags[first.int()] != tags[ctor.int()] or datas[first.int()].lhs != datas[ctor.int()].lhs or
@@ -787,7 +787,7 @@ const Builder = struct {
         if (f >= bir_.decls.len) return false;
         const fd = bir_.decls[f];
         if (fd.kind != .value) return false;
-        const args = bir_.extraSlice(bir_.subRange(@enumFromInt(datas[at.inst].rhs)), Inst.Index);
+        const args = bir_.extraSlice(bir_.subRange(@fromBackingInt(@intCast(datas[at.inst].rhs))), Inst.Index);
         const params = bir_.extraSlice(.{ .start = fd.params_start, .end = fd.params_end }, Inst.Index);
         if (args.len != params.len or at.pos - 1 >= params.len) return false;
         var inner: std.ArrayList(Bind) = .empty;
@@ -862,11 +862,11 @@ const Builder = struct {
                 if (d.inst_start.int() <= f and f < d.inst_end.int()) break d;
             } else continue;
             const lambda = bir_.instData(source.function);
-            const params = bir_.extraSlice(bir_.subRange(@enumFromInt(lambda.lhs)), Inst.Index);
+            const params = bir_.extraSlice(bir_.subRange(@fromBackingInt(@intCast(lambda.lhs))), Inst.Index);
             if (params.len == 0) continue;
             var item: std.ArrayList(u32) = .empty;
             try b.subtree(params[0], &item);
-            const body = b.roots[@intFromEnum(row.body)];
+            const body = b.roots[@backingInt(row.body)];
             for (0..body.values.len) |k| {
                 const v = body.values.start + k;
                 out[v] = switch (b.values.items[v]) {
@@ -946,20 +946,20 @@ const Builder = struct {
             },
             .method_call => {
                 try out.append(b.arena, d.lhs);
-                const mc = bir_.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
-                try out.appendSlice(b.arena, extra[@intFromEnum(mc.args_start)..@intFromEnum(mc.args_end)]);
+                const mc = bir_.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
+                try out.appendSlice(b.arena, extra[@backingInt(mc.args_start)..@backingInt(mc.args_end)]);
             },
             .type_dispatch => {
-                const t = bir_.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
-                try out.appendSlice(b.arena, extra[@intFromEnum(t.args_start)..@intFromEnum(t.args_end)]);
+                const t = bir_.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
+                try out.appendSlice(b.arena, extra[@backingInt(t.args_start)..@backingInt(t.args_end)]);
             },
             .lambda, .let => {
                 try out.appendSlice(b.arena, extra[extra[d.lhs]..extra[d.lhs + 1]]);
                 try out.append(b.arena, d.rhs);
             },
             .let_def => {
-                const def = bir_.extraData(@enumFromInt(d.lhs), Bir.LetDef);
-                try out.appendSlice(b.arena, extra[@intFromEnum(def.params_start)..@intFromEnum(def.params_end)]);
+                const def = bir_.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
+                try out.appendSlice(b.arena, extra[@backingInt(def.params_start)..@backingInt(def.params_end)]);
                 try out.append(b.arena, d.rhs);
             },
             .case => {
@@ -973,9 +973,9 @@ const Builder = struct {
             .let_stmt => try out.append(b.arena, d.rhs),
             .markup => {
                 var values: std.ArrayList(Inst.Index) = .empty;
-                try bir_.markupValues(b.arena, @enumFromInt(d.lhs), &values);
+                try bir_.markupValues(b.arena, @fromBackingInt(@intCast(d.lhs)), &values);
                 for (values.items) |v| try out.append(b.arena, v.int());
-                try b.entryValues(@enumFromInt(d.lhs), out);
+                try b.entryValues(@fromBackingInt(@intCast(d.lhs)), out);
             },
             else => {},
         }
@@ -1016,7 +1016,7 @@ const Builder = struct {
     fn helperCallee(b: *const Builder, inst: Inst.Index) ?Inst.Index {
         const bir_ = b.bir();
         if (bir_.instTag(inst) != .call) return null;
-        const callee: Inst.Index = @enumFromInt(bir_.instData(inst).lhs);
+        const callee: Inst.Index = @fromBackingInt(@intCast(bir_.instData(inst).lhs));
         const d = bir_.instData(callee);
         switch (bir_.instTag(callee)) {
             .top => {
@@ -1043,7 +1043,7 @@ const Builder = struct {
     /// enclosing root when it is called per item, its captures and inputs
     /// values of that root otherwise; its body a root of its own.
     fn formRow(b: *Builder, record: u32, arity: u8) !m.Row.Index {
-        const r = b.bir().extraData(@enumFromInt(record), Bir.MarkupRow);
+        const r = b.bir().extraData(@fromBackingInt(@intCast(record)), Bir.MarkupRow);
         const index: u32 = @intCast(b.tree_rows.items.len);
         const site: m.Site = .{ .module = b.in.module, .inst = r.function.int() };
         var row: m.Row = .{
@@ -1053,7 +1053,7 @@ const Builder = struct {
                 .lambda => .lambda,
                 .function => .function,
             },
-            .body = @enumFromInt(0),
+            .body = @fromBackingInt(@intCast(0)),
             .function = null,
             .arity = arity,
             .reads_index = arity == 2,
@@ -1064,7 +1064,7 @@ const Builder = struct {
             .function => {
                 const f = try b.value(.{ .inst = r.function });
                 row.function = f;
-                row.inputs = .{ .start = @intFromEnum(f), .len = 1 };
+                row.inputs = .{ .start = @backingInt(f), .len = 1 };
             },
             .markup, .lambda => {
                 const captures_start: u32 = @intCast(b.values.items.len);
@@ -1073,16 +1073,16 @@ const Builder = struct {
                 }
                 row.captures = .{ .start = captures_start, .len = @as(u32, @intCast(b.values.items.len)) - captures_start };
                 const inputs_start: u32 = @intCast(b.values.items.len);
-                var at = @intFromEnum(r.inputs_start);
-                while (at < @intFromEnum(r.inputs_end)) : (at += Bir.extraLen(Bir.MarkupInput)) {
-                    _ = try b.value(.{ .input = @enumFromInt(at) });
+                var at = @backingInt(r.inputs_start);
+                while (at < @backingInt(r.inputs_end)) : (at += Bir.extraLen(Bir.MarkupInput)) {
+                    _ = try b.value(.{ .input = @fromBackingInt(@intCast(at)) });
                 }
                 row.inputs = .{ .start = inputs_start, .len = @as(u32, @intCast(b.values.items.len)) - inputs_start };
             },
         }
         const lambda_body: Inst.OptionalIndex = if (r.shape == .lambda) blk: {
             const d = b.bir().instData(r.function);
-            break :blk @as(Inst.Index, @enumFromInt(d.rhs)).toOptional();
+            break :blk @as(Inst.Index, @fromBackingInt(@intCast(d.rhs))).toOptional();
         } else r.body;
         try b.tree_rows.append(b.arena, row);
         try b.row_sources.append(b.arena, .{
@@ -1095,7 +1095,7 @@ const Builder = struct {
             .markup => {
                 const body = r.body.unwrap().?;
                 try b.row_bodies.append(b.arena, body.int());
-                b.tree_rows.items[index].body = @enumFromInt(b.rootIndexOf(body.int()).?);
+                b.tree_rows.items[index].body = @fromBackingInt(@intCast(b.rootIndexOf(body.int()).?));
                 // A body's instruction comes before its row's, so its root
                 // is usually built already; one built later reads
                 // `row_bodies`.
@@ -1104,7 +1104,7 @@ const Builder = struct {
             .lambda => try b.pending_lambdas.append(b.arena, index),
             .function => {},
         }
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 
     fn itemList(b: *Builder, start: Bir.ExtraIndex, end: Bir.ExtraIndex) !m.Range {
@@ -1113,7 +1113,7 @@ const Builder = struct {
         for (bir_.extraSlice(.{ .start = start, .end = end }, Bir.ExtraIndex)) |at| {
             const item = bir_.extraData(at, Bir.MarkupItem);
             if (item.kind == .spread) continue;
-            const row = b.rowOf(@intFromEnum(at));
+            const row = b.rowOf(@backingInt(at));
             const kind: m.Item.Kind = if (row) |r| switch (r.kind) {
                 .event => .event,
                 .escape => .escape,
@@ -1124,15 +1124,15 @@ const Builder = struct {
                 .name = try b.string(b.symbolText(item.name)),
                 .attribute = .none,
                 .event = .none,
-                .class = if (row) |r| (if (kind == .event) .string else @enumFromInt(r.detail)) else .string,
-                .form = if (row) |r| (if (kind == .event) @enumFromInt(r.detail) else .message) else .message,
+                .class = if (row) |r| (if (kind == .event) .string else @fromBackingInt(@intCast(r.detail))) else .string,
+                .form = if (row) |r| (if (kind == .event) @fromBackingInt(@intCast(r.detail)) else .message) else .message,
                 .url = if (row) |r| r.url else false,
                 .value = undefined,
             };
             switch (kind) {
                 .attribute => if (row) |r| {
                     out.attribute = try b.attributeRow(r.row);
-                    if (out.attribute != .none) out.url = out.url or b.attribute_facts.items[@intFromEnum(out.attribute)].url;
+                    if (out.attribute != .none) out.url = out.url or b.attribute_facts.items[@backingInt(out.attribute)].url;
                 },
                 .event => if (row) |r| {
                     out.event = try b.eventRow(r.row);
@@ -1175,7 +1175,7 @@ const Builder = struct {
     }
 
     fn noConstant() m.Constant {
-        return .{ .kind = .none, .text = @enumFromInt(0), .bool = false };
+        return .{ .kind = .none, .text = @fromBackingInt(@intCast(0)), .bool = false };
     }
 
     fn constant(b: *Builder, c: Bir.Constant, offset: u32, len: u32) !m.Constant {
@@ -1200,7 +1200,7 @@ const Builder = struct {
         const pattern = row.facts & Interface.VocabRow.pattern_bit != 0;
         if (pattern) {
             for (b.element_facts.items, 0..) |f, i| {
-                if (std.mem.eql(u8, b.stringText(f.name), written)) return @enumFromInt(i);
+                if (std.mem.eql(u8, b.stringText(f.name), written)) return @fromBackingInt(@intCast(i));
             }
         }
         if (pattern or b.element_rows[iface_row] == none) {
@@ -1210,14 +1210,14 @@ const Builder = struct {
                 .void = row.has(.void),
                 .namespace = if (row.has(.svg)) .svg else if (row.has(.mathml)) .mathml else .html,
             });
-            if (pattern) return @enumFromInt(at);
+            if (pattern) return @fromBackingInt(@intCast(at));
             b.element_rows[iface_row] = at;
         }
-        return @enumFromInt(b.element_rows[iface_row]);
+        return @fromBackingInt(@intCast(b.element_rows[iface_row]));
     }
 
     fn stringText(b: *const Builder, i: m.Strings.Index) []const u8 {
-        const span = b.spans.items[@intFromEnum(i)];
+        const span = b.spans.items[@backingInt(i)];
         return b.string_bytes.items[span.start..][0..span.len];
     }
 
@@ -1237,7 +1237,7 @@ const Builder = struct {
                 .styles = row.has(.styles),
             });
         }
-        return @enumFromInt(b.attribute_rows[iface_row]);
+        return @fromBackingInt(@intCast(b.attribute_rows[iface_row]));
     }
 
     fn eventRow(b: *Builder, iface_row: u32) !m.EventRow {
@@ -1263,6 +1263,6 @@ const Builder = struct {
                 .has_extractor = row.via != .none,
             });
         }
-        return @enumFromInt(b.event_rows[iface_row]);
+        return @fromBackingInt(@intCast(b.event_rows[iface_row]));
     }
 };

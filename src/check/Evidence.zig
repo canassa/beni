@@ -50,11 +50,11 @@ pub const WantedId = enum(u32) {
     _,
 
     pub fn int(id: WantedId) u32 {
-        return @intFromEnum(id);
+        return @backingInt(id);
     }
 
     pub fn toOptional(id: WantedId) Optional {
-        return @enumFromInt(@intFromEnum(id));
+        return @fromBackingInt(@intCast(@backingInt(id)));
     }
 
     pub const Optional = enum(u32) {
@@ -62,7 +62,7 @@ pub const WantedId = enum(u32) {
         _,
 
         pub fn unwrap(o: Optional) ?WantedId {
-            return if (o == .none) null else @enumFromInt(@intFromEnum(o));
+            return if (o == .none) null else @fromBackingInt(@intCast(@backingInt(o)));
         }
     };
 };
@@ -193,21 +193,21 @@ pub const Slot = enum(u32) {
     const given_bit: u32 = 1 << 31;
 
     pub fn wanted(id: WantedId) Slot {
-        return @enumFromInt(id.int());
+        return @fromBackingInt(@intCast(id.int()));
     }
 
     pub fn given(index: u32) Slot {
-        return @enumFromInt(index | given_bit);
+        return @fromBackingInt(@intCast(index | given_bit));
     }
 
     pub fn asWanted(s: Slot) ?WantedId {
-        if (s == .none or @intFromEnum(s) & given_bit != 0) return null;
-        return @enumFromInt(@intFromEnum(s));
+        if (s == .none or @backingInt(s) & given_bit != 0) return null;
+        return @fromBackingInt(@intCast(@backingInt(s)));
     }
 
     pub fn asGiven(s: Slot) ?u32 {
-        if (s == .none or @intFromEnum(s) & given_bit == 0) return null;
-        return @intFromEnum(s) & ~given_bit;
+        if (s == .none or @backingInt(s) & given_bit == 0) return null;
+        return @backingInt(s) & ~given_bit;
     }
 };
 
@@ -322,7 +322,7 @@ pub fn repoint(e: *Evidence, start: u32, from: u32, to: u32) void {
 
 pub fn add(e: *Evidence, gpa: Allocator, w: Wanted) Error!WantedId {
     std.debug.assert(w.frame != std.math.maxInt(u32));
-    const id: WantedId = @enumFromInt(@as(u32, @intCast(e.wanteds.items.len)));
+    const id: WantedId = @fromBackingInt(@intCast(@as(u32, @intCast(e.wanteds.items.len))));
     try lists.push(Wanted, &e.wanteds, gpa, w);
     try lists.push(Answer, &e.answers, gpa, .none);
     return id;

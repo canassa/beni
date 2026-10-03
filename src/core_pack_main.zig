@@ -161,10 +161,10 @@ fn check(
     const pack = Pack.Pack.init(blob);
     var files: u32 = 0;
     for (0..session.store.count()) |i| {
-        if (session.store.package(@enumFromInt(i)) == .app) continue;
+        if (session.store.package(@fromBackingInt(@intCast(i))) == .app) continue;
         files += 1;
         if (pack.find(.frontend, session.file_keys[i]) == null) {
-            _ = fail(stderr, "checking {s}, '{s}' left no front-end artifact", .{ what, session.store.path(@enumFromInt(i)) });
+            _ = fail(stderr, "checking {s}, '{s}' left no front-end artifact", .{ what, session.store.path(@fromBackingInt(@intCast(i))) });
             return error.Reported;
         }
     }
@@ -173,7 +173,7 @@ fn check(
         return error.Reported;
     }
     for (0..session.graph.count()) |i| {
-        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const m: @TypeOf(session.graph).Index = @fromBackingInt(@intCast(i));
         if (session.graph.modulePackage(m) == .app) continue;
         if (!session.keys.isCacheable(m) or pack.find(.entry, session.keys.of(m)) == null) {
             _ = fail(stderr, "checking {s}, the module '{s}' left no cache entry", .{ what, session.store.path(session.graph.moduleFile(m)) });

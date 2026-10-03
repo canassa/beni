@@ -73,8 +73,8 @@ pub fn main(init: std.process.Init) !u8 {
         while (lines.next()) |line| {
             const space = std.mem.indexOfScalar(u8, line, ' ') orelse continue;
             const value = std.fmt.parseUnsigned(u64, line[space + 1 ..], 10) catch continue;
-            inline for (@typeInfo(Counts).@"struct".fields) |field| {
-                if (std.mem.eql(u8, line[0..space], field.name)) @field(counts, field.name) += value;
+            inline for (@typeInfo(Counts).@"struct".field_names) |field_name| {
+                if (std.mem.eql(u8, line[0..space], field_name)) @field(counts, field_name) += value;
             }
         }
     }

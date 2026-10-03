@@ -161,7 +161,7 @@ pub const Reader = struct {
                 const params = try r.readRange(t.lhs);
                 defer r.scratch.free(params);
                 const range = try r.store.addVars(params);
-                const result = try r.read(@enumFromInt(t.rhs));
+                const result = try r.read(@fromBackingInt(@intCast(t.rhs)));
                 break :blk try r.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, r.rank);
             },
             .app => blk: {
@@ -183,12 +183,12 @@ pub const Reader = struct {
                 defer r.scratch.free(fields);
                 for (0..count) |i| {
                     fields[i] = .{
-                        .name = r.iface.symbol(@enumFromInt(words[i * 2])),
-                        .value = try r.read(@enumFromInt(words[i * 2 + 1])),
+                        .name = r.iface.symbol(@fromBackingInt(@intCast(words[i * 2]))),
+                        .value = try r.read(@fromBackingInt(@intCast(words[i * 2 + 1]))),
                     };
                 }
                 const range = try r.store.addFields(fields);
-                const ext = try r.read(@enumFromInt(t.rhs));
+                const ext = try r.read(@fromBackingInt(@intCast(t.rhs)));
                 break :blk try r.store.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } }, r.rank);
             },
             .alias => blk: {
@@ -248,7 +248,7 @@ pub const Reader = struct {
         const words = r.iface.range(start);
         const out = try r.scratch.alloc(Var, words.len);
         errdefer r.scratch.free(out);
-        for (words, out) |word, *v| v.* = try r.read(@enumFromInt(word));
+        for (words, out) |word, *v| v.* = try r.read(@fromBackingInt(@intCast(word)));
         return out;
     }
 };
@@ -297,7 +297,7 @@ pub fn instantiateWith(
         const q = iface.quantified(s, @intCast(i));
         v.* = try store.fresh(.{ .flex = .{
             .name = iface.quantifiedSymbol(q),
-            .kind = @enumFromInt(q.kind),
+            .kind = @fromBackingInt(@intCast(q.kind)),
             .equatable = q.equatable,
         } }, rank);
     }
@@ -322,7 +322,7 @@ pub fn instantiateWith(
             c.* = .{
                 .name = iface.symbol(qc.name),
                 .fn_var = try reader.read(qc.type),
-                .region = @enumFromInt(0),
+                .region = @fromBackingInt(@intCast(0)),
                 .origin = .where_clause,
             };
         }
@@ -384,8 +384,8 @@ pub fn instantiateCtorWith(
     if (ctor_index >= iface.ctors.len) return null;
     const c = iface.ctors[ctor_index];
     if (c.arg_terms == Interface.no_terms) return null;
-    if (@intFromEnum(c.type) >= iface.types.len) return null;
-    const arity = iface.types[@intFromEnum(c.type)].arity;
+    if (@backingInt(c.type) >= iface.types.len) return null;
+    const arity = iface.types[@backingInt(c.type)].arity;
 
     const fresh = try scratch.alloc(Var, arity);
     defer scratch.free(fresh);
@@ -393,7 +393,7 @@ pub fn instantiateCtorWith(
         const q = iface.ctorQuantified(c, @intCast(i));
         v.* = try store.fresh(.{ .flex = .{
             .name = iface.quantifiedSymbol(q),
-            .kind = @enumFromInt(q.kind),
+            .kind = @fromBackingInt(@intCast(q.kind)),
             .equatable = q.equatable,
         } }, rank);
     }
@@ -404,7 +404,7 @@ pub fn instantiateCtorWith(
     const words = iface.range(c.arg_terms);
     const args = try scratch.alloc(Var, words.len);
     defer scratch.free(args);
-    for (words, args) |word, *v| v.* = try reader.read(@enumFromInt(word));
+    for (words, args) |word, *v| v.* = try reader.read(@fromBackingInt(@intCast(word)));
 
     // The result: the owning type applied to its own parameters — or, for
     // a record alias's constructor (interface v3), the alias of the
@@ -425,7 +425,7 @@ pub fn instantiateCtorWith(
             defer scratch.free(fields);
             for (fields, names, args) |*f, name, arg| {
                 if (name >= iface.symbols.len) return null;
-                f.* = .{ .name = iface.symbol(@enumFromInt(name)), .value = arg };
+                f.* = .{ .name = iface.symbol(@fromBackingInt(@intCast(name))), .value = arg };
             }
             const field_range = try store.addFields(fields);
             const closed = try store.fresh(.{ .structure = .empty_record }, rank);

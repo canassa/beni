@@ -85,8 +85,8 @@ pub fn build(e: *Eager, s: *Solve) Error!void {
     for (bir.decls, 0..) |d, i| {
         // A `type`, or a tagged schema's two nominal endpoints (§11.5).
         const ids: [2]Types.TypeId = switch (d.kind) {
-            .type => .{ cx.types.ofDecl(cx.module, @enumFromInt(i)), .none },
-            .schema => .{ cx.types.ofSchemaDecl(cx.module, @enumFromInt(i), .type), cx.types.ofSchemaDecl(cx.module, @enumFromInt(i), .encoded) },
+            .type => .{ cx.types.ofDecl(cx.module, @fromBackingInt(@intCast(i))), .none },
+            .schema => .{ cx.types.ofSchemaDecl(cx.module, @fromBackingInt(@intCast(i)), .type), cx.types.ofSchemaDecl(cx.module, @fromBackingInt(@intCast(i)), .encoded) },
             else => continue,
         };
         for (ids) |id| {
@@ -122,7 +122,7 @@ fn body(e: *Eager, s: *Solve, row: *Row) Error!void {
     const gpa = s.cx.gpa;
     const t = s.contexts.local(row.type_id).?;
     // A unit P5 settled kept its last passes: they are the bodies.
-    const kept = s.contexts.bodies[t * 2 + @intFromEnum(row.kind)];
+    const kept = s.contexts.bodies[t * 2 + @backingInt(row.kind)];
     if (kept.set) {
         row.markers = .{ .start = @intCast(e.markers.items.len), .len = @intCast(kept.markers.len) };
         try e.markers.appendSlice(gpa, kept.markers);
@@ -219,7 +219,7 @@ fn bodyUnit(e: *Elaborate, i: u32) Error!bool {
 fn rowRegion(e: *const Elaborate, i: u32) Bir.Inst.Index {
     const cx = e.in.cx;
     const entry = cx.types.entry(e.rows.items[i].shape.nominal);
-    if (entry.decl.int() >= cx.bir.decls.len) return @enumFromInt(0);
+    if (entry.decl.int() >= cx.bir.decls.len) return @fromBackingInt(@intCast(0));
     return cx.bir.decls[entry.decl.int()].inst_start;
 }
 

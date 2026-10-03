@@ -188,7 +188,7 @@ fn printInterfaceHashes(gpa: Allocator, stdout: *Io.Writer, session: *Session) !
     };
     const lines = try arena.alloc(Line, session.graph.count());
     for (lines, 0..) |*line, i| {
-        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const m: @TypeOf(session.graph).Index = @fromBackingInt(@intCast(i));
         const file = session.graph.moduleFile(m);
         const iface = &session.resolution.interfaces[i];
         const bytes = try iface_bytes.write(gpa, iface, &session.interner);
@@ -230,7 +230,7 @@ fn printCacheKeys(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void {
     };
     const lines = try arena.alloc(Line, session.graph.count());
     for (lines, 0..) |*line, i| {
-        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const m: @TypeOf(session.graph).Index = @fromBackingInt(@intCast(i));
         const file = session.graph.moduleFile(m);
         line.* = .{
             .key = try std.fmt.allocPrint(arena, "{t}:{s}", .{
@@ -268,7 +268,7 @@ fn printCompareKeys(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void
     };
     const lines = try arena.alloc(Line, session.graph.count());
     for (lines, 0..) |*line, i| {
-        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const m: @TypeOf(session.graph).Index = @fromBackingInt(@intCast(i));
         const file = session.graph.moduleFile(m);
         line.* = .{
             .key = try std.fmt.allocPrint(arena, "{t}:{s}", .{
@@ -307,7 +307,7 @@ fn printDependencyDigests(gpa: Allocator, stdout: *Io.Writer, session: *Session)
     };
     const lines = try arena.alloc(Line, session.graph.count());
     for (lines, 0..) |*line, i| {
-        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const m: @TypeOf(session.graph).Index = @fromBackingInt(@intCast(i));
         const file = session.graph.moduleFile(m);
         line.* = .{
             .key = try std.fmt.allocPrint(arena, "{t}:{s}", .{

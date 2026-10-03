@@ -73,7 +73,7 @@ fn checkOne(cx: *const Context, report: *Report, decl_scheme: []Var.Optional, ma
     // almost always a mistake. `on` takes several names, each once.
     var seen: u32 = 0;
     for (fs, 0..) |f, k| {
-        const bit = @as(u32, 1) << @intCast(@intFromEnum(f.word));
+        const bit = @as(u32, 1) << @intCast(@backingInt(f.word));
         if (f.word == .on) {
             for (fs[0..k]) |g| {
                 if (g.word == .on and f.arg != .none and g.arg != .none and bir.symbol(g.arg) == bir.symbol(f.arg)) return fail(cx, report, i, .duplicate_declaration,
@@ -93,7 +93,7 @@ fn checkOne(cx: *const Context, report: *Report, decl_scheme: []Var.Optional, ma
     }
     const has = struct {
         fn f(bits: u32, word: Bir.FactWord) bool {
-            return bits & (@as(u32, 1) << @intCast(@intFromEnum(word))) != 0;
+            return bits & (@as(u32, 1) << @intCast(@backingInt(word))) != 0;
         }
     }.f;
 

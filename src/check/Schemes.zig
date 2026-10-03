@@ -246,7 +246,7 @@ pub const Writer = struct {
             .effects = effects,
         });
         try w.finish(mark);
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 
     /// Write one solved root for an unhashed schema plan. Unlike `add`, this
@@ -442,7 +442,7 @@ pub const Writer = struct {
             .quantified_count = 0,
             .body = body,
         });
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 
     /// Start a new scheme: a new epoch, so every slot written for the last
@@ -558,7 +558,7 @@ pub const Writer = struct {
     fn term(w: *Writer, tag: Interface.Term.Tag, lhs: u32, rhs: u32) Error!Interface.TermIndex {
         const index: u32 = @intCast(w.terms.len);
         try w.terms.append(w.gpa, .{ .tag = tag, .lhs = lhs, .rhs = rhs });
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 
     pub fn addRange(w: *Writer, words: []const u32) Error!u32 {
@@ -588,16 +588,16 @@ pub const Writer = struct {
     /// `private_method` row's culprit (checker-v2.md §14.2).
     pub fn typeRefOf(w: *Writer, id: TypeStore.TypeId) Error!Interface.TypeRefIndex {
         const t = w.types.named(id) orelse return .none;
-        if (w.ref_index.get(id)) |i| return @enumFromInt(i);
-        const index: Interface.TypeRefIndex = @enumFromInt(@as(u32, @intCast(w.type_refs.items.len)));
+        if (w.ref_index.get(id)) |i| return @fromBackingInt(@intCast(i));
+        const index: Interface.TypeRefIndex = @fromBackingInt(@intCast(@as(u32, @intCast(w.type_refs.items.len))));
         try w.type_refs.append(w.gpa, .{
             .package = t.package,
-            .module = @enumFromInt(try w.symbolIndex(t.module)),
-            .name = @enumFromInt(try w.symbolIndex(t.name)),
+            .module = @fromBackingInt(@intCast(try w.symbolIndex(t.module))),
+            .name = @fromBackingInt(@intCast(try w.symbolIndex(t.name))),
         });
         try w.ref_ids.append(w.gpa, id);
         try w.ref_row.append(w.gpa, no_row);
-        try w.ref_index.put(w.gpa, id, @intFromEnum(index));
+        try w.ref_index.put(w.gpa, id, @backingInt(index));
         return index;
     }
 
@@ -706,7 +706,7 @@ pub const Writer = struct {
         try w.stack.ensureUnusedCapacity(w.gpa, vars.len);
         for (vars) |v| w.stack.appendAssumeCapacity(v.int());
         for (base..base + vars.len) |i| {
-            const t = try w.writeVar(@enumFromInt(w.stack.items[i]));
+            const t = try w.writeVar(@fromBackingInt(@intCast(w.stack.items[i])));
             w.stack.items[i] = t.int();
         }
         return base;
@@ -720,7 +720,7 @@ pub const Writer = struct {
         w.quantified_count += 1;
         if (w.claim(root)) w.quantified[root.int()] = index;
         const q: Interface.Quantified = .{
-            .kind = @intFromEnum(flags.kind),
+            .kind = @backingInt(flags.kind),
             .equatable = flags.equatable,
             // Into the interface's own column, never the interner's — see
             // `Interface.Quantified.name`.
@@ -728,12 +728,12 @@ pub const Writer = struct {
             // inherited through a merge, which member order decides
             // (checker.md §8.7).
             .name = if (flags.name.unwrap()) |n|
-                (if (Render.nameAgreesWithKind(w.interner.slice(n), flags.kind)) @enumFromInt(try w.symbolIndex(n)) else .none)
+                (if (Render.nameAgreesWithKind(w.interner.slice(n), flags.kind)) @fromBackingInt(@intCast(try w.symbolIndex(n))) else .none)
             else
                 .none,
         };
         try w.pending_flags.append(w.gpa, q.flags());
-        try w.pending_flags.append(w.gpa, @intFromEnum(q.name));
+        try w.pending_flags.append(w.gpa, @backingInt(q.name));
         // Patched by `writeConstraints`; a quantifier with none keeps
         // `0, 0` and consumes no `extra` (§6.5 rule 4).
         try w.pending_flags.append(w.gpa, 0);
@@ -908,8 +908,8 @@ const testing = std.testing;
 /// would be testing a record no build produces.
 fn testTypes(entries: []Types.Entry, module: Symbol, names: []const Symbol) Types {
     for (entries, names) |*e, n| e.* = .{
-        .module = @enumFromInt(0),
-        .decl = @enumFromInt(0),
+        .module = @fromBackingInt(@intCast(0)),
+        .decl = @fromBackingInt(@intCast(0)),
         .name = n,
         .package = .core,
         .module_name = module,
@@ -934,7 +934,7 @@ fn testTypeIds(gpa: Allocator, iface: *const Interface, types: *const Types) All
         slot.* = .none;
         for (types.entries, 0..) |e, i| {
             if (e.name == iface.symbol(ref.name) and e.module_name == iface.symbol(ref.module)) {
-                slot.* = @enumFromInt(i);
+                slot.* = @fromBackingInt(@intCast(i));
                 break;
             }
         }
@@ -961,7 +961,7 @@ test "a scheme round trips through terms with its sharing intact" {
     defer w.deinit();
     const index = try w.add(body);
     try w.attach(&iface);
-    try testing.expectEqual(@as(u32, 0), @intFromEnum(index));
+    try testing.expectEqual(@as(u32, 0), @backingInt(index));
     try testing.expectEqual(@as(u32, 1), iface.schemes[0].quantified_count);
 
     // Instantiating twice gives two independent copies, and within one copy
@@ -1003,9 +1003,9 @@ test "a method constraint round trips through the interface onto a fresh variabl
         try interner.getOrPut(gpa, "Bool"),
         try interner.getOrPut(gpa, "Order"),
     });
-    const int: TypeStore.TypeId = @enumFromInt(0);
-    const bool_id: TypeStore.TypeId = @enumFromInt(1);
-    const order_id: TypeStore.TypeId = @enumFromInt(2);
+    const int: TypeStore.TypeId = @fromBackingInt(@intCast(0));
+    const bool_id: TypeStore.TypeId = @fromBackingInt(@intCast(1));
+    const order_id: TypeStore.TypeId = @fromBackingInt(@intCast(2));
     const a = try store.fresh(.{ .flex = .{} }, TypeStore.generalized);
     const int_var = try store.fresh(.{ .structure = .{ .app = .{ .type = int, .args = .empty } } }, TypeStore.generalized);
     const bool_var = try store.fresh(.{ .structure = .{ .app = .{ .type = bool_id, .args = .empty } } }, TypeStore.generalized);
@@ -1016,8 +1016,8 @@ test "a method constraint round trips through the interface onto a fresh variabl
     const eq_name = try interner.getOrPut(gpa, "eq");
     const compare_name = try interner.getOrPut(gpa, "compare");
     const set = try store.addConstraints(&.{
-        .{ .name = eq_name, .fn_var = eq_fn, .region = @enumFromInt(0), .origin = .where_clause },
-        .{ .name = compare_name, .fn_var = compare_fn, .region = @enumFromInt(0), .origin = .where_clause },
+        .{ .name = eq_name, .fn_var = eq_fn, .region = @fromBackingInt(@intCast(0)), .origin = .where_clause },
+        .{ .name = compare_name, .fn_var = compare_fn, .region = @fromBackingInt(@intCast(0)), .origin = .where_clause },
     });
     store.setContent(a, .{ .flex = .{ .constraints = set.toOptional() } });
     const params = try store.addVars(&.{ a, int_var });
@@ -1117,16 +1117,16 @@ test "quantifier order matches the writer, records and constraints included" {
     // record lays the evidence out in the order the callee expects.
     const scheme = iface.schemes[0];
     try testing.expectEqual(@as(u32, 2), scheme.quantified_count);
-    const record_term = iface.term(@enumFromInt(iface.term(scheme.body).rhs));
+    const record_term = iface.term(@fromBackingInt(@intCast(iface.term(scheme.body).rhs)));
     _ = record_term;
     const func_term = iface.term(scheme.body);
     const param_words = iface.range(func_term.lhs);
-    const rec = iface.term(@enumFromInt(param_words[0]));
+    const rec = iface.term(@fromBackingInt(@intCast(param_words[0])));
     const pairs = iface.range(rec.lhs);
-    try testing.expectEqualStrings("a", interner.slice(iface.symbol(@enumFromInt(pairs[0]))));
-    try testing.expectEqual(@as(u32, 0), iface.term(@enumFromInt(pairs[1])).lhs);
-    try testing.expectEqualStrings("b", interner.slice(iface.symbol(@enumFromInt(pairs[2]))));
-    try testing.expectEqual(@as(u32, 1), iface.term(@enumFromInt(pairs[3])).lhs);
+    try testing.expectEqualStrings("a", interner.slice(iface.symbol(@fromBackingInt(@intCast(pairs[0])))));
+    try testing.expectEqual(@as(u32, 0), iface.term(@fromBackingInt(@intCast(pairs[1]))).lhs);
+    try testing.expectEqualStrings("b", interner.slice(iface.symbol(@fromBackingInt(@intCast(pairs[2])))));
+    try testing.expectEqual(@as(u32, 1), iface.term(@fromBackingInt(@intCast(pairs[3]))).lhs);
 }
 
 /// Build a random solved type at `TypeStore.generalized`, with deliberate
@@ -1166,7 +1166,7 @@ const RandomType = struct {
         switch (choice) {
             0 => return g.store.fresh(.{ .flex = .{
                 .name = g.names[g.random.uintLessThan(usize, g.names.len)].toOptional(),
-                .kind = @enumFromInt(g.random.uintLessThan(u32, 3)),
+                .kind = @fromBackingInt(@intCast(g.random.uintLessThan(u32, 3))),
                 .equatable = g.random.boolean(),
             } }, rank),
             1 => return g.store.fresh(.{ .structure = .unit }, rank),
@@ -1294,7 +1294,7 @@ fn expectRoundTrip(seed: u64) !void {
     // type — or as `.none` — shows up in the rendered text.
     var entries: [3]Types.Entry = undefined;
     const types = testTypes(&entries, try interner.getOrPut(gpa, "M"), &.{ names[0], names[1], names[2] });
-    const ids = [_]TypeStore.TypeId{ @enumFromInt(0), @enumFromInt(1), @enumFromInt(2), .none };
+    const ids = [_]TypeStore.TypeId{ @fromBackingInt(@intCast(0)), @fromBackingInt(@intCast(1)), @fromBackingInt(@intCast(2)), .none };
 
     var prng: std.Random.DefaultPrng = .init(seed);
     var source: TypeStore = .init(gpa);
@@ -1317,7 +1317,7 @@ fn expectRoundTrip(seed: u64) !void {
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const copy = try instantiate(&iface, type_ids, &target, @intFromEnum(index), TypeStore.generalized, arena.allocator());
+    const copy = try instantiate(&iface, type_ids, &target, @backingInt(index), TypeStore.generalized, arena.allocator());
 
     // The record must not have smuggled an error term into a type that had
     // none: `err` unifies with anything, so one hiding inside a published

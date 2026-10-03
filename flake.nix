@@ -2,9 +2,10 @@
   description = "beni — an Elm-like language that compiles to JavaScript";
 
   # Pinned to the same channel as the host (/etc/nixos). Zig releases move the
-  # std API, so the toolchain is upgraded DELIBERATELY: bump this input, read the
-  # Zig release notes, fix what breaks, commit. Never track unstable here.
+  # std API, so the toolchain is upgraded deliberately. Never track unstable here.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+  inputs.zig-overlay.url = "github:mitchellh/zig-overlay";
+  inputs.zig-overlay.inputs.nixpkgs.follows = "nixpkgs";
 
   # The compilers under test in bench/compare (docs/design/compare-bench.md
   # §8.1): a separate, unstable pin, so upgrading Elm, Gleam, Roc, PureScript
@@ -12,26 +13,22 @@
   # re-measure against newer compilers; the results file records the rev.
   inputs.nixpkgs-compare.url = "github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3";
 
-  outputs = { self, nixpkgs, nixpkgs-compare }:
+  outputs = { self, nixpkgs, nixpkgs-compare, zig-overlay }:
     let
       # The shell is the same on every machine the compiler is developed on;
       # only the nixpkgs instance differs. Naming one system here was enough
       # until the first non-NixOS checkout, which then got no devShell at all.
       systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
-      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system nixpkgs.legacyPackages.${system});
     in
     {
-      devShells = forAllSystems (pkgs: rec {
+      devShells = forAllSystems (system: pkgs: rec {
         default = pkgs.mkShell {
           packages = [
-            # 0.16.0 — the version the bundled langref in
-            # .claude/skills/zig-developer/zig-langref/ documents. Keep zls in
-            # lockstep. NOTE: references/zig is the submodule at master, ~2100
-            # commits ahead of this; it is read for compiler ARCHITECTURE, not for
-            # API signatures. For an exact signature, trust this toolchain's own
-            # std (`zig env` → lib_dir) or the langref.
-            pkgs.zig
-            pkgs.zls
+            # Zig 0.17.0. The bundled 0.16 langref is stale for API signatures;
+            # use this toolchain's std (`zig env` → lib_dir). ZLS remains out of
+            # the shell until its stable release supports Zig 0.17.
+            zig-overlay.packages.${system}."0.17.0"
 
             # Boundary 2 of the write-tests skill: emitted JavaScript is executed
             # and its behaviour asserted. Without a JS runtime those tests cannot
@@ -43,11 +40,11 @@
           ];
 
           # Each worktree keeps its own `.zig-cache`. Sharing one cache
-          # across worktrees is unsafe with Zig 0.16: its manifests record
+          # across worktrees is unsafe: Zig's manifests record
           # build-root-relative paths, so a worktree could be handed a binary
           # built from another worktree's sources.
           shellHook = ''
-            echo "beni: zig $(zig version) · node $(node --version) · zls $(zls --version)"
+            echo "beni: zig $(zig version) · node $(node --version)"
           '';
         };
 

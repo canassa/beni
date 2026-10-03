@@ -119,7 +119,7 @@ pub fn negativeArgumentHint(r: *Reporter, w: *std.Io.Writer, category: @import("
     if (call.int() >= bir.insts.len or bir.instTag(call) != .call) return false;
     const callee = r.calleeOf(call);
     if (callee.kind != .operator or !std.mem.eql(u8, callee.name, "-")) return false;
-    const args = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(call).rhs)), Bir.Inst.Index);
+    const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(call).rhs))), Bir.Inst.Index);
     if (args.len != 2 or args[1].int() >= bir.insts.len) return false;
     switch (bir.instTag(args[1])) {
         .int, .float => {},
@@ -729,7 +729,7 @@ pub fn eqName(r: *const Reporter, gpa: std.mem.Allocator, use: EqUse) error{OutO
     switch (use) {
         .wanted => |w| {
             if (w.origin.int() < bir.insts.len and bir.instTag(w.origin) == .method_call) {
-                const m = bir.extraData(@enumFromInt(bir.instData(w.origin).rhs), Bir.MethodCall);
+                const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(w.origin).rhs)), Bir.MethodCall);
                 if (m.origin.spelling()) |op| return std.fmt.allocPrint(gpa, "`{s}`", .{op});
                 return std.fmt.allocPrint(gpa, "`.{s}`", .{r.env.interner.slice(bir.symbol(m.name))});
             }
@@ -790,7 +790,7 @@ fn markerCallee(r: *const Reporter, call: Bir.Inst.OptionalIndex) MarkerCallee {
     const bir = r.env.bir;
     const at = call.unwrap() orelse return .none;
     if (at.int() >= bir.insts.len or bir.instTag(at) != .call) return .none;
-    return referenceCallee(r, @enumFromInt(bir.instData(at).lhs));
+    return referenceCallee(r, @fromBackingInt(@intCast(bir.instData(at).lhs)));
 }
 
 /// A `where` clause's requirement raised at `origin` — a call, or the
@@ -799,7 +799,7 @@ fn markerCallee(r: *const Reporter, call: Bir.Inst.OptionalIndex) MarkerCallee {
 fn basicsWhereCallee(r: *const Reporter, origin: Bir.Inst.Index) MarkerCallee {
     const bir = r.env.bir;
     if (origin.int() >= bir.insts.len) return .none;
-    const reference: Bir.Inst.Index = if (bir.instTag(origin) == .call) @enumFromInt(bir.instData(origin).lhs) else origin;
+    const reference: Bir.Inst.Index = if (bir.instTag(origin) == .call) @fromBackingInt(@intCast(bir.instData(origin).lhs)) else origin;
     const callee = referenceCallee(r, reference);
     return if (callee == .basics) callee else .none;
 }
@@ -810,10 +810,10 @@ fn referenceCallee(r: *const Reporter, reference: Bir.Inst.Index) MarkerCallee {
     if (bir.instTag(reference) == .ext_value) {
         const data = bir.instData(reference);
         if (data.lhs >= r.env.interfaces.len) return .none;
-        const module: Graph.Index = @enumFromInt(data.lhs);
+        const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
         const iface = r.env.iface(module);
         if (data.rhs >= iface.values.len) return .none;
-        const name = iface.valueName(@enumFromInt(data.rhs));
+        const name = iface.valueName(@fromBackingInt(@intCast(data.rhs)));
         const wk = InternPool.WellKnown;
         const basics = r.env.graph.find(.core, wk.Basics.symbol());
         const is_basics = if (basics) |b| b == module else false;

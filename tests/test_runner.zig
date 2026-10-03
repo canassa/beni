@@ -154,7 +154,10 @@ const Outcome = struct {
 /// down.
 fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     testing.environ = init.environ;
-    testing.allocator_instance = .{};
+    testing.allocator_instance = .init(std.heap.page_allocator, .{
+        .canary = 0xc3a701ba,
+        .check_write_after_free = true,
+    });
     testing.io_instance = .init(testing.allocator, .{
         .argv0 = .init(init.args),
         .environ = init.environ,
@@ -177,8 +180,7 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
         },
     };
     testing.io_instance.deinit();
-    const leaks = testing.allocator_instance.detectLeaks();
-    testing.allocator_instance.deinitWithoutLeakChecks();
+    const leaks = testing.allocator_instance.deinit();
     const cpu_us = started.cpuUs();
     const spent = (timing.testSpent() -% spent_before) -| timing.cases_spent.load(.monotonic);
     // The budget (`timing.budget_unit`): instructions, which a loaded
@@ -235,11 +237,11 @@ const Started = struct {
 fn mainServer(init: std.process.Init.Minimal) !void {
     var stdin_reader: Io.File.Reader = .initStreaming(.stdin(), runner_io, &stdin_buffer);
     var stdout_writer: Io.File.Writer = .initStreaming(.stdout(), runner_io, &stdout_buffer);
-    var server = try std.zig.Server.init(.{
+    var server: std.zig.Server = .{
         .in = &stdin_reader.interface,
         .out = &stdout_writer.interface,
-        .zig_version = builtin.zig_version_string,
-    });
+    };
+    try server.serveStringMessage(.zig_version, builtin.zig_version_string);
 
     while (true) {
         const hdr = try server.receiveMessage();
@@ -293,7 +295,7 @@ fn mainServer(init: std.process.Init.Minimal) !void {
                 });
             },
             else => {
-                std.debug.print("unsupported message: {x}\n", .{@intFromEnum(hdr.tag)});
+                std.debug.print("unsupported message: {x}\n", .{@backingInt(hdr.tag)});
                 std.process.exit(1);
             },
         }
@@ -333,8 +335,8 @@ pub fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (@intFromEnum(level) <= @intFromEnum(std.log.Level.err)) log_err_count +|= 1;
-    if (@intFromEnum(level) <= @intFromEnum(testing.log_level)) {
+    if (@backingInt(level) <= @backingInt(std.log.Level.err)) log_err_count +|= 1;
+    if (@backingInt(level) <= @backingInt(testing.log_level)) {
         std.debug.print("[" ++ @tagName(scope) ++ "] (" ++ @tagName(level) ++ "): " ++ format ++ "\n", args);
     }
 }

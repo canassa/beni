@@ -147,8 +147,8 @@ fn writeInterfaceAt(
             const params = cx.iface.range(term.lhs);
             try tag(gpa, out, .func);
             try appendInt(gpa, out, u32, @intCast(params.len));
-            for (params) |p| try writeInterfaceAt(gpa, out, cx, @enumFromInt(p), depth + 1);
-            return writeInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
+            for (params) |p| try writeInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(p)), depth + 1);
+            return writeInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(term.rhs)), depth + 1);
         },
         .app => return writeInterfaceNamed(gpa, out, cx, term.lhs, cx.iface.range(term.rhs), depth),
         // As with BIR bodies, a nested alias stays named; closure adds its
@@ -158,7 +158,7 @@ fn writeInterfaceAt(
             const elements = cx.iface.range(term.lhs);
             try tag(gpa, out, .tuple);
             try appendInt(gpa, out, u32, @intCast(elements.len));
-            for (elements) |e| try writeInterfaceAt(gpa, out, cx, @enumFromInt(e), depth + 1);
+            for (elements) |e| try writeInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(e)), depth + 1);
         },
         .record => return writeInterfaceRecord(gpa, out, cx, term, depth),
         .unit => return tag(gpa, out, .unit),
@@ -179,13 +179,13 @@ fn writeInterfaceNamed(
     args: []const u32,
     depth: u32,
 ) Allocator.Error!void {
-    const ref = cx.iface.typeRef(@enumFromInt(ref_word)) orelse return tag(gpa, out, .err);
+    const ref = cx.iface.typeRef(@fromBackingInt(@intCast(ref_word))) orelse return tag(gpa, out, .err);
     try tag(gpa, out, .named);
-    try out.append(gpa, @intFromEnum(ref.package));
+    try out.append(gpa, @backingInt(ref.package));
     try appendText(gpa, out, cx.interner.slice(cx.iface.symbol(ref.module)));
     try appendText(gpa, out, cx.interner.slice(cx.iface.symbol(ref.name)));
     try appendInt(gpa, out, u32, @intCast(args.len));
-    for (args) |a| try writeInterfaceAt(gpa, out, cx, @enumFromInt(a), depth + 1);
+    for (args) |a| try writeInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(a)), depth + 1);
 }
 
 const InterfaceField = struct {
@@ -205,8 +205,8 @@ fn writeInterfaceRecord(
     const fields = try gpa.alloc(InterfaceField, words.len / 2);
     defer gpa.free(fields);
     for (fields, 0..) |*field, i| field.* = .{
-        .name = @enumFromInt(words[i * 2]),
-        .value = @enumFromInt(words[i * 2 + 1]),
+        .name = @fromBackingInt(@intCast(words[i * 2])),
+        .value = @fromBackingInt(@intCast(words[i * 2 + 1])),
     };
     const Sorter = struct {
         cx: InterfaceContext,
@@ -228,7 +228,7 @@ fn writeInterfaceRecord(
     }
     if (term.rhs != Interface.TermIndex.none.int()) {
         try out.append(gpa, 1);
-        return writeInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
+        return writeInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(term.rhs)), depth + 1);
     }
     return out.append(gpa, 0);
 }
@@ -241,7 +241,7 @@ fn writeAt(gpa: Allocator, out: *std.ArrayList(u8), cx: Context, inst: Bir.Inst.
     switch (t) {
         .type_unit => return tag(gpa, out, .unit),
         .type_var => {
-            const name = bir.symbol(@enumFromInt(data.lhs));
+            const name = bir.symbol(@fromBackingInt(@intCast(data.lhs)));
             for (cx.params, 0..) |p, i| {
                 if (p != name) continue;
                 try tag(gpa, out, .@"var");
@@ -253,11 +253,11 @@ fn writeAt(gpa: Allocator, out: *std.ArrayList(u8), cx: Context, inst: Bir.Inst.
             return tag(gpa, out, .err);
         },
         .type_fn => {
-            const params = bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index);
+            const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index);
             try tag(gpa, out, .func);
             try appendInt(gpa, out, u32, @intCast(params.len));
             for (params) |p| try writeAt(gpa, out, cx, p, depth + 1);
-            return writeAt(gpa, out, cx, @enumFromInt(data.rhs), depth + 1);
+            return writeAt(gpa, out, cx, @fromBackingInt(@intCast(data.rhs)), depth + 1);
         },
         .type_tuple => {
             const elements = bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
@@ -271,14 +271,14 @@ fn writeAt(gpa: Allocator, out: *std.ArrayList(u8), cx: Context, inst: Bir.Inst.
             gpa,
             out,
             cx,
-            bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field),
-            @as(Bir.Inst.Index, @enumFromInt(data.lhs)),
+            bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field),
+            @as(Bir.Inst.Index, @fromBackingInt(@intCast(data.lhs))),
             depth,
         ),
         .type_top, .ext_type, .schema_type_top, .ext_schema_type => return named(gpa, out, cx, t, data, &.{}, depth),
         .type_app => {
-            const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
-            const head: Bir.Inst.Index = @enumFromInt(data.lhs);
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
+            const head: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
             return named(gpa, out, cx, bir.instTag(head), bir.instData(head), args, depth);
         },
         else => return tag(gpa, out, .err),
@@ -302,7 +302,7 @@ fn named(
     const id: Types.TypeId = Types.headId(cx.types, cx.module, t, data);
     const who = cx.types.named(id) orelse return tag(gpa, out, .err);
     try tag(gpa, out, .named);
-    try out.append(gpa, @intFromEnum(who.package));
+    try out.append(gpa, @backingInt(who.package));
     try appendText(gpa, out, cx.interner.slice(who.module));
     try appendText(gpa, out, cx.interner.slice(who.name));
     try appendInt(gpa, out, u32, @intCast(args.len));
@@ -387,25 +387,25 @@ fn collectInterfaceAt(
     const term = cx.iface.term(index);
     switch (term.tag) {
         .app, .alias => {
-            if (cx.iface.typeRef(@enumFromInt(term.lhs))) |ref| {
+            if (cx.iface.typeRef(@fromBackingInt(@intCast(term.lhs)))) |ref| {
                 const module_name = cx.iface.symbol(ref.module);
                 if (ref.package == cx.graph.modulePackage(cx.module) and module_name == cx.graph.moduleName(cx.module)) {
                     const id = cx.types.find(cx.graph, ref.package, module_name, cx.iface.symbol(ref.name));
                     if (id != .none) try out.append(gpa, id);
                 }
             }
-            for (cx.iface.range(term.rhs)) |arg| try collectInterfaceAt(gpa, out, cx, @enumFromInt(arg), depth + 1);
+            for (cx.iface.range(term.rhs)) |arg| try collectInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(arg)), depth + 1);
         },
         .func => {
-            for (cx.iface.range(term.lhs)) |p| try collectInterfaceAt(gpa, out, cx, @enumFromInt(p), depth + 1);
-            try collectInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
+            for (cx.iface.range(term.lhs)) |p| try collectInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(p)), depth + 1);
+            try collectInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(term.rhs)), depth + 1);
         },
-        .tuple => for (cx.iface.range(term.lhs)) |e| try collectInterfaceAt(gpa, out, cx, @enumFromInt(e), depth + 1),
+        .tuple => for (cx.iface.range(term.lhs)) |e| try collectInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(e)), depth + 1),
         .record => {
             const words = cx.iface.range(term.lhs);
             var i: usize = 1;
-            while (i < words.len) : (i += 2) try collectInterfaceAt(gpa, out, cx, @enumFromInt(words[i]), depth + 1);
-            if (term.rhs != Interface.TermIndex.none.int()) try collectInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
+            while (i < words.len) : (i += 2) try collectInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(words[i])), depth + 1);
+            if (term.rhs != Interface.TermIndex.none.int()) try collectInterfaceAt(gpa, out, cx, @fromBackingInt(@intCast(term.rhs)), depth + 1);
         },
         .@"var", .unit, .empty_record, .err => {},
     }
@@ -428,10 +428,10 @@ fn collectAt(
             if (id != .none) try out.append(gpa, id);
         },
         .type_fn => {
-            for (bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index)) |p| {
+            for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index)) |p| {
                 try collectAt(gpa, out, cx, p, depth + 1);
             }
-            try collectAt(gpa, out, cx, @enumFromInt(data.rhs), depth + 1);
+            try collectAt(gpa, out, cx, @fromBackingInt(@intCast(data.rhs)), depth + 1);
         },
         .type_tuple => for (bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |e| {
             try collectAt(gpa, out, cx, e, depth + 1);
@@ -440,19 +440,19 @@ fn collectAt(
             try collectAt(gpa, out, cx, f.value, depth + 1);
         },
         .type_record_ext => {
-            try collectAt(gpa, out, cx, @enumFromInt(data.lhs), depth + 1);
-            for (bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field)) |f| {
+            try collectAt(gpa, out, cx, @fromBackingInt(@intCast(data.lhs)), depth + 1);
+            for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |f| {
                 try collectAt(gpa, out, cx, f.value, depth + 1);
             }
         },
         .type_app => {
-            const head: Bir.Inst.Index = @enumFromInt(data.lhs);
+            const head: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
             const head_tag = bir.instTag(head);
             if (head_tag == .type_top or head_tag == .schema_type_top) {
                 const id = Types.headId(cx.types, cx.module, head_tag, bir.instData(head));
                 if (id != .none) try out.append(gpa, id);
             }
-            for (bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)) |a| {
+            for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index)) |a| {
                 try collectAt(gpa, out, cx, a, depth + 1);
             }
         },
@@ -461,7 +461,7 @@ fn collectAt(
 }
 
 fn tag(gpa: Allocator, out: *std.ArrayList(u8), t: Tag) Allocator.Error!void {
-    try out.append(gpa, @intFromEnum(t));
+    try out.append(gpa, @backingInt(t));
 }
 
 fn appendText(gpa: Allocator, out: *std.ArrayList(u8), text: []const u8) Allocator.Error!void {
@@ -718,7 +718,7 @@ test "the round trip is total: every tag renders and nothing is left over" {
     defer out.deinit(gpa);
     for ([_]Tag{ .unit, .err, .too_deep }) |t| {
         out.clearRetainingCapacity();
-        try render(gpa, &out, &.{@intFromEnum(t)});
+        try render(gpa, &out, &.{@backingInt(t)});
         try testing.expect(out.items.len != 0);
         try testing.expect(std.mem.indexOf(u8, out.items, "trailing") == null);
     }
@@ -726,6 +726,6 @@ test "the round trip is total: every tag renders and nothing is left over" {
     // produces one, and a reader that could crash on bytes is the posture
     // `checker.md` §7 forbids.
     out.clearRetainingCapacity();
-    try render(gpa, &out, &.{ @intFromEnum(Tag.tuple), 9 });
+    try render(gpa, &out, &.{ @backingInt(Tag.tuple), 9 });
     try testing.expect(out.items.len != 0);
 }

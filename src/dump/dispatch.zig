@@ -73,7 +73,7 @@ pub fn write(
         labels[c.int()] +|= 1;
     };
     for (labels, 0..) |*l, i| {
-        l.* = if (l.* > 1 and cx.hasChildren(@enumFromInt(i))) Context.unlabelled else Context.plain;
+        l.* = if (l.* > 1 and cx.hasChildren(@fromBackingInt(@intCast(i)))) Context.unlabelled else Context.plain;
     }
     cx.labels = labels;
     for (bir.decls, 0..) |d, i| {
@@ -153,8 +153,8 @@ pub fn write(
     for (dispatch.boundary) |b| {
         const decl = if (b.decl < bir.decls.len) interner.slice(bir.symbol(bir.decls[b.decl].name)) else "?";
         switch (b.kind) {
-            .field => try w.print("  boundary {s} field {s}\n", .{ decl, interner.slice(@enumFromInt(b.value)) }),
-            .type => if (types.named(@enumFromInt(b.value))) |named| {
+            .field => try w.print("  boundary {s} field {s}\n", .{ decl, interner.slice(@fromBackingInt(@intCast(b.value))) }),
+            .type => if (types.named(@fromBackingInt(@intCast(b.value)))) |named| {
                 try w.print("  boundary {s} type {s}.{s}\n", .{ decl, interner.slice(named.module), interner.slice(named.name) });
             } else try w.print("  boundary {s} type ?\n", .{decl}),
         }
@@ -197,10 +197,10 @@ fn writeDebugShape(
             .unit => try w.writeAll("⊤"),
             .tuple => try w.writeAll(if (n.count == 0) "( )" else "( "),
             .record => try w.writeAll(if (n.count == 0) "{}" else "{ "),
-            .field => try w.print("{s} : ", .{interner.slice(@enumFromInt(n.value))}),
+            .field => try w.print("{s} : ", .{interner.slice(@fromBackingInt(@intCast(n.value)))}),
             .named => {
                 if (n.count != 0) try w.writeAll("(");
-                if (types.named(@enumFromInt(n.value))) |named| {
+                if (types.named(@fromBackingInt(@intCast(n.value)))) |named| {
                     try w.print("{s}.{s}", .{ interner.slice(named.module), interner.slice(named.name) });
                 } else try w.writeAll("?");
                 if (n.count != 0) try w.writeAll(" ");
@@ -345,7 +345,7 @@ const Context = struct {
                 try w.print(" {s}", .{@tagName(std.enums.fromInt(M.Class, n.detail) orelse .string)});
             },
             .escape => {
-                const name = if (n.node < cx.bir.extra.len) cx.interner.slice(cx.bir.symbol(cx.bir.extraData(@enumFromInt(n.node), Bir.MarkupItem).name)) else "?";
+                const name = if (n.node < cx.bir.extra.len) cx.interner.slice(cx.bir.symbol(cx.bir.extraData(@fromBackingInt(@intCast(n.node)), Bir.MarkupItem).name)) else "?";
                 try w.print(" \"{s}\" string{s}", .{ name, if (n.url) " url" else "" });
             },
             .event => {
@@ -355,7 +355,7 @@ const Context = struct {
                     const iface = &cx.interfaces[v.int()];
                     if (n.extractor < iface.values.len) try w.print(" via {s}.{s}", .{
                         cx.interner.slice(cx.graph.moduleName(v)),
-                        cx.interner.slice(iface.valueName(@enumFromInt(n.extractor))),
+                        cx.interner.slice(iface.valueName(@fromBackingInt(@intCast(n.extractor)))),
                     });
                 };
             },

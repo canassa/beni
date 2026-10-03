@@ -256,7 +256,7 @@ pub const Counter = enum {
     spec_init_capped,
     spec_inline_capped,
 
-    pub const count = @typeInfo(Counter).@"enum".fields.len;
+    pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };
 
 /// A complete event. `file` is a file index (or `no_file` for serial steps)
@@ -393,11 +393,11 @@ pub fn end(profile: *Profile, tid: u32, token: Token, phase: Phase, file: u32, b
 /// after the join and calls this once per counter).
 pub fn addCounter(profile: *Profile, c: Counter, value: u64) void {
     if (!profile.enabled) return;
-    profile.counters[@intFromEnum(c)] += value;
+    profile.counters[@backingInt(c)] += value;
 }
 
 pub fn counter(profile: *const Profile, c: Counter) u64 {
-    return profile.counters[@intFromEnum(c)];
+    return profile.counters[@backingInt(c)];
 }
 
 /// Total events recorded across all threads (not counting dropped ones).
@@ -445,8 +445,8 @@ pub fn write(profile: *const Profile, writer: *Io.Writer, file_paths: []const []
         }
     }
     const end_ns = profile.nowNs();
-    inline for (@typeInfo(Counter).@"enum".fields) |field| {
-        try writeCounter(&json, field.name, end_ns, profile.counters[field.value]);
+    inline for (@typeInfo(Counter).@"enum".field_names, @typeInfo(Counter).@"enum".field_values) |field_name, field_value| {
+        try writeCounter(&json, field_name, end_ns, profile.counters[field_value]);
     }
     var dropped: u64 = 0;
     for (profile.threads) |buffer| dropped += buffer.dropped;

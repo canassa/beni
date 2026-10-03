@@ -44,7 +44,7 @@ pub fn write(
 
     var lines: std.ArrayList([]const u8) = .empty;
     for (0..graph.count()) |i| {
-        const from: Graph.Index = @enumFromInt(i);
+        const from: Graph.Index = @fromBackingInt(@intCast(i));
         for (graph.dependencies(from)) |to| {
             try lines.append(arena, try std.fmt.allocPrint(arena, "{s} -> {s}", .{
                 try name(arena, graph, interner, from),

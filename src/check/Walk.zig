@@ -178,12 +178,12 @@ pub fn encodeGround(
             .flex, .rigid, .err, .alias => return null,
         };
         switch (flat) {
-            .unit => try lists.add(words, gpa, @intFromEnum(Tag.unit)),
-            .empty_record => try lists.add(words, gpa, @intFromEnum(Tag.empty_record)),
+            .unit => try lists.add(words, gpa, @backingInt(Tag.unit)),
+            .empty_record => try lists.add(words, gpa, @backingInt(Tag.empty_record)),
             .func => return null,
             .tuple => |t| {
                 const elements = store.vars(t);
-                try words.appendSlice(gpa, &.{ @intFromEnum(Tag.tuple), @intCast(elements.len) });
+                try words.appendSlice(gpa, &.{ @backingInt(Tag.tuple), @intCast(elements.len) });
                 var i = elements.len;
                 while (i > 0) : (i -= 1) try lists.add(stack, gpa, elements[i - 1]);
             },
@@ -191,14 +191,14 @@ pub fn encodeGround(
                 if (a.type == .none) return null;
                 if (!heads.kept(a)) found.kept = false;
                 const args = store.vars(a.args);
-                try words.appendSlice(gpa, &.{ @intFromEnum(Tag.app), a.type.int(), @intCast(args.len) });
+                try words.appendSlice(gpa, &.{ @backingInt(Tag.app), a.type.int(), @intCast(args.len) });
                 var i = args.len;
                 while (i > 0) : (i -= 1) try lists.add(stack, gpa, args[i - 1]);
             },
             .record => |rec| {
                 const fields = store.fields(rec.fields);
-                try words.appendSlice(gpa, &.{ @intFromEnum(Tag.record), @intCast(fields.len) });
-                for (fields) |f| try lists.add(words, gpa, @intFromEnum(f.name));
+                try words.appendSlice(gpa, &.{ @backingInt(Tag.record), @intCast(fields.len) });
+                for (fields) |f| try lists.add(words, gpa, @backingInt(f.name));
                 try lists.add(stack, gpa, rec.ext);
                 var i = fields.len;
                 while (i > 0) : (i -= 1) try lists.add(stack, gpa, fields[i - 1].value);
@@ -321,7 +321,7 @@ pub fn stepped(store: *const TypeStore, root: Var, n: u32) ?Stepped {
             },
             .record => |r| {
                 const fields = store.fields(r.fields);
-                if (n < fields.len) return .{ .v = fields[n].value, .kind = .field, .index = @intFromEnum(fields[n].name) };
+                if (n < fields.len) return .{ .v = fields[n].value, .kind = .field, .index = @backingInt(fields[n].name) };
                 return if (n == fields.len) .{ .v = r.ext, .kind = .extension, .index = 0 } else null;
             },
         },
@@ -356,7 +356,7 @@ pub fn follow(store: *const TypeStore, root: Var, kind: StepKind, index: u32) ?V
             .record => |r| switch (kind) {
                 .field => {
                     for (store.fields(r.fields)) |f| {
-                        if (@intFromEnum(f.name) == index) return f.value;
+                        if (@backingInt(f.name) == index) return f.value;
                     }
                     return null;
                 },
@@ -620,8 +620,8 @@ pub fn fieldIn(store: *const TypeStore, range: TypeStore.Range, name: InternPool
     var hi: usize = fields.len;
     while (lo < hi) {
         const mid = lo + (hi - lo) / 2;
-        const at = @intFromEnum(fields[mid].name);
-        const want = @intFromEnum(name);
+        const at = @backingInt(fields[mid].name);
+        const want = @backingInt(name);
         if (at < want) lo = mid + 1 else if (at > want) hi = mid else return fields[mid].value;
     }
     return null;
@@ -876,7 +876,7 @@ test "occurs finds a cycle through a record and none through a constraint's meth
     // x = { e | f : x }
     const x = try store.freshFlex(1);
     const e = try store.freshFlex(1);
-    var fields = [_]TypeStore.Field{.{ .name = @enumFromInt(3), .value = x }};
+    var fields = [_]TypeStore.Field{.{ .name = @fromBackingInt(@intCast(3)), .value = x }};
     const range = try store.addFields(&fields);
     const record = try store.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = e } } }, 1);
     _ = store.merge(x, record, store.content(record));
@@ -888,7 +888,7 @@ test "occurs finds a cycle through a record and none through a constraint's meth
     const y = try store.freshFlex(1);
     const params = try store.addVars(&.{ y, y });
     const method = try store.fresh(.{ .structure = .{ .func = .{ .params = params, .result = y } } }, 1);
-    const set = try store.addConstraints(&.{.{ .name = @enumFromInt(1), .fn_var = method, .region = @enumFromInt(0), .origin = .dot_call }});
+    const set = try store.addConstraints(&.{.{ .name = @fromBackingInt(@intCast(1)), .fn_var = method, .region = @fromBackingInt(@intCast(0)), .origin = .dot_call }});
     store.setContent(y, .{ .flex = .{ .constraints = set.toOptional() } });
     o.restart(&store);
     try testing.expectEqual(@as(?Var, null), try o.check(&store, &stacks, testing.allocator, y));
@@ -920,7 +920,7 @@ fn walkDeepType() !void {
     const bottom = v;
     for (0..deep_type) |_| {
         const args = try store.addVars(&.{v});
-        v = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, 5);
+        v = try store.fresh(.{ .structure = .{ .app = .{ .type = @fromBackingInt(@intCast(0)), .args = args } } }, 5);
     }
     var o: Occurs = .begin(&store);
     try testing.expectEqual(@as(?Var, null), try o.check(&store, &stacks, testing.allocator, v));
@@ -940,10 +940,10 @@ test "a variable met only in a requirement's method type is reached through requ
     const b = try store.freshFlex(1);
     const params = try store.addVars(&.{ a, b });
     const method_type = try store.fresh(.{ .structure = .{ .func = .{ .params = params, .result = b } } }, 1);
-    const set = try store.addConstraints(&.{.{ .name = @enumFromInt(3), .fn_var = method_type, .region = @enumFromInt(0), .origin = .where_clause }});
+    const set = try store.addConstraints(&.{.{ .name = @fromBackingInt(@intCast(3)), .fn_var = method_type, .region = @fromBackingInt(@intCast(0)), .origin = .where_clause }});
     store.setContent(a, .{ .flex = .{ .constraints = set.toOptional() } });
     const args = try store.addVars(&.{a});
-    const scheme = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, 1);
+    const scheme = try store.fresh(.{ .structure = .{ .app = .{ .type = @fromBackingInt(@intCast(0)), .args = args } } }, 1);
     try testing.expect(!try reaches(&store, &stacks, testing.allocator, scheme, b));
     try testing.expect(try reachesThroughRequirements(&store, &stacks, testing.allocator, scheme, b));
     try testing.expect(try reachesThroughRequirements(&store, &stacks, testing.allocator, scheme, a));

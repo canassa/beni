@@ -75,7 +75,7 @@ pub fn settle(
                 const b = item.bir;
                 const data = b.instData(item.inst);
                 if (b.instTag(item.inst) == .type_app) {
-                    const head: Bir.Inst.Index = @enumFromInt(data.lhs);
+                    const head: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
                     const id = types.headId(item.module, b.instTag(head), b.instData(head));
                     if (id != .none and id.int() < n and isPlainAlias(types.entries[id.int()]) and state[id.int()] == .unvisited) {
                         state[id.int()] = .settling;
@@ -96,7 +96,7 @@ pub fn settle(
                 const data = b.instData(item.inst);
                 switch (tag) {
                     .type_var => if (item.live) {
-                        const var_name = b.symbol(@enumFromInt(data.lhs));
+                        const var_name = b.symbol(@fromBackingInt(@intCast(data.lhs)));
                         const info = Bir.TypeVarInfo.unpack(data.rhs);
                         if (info.param != Bir.TypeVarInfo.param_none and info.param < mine.len and info.param < params.len and params[info.param] == var_name) {
                             mine[info.param] = true;
@@ -105,10 +105,10 @@ pub fn settle(
                         }
                     },
                     .type_app => {
-                        const head: Bir.Inst.Index = @enumFromInt(data.lhs);
+                        const head: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
                         const head_tag = b.instTag(head);
                         const id = types.headId(item.module, head_tag, b.instData(head));
-                        const args = b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+                        const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
                         const nested = id != .none and id.int() < n and types.entries[id.int()].kind == .alias;
                         for (args, 0..) |arg, j| {
                             // An argument survives a nested alias only where
@@ -146,10 +146,10 @@ fn pushTypeChildren(gpa: Allocator, work: anytype, item: anytype, apps: bool) Al
     const Item = @TypeOf(item);
     switch (b.instTag(item.inst)) {
         .type_fn => {
-            for (b.extraSlice(b.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index)) |p| {
+            for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index)) |p| {
                 try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = p, .live = item.live });
             }
-            try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = @enumFromInt(data.rhs), .live = item.live });
+            try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = @fromBackingInt(@intCast(data.rhs)), .live = item.live });
         },
         .type_tuple => for (b.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |el| {
             try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = el, .live = item.live });
@@ -158,13 +158,13 @@ fn pushTypeChildren(gpa: Allocator, work: anytype, item: anytype, apps: bool) Al
             try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = f.value, .live = item.live });
         },
         .type_record_ext => {
-            try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = @enumFromInt(data.lhs), .live = item.live });
-            for (b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Field)) |f| {
+            try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = @fromBackingInt(@intCast(data.lhs)), .live = item.live });
+            for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |f| {
                 try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = f.value, .live = item.live });
             }
         },
         .type_app => if (apps) {
-            for (b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)) |arg| {
+            for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index)) |arg| {
                 try work.append(gpa, Item{ .module = item.module, .bir = b, .inst = arg, .live = item.live });
             }
         },

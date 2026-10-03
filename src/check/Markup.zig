@@ -67,7 +67,7 @@ pub const Row = struct {
     type: Var.Optional = .none,
 
     pub fn has(row: Row, word: Bir.FactWord) bool {
-        return row.facts & (@as(u32, 1) << @intCast(@intFromEnum(word))) != 0;
+        return row.facts & (@as(u32, 1) << @intCast(@backingInt(word))) != 0;
     }
 
     fn literalLen(row: Row, cx: *const Context) usize {
@@ -125,7 +125,7 @@ pub fn build(
             var on: std.ArrayList(Symbol) = .empty;
             if (r.on != Interface.no_terms and r.on < iface.extra.len) {
                 const len = iface.extra[r.on];
-                for (iface.extra[r.on + 1 ..][0..len]) |s| try on.append(cx.scratch, iface.symbol(@enumFromInt(s)));
+                for (iface.extra[r.on + 1 ..][0..len]) |s| try on.append(cx.scratch, iface.symbol(@fromBackingInt(@intCast(s))));
             }
             try rows.append(cx.scratch, .{
                 .form = form,
@@ -162,8 +162,8 @@ pub fn typeOf(m: *Markup, row: *Row) Error!?Var {
     } else blk: {
         if (row.scheme == .none) return null;
         const iface = cx.iface(m.vocabulary);
-        if (@intFromEnum(row.scheme) >= iface.schemes.len) return null;
-        break :blk try InterfaceTerms.instantiate(iface, cx.types.refIds(m.vocabulary), cx.store, @intFromEnum(row.scheme), TypeStore.generalized, cx.scratch);
+        if (@backingInt(row.scheme) >= iface.schemes.len) return null;
+        break :blk try InterfaceTerms.instantiate(iface, cx.types.refIds(m.vocabulary), cx.store, @backingInt(row.scheme), TypeStore.generalized, cx.scratch);
     };
     row.type = v.toOptional();
     return v;
@@ -256,8 +256,8 @@ pub fn section(m: *Markup, gpa: Allocator, decisions: []MarkupDecide.Decision) E
     const tags = bir.insts.items(.tag);
     for (tags, 0..) |tag, i| {
         if (tag != .markup) continue;
-        s.root = @enumFromInt(i);
-        try s.node(@enumFromInt(bir.instData(s.root).lhs));
+        s.root = @fromBackingInt(@intCast(i));
+        try s.node(@fromBackingInt(@intCast(bir.instData(s.root).lhs)));
     }
     return s.out.toOwnedSlice(gpa);
 }
@@ -270,11 +270,11 @@ const Section = struct {
     m: *Markup,
     gpa: Allocator,
     decisions: []const MarkupDecide.Decision,
-    root: Bir.Inst.Index = @enumFromInt(0),
+    root: Bir.Inst.Index = @fromBackingInt(@intCast(0)),
     out: std.ArrayList(Dispatch.Markup) = .empty,
 
     fn decided(s: *const Section, at: Bir.ExtraIndex) u8 {
-        const key = @intFromEnum(at);
+        const key = @backingInt(at);
         const i = std.sort.lowerBound(MarkupDecide.Decision, s.decisions, key, struct {
             fn order(k: u32, d: MarkupDecide.Decision) std.math.Order {
                 return std.math.order(k, d.at);
@@ -296,7 +296,7 @@ const Section = struct {
                 const e = bir.extraData(at, Bir.MarkupElement);
                 const tag = bir.symbol(e.name);
                 const row = s.m.element(tag);
-                try s.add(.{ .root = s.root, .node = @intFromEnum(at), .kind = .element, .row = if (row) |r| r.index else Dispatch.Markup.no_row });
+                try s.add(.{ .root = s.root, .node = @backingInt(at), .kind = .element, .row = if (row) |r| r.index else Dispatch.Markup.no_row });
                 for (bir.extraSlice(.{ .start = e.items_start, .end = e.items_end }, Bir.ExtraIndex)) |i| try s.item(tag, i);
                 try s.children(e.children_start, e.children_end);
             },
@@ -305,7 +305,7 @@ const Section = struct {
                 try s.children(f.children_start, f.children_end);
             },
             .text => {},
-            .hole => try s.add(.{ .root = s.root, .node = @intFromEnum(at), .kind = .hole, .detail = s.decided(at) }),
+            .hole => try s.add(.{ .root = s.root, .node = @backingInt(at), .kind = .hole, .detail = s.decided(at) }),
             // A component is an ordinary call: its site is an ordinary
             // site. Children written as markup are this root's nodes.
             .component => {
@@ -315,22 +315,22 @@ const Section = struct {
             .@"for", .show => {
                 const f = bir.extraData(at, Bir.MarkupForm);
                 const is_for = bir.markupKind(at) == .@"for";
-                const detail: u8 = if (is_for) @intFromEnum(switch (f.mode) {
+                const detail: u8 = if (is_for) @backingInt(switch (f.mode) {
                     .key_function => Dispatch.Markup.ForMode.key,
                     .literal_false => .position,
                     .literal_true, .absent => .reference,
-                }) else @intFromEnum(if (f.mode == .key_function) Dispatch.Markup.ShowMode.key else .identity);
+                }) else @backingInt(if (f.mode == .key_function) Dispatch.Markup.ShowMode.key else .identity);
                 var arity: u8 = 1;
                 if (f.row != Bir.none_extra) {
-                    const r = bir.extraData(@enumFromInt(f.row), Bir.MarkupRow);
+                    const r = bir.extraData(@fromBackingInt(@intCast(f.row)), Bir.MarkupRow);
                     arity = switch (r.shape) {
-                        .markup, .lambda => if (is_for and bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(r.function).lhs)), Bir.Inst.Index).len == 2) 2 else 1,
-                        .function => @max(s.decided(@enumFromInt(f.row)), 1),
+                        .markup, .lambda => if (is_for and bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(r.function).lhs))), Bir.Inst.Index).len == 2) 2 else 1,
+                        .function => @max(s.decided(@fromBackingInt(@intCast(f.row))), 1),
                     };
                 }
                 try s.add(.{
                     .root = s.root,
-                    .node = @intFromEnum(at),
+                    .node = @backingInt(at),
                     .kind = if (is_for) .@"for" else .show,
                     .detail = detail,
                     .arity = arity,
@@ -352,9 +352,9 @@ const Section = struct {
             .spread => {},
             .escape => try s.add(.{
                 .root = s.root,
-                .node = @intFromEnum(at),
+                .node = @backingInt(at),
                 .kind = .escape,
-                .detail = @intFromEnum(Dispatch.Markup.Class.string),
+                .detail = @backingInt(Dispatch.Markup.Class.string),
                 .url = urlName(m.cx.interner.slice(bir.symbol(it.name))),
             }),
             .attr => {
@@ -362,7 +362,7 @@ const Section = struct {
                 if (row.form == .event) {
                     return s.add(.{
                         .root = s.root,
-                        .node = @intFromEnum(at),
+                        .node = @backingInt(at),
                         .kind = .event,
                         .detail = s.decided(at),
                         .row = row.index,
@@ -370,7 +370,7 @@ const Section = struct {
                     });
                 }
                 const class: Dispatch.Markup.Class = if (row.has(.classes) or row.has(.styles))
-                    @enumFromInt(s.decided(at))
+                    @fromBackingInt(@intCast(s.decided(at)))
                 else switch (try m.classOf(row) orelse .string) {
                     .string, .other => .string,
                     .int => .int,
@@ -378,7 +378,7 @@ const Section = struct {
                     .bool => .bool,
                     .maybe_string => .maybe_string,
                 };
-                try s.add(.{ .root = s.root, .node = @intFromEnum(at), .kind = .attribute, .detail = @intFromEnum(class), .row = row.index });
+                try s.add(.{ .root = s.root, .node = @backingInt(at), .kind = .attribute, .detail = @backingInt(class), .row = row.index });
             },
         }
     }
@@ -401,7 +401,7 @@ fn extractor(m: *const Markup, row: Row) u32 {
     const cx = m.cx;
     const iface: *const Interface = if (m.vocabulary == cx.module) &cx.interfaces[cx.module.int()] else cx.iface(m.vocabulary);
     const index = iface.findValue(cx.interner, via) orelse return no_row;
-    return @intFromEnum(index);
+    return @backingInt(index);
 }
 
 // ---------------------------------------------------------------------------

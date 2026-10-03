@@ -81,7 +81,7 @@ pub fn rows(
             written += 1;
             switch (item) {
                 .field => |f| {
-                    try nodes.append(gpa, .{ .kind = .field, .count = 1, .value = @intFromEnum(f.name) });
+                    try nodes.append(gpa, .{ .kind = .field, .count = 1, .value = @backingInt(f.name) });
                     try stack.append(gpa, .{ .type = f.value });
                 },
                 .type => |v| {

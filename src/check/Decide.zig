@@ -119,10 +119,10 @@ pub fn drain(s: *Solve, q: u32, boundary: bool) Error!void {
         for (batch.items) |raw| {
             // A wanted: the resolver's (§9.1, one `seq` for both kinds).
             if (raw & Evidence.queued_wanted != 0) {
-                try Resolve.drained(s, @enumFromInt(raw & ~Evidence.queued_wanted));
+                try Resolve.drained(s, @fromBackingInt(@intCast(raw & ~Evidence.queued_wanted)));
                 continue;
             }
-            const id: Id = @enumFromInt(raw);
+            const id: Id = @fromBackingInt(@intCast(raw));
             const row = s.obligations.rowPtr(id);
             if (row.state != .ready) continue;
             if (!boundary and row.kind == .equatable) {
@@ -136,8 +136,8 @@ pub fn drain(s: *Solve, q: u32, boundary: bool) Error!void {
 }
 
 fn seqOf(s: *const Solve, raw: u32) u32 {
-    if (raw & Evidence.queued_wanted != 0) return s.evidence.get(@enumFromInt(raw & ~Evidence.queued_wanted)).seq;
-    return s.obligations.row(@enumFromInt(raw)).seq;
+    if (raw & Evidence.queued_wanted != 0) return s.evidence.get(@fromBackingInt(@intCast(raw & ~Evidence.queued_wanted))).seq;
+    return s.obligations.row(@fromBackingInt(@intCast(raw))).seq;
 }
 
 fn seqLessThan(s: *const Solve, a: u32, b: u32) bool {
@@ -337,7 +337,7 @@ pub fn defaults(s: *Solve, rank: u32) Error!bool {
     defer list.deinit(gpa);
     var applied_any = false;
     for (list.items, 0..) |raw, i| {
-        const id: Id = @enumFromInt(raw);
+        const id: Id = @fromBackingInt(@intCast(raw));
         const row = s.obligations.row(id);
         if (row.state != .open) continue;
         const at = try lowerDependants(s, row);

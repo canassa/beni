@@ -168,7 +168,7 @@ pub fn write(in: Input) !u8 {
     for (in.o.langs, 0..) |l, i| try w.print("{s}\"{t}\"", .{ if (i > 0) ", " else "", l });
     try w.writeAll("],\n  \"langs\": {\n");
     for (in.o.langs, 0..) |lang, oi| {
-        const li = @intFromEnum(lang);
+        const li = @backingInt(lang);
         try w.print("    \"{t}\": {{\n      \"version\": \"{f}\", \"command\": \"{s}\",\n", .{ lang, std.zig.fmtString(in.versions[li]), impl.commandText(lang) });
         try w.writeAll("      \"modes\": {\n");
         var first_mode = true;
@@ -328,7 +328,7 @@ pub fn render(a: Allocator, io: Io, o: runner.Options, from: []const u8, out: *I
     var cpu = grid(in, .cpu);
     var wall = grid(in, .wall);
     for (langs.items) |lang| {
-        const li = @intFromEnum(lang);
+        const li = @backingInt(lang);
         const modes_obj = langs_obj.get(@tagName(lang)).?.object.get("modes").?.object;
         for ([_]Mode{ .annotated, .inferred }, 0..) |mode, mi| {
             const mode_obj = (modes_obj.get(@tagName(mode)) orelse continue).object;
@@ -400,7 +400,7 @@ fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, name: []const u8) !vo
     const beni_a = if (cpu[0][0][tot]) |s| s.per1k() else 0;
     const beni_i = if (cpu[0][1][tot]) |s| s.per1k() else 0;
     for (langs) |lang| {
-        const li = @intFromEnum(lang);
+        const li = @backingInt(lang);
         try w.print("| {s}{s} |", .{ langName(lang), if (lang == .typescript) "¹" else if (lang == .roc) "²" else "" });
         for ([_]usize{ 0, 1 }) |mi| {
             if (cpu[li][mi][tot]) |s| {
@@ -412,7 +412,7 @@ fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, name: []const u8) !vo
     }
     // What Roc's `check` spends its time on (§9, §10.7): a profile, dated
     // and disclosed, never a figure derived from Roc's `--timings`.
-    const roc = @intFromEnum(Lang.roc);
+    const roc = @backingInt(Lang.roc);
     if (cpu[roc][0][tot] != null or cpu[roc][1][tot] != null) {
         try w.writeAll("\n² Roc's `check` command is");
         for ([_]usize{ 0, 1 }, 0..) |mi, i| if (cpu[roc][mi][tot]) |s| {
@@ -436,7 +436,7 @@ fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, name: []const u8) !vo
         for (0..n_proj) |pi| {
             try w.print("| {s} |", .{impl.projects[pi].name()});
             for (langs) |lang| {
-                if (cpu[@intFromEnum(lang)][mi][pi]) |s| {
+                if (cpu[@backingInt(lang)][mi][pi]) |s| {
                     // Roc's recursion cell is mostly canonicalisation (²).
                     const flagged = lang == .roc and impl.projects[pi] == .family and impl.projects[pi].family == .recursion;
                     try w.print(" {d:.3}{s} |", .{ s.per1k(), if (flagged) "²" else "" });
@@ -445,7 +445,7 @@ fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, name: []const u8) !vo
             try w.writeAll("\n");
         }
         try w.writeAll("| additivity |");
-        for (langs) |lang| try w.print(" {d:.2} |", .{additivity(cpu[@intFromEnum(lang)][mi])});
+        for (langs) |lang| try w.print(" {d:.2} |", .{additivity(cpu[@backingInt(lang)][mi])});
         try w.writeAll("\n");
     }
     try w.writeAll("\n¹ TypeScript checks a different kind of program in its own idiom: structural assignability, no `Int`/`Float` split, parameters always annotated, and more annotations in the inferred mode than any other language (compare-bench.md §2.6, §6.3).\n\n");
@@ -454,18 +454,18 @@ fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, name: []const u8) !vo
         const last = in.sizes.len - 1;
         const base = bs.points[last].?.stats.annotations;
         try w.print("Signatures and typed binders written in the inferred mode, total project at size {d}: {d} in beni, Elm, Gleam and Roc (Base and the entry points)", .{ in.sizes[last], base });
-        if (cpu[@intFromEnum(Lang.purescript)][1][tot]) |ps| {
+        if (cpu[@backingInt(Lang.purescript)][1][tot]) |ps| {
             const n = ps.points[last].?.stats.annotations;
             if (n == base) {
                 try w.writeAll("; PureScript needed none beyond them at this seed (the signatures and binder types of compare-bench.md §19 V10 are written only where its classes would be ambiguous, and are counted when they are)");
             } else try w.print("; {d} in PureScript, whose {d} more are the signatures and binder types of compare-bench.md §19 V10", .{ n, n - base });
         }
-        if (cpu[@intFromEnum(Lang.typescript)][1][tot]) |ts| try w.print("; {d} annotation sites in TypeScript (§6.3)", .{ts.points[last].?.stats.annotations});
+        if (cpu[@backingInt(Lang.typescript)][1][tot]) |ts| try w.print("; {d} annotation sites in TypeScript (§6.3)", .{ts.points[last].?.stats.annotations});
         try w.writeAll(".\n\n");
     }
     // §10.6: an additivity outside 0.8–1.2 is flagged.
     for (langs) |lang| for ([_]usize{ 0, 1 }) |mi| {
-        const x = additivity(cpu[@intFromEnum(lang)][mi]);
+        const x = additivity(cpu[@backingInt(lang)][mi]);
         if (x != 0 and (x < 0.8 or x > 1.2)) {
             try w.print("**Flagged (§10.6):** {s}'s additivity in the {s} mode is {d:.2}, outside 0.8–1.2: its family slopes do not sum to its total slope.", .{ langName(lang), if (mi == 0) "annotated" else "inferred", x });
             if (lang == .elm) try w.writeAll(" The cause is Elm's own runtime options (see *Caveats*): its per-family slopes are inflated by nursery first-touch faults, and its total row is unaffected.");

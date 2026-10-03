@@ -63,7 +63,7 @@ seq: *u32 = undefined,
 /// `frame` (§9.1).
 queue: *u32 = undefined,
 /// The instruction the copy in progress is FOR (`copy`'s caller sets it).
-origin: Bir.Inst.Index = @enumFromInt(0),
+origin: Bir.Inst.Index = @fromBackingInt(@intCast(0)),
 /// The wanted whose resolution asked for the copy in progress (an
 /// instance's context, §9.3 step 4), or none: the lineage of §9.5.
 parent: Evidence.WantedId.Optional = .none,
@@ -114,7 +114,7 @@ pub fn adoptSince(in: *Instantiate, mark: u32) Error!void {
     const store = in.cx.store;
     var i = mark;
     while (i < store.count()) : (i += 1) {
-        const v: Var = @enumFromInt(i);
+        const v: Var = @fromBackingInt(@intCast(i));
         if (store.rank(v) == f.rank) try lists.push(Var, &f.pool, in.cx.gpa, v);
     }
 }
@@ -164,7 +164,7 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
     // And effect inference learns the copy's origin, while the memo holds it.
     if (in.record_owner) |owner| {
         in.record_owner = null;
-        if (in.cx.effects) |e| try e.recordCopy(owner, root, in.copied.items[start..], @intFromEnum(in.origin));
+        if (in.cx.effects) |e| try e.recordCopy(owner, root, in.copied.items[start..], @backingInt(in.origin));
     }
     const result = store.copy(root).unwrap().?;
     for (in.copied.items[start..]) |r| store.setCopy(r, .none);
@@ -318,7 +318,7 @@ fn wantImported(in: *Instantiate, mark: u32, scheme: Var) Error!void {
     in.entries = 0;
     var i = mark;
     while (i < store.count()) : (i += 1) {
-        in.entries += Walk.constraints(store.flagsOf(@enumFromInt(i))).count(store);
+        in.entries += Walk.constraints(store.flagsOf(@fromBackingInt(@intCast(i)))).count(store);
     }
     if (in.entries != 0) try in.wantInOrder(scheme, false);
 }
@@ -369,17 +369,17 @@ pub fn reference(in: *Instantiate, region: Bir.Inst.Index) Error!?Var {
     const data = bir.instData(region);
     return switch (bir.instTag(region)) {
         .ctor => try in.ownCtor(data.lhs, region),
-        .ext_value => try in.imported(@enumFromInt(data.lhs), .value, data.rhs),
-        .ext_ctor => try in.importedCtor(@enumFromInt(data.lhs), data.rhs),
-        .ext_schema_member => try in.imported(@enumFromInt(data.lhs), .schema_member, data.rhs),
-        .ext_schema_ctor => try in.imported(@enumFromInt(data.lhs), .schema_ctor, data.rhs),
+        .ext_value => try in.imported(@fromBackingInt(@intCast(data.lhs)), .value, data.rhs),
+        .ext_ctor => try in.importedCtor(@fromBackingInt(@intCast(data.lhs)), data.rhs),
+        .ext_schema_member => try in.imported(@fromBackingInt(@intCast(data.lhs)), .schema_member, data.rhs),
+        .ext_schema_ctor => try in.imported(@fromBackingInt(@intCast(data.lhs)), .schema_ctor, data.rhs),
         .schema_member_top => blk: {
             const kind = std.enums.fromInt(Interface.SchemaMember.Kind, data.rhs) orelse break :blk null;
             break :blk cx.schemas.member(data.lhs, kind);
         },
         .schema_ctor_top => blk: {
             const ref = Bir.SchemaCtorRef.unpack(data.rhs);
-            break :blk try cx.schemas.constructor(@enumFromInt(data.lhs), if (ref.encoded) .encoded else .type, ref.variant);
+            break :blk try cx.schemas.constructor(@fromBackingInt(@intCast(data.lhs)), if (ref.encoded) .encoded else .type, ref.variant);
         },
         else => null,
     };
@@ -406,12 +406,12 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     };
     if (scheme == .none) return null;
     const mark = cx.store.count();
-    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), in.frame().rank, cx.scratch, &in.term_memo, cx.gpa, &in.quantified);
+    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @backingInt(scheme), in.frame().rank, cx.scratch, &in.term_memo, cx.gpa, &in.quantified);
     try in.adoptSince(mark);
     try in.wantImported(mark, v);
     // A value's summary, read from its record (transparent-effects-proposal.md
     // §14.3 rule 3): the use's classes get its rungs and dependencies now.
-    if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@intFromEnum(scheme)], v, in.quantified.items, @intFromEnum(in.origin));
+    if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@backingInt(scheme)], v, in.quantified.items, @backingInt(in.origin));
     return v;
 }
 
@@ -524,7 +524,7 @@ fn copyKeepsSharing() !void {
         .artifacts = undefined,
         .interner = undefined,
         .interfaces = &.{},
-        .module = @enumFromInt(0),
+        .module = @fromBackingInt(@intCast(0)),
         .bir = undefined,
         .schemas = undefined,
         .too_deep = &too_deep,
@@ -547,7 +547,7 @@ fn copyKeepsSharing() !void {
     var v = a;
     for (0..deep_type) |_| {
         const args = try store.addVars(&.{v});
-        v = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, TypeStore.generalized);
+        v = try store.fresh(.{ .structure = .{ .app = .{ .type = @fromBackingInt(@intCast(0)), .args = args } } }, TypeStore.generalized);
     }
     const deep = try in.copy(v);
     try testing.expect(deep != v);

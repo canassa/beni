@@ -281,14 +281,14 @@ const Schedule = struct {
         const n = s.graph.count();
         if (parallel.jobs <= 1 or n <= 1) return 1;
         for (0..n) |i| {
-            if (s.graph.isPoisoned(@enumFromInt(i))) return 1;
+            if (s.graph.isPoisoned(@fromBackingInt(@intCast(i)))) return 1;
         }
         var bound: usize = @min(parallel.jobs, try s.width());
         // One thread per `insts_per_resolver` instructions; an explicit
         // `--jobs` above 1 still gets two, so that asking for a parallel run
         // always gets one, whatever the project's size.
         var insts: usize = 0;
-        for (0..n) |i| insts += s.template.artifacts.bir(s.graph.moduleFile(@enumFromInt(i))).insts.len;
+        for (0..n) |i| insts += s.template.artifacts.bir(s.graph.moduleFile(@fromBackingInt(@intCast(i)))).insts.len;
         const by_work = std.math.divCeil(usize, insts, insts_per_resolver) catch unreachable;
         bound = @min(bound, @max(@as(usize, if (parallel.size_by_work) 1 else 2), by_work));
         return @min(bound, n);
@@ -332,7 +332,7 @@ const Schedule = struct {
         @memset(s.dependent_start, 0);
         var edges: u32 = 0;
         for (0..n) |i| {
-            for (s.graph.dependencies(@enumFromInt(i))) |dep| {
+            for (s.graph.dependencies(@fromBackingInt(@intCast(i)))) |dep| {
                 if (dep.int() == i or position[dep.int()] >= position[i]) continue;
                 s.blockers[i] += 1;
                 s.dependent_start[dep.int() + 1] += 1;
@@ -345,9 +345,9 @@ const Schedule = struct {
         defer gpa.free(cursor);
         @memcpy(cursor, s.dependent_start[0..n]);
         for (0..n) |i| {
-            for (s.graph.dependencies(@enumFromInt(i))) |dep| {
+            for (s.graph.dependencies(@fromBackingInt(@intCast(i)))) |dep| {
                 if (dep.int() == i or position[dep.int()] >= position[i]) continue;
-                s.dependents[cursor[dep.int()]] = @enumFromInt(i);
+                s.dependents[cursor[dep.int()]] = @fromBackingInt(@intCast(i));
                 cursor[dep.int()] += 1;
             }
         }
@@ -442,7 +442,7 @@ const NameTable = struct {
     fn seal(t: *NameTable) void {
         std.sort.pdq(Entry, t.entries.items, {}, struct {
             fn lessThan(_: void, a: Entry, b: Entry) bool {
-                if (a.name != b.name) return @intFromEnum(a.name) < @intFromEnum(b.name);
+                if (a.name != b.name) return @backingInt(a.name) < @backingInt(b.name);
                 return a.index < b.index;
             }
         }.lessThan);
@@ -452,7 +452,7 @@ const NameTable = struct {
         const items = t.entries.items;
         const at = std.sort.partitionPoint(Entry, items, name, struct {
             fn below(target: Symbol, e: Entry) bool {
-                return @intFromEnum(e.name) < @intFromEnum(target);
+                return @backingInt(e.name) < @backingInt(target);
             }
         }.below);
         if (at < items.len and items[at].name == name) return items[at].index;
@@ -504,7 +504,7 @@ const Pass = struct {
     available_names: *std.ArrayList(Symbol),
 
     /// The module being resolved, and the things every helper needs.
-    current: Graph.Index = @enumFromInt(0),
+    current: Graph.Index = @fromBackingInt(@intCast(0)),
     quiet: bool = false,
     /// The current module's names, looked up per reference.
     tables: Tables = .{},
@@ -588,7 +588,7 @@ const Pass = struct {
     fn exposeAllCtors(p: *Pass, m: Graph.Index, iface: *const Interface, e: Bir.Exposed, name: Symbol) Allocator.Error!void {
         const available_start: u32 = @intCast(p.available_names.items.len);
         if (iface.findType(p.interner, name)) |t| {
-            const start, const end = iface.types[@intFromEnum(t)].ctorRange();
+            const start, const end = iface.types[@backingInt(t)].ctorRange();
             for (iface.ctors[start..end]) |ctor| try p.available_names.append(p.gpa, iface.symbol(ctor.name));
         }
         try p.report(.{
@@ -620,8 +620,8 @@ const Pass = struct {
                 if (!tag.isUnresolved()) continue;
                 const resolved = switch (tag.*) {
                     .import_value, .qualified, .import_ctor, .qualified_ctor, .type_import, .type_qualified => blk: {
-                        const module_symbol = bir.symbol(@enumFromInt(d.lhs));
-                        const name = bir.symbol(@enumFromInt(d.rhs));
+                        const module_symbol = bir.symbol(@fromBackingInt(@intCast(d.lhs)));
+                        const name = bir.symbol(@fromBackingInt(@intCast(d.rhs)));
                         const namespace: Namespace = switch (tag.*) {
                             .import_value, .qualified => .value,
                             .import_ctor, .qualified_ctor => .ctor,
@@ -630,11 +630,11 @@ const Pass = struct {
                         };
                         break :blk try p.resolveOrdinaryReference(m, bir, module_symbol, name, namespace, token);
                     },
-                    .schema_type_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@enumFromInt(d.lhs)), .type, token),
-                    .schema_value_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@enumFromInt(d.lhs)), .value, token),
-                    .schema_ctor_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@enumFromInt(d.lhs)), .ctor, token),
-                    .schema_ref => try p.resolveSchemaOperand(m, bir, @intCast(decl_i), bir.symbol(@enumFromInt(d.lhs)), token),
-                    .schema_expr_ref => try p.resolveSchemaExpr(m, bir, bir.symbol(@enumFromInt(d.lhs)), token),
+                    .schema_type_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@fromBackingInt(@intCast(d.lhs))), .type, token),
+                    .schema_value_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@fromBackingInt(@intCast(d.lhs))), .value, token),
+                    .schema_ctor_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@fromBackingInt(@intCast(d.lhs))), .ctor, token),
+                    .schema_ref => try p.resolveSchemaOperand(m, bir, @intCast(decl_i), bir.symbol(@fromBackingInt(@intCast(d.lhs))), token),
+                    .schema_expr_ref => try p.resolveSchemaExpr(m, bir, bir.symbol(@fromBackingInt(@intCast(d.lhs))), token),
                     else => unreachable,
                 };
                 tag.* = resolved.tag;
@@ -651,7 +651,7 @@ const Pass = struct {
         rhs: u32,
 
         fn poison(code: diagnostic.Code) Resolved {
-            return .{ .tag = .@"error", .lhs = @intFromEnum(code), .rhs = 0 };
+            return .{ .tag = .@"error", .lhs = @backingInt(code), .rhs = 0 };
         }
     };
 
@@ -749,7 +749,7 @@ const Pass = struct {
             .type => schemaMemberKind(text) == .type or schemaMemberKind(text) == .encoded,
             .value => if (schemaMemberKind(text)) |kind| kind != .type and kind != .encoded else false,
             .ctor => switch (source) {
-                .local => |di| localSchemaVariant(p.artifacts.bir(p.graph.moduleFile(p.current)), @enumFromInt(di), name) != null,
+                .local => |di| localSchemaVariant(p.artifacts.bir(p.graph.moduleFile(p.current)), @fromBackingInt(@intCast(di)), name) != null,
                 .external => |ext| p.interfaces[ext.module.int()].findSchemaCtor(ext.schema, .type, p.interner, name) != null,
             },
             .schema => false,
@@ -789,22 +789,22 @@ const Pass = struct {
         const iface = &p.interfaces[target.int()];
         switch (namespace) {
             .value => if (iface.findValue(p.interner, name)) |v| {
-                return .{ .tag = .ext_value, .lhs = target.int(), .rhs = @intFromEnum(v) };
+                return .{ .tag = .ext_value, .lhs = target.int(), .rhs = @backingInt(v) };
             },
             .type => if (iface.findType(p.interner, name)) |t| {
-                return .{ .tag = .ext_type, .lhs = target.int(), .rhs = @intFromEnum(t) };
+                return .{ .tag = .ext_type, .lhs = target.int(), .rhs = @backingInt(t) };
             },
             .ctor => if (iface.findCtor(p.interner, name)) |c| {
-                return .{ .tag = .ext_ctor, .lhs = target.int(), .rhs = @intFromEnum(c) };
+                return .{ .tag = .ext_ctor, .lhs = target.int(), .rhs = @backingInt(c) };
             },
             .schema => if (iface.findSchema(p.interner, name)) |s| {
-                return .{ .tag = .ext_schema_target, .lhs = target.int(), .rhs = @intFromEnum(s) };
+                return .{ .tag = .ext_schema_target, .lhs = target.int(), .rhs = @backingInt(s) };
             },
         }
         if (namespace == .type or namespace == .value or namespace == .ctor) {
             if (iface.findSchema(p.interner, name)) |si| {
                 const code: diagnostic.Code = if (namespace == .type) .schema_used_as_type else .schema_used_as_value;
-                try p.report(.{ .code = code, .module = m, .token = token, .name = name.toOptional(), .expected = iface.schemas[@intFromEnum(si)].params_len });
+                try p.report(.{ .code = code, .module = m, .token = token, .name = name.toOptional(), .expected = iface.schemas[@backingInt(si)].params_len });
                 return .poison(code);
             }
         }
@@ -945,7 +945,7 @@ const Pass = struct {
             const code: diagnostic.Code = if (namespace == .type) .schema_used_as_type else .schema_used_as_value;
             const arity: u32 = switch (found.source) {
                 .local => |di| bir.decls[di].params,
-                .external => |ext| p.interfaces[ext.module.int()].schemas[@intFromEnum(ext.schema)].params_len,
+                .external => |ext| p.interfaces[ext.module.int()].schemas[@backingInt(ext.schema)].params_len,
             };
             try p.report(.{ .code = code, .module = m, .token = token, .name = found.schema_name.toOptional(), .expected = arity });
             return .poison(code);
@@ -997,7 +997,7 @@ const Pass = struct {
                 if (variant.len == 0 or std.mem.indexOfScalar(u8, variant, '.') != null) break :blk false;
                 const name = p.interner.find(variant) orelse break :blk false;
                 break :blk switch (source) {
-                    .local => |di| localSchemaVariant(p.artifacts.bir(p.graph.moduleFile(p.current)), @enumFromInt(di), name) != null,
+                    .local => |di| localSchemaVariant(p.artifacts.bir(p.graph.moduleFile(p.current)), @fromBackingInt(@intCast(di)), name) != null,
                     .external => |ext| p.interfaces[ext.module.int()].findSchemaCtor(ext.schema, endpoint, p.interner, name) != null,
                 };
             },
@@ -1050,10 +1050,10 @@ const Pass = struct {
 
     fn schemaSourceOrigin(p: *const Pass, m: Graph.Index, source: SchemaSource) SourceOrigin {
         return switch (source) {
-            .local => |di| .{ .module = m, .token = p.artifacts.bir(p.graph.moduleFile(m)).decl(@enumFromInt(di)).name_token },
+            .local => |di| .{ .module = m, .token = p.artifacts.bir(p.graph.moduleFile(m)).decl(@fromBackingInt(@intCast(di))).name_token },
             .external => |ext| blk: {
                 const bir = p.artifacts.bir(p.graph.moduleFile(ext.module));
-                const schema_name = p.interfaces[ext.module.int()].schemas[@intFromEnum(ext.schema)].name;
+                const schema_name = p.interfaces[ext.module.int()].schemas[@backingInt(ext.schema)].name;
                 const name = p.interfaces[ext.module.int()].symbol(schema_name);
                 for (bir.decls) |decl| if (decl.kind == .schema and bir.symbol(decl.name) == name)
                     break :blk .{ .module = ext.module, .token = decl.name_token };
@@ -1093,7 +1093,7 @@ const Pass = struct {
 
     fn schemaMemberKind(text: []const u8) ?Interface.SchemaMember.Kind {
         const names = [_][]const u8{ "Type", "Encoded", "schema", "parse", "print", "parseWith", "printWith" };
-        inline for (names, 0..) |name, i| if (std.mem.eql(u8, text, name)) return @enumFromInt(i);
+        inline for (names, 0..) |name, i| if (std.mem.eql(u8, text, name)) return @fromBackingInt(@intCast(i));
         return null;
     }
 
@@ -1101,17 +1101,17 @@ const Pass = struct {
         const available_start: u32 = @intCast(p.available_names.items.len);
         if (expected_kind == 3) switch (path.source) {
             .local => |di| {
-                const root = p.artifacts.bir(p.graph.moduleFile(m)).decl(@enumFromInt(di)).schema_body.unwrap();
+                const root = p.artifacts.bir(p.graph.moduleFile(m)).decl(@fromBackingInt(@intCast(di))).schema_body.unwrap();
                 if (root) |r| if (schemaTaggedInst(p.artifacts.bir(p.graph.moduleFile(m)), r)) |tagged| {
                     const local_bir = p.artifacts.bir(p.graph.moduleFile(m));
-                    const variants = local_bir.extraSlice(local_bir.subRange(@enumFromInt(local_bir.instData(tagged).rhs)), Bir.Inst.Index);
+                    const variants = local_bir.extraSlice(local_bir.subRange(@fromBackingInt(@intCast(local_bir.instData(tagged).rhs))), Bir.Inst.Index);
                     for (variants) |vi| if (local_bir.instTag(vi) == .schema_variant)
-                        try p.available_names.append(p.gpa, local_bir.symbol(@enumFromInt(local_bir.instData(vi).lhs)));
+                        try p.available_names.append(p.gpa, local_bir.symbol(@fromBackingInt(@intCast(local_bir.instData(vi).lhs))));
                 };
             },
             .external => |ext| {
                 const iface = &p.interfaces[ext.module.int()];
-                const schema = iface.schemas[@intFromEnum(ext.schema)];
+                const schema = iface.schemas[@backingInt(ext.schema)];
                 for (iface.schema_ctors[schema.program_ctors_start..schema.program_ctors_end]) |ctor|
                     try p.available_names.append(p.gpa, iface.symbol(ctor.name));
             },
@@ -1133,11 +1133,11 @@ const Pass = struct {
         const kind = schemaMemberKind(path.rest) orelse return p.reportUnknownSchemaMember(m, path, path.rest, token, 1);
         if (kind != .type and kind != .encoded) return p.reportUnknownSchemaMember(m, path, path.rest, token, 1);
         return switch (path.source) {
-            .local => |di| .{ .tag = .schema_type_top, .lhs = di, .rhs = @intFromEnum(kind) },
+            .local => |di| .{ .tag = .schema_type_top, .lhs = di, .rhs = @backingInt(kind) },
             .external => |ext| blk: {
                 const name = p.interner.find(path.rest) orelse unreachable;
                 const member = p.interfaces[ext.module.int()].findSchemaMember(ext.schema, p.interner, name, kind) orelse return p.reportUnknownSchemaMember(m, path, path.rest, token, 1);
-                break :blk .{ .tag = .ext_schema_type, .lhs = ext.module.int(), .rhs = @intFromEnum(member) };
+                break :blk .{ .tag = .ext_schema_type, .lhs = ext.module.int(), .rhs = @backingInt(member) };
             },
         };
     }
@@ -1146,11 +1146,11 @@ const Pass = struct {
         const kind = schemaMemberKind(path.rest) orelse return p.reportUnknownSchemaMember(m, path, path.rest, token, 2);
         if (kind == .type or kind == .encoded) return p.reportUnknownSchemaMember(m, path, path.rest, token, 2);
         return switch (path.source) {
-            .local => |di| .{ .tag = .schema_member_top, .lhs = di, .rhs = @intFromEnum(kind) },
+            .local => |di| .{ .tag = .schema_member_top, .lhs = di, .rhs = @backingInt(kind) },
             .external => |ext| blk: {
                 const name = p.interner.find(path.rest) orelse unreachable;
                 const member = p.interfaces[ext.module.int()].findSchemaMember(ext.schema, p.interner, name, kind) orelse return p.reportUnknownSchemaMember(m, path, path.rest, token, 2);
-                break :blk .{ .tag = .ext_schema_member, .lhs = ext.module.int(), .rhs = @intFromEnum(member) };
+                break :blk .{ .tag = .ext_schema_member, .lhs = ext.module.int(), .rhs = @backingInt(member) };
             },
         };
     }
@@ -1167,12 +1167,12 @@ const Pass = struct {
         const variant_name = p.interner.find(variant_text) orelse return p.reportUnknownSchemaMember(m, path, variant_text, token, 3);
         return switch (path.source) {
             .local => |di| blk: {
-                const variant = localSchemaVariant(bir, @enumFromInt(di), variant_name) orelse return p.reportUnknownSchemaMember(m, path, variant_text, token, 3);
+                const variant = localSchemaVariant(bir, @fromBackingInt(@intCast(di)), variant_name) orelse return p.reportUnknownSchemaMember(m, path, variant_text, token, 3);
                 break :blk .{ .tag = .schema_ctor_top, .lhs = di, .rhs = Bir.SchemaCtorRef.pack(.{ .variant = @intCast(variant), .encoded = endpoint == .encoded }) };
             },
             .external => |ext| blk: {
                 const ctor = p.interfaces[ext.module.int()].findSchemaCtor(ext.schema, endpoint, p.interner, variant_name) orelse return p.reportUnknownSchemaMember(m, path, variant_text, token, 3);
-                break :blk .{ .tag = .ext_schema_ctor, .lhs = ext.module.int(), .rhs = @intFromEnum(ctor) };
+                break :blk .{ .tag = .ext_schema_ctor, .lhs = ext.module.int(), .rhs = @backingInt(ctor) };
             },
         };
     }
@@ -1182,10 +1182,10 @@ const Pass = struct {
         var at = root;
         var budget = bir.insts.len + 1;
         while (budget > 0) : (budget -= 1) switch (bir.instTag(at)) {
-            .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+            .schema_value, .schema_paren => at = @fromBackingInt(@intCast(bir.instData(at).lhs)),
             .schema_tagged => {
-                const variants = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(at).rhs)), Bir.Inst.Index);
-                for (variants, 0..) |vi, i| if (bir.symbol(@enumFromInt(bir.instData(vi).lhs)) == name) return @intCast(i);
+                const variants = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(at).rhs))), Bir.Inst.Index);
+                for (variants, 0..) |vi, i| if (bir.symbol(@fromBackingInt(@intCast(bir.instData(vi).lhs))) == name) return @intCast(i);
                 return null;
             },
             else => return null,
@@ -1197,7 +1197,7 @@ const Pass = struct {
         var at = root;
         var budget = bir.insts.len + 1;
         while (budget > 0) : (budget -= 1) switch (bir.instTag(at)) {
-            .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+            .schema_value, .schema_paren => at = @fromBackingInt(@intCast(bir.instData(at).lhs)),
             .schema_tagged => return at,
             else => return null,
         };
@@ -1210,10 +1210,10 @@ const Pass = struct {
         }
         const text = p.interner.slice(name);
         const primitive: ?Bir.SchemaPrimitive = if (std.mem.eql(u8, text, "String")) .string else if (std.mem.eql(u8, text, "Bool")) .bool else if (std.mem.eql(u8, text, "Int")) .int else if (std.mem.eql(u8, text, "Float")) .float else if (std.mem.eql(u8, text, "FiniteFloat")) .finite_float else if (std.mem.eql(u8, text, "Null")) .null else if (std.mem.eql(u8, text, "Value")) .value else if (std.mem.eql(u8, text, "List")) .list else null;
-        if (primitive) |kind| return .{ .tag = .schema_primitive, .lhs = @intFromEnum(kind), .rhs = 0 };
+        if (primitive) |kind| return .{ .tag = .schema_primitive, .lhs = @backingInt(kind), .rhs = 0 };
         if (p.schemaFromRoot(m, bir, name)) |source| return switch (source) {
             .local => |di| .{ .tag = .schema_target_top, .lhs = di, .rhs = 0 },
-            .external => |ext| .{ .tag = .ext_schema_target, .lhs = ext.module.int(), .rhs = @intFromEnum(ext.schema) },
+            .external => |ext| .{ .tag = .ext_schema_target, .lhs = ext.module.int(), .rhs = @backingInt(ext.schema) },
         };
         if (std.mem.lastIndexOfScalar(u8, text, '.')) |dot| {
             const module_text = text[0..dot];
@@ -1275,21 +1275,21 @@ const Pass = struct {
         @memset(applied, 0);
         for (tags, data) |tag, d| {
             if (tag != .type_app) continue;
-            applied[d.lhs] = bir.subRange(@enumFromInt(d.rhs)).len();
+            applied[d.lhs] = bir.subRange(@fromBackingInt(@intCast(d.rhs))).len();
         }
         // The switch's tags tested first: its `else` prong is a check of the
         // operand against every tag in Zig's own backend (`Inst.Tag.set`).
         const named = comptime Bir.Inst.Tag.set(&.{ .type_top, .ext_type, .schema_type_top, .ext_schema_type });
         for (tags, data, tokens, applied) |tag, d, token, found| {
-            if (!named[@intFromEnum(tag)]) continue;
+            if (!named[@backingInt(tag)]) continue;
             const expected: u32, const name: Symbol = switch (tag) {
-                .type_top => .{ bir.decl(@enumFromInt(d.lhs)).params, bir.symbol(bir.decl(@enumFromInt(d.lhs)).name) },
+                .type_top => .{ bir.decl(@fromBackingInt(@intCast(d.lhs))).params, bir.symbol(bir.decl(@fromBackingInt(@intCast(d.lhs))).name) },
                 .ext_type => blk: {
                     const iface = &p.interfaces[d.lhs];
                     const t = iface.types[d.rhs];
                     break :blk .{ t.arity, iface.symbol(t.name) };
                 },
-                .schema_type_top => .{ bir.decl(@enumFromInt(d.lhs)).params, bir.symbol(bir.decl(@enumFromInt(d.lhs)).name) },
+                .schema_type_top => .{ bir.decl(@fromBackingInt(@intCast(d.lhs))).params, bir.symbol(bir.decl(@fromBackingInt(@intCast(d.lhs))).name) },
                 .ext_schema_type => blk: {
                     const iface = &p.interfaces[d.lhs];
                     const member = iface.schema_members[d.rhs];
@@ -1336,7 +1336,7 @@ const Pass = struct {
         for (bir.decls, 0..) |d, i| {
             if (d.kind != .type_alias or state[i] != 0) continue;
             const closes_on = try p.aliasReaches(bir, state, @intCast(i)) orelse continue;
-            const culprit = bir.decl(@enumFromInt(closes_on));
+            const culprit = bir.decl(@fromBackingInt(@intCast(closes_on)));
             try p.report(.{
                 .code = .recursive_alias,
                 .module = p.current,
@@ -1594,7 +1594,7 @@ test "every reference is rewritten: no unresolved form survives the pass" {
     });
     defer p.deinit();
     for (0..p.session.store.count()) |i| {
-        const bir = p.session.artifacts.bir(@enumFromInt(i));
+        const bir = p.session.artifacts.bir(@fromBackingInt(@intCast(i)));
         for (bir.insts.items(.tag)) |tag| try testing.expect(!tag.isUnresolved());
     }
     const codes = try p.codes(testing.allocator);
@@ -1628,7 +1628,7 @@ test "a module's own names resolve to its own declarations, not through an inter
     defer testing.allocator.free(codes);
     try testing.expectEqualSlices(diagnostic.Code, &.{}, codes);
 
-    const bir = p.session.artifacts.bir(@enumFromInt(0));
+    const bir = p.session.artifacts.bir(@fromBackingInt(@intCast(0)));
     var tops: u32 = 0;
     for (bir.insts.items(.tag)) |tag| {
         if (tag == .top or tag == .type_top) tops += 1;
@@ -1651,7 +1651,7 @@ fn checkArbitrary(a: [:0]const u8, b: [:0]const u8) !void {
     });
     defer p.deinit();
     for (0..p.session.store.count()) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+        const file: SourceStore.Index = @fromBackingInt(@intCast(i));
         const bir = p.session.artifacts.bir(file);
         for (bir.insts.items(.tag), bir.insts.items(.data)) |tag, d| {
             try testing.expect(!tag.isUnresolved());

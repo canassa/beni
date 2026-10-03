@@ -32,10 +32,10 @@ pub fn Appender(comptime T: type) type {
             if (@typeInfo(T) != .@"struct") return a.slice.set(i, item);
             // Each field straight to its column: `Slice.set` asks `items`
             // for every column's slice, one call per field per row.
-            inline for (std.meta.fields(T), 0..) |field, f| {
-                if (@sizeOf(field.type) != 0) {
-                    const column: [*]field.type = @ptrCast(@alignCast(a.slice.ptrs[f]));
-                    column[i] = @field(item, field.name);
+            inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types, 0..) |field_name, field_type, f| {
+                if (@sizeOf(field_type) != 0) {
+                    const column: [*]field_type = @ptrCast(@alignCast(a.slice.ptrs[f]));
+                    column[i] = @field(item, field_name);
                 }
             }
         }

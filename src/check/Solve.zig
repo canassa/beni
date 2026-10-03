@@ -348,8 +348,8 @@ pub fn ownValue(s: *const Solve, name: InternPool.Symbol) ?u32 {
     var hi: usize = s.own_values.len;
     while (lo < hi) {
         const mid = lo + (hi - lo) / 2;
-        const at = @intFromEnum(s.own_values[mid].name);
-        if (at < @intFromEnum(name)) lo = mid + 1 else if (at > @intFromEnum(name)) hi = mid else return s.own_values[mid].decl;
+        const at = @backingInt(s.own_values[mid].name);
+        if (at < @backingInt(name)) lo = mid + 1 else if (at > @backingInt(name)) hi = mid else return s.own_values[mid].decl;
     }
     return null;
 }
@@ -386,7 +386,7 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
         switch (node.tag) {
             .true_ => {},
             .and_ => for (s.tree.constraints(node.a, node.b)) |child| try s.solve(child),
-            .equal => _ = try s.unify(@enumFromInt(node.a), @enumFromInt(node.b), node.region, node.category),
+            .equal => _ = try s.unify(@fromBackingInt(@intCast(node.a)), @fromBackingInt(@intCast(node.b)), node.region, node.category),
             .call => try s.call(node),
             .instantiate => {
                 s.instantiate.origin = node.region;
@@ -394,12 +394,12 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                 // A top-level or local reference: effect inference learns
                 // which scheme it copied (transparent-effects-proposal.md
                 // §14.3 rules 3 and 4).
-                const copy = try s.instantiate.copyRecorded(@enumFromInt(node.b), s.instantiate.decl orelse std.math.maxInt(u32));
+                const copy = try s.instantiate.copyRecorded(@fromBackingInt(@intCast(node.b)), s.instantiate.decl orelse std.math.maxInt(u32));
                 try s.instantiated(node.region);
-                _ = try s.unify(@enumFromInt(node.a), copy, node.region, node.category);
+                _ = try s.unify(@fromBackingInt(@intCast(node.a)), copy, node.region, node.category);
             },
             .reference => {
-                const target: Var = @enumFromInt(node.a);
+                const target: Var = @fromBackingInt(@intCast(node.a));
                 s.instantiate.made.clearRetainingCapacity();
                 if (try s.instantiate.reference(node.region)) |scheme| {
                     const copy = try s.instantiate.copy(scheme);
@@ -431,11 +431,11 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
             },
             .tuple_index => {
                 const payload = s.tree.extraData(node.b, Tree.TupleIndex);
-                const id = try s.obligations.create(s.cx.gpa, .tuple_index, node.region, &.{ @enumFromInt(node.a), payload.result }, payload.index, null);
+                const id = try s.obligations.create(s.cx.gpa, .tuple_index, node.region, &.{ @fromBackingInt(@intCast(node.a)), payload.result }, payload.index, null);
                 try Decide.begin(s, id);
             },
             .interpolatable => {
-                const id = try s.obligations.create(s.cx.gpa, .interpolatable, node.region, &.{@enumFromInt(node.a)}, 0, null);
+                const id = try s.obligations.create(s.cx.gpa, .interpolatable, node.region, &.{@fromBackingInt(@intCast(node.a))}, 0, null);
                 try Decide.begin(s, id);
             },
             .record => {
@@ -456,13 +456,13 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
             .method => try Resolve.method(s, node),
             .demand => try Groups.demanded(s, node),
             .internal => {
-                try s.poison(@enumFromInt(node.a));
+                try s.poison(@fromBackingInt(@intCast(node.a)));
                 try s.report.internal(node.region, "the checker met a form its subset excludes; the subset gate (checker-v2.md §5) should have refused this module");
             },
             .markup_obligation => {
                 const o = s.tree.extraData(node.a, Tree.MarkupObligation);
                 const vars = [_]Var{ o.v0, o.v1, o.v2 };
-                const id = try s.obligations.create(s.cx.gpa, @enumFromInt(o.kind), node.region, vars[0..o.count], o.index, null);
+                const id = try s.obligations.create(s.cx.gpa, @fromBackingInt(@intCast(o.kind)), node.region, vars[0..o.count], o.index, null);
                 try Decide.begin(s, id);
             },
             .markup_fault => try MarkupDecide.fault(s, node.region, s.tree.extraData(node.a, Tree.MarkupFault)),
@@ -525,7 +525,7 @@ fn takesFields(s: *Solve, expected: Var, literal: Var) Error!bool {
     // Both sorted by symbol: every wanted name must be one of the literal's.
     var j: usize = 0;
     for (row.items) |w| {
-        while (j < names.len and @intFromEnum(names[j].name) < @intFromEnum(w.name)) j += 1;
+        while (j < names.len and @backingInt(names[j].name) < @backingInt(w.name)) j += 1;
         if (j == names.len or names[j].name != w.name) return false;
         j += 1;
     }
@@ -533,7 +533,7 @@ fn takesFields(s: *Solve, expected: Var, literal: Var) Error!bool {
 }
 
 fn symbolLessThan(_: void, a: TypeStore.Field, b: TypeStore.Field) bool {
-    return @intFromEnum(a.name) < @intFromEnum(b.name);
+    return @backingInt(a.name) < @backingInt(b.name);
 }
 
 /// `CLet`: a frame one rank in for the header, and its boundary. Returns the
@@ -671,14 +671,14 @@ fn rigidOf(s: *Solve, expected: Var, actual: Var) ?Report.Rigid {
 fn isBasicsAppend(s: *Solve, inst: Bir.Inst.Index) bool {
     const bir = s.cx.bir;
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .call) return false;
-    const callee: Bir.Inst.Index = @enumFromInt(bir.instData(inst).lhs);
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(inst).lhs));
     if (bir.instTag(callee) != .ext_value) return false;
     const d = bir.instData(callee);
     const basics = s.cx.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return false;
     if (d.lhs != basics.int()) return false;
     const iface = s.cx.iface(basics);
     if (d.rhs >= iface.values.len) return false;
-    return iface.symbols[@intFromEnum(iface.values[d.rhs].name)] == InternPool.WellKnown.append.symbol();
+    return iface.symbols[@backingInt(iface.values[d.rhs].name)] == InternPool.WellKnown.append.symbol();
 }
 
 /// Whether the reference at `inst` is core's `Js.from` or `Js.to`: the two
@@ -689,13 +689,13 @@ fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
     const bir = s.cx.bir;
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .ext_value) return null;
     const d = bir.instData(inst);
-    const module: Graph.Index = @enumFromInt(d.lhs);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= s.cx.graph.count()) return null;
     if (s.cx.graph.modulePackage(module) != .core) return null;
     if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return null;
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return null;
-    return std.meta.stringToEnum(Which, s.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
+    return std.meta.stringToEnum(Which, s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
 }
 
 /// Whether the reference at `inst` is core's `Debug.toString` or
@@ -706,13 +706,13 @@ fn debugUse(s: *Solve, inst: Bir.Inst.Index) ?Dispatch.DebugSite.Which {
     const bir = s.cx.bir;
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .ext_value) return null;
     const d = bir.instData(inst);
-    const module: Graph.Index = @enumFromInt(d.lhs);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= s.cx.graph.count()) return null;
     if (s.cx.graph.module(module).package != .core) return null;
     if (s.cx.graph.moduleName(module) != InternPool.WellKnown.Debug.symbol()) return null;
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return null;
-    return std.meta.stringToEnum(Dispatch.DebugSite.Which, s.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
+    return std.meta.stringToEnum(Dispatch.DebugSite.Which, s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
 }
 
 /// Whether the call at `inst` is of core's `Js.maySuspend`, whose answer is
@@ -722,16 +722,16 @@ fn debugUse(s: *Solve, inst: Bir.Inst.Index) ?Dispatch.DebugSite.Which {
 fn isProbe(s: *Solve, inst: Bir.Inst.Index) bool {
     const bir = s.cx.bir;
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .call) return false;
-    const callee: Bir.Inst.Index = @enumFromInt(bir.instData(inst).lhs);
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(inst).lhs));
     if (callee.int() >= bir.insts.len or bir.instTag(callee) != .ext_value) return false;
     const d = bir.instData(callee);
-    const module: Graph.Index = @enumFromInt(d.lhs);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= s.cx.graph.count()) return false;
     if (s.cx.graph.modulePackage(module) != .core) return false;
     if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return false;
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return false;
-    return std.mem.eql(u8, s.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]), "maySuspend");
+    return std.mem.eql(u8, s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]), "maySuspend");
 }
 
 fn call(s: *Solve, node: Tree.Node) Error!void {
@@ -741,7 +741,7 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
     defer scratch.free(args);
     // `Js.maySuspend f`: the lowering reads `f`'s class here (§16.2).
     if (info.flavor == .call and args.len == 1 and s.isProbe(node.region)) {
-        if (s.cx.effects) |e| try e.probe(@intFromEnum(node.region), args[0]);
+        if (s.cx.effects) |e| try e.probe(@backingInt(node.region), args[0]);
     }
     const st = s.store();
     const given: u32 = @intCast(args.len);
@@ -836,7 +836,7 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
 fn calleeRow(s: *Solve, call_inst: Bir.Inst.Index) ?usize {
     const bir = s.cx.bir;
     if (call_inst.int() >= bir.insts.len or bir.instTag(call_inst) != .call) return null;
-    const callee: Bir.Inst.Index = @enumFromInt(bir.instData(call_inst).lhs);
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call_inst).lhs));
     const rows = s.evidence.inst_evidence.items;
     if (rows.len == 0 or rows[rows.len - 1].inst != callee) return null;
     return rows.len - 1;
@@ -871,9 +871,9 @@ fn argRegions(s: *Solve, region: Bir.Inst.Index) []const Bir.Inst.Index {
     const bir = s.cx.bir;
     if (region.int() >= bir.insts.len) return &.{};
     return switch (bir.instTag(region)) {
-        .call, .pat_ctor => bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(region).rhs)), Bir.Inst.Index),
+        .call, .pat_ctor => bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(region).rhs))), Bir.Inst.Index),
         .method_call => {
-            const m = bir.extraData(@enumFromInt(bir.instData(region).rhs), Bir.MethodCall);
+            const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(region).rhs)), Bir.MethodCall);
             return bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
         },
         else => &.{},
@@ -966,7 +966,7 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
             // promotion `promoted` (§8.1), reported in a release build too.
             const before = s.unifier.unifications;
             try Resolve.close(s, m);
-            const region: Bir.Inst.Index = if (m.len != 0) s.cx.bir.decls[m[0]].body.unwrap() orelse @enumFromInt(0) else @enumFromInt(0);
+            const region: Bir.Inst.Index = if (m.len != 0) s.cx.bir.decls[m[0]].body.unwrap() orelse @fromBackingInt(@intCast(0)) else @fromBackingInt(@intCast(0));
             _ = try s.expect(s.unifier.unifications == before, region, "step 7 of a top-level boundary unified (checker-v2.md §8.1)");
         }
     }

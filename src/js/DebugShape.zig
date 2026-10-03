@@ -153,10 +153,10 @@ const Writer = struct {
                     frame = .{ .close = "}", .left = n.count, .first = true, .comma_first = false, .skip = false };
                 },
                 .field => {
-                    try w.print("\"{s}\":", .{w.cx.interner.slice(@enumFromInt(n.value))});
+                    try w.print("\"{s}\":", .{w.cx.interner.slice(@fromBackingInt(@intCast(n.value)))});
                     frame = .{ .close = "", .left = n.count, .first = true, .comma_first = false, .skip = false };
                 },
-                .named => switch (w.head(@enumFromInt(n.value))) {
+                .named => switch (w.head(@fromBackingInt(@intCast(n.value)))) {
                     .code => |code| {
                         try w.out.appendSlice(w.arena, code);
                         frame = .{ .close = "", .left = n.count, .first = true, .comma_first = false, .skip = true };
@@ -246,11 +246,11 @@ const Writer = struct {
                 try w.out.append(w.arena, ']');
             },
             .type_record => try w.fields(m, bir, bir.extraSlice(Bir.inlineRange(data), Bir.Field), env, depth),
-            .type_record_ext => try w.fields(m, bir, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field), env, depth),
+            .type_record_ext => try w.fields(m, bir, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field), env, depth),
             .type_top, .ext_type, .schema_type_top, .ext_schema_type => try w.applied(m, bir, w.cx.types.headId(m, tag, data), &.{}, env, depth),
             .type_app => {
-                const h: Bir.Inst.Index = @enumFromInt(data.lhs);
-                const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+                const h: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
                 try w.applied(m, bir, w.cx.types.headId(m, bir.instTag(h), bir.instData(h)), args, env, depth);
             },
             else => try w.out.appendSlice(w.arena, "\"?\""),

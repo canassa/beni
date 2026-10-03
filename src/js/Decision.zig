@@ -306,13 +306,13 @@ const HeadContext = struct {
         var hasher = std.hash.Wyhash.init(0);
         // `tuple` and `unit` are one head (`sameHead`), so they hash alike.
         const tag: std.meta.Tag(Head) = if (h == .unit) .tuple else std.meta.activeTag(h);
-        hasher.update(&.{@intFromEnum(tag)});
+        hasher.update(&.{@backingInt(tag)});
         switch (h) {
             .wild, .tuple, .unit => {},
             .ctor => |c| hasher.update(std.mem.asBytes(&c.order)),
             .list => |cons| hasher.update(&.{@intFromBool(cons)}),
             .literal => |lit| {
-                hasher.update(&.{@intFromEnum(lit.kind)});
+                hasher.update(&.{@backingInt(lit.kind)});
                 switch (ctx.bir.instTag(lit.pat)) {
                     .pat_char => hasher.update(std.mem.asBytes(&ctx.bir.instData(lit.pat).lhs)),
                     .pat_int, .pat_string => hasher.update(ctx.bir.bytes(lit.pat)),
@@ -392,7 +392,7 @@ const Builder = struct {
             // A record pattern binds names and cannot fail: a record type
             // has no alternatives (`Exhaustive.simplify`, §7's table).
             .pat_wild, .pat_var, .pat_record => .wild,
-            .pat_as => b.headOf(.{ .pat = @as(Inst.Index, @enumFromInt(d.lhs)).toOptional() }),
+            .pat_as => b.headOf(.{ .pat = @as(Inst.Index, @fromBackingInt(@intCast(d.lhs))).toOptional() }),
             .pat_unit => .unit,
             .pat_tuple => .{ .tuple = Bir.inlineRange(d).len() },
             .pat_int => .{ .literal = .{ .pat = pat, .kind = .int } },
@@ -409,8 +409,8 @@ const Builder = struct {
                 break :blk .{ .list = cell.from < len };
             },
             .pat_ctor => blk: {
-                const arity = bir.subRange(@enumFromInt(d.rhs)).len();
-                break :blk if (b.ctorInfo(@enumFromInt(d.lhs), arity)) |c| .{ .ctor = c } else .wild;
+                const arity = bir.subRange(@fromBackingInt(@intCast(d.rhs))).len();
+                break :blk if (b.ctorInfo(@fromBackingInt(@intCast(d.lhs)), arity)) |c| .{ .ctor = c } else .wild;
             },
             // A pattern the parser or the resolver could not build. A build
             // with any error diagnostic emits nothing, so this is
@@ -445,8 +445,8 @@ const Builder = struct {
                 const iface = &b.cx.interfaces[d.lhs];
                 if (d.rhs >= iface.ctors.len) return null;
                 const type_index = iface.ctors[d.rhs].type;
-                if (@intFromEnum(type_index) >= iface.types.len) return null;
-                const t = iface.types[@intFromEnum(type_index)];
+                if (@backingInt(type_index) >= iface.types.len) return null;
+                const t = iface.types[@backingInt(type_index)];
                 if (t.ctors_end <= t.ctors_start) return null;
                 if (d.rhs < t.ctors_start or d.rhs >= t.ctors_end) return null;
                 return .{
@@ -458,7 +458,7 @@ const Builder = struct {
             },
             // A tagged schema endpoint's constructor (`schema.md` §6).
             .schema_ctor_top, .ext_schema_ctor => {
-                const info = SchemaCtor.of(bir, @enumFromInt(0), b.cx.interfaces, ref) orelse return null;
+                const info = SchemaCtor.of(bir, @fromBackingInt(@intCast(0)), b.cx.interfaces, ref) orelse return null;
                 return .{ .ref = ref, .order = info.order, .count = info.count, .arity = arity };
             },
             else => return null,
@@ -854,7 +854,7 @@ const Builder = struct {
         const d = bir.instData(pat);
         switch (bir.instTag(pat)) {
             .pat_ctor => {
-                const args = bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
                 for (args, 0..) |arg, i| {
                     if (i < out.len) out[i] = .{ .pat = arg.toOptional() };
                 }
@@ -916,7 +916,7 @@ fn spreadIndex(bir: *const Bir, pat: Inst.Index) ?u32 {
 fn unwrapAs(bir: *const Bir, pat: Inst.Index) Inst.Index {
     var at = pat;
     while (at.int() < bir.insts.len and bir.instTag(at) == .pat_as) {
-        at = @enumFromInt(bir.instData(at).lhs);
+        at = @fromBackingInt(@intCast(bir.instData(at).lhs));
     }
     return at;
 }

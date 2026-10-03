@@ -121,7 +121,7 @@ join_failures: std.ArrayList(JoinFailure) = .empty,
 /// The first invariant a unification broke (`invariant`), for the caller to
 /// report as `internal`: never a silent drop.
 fault: ?[]const u8 = null,
-region: Bir.Inst.Index = @enumFromInt(0),
+region: Bir.Inst.Index = @fromBackingInt(@intCast(0)),
 /// The region `unifyArgument` asks a comparison's question at, until the
 /// first pair `go` examines takes it: only that top pair may ask (§11.4).
 question_at: ?Bir.Inst.Index = null,
@@ -988,7 +988,7 @@ fn gather(u: *Unify, rec: TypeStore.Structure.Record) Error!Gathered {
 }
 
 fn symbolLessThan(_: void, a: TypeStore.Field, b: TypeStore.Field) bool {
-    return @intFromEnum(a.name) < @intFromEnum(b.name);
+    return @backingInt(a.name) < @backingInt(b.name);
 }
 
 fn endVar(end: Walk.RowEnd) Var {
@@ -1023,8 +1023,8 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
     while (i < a.fields.items.len and j < b.fields.items.len) {
         const fa = a.fields.items[i];
         const fb = b.fields.items[j];
-        const na = @intFromEnum(fa.name);
-        const nb = @intFromEnum(fb.name);
+        const na = @backingInt(fa.name);
+        const nb = @backingInt(fb.name);
         if (na < nb) {
             try lists.add(&only_a, u.scratch, fa);
             i += 1;

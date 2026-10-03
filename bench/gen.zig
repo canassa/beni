@@ -2196,8 +2196,8 @@ test "the wide shape spends its whole budget, at every size" {
 test "every pathological case is the size and shape it claims, and named by a valid module path" {
     var out: Io.Writer.Allocating = .init(testing.allocator);
     defer out.deinit();
-    inline for (@typeInfo(Pathological.Case).@"enum".fields) |field| {
-        const case: Pathological.Case = @enumFromInt(field.value);
+    inline for (@typeInfo(Pathological.Case).@"enum".field_names, @typeInfo(Pathological.Case).@"enum".field_values) |field_name, field_value| {
+        const case: Pathological.Case = @fromBackingInt(@intCast(field_value));
         const which: Pathological = .{ .case = case };
         out.clearRetainingCapacity();
         try writePathological(&out.writer, which);
@@ -2226,7 +2226,7 @@ test "every pathological case is the size and shape it claims, and named by a va
             },
         }
         // `Pathological.parse` round-trips the name the flag takes.
-        try testing.expectEqual(@as(?Pathological, which), Pathological.parse(field.name));
+        try testing.expectEqual(@as(?Pathological, which), Pathological.parse(field_name));
         // Every path segment is an upper identifier (language.md §1), so
         // the file has a module name and `beni check` on it does not
         // report `invalid_module_path` instead of what it is here for.

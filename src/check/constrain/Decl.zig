@@ -121,7 +121,7 @@ pub fn group(g: *Generator, members: []Member) Error!Constraint {
     // Declare first, define second: a mutually recursive group sees itself.
     for (members) |*m| {
         const d = bir.decls[m.decl];
-        g.decl = @enumFromInt(m.decl);
+        g.decl = @fromBackingInt(@intCast(m.decl));
         g.locals_base = d.locals_start;
         m.check = .none;
         if (d.kind == .schema) {
@@ -155,11 +155,11 @@ pub fn group(g: *Generator, members: []Member) Error!Constraint {
     for (members) |m| {
         const check = m.check.unwrap() orelse continue;
         const d = bir.decls[m.decl];
-        g.decl = @enumFromInt(m.decl);
+        g.decl = @fromBackingInt(@intCast(m.decl));
         g.locals_base = d.locals_start;
         g.decl_rigids = m.rigids;
         defer g.decl_rigids = &.{};
-        try parts.append(g.cx.scratch, try g.add(.member, @enumFromInt(0), m.decl, 0, .{}));
+        try parts.append(g.cx.scratch, try g.add(.member, @fromBackingInt(@intCast(0)), m.decl, 0, .{}));
         try parts.append(g.cx.scratch, if (d.kind == .schema)
             try schemaDecl(g, m.decl)
         else
@@ -179,17 +179,17 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
     const mark = g.storeMark();
     var b = g.cx.builder(.rigid, g.rank);
     defer b.deinit();
-    const check = try g.cx.readAnnotation(&b, annotation, @intFromEnum(g.decl));
-    if (top) |d| try attachWhere(g.cx, d, &b, @intFromEnum(g.decl));
+    const check = try g.cx.readAnnotation(&b, annotation, @backingInt(g.decl));
+    if (top) |d| try attachWhere(g.cx, d, &b, @backingInt(g.decl));
     // The annotation promises no bits: this reading and the scheme are one
     // class position by position (transparent-effects-proposal.md §14.3
     // rule 5); a `let`'s, whose scheme was read just before, is zipped.
     if (g.cx.effects) |e| {
-        if (top != null) try e.checkReading(@intFromEnum(g.decl), mark, g.storeMark(), scheme, check) else try e.zip(scheme, check);
+        if (top != null) try e.checkReading(@backingInt(g.decl), mark, g.storeMark(), scheme, check) else try e.zip(scheme, check);
     }
     try g.adoptSince(mark);
     const rigids_start: u32 = @intCast(g.tree.extra.items.len);
-    for (b.scope.items) |scoped| try g.tree.extra.append(g.gpa, @intFromEnum(scoped.v));
+    for (b.scope.items) |scoped| try g.tree.extra.append(g.gpa, @backingInt(scoped.v));
     try g.frame_annotated.append(g.gpa, @intCast(g.tree.annotated.items.len));
     try g.tree.annotated.append(g.gpa, .{
         .scheme = scheme,
@@ -197,11 +197,11 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
         .rigids_len = @intCast(b.scope.items.len),
         .annotation = annotation,
         .name = name,
-        .decl = @intFromEnum(g.decl),
+        .decl = @backingInt(g.decl),
         .let = top == null,
     });
     if (top) |d| {
-        if (d.where_start != d.where_end) try g.evidence.registerGivens(g.gpa, g.cx.store, g.cx.interner, g.cx.scratch, check, @intFromEnum(g.decl));
+        if (d.where_start != d.where_end) try g.evidence.registerGivens(g.gpa, g.cx.store, g.cx.interner, g.cx.scratch, check, @backingInt(g.decl));
     }
     return .{ .check = check, .rigids = if (top != null) try g.cx.scratch.dupe(Types.Builder.Scoped, b.scope.items) else &.{} };
 }
@@ -241,7 +241,7 @@ fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
         g.ambient_site = outer_site;
     }
     if (params.len == 0) {
-        g.ambient = if (g.cx.effects) |e| try e.evalNode(@intFromEnum(g.decl)) else null;
+        g.ambient = if (g.cx.effects) |e| try e.evalNode(@backingInt(g.decl)) else null;
         // `main` is evaluated once, when the program starts, outside any
         // fiber: its evaluation is a `sync` boundary
         // (transparent-effects-proposal.md §15.2 item 5), for the `main` of
@@ -250,7 +250,7 @@ fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
         // loaded, and is a boundary of the same kind (§15.2 item 7).
         if (g.cx.effects) |e| {
             const is_main = bir.symbol(d.name) == InternPool.WellKnown.main.symbol() and g.cx.graph.modulePackage(g.cx.module) == .app;
-            try e.demand(.{ .v = g.ambient.?, .kind = if (is_main) .main else .value, .site = @intFromEnum(d.inst_start), .decl = @intFromEnum(g.decl) });
+            try e.demand(.{ .v = g.ambient.?, .kind = if (is_main) .main else .value, .site = @backingInt(d.inst_start), .decl = @backingInt(g.decl) });
         }
         return Expr.expr(g, body, target, category);
     }
@@ -278,7 +278,7 @@ fn schemaDecl(g: *Generator, index: u32) Error!Constraint {
     defer parts.deinit(g.cx.scratch);
     for (g.cx.schemas.vias.items) |via| {
         if (via.owner.int() != index) continue;
-        try parts.append(g.cx.scratch, try Expr.expr(g, via.expr, via.expected, .{ .tag = .schema_conversion, .index = @intFromEnum(via.field) }));
+        try parts.append(g.cx.scratch, try Expr.expr(g, via.expr, via.expected, .{ .tag = .schema_conversion, .index = @backingInt(via.field) }));
     }
     return g.conj(parts.items);
 }
@@ -295,7 +295,7 @@ const Pending = struct {
 
 pub fn letExpr(g: *Generator, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
-    const defs = bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index);
+    const defs = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index);
     const groups = try sccOfLet(g, defs);
     defer g.cx.scratch.free(groups.order);
     defer g.cx.scratch.free(groups.starts);
@@ -307,7 +307,7 @@ pub fn letExpr(g: *Generator, data: Bir.Inst.Data, expected: Var, category: Cate
         const members = groups.order[groups.starts[i]..groups.starts[i + 1]];
         p.* = .{ .first = members[0], .payload = try bindingGroup(g, members) };
     }
-    const body = try Expr.expr(g, @enumFromInt(data.rhs), expected, category);
+    const body = try Expr.expr(g, @fromBackingInt(@intCast(data.rhs)), expected, category);
     // Nest from the last group out, in a loop: the first group is the
     // outermost `let`, generalised first.
     var inner = body;
@@ -376,12 +376,12 @@ fn declareBinding(g: *Generator, m: Bir.Inst.Index, parts: *std.ArrayList(Constr
     const data = bir.instData(m);
     switch (bir.instTag(m)) {
         .let_def => {
-            const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+            const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
             const name = g.nameOfLocal(def.local);
             if (def.annotation.unwrap()) |a| {
                 var scheme_builder = g.cx.builder(.flex, TypeStore.generalized);
                 defer scheme_builder.deinit();
-                const scheme = try g.cx.readAnnotation(&scheme_builder, a, @intFromEnum(g.decl));
+                const scheme = try g.cx.readAnnotation(&scheme_builder, a, @backingInt(g.decl));
                 const check = (try rigidReading(g, a, scheme, name, null)).check;
                 // An Elm curried annotation: its uses are not held to it
                 // (checker.md §8.7), as at the top level.
@@ -401,9 +401,9 @@ fn declareBinding(g: *Generator, m: Bir.Inst.Index, parts: *std.ArrayList(Constr
         .let_pattern => {
             const v = try g.freshFlex();
             _ = try g.header(v, m, .none);
-            try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @enumFromInt(data.lhs), v));
+            try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @fromBackingInt(@intCast(data.lhs)), v));
             // `_ = e`, for `unit_discarded` (checker-v2.md §34).
-            if (g.cx.discards) |list| if (bir.instTag(@enumFromInt(data.lhs)) == .pat_wild) {
+            if (g.cx.discards) |list| if (bir.instTag(@fromBackingInt(@intCast(data.lhs))) == .pat_wild) {
                 try list.append(g.cx.scratch, .{ .inst = m, .v = v });
             };
             return v;
@@ -419,10 +419,10 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
     const data = bir.instData(m);
     switch (bir.instTag(m)) {
         .let_def => {
-            const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+            const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
             const category: Category = .{ .tag = if (def.annotation == .none) .general else .let_annotation };
             const params = bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index);
-            if (params.len == 0) return Expr.expr(g, @enumFromInt(data.rhs), check, category);
+            if (params.len == 0) return Expr.expr(g, @fromBackingInt(@intCast(data.rhs)), check, category);
             const param_vars = try g.cx.scratch.alloc(Var, params.len);
             defer g.cx.scratch.free(param_vars);
             for (param_vars) |*v| v.* = try g.freshFlex();
@@ -436,8 +436,8 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
             const outer = g.ambient;
             const outer_site = g.ambient_site;
             g.ambient = arrow;
-            g.ambient_site = @intFromEnum(m);
-            if (g.cx.effects) |e| try e.function(@intFromEnum(m), arrow);
+            g.ambient_site = @backingInt(m);
+            if (g.cx.effects) |e| try e.function(@backingInt(m), arrow);
             defer {
                 g.ambient = outer;
                 g.ambient_site = outer_site;
@@ -445,18 +445,18 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
             // A `?` in the body returns from this definition (§8.6).
             try g.targets.append(g.gpa, .{ .inst = m, .result = result });
             defer _ = g.targets.pop();
-            try parts.append(g.cx.scratch, try Expr.expr(g, @enumFromInt(data.rhs), result, category));
+            try parts.append(g.cx.scratch, try Expr.expr(g, @fromBackingInt(@intCast(data.rhs)), result, category));
             return g.conj(parts.items);
         },
-        .let_pattern => return Expr.expr(g, @enumFromInt(data.rhs), check, .{ .tag = .destructure }),
+        .let_pattern => return Expr.expr(g, @fromBackingInt(@intCast(data.rhs)), check, .{ .tag = .destructure }),
         // A statement (checker-v2.md §29.1): its expression is checked on its
         // own, and only then held to `()` under `statement`, so a failure
         // inside it reports once, as itself, and never as `statement_not_unit`.
         .let_stmt => {
             const t = try g.freshFlex();
             const parts = [_]Constraint{
-                try Expr.expr(g, @enumFromInt(data.rhs), t, .{}),
-                try g.equal(check, t, m, .{ .tag = .statement, .owner = @enumFromInt(data.rhs) }),
+                try Expr.expr(g, @fromBackingInt(@intCast(data.rhs)), t, .{}),
+                try g.equal(check, t, m, .{ .tag = .statement, .owner = @fromBackingInt(@intCast(data.rhs)) }),
             };
             return g.conj(&parts);
         },
@@ -482,7 +482,7 @@ fn sccOfLet(g: *Generator, defs: []const Bir.Inst.Index) Error!Groups {
     const none = std.math.maxInt(u32);
     // Local (relative) → the binding that binds it, over this declaration's
     // locals. Filled once per `let`; a local belongs to one binding.
-    const d = bir.decls[@intFromEnum(g.decl)];
+    const d = bir.decls[@backingInt(g.decl)];
     const local_count = d.locals_end - d.locals_start;
     const bound_by = try scratch.alloc(u32, local_count);
     defer scratch.free(bound_by);
@@ -493,13 +493,13 @@ fn sccOfLet(g: *Generator, defs: []const Bir.Inst.Index) Error!Groups {
         const data = bir.instData(def_inst);
         switch (bir.instTag(def_inst)) {
             .let_def => {
-                const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+                const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
                 if (def.annotation != .none) continue;
                 if (def.local < local_count) bound_by[def.local] = @intCast(i);
             },
             .let_pattern => {
                 locals.clearRetainingCapacity();
-                try patternLocals(g, @enumFromInt(data.lhs), &locals);
+                try patternLocals(g, @fromBackingInt(@intCast(data.lhs)), &locals);
                 for (locals.items) |l| {
                     if (l < local_count) bound_by[l] = @intCast(i);
                 }
@@ -522,7 +522,7 @@ fn sccOfLet(g: *Generator, defs: []const Bir.Inst.Index) Error!Groups {
     for (defs, 0..) |def_inst, i| {
         edge_start[i] = @intCast(edges.items.len);
         referenced.clearRetainingCapacity();
-        try collectLocalRefs(g, @enumFromInt(bir.instData(def_inst).rhs), &referenced);
+        try collectLocalRefs(g, @fromBackingInt(@intCast(bir.instData(def_inst).rhs)), &referenced);
         for (referenced.items) |local| {
             if (local >= local_count) continue;
             const j = bound_by[local];
@@ -553,12 +553,12 @@ fn patternLocals(g: *Generator, root: Bir.Inst.Index, out: *std.ArrayList(u32)) 
             .pat_var => try out.append(scratch, data.lhs),
             .pat_as => {
                 try out.append(scratch, data.rhs);
-                try stack.append(scratch, @enumFromInt(data.lhs));
+                try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
             },
             .pat_record => try out.appendSlice(scratch, bir.extraSlice(Bir.inlineRange(data), u32)),
             .pat_tuple, .pat_list => try stack.appendSlice(scratch, bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)),
-            .pat_ctor => try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)),
-            .pat_spread => try stack.append(scratch, @enumFromInt(data.lhs)),
+            .pat_ctor => try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index)),
+            .pat_spread => try stack.append(scratch, @fromBackingInt(@intCast(data.lhs))),
             else => {},
         }
     }
@@ -595,52 +595,52 @@ pub fn pushChildren(bir: *const Bir, scratch: Allocator, inst: Bir.Inst.Index, s
             for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |f| try stack.append(scratch, f.value);
         },
         .record_update, .type_record_ext => {
-            try stack.append(scratch, @enumFromInt(data.lhs));
-            for (bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field)) |f| try stack.append(scratch, f.value);
+            try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
+            for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |f| try stack.append(scratch, f.value);
         },
-        .field_access, .tuple_index, .@"try" => try stack.append(scratch, @enumFromInt(data.lhs)),
+        .field_access, .tuple_index, .@"try" => try stack.append(scratch, @fromBackingInt(@intCast(data.lhs))),
         .method_call => {
-            const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
-            try stack.append(scratch, @enumFromInt(data.lhs));
+            const m = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
+            try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
             try stack.appendSlice(scratch, bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index));
         },
         .type_dispatch => {
-            const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+            const t = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.TypeDispatch);
             try stack.appendSlice(scratch, bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Bir.Inst.Index));
         },
         .call, .pat_ctor, .case, .type_app => {
-            try stack.append(scratch, @enumFromInt(data.lhs));
-            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index));
+            try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
+            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index));
         },
         .lambda, .let => {
-            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index));
-            try stack.append(scratch, @enumFromInt(data.rhs));
+            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index));
+            try stack.append(scratch, @fromBackingInt(@intCast(data.rhs)));
         },
         .let_def => {
-            const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+            const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
             try stack.appendSlice(scratch, bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index));
-            try stack.append(scratch, @enumFromInt(data.rhs));
+            try stack.append(scratch, @fromBackingInt(@intCast(data.rhs)));
         },
         .let_pattern, .branch, .type_fn => {
-            try stack.append(scratch, @enumFromInt(data.lhs));
-            try stack.append(scratch, @enumFromInt(data.rhs));
+            try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
+            try stack.append(scratch, @fromBackingInt(@intCast(data.rhs)));
         },
-        .let_stmt => try stack.append(scratch, @enumFromInt(data.rhs)),
-        .pat_as, .pat_spread => try stack.append(scratch, @enumFromInt(data.lhs)),
-        .markup => try bir.markupValues(scratch, @enumFromInt(data.lhs), stack),
+        .let_stmt => try stack.append(scratch, @fromBackingInt(@intCast(data.rhs))),
+        .pat_as, .pat_spread => try stack.append(scratch, @fromBackingInt(@intCast(data.lhs))),
+        .markup => try bir.markupValues(scratch, @fromBackingInt(@intCast(data.lhs)), stack),
         .schema_app, .schema_value, .schema_tagged => {
-            try stack.append(scratch, @enumFromInt(data.lhs));
-            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index));
+            try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
+            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index));
         },
-        .schema_paren, .schema_as, .schema_via => try stack.append(scratch, @enumFromInt(data.lhs)),
+        .schema_paren, .schema_as, .schema_via => try stack.append(scratch, @fromBackingInt(@intCast(data.lhs))),
         .schema_record => try stack.appendSlice(scratch, bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)),
         .schema_field => {
-            const field = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaField);
+            const field = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaField);
             try stack.append(scratch, field.operand);
             try stack.appendSlice(scratch, bir.extraSlice(.{ .start = field.modifiers_start, .end = field.modifiers_end }, Bir.Inst.Index));
         },
         .schema_variant => {
-            const variant = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+            const variant = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaVariant);
             if (variant.payload.unwrap()) |p| try stack.append(scratch, p);
             if (variant.rename.unwrap()) |r| try stack.append(scratch, r);
         },

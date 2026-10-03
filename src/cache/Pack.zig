@@ -70,7 +70,7 @@ pub const Pack = struct {
         var previous: ?Row = null;
         for (0..count) |i| {
             const row = pack.rowAt(@intCast(i));
-            if (row.kind > @intFromEnum(Kind.frontend)) return empty;
+            if (row.kind > @backingInt(Kind.frontend)) return empty;
             if (@as(u64, row.offset) + row.len > bytes.len or row.offset < table_end) return empty;
             if (previous) |p| if (!p.lessThan(row)) return empty;
             previous = row;
@@ -81,7 +81,7 @@ pub const Pack = struct {
     /// The payload stored under `(kind, key)`, borrowed from the pack, or
     /// null. A binary search over the sorted table.
     pub fn find(pack: Pack, kind: Kind, key: Key.Key) ?[]const u8 {
-        const want: Row = .{ .kind = @intFromEnum(kind), .key = key, .offset = 0, .len = 0 };
+        const want: Row = .{ .kind = @backingInt(kind), .key = key, .offset = 0, .len = 0 };
         var lo: u32 = 0;
         var hi: u32 = pack.count;
         while (lo < hi) {
@@ -102,7 +102,7 @@ pub const Pack = struct {
     pub fn countOf(pack: Pack, kind: Kind) u32 {
         var n: u32 = 0;
         for (0..pack.count) |i| {
-            if (pack.rowAt(@intCast(i)).kind == @intFromEnum(kind)) n += 1;
+            if (pack.rowAt(@intCast(i)).kind == @backingInt(kind)) n += 1;
         }
         return n;
     }
@@ -173,7 +173,7 @@ pub const Writer = struct {
     pub fn write(w: *Writer, gpa: Allocator) Allocator.Error![]u8 {
         std.mem.sort(Pending, w.rows.items, {}, struct {
             fn lessThan(_: void, a: Pending, b: Pending) bool {
-                if (a.kind != b.kind) return @intFromEnum(a.kind) < @intFromEnum(b.kind);
+                if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
                 return std.mem.order(u8, &a.key, &b.key) == .lt;
             }
         }.lessThan);
@@ -194,7 +194,7 @@ pub const Writer = struct {
         try appendU32(gpa, &out, @intCast(unique.items.len));
         var offset: usize = header_len + unique.items.len * row_len;
         for (unique.items) |p| {
-            try out.append(gpa, @intFromEnum(p.kind));
+            try out.append(gpa, @backingInt(p.kind));
             try out.appendNTimes(gpa, 0, 3);
             try out.appendSlice(gpa, &p.key);
             try appendU32(gpa, &out, @intCast(offset));

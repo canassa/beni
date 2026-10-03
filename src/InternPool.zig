@@ -41,7 +41,7 @@ pub const Symbol = enum(u32) {
     _,
 
     pub fn toOptional(s: Symbol) Optional {
-        return @enumFromInt(@intFromEnum(s));
+        return @fromBackingInt(@intCast(@backingInt(s)));
     }
 
     /// A hash map keyed by symbol, hashed by one multiplication. `std`'s
@@ -56,7 +56,7 @@ pub const Symbol = enum(u32) {
 
     pub const HashContext = struct {
         pub fn hash(_: HashContext, s: Symbol) u64 {
-            return @as(u64, @intFromEnum(s)) *% 0x9E37_79B9_7F4A_7C15;
+            return @as(u64, @backingInt(s)) *% 0x9E37_79B9_7F4A_7C15;
         }
 
         pub fn eql(_: HashContext, a: Symbol, b: Symbol) bool {
@@ -69,14 +69,14 @@ pub const Symbol = enum(u32) {
         _,
 
         pub fn unwrap(o: Optional) ?Symbol {
-            return if (o == .none) null else @enumFromInt(@intFromEnum(o));
+            return if (o == .none) null else @fromBackingInt(@intCast(@backingInt(o)));
         }
     };
 };
 
 /// A remap slot `Global.mergeOne` has not filled yet. No pool reaches
 /// this many symbols: a `Symbol` is a u32 index into a u32-offset pool.
-pub const unmapped: Symbol = @enumFromInt(std.math.maxInt(u32));
+pub const unmapped: Symbol = @fromBackingInt(@intCast(std.math.maxInt(u32)));
 
 /// Which streaming hash `Hasher` is. Measured on the generated
 /// 100k-line corpus (`zig build bench -- --generate=100000`: 626 files,
@@ -292,10 +292,10 @@ pub const WellKnown = enum(u32) {
     offset,
 
     pub fn symbol(w: WellKnown) Symbol {
-        return @enumFromInt(@intFromEnum(w));
+        return @fromBackingInt(@intCast(@backingInt(w)));
     }
 
-    pub const count = @typeInfo(WellKnown).@"enum".fields.len;
+    pub const count = @typeInfo(WellKnown).@"enum".field_names.len;
 };
 
 /// One open-addressed, insertion-ordered string table. `Local` and `Global`
@@ -329,7 +329,7 @@ const Pool = struct {
     }
 
     fn slice(pool: *const Pool, symbol: Symbol) []const u8 {
-        const e = pool.entries.items[@intFromEnum(symbol)];
+        const e = pool.entries.items[@backingInt(symbol)];
         return pool.bytes.items[e.offset..][0..e.len];
     }
 
@@ -351,7 +351,7 @@ const Pool = struct {
             if (slot == empty_slot) break;
             const e = pool.entries.items[slot];
             if (e.hash == hash and std.mem.eql(u8, pool.bytes.items[e.offset..][0..e.len], bytes)) {
-                return @enumFromInt(slot);
+                return @fromBackingInt(@intCast(slot));
             }
         }
         // Not present: append bytes and entry, then claim the slot. The
@@ -363,7 +363,7 @@ const Pool = struct {
         const index: u32 = @intCast(pool.entries.items.len);
         try pool.entries.append(gpa, .{ .offset = offset, .len = @intCast(bytes.len), .hash = hash });
         pool.slots[i] = index;
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 
     /// The symbol whose bytes are `bytes`, or null. Reads the table and
@@ -383,7 +383,7 @@ const Pool = struct {
             if (slot == empty_slot) return null;
             const e = pool.entries.items[slot];
             if (e.hash == hash and std.mem.eql(u8, pool.bytes.items[e.offset..][0..e.len], bytes)) {
-                return @enumFromInt(slot);
+                return @fromBackingInt(@intCast(slot));
             }
         }
     }
@@ -498,7 +498,7 @@ pub const Global = struct {
     /// `symbol`'s position in text order (`rankByText`), or null when it
     /// has none.
     pub inline fn textRank(global: *const Global, symbol: Symbol) ?u32 {
-        const i = @intFromEnum(symbol);
+        const i = @backingInt(symbol);
         return if (i < global.text_rank.len) global.text_rank[i] else null;
     }
 
@@ -557,7 +557,7 @@ pub const Global = struct {
     /// are numbered by the input and not by which worker lexed what
     /// (`fast-compiler.md` §10). `remap` starts all `unmapped`.
     pub fn mergeOne(global: *Global, gpa: Allocator, local: *const Local, remap: []Symbol, symbol: Symbol) Allocator.Error!void {
-        const i = @intFromEnum(symbol);
+        const i = @backingInt(symbol);
         if (remap[i] != unmapped) return;
         const e = local.pool.entries.items[i];
         remap[i] = try global.pool.getOrPutHashed(gpa, e.hash, local.pool.bytes.items[e.offset..][0..e.len]);
@@ -581,8 +581,8 @@ pub const Global = struct {
         const ByText = struct {
             locals: []const *const Local,
             fn lessThan(cx: @This(), a: Left, b: Left) bool {
-                const ta = cx.locals[a.pool].slice(@enumFromInt(a.symbol));
-                const tb = cx.locals[b.pool].slice(@enumFromInt(b.symbol));
+                const ta = cx.locals[a.pool].slice(@fromBackingInt(@intCast(a.symbol)));
+                const tb = cx.locals[b.pool].slice(@fromBackingInt(@intCast(b.symbol)));
                 return switch (std.mem.order(u8, ta, tb)) {
                     .lt => true,
                     .gt => false,
@@ -591,7 +591,7 @@ pub const Global = struct {
             }
         };
         std.mem.sort(Left, left.items, ByText{ .locals = locals }, ByText.lessThan);
-        for (left.items) |l| try global.mergeOne(gpa, locals[l.pool], remaps[l.pool], @enumFromInt(l.symbol));
+        for (left.items) |l| try global.mergeOne(gpa, locals[l.pool], remaps[l.pool], @fromBackingInt(@intCast(l.symbol)));
     }
 };
 
@@ -626,12 +626,12 @@ pub const Overlay = struct {
     }
 
     pub fn isOverlay(symbol: Symbol) bool {
-        return @intFromEnum(symbol) & bit != 0;
+        return @backingInt(symbol) & bit != 0;
     }
 
     pub fn slice(o: *const Overlay, symbol: Symbol) []const u8 {
-        const i = @intFromEnum(symbol);
-        if (i & bit != 0) return o.pool.slice(@enumFromInt(i & ~bit));
+        const i = @backingInt(symbol);
+        if (i & bit != 0) return o.pool.slice(@fromBackingInt(@intCast(i & ~bit)));
         return o.global.slice(symbol);
     }
 
@@ -641,8 +641,8 @@ pub const Overlay = struct {
         const hash = Hasher.hash(bytes);
         if (o.global.pool.findHashed(hash, bytes)) |s| return s;
         const local = try o.pool.getOrPutHashed(gpa, hash, bytes);
-        std.debug.assert(@intFromEnum(local) & bit == 0);
-        return @enumFromInt(@intFromEnum(local) | bit);
+        std.debug.assert(@backingInt(local) & bit == 0);
+        return @fromBackingInt(@intCast(@backingInt(local) | bit));
     }
 
     /// The symbol for `bytes` in either pool, or null. Never writes.
@@ -650,16 +650,16 @@ pub const Overlay = struct {
         const hash = Hasher.hash(bytes);
         if (o.global.pool.findHashed(hash, bytes)) |s| return s;
         const local = o.pool.findHashed(hash, bytes) orelse return null;
-        return @enumFromInt(@intFromEnum(local) | bit);
+        return @fromBackingInt(@intCast(@backingInt(local) | bit));
     }
 };
 
 /// Intern every `WellKnown` name, in declaration order, into an empty pool.
 fn registerWellKnown(pool: *Pool, gpa: Allocator) Allocator.Error!void {
     std.debug.assert(pool.entries.items.len == 0);
-    inline for (@typeInfo(WellKnown).@"enum".fields) |field| {
-        const symbol = try pool.getOrPut(gpa, field.name);
-        std.debug.assert(@intFromEnum(symbol) == field.value);
+    inline for (@typeInfo(WellKnown).@"enum".field_names, @typeInfo(WellKnown).@"enum".field_values) |field_name, field_value| {
+        const symbol = try pool.getOrPut(gpa, field_name);
+        std.debug.assert(@backingInt(symbol) == field_value);
     }
 }
 
@@ -680,8 +680,8 @@ test "Local.init shares the well-known prefix with Global, so merge is the ident
     const view = try local.getOrPut(testing.allocator, "scene");
     const remap = try mergeAllForTest(&global, testing.allocator, &local);
     defer testing.allocator.free(remap);
-    for (remap[0..WellKnown.count], 0..) |g, i| try testing.expectEqual(@as(u32, @intCast(i)), @intFromEnum(g));
-    try testing.expectEqual(@as(Symbol, @enumFromInt(WellKnown.count)), remap[@intFromEnum(view)]);
+    for (remap[0..WellKnown.count], 0..) |g, i| try testing.expectEqual(@as(u32, @intCast(i)), @backingInt(g));
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(WellKnown.count))), remap[@backingInt(view)]);
 }
 
 test "an overlay answers global text with the global symbol and keeps new text to itself" {
@@ -749,7 +749,7 @@ test "well-known symbols have stable indices in Global" {
     var global = try Global.init(testing.allocator);
     defer global.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, WellKnown.count), global.count());
-    try testing.expectEqual(@as(Symbol, @enumFromInt(0)), WellKnown.main.symbol());
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(0))), WellKnown.main.symbol());
     try testing.expectEqualStrings("main", global.slice(WellKnown.main.symbol()));
     try testing.expectEqualStrings("and", global.slice(WellKnown.@"and".symbol()));
     try testing.expectEqualStrings("Never", global.slice(WellKnown.Never.symbol()));
@@ -782,13 +782,13 @@ test "merge remaps every local symbol and shares across workers" {
     try testing.expectEqual(@as(usize, 2), remap1.len);
     // `main` lands on its well-known index; `view` gets one global id from
     // both workers; `update` is new.
-    try testing.expectEqual(WellKnown.main.symbol(), remap0[@intFromEnum(w0_main)]);
-    try testing.expectEqual(remap0[@intFromEnum(w0_view)], remap1[@intFromEnum(w1_view)]);
-    try testing.expectEqual(@as(Symbol, @enumFromInt(WellKnown.count)), remap0[@intFromEnum(w0_view)]);
-    try testing.expectEqual(@as(Symbol, @enumFromInt(WellKnown.count + 1)), remap1[@intFromEnum(w1_update)]);
+    try testing.expectEqual(WellKnown.main.symbol(), remap0[@backingInt(w0_main)]);
+    try testing.expectEqual(remap0[@backingInt(w0_view)], remap1[@backingInt(w1_view)]);
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(WellKnown.count))), remap0[@backingInt(w0_view)]);
+    try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(WellKnown.count + 1))), remap1[@backingInt(w1_update)]);
     try testing.expectEqual(@as(u32, WellKnown.count + 2), global.count());
-    for (remap0, 0..) |g, i| try testing.expectEqualStrings(w0.slice(@enumFromInt(i)), global.slice(g));
-    for (remap1, 0..) |g, i| try testing.expectEqualStrings(w1.slice(@enumFromInt(i)), global.slice(g));
+    for (remap0, 0..) |g, i| try testing.expectEqualStrings(w0.slice(@fromBackingInt(@intCast(i))), global.slice(g));
+    for (remap1, 0..) |g, i| try testing.expectEqualStrings(w1.slice(@fromBackingInt(@intCast(i))), global.slice(g));
 }
 
 test "Global.find looks up without inserting" {
@@ -830,7 +830,7 @@ test "randomized: Global.find agrees with getOrPut over the whole pool" {
     }
     // Everything interned is findable, at the index it was given.
     for (0..global.count()) |i| {
-        const s: Symbol = @enumFromInt(i);
+        const s: Symbol = @fromBackingInt(@intCast(i));
         try testing.expectEqual(s, global.find(global.slice(s)).?);
     }
 }
@@ -858,7 +858,7 @@ test "randomized: Local agrees with a StringHashMap oracle across table growth" 
         if (oracle.get(key)) |expected| {
             try testing.expectEqual(expected, symbol);
         } else {
-            try testing.expectEqual(@as(u32, @intFromEnum(symbol)), oracle.count());
+            try testing.expectEqual(@as(u32, @backingInt(symbol)), oracle.count());
             try oracle.put(try testing.allocator.dupe(u8, key), symbol);
         }
         try testing.expectEqualStrings(key, local.slice(symbol));
@@ -892,6 +892,6 @@ fn mergeAllForTest(global: *Global, gpa: Allocator, local: *const Local) Allocat
     const remap = try gpa.alloc(Symbol, local.count());
     errdefer gpa.free(remap);
     @memset(remap, unmapped);
-    for (0..remap.len) |i| try global.mergeOne(gpa, local, remap, @enumFromInt(i));
+    for (0..remap.len) |i| try global.mergeOne(gpa, local, remap, @fromBackingInt(@intCast(i)));
     return remap;
 }

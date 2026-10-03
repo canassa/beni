@@ -101,11 +101,11 @@ pub const Which = enum {
 pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, release: bool) ?Inst.Index {
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .case) return null;
     const d = bir.instData(inst);
-    var scrutinee: Inst.Index = @enumFromInt(d.lhs);
+    var scrutinee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
     if (scrutinee.int() >= bir.insts.len) return null;
     // `Js.development ()`, a call since `Js` names no core type
     // (`boundary.md` §4.2, amended 2026-10-02): its callee is the intrinsic.
-    if (bir.instTag(scrutinee) == .call) scrutinee = @enumFromInt(bir.instData(scrutinee).lhs);
+    if (bir.instTag(scrutinee) == .call) scrutinee = @fromBackingInt(@intCast(bir.instData(scrutinee).lhs));
     if (scrutinee.int() >= bir.insts.len) return null;
     if ((of(graph, interfaces, bir, scrutinee, interner) orelse return null) != .development) return null;
     return armOf(graph, interfaces, bir, inst, interner, release);
@@ -117,9 +117,9 @@ pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *cons
 /// `True`'s where the answer is no, `False`'s where it is yes (`armOf`).
 pub fn probeCall(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype) ?Inst.Index {
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .case) return null;
-    const scrutinee: Inst.Index = @enumFromInt(bir.instData(inst).lhs);
+    const scrutinee: Inst.Index = @fromBackingInt(@intCast(bir.instData(inst).lhs));
     if (scrutinee.int() >= bir.insts.len or bir.instTag(scrutinee) != .call) return null;
-    const callee: Inst.Index = @enumFromInt(bir.instData(scrutinee).lhs);
+    const callee: Inst.Index = @fromBackingInt(@intCast(bir.instData(scrutinee).lhs));
     if (callee.int() >= bir.insts.len) return null;
     if ((of(graph, interfaces, bir, callee, interner) orelse return null) != .maySuspend) return null;
     return scrutinee;
@@ -130,18 +130,18 @@ pub fn probeCall(graph: *const Graph, interfaces: []const Interface, bir: *const
 pub fn armOf(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, which: bool) ?Inst.Index {
     const d = bir.instData(inst);
     const dropped: []const u8 = if (which) "True" else "False";
-    for (bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+    for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
         const b = bir.instData(branch);
-        const pattern: Inst.Index = @enumFromInt(b.lhs);
+        const pattern: Inst.Index = @fromBackingInt(@intCast(b.lhs));
         if (pattern.int() >= bir.insts.len or bir.instTag(pattern) != .pat_ctor) continue;
-        const ref: Inst.Index = @enumFromInt(bir.instData(pattern).lhs);
+        const ref: Inst.Index = @fromBackingInt(@intCast(bir.instData(pattern).lhs));
         if (ref.int() >= bir.insts.len or bir.instTag(ref) != .ext_ctor) continue;
         const rd = bir.instData(ref);
-        const module: Graph.Index = @enumFromInt(rd.lhs);
+        const module: Graph.Index = @fromBackingInt(@intCast(rd.lhs));
         if (module.int() >= interfaces.len or graph.modulePackage(module) != .core) continue;
         const iface = &interfaces[module.int()];
         if (rd.rhs >= iface.ctors.len) continue;
-        if (std.mem.eql(u8, interner.slice(iface.symbols[@intFromEnum(iface.ctors[rd.rhs].name)]), dropped)) return branch;
+        if (std.mem.eql(u8, interner.slice(iface.symbols[@backingInt(iface.ctors[rd.rhs].name)]), dropped)) return branch;
     }
     return null;
 }
@@ -225,11 +225,11 @@ pub fn isIdentifier(bytes: []const u8) bool {
 pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype) ?Which {
     if (bir.instTag(inst) != .ext_value) return null;
     const d = bir.instData(inst);
-    const module: Graph.Index = @enumFromInt(d.lhs);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= interfaces.len) return null;
     if (graph.modulePackage(module) != .core) return null;
     if (!same(interner.slice(graph.moduleName(module)), "Js")) return null;
     const iface = &interfaces[module.int()];
     if (d.rhs >= iface.values.len) return null;
-    return std.meta.stringToEnum(Which, interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
+    return std.meta.stringToEnum(Which, interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
 }

@@ -175,7 +175,7 @@ pub const Globals = struct {
     pub const Key = struct { module: u32, base: u32, tag: u32 };
 
     pub fn key(n: JsIr.Name) Key {
-        return .{ .module = @intFromEnum(n.module), .base = @intFromEnum(n.base), .tag = n.tag };
+        return .{ .module = @backingInt(n.module), .base = @backingInt(n.base), .tag = n.tag };
     }
 
     pub fn deinit(g: *Globals, gpa: Allocator) void {
@@ -565,14 +565,14 @@ pub const Module = struct {
                 const o = m.local[i];
                 if (o >= busy.len) continue;
                 if (busy[o]) {
-                    m.failure = .{ .kind = .collision, .name = @enumFromInt(i) };
+                    m.failure = .{ .kind = .collision, .name = @fromBackingInt(@intCast(i)) };
                     return;
                 }
                 busy[o] = true;
             }
             for (blocked.items(s)) |x| {
                 if (m.local[x] >= busy.len or !busy[m.local[x]]) continue;
-                m.failure = .{ .kind = .collision, .name = @enumFromInt(x) };
+                m.failure = .{ .kind = .collision, .name = @fromBackingInt(@intCast(x)) };
                 return;
             }
         }
@@ -620,37 +620,37 @@ pub const Module = struct {
         const d = m.ir.data(stmt);
         switch (m.ir.tag(stmt)) {
             .import_stmt => {
-                const imp = m.ir.extraData(@enumFromInt(d.lhs), JsIr.Import);
+                const imp = m.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
                 // Only the `local` half: the `imported` one is the sibling's
                 // own export name and may not move (`boundary.md` §4).
                 for (m.ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| try m.see(spec.local, mentioned);
             },
             .export_stmt => for (m.ir.extraSlice(JsIr.inlineRange(d), NameIndex)) |n| try m.see(n, mentioned),
             .const_decl => {
-                try m.see(@enumFromInt(d.lhs), mentioned);
-                try m.collectExpr(@enumFromInt(d.rhs), mentioned);
+                try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                try m.collectExpr(@fromBackingInt(@intCast(d.rhs)), mentioned);
             },
             .let_decl => {
-                try m.see(@enumFromInt(d.lhs), mentioned);
-                if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try m.collectExpr(v, mentioned);
+                try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try m.collectExpr(v, mentioned);
             },
             .func_decl, .gen_decl => {
-                try m.see(@enumFromInt(d.lhs), mentioned);
-                try m.collectFunc(@enumFromInt(d.rhs), mentioned);
+                try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                try m.collectFunc(@fromBackingInt(@intCast(d.rhs)), mentioned);
             },
             .assign_stmt => {
-                try m.collectExpr(@enumFromInt(d.lhs), mentioned);
-                try m.collectExpr(@enumFromInt(d.rhs), mentioned);
+                try m.collectExpr(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                try m.collectExpr(@fromBackingInt(@intCast(d.rhs)), mentioned);
             },
-            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try m.collectExpr(v, mentioned),
+            .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try m.collectExpr(v, mentioned),
             .if_stmt => {
-                try m.collectExpr(@enumFromInt(d.lhs), mentioned);
-                const branches = m.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                try m.collectExpr(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                const branches = m.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
                 try m.collectList(branches.thenBody(), mentioned);
                 try m.collectList(branches.elseBody(), mentioned);
             },
             .while_true, .block_stmt => {
-                const label: NameIndex = @enumFromInt(d.lhs);
+                const label: NameIndex = @fromBackingInt(@intCast(d.lhs));
                 try m.see(label, mentioned);
                 // A label may not be declared again inside its own
                 // statement: every scope there uses it (`push`).
@@ -661,33 +661,33 @@ pub const Module = struct {
                 };
                 const saved = try m.push();
                 defer m.leave(saved);
-                try m.collectList(m.ir.subRange(@enumFromInt(d.rhs)), mentioned);
+                try m.collectList(m.ir.subRange(@fromBackingInt(@intCast(d.rhs))), mentioned);
             },
             .for_of => {
-                const f = m.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                const f = m.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
                 // The iterable is in the scope of the head's `let`: `for(let
                 // a of a)` reads the new `a`, before it is initialised.
                 const saved = try m.push();
                 defer m.leave(saved);
-                try m.see(@enumFromInt(d.lhs), mentioned);
+                try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned);
                 try m.collectExpr(f.iterable, mentioned);
                 try m.collectList(f.body(), mentioned);
             },
-            .break_stmt, .continue_stmt => try m.see(@enumFromInt(d.lhs), mentioned),
+            .break_stmt, .continue_stmt => try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned),
             .switch_stmt => {
-                try m.collectExpr(@enumFromInt(d.lhs), mentioned);
+                try m.collectExpr(@fromBackingInt(@intCast(d.lhs)), mentioned);
                 const saved = try m.push();
                 defer m.leave(saved);
-                for (m.ir.extraSlice(m.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try m.collect(c, mentioned);
+                for (m.ir.extraSlice(m.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| try m.collect(c, mentioned);
             },
             .switch_case => {
-                if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try m.collectExpr(t, mentioned);
-                try m.collectList(m.ir.subRange(@enumFromInt(d.rhs)), mentioned);
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try m.collectExpr(t, mentioned);
+                try m.collectList(m.ir.subRange(@fromBackingInt(@intCast(d.rhs))), mentioned);
             },
-            .expr_stmt, .throw_stmt => try m.collectExpr(@enumFromInt(d.lhs), mentioned),
+            .expr_stmt, .throw_stmt => try m.collectExpr(@fromBackingInt(@intCast(d.lhs)), mentioned),
             // Each block is always braced, so each is a scope of its own.
             .try_stmt => {
-                const t = m.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                const t = m.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
                 {
                     const saved = try m.push();
                     defer m.leave(saved);
@@ -721,18 +721,18 @@ pub const Module = struct {
             // it is (`pulled_outer`). `a` is evaluated where it stands.
             if (m.met == null and i + 1 < list.len and m.ir.tag(list[i]) == .let_decl and
                 m.ir.tag(list[i + 1]) == .while_true and
-                @as(NameIndex, @enumFromInt(m.ir.data(list[i + 1]).lhs)) == .none)
+                @as(NameIndex, @fromBackingInt(@intCast(m.ir.data(list[i + 1]).lhs))) == .none)
             {
                 const d = m.ir.data(list[i]);
-                const n: NameIndex = @enumFromInt(d.lhs);
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
                 if (n.unwrap()) |index| if (index < m.ir.names.len and m.ir.name(n).module == .none) {
-                    if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try m.collectExpr(v, mentioned);
+                    if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try m.collectExpr(v, mentioned);
                     const saved = try m.push();
                     defer m.leave(saved);
                     try m.see(n, mentioned);
                     m.pulled_stamp[index] = m.current;
                     m.pulled_outer[index] = saved;
-                    try m.collectList(m.ir.subRange(@enumFromInt(m.ir.data(list[i + 1]).rhs)), mentioned);
+                    try m.collectList(m.ir.subRange(@fromBackingInt(@intCast(m.ir.data(list[i + 1]).rhs))), mentioned);
                     i += 1;
                     continue;
                 };
@@ -762,8 +762,8 @@ pub const Module = struct {
         while (m.stack.items.len > base) {
             const node = JsIr.popOperand(&m.stack).?;
             switch (m.ir.tag(node)) {
-                .ident => try m.see(@enumFromInt(m.ir.data(node).lhs), mentioned),
-                .arrow => try m.collectFunc(@enumFromInt(m.ir.data(node).lhs), mentioned),
+                .ident => try m.see(@fromBackingInt(@intCast(m.ir.data(node).lhs)), mentioned),
+                .arrow => try m.collectFunc(@fromBackingInt(@intCast(m.ir.data(node).lhs)), mentioned),
                 else => try m.ir.pushOperands(m.gpa, &m.stack, node),
             }
         }
@@ -909,15 +909,15 @@ test "the whole-program table hands out ordinals in call order and repeats itsel
     const gpa = testing.allocator;
     var g: Globals = .{};
     defer g.deinit(gpa);
-    const a: JsIr.Name = .{ .module = @enumFromInt(1), .base = @enumFromInt(2), .tag = 0 };
-    const b: JsIr.Name = .{ .module = @enumFromInt(1), .base = @enumFromInt(3), .tag = 0 };
+    const a: JsIr.Name = .{ .module = @fromBackingInt(@intCast(1)), .base = @fromBackingInt(@intCast(2)), .tag = 0 };
+    const b: JsIr.Name = .{ .module = @fromBackingInt(@intCast(1)), .base = @fromBackingInt(@intCast(3)), .tag = 0 };
     try testing.expectEqual(@as(u32, 0), try g.intern(gpa, a));
     try testing.expectEqual(@as(u32, 1), try g.intern(gpa, b));
     try testing.expectEqual(@as(u32, 0), try g.intern(gpa, a));
     try testing.expectEqual(@as(?u32, 1), g.lookup(b));
     // A name nothing has interned has no ordinal, which is how the entry file
     // learns that the module it imports from never exported one.
-    try testing.expectEqual(@as(?u32, null), g.lookup(.{ .module = @enumFromInt(9), .base = @enumFromInt(9), .tag = 0 }));
+    try testing.expectEqual(@as(?u32, null), g.lookup(.{ .module = @fromBackingInt(@intCast(9)), .base = @fromBackingInt(@intCast(9)), .tag = 0 }));
 }
 
 test "a module's whole-program names are collected once each, in print order, skipping dropped statements" {
@@ -925,11 +925,11 @@ test "a module's whole-program names are collected once each, in print order, sk
     defer arena_state.deinit();
     const gpa = arena_state.allocator();
     var b: JsIr.Builder = .init(gpa);
-    const module: JsIr.Symbol = @enumFromInt(1);
-    const f = try b.intern(.qualified(module, @enumFromInt(10)));
-    const g = try b.intern(.qualified(module, @enumFromInt(11)));
-    const h = try b.intern(.qualified(module, @enumFromInt(12)));
-    const x = try b.intern(.local(@enumFromInt(20)));
+    const module: JsIr.Symbol = @fromBackingInt(@intCast(1));
+    const f = try b.intern(.qualified(module, @fromBackingInt(@intCast(10))));
+    const g = try b.intern(.qualified(module, @fromBackingInt(@intCast(11))));
+    const h = try b.intern(.qualified(module, @fromBackingInt(@intCast(12))));
+    const x = try b.intern(.local(@fromBackingInt(@intCast(20))));
     // `const f = g;`, `const h = x;` (a local, never collected), then
     // `const x = f;` — `f` again, which is not collected twice.
     const s1 = try testNode(&b, .const_decl, f.int(), (try testNode(&b, .ident, g.int(), 0)).int());
@@ -982,14 +982,14 @@ fn nameDeepChain() !void {
     defer arena_state.deinit();
     const gpa = arena_state.allocator();
     var b: JsIr.Builder = .init(gpa);
-    const f = try b.intern(.local(@enumFromInt(0)));
-    const a = try b.intern(.local(@enumFromInt(1)));
-    const z = try b.intern(.local(@enumFromInt(2)));
+    const f = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const z = try b.intern(.local(@fromBackingInt(@intCast(2))));
     var chain = try testNode(&b, .ident, z.int(), 0);
     for (1..deep_chain) |_| {
         const operand = try testNode(&b, .ident, a.int(), 0);
         const pair = try b.addRecord(JsIr.Binary{ .left = chain, .right = operand });
-        chain = try testNode(&b, .binary, @intFromEnum(pair), @intFromEnum(JsIr.BinaryOp.logical_and));
+        chain = try testNode(&b, .binary, @backingInt(pair), @backingInt(JsIr.BinaryOp.logical_and));
     }
     const decl = try testFunc(&b, f, a, &.{try testNode(&b, .return_stmt, chain.int(), 0)});
     const ir = try b.toOwned(try b.addRange(&.{decl}));
@@ -1016,12 +1016,12 @@ test "a declaration of 16 384 locals is named and self-checked in linear time" {
     const gpa = arena_state.allocator();
     const width = 16_384;
     var b: JsIr.Builder = .init(gpa);
-    const f = try b.intern(.local(@enumFromInt(0)));
-    const a = try b.intern(.local(@enumFromInt(1)));
+    const f = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(1))));
     const locals = try gpa.alloc(NameIndex, width);
     const stmts = try gpa.alloc(Index, width);
     for (locals, stmts, 0..) |*local, *stmt, i| {
-        local.* = try b.intern(.local(@enumFromInt(2 + i)));
+        local.* = try b.intern(.local(@fromBackingInt(@intCast(2 + i))));
         stmt.* = try testNode(&b, .const_decl, local.int(), (try testNode(&b, .ident, a.int(), 0)).int());
     }
     const decl = try testFunc(&b, f, a, stmts);
@@ -1046,17 +1046,17 @@ test "a loop's body reuses a spelling of the scope around it that it does not us
     defer arena_state.deinit();
     const gpa = arena_state.allocator();
     var b: JsIr.Builder = .init(gpa);
-    const f = try b.intern(.local(@enumFromInt(0)));
-    const a = try b.intern(.local(@enumFromInt(1)));
-    const x = try b.intern(.local(@enumFromInt(2)));
-    const y = try b.intern(.local(@enumFromInt(3)));
-    const x2 = try b.intern(.local(@enumFromInt(4)));
-    const none = @intFromEnum(NameIndex.none);
+    const f = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const x = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const y = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const x2 = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    const none = @backingInt(NameIndex.none);
     const decl_x2 = try testNode(&b, .const_decl, x2.int(), (try testNode(&b, .ident, a.int(), 0)).int());
     const first = try b.addRecord(try b.addRange(&.{try testNode(&b, .const_decl, x.int(), (try testNode(&b, .ident, a.int(), 0)).int())}));
     const second = try b.addRecord(try b.addRange(&.{try testNode(&b, .const_decl, y.int(), (try testNode(&b, .ident, x2.int(), 0)).int())}));
-    const loop1 = try testNode(&b, .while_true, none, @intFromEnum(first));
-    const loop2 = try testNode(&b, .while_true, none, @intFromEnum(second));
+    const loop1 = try testNode(&b, .while_true, none, @backingInt(first));
+    const loop2 = try testNode(&b, .while_true, none, @backingInt(second));
     const decl = try testFunc(&b, f, a, &.{ decl_x2, loop1, loop2 });
     const ir = try b.toOwned(try b.addRange(&.{decl}));
 
@@ -1087,5 +1087,5 @@ fn testFunc(b: *JsIr.Builder, name: NameIndex, param: NameIndex, body: []const I
         .body_start = stmts.start,
         .body_end = stmts.end,
     });
-    return testNode(b, .func_decl, name.int(), @intFromEnum(func));
+    return testNode(b, .func_decl, name.int(), @backingInt(func));
 }

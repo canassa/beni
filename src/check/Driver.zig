@@ -149,7 +149,7 @@ pub fn go(d: *Driver, scratch: *Arena) Error!void {
 fn parallelisable(d: *const Driver) bool {
     if (d.options.jobs <= 1 or d.graph.count() <= 1) return false;
     for (0..d.graph.count()) |i| {
-        if (d.graph.isPoisoned(@enumFromInt(i))) return false;
+        if (d.graph.isPoisoned(@fromBackingInt(@intCast(i)))) return false;
     }
     return true;
 }
@@ -207,7 +207,7 @@ fn workBound(d: *const Driver) usize {
     if (!d.options.size_by_work) return std.math.maxInt(usize);
     var tokens: usize = 0;
     for (0..d.graph.count()) |i| {
-        tokens += d.artifacts.spans(d.graph.moduleFile(@enumFromInt(i))).len();
+        tokens += d.artifacts.spans(d.graph.moduleFile(@fromBackingInt(@intCast(i)))).len();
     }
     return @max(1, std.math.divCeil(usize, tokens, tokens_per_checker) catch unreachable);
 }
@@ -225,7 +225,7 @@ fn serial(d: *Driver, scratch: *Arena) Error!void {
     // the sequence is `graph.order`'s, so the walk is a function of the
     // input alone (`fast-compiler.md` §10).
     for (0..d.graph.count()) |i| {
-        if (d.graph.modulePackage(@enumFromInt(i)) == .core) d.core_pending += 1;
+        if (d.graph.modulePackage(@fromBackingInt(@intCast(i))) == .core) d.core_pending += 1;
     }
     for ([_]bool{ true, false }) |core| {
         for (d.graph.order) |m| {
@@ -267,7 +267,7 @@ fn buildSchedule(d: *Driver) Error!void {
 
     var edges: u32 = 0;
     for (0..n) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         for (d.graph.dependencies(m)) |dep| {
             if (dep == m or position[dep.int()] >= position[i]) continue;
             d.blockers[i] += 1;
@@ -281,7 +281,7 @@ fn buildSchedule(d: *Driver) Error!void {
     defer gpa.free(cursor);
     @memcpy(cursor, d.dependent_start[0..n]);
     for (0..n) |i| {
-        const m: Graph.Index = @enumFromInt(i);
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
         for (d.graph.dependencies(m)) |dep| {
             if (dep == m or position[dep.int()] >= position[i]) continue;
             d.dependents[cursor[dep.int()]] = m;
@@ -293,11 +293,11 @@ fn buildSchedule(d: *Driver) Error!void {
     // until the last core module has published (see `core_pending`).
     d.core_pending = 0;
     for (0..n) |i| {
-        if (d.graph.modulePackage(@enumFromInt(i)) == .core) d.core_pending += 1;
+        if (d.graph.modulePackage(@fromBackingInt(@intCast(i))) == .core) d.core_pending += 1;
     }
     if (d.core_pending != 0) {
         for (0..n) |i| {
-            if (d.graph.modulePackage(@enumFromInt(i)) == .core) continue;
+            if (d.graph.modulePackage(@fromBackingInt(@intCast(i))) == .core) continue;
             d.blockers[i] += 1;
         }
     }
@@ -316,10 +316,10 @@ fn buildSchedule(d: *Driver) Error!void {
 /// released. Under the lock, once.
 fn openCoreGate(d: *Driver) void {
     for (0..d.graph.count()) |i| {
-        if (d.graph.modulePackage(@enumFromInt(i)) == .core) continue;
+        if (d.graph.modulePackage(@fromBackingInt(@intCast(i))) == .core) continue;
         d.blockers[i] -= 1;
         if (d.blockers[i] != 0) continue;
-        d.queue[d.queue_len] = @enumFromInt(@as(u32, @intCast(i)));
+        d.queue[d.queue_len] = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         d.queue_len += 1;
     }
 }

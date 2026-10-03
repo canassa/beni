@@ -28,7 +28,7 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
     defer g.depth -= 1;
     // Unreachable from a file the parser accepted; noted, never silent.
     if (g.depth > Generator.max_depth) {
-        try g.cx.noteTooDeep(inst, @intFromEnum(g.decl));
+        try g.cx.noteTooDeep(inst, @backingInt(g.decl));
         return g.true_();
     }
 
@@ -45,7 +45,7 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
         .pat_as => {
             g.setLocal(data.rhs, expected);
             _ = try g.binder(expected, inst, g.nameOfLocal(data.rhs));
-            return patternAgainst(g, @enumFromInt(data.lhs), expected);
+            return patternAgainst(g, @fromBackingInt(@intCast(data.lhs)), expected);
         },
         .pat_int => return g.equal(expected, try g.freshKind(.number), inst, .{ .tag = .case_pattern }),
         .pat_char => return g.equal(expected, try g.primitive(wk.char), inst, .{ .tag = .case_pattern }),
@@ -73,7 +73,7 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
             for (elements) |el| {
                 // A spread's operand is the elements it covers: a list of
                 // the same type (language.md §6.8).
-                const operand: Bir.Inst.Index = @enumFromInt(bir.instData(el).lhs);
+                const operand: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(el).lhs));
                 try parts.append(g.cx.scratch, if (bir.instTag(el) == .pat_spread)
                     try patternAgainst(g, operand, list)
                 else
@@ -90,7 +90,7 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
                 g.setLocal(li, v);
                 const name = g.nameOfLocal(li);
                 _ = try g.binder(v, inst, name);
-                p.* = .{ .name = name.unwrap() orelse @enumFromInt(0), .value = v };
+                p.* = .{ .name = name.unwrap() orelse @fromBackingInt(@intCast(0)), .value = v };
             }
             const range = try g.cx.store.addFields(pairs);
             const ext = try g.freshFlex();
@@ -98,7 +98,7 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
             return g.equal(required, expected, inst, .{ .tag = .case_pattern });
         },
         .pat_ctor => {
-            const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
             const ctor = try g.freshFlex();
             const arg_vars = try g.cx.scratch.alloc(Var, args.len);
             defer g.cx.scratch.free(arg_vars);
@@ -114,11 +114,11 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
             });
             var parts: std.ArrayList(Constraint) = .empty;
             defer parts.deinit(g.cx.scratch);
-            const reference: Bir.Inst.Index = @enumFromInt(data.lhs);
+            const reference: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
             if (bir.instTag(reference) == .@"error") {
                 try parts.append(g.cx.scratch, try g.equal(ctor, try g.fresh(.err), inst, .{}));
             } else {
-                try parts.append(g.cx.scratch, try g.add(.reference, reference, @intFromEnum(ctor), 0, .{}));
+                try parts.append(g.cx.scratch, try g.add(.reference, reference, @backingInt(ctor), 0, .{}));
             }
             try parts.append(g.cx.scratch, try g.add(.call, inst, payload, 0, .{ .tag = .case_pattern }));
             for (args, arg_vars) |arg, v| try parts.append(g.cx.scratch, try patternAgainst(g, arg, v));
@@ -127,6 +127,6 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
         // A parser placeholder: already reported.
         .@"error" => return g.equal(expected, try g.fresh(.err), inst, .{}),
         // No pattern at all: the compiler's failure.
-        else => return g.add(.internal, inst, @intFromEnum(expected), 0, .{}),
+        else => return g.add(.internal, inst, @backingInt(expected), 0, .{}),
     }
 }

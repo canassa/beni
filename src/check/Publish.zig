@@ -103,7 +103,7 @@ pub fn fill(in: Input) Error!u32 {
     const members = try gpa.dupe(Interface.SchemaMember, iface.schema_members);
     errdefer gpa.free(members);
     for (members) |*member| {
-        const decl = prov.schemaDecl(@intFromEnum(member.schema));
+        const decl = prov.schemaDecl(@backingInt(member.schema));
         const root = if (decl) |d| cx.schemas.member(d.int(), member.kind) else null;
         member.scheme = try p.scheme(root, decl);
     }
@@ -113,7 +113,7 @@ pub fn fill(in: Input) Error!u32 {
     const ctors = try gpa.dupe(Interface.SchemaCtor, iface.schema_ctors);
     errdefer gpa.free(ctors);
     for (ctors, 0..) |*ctor, ci| {
-        const si = @intFromEnum(ctor.schema);
+        const si = @backingInt(ctor.schema);
         const decl = prov.schemaDecl(si);
         const root = if (decl) |d| blk: {
             const schema = iface.schemas[si];
@@ -377,7 +377,7 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
         }
         if (iface.findType(cx.interner, entry.name) != null) continue;
         try hidden.append(gpa, .{
-            .name = @enumFromInt(try writer.symbolIndex(entry.name)),
+            .name = @fromBackingInt(@intCast(try writer.symbolIndex(entry.name))),
             .arity = entry.arity,
             .kind = entry.kind,
             .is_equatable = entry.equatable and entry.kind == .foreign,
@@ -449,7 +449,7 @@ const Facts = struct {
         const types = f.cx.types;
         if (Contexts.tableRow(types, id, kind) == .primitive) return .{ .status = .primitive };
         if (f.contexts.moduleRuleAnswers(id, kind)) {
-            if (f.contexts.module_pub[@intFromEnum(kind)]) return .{ .status = .own_method };
+            if (f.contexts.module_pub[@backingInt(kind)]) return .{ .status = .own_method };
             return f.private(id, Contexts.methodName(kind));
         }
         if (types.entry(id).kind == .foreign) return .{ .status = .foreign };
@@ -460,9 +460,9 @@ const Facts = struct {
             .own_method => return .{ .status = .own_method },
             .foreign => return .{ .status = .foreign },
             .absent_function => return .{ .status = .function },
-            .absent_private => return f.private(@enumFromInt(answer.culprit), answer.method),
+            .absent_private => return f.private(@fromBackingInt(@intCast(answer.culprit)), answer.method),
             // The reason rides on the row (§14.2).
-            .absent_requirement => return f.culpritRow(.requirement, @enumFromInt(answer.culprit), answer.method),
+            .absent_requirement => return f.culpritRow(.requirement, @fromBackingInt(@intCast(answer.culprit)), answer.method),
             // The record has no status for a needed annotation, so an
             // importer says "does not support" where the module itself gives
             // the annotation hint: the texts are the unanswerable row's.
@@ -483,7 +483,7 @@ const Facts = struct {
         try words.ensureTotalCapacity(f.cx.scratch, 1 + entries.len * Interface.context_words);
         // The row's one scheme first: its method types, or `none`.
         words.appendAssumeCapacity(if (answer.template.unwrap()) |template|
-            @intFromEnum(try f.templateScheme(t, template, f.contexts.pinsOf(answer), f.cx.types.entry(id).decl))
+            @backingInt(try f.templateScheme(t, template, f.contexts.pinsOf(answer), f.cx.types.entry(id).decl))
         else
             std.math.maxInt(u32));
         for (entries) |e| {
@@ -506,7 +506,7 @@ const Facts = struct {
     fn culpritRow(f: *Facts, status: Interface.Derived.Status, culprit: Types.TypeId, method: InternPool.Symbol) Error!Interface.Derived {
         const ref = try f.writer.typeRefOf(culprit);
         if (ref == .none) return .{ .status = .unanswerable };
-        const words = [_]u32{ @intFromEnum(ref), try f.slot(method) };
+        const words = [_]u32{ @backingInt(ref), try f.slot(method) };
         return .{ .status = status, .context = try f.writer.addRange(&words) };
     }
 
@@ -611,8 +611,8 @@ fn roundtrip(cx: *const Context, iface: *Interface, report: *Report) Error!void 
     defer gpa.free(bytes);
     const loaded = iface_bytes.read(gpa, bytes, cx.interner) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        error.BadRecord => return report.internal(@enumFromInt(0), "this module's interface record did not load back from its own bytes"),
-        error.UnknownSymbol => return report.internal(@enumFromInt(0), "this module's interface record names a string the session's interner does not hold"),
+        error.BadRecord => return report.internal(@fromBackingInt(@intCast(0)), "this module's interface record did not load back from its own bytes"),
+        error.UnknownSymbol => return report.internal(@fromBackingInt(@intCast(0)), "this module's interface record names a string the session's interner does not hold"),
     };
     iface.deinit(gpa);
     iface.* = loaded;

@@ -81,7 +81,7 @@ pub const Index = enum(u32) {
     _,
 
     pub fn int(i: Index) u32 {
-        return @intFromEnum(i);
+        return @backingInt(i);
     }
 };
 
@@ -210,7 +210,7 @@ pub const Module = struct {
     deps_end: u32,
 };
 
-const package_count = @typeInfo(Package).@"enum".fields.len;
+const package_count = @typeInfo(Package).@"enum".field_names.len;
 const no_row = std.math.maxInt(u32);
 const no_module = std.math.maxInt(u32);
 
@@ -294,7 +294,7 @@ pub fn dependencies(g: *const Graph, i: Index) []const Index {
 /// stale reference onto the wrong module instead of poisoning it.
 pub fn find(g: *const Graph, package: Package, name: Symbol) ?Index {
     const row = g.rowOf(name) orelse return null;
-    return moduleOrNull(row.exact[@intFromEnum(package)]);
+    return moduleOrNull(row.exact[@backingInt(package)]);
 }
 
 fn rowOf(g: *const Graph, name: Symbol) ?*const Row {
@@ -302,7 +302,7 @@ fn rowOf(g: *const Graph, name: Symbol) ?*const Row {
 }
 
 fn moduleOrNull(m: u32) ?Index {
-    return if (m == no_module) null else @enumFromInt(m);
+    return if (m == no_module) null else @fromBackingInt(@intCast(m));
 }
 
 /// Resolve `name` as seen from a module of `from`: its own package first,
@@ -321,7 +321,7 @@ fn moduleOrNull(m: u32) ?Index {
 /// (`Row.visible`), so this is a bounds check and two loads.
 pub fn lookup(g: *const Graph, from: Package, name: Symbol) ?Index {
     const row = g.rowOf(name) orelse return null;
-    return moduleOrNull(row.visible[@intFromEnum(from)]);
+    return moduleOrNull(row.visible[@backingInt(from)]);
 }
 
 /// Resolve `name` as seen from module `from`: `lookup`, then the platform
@@ -340,7 +340,7 @@ pub fn lookupFrom(g: *const Graph, from: Index, name: Symbol) ?Index {
     if (pkg != .platform or packages[target.int()] != .platform) return target;
     if (g.platformSees(from, target)) return target;
     const row = g.rowOf(name) orelse return null;
-    return moduleOrNull(row.exact[@intFromEnum(Package.core)]);
+    return moduleOrNull(row.exact[@backingInt(Package.core)]);
 }
 
 /// Whether platform module `from`'s package may import platform module
@@ -357,9 +357,9 @@ pub fn platformSees(g: *const Graph, from: Index, target: Index) bool {
 /// module has the name, or `from` may import it.
 pub fn hiddenPlatformModule(g: *const Graph, from: Index, name: Symbol) ?Index {
     const row = g.rowOf(name) orelse return null;
-    const target = moduleOrNull(row.exact[@intFromEnum(Package.platform)]) orelse return null;
+    const target = moduleOrNull(row.exact[@backingInt(Package.platform)]) orelse return null;
     return switch (g.modulePackage(from)) {
-        .app => if (row.exact[@intFromEnum(Package.app)] != no_module or g.modules.items(.app_visible)[target.int()]) null else target,
+        .app => if (row.exact[@backingInt(Package.app)] != no_module or g.modules.items(.app_visible)[target.int()]) null else target,
         .platform => if (g.platformSees(from, target)) null else target,
         .core => null,
     };
@@ -368,10 +368,10 @@ pub fn hiddenPlatformModule(g: *const Graph, from: Index, name: Symbol) ?Index {
 /// `lookup`'s precedence over one row's `exact` answers. `app_sees` is
 /// whether a root-package module may see the row's platform module.
 fn visibleFrom(exact: [package_count]u32, from: Package, app_sees: bool) u32 {
-    if (exact[@intFromEnum(from)] != no_module) return exact[@intFromEnum(from)];
+    if (exact[@backingInt(from)] != no_module) return exact[@backingInt(from)];
     const hidden = from == .app and !app_sees;
-    if (from != .platform and !hidden and exact[@intFromEnum(Package.platform)] != no_module) return exact[@intFromEnum(Package.platform)];
-    if (from != .core and exact[@intFromEnum(Package.core)] != no_module) return exact[@intFromEnum(Package.core)];
+    if (from != .platform and !hidden and exact[@backingInt(Package.platform)] != no_module) return exact[@backingInt(Package.platform)];
+    if (from != .core and exact[@backingInt(Package.core)] != no_module) return exact[@backingInt(Package.core)];
     return no_module;
 }
 
@@ -419,11 +419,11 @@ pub fn build(
     //    is `duplicate_module` — deterministic without a tie-break rule.
     var name_limit: u32 = 0;
     for (0..store.count()) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
+        const file: SourceStore.Index = @fromBackingInt(@intCast(i));
         if (!store.modulePathValid(file)) continue;
         if (keep) |k| if (!k[i]) continue;
         const name = try interner.getOrPut(gpa, store.moduleName(file));
-        name_limit = @max(name_limit, @intFromEnum(name) + 1);
+        name_limit = @max(name_limit, @backingInt(name) + 1);
         const package = store.package(file);
         const layer: u8 = if (package == .platform and file.int() < platforms.file_layers.len) platforms.file_layers[file.int()] else 0;
         try modules.append(gpa, .{
@@ -442,12 +442,12 @@ pub fn build(
     var rows: std.ArrayList(Row) = .empty;
     errdefer rows.deinit(gpa);
     for (modules.items(.name), modules.items(.package), modules.items(.file), 0..) |name, pkg, file, i| {
-        const slot = &g.name_rows[@intFromEnum(name)];
+        const slot = &g.name_rows[@backingInt(name)];
         if (slot.* == no_row) {
             slot.* = @intCast(rows.items.len);
             try rows.append(gpa, .{});
         }
-        const exact = &rows.items[slot.*].exact[@intFromEnum(pkg)];
+        const exact = &rows.items[slot.*].exact[@backingInt(pkg)];
         if (exact.* != no_module) {
             try diagnostics.append(gpa, .{
                 .code = .duplicate_module,
@@ -462,9 +462,9 @@ pub fn build(
         }
     }
     for (rows.items) |*row| {
-        const platform_module = row.exact[@intFromEnum(Package.platform)];
+        const platform_module = row.exact[@backingInt(Package.platform)];
         const app_sees = platform_module == no_module or modules.items(.app_visible)[platform_module];
-        for (&row.visible, 0..) |*v, from| v.* = visibleFrom(row.exact, @enumFromInt(from), app_sees);
+        for (&row.visible, 0..) |*v, from| v.* = visibleFrom(row.exact, @fromBackingInt(@intCast(from)), app_sees);
     }
     g.rows = try rows.toOwnedSlice(gpa);
     g.modules = modules.toOwnedSlice();
@@ -482,7 +482,7 @@ pub fn build(
     const dep_stamp = try scratch.alloc(u32, g.modules.len);
     @memset(dep_stamp, 0);
     for (0..g.modules.len) |i| {
-        const index: Index = @enumFromInt(i);
+        const index: Index = @fromBackingInt(@intCast(i));
         const stamp: u32 = @intCast(i + 1);
         const start: u32 = @intCast(deps.items.len);
         const file = g.modules.items(.file)[i];
@@ -594,7 +594,7 @@ pub fn dropUnreached(g: *const Graph, scratch: Allocator, roots: []const bool, k
     for (0..n) |i| {
         if (!roots[files[i].int()]) continue;
         reached[i] = true;
-        try stack.append(scratch, @enumFromInt(i));
+        try stack.append(scratch, @fromBackingInt(@intCast(i)));
     }
     while (stack.pop()) |m| {
         for (g.dependencies(m)) |dep| {
@@ -699,14 +699,14 @@ fn markReferencedModules(g: *const Graph, bir: *const Bir, used: []u32, stamp: u
             .import_value, .import_ctor, .import_type, .import_schema => {},
             .top_value, .top_ctor, .top_type, .top_schema => continue,
         }
-        const row = g.rowIndex(bir.symbol(@enumFromInt(ref.a))) orelse continue;
+        const row = g.rowIndex(bir.symbol(@fromBackingInt(@intCast(ref.a)))) orelse continue;
         used[row] = stamp;
     }
 }
 
 /// The row of module name `name` in `rows`, or null when no module has it.
 fn rowIndex(g: *const Graph, name: Symbol) ?u32 {
-    const s = @intFromEnum(name);
+    const s = @backingInt(name);
     if (s >= g.name_rows.len or g.name_rows[s] == no_row) return null;
     return g.name_rows[s];
 }
@@ -763,11 +763,11 @@ fn mintedModules(bir: *const Bir, js: ?Symbol, interner: *const InternPool.Globa
     var acc: [4]u8 = @splat(0);
     var i: usize = 0;
     while (i + 4 <= tags.len) : (i += 4) {
-        inline for (0..4) |k| acc[k] |= minted_bits[@intFromEnum(tags[i + k])];
+        inline for (0..4) |k| acc[k] |= minted_bits[@backingInt(tags[i + k])];
     }
     var seen = acc[0] | acc[1] | acc[2] | acc[3];
-    while (i < tags.len) : (i += 1) seen |= minted_bits[@intFromEnum(tags[i])];
-    const literal_bits = minted_bits[@intFromEnum(Bir.Inst.Tag.string)] | minted_bits[@intFromEnum(Bir.Inst.Tag.list)];
+    while (i < tags.len) : (i += 1) seen |= minted_bits[@backingInt(tags[i])];
+    const literal_bits = minted_bits[@backingInt(Bir.Inst.Tag.string)] | minted_bits[@backingInt(Bir.Inst.Tag.list)];
     if (js == null or seen & literal_bits == 0) return seen;
     return seen & ~exemptBits(bir, js.?, interner);
 }
@@ -783,7 +783,7 @@ fn exemptBits(bir: *const Bir, js: Symbol, interner: *const InternPool.Global) u
     // The switch's tags tested first: its `else` prong is a check of the
     // operand against every tag in Zig's own backend (`Inst.Tag.set`).
     const counted = comptime Bir.Inst.Tag.set(&.{ .string, .list, .chunk, .interp, .pat_string, .pat_list });
-    for (tags) |tag| if (counted[@intFromEnum(tag)]) switch (tag) {
+    for (tags) |tag| if (counted[@backingInt(tag)]) switch (tag) {
         .string => strings += 1,
         .list => lists += 1,
         .chunk, .interp, .pat_string => other_string = true,
@@ -792,17 +792,17 @@ fn exemptBits(bir: *const Bir, js: Symbol, interner: *const InternPool.Global) u
     };
     for (tags, 0..) |tag, at| {
         if (tag != .call) continue;
-        const data = bir.instData(@enumFromInt(at));
-        const callee: Bir.Inst.Index = @enumFromInt(data.lhs);
+        const data = bir.instData(@fromBackingInt(@intCast(at)));
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
         switch (bir.instTag(callee)) {
             .qualified, .import_value => {},
             else => continue,
         }
         const name = bir.instData(callee);
-        if (bir.symbol(@enumFromInt(name.lhs)) != js) continue;
-        const which = std.meta.stringToEnum(JsIntrinsic.Which, interner.slice(bir.symbol(@enumFromInt(name.rhs)))) orelse continue;
+        if (bir.symbol(@fromBackingInt(@intCast(name.lhs))) != js) continue;
+        const which = std.meta.stringToEnum(JsIntrinsic.Which, interner.slice(bir.symbol(@fromBackingInt(@intCast(name.rhs))))) orelse continue;
         const positions = JsIntrinsic.inPlaceLiterals(which);
-        const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+        const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
         for (args, 0..) |arg, k| {
             if (k >= 8 or positions & (@as(u8, 1) << @intCast(k)) == 0) continue;
             switch (bir.instTag(arg)) {
@@ -821,8 +821,8 @@ fn exemptBits(bir: *const Bir, js: Symbol, interner: *const InternPool.Global) u
         }
     }
     var mask: u8 = 0;
-    if (strings == 0 and !other_string) mask |= minted_bits[@intFromEnum(Bir.Inst.Tag.string)];
-    if (lists == 0 and !other_list) mask |= minted_bits[@intFromEnum(Bir.Inst.Tag.list)];
+    if (strings == 0 and !other_string) mask |= minted_bits[@backingInt(Bir.Inst.Tag.string)];
+    if (lists == 0 and !other_list) mask |= minted_bits[@backingInt(Bir.Inst.Tag.list)];
     return mask;
 }
 
@@ -898,7 +898,7 @@ const minted_bits: [256]u8 = blk: {
         .{ .schema_primitive, schema },
         .{ .schema_target_top, schema },
         .{ .ext_schema_target, schema },
-    }) |entry| table[@intFromEnum(entry[0])] = entry[1];
+    }) |entry| table[@backingInt(entry[0])] = entry[1];
     break :blk table;
 };
 
@@ -932,7 +932,7 @@ fn scheduleAndReportCycles(
     @memcpy(cursor, starts[0..component_count]);
     for (0..n) |i| {
         const c = component[i];
-        members[cursor[c]] = @enumFromInt(i);
+        members[cursor[c]] = @fromBackingInt(@intCast(i));
         cursor[c] += 1;
     }
 
@@ -982,7 +982,7 @@ fn scheduleAndReportCycles(
     var cross_edges: u32 = 0;
     for (0..n) |i| {
         const from = component[i];
-        for (g.dependencies(@enumFromInt(i))) |d| {
+        for (g.dependencies(@fromBackingInt(@intCast(i)))) |d| {
             const to = component[d.int()];
             if (from == to) continue;
             in_degree[from] += 1;
@@ -996,7 +996,7 @@ fn scheduleAndReportCycles(
     @memcpy(rcursor, rstarts[0..component_count]);
     for (0..n) |i| {
         const from = component[i];
-        for (g.dependencies(@enumFromInt(i))) |d| {
+        for (g.dependencies(@fromBackingInt(@intCast(i)))) |d| {
             const to = component[d.int()];
             if (from == to) continue;
             rdeps[rcursor[to]] = from;
@@ -1191,7 +1191,7 @@ const Tarjan = struct {
         defer frames.deinit(scratch);
         for (0..g.modules.len) |root| {
             if (t.index[root] != unvisited) continue;
-            try frames.append(scratch, .{ .node = @enumFromInt(root), .cursor = 0 });
+            try frames.append(scratch, .{ .node = @fromBackingInt(@intCast(root)), .cursor = 0 });
             try t.visit(scratch, g, &frames);
         }
     }
@@ -1259,7 +1259,7 @@ test "a chain of imports is a stable topological order and nothing is poisoned" 
     try testing.expectEqualDeep(@as([]const []const u8, &.{ "C", "B", "A" }), order);
     try testing.expectEqual(@as(u32, 3), p.graph().count());
     try testing.expectEqual(@as(u32, 2), p.graph().edgeCount());
-    for (0..3) |i| try testing.expect(!p.graph().isPoisoned(@enumFromInt(i)));
+    for (0..3) |i| try testing.expect(!p.graph().isPoisoned(@fromBackingInt(@intCast(i))));
 
     const a = p.module("A").?;
     try testing.expectEqualSlices(Index, &.{p.module("B").?}, p.graph().dependencies(a));
@@ -1295,9 +1295,9 @@ test "a three-module cycle is one diagnostic on its first module, and every memb
     try testing.expectEqual(@as(usize, 1), p.graph().diagnostics.len);
     const item = p.graph().diagnostics[0];
     try testing.expectEqual(diagnostic.Code.import_cycle, item.code);
-    try testing.expectEqual(p.module("A").?, @as(Index, @enumFromInt(0)));
+    try testing.expectEqual(p.module("A").?, @as(Index, @fromBackingInt(@intCast(0))));
     try testing.expectEqualSlices(Index, &.{ p.module("A").?, p.module("B").?, p.module("C").? }, p.graph().cycle_members[item.cycle_start..item.cycle_end]);
-    for (0..3) |i| try testing.expect(p.graph().isPoisoned(@enumFromInt(i)));
+    for (0..3) |i| try testing.expect(p.graph().isPoisoned(@fromBackingInt(@intCast(i))));
 
     // Every module still gets a place in the schedule, so nothing is
     // silently skipped; and the cycle is the ONLY thing reported.
@@ -1357,8 +1357,8 @@ test "two files claiming one module name is duplicate_module on the second" {
     try testing.expectEqual(@as(usize, 1), p.graph().diagnostics.len);
     try testing.expectEqual(diagnostic.Code.duplicate_module, p.graph().diagnostics[0].code);
     try testing.expectEqualStrings("b/M.beni", p.session.store.path(p.graph().diagnostics[0].file));
-    try testing.expect(p.graph().isPoisoned(@enumFromInt(1)));
-    try testing.expect(!p.graph().isPoisoned(@enumFromInt(0)));
+    try testing.expect(p.graph().isPoisoned(@fromBackingInt(@intCast(1))));
+    try testing.expect(!p.graph().isPoisoned(@fromBackingInt(@intCast(0))));
 }
 
 test "lookup searches the importing package first, then core" {

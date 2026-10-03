@@ -77,7 +77,7 @@ pub const Section = enum(u32) {
     schema_plan,
     diagnostics,
 
-    pub const count: u32 = @typeInfo(Section).@"enum".fields.len;
+    pub const count: u32 = @typeInfo(Section).@"enum".field_names.len;
 };
 
 const header_bytes: u32 = 32; // magic(8) + version(4) + section_count(4) + key(16)
@@ -123,7 +123,7 @@ pub fn write(gpa: Allocator, entry: Entry) Allocator.Error![]u8 {
     var lengths: [Section.count]u32 = undefined;
     var at: u32 = body_start;
     for (0..Section.count) |i| {
-        const s: Section = @enumFromInt(i);
+        const s: Section = @fromBackingInt(@intCast(i));
         const bytes = entry.section(s);
         offsets[i] = at;
         lengths[i] = @intCast(bytes.len);
@@ -142,7 +142,7 @@ pub fn write(gpa: Allocator, entry: Entry) Allocator.Error![]u8 {
         const row = out[header_bytes + i * 8 ..][0..8];
         std.mem.writeInt(u32, row[0..4], offsets[i], .little);
         std.mem.writeInt(u32, row[4..8], lengths[i], .little);
-        const s: Section = @enumFromInt(i);
+        const s: Section = @fromBackingInt(@intCast(i));
         @memcpy(out[offsets[i]..][0..lengths[i]], entry.section(s));
     }
     return out;
@@ -181,7 +181,7 @@ pub fn read(bytes: []const u8) ReadError!Entry {
         if (offset % 4 != 0 or offset < body_start) return error.BadEntry;
         if (@as(u64, offset) + @as(u64, len) > bytes.len) return error.BadEntry;
         const slice = bytes[offset..][0..len];
-        switch (@as(Section, @enumFromInt(i))) {
+        switch (@as(Section, @fromBackingInt(@intCast(i)))) {
             .interface => entry.interface = slice,
             .dispatch => entry.dispatch = slice,
             .schema_plan => entry.schema_plan = slice,
@@ -405,7 +405,7 @@ test "the six corrupt-entry shapes are each a miss" {
     // 5. A section offset past the end, a length past the end, a length
     //    chosen to wrap 32 bits, and a misaligned offset.
     {
-        const row = copy[header_bytes + @intFromEnum(Section.dispatch) * 8 ..][0..8];
+        const row = copy[header_bytes + @backingInt(Section.dispatch) * 8 ..][0..8];
         const offset = std.mem.readInt(u32, row[0..4], .little);
         const len = std.mem.readInt(u32, row[4..8], .little);
 
@@ -519,9 +519,9 @@ test "fuzz: a mutated entry never reads back as one that leaves the file" {
     defer gpa.free(diagnostics);
     const bytes = try write(gpa, .{
         .key = sample_key,
-        .interface = "a" ** 130,
-        .dispatch = "b" ** 71,
-        .schema_plan = "p" ** 69,
+        .interface = &@as([130]u8, @splat('a')),
+        .dispatch = &@as([71]u8, @splat('b')),
+        .schema_plan = &@as([69]u8, @splat('p')),
         .diagnostics = diagnostics,
     });
     defer gpa.free(bytes);

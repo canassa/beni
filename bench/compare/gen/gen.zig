@@ -48,7 +48,7 @@ pub fn generate(arena: Allocator, opts: Options, diag: *std.Io.Writer) !Program 
         if (std.mem.indexOfScalar(Tree.Family, opts.families, fam) == null) continue;
         var earlier: std.ArrayList(u32) = .empty;
         for (1..opts.size + 1) |k| {
-            var rng = Rng.forUnit(opts.seed, @intFromEnum(fam), @intCast(k));
+            var rng = Rng.forUnit(opts.seed, @backingInt(fam), @intCast(k));
             var u: common.Unit = undefined;
             try u.init(t, &rng, cfg, p.base, fam, @intCast(k));
             try families.generate(&u, earlier.items);

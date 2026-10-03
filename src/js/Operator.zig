@@ -122,11 +122,11 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, m
             break :blk .{ module, interner.slice(bir.symbol(bir.decls[d.lhs].name)) };
         },
         .ext_value => blk: {
-            const m: Graph.Index = @enumFromInt(d.lhs);
+            const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
             if (m.int() >= interfaces.len) return null;
             const iface = &interfaces[m.int()];
             if (d.rhs >= iface.values.len) return null;
-            break :blk .{ m, interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]) };
+            break :blk .{ m, interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]) };
         },
         else => return null,
     };
@@ -156,11 +156,11 @@ pub fn isBasicsAppend(graph: *const Graph, interfaces: []const Interface, bir: *
             break :blk .{ module, interner.slice(bir.symbol(bir.decls[d.lhs].name)) };
         },
         .ext_value => blk: {
-            const m: Graph.Index = @enumFromInt(d.lhs);
+            const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
             if (m.int() >= interfaces.len) return false;
             const iface = &interfaces[m.int()];
             if (d.rhs >= iface.values.len) return false;
-            break :blk .{ m, interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]) };
+            break :blk .{ m, interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]) };
         },
         else => return false,
     };

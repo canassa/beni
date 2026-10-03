@@ -182,7 +182,7 @@ pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.E
 /// computes both recipes from one blob, and the two differ in their version.
 pub fn writeOwn(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.Error!void {
     try out.appendSlice(gpa, &t.build_id);
-    try out.append(gpa, @intFromEnum(t.package));
+    try out.append(gpa, @backingInt(t.package));
     try appendInt(gpa, out, u32, @intCast(t.name.len));
     try out.appendSlice(gpa, t.name);
     try appendInt(gpa, out, u32, @intCast(t.options.len));
@@ -196,7 +196,7 @@ pub fn writeRest(gpa: Allocator, out: *std.ArrayList(u8), core: Key, imports: []
     try out.appendSlice(gpa, &core);
     try appendInt(gpa, out, u32, @intCast(imports.len));
     for (imports) |i| {
-        try out.append(gpa, @intFromEnum(i.package));
+        try out.append(gpa, @backingInt(i.package));
         try appendInt(gpa, out, u32, @intCast(i.name.len));
         try out.appendSlice(gpa, i.name);
         try out.appendSlice(gpa, &i.key);
@@ -254,7 +254,7 @@ pub fn finish(
     try bytes.appendSlice(scratch, &core_surface);
     try appendInt(scratch, &bytes, u32, @intCast(imports.len));
     for (imports) |i| {
-        try bytes.append(scratch, @intFromEnum(i.package));
+        try bytes.append(scratch, @backingInt(i.package));
         try appendInt(scratch, &bytes, u32, @intCast(i.name.len));
         try bytes.appendSlice(scratch, i.name);
         try bytes.appendSlice(scratch, &i.iface_hash);
@@ -266,7 +266,7 @@ pub fn finish(
 pub fn sortPairs(imports: *std.ArrayList(ImportPair)) void {
     const Less = struct {
         fn f(_: void, a: ImportPair, b: ImportPair) bool {
-            if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
+            if (a.package != b.package) return @backingInt(a.package) < @backingInt(b.package);
             return std.mem.lessThan(u8, a.name, b.name);
         }
     };
@@ -590,7 +590,7 @@ fn declaresForeign(bir: *const Bir) bool {
 }
 
 fn importLessThan(_: void, a: Import, b: Import) bool {
-    if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
+    if (a.package != b.package) return @backingInt(a.package) < @backingInt(b.package);
     return std.mem.lessThan(u8, a.name, b.name);
 }
 
@@ -716,7 +716,7 @@ test "the key's byte string is the recipe, field by field" {
     at += 4;
     try testing.expectEqualSlices(u8, &sample_build_id, bytes.items[at..][0..16]);
     at += 16;
-    try testing.expectEqual(@as(u8, @intFromEnum(SourceStore.Package.app)), bytes.items[at]);
+    try testing.expectEqual(@as(u8, @backingInt(SourceStore.Package.app)), bytes.items[at]);
     at += 1;
     try testing.expectEqual(@as(u32, 3), std.mem.readInt(u32, bytes.items[at..][0..4], .little));
     at += 4;
@@ -734,7 +734,7 @@ test "the key's byte string is the recipe, field by field" {
     at += 16;
     try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, bytes.items[at..][0..4], .little));
     at += 4;
-    try testing.expectEqual(@as(u8, @intFromEnum(SourceStore.Package.app)), bytes.items[at]);
+    try testing.expectEqual(@as(u8, @backingInt(SourceStore.Package.app)), bytes.items[at]);
     at += 1;
     try testing.expectEqual(@as(u32, 4), std.mem.readInt(u32, bytes.items[at..][0..4], .little));
     at += 4;

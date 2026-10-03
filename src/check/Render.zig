@@ -822,18 +822,18 @@ test "a namer keeps one name per variable and never repeats a name" {
     const gpa = testing.allocator;
     var namer: Namer = .init(gpa);
     defer namer.deinit();
-    const a: Var = @enumFromInt(0);
-    const b: Var = @enumFromInt(1);
-    const c: Var = @enumFromInt(2);
+    const a: Var = @fromBackingInt(@intCast(0));
+    const b: Var = @fromBackingInt(@intCast(1));
+    const c: Var = @fromBackingInt(@intCast(2));
     try testing.expectEqualStrings("a", try namer.name(a, null));
     try testing.expectEqualStrings("a", try namer.name(a, null));
     try testing.expectEqualStrings("b", try namer.name(b, null));
     // A preferred name wins, and a clash with it is disambiguated rather
     // than silently reused: two different variables must never print alike.
     try testing.expectEqualStrings("msg", try namer.name(c, "msg"));
-    const d: Var = @enumFromInt(3);
+    const d: Var = @fromBackingInt(@intCast(3));
     try testing.expectEqualStrings("msg2", try namer.name(d, "msg"));
-    const e: Var = @enumFromInt(4);
+    const e: Var = @fromBackingInt(@intCast(4));
     try testing.expectEqualStrings("c", try namer.name(e, null));
 }
 
@@ -850,7 +850,7 @@ test "disambiguating one stem sixty-four times is linear, not quadratic" {
     var namer: Namer = .init(gpa);
     defer namer.deinit();
     for (0..64) |i| {
-        const v: Var = @enumFromInt(@as(u32, @intCast(i)));
+        const v: Var = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         const got = try namer.name(v, "number");
         if (i == 0) {
             try testing.expectEqualStrings("number", got);

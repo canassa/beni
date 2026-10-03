@@ -331,18 +331,18 @@ fn calleeOf(cx: *const Context, out: *const Elaborate.Output, lets: []const Disp
     if (d.siteOf(s.inst)) |site| if (site.callee.unwrap()) |c| {
         return switch (out.terms[c.int()]) {
             .top => |u| .{ .binder = u.decl.int() },
-            .ext => |u| .{ .ext = .{ .module = u.module, .value = @intFromEnum(u.value) } },
+            .ext => |u| .{ .ext = .{ .module = u.module, .value = @backingInt(u.value) } },
             else => .none,
         };
     };
     if (s.inst.int() >= bir.insts.len) return .none;
     var ref = s.inst;
-    if (bir.instTag(ref) == .call) ref = @enumFromInt(bir.instData(ref).lhs);
+    if (bir.instTag(ref) == .call) ref = @fromBackingInt(@intCast(bir.instData(ref).lhs));
     if (ref.int() >= bir.insts.len) return .none;
     const data = bir.instData(ref);
     return switch (bir.instTag(ref)) {
         .top => .{ .binder = data.lhs },
-        .ext_value => .{ .ext = .{ .module = @enumFromInt(data.lhs), .value = data.rhs } },
+        .ext_value => .{ .ext = .{ .module = @fromBackingInt(@intCast(data.lhs)), .value = data.rhs } },
         .local => if (s.decl < bir.decls.len) (if (d.localLet(bir, s.decl, data.lhs)) |i| Callee{ .binder = decls_len + i } else .none) else .none,
         else => .none,
     };
@@ -520,13 +520,13 @@ pub fn run(in: Input) Error!Result {
                         continue;
                     }
                 }
-                try part_terms.append(scratch, @enumFromInt(@as(u32, @intCast(terms.items.len))));
+                try part_terms.append(scratch, @fromBackingInt(@intCast(@as(u32, @intCast(terms.items.len)))));
                 try terms.append(gpa, t);
             }
             const parts_start: u32 = @intCast(args.items.len);
             try args.appendSlice(gpa, part_terms.items);
             terms.items[id_index] = .{ .identity = .{ .start = parts_start, .len = @intCast(part_terms.items.len) } };
-            try ids.append(scratch, @enumFromInt(id_index));
+            try ids.append(scratch, @fromBackingInt(@intCast(id_index)));
         }
         // The roots, then the identities: one run at the end of `args`.
         const roots = in.out.args[site.evidence.start..][0..site.evidence.len];
@@ -624,7 +624,7 @@ fn refuseAsEvidence(p: *Pass, terms: []const Dispatch.Term, args: []const TermIn
     for (terms, takes) |t, *x| {
         x.* = switch (t) {
             .top => |u| u.decl.int() < p.in.decls.len and p.in.decls[u.decl.int()].identities.len != 0,
-            .ext => |u| Dispatch.extIdentities(cx.interfaces, u.module, @intFromEnum(u.value), &buf) != 0,
+            .ext => |u| Dispatch.extIdentities(cx.interfaces, u.module, @backingInt(u.value), &buf) != 0,
             else => false,
         };
         any = any or x.*;
@@ -666,7 +666,7 @@ fn refuseAsEvidence(p: *Pass, terms: []const Dispatch.Term, args: []const TermIn
             if (seen[t.int()] == stamp) continue;
             seen[t.int()] = stamp;
             if (takes[t.int()]) {
-                var region: Bir.Inst.Index = @enumFromInt(0);
+                var region: Bir.Inst.Index = @fromBackingInt(@intCast(0));
                 if (row.shape == .nominal) {
                     const entry = cx.types.entry(row.shape.nominal);
                     if (entry.decl.int() < cx.bir.decls.len) region = cx.bir.decls[entry.decl.int()].inst_start;

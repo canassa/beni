@@ -254,8 +254,8 @@ pub const MarkerKey = struct {
     /// a derived row of 65 600 context entries looks one up per entry.
     pub const HashContext = struct {
         pub fn hash(_: HashContext, k: MarkerKey) u64 {
-            return (@as(u64, @intFromEnum(k.root)) *% 0x9E37_79B9_7F4A_7C15) ^
-                (@as(u64, @intFromEnum(k.method)) *% 0xC2B2_AE3D_27D4_EB4F);
+            return (@as(u64, @backingInt(k.root)) *% 0x9E37_79B9_7F4A_7C15) ^
+                (@as(u64, @backingInt(k.method)) *% 0xC2B2_AE3D_27D4_EB4F);
         }
 
         pub fn eql(_: HashContext, a: MarkerKey, b: MarkerKey) bool {
@@ -368,7 +368,7 @@ fn siteRows(e: *Elaborate) Error!void {
         if (!d.kind.isValue()) continue;
         var i = d.inst_start.int();
         while (i < d.inst_end.int() and i < bir.insts.len) : (i += 1) {
-            const inst: Bir.Inst.Index = @enumFromInt(i);
+            const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
             switch (bir.instTag(inst)) {
                 .call => {
                     const callee = bir.instData(inst).lhs;
@@ -498,7 +498,7 @@ fn site(e: *Elaborate, event: Event) Error!void {
     }
     // The callee alone, for `Cycles` (`Edges.declEdges`' third leg).
     if (kept) |t| {
-        const at: TermIndex = @enumFromInt(@as(u32, @intCast(e.terms.items.len)));
+        const at: TermIndex = @fromBackingInt(@intCast(@as(u32, @intCast(e.terms.items.len))));
         try e.terms.append(e.gpa, t);
         try e.sites.append(e.gpa, .{ .inst = event.inst, .callee = at.toOptional() });
     }
@@ -557,8 +557,8 @@ fn calleeNodes(e: *Elaborate, callee_id: WantedId, binder: Binder, kept: *?Dispa
     const id = e.follow(callee_id) orelse return false;
     const a = ev.answer(id);
     const value: ?Dispatch.Term = switch (a) {
-        .top => |t| .{ .top = .{ .decl = @enumFromInt(t.decl) } },
-        .group_call => |d| .{ .top = .{ .decl = @enumFromInt(d) } },
+        .top => |t| .{ .top = .{ .decl = @fromBackingInt(@intCast(t.decl)) } },
+        .group_call => |d| .{ .top = .{ .decl = @fromBackingInt(@intCast(d)) } },
         .ext => |x| .{ .ext = .{ .module = x.module, .value = x.value } },
         else => null,
     };
@@ -778,7 +778,7 @@ fn termOf(e: *Elaborate, id: WantedId, binder: Binder, ctx: Ctx, node: u32) Erro
             else => e.failTerm(.internal, "a `where` clause's evidence is used outside its declaration (checker-v2.md §12.2)"),
         },
         .promoted => |p| try e.promotedTerm(w, p.root, p.method, binder, ctx),
-        .top => |t| try e.withArgs(node, .{ .top = .{ .decl = @enumFromInt(t.decl) } }, ev.argsOf(t.args), ctx),
+        .top => |t| try e.withArgs(node, .{ .top = .{ .decl = @fromBackingInt(@intCast(t.decl)) } }, ev.argsOf(t.args), ctx),
         .ext => |x| try e.withArgs(node, .{ .ext = .{ .module = x.module, .value = x.value } }, ev.argsOf(x.args), ctx),
         .derived => |dv| try e.derivedTerm(id, dv, binder, node),
         .primitive => |p| .{ .primitive = p },
@@ -790,7 +790,7 @@ fn termOf(e: *Elaborate, id: WantedId, binder: Binder, ctx: Ctx, node: u32) Erro
             if (!try e.groupNodes(d, binder, ctx, &leaves)) break :blk null;
             const range = try e.unit.addArgs(e.scratch, leaves.items);
             e.unit.nodes.items[node].args = range;
-            break :blk .{ .top = .{ .decl = @enumFromInt(d) } };
+            break :blk .{ .top = .{ .decl = @fromBackingInt(@intCast(d)) } };
         },
     };
 }
@@ -920,8 +920,8 @@ fn structural(e: *Elaborate, kind: Dispatch.Derived.Kind, shape: Dispatch.Shape,
 }
 
 fn shapeHash(e: *const Elaborate, kind: Dispatch.Derived.Kind, shape: Dispatch.Shape) u64 {
-    var h: std.hash.Wyhash = .init(@intFromEnum(kind));
-    h.update(&.{@intFromEnum(std.meta.activeTag(shape))});
+    var h: std.hash.Wyhash = .init(@backingInt(kind));
+    h.update(&.{@backingInt(std.meta.activeTag(shape))});
     switch (shape) {
         .nominal => |t| h.update(std.mem.asBytes(&t)),
         .tuple => |n| h.update(&.{n}),

@@ -44,7 +44,7 @@ const KeyContext = struct {
 pub fn init(gpa: Allocator) !Store {
     var s: Store = .{};
     inline for (.{ Tag.int, Tag.float, Tag.string, Tag.bool }) |t| {
-        _ = try s.intern(gpa, &.{@intFromEnum(t)});
+        _ = try s.intern(gpa, &.{@backingInt(t)});
     }
     return s;
 }
@@ -64,61 +64,61 @@ fn intern(s: *Store, gpa: Allocator, ws: []const u32) !Type {
         s.words.shrinkRetainingCapacity(start);
         return gop.value_ptr.*;
     }
-    const t: Type = @enumFromInt(s.spans.items.len);
+    const t: Type = @fromBackingInt(@intCast(s.spans.items.len));
     try s.spans.append(gpa, .{ start, key.len });
     gop.value_ptr.* = t;
     return t;
 }
 
 fn slice(s: *const Store, t: Type) []const u32 {
-    const sp = s.spans.items[@intFromEnum(t)];
+    const sp = s.spans.items[@backingInt(t)];
     return s.words.items[sp[0]..][0..sp[1]];
 }
 
 pub fn tag(s: *const Store, t: Type) Tag {
-    return @enumFromInt(s.slice(t)[0]);
+    return @fromBackingInt(@intCast(s.slice(t)[0]));
 }
 
 pub fn pair(s: *Store, gpa: Allocator, a: Type, b: Type) !Type {
-    return s.intern(gpa, &.{ @intFromEnum(Tag.pair), @intFromEnum(a), @intFromEnum(b) });
+    return s.intern(gpa, &.{ @backingInt(Tag.pair), @backingInt(a), @backingInt(b) });
 }
 
 pub fn list(s: *Store, gpa: Allocator, a: Type) !Type {
-    return s.intern(gpa, &.{ @intFromEnum(Tag.list), @intFromEnum(a) });
+    return s.intern(gpa, &.{ @backingInt(Tag.list), @backingInt(a) });
 }
 
 pub fn func(s: *Store, gpa: Allocator, params: []const Type, ret: Type) !Type {
     var buf: [32]u32 = undefined;
-    buf[0] = @intFromEnum(Tag.func);
-    buf[1] = @intFromEnum(ret);
-    for (params, 0..) |p, i| buf[2 + i] = @intFromEnum(p);
+    buf[0] = @backingInt(Tag.func);
+    buf[1] = @backingInt(ret);
+    for (params, 0..) |p, i| buf[2 + i] = @backingInt(p);
     return s.intern(gpa, buf[0 .. 2 + params.len]);
 }
 
 pub fn named(s: *Store, gpa: Allocator, decl: u32, args: []const Type) !Type {
     var buf: [32]u32 = undefined;
-    buf[0] = @intFromEnum(Tag.named);
+    buf[0] = @backingInt(Tag.named);
     buf[1] = decl;
-    for (args, 0..) |p, i| buf[2 + i] = @intFromEnum(p);
+    for (args, 0..) |p, i| buf[2 + i] = @backingInt(p);
     return s.intern(gpa, buf[0 .. 2 + args.len]);
 }
 
 pub fn tvar(s: *Store, gpa: Allocator, i: u32) !Type {
-    return s.intern(gpa, &.{ @intFromEnum(Tag.@"var"), i });
+    return s.intern(gpa, &.{ @backingInt(Tag.@"var"), i });
 }
 
 /// Pair components, list element, or the var index, as `a`/`b`.
 pub fn pairParts(s: *const Store, t: Type) [2]Type {
     const w = s.slice(t);
-    return .{ @enumFromInt(w[1]), @enumFromInt(w[2]) };
+    return .{ @fromBackingInt(@intCast(w[1])), @fromBackingInt(@intCast(w[2])) };
 }
 
 pub fn listElem(s: *const Store, t: Type) Type {
-    return @enumFromInt(s.slice(t)[1]);
+    return @fromBackingInt(@intCast(s.slice(t)[1]));
 }
 
 pub fn funcRet(s: *const Store, t: Type) Type {
-    return @enumFromInt(s.slice(t)[1]);
+    return @fromBackingInt(@intCast(s.slice(t)[1]));
 }
 
 pub fn funcParams(s: *const Store, t: Type) []const Type {

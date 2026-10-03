@@ -186,7 +186,7 @@ const Body = struct {
         defer kids.deinit(scratch);
         for (start..end) |i| {
             kids.clearRetainingCapacity();
-            try Decl.pushChildren(bir, scratch, @enumFromInt(i), &kids);
+            try Decl.pushChildren(bir, scratch, @fromBackingInt(@intCast(i)), &kids);
             for (kids.items) |k| {
                 if (k.int() >= start and k.int() < end) parents[k.int() - start] = @intCast(i);
             }
@@ -202,7 +202,7 @@ const Body = struct {
         const start = b.decl.inst_start.int();
         if (inst.int() < start or inst.int() - start >= b.parents.len) return null;
         const p = b.parents[inst.int() - start];
-        return if (p == no_parent) null else @enumFromInt(p);
+        return if (p == no_parent) null else @fromBackingInt(@intCast(p));
     }
 
     /// The body of the `let` function `call` (a `call` instruction) calls,
@@ -211,7 +211,7 @@ const Body = struct {
         const bir = b.bir;
         const c = call.unwrap() orelse return null;
         if (c.int() >= bir.insts.len or bir.instTag(c) != .call) return null;
-        const callee: Bir.Inst.Index = @enumFromInt(bir.instData(c).lhs);
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(c).lhs));
         if (bir.instTag(callee) != .local) return null;
         const local = b.decl.locals_start + bir.instData(callee).lhs;
         if (local >= bir.locals.len or bir.locals[local].kind != .let) return null;
@@ -229,9 +229,9 @@ const Body = struct {
 
     fn functionBody(bir: *const Bir, inst: Bir.Inst.Index) ?Bir.Inst.Index {
         if (bir.instTag(inst) != .let_def) return null;
-        const def = bir.extraData(@enumFromInt(bir.instData(inst).lhs), Bir.LetDef);
+        const def = bir.extraData(@fromBackingInt(@intCast(bir.instData(inst).lhs)), Bir.LetDef);
         if (def.params_start == def.params_end) return null;
-        return @enumFromInt(bir.instData(inst).rhs);
+        return @fromBackingInt(@intCast(bir.instData(inst).rhs));
     }
 
     /// Members of `class` referenced under `root` — by value, or by a method
@@ -247,7 +247,7 @@ const Body = struct {
             switch (bir.instTag(inst)) {
                 .top => if (std.mem.indexOfScalar(u32, class, data.lhs) != null) try out.append(b.scratch, data.lhs),
                 .method_call => {
-                    const name = bir.symbol(bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall).name);
+                    const name = bir.symbol(bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall).name);
                     for (class) |d| {
                         if (bir.symbol(bir.decls[d].name) == name) try out.append(b.scratch, d);
                     }
@@ -283,9 +283,9 @@ const Body = struct {
             .let => {
                 if (bir.instTag(l.inst) != .let_def) return null;
                 const data = bir.instData(l.inst);
-                const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+                const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
                 if (def.params_start != def.params_end) return null;
-                return @enumFromInt(data.rhs);
+                return @fromBackingInt(@intCast(data.rhs));
             },
             .pattern => {
                 var at = l.inst;
@@ -294,9 +294,9 @@ const Body = struct {
                         .branch => {
                             const case = b.parent(p) orelse return null;
                             if (bir.instTag(case) != .case) return null;
-                            return @enumFromInt(bir.instData(case).lhs);
+                            return @fromBackingInt(@intCast(bir.instData(case).lhs));
                         },
-                        .let_pattern => return @enumFromInt(bir.instData(p).rhs),
+                        .let_pattern => return @fromBackingInt(@intCast(bir.instData(p).rhs)),
                         .lambda, .let_def => return null,
                         else => {},
                     }

@@ -153,7 +153,7 @@ pub const Section = enum(u32) {
     /// One word of flags: bit 0 is `Bir.uses_markup` (frontend.md §9.7).
     bir_flags,
 
-    pub const count: u32 = @typeInfo(Section).@"enum".fields.len;
+    pub const count: u32 = @typeInfo(Section).@"enum".field_names.len;
 };
 
 /// magic(8) + version(4) + section_count(4) + key(16) + total_len(4) +
@@ -278,28 +278,28 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
     var lengths: [Section.count]u32 = @splat(0);
     const spans = in.spans;
     const insts = bir.insts;
-    lengths[@intFromEnum(Section.bir_insts_tag)] = @intCast(insts.len);
-    lengths[@intFromEnum(Section.bir_insts_token)] = @intCast(insts.len * 4);
-    lengths[@intFromEnum(Section.bir_insts_lhs)] = @intCast(insts.len * 4);
-    lengths[@intFromEnum(Section.bir_insts_rhs)] = @intCast(insts.len * 4);
-    lengths[@intFromEnum(Section.bir_extra)] = @intCast(bir.extra.len * 4);
-    lengths[@intFromEnum(Section.bir_string_bytes)] = @intCast(bir.string_bytes.len);
-    lengths[@intFromEnum(Section.bir_symbols)] = @intCast(bir.symbols.len * 4);
-    lengths[@intFromEnum(Section.bir_decls)] = @intCast(bir.decls.len * rowBytes(Bir.Decl));
-    lengths[@intFromEnum(Section.bir_ctors)] = @intCast(bir.ctors.len * rowBytes(Bir.Ctor));
-    lengths[@intFromEnum(Section.bir_locals)] = @intCast(bir.locals.len * rowBytes(Bir.Local));
-    lengths[@intFromEnum(Section.bir_refs)] = @intCast(bir.refs.len * rowBytes(Bir.Ref));
-    lengths[@intFromEnum(Section.bir_imports)] = @intCast(bir.imports.len * rowBytes(Bir.Import));
-    lengths[@intFromEnum(Section.bir_exposed)] = @intCast(bir.exposed.len * rowBytes(Bir.Exposed));
-    lengths[@intFromEnum(Section.bir_interface)] = @intCast(bir.interface.len * 4);
-    lengths[@intFromEnum(Section.bir_diagnostics)] = @intCast(bir.diagnostics.len * rowBytes(BirDiagnostics.Item));
-    lengths[@intFromEnum(Section.token_tags)] = @intCast(spans.len());
-    lengths[@intFromEnum(Section.token_starts)] = @intCast(spans.len() * 4);
-    lengths[@intFromEnum(Section.line_starts)] = @intCast(in.line_starts.len * 4);
-    lengths[@intFromEnum(Section.diagnostics)] = diagnosticsLen(in.diagnostics);
-    lengths[@intFromEnum(Section.strings)] = Strings.header + distinct * Strings.row + blob_len;
-    lengths[@intFromEnum(Section.bir_module_doc)] = 8;
-    lengths[@intFromEnum(Section.bir_flags)] = 4;
+    lengths[@backingInt(Section.bir_insts_tag)] = @intCast(insts.len);
+    lengths[@backingInt(Section.bir_insts_token)] = @intCast(insts.len * 4);
+    lengths[@backingInt(Section.bir_insts_lhs)] = @intCast(insts.len * 4);
+    lengths[@backingInt(Section.bir_insts_rhs)] = @intCast(insts.len * 4);
+    lengths[@backingInt(Section.bir_extra)] = @intCast(bir.extra.len * 4);
+    lengths[@backingInt(Section.bir_string_bytes)] = @intCast(bir.string_bytes.len);
+    lengths[@backingInt(Section.bir_symbols)] = @intCast(bir.symbols.len * 4);
+    lengths[@backingInt(Section.bir_decls)] = @intCast(bir.decls.len * rowBytes(Bir.Decl));
+    lengths[@backingInt(Section.bir_ctors)] = @intCast(bir.ctors.len * rowBytes(Bir.Ctor));
+    lengths[@backingInt(Section.bir_locals)] = @intCast(bir.locals.len * rowBytes(Bir.Local));
+    lengths[@backingInt(Section.bir_refs)] = @intCast(bir.refs.len * rowBytes(Bir.Ref));
+    lengths[@backingInt(Section.bir_imports)] = @intCast(bir.imports.len * rowBytes(Bir.Import));
+    lengths[@backingInt(Section.bir_exposed)] = @intCast(bir.exposed.len * rowBytes(Bir.Exposed));
+    lengths[@backingInt(Section.bir_interface)] = @intCast(bir.interface.len * 4);
+    lengths[@backingInt(Section.bir_diagnostics)] = @intCast(bir.diagnostics.len * rowBytes(BirDiagnostics.Item));
+    lengths[@backingInt(Section.token_tags)] = @intCast(spans.len());
+    lengths[@backingInt(Section.token_starts)] = @intCast(spans.len() * 4);
+    lengths[@backingInt(Section.line_starts)] = @intCast(in.line_starts.len * 4);
+    lengths[@backingInt(Section.diagnostics)] = diagnosticsLen(in.diagnostics);
+    lengths[@backingInt(Section.strings)] = Strings.header + distinct * Strings.row + blob_len;
+    lengths[@backingInt(Section.bir_module_doc)] = 8;
+    lengths[@backingInt(Section.bir_flags)] = 4;
 
     var offsets: [Section.count]u32 = @splat(0);
     var at: u32 = body_start;
@@ -329,7 +329,7 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
     // 3. The sections.
     const s = struct {
         fn of(buffer: []u8, offs: [Section.count]u32, lens: [Section.count]u32, which: Section) []u8 {
-            const i = @intFromEnum(which);
+            const i = @backingInt(which);
             return buffer[offs[i]..][0..lens[i]];
         }
     }.of;
@@ -469,7 +469,7 @@ fn widthFor(comptime bits: u16) u32 {
 fn rowBytes(comptime T: type) u32 {
     return comptime blk: {
         var total: u32 = 0;
-        for (std.meta.fields(T)) |f| total += fieldBytes(f.type);
+        for (@typeInfo(T).@"struct".field_types) |field_type| total += fieldBytes(field_type);
         break :blk total;
     };
 }
@@ -478,20 +478,20 @@ fn writeRows(comptime T: type, dst: []u8, rows: []const T) void {
     const size = rowBytes(T);
     for (rows, 0..) |row, i| {
         var at: u32 = @intCast(i * size);
-        inline for (std.meta.fields(T)) |f| {
-            const raw: u32 = switch (@typeInfo(f.type)) {
-                .bool => @intFromBool(@field(row, f.name)),
-                .int => @field(row, f.name),
-                .@"enum" => @intFromEnum(@field(row, f.name)),
+        inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+            const raw: u32 = switch (@typeInfo(field_type)) {
+                .bool => @intFromBool(@field(row, field_name)),
+                .int => @field(row, field_name),
+                .@"enum" => @backingInt(@field(row, field_name)),
                 else => unreachable,
             };
-            switch (fieldBytes(f.type)) {
+            switch (fieldBytes(field_type)) {
                 1 => dst[at] = @intCast(raw),
                 2 => std.mem.writeInt(u16, dst[at..][0..2], @intCast(raw), .little),
                 4 => std.mem.writeInt(u32, dst[at..][0..4], raw, .little),
                 else => unreachable,
             }
-            at += fieldBytes(f.type);
+            at += fieldBytes(field_type);
         }
     }
 }
@@ -507,23 +507,23 @@ fn writeRows(comptime T: type, dst: []u8, rows: []const T) void {
 fn readRow(comptime T: type, src: []const u8) ReadError!T {
     var out: T = undefined;
     var at: u32 = 0;
-    inline for (std.meta.fields(T)) |f| {
-        const raw: u32 = switch (fieldBytes(f.type)) {
+    inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+        const raw: u32 = switch (fieldBytes(field_type)) {
             1 => src[at],
             2 => std.mem.readInt(u16, src[at..][0..2], .little),
             4 => std.mem.readInt(u32, src[at..][0..4], .little),
             else => unreachable,
         };
-        @field(out, f.name) = switch (@typeInfo(f.type)) {
+        @field(out, field_name) = switch (@typeInfo(field_type)) {
             .bool => raw != 0,
             .int => @intCast(raw),
             .@"enum" => blk: {
-                if (!validEnum(f.type, raw)) return error.BadArtifact;
-                break :blk @enumFromInt(raw);
+                if (!validEnum(field_type, raw)) return error.BadArtifact;
+                break :blk @fromBackingInt(@intCast(raw));
             },
             else => unreachable,
         };
-        at += fieldBytes(f.type);
+        at += fieldBytes(field_type);
     }
     return out;
 }
@@ -533,16 +533,16 @@ fn readRow(comptime T: type, src: []const u8) ReadError!T {
 /// `Inst.Tag` is asked this 208 092 times per project.
 fn validEnum(comptime E: type, raw: u32) bool {
     const info = @typeInfo(E).@"enum";
-    if (!info.is_exhaustive) return true;
+    if (info.mode == .nonexhaustive) return true;
     const contiguous = comptime blk: {
-        for (info.fields, 0..) |f, i| {
-            if (f.value != i) break :blk false;
+        for (info.field_values, 0..) |value, i| {
+            if (value != i) break :blk false;
         }
         break :blk true;
     };
-    if (contiguous) return raw < info.fields.len;
-    inline for (info.fields) |f| {
-        if (raw == f.value) return true;
+    if (contiguous) return raw < info.field_values.len;
+    inline for (info.field_values) |value| {
+        if (raw == value) return true;
     }
     return false;
 }
@@ -637,25 +637,25 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
     }
     const sec = struct {
         fn of(b: []const u8, offs: [Section.count]u32, lens: [Section.count]u32, which: Section) []const u8 {
-            const i = @intFromEnum(which);
+            const i = @backingInt(which);
             return b[offs[i]..][0..lens[i]];
         }
     }.of;
 
     // Every column's length has to agree with the row count the first column
     // fixes, or the artifact describes two different files.
-    const inst_count = lengths[@intFromEnum(Section.bir_insts_tag)];
-    const token_count = lengths[@intFromEnum(Section.token_tags)];
-    if (lengths[@intFromEnum(Section.bir_insts_token)] != inst_count * 4) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.bir_insts_lhs)] != inst_count * 4) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.bir_insts_rhs)] != inst_count * 4) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.token_starts)] != token_count * 4) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.bir_extra)] % 4 != 0) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.bir_symbols)] % 4 != 0) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.bir_interface)] % 4 != 0) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.line_starts)] % 4 != 0) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.bir_module_doc)] != 8) return error.BadArtifact;
-    if (lengths[@intFromEnum(Section.bir_flags)] != 4) return error.BadArtifact;
+    const inst_count = lengths[@backingInt(Section.bir_insts_tag)];
+    const token_count = lengths[@backingInt(Section.token_tags)];
+    if (lengths[@backingInt(Section.bir_insts_token)] != inst_count * 4) return error.BadArtifact;
+    if (lengths[@backingInt(Section.bir_insts_lhs)] != inst_count * 4) return error.BadArtifact;
+    if (lengths[@backingInt(Section.bir_insts_rhs)] != inst_count * 4) return error.BadArtifact;
+    if (lengths[@backingInt(Section.token_starts)] != token_count * 4) return error.BadArtifact;
+    if (lengths[@backingInt(Section.bir_extra)] % 4 != 0) return error.BadArtifact;
+    if (lengths[@backingInt(Section.bir_symbols)] % 4 != 0) return error.BadArtifact;
+    if (lengths[@backingInt(Section.bir_interface)] % 4 != 0) return error.BadArtifact;
+    if (lengths[@backingInt(Section.line_starts)] % 4 != 0) return error.BadArtifact;
+    if (lengths[@backingInt(Section.bir_module_doc)] != 8) return error.BadArtifact;
+    if (lengths[@backingInt(Section.bir_flags)] != 4) return error.BadArtifact;
     inline for (.{
         .{ Section.bir_decls, Bir.Decl },
         .{ Section.bir_ctors, Bir.Ctor },
@@ -665,7 +665,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
         .{ Section.bir_exposed, Bir.Exposed },
         .{ Section.bir_diagnostics, BirDiagnostics.Item },
     }) |pair| {
-        if (lengths[@intFromEnum(pair[0])] % rowBytes(pair[1]) != 0) return error.BadArtifact;
+        if (lengths[@backingInt(pair[0])] % rowBytes(pair[1]) != 0) return error.BadArtifact;
     }
 
     // Every enum column is checked in the BYTES, before a value of the enum
@@ -705,7 +705,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
     out.bir.extra = try dupeU32s(gpa, sec(bytes, offsets, lengths, .bir_extra));
     out.bir.string_bytes = try gpa.dupe(u8, sec(bytes, offsets, lengths, .bir_string_bytes));
     {
-        const symbols = try gpa.alloc(Bir.Symbol, lengths[@intFromEnum(Section.bir_symbols)] / 4);
+        const symbols = try gpa.alloc(Bir.Symbol, lengths[@backingInt(Section.bir_symbols)] / 4);
         out.bir.symbols = symbols;
         const slots: []u32 = @ptrCast(symbols);
         readU32s(slots, sec(bytes, offsets, lengths, .bir_symbols));
@@ -906,7 +906,7 @@ const Sample = struct {
         bir.symbols = try gpa.dupe(Bir.Symbol, &.{ a, b, a });
         bir.decls = try gpa.dupe(Bir.Decl, &.{.{
             .kind = .value,
-            .name = @enumFromInt(0),
+            .name = @fromBackingInt(@intCast(0)),
             .name_token = 0,
             .is_pub = true,
             .is_opaque = false,
@@ -914,17 +914,17 @@ const Sample = struct {
             .doc_start = 0,
             .doc_end = 1,
             .params = 0,
-            .params_start = @enumFromInt(0),
-            .params_end = @enumFromInt(0),
+            .params_start = @fromBackingInt(@intCast(0)),
+            .params_end = @fromBackingInt(@intCast(0)),
             .type_params_start = 0,
             .type_params_end = 0,
             .annotation = .none,
-            .where_start = @enumFromInt(0),
-            .where_end = @enumFromInt(0),
-            .body = @enumFromInt(2),
+            .where_start = @fromBackingInt(@intCast(0)),
+            .where_end = @fromBackingInt(@intCast(0)),
+            .body = @fromBackingInt(@intCast(2)),
             .schema_body = .none,
-            .inst_start = @enumFromInt(0),
-            .inst_end = @enumFromInt(3),
+            .inst_start = @fromBackingInt(@intCast(0)),
+            .inst_end = @fromBackingInt(@intCast(3)),
             .ctors_start = 0,
             .ctors_end = 1,
             .locals_start = 0,
@@ -933,24 +933,24 @@ const Sample = struct {
             .refs_end = 1,
         }});
         bir.ctors = try gpa.dupe(Bir.Ctor, &.{.{
-            .name = @enumFromInt(1),
+            .name = @fromBackingInt(@intCast(1)),
             .name_token = 1,
-            .decl = @enumFromInt(0),
-            .args_start = @enumFromInt(0),
-            .args_end = @enumFromInt(0),
+            .decl = @fromBackingInt(@intCast(0)),
+            .args_start = @fromBackingInt(@intCast(0)),
+            .args_end = @fromBackingInt(@intCast(0)),
         }});
-        bir.locals = try gpa.dupe(Bir.Local, &.{.{ .name = @enumFromInt(2), .kind = .param, .inst = @enumFromInt(0) }});
+        bir.locals = try gpa.dupe(Bir.Local, &.{.{ .name = @fromBackingInt(@intCast(2)), .kind = .param, .inst = @fromBackingInt(@intCast(0)) }});
         bir.refs = try gpa.dupe(Bir.Ref, &.{.{ .kind = .top_value, .a = 0, .b = 0 }});
         bir.imports = try gpa.dupe(Bir.Import, &.{.{
-            .module = @enumFromInt(0),
+            .module = @fromBackingInt(@intCast(0)),
             .name_token = 1,
-            .alias = @enumFromInt(0),
+            .alias = @fromBackingInt(@intCast(0)),
             .exposed_start = 0,
             .exposed_end = 1,
             .prelude = true,
         }});
-        bir.exposed = try gpa.dupe(Bir.Exposed, &.{.{ .name = @enumFromInt(1), .token = 2 }});
-        bir.interface = try gpa.dupe(Bir.DeclIndex, &.{@enumFromInt(0)});
+        bir.exposed = try gpa.dupe(Bir.Exposed, &.{.{ .name = @fromBackingInt(@intCast(1)), .token = 2 }});
+        bir.interface = try gpa.dupe(Bir.DeclIndex, &.{@fromBackingInt(@intCast(0))});
         bir.diagnostics = try gpa.dupe(BirDiagnostics.Item, &.{.{
             .code = .let_forward_reference,
             .start = 1,
@@ -1190,7 +1190,7 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
     // it is recomputed after each mutation — the point is that the BOUNDS
     // check refuses them on its own, which is what makes the hash a second
     // line and not the only one.
-    const row = header_bytes + @intFromEnum(Section.bir_extra) * 8;
+    const row = header_bytes + @backingInt(Section.bir_extra) * 8;
     const offset = std.mem.readInt(u32, copy[row..][0..4], .little);
     const len = std.mem.readInt(u32, copy[row + 4 ..][0..4], .little);
     for ([_][2]u32{
@@ -1216,7 +1216,7 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
     // A `bir_symbols` slot past the string table, and a `strings` record
     // overrunning its blob — the two indices a caller is handed unchecked.
     {
-        const symbols_at = std.mem.readInt(u32, copy[header_bytes + @intFromEnum(Section.bir_symbols) * 8 ..][0..4], .little);
+        const symbols_at = std.mem.readInt(u32, copy[header_bytes + @backingInt(Section.bir_symbols) * 8 ..][0..4], .little);
         std.mem.writeInt(u32, copy[symbols_at..][0..4], 99, .little);
         reseal(copy);
         try expectMiss(gpa, copy, "a `bir_symbols` slot past the string table");
@@ -1227,7 +1227,7 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
     // row of each column, so the check is seen to cover the whole column
     // and not only its first byte.
     inline for (.{ Section.bir_insts_tag, Section.token_tags }) |which| {
-        const table_row = header_bytes + @intFromEnum(which) * 8;
+        const table_row = header_bytes + @backingInt(which) * 8;
         const at = std.mem.readInt(u32, copy[table_row..][0..4], .little);
         const count = std.mem.readInt(u32, copy[table_row + 4 ..][0..4], .little);
         const last = at + count - 1;
@@ -1243,7 +1243,7 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
         ok.deinit(gpa);
     }
     {
-        const strings_at = std.mem.readInt(u32, copy[header_bytes + @intFromEnum(Section.strings) * 8 ..][0..4], .little);
+        const strings_at = std.mem.readInt(u32, copy[header_bytes + @backingInt(Section.strings) * 8 ..][0..4], .little);
         const record = strings_at + Strings.header;
         std.mem.writeInt(u32, copy[record + 4 ..][0..4], 1_000_000, .little);
         reseal(copy);
@@ -1397,13 +1397,13 @@ test "verify refuses the structural faults a well-typed record can still have" {
     const cases = [_]Case{
         .{ .what = "inst_end before inst_start", .apply = struct {
             fn go(d: *Bir.Decl) void {
-                d.inst_end = @enumFromInt(0);
-                d.inst_start = @enumFromInt(1);
+                d.inst_end = @fromBackingInt(@intCast(0));
+                d.inst_start = @fromBackingInt(@intCast(1));
             }
         }.go },
         .{ .what = "an instruction range past the column", .apply = struct {
             fn go(d: *Bir.Decl) void {
-                d.inst_end = @enumFromInt(99);
+                d.inst_end = @fromBackingInt(@intCast(99));
             }
         }.go },
         .{ .what = "a locals range past the table", .apply = struct {
@@ -1428,22 +1428,22 @@ test "verify refuses the structural faults a well-typed record can still have" {
         }.go },
         .{ .what = "a `where` range past `extra`", .apply = struct {
             fn go(d: *Bir.Decl) void {
-                d.where_end = @enumFromInt(99);
+                d.where_end = @fromBackingInt(@intCast(99));
             }
         }.go },
         .{ .what = "a SymbolIndex past `symbols`", .apply = struct {
             fn go(d: *Bir.Decl) void {
-                d.name = @enumFromInt(99);
+                d.name = @fromBackingInt(@intCast(99));
             }
         }.go },
         .{ .what = "a body past `insts`", .apply = struct {
             fn go(d: *Bir.Decl) void {
-                d.body = @enumFromInt(99);
+                d.body = @fromBackingInt(@intCast(99));
             }
         }.go },
         .{ .what = "a schema body past `insts`", .apply = struct {
             fn go(d: *Bir.Decl) void {
-                d.schema_body = @enumFromInt(99);
+                d.schema_body = @fromBackingInt(@intCast(99));
             }
         }.go },
         .{ .what = "a name_token past the token list", .apply = struct {
@@ -1470,14 +1470,14 @@ test "verify refuses the structural faults a well-typed record can still have" {
         defer gpa.free(two);
         two[0] = decls[0];
         two[1] = decls[0];
-        two[0].inst_start = @enumFromInt(0);
-        two[0].inst_end = @enumFromInt(2);
-        two[1].inst_start = @enumFromInt(1);
-        two[1].inst_end = @enumFromInt(3);
+        two[0].inst_start = @fromBackingInt(@intCast(0));
+        two[0].inst_end = @fromBackingInt(@intCast(2));
+        two[1].inst_start = @fromBackingInt(@intCast(1));
+        two[1].inst_end = @fromBackingInt(@intCast(3));
         const was = sample.bir.decls;
         sample.bir.decls = two;
         try testing.expect(!sample.bir.verify(token_count));
-        two[1].inst_start = @enumFromInt(2);
+        two[1].inst_start = @fromBackingInt(@intCast(2));
         try testing.expect(sample.bir.verify(token_count));
         sample.bir.decls = was;
     }

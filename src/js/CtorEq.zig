@@ -44,7 +44,7 @@ pub const Application = struct { ctor: Inst.Index, args: []const Inst.Index };
 pub fn application(c: Context, inst: Inst.Index) ?Application {
     const bir = c.bir;
     const ctor: Inst.Index, const args: []const Inst.Index = switch (bir.instTag(inst)) {
-        .call => .{ @enumFromInt(bir.instData(inst).lhs), bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(inst).rhs)), Inst.Index) },
+        .call => .{ @fromBackingInt(@intCast(bir.instData(inst).lhs)), bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(inst).rhs))), Inst.Index) },
         .ctor, .ext_ctor => .{ inst, &.{} },
         else => return null,
     };
@@ -77,7 +77,7 @@ fn taggedArity(c: Context, inst: Inst.Index) ?usize {
             if (d.rhs >= iface.ctors.len) return null;
             const ctor = iface.ctors[d.rhs];
             if (ctor.result == .record_alias) return null;
-            const owner = iface.types[@intFromEnum(ctor.type)];
+            const owner = iface.types[@backingInt(ctor.type)];
             var widest: usize = 0;
             for (iface.ctors[owner.ctors_start..owner.ctors_end]) |sibling| widest = @max(widest, sibling.arity);
             if (widest == 0) return null;
@@ -124,7 +124,7 @@ pub fn fieldEq(c: Context, t_index: Dispatch.TermIndex, ctor: Inst.Index, j: usi
             if (ctor_row.arg_terms == Interface.no_terms) return .none;
             const words = iface.range(ctor_row.arg_terms);
             if (j >= words.len) return .none;
-            const field = iface.term(@enumFromInt(words[j]));
+            const field = iface.term(@fromBackingInt(@intCast(words[j])));
             if (field.tag != .@"var") return .none;
             const published = Dispatch.publishedContext(c.interfaces, c.types, c.interner, use.type, .eq) orelse return .none;
             const count = published.iface.contextLen(published.row.context);
@@ -191,9 +191,9 @@ pub fn inPlace(c: Context, site: Dispatch.Site) bool {
     }
     if (site.evidence.len != 0) return false;
     const d = bir.instData(inst);
-    const m = bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+    const m = bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
     const args: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
     if (Bir.SubRange.len(args) != 1) return false;
     const right: Inst.Index = bir.extraSlice(args, Inst.Index)[0];
-    return side(c, callee, m.origin, @enumFromInt(d.lhs), right) != null;
+    return side(c, callee, m.origin, @fromBackingInt(@intCast(d.lhs)), right) != null;
 }

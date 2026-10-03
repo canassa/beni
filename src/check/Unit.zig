@@ -74,7 +74,7 @@ pending: std.ArrayList(Pending) = .empty,
 roots: std.ArrayList(u32) = .empty,
 
 const inline_len = 16;
-const contexts = @typeInfo(Ctx).@"enum".fields.len;
+const contexts = @typeInfo(Ctx).@"enum".field_names.len;
 
 pub fn deinit(u: *Unit, scratch: Allocator) void {
     u.nodes.deinit(scratch);
@@ -128,7 +128,7 @@ pub fn wanted(u: *Unit, scratch: Allocator, key: Key) Error!u32 {
 }
 
 fn slotIndex(key: Key) usize {
-    return @as(usize, @intFromEnum(key.wanted)) * contexts + @intFromEnum(key.ctx);
+    return @as(usize, @backingInt(key.wanted)) * contexts + @backingInt(key.ctx);
 }
 
 /// `key`'s slot in `memo`, the columns grown to hold it (to twice what is
@@ -232,7 +232,7 @@ pub fn emit(
         var t = node.term;
         const start: u32 = @intCast(args.items.len);
         for (u.node_args.items[node.args.start..][0..node.args.len]) |child| {
-            try lists.add(args, gpa, @enumFromInt(index[child]));
+            try lists.add(args, gpa, @fromBackingInt(@intCast(index[child])));
         }
         const range: Dispatch.Range = .{ .start = start, .len = node.args.len };
         switch (t) {
@@ -244,6 +244,6 @@ pub fn emit(
         }
         try lists.add(terms, gpa, t);
     }
-    for (u.roots.items) |r| try out.append(scratch, @enumFromInt(index[r]));
+    for (u.roots.items) |r| try out.append(scratch, @fromBackingInt(@intCast(index[r])));
     return true;
 }

@@ -115,7 +115,7 @@ pub const Column = enum(u32) {
     symbols,
     strings,
 
-    pub const count: u32 = @typeInfo(Column).@"enum".fields.len;
+    pub const count: u32 = @typeInfo(Column).@"enum".field_names.len;
 
     /// Bytes per element. `strings` is the one column whose `len` is a BYTE
     /// count rather than an element count, so its width is 1 by definition.
@@ -309,29 +309,29 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     // 2. Lengths, then offsets. `len` is the element count except for
     //    `strings`, where it is a byte count.
     var lengths: [Column.count]u32 = undefined;
-    lengths[@intFromEnum(Column.values)] = @intCast(iface.values.len);
-    lengths[@intFromEnum(Column.types)] = @intCast(iface.types.len);
-    lengths[@intFromEnum(Column.ctors)] = @intCast(iface.ctors.len);
-    lengths[@intFromEnum(Column.schemes)] = @intCast(iface.schemes.len);
-    lengths[@intFromEnum(Column.term_tags)] = @intCast(iface.terms.len);
-    lengths[@intFromEnum(Column.term_lhs)] = @intCast(iface.terms.len);
-    lengths[@intFromEnum(Column.term_rhs)] = @intCast(iface.terms.len);
-    lengths[@intFromEnum(Column.extra)] = @intCast(iface.extra.len);
-    lengths[@intFromEnum(Column.type_refs)] = @intCast(iface.type_refs.len);
-    lengths[@intFromEnum(Column.hidden_types)] = @intCast(iface.hidden_types.len);
-    lengths[@intFromEnum(Column.schemas)] = @intCast(iface.schemas.len);
-    lengths[@intFromEnum(Column.schema_members)] = @intCast(iface.schema_members.len);
-    lengths[@intFromEnum(Column.schema_ctors)] = @intCast(iface.schema_ctors.len);
-    lengths[@intFromEnum(Column.elements)] = @intCast(iface.elements.len);
-    lengths[@intFromEnum(Column.attributes)] = @intCast(iface.attributes.len);
-    lengths[@intFromEnum(Column.events)] = @intCast(iface.events.len);
-    lengths[@intFromEnum(Column.symbols)] = @intCast(iface.symbols.len);
-    lengths[@intFromEnum(Column.strings)] = @intCast(blob.items.len);
+    lengths[@backingInt(Column.values)] = @intCast(iface.values.len);
+    lengths[@backingInt(Column.types)] = @intCast(iface.types.len);
+    lengths[@backingInt(Column.ctors)] = @intCast(iface.ctors.len);
+    lengths[@backingInt(Column.schemes)] = @intCast(iface.schemes.len);
+    lengths[@backingInt(Column.term_tags)] = @intCast(iface.terms.len);
+    lengths[@backingInt(Column.term_lhs)] = @intCast(iface.terms.len);
+    lengths[@backingInt(Column.term_rhs)] = @intCast(iface.terms.len);
+    lengths[@backingInt(Column.extra)] = @intCast(iface.extra.len);
+    lengths[@backingInt(Column.type_refs)] = @intCast(iface.type_refs.len);
+    lengths[@backingInt(Column.hidden_types)] = @intCast(iface.hidden_types.len);
+    lengths[@backingInt(Column.schemas)] = @intCast(iface.schemas.len);
+    lengths[@backingInt(Column.schema_members)] = @intCast(iface.schema_members.len);
+    lengths[@backingInt(Column.schema_ctors)] = @intCast(iface.schema_ctors.len);
+    lengths[@backingInt(Column.elements)] = @intCast(iface.elements.len);
+    lengths[@backingInt(Column.attributes)] = @intCast(iface.attributes.len);
+    lengths[@backingInt(Column.events)] = @intCast(iface.events.len);
+    lengths[@backingInt(Column.symbols)] = @intCast(iface.symbols.len);
+    lengths[@backingInt(Column.strings)] = @intCast(blob.items.len);
 
     var offsets_of: [Column.count]u32 = undefined;
     var at: u32 = body_start;
     for (0..Column.count) |i| {
-        const c: Column = @enumFromInt(i);
+        const c: Column = @fromBackingInt(@intCast(i));
         offsets_of[i] = at;
         at += lengths[i] * c.width();
         at += @intCast(pad4(at)); // gaps are zero-filled by the memset below
@@ -351,54 +351,54 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
 
     // 3. The columns.
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.values)]..];
+        const out = bytes[offsets_of[@backingInt(Column.values)]..];
         for (iface.values, 0..) |v, i| {
             const row = out[i * 12 ..][0..12];
-            std.mem.writeInt(u32, row[0..4], @intFromEnum(v.name), .little);
-            std.mem.writeInt(u32, row[4..8], @intFromEnum(v.scheme), .little);
+            std.mem.writeInt(u32, row[0..4], @backingInt(v.name), .little);
+            std.mem.writeInt(u32, row[4..8], @backingInt(v.scheme), .little);
             row[8] = @as(u8, @intFromBool(v.is_foreign)) | (@as(u8, @intFromBool(v.is_markup_primitive)) << 1);
         }
     }
-    writeVocab(bytes[offsets_of[@intFromEnum(Column.elements)]..], iface.elements);
-    writeVocab(bytes[offsets_of[@intFromEnum(Column.attributes)]..], iface.attributes);
-    writeVocab(bytes[offsets_of[@intFromEnum(Column.events)]..], iface.events);
+    writeVocab(bytes[offsets_of[@backingInt(Column.elements)]..], iface.elements);
+    writeVocab(bytes[offsets_of[@backingInt(Column.attributes)]..], iface.attributes);
+    writeVocab(bytes[offsets_of[@backingInt(Column.events)]..], iface.events);
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.types)]..];
+        const out = bytes[offsets_of[@backingInt(Column.types)]..];
         for (iface.types, 0..) |t, i| {
             const row = out[i * 32 ..][0..32];
-            std.mem.writeInt(u32, row[0..4], @intFromEnum(t.name), .little);
+            std.mem.writeInt(u32, row[0..4], @backingInt(t.name), .little);
             std.mem.writeInt(u32, row[4..8], t.ctors_start, .little);
             std.mem.writeInt(u32, row[8..12], t.ctors_end, .little);
             std.mem.writeInt(u16, row[12..14], t.arity, .little);
-            row[14] = @intFromEnum(t.kind);
+            row[14] = @backingInt(t.kind);
             row[15] = @as(u8, @intFromBool(t.is_opaque)) | (@as(u8, @intFromBool(t.is_equatable)) << 1) | (@as(u8, @intFromBool(t.no_function)) << 2);
             std.mem.writeInt(u32, row[16..20], t.payload_params, .little);
             std.mem.writeInt(u32, row[20..24], t.eq.context, .little);
             std.mem.writeInt(u32, row[24..28], t.compare.context, .little);
-            row[28] = @intFromEnum(t.eq.status);
-            row[29] = @intFromEnum(t.compare.status);
+            row[28] = @backingInt(t.eq.status);
+            row[29] = @backingInt(t.compare.status);
         }
     }
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.ctors)]..];
+        const out = bytes[offsets_of[@backingInt(Column.ctors)]..];
         for (iface.ctors, 0..) |c, i| {
             const row = out[i * 28 ..][0..28];
-            std.mem.writeInt(u32, row[0..4], @intFromEnum(c.name), .little);
-            std.mem.writeInt(u32, row[4..8], @intFromEnum(c.type), .little);
+            std.mem.writeInt(u32, row[0..4], @backingInt(c.name), .little);
+            std.mem.writeInt(u32, row[4..8], @backingInt(c.type), .little);
             std.mem.writeInt(u32, row[8..12], c.arity, .little);
             std.mem.writeInt(u32, row[12..16], c.arg_terms, .little);
             std.mem.writeInt(u32, row[16..20], c.quantified_start, .little);
             std.mem.writeInt(u32, row[20..24], c.fields, .little);
-            row[24] = @intFromEnum(c.result);
+            row[24] = @backingInt(c.result);
         }
     }
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.schemes)]..];
+        const out = bytes[offsets_of[@backingInt(Column.schemes)]..];
         for (iface.schemes, 0..) |s, i| {
             const row = out[i * 16 ..][0..16];
             std.mem.writeInt(u32, row[0..4], s.quantified_start, .little);
             std.mem.writeInt(u32, row[4..8], s.quantified_count, .little);
-            std.mem.writeInt(u32, row[8..12], @intFromEnum(s.body), .little);
+            std.mem.writeInt(u32, row[8..12], @backingInt(s.body), .little);
             std.mem.writeInt(u32, row[12..16], s.effects, .little);
         }
     }
@@ -406,42 +406,42 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
         const tags = iface.terms.items(.tag);
         const lhs = iface.terms.items(.lhs);
         const rhs = iface.terms.items(.rhs);
-        const tags_out = bytes[offsets_of[@intFromEnum(Column.term_tags)]..];
-        for (tags, 0..) |t, i| tags_out[i] = @intFromEnum(t);
-        writeWords(bytes[offsets_of[@intFromEnum(Column.term_lhs)]..], lhs);
-        writeWords(bytes[offsets_of[@intFromEnum(Column.term_rhs)]..], rhs);
+        const tags_out = bytes[offsets_of[@backingInt(Column.term_tags)]..];
+        for (tags, 0..) |t, i| tags_out[i] = @backingInt(t);
+        writeWords(bytes[offsets_of[@backingInt(Column.term_lhs)]..], lhs);
+        writeWords(bytes[offsets_of[@backingInt(Column.term_rhs)]..], rhs);
     }
-    writeWords(bytes[offsets_of[@intFromEnum(Column.extra)]..], iface.extra);
+    writeWords(bytes[offsets_of[@backingInt(Column.extra)]..], iface.extra);
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.type_refs)]..];
+        const out = bytes[offsets_of[@backingInt(Column.type_refs)]..];
         for (iface.type_refs, 0..) |r, i| {
             const row = out[i * 16 ..][0..16];
-            std.mem.writeInt(u32, row[0..4], @intFromEnum(r.module), .little);
-            std.mem.writeInt(u32, row[4..8], @intFromEnum(r.name), .little);
-            std.mem.writeInt(u32, row[8..12], @intFromEnum(r.body), .little);
-            row[12] = @intFromEnum(r.package);
+            std.mem.writeInt(u32, row[0..4], @backingInt(r.module), .little);
+            std.mem.writeInt(u32, row[4..8], @backingInt(r.name), .little);
+            std.mem.writeInt(u32, row[8..12], @backingInt(r.body), .little);
+            row[12] = @backingInt(r.package);
         }
     }
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.hidden_types)]..];
+        const out = bytes[offsets_of[@backingInt(Column.hidden_types)]..];
         for (iface.hidden_types, 0..) |t, i| {
             const row = out[i * 24 ..][0..24];
-            std.mem.writeInt(u32, row[0..4], @intFromEnum(t.name), .little);
+            std.mem.writeInt(u32, row[0..4], @backingInt(t.name), .little);
             std.mem.writeInt(u16, row[4..6], t.arity, .little);
-            row[6] = @intFromEnum(t.kind);
+            row[6] = @backingInt(t.kind);
             row[7] = @as(u8, @intFromBool(t.is_equatable)) | (@as(u8, @intFromBool(t.no_function)) << 1);
             std.mem.writeInt(u32, row[8..12], t.payload_params, .little);
             std.mem.writeInt(u32, row[12..16], t.eq.context, .little);
             std.mem.writeInt(u32, row[16..20], t.compare.context, .little);
-            row[20] = @intFromEnum(t.eq.status);
-            row[21] = @intFromEnum(t.compare.status);
+            row[20] = @backingInt(t.eq.status);
+            row[21] = @backingInt(t.compare.status);
         }
     }
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.schemas)]..];
+        const out = bytes[offsets_of[@backingInt(Column.schemas)]..];
         for (iface.schemas, 0..) |s, i| {
             const row = out[i * 32 ..][0..32];
-            std.mem.writeInt(u32, row[0..4], @intFromEnum(s.name), .little);
+            std.mem.writeInt(u32, row[0..4], @backingInt(s.name), .little);
             std.mem.writeInt(u32, row[4..8], s.params_len, .little);
             std.mem.writeInt(u32, row[8..12], s.members_start, .little);
             std.mem.writeInt(u32, row[12..16], s.members_end, .little);
@@ -452,31 +452,31 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
         }
     }
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.schema_members)]..];
+        const out = bytes[offsets_of[@backingInt(Column.schema_members)]..];
         for (iface.schema_members, 0..) |m, i| {
             const row = out[i * 16 ..][0..16];
-            std.mem.writeInt(u32, row[0..4], @intFromEnum(m.name), .little);
-            std.mem.writeInt(u32, row[4..8], @intFromEnum(m.schema), .little);
-            std.mem.writeInt(u32, row[8..12], @intFromEnum(m.scheme), .little);
-            row[12] = @intFromEnum(m.kind);
+            std.mem.writeInt(u32, row[0..4], @backingInt(m.name), .little);
+            std.mem.writeInt(u32, row[4..8], @backingInt(m.schema), .little);
+            std.mem.writeInt(u32, row[8..12], @backingInt(m.scheme), .little);
+            row[12] = @backingInt(m.kind);
             row[13] = m.arity;
             row[14] = @intFromBool(m.visible);
         }
     }
     {
-        const out = bytes[offsets_of[@intFromEnum(Column.schema_ctors)]..];
+        const out = bytes[offsets_of[@backingInt(Column.schema_ctors)]..];
         for (iface.schema_ctors, 0..) |c, i| {
             const row = out[i * 16 ..][0..16];
-            std.mem.writeInt(u32, row[0..4], @intFromEnum(c.name), .little);
-            std.mem.writeInt(u32, row[4..8], @intFromEnum(c.schema), .little);
-            std.mem.writeInt(u32, row[8..12], @intFromEnum(c.scheme), .little);
-            row[12] = @intFromEnum(c.endpoint);
+            std.mem.writeInt(u32, row[0..4], @backingInt(c.name), .little);
+            std.mem.writeInt(u32, row[4..8], @backingInt(c.schema), .little);
+            std.mem.writeInt(u32, row[8..12], @backingInt(c.scheme), .little);
+            row[12] = @backingInt(c.endpoint);
             row[13] = c.arity;
             row[14] = @intFromBool(c.visible);
         }
     }
-    writeWords(bytes[offsets_of[@intFromEnum(Column.symbols)]..], offsets);
-    @memcpy(bytes[offsets_of[@intFromEnum(Column.strings)]..][0..blob.items.len], blob.items);
+    writeWords(bytes[offsets_of[@backingInt(Column.symbols)]..], offsets);
+    @memcpy(bytes[offsets_of[@backingInt(Column.strings)]..][0..blob.items.len], blob.items);
 
     return bytes;
 }
@@ -485,12 +485,12 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
 fn writeVocab(out: []u8, rows: []const Interface.VocabRow) void {
     for (rows, 0..) |r, i| {
         writeWords(out[i * 24 ..][0..24], &.{
-            @intFromEnum(r.name),
+            @backingInt(r.name),
             r.facts,
-            @intFromEnum(r.arg),
-            @intFromEnum(r.via),
+            @backingInt(r.arg),
+            @backingInt(r.via),
             r.on,
-            @intFromEnum(r.scheme),
+            @backingInt(r.scheme),
         });
     }
 }
@@ -500,12 +500,12 @@ fn readVocab(gpa: Allocator, in: []const u8, n: u32) Allocator.Error![]Interface
     for (rows, 0..) |*r, i| {
         const row = in[i * 24 ..][0..24];
         r.* = .{
-            .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+            .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
             .facts = std.mem.readInt(u32, row[4..8], .little),
-            .arg = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
-            .via = @enumFromInt(std.mem.readInt(u32, row[12..16], .little)),
+            .arg = @fromBackingInt(@intCast(std.mem.readInt(u32, row[8..12], .little))),
+            .via = @fromBackingInt(@intCast(std.mem.readInt(u32, row[12..16], .little))),
             .on = std.mem.readInt(u32, row[16..20], .little),
-            .scheme = @enumFromInt(std.mem.readInt(u32, row[20..24], .little)),
+            .scheme = @fromBackingInt(@intCast(std.mem.readInt(u32, row[20..24], .little))),
         };
     }
     return rows;
@@ -515,13 +515,13 @@ fn readVocab(gpa: Allocator, in: []const u8, n: u32) Allocator.Error![]Interface
 /// their columns, and its facts name only fact words and the pattern bit.
 fn verifyVocab(iface: *const Interface, rows: []const Interface.VocabRow) bool {
     const symbols = iface.symbols.len;
-    const known: u32 = (@as(u32, 1) << @typeInfo(Bir.FactWord).@"enum".fields.len) - 1;
+    const known: u32 = (@as(u32, 1) << @typeInfo(Bir.FactWord).@"enum".field_names.len) - 1;
     for (rows) |r| {
-        if (@intFromEnum(r.name) >= symbols) return false;
+        if (@backingInt(r.name) >= symbols) return false;
         if (r.facts & ~(known | Interface.VocabRow.pattern_bit) != 0) return false;
-        if (r.arg.unwrap()) |s| if (@intFromEnum(s) >= symbols) return false;
-        if (r.via.unwrap()) |s| if (@intFromEnum(s) >= symbols) return false;
-        if (r.scheme != .none and @intFromEnum(r.scheme) >= iface.schemes.len) return false;
+        if (r.arg.unwrap()) |s| if (@backingInt(s) >= symbols) return false;
+        if (r.via.unwrap()) |s| if (@backingInt(s) >= symbols) return false;
+        if (r.scheme != .none and @backingInt(r.scheme) >= iface.schemes.len) return false;
         if (r.on != Interface.no_terms) {
             const names = rangeOf(iface, r.on) orelse return false;
             for (names) |name| {
@@ -609,7 +609,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
     var offsets_of: [Column.count]u32 = undefined;
     var lengths: [Column.count]u32 = undefined;
     for (0..Column.count) |i| {
-        const c: Column = @enumFromInt(i);
+        const c: Column = @fromBackingInt(@intCast(i));
         const row = bytes[header_bytes + i * 8 ..][0..8];
         const offset = std.mem.readInt(u32, row[0..4], .little);
         const len = std.mem.readInt(u32, row[4..8], .little);
@@ -623,9 +623,9 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         lengths[i] = len;
     }
     // The three `terms` columns are one table split three ways.
-    const terms_len = lengths[@intFromEnum(Column.term_tags)];
-    if (lengths[@intFromEnum(Column.term_lhs)] != terms_len) return error.BadRecord;
-    if (lengths[@intFromEnum(Column.term_rhs)] != terms_len) return error.BadRecord;
+    const terms_len = lengths[@backingInt(Column.term_tags)];
+    if (lengths[@backingInt(Column.term_lhs)] != terms_len) return error.BadRecord;
+    if (lengths[@backingInt(Column.term_rhs)] != terms_len) return error.BadRecord;
 
     var iface: Interface = .empty;
     errdefer iface.deinit(gpa);
@@ -633,9 +633,9 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
     // `symbols` first: every other column indexes it, and a string that is
     // not in this session's interner is the one failure that is not a miss.
     {
-        const blob = bytes[offsets_of[@intFromEnum(Column.strings)]..][0..lengths[@intFromEnum(Column.strings)]];
-        const words = bytes[offsets_of[@intFromEnum(Column.symbols)]..];
-        const n = lengths[@intFromEnum(Column.symbols)];
+        const blob = bytes[offsets_of[@backingInt(Column.strings)]..][0..lengths[@backingInt(Column.strings)]];
+        const words = bytes[offsets_of[@backingInt(Column.symbols)]..];
+        const n = lengths[@backingInt(Column.symbols)];
         const symbols = try gpa.alloc(Symbol, n);
         iface.symbols = symbols;
         for (symbols, 0..) |*s, i| {
@@ -649,25 +649,25 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.values)]..];
-        const values = try gpa.alloc(Interface.Value, lengths[@intFromEnum(Column.values)]);
+        const in = bytes[offsets_of[@backingInt(Column.values)]..];
+        const values = try gpa.alloc(Interface.Value, lengths[@backingInt(Column.values)]);
         iface.values = values;
         for (values, 0..) |*v, i| {
             const row = in[i * 12 ..][0..12];
             v.* = .{
-                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
-                .scheme = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
+                .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
+                .scheme = @fromBackingInt(@intCast(std.mem.readInt(u32, row[4..8], .little))),
                 .is_foreign = row[8] & 1 == 1,
                 .is_markup_primitive = row[8] & 2 == 2,
             };
         }
     }
-    iface.elements = try readVocab(gpa, bytes[offsets_of[@intFromEnum(Column.elements)]..], lengths[@intFromEnum(Column.elements)]);
-    iface.attributes = try readVocab(gpa, bytes[offsets_of[@intFromEnum(Column.attributes)]..], lengths[@intFromEnum(Column.attributes)]);
-    iface.events = try readVocab(gpa, bytes[offsets_of[@intFromEnum(Column.events)]..], lengths[@intFromEnum(Column.events)]);
+    iface.elements = try readVocab(gpa, bytes[offsets_of[@backingInt(Column.elements)]..], lengths[@backingInt(Column.elements)]);
+    iface.attributes = try readVocab(gpa, bytes[offsets_of[@backingInt(Column.attributes)]..], lengths[@backingInt(Column.attributes)]);
+    iface.events = try readVocab(gpa, bytes[offsets_of[@backingInt(Column.events)]..], lengths[@backingInt(Column.events)]);
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.types)]..];
-        const types = try gpa.alloc(Interface.Type, lengths[@intFromEnum(Column.types)]);
+        const in = bytes[offsets_of[@backingInt(Column.types)]..];
+        const types = try gpa.alloc(Interface.Type, lengths[@backingInt(Column.types)]);
         iface.types = types;
         for (types, 0..) |*t, i| {
             const row = in[i * 32 ..][0..32];
@@ -675,7 +675,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
             // writer produced (`checker.md` §7: padding is not a field).
             if (row[15] & ~@as(u8, 7) != 0 or row[30] != 0 or row[31] != 0) return error.BadRecord;
             t.* = .{
-                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .ctors_start = std.mem.readInt(u32, row[4..8], .little),
                 .ctors_end = std.mem.readInt(u32, row[8..12], .little),
                 .arity = std.mem.readInt(u16, row[12..14], .little),
@@ -696,15 +696,15 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.ctors)]..];
-        const ctors = try gpa.alloc(Interface.Ctor, lengths[@intFromEnum(Column.ctors)]);
+        const in = bytes[offsets_of[@backingInt(Column.ctors)]..];
+        const ctors = try gpa.alloc(Interface.Ctor, lengths[@backingInt(Column.ctors)]);
         iface.ctors = ctors;
         for (ctors, 0..) |*c, i| {
             const row = in[i * 28 ..][0..28];
             if (row[25] != 0 or row[26] != 0 or row[27] != 0) return error.BadRecord;
             c.* = .{
-                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
-                .type = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
+                .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
+                .type = @fromBackingInt(@intCast(std.mem.readInt(u32, row[4..8], .little))),
                 .arity = std.mem.readInt(u32, row[8..12], .little),
                 .arg_terms = std.mem.readInt(u32, row[12..16], .little),
                 .quantified_start = std.mem.readInt(u32, row[16..20], .little),
@@ -714,15 +714,15 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.schemes)]..];
-        const schemes = try gpa.alloc(Interface.Scheme, lengths[@intFromEnum(Column.schemes)]);
+        const in = bytes[offsets_of[@backingInt(Column.schemes)]..];
+        const schemes = try gpa.alloc(Interface.Scheme, lengths[@backingInt(Column.schemes)]);
         iface.schemes = schemes;
         for (schemes, 0..) |*s, i| {
             const row = in[i * 16 ..][0..16];
             s.* = .{
                 .quantified_start = std.mem.readInt(u32, row[0..4], .little),
                 .quantified_count = std.mem.readInt(u32, row[4..8], .little),
-                .body = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+                .body = @fromBackingInt(@intCast(std.mem.readInt(u32, row[8..12], .little))),
                 .effects = std.mem.readInt(u32, row[12..16], .little),
             };
         }
@@ -731,7 +731,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         // Column by column, each one copy into a list of exactly its length:
         // the tags are checked in the bytes first, because a `Tag` value
         // outside the enum must never exist.
-        const tags = bytes[offsets_of[@intFromEnum(Column.term_tags)]..][0..terms_len];
+        const tags = bytes[offsets_of[@backingInt(Column.term_tags)]..][0..terms_len];
         var bad: u8 = 0;
         for (tags) |tag| bad |= @intFromBool(std.enums.fromInt(Interface.Term.Tag, tag) == null);
         if (bad != 0) return error.BadRecord;
@@ -741,38 +741,38 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         terms.len = terms_len;
         const s = terms.slice();
         @memcpy(@as([]u8, @ptrCast(s.items(.tag))), tags);
-        readWords(s.items(.lhs), bytes[offsets_of[@intFromEnum(Column.term_lhs)]..]);
-        readWords(s.items(.rhs), bytes[offsets_of[@intFromEnum(Column.term_rhs)]..]);
+        readWords(s.items(.lhs), bytes[offsets_of[@backingInt(Column.term_lhs)]..]);
+        readWords(s.items(.rhs), bytes[offsets_of[@backingInt(Column.term_rhs)]..]);
         iface.terms = terms.toOwnedSlice();
     }
     {
-        const extra = try gpa.alloc(u32, lengths[@intFromEnum(Column.extra)]);
+        const extra = try gpa.alloc(u32, lengths[@backingInt(Column.extra)]);
         iface.extra = extra;
-        readWords(extra, bytes[offsets_of[@intFromEnum(Column.extra)]..]);
+        readWords(extra, bytes[offsets_of[@backingInt(Column.extra)]..]);
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.type_refs)]..];
-        const refs = try gpa.alloc(Interface.TypeRef, lengths[@intFromEnum(Column.type_refs)]);
+        const in = bytes[offsets_of[@backingInt(Column.type_refs)]..];
+        const refs = try gpa.alloc(Interface.TypeRef, lengths[@backingInt(Column.type_refs)]);
         iface.type_refs = refs;
         for (refs, 0..) |*r, i| {
             const row = in[i * 16 ..][0..16];
             r.* = .{
-                .module = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
-                .name = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
-                .body = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+                .module = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
+                .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[4..8], .little))),
+                .body = @fromBackingInt(@intCast(std.mem.readInt(u32, row[8..12], .little))),
                 .package = std.enums.fromInt(SourceStore.Package, row[12]) orelse return error.BadRecord,
             };
         }
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.hidden_types)]..];
-        const hidden = try gpa.alloc(Interface.HiddenType, lengths[@intFromEnum(Column.hidden_types)]);
+        const in = bytes[offsets_of[@backingInt(Column.hidden_types)]..];
+        const hidden = try gpa.alloc(Interface.HiddenType, lengths[@backingInt(Column.hidden_types)]);
         iface.hidden_types = hidden;
         for (hidden, 0..) |*t, i| {
             const row = in[i * 24 ..][0..24];
             if (row[7] & ~@as(u8, 3) != 0 or row[22] != 0 or row[23] != 0) return error.BadRecord;
             t.* = .{
-                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .arity = std.mem.readInt(u16, row[4..6], .little),
                 .kind = std.enums.fromInt(Interface.TypeKind, row[6]) orelse return error.BadRecord,
                 .is_equatable = row[7] & 1 == 1,
@@ -790,13 +790,13 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.schemas)]..];
-        const schemas = try gpa.alloc(Interface.Schema, lengths[@intFromEnum(Column.schemas)]);
+        const in = bytes[offsets_of[@backingInt(Column.schemas)]..];
+        const schemas = try gpa.alloc(Interface.Schema, lengths[@backingInt(Column.schemas)]);
         iface.schemas = schemas;
         for (schemas, 0..) |*s, i| {
             const row = in[i * 32 ..][0..32];
             s.* = .{
-                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .params_len = std.mem.readInt(u32, row[4..8], .little),
                 .members_start = std.mem.readInt(u32, row[8..12], .little),
                 .members_end = std.mem.readInt(u32, row[12..16], .little),
@@ -808,16 +808,16 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.schema_members)]..];
-        const members = try gpa.alloc(Interface.SchemaMember, lengths[@intFromEnum(Column.schema_members)]);
+        const in = bytes[offsets_of[@backingInt(Column.schema_members)]..];
+        const members = try gpa.alloc(Interface.SchemaMember, lengths[@backingInt(Column.schema_members)]);
         iface.schema_members = members;
         for (members, 0..) |*m, i| {
             const row = in[i * 16 ..][0..16];
             if (row[15] != 0 or row[14] & ~@as(u8, 1) != 0) return error.BadRecord;
             m.* = .{
-                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
-                .schema = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
-                .scheme = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+                .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
+                .schema = @fromBackingInt(@intCast(std.mem.readInt(u32, row[4..8], .little))),
+                .scheme = @fromBackingInt(@intCast(std.mem.readInt(u32, row[8..12], .little))),
                 .kind = std.enums.fromInt(Interface.SchemaMember.Kind, row[12]) orelse return error.BadRecord,
                 .arity = row[13],
                 .visible = row[14] & 1 == 1,
@@ -825,16 +825,16 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.schema_ctors)]..];
-        const ctors = try gpa.alloc(Interface.SchemaCtor, lengths[@intFromEnum(Column.schema_ctors)]);
+        const in = bytes[offsets_of[@backingInt(Column.schema_ctors)]..];
+        const ctors = try gpa.alloc(Interface.SchemaCtor, lengths[@backingInt(Column.schema_ctors)]);
         iface.schema_ctors = ctors;
         for (ctors, 0..) |*c, i| {
             const row = in[i * 16 ..][0..16];
             if (row[15] != 0 or row[14] & ~@as(u8, 1) != 0) return error.BadRecord;
             c.* = .{
-                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
-                .schema = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
-                .scheme = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+                .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
+                .schema = @fromBackingInt(@intCast(std.mem.readInt(u32, row[4..8], .little))),
+                .scheme = @fromBackingInt(@intCast(std.mem.readInt(u32, row[8..12], .little))),
                 .endpoint = std.enums.fromInt(Interface.SchemaCtor.Endpoint, row[12]) orelse return error.BadRecord,
                 .arity = row[13],
                 .visible = row[14] & 1 == 1,
@@ -890,33 +890,33 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
     const terms = iface.terms.len;
 
     for (iface.values) |v| {
-        if (@intFromEnum(v.name) >= symbols) return false;
-        if (v.scheme != .none and @intFromEnum(v.scheme) >= iface.schemes.len) return false;
+        if (@backingInt(v.name) >= symbols) return false;
+        if (v.scheme != .none and @backingInt(v.scheme) >= iface.schemes.len) return false;
     }
     if (!verifyVocab(iface, iface.elements) or !verifyVocab(iface, iface.attributes) or !verifyVocab(iface, iface.events)) return false;
     for (iface.types) |t| {
-        if (@intFromEnum(t.name) >= symbols) return false;
+        if (@backingInt(t.name) >= symbols) return false;
         if (t.ctors_start > t.ctors_end or t.ctors_end > iface.ctors.len) return false;
         if (!verifyFacts(iface, interner, t.arity, t.payload_params, t.eq, t.compare)) return false;
     }
     for (iface.hidden_types, 0..) |t, i| {
-        if (@intFromEnum(t.name) >= symbols) return false;
+        if (@backingInt(t.name) >= symbols) return false;
         if (t.kind == .alias) return false;
         if (!verifyFacts(iface, interner, t.arity, t.payload_params, t.eq, t.compare)) return false;
         // Sorted by name text, each name once (`Interface.typeFacts`
         // binary-searches it).
         if (i != 0) {
-            const before = interner.slice(iface.symbols[@intFromEnum(iface.hidden_types[i - 1].name)]);
-            if (std.mem.order(u8, before, interner.slice(iface.symbols[@intFromEnum(t.name)])) != .lt) return false;
+            const before = interner.slice(iface.symbols[@backingInt(iface.hidden_types[i - 1].name)]);
+            if (std.mem.order(u8, before, interner.slice(iface.symbols[@backingInt(t.name)])) != .lt) return false;
         }
     }
     for (iface.ctors) |c| {
-        if (@intFromEnum(c.name) >= symbols) return false;
-        if (@intFromEnum(c.type) >= iface.types.len) return false;
+        if (@backingInt(c.name) >= symbols) return false;
+        if (@backingInt(c.type) >= iface.types.len) return false;
         if (c.quantified_start > iface.extra.len) return false;
         // A record-alias constructor is exactly the constructor of an alias
         // row, and only an alias row's constructor is one.
-        if ((c.result == .record_alias) != (iface.types[@intFromEnum(c.type)].kind == .alias)) return false;
+        if ((c.result == .record_alias) != (iface.types[@backingInt(c.type)].kind == .alias)) return false;
         switch (c.result) {
             .nominal => if (c.fields != Interface.no_terms) return false,
             .record_alias => {
@@ -936,7 +936,7 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
         }
     }
     for (iface.schemes) |s| {
-        if (!isTerm(terms, @intFromEnum(s.body))) return false;
+        if (!isTerm(terms, @backingInt(s.body))) return false;
         const block = @as(u64, s.quantified_start) + @as(u64, s.quantified_count) * Interface.Quantified.words;
         if (block > iface.extra.len) return false;
         for (0..s.quantified_count) |i| {
@@ -1015,14 +1015,14 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
         };
     }
     for (iface.type_refs) |r| {
-        if (@intFromEnum(r.module) >= symbols) return false;
-        if (@intFromEnum(r.name) >= symbols) return false;
-        if (!isTerm(terms, @intFromEnum(r.body))) return false;
+        if (@backingInt(r.module) >= symbols) return false;
+        if (@backingInt(r.name) >= symbols) return false;
+        if (!isTerm(terms, @backingInt(r.body))) return false;
     }
     var members_end: u32 = 0;
     var ctors_end: u32 = 0;
     for (iface.schemas, 0..) |s, schema_i| {
-        if (@intFromEnum(s.name) >= symbols) return false;
+        if (@backingInt(s.name) >= symbols) return false;
         if (s.members_start > s.members_end or s.members_end > iface.schema_members.len) return false;
         if (s.members_start != members_end or s.members_end - s.members_start != 7) return false;
         if (s.program_ctors_start > s.program_ctors_end or s.program_ctors_end > iface.schema_ctors.len) return false;
@@ -1030,7 +1030,7 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
         if (s.program_ctors_start != ctors_end or s.program_ctors_end != s.encoded_ctors_start) return false;
         if (s.program_ctors_end - s.program_ctors_start != s.encoded_ctors_end - s.encoded_ctors_start) return false;
         for (iface.schema_members[s.members_start..s.members_end], 0..) |m, kind_i| {
-            if (@intFromEnum(m.schema) != schema_i or @intFromEnum(m.kind) != kind_i) return false;
+            if (@backingInt(m.schema) != schema_i or @backingInt(m.kind) != kind_i) return false;
             const extra_arity: u32 = switch (kind_i) {
                 0, 1 => 0,
                 2 => @intFromBool(s.params_len == 0),
@@ -1043,10 +1043,10 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
             if (m.arity != expected) return false;
         }
         for (iface.schema_ctors[s.program_ctors_start..s.program_ctors_end]) |c| {
-            if (@intFromEnum(c.schema) != schema_i or c.endpoint != .type) return false;
+            if (@backingInt(c.schema) != schema_i or c.endpoint != .type) return false;
         }
         for (iface.schema_ctors[s.encoded_ctors_start..s.encoded_ctors_end]) |c| {
-            if (@intFromEnum(c.schema) != schema_i or c.endpoint != .encoded) return false;
+            if (@backingInt(c.schema) != schema_i or c.endpoint != .encoded) return false;
         }
         const program = iface.schema_ctors[s.program_ctors_start..s.program_ctors_end];
         const encoded = iface.schema_ctors[s.encoded_ctors_start..s.encoded_ctors_end];
@@ -1058,13 +1058,13 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
     }
     if (members_end != iface.schema_members.len or ctors_end != iface.schema_ctors.len) return false;
     for (iface.schema_members) |m| {
-        if (@intFromEnum(m.name) >= symbols or @intFromEnum(m.schema) >= iface.schemas.len) return false;
-        if (m.scheme == .none or @intFromEnum(m.scheme) >= iface.schemes.len) return false;
+        if (@backingInt(m.name) >= symbols or @backingInt(m.schema) >= iface.schemas.len) return false;
+        if (m.scheme == .none or @backingInt(m.scheme) >= iface.schemes.len) return false;
         if (!m.visible) return false;
     }
     for (iface.schema_ctors) |c| {
-        if (@intFromEnum(c.name) >= symbols or @intFromEnum(c.schema) >= iface.schemas.len) return false;
-        if (c.scheme == .none or @intFromEnum(c.scheme) >= iface.schemes.len) return false;
+        if (@backingInt(c.name) >= symbols or @backingInt(c.schema) >= iface.schemas.len) return false;
+        if (c.scheme == .none or @backingInt(c.scheme) >= iface.schemes.len) return false;
         if (!c.visible or c.arity > 1) return false;
     }
     return true;
@@ -1343,7 +1343,7 @@ test "the symbols column shares one strings record between equal names" {
     const bytes = try write(testing.allocator, &iface, &global);
     defer testing.allocator.free(bytes);
     // Three slots, one record: 4 + 10 bytes padded to 16.
-    const row = bytes[header_bytes + @intFromEnum(Column.strings) * 8 ..][0..8];
+    const row = bytes[header_bytes + @backingInt(Column.strings) * 8 ..][0..8];
     try testing.expectEqual(@as(u32, 16), std.mem.readInt(u32, row[4..8], .little));
     var back = try read(testing.allocator, bytes, &global);
     defer back.deinit(testing.allocator);
@@ -1482,7 +1482,7 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
     // Type 0 is a nominal type of 300 parameters; type 1 the alias `P`,
     // whose one constructor is its record's.
     const good_types = [_]Interface.Type{ .{
-        .name = @enumFromInt(0),
+        .name = @fromBackingInt(@intCast(0)),
         .arity = 300,
         .kind = .adt,
         .is_opaque = false,
@@ -1493,7 +1493,7 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
         .eq = .{ .status = .present, .context = 14 },
         .compare = .{ .status = .function },
     }, .{
-        .name = @enumFromInt(0),
+        .name = @fromBackingInt(@intCast(0)),
         .arity = 0,
         .kind = .alias,
         .is_opaque = false,
@@ -1503,7 +1503,7 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
         .eq = .{ .status = .alias },
         .compare = .{ .status = .alias },
     } };
-    const good_ctors = [_]Interface.Ctor{.{ .name = @enumFromInt(0), .type = @enumFromInt(1), .arity = 2, .result = .record_alias, .fields = 0 }};
+    const good_ctors = [_]Interface.Ctor{.{ .name = @fromBackingInt(@intCast(0)), .type = @fromBackingInt(@intCast(1)), .arity = 2, .result = .record_alias, .fields = 0 }};
     const record = struct {
         fn of(types: []const Interface.Type, ctors: []const Interface.Ctor, words: []const u32, symbols: []const Symbol) Interface {
             return .{
@@ -1554,7 +1554,7 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
     try testing.expect(!verify(&record(&good_types, &nominal, &extra, &symbols), &global));
     // A record-alias constructor of a nominal type.
     var on_adt = good_ctors;
-    on_adt[0].type = @enumFromInt(0);
+    on_adt[0].type = @fromBackingInt(@intCast(0));
     try testing.expect(!verify(&record(&good_types, &on_adt, &extra, &symbols), &global));
     // One parameter's methods out of text order, and the same pair twice.
     var swapped = extra;
@@ -1576,8 +1576,8 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
     // A hidden row round-trips with its facts, and is held to the
     // same rules; hidden rows are sorted by name text.
     const hidden = [_]Interface.HiddenType{
-        .{ .name = @enumFromInt(3), .arity = 300, .kind = .adt, .is_equatable = false, .payload_params = 3, .eq = .{ .status = .present, .context = 14 }, .compare = .{ .status = .function } },
-        .{ .name = @enumFromInt(2), .arity = 0, .kind = .foreign, .is_equatable = true, .eq = .{ .status = .foreign }, .compare = .{ .status = .foreign } },
+        .{ .name = @fromBackingInt(@intCast(3)), .arity = 300, .kind = .adt, .is_equatable = false, .payload_params = 3, .eq = .{ .status = .present, .context = 14 }, .compare = .{ .status = .function } },
+        .{ .name = @fromBackingInt(@intCast(2)), .arity = 0, .kind = .foreign, .is_equatable = true, .eq = .{ .status = .foreign }, .compare = .{ .status = .foreign } },
     };
     var with_hidden = good;
     with_hidden.hidden_types = &hidden;
@@ -1597,7 +1597,7 @@ test "a column offset past the end, and a strings record that overruns the blob"
     defer global.deinit(testing.allocator);
     const name = try global.getOrPut(testing.allocator, "field");
     const iface: Interface = .{
-        .values = &.{.{ .name = @enumFromInt(0), .is_foreign = false, .scheme = .none }},
+        .values = &.{.{ .name = @fromBackingInt(@intCast(0)), .is_foreign = false, .scheme = .none }},
         .types = &.{},
         .ctors = &.{},
         .schemas = &.{},
@@ -1621,7 +1621,7 @@ test "a column offset past the end, and a strings record that overruns the blob"
     {
         const copy = try testing.allocator.dupe(u8, bytes);
         defer testing.allocator.free(copy);
-        const row = copy[header_bytes + @intFromEnum(Column.values) * 8 ..][0..8];
+        const row = copy[header_bytes + @backingInt(Column.values) * 8 ..][0..8];
         std.mem.writeInt(u32, row[0..4], @intCast(bytes.len), .little);
         try testing.expectError(error.BadRecord, read(testing.allocator, copy, &global));
     }
@@ -1629,7 +1629,7 @@ test "a column offset past the end, and a strings record that overruns the blob"
     {
         const copy = try testing.allocator.dupe(u8, bytes);
         defer testing.allocator.free(copy);
-        const row = copy[header_bytes + @intFromEnum(Column.values) * 8 ..][0..8];
+        const row = copy[header_bytes + @backingInt(Column.values) * 8 ..][0..8];
         std.mem.writeInt(u32, row[4..8], 1000, .little);
         try testing.expectError(error.BadRecord, read(testing.allocator, copy, &global));
     }
@@ -1637,7 +1637,7 @@ test "a column offset past the end, and a strings record that overruns the blob"
     {
         const copy = try testing.allocator.dupe(u8, bytes);
         defer testing.allocator.free(copy);
-        const row = copy[header_bytes + @intFromEnum(Column.values) * 8 ..][0..8];
+        const row = copy[header_bytes + @backingInt(Column.values) * 8 ..][0..8];
         std.mem.writeInt(u32, row[4..8], std.math.maxInt(u32) / 6, .little);
         try testing.expectError(error.BadRecord, read(testing.allocator, copy, &global));
     }
@@ -1645,7 +1645,7 @@ test "a column offset past the end, and a strings record that overruns the blob"
     {
         const copy = try testing.allocator.dupe(u8, bytes);
         defer testing.allocator.free(copy);
-        const row = copy[header_bytes + @intFromEnum(Column.values) * 8 ..][0..8];
+        const row = copy[header_bytes + @backingInt(Column.values) * 8 ..][0..8];
         std.mem.writeInt(u32, row[0..4], body_start + 1, .little);
         try testing.expectError(error.BadRecord, read(testing.allocator, copy, &global));
     }
@@ -1653,7 +1653,7 @@ test "a column offset past the end, and a strings record that overruns the blob"
     {
         const copy = try testing.allocator.dupe(u8, bytes);
         defer testing.allocator.free(copy);
-        const at = std.mem.readInt(u32, copy[header_bytes + @intFromEnum(Column.strings) * 8 ..][0..4], .little);
+        const at = std.mem.readInt(u32, copy[header_bytes + @backingInt(Column.strings) * 8 ..][0..4], .little);
         std.mem.writeInt(u32, copy[at..][0..4], 1000, .little);
         try testing.expectError(error.BadRecord, read(testing.allocator, copy, &global));
     }
@@ -1661,7 +1661,7 @@ test "a column offset past the end, and a strings record that overruns the blob"
     {
         const copy = try testing.allocator.dupe(u8, bytes);
         defer testing.allocator.free(copy);
-        const at = std.mem.readInt(u32, copy[header_bytes + @intFromEnum(Column.symbols) * 8 ..][0..4], .little);
+        const at = std.mem.readInt(u32, copy[header_bytes + @backingInt(Column.symbols) * 8 ..][0..4], .little);
         std.mem.writeInt(u32, copy[at..][0..4], 1000, .little);
         try testing.expectError(error.BadRecord, read(testing.allocator, copy, &global));
     }
@@ -1669,7 +1669,7 @@ test "a column offset past the end, and a strings record that overruns the blob"
     {
         const copy = try testing.allocator.dupe(u8, bytes);
         defer testing.allocator.free(copy);
-        const at = std.mem.readInt(u32, copy[header_bytes + @intFromEnum(Column.values) * 8 ..][0..4], .little);
+        const at = std.mem.readInt(u32, copy[header_bytes + @backingInt(Column.values) * 8 ..][0..4], .little);
         std.mem.writeInt(u32, copy[at..][0..4], 9, .little);
         try testing.expectError(error.BadRecord, read(testing.allocator, copy, &global));
     }
@@ -1704,12 +1704,12 @@ const mutation_fixture: TestProject.Module = .{ .path = "F.beni", .source =
 
 /// Where column `c`'s first row starts in `bytes`, from the column table.
 fn columnAt(bytes: []const u8, c: Column) u32 {
-    return std.mem.readInt(u32, bytes[header_bytes + @intFromEnum(c) * 8 ..][0..4], .little);
+    return std.mem.readInt(u32, bytes[header_bytes + @backingInt(c) * 8 ..][0..4], .little);
 }
 
 /// The length word of column `c` in the column table.
 fn columnLen(bytes: []u8, c: Column) *[4]u8 {
-    return bytes[header_bytes + @intFromEnum(c) * 8 + 4 ..][0..4];
+    return bytes[header_bytes + @backingInt(c) * 8 + 4 ..][0..4];
 }
 
 test "each check the reader makes refuses the one mutation aimed at it" {
@@ -1766,8 +1766,8 @@ test "each check the reader makes refuses the one mutation aimed at it" {
         defer gpa.free(copy);
         switch (m.table) {
             .none => copy[columnAt(copy, m.column) + m.byte.?] = m.value,
-            .offset_in_header => std.mem.writeInt(u32, copy[header_bytes + @intFromEnum(m.column) * 8 ..][0..4], header_bytes, .little),
-            .misaligned => std.mem.writeInt(u32, copy[header_bytes + @intFromEnum(m.column) * 8 ..][0..4], body_start + 1, .little),
+            .offset_in_header => std.mem.writeInt(u32, copy[header_bytes + @backingInt(m.column) * 8 ..][0..4], header_bytes, .little),
+            .misaligned => std.mem.writeInt(u32, copy[header_bytes + @backingInt(m.column) * 8 ..][0..4], body_start + 1, .little),
             .one_short => {
                 const len = columnLen(copy, m.column);
                 std.mem.writeInt(u32, len, std.mem.readInt(u32, len, .little) - 1, .little);

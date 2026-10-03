@@ -598,7 +598,7 @@ const Emitter = struct {
     fn refuseMarkupWithoutLowering(e: *Emitter) !void {
         if (e.options.platform.lowering != null) return;
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             const b = e.bir(m);
             for (b.decls, 0..) |d, index| {
                 if (!e.live.decl(m, index)) continue;
@@ -675,7 +675,7 @@ const Emitter = struct {
         errdefer e.gpa.free(message);
         try e.diagnostics.append(e.gpa, .{
             .code = code,
-            .file = @enumFromInt(0),
+            .file = @fromBackingInt(@intCast(0)),
             .token = 0,
             .message = message,
             .at = at,
@@ -737,7 +737,7 @@ const Emitter = struct {
     /// `foreign` may be polymorphic in a way that lets it fabricate a value.
     fn checkForeignShapes(e: *Emitter) !void {
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
             const b = e.bir(m);
             for (b.decls) |d| {
@@ -768,7 +768,7 @@ const Emitter = struct {
 
     fn checkSiblings(e: *Emitter) !void {
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
             const b = e.bir(m);
             const dispatch = e.dispatchOf(m);
@@ -1039,7 +1039,7 @@ const Emitter = struct {
     fn unitTail(b: *const Bir, annotation: Bir.Inst.OptionalIndex, arity: u32) u32 {
         const ty = annotation.unwrap() orelse return 0;
         if (b.instTag(ty) != .type_fn) return 0;
-        const params = b.extraSlice(b.subRange(@enumFromInt(b.instData(ty).lhs)), Bir.Inst.Index);
+        const params = b.extraSlice(b.subRange(@fromBackingInt(@intCast(b.instData(ty).lhs))), Bir.Inst.Index);
         if (params.len != arity) return 0;
         var n: u32 = 0;
         var i = params.len;
@@ -1417,7 +1417,7 @@ const Emitter = struct {
                 continue;
             }
             const value = iface.findValue(&e.session.interner, b.symbol(d.name)) orelse continue;
-            try supplied.append(e.scratch, .{ .name = want.name, .decl = index, .value = @intFromEnum(value) });
+            try supplied.append(e.scratch, .{ .name = want.name, .decl = index, .value = @backingInt(value) });
         }
         e.runtime_module = module;
         e.supplied = supplied.items;
@@ -1610,7 +1610,7 @@ const Emitter = struct {
     fn findEntry(e: *Emitter) !?Entry {
         var found: ?Entry = null;
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
             if (e.session.store.package(file) != .app) continue;
             const b = e.bir(m);
@@ -1651,7 +1651,7 @@ const Emitter = struct {
                     );
                     return null;
                 }
-                found = .{ .module = m, .decl = @enumFromInt(@as(u32, @intCast(index))) };
+                found = .{ .module = m, .decl = @fromBackingInt(@intCast(@as(u32, @intCast(index)))) };
             }
         }
         const entry = found orelse {
@@ -1785,7 +1785,7 @@ const Emitter = struct {
         const head_tag, const head_data, const args = switch (tag) {
             .type_var => {
                 const f = frame orelse return null;
-                const symbol = b.symbol(@enumFromInt(d.lhs));
+                const symbol = b.symbol(@fromBackingInt(@intCast(d.lhs)));
                 for (f.params, 0..) |p, i| {
                     if (p != symbol) continue;
                     if (i >= f.args.len) return null;
@@ -1795,8 +1795,8 @@ const Emitter = struct {
             },
             .type_top, .ext_type => .{ tag, d, &[_]Bir.Inst.Index{} },
             .type_app => blk: {
-                const head: Bir.Inst.Index = @enumFromInt(d.lhs);
-                break :blk .{ b.instTag(head), b.instData(head), b.extraSlice(b.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index) };
+                const head: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                break :blk .{ b.instTag(head), b.instData(head), b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index) };
             },
             else => return null,
         };
@@ -1830,13 +1830,13 @@ const Emitter = struct {
         const d = b.instData(inst);
         switch (b.instTag(inst)) {
             .ext_type => {
-                const m: Graph.Index = @enumFromInt(d.lhs);
+                const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
                 if (m.int() >= e.session.resolution.interfaces.len) return null;
                 const iface = &e.session.resolution.interfaces[m.int()];
                 if (d.rhs >= iface.types.len) return null;
                 return .{
                     .module = e.session.interner.slice(e.graph().moduleName(m)),
-                    .name = e.session.interner.slice(iface.symbols[@intFromEnum(iface.types[d.rhs].name)]),
+                    .name = e.session.interner.slice(iface.symbols[@backingInt(iface.types[d.rhs].name)]),
                 };
             },
             .type_top => {
@@ -1917,7 +1917,7 @@ const Emitter = struct {
     /// invoked.
     fn firstAppModule(e: *Emitter) ?Graph.Index {
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             if (e.session.store.package(e.graph().moduleFile(m)) == .app) return m;
         }
         return null;
@@ -1928,7 +1928,7 @@ const Emitter = struct {
     fn entryFileRule(e: *Emitter) ![]const u8 {
         var count: u32 = 0;
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             if (e.session.store.package(e.graph().moduleFile(m)) == .app) count += 1;
         }
         if (count <= 1) return "this project's only module";
@@ -1941,10 +1941,10 @@ const Emitter = struct {
 
     fn currentModuleOf(e: *Emitter, b: *const Bir) Graph.Index {
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             if (e.bir(m) == b) return m;
         }
-        return @enumFromInt(0);
+        return @fromBackingInt(@intCast(0));
     }
 
     // ---- backend.md §9: reachability elimination --------------------------
@@ -1967,7 +1967,7 @@ const Emitter = struct {
         const birs = try e.scratch.alloc(*const Bir, count);
         const tables = try e.scratch.alloc(*const Dispatch, count);
         for (birs, tables, 0..) |*b, *d, i| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
@@ -1989,11 +1989,11 @@ const Emitter = struct {
     fn openDebugContext(e: *Emitter) !void {
         const count = e.graph().count();
         const any = for (0..count) |i| {
-            if (e.dispatchOf(@enumFromInt(@as(u32, @intCast(i)))).debug.len != 0) break true;
+            if (e.dispatchOf(@fromBackingInt(@intCast(@as(u32, @intCast(i))))).debug.len != 0) break true;
         } else false;
         if (!any) return;
         const birs = try e.scratch.alloc(*const Bir, count);
-        for (birs, 0..) |*b, i| b.* = e.bir(@enumFromInt(@as(u32, @intCast(i))));
+        for (birs, 0..) |*b, i| b.* = e.bir(@fromBackingInt(@intCast(@as(u32, @intCast(i)))));
         e.debug_context = .{ .birs = birs, .types = &e.session.checked.types, .interner = &e.session.interner };
     }
 
@@ -2035,8 +2035,8 @@ const Emitter = struct {
                 try Spec.pushChildren(e.scratch, ir, node, &stack);
                 const d = ir.data(node);
                 const index: JsIr.NameIndex = switch (ir.tag(node)) {
-                    .member => @enumFromInt(d.rhs),
-                    .property => @enumFromInt(d.lhs),
+                    .member => @fromBackingInt(@intCast(d.rhs)),
+                    .property => @fromBackingInt(@intCast(d.lhs)),
                     else => continue,
                 };
                 const n = ir.name(index);
@@ -2067,7 +2067,7 @@ const Emitter = struct {
         const tables = try e.scratch.alloc(*const Dispatch, count);
         var insts: usize = 0;
         for (birs, tables, 0..) |*b, *d, i| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
             insts += b.*.insts.len;
@@ -2115,7 +2115,7 @@ const Emitter = struct {
         builders: []Reach.Builder,
 
         fn build(t: EdgeTask, w: *Worker, i: u32) Allocator.Error!void {
-            t.edges[i] = try t.builders[w.tid].module(@enumFromInt(i));
+            t.edges[i] = try t.builders[w.tid].module(@fromBackingInt(@intCast(i)));
         }
     };
 
@@ -2189,7 +2189,7 @@ const Emitter = struct {
         var sites: std.ArrayList(DebugSite) = .empty;
         var stream: std.ArrayList(Edges.Edge) = .empty;
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             if (m == debug) continue;
             const b = e.bir(m);
             const file = e.graph().moduleFile(m);
@@ -2312,7 +2312,7 @@ const Emitter = struct {
         // The output path of every module, so a specifier is a string join
         // and not a second walk.
         const paths = try e.scratch.alloc([]const u8, count);
-        for (paths, 0..) |*slot, i| slot.* = try e.outputPath(@enumFromInt(@as(u32, @intCast(i))));
+        for (paths, 0..) |*slot, i| slot.* = try e.outputPath(@fromBackingInt(@intCast(@as(u32, @intCast(i)))));
         // Every module's specifier table, one per importer DEPTH: a specifier
         // depends on the target's path and on nothing of the importer but its
         // directory depth, so the modules at one depth share one table. One
@@ -2353,7 +2353,7 @@ const Emitter = struct {
             todo = .empty;
             insts = 0;
             for (slots, 0..) |*slot, i| {
-                const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+                const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
                 // §5: a module with nothing reachable is not written at all,
                 // and nothing imports it, because imports are use-driven and a
                 // use is an edge.
@@ -2478,7 +2478,7 @@ const Emitter = struct {
         // finished in.
         for (todo.items) |i| {
             const slot = &slots[i];
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
             if (slot.lowered) |*lowered| if (lowered.diagnostics.len != 0) {
                 for (lowered.diagnostics) |d| {
@@ -2584,7 +2584,7 @@ const Emitter = struct {
         fn lower(t: Task, w: *Worker, i: u32) Allocator.Error!void {
             const e = t.e;
             const slot = &t.slots[i];
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
             const token = e.session.profile.begin();
             defer e.session.profile.end(w.tid, token, .emit_module, file.int(), 0);
@@ -2700,7 +2700,7 @@ const Emitter = struct {
             const e = t.e;
             const slot = &t.slots[i];
             const token = e.session.profile.begin();
-            defer e.session.profile.end(w.tid, token, .emit_module, e.graph().moduleFile(@enumFromInt(i)).int(), 0);
+            defer e.session.profile.end(w.tid, token, .emit_module, e.graph().moduleFile(@fromBackingInt(@intCast(i))).int(), 0);
             const lowered = &(slot.lowered orelse return);
             if (lowered.diagnostics.len != 0) return;
             const scratch = w.module.allocator();
@@ -2760,14 +2760,14 @@ const Emitter = struct {
                     // A plain name in the session's pool, so that a body
                     // copied into another module (§9, *Once the whole
                     // program is in view*) names the same property there.
-                    if (InternPool.Overlay.isOverlay(ir.names[n].base)) ir.setName(@enumFromInt(@as(u32, @intCast(n))), .{
+                    if (InternPool.Overlay.isOverlay(ir.names[n].base)) ir.setName(@fromBackingInt(@intCast(@as(u32, @intCast(n)))), .{
                         .module = .none,
                         .base = try e.session.interner.getOrPut(e.gpa, gop.key_ptr.*),
                         .tag = tag,
                     });
                     continue;
                 }
-                const name = try e.poolName(slot, @enumFromInt(@as(u32, @intCast(n))));
+                const name = try e.poolName(slot, @fromBackingInt(@intCast(@as(u32, @intCast(n)))));
                 const gop = try ids.getOrPut(e.scratch, Rename.Globals.key(name));
                 if (!gop.found_existing) gop.value_ptr.* = ids.count() - 1;
                 g.* = gop.value_ptr.*;
@@ -2785,7 +2785,7 @@ const Emitter = struct {
                 .global = global,
                 .prop = prop,
                 .tables = tables,
-                .self = e.graph().moduleName(@enumFromInt(i)).toOptional(),
+                .self = e.graph().moduleName(@fromBackingInt(@intCast(i))).toOptional(),
             });
         }
         // What files the pass cannot see read or call: the entry file's
@@ -2822,7 +2822,7 @@ const Emitter = struct {
             // A library: every name a root-package module exports is its
             // surface (`Reach`'s roots), called by code outside the build.
             for (todo) |i| {
-                const module: Graph.Index = @enumFromInt(i);
+                const module: Graph.Index = @fromBackingInt(@intCast(i));
                 if (e.session.store.package(e.graph().moduleFile(module)) != .app) continue;
                 const lowered = &(slots[i].lowered orelse continue);
                 if (lowered.diagnostics.len != 0) continue;
@@ -2909,13 +2909,13 @@ const Emitter = struct {
             const d = ir.data(stmt);
             switch (ir.tag(stmt)) {
                 .const_decl, .let_decl, .func_decl, .gen_decl => {
-                    const n: JsIr.NameIndex = @enumFromInt(d.lhs);
+                    const n: JsIr.NameIndex = @fromBackingInt(@intCast(d.lhs));
                     if (n.unwrap()) |at| if (at < global.len and global[at] < out.len) {
                         out[global[at]] = true;
                     };
                 },
                 .import_stmt => {
-                    const imp = ir.extraData(@enumFromInt(d.lhs), JsIr.Import);
+                    const imp = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
                     for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
                         if (spec.local.unwrap()) |at| if (at < global.len and global[at] < out.len) {
                             out[global[at]] = true;
@@ -2958,7 +2958,7 @@ const Emitter = struct {
             if (lowered.diagnostics.len != 0) continue;
             defer k += 1;
             if (k < stats.copied_modules.len and stats.copied_modules[k]) continue;
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             const b = e.bir(m);
             const module = e.graph().moduleName(m).toOptional();
             gone[i] = try .initEmpty(e.scratch, b.decls.len);
@@ -2988,7 +2988,7 @@ const Emitter = struct {
         const birs = try e.scratch.alloc(*const Bir, count);
         const tables = try e.scratch.alloc(*const Dispatch, count);
         for (birs, tables, 0..) |*bb, *dt, i| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             bb.* = e.bir(m);
             dt.* = e.dispatchOf(m);
         }
@@ -3124,7 +3124,7 @@ const Emitter = struct {
         const sibling_of = try scratch.alloc(?u32, slots.len);
         @memset(sibling_of, null);
         for (todo) |i| {
-            const m: Graph.Index = @enumFromInt(i);
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
             const b = e.bir(m);
             var surviving = false;
             for (b.decls, 0..) |d, index| surviving = surviving or (d.kind == .foreign_value and e.live.decl(m, index));
@@ -3181,7 +3181,7 @@ const Emitter = struct {
             var edges: std.ArrayList(Piece) = .empty;
             for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
                 if (ir.tag(stmt) != .import_stmt or slot.plan.isDropped(stmt)) continue;
-                const imp = ir.extraData(@enumFromInt(ir.data(stmt).lhs), JsIr.Import);
+                const imp = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).lhs)), JsIr.Import);
                 const source = ir.string_bytes[imp.source_start..][0..imp.source_len];
                 const target: ?u32 = if (std.mem.eql(u8, source, slot.sibling))
                     sibling_of[i]
@@ -3232,7 +3232,7 @@ const Emitter = struct {
                 start = .{ .file = x, .data = s.data };
             }
         }
-        try entry_edges.append(scratch, .{ .module = @intFromEnum(entry.module) });
+        try entry_edges.append(scratch, .{ .module = @backingInt(entry.module) });
 
         const program = try e.programSpecifier();
         for (files.items, 0..) |*f, x| {
@@ -3641,7 +3641,7 @@ const Emitter = struct {
             const ir = &lowered.ir;
             for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
                 if (ir.tag(stmt) != .import_stmt) continue;
-                const imp = ir.extraData(@enumFromInt(ir.data(stmt).lhs), JsIr.Import);
+                const imp = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).lhs)), JsIr.Import);
                 for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
                     if (spec.imported != spec.local) continue;
                     const ordinal = e.globals.lookup(ir.name(spec.local)) orelse continue;
@@ -3902,7 +3902,7 @@ const Emitter = struct {
     /// the modules that import them.
     fn copyAssets(e: *Emitter) !void {
         for (0..e.graph().count()) |i| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             const b = e.bir(m);
             // §5: a sibling file is copied iff the module has a SURVIVING
             // `foreign_value`, which replaces the old "declares any
@@ -4782,13 +4782,13 @@ fn firstTypeVar(scratch: Allocator, b: *const Bir, root: Bir.Inst.Index) Allocat
         switch (b.instTag(inst)) {
             .type_var => return inst,
             .type_fn => {
-                try stack.appendSlice(scratch, b.extraSlice(b.subRange(@enumFromInt(d.lhs)), Bir.Inst.Index));
-                try stack.append(scratch, @enumFromInt(d.rhs));
+                try stack.appendSlice(scratch, b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.lhs))), Bir.Inst.Index));
+                try stack.append(scratch, @fromBackingInt(@intCast(d.rhs)));
             },
-            .type_app => try stack.appendSlice(scratch, b.extraSlice(b.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index)),
+            .type_app => try stack.appendSlice(scratch, b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index)),
             .type_tuple => try stack.appendSlice(scratch, b.extraSlice(Bir.inlineRange(d), Bir.Inst.Index)),
             .type_record => for (b.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| try stack.append(scratch, f.value),
-            .type_record_ext => return @enumFromInt(d.lhs),
+            .type_record_ext => return @fromBackingInt(@intCast(d.lhs)),
             else => {},
         }
     }

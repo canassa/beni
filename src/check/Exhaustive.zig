@@ -288,19 +288,19 @@ pub fn run(
         }
         var inst = d.inst_start.int();
         while (inst < d.inst_end.int() and inst < bir.insts.len) : (inst += 1) {
-            const at: Bir.Inst.Index = @enumFromInt(inst);
+            const at: Bir.Inst.Index = @fromBackingInt(@intCast(inst));
             const data = bir.instData(at);
             switch (bir.instTag(at)) {
                 .case => {
                     scratch.reset(.retain_capacity);
                     try one(gpa, scratch.allocator(), cx, reporter, at, budget);
                 },
-                .lambda => for (bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index)) |param| {
+                .lambda => for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index)) |param| {
                     scratch.reset(.retain_capacity);
                     try irrefutable(gpa, scratch.allocator(), cx, reporter, param, .refutable_parameter_pattern, budget);
                 },
                 .let_def => {
-                    const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+                    const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
                     for (bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index)) |param| {
                         scratch.reset(.retain_capacity);
                         try irrefutable(gpa, scratch.allocator(), cx, reporter, param, .refutable_parameter_pattern, budget);
@@ -308,7 +308,7 @@ pub fn run(
                 },
                 .let_pattern => {
                     scratch.reset(.retain_capacity);
-                    try irrefutable(gpa, scratch.allocator(), cx, reporter, @enumFromInt(data.lhs), .refutable_let_pattern, budget);
+                    try irrefutable(gpa, scratch.allocator(), cx, reporter, @fromBackingInt(@intCast(data.lhs)), .refutable_let_pattern, budget);
                 },
                 else => {},
             }
@@ -388,7 +388,7 @@ fn hasCtor(bir: *const Bir, pattern: Bir.Inst.Index, depth: u32) bool {
     const data = bir.instData(pattern);
     return switch (bir.instTag(pattern)) {
         .pat_ctor => true,
-        .pat_as => hasCtor(bir, @enumFromInt(data.lhs), depth + 1),
+        .pat_as => hasCtor(bir, @fromBackingInt(@intCast(data.lhs)), depth + 1),
         .pat_tuple => for (bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |el| {
             if (hasCtor(bir, el, depth + 1)) break true;
         } else false,
@@ -410,7 +410,7 @@ fn one(
     budget: u32,
 ) Error!void {
     const bir = cx.bir;
-    const branches = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(case).rhs)), Bir.Inst.Index);
+    const branches = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(case).rhs))), Bir.Inst.Index);
     if (branches.len == 0) return; // `case_without_branches` already reported
 
     var pats: Patterns = .{ .string_bytes = bir.string_bytes };
@@ -433,7 +433,7 @@ fn one(
     for (branches, 0..) |b, i| {
         // The PATTERN, not the branch: a redundant branch is a statement
         // about what it matches, so the caret belongs under the pattern.
-        const pattern: Bir.Inst.Index = @enumFromInt(bir.instData(b).lhs);
+        const pattern: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(b).lhs));
         const p = an.simplify(pattern, 0) catch |err| switch (err) {
             // The `case` is abandoned WHOLE at any of these three sites, and
             // the reason decides what is said. An undecided `case` is
@@ -545,7 +545,7 @@ pub const Analysis = struct {
     }
 
     fn node(an: *Analysis, n: Node) Error!PatIndex {
-        const i: PatIndex = @enumFromInt(an.pats.nodes.len);
+        const i: PatIndex = @fromBackingInt(@intCast(an.pats.nodes.len));
         try an.pats.nodes.append(an.arena, n);
         return i;
     }
@@ -659,7 +659,7 @@ pub const Analysis = struct {
             // A record pattern binds names and cannot fail: a record has
             // exactly one shape (language.md §3).
             .pat_wild, .pat_var, .pat_record => return an.anything(),
-            .pat_as => return an.simplify(@enumFromInt(data.lhs), depth + 1),
+            .pat_as => return an.simplify(@fromBackingInt(@intCast(data.lhs)), depth + 1),
             // `alt` is an ABSOLUTE index into `pats.alts`, so the unit's sole
             // alternative is `alts_start` and not `0` — which they are equal
             // to only when the unit union happens to be the first one interned.
@@ -683,8 +683,8 @@ pub const Analysis = struct {
             },
             .pat_list => return an.simplifyList(inst, depth),
             .pat_ctor => {
-                const found = try an.ctorUnion(@enumFromInt(data.lhs));
-                const arg_insts = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+                const found = try an.ctorUnion(@fromBackingInt(@intCast(data.lhs)));
+                const arg_insts = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
                 const declared = an.pats.alt(found.alt).arity;
                 // A constructor written with the wrong number of arguments
                 // is a type error, so this declaration would have been
@@ -744,7 +744,7 @@ pub const Analysis = struct {
                 const alts = try an.arena.alloc(Alt, d.ctors_end - d.ctors_start);
                 for (bir.ctors[d.ctors_start..d.ctors_end], alts) |sibling, *a| a.* = .{
                     .name = bir.symbol(sibling.name).toOptional(),
-                    .arity = @intFromEnum(sibling.args_end) - @intFromEnum(sibling.args_start),
+                    .arity = @backingInt(sibling.args_end) - @backingInt(sibling.args_start),
                 };
                 const un = try an.internUnion(.adt, id, alts);
                 return .{ .un = un, .alt = an.pats.unionAt(un).alts_start + (data.lhs - d.ctors_start) };
@@ -754,7 +754,7 @@ pub const Analysis = struct {
             // in declaration order for this (see `Interface.findCtor`).
             .ext_ctor => {
                 if (data.lhs >= an.cx.interfaces.len) return error.Malformed;
-                const module: Graph.Index = @enumFromInt(data.lhs);
+                const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
                 // §3.2 row 17: the sibling constructor set, which is `R` —
                 // the importer's exhaustiveness is a function of the
                 // declaring module's published `types`/`ctors` tables.
@@ -762,8 +762,8 @@ pub const Analysis = struct {
                 const iface = &an.cx.interfaces[data.lhs];
                 if (data.rhs >= iface.ctors.len) return error.Malformed;
                 const type_index = iface.ctors[data.rhs].type;
-                if (@intFromEnum(type_index) >= iface.types.len) return error.Malformed;
-                const t = iface.types[@intFromEnum(type_index)];
+                if (@backingInt(type_index) >= iface.types.len) return error.Malformed;
+                const t = iface.types[@backingInt(type_index)];
                 if (t.ctors_end <= t.ctors_start or data.rhs < t.ctors_start or data.rhs >= t.ctors_end) return error.Malformed;
                 const id = an.cx.types.ofInterface(module, type_index);
                 if (id == .none) return error.Malformed;
@@ -776,25 +776,25 @@ pub const Analysis = struct {
                 return .{ .un = un, .alt = an.pats.unionAt(un).alts_start + (data.rhs - t.ctors_start) };
             },
             .schema_ctor_top => {
-                const decl: Bir.DeclIndex = @enumFromInt(data.lhs);
+                const decl: Bir.DeclIndex = @fromBackingInt(@intCast(data.lhs));
                 if (decl.int() >= bir.decls.len) return error.Malformed;
                 const d = bir.decl(decl);
                 const root = d.schema_body.unwrap() orelse return error.Malformed;
                 var at = root;
                 var budget = bir.insts.len + 1;
                 while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) switch (bir.instTag(at)) {
-                    .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+                    .schema_value, .schema_paren => at = @fromBackingInt(@intCast(bir.instData(at).lhs)),
                     else => break,
                 };
                 if (bir.instTag(at) != .schema_tagged) return error.Malformed;
-                const variants = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(at).rhs)), Bir.Inst.Index);
+                const variants = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(at).rhs))), Bir.Inst.Index);
                 const ref = Bir.SchemaCtorRef.unpack(data.rhs);
                 if (ref.variant >= variants.len) return error.Malformed;
                 const alts = try an.arena.alloc(Alt, variants.len);
                 for (variants, alts) |vi, *a| {
                     const vd = bir.instData(vi);
-                    const v = bir.extraData(@enumFromInt(vd.rhs), Bir.SchemaVariant);
-                    const variant_name = bir.symbol(@enumFromInt(vd.lhs));
+                    const v = bir.extraData(@fromBackingInt(@intCast(vd.rhs)), Bir.SchemaVariant);
+                    const variant_name = bir.symbol(@fromBackingInt(@intCast(vd.lhs)));
                     a.* = .{ .name = an.schemaCtorDisplay(bir.symbol(d.name), ref.encoded, variant_name).toOptional(), .arity = if (v.payload == .none) 0 else 1 };
                 }
                 const endpoint: Interface.SchemaCtor.Endpoint = if (ref.encoded) .encoded else .type;
@@ -804,11 +804,11 @@ pub const Analysis = struct {
             },
             .ext_schema_ctor => {
                 if (data.lhs >= an.cx.interfaces.len) return error.Malformed;
-                const module: Graph.Index = @enumFromInt(data.lhs);
+                const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
                 const iface = &an.cx.interfaces[data.lhs];
                 if (data.rhs >= iface.schema_ctors.len) return error.Malformed;
                 const ctor = iface.schema_ctors[data.rhs];
-                const si = @intFromEnum(ctor.schema);
+                const si = @backingInt(ctor.schema);
                 if (si >= iface.schemas.len) return error.Malformed;
                 const schema = iface.schemas[si];
                 const from = if (ctor.endpoint == .type) schema.program_ctors_start else schema.encoded_ctors_start;

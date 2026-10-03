@@ -589,7 +589,7 @@ pub fn lessThan(_: void, a: Diagnostic, b: Diagnostic) bool {
         .gt => return false,
         .eq => {},
     }
-    return @intFromEnum(a.code) < @intFromEnum(b.code);
+    return @backingInt(a.code) < @backingInt(b.code);
 }
 
 /// Sort into emission order. Stable, so equal keys keep production order.
@@ -602,15 +602,15 @@ pub fn sort(diagnostics: []Diagnostic) void {
 /// meaningful only for the build the key names — and a value the enum does
 /// not define must be a miss rather than an `@enumFromInt` past the end.
 pub fn codeFromInt(raw: u16) ?Code {
-    const fields = @typeInfo(Code).@"enum".fields;
+    const fields = @typeInfo(Code).@"enum".field_names;
     if (raw >= fields.len) return null;
-    return @enumFromInt(raw);
+    return @fromBackingInt(@intCast(raw));
 }
 
 pub fn severityFromInt(raw: u8) ?Severity {
-    const fields = @typeInfo(Severity).@"enum".fields;
+    const fields = @typeInfo(Severity).@"enum".field_names;
     if (raw >= fields.len) return null;
-    return @enumFromInt(raw);
+    return @fromBackingInt(@intCast(raw));
 }
 
 /// 1-based line and column of `offset` in `source` (frontend.md §3.1). A
@@ -697,8 +697,8 @@ test "codePoints: a sequence counts one, a stray byte one of its own" {
 }
 
 test "every code has a non-empty title" {
-    inline for (@typeInfo(Code).@"enum".fields) |field| {
-        const code: Code = @enumFromInt(field.value);
+    inline for (@typeInfo(Code).@"enum".field_values) |field_value| {
+        const code: Code = @fromBackingInt(@intCast(field_value));
         try std.testing.expect(title(code).len > 0);
     }
 }

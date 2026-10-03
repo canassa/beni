@@ -196,7 +196,7 @@ pub fn applyRemap(a: *Artifacts, index: SourceStore.Index, remap: []const Intern
     const tags = list.items(.tag);
     const payloads = list.items(.payload);
     for (tags, payloads) |tag, *payload| {
-        if (tag.isInterned()) payload.* = @intFromEnum(remap[payload.*]);
+        if (tag.isInterned()) payload.* = @backingInt(remap[payload.*]);
     }
     a.files.items(.bir)[index.int()].applyRemap(remap);
 }
@@ -212,7 +212,7 @@ test "resize, set, applyRemap, and the old entry is freed" {
     var a: Artifacts = .{};
     defer a.deinit(gpa);
     try a.resize(gpa, 2);
-    try testing.expectEqual(@as(usize, 0), a.tokens(@enumFromInt(1)).len);
+    try testing.expectEqual(@as(usize, 0), a.tokens(@fromBackingInt(@intCast(1))).len);
 
     var list: Token.TokenList = .empty;
     try list.append(gpa, .{ .tag = .lower_ident, .start = 0, .line = 0, .payload = 1 });
@@ -220,21 +220,21 @@ test "resize, set, applyRemap, and the old entry is freed" {
     try list.append(gpa, .{ .tag = .eof, .start = 4, .line = 0, .payload = 0 });
     const cs = try gpa.dupe(Token.Comment, &.{.{ .kind = .plain, .start = 5, .before_token = 2 }});
     var lowered: Bir = .empty;
-    lowered.symbols = try gpa.dupe(InternPool.Symbol, &.{ @enumFromInt(1), @enumFromInt(0) });
-    a.set(gpa, @enumFromInt(1), .{ .tokens = list, .comments = cs, .lex_diagnostics = &.{}, .ast = .empty, .bir = lowered, .formatted = null, .worker = 3 });
-    try testing.expectEqual(@as(u32, 3), a.worker(@enumFromInt(1)));
-    try testing.expectEqual(@as(usize, 1), a.comments(@enumFromInt(1)).len);
+    lowered.symbols = try gpa.dupe(InternPool.Symbol, &.{ @fromBackingInt(@intCast(1)), @fromBackingInt(@intCast(0)) });
+    a.set(gpa, @fromBackingInt(@intCast(1)), .{ .tokens = list, .comments = cs, .lex_diagnostics = &.{}, .ast = .empty, .bir = lowered, .formatted = null, .worker = 3 });
+    try testing.expectEqual(@as(u32, 3), a.worker(@fromBackingInt(@intCast(1))));
+    try testing.expectEqual(@as(usize, 1), a.comments(@fromBackingInt(@intCast(1))).len);
 
     // Only interned tags are remapped; the tuple index keeps its value.
-    a.applyRemap(@enumFromInt(1), &.{ @enumFromInt(10), @enumFromInt(11) });
-    try testing.expectEqualSlices(u32, &.{ 11, 1, 0 }, a.tokens(@enumFromInt(1)).items(.payload));
-    try testing.expectEqualSlices(InternPool.Symbol, &.{ @enumFromInt(11), @enumFromInt(10) }, a.bir(@enumFromInt(1)).symbols);
+    a.applyRemap(@fromBackingInt(@intCast(1)), &.{ @fromBackingInt(@intCast(10)), @fromBackingInt(@intCast(11)) });
+    try testing.expectEqualSlices(u32, &.{ 11, 1, 0 }, a.tokens(@fromBackingInt(@intCast(1))).items(.payload));
+    try testing.expectEqualSlices(InternPool.Symbol, &.{ @fromBackingInt(@intCast(11)), @fromBackingInt(@intCast(10)) }, a.bir(@fromBackingInt(@intCast(1))).symbols);
 
     // Setting again frees the previous columns (the testing allocator
     // would report a leak otherwise), and resize frees everything.
     var again: Token.TokenList = .empty;
     try again.append(gpa, .{ .tag = .eof, .start = 0, .line = 0, .payload = 0 });
-    a.set(gpa, @enumFromInt(1), .{ .tokens = again, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .formatted = null, .worker = 0 });
+    a.set(gpa, @fromBackingInt(@intCast(1)), .{ .tokens = again, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .formatted = null, .worker = 0 });
     try a.resize(gpa, 1);
     try testing.expectEqual(@as(usize, 1), a.files.len);
 }

@@ -215,7 +215,7 @@ test "a backticked span is one unit, spaces and all" {
 }
 
 test "an indented block and a list keep their shape however wide" {
-    const wide = "    " ++ "x" ** 100;
+    const wide = "    " ++ @as([100]u8, @splat('x'));
     const input = "Write:\n\n" ++ wide ++ "\n\n- a bullet that is very long indeed and runs past the eightieth column by a mile\n";
     try expectReflow(input, input);
 }
@@ -225,7 +225,7 @@ test "columns are code points: § and — are one each" {
     try testing.expectEqual(@as(usize, 1), countColumns("—"));
     try testing.expectEqual(@as(usize, 3), countColumns("a—b"));
     // 80 columns of prose with three `§` in it is 83 bytes and must not move.
-    const line = "§§§" ++ "a" ** 77;
+    const line = "§§§" ++ @as([77]u8, @splat('a'));
     try testing.expectEqual(@as(usize, 80), countColumns(line));
     try expectReflow(line, line);
 }

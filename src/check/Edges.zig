@@ -209,7 +209,7 @@ fn walkDecl(
             try out.append(scratch, .{ .top = payload.lhs });
         } else if (tag == .ext_value) {
             try out.append(scratch, .{ .ext = .{
-                .module = @enumFromInt(payload.lhs),
+                .module = @fromBackingInt(@intCast(payload.lhs)),
                 .value = payload.rhs,
             } });
         } else continue;
@@ -348,7 +348,7 @@ pub fn termsEdges(
             .top => |use| try out.append(scratch, .{ .top = use.decl.int() }),
             .ext => |e| try out.append(scratch, .{ .ext = .{
                 .module = e.module,
-                .value = @intFromEnum(e.value),
+                .value = @backingInt(e.value),
             } }),
             .derived => |use| {
                 try out.append(scratch, .{ .derived = use.index });
@@ -437,16 +437,16 @@ test "one declaration, three legs, in table order" {
     // one argument hanging off the first callee.
     const terms = [_]Dispatch.Term{
         .{ .derived = .{ .index = 0, .args = .{ .start = 0, .len = 1 } } },
-        .{ .ext = .{ .module = @enumFromInt(5), .value = @enumFromInt(6) } },
+        .{ .ext = .{ .module = @fromBackingInt(@intCast(5)), .value = @fromBackingInt(@intCast(6)) } },
         .{ .primitive = .string_compare },
-        .{ .top = .{ .decl = @enumFromInt(0) } },
+        .{ .top = .{ .decl = @fromBackingInt(@intCast(0)) } },
     };
-    const args = [_]Dispatch.TermIndex{ @enumFromInt(1), @enumFromInt(2), @enumFromInt(3) };
+    const args = [_]Dispatch.TermIndex{ @fromBackingInt(@intCast(1)), @fromBackingInt(@intCast(2)), @fromBackingInt(@intCast(3)) };
     const sites = [_]Dispatch.Site{
-        .{ .inst = @enumFromInt(1), .callee = @enumFromInt(0) },
-        .{ .inst = @enumFromInt(2), .evidence = .{ .start = 1, .len = 1 } },
+        .{ .inst = @fromBackingInt(@intCast(1)), .callee = @fromBackingInt(@intCast(0)) },
+        .{ .inst = @fromBackingInt(@intCast(2)), .evidence = .{ .start = 1, .len = 1 } },
         // Declaration 1's site: past `inst_end`, so `sitesIn` must stop.
-        .{ .inst = @enumFromInt(3), .evidence = .{ .start = 2, .len = 1 } },
+        .{ .inst = @fromBackingInt(@intCast(3)), .evidence = .{ .start = 2, .len = 1 } },
     };
     var dispatch: Dispatch = .empty;
     dispatch.terms = &terms;
@@ -482,7 +482,7 @@ test "one declaration, three legs, in table order" {
 fn blankDecl(inst_start: u32, inst_end: u32, refs_start: u32, refs_end: u32) Bir.Decl {
     return .{
         .kind = .value,
-        .name = @enumFromInt(0),
+        .name = @fromBackingInt(@intCast(0)),
         .name_token = 0,
         .is_pub = false,
         .is_opaque = false,
@@ -490,17 +490,17 @@ fn blankDecl(inst_start: u32, inst_end: u32, refs_start: u32, refs_end: u32) Bir
         .doc_start = 0,
         .doc_end = 0,
         .params = 0,
-        .params_start = @enumFromInt(0),
-        .params_end = @enumFromInt(0),
+        .params_start = @fromBackingInt(@intCast(0)),
+        .params_end = @fromBackingInt(@intCast(0)),
         .type_params_start = 0,
         .type_params_end = 0,
         .annotation = .none,
-        .where_start = @enumFromInt(0),
-        .where_end = @enumFromInt(0),
-        .body = @enumFromInt(inst_start),
+        .where_start = @fromBackingInt(@intCast(0)),
+        .where_end = @fromBackingInt(@intCast(0)),
+        .body = @fromBackingInt(@intCast(inst_start)),
         .schema_body = .none,
-        .inst_start = @enumFromInt(inst_start),
-        .inst_end = @enumFromInt(inst_end),
+        .inst_start = @fromBackingInt(@intCast(inst_start)),
+        .inst_end = @fromBackingInt(@intCast(inst_end)),
         .ctors_start = 0,
         .ctors_end = 0,
         .locals_start = 0,
@@ -518,14 +518,14 @@ test "an argument that points back at its owner is not followed" {
     const terms = [_]Dispatch.Term{
         .{ .derived = .{ .index = 0, .args = .{ .start = 0, .len = 1 } } },
     };
-    const args = [_]Dispatch.TermIndex{@enumFromInt(0)};
+    const args = [_]Dispatch.TermIndex{@fromBackingInt(@intCast(0))};
     var dispatch: Dispatch = .empty;
     dispatch.terms = &terms;
     dispatch.args = &args;
 
     var out: std.ArrayList(Edge) = .empty;
     defer out.deinit(gpa);
-    try termEdges(&out, gpa, &dispatch, @enumFromInt(0));
+    try termEdges(&out, gpa, &dispatch, @fromBackingInt(@intCast(0)));
     try testing.expectEqual(@as(usize, 1), out.items.len);
 }
 
@@ -540,16 +540,16 @@ test "a term shared by two owners is walked once" {
     const terms = [_]Dispatch.Term{
         .{ .derived = .{ .index = 0, .args = .{ .start = 0, .len = 2 } } },
         .{ .derived = .{ .index = 1 } },
-        .{ .ext = .{ .module = @enumFromInt(2), .value = @enumFromInt(3), .args = .{ .start = 2, .len = 1 } } },
+        .{ .ext = .{ .module = @fromBackingInt(@intCast(2)), .value = @fromBackingInt(@intCast(3)), .args = .{ .start = 2, .len = 1 } } },
     };
-    const args = [_]Dispatch.TermIndex{ @enumFromInt(1), @enumFromInt(2), @enumFromInt(1) };
+    const args = [_]Dispatch.TermIndex{ @fromBackingInt(@intCast(1)), @fromBackingInt(@intCast(2)), @fromBackingInt(@intCast(1)) };
     var dispatch: Dispatch = .empty;
     dispatch.terms = &terms;
     dispatch.args = &args;
 
     var out: std.ArrayList(Edge) = .empty;
     defer out.deinit(gpa);
-    try termEdges(&out, gpa, &dispatch, @enumFromInt(0));
+    try termEdges(&out, gpa, &dispatch, @fromBackingInt(@intCast(0)));
     try testing.expectEqual(@as(usize, 3), out.items.len);
     try testing.expectEqual(@as(u32, 0), out.items[0].derived);
     try testing.expectEqual(@as(u32, 1), out.items[1].derived);

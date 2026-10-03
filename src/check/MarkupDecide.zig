@@ -93,12 +93,12 @@ fn renderable(s: *Solve, id: Id, row: Row, default: bool) Error!void {
     switch (st.resolvedContent(part)) {
         .err, .alias => {},
         .flex => |flags| if (flags.kind == .number) {
-            if (default) try record(s, row, @intFromEnum(Hole.text_number)) else try Decide.reopen(s, id);
+            if (default) try record(s, row, @backingInt(Hole.text_number)) else try Decide.reopen(s, id);
         } else if (default) {
             if (!failedAt(s, row.region)) try MarkupTexts.childUnknown(s.report, row.region);
         } else try Decide.reopen(s, id),
         .rigid => |flags| if (flags.kind == .number) {
-            try record(s, row, @intFromEnum(Hole.text_number));
+            try record(s, row, @backingInt(Hole.text_number));
         } else try MarkupTexts.childNotRenderable(s.report, row.region, part),
         .structure => {
             const a = appOf(s, part) orelse return MarkupTexts.childNotRenderable(s.report, row.region, part);
@@ -113,12 +113,12 @@ fn renderable(s: *Solve, id: Id, row: Row, default: bool) Error!void {
                     .text_bool
                 else
                     null;
-                if (kind) |k| return record(s, row, @intFromEnum(k));
+                if (kind) |k| return record(s, row, @backingInt(k));
                 return MarkupTexts.childNotRenderable(s.report, row.region, part);
             }
             if (isMarkupType(s, a)) {
                 _ = try s.unify(m, Walk.positions(st, part)[0], row.region, .{ .tag = .markup_child });
-                return record(s, row, @intFromEnum(Hole.html));
+                return record(s, row, @backingInt(Hole.html));
             }
             const wrapper: ?Hole = if (a.type == wk.maybe and a.args.len == 1)
                 .maybe_html
@@ -138,15 +138,15 @@ fn renderable(s: *Solve, id: Id, row: Row, default: bool) Error!void {
                 } else return MarkupTexts.childNotRenderable(s.report, row.region, part),
             }
             _ = try s.unify(try html(s, m), inner, row.region, .{ .tag = .markup_child });
-            try record(s, row, @intFromEnum(w));
+            try record(s, row, @backingInt(w));
         },
     }
 }
 
 /// The name symbol of the item record a handler or list row is about.
 fn itemName(s: *Solve, row: Row) u32 {
-    const it = s.cx.bir.extraData(@enumFromInt(row.index & ~Obligations.markup_flag), Bir.MarkupItem);
-    return @intFromEnum(s.cx.bir.symbol(it.name));
+    const it = s.cx.bir.extraData(@fromBackingInt(@intCast(row.index & ~Obligations.markup_flag)), Bir.MarkupItem);
+    return @backingInt(s.cx.bir.symbol(it.name));
 }
 
 /// §25.4's `handler(h, p, m)`: a function is the payload form, `p -> m`;
@@ -162,20 +162,20 @@ fn handler(s: *Solve, id: Id, row: Row, default: bool) Error!void {
         .err, .alias => {},
         .flex => if (default) {
             _ = try s.unify(m, h, row.region, category);
-            try record(s, row, @intFromEnum(Form.message));
+            try record(s, row, @backingInt(Form.message));
         } else try Decide.reopen(s, id),
         .structure => |flat| if (flat == .func) {
             const params = try s.store().addVars(&.{payload});
             const wanted = try s.fresh(.{ .structure = .{ .func = .{ .params = params, .result = m } } });
             _ = try s.unify(wanted, h, row.region, category);
-            try record(s, row, @intFromEnum(Form.payload));
+            try record(s, row, @backingInt(Form.payload));
         } else {
             _ = try s.unify(m, h, row.region, category);
-            try record(s, row, @intFromEnum(Form.message));
+            try record(s, row, @backingInt(Form.message));
         },
         .rigid => {
             _ = try s.unify(m, h, row.region, category);
-            try record(s, row, @intFromEnum(Form.message));
+            try record(s, row, @backingInt(Form.message));
         },
     }
 }
@@ -196,14 +196,14 @@ fn attrForm(s: *Solve, id: Id, row: Row, default: bool) Error!void {
     };
     if (!is_list) {
         _ = try s.unify(try s.fresh(.{ .structure = .{ .app = .{ .type = wk.string, .args = .empty } } }), v, row.region, category);
-        return record(s, row, @intFromEnum(Class.string));
+        return record(s, row, @backingInt(Class.string));
     }
     const name = try s.fresh(.{ .structure = .{ .app = .{ .type = wk.string, .args = .empty } } });
     const second = try s.fresh(.{ .structure = .{ .app = .{ .type = if (styles) wk.string else wk.bool, .args = .empty } } });
     const pair = try s.fresh(.{ .structure = .{ .tuple = try st.addVars(&.{ name, second }) } });
     const list = try s.fresh(.{ .structure = .{ .app = .{ .type = wk.list, .args = try st.addVars(&.{pair}) } } });
     _ = try s.unify(list, v, row.region, category);
-    try record(s, row, @intFromEnum(if (styles) Class.style_list else Class.class_list));
+    try record(s, row, @backingInt(if (styles) Class.style_list else Class.class_list));
 }
 
 /// §25.4's `row(f, a, m)`: a function of one parameter is `a -> H m`; of
@@ -270,7 +270,7 @@ fn item(s: *Solve, id: Id, row: Row, default: bool) Error!void {
     const yes = primitiveEq(s, a) orelse if (default) false else return Decide.reopen(s, id);
     try record(s, row, @intFromBool(yes));
     if (yes or row.index & Obligations.markup_flag == 0 or !s.informational) return;
-    const form = s.cx.bir.extraData(@enumFromInt(row.index & ~Obligations.markup_flag), Bir.MarkupForm);
+    const form = s.cx.bir.extraData(@fromBackingInt(@intCast(row.index & ~Obligations.markup_flag)), Bir.MarkupForm);
     try MarkupTexts.unkeyedFor(s.report, row.region, form.token, a, keyField(s, a));
 }
 
@@ -308,6 +308,6 @@ pub fn fault(s: *Solve, region: Bir.Inst.Index, f: Tree.MarkupFault) Error!void 
         .raw_attribute => if (s.informational) try MarkupTexts.rawAttribute(s.report, region, f.token, f.name),
         .event_escape => try MarkupTexts.eventEscape(s.report, region, f.token, f.name, try vocab.eventsLike(s.cx.scratch, s.cx.interner.slice(f.name), f.tag)),
         .srcdoc_escape => try MarkupTexts.srcdocEscape(s.report, region, f.token, f.name),
-        .quoted_value, .bare_value => try MarkupTexts.valueForm(s.report, region, f.token, f.name, f.kind == .quoted_value, @enumFromInt(f.type)),
+        .quoted_value, .bare_value => try MarkupTexts.valueForm(s.report, region, f.token, f.name, f.kind == .quoted_value, @fromBackingInt(@intCast(f.type))),
     }
 }

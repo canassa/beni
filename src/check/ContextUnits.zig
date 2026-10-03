@@ -246,7 +246,7 @@ pub fn viaEdges(c: *Contexts, from: u32, decl: u32) Error!bool {
     for (c.extra_adj[from].items) |to| c.edge_seen[to] = has;
     var roots: std.ArrayList(Var) = .empty;
     defer roots.deinit(scratch);
-    const program = cx.types.ofSchemaDecl(cx.module, @enumFromInt(decl), .type);
+    const program = cx.types.ofSchemaDecl(cx.module, @fromBackingInt(@intCast(decl)), .type);
     if (program != .none and cx.types.entry(program).kind == .adt) {
         try cx.schemas.payloads(decl, .type, &roots, scratch);
     } else {
@@ -297,7 +297,7 @@ pub fn mentions(c: *Contexts, d: Bir.Decl, edges: *std.ArrayList(u32), from: u32
             const target = bir.decls[ref.a];
             switch (target.kind) {
                 .schema => {
-                    const program = types.ofSchemaDecl(c.cx.module, @enumFromInt(ref.a), .type);
+                    const program = types.ofSchemaDecl(c.cx.module, @fromBackingInt(@intCast(ref.a)), .type);
                     if (program == .none or types.entry(program).kind != .adt) {
                         // A record schema's `via` targets are this type's
                         // mentions (`complete`) — not an encoded endpoint's,
@@ -308,7 +308,7 @@ pub fn mentions(c: *Contexts, d: Bir.Decl, edges: *std.ArrayList(u32), from: u32
                         try pending.append(scratch, target);
                         continue;
                     }
-                    for ([_]Types.TypeId{ program, types.ofSchemaDecl(c.cx.module, @enumFromInt(ref.a), .encoded) }) |endpoint| {
+                    for ([_]Types.TypeId{ program, types.ofSchemaDecl(c.cx.module, @fromBackingInt(@intCast(ref.a)), .encoded) }) |endpoint| {
                         const to = c.local(endpoint) orelse continue;
                         if (named[to] == from) continue;
                         named[to] = from;
@@ -316,7 +316,7 @@ pub fn mentions(c: *Contexts, d: Bir.Decl, edges: *std.ArrayList(u32), from: u32
                     }
                 },
                 .type => {
-                    const to = c.local(c.cx.types.ofDecl(c.cx.module, @enumFromInt(ref.a))) orelse continue;
+                    const to = c.local(c.cx.types.ofDecl(c.cx.module, @fromBackingInt(@intCast(ref.a)))) orelse continue;
                     if (named[to] == from) continue;
                     named[to] = from;
                     try edges.append(scratch, to);

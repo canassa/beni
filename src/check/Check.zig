@@ -64,8 +64,8 @@ pub const Counters = struct {
     /// were the whole project's.
     pub fn add(a: Counters, b: Counters) Counters {
         var out: Counters = .{};
-        inline for (@typeInfo(Counters).@"struct".fields) |f| {
-            @field(out, f.name) = @field(a, f.name) + @field(b, f.name);
+        inline for (@typeInfo(Counters).@"struct".field_names) |field_name| {
+            @field(out, field_name) = @field(a, field_name) + @field(b, field_name);
         }
         return out;
     }

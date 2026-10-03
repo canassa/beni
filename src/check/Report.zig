@@ -143,7 +143,7 @@ pub fn emit(r: *Report, item: Item) Error!void {
 /// Record `item`'s region when it is an error about this module.
 fn noteError(r: *Report, item: Item) Error!void {
     if (item.module != r.module or item.severity != .@"error") return;
-    _ = try r.error_regions.insert(r.gpa, @intFromEnum(item.region));
+    _ = try r.error_regions.insert(r.gpa, @backingInt(item.region));
 }
 
 /// The list half of `emit`, for the one caller that has no `Report` yet — P0's
@@ -435,5 +435,5 @@ pub fn constrainedConstant(r: *Report, region: Bir.Inst.Index, token: u32, decl:
 /// Whether this module's list already holds an error at `region`, so one
 /// use is not refused twice for one receiver (`Instances.noMethodsAs`).
 pub fn hasErrorAt(r: *const Report, region: Bir.Inst.Index) bool {
-    return r.error_regions.contains(@intFromEnum(region));
+    return r.error_regions.contains(@backingInt(region));
 }

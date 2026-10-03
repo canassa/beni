@@ -54,7 +54,7 @@ pub const Id = enum(u32) {
     _,
 
     pub fn int(id: Id) u32 {
-        return @intFromEnum(id);
+        return @backingInt(id);
     }
 };
 
@@ -94,7 +94,7 @@ pub const Kind = enum(u8) {
     /// boundary, taken with `try`'s defaults (§8.1 step 3), because some of
     /// those decisions unify.
     pub fn isMarkup(k: Kind) bool {
-        return @intFromEnum(k) >= @intFromEnum(Kind.renderable);
+        return @backingInt(k) >= @backingInt(Kind.renderable);
     }
 };
 
@@ -243,7 +243,7 @@ pub fn create(o: *Obligations, gpa: Allocator, kind: Kind, region: Bir.Inst.Inde
     std.debug.assert(vars.len >= 1 and vars.len <= width);
     var slots: [width]Var = .{ vars[0], vars[0], vars[0] };
     for (vars, 0..) |v, i| slots[i] = v;
-    const id: Id = @enumFromInt(o.rows.items.len);
+    const id: Id = @fromBackingInt(@intCast(o.rows.items.len));
     try o.rows.append(gpa, .{
         .kind = kind,
         .state = .open,
@@ -270,7 +270,7 @@ pub fn repoint(o: *Obligations, start: u32, from: u32, to: u32) void {
 /// while they are walked adds nothing to the walk and takes nothing from it.
 pub fn members(o: *const Obligations, set: Set) Members {
     if (set == .none) return .{ .links = &o.links, .at = 0, .end = 0 };
-    const r = o.sets.items[@intFromEnum(set)].all;
+    const r = o.sets.items[@backingInt(set)].all;
     return .{ .links = &o.links, .at = r.start, .end = r.start + r.len };
 }
 
@@ -295,7 +295,7 @@ pub const Members = struct {
 /// `links`: valid until the next attach or merge.
 pub fn owned(o: *const Obligations, set: Set) []const Id {
     if (set == .none) return &.{};
-    const r = o.sets.items[@intFromEnum(set)].owned;
+    const r = o.sets.items[@backingInt(set)].owned;
     return o.links.items[r.start..][0..r.len];
 }
 
@@ -312,11 +312,11 @@ pub fn openEquatable(o: *const Obligations, set: Set) ?Id {
 /// owns the row); a new set when `set` is `.none`.
 pub fn with(o: *Obligations, gpa: Allocator, set: Set, id: Id, owner: bool) Error!Set {
     const at: Set = if (set != .none) set else blk: {
-        const fresh: Set = @enumFromInt(o.sets.items.len);
+        const fresh: Set = @fromBackingInt(@intCast(o.sets.items.len));
         try o.sets.append(gpa, .{});
         break :blk fresh;
     };
-    const d = &o.sets.items[@intFromEnum(at)];
+    const d = &o.sets.items[@backingInt(at)];
     try o.push(gpa, &d.all, id);
     if (owner) try o.push(gpa, &d.owned, id);
     return at;
@@ -348,8 +348,8 @@ fn push(o: *Obligations, gpa: Allocator, run: *Run, id: Id) Error!void {
 pub fn merged(o: *Obligations, gpa: Allocator, a: Set, b: Set) Error!Set {
     if (b == .none or a == b) return a;
     if (a == .none) return b;
-    const da = &o.sets.items[@intFromEnum(a)];
-    const db = &o.sets.items[@intFromEnum(b)];
+    const da = &o.sets.items[@backingInt(a)];
+    const db = &o.sets.items[@backingInt(b)];
     const big, const small, const kept = if (da.all.len >= db.all.len) .{ da, db, a } else .{ db, da, b };
     // By position, not by slice: `push` can move `links`.
     for (small.all.start..small.all.start + small.all.len) |i| {
@@ -405,12 +405,12 @@ const testing = std.testing;
 test "a merge moves the smaller set's open rows into the larger, in place" {
     var o: Obligations = .{ .current_queue = 0 };
     defer o.deinit(testing.allocator);
-    const x: Var = @enumFromInt(1);
-    const y: Var = @enumFromInt(2);
-    const r: Var = @enumFromInt(3);
-    const a = try o.create(testing.allocator, .tuple_index, @enumFromInt(0), &.{ x, r }, 0, null);
-    const b = try o.create(testing.allocator, .interpolatable, @enumFromInt(0), &.{y}, 0, null);
-    const c = try o.create(testing.allocator, .interpolatable, @enumFromInt(0), &.{y}, 0, null);
+    const x: Var = @fromBackingInt(@intCast(1));
+    const y: Var = @fromBackingInt(@intCast(2));
+    const r: Var = @fromBackingInt(@intCast(3));
+    const a = try o.create(testing.allocator, .tuple_index, @fromBackingInt(@intCast(0)), &.{ x, r }, 0, null);
+    const b = try o.create(testing.allocator, .interpolatable, @fromBackingInt(@intCast(0)), &.{y}, 0, null);
+    const c = try o.create(testing.allocator, .interpolatable, @fromBackingInt(@intCast(0)), &.{y}, 0, null);
     const sa = try o.with(testing.allocator, .none, a, true);
     var sb = try o.with(testing.allocator, .none, b, true);
     sb = try o.with(testing.allocator, sb, c, true);

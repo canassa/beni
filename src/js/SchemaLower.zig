@@ -60,13 +60,13 @@ pub fn memberUse(l: *const Lowerer, inst: Bir.Inst.Index) ?MemberUse {
     switch (l.bir.instTag(inst)) {
         .schema_member_top => return .{ .ref = .{ .module = l.in.module, .decl = d.lhs }, .kind = std.enums.fromInt(Interface.SchemaMember.Kind, d.rhs) orelse return null },
         .ext_schema_member => {
-            const module: Graph.Index = @enumFromInt(d.lhs);
+            const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
             const sg = l.in.schemas orelse return null;
             if (module.int() >= sg.interfaces.len or module.int() >= sg.provenance.len) return null;
             const iface = &sg.interfaces[module.int()];
             if (d.rhs >= iface.schema_members.len) return null;
             const member = iface.schema_members[d.rhs];
-            const decl = sg.provenance[module.int()].schemaDecl(@intFromEnum(member.schema)) orelse return null;
+            const decl = sg.provenance[module.int()].schemaDecl(@backingInt(member.schema)) orelse return null;
             return .{ .ref = .{ .module = module, .decl = decl.int() }, .kind = member.kind };
         },
         else => return null,
@@ -249,7 +249,7 @@ const Gen = struct {
     }
 
     fn letDecl(g: *Gen, out: *Stmts, n: NameIndex) !void {
-        try out.append(g.l.scratch, try g.l.add(.let_decl, g.p, @intFromEnum(n), @intFromEnum(Node.OptionalIndex.none)));
+        try out.append(g.l.scratch, try g.l.add(.let_decl, g.p, @backingInt(n), @backingInt(Node.OptionalIndex.none)));
     }
 
     fn assign(g: *Gen, out: *Stmts, n: NameIndex, value: Node.Index) !void {
@@ -273,23 +273,23 @@ const Gen = struct {
             .else_start = else_range.start,
             .else_end = else_range.end,
         });
-        try out.append(g.l.scratch, try g.l.add(.if_stmt, g.p, cond.int(), @intFromEnum(record)));
+        try out.append(g.l.scratch, try g.l.add(.if_stmt, g.p, cond.int(), @backingInt(record)));
     }
 
     fn whileTrue(g: *Gen, out: *Stmts, body: []const Node.Index) !void {
         const range = try g.l.b.addRange(body);
         const record = try g.l.b.addRecord(range);
-        try out.append(g.l.scratch, try g.l.add(.while_true, g.p, @intFromEnum(NameIndex.none), @intFromEnum(record)));
+        try out.append(g.l.scratch, try g.l.add(.while_true, g.p, @backingInt(NameIndex.none), @backingInt(record)));
     }
 
     fn breakStmt(g: *Gen, out: *Stmts) !void {
-        try out.append(g.l.scratch, try g.l.add(.break_stmt, g.p, @intFromEnum(NameIndex.none), Node.Data.unused));
+        try out.append(g.l.scratch, try g.l.add(.break_stmt, g.p, @backingInt(NameIndex.none), Node.Data.unused));
     }
 
     fn forOf(g: *Gen, out: *Stmts, item: NameIndex, iterable: Node.Index, body: []const Node.Index) !void {
         const range = try g.l.b.addRange(body);
         const record = try g.l.b.addRecord(JsIr.ForOf{ .iterable = iterable, .body_start = range.start, .body_end = range.end });
-        try out.append(g.l.scratch, try g.l.add(.for_of, g.p, @intFromEnum(item), @intFromEnum(record)));
+        try out.append(g.l.scratch, try g.l.add(.for_of, g.p, @backingInt(item), @backingInt(record)));
     }
 
     fn arrow(g: *Gen, params: []const NameIndex, body: []const Node.Index) !Node.Index {
@@ -352,7 +352,7 @@ const Gen = struct {
 
     fn nodeWorkerName(g: *Gen, dir: Dir, n: PNode) !NameIndex {
         var buf: [32]u8 = undefined;
-        const suffix = std.fmt.bufPrint(&buf, "{s}${d}", .{ @tagName(dir), @intFromEnum(n) }) catch unreachable;
+        const suffix = std.fmt.bufPrint(&buf, "{s}${d}", .{ @tagName(dir), @backingInt(n) }) catch unreachable;
         return g.own(try g.l.scratch.dupe(u8, suffix));
     }
 
@@ -422,24 +422,24 @@ const Gen = struct {
                 return g.id(params[i]);
             },
             .reference => {
-                const t = g.sg.target(g.ref.module, @enumFromInt(SchemaGraph.lhs(plan, n))) orelse return g.lit(.undefined_lit);
+                const t = g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return g.lit(.undefined_lit);
                 const words = SchemaGraph.args(plan, n);
                 if (self) |s| if (t.module == g.ref.module and t.decl == g.ref.decl and isIdentity(plan, words, params.len)) return g.id(s);
                 var args: std.ArrayList(Node.Index) = .empty;
-                for (words) |a| try args.append(g.l.scratch, try g.descNode(@enumFromInt(a), params, self));
+                for (words) |a| try args.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, self));
                 if (t.module == g.ref.module and words.len == 0 and g.sg.paramCount(t) == 0) {
                     return g.id(try schemaName(g.l, t, "description"));
                 }
                 if (words.len == 0) try args.append(g.l.scratch, try g.lit(.null_lit));
                 return g.call(try g.id(try schemaName(g.l, t, "schema")), args.items);
             },
-            .list => return g.call(try g.core("list"), &.{try g.descNode(@enumFromInt(SchemaGraph.lhs(plan, n)), params, self)}),
-            .nullable => return g.call(try g.core("nullable"), &.{try g.descNode(@enumFromInt(SchemaGraph.lhs(plan, n)), params, self)}),
+            .list => return g.call(try g.core("list"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
+            .nullable => return g.call(try g.core("nullable"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
             .conversion => {
-                const source = try g.descNode(@enumFromInt(SchemaGraph.lhs(plan, n)), params, self);
+                const source = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self);
                 return g.call(try g.core("converted"), &.{ source, try g.id(try g.viaName(SchemaGraph.rhs(plan, n))) });
             },
-            .check, .annotation => return g.descNode(@enumFromInt(SchemaGraph.lhs(plan, n)), params, self),
+            .check, .annotation => return g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self),
             .record => return g.descRecord(n, params, self),
             .tagged => return g.descTagged(n, params, self),
         }
@@ -502,7 +502,7 @@ const Gen = struct {
     /// `Schema.tagged "key" [ variant …, nullary … ]`.
     fn descTagged(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
         const plan = g.plan;
-        const discriminator = SchemaGraph.literal(plan, @enumFromInt(SchemaGraph.lhs(plan, n)));
+        const discriminator = SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))));
         var variants: std.ArrayList(Node.Index) = .empty;
         const info = g.variantsOf(n);
         for (SchemaGraph.variants(plan, n), 0..) |vi, order| {
@@ -741,10 +741,10 @@ const Gen = struct {
     fn isPassedArgument(g: *Gen, n: PNode) bool {
         const plan = g.plan;
         for (0..plan.nodes.len) |i| {
-            const r: PNode = @enumFromInt(@as(u32, @intCast(i)));
+            const r: PNode = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             if (SchemaGraph.tag(plan, r) != .reference) continue;
             for (SchemaGraph.args(plan, r)) |a| {
-                if (a != @intFromEnum(n)) continue;
+                if (a != @backingInt(n)) continue;
                 return switch (SchemaGraph.tag(plan, n)) {
                     .parameter => false,
                     .reference => SchemaGraph.args(plan, n).len != 0,
@@ -851,7 +851,7 @@ const Fn = struct {
             path[0],
             path[1],
             path[2],
-            try g.num(@intFromEnum(code)),
+            try g.num(@backingInt(code)),
             message,
             input,
             try g.lit(if (written) .true_lit else .false_lit),
@@ -948,10 +948,10 @@ const Fn = struct {
                 return .{ try g.id(w.slots[i]), &.{} };
             },
             .reference => {
-                const t = g.sg.target(g.ref.module, @enumFromInt(SchemaGraph.lhs(plan, n))) orelse return .{ try g.lit(.undefined_lit), &.{} };
+                const t = g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return .{ try g.lit(.undefined_lit), &.{} };
                 const callee = try g.id(try schemaName(g.l, t, @tagName(w.dir)));
                 var args: std.ArrayList(Node.Index) = .empty;
-                for (SchemaGraph.args(plan, n)) |a| try args.append(g.l.scratch, try w.slotFor(@enumFromInt(a)));
+                for (SchemaGraph.args(plan, n)) |a| try args.append(g.l.scratch, try w.slotFor(@fromBackingInt(@intCast(a))));
                 return .{ callee, args.items };
             },
             else => {
@@ -974,7 +974,7 @@ const Fn = struct {
                 return if (i < w.slots.len) g.id(w.slots[i]) else g.lit(.undefined_lit);
             },
             .reference => if (SchemaGraph.args(plan, n).len == 0) {
-                const t = g.sg.target(g.ref.module, @enumFromInt(SchemaGraph.lhs(plan, n))) orelse return g.lit(.undefined_lit);
+                const t = g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return g.lit(.undefined_lit);
                 return g.id(try schemaName(g.l, t, @tagName(w.dir)));
             },
             else => {},
@@ -1005,7 +1005,7 @@ const Fn = struct {
                 var otherwise: Stmts = .empty;
                 const y = try g.fresh("$y");
                 try g.letDecl(&otherwise, y);
-                try w.decodeInto(&otherwise, @enumFromInt(SchemaGraph.lhs(plan, n)), x, offset, at, y);
+                try w.decodeInto(&otherwise, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), x, offset, at, y);
                 const failed = try g.bin(.strict_eq, try g.id(y), try w.failMark());
                 try g.assign(&otherwise, target, try g.l.condOf(failed, try w.failMark(), try g.coreCtor("Schema", "NonNull", &.{try g.id(y)}), g.p));
                 try g.ifElse(out, try g.bin(.strict_eq, try g.id(x), try g.lit(.null_lit)), then.items, otherwise.items);
@@ -1014,7 +1014,7 @@ const Fn = struct {
                 // `NConverted`, decoding: the source, then `forward`.
                 const b = try g.fresh("$b");
                 try g.letDecl(out, b);
-                try w.decodeInto(out, @enumFromInt(SchemaGraph.lhs(plan, n)), x, offset, at, b);
+                try w.decodeInto(out, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), x, offset, at, b);
                 const path = try w.pathArgs(at);
                 const forward = try g.call(try g.core("compiledForward"), &.{
                     try g.id(w.c),
@@ -1027,7 +1027,7 @@ const Fn = struct {
                 const failed = try g.bin(.strict_eq, try g.id(b), try w.failMark());
                 try g.assign(out, target, try g.l.condOf(failed, try w.failMark(), forward, g.p));
             },
-            .check, .annotation => try w.decodeInto(out, @enumFromInt(SchemaGraph.lhs(plan, n)), x, offset, at, target),
+            .check, .annotation => try w.decodeInto(out, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), x, offset, at, target),
             else => {
                 const callee, const extra = try w.calleeOf(n);
                 try w.callInto(out, callee, extra, x, offset, at, target);
@@ -1081,7 +1081,7 @@ const Fn = struct {
     fn takesPath(plan: *const SchemaPlan, n: PNode) bool {
         return switch (SchemaGraph.tag(plan, n)) {
             .primitive => false,
-            .nullable, .check, .annotation => takesPath(plan, @enumFromInt(SchemaGraph.lhs(plan, n))),
+            .nullable, .check, .annotation => takesPath(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))),
             else => true,
         };
     }
@@ -1217,7 +1217,7 @@ const Fn = struct {
         if (test_expr) |t| try g.ifElse(&loop_body, t, report.items, &.{}) else try loop_body.appendSlice(g.l.scratch, report.items);
         var reject: Stmts = .empty;
         if (whole_fails) {
-            const decl = try g.l.add(.let_decl, g.p, @intFromEnum(found), @intFromEnum((try g.lit(.false_lit)).toOptional()));
+            const decl = try g.l.add(.let_decl, g.p, @backingInt(found), @backingInt((try g.lit(.false_lit)).toOptional()));
             try reject.append(g.l.scratch, decl);
         }
         try g.forOf(&reject, key, try g.globalCall("Object", "keys", &.{try g.id(v)}), loop_body.items);
@@ -1241,7 +1241,7 @@ const Fn = struct {
 
     fn decodeList(w: *Fn, out: *Stmts, n: PNode) !void {
         const g = w.g;
-        const child: PNode = @enumFromInt(SchemaGraph.lhs(g.plan, n));
+        const child: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, n)));
         const v = w.ps.v;
         var then: Stmts = .empty;
         try g.ret(&then, try w.failText(w.ownAt(), .wrong_shape, "expected an array", try g.id(v), false));
@@ -1257,7 +1257,7 @@ const Fn = struct {
         const result = try g.fresh("$out");
         if (!adopt) try g.constDecl(out, result, try g.l.arrayNode(&.{}, g.p));
         const i = try g.fresh("$i");
-        try out.append(g.l.scratch, try g.l.add(.let_decl, g.p, @intFromEnum(i), @intFromEnum((try g.num(0)).toOptional())));
+        try out.append(g.l.scratch, try g.l.add(.let_decl, g.p, @backingInt(i), @backingInt((try g.num(0)).toOptional())));
 
         var body: Stmts = .empty;
         var stop: Stmts = .empty;
@@ -1300,7 +1300,7 @@ const Fn = struct {
         const g = w.g;
         const plan = g.plan;
         const v = w.ps.v;
-        const discriminator = SchemaGraph.literal(plan, @enumFromInt(SchemaGraph.lhs(plan, n)));
+        const discriminator = SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))));
         const info = g.variantsOf(n);
         var then: Stmts = .empty;
         try g.ret(&then, try w.failText(w.ownAt(), .wrong_shape, "expected an object", try g.id(v), false));
@@ -1360,18 +1360,18 @@ const Fn = struct {
         // A case's body is a block of its own: two arms may declare one name.
         const block_range = try g.l.b.addRange(body);
         const block_record = try g.l.b.addRecord(block_range);
-        const block = try g.l.add(.block_stmt, g.p, @intFromEnum(NameIndex.none), @intFromEnum(block_record));
+        const block = try g.l.add(.block_stmt, g.p, @backingInt(NameIndex.none), @backingInt(block_record));
         const range = try g.l.b.addRange(&.{block});
         const record = try g.l.b.addRecord(range);
         const t: Node.OptionalIndex = if (test_expr) |e| e.toOptional() else .none;
-        return g.l.add(.switch_case, g.p, @intFromEnum(t), @intFromEnum(record));
+        return g.l.add(.switch_case, g.p, @backingInt(t), @backingInt(record));
     }
 
     fn switchOn(w: *Fn, out: *Stmts, discriminant: Node.Index, cases: []const Node.Index) !void {
         const g = w.g;
         const range = try g.l.b.addRange(cases);
         const record = try g.l.b.addRecord(range);
-        try out.append(g.l.scratch, try g.l.add(.switch_stmt, g.p, discriminant.int(), @intFromEnum(record)));
+        try out.append(g.l.scratch, try g.l.add(.switch_stmt, g.p, discriminant.int(), @backingInt(record)));
     }
 
     // ---- Encoding (`print`) ---------------------------------------------------
@@ -1390,7 +1390,7 @@ const Fn = struct {
                 var otherwise: Stmts = .empty;
                 const a = try g.fresh("$a");
                 try g.constDecl(&otherwise, a, try g.l.member(try g.id(x), try g.l.slotName(0), g.p));
-                try w.encodeInto(&otherwise, @enumFromInt(SchemaGraph.lhs(plan, n)), a, offset, at, target);
+                try w.encodeInto(&otherwise, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), a, offset, at, target);
                 try g.ifElse(out, try g.coreCtorTest("Schema", "Null", try g.id(x)), then.items, otherwise.items);
             },
             .conversion => {
@@ -1414,10 +1414,10 @@ const Fn = struct {
                 const outer = w.c;
                 w.c = below;
                 defer w.c = outer;
-                try w.encodeInto(&otherwise, @enumFromInt(SchemaGraph.lhs(plan, n)), b, offset, at, target);
+                try w.encodeInto(&otherwise, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), b, offset, at, target);
                 try g.ifElse(out, try g.bin(.strict_eq, try g.id(b), try g.ctxField(outer, "fail")), then.items, otherwise.items);
             },
-            .check, .annotation => try w.encodeInto(out, @enumFromInt(SchemaGraph.lhs(plan, n)), x, offset, at, target),
+            .check, .annotation => try w.encodeInto(out, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), x, offset, at, target),
             else => {
                 const callee, const extra = try w.calleeOf(n);
                 try w.callInto(out, callee, extra, x, offset, at, target);
@@ -1532,7 +1532,7 @@ const Fn = struct {
     /// array.
     fn encodeList(w: *Fn, out: *Stmts, n: PNode) !void {
         const g = w.g;
-        const child: PNode = @enumFromInt(SchemaGraph.lhs(g.plan, n));
+        const child: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, n)));
         const v = w.ps.v;
         if (takesPath(g.plan, child)) try w.hereFor(out);
         // `plain`: a list's elements as a plain array.
@@ -1552,7 +1552,7 @@ const Fn = struct {
         const result = try g.fresh("$out");
         try g.constDecl(out, result, try g.l.arrayNode(&.{}, g.p));
         const i = try g.fresh("$i");
-        try out.append(g.l.scratch, try g.l.add(.let_decl, g.p, @intFromEnum(i), @intFromEnum((try g.num(0)).toOptional())));
+        try out.append(g.l.scratch, try g.l.add(.let_decl, g.p, @backingInt(i), @backingInt((try g.num(0)).toOptional())));
 
         var body: Stmts = .empty;
         var stop: Stmts = .empty;
@@ -1587,7 +1587,7 @@ const Fn = struct {
         const g = w.g;
         const plan = g.plan;
         const v = w.ps.v;
-        const discriminator = SchemaGraph.literal(plan, @enumFromInt(SchemaGraph.lhs(plan, n)));
+        const discriminator = SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))));
         const info = g.variantsOf(n);
         var takes = false;
         for (SchemaGraph.variants(plan, n)) |vi| {
@@ -1649,7 +1649,7 @@ fn adoptable(plan: *const SchemaPlan, child: PNode) bool {
 fn isIdentity(plan: *const SchemaPlan, words: []const u32, params: usize) bool {
     if (words.len != params) return false;
     for (words, 0..) |a, i| {
-        const n: PNode = @enumFromInt(a);
+        const n: PNode = @fromBackingInt(@intCast(a));
         if (SchemaGraph.tag(plan, n) != .parameter or SchemaGraph.lhs(plan, n) != i) return false;
     }
     return true;

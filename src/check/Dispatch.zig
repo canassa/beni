@@ -75,11 +75,11 @@ pub const TermIndex = enum(u32) {
     _,
 
     pub fn int(i: TermIndex) u32 {
-        return @intFromEnum(i);
+        return @backingInt(i);
     }
 
     pub fn toOptional(i: TermIndex) Optional {
-        return @enumFromInt(@intFromEnum(i));
+        return @fromBackingInt(@intCast(@backingInt(i)));
     }
 
     pub const Optional = enum(u32) {
@@ -88,7 +88,7 @@ pub const TermIndex = enum(u32) {
 
         pub fn unwrap(o: Optional) ?TermIndex {
             if (o == .none) return null;
-            return @enumFromInt(@intFromEnum(o));
+            return @fromBackingInt(@intCast(@backingInt(o)));
         }
     };
 };
@@ -483,7 +483,7 @@ pub fn effectAt(d: *const Dispatch, inst: Bir.Inst.Index) EffectSite {
 /// callee's (§16.2) — the callee reference of a `call`, the instruction
 /// itself for anything else.
 pub fn evidenceChoice(d: *const Dispatch, bir: *const Bir, inst: Bir.Inst.Index) Suspend {
-    const at: Bir.Inst.Index = if (bir.instTag(inst) == .call) @enumFromInt(bir.instData(inst).lhs) else inst;
+    const at: Bir.Inst.Index = if (bir.instTag(inst) == .call) @fromBackingInt(@intCast(bir.instData(inst).lhs)) else inst;
     return d.effectAt(at).body;
 }
 
@@ -616,7 +616,7 @@ pub fn extRequirementCount(interfaces: []const Interface, module: Graph.Index, v
     const iface = &interfaces[module.int()];
     if (value >= iface.values.len) return 0;
     const index = iface.values[value].scheme;
-    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return 0;
+    if (index == .none or @backingInt(index) >= iface.schemes.len) return 0;
     const s = iface.scheme(index);
     var n: u32 = 0;
     var i: u32 = 0;
@@ -633,7 +633,7 @@ pub fn extIdentities(interfaces: []const Interface, module: Graph.Index, value: 
     const iface = &interfaces[module.int()];
     if (value >= iface.values.len) return 0;
     const index = iface.values[value].scheme;
-    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return 0;
+    if (index == .none or @backingInt(index) >= iface.schemes.len) return 0;
     const s = iface.scheme(index);
     var n: u32 = 0;
     var at: u32 = 0;
@@ -722,7 +722,7 @@ fn publishedMethod(interfaces: []const Interface, types: *const Types, interner:
 pub fn requirementCount(d: *const Dispatch, t: Term, interfaces: []const Interface, types: *const Types, interner: *const InternPool.Global) u32 {
     return switch (t) {
         .top => |u| @intCast(d.declRequirements(u.decl.int()).len + d.declIdentities(u.decl.int()).len),
-        .ext => |u| extRequirementCount(interfaces, u.module, @intFromEnum(u.value)) + extIdentityCount(interfaces, u.module, @intFromEnum(u.value)),
+        .ext => |u| extRequirementCount(interfaces, u.module, @backingInt(u.value)) + extIdentityCount(interfaces, u.module, @backingInt(u.value)),
         .derived => |u| @intCast(d.contextOf(u.index).len),
         .ext_derived => |u| publishedCount(interfaces, types, interner, u.type, u.kind),
         // An identity's parts are its own, and say their count.
@@ -742,7 +742,7 @@ pub fn referenceCount(d: *const Dispatch, bir: *const Bir, interfaces: []const I
     const data = bir.instData(inst);
     return switch (bir.instTag(inst)) {
         .top => @intCast(d.declRequirements(data.lhs).len + d.declIdentities(data.lhs).len),
-        .ext_value => extRequirementCount(interfaces, @enumFromInt(data.lhs), data.rhs) + extIdentityCount(interfaces, @enumFromInt(data.lhs), data.rhs),
+        .ext_value => extRequirementCount(interfaces, @fromBackingInt(@intCast(data.lhs)), data.rhs) + extIdentityCount(interfaces, @fromBackingInt(@intCast(data.lhs)), data.rhs),
         .local => if (d.localLet(bir, owner orelse return 0, data.lhs)) |i| d.lets[i].requirements.len + d.lets[i].identities.len else 0,
         else => 0,
     };
@@ -840,7 +840,7 @@ pub fn checkI7(
             if (!cx.termOk(t, null)) ok = false;
         };
         if (ok) continue;
-        var region: Bir.Inst.Index = @enumFromInt(0);
+        var region: Bir.Inst.Index = @fromBackingInt(@intCast(0));
         if (row.shape == .nominal) {
             const entry = types.entry(row.shape.nominal);
             if (entry.decl.int() < bir.decls.len) region = bir.decls[entry.decl.int()].inst_start;
@@ -858,7 +858,7 @@ pub fn checkI7(
     const tags = bir.insts.items(.tag);
     const data = bir.insts.items(.data);
     for (tags, data, 0..) |tag, payload, raw| {
-        const inst: Bir.Inst.Index = @enumFromInt(@as(u32, @intCast(raw)));
+        const inst: Bir.Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(raw))));
         while (next < d.sites.len and d.sites[next].inst.int() < inst.int()) : (next += 1) {
             // A site on an instruction past the Bir, or out of order: the
             // loop below never meets it, so it is measured here.
@@ -871,7 +871,7 @@ pub fn checkI7(
         }
         const missing = switch (tag) {
             .method_call, .type_dispatch => true,
-            .call => referenceCount(d, bir, interfaces, ownerAt(owners, @intCast(raw)), @enumFromInt(payload.lhs)) != 0,
+            .call => referenceCount(d, bir, interfaces, ownerAt(owners, @intCast(raw)), @fromBackingInt(@intCast(payload.lhs))) != 0,
             else => false,
         };
         if (missing) try out.append(gpa, inst);
@@ -893,7 +893,7 @@ fn slotMethod(cx: I7, owner: Term, k: usize) ?Symbol {
             const reqs = d.declRequirements(u.decl.int());
             return if (k < reqs.len) reqs[k].method else null;
         },
-        .ext => |u| return extRequirementMethod(interfaces, u.module, @intFromEnum(u.value), k),
+        .ext => |u| return extRequirementMethod(interfaces, u.module, @backingInt(u.value), k),
         .derived => |u| {
             const ctx = d.contextOf(u.index);
             return if (k < ctx.len) ctx[k].method else null;
@@ -917,7 +917,7 @@ fn extRequirementMethod(interfaces: []const Interface, module: Graph.Index, valu
     const iface = &interfaces[module.int()];
     if (value >= iface.values.len) return null;
     const index = iface.values[value].scheme;
-    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return null;
+    if (index == .none or @backingInt(index) >= iface.schemes.len) return null;
     const s = iface.scheme(index);
     var at: usize = 0;
     var i: u32 = 0;
@@ -975,7 +975,7 @@ const I7 = struct {
         const t = tag orelse return true;
         const data = bir.instData(site.inst);
         const expected: u32 = switch (t) {
-            .call => referenceCount(d, bir, cx.interfaces, ownerAt(cx.owners, site.inst.int()), @enumFromInt(data.lhs)),
+            .call => referenceCount(d, bir, cx.interfaces, ownerAt(cx.owners, site.inst.int()), @fromBackingInt(@intCast(data.lhs))),
             .top, .ext_value, .local => referenceCount(d, bir, cx.interfaces, ownerAt(cx.owners, site.inst.int()), site.inst),
             // A site the backend never reads: nothing to measure it against.
             else => return true,
@@ -1043,12 +1043,12 @@ const I7 = struct {
         defer stack.deinit(gpa);
         for (d.derived) |row| {
             if (@as(u64, row.body.start) + row.body.len > d.args.len) continue;
-            const kind: u8 = @as(u8, @intFromEnum(row.kind)) + 1;
+            const kind: u8 = @as(u8, @backingInt(row.kind)) + 1;
             const method = kindMethod(row.kind).toOptional();
             stack.clearRetainingCapacity();
             for (d.argsAt(row.body)) |t| try stack.append(gpa, .{ .term = t.int(), .ctx = kind, .method = method });
             if (try cx.placed(&seen, &stack, gpa)) continue;
-            var region: Bir.Inst.Index = @enumFromInt(0);
+            var region: Bir.Inst.Index = @fromBackingInt(@intCast(0));
             if (row.shape == .nominal) {
                 const entry = cx.types.entry(row.shape.nominal);
                 if (entry.decl.int() < bir.decls.len) region = bir.decls[entry.decl.int()].inst_start;
@@ -1067,12 +1067,12 @@ const I7 = struct {
                 owner = d.term(callee);
             } else if (site.inst.int() < bir.insts.len) {
                 var ref = site.inst;
-                if (bir.instTag(ref) == .call) ref = @enumFromInt(bir.instData(ref).lhs);
+                if (bir.instTag(ref) == .call) ref = @fromBackingInt(@intCast(bir.instData(ref).lhs));
                 if (ref.int() < bir.insts.len) {
                     const data = bir.instData(ref);
                     owner = switch (bir.instTag(ref)) {
-                        .top => .{ .top = .{ .decl = @enumFromInt(data.lhs) } },
-                        .ext_value => .{ .ext = .{ .module = @enumFromInt(data.lhs), .value = @enumFromInt(data.rhs) } },
+                        .top => .{ .top = .{ .decl = @fromBackingInt(@intCast(data.lhs)) } },
+                        .ext_value => .{ .ext = .{ .module = @fromBackingInt(@intCast(data.lhs)), .value = @fromBackingInt(@intCast(data.rhs)) } },
                         .local => blk: {
                             if (ownerAt(cx.owners, site.inst.int())) |decl| if (d.localLet(bir, decl, data.lhs)) |i| {
                                 let_slots = d.letRequirements(i);
@@ -1099,13 +1099,13 @@ const I7 = struct {
             const t = d.terms[v.term];
             if (t == .undetermined) {
                 if (v.ctx == 0) return false;
-                const kind: Derived.Kind = @enumFromInt(v.ctx - 1);
+                const kind: Derived.Kind = @fromBackingInt(@intCast(v.ctx - 1));
                 if (v.method.unwrap()) |m| if (m != kindMethod(kind)) return false;
                 continue;
             }
             const ctx: u8 = switch (t) {
-                .derived => |u| if (u.index < d.derived.len) @as(u8, @intFromEnum(d.derived[u.index].kind)) + 1 else v.ctx,
-                .ext_derived => |u| @as(u8, @intFromEnum(u.kind)) + 1,
+                .derived => |u| if (u.index < d.derived.len) @as(u8, @backingInt(d.derived[u.index].kind)) + 1 else v.ctx,
+                .ext_derived => |u| @as(u8, @backingInt(u.kind)) + 1,
                 else => v.ctx,
             };
             const r = t.argsOf();
@@ -1169,17 +1169,17 @@ test "the evidence-count assert refuses a hand-corrupted table and accepts the t
     // A correct table, written as the trees it is: the call passes
     // declaration 0 its one argument, which is itself `top 0` applied to a
     // primitive, and the method call's callee is a primitive.
-    const requirements = [_]Requirement{.{ .quantified = 0, .var_name = .none, .method = @enumFromInt(1) }};
+    const requirements = [_]Requirement{.{ .quantified = 0, .var_name = .none, .method = @fromBackingInt(@intCast(1)) }};
     const decls = [_]DeclInfo{.{ .requirements = .{ .start = 0, .len = 1 } }};
     var terms_buf = [_]Term{
-        .{ .top = .{ .decl = @enumFromInt(0), .args = .{ .start = 1, .len = 1 } } },
+        .{ .top = .{ .decl = @fromBackingInt(@intCast(0)), .args = .{ .start = 1, .len = 1 } } },
         .{ .primitive = .strict_eq },
         .{ .primitive = .strict_eq },
     };
-    var args_buf = [_]TermIndex{ @enumFromInt(0), @enumFromInt(1) };
+    var args_buf = [_]TermIndex{ @fromBackingInt(@intCast(0)), @fromBackingInt(@intCast(1)) };
     var sites_buf = [_]Site{
-        .{ .inst = @enumFromInt(2), .evidence = .{ .start = 0, .len = 1 } },
-        .{ .inst = @enumFromInt(3), .callee = @enumFromInt(2) },
+        .{ .inst = @fromBackingInt(@intCast(2)), .evidence = .{ .start = 0, .len = 1 } },
+        .{ .inst = @fromBackingInt(@intCast(3)), .callee = @fromBackingInt(@intCast(2)) },
     };
     var d: Dispatch = .empty;
     d.terms = &terms_buf;
@@ -1199,7 +1199,7 @@ test "the evidence-count assert refuses a hand-corrupted table and accepts the t
     const nested = d.argsOfTerm(roots[0])[0];
     const terms = @constCast(d.terms);
     const saved = terms[nested.int()];
-    terms[nested.int()] = .{ .top = .{ .decl = @enumFromInt(0) } };
+    terms[nested.int()] = .{ .top = .{ .decl = @fromBackingInt(@intCast(0)) } };
     try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 1), bad.items.len);
     try testing.expectEqual(@as(u32, 2), bad.items[0].int());
@@ -1249,7 +1249,7 @@ test "the evidence-count assert accepts a term shared by two owners and judges i
     try tb.init(3, &.{.{ 1, .top }});
     tb.insts.items(.data)[2] = .{ .lhs = 1, .rhs = 0 };
     tb.bir.insts = tb.insts.slice();
-    const requirement: Requirement = .{ .quantified = 0, .var_name = .none, .method = @enumFromInt(1) };
+    const requirement: Requirement = .{ .quantified = 0, .var_name = .none, .method = @fromBackingInt(@intCast(1)) };
     const requirements = [_]Requirement{ requirement, requirement };
     const decls = [_]DeclInfo{.{ .requirements = .{ .start = 0, .len = 2 } }};
     const contexts = [_]ContextEntry{.{ .param = 0, .method = InternPool.WellKnown.eq.symbol() }};
@@ -1259,8 +1259,8 @@ test "the evidence-count assert accepts a term shared by two owners and judges i
         .{ .derived = .{ .index = 0, .args = .{ .start = 3, .len = 1 } } },
         .{ .primitive = .strict_eq },
     };
-    var args = [_]TermIndex{ @enumFromInt(0), @enumFromInt(1), @enumFromInt(2), @enumFromInt(2) };
-    const sites = [_]Site{.{ .inst = @enumFromInt(2), .evidence = .{ .start = 0, .len = 2 } }};
+    var args = [_]TermIndex{ @fromBackingInt(@intCast(0)), @fromBackingInt(@intCast(1)), @fromBackingInt(@intCast(2)), @fromBackingInt(@intCast(2)) };
+    const sites = [_]Site{.{ .inst = @fromBackingInt(@intCast(2)), .evidence = .{ .start = 0, .len = 2 } }};
     var d: Dispatch = .empty;
     d.terms = &terms;
     d.args = &args;
@@ -1277,7 +1277,7 @@ test "the evidence-count assert accepts a term shared by two owners and judges i
     try testing.expectEqual(@as(usize, 0), bad.items.len);
 
     // The shared term pointing back at an owner is still refused.
-    args[3] = @enumFromInt(1);
+    args[3] = @fromBackingInt(@intCast(1));
     try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 1), bad.items.len);
     try testing.expectEqual(@as(u32, 2), bad.items[0].int());

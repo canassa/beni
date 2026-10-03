@@ -125,13 +125,13 @@ fn reachedFunction(r: *Reporter, actual: Var, field: Symbol) ?Reached {
     if (entry.module == r.env.module or entry.module.int() >= r.env.interfaces.len) return null;
     const iface = r.env.iface(entry.module);
     const value = iface.findValue(r.env.interner, field) orelse return null;
-    const body = iface.term(iface.scheme(iface.values[@intFromEnum(value)].scheme).body);
+    const body = iface.term(iface.scheme(iface.values[@backingInt(value)].scheme).body);
     if (body.tag != .func) return null;
     const params = iface.range(body.lhs);
     if (params.len == 0) return null;
-    const first = iface.term(@enumFromInt(params[0]));
+    const first = iface.term(@fromBackingInt(@intCast(params[0])));
     if (first.tag != .app) return null;
-    const ref = iface.typeRef(@enumFromInt(first.lhs)) orelse return null;
+    const ref = iface.typeRef(@fromBackingInt(@intCast(first.lhs))) orelse return null;
     if (iface.symbol(ref.name) != entry.name) return null;
     return .{ .module = entry.module, .module_name = entry.module_name, .params = params.len };
 }
@@ -142,9 +142,9 @@ fn fieldHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, category: 
     if (category.tag != .field_access or category.index == Category.no_field) return false;
     const bir = r.env.bir;
     if (region.int() >= bir.insts.len or bir.instTag(region) != .field_access) return false;
-    const field: Symbol = @enumFromInt(category.index);
+    const field: Symbol = @fromBackingInt(@intCast(category.index));
     const reached = reachedFunction(r, actual, field) orelse return false;
-    try writeReachedHint(r, w, reached, field, @enumFromInt(bir.instData(region).lhs));
+    try writeReachedHint(r, w, reached, field, @fromBackingInt(@intCast(bir.instData(region).lhs)));
     return true;
 }
 
@@ -176,13 +176,13 @@ fn writeReachedHint(r: *Reporter, w: *std.Io.Writer, reached: Reached, field: Sy
 pub fn unitMethodHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, module: Graph.Index, method: Symbol, found: Var) Error!void {
     const bir = r.env.bir;
     if (region.int() >= bir.insts.len or bir.instTag(region) != .method_call) return;
-    const m = bir.extraData(@enumFromInt(bir.instData(region).rhs), Bir.MethodCall);
+    const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(region).rhs)), Bir.MethodCall);
     if (m.origin.spelling() != null) return;
     const args = bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
     if (args.len != 1 or bir.instTag(args[0]) != .unit) return;
     if (r.env.store.paramCount(found) != 1) return;
     const reached: Reached = .{ .module = module, .module_name = r.env.graph.moduleName(module), .params = 1 };
-    try writeReachedHint(r, w, reached, method, @enumFromInt(bir.instData(region).lhs));
+    try writeReachedHint(r, w, reached, method, @fromBackingInt(@intCast(bir.instData(region).lhs)));
 }
 
 // ---- `f(a, b)` --------------------------------------------------------------
@@ -195,11 +195,11 @@ pub fn unitMethodHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, m
 pub fn tupleCallHint(r: *Reporter, w: *std.Io.Writer, call: Bir.Inst.Index, arity: u32) Error!bool {
     const bir = r.env.bir;
     if (call.int() >= bir.insts.len or bir.instTag(call) != .call) return false;
-    const args = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(call).rhs)), Bir.Inst.Index);
+    const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(call).rhs))), Bir.Inst.Index);
     if (args.len != 1 or bir.instTag(args[0]) != .tuple) return false;
     const elements = bir.extraSlice(Bir.inlineRange(bir.instData(args[0])), Bir.Inst.Index);
     if (elements.len != arity) return false;
-    const callee: Bir.Inst.Index = @enumFromInt(bir.instData(call).lhs);
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
     const tokens = bir.insts.items(.main_token);
     if (tokens[args[0].int()] != tokens[callee.int()] + 1) return false;
     const name = r.calleeOf(call).name;
@@ -241,7 +241,7 @@ fn argType(r: *Reporter, inst: Bir.Inst.Index) ArgType {
 /// Whether a value of `arg` could be passed where `iface`'s term `index`
 /// is declared — read-only, and generous: anything not known fits.
 fn fits(r: *Reporter, iface: *const Interface, arg: ArgType, index: u32, depth: u32) bool {
-    const t = iface.term(@enumFromInt(index));
+    const t = iface.term(@fromBackingInt(@intCast(index)));
     switch (t.tag) {
         .@"var", .err, .alias => return true,
         else => {},
@@ -250,7 +250,7 @@ fn fits(r: *Reporter, iface: *const Interface, arg: ArgType, index: u32, depth: 
         .unknown => return true,
         .number, .float, .string, .char => {
             if (t.tag != .app) return false;
-            const ref = iface.typeRef(@enumFromInt(t.lhs)) orelse return true;
+            const ref = iface.typeRef(@fromBackingInt(@intCast(t.lhs))) orelse return true;
             const name = r.env.interner.slice(iface.symbol(ref.name));
             return switch (arg) {
                 .number => std.mem.eql(u8, name, "Int") or std.mem.eql(u8, name, "Float"),
@@ -270,7 +270,7 @@ fn fits(r: *Reporter, iface: *const Interface, arg: ArgType, index: u32, depth: 
                 .app => |a| {
                     if (t.tag != .app) return false;
                     if (a.type == .none) return true;
-                    const ref = iface.typeRef(@enumFromInt(t.lhs)) orelse return true;
+                    const ref = iface.typeRef(@fromBackingInt(@intCast(t.lhs))) orelse return true;
                     if (iface.symbol(ref.name) != r.env.types.name(a.type)) return false;
                     if (depth == 0) return true;
                     const args = Walk.positions(st, v);
@@ -301,13 +301,13 @@ pub fn elmOrderHint(r: *Reporter, w: *std.Io.Writer, category: Category, actual:
     const call = category.owner.unwrap() orelse return false;
     const bir = r.env.bir;
     if (call.int() >= bir.insts.len or bir.instTag(call) != .call) return false;
-    const callee: Bir.Inst.Index = @enumFromInt(bir.instData(call).lhs);
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
     if (bir.instTag(callee) != .ext_value) return false;
     // An operator's core function is never a call the author wrote.
     if (r.calleeOf(call).kind == .operator) return false;
     const data = bir.instData(callee);
     if (data.lhs >= r.env.interfaces.len) return false;
-    const module: Graph.Index = @enumFromInt(data.lhs);
+    const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
     switch (r.env.graph.modulePackage(module)) {
         .core, .platform => {},
         else => return false,
@@ -317,7 +317,7 @@ pub fn elmOrderHint(r: *Reporter, w: *std.Io.Writer, category: Category, actual:
     const body = iface.term(iface.scheme(iface.values[data.rhs].scheme).body);
     if (body.tag != .func) return false;
     const params = iface.range(body.lhs);
-    const args = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(call).rhs)), Bir.Inst.Index);
+    const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(call).rhs))), Bir.Inst.Index);
     const max = 5;
     if (args.len != params.len or args.len < 2 or args.len > max) return false;
     if (category.index > args.len) return false;
@@ -366,7 +366,7 @@ pub fn elmOrderHint(r: *Reporter, w: *std.Io.Writer, category: Category, actual:
     }
     if (tied) return false;
     const chosen = found orelse return false;
-    const value = iface.valueName(@enumFromInt(data.rhs));
+    const value = iface.valueName(@fromBackingInt(@intCast(data.rhs)));
     w.writeAll("\nHint: `") catch return error.OutOfMemory;
     writeCallee(r, w, module, value) catch return error.OutOfMemory;
     w.writeAll("` takes its arguments in another order than Elm's — the subject first, a\nfunction last:\n\n    ") catch return error.OutOfMemory;
@@ -382,8 +382,8 @@ pub fn elmOrderHint(r: *Reporter, w: *std.Io.Writer, category: Category, actual:
 /// Whether two declared parameters are written alike at the top: one
 /// variable, or one type constructor.
 fn sameTerm(iface: *const Interface, a: u32, b: u32) bool {
-    const x = iface.term(@enumFromInt(a));
-    const y = iface.term(@enumFromInt(b));
+    const x = iface.term(@fromBackingInt(@intCast(a)));
+    const y = iface.term(@fromBackingInt(@intCast(b)));
     if (x.tag != y.tag) return false;
     return switch (x.tag) {
         .@"var", .app, .alias => x.lhs == y.lhs,
@@ -436,12 +436,12 @@ pub fn mismatchHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, cat
 /// another module's interface or of this one.
 fn calleeArity(r: *Reporter, call: Bir.Inst.Index) ?u32 {
     const bir = r.env.bir;
-    const callee: Bir.Inst.Index = @enumFromInt(bir.instData(call).lhs);
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
     const data = bir.instData(callee);
     switch (bir.instTag(callee)) {
         .ext_value => {
             if (data.lhs >= r.env.interfaces.len) return null;
-            const iface = r.env.iface(@enumFromInt(data.lhs));
+            const iface = r.env.iface(@fromBackingInt(@intCast(data.lhs)));
             if (data.rhs >= iface.values.len) return null;
             const body = iface.term(iface.scheme(iface.values[data.rhs].scheme).body);
             if (body.tag != .func) return null;
@@ -484,18 +484,18 @@ pub fn suspiciousOrder(r: *Reporter, set_decl: anytype) Error!void {
         set_decl.at(@intCast(d));
         for (decl.inst_start.int()..decl.inst_end.int()) |i| {
             if (tags[i] != .call) continue;
-            const call: Bir.Inst.Index = @enumFromInt(i);
-            const callee: Bir.Inst.Index = @enumFromInt(bir.instData(call).lhs);
+            const call: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+            const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
             if (bir.instTag(callee) != .ext_value) continue;
             const data = bir.instData(callee);
             if (data.lhs >= r.env.interfaces.len) continue;
-            const module: Graph.Index = @enumFromInt(data.lhs);
+            const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
             if (r.env.graph.modulePackage(module) != .core) continue;
             const iface = r.env.iface(module);
             if (data.rhs >= iface.values.len) continue;
-            const value = iface.valueName(@enumFromInt(data.rhs));
+            const value = iface.valueName(@fromBackingInt(@intCast(data.rhs)));
             if (!suspicious(r.env.interner.slice(r.env.graph.moduleName(module)), r.env.interner.slice(value))) continue;
-            const args = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(call).rhs)), Bir.Inst.Index);
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(call).rhs))), Bir.Inst.Index);
             if (args.len < 2) continue;
             if (!isLiteral(bir, args[0]) or isLiteral(bir, args[args.len - 1])) continue;
             try warn(r, call, module, value, args);

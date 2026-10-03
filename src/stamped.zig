@@ -83,7 +83,7 @@ pub fn Column(comptime K: type, comptime V: type) type {
 
         fn index(k: K) usize {
             return switch (@typeInfo(K)) {
-                .@"enum" => @intFromEnum(k),
+                .@"enum" => @backingInt(k),
                 else => k,
             };
         }
@@ -96,8 +96,8 @@ test "a column forgets everything at clear, and nothing before it" {
     const Id = enum(u32) { _ };
     var c: Column(Id, u32) = .{};
     defer c.deinit(testing.allocator);
-    const a: Id = @enumFromInt(3);
-    const b: Id = @enumFromInt(40);
+    const a: Id = @fromBackingInt(@intCast(3));
+    const b: Id = @fromBackingInt(@intCast(40));
     try c.put(testing.allocator, a, 7);
     try testing.expectEqual(@as(?u32, 7), c.get(a));
     try testing.expectEqual(@as(?u32, null), c.get(b));
@@ -110,7 +110,7 @@ test "a column forgets everything at clear, and nothing before it" {
     try testing.expectEqual(@as(?u32, 9), c.get(b));
     c.clear();
     try testing.expect(!c.contains(b));
-    try testing.expectEqual(@as(?u32, null), c.get(@enumFromInt(1000)));
+    try testing.expectEqual(@as(?u32, null), c.get(@fromBackingInt(@intCast(1000))));
 }
 
 test "a generation that wraps empties every slot first" {

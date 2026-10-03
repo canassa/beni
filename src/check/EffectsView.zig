@@ -101,7 +101,7 @@ pub const View = struct {
         const block = iface.effectBlock(scheme) orelse return view;
         for (0..block.classCount()) |c| {
             const class = block.class(@intCast(c));
-            try view.addClass(@enumFromInt(@min(class.rung, 2)), class.deps, class.sync);
+            try view.addClass(@fromBackingInt(@intCast(@min(class.rung, 2))), class.deps, class.sync);
         }
         view.markDependants();
         view.by_var = try gpa.alloc(u32, store.count());

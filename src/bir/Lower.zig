@@ -451,7 +451,7 @@ fn tokenEnd(l: *const Lower, token: TokenIndex) u32 {
 
 fn tokenSymbol(l: *const Lower, token: TokenIndex) Symbol {
     std.debug.assert(l.tags[token].isInterned());
-    return @enumFromInt(l.payloads[token]);
+    return @fromBackingInt(@intCast(l.payloads[token]));
 }
 
 // ---------------------------------------------------------------------------
@@ -465,7 +465,7 @@ fn tokenSymbol(l: *const Lower, token: TokenIndex) Symbol {
 fn addInst(l: *Lower, tag: Inst.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
     const i: u32 = @intCast(l.insts.len);
     try l.inst_appender.append(&l.insts, l.gpa, .{ .tag = tag, .main_token = l.cur_token, .data = .{ .lhs = lhs, .rhs = rhs } });
-    return @enumFromInt(i);
+    return @fromBackingInt(@intCast(i));
 }
 
 /// Append an instruction stamped with `token` rather than with whatever
@@ -495,42 +495,42 @@ fn setInstData(l: *Lower, inst: Index, lhs: u32, rhs: u32) void {
 }
 
 fn errorInst(l: *Lower, code: diagnostic.Code) Allocator.Error!Index {
-    return l.addInst(.@"error", @intFromEnum(code), Inst.Data.unused);
+    return l.addInst(.@"error", @backingInt(code), Inst.Data.unused);
 }
 
 fn addSymbol(l: *Lower, symbol: Symbol) Allocator.Error!SymbolIndex {
     const i: u32 = @intCast(l.symbols.items.len);
     try lists.push(Symbol, &l.symbols, l.gpa, symbol);
-    return @enumFromInt(i);
+    return @fromBackingInt(@intCast(i));
 }
 
 fn addExtraWords(l: *Lower, words: []const u32) Allocator.Error!Bir.ExtraIndex {
     const i: u32 = @intCast(l.extra.items.len);
     try l.extra.appendSlice(l.gpa, words);
-    return @enumFromInt(i);
+    return @fromBackingInt(@intCast(i));
 }
 
 /// Copy `items` into `extra` and return their range.
 fn addRange(l: *Lower, items: []const u32) Allocator.Error!SubRange {
     const start = try l.addExtraWords(items);
-    return .{ .start = start, .end = @enumFromInt(@intFromEnum(start) + items.len) };
+    return .{ .start = start, .end = @fromBackingInt(@intCast(@backingInt(start) + items.len)) };
 }
 
 /// Store a `SubRange` record itself in `extra`, for tags whose data holds
 /// an `ExtraIndex` to a range.
 fn addRangeRecord(l: *Lower, range: SubRange) Allocator.Error!Bir.ExtraIndex {
-    return l.addExtraWords(&.{ @intFromEnum(range.start), @intFromEnum(range.end) });
+    return l.addExtraWords(&.{ @backingInt(range.start), @backingInt(range.end) });
 }
 
 fn addExtra(l: *Lower, record: anytype) Allocator.Error!Bir.ExtraIndex {
-    const fields = std.meta.fields(@TypeOf(record));
-    var words: [fields.len]u32 = undefined;
-    inline for (fields, 0..) |field, i| {
-        const v = @field(record, field.name);
-        words[i] = switch (@typeInfo(field.type)) {
-            .@"enum" => @intFromEnum(v),
+    const info = @typeInfo(@TypeOf(record)).@"struct";
+    var words: [info.field_names.len]u32 = undefined;
+    inline for (info.field_names, info.field_types, 0..) |field_name, field_type, i| {
+        const v = @field(record, field_name);
+        words[i] = switch (@typeInfo(field_type)) {
+            .@"enum" => @backingInt(v),
             .int => v,
-            else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+            else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
         };
     }
     return l.addExtraWords(&words);
@@ -548,7 +548,7 @@ fn scratchMark(l: *const Lower) usize {
 
 fn pushScratch(l: *Lower, value: anytype) Allocator.Error!void {
     const word: u32 = switch (@typeInfo(@TypeOf(value))) {
-        .@"enum" => @intFromEnum(value),
+        .@"enum" => @backingInt(value),
         .int => value,
         else => @compileError("unexpected scratch value type: " ++ @typeName(@TypeOf(value))),
     };
@@ -651,8 +651,8 @@ fn addRef(l: *Lower, kind: Bir.Ref.Kind, a: u32, b: u32) Allocator.Error!void {
 fn importRef(l: *Lower, tag: Inst.Tag, ref_kind: Bir.Ref.Kind, module: Symbol, name: Symbol) Allocator.Error!Index {
     const m = try l.addSymbol(module);
     const n = try l.addSymbol(name);
-    try l.addRef(ref_kind, @intFromEnum(m), @intFromEnum(n));
-    return l.addInst(tag, @intFromEnum(m), @intFromEnum(n));
+    try l.addRef(ref_kind, @backingInt(m), @backingInt(n));
+    return l.addInst(tag, @backingInt(m), @backingInt(n));
 }
 
 /// `import_value(Basics, name)` for a core function reached by desugaring
@@ -671,7 +671,7 @@ fn basicsRef(l: *Lower, name: WellKnown) Allocator.Error!Index {
 /// `×` in an expression the `*` the parser read it as.
 fn opTag(l: *const Lower, token: u32) Token.Tag {
     return switch (l.tags[token]) {
-        .lookalike => @enumFromInt(l.payloads[token]),
+        .lookalike => @fromBackingInt(@intCast(l.payloads[token])),
         .times => .op_star,
         else => |tag| tag.canonical(),
     };
@@ -784,7 +784,7 @@ fn expose(l: *Lower, table: *Symbol.Map(NameEntry), symbol: Symbol, entry: NameE
 fn importToken(l: *const Lower, i: usize, which: enum { module, alias }) TokenIndex {
     // `list_scratch` holds the import nodes in order while imports are
     // being lowered (nothing else uses it yet).
-    const node: NodeIndex = @enumFromInt(l.list_scratch.items[i]);
+    const node: NodeIndex = @fromBackingInt(@intCast(l.list_scratch.items[i]));
     const imp = l.tree.fullImport(node);
     return switch (which) {
         .module => imp.name.?,
@@ -850,17 +850,17 @@ fn newDeclNamed(l: *Lower, kind: Bir.Decl.Kind, name: Symbol, name_token: TokenI
         .doc_start = header.doc_start,
         .doc_end = header.doc_end,
         .params = 0,
-        .params_start = @enumFromInt(0),
-        .params_end = @enumFromInt(0),
+        .params_start = @fromBackingInt(@intCast(0)),
+        .params_end = @fromBackingInt(@intCast(0)),
         .type_params_start = 0,
         .type_params_end = 0,
         .annotation = .none,
-        .where_start = @enumFromInt(0),
-        .where_end = @enumFromInt(0),
+        .where_start = @fromBackingInt(@intCast(0)),
+        .where_end = @fromBackingInt(@intCast(0)),
         .body = .none,
         .schema_body = .none,
-        .inst_start = @enumFromInt(0),
-        .inst_end = @enumFromInt(0),
+        .inst_start = @fromBackingInt(@intCast(0)),
+        .inst_end = @fromBackingInt(@intCast(0)),
         .ctors_start = 0,
         .ctors_end = 0,
         .locals_start = 0,
@@ -868,7 +868,7 @@ fn newDeclNamed(l: *Lower, kind: Bir.Decl.Kind, name: Symbol, name_token: TokenI
         .refs_start = 0,
         .refs_end = 0,
     });
-    if (header.pub_token != .none) try l.interface.append(l.gpa, @enumFromInt(index));
+    if (header.pub_token != .none) try l.interface.append(l.gpa, @fromBackingInt(@intCast(index)));
     return index;
 }
 
@@ -992,13 +992,13 @@ fn lowerFacts(l: *Lower, v: Ast.full.VocabDecl) Allocator.Error!SubRange {
             else => t += 1,
         }
     }
-    return .{ .start = @enumFromInt(start), .end = @enumFromInt(l.extra.items.len) };
+    return .{ .start = @fromBackingInt(@intCast(start)), .end = @fromBackingInt(@intCast(l.extra.items.len)) };
 }
 
 /// The fact a word spells, or null for a word the parser reported.
 fn factWord(text: []const u8) ?Bir.FactWord {
-    inline for (@typeInfo(Bir.FactWord).@"enum".fields) |f| {
-        const w: Bir.FactWord = @enumFromInt(f.value);
+    inline for (@typeInfo(Bir.FactWord).@"enum".field_values) |field_value| {
+        const w: Bir.FactWord = @fromBackingInt(@intCast(field_value));
         if (std.mem.eql(u8, w.spelling(), text)) return w;
     }
     return null;
@@ -1089,9 +1089,9 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
             try l.ctors.append(l.gpa, .{
                 .name = try l.addSymbol(l.tokenSymbol(ctor_token)),
                 .name_token = ctor_token,
-                .decl = @enumFromInt(index),
-                .args_start = @enumFromInt(0),
-                .args_end = @enumFromInt(0),
+                .decl = @fromBackingInt(@intCast(index)),
+                .args_start = @fromBackingInt(@intCast(0)),
+                .args_end = @fromBackingInt(@intCast(0)),
             });
             // A constructor named like an exposed upper name hides it, as
             // a top-level name hides a prelude name: the exposed name is
@@ -1113,9 +1113,9 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
             try l.ctors.append(l.gpa, .{
                 .name = try l.addSymbol(l.tokenSymbol(name_token)),
                 .name_token = name_token,
-                .decl = @enumFromInt(index),
-                .args_start = @enumFromInt(0),
-                .args_end = @enumFromInt(0),
+                .decl = @fromBackingInt(@intCast(index)),
+                .args_start = @fromBackingInt(@intCast(0)),
+                .args_end = @fromBackingInt(@intCast(0)),
             });
             try l.declareName(&l.ctor_names, l.tokenSymbol(name_token), name_token, ctor_index, .duplicate_constructor, false);
             l.decls.items[index].ctors_end = @intCast(l.ctors.items.len);
@@ -1166,7 +1166,7 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
         std.debug.assert(l.scope.items.len == 0 and l.frames.items.len == 0);
         l.type_params = null;
         const d = &l.decls.items[i];
-        d.inst_start = @enumFromInt(l.cur_inst_start);
+        d.inst_start = @fromBackingInt(@intCast(l.cur_inst_start));
         switch (l.tree.nodeTag(src.node)) {
             .definition => try l.lowerDefinition(src.node, src.annotation),
             .annotation => {
@@ -1199,8 +1199,8 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
                     const mark = l.scratchMark();
                     defer l.shrinkScratch(mark);
                     const fields = Bir.inlineRange(l.insts.items(.data)[body.int()]);
-                    var f = @intFromEnum(fields.start);
-                    while (f < @intFromEnum(fields.end)) : (f += Bir.extraLen(Bir.Field)) {
+                    var f = @backingInt(fields.start);
+                    while (f < @backingInt(fields.end)) : (f += Bir.extraLen(Bir.Field)) {
                         try l.pushScratch(l.extra.items[f + 1]);
                     }
                     const range = try l.addRange(l.scratchSince(mark));
@@ -1243,7 +1243,7 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
             else => unreachable,
         }
         const done = &l.decls.items[i];
-        done.inst_end = @enumFromInt(@as(u32, @intCast(l.insts.len)));
+        done.inst_end = @fromBackingInt(@intCast(@as(u32, @intCast(l.insts.len))));
         done.locals_start = l.cur_locals_start;
         done.locals_end = @intCast(l.locals.items.len);
         done.refs_start = l.cur_refs_start;
@@ -1371,8 +1371,8 @@ fn lowerWhere(l: *Lower, header: Ast.DeclHeader, name_token: TokenIndex) Allocat
                 .inside_constraint = true,
             });
         }
-        try l.pushScratch(@intFromEnum(try l.addSymbol(variable)));
-        try l.pushScratch(@intFromEnum(try l.addSymbol(method)));
+        try l.pushScratch(@backingInt(try l.addSymbol(variable)));
+        try l.pushScratch(@backingInt(try l.addSymbol(method)));
         try l.pushScratch(type_inst.int());
     }
     // Leave the annotation's variables where the caller found them.
@@ -1395,14 +1395,14 @@ fn lowerSchema(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     switch (tag) {
         .schema_operand => {
             const name = try l.addSymbol(l.tokenSymbol(main));
-            const head = try l.addInst(.schema_ref, @intFromEnum(name), 0);
+            const head = try l.addInst(.schema_ref, @backingInt(name), 0);
             const args = l.tree.children(node);
             if (args.len == 0) return head;
             const mark = l.scratchMark();
             defer l.shrinkScratch(mark);
             for (args) |arg| try l.pushScratch(try l.lowerSchema(arg));
             const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
-            return l.addInstAt(main, .schema_app, head.int(), @intFromEnum(range));
+            return l.addInstAt(main, .schema_app, head.int(), @backingInt(range));
         },
         .schema_paren => {
             const child = try l.lowerSchema(l.tree.operand(node));
@@ -1416,7 +1416,7 @@ fn lowerSchema(l: *Lower, node: NodeIndex) Allocator.Error!Index {
                 try l.pushScratch(try l.lowerSchema(field));
             }
             const range = try l.addRange(l.scratchSince(mark));
-            return l.addInstAt(main, .schema_record, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main, .schema_record, @backingInt(range.start), @backingInt(range.end));
         },
         .schema_field, .schema_value => {
             const field = l.tree.fullSchemaField(node);
@@ -1424,7 +1424,7 @@ fn lowerSchema(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const modifiers = try l.lowerSchemaModifiers(field.modifiers);
             if (tag == .schema_value) {
                 const range = try l.addRangeRecord(modifiers);
-                return l.addInstAt(main, .schema_value, operand.int(), @intFromEnum(range));
+                return l.addInstAt(main, .schema_value, operand.int(), @backingInt(range));
             }
             const name = try l.addSymbol(l.tokenSymbol(field.name));
             const extra = try l.addExtra(Bir.SchemaField{
@@ -1434,7 +1434,7 @@ fn lowerSchema(l: *Lower, node: NodeIndex) Allocator.Error!Index {
                 .doc_start = field.header.doc_start,
                 .doc_end = field.header.doc_end,
             });
-            return l.addInstAt(main, .schema_field, @intFromEnum(name), @intFromEnum(extra));
+            return l.addInstAt(main, .schema_field, @backingInt(name), @backingInt(extra));
         },
         .schema_tagged => {
             const tagged = l.tree.fullSchemaTagged(node);
@@ -1443,7 +1443,7 @@ fn lowerSchema(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             defer l.shrinkScratch(mark);
             for (tagged.variants) |variant| try l.pushScratch(try l.lowerSchema(variant));
             const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
-            return l.addInstAt(main, .schema_tagged, discriminator.int(), @intFromEnum(range));
+            return l.addInstAt(main, .schema_tagged, discriminator.int(), @backingInt(range));
         },
         .schema_variant => {
             const variant = l.tree.fullSchemaVariant(node);
@@ -1451,7 +1451,7 @@ fn lowerSchema(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const rename = if (variant.rename) |r| (try l.lowerSchemaString(r)).toOptional() else Inst.OptionalIndex.none;
             const name = try l.addSymbol(l.tokenSymbol(variant.name));
             const extra = try l.addExtra(Bir.SchemaVariant{ .payload = payload, .rename = rename });
-            return l.addInstAt(main, .schema_variant, @intFromEnum(name), @intFromEnum(extra));
+            return l.addInstAt(main, .schema_variant, @backingInt(name), @backingInt(extra));
         },
         .schema_as => {
             const value = try l.lowerSchemaString(l.tree.operand(node));
@@ -1551,8 +1551,8 @@ fn lowerTypeParams(l: *Lower, all_params: []const TokenIndex) Allocator.Error!vo
         l: *const Lower,
         params: []const TokenIndex,
         fn lessThan(cx: @This(), a: u32, b: u32) bool {
-            const sa = @intFromEnum(cx.l.tokenSymbol(cx.params[a]));
-            const sb = @intFromEnum(cx.l.tokenSymbol(cx.params[b]));
+            const sa = @backingInt(cx.l.tokenSymbol(cx.params[a]));
+            const sb = @backingInt(cx.l.tokenSymbol(cx.params[b]));
             return sa < sb or (sa == sb and a < b);
         }
     };
@@ -1757,7 +1757,7 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     }
     if (l.in_schema_expr) {
         const name = try l.addSymbol(symbol);
-        return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
+        return l.addInst(.schema_expr_ref, @backingInt(name), 0);
     }
     // A name the prelude had and lost (language.md §12.4): the message
     // says what replaced it.
@@ -1786,7 +1786,7 @@ fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     if (l.schemas.contains(symbol)) return l.schemaNamespaceRef(token, .schema_value_ref);
     if (l.in_schema_expr) {
         const name = try l.addSymbol(symbol);
-        return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
+        return l.addInst(.schema_expr_ref, @backingInt(name), 0);
     }
     if (!l.exposes_all_ctors) try l.reportToken(.unbound_constructor, token);
     return l.errorInst(.unbound_constructor);
@@ -1795,7 +1795,7 @@ fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 fn schemaExprRef(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     l.cur_token = token;
     const name = try l.addSymbol(l.tokenSymbol(token));
-    return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
+    return l.addInst(.schema_expr_ref, @backingInt(name), 0);
 }
 
 /// Keep a possibly schema-qualified spelling whole until imported interfaces
@@ -1817,7 +1817,7 @@ fn schemaNamespaceRef(l: *Lower, token: TokenIndex, tag: Inst.Tag) Allocator.Err
             const module = l.importModule(entry.index);
             const m = try l.addSymbol(module);
             const n = try l.addSymbol(root);
-            try l.addRef(.import_schema, @intFromEnum(m), @intFromEnum(n));
+            try l.addRef(.import_schema, @backingInt(m), @backingInt(n));
         },
     };
     if (first_dot < text.len) {
@@ -1841,11 +1841,11 @@ fn schemaNamespaceRef(l: *Lower, token: TokenIndex, tag: Inst.Tag) Allocator.Err
             const schema = try l.interner.getOrPut(l.gpa, tail[0..dot]);
             const m = try l.addSymbol(module);
             const n = try l.addSymbol(schema);
-            try l.addRef(.import_schema, @intFromEnum(m), @intFromEnum(n));
+            try l.addRef(.import_schema, @backingInt(m), @backingInt(n));
         }
     }
     const whole = try l.addSymbol(l.tokenSymbol(token));
-    return l.addInst(tag, @intFromEnum(whole), 0);
+    return l.addInst(tag, @backingInt(whole), 0);
 }
 
 /// Whether a qualified spelling needs the schema namespace resolver.  An
@@ -1912,7 +1912,7 @@ fn resolveType(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 }
 
 fn importModule(l: *const Lower, import_index: u32) Symbol {
-    return l.symbols.items[@intFromEnum(l.imports.items[import_index].module)];
+    return l.symbols.items[@backingInt(l.imports.items[import_index].module)];
 }
 
 /// The explicit import whose alias is spelled `text` — the first to take
@@ -1991,7 +1991,7 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     l.cur_token = main_token;
     const data = l.tree.nodeData(node);
     switch (l.tree.nodeTag(node)) {
-        .type_var => return l.lowerTypeVarMarked(l.tree.nodeMainToken(node), @enumFromInt(data.lhs)),
+        .type_var => return l.lowerTypeVarMarked(l.tree.nodeMainToken(node), @fromBackingInt(@intCast(data.lhs))),
         .type_con => {
             const con = l.tree.fullTypeCon(node);
             const ref = switch (l.tags[con.name]) {
@@ -2006,7 +2006,7 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             defer l.shrinkScratch(mark);
             for (con.args) |arg| try l.pushScratch(try l.lowerType(arg));
             const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
-            return l.addInstAt(main_token, .type_app, ref.int(), @intFromEnum(range));
+            return l.addInstAt(main_token, .type_app, ref.int(), @backingInt(range));
         },
         .type_fn => {
             const fn_type = l.tree.fullTypeFn(node);
@@ -2020,7 +2020,7 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             l.receives = outer;
             const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
             const result = try l.lowerType(fn_type.result);
-            return l.addInstAt(main_token, .type_fn, @intFromEnum(range), result.int());
+            return l.addInstAt(main_token, .type_fn, @backingInt(range), result.int());
         },
         .type_unit => return l.addInst(.type_unit, 0, 0),
         .type_bottom => return l.bottomType(),
@@ -2052,17 +2052,17 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             defer l.shrinkScratch(mark);
             for (l.tree.children(node)) |elem| try l.pushScratch(try l.lowerType(elem));
             const range = try l.addRange(l.scratchSince(mark));
-            return l.addInstAt(main_token, .type_tuple, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main_token, .type_tuple, @backingInt(range.start), @backingInt(range.end));
         },
         .type_record => {
             const range = try l.lowerTypeFields(l.tree.children(node));
-            return l.addInstAt(main_token, .type_record, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main_token, .type_record, @backingInt(range.start), @backingInt(range.end));
         },
         .type_record_ext => {
             const ext = l.tree.fullTypeRecordExt(node);
             const base = try l.lowerTypeVar(ext.base);
             const range = try l.addRangeRecord(try l.lowerTypeFields(ext.fields));
-            return l.addInstAt(main_token, .type_record_ext, base.int(), @intFromEnum(range));
+            return l.addInstAt(main_token, .type_record_ext, base.int(), @backingInt(range));
         },
         else => |tag| {
             std.debug.assert(tag.isError());
@@ -2100,9 +2100,9 @@ const FieldNames = struct {
             return false;
         }
         if (f.set.count == 0) {
-            for (f.few) |n| _ = try f.set.insert(gpa, @intFromEnum(n));
+            for (f.few) |n| _ = try f.set.insert(gpa, @backingInt(n));
         }
-        return f.set.insert(gpa, @intFromEnum(symbol));
+        return f.set.insert(gpa, @backingInt(symbol));
     }
 };
 
@@ -2179,7 +2179,7 @@ fn lowerTypeVarMarked(l: *Lower, token: TokenIndex, marker: Ast.OptionalTokenInd
             info.equatable = true;
         }
     }
-    return l.addInst(.type_var, @intFromEnum(name), info.pack());
+    return l.addInst(.type_var, @backingInt(name), info.pack());
 }
 
 // ---------------------------------------------------------------------------
@@ -2229,9 +2229,9 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             l.setInstData(param, local, Inst.Data.unused);
             const target = try l.addInst(.local, local, Inst.Data.unused);
             const field = try l.addSymbol(l.tokenSymbol(main_token));
-            const access = try l.addInst(.field_access, target.int(), @intFromEnum(field));
+            const access = try l.addInst(.field_access, target.int(), @backingInt(field));
             const params = try l.addRangeRecord(try l.addRange(&.{param.int()}));
-            return l.addInst(.lambda, @intFromEnum(params), access.int());
+            return l.addInst(.lambda, @backingInt(params), access.int());
         },
         .op_fn => {
             // `(==)` and its five relatives are a LAMBDA over a method call
@@ -2261,25 +2261,25 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             defer l.shrinkScratch(mark);
             for (l.tree.children(node)) |elem| try l.pushScratch(try l.lowerExpr(elem));
             const range = try l.addRange(l.scratchSince(mark));
-            return l.addInstAt(main_token, if (tag == .tuple) .tuple else .list, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main_token, if (tag == .tuple) .tuple else .list, @backingInt(range.start), @backingInt(range.end));
         },
         // Only ever an item of a `list`, which `lowerSpreadList` reads; the
         // operand alone is the defensive reading of one met anywhere else.
         .spread => return l.lowerExpr(l.tree.operand(node)),
         .record => {
             const range = try l.lowerFields(l.tree.children(node));
-            return l.addInstAt(main_token, .record, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main_token, .record, @backingInt(range.start), @backingInt(range.end));
         },
         .record_update => {
             const upd = l.tree.fullRecordUpdate(node);
             const base = try l.resolveValue(upd.base);
             const range = try l.addRangeRecord(try l.lowerFields(upd.fields));
-            return l.addInstAt(main_token, .record_update, base.int(), @intFromEnum(range));
+            return l.addInstAt(main_token, .record_update, base.int(), @backingInt(range));
         },
         .field_access => {
             const target = try l.lowerExpr(l.tree.operand(node));
             const field = try l.addSymbol(l.tokenSymbol(main_token));
-            return l.addInstAt(main_token, .field_access, target.int(), @intFromEnum(field));
+            return l.addInstAt(main_token, .field_access, target.int(), @backingInt(field));
         },
         .tuple_index => {
             const target = try l.lowerExpr(l.tree.operand(node));
@@ -2311,7 +2311,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             _ = l.frames.pop();
             l.popScope(mark);
             const params_record = try l.addRangeRecord(params);
-            return l.addInstAt(main_token, .lambda, @intFromEnum(params_record), body.int());
+            return l.addInstAt(main_token, .lambda, @backingInt(params_record), body.int());
         },
         .@"if", .if_then => return l.lowerIf(node),
         .let, .block => return l.lowerLet(node),
@@ -2326,7 +2326,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
                 try l.pushScratch(try l.lowerBranch(b.pattern, b.body));
             }
             const branches = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
-            return l.addInstAt(main_token, .case, scrutinee.int(), @intFromEnum(branches));
+            return l.addInstAt(main_token, .case, scrutinee.int(), @backingInt(branches));
         },
         // Every other binary operator: a call of its core function — except
         // the six comparisons, which are method calls on the type of their
@@ -2385,7 +2385,7 @@ fn lowerSpreadList(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     var built: ?Index = null;
     if (end < items.len) {
         const range = try l.addRange(@ptrCast(lowered[end..]));
-        built = try l.addInstAt(l.tree.nodeMainToken(node), .list, @intFromEnum(range.start), @intFromEnum(range.end));
+        built = try l.addInstAt(l.tree.nodeMainToken(node), .list, @backingInt(range.start), @backingInt(range.end));
     }
     var i = end;
     // The `...` of the nearest spread at or right of `i`.
@@ -2411,7 +2411,7 @@ fn lowerSpreadList(l: *Lower, node: NodeIndex) Allocator.Error!Index {
 
 fn call(l: *Lower, callee: Index, args: []const u32) Allocator.Error!Index {
     const range = try l.addRangeRecord(try l.addRange(args));
-    return l.addInst(.call, callee.int(), @intFromEnum(range));
+    return l.addInst(.call, callee.int(), @backingInt(range));
 }
 
 /// `x.m a b` (static-dispatch-spike.md §1.4). `args` excludes the receiver,
@@ -2425,7 +2425,7 @@ fn methodCall(l: *Lower, receiver: Index, name: Symbol, origin: Bir.WellKnown, a
         .args_start = range.start,
         .args_end = range.end,
     });
-    return l.addInst(.method_call, receiver.int(), @intFromEnum(extra));
+    return l.addInst(.method_call, receiver.int(), @backingInt(extra));
 }
 
 /// `a.m args` with no receiver value (§4.1): `var_symbol` is the type
@@ -2437,7 +2437,7 @@ fn typeDispatch(l: *Lower, var_symbol: Symbol, name: Symbol, args: []const u32) 
         .args_start = range.start,
         .args_end = range.end,
     });
-    return l.addInst(.type_dispatch, @intFromEnum(try l.addSymbol(var_symbol)), @intFromEnum(extra));
+    return l.addInst(.type_dispatch, @backingInt(try l.addSymbol(var_symbol)), @backingInt(extra));
 }
 
 /// `(==)` → `\a b -> a == b` (§3.1, Appendix A.22): a closure of arity two
@@ -2454,7 +2454,7 @@ fn operatorLambda(l: *Lower, origin: Bir.WellKnown) Allocator.Error!Index {
     const argument = try l.addInst(.local, right_local, Inst.Data.unused);
     const body = try l.methodCall(receiver, origin.method().?.symbol(), origin, &.{argument.int()});
     const params = try l.addRangeRecord(try l.addRange(&.{ left.int(), right.int() }));
-    return l.addInst(.lambda, @intFromEnum(params), body.int());
+    return l.addInst(.lambda, @backingInt(params), body.int());
 }
 
 /// The core function of language.md §6.5's table for an operator token,
@@ -2550,7 +2550,7 @@ fn lowerApplication(
     extra: ?NodeIndex,
     position: Position,
 ) Allocator.Error!Index {
-    var param: Index = @enumFromInt(0);
+    var param: Index = @fromBackingInt(@intCast(0));
     var local: u32 = 0;
     const has_hole = l.placeholderIn(args);
     var extra_arg: ?Index = null;
@@ -2579,8 +2579,8 @@ fn lowerApplication(
     // naming a type variable of this declaration's `where` clause, is a
     // dispatch on the TYPE and never a field access (§4.1).
     const dispatch: ?Symbol = if (method) |m| l.typeDispatchVar(m.target) else null;
-    var receiver: Index = @enumFromInt(0);
-    var callee: Index = @enumFromInt(0);
+    var receiver: Index = @fromBackingInt(@intCast(0));
+    var callee: Index = @fromBackingInt(@intCast(0));
     if (method) |m| {
         if (dispatch == null) receiver = try l.lowerExpr(m.target);
     } else {
@@ -2628,7 +2628,7 @@ fn lowerApplication(
     if (!has_hole) return called;
     _ = l.frames.pop();
     const params = try l.addRangeRecord(try l.addRange(&.{param.int()}));
-    return l.addInstAt(main_token, .lambda, @intFromEnum(params), called.int());
+    return l.addInstAt(main_token, .lambda, @backingInt(params), called.int());
 }
 
 fn placeholderIn(l: *const Lower, args: []const NodeIndex) bool {
@@ -2653,8 +2653,8 @@ fn typeDispatchVar(l: *const Lower, receiver: NodeIndex) ?Symbol {
         if (prelude.valueModule(w) != null) return null;
     }
     const d = l.decls.items[l.cur_decl];
-    var i = @intFromEnum(d.where_start);
-    while (i < @intFromEnum(d.where_end)) : (i += Bir.extraLen(Bir.WhereConstraint)) {
+    var i = @backingInt(d.where_start);
+    while (i < @backingInt(d.where_end)) : (i += Bir.extraLen(Bir.WhereConstraint)) {
         if (l.symbols.items[l.extra.items[i]] == symbol) return symbol;
     }
     // Trigger (2) of §4.1: the declaration has an annotation naming `v` as
@@ -2674,18 +2674,18 @@ fn lowerIf(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const if_token = l.tree.nodeMainToken(node);
     const cond = try l.lowerExpr(i.cond);
     const true_ref = try l.importRef(.import_ctor, .import_ctor, WellKnown.Basics.symbol(), WellKnown.True.symbol());
-    const true_pat = try l.addInst(.pat_ctor, true_ref.int(), @intFromEnum(try l.addRangeRecord(SubRange.empty)));
+    const true_pat = try l.addInst(.pat_ctor, true_ref.int(), @backingInt(try l.addRangeRecord(SubRange.empty)));
     const then_expr = try l.lowerExpr(i.then_expr);
     const then_branch = try l.addInst(.branch, true_pat.int(), then_expr.int());
     const false_ref = try l.importRef(.import_ctor, .import_ctor, WellKnown.Basics.symbol(), WellKnown.False.symbol());
-    const false_pat = try l.addInst(.pat_ctor, false_ref.int(), @intFromEnum(try l.addRangeRecord(SubRange.empty)));
+    const false_pat = try l.addInst(.pat_ctor, false_ref.int(), @backingInt(try l.addRangeRecord(SubRange.empty)));
     // An `if` without `else` (language.md §12.10): the missing branch is
     // the unit value, marked by `lhs` 1 so the checker can tell it from a
     // written `⊤` (checker-v2.md §34). Nothing else reads the mark.
     const else_expr = if (i.else_expr) |e| try l.lowerExpr(e) else try l.addInstAt(if_token, .unit, 1, 0);
     const else_branch = try l.addInst(.branch, false_pat.int(), else_expr.int());
     const branches = try l.addRangeRecord(try l.addRange(&.{ then_branch.int(), else_branch.int() }));
-    return l.addInstAt(if_token, .case, cond.int(), @intFromEnum(branches));
+    return l.addInstAt(if_token, .case, cond.int(), @backingInt(branches));
 }
 
 /// A `case` branch: its pattern's variables are in scope in its body only.
@@ -2723,7 +2723,7 @@ fn lowerQuestion(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     } else {
         try l.reportToken(.question_outside_function, q_token);
     }
-    return l.addInst(.@"try", operand.int(), @intFromEnum(target));
+    return l.addInst(.@"try", operand.int(), @backingInt(target));
 }
 
 /// `let` (§7): every binding's name is bound before any body is lowered,
@@ -2821,7 +2821,7 @@ fn lowerBindings(
                 pending_annotation_name = l.tokenSymbol(l.tree.nodeMainToken(b));
             },
             .let_def => {
-                const inst: Index = @enumFromInt(l.list_scratch.items[slot]);
+                const inst: Index = @fromBackingInt(@intCast(l.list_scratch.items[slot]));
                 const row = &order.items[slot - mark];
                 row.inst_start = @intCast(l.insts.len);
                 const def = l.tree.fullLetDef(b);
@@ -2846,7 +2846,7 @@ fn lowerBindings(
                     .params_start = params.start,
                     .params_end = params.end,
                 });
-                l.setInstData(inst, @intFromEnum(record), body.int());
+                l.setInstData(inst, @backingInt(record), body.int());
                 row.inst_end = @intCast(l.insts.len);
                 // A value whose right-hand side IS a lambda evaluates
                 // nothing when it is bound (§6, *Evaluation order*), so
@@ -2857,7 +2857,7 @@ fn lowerBindings(
                 slot += 1;
             },
             .let_pattern => {
-                const pat: Index = @enumFromInt(l.list_scratch.items[slot]);
+                const pat: Index = @fromBackingInt(@intCast(l.list_scratch.items[slot]));
                 const row = &order.items[slot - mark];
                 row.inst_start = @intCast(l.insts.len);
                 const lp = l.tree.fullLetPattern(b);
@@ -2902,7 +2902,7 @@ fn lowerBindings(
     // has at least one binding even when every one of them is an error.
     if (items.len == 0 and (rest.len != 0 or all_bindings.len == 0)) return body;
     const bindings = try l.addRangeRecord(try l.addRange(items));
-    return l.addInst(.let, @intFromEnum(bindings), body.int());
+    return l.addInst(.let, @backingInt(bindings), body.int());
 }
 
 /// §7's initialisation rule, for one `let` block: a VALUE binding is
@@ -3141,8 +3141,8 @@ fn patternNames(l: *Lower, pattern: NodeIndex, names: *std.ArrayList(Symbol)) Al
         .pat_ctor => for (l.tree.children(pattern)) |child| try l.patternNames(child, names),
         .pat_cons => {
             const d = l.tree.nodeData(pattern);
-            try l.patternNames(@enumFromInt(d.lhs), names);
-            try l.patternNames(@enumFromInt(d.rhs), names);
+            try l.patternNames(@fromBackingInt(@intCast(d.lhs)), names);
+            try l.patternNames(@fromBackingInt(@intCast(d.rhs)), names);
         },
         .pat_record => for (l.tree.fullPatRecord(pattern).fields) |f| try names.append(l.scratch_allocator, l.tokenSymbol(f)),
         else => {},
@@ -3167,7 +3167,7 @@ fn lowerCallback(
     _ = l.frames.pop();
     l.popScope(scope_mark);
     const params = try l.addRangeRecord(try l.addRange(&.{pat.int()}));
-    return l.addInstAt(bind_token, .lambda, @intFromEnum(params), rest_expr.int());
+    return l.addInstAt(bind_token, .lambda, @backingInt(params), rest_expr.int());
 }
 
 /// The name token of the last `let_annotation` in `bindings`.
@@ -3230,7 +3230,7 @@ fn lowerString(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         }
     }
     const range = try l.addRange(l.scratchSince(mark));
-    return l.addInstAt(s.start_token, .interp, @intFromEnum(range.start), @intFromEnum(range.end));
+    return l.addInstAt(s.start_token, .interp, @backingInt(range.start), @backingInt(range.end));
 }
 
 // ---------------------------------------------------------------------------
@@ -3244,7 +3244,7 @@ fn lowerMarkup(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const open = l.tree.nodeMainToken(node);
     const root = try l.markupNode(node);
     l.uses_markup = true;
-    return l.addInstAt(open, .markup, @intFromEnum(root), 0);
+    return l.addInstAt(open, .markup, @backingInt(root), 0);
 }
 
 /// An element, fragment, component or form, as a node record.
@@ -3355,7 +3355,7 @@ fn markupItems(l: *Lower, attrs: []const NodeIndex, tag_name: TokenIndex, compon
             .markup_attr, .markup_attr_escape => {
                 const item = try l.markupItem(attr);
                 const token = l.tree.nodeMainToken(attr);
-                const name = l.symbols.items[@intFromEnum(item.name)];
+                const name = l.symbols.items[@backingInt(item.name)];
                 if (try seen.first(l.scratch_allocator, l.interner.slice(name), token)) |first| {
                     // A quoted name is reported whole, quotes included.
                     const last = if (l.tags[token] == .str_start) l.stringEnd(token) else token;
@@ -3388,8 +3388,8 @@ fn markupItem(l: *Lower, attr: NodeIndex) Allocator.Error!Bir.MarkupItem {
         .constant = .none,
         .constant_offset = 0,
         .constant_len = 0,
-        .entries_start = @enumFromInt(0),
-        .entries_end = @enumFromInt(0),
+        .entries_start = @fromBackingInt(@intCast(0)),
+        .entries_end = @fromBackingInt(@intCast(0)),
     };
     const a = l.tree.fullMarkupAttr(attr);
     if (a.name_string) |name_node| {
@@ -3504,7 +3504,7 @@ fn quotedValue(l: *Lower, node: NodeIndex) Allocator.Error!Quoted {
         }
     }
     const range = try l.addRange(l.scratchSince(mark));
-    return .{ .inst = try l.addInstAt(s.start_token, .interp, @intFromEnum(range.start), @intFromEnum(range.end)), .offset = 0, .len = 0 };
+    return .{ .inst = try l.addInstAt(s.start_token, .interp, @backingInt(range.start), @backingInt(range.end)), .offset = 0, .len = 0 };
 }
 
 /// A quoted value as a value instruction, where one is needed: a form's
@@ -3587,7 +3587,7 @@ fn boolConstant(l: *const Lower, inst: Index) Bir.Constant {
 /// pair literals whose names are string literals without interpolation
 /// (frontend.md §9.7). Empty for any other value.
 fn listEntries(l: *Lower, node: NodeIndex, inst: Index) Allocator.Error!SubRange {
-    const empty: SubRange = .{ .start = @enumFromInt(0), .end = @enumFromInt(0) };
+    const empty: SubRange = .{ .start = @fromBackingInt(@intCast(0)), .end = @fromBackingInt(@intCast(0)) };
     if (l.tree.nodeTag(node) != .list) return empty;
     const elems = l.tree.children(node);
     if (elems.len == 0) return empty;
@@ -3601,10 +3601,10 @@ fn listEntries(l: *Lower, node: NodeIndex, inst: Index) Allocator.Error!SubRange
     const list = Bir.inlineRange(datas[inst.int()]);
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
-    for (elems, @intFromEnum(list.start)..) |e, at| {
+    for (elems, @backingInt(list.start)..) |e, at| {
         const pair = Bir.inlineRange(datas[l.extra.items[at]]);
-        const name_inst = l.extra.items[@intFromEnum(pair.start)];
-        const value_inst: Index = @enumFromInt(l.extra.items[@intFromEnum(pair.start) + 1]);
+        const name_inst = l.extra.items[@backingInt(pair.start)];
+        const value_inst: Index = @fromBackingInt(@intCast(l.extra.items[@backingInt(pair.start) + 1]));
         const second = l.tree.children(e)[1];
         const c: ConstantOf = switch (l.tree.nodeTag(second)) {
             .string, .ctor => l.constantOf(second, value_inst),
@@ -3670,7 +3670,7 @@ fn markupComponent(l: *Lower, mk: Ast.full.Markup, name: TokenIndex) Allocator.E
     const children = try l.markupChildren(mk.children);
     const form: Bir.ChildrenForm = if (children.len() == 0)
         .absent
-    else if (children.len() == 1 and l.recordKind(l.extra.items[@intFromEnum(children.start)]) == .hole)
+    else if (children.len() == 1 and l.recordKind(l.extra.items[@backingInt(children.start)]) == .hole)
         .hole
     else
         .fragment;
@@ -3691,7 +3691,7 @@ fn markupComponent(l: *Lower, mk: Ast.full.Markup, name: TokenIndex) Allocator.E
 }
 
 fn recordKind(l: *const Lower, index: u32) Bir.MarkupKind {
-    return @enumFromInt(l.extra.items[index]);
+    return @fromBackingInt(@intCast(l.extra.items[index]));
 }
 
 /// `Module.value` spelled as two texts, resolved as a qualified name is
@@ -3806,7 +3806,7 @@ fn markupForm(l: *Lower, node: NodeIndex, mk: Ast.full.Markup) Allocator.Error!B
     if (offending) |t| {
         try l.reportMarkup(.invalid_form_children, t, t, form_name, .none);
     } else if (hole) |h| {
-        record.row = @intFromEnum(try l.lowerRow(l.tree.operand(h)));
+        record.row = @backingInt(try l.lowerRow(l.tree.operand(h)));
     } else {
         try l.reportMarkup(.invalid_form_children, form_name, form_name, form_name, .none);
     }
@@ -3945,7 +3945,7 @@ fn lowerRow(l: *Lower, node: NodeIndex) Allocator.Error!Bir.ExtraIndex {
         }
         if (tags[at] == .markup) {
             shape = .markup;
-            body = @enumFromInt(at);
+            body = @fromBackingInt(@intCast(at));
         } else l.shrinkScratch(mark);
     }
     const lets = try l.addRange(l.scratchSince(mark));
@@ -3955,10 +3955,10 @@ fn lowerRow(l: *Lower, node: NodeIndex) Allocator.Error!Bir.ExtraIndex {
         .body = body,
         .lets_start = lets.start,
         .lets_end = lets.end,
-        .captures_start = @enumFromInt(0),
-        .captures_end = @enumFromInt(0),
-        .inputs_start = @enumFromInt(0),
-        .inputs_end = @enumFromInt(0),
+        .captures_start = @fromBackingInt(@intCast(0)),
+        .captures_end = @fromBackingInt(@intCast(0)),
+        .inputs_start = @fromBackingInt(@intCast(0)),
+        .inputs_end = @fromBackingInt(@intCast(0)),
     });
     if (shape != .function) try l.rows.append(l.scratch_allocator, .{ .row = row, .decl = l.cur_decl, .first = first, .function = function.int() });
     return row;
@@ -4116,7 +4116,7 @@ const RowAnalysis = struct {
             const p = parents[cur - base];
             if (p.inst == none_u32 or p.pos != 0) break;
             switch (tags[p.inst]) {
-                .field_access => path = path.append(@intFromEnum(l.symbols.items[datas[p.inst].rhs])),
+                .field_access => path = path.append(@backingInt(l.symbols.items[datas[p.inst].rhs])),
                 .tuple_index => path = path.append(@min(datas[p.inst].rhs, Bir.tuple_link - 1) | Bir.tuple_link),
                 else => break,
             }
@@ -4145,16 +4145,16 @@ const RowAnalysis = struct {
         const d = l.decls.items[decl];
         const tags = l.insts.items(.tag);
         const datas = l.insts.items(.data);
-        const params = l.extra.items[@intFromEnum(d.params_start)..@intFromEnum(d.params_end)];
+        const params = l.extra.items[@backingInt(d.params_start)..@backingInt(d.params_end)];
         const out = try a.gpa().alloc(Paths, params.len);
         for (out, params) |*paths, param| {
             paths.* = .{};
             switch (tags[param]) {
                 .pat_record => {
                     const locals = Bir.inlineRange(datas[param]);
-                    for (l.extra.items[@intFromEnum(locals.start)..@intFromEnum(locals.end)]) |local| {
+                    for (l.extra.items[@backingInt(locals.start)..@backingInt(locals.end)]) |local| {
                         const name = l.locals.items[d.locals_start + local].name;
-                        try paths.add(a.gpa(), (Path{}).append(@intFromEnum(l.symbols.items[@intFromEnum(name)])));
+                        try paths.add(a.gpa(), (Path{}).append(@backingInt(l.symbols.items[@backingInt(name)])));
                     }
                 },
                 .pat_var => {
@@ -4229,14 +4229,14 @@ fn finishRows(l: *Lower) Allocator.Error!void {
             for (paths.list.items) |p| {
                 var links: [Bir.max_input_links]u32 = @splat(0);
                 for (p.links[0..p.len], 0..) |k, n| {
-                    links[n] = if (k & Bir.tuple_link != 0) k else @intFromEnum(try l.addSymbol(@enumFromInt(k)));
+                    links[n] = if (k & Bir.tuple_link != 0) k else @backingInt(try l.addSymbol(@fromBackingInt(@intCast(k))));
                 }
                 _ = try l.addExtra(Bir.MarkupInput{ .local = local, .len = p.len, .link0 = links[0], .link1 = links[1], .link2 = links[2], .link3 = links[3] });
             }
         }
-        const at = @intFromEnum(row.row);
-        l.extra.items[at + 5] = @intFromEnum(capture_range.start);
-        l.extra.items[at + 6] = @intFromEnum(capture_range.end);
+        const at = @backingInt(row.row);
+        l.extra.items[at + 5] = @backingInt(capture_range.start);
+        l.extra.items[at + 6] = @backingInt(capture_range.end);
         l.extra.items[at + 7] = inputs_start;
         l.extra.items[at + 8] = @intCast(l.extra.items.len);
     }
@@ -4268,11 +4268,11 @@ fn operandsOf(l: *const Lower, inst: u32, out: *std.ArrayList(u32), gpa: Allocat
         .method_call => {
             try out.append(gpa, d.lhs);
             const m = extraAt(extra, d.rhs, Bir.MethodCall);
-            try out.appendSlice(gpa, extra[@intFromEnum(m.args_start)..@intFromEnum(m.args_end)]);
+            try out.appendSlice(gpa, extra[@backingInt(m.args_start)..@backingInt(m.args_end)]);
         },
         .type_dispatch => {
             const t = extraAt(extra, d.rhs, Bir.TypeDispatch);
-            try out.appendSlice(gpa, extra[@intFromEnum(t.args_start)..@intFromEnum(t.args_end)]);
+            try out.appendSlice(gpa, extra[@backingInt(t.args_start)..@backingInt(t.args_end)]);
         },
         .lambda, .let => {
             try out.appendSlice(gpa, extra[extra[d.lhs]..extra[d.lhs + 1]]);
@@ -4280,7 +4280,7 @@ fn operandsOf(l: *const Lower, inst: u32, out: *std.ArrayList(u32), gpa: Allocat
         },
         .let_def => {
             const def = extraAt(extra, d.lhs, Bir.LetDef);
-            try out.appendSlice(gpa, extra[@intFromEnum(def.params_start)..@intFromEnum(def.params_end)]);
+            try out.appendSlice(gpa, extra[@backingInt(def.params_start)..@backingInt(def.params_end)]);
             try out.append(gpa, d.rhs);
         },
         .case => {
@@ -4301,15 +4301,15 @@ fn operandsOf(l: *const Lower, inst: u32, out: *std.ArrayList(u32), gpa: Allocat
 /// source order.
 fn markupOperands(l: *const Lower, at: u32, out: *std.ArrayList(u32), gpa: Allocator) Allocator.Error!void {
     const extra = l.extra.items;
-    switch (@as(Bir.MarkupKind, @enumFromInt(extra[at]))) {
+    switch (@as(Bir.MarkupKind, @fromBackingInt(@intCast(extra[at])))) {
         .element => {
             const e = extraAt(extra, at, Bir.MarkupElement);
             try l.itemOperands(e.items_start, e.items_end, out, gpa);
-            for (extra[@intFromEnum(e.children_start)..@intFromEnum(e.children_end)]) |c| try l.markupOperands(c, out, gpa);
+            for (extra[@backingInt(e.children_start)..@backingInt(e.children_end)]) |c| try l.markupOperands(c, out, gpa);
         },
         .fragment => {
             const f = extraAt(extra, at, Bir.MarkupFragment);
-            for (extra[@intFromEnum(f.children_start)..@intFromEnum(f.children_end)]) |c| try l.markupOperands(c, out, gpa);
+            for (extra[@backingInt(f.children_start)..@backingInt(f.children_end)]) |c| try l.markupOperands(c, out, gpa);
         },
         .text => {},
         .hole => try out.append(gpa, extraAt(extra, at, Bir.MarkupHole).value.int()),
@@ -4318,7 +4318,7 @@ fn markupOperands(l: *const Lower, at: u32, out: *std.ArrayList(u32), gpa: Alloc
             try out.append(gpa, c.callee.int());
             if (c.spread.unwrap()) |s| try out.append(gpa, s.int());
             try l.itemOperands(c.props_start, c.props_end, out, gpa);
-            for (extra[@intFromEnum(c.children_start)..@intFromEnum(c.children_end)]) |ch| try l.markupOperands(ch, out, gpa);
+            for (extra[@backingInt(c.children_start)..@backingInt(c.children_end)]) |ch| try l.markupOperands(ch, out, gpa);
         },
         .@"for", .show => {
             const f = extraAt(extra, at, Bir.MarkupForm);
@@ -4332,7 +4332,7 @@ fn markupOperands(l: *const Lower, at: u32, out: *std.ArrayList(u32), gpa: Alloc
 
 fn itemOperands(l: *const Lower, start: Bir.ExtraIndex, end: Bir.ExtraIndex, out: *std.ArrayList(u32), gpa: Allocator) Allocator.Error!void {
     const extra = l.extra.items;
-    for (extra[@intFromEnum(start)..@intFromEnum(end)]) |at| {
+    for (extra[@backingInt(start)..@backingInt(end)]) |at| {
         const item = extraAt(extra, at, Bir.MarkupItem);
         if (item.value.unwrap()) |v| try out.append(gpa, v.int());
     }
@@ -4342,11 +4342,11 @@ fn itemOperands(l: *const Lower, start: Bir.ExtraIndex, end: Bir.ExtraIndex, out
 /// `Bir.extraData` does once the arrays are frozen.
 fn extraAt(extra: []const u32, index: u32, comptime T: type) T {
     var result: T = undefined;
-    inline for (std.meta.fields(T), 0..) |field, k| {
-        @field(result, field.name) = switch (@typeInfo(field.type)) {
-            .@"enum" => @enumFromInt(extra[index + k]),
+    inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types, 0..) |field_name, field_type, k| {
+        @field(result, field_name) = switch (@typeInfo(field_type)) {
+            .@"enum" => @fromBackingInt(@intCast(extra[index + k])),
             .int => extra[index + k],
-            else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+            else => @compileError("unexpected extra field type: " ++ @typeName(field_type)),
         };
     }
     return result;
@@ -4391,7 +4391,7 @@ fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Ki
             // constructor pattern — its arity (checker.md §8.3), its type,
             // its redundancy (§6.6) — is about the pattern as a whole, and
             // its name is where a reader looks for it.
-            return l.addInstAt(pc.name, .pat_ctor, ref.int(), @intFromEnum(args));
+            return l.addInstAt(pc.name, .pat_ctor, ref.int(), @backingInt(args));
         },
         .pat_int => {
             const text = try l.addBytes(l.tokenText(main_token));
@@ -4421,7 +4421,7 @@ fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Ki
             defer l.shrinkScratch(mark);
             for (l.tree.children(node)) |elem| try l.pushScratch(try l.lowerPattern(elem, set_start, .pattern));
             const range = try l.addRange(l.scratchSince(mark));
-            return l.addInst(if (tag == .pat_tuple) .pat_tuple else .pat_list, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInst(if (tag == .pat_tuple) .pat_tuple else .pat_list, @backingInt(range.start), @backingInt(range.end));
         },
         .pat_record => {
             const pr = l.tree.fullPatRecord(node);
@@ -4430,15 +4430,15 @@ fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Ki
             defer l.shrinkScratch(mark);
             for (pr.fields) |field_token| try l.pushScratch(try l.bindVar(field_token, set_start, .pattern, inst));
             const range = try l.addRange(l.scratchSince(mark));
-            l.setInstData(inst, @intFromEnum(range.start), @intFromEnum(range.end));
+            l.setInstData(inst, @backingInt(range.start), @backingInt(range.end));
             return inst;
         },
         // A `::` pattern: `cons_removed`, reported by the parser. Its
         // names are still bound — to nothing, so a body that reads them is
         // poisoned rather than full of `unbound_variable`s.
         .pat_cons => {
-            _ = try l.lowerPattern(@enumFromInt(data.lhs), set_start, .pattern);
-            _ = try l.lowerPattern(@enumFromInt(data.rhs), set_start, .pattern);
+            _ = try l.lowerPattern(@fromBackingInt(@intCast(data.lhs)), set_start, .pattern);
+            _ = try l.lowerPattern(@fromBackingInt(@intCast(data.rhs)), set_start, .pattern);
             return l.errorInst(.cons_removed);
         },
         .pat_spread => {
@@ -4692,17 +4692,17 @@ fn checkWellFormed(bir: *const Bir) !void {
             },
         };
         var i_inst = d.inst_start.int();
-        while (i_inst < d.inst_end.int()) : (i_inst += 1) try checkInst(bir, d, @enumFromInt(i_inst));
+        while (i_inst < d.inst_end.int()) : (i_inst += 1) try checkInst(bir, d, @fromBackingInt(@intCast(i_inst)));
     }
     try testing.expectEqual(n_insts, prev_end); // every instruction belongs to a declaration
 }
 
 fn checkSymbol(bir: *const Bir, s: SymbolIndex) !void {
-    try testing.expect(@intFromEnum(s) < bir.symbols.len);
+    try testing.expect(@backingInt(s) < bir.symbols.len);
 }
 
 fn checkRange(r: SubRange, n_extra: usize) !void {
-    try testing.expect(@intFromEnum(r.start) <= @intFromEnum(r.end) and @intFromEnum(r.end) <= n_extra);
+    try testing.expect(@backingInt(r.start) <= @backingInt(r.end) and @backingInt(r.end) <= n_extra);
 }
 
 fn checkInDecl(d: Bir.Decl, inst: Index) !void {
@@ -4729,7 +4729,7 @@ fn checkFields(bir: *const Bir, d: Bir.Decl, r: SubRange) !void {
 
 fn checkRecordAt(bir: *const Bir, index: u32) !SubRange {
     try testing.expect(index + 2 <= bir.extra.len);
-    return bir.subRange(@enumFromInt(index));
+    return bir.subRange(@fromBackingInt(@intCast(index)));
 }
 
 fn checkBytes(bir: *const Bir, data: Inst.Data) !void {
@@ -4745,7 +4745,7 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
         .import_value, .import_ctor, .qualified, .qualified_ctor, .type_import, .type_qualified => {
             try testing.expect(data.lhs < bir.symbols.len and data.rhs < bir.symbols.len);
         },
-        .schema_type_ref, .schema_value_ref, .schema_ctor_ref => try checkSymbol(bir, @enumFromInt(data.lhs)),
+        .schema_type_ref, .schema_value_ref, .schema_ctor_ref => try checkSymbol(bir, @fromBackingInt(@intCast(data.lhs))),
         // Lowering never produces these; `resolve/Resolve.zig` rewrites
         // the forms above into them after the module graph exists.
         .ext_value, .ext_ctor, .ext_type, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .schema_type_top, .ext_schema_type, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target => return error.TestUnexpectedResult,
@@ -4754,70 +4754,70 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             const info = Bir.TypeVarInfo.unpack(data.rhs);
             if (info.param != Bir.TypeVarInfo.param_none) try testing.expect(info.param < d.params);
         },
-        .schema_ref, .schema_expr_ref => try checkSymbol(bir, @enumFromInt(data.lhs)),
+        .schema_ref, .schema_expr_ref => try checkSymbol(bir, @fromBackingInt(@intCast(data.lhs))),
         .schema_app => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
         },
-        .schema_paren, .schema_as, .schema_via => try checkInDecl(d, @enumFromInt(data.lhs)),
+        .schema_paren, .schema_as, .schema_via => try checkInDecl(d, @fromBackingInt(@intCast(data.lhs))),
         .schema_record => try checkInstList(bir, d, Bir.inlineRange(data)),
         .schema_field => {
-            try checkSymbol(bir, @enumFromInt(data.lhs));
+            try checkSymbol(bir, @fromBackingInt(@intCast(data.lhs)));
             try testing.expect(data.rhs + Bir.extraLen(Bir.SchemaField) <= bir.extra.len);
-            const field = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaField);
+            const field = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaField);
             try checkInDecl(d, field.operand);
             try checkInstList(bir, d, .{ .start = field.modifiers_start, .end = field.modifiers_end });
         },
         .schema_value => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
         },
         .schema_tagged => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
         },
         .schema_variant => {
-            try checkSymbol(bir, @enumFromInt(data.lhs));
+            try checkSymbol(bir, @fromBackingInt(@intCast(data.lhs)));
             try testing.expect(data.rhs + Bir.extraLen(Bir.SchemaVariant) <= bir.extra.len);
-            const variant = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+            const variant = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaVariant);
             if (variant.payload.unwrap()) |p| try checkInDecl(d, p);
             if (variant.rename.unwrap()) |r| try checkInDecl(d, r);
         },
         .schema_optional, .schema_nullable => {},
         .type_app, .call, .pat_ctor => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
         },
         .type_fn => {
             const params = try checkRecordAt(bir, data.lhs);
             try testing.expect(params.len() >= 1);
             try checkInstList(bir, d, params);
-            try checkInDecl(d, @enumFromInt(data.rhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.rhs)));
         },
         .let_pattern, .branch => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
-            try checkInDecl(d, @enumFromInt(data.rhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.rhs)));
         },
-        .let_stmt => try checkInDecl(d, @enumFromInt(data.rhs)),
+        .let_stmt => try checkInDecl(d, @fromBackingInt(@intCast(data.rhs))),
         .type_unit, .unit, .pat_wild, .pat_unit => {},
         .type_tuple, .tuple, .list, .interp, .pat_tuple, .pat_list => try checkInstList(bir, d, Bir.inlineRange(data)),
         .type_record, .record => try checkFields(bir, d, Bir.inlineRange(data)),
         .type_record_ext, .record_update => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try checkFields(bir, d, try checkRecordAt(bir, data.rhs));
         },
         .int, .float, .string, .chunk, .pat_int, .pat_string => try checkBytes(bir, data),
         .markup => try testing.expect(bir.markupTreeValid(d, data.lhs)),
         .char, .pat_char => try testing.expect(data.lhs <= 0x10FFFF),
         .field_access => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try testing.expect(data.rhs < bir.symbols.len);
         },
-        .tuple_index => try checkInDecl(d, @enumFromInt(data.lhs)),
+        .tuple_index => try checkInDecl(d, @fromBackingInt(@intCast(data.lhs))),
         .method_call => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try testing.expect(data.rhs + Bir.extraLen(Bir.MethodCall) <= bir.extra.len);
-            const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
+            const m = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
             try checkSymbol(bir, m.name);
             try checkInstList(bir, d, .{ .start = m.args_start, .end = m.args_end });
             try testing.expect(m.args_end != m.args_start); // never zero arguments (§1.1)
@@ -4825,29 +4825,29 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
         .type_dispatch => {
             try testing.expect(data.lhs < bir.symbols.len);
             try testing.expect(data.rhs + Bir.extraLen(Bir.TypeDispatch) <= bir.extra.len);
-            const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+            const t = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.TypeDispatch);
             try checkSymbol(bir, t.name);
             try checkInstList(bir, d, .{ .start = t.args_start, .end = t.args_end });
         },
         .lambda, .let => {
             try checkInstList(bir, d, try checkRecordAt(bir, data.lhs));
-            try checkInDecl(d, @enumFromInt(data.rhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.rhs)));
         },
         .let_def => {
             try testing.expect(data.lhs + Bir.extraLen(Bir.LetDef) <= bir.extra.len);
-            const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+            const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
             try checkLocal(bir, d, def.local);
             if (def.annotation.unwrap()) |a| try checkInDecl(d, a);
             try checkInstList(bir, d, .{ .start = def.params_start, .end = def.params_end });
-            try checkInDecl(d, @enumFromInt(data.rhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.rhs)));
         },
         .case => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
         },
         .@"try" => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
-            const target: Inst.OptionalIndex = @enumFromInt(data.rhs);
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
+            const target: Inst.OptionalIndex = @fromBackingInt(@intCast(data.rhs));
             if (target.unwrap()) |t| {
                 try checkInDecl(d, t);
                 try testing.expectEqual(Inst.Tag.let_def, bir.instTag(t));
@@ -4858,11 +4858,11 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             for (bir.extraSlice(Bir.inlineRange(data), u32)) |l| try checkLocal(bir, d, l);
         },
         .pat_as => {
-            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInDecl(d, @fromBackingInt(@intCast(data.lhs)));
             try checkLocal(bir, d, data.rhs);
         },
-        .pat_spread => try checkInDecl(d, @enumFromInt(data.lhs)),
-        .@"error" => try testing.expect(data.lhs < @typeInfo(diagnostic.Code).@"enum".fields.len),
+        .pat_spread => try checkInDecl(d, @fromBackingInt(@intCast(data.lhs))),
+        .@"error" => try testing.expect(data.lhs < @typeInfo(diagnostic.Code).@"enum".field_names.len),
     }
 }
 

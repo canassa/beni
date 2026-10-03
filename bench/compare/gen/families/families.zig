@@ -145,7 +145,7 @@ fn polymorphism(u: *Unit) !void {
                 key[0] = c.f;
                 for (0..nv) |i| {
                     c.targs[i] = u.g.pick(Type, &insts);
-                    key[1 + i] = @intFromEnum(c.targs[i]);
+                    key[1 + i] = @backingInt(c.targs[i]);
                 }
                 const gop = try seen.getOrPut(u.arena(), key);
                 if (gop.found_existing) continue;

@@ -22,8 +22,8 @@ const WellKnown = InternPool.WellKnown;
 /// The `WellKnown` behind a symbol, when the symbol is in the well-known
 /// prefix. Symbols at or past `WellKnown.count` are ordinary identifiers.
 pub fn wellKnown(symbol: Symbol) ?WellKnown {
-    const i = @intFromEnum(symbol);
-    return if (i < WellKnown.count) @enumFromInt(i) else null;
+    const i = @backingInt(symbol);
+    return if (i < WellKnown.count) @fromBackingInt(@intCast(i)) else null;
 }
 
 /// True for the nine module aliases usable in qualified names. `Int` and
@@ -165,8 +165,8 @@ test "every prelude name has exactly the namespaces Appendix A gives it" {
     var n_types: u32 = 0;
     var n_ctors: u32 = 0;
     var n_values: u32 = 0;
-    inline for (@typeInfo(WellKnown).@"enum".fields) |field| {
-        const w: WellKnown = @enumFromInt(field.value);
+    inline for (@typeInfo(WellKnown).@"enum".field_values) |field_value| {
+        const w: WellKnown = @fromBackingInt(@intCast(field_value));
         if (isModule(w)) n_modules += 1;
         if (typeModule(w) != null) n_types += 1;
         if (ctorModule(w) != null) n_ctors += 1;
@@ -190,5 +190,5 @@ test "every prelude name has exactly the namespaces Appendix A gives it" {
     try std.testing.expectEqual(@as(?WellKnown, .Char), typeModule(.Char));
     try std.testing.expect(isModule(.List));
     try std.testing.expectEqual(@as(?WellKnown, .max), wellKnown(WellKnown.max.symbol()));
-    try std.testing.expectEqual(@as(?WellKnown, null), wellKnown(@enumFromInt(WellKnown.count)));
+    try std.testing.expectEqual(@as(?WellKnown, null), wellKnown(@fromBackingInt(@intCast(WellKnown.count))));
 }

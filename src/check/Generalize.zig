@@ -657,7 +657,7 @@ test "an inner frame's variable bound to an outer one escapes; its own is quanti
     try frames[0].pool.append(testing.allocator, outer);
     // inner = List outer, own = a fresh variable of the inner frame.
     const args = try store.addVars(&.{outer});
-    const inner = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, 2);
+    const inner = try store.fresh(.{ .structure = .{ .app = .{ .type = @fromBackingInt(@intCast(0)), .args = args } } }, 2);
     const own = try store.freshFlex(2);
     try frames[1].pool.appendSlice(testing.allocator, &.{ inner, own });
 
@@ -688,7 +688,7 @@ fn adjustDeepType() !void {
     var v = outer;
     for (0..Walk.deep_type) |_| {
         const args = try store.addVars(&.{v});
-        v = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, 3);
+        v = try store.fresh(.{ .structure = .{ .app = .{ .type = @fromBackingInt(@intCast(0)), .args = args } } }, 3);
         try pool.append(testing.allocator, v);
     }
     try adjustRanks(&store, &stacks, testing.allocator, testing.allocator, &pool, 3, true);

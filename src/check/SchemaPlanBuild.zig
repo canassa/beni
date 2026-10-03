@@ -50,12 +50,12 @@ pub fn build(
         if (decl.kind != .schema) continue;
         const root_inst = decl.schema_body.unwrap() orelse continue;
         const params_start: u32 = @intCast(b.extra.items.len);
-        for (bir.declTypeParams(decl)) |param| try b.extra.append(gpa, @intFromEnum(try b.symbolIndex(param)));
+        for (bir.declTypeParams(decl)) |param| try b.extra.append(gpa, @backingInt(try b.symbolIndex(param)));
         const params_end: u32 = @intCast(b.extra.items.len);
-        const root = try b.node(@enumFromInt(decl_i), root_inst);
+        const root = try b.node(@fromBackingInt(@intCast(decl_i)), root_inst);
         try b.definitions.append(gpa, .{
             .name = try b.symbolIndex(bir.symbol(decl.name)),
-            .decl = @enumFromInt(decl_i),
+            .decl = @fromBackingInt(@intCast(decl_i)),
             .params_start = params_start,
             .params_end = params_end,
             .root = root,
@@ -84,8 +84,8 @@ pub fn build(
             .params_start = d.params_start,
             .params_end = d.params_end,
             .root = d.root,
-            .type_ref = @enumFromInt(program.lhs),
-            .encoded_ref = @enumFromInt(encoded.lhs),
+            .type_ref = @fromBackingInt(@intCast(program.lhs)),
+            .encoded_ref = @fromBackingInt(@intCast(encoded.lhs)),
             .program_term = program_term,
             .encoded_term = encoded_term,
             .token = d.token,
@@ -160,14 +160,14 @@ const Builder = struct {
     }
 
     fn symbolIndex(b: *Builder, symbol: Symbol) Allocator.Error!SchemaPlan.SymbolIndex {
-        for (b.symbols.items, 0..) |seen, i| if (seen == symbol) return @enumFromInt(i);
-        const index: SchemaPlan.SymbolIndex = @enumFromInt(b.symbols.items.len);
+        for (b.symbols.items, 0..) |seen, i| if (seen == symbol) return @fromBackingInt(@intCast(i));
+        const index: SchemaPlan.SymbolIndex = @fromBackingInt(@intCast(b.symbols.items.len));
         try b.symbols.append(b.gpa, symbol);
         return index;
     }
 
     fn literal(b: *Builder, bytes: []const u8) Allocator.Error!SchemaPlan.LiteralIndex {
-        const index: SchemaPlan.LiteralIndex = @enumFromInt(b.literals.items.len);
+        const index: SchemaPlan.LiteralIndex = @fromBackingInt(@intCast(b.literals.items.len));
         const start: u32 = @intCast(b.literal_bytes.items.len);
         try b.literal_bytes.appendSlice(b.gpa, bytes);
         try b.literals.append(b.gpa, .{ .start = start, .len = @intCast(bytes.len) });
@@ -179,7 +179,7 @@ const Builder = struct {
     }
 
     fn appendNode(b: *Builder, entry: SchemaPlan.Node) Allocator.Error!SchemaPlan.NodeIndex {
-        const index: SchemaPlan.NodeIndex = @enumFromInt(b.nodes.len);
+        const index: SchemaPlan.NodeIndex = @fromBackingInt(@intCast(b.nodes.len));
         try b.nodes.append(b.gpa, entry);
         return index;
     }
@@ -195,24 +195,24 @@ const Builder = struct {
         const data = b.bir.instData(inst);
         const at = b.token(inst);
         return switch (b.bir.instTag(inst)) {
-            .schema_paren => b.node(owner, @enumFromInt(data.lhs)),
-            .schema_value => b.value(owner, @enumFromInt(data.lhs), b.bir.extraSlice(b.bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)),
+            .schema_paren => b.node(owner, @fromBackingInt(@intCast(data.lhs))),
+            .schema_value => b.value(owner, @fromBackingInt(@intCast(data.lhs)), b.bir.extraSlice(b.bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index)),
             .schema_parameter => b.appendNode(.{ .tag = .parameter, .lhs = data.lhs, .rhs = 0, .token = at }),
             .schema_primitive => b.appendNode(.{ .tag = .primitive, .lhs = data.lhs, .rhs = 0, .token = at }),
             .schema_target_top, .ext_schema_target => b.reference(inst, &.{}),
             .schema_app => blk: {
-                const args_i = b.bir.extraSlice(b.bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+                const args_i = b.bir.extraSlice(b.bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
                 const args = try b.gpa.alloc(u32, args_i.len);
                 defer b.gpa.free(args);
-                for (args_i, args) |arg, *out| out.* = @intFromEnum(try b.node(owner, arg));
-                const head: Bir.Inst.Index = @enumFromInt(data.lhs);
+                for (args_i, args) |arg, *out| out.* = @backingInt(try b.node(owner, arg));
+                const head: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
                 if (b.bir.instTag(head) == .schema_primitive and std.enums.fromInt(Bir.SchemaPrimitive, b.bir.instData(head).lhs) == .list and args.len == 1)
                     break :blk b.appendNode(.{ .tag = .list, .lhs = args[0], .rhs = 0, .token = at });
                 break :blk switch (b.bir.instTag(head)) {
                     .schema_target_top, .ext_schema_target => b.reference(head, args),
                     else => {
                         b.poisoned = true;
-                        break :blk b.appendNode(.{ .tag = .primitive, .lhs = @intFromEnum(SchemaPlan.Primitive.value), .rhs = 0, .token = at });
+                        break :blk b.appendNode(.{ .tag = .primitive, .lhs = @backingInt(SchemaPlan.Primitive.value), .rhs = 0, .token = at });
                     },
                 };
             },
@@ -220,7 +220,7 @@ const Builder = struct {
             .schema_tagged => b.tagged(owner, inst),
             else => blk: {
                 b.poisoned = true;
-                break :blk b.appendNode(.{ .tag = .primitive, .lhs = @intFromEnum(SchemaPlan.Primitive.value), .rhs = 0, .token = at });
+                break :blk b.appendNode(.{ .tag = .primitive, .lhs = @backingInt(SchemaPlan.Primitive.value), .rhs = 0, .token = at });
             },
         };
     }
@@ -228,7 +228,7 @@ const Builder = struct {
     fn value(b: *Builder, owner: Bir.DeclIndex, operand: Bir.Inst.Index, modifiers: []const Bir.Inst.Index) Allocator.Error!SchemaPlan.NodeIndex {
         var child = try b.node(owner, operand);
         for (modifiers) |modifier| switch (b.bir.instTag(modifier)) {
-            .schema_nullable => child = try b.appendNode(.{ .tag = .nullable, .lhs = @intFromEnum(child), .rhs = 0, .token = b.token(modifier) }),
+            .schema_nullable => child = try b.appendNode(.{ .tag = .nullable, .lhs = @backingInt(child), .rhs = 0, .token = b.token(modifier) }),
             .schema_via => child = try b.conversion(owner, child, modifier),
             else => {},
         };
@@ -241,19 +241,19 @@ const Builder = struct {
         try pending.ensureTotalCapacity(b.gpa, fields.len);
         for (fields) |field_inst| {
             const data = b.bir.instData(field_inst);
-            const field = b.bir.extraData(@enumFromInt(data.rhs), Bir.SchemaField);
+            const field = b.bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.SchemaField);
             var child = try b.node(owner, field.operand);
-            var external = try b.literal(b.interner.slice(b.bir.symbol(@enumFromInt(data.lhs))));
+            var external = try b.literal(b.interner.slice(b.bir.symbol(@fromBackingInt(@intCast(data.lhs)))));
             var optional = false;
             for (b.bir.extraSlice(.{ .start = field.modifiers_start, .end = field.modifiers_end }, Bir.Inst.Index)) |modifier| switch (b.bir.instTag(modifier)) {
-                .schema_as => external = try b.literal(b.bir.bytes(@enumFromInt(b.bir.instData(modifier).lhs))),
+                .schema_as => external = try b.literal(b.bir.bytes(@fromBackingInt(@intCast(b.bir.instData(modifier).lhs)))),
                 .schema_optional => optional = true,
-                .schema_nullable => child = try b.appendNode(.{ .tag = .nullable, .lhs = @intFromEnum(child), .rhs = 0, .token = b.token(modifier) }),
+                .schema_nullable => child = try b.appendNode(.{ .tag = .nullable, .lhs = @backingInt(child), .rhs = 0, .token = b.token(modifier) }),
                 .schema_via => child = try b.conversion(owner, child, modifier),
                 else => {},
             };
             pending.appendAssumeCapacity(.{
-                .name = try b.symbolIndex(b.bir.symbol(@enumFromInt(data.lhs))),
+                .name = try b.symbolIndex(b.bir.symbol(@fromBackingInt(@intCast(data.lhs)))),
                 .external = external,
                 .child = child,
                 .optional = optional,
@@ -266,7 +266,7 @@ const Builder = struct {
     }
 
     fn conversion(b: *Builder, owner: Bir.DeclIndex, child: SchemaPlan.NodeIndex, modifier: Bir.Inst.Index) Allocator.Error!SchemaPlan.NodeIndex {
-        var expr: Bir.Inst.Index = @enumFromInt(b.bir.instData(modifier).lhs);
+        var expr: Bir.Inst.Index = @fromBackingInt(@intCast(b.bir.instData(modifier).lhs));
         var target: Var = b.schemas.endpoints[owner.int()].program;
         for (b.schemas.vias.items) |via| if (via.owner == owner and via.region == modifier) {
             expr = via.expr;
@@ -282,15 +282,15 @@ const Builder = struct {
             .opaque_checks = true,
         });
         try b.conversion_vars.append(b.gpa, target);
-        return b.appendNode(.{ .tag = .conversion, .lhs = @intFromEnum(child), .rhs = conversion_index, .token = b.token(modifier) });
+        return b.appendNode(.{ .tag = .conversion, .lhs = @backingInt(child), .rhs = conversion_index, .token = b.token(modifier) });
     }
 
     fn reference(b: *Builder, head: Bir.Inst.Index, args: []const u32) Allocator.Error!SchemaPlan.NodeIndex {
         const target = (try b.schemaTarget(head)) orelse {
             b.poisoned = true;
-            return b.appendNode(.{ .tag = .primitive, .lhs = @intFromEnum(SchemaPlan.Primitive.value), .rhs = 0, .token = b.token(head) });
+            return b.appendNode(.{ .tag = .primitive, .lhs = @backingInt(SchemaPlan.Primitive.value), .rhs = 0, .token = b.token(head) });
         };
-        return b.appendNode(.{ .tag = .reference, .lhs = @intFromEnum(target), .rhs = try b.range(args), .token = b.token(head) });
+        return b.appendNode(.{ .tag = .reference, .lhs = @backingInt(target), .rhs = try b.range(args), .token = b.token(head) });
     }
 
     fn schemaTarget(b: *Builder, head: Bir.Inst.Index) Allocator.Error!?SchemaPlan.SchemaTargetIndex {
@@ -299,10 +299,10 @@ const Builder = struct {
             .schema_target_top => .{
                 .package = b.graph.modulePackage(b.module),
                 .module = try b.symbolIndex(b.graph.moduleName(b.module)),
-                .schema = try b.symbolIndex(b.bir.symbol(b.bir.decl(@enumFromInt(data.lhs)).name)),
+                .schema = try b.symbolIndex(b.bir.symbol(b.bir.decl(@fromBackingInt(@intCast(data.lhs))).name)),
             },
             .ext_schema_target => blk: {
-                const module: Graph.Index = @enumFromInt(data.lhs);
+                const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
                 const iface = &b.interfaces[module.int()];
                 break :blk .{
                     .package = b.graph.modulePackage(module),
@@ -313,24 +313,24 @@ const Builder = struct {
             else => return null,
         };
         for (b.schema_targets.items, 0..) |seen, i| {
-            if (seen.package == target.package and seen.module == target.module and seen.schema == target.schema) return @enumFromInt(i);
+            if (seen.package == target.package and seen.module == target.module and seen.schema == target.schema) return @fromBackingInt(@intCast(i));
         }
-        const index: SchemaPlan.SchemaTargetIndex = @enumFromInt(b.schema_targets.items.len);
+        const index: SchemaPlan.SchemaTargetIndex = @fromBackingInt(@intCast(b.schema_targets.items.len));
         try b.schema_targets.append(b.gpa, target);
         return index;
     }
 
     fn tagged(b: *Builder, owner: Bir.DeclIndex, inst: Bir.Inst.Index) Allocator.Error!SchemaPlan.NodeIndex {
         const data = b.bir.instData(inst);
-        const discriminator = try b.literal(b.bir.bytes(@enumFromInt(data.lhs)));
-        const variants_i = b.bir.extraSlice(b.bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+        const discriminator = try b.literal(b.bir.bytes(@fromBackingInt(@intCast(data.lhs))));
+        const variants_i = b.bir.extraSlice(b.bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
         const words = try b.gpa.alloc(u32, variants_i.len);
         defer b.gpa.free(words);
         const local_target = try b.localSchemaTarget(owner);
         for (variants_i, words) |variant_inst, *word| {
             const vd = b.bir.instData(variant_inst);
-            const source = b.bir.symbol(@enumFromInt(vd.lhs));
-            const variant = b.bir.extraData(@enumFromInt(vd.rhs), Bir.SchemaVariant);
+            const source = b.bir.symbol(@fromBackingInt(@intCast(vd.lhs)));
+            const variant = b.bir.extraData(@fromBackingInt(@intCast(vd.rhs)), Bir.SchemaVariant);
             const payload: SchemaPlan.NodeIndex.Optional = if (variant.payload.unwrap()) |p|
                 (try b.node(owner, p)).toOptional()
             else
@@ -351,7 +351,7 @@ const Builder = struct {
                 .token = b.token(variant_inst),
             });
         }
-        return b.appendNode(.{ .tag = .tagged, .lhs = @intFromEnum(discriminator), .rhs = try b.range(words), .token = b.token(inst) });
+        return b.appendNode(.{ .tag = .tagged, .lhs = @backingInt(discriminator), .rhs = try b.range(words), .token = b.token(inst) });
     }
 
     fn localSchemaTarget(b: *Builder, owner: Bir.DeclIndex) Allocator.Error!SchemaPlan.SchemaTargetIndex {
@@ -360,15 +360,15 @@ const Builder = struct {
             .module = try b.symbolIndex(b.graph.moduleName(b.module)),
             .schema = try b.symbolIndex(b.bir.symbol(b.bir.decl(owner).name)),
         };
-        for (b.schema_targets.items, 0..) |seen, i| if (seen.package == target.package and seen.module == target.module and seen.schema == target.schema) return @enumFromInt(i);
-        const index: SchemaPlan.SchemaTargetIndex = @enumFromInt(b.schema_targets.items.len);
+        for (b.schema_targets.items, 0..) |seen, i| if (seen.package == target.package and seen.module == target.module and seen.schema == target.schema) return @fromBackingInt(@intCast(i));
+        const index: SchemaPlan.SchemaTargetIndex = @fromBackingInt(@intCast(b.schema_targets.items.len));
         try b.schema_targets.append(b.gpa, target);
         return index;
     }
 
     fn ctorTarget(b: *Builder, schema: SchemaPlan.SchemaTargetIndex, variant: Symbol, endpoint: SchemaPlan.Endpoint) Allocator.Error!SchemaPlan.CtorTargetIndex {
         const name = try b.symbolIndex(variant);
-        const index: SchemaPlan.CtorTargetIndex = @enumFromInt(b.ctor_targets.items.len);
+        const index: SchemaPlan.CtorTargetIndex = @fromBackingInt(@intCast(b.ctor_targets.items.len));
         try b.ctor_targets.append(b.gpa, .{ .schema = schema, .variant = name, .endpoint = endpoint });
         return index;
     }

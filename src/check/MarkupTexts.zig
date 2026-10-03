@@ -24,7 +24,7 @@ const Error = Report.Error;
 /// attribute, event or form it was looking at is named.
 pub fn categoryLines(scratch: std.mem.Allocator, interner: *const InternPool.Global, category: Category) Diagnostics.Reporter.Lines {
     const name: []const u8 = switch (category.tag) {
-        .markup_attribute, .markup_list_attribute, .markup_handler => interner.slice(@enumFromInt(category.index)),
+        .markup_attribute, .markup_list_attribute, .markup_handler => interner.slice(@fromBackingInt(@intCast(category.index))),
         .markup_form => switch (std.enums.fromInt(FormAttribute, category.index) orelse .each) {
             .each => "each",
             .when => "when",

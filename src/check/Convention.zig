@@ -104,10 +104,10 @@ pub fn ofLet(dispatch: *const Dispatch, bir: *const Bir, i: u32) Use {
     const inst = dispatch.lets[i].inst;
     const evidence = dispatch.lets[i].requirements.len + dispatch.lets[i].identities.len;
     const data = bir.instData(inst);
-    const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+    const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
     var arity: u32 = @intCast(bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index).len);
-    const rhs: Bir.Inst.Index = @enumFromInt(data.rhs);
-    if (arity == 0 and bir.instTag(rhs) == .lambda) arity = bir.subRange(@enumFromInt(bir.instData(rhs).lhs)).len();
+    const rhs: Bir.Inst.Index = @fromBackingInt(@intCast(data.rhs));
+    if (arity == 0 and bir.instTag(rhs) == .lambda) arity = bir.subRange(@fromBackingInt(@intCast(bir.instData(rhs).lhs))).len();
     return .{ .convention = of(arity, false, arity, evidence), .evidence = evidence, .arity = arity };
 }
 
@@ -146,7 +146,7 @@ pub fn importArity(interfaces: []const Interface, module: Graph.Index, value: u3
     const iface = &interfaces[module.int()];
     if (value >= iface.values.len) return 0;
     const index = iface.values[value].scheme;
-    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return 0;
+    if (index == .none or @backingInt(index) >= iface.schemes.len) return 0;
     // Through the aliases at the root, their bodies on their rows
     // (checker-v2.md §14.2).
     const Count = struct {
