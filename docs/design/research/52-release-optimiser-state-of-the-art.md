@@ -1170,7 +1170,7 @@ solver*; what each landed slice did, and measured, is `backend.md` §9's dated a
 | 6 | planned | executability, the read-offs, one rewrite; rounds go | E1, E2 and G8's program move, the rest justified one by one |
 | 7 | planned | definite initialisation as a may-fact | byte-identical or smaller |
 | 8a | approved, planned | calls with known results, inside the solver, under the owner's four constraints | smaller |
-| 8b | undecided | cloning | — |
+| 8b | **dropped by the owner, 2026-10-04** | cloning: no mainstream JavaScript compiler does it, and the engine specialises hot code at run time | — |
 
 **Compile time and memory** (millions of instructions of the ReleaseSafe compiler and peak RSS,
 a `--release` build in a fresh project, two runs each, master at `71b75ae9` against slices 0–3):

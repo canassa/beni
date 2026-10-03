@@ -6724,8 +6724,8 @@ the compiler before over every `run/` and `browser/` fixture and the `bench/todo
    (G8); every other move is listed and justified. `spec_analyses` becomes `spec_solves`.
 7. **Definite initialisation as a may-fact** in the solver (research 52 §3.5); `max_init_runs` and
    the restarts go. Byte-identical or smaller.
-8. **Calls with known results** (8a, above, approved); **cloning** (8b) only after the owner
-   decides, which waits for slice 6's measurements.
+8. **Calls with known results** (8a, above, approved); **cloning** (8b) is **dropped** (the owner,
+   2026-10-04): no mainstream JavaScript compiler clones, and the engine specialises hot code itself.
 
 ### Compact statements
 
