@@ -381,6 +381,8 @@ a **directory** builds every `.beni` in it in one invocation — the shape `emit
 
 ## 6. Decisions only the owner can take
 
+*Taken 2026-10-03 by the owner, revised for effects having landed: see [`backend.md`](../docs/design/backend.md) §10, *Decided 2026-10-03*. The text below is the record of the options.*
+
 **1. The surface of `lazy`, if it is a surface at all.**
 *Options:* (a) a reserved **keyword**; (b) a **contextual word** in annotation position, the way
 `where` is (`static-dispatch-spike.md` §2.2) and `equatable` is (`language.md` §3); (c) a **core

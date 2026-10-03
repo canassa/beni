@@ -6942,6 +6942,45 @@ declaration's chunk is decided by which entry points reach it; and **with one en
 `lazy`, a release build is exactly one file**, which is the degenerate case of everything below and
 the part of this section worth the most bytes.
 
+*Decided 2026-10-03 by the owner* (the decisions below supersede the PENDING paragraph that
+follows and `plans/m3d-plan.md` §6; specification of the open points comes before code):
+1. **Two sources of entries.** Static multi-entry — one build, several `main`s, shared code in a
+   common chunk — and `lazy`. `boundary.md` §5.3's "ONE entry point and ONE platform" becomes "one
+   platform, a set of entry points".
+2. **`lazy` is a contextual word on an annotated top-level function**, as `where` is
+   (`lazy adminPage : Model → Html Msg`); `lazy` stays usable as a name, and a value cannot be
+   `lazy`, because a top-level constant is evaluated at load time, where nothing can suspend.
+3. **A call to a `lazy` function may suspend**: no new effect type; the effects inference marks its
+   callers and the fiber runtime parks on the dynamic `import()`. So it is callable from commands
+   and tasks, not from `view`, which renders a loading state meanwhile.
+4. **A failed load is a typed error** (rule 9). The declaration carries its real type; a CALL has
+   type `Result LoadError r`, where `r` is the declared result. `LoadError` names each documented
+   failure of a dynamic import; anything else crashes.
+5. **The chunker is this section** — colouring, the main chunk absorbing every colour with `main`,
+   merging by promoting entries, synthesised cross-chunk bindings — with the 4 096-byte / 5%
+   thresholds provisional until measured on the first large app.
+6. **A `--release --library` build is one file**: packages ship as source, so nobody consumes
+   per-module compiled output.
+7. **Acceptance is stated in entries**: a two-entry program splits and both entries run, and a
+   `lazy` function is loaded and called in a page.
+8. **Preloading, two forms.** A platform may write `<link rel="modulepreload">` into the page shell
+   for chosen chunks (fetch and compile, not evaluate; none by default). And a core task
+   `Lazy.preload f : Task LoadError ⊤` starts the load from the program — after first render, on
+   a link's hover — whose argument must be the NAME of a `lazy` declaration, written directly, so
+   the chunk is known statically; anything else is a compile error. Evaluating a beni chunk early is
+   always safe: its top level is pure constants.
+
+*Emission sketch* (not normative): the body goes to its own chunk; the main chunk holds a stub that,
+once the module has arrived, calls it synchronously (one test, no suspension), and otherwise parks
+on `import(chunk).then(ok, fail)`, `fail` mapping exactly the documented failures to `LoadError`
+and rethrowing the rest. Chunk names are derived from module and declaration (rule 5).
+
+**Open research before the specification:** (a) how Chrome, Firefox and Safari report a failed
+`import()` — network failure, a chunk that throws while evaluating, a parse failure — so `LoadError`
+names exactly what each documents; (b) whether a failed module fetch is cached in the module map, so
+that retrying the same URL fails without refetching — which decides whether `LoadError`'s network
+case can be retried and whether a retry needs a different URL.
+
 **What is PENDING an owner decision, and nothing here quietly assumes an answer.** The `lazy` marker
 is specified in `fast-compiler.md` §9.5 as rewriting a declaration's type to `Task LoadError a`, and
 that section's own block quote says the type is gone. A deferred load is asynchronous, this language
