@@ -1,8 +1,10 @@
 -- The render loop (backend.md §15.11) and the rows a render runs
--- (§15.5; language.md §11.9, §11.11). `Debug.log` in the view and in the
--- row counts what runs. A message does not render at once: five in one
--- task run `update` five times and render once, on the microtask after
--- the task, and the runtime's `flush` renders at once, before it returns.
+-- (§15.5; language.md §11.9, §11.11). `Debug.log` in the view logs each
+-- render that computes `model.ticks` — one in which it changed (§11.11,
+-- made precise 2026-10-04) — and in the row, each row that runs. A
+-- message does not render at once: five in one task run `update` five
+-- times and render once, on the microtask after the task, and the
+-- runtime's `flush` renders at once, before it returns.
 -- A row runs only when its item or one of its inputs changed: its inputs
 -- are the fields it reads of what is outside it — `model.selected`, not
 -- `model` — so a message that changes only `ticks` runs none of the rows,

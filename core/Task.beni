@@ -303,8 +303,9 @@ fromHost f =
         f ⊤
     else
         Js.write hosting True
-        f ⊤
-        Js.write hosting False
+        -- Released however `f` ends, so a throw leaves no later wake
+        -- without its microtask.
+        Js.finally (λ⊤ → f ⊤) λ⊤ → Js.write hosting False
         if Js.read scheduled then drain ⊤
 
 
