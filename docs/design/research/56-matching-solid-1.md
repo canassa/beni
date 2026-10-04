@@ -573,6 +573,73 @@ not a stale screen; it has no bit budget (a guard is a field, not a bit of a 31-
 state is immutable, so there is no mutation for a compiler to miss. Whether those were Svelte's
 reasons is X3's to confirm.
 
+*Amended 2026-10-04: X3, read from primary sources, before slice B was built* (the owner's standing
+condition, `plans/browser-decisions.md` disagreement 14). Svelte's own account of the move, in its
+words:
+
+- **The runes announcement** (the Svelte team, 20 September 2023,
+  [svelte.dev/blog/runes](https://svelte.dev/blog/runes)): compile-time reactivity *"only works for
+  `let` declarations at the top level of a component, which can cause confusion. Having code behave
+  one way inside `.svelte` files and another inside `.js` can make it hard to refactor code"*. Its
+  example: `const multiplyByHeight = (width) => width * height;` then
+  `$: area = multiplyByHeight(width);` — *"Because the `$: area = ...` declaration can only 'see'
+  `width`, it won't be recalculated when `height` changes. As a result, code is hard to refactor,
+  and understanding the intricacies of when Svelte chooses to update which values can become rather
+  tricky beyond a certain level of complexity."* And the gain it names for signals: *"changes to a
+  value inside a large list needn't invalidate all the other members of the list."*
+- **The Svelte 5 migration guide**, section *`$:` → `$derived`/`$effect`*
+  ([svelte.dev/docs/svelte/v5-migration-guide](https://svelte.dev/docs/svelte/v5-migration-guide)):
+  *"`$:` dependencies were determined through static analysis of the dependencies. This worked in
+  most cases, but could break in subtle ways during a refactoring where dependencies would be for
+  example moved into a function and no longer be visible as a result"*; *"`$:` only updated directly
+  before rendering, which meant you could read stale values in-between rerenders"*; *"`$:` only ran
+  once per tick, which meant that statements may run less often than you think"*; *"`$:` statements
+  were also ordered by using static analysis of the dependencies. In some cases there could be ties
+  and the ordering would be wrong as a result, needing manual interventions"*; and TypeScript.
+- **The legacy reference for `$:`**
+  ([svelte.dev/docs/svelte/legacy-reactive-assignments](https://svelte.dev/docs/svelte/legacy-reactive-assignments)):
+  *"The dependencies of a `$:` statement are determined at compile time — they are whichever
+  variables are referenced (but not assigned to) inside the statement"*, so `$: doubled = double()`
+  does not re-run when `count` changes; statements are *"ordered topologically"*; and a mutation of
+  an object or array that is not an assignment does not invalidate it.
+
+**What applies to B, problem by problem** (the author's reading):
+
+1. *A dependency hidden in a function is invisible, and the value goes stale* — the problem B could
+   share, and the one it must not. Svelte's analysis decided **whether** to recompute from the
+   names written in the statement, and a function that read `height` from its closure or from
+   component state was a read nobody saw. In beni a function reads only its arguments and immutable
+   top-level values: there is no component state, no assignment, no closure over anything that
+   changes between renders except the locals of the function being rendered. So a value's reads
+   are exactly the locals it uses, and B's analysis follows each: a field path where the use is a
+   field access or an argument of a same-module function whose summary says which fields it reads
+   (the analysis rows already have, `language.md` §11.9), **the whole local everywhere else** — a
+   call of another module's function, a `case`, a record, and a call of a *local* function, which is
+   itself a local (a closure made in this render, compared by identity, so every render runs it).
+   Where the analysis cannot see, it compares more, never less: stale is not a possible outcome,
+   only a re-evaluation. B's slice must hold that line in its fixtures (a read through a helper, a
+   local function, a `case`, a record, another module), and a value whose reads the compiler cannot
+   bound — evidence a `where` clause passes, a `?` that returns from the enclosing function — is not
+   grouped at all.
+2. *Stale values between renders; once per tick; run less often than you think* — `$:` values were
+   program state other code could read. B's values are read only by the render that computes them
+   (B2 moves a `let` only when every use is inside the root), so there is no "between renders" in
+   which to see one.
+3. *Ordering ties* — `$:` statements assigned state, so their order mattered. B's values are pure;
+   only `Debug` can see their order, which the owner accepted (`language.md` §11.11, amended
+   2026-10-04).
+4. *Mutation is not assignment* — beni has no mutation; an untouched field is the same value (W27,
+   §11.12), which is what B's guards compare.
+5. *Top level only; `.svelte` and `.js` behave differently* — B has no syntax and no second
+   semantics: a root in a helper module, a component, a nested root are grouped by the same rule,
+   and the page is the same whether or not a value is grouped. Only the cost differs.
+6. *A large list invalidates every member* — not B's to fix: that is C (§6.3).
+
+**Verdict: none of Svelte's reasons is a problem B shares**, provided its analysis keeps the
+"whole local when unsure" rule and compares rather than trusts; the one hazard Svelte names that B
+could reproduce — a dependency hidden in a function — cannot arise in beni for a top-level function,
+and for a local function it is a guard on the function value itself. B is built.
+
 ---
 
 ## 7. Recommendation, and the order to build it in
