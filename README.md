@@ -198,8 +198,8 @@ loadAll pages = Task.timeout (Duration.seconds 10) λ⊤ →
 
 ### Schemas
 
-A `schema` describes data from outside the program, such as JSON. It compiles to
-a parser and a printer, and a parse failure is a typed value, not an exception.
+Zod-like validation is built into the language. Schemas are compiled down into
+highly optimized JavaScript.
 
 ```elm
 schema Item =
