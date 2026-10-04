@@ -119,11 +119,20 @@ project) against it, one step per line, `#` for a comment:
                                 `(keydown's default prevented)` (or `keyup's`)
     dblclick <selector>         a bubbling `dblclick` (`detail` 2), with no
                                 `click`s before it
+    press <selector>            a user's click: trusted (below); a listener
+                                the driver added on the window, after every
+                                listener of the page, logs `(a later
+                                listener ran)`
     focus <selector>            `.focus()`
     blur <selector>             `.blur()`
-    advance <ms>                move the page's virtual clock on by `ms`,
+    advance <ms> [tasks]        move the page's virtual clock on by `ms`,
                                 firing each timer that comes due, earliest
-                                first, the page settling after each
+                                first, the page settling after each; with
+                                `tasks`, `(the timer's task ended)` is
+                                logged as each timer's callback returns,
+                                before any microtask it queued; a callback
+                                that throws is reported to the window's
+                                `error` listeners, as a host reports it
     event <window|document> <name> [<n>]
                                 `n` (default 1) plain `Event`s of that
                                 name on the window or the document, in one
@@ -277,7 +286,15 @@ compares instead of `.expected`. The differences known today:
   and there is no `requestAnimationFrame` frame clock; a fixture about
   scheduling order belongs to `test-browser`;
 - layout: happy-dom lays nothing out, so sizes and positions are zero;
-- steps dispatch untrusted events in both DOMs, and `key` types nothing;
+- steps dispatch untrusted events in both DOMs, and `key` types nothing —
+  except `press` and the focus events a `focus()` or `blur()` call fires,
+  which are trusted as Chrome makes them: Chrome's `press` is its own
+  click, sent through `Input.dispatchMouseEvent`, and happy-dom, which has
+  no `isTrusted`, is given one that is true for exactly those. The
+  emulation is dispatched from the driver's stack, so where Chrome runs
+  microtasks between two listeners of a user's click, happy-dom does not:
+  a fixture shows what the runtime does at a listener's end, not what the
+  host does after it;
 - `Headers`: happy-dom iterates names as they were written, where the Fetch
   standard and Chrome lower-case them, so a fixture that shows headers
   lower-cases them itself (the fetch log does);

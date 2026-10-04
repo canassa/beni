@@ -279,7 +279,47 @@ schedule task a b c =
         ⊤
     else
         Js.write scheduled True
-        Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from drain ])
+        -- A host callback under `fromHost` drains when it returns.
+        if Js.read hosting then
+            ⊤
+        else
+            Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from drain ])
+
+
+-- A host callback runs under `fromHost`, which drains when it returns: no
+-- microtask is queued for what it resumes.
+hosting : Js.Ref Bool
+hosting = Js.ref False
+
+
+--| Run `f`, a callback the platform registered with its host — a timer's,
+--| a promise reaction's — which the host calls with nothing beneath it:
+--| the fibers it resumes run when it returns, in the same callback, where
+--| they would have run on the microtask after it. Never for a callback
+--| the host may call while other code runs, such as an event's listener.
+pub fromHost : sync (⊤ → ⊤) → ⊤
+fromHost f =
+    if Js.read scheduled then
+        f ⊤
+    else
+        Js.write hosting True
+        f ⊤
+        Js.write hosting False
+        if Js.read scheduled then drain ⊤
+
+
+-- The platform's turn (`onTurn`), or null.
+turn : Js.Ref V
+turn = Js.ref Js.null
+
+
+--| How the platform runs each drain of the scheduler: `f` is handed the
+--| drain and calls it once, at once. The browser's makes the drain a
+--| turn, so the messages its fibers send render when it returns
+--| (`backend.md` §15.11), not on a microtask after it. The last one given
+--| is the one used.
+pub onTurn : sync ((⊤ → ⊤) → ⊤) → ⊤
+onTurn f = Js.write turn (Js.from f)
 
 
 resumeFiber : V, V, V → Bool
@@ -417,6 +457,14 @@ stopQueue ⊤ = if Js.read phase == 0 then Js.write phase 1
 
 drain : ⊤ → ⊤
 drain ⊤ =
+    if Js.isNull (Js.read turn) then
+        drainNow ⊤
+    else
+        Js.to (Js.apply (Js.read turn) [ Js.from drainNow ])
+
+
+drainNow : ⊤ → ⊤
+drainNow ⊤ =
     if Js.bitAnd (Js.read phase) 1 ≠ 0 then
         ⊤
     else
@@ -1809,7 +1857,7 @@ realSleep ms =
     _ = callback λwake →
         timer =
             Js.apply (Js.global "setTimeout")
-                [ Js.from λ⊤ → Js.apply (Js.from wake) [ Js.null ]
+                [ Js.from λ⊤ → fromHost λ⊤ → Js.to (Js.apply (Js.from wake) [ Js.null ])
                 , Js.from (Basics.min ms timerLimit)
                 ]
         λ⊤ → Js.to (Js.apply (Js.global "clearTimeout") [ timer ])

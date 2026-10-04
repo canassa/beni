@@ -1,0 +1,26 @@
+-- load
+console.log: view: "idle"
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <p>"idle"</p>
+  </main>
+</body>
+-- click #start
+console.log: view: "sleeping"
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <p>"sleeping"</p>
+  </main>
+</body>
+-- advance 100 tasks
+console.log: woke: ⊤
+console.log: view: "awake"
+(the timer's task ended)
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <p>"awake"</p>
+  </main>
+</body>
