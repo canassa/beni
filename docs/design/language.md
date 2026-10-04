@@ -1992,7 +1992,11 @@ is what it is compared with; so is a value that may have an effect — the effec
 **except one of `Debug`'s**, which is grouped like any other, so that a fixture can count what runs
 (`--release` refuses `Debug`, so no shipped program can tell). `Random.value` or `Time.now` in a
 `view` therefore answers anew on every render, as it did before. *Amended the same day, after
-review:* **wherever such a value or such an attribute stands, the markup holding it is patched on
+review — skipped calls* (it was never applied to §11.6 and §11.8, and is now): **a helper call or a
+component that may have an effect other than `Debug`'s is never skipped**, and **a skipped one
+keeps what it shows current**: the markup it returned last is patched again on every render, so a
+controlled input it renders is reconciled and a value inside it that must run every render runs;
+only the call, and the markup that needs no patch, are saved. *And:* **wherever such a value or such an attribute stands, the markup holding it is patched on
 every render** — markup in an `if`, a `case` branch or a `let`, nested at any depth, and every
 markup value whose own value holds it — so a controlled input nested in a branch is reconciled
 exactly as one at the top of the view is, and a view that reads nothing of its model still draws

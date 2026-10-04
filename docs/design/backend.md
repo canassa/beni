@@ -7678,6 +7678,18 @@ The rules, exactly:
   value's code is written once, in `p`: not in `view`, `m` and `p` as before.
 - **What still runs every render** is one test per group and the untested groups: an edit to a
   field no value reads costs comparisons and nothing else, however many values the root has.
+- **A helper call or a component** (`language.md` §11.6, §11.8, as amended after review) is written
+  on every render, in a group with no test: its arguments compared with the ones kept, and when
+  one changed the call made; when none did, `Rt.restate(slot)`, which patches the slot's instance
+  again with the block it shows if its kind carries `l`. A call that may have an effect
+  (`tree.everyRender` of the hole's value, `Component.impure`) is made every time. A call of
+  constants is made once, under a field of its own, then restated. **`l: true`** is on a kind
+  that has a group with no test (a `stateful` write, an every-render value, a helper or a
+  component) — on a root that is not grouped, one with a `stateful` write, a helper or a
+  component — and on `Html.map`'s kind; `Rt.patch` handed the very block an instance shows patches
+  it again when its kind has `l`, which is how a restate reaches markup nested at any depth. Since
+  a helper's or a component's markup may need it, a root that places one is live, and so are the
+  values that hold it (`boundary.md` §9.4.6).
 - **Markup that writes nothing** (no op) is the hoisted block it was, `{ t, v: null }`, with no `p`
   to call. *Amended after review:* a root with no input is hoisted the same way only when it is not
   **live** — no `stateful` write and no value `tree.everyRender` answers true for; a live one is a
