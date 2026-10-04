@@ -1,6 +1,7 @@
 // The scaling sweeps: how each subject's cost per update grows as one
 // parameter of the page grows — the number of holes, rows, model fields,
-// levels of nesting, items behind a derived view, messages in one task.
+// levels of nesting, items behind a derived view, live rows a render skips,
+// calls of a helper tree, messages in one task.
 // The table benchmark (bench.mjs) measures one size; this measures curves.
 // A separate investigation, run by hand; no gate runs it.
 //
@@ -44,6 +45,9 @@ import { loadavg } from "node:os";
 import * as depth from "./apps/scaling/depth.mjs";
 import * as derived from "./apps/scaling/derived.mjs";
 import * as holes from "./apps/scaling/holes.mjs";
+import * as live from "./apps/scaling/live.mjs";
+import * as liveHelper from "./apps/scaling/live-helper.mjs";
+import * as tree from "./apps/scaling/tree.mjs";
 import * as rows from "./apps/scaling/rows.mjs";
 import * as width from "./apps/scaling/width.mjs";
 import { launch, sleep, traced } from "./lib/cdp.mjs";
@@ -106,6 +110,27 @@ const sweeps = [
     program: derived,
     helper: true,
     params: { full: [100, 300, 1000, 3000, 10000, 30000, 100000], quick: [100, 3000, 100000] },
+    ops: [{ id: "tick", target: "go", done: (k) => textIs(byId("tick"), k) }],
+  },
+  {
+    id: "live",
+    what: "live rows: N keyed rows, each a controlled input and a helper's markup, an unrelated field changes",
+    program: live,
+    params: { full: [100, 300, 1000, 3000, 10000], quick: [100, 1000, 10000] },
+    ops: [{ id: "tick", target: "go", done: (k) => textIs(byId("tick"), k) }],
+  },
+  {
+    id: "helperRows",
+    what: "rows holding a helper: N keyed rows, each a helper's markup and no input, an unrelated field changes",
+    program: liveHelper,
+    params: { full: [100, 300, 1000, 3000, 10000], quick: [100, 1000, 10000] },
+    ops: [{ id: "tick", target: "go", done: (k) => textIs(byId("tick"), k) }],
+  },
+  {
+    id: "tree",
+    what: "helper tree: a recursive helper D levels deep, an unrelated field changes",
+    program: tree,
+    params: { full: [4, 6, 8, 10, 12], quick: [4, 8, 12] },
     ops: [{ id: "tick", target: "go", done: (k) => textIs(byId("tick"), k) }],
   },
   {
