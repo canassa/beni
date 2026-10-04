@@ -103,8 +103,8 @@ doubled = List.map [ 1.0, 2.0, 3.0 ] (scale 2 _)
 ### Static dispatch
 
 Most of what type classes give you, with much less machinery. A module's
-functions can be called as methods on its type, so `price.add tax` is
-`Money.add price tax`, and a `where` clause asks for a method on any type.
+functions can be called as methods on its type, so `v.add w` is
+`Vec.add v w`, and a `where` clause asks for a method on any type.
 
 ```elm
 -- Vec.beni
