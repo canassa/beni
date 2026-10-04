@@ -261,6 +261,10 @@ pub const Root = struct {
     /// of the inputs — every path a value reads, distinct, in first-use
     /// order (`Tree.readsOf`).
     reads: Value.Range = .{ .start = 0, .len = 0 },
+    /// 1.5, `expression` only: values that each are a constant `let` of
+    /// the enclosing declaration only this root's values read, which the
+    /// root evaluates (`Context.bindLet`), in source order.
+    lets: Value.Range = .{ .start = 0, .len = 0 },
 
     pub const Index = enum(u32) { _ };
     pub const Kind = enum(u8) { expression, row_markup, row_lambda, _ };
@@ -586,6 +590,12 @@ pub const Context = struct {
         return cx.vtable.bind_inputs(cx.impl, r, names);
     }
 
+    /// 1.5: from here until `unbindInputs`, grouped root `r`'s `k`-th
+    /// `let` (`Root.lets`) is read under `name`.
+    pub fn bindLet(cx: *Context, r: Root.Index, k: u32, name: Name) Error!void {
+        return cx.vtable.bind_let(cx.impl, r, k, name);
+    }
+
     pub fn unbindInputs(cx: *Context, r: Root.Index) void {
         cx.vtable.unbind_inputs(cx.impl, r);
     }
@@ -779,6 +789,7 @@ pub const VTable = struct {
     grouped: *const fn (impl: *anyopaque, r: Root.Index) bool,
     bind_inputs: *const fn (impl: *anyopaque, r: Root.Index, names: []const Name) Error!void,
     unbind_inputs: *const fn (impl: *anyopaque, r: Root.Index) void,
+    bind_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32, name: Name) Error!void,
     root_values: *const fn (impl: *anyopaque, block: Block, r: Root.Index, values: []const Value.Index) Error!void,
     component_call: *const fn (impl: *anyopaque, node: Node.Index, children: ?Expr) Error!Expr,
     extractor: *const fn (impl: *anyopaque, item: u32) Error!?Expr,

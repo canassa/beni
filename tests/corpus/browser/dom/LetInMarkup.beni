@@ -1,0 +1,55 @@
+-- A `let` read only by markup is one of its values (language.md §11.11,
+-- the `let` rule; backend.md §15.4). `shown`, the items sorted, is used
+-- only inside the root, so it is computed when `model.items` is another
+-- list and not otherwise: a tick logs no "sorted", an added item does,
+-- and the list's rows run only then. `label` is used to choose between
+-- two roots, outside either, so it is computed on every render, as
+-- before. `Debug.log` shows each computation; it is written in the `let`
+-- itself, as a call of a helper that logs would be a call that may have
+-- an effect, which is never moved.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Tick
+    | Add
+
+
+type alias Model =
+    items : List Int
+    ticks : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Tick →
+            { model | ticks = model.ticks + 1 }
+
+        Add →
+            { model | items = List.push model.items (10 - List.length model.items) }
+
+
+view : Model → Html Msg
+view model =
+    shown = Debug.log "sorted" (List.sort model.items)
+    label = Debug.log "label" (if model.ticks > 1 then "many" else "few")
+
+    if label == "many" then
+        <main>
+            <button id="tick" onClick={Tick}>tick</button>
+            <button id="add" onClick={Add}>add</button>
+            <p>{model.ticks}</p>
+            <ul><For each={shown} keyed={False}>{λi → <li>{i}</li>}</For></ul>
+        </main>
+    else
+        <main>
+            <button id="tick" onClick={Tick}>tick</button>
+            <button id="add" onClick={Add}>add</button>
+            <p>{label}</p>
+        </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { items = [ 3, 1, 2 ], ticks = 2 }, update = update, view = view }

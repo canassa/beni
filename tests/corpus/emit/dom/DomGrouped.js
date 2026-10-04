@@ -1,4 +1,4 @@
-import { String$fromInt } from "./_core/String.mjs";
+import { String$fromInt, String$toUpper } from "./_core/String.mjs";
 import { Rt$template } from "./_platform/Rt.mjs";
 const DomGrouped$p21 = (i$1, v$2) => {
   const $in$3 = v$2[0];
@@ -80,7 +80,36 @@ const DomGrouped$k36 = { m: (v$24, cx$25) => {
   DomGrouped$p36(i$28, v$24);
   return i$28;
 }, p: DomGrouped$p36 };
+const DomGrouped$p50 = (i$29, v$30) => {
+  const $in$31 = v$30[0];
+  if ($in$31.name !== i$29.l0_0) {
+    i$29.l0_0 = $in$31.name;
+    const $t$32 = String$toUpper($in$31.name);
+    i$29.d0 = $t$32;
+  }
+  const $let$33 = i$29.d0;
+  if ($in$31.name !== i$29.g0_0) {
+    i$29.g0_0 = $in$31.name;
+    if ($let$33 !== i$29.a0) {
+      i$29.w0.setAttribute("title", $let$33);
+      i$29.a0 = $let$33;
+    }
+    if ($let$33 !== i$29.a1) {
+      i$29.a1 = $let$33;
+      i$29.w1.data = $let$33;
+    }
+  }
+};
+const DomGrouped$t50 = Rt$template("<p> ", 0);
+const DomGrouped$k50 = { m: (v$34, cx$35) => {
+  const r$36 = DomGrouped$t50();
+  const w$37 = r$36.firstChild;
+  const i$38 = { s: r$36, q: null, e: r$36, w0: r$36, w1: w$37, a0: undefined, a1: undefined, l0_0: undefined, d0: undefined, g0_0: undefined };
+  DomGrouped$p50(i$38, v$34);
+  return i$38;
+}, p: DomGrouped$p50 };
 const DomGrouped$view = (model$1) => ({ t: DomGrouped$k21, v: [model$1] });
 const DomGrouped$ordered = (model$1) => ({ t: DomGrouped$k36, v: [model$1] });
-export { DomGrouped$view, DomGrouped$ordered };
+const DomGrouped$shouted = (model$1) => ({ t: DomGrouped$k50, v: [model$1] });
+export { DomGrouped$view, DomGrouped$ordered, DomGrouped$shouted };
 //# sourceMappingURL=DomGrouped.mjs.map
