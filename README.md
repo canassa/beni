@@ -3,7 +3,7 @@
 Beni is a statically typed functional language in the ML family that compiles
 to JavaScript.
 
-- **Fast compiler**: 768K lines/s on one core, 6× faster than TypeScript 7.
+- **Fast compiler**: written in Zig, 768K lines/s on one core, 6× faster than TypeScript 7.
 - **No runtime errors**: no `null`, no `undefined`, no exceptions.
 - **Hindley–Milner type inference**: annotations are optional.
 - **Colorless functions**: no `async` or `await`; the runtime handles waiting.
@@ -180,6 +180,24 @@ search : String, Cmd.Send Msg → ⊤
 search q send =
     Time.sleep (Time.millis 250)
     send (Found (lookup q))
+```
+
+### A fiber runtime
+
+Every program runs on a fiber runtime inspired by Effect. Cancellation,
+timeouts, retries with backoff, races and bounded concurrency are part of the
+standard library, and a cancelled fiber always runs its cleanup. Here up to
+four pages load at a time, each retried with exponential backoff, and the whole
+batch gives up after ten seconds.
+
+```elm
+backoff : Schedule.Schedule Http.Error
+backoff = Schedule.exponential (Duration.millis 100) 2.0 ▷ Schedule.upTo (Duration.seconds 5)
+
+
+loadAll : List Int → Maybe (Result Http.Error (List String))
+loadAll pages = Task.timeout (Duration.seconds 10) λ⊤ →
+    Task.forEachOk pages 4 λn → Task.retry backoff λ⊤ → fetchPage n
 ```
 
 ### Schemas
