@@ -1,50 +1,168 @@
-# beni
+# Beni
 
-beni is a compiler for an Elm-like language that emits JavaScript, written in Zig.
-It keeps Elm's guarantees and its error quality — no runtime exceptions, immutable
-values, effects behind a controlled boundary — while being built from the ground up
-for speed: flat data-oriented IRs, per-file parallelism, and a resident daemon for
-incremental rebuilds.
+Beni is a statically typed functional language in the ML family that compiles
+to JavaScript.
 
-The language is Elm 0.19 with a short list of deliberate departures, all of them in
-[`language.md`](docs/design/language.md) §0. The largest is that there is no automatic
-currying: every call is saturated, function types are n-ary and written `Int, Int -> Int`,
-and partial application is written with a `_` placeholder. Arity is therefore part of a
-type, so an arity mistake is reported where it is written rather than two arguments later.
+- **Fast compiler**: 768K lines/s on one core, 6× faster than TypeScript 7.
+- **No runtime errors**: no `null`, no `undefined`, no exceptions.
+- **Hindley–Milner type inference**: annotations are optional.
+- **Colorless functions**: no `async` or `await`; the runtime handles waiting.
+- **Fast UI**: compiled templates, as fast as Solid, 1.4 kB for an empty page.
 
-**State.** The front end, the type checker and a first JavaScript backend are built and
-measured. The daemon and incremental rebuilds are designed but not yet written; so is the
-optimiser. [`fast-compiler.md`](docs/design/fast-compiler.md) §13 is the build order and
-says where each milestone stands.
+```elm
+type Shape
+    = Circle Float
+    | Rect Float Float
 
-## Building
 
-The toolchain (Zig 0.16.0, Node 24) is pinned by `flake.nix`; `direnv allow` puts it on `PATH`.
+area : Shape → Float
+area shape =
+    case shape of
+        Circle r →
+            pi * r * r
 
-```sh
-zig build                 # install ./zig-out/bin/beni
-zig build test            # hermetic unit tests
-zig build test-blackbox   # spawns the installed binary against temp projects
-zig build bench -- --generate=100000   # per-phase throughput, ReleaseFast
-zig build fmt-check       # zig fmt --check over src, build.zig, tests, bench
-zig build --list-steps
+        Rect w h →
+            w * h
+
+
+largest : List Shape, Int → List (Shape × Float)
+largest shapes n =
+    shapes
+        ▷ List.map λs → ( s, area s )
+        ▷ List.filter λ( _, a ) → a ≥ 1.0
+        ▷ List.sortBy λ( _, a ) → -a
+        ▷ List.take n
 ```
 
-## Design
+## The language
 
-Everything is specified before it is written, and the specification is normative: where
-the code and a document disagree, that is a bug in one of them. See
-[`docs/design/`](docs/design/).
+Beni has custom types and records, pattern matching with exhaustiveness
+checking, and type inference throughout. Values are immutable and functions are
+pure. A missing value is a `Maybe` and a failure is a `Result`, and the type
+checker proves that every `case` handles every value.
 
-| Document | What it settles |
-|---|---|
-| [`fast-compiler.md`](docs/design/fast-compiler.md) | why the compiler is shaped this way, the throughput budgets, and the build order |
-| [`language.md`](docs/design/language.md) | the language: lexical structure, grammar, layout, formatting |
-| [`frontend.md`](docs/design/frontend.md) | the implementation contract for lexer, parser, formatter and BIR |
-| [`checker.md`](docs/design/checker.md) | the type checker: constraint generation, solving, generalisation, diagnostics |
-| [`backend.md`](docs/design/backend.md) | JavaScript emission, pattern matching, dead-code elimination, chunking |
-| [`boundary.md`](docs/design/boundary.md) | what `foreign` may do, what a platform package is, and how `main` is reached |
+Functions take all their arguments at once. A call is never partially applied by
+accident, and when you do want partial application you write it, as in
+`List.map xs (scale 2 _)`. A type's functions can be called as methods
+(`point.distance other`), resolved at compile time, and a function can require
+them of its argument (`where a.compare : a, a → Order`).
 
-`docs/design/research/` holds the evidence the decisions rest on, and the two effects
-proposals plus the review between them are the live design argument about how beni will
-perform effects.
+Effects need no special syntax. The compiler infers which functions may wait, on
+a timer or on the network, and the runtime handles the rest, including
+cancellation, timeouts, retries and structured concurrency:
+
+```elm
+search : String, Cmd.Send Msg → ⊤
+search q send =
+    Time.sleep (Time.millis 250)
+    send (Found (lookup q))
+```
+
+`schema` declarations describe data coming from outside, such as JSON over
+HTTP, and compile to their own parsers and printers with typed errors.
+
+## Platforms
+
+The language knows nothing about the browser or Node. A platform package
+supplies what a program can do on a host: its `main`, its effects and its
+bindings to JavaScript. Every line of JavaScript in a build lives in the
+platform, written to report each documented failure as a typed value, so
+libraries are pure Beni and cannot break the guarantees.
+
+Beni ships with these platforms:
+
+- **`node`**: programs and tests run under Node.
+- **`browser`**: the DOM, events, HTTP, storage, routing and timers.
+- **`browser-tea`**: The Elm Architecture on top of `browser`, with commands,
+  subscriptions and keyed, cancellable effects.
+- **`html`**: the shared HTML vocabulary, so one view can render in the
+  browser or to a string under Node.
+
+Markup is part of the language, written as JSX and typed against the
+platform's vocabulary:
+
+```elm
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Increment
+    | Decrement
+
+
+update : Msg, Int → Int
+update msg count =
+    case msg of
+        Increment →
+            count + 1
+
+        Decrement →
+            count - 1
+
+
+view : Int → Html Msg
+view count =
+    <div>
+        <button onClick={Decrement}>-</button>
+        <span>{count}</span>
+        <button onClick={Increment}>+</button>
+    </div>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = 0, update = update, view = view }
+```
+
+The `browser` platform compiles a view into HTML templates that are cloned once
+and then patched only where a value changed. On js-framework-benchmark's
+operations its script time beats Solid 1 on eight of nine in our harness.
+
+## The compiler
+
+The compiler is written in Zig, with flat data-oriented IRs, files checked in
+parallel and an on-disk cache keyed by content. A 100 000-line project checks
+cold in under 40 ms on eight threads, and in about 0.13 s on one.
+
+## Inspirations
+
+Beni starts from Elm, which gave it The Elm Architecture, its guarantees and
+its style of error messages. Other ideas come from:
+
+- **Roc**: platforms that own all host code, and methods resolved at compile
+  time.
+- **Solid** and **dom-expressions**: the template compiler and the render loop.
+- **Effect**: the fiber runtime and the schema library.
+- **Zig**: the data-oriented design of the compiler.
+
+Coming from Elm, you will notice that functions are not curried, lambdas are
+written `λx → …`, lists are matched with brackets (`[ x, …rest ]`), the pipe is
+`▷`, tuple types are `Int × String`, markup is JSX, effects are inferred, and
+methods and `schema` declarations exist.
+
+## Status
+
+Beni is pre-1.0 and changes often. The compiler, the type checker, the
+JavaScript backend, the platforms above, effects, routing, HTTP and schemas are
+built and tested. Packages, editor support and user documentation are not built
+yet.
+
+## Try it
+
+The toolchain (Zig 0.17 and Node 24) is pinned by `flake.nix`. Run
+`direnv allow` to put it on your `PATH`.
+
+```sh
+zig build
+./zig-out/bin/beni new --platform=browser-tea hello
+./zig-out/bin/beni serve hello
+```
+
+`serve` rebuilds and reloads the page on every save.
+
+## Learn more
+
+Each part of Beni is specified before it is built, and the specification is
+normative. Start with [`docs/design/language.md`](docs/design/language.md); the
+rest is in [`docs/design/`](docs/design/). Contributors should read
+[`CLAUDE.md`](CLAUDE.md) for the build, the test gates and the project rules.
