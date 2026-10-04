@@ -102,13 +102,9 @@ doubled = List.map [ 1.0, 2.0, 3.0 ] (scale 2 _)
 
 ### Static dispatch
 
-The power of type classes without the complexity. A type's methods are the
-functions its module exports, so `price.add tax` calls `Money.add`. Generic
-code asks for a method with `where`, and the compiler finds it in the module
-that declares the type. There are no instance declarations, no orphan rules
-and no global coherence checks, because there is only ever one place to look.
-Every call is resolved at compile time and costs the same as a direct function
-call.
+Most of what type classes give you, with much less machinery. A module's
+functions can be called as methods on its type, so `price.add tax` is
+`Money.add price tax`, and a `where` clause asks for a method on any type.
 
 ```elm
 -- Money.beni
