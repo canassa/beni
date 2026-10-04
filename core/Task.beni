@@ -303,9 +303,21 @@ fromHost f =
         f ⊤
     else
         Js.write hosting True
+        ok = Js.ref False
         -- Released however `f` ends, so a throw leaves no later wake
-        -- without its microtask.
-        Js.finally (λ⊤ → f ⊤) λ⊤ → Js.write hosting False
+        -- without its microtask; what `f` woke before it threw drains on
+        -- the microtask it would have had without `fromHost`.
+        Js.finally
+            (λ⊤ →
+                f ⊤
+                Js.write ok True
+            )
+            λ⊤ →
+                Js.write hosting False
+                if Js.read ok || not (Js.read scheduled) then
+                    ⊤
+                else
+                    Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from drain ])
         if Js.read scheduled then drain ⊤
 
 
