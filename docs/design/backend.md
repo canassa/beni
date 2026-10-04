@@ -7679,7 +7679,13 @@ The rules, exactly:
 - **What still runs every render** is one test per group and the untested groups: an edit to a
   field no value reads costs comparisons and nothing else, however many values the root has.
 - **Markup that writes nothing** (no op) is the hoisted block it was, `{ t, v: null }`, with no `p`
-  to call.
+  to call. *Amended after review:* a root with no input is hoisted the same way only when it is not
+  **live** — no `stateful` write and no value `tree.everyRender` answers true for; a live one is a
+  new `{ t, v: null }` each time it is evaluated, so the slot holding it patches it, and the
+  values of the roots that hold it are every-render values themselves (`boundary.md` §9.4.6).
+- **A constant attribute that needs code** (a URL, a property, a `raw` one) is written in `p` under
+  a test of its own field, `if (i.a<k> === undefined) { …; i.a<k> = true; }`, so it is written
+  once, at mount, in source order among its element's attributes, whatever group it is in.
 
 *The `let` rule* (the same day; research 56 §6.2, Fix B's second part). A `let` of the enclosing
 function that only the root's values use (`Root.lets`) is not written where it stands: `p`
@@ -8410,8 +8416,8 @@ every message but one kind: **a message sent during a *turn* renders when the tu
 microtask of its own.** A turn is a callback the host calls with nothing of the page's beneath it —
 so the host performs a microtask checkpoint when it returns, and the microtask flush would have run
 exactly there (HTML's *clean up after running script*). Rendering at that point instead of in a
-callback of its own changes no order a program can observe and removes one top-level callback per
-message, which is research 56 §2's whole fixed floor (an empty microtask costs 0.05 ms in
+callback of its own changes no order among a program's own work — its handlers, `update`s, fibers,
+renders and after-render work run as before — and removes one top-level callback per message, which is research 56 §2's whole fixed floor (an empty microtask costs 0.05 ms in
 js-framework-benchmark's trace). W28's substance is unchanged: messages are staged, a flush renders
 the staged ones once, `Browser.flush` and the after-render phase are as before. What is a turn:
 
@@ -8439,7 +8445,11 @@ another (one render, at the outer one's end); and a message sent during the flus
 subscription (`Listen.on`, `Sub.on`) is not a turn yet: it is the platform's, not the runtime's, and
 the microtask it pays is the follow-up research 56 §8 question 3 leaves.
 
-**One case renders earlier than the microtask would have.** `isTrusted` says the browser dispatched
+**What foreign JavaScript can see.** A microtask queued during a turn — by a host promise that
+settled, or by page script a handler's host call reached — ran before the render when the render
+was itself a microtask queued earlier, and now runs after it, since the render is no longer in the
+queue. Nothing a beni program writes queues a microtask a render could overtake, so only foreign
+JavaScript can tell. **One case renders earlier than the microtask would have.** `isTrusted` says the browser dispatched
 an event, not that the stack beneath it is empty: page script calling `el.focus()` gets a trusted
 `focus` dispatched inside its call, and its message now renders before `focus()` returns. The page
 shows the same thing either way; only foreign JavaScript can tell, and it sees a render that was

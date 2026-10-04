@@ -1991,7 +1991,12 @@ the same paths, in the order of their first write — and in source order within
 is what it is compared with; so is a value that may have an effect — the effects sentence above —
 **except one of `Debug`'s**, which is grouped like any other, so that a fixture can count what runs
 (`--release` refuses `Debug`, so no shipped program can tell). `Random.value` or `Time.now` in a
-`view` therefore answers anew on every render, as it did before.
+`view` therefore answers anew on every render, as it did before. *Amended the same day, after
+review:* **wherever such a value or such an attribute stands, the markup holding it is patched on
+every render** — markup in an `if`, a `case` branch or a `let`, nested at any depth, and every
+markup value whose own value holds it — so a controlled input nested in a branch is reconciled
+exactly as one at the top of the view is, and a view that reads nothing of its model still draws
+anew.
 
 **A `let` read only by markup is a value of that markup** (the owner's decision of 2026-10-04, the
 rule the amendment above names). A constant `let` of the function enclosing a markup root — a name
@@ -2000,8 +2005,11 @@ as one of them: at the root's first render, and later only in a render in which 
 its expression reads is not `===` to what it was when it was last evaluated; a value that uses it
 reads those paths, and the `let`'s last value. So `shown = top model.items` in a `view` is
 computed again only when `model.items` is another list. A `let` used anywhere outside the root,
-one whose expression may have an effect other than `Debug`'s, and one that defines a function, is
-evaluated where it is written, as before.
+one whose expression may have an effect other than `Debug`'s or holds markup that is patched on
+every render (above), and one that defines a function — bound to a lambda, or written with
+parameters — is evaluated where it is written, as before. **A `let` is a value of one root at
+most**: when two roots could take it (the `h1` in `header = <h1>{title}</h1>` and the root that
+reads `header`), the innermost does, and it is evaluated once per render that needs it.
 
 ### 11.12 Identity: an untouched field keeps its identity
 
