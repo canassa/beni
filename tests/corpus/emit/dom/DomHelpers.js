@@ -1,4 +1,4 @@
-import { Rt$template, Rt$insertText, Rt$childHtml, Rt$slot, Rt$forKeyed, Rt$text } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$insertText, Rt$childHtml, Rt$restate, Rt$slot, Rt$forKeyed, Rt$text } from "./_platform/Rt.mjs";
 const DomHelpers$p10 = (i$1, v$2) => {
   const $in$3 = v$2[0];
   const $in$4 = v$2[1];
@@ -27,19 +27,21 @@ const DomHelpers$k10 = { m: (v$7, cx$8) => {
 const DomHelpers$p27 = (i$15, v$16) => {
   const $in$17 = v$16[0];
   const $in$18 = v$16[1];
-  if ($in$17 !== i$15.g0_0 || $in$18 !== i$15.g0_1) {
-    i$15.g0_0 = $in$17;
-    i$15.g0_1 = $in$18;
+  {
     if ($in$17 !== i$15.a0_0 || $in$18 !== i$15.a0_1) {
       i$15.a0_0 = $in$17;
       i$15.a0_1 = $in$18;
       Rt$childHtml(i$15.c0, DomHelpers$label($in$17, $in$18));
+    } else {
+      Rt$restate(i$15.c0);
     }
   }
-  if (i$15.g1 === undefined) {
-    i$15.g1 = true;
-    {
+  {
+    if (i$15.a1 === undefined) {
       Rt$childHtml(i$15.c1, DomHelpers$label("fixed", 1));
+      i$15.a1 = true;
+    } else {
+      Rt$restate(i$15.c1);
     }
   }
 };
@@ -50,10 +52,10 @@ const DomHelpers$k27 = { m: (v$19, cx$20) => {
   const w$23 = w$22.nextSibling;
   const c$24 = Rt$slot(r$21, w$22, cx$20);
   const c$25 = Rt$slot(r$21, w$23, cx$20);
-  const i$26 = { s: r$21, q: null, e: r$21, c0: c$24, c1: c$25, a0_0: undefined, a0_1: undefined, g0_0: undefined, g0_1: undefined, g1: undefined };
+  const i$26 = { s: r$21, q: null, e: r$21, c0: c$24, c1: c$25, a0_0: undefined, a0_1: undefined, a1: undefined };
   DomHelpers$p27(i$26, v$19);
   return i$26;
-}, p: DomHelpers$p27 };
+}, p: DomHelpers$p27, l: true };
 const DomHelpers$t42 = Rt$template("<li>", 0);
 const DomHelpers$p44 = (i$27, v$28) => {
   const $in$29 = v$28[0];
@@ -69,6 +71,8 @@ const DomHelpers$p44 = (i$27, v$28) => {
       if (item$38 !== i$37.a0_0) {
         i$37.a0_0 = item$38;
         Rt$childHtml(i$37.c0, DomHelpers$label(item$38, 0));
+      } else {
+        Rt$restate(i$37.c0);
       }
     }, i: false, f: null };
     Rt$forKeyed(i$27.c0, $in$29, null, made$31, null);
@@ -93,7 +97,7 @@ const DomHelpers$k69 = { m: (v$46, cx$47) => {
     i$50.a0 = v$51[0];
     i$50.w1.data = v$51[0];
   }
-} };
+}, l: true };
 const DomHelpers$p85 = (i$52, v$53) => {
   const $in$54 = v$53[0];
   const x$55 = $in$54;

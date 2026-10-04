@@ -75,6 +75,9 @@ pub const lowering: m.Lowering = .{
         .{ .name = "insertText", .arity = 3 },
         // The payload extractor of an event whose handler takes the event.
         .{ .name = "identity", .arity = 1 },
+        // `(slot)`: what the slot shows patched again when it must be on
+        // every render — a skipped helper's or component's markup.
+        .{ .name = "restate", .arity = 1 },
     },
     .module = module,
     .root = root,
@@ -147,8 +150,8 @@ const Op = struct {
         html: struct { at: Place, kind: m.HoleKind, value: u32 },
         /// A helper call in an `html` hole (`Hole.call`): made only when an
         /// argument is not the one kept (language.md §11.6).
-        helper: struct { at: Place, callee: m.Value.Index, args: []const u32 },
-        component: struct { at: Place, props: []const u32, children: ?u32, thunk: u32 },
+        helper: struct { at: Place, callee: m.Value.Index, args: []const u32, impure: bool },
+        component: struct { at: Place, props: []const u32, children: ?u32, thunk: u32, impure: bool },
         for_: struct { at: Place, mode: m.For.Mode, each: u32, key: ?u32, row: u32, inputs: ?u32 },
         show: struct { at: Place, when: u32, key: ?u32, fallback: ?u32, body: u32, inputs: []const u32 },
     };
@@ -477,6 +480,7 @@ const Gen = struct {
         for (b.ops.items) |op| {
             switch (op.what) {
                 .attribute => |x| if (g.stateful(x.item)) return true,
+                .helper, .component => return true,
                 else => {},
             }
             var values: std.ArrayList(m.Value.Index) = .empty;
@@ -594,8 +598,13 @@ const Gen = struct {
             var values: std.ArrayList(m.Value.Index) = .empty;
             try g.opValues(b, op, &values);
             var reads: std.ArrayList(u32) = .empty;
+            // A helper's or a component's markup may hold what a render
+            // must patch every time; only a call that reads nothing can be
+            // left to its group's test, which none is: it runs every render,
+            // and is skipped by its own arguments' test (`callOrRestate`).
             var every = switch (op.what) {
                 .attribute => |x| g.stateful(x.item),
+                .helper, .component => true,
                 else => false,
             };
             for (values.items) |v| {
@@ -797,10 +806,13 @@ const Gen = struct {
         try js.constant(mount.block, inst, object);
         try js.expression(mount.block, try js.call(try g.ident(p_name), &.{ try g.ident(inst), try g.ident(v) }));
         try js.@"return"(mount.block, try g.ident(inst));
-        return g.cx.hoist(n.kind, try js.object(&.{
-            .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) },
-            .{ .key = "p", .value = try g.ident(p_name) },
-        }));
+        // `l`: a kind a render must patch every time, which `Rt.patch`
+        // patches again when it is handed the block it shows.
+        var props: std.ArrayList(m.Property) = .empty;
+        try props.append(a_, .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) });
+        try props.append(a_, .{ .key = "p", .value = try g.ident(p_name) });
+        if (try g.kindLive(b)) try props.append(a_, .{ .key = "l", .value = try js.literal(.true) });
+        return g.cx.hoist(n.kind, try js.object(props.items));
     }
 
     /// The template's cloner, hoisted once.
@@ -820,10 +832,11 @@ const Gen = struct {
         const pv = try g.cx.fresh("v");
         var patch: Fn = .{ .block = try js.block(), .v = pv, .i = i };
         try g.writePatch(b, &patch, null, false);
-        return g.cx.hoist(n.kind, try js.object(&.{
-            .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) },
-            .{ .key = "p", .value = try js.arrow(&.{ i, pv }, patch.block) },
-        }));
+        var props: std.ArrayList(m.Property) = .empty;
+        try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) });
+        try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, pv }, patch.block) });
+        if (try g.kindLive(b)) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
+        return g.cx.hoist(n.kind, try js.object(props.items));
     }
 
     /// An operand made where the markup is evaluated.
@@ -1390,7 +1403,7 @@ const Gen = struct {
                 if (h.kind == .html) if (h.call) |call| {
                     const args = try a_.alloc(u32, call.args.len);
                     for (args, 0..) |*x, k| x.* = try b.operand(a_, .{ .value = call.args.at(@intCast(k)) });
-                    break :blk .{ .helper = .{ .at = at, .callee = call.callee, .args = args } };
+                    break :blk .{ .helper = .{ .at = at, .callee = call.callee, .args = args, .impure = g.tree.everyRender(h.value) } };
                 };
                 const value = try b.operand(a_, .{ .value = h.value });
                 break :blk switch (h.kind) {
@@ -1407,7 +1420,7 @@ const Gen = struct {
                 const written = c.children_nodes.len != 0;
                 const children: ?u32 = if (written) try b.operand(a_, .{ .children = .{ .node = n, .site = b.site } }) else null;
                 const thunk = try b.operand(a_, .{ .thunk = .{ .node = n, .children = written } });
-                break :blk .{ .component = .{ .at = at, .props = props.items, .children = children, .thunk = thunk } };
+                break :blk .{ .component = .{ .at = at, .props = props.items, .children = children, .thunk = thunk, .impure = c.impure } };
             },
             .for_ => blk: {
                 const f = g.tree.for_(n);
@@ -1733,9 +1746,12 @@ const Gen = struct {
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
             },
             .html, .for_ => {},
-            .helper => |x| for (x.args, 0..) |arg, j| {
-                if (g.constantOperand(b, arg)) continue;
-                try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = undef });
+            .helper => |x| {
+                for (x.args, 0..) |arg, j| {
+                    if (g.constantOperand(b, arg)) continue;
+                    try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = undef });
+                }
+                if (!x.impure and g.allConstant(b, x.args)) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
             },
             .component => |x| {
                 for (x.props, 0..) |prop, j| {
@@ -1743,6 +1759,7 @@ const Gen = struct {
                     try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = undef });
                 }
                 if (x.children != null) try fields.append(a_, .{ .key = try g.print("a{d}c", .{k}), .value = undef });
+                if (!x.impure and x.children == null and g.allConstant(b, x.props)) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
             },
             .show => |x| {
                 try fields.append(a_, .{ .key = try g.print("a{d}k", .{k}), .value = undef });
@@ -1854,7 +1871,6 @@ const Gen = struct {
                     // made only when an argument changed (§11.6). A
                     // constant argument never does (`Tree.constant`), so
                     // a call of constants is made at mount only.
-                    if (!f.grouped and x.args.len != 0 and g.allConstant(b, x.args)) continue;
                     var changed: ?m.Expr = null;
                     const then = try js.block();
                     for (x.args, 0..) |p, j| {
@@ -1864,10 +1880,9 @@ const Gen = struct {
                         try js.assign(then, try g.fieldOf(f, "a{d}_{d}", .{ k, j }), try g.read(b, f, p));
                     }
                     try js.expression(then, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.helperCall(b, f, x.callee, x.args) }));
-                    if (changed) |c| try js.@"if"(f.block, c, then, null) else try js.nested(f.block, then);
+                    try g.callOrRestate(f, k, changed, then, x.impure);
                 },
                 .component => |x| {
-                    if (!f.grouped and x.children == null and g.allConstant(b, x.props)) continue;
                     var changed: ?m.Expr = null;
                     const then = try js.block();
                     for (x.props, 0..) |p, j| {
@@ -1882,7 +1897,7 @@ const Gen = struct {
                         try js.assign(then, try g.fieldOf(f, "a{d}c", .{k}), try g.read(b, f, ch));
                     }
                     try js.expression(then, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.componentCall(b, f, op.node, x.thunk, x.children) }));
-                    if (changed) |c| try js.@"if"(f.block, c, then, null) else try js.nested(f.block, then);
+                    try g.callOrRestate(f, k, changed, then, x.impure);
                 },
                 .for_ => |x| try js.expression(f.block, try g.forCall(b, f, x.mode, try g.fieldOf(f, "c{d}", .{k}), x.each, x.key, x.row, x.inputs)),
                 .show => |x| {
@@ -1909,6 +1924,25 @@ const Gen = struct {
                 },
             }
         }
+    }
+
+    /// A helper's or a component's call in `p` (`then`, which places it),
+    /// or, when it is skipped, the slot's markup patched again if it must
+    /// be patched on every render (`Rt.restate`; language.md §11.11): a
+    /// skipped call keeps a controlled input or an effect inside it as
+    /// current as a call would. An impure call is never skipped. A call
+    /// whose arguments are all constant is made once, at mount: by `m`
+    /// for a root that is not grouped, by `p` under a field of its own
+    /// otherwise.
+    fn callOrRestate(g: *Gen, f: *Fn, k: u32, changed: ?m.Expr, then: m.Block, impure: bool) m.Error!void {
+        const js = g.jsb();
+        if (impure) return js.nested(f.block, then);
+        const otherwise = try js.block();
+        try js.expression(otherwise, try g.rt("restate", &.{try g.fieldOf(f, "c{d}", .{k})}));
+        if (changed) |c| return js.@"if"(f.block, c, then, otherwise);
+        if (!f.grouped) return js.nested(f.block, otherwise);
+        try js.assign(then, try g.fieldOf(f, "a{d}", .{k}), try js.literal(.true));
+        try js.@"if"(f.block, try js.binary(.strict_eq, try g.fieldOf(f, "a{d}", .{k}), try js.literal(.undefined)), then, otherwise);
     }
 
     /// The operands an op writes from, for the ops a row may leave alone

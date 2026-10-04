@@ -1,0 +1,6 @@
+-- See Main.beni: a component that renders a controlled input.
+import Html exposing (Html)
+
+
+pub view : { text : String, onEdit : String → msg } → Html msg
+view props = <input id="component" value={props.text} onInput={props.onEdit} />

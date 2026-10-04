@@ -7686,8 +7686,9 @@ The rules, exactly:
   constants is made once, under a field of its own, then restated. **`l: true`** is on a kind
   that has a group with no test (a `stateful` write, an every-render value, a helper or a
   component) — on a root that is not grouped, one with a `stateful` write, a helper or a
-  component — and on `Html.map`'s kind; `Rt.patch` handed the very block an instance shows patches
-  it again when its kind has `l`, which is how a restate reaches markup nested at any depth. Since
+  component — and on `Html.map`'s kind, whose `p` restates what it maps when it is handed the same
+  markup; a restate reaches markup nested at any depth through those `p`s, since a live root
+  nested in a value makes that value an every-render one, a new block each time. Since
   a helper's or a component's markup may need it, a root that places one is live, and so are the
   values that hold it (`boundary.md` §9.4.6).
 - **Markup that writes nothing** (no op) is the hoisted block it was, `{ t, v: null }`, with no `p`

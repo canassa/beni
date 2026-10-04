@@ -1,8 +1,8 @@
 -- load
-console.log: tag: "fixed"
-console.log: fixed: 7
 console.log: tag: "counted"
 console.log: counted: 0
+console.log: tag: "fixed"
+console.log: fixed: 7
 console.log: boxed: 0
 console.log: local: 0
 <body>

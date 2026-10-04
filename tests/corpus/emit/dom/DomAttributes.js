@@ -82,7 +82,7 @@ const DomAttributes$k68 = { m: (v$28, cx$29) => {
   const i$34 = { s: r$30, q: null, e: r$30, w0: r$30, w1: w$31, w2: w$32, w4: w$33, g0_0: undefined };
   DomAttributes$p68(i$34, v$28);
   return i$34;
-}, p: DomAttributes$p68 };
+}, p: DomAttributes$p68, l: true };
 const DomAttributes$inPlace = (r$1) => ({ t: DomAttributes$k27, v: [r$1] });
 const DomAttributes$lists = (r$1) => ({ t: DomAttributes$k48, v: [r$1] });
 const DomAttributes$fields = (r$1) => ({ t: DomAttributes$k68, v: [r$1] });

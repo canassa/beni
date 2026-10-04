@@ -1,0 +1,58 @@
+-- A helper call or a component whose arguments did not change is not made
+-- again (language.md §11.6, §11.8) — but what it showed is still kept
+-- current (§11.11): a controlled input it rendered is reconciled with the
+-- model, and a call that may have an effect is made on every render. The
+-- edits here are rejected, so `update` returns the model it was given and
+-- every argument is the one the last render passed; each input still
+-- shows the model's text again. Each `Random.value` draws anew on a
+-- message that changes nothing the helper or the component is given.
+import Browser
+import Dice
+import Field
+import Html exposing (Html)
+import Random
+
+
+type Msg
+    = Typed String
+    | Other
+
+
+type alias Model =
+    text : String
+    o : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Typed s →
+            if String.length s > 3 then m else { m | text = s }
+
+        Other →
+            { m | o = m.o + 1 }
+
+
+field : String → Html Msg
+field t = <input id="helper" value={t} onInput={Typed} />
+
+
+dice : String → Html Msg
+dice label =
+    r = Random.value (Random.int 1 1000000)
+    <i id="dice">{label} {r}</i>
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="other" onClick={Other}>other</button>
+        {field m.text}
+        <Field text={m.text} onEdit={Typed} />
+        {dice "helper"}
+        <Dice label="component" />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { text = "ab", o = 0 }, update = update, view = view }

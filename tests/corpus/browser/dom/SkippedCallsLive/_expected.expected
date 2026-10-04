@@ -1,0 +1,96 @@
+-- load
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <input id="helper" .value="ab">
+    <!---->
+    <input id="component" .value="ab">
+    <!---->
+    <i id="dice">
+      "helper"
+      " "
+      "530269"
+      <!---->
+    </i>
+    <!---->
+    <b id="die">
+      "component"
+      " "
+      "306532"
+      <!---->
+    </b>
+    <!---->
+  </main>
+</body>
+-- input #helper "abcdef"
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <input id="helper" .value="ab">
+    <!---->
+    <input id="component" .value="ab">
+    <!---->
+    <i id="dice">
+      "helper"
+      " "
+      "526478"
+      <!---->
+    </i>
+    <!---->
+    <b id="die">
+      "component"
+      " "
+      "463182"
+      <!---->
+    </b>
+    <!---->
+  </main>
+</body>
+-- input #component "abcdef"
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <input id="helper" .value="ab">
+    <!---->
+    <input id="component" .value="ab">
+    <!---->
+    <i id="dice">
+      "helper"
+      " "
+      "937408"
+      <!---->
+    </i>
+    <!---->
+    <b id="die">
+      "component"
+      " "
+      "172872"
+      <!---->
+    </b>
+    <!---->
+  </main>
+</body>
+-- click #other
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <input id="helper" .value="ab">
+    <!---->
+    <input id="component" .value="ab">
+    <!---->
+    <i id="dice">
+      "helper"
+      " "
+      "690282"
+      <!---->
+    </i>
+    <!---->
+    <b id="die">
+      "component"
+      " "
+      "22674"
+      <!---->
+    </b>
+    <!---->
+  </main>
+</body>

@@ -209,6 +209,22 @@ patch i b cx =
         n
 
 
+-- `i` patched again with the block it shows, when its kind must be on
+-- every render (`l`): it holds a controlled input, a value with an effect,
+-- or a helper's or component's markup (backend.md §15.4, as amended).
+again : V → ⊤
+again i =
+    t = Js.get i "t"
+    if Js.to (Js.get t "l") then
+        Js.to (Js.call t "p" [ i, Js.get (Js.get i "b") "v" ])
+
+
+-- `(slot)`: what the slot shows patched again when it must be on every
+-- render — the markup of a helper or a component whose call was skipped.
+pub restate : V → ⊤
+restate s = if Js.isNull (Js.get s "i") then ⊤ else again (Js.get s "i")
+
+
 -- Put a new instance in the slot, in place of what it held.
 pub place : V, V → ⊤
 place s i =
@@ -1735,7 +1751,8 @@ text s = Js.from { t = textKind, v = s }
 mapKind : V
 mapKind =
     Js.from
-        { m =
+        { l = True
+        , m =
             λv cx →
                 c = Js.from { f = Js.at v 1, up = cx }
                 h = slot Js.null Js.null c
@@ -1744,10 +1761,15 @@ mapKind =
         , p =
             λi v →
                 Js.set (Js.get i "c") "f" (Js.at v 1)
-                Js.set
-                    (Js.get i "q")
-                    "i"
-                    (patch (Js.get (Js.get i "q") "i") (Js.at v 0) (Js.get i "c"))
+                -- The markup it maps, patched again when it is the same
+                -- and must be on every render (`restate`).
+                if Js.same (Js.at v 0) (Js.get (Js.get (Js.get i "q") "i") "b") then
+                    restate (Js.get i "q")
+                else
+                    Js.set
+                        (Js.get i "q")
+                        "i"
+                        (patch (Js.get (Js.get i "q") "i") (Js.at v 0) (Js.get i "c"))
         }
 
 
