@@ -10588,11 +10588,13 @@ pub const Lowerer = struct {
             .live = live.items,
             .interfaces = l.in.interfaces,
             .comparison = .{ .ctx = l, .classify = classifyComparison },
+            .debug_module = if (l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol())) |d| d.int() else null,
         }) orelse return;
         const st = try l.scratch.create(MarkupState);
         st.* = .{
             .built = built,
             .lowering = mk.lowering,
+            .grouped = try l.scratch.alloc(?bool, built.tree.roots.len),
             .bound = try l.scratch.alloc(Bound, built.values.len),
             .cx = .{
                 .build = mk.build,
@@ -10603,6 +10605,7 @@ pub const Lowerer = struct {
             },
         };
         @memset(st.bound, .none);
+        @memset(st.grouped, null);
         l.mk = st;
         // A hoisted name is `<Module>$<hint>`, which a declaration of the
         // same name is too.
@@ -10637,7 +10640,9 @@ pub const Lowerer = struct {
         const st = l.mk orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const index = st.built.rootAt(inst.int()) orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const root = st.built.tree.root(index);
-        try l.markupValues(out, root);
+        // A grouped root's values are the lowering's to evaluate, inside
+        // its own functions (`boundary.md` §9.4.6, 1.5).
+        if (!l.markupGrouped(index)) try l.markupValues(out, root);
         const saved = st.pos;
         st.pos = p;
         defer st.pos = saved;
@@ -10646,6 +10651,116 @@ pub const Lowerer = struct {
             error.Reported => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
         return @fromBackingInt(@intCast(@backingInt(result)));
+    }
+
+    /// Whether root `index`'s values are left to the lowering (`cx.grouped`,
+    /// `boundary.md` §9.4.6, 1.5): the lowering groups, the tree found
+    /// nothing that returns from the enclosing function, and the enclosing
+    /// declaration takes no evidence — its own or a `let` function's — has
+    /// no suspendable body, and is not being lowered in the suspendable
+    /// form, so no value can suspend. Decided once per root.
+    fn markupGrouped(l: *Lowerer, index: beni_markup.Root.Index) bool {
+        const st = l.mk orelse return false;
+        const at = @backingInt(index);
+        if (st.grouped[at]) |g| return g;
+        const answer = blk: {
+            if (!st.lowering.groups or !st.built.groupable[at]) break :blk false;
+            if (st.built.tree.root(index).kind != .expression) break :blk false;
+            const decl = st.built.root_decls[at];
+            if (decl >= l.bir.decls.len) break :blk false;
+            if (l.suspendable) break :blk false;
+            if (l.in.dispatch.effectDecl(decl).twin) break :blk false;
+            if (l.in.dispatch.effectDecl(decl).own != .no) break :blk false;
+            if (Convention.ofDecl(l.in.dispatch, l.bir, decl).evidence != 0) break :blk false;
+            const d = l.bir.decls[decl];
+            for (l.bir.declLocals(d)) |local| {
+                if (local.kind != .let) continue;
+                const row = l.in.dispatch.letIndex(local.inst) orelse continue;
+                if (l.in.dispatch.letRequirements(row).len != 0) break :blk false;
+            }
+            break :blk true;
+        };
+        st.grouped[at] = answer;
+        return answer;
+    }
+
+    /// `cx.bindInputs`: each input's local read under the name given, and
+    /// a new function's label scope, until `unbindInputs`.
+    fn markupBindInputs(l: *Lowerer, index: beni_markup.Root.Index, names: []const beni_markup.Name) Allocator.Error!void {
+        const st = l.mk.?;
+        const root = st.built.tree.root(index);
+        const saved = try l.scratch.alloc(JsIr.NameIndex, root.inputs.len);
+        for (0..root.inputs.len) |k| {
+            const local = st.built.values[root.inputs.start + k].capture;
+            saved[k] = if (local < l.local_names.len) l.local_names[local] else .none;
+            if (local < l.local_names.len and k < names.len) l.local_names[local] = @fromBackingInt(@intCast(@backingInt(names[k])));
+        }
+        try st.binds.append(l.scratch, .{ .root = index, .names = saved, .case_depth = l.case_depth });
+        l.case_depth = 0;
+        l.function_depth += 1;
+    }
+
+    fn markupUnbindInputs(l: *Lowerer, index: beni_markup.Root.Index) void {
+        const st = l.mk.?;
+        const top = st.binds.pop() orelse return;
+        std.debug.assert(top.root == index);
+        const root = st.built.tree.root(index);
+        for (0..root.inputs.len) |k| {
+            const local = st.built.values[root.inputs.start + k].capture;
+            if (local < l.local_names.len) l.local_names[local] = top.names[k];
+        }
+        l.case_depth = top.case_depth;
+        l.function_depth -= 1;
+    }
+
+    /// `cx.rootValues`: the instruction values among `values` of grouped
+    /// root `index`, evaluated into `block` in the root's order.
+    fn markupRootValues(l: *Lowerer, block: beni_markup.Block, index: beni_markup.Root.Index, values: []const beni_markup.Value.Index) Allocator.Error!void {
+        const st = l.mk.?;
+        const root = st.built.tree.root(index);
+        const wanted = try l.scratch.alloc(bool, root.values.len);
+        @memset(wanted, false);
+        for (values) |v| {
+            const at = @backingInt(v);
+            if (at >= root.values.start and at < root.values.start + root.values.len) wanted[at - root.values.start] = true;
+        }
+        var stmts: StmtList = .empty;
+        try l.markupValuesSome(&stmts, root, wanted);
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+    }
+
+    /// The instruction values of `root` that `wanted` marks, into `out`.
+    fn markupValuesSome(l: *Lowerer, out: *StmtList, root: beni_markup.Root, wanted: []const bool) Allocator.Error!void {
+        const st = l.mk.?;
+        for (root.values.start..root.values.start + root.values.len, 0..) |v, k| {
+            if (!wanted[k]) continue;
+            const inst = switch (st.built.values[v]) {
+                .inst => |i| i,
+                else => continue,
+            };
+            try l.markupBind(out, v, inst);
+        }
+    }
+
+    /// Evaluate value slot `v`, instruction `inst`, into `out`, bound where
+    /// the lowering can name it.
+    fn markupBind(l: *Lowerer, out: *StmtList, v: usize, inst: Inst.Index) Allocator.Error!void {
+        const st = l.mk.?;
+        const value = try l.expr(out, inst);
+        const tag = l.b.tagOf(value);
+        st.bound[v] = switch (tag) {
+            .ident => if (l.isMutable(value)) blk: {
+                const n = try l.fresh(l.well.temp);
+                try l.constDecl(out, n, value, l.pos(inst));
+                break :blk .{ .name = n };
+            } else .{ .name = @fromBackingInt(@intCast(l.b.dataOf(value).lhs)) },
+            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => .{ .node = value },
+            else => blk: {
+                const n = try l.fresh(l.well.temp);
+                try l.constDecl(out, n, value, l.pos(inst));
+                break :blk .{ .name = n };
+            },
+        };
     }
 
     /// Evaluate a root's instruction values into `out`, in order, each
@@ -10665,21 +10780,7 @@ pub const Lowerer = struct {
                 else => continue,
             };
             const out = if (k < apart.len and apart[k]) apart_out else main_out;
-            const value = try l.expr(out, inst);
-            const tag = l.b.tagOf(value);
-            st.bound[v] = switch (tag) {
-                .ident => if (l.isMutable(value)) blk: {
-                    const n = try l.fresh(l.well.temp);
-                    try l.constDecl(out, n, value, l.pos(inst));
-                    break :blk .{ .name = n };
-                } else .{ .name = @fromBackingInt(@intCast(l.b.dataOf(value).lhs)) },
-                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => .{ .node = value },
-                else => blk: {
-                    const n = try l.fresh(l.well.temp);
-                    try l.constDecl(out, n, value, l.pos(inst));
-                    break :blk .{ .name = n };
-                },
-            };
+            try l.markupBind(out, v, inst);
         }
     }
 
@@ -10705,6 +10806,16 @@ pub const Lowerer = struct {
             },
             .capture => |local| return l.ident(try l.localName(local), p),
             .input => |record| return l.markupInput(record, p),
+            .read => |r| {
+                var n = try l.ident(try l.localName(r.local), p);
+                for (r.links[0..r.len]) |link| {
+                    n = if (link & Bir.tuple_link != 0)
+                        try l.member(n, try l.slotName(link & ~Bir.tuple_link), p)
+                    else
+                        try l.fieldMember(n, @fromBackingInt(link), p);
+                }
+                return n;
+            },
             .probe => |probe| {
                 // `s`, or `s.$ === "Just" ? s.a : s`: the key a selector's
                 // comparisons can hold for, else the value itself, which
@@ -10993,6 +11104,18 @@ const MarkupState = struct {
     decl_names: []const u32 = &.{},
     /// Where the JavaScript being built is positioned (`cx.at`).
     pos: u32 = Node.no_pos,
+    /// Per root, whether its values are the lowering's (`markupGrouped`),
+    /// once decided.
+    grouped: []?bool,
+    /// The grouped roots whose inputs are bound, innermost last, each with
+    /// what its inputs' locals and the label depth were before.
+    binds: std.ArrayList(InputBind) = .empty,
+};
+
+const InputBind = struct {
+    root: beni_markup.Root.Index,
+    names: []const JsIr.NameIndex,
+    case_depth: u32,
 };
 
 /// One pair of program start data (`boundary.md` §9.4.5).
@@ -11113,6 +11236,22 @@ const markup_vtable: beni_markup.VTable = struct {
         const l = lowerer(impl);
         const result = try l.markupRowValues(into, null, row, item, position, captures, &.{});
         return if (result) |n| expr(n) else null;
+    }
+
+    fn grouped(impl: *anyopaque, r: M.Root.Index) bool {
+        return lowerer(impl).markupGrouped(r);
+    }
+
+    fn bindInputs(impl: *anyopaque, r: M.Root.Index, names: []const M.Name) E!void {
+        return lowerer(impl).markupBindInputs(r, names);
+    }
+
+    fn unbindInputs(impl: *anyopaque, r: M.Root.Index) void {
+        lowerer(impl).markupUnbindInputs(r);
+    }
+
+    fn rootValues(impl: *anyopaque, into: M.Block, r: M.Root.Index, values: []const M.Value.Index) E!void {
+        return lowerer(impl).markupRootValues(into, r, values);
     }
 
     fn rowValuesApart(impl: *anyopaque, into: M.Block, apart_into: M.Block, row: M.Row.Index, item: M.Name, position: ?M.Name, captures: []const M.Name, apart: []const M.Value.Index) E!?M.Expr {
@@ -11315,6 +11454,10 @@ const markup_vtable: beni_markup.VTable = struct {
         .value = value,
         .row_values = rowValues,
         .row_values_apart = rowValuesApart,
+        .grouped = grouped,
+        .bind_inputs = bindInputs,
+        .unbind_inputs = unbindInputs,
+        .root_values = rootValues,
         .component_call = componentCall,
         .extractor = extractor,
         .maybe = maybe,

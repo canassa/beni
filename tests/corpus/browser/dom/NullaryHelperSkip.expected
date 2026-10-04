@@ -13,7 +13,6 @@ console.log: maybeText: "none"
   </main>
 </body>
 -- click #run
-console.log: button: "add"
 <body>
   <main>
     <button id="run">"run"</button>
@@ -25,7 +24,6 @@ console.log: button: "add"
   </main>
 </body>
 -- click #add
-console.log: button: "add"
 <body>
   <main>
     <button id="run">"run"</button>

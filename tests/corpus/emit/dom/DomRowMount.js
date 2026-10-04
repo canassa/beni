@@ -1,36 +1,151 @@
-import { Rt$template, Rt$slot, Rt$forKeyed, Rt$delegate } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$slot } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 import { String$fromInt, String$compare } from "./_core/String.mjs";
-const DomRowMount$t59 = Rt$template("<ul>", 0);
-const DomRowMount$k59 = { m: (v$4, cx$5) => {
-  const r$6 = DomRowMount$t59();
-  const c$7 = Rt$slot(r$6, null, cx$5);
-  Rt$forKeyed(c$7, v$4[0], v$4[1], v$4[2], v$4[3]);
-  return { s: r$6, q: null, e: r$6, c0: c$7 };
-}, p: (i$8, v$9) => {
-  Rt$forKeyed(i$8.c0, v$9[0], v$9[1], v$9[2], v$9[3]);
-} };
 const DomRowMount$t57 = Rt$template("<li><a> </a><input>", 0);
-const DomRowMount$t91 = Rt$template("<ul>", 0);
-const DomRowMount$k91 = { m: (v$29, cx$30) => {
-  const r$31 = DomRowMount$t91();
-  const c$32 = Rt$slot(r$31, null, cx$30);
-  Rt$forKeyed(c$32, v$29[0], v$29[1], v$29[2], v$29[3]);
-  return { s: r$31, q: null, e: r$31, c0: c$32 };
-}, p: (i$33, v$34) => {
-  Rt$forKeyed(i$33.c0, v$34[0], v$34[1], v$34[2], v$34[3]);
-} };
+const DomRowMount$p59 = (i$1, v$2) => {
+  const $in$3 = v$2[0];
+  if ($in$3.rows !== i$1.g0_0 || $in$3.picked !== i$1.g0_1) {
+    i$1.g0_0 = $in$3.rows;
+    i$1.g0_1 = $in$3.picked;
+    const $t$4 = $in$3.rows;
+    const $t$6 = ($p$5) => $p$5.id;
+    const made$7 = { m: (item$8, position$9, cx$10) => {
+      const r$11 = DomRowMount$t57();
+      const w$12 = r$11.firstChild;
+      const w$13 = w$12.firstChild;
+      const w$14 = w$12.nextSibling;
+      Rt$delegate(["click", "input"]);
+      if (cx$10 !== null) {
+        w$12.$$cx = cx$10;
+      }
+      w$14.$$inputX = Html$targetValue;
+      if (cx$10 !== null) {
+        w$14.$$cx = cx$10;
+      }
+      return { s: r$11, q: null, e: r$11, w0: r$11, w1: w$12, w2: w$13, w3: w$14, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, x: undefined };
+    }, p: (i$15, item$16, position$17) => {
+      const $t$18 = $in$3.picked === item$16.id ? "on" : "";
+      if ($t$18 !== i$15.a0) {
+        i$15.w0.setAttribute("class", $t$18);
+        i$15.a0 = $t$18;
+      }
+      if (item$16 !== i$15.x) {
+        const $t$19 = String$fromInt(item$16.id);
+        const $t$20 = { $: "Pick", a: item$16.id, b: null };
+        const $t$21 = item$16.label;
+        const $t$23 = ($p$22) => ({ $: "Typed", a: item$16.id, b: $p$22 });
+        if ($t$19 !== i$15.a1) {
+          i$15.a1 = $t$19;
+          i$15.w0.style.setProperty("order", $t$19);
+        }
+        if ($t$20 !== i$15.a2) {
+          i$15.a2 = $t$20;
+          i$15.w1.$$click = $t$20;
+        }
+        if ($t$21 !== i$15.a3) {
+          i$15.a3 = $t$21;
+          i$15.w2.data = $t$21;
+        }
+        if ($t$23 !== i$15.a4) {
+          i$15.a4 = $t$23;
+          i$15.w3.$$input = $t$23;
+        }
+      }
+    }, w: true, i: false, f: null, g: 0, z: $in$3.picked };
+    Rt$forKeyed(i$1.c0, $t$4, $t$6, made$7, [$in$3.picked]);
+  }
+};
+const DomRowMount$t59 = Rt$template("<ul>", 0);
+const DomRowMount$k59 = { m: (v$24, cx$25) => {
+  const r$26 = DomRowMount$t59();
+  const c$27 = Rt$slot(r$26, null, cx$25);
+  const i$28 = { s: r$26, q: null, e: r$26, c0: c$27, g0_0: undefined, g0_1: undefined };
+  DomRowMount$p59(i$28, v$24);
+  return i$28;
+}, p: DomRowMount$p59 };
 const DomRowMount$t89 = Rt$template("<li>", 0);
-const DomRowMount$t117 = Rt$template("<ul>", 0);
-const DomRowMount$k117 = { m: (v$49, cx$50) => {
-  const r$51 = DomRowMount$t117();
-  const c$52 = Rt$slot(r$51, null, cx$50);
-  Rt$forKeyed(c$52, v$49[0], v$49[1], v$49[2], v$49[3]);
-  return { s: r$51, q: null, e: r$51, c0: c$52 };
-}, p: (i$53, v$54) => {
-  Rt$forKeyed(i$53.c0, v$54[0], v$54[1], v$54[2], v$54[3]);
-} };
+const DomRowMount$p91 = (i$29, v$30) => {
+  const $in$31 = v$30[0];
+  if ($in$31.rows !== i$29.g0_0 || $in$31.picked !== i$29.g0_1) {
+    i$29.g0_0 = $in$31.rows;
+    i$29.g0_1 = $in$31.picked;
+    const $t$32 = $in$31.rows;
+    const $t$34 = ($p$33) => $p$33.id;
+    const made$35 = { m: (item$36, position$37, cx$38) => {
+      const $t$39 = item$36.label;
+      const $t$40 = $in$31.picked === item$36.id ? "on" : "";
+      const r$41 = DomRowMount$t89();
+      r$41.setAttribute("title", $t$39);
+      r$41.setAttribute("class", $t$40);
+      return { s: r$41, q: null, e: r$41, w0: r$41, a0: $t$39, a1: $t$40 };
+    }, p: (i$42, item$43, position$44) => {
+      const $t$46 = $in$31.picked === item$43.id ? "on" : "";
+      if ($t$46 !== i$42.a1) {
+        i$42.w0.setAttribute("class", $t$46);
+        i$42.a1 = $t$46;
+      }
+      if (item$43 !== i$42.x) {
+        const $t$45 = item$43.label;
+        if ($t$45 !== i$42.a0) {
+          i$42.w0.setAttribute("title", $t$45);
+          i$42.a0 = $t$45;
+        }
+      }
+    }, i: false, f: null, g: 0, z: $in$31.picked };
+    Rt$forKeyed(i$29.c0, $t$32, $t$34, made$35, [$in$31.picked]);
+  }
+};
+const DomRowMount$t91 = Rt$template("<ul>", 0);
+const DomRowMount$k91 = { m: (v$47, cx$48) => {
+  const r$49 = DomRowMount$t91();
+  const c$50 = Rt$slot(r$49, null, cx$48);
+  const i$51 = { s: r$49, q: null, e: r$49, c0: c$50, g0_0: undefined, g0_1: undefined };
+  DomRowMount$p91(i$51, v$47);
+  return i$51;
+}, p: DomRowMount$p91 };
 const DomRowMount$t115 = Rt$template("<li> ", 0);
+const DomRowMount$p117 = (i$52, v$53) => {
+  const $in$54 = v$53[0];
+  if ($in$54.rows !== i$52.g0_0 || $in$54.picked !== i$52.g0_1) {
+    i$52.g0_0 = $in$54.rows;
+    i$52.g0_1 = $in$54.picked;
+    const $t$55 = $in$54.rows;
+    const $t$57 = ($p$56) => $p$56.id;
+    const made$58 = { m: (item$59, position$60, cx$61) => {
+      const $t$62 = $in$54.picked === item$59.id;
+      const $t$63 = item$59.label;
+      const r$64 = DomRowMount$t115();
+      const w$65 = r$64.firstChild;
+      if ($t$62) {
+        r$64.classList.toggle("on", true);
+      }
+      w$65.data = $t$63;
+      return { s: r$64, q: null, e: r$64, w0: r$64, w1: w$65, a0: $t$62, a1: $t$63 };
+    }, p: (i$66, item$67, position$68) => {
+      const $t$69 = $in$54.picked === item$67.id;
+      if ($t$69 !== i$66.a0) {
+        i$66.a0 = $t$69;
+        i$66.w0.classList.toggle("on", $t$69);
+      }
+      if (item$67 !== i$66.x) {
+        const $t$70 = item$67.label;
+        if ($t$70 !== i$66.a1) {
+          i$66.a1 = $t$70;
+          i$66.w1.data = $t$70;
+        }
+      }
+    }, i: false, f: null, g: 0, z: $in$54.picked };
+    Rt$forKeyed(i$52.c0, $t$55, $t$57, made$58, [$in$54.picked]);
+  }
+};
+const DomRowMount$t117 = Rt$template("<ul>", 0);
+const DomRowMount$k117 = { m: (v$71, cx$72) => {
+  const r$73 = DomRowMount$t117();
+  const c$74 = Rt$slot(r$73, null, cx$72);
+  const i$75 = { s: r$73, q: null, e: r$73, c0: c$74, g0_0: undefined, g0_1: undefined };
+  DomRowMount$p117(i$75, v$71);
+  return i$75;
+}, p: DomRowMount$p117 };
 const DomRowMount$Msg$$order = { Pick: 0, Typed: 1 };
 const DomRowMount$Msg$$compare = ($x, $y) => {
   if ($x.$ !== $y.$) {
@@ -58,105 +173,8 @@ const DomRowMount$Msg$$eq = ($x, $y) => {
       return $x.a === $y.a && $x.b === $y.b;
   }
 };
-const DomRowMount$after = (model$1) => {
-  const $t$1 = model$1.rows;
-  const $t$3 = ($p$2) => $p$2.id;
-  return { t: DomRowMount$k59, v: [$t$1, $t$3, { m: (item$10, position$11, cx$12) => {
-    const r$13 = DomRowMount$t57();
-    const w$14 = r$13.firstChild;
-    const w$15 = w$14.firstChild;
-    const w$16 = w$14.nextSibling;
-    Rt$delegate(["click", "input"]);
-    if (cx$12 !== null) {
-      w$14.$$cx = cx$12;
-    }
-    w$16.$$inputX = Html$targetValue;
-    if (cx$12 !== null) {
-      w$16.$$cx = cx$12;
-    }
-    return { s: r$13, q: null, e: r$13, w0: r$13, w1: w$14, w2: w$15, w3: w$16, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, x: undefined };
-  }, p: (i$17, item$18, position$19) => {
-    const $t$20 = model$1.picked === item$18.id ? "on" : "";
-    if ($t$20 !== i$17.a0) {
-      i$17.w0.setAttribute("class", $t$20);
-      i$17.a0 = $t$20;
-    }
-    if (item$18 !== i$17.x) {
-      const $t$21 = String$fromInt(item$18.id);
-      const $t$22 = { $: "Pick", a: item$18.id, b: null };
-      const $t$23 = item$18.label;
-      const $t$25 = ($p$24) => ({ $: "Typed", a: item$18.id, b: $p$24 });
-      if ($t$21 !== i$17.a1) {
-        i$17.a1 = $t$21;
-        i$17.w0.style.setProperty("order", $t$21);
-      }
-      if ($t$22 !== i$17.a2) {
-        i$17.a2 = $t$22;
-        i$17.w1.$$click = $t$22;
-      }
-      if ($t$23 !== i$17.a3) {
-        i$17.a3 = $t$23;
-        i$17.w2.data = $t$23;
-      }
-      if ($t$25 !== i$17.a4) {
-        i$17.a4 = $t$25;
-        i$17.w3.$$input = $t$25;
-      }
-    }
-  }, w: true, i: false, f: null, g: 0, z: model$1.picked }, [model$1.picked]] };
-};
-const DomRowMount$before = (model$1) => {
-  const $t$26 = model$1.rows;
-  const $t$28 = ($p$27) => $p$27.id;
-  return { t: DomRowMount$k91, v: [$t$26, $t$28, { m: (item$35, position$36, cx$37) => {
-    const $t$38 = item$35.label;
-    const $t$39 = model$1.picked === item$35.id ? "on" : "";
-    const r$40 = DomRowMount$t89();
-    r$40.setAttribute("title", $t$38);
-    r$40.setAttribute("class", $t$39);
-    return { s: r$40, q: null, e: r$40, w0: r$40, a0: $t$38, a1: $t$39 };
-  }, p: (i$41, item$42, position$43) => {
-    const $t$45 = model$1.picked === item$42.id ? "on" : "";
-    if ($t$45 !== i$41.a1) {
-      i$41.w0.setAttribute("class", $t$45);
-      i$41.a1 = $t$45;
-    }
-    if (item$42 !== i$41.x) {
-      const $t$44 = item$42.label;
-      if ($t$44 !== i$41.a0) {
-        i$41.w0.setAttribute("title", $t$44);
-        i$41.a0 = $t$44;
-      }
-    }
-  }, i: false, f: null, g: 0, z: model$1.picked }, [model$1.picked]] };
-};
-const DomRowMount$toggled = (model$1) => {
-  const $t$46 = model$1.rows;
-  const $t$48 = ($p$47) => $p$47.id;
-  return { t: DomRowMount$k117, v: [$t$46, $t$48, { m: (item$55, position$56, cx$57) => {
-    const $t$58 = model$1.picked === item$55.id;
-    const $t$59 = item$55.label;
-    const r$60 = DomRowMount$t115();
-    const w$61 = r$60.firstChild;
-    if ($t$58) {
-      r$60.classList.toggle("on", true);
-    }
-    w$61.data = $t$59;
-    return { s: r$60, q: null, e: r$60, w0: r$60, w1: w$61, a0: $t$58, a1: $t$59 };
-  }, p: (i$62, item$63, position$64) => {
-    const $t$65 = model$1.picked === item$63.id;
-    if ($t$65 !== i$62.a0) {
-      i$62.a0 = $t$65;
-      i$62.w0.classList.toggle("on", $t$65);
-    }
-    if (item$63 !== i$62.x) {
-      const $t$66 = item$63.label;
-      if ($t$66 !== i$62.a1) {
-        i$62.a1 = $t$66;
-        i$62.w1.data = $t$66;
-      }
-    }
-  }, i: false, f: null, g: 0, z: model$1.picked }, [model$1.picked]] };
-};
+const DomRowMount$after = (model$1) => ({ t: DomRowMount$k59, v: [model$1] });
+const DomRowMount$before = (model$1) => ({ t: DomRowMount$k91, v: [model$1] });
+const DomRowMount$toggled = (model$1) => ({ t: DomRowMount$k117, v: [model$1] });
 export { DomRowMount$Msg$$compare, DomRowMount$Msg$$eq, DomRowMount$after, DomRowMount$before, DomRowMount$toggled };
 //# sourceMappingURL=DomRowMount.mjs.map

@@ -2,10 +2,13 @@
 -- unchanged argument (language.md §11.6, §11.12; backend.md §4, *A nullary
 -- constructor is one object*): `Run` and `Nothing` are the same object on
 -- every render, so `button "run" Run` and `maybeText Nothing` are called
--- once, at mount, and never again. `button "add" (Add 1)` builds a new
--- message each render and is called every time. `Debug.log` in each
--- helper's body shows which calls happen; `Msg` has a constructor with a
--- field, so its nullary constructors are objects and not bare strings.
+-- once, at mount, and never again. So is `button "add" (Add 1)`, though
+-- it builds a new message: a value of the root that reads nothing is
+-- computed at mount only (language.md §11.11, made precise 2026-10-04),
+-- where before it was rebuilt and its helper called on every render.
+-- `Debug.log` in each helper's body shows which calls happen; `Msg` has a
+-- constructor with a field, so its nullary constructors are objects and
+-- not bare strings.
 import Browser
 import Html exposing (Html)
 

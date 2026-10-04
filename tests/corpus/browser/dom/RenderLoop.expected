@@ -31,7 +31,6 @@ console.log: view: 5
   </main>
 </body>
 -- click #select
-console.log: view: 5
 console.log: row: "a"
 console.log: row: "b"
 console.log: row: "c"

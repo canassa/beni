@@ -1,0 +1,18 @@
+# One field: "a", "a+b" and the message that carries it.
+click #a
+# Another: "a+b", and "scaled", whose local function reads it.
+click #b
+# "scaled" again, through its argument.
+click #c
+# A field read inside a function of this module.
+click #x
+# A field nothing but another module's function reads.
+click #y
+click #pick
+# The card is called again.
+click #rename
+# The list's new row.
+click #push
+click #set
+# The model as it was: only what may have an effect.
+click #noop

@@ -1,0 +1,154 @@
+-- A root computes its own values, by what they read (language.md §11.11,
+-- made precise 2026-10-04; backend.md §15.4, *A root computes its own
+-- values*). `Debug.log` on each value shows when it is computed: a value
+-- runs at mount and then only in a render in which one of the fields it
+-- reads is not the one it saw last. What each reads:
+--
+--   - "a": `model.a`; "a+b": two fields; "case": `model.pick`, through a
+--     `case`, which reads the whole of what it is given.
+--   - "x": `model.nested.x`, read inside `nestedX`, a function of this
+--     module: its body says which field of its parameter it reads, so
+--     an edit to `nested.y` does not run it.
+--   - "total": `Total.sum model`, a function of another module: the whole
+--     model, so every render runs it.
+--   - "scaled": `scale model.c`, `scale` a local function that reads
+--     `model.b`: a local is read whole, and this one is made again by
+--     every render, so it runs every time — never stale.
+--   - the button's message `Set model.a` is made only when `a` changes;
+--     the card is called only when `model.name` changes, its body
+--     logging "card"; the list's rows run only when the list changes.
+--   - "dice": `Random.value`, which may have an effect, runs on every
+--     render whatever it reads.
+--
+-- `Noop` returns the model it was given: the page renders and runs only
+-- what may have an effect.
+import Browser
+import Card
+import Html exposing (Html)
+import Random
+import Total
+
+
+type Msg
+    = IncA
+    | IncB
+    | IncC
+    | IncX
+    | IncY
+    | Pick
+    | Rename
+    | Push
+    | Set Int
+    | Noop
+
+
+type alias Nested =
+    x : Int
+    y : Int
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+    nested : Nested
+    pick : Maybe Int
+    name : String
+    items : List Int
+    set : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        IncA →
+            { model | a = model.a + 1 }
+
+        IncB →
+            { model | b = model.b + 1 }
+
+        IncC →
+            { model | c = model.c + 1 }
+
+        IncX →
+            { model | nested = { x = model.nested.x + 1, y = model.nested.y } }
+
+        IncY →
+            { model | nested = { x = model.nested.x, y = model.nested.y + 1 } }
+
+        Pick →
+            { model | pick = Just 7 }
+
+        Rename →
+            { model | name = "${model.name}!" }
+
+        Push →
+            { model | items = List.push model.items (List.length model.items) }
+
+        Set n →
+            { model | set = n }
+
+        Noop →
+            model
+
+
+nestedX : Model → Int
+nestedX m = m.nested.x * 10
+
+
+view : Model → Html Msg
+view model =
+    scale : Int → Int
+    scale n = n * model.b
+
+    <main>
+        <button id="a" onClick={IncA}>a</button>
+        <button id="b" onClick={IncB}>b</button>
+        <button id="c" onClick={IncC}>c</button>
+        <button id="x" onClick={IncX}>x</button>
+        <button id="y" onClick={IncY}>y</button>
+        <button id="pick" onClick={Pick}>pick</button>
+        <button id="rename" onClick={Rename}>rename</button>
+        <button id="push" onClick={Push}>push</button>
+        <button id="set" onClick={Set (Debug.log "message" model.a)}>set</button>
+        <button id="noop" onClick={Noop}>noop</button>
+        <p>{Debug.log "a" model.a}</p>
+        <p>{Debug.log "a+b" (model.a + model.b)}</p>
+        <p>
+            {Debug.log
+                "case"
+                (case model.pick of
+                    Just n →
+                        n
+
+                    Nothing →
+                        0
+                )
+            }
+        </p>
+        <p>{Debug.log "x" (nestedX model)}</p>
+        <p>{Debug.log "total" (Total.sum model)}</p>
+        <p>{Debug.log "scaled" (scale model.c)}</p>
+        <p>{model.set}</p>
+        <Card title={model.name} />
+        <ul><For each={model.items} keyed={False}>{λi → <li>{Debug.log "row" i}</li>}</For></ul>
+        <p class="dice">{Random.value (Random.int 1 1000000)}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init =
+            { a = 0
+            , b = 1
+            , c = 2
+            , nested = { x = 0, y = 0 }
+            , pick = Nothing
+            , name = "card"
+            , items = [ 0 ]
+            , set = 0
+            }
+        , update = update
+        , view = view
+        }

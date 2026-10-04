@@ -1,0 +1,336 @@
+-- load
+console.log: message: 0
+console.log: a: 0
+console.log: a+b: 1
+console.log: case: 0
+console.log: x: 0
+console.log: total: 3
+console.log: scaled: 2
+console.log: card: "card"
+console.log: row: 0
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"0"</p>
+    <p>"1"</p>
+    <p>"0"</p>
+    <p>"0"</p>
+    <p>"3"</p>
+    <p>"2"</p>
+    <p>"0"</p>
+    <h2>"card"</h2>
+    <ul>
+      <li>"0"</li>
+    </ul>
+    <p class="dice">"530269"</p>
+  </main>
+</body>
+-- click #a
+console.log: message: 1
+console.log: a: 1
+console.log: a+b: 2
+console.log: total: 4
+console.log: scaled: 2
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"2"</p>
+    <p>"0"</p>
+    <p>"0"</p>
+    <p>"4"</p>
+    <p>"2"</p>
+    <p>"0"</p>
+    <h2>"card"</h2>
+    <ul>
+      <li>"0"</li>
+    </ul>
+    <p class="dice">"306532"</p>
+  </main>
+</body>
+-- click #b
+console.log: a+b: 3
+console.log: total: 5
+console.log: scaled: 4
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"0"</p>
+    <p>"0"</p>
+    <p>"5"</p>
+    <p>"4"</p>
+    <p>"0"</p>
+    <h2>"card"</h2>
+    <ul>
+      <li>"0"</li>
+    </ul>
+    <p class="dice">"526478"</p>
+  </main>
+</body>
+-- click #c
+console.log: total: 6
+console.log: scaled: 6
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"0"</p>
+    <p>"0"</p>
+    <p>"6"</p>
+    <p>"6"</p>
+    <p>"0"</p>
+    <h2>"card"</h2>
+    <ul>
+      <li>"0"</li>
+    </ul>
+    <p class="dice">"463182"</p>
+  </main>
+</body>
+-- click #x
+console.log: x: 10
+console.log: total: 6
+console.log: scaled: 6
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"0"</p>
+    <p>"10"</p>
+    <p>"6"</p>
+    <p>"6"</p>
+    <p>"0"</p>
+    <h2>"card"</h2>
+    <ul>
+      <li>"0"</li>
+    </ul>
+    <p class="dice">"937408"</p>
+  </main>
+</body>
+-- click #y
+console.log: total: 6
+console.log: scaled: 6
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"0"</p>
+    <p>"10"</p>
+    <p>"6"</p>
+    <p>"6"</p>
+    <p>"0"</p>
+    <h2>"card"</h2>
+    <ul>
+      <li>"0"</li>
+    </ul>
+    <p class="dice">"172872"</p>
+  </main>
+</body>
+-- click #pick
+console.log: case: 7
+console.log: total: 6
+console.log: scaled: 6
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"7"</p>
+    <p>"10"</p>
+    <p>"6"</p>
+    <p>"6"</p>
+    <p>"0"</p>
+    <h2>"card"</h2>
+    <ul>
+      <li>"0"</li>
+    </ul>
+    <p class="dice">"690282"</p>
+  </main>
+</body>
+-- click #rename
+console.log: total: 6
+console.log: scaled: 6
+console.log: card: "card!"
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"7"</p>
+    <p>"10"</p>
+    <p>"6"</p>
+    <p>"6"</p>
+    <p>"0"</p>
+    <h2>"card!"</h2>
+    <ul>
+      <li>"0"</li>
+    </ul>
+    <p class="dice">"22674"</p>
+  </main>
+</body>
+-- click #push
+console.log: total: 6
+console.log: scaled: 6
+console.log: row: 1
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"7"</p>
+    <p>"10"</p>
+    <p>"6"</p>
+    <p>"6"</p>
+    <p>"0"</p>
+    <h2>"card!"</h2>
+    <ul>
+      <li>"0"</li>
+      <li>"1"</li>
+    </ul>
+    <p class="dice">"773462"</p>
+  </main>
+</body>
+-- click #set
+console.log: total: 6
+console.log: scaled: 6
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"7"</p>
+    <p>"10"</p>
+    <p>"6"</p>
+    <p>"6"</p>
+    <p>"1"</p>
+    <h2>"card!"</h2>
+    <ul>
+      <li>"0"</li>
+      <li>"1"</li>
+    </ul>
+    <p class="dice">"427724"</p>
+  </main>
+</body>
+-- click #noop
+console.log: scaled: 6
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <button id="x">"x"</button>
+    <button id="y">"y"</button>
+    <button id="pick">"pick"</button>
+    <button id="rename">"rename"</button>
+    <button id="push">"push"</button>
+    <button id="set">"set"</button>
+    <button id="noop">"noop"</button>
+    <p>"1"</p>
+    <p>"3"</p>
+    <p>"7"</p>
+    <p>"10"</p>
+    <p>"6"</p>
+    <p>"6"</p>
+    <p>"1"</p>
+    <h2>"card!"</h2>
+    <ul>
+      <li>"0"</li>
+      <li>"1"</li>
+    </ul>
+    <p class="dice">"888924"</p>
+  </main>
+</body>

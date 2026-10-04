@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.4: what the compiler hands a platform's markup lowering, and everything
+//! 1.5: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -21,8 +21,9 @@ const std = @import("std");
 /// The version of the interface this module declares (§9.4.6). Version 1.0
 /// is `boundary.md` §9.4 as written on 2026-09-29; 1.1 adds `Hole.call`,
 /// 1.2 `Tree.item_only` and `Context.rowValuesApart`, 1.3 `Row.selector`,
-/// 1.4 `Tree.constant`.
-pub const version: Version = .{ .major = 1, .minor = 4 };
+/// 1.4 `Tree.constant`, 1.5 a root's inputs and reads, `Lowering.groups`
+/// and the calls that evaluate a grouped root's values.
+pub const version: Version = .{ .major = 1, .minor = 5 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -58,6 +59,9 @@ pub const Lowering = struct {
     /// the root's values already evaluated; returns what the root evaluates
     /// to.
     root: *const fn (cx: *Context, tree: *const Tree, root: Root.Index) Error!Expr,
+    /// 1.5: the lowering evaluates a grouped root's values itself
+    /// (`Context.grouped`), so the compiler does not where the root stands.
+    groups: bool = false,
 };
 
 pub const Error = error{ OutOfMemory, Reported };
@@ -122,10 +126,35 @@ pub const Tree = struct {
     /// to render. Empty: none is known to be.
     constant: []const bool = &.{},
 
+    /// 1.5: per value of a root of kind `expression`, a range of
+    /// `read_sets`: the positions in its root's `reads` of the paths it
+    /// reads. Empty: no value is known to read anything.
+    value_reads: []const Range = &.{},
+    read_sets: []const u32 = &.{},
+    /// 1.5: per value, whether evaluating it may have an effect other than
+    /// `Debug`'s (language.md §11.11): a lowering evaluates such a value of
+    /// a grouped root on every render. Empty: none may.
+    every_render: []const bool = &.{},
+
     /// Whether value `v` is the same on every evaluation (`constant`).
     pub fn isConstant(t: *const Tree, v: Value.Index) bool {
         const at = @backingInt(v);
         return at < t.constant.len and t.constant[at];
+    }
+
+    /// Whether value `v` is evaluated on every render (`every_render`).
+    pub fn everyRender(t: *const Tree, v: Value.Index) bool {
+        const at = @backingInt(v);
+        return at < t.every_render.len and t.every_render[at];
+    }
+
+    /// The positions in its root's `reads` of the paths value `v` reads
+    /// (`value_reads`).
+    pub fn readsOf(t: *const Tree, v: Value.Index) []const u32 {
+        const at = @backingInt(v);
+        if (at >= t.value_reads.len) return &.{};
+        const r = t.value_reads[at];
+        return t.read_sets[r.start..][0..r.len];
     }
 
     /// Whether value `v` reads only its row's item (`item_only`).
@@ -224,6 +253,14 @@ pub const Root = struct {
     node: Node.Index,
     /// The values this root evaluates, in evaluation order (language.md §6).
     values: Value.Range,
+    /// 1.5, `expression` only: values that each read one local of the
+    /// enclosing declaration whole — every local a value reads, bound
+    /// outside the root, in first-use order.
+    inputs: Value.Range = .{ .start = 0, .len = 0 },
+    /// 1.5, `expression` only: values that each read one path through one
+    /// of the inputs — every path a value reads, distinct, in first-use
+    /// order (`Tree.readsOf`).
+    reads: Value.Range = .{ .start = 0, .len = 0 },
 
     pub const Index = enum(u32) { _ };
     pub const Kind = enum(u8) { expression, row_markup, row_lambda, _ };
@@ -536,6 +573,29 @@ pub const Context = struct {
         return cx.vtable.row_values_apart(cx.impl, block, apart_block, row, item, index, captures, apart);
     }
 
+    /// 1.5: whether the compiler left root `r`'s values for the lowering
+    /// to evaluate (a lowering that sets `Lowering.groups` only): what the
+    /// root evaluates to where it stands then reads only `Root.inputs`.
+    pub fn grouped(cx: *Context, r: Root.Index) bool {
+        return cx.vtable.grouped(cx.impl, r);
+    }
+
+    /// 1.5: from here until `unbindInputs`, each of grouped root `r`'s
+    /// inputs' locals is read under the name given, one per input.
+    pub fn bindInputs(cx: *Context, r: Root.Index, names: []const Name) Error!void {
+        return cx.vtable.bind_inputs(cx.impl, r, names);
+    }
+
+    pub fn unbindInputs(cx: *Context, r: Root.Index) void {
+        cx.vtable.unbind_inputs(cx.impl, r);
+    }
+
+    /// 1.5: evaluate the values of grouped root `r` named in `values` into
+    /// `block`, in the root's order, with its inputs bound.
+    pub fn rootValues(cx: *Context, block: Block, r: Root.Index, values: []const Value.Index) Error!void {
+        return cx.vtable.root_values(cx.impl, block, r, values);
+    }
+
     /// A call of a beni function value, which takes its arguments directly.
     pub fn call(cx: *Context, callee: Expr, args: []const Expr) Error!Expr {
         return cx.js.call(callee, args);
@@ -716,6 +776,10 @@ pub const VTable = struct {
     value: *const fn (impl: *anyopaque, v: Value.Index) Error!Expr,
     row_values: *const fn (impl: *anyopaque, block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name) Error!?Expr,
     row_values_apart: *const fn (impl: *anyopaque, block: Block, apart_block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name, apart: []const Value.Index) Error!?Expr,
+    grouped: *const fn (impl: *anyopaque, r: Root.Index) bool,
+    bind_inputs: *const fn (impl: *anyopaque, r: Root.Index, names: []const Name) Error!void,
+    unbind_inputs: *const fn (impl: *anyopaque, r: Root.Index) void,
+    root_values: *const fn (impl: *anyopaque, block: Block, r: Root.Index, values: []const Value.Index) Error!void,
     component_call: *const fn (impl: *anyopaque, node: Node.Index, children: ?Expr) Error!Expr,
     extractor: *const fn (impl: *anyopaque, item: u32) Error!?Expr,
     maybe: *const fn (impl: *anyopaque, e: Expr) Error!Expr,
