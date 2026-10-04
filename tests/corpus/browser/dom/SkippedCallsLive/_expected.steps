@@ -1,0 +1,5 @@
+# Rejected edits: each input shows the model again.
+input #helper "abcdef"
+input #component "abcdef"
+# Nothing the calls are given changes; they draw anew all the same.
+click #other

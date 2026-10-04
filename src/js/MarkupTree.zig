@@ -517,7 +517,8 @@ const Builder = struct {
                     },
                     .fragment => children_nodes = try b.childList(c.children_start, c.children_end),
                 }
-                try b.components.append(b.arena, .{ .props = props, .spread = spread, .children = children_value, .children_nodes = children_nodes });
+                const site = b.in.dispatch.effectAt(c.callee);
+                try b.components.append(b.arena, .{ .props = props, .spread = spread, .children = children_value, .children_nodes = children_nodes, .impure = site.impure or site.own != .no });
                 try b.component_sources.append(b.arena, .{ .callee = c.callee, .props = .{ .start = c.props_start, .end = c.props_end } });
                 return b.addNode(.component, b.components.items.len - 1, c.token);
             },
@@ -1185,8 +1186,10 @@ const Builder = struct {
         return false;
     }
 
-    /// Whether the markup at `n` writes a `stateful` attribute (its own,
-    /// not a row's or a `Show` body's, which are roots of their own).
+    /// Whether the markup at `n` must be patched on every render for its
+    /// own sake: it writes a `stateful` attribute, or places a helper's or
+    /// a component's markup, which may (language.md §11.11). A row's or a
+    /// `Show` body's markup is a root of its own.
     fn writesStateful(b: *const Builder, n: m.Node.Index) bool {
         if (n == .none) return false;
         const node_ = b.nodes.items[@backingInt(n)];
@@ -1204,11 +1207,8 @@ const Builder = struct {
                 for (b.children.items[f.children.start..][0..f.children.len]) |c| if (b.writesStateful(c)) return true;
                 return false;
             },
-            .component => {
-                const c = b.components.items[node_.payload];
-                for (b.children.items[c.children_nodes.start..][0..c.children_nodes.len]) |x| if (b.writesStateful(x)) return true;
-                return false;
-            },
+            .component => return true,
+            .hole => return b.holes.items[node_.payload].call != null,
             else => return false,
         }
     }

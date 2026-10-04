@@ -1,0 +1,9 @@
+-- See Main.beni: a component whose body draws a random number.
+import Html exposing (Html)
+import Random
+
+
+pub view : { label : String } → Html msg
+view props =
+    r = Random.value (Random.int 1 1000000)
+    <b id="die">{props.label} {r}</b>

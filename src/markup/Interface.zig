@@ -361,6 +361,9 @@ pub const Component = struct {
     /// the lowering renders as one markup value and hands to
     /// `cx.componentCall`. Empty otherwise.
     children_nodes: Range,
+    /// 1.5: the call may have an effect other than `Debug`'s: a lowering
+    /// makes it on every render, never skipped.
+    impure: bool = false,
 };
 
 pub const For = struct {
