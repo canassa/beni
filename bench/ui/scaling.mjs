@@ -7,6 +7,7 @@
 //   node scaling.mjs [--full] [--sweeps=holes,rows,...] [--subjects=beni,solid1,...]
 //                    [--taskset=4-7] [--out=results/<date>-scaling-<mode>.json]
 //                    [--build-only] [--no-build] [--beni=<path>] [--chrome=<path>]
+//                    [--variants=<name>=<path to beni>,...]
 //
 // Quick by default (two or three points a sweep, one page of three samples
 // per point and subject); `--full` takes every point and two pages of four
@@ -30,6 +31,11 @@
 // apps/scaling/*.mjs, into out/scaling/ and apps/solid{1,2}/gen/ (both
 // git-ignored), and built: beni development and `--release`, Solid 1 as
 // rollup.config.js builds it, Solid 2 as vite.config.mjs does.
+//
+// `--variants=A=../../a/beni,B=…` adds one subject per other beni binary,
+// `beni-<name>`: each program's development build by that binary, made
+// again on every run, measured in the same batch as the rest — how two
+// builds of the compiler are compared under the same noise.
 
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -122,8 +128,12 @@ const sweeps = [
 
 const wantedSweeps = arg("sweeps", null)?.split(",") ?? sweeps.map((s) => s.id);
 for (const w of wantedSweeps) if (!sweeps.some((s) => s.id === w)) throw new Error(`unknown sweep ${w}`);
+const variants = (arg("variants", null)?.split(",") ?? []).map((v) => {
+  const [name, path] = v.split("=");
+  return { name, path };
+});
 const defaultSubjects = ["beni", "beni-helper", "solid1"];
-const wantedSubjects = arg("subjects", null)?.split(",") ?? defaultSubjects;
+const wantedSubjects = [...(arg("subjects", null)?.split(",") ?? defaultSubjects), ...variants.map((v) => `beni-${v.name}`)];
 const wants = (name) => wantedSubjects.includes(name);
 const chosen = sweeps.filter((s) => wantedSweeps.includes(s.id));
 
@@ -169,6 +179,11 @@ function buildAll() {
         run(beniExe, ["build", "--platform=browser-tea", ...flags, "--no-cache", `--out=${outDir}`, `${dir}/${src}/Main.beni`]);
       }
     }
+    for (const v of variants) {
+      const outDir = `${dir}/beni-${v.name}-dev`;
+      rmSync(join(root, outDir), { recursive: true, force: true });
+      run(v.path, ["build", "--platform=browser-tea", "--no-cache", `--out=${outDir}`, `${dir}/src/Main.beni`]);
+    }
     for (const v of [1, 2].filter((v) => wants(`solid${v}`))) {
       const src = `apps/solid${v}/gen/${tag}.jsx`;
       const changed = put(src, m.solid(v, p));
@@ -201,6 +216,7 @@ const subjectsOf = (sweep, dir) => {
           { name: "beni-helper-release", kind: "beni", dir: `scaling/${dir.slice(12)}/beni-helper-rel` },
         ]
       : []),
+    ...variants.map((v) => ({ name: `beni-${v.name}`, kind: "beni", dir: `scaling/${dir.slice(12)}/beni-${v.name}-dev` })),
     { name: "solid2", kind: "solid", src: `/${dir}/solid2.js` },
     { name: "solid1", kind: "solid", src: `/${dir}/solid1.js`, module: false },
     { name: "p2", kind: "script", src: `/${dir}/p2.js` },

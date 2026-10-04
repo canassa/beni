@@ -697,6 +697,93 @@ programmer, no change to any guarantee.
 
 ---
 
+## 9. Built, and measured (2026-10-04)
+
+*Facts: what was built, and the measurements of the built compiler.* A, B (both parts) and C were
+built as §6 proposes, each specified first (`backend.md` §15.11 *A render at the end of a turn*,
+§15.4 *A root computes its own values* and *The `let` rule*, §4 *a fourth point* and §15.5;
+`boundary.md` §9.4.6 version 1.5; `language.md` §11.11). **A and B are on the slice branch; C is
+not**: it misses its byte budget (§9.3) and is kept on a branch of its own,
+`r56-slice-C-over-budget`, for the owner to decide.
+
+### 9.1 Method
+
+One batch for all four compilers, so each slice is measured against the one before it under the
+same noise: `scaling.mjs --full` gained `--variants=<name>=<beni>,…`, a subject per other beni
+binary, built from the same generated programs (`results/2026-10-04-r56-slices.json`: `beni` is
+the compiler before A, `beni-A`, `beni-B` and `beni-C` the three slices, ReleaseFast builds).
+The table benchmark is `bench.mjs` with each compiler's development build of `apps/beni` as an
+extra subject (`…-slices-table.json`), the static page `micro.mjs` (`…-slices-static.json`) and
+`match.mjs --cases=static:50` (`…-slices-static-trace.json`). Chrome pinned to CPUs 8–15, nothing
+else running, development builds unless named; medians.
+
+### 9.2 Sweeps: script ms per message (2 pages × 4 samples)
+
+| point | before | A | **B** | C | Solid 1 |
+|---|--:|--:|--:|--:|--:|
+| holes 10 | 0.144 | 0.089 | **0.093** | 0.085 | 0.084 |
+| holes 1 000 | 0.199 | 0.168 | **0.096** | 0.104 | 0.083 |
+| holes 10 000 | 0.839 | 0.768 | **0.111** | 0.107 | 0.085 |
+| rows 1 000, change | 0.184 | 0.133 | **0.141** | 0.113 | 0.090 |
+| rows 30 000, change | 0.460 | 0.419 | **0.456** | 0.158 | 0.120 |
+| rows 30 000, swap | 0.942 | 0.876 | **0.794** | 0.840 | 5.36 |
+| width 256 | 0.166 | 0.123 | **0.120** | 0.115 | 0.090 |
+| width 1 024 | 0.415 | 0.409 | **0.349** | 0.373 | 0.096 |
+| depth 16 | 0.163 | 0.110 | **0.123** | 0.108 | 0.123 |
+| derived 1 000 | 0.302 | 0.237 | **0.089** | 0.084 | 0.083 |
+| derived 100 000 | 6.63 | 6.66 | **0.092** | 0.089 | 0.083 |
+| burst 1 | 0.223 | 0.237 | **0.170** | 0.178 | 0.121 |
+| burst 100 | 0.899 | 0.913 | **0.794** | 0.816 | 1.15 |
+| stream 1 (per message) | 0.120 | 0.118 | **0.072** | 0.071 | 0.071 |
+
+Every point is in the JSON; these are the ones §0.1 names. **A takes the floor off** (holes 10:
+0.144 → 0.089; every width and depth point to Solid 1's); **B flattens view size and the derived
+view** (holes 10 000: 0.768 → 0.111; derived 100 000: 6.66 → 0.092, against Solid 1's 0.083);
+**C flattens the long list's edit** (30 000 rows: 0.456 → 0.158).
+
+### 9.3 Bytes, release builds, brotli
+
+| page | before | A | B | C |
+|---|--:|--:|--:|--:|
+| table app | 5 571 | 5 593 (+22) | 5 487 (−106) | 5 757 (+270) |
+| static page | 2 562 | 2 664 (+102) | 2 668 (+4) | — |
+| holes 10 | 1 217 | 1 258 (+41) | 1 245 (−13) | — |
+| holes 1 000 | 18 756 | 18 812 (+56) | 8 524 (−10 288) | — |
+| rows 1 000 | 3 992 | 4 042 (+50) | 3 852 (−190) | 4 148 (+296) |
+| derived 1 000 | 3 761 | 3 816 (+55) | 3 657 (−159) | 3 777 (+120) |
+| width 256 | 6 215 | 6 133 (−82) | 5 598 (−535) | — |
+
+A costs 41–102 bytes on pages with events (the static page's +102 is the most; `emit/release/split/
+HolesPage` +59; a page with no event, 0). B shrinks every page but the static one (+4), as §5.4
+estimated. **C costs +270 to +296 on a page with a trie and a keyed list, +120 on a page with a
+keyed list only, and +200 on any release program that makes a trie** — `emit/release/app/SpecMaybe`
+825 → 1 025 — because the protocol puts `$diff` in every trie header, so every program that writes
+a list of 32 or more ships it, renderer or not. Its budget was 200. The function was cut to the
+tree and the tail (the head is not walked) and made a plain function of the list (no method
+closure) before this measurement; a hand-minimal version of the same two pieces, written as
+JavaScript, is still about 230 brotli bytes, so the budget is not within reach of this design.
+
+### 9.4 The table benchmark and the static page
+
+Table, script ms, n = 10 (`report.mjs`): B against Solid 1 — create 1k 4.54 / 4.99, replace 10.2 /
+11.9, update every 10th 1.23 / 1.58, select 0.82 / 1.37, swap 0.87 / 1.69, remove 0.48 / 0.56,
+create 10k 49.6 / 55.4, **append 5.64 / 5.20** (release 5.06), clear 22.8 / 23.7. The compiler
+before A: 4.75, 10.1, 1.42, 1.12, 1.24, 0.53, 49.2, 5.56, 22.0. The static page, in-page µs per
+message: B 4.82, release 5.05, before 5.50, Solid 1 6.85; first message 0.507 ms (release 0.382)
+against Solid 1's 0.468. In a trace (`static:50`): B 0.105, release 0.091, Solid 1 0.094.
+
+### 9.5 Where beni does not yet match Solid 1 (B, the slice branch)
+
+- **A long keyed list's one-row edit**: 0.141 at 1 000 rows, 0.456 at 30 000 (Solid 1: 0.090,
+  0.120). C closes most of it (0.113, 0.158) and is not landed (§9.3); what remains with C is §4.2's
+  residual, the dispatch and `List.update`'s trie copy (0.03–0.04 ms), as predicted.
+- **The 1 024-field model**: 0.349 against 0.096, the record copy (§3.3); out of scope.
+- **A burst of one to three synthetic clicks**: 0.170 against 0.121 at K = 1, the microtask kept on
+  purpose (§4.6); from K = 10 beni is below Solid 1.
+- **Large views, a little**: holes 1 000–10 000 at 0.096–0.111 against 0.083–0.085 — one test per
+  group and the per-op tests left inside a group that reads several paths.
+- **The table's append** in the development build (5.64 / 5.20); `--release` 5.06.
+
 ## Appendix: reproducing
 
 ```sh
