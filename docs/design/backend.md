@@ -7676,36 +7676,43 @@ The rules, exactly:
   needs code, builds the instance with every kept value `undefined` — a toggle's `false`, a class
   or style list's `null`, so the first write is the one `m` used to make — and calls `p`. Every
   value's code is written once, in `p`: not in `view`, `m` and `p` as before.
-- **What still runs every render** is one test per group, the untested groups, and a restate of
-  each slot in a skipped group (below): an edit to a field no value reads costs comparisons, and
-  the walk of the live markup under the slots it skipped, however many values the root has.
+- **What still runs every render** is one test per group, the untested groups, and a call of
+  `Rt.restate(slot)` for each slot in a skipped group (below), which returns at once unless what
+  the slot shows is live: an edit to a field no value reads costs comparisons, plus a walk of the
+  live instances under the slots it skipped — none when nothing under them is live — however many
+  values the root has.
 - **A helper call or a component** (`language.md` §11.6, §11.8, as amended after review) is an op
   of the group its arguments' paths make, like any other: when the group runs, its arguments are
   compared with the ones kept, and when one changed the call is made; when none did,
   `Rt.restate(slot)`. A call that may have an effect (`tree.everyRender` of the hole's value,
   `Component.impure`) is in no group and made every time. A call of constants is made once, under
   a field of its own, then restated.
-- **A skipped group restates its slots** (*amended after the second review*): the group's test
-  has an `else` that calls `Rt.restate(slot)` for every op of the group that holds a slot — an
-  `Html` hole, a helper, a component, `Html.map`, a `For`, a `Show` — and a `Show` whose value
-  and inputs are unchanged restates its own. `Rt.restate` patches the slot's instance again with
-  the block it shows when its kind carries `l`, and a list's rows when the slot says so (its
-  `l`): a block row's, and a `List Html` hole's blocks, by their kind's `again`; a row compiled
-  in place, when its row function carries `l`, by that function's `p` with the item the row
-  shows. The slot keeps only that `p` (`r`), never the row function: a row function stored in a
-  slot is one the release optimiser can no longer see whole, and the table app lost its rows'
-  specialisation to it (+174 brotli bytes before the change, +59 after, §9's facts). **`l: true`** is on a kind that writes a `stateful` attribute,
-  has a value `tree.everyRender` answers true for, or holds a slot — the markup a slot shows may be
-  either — and on `Html.map`'s kind, whose `p` restates what it maps when handed the same markup;
-  a row function carries it on the same terms. A `For` whose row function is live or makes blocks
-  restates its rows at the end of every render that reaches it, the ones it patched included. **`Rt.patch`** handed the very block its
-  instance shows calls `again` on it: a hoisted block, a `let`'s value, a top-level constant
-  placed again is patched again when its kind is live. A restate thus reaches markup nested at
-  any depth without evaluating again the value that holds it, so the value's group test still
-  skips it, and what it does costs a walk of the live kinds under it — none for a kind without
-  `l`.
+- **A skipped group restates its slots** (*amended after the second review, and after the third*):
+  the group's test has an `else` that calls `Rt.restate(slot)` for every op of the group that
+  holds a slot — an `Html` hole, a helper, a component, `Html.map`, a `For`, a `Show` — and a
+  `Show` whose value and inputs are unchanged restates its own. What a restate visits is decided
+  at run time, by whether an instance is **live** (`i.l`): it writes a `stateful` attribute, has
+  a value its patch evaluates on every render (a grouped root's or a row's `tree.everyRender`
+  value; a root that is not grouped evaluates its values where it stands, so not its own), or holds
+  a slot whose content is live in turn. A kind's `p` writes `i.l` last, from its slots' `l` (a
+  list's `w`); its `m`, when it fills its slots itself, writes it in the instance. A slot keeps
+  whether what it shows is live: `l` for the instance it shows, `w` for a list's rows (`w` is
+  then `Rt`'s own row walk, so a page with no list ships none of it). `Rt.restate` patches the
+  instance again (`again`: its kind's `p` with the block it shows, whose group tests skip all
+  but what must run) when `l`, and walks the rows when `w`: a block row, and a `List Html` hole's block, by `again`;
+  a row compiled in place by its row function's **`r`**, which **evaluates none of the row's
+  values** — it writes each `stateful` attribute again from the value the row keeps (`a<k>`),
+  compared with the page's, and restates the row's slots — or, for a row with a value evaluated on
+  every render (`e`), by its `p` with the item it shows. A list's pass stamps each live row it
+  mounts or patches and restates only the live rows it did not reach, so no row is patched twice in
+  a render. A kind or a row function that can be live carries `l: true`, and the runtime keeps a
+  slot's `l` and a list's `w` only for such kinds and rows, so a page none of whose markup can be
+  live keeps none of this bookkeeping. **`Rt.patch`** handed the very block a live instance shows
+  patches it again: a hoisted block, a `let`'s value, a top-level constant placed again is
+  reconciled. A restate thus reaches markup nested at any depth without evaluating again the value
+  that holds it, and costs a visit of each live instance under the skipped slots, and nothing else.
 - **Markup that writes nothing** (no op) is the hoisted block it was, `{ t, v: null }`, with no `p`
-  to call; so is a root with no input, live or not, since `Rt.patch` patches a live one again.
+  to call; so is a root with no input, live or not, since `Rt.patch` patches a live instance again.
 - **A constant attribute that needs code** (a URL, a property, a `raw` one) is written in `p` under
   a test of its own field, `if (i.a<k> === undefined) { …; i.a<k> = true; }`, so it is written
   once, at mount, in source order among its element's attributes, whatever group it is in.
