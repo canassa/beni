@@ -1713,10 +1713,10 @@ read.** For a root of kind `expression`:
 - **`tree.everyRender(v)`**, per value, whether a render must evaluate it every time: it may have
   an effect other than `Debug`'s — a call, outside any function the value makes, whose callee may
   be `impure` or suspend (`transparent-effects-proposal.md` §16.2's `impure` answer) and is not
-  one of `Debug`'s — or it holds a **live** root: an `expression` root that writes a `stateful`
-  attribute, places a helper call or a component, or has such a value (`language.md` §11.11, amended). A grouped root evaluates such a
-  value on every render; a lowering must also make a live root a new value each time it is
-  evaluated, so that the slot holding it patches it.
+  one of `Debug`'s. A grouped root evaluates such a value on every render. Markup nested in a
+  value — a root inside it, a helper's or a component's markup — is no reason to evaluate it
+  again (*amended after the second review*): a lowering that skips a value keeps what the value
+  showed current itself, as `dom` does by restating the slot (`backend.md` §15.4).
 - **`tree.pathOf(v)`**, per value, the position in `Root.reads` of the path the value is exactly —
   a local of the enclosing declaration read through at most four field or tuple accesses and
   nothing more — or null: such a value changed exactly when that path did.
@@ -1733,23 +1733,23 @@ read.** For a root of kind `expression`:
   function's (`static-dispatch-spike.md` §8.1), may not suspend, has no suspendable body and is
   not being lowered in the suspendable form (`transparent-effects-proposal.md` §16.2), and no
   value holds a `?` (which returns from the enclosing function). The answer is the same for every
-  root of a declaration, since one is lowered inside another. *A known cliff:* the declaration's own
-  answer covers everything it calls, so a `view` that calls a function value it does not know —
-  `model.render x`, a function in a field — may suspend as far as the checker can tell, and none of
-  its roots is grouped; they are lowered as before §15.4's amendment. For such a root, a lowering evaluates the values
+  root of a declaration, since one is lowered inside another. For such a root, a lowering evaluates the values
   itself, inside its own functions, by **`cx.bindInputs(root, names)`** — every input's local read
   under the name given, until **`cx.unbindInputs(root)`**, nested innermost first — and
   **`cx.rootValues(block, root, values)`**, which evaluates the instruction values among `values`
   into `block`, in the root's order. What the root evaluates to where it stands may then read only
   `Root.inputs`. A lowering may evaluate a value of such a root zero times in a render, and must
   evaluate it in a render in which one of its paths is not `===` to what it was at the value's last
-  evaluation, and at the first (`language.md` §11.11, as amended 2026-10-04).
+  evaluation, and at the first (`language.md` §11.11, as amended 2026-10-04). *A known cliff:* the
+  declaration's own answer covers everything it calls, so a `view` that calls a function value it
+  does not know — `model.render x`, a function in a field — may suspend as far as the checker can
+  tell, and none of its roots is grouped; they are lowered as before §15.4's amendment.
 
 **A `let` read only by the root** (*the same day*, research 56 §6.2's `let` rule): **`Root.lets`**,
 values of a grouped root that each are one `let` of the enclosing declaration — a constant one,
 `shown = top model.items`, bound outside the root, whose every use in the declaration is inside the
 root's values or inside another such `let`'s expression, and whose expression holds no `?`, has no
-effect but `Debug`'s and holds no live root — in source order. Only a root inside no other root's
+effect but `Debug`'s — in source order. Only a root inside no other root's
 value takes `let`s, and **a `let` is one root's at most**: when two roots could take it, the root
 first in instruction order does, which is the innermost (a root inside another's `let` comes before
 it). Which `let`s a root takes is decided in one pass from the last `let` to the first, since a
