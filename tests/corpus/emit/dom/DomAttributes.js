@@ -79,7 +79,7 @@ const DomAttributes$k68 = { m: (v$28, cx$29) => {
   const w$31 = r$30.firstChild;
   const w$32 = w$31.nextSibling;
   const w$33 = w$32.nextSibling;
-  const i$34 = { s: r$30, q: null, e: r$30, w0: r$30, w1: w$31, w2: w$32, w4: w$33, g0_0: undefined };
+  const i$34 = { s: r$30, q: null, e: r$30, w0: r$30, w1: w$31, w2: w$32, w4: w$33, g0_0: undefined, l: true };
   DomAttributes$p68(i$34, v$28);
   return i$34;
 }, p: DomAttributes$p68, l: true };

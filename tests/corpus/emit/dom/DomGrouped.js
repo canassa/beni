@@ -36,7 +36,7 @@ const DomGrouped$k21 = { m: (v$8, cx$9) => {
   const w$13 = w$11.nextSibling;
   const w$14 = w$13.firstChild;
   const w$15 = w$13.nextSibling;
-  const i$16 = { s: r$10, q: null, e: r$10, w0: r$10, w1: w$11, w2: w$12, w4: w$14, w5: w$15, a1: undefined, g0_0: undefined, g1: undefined, g2_0: undefined };
+  const i$16 = { s: r$10, q: null, e: r$10, w0: r$10, w1: w$11, w2: w$12, w4: w$14, w5: w$15, a1: undefined, g0_0: undefined, g1: undefined, g2_0: undefined, l: true };
   DomGrouped$p21(i$16, v$8);
   return i$16;
 }, p: DomGrouped$p21, l: true };

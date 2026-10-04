@@ -53,6 +53,7 @@ const DomLists$p44 = (i$10, v$11) => {
   } else {
     Rt$restate(i$10.c0);
   }
+  i$10.l = i$10.c0.w || i$10.c0.l;
 };
 const DomLists$t44 = Rt$template("<table><tbody>", 0);
 const DomLists$k44 = { m: (v$30, cx$31) => {
@@ -134,6 +135,7 @@ const DomLists$p81 = (i$36, v$37) => {
     Rt$restate(i$36.c1);
     Rt$restate(i$36.c2);
   }
+  i$36.l = i$36.c0.w || i$36.c0.l || i$36.c1.w || i$36.c1.l || i$36.c2.w || i$36.c2.l;
 };
 const DomLists$t81 = Rt$template("<div><ol></ol><ul></ul><ul>", 0);
 const DomLists$k81 = { m: (v$81, cx$82) => {
@@ -203,6 +205,7 @@ const DomLists$p104 = (i$91, v$92) => {
   } else {
     Rt$restate(i$91.c0);
   }
+  i$91.l = i$91.c0.l;
 };
 const DomLists$t104 = Rt$template("<!>", 4);
 const DomLists$k104 = { m: (v$117, cx$118) => {

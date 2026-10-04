@@ -24,6 +24,7 @@ const DomChildren$p16 = (i$1, v$2) => {
   } else {
     Rt$restate(i$1.c0);
   }
+  i$1.l = i$1.c0.l;
 };
 const DomChildren$t16 = Rt$template("<div>", 0);
 const DomChildren$k16 = { m: (v$16, cx$17) => {
@@ -59,6 +60,7 @@ const DomChildren$p42 = (i$21, v$22) => {
   } else {
     Rt$restate(i$21.c2);
   }
+  i$21.l = i$21.c0.l || i$21.c1.l || i$21.c2.w;
 };
 const DomChildren$t42 = Rt$template("<section><h1>title</h1><!><ul>", 0);
 const DomChildren$k42 = { m: (v$30, cx$31) => {
@@ -83,6 +85,7 @@ const DomChildren$p53 = (i$39, v$40) => {
   } else {
     Rt$restate(i$39.c1);
   }
+  i$39.l = i$39.c1.l;
 };
 const DomChildren$t53 = Rt$template("Hi <hr><!>", 4);
 const DomChildren$k53 = { m: (v$44, cx$45) => {
@@ -106,6 +109,7 @@ const DomChildren$p66 = (i$53, v$54) => {
   } else {
     Rt$restate(i$53.c0);
   }
+  i$53.l = i$53.c0.l;
 };
 const DomChildren$t66 = Rt$template("<div>", 0);
 const DomChildren$k66 = { m: (v$58, cx$59) => {

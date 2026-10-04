@@ -12,7 +12,11 @@
 -- 2026-10-04), so the record is not built again when only the count
 -- changed. A local function is a new function on every render and is
 -- called on every render; its markup computes `local` only when the
--- number it is given changed.
+-- number it is given changed. At load `card "fixed"` is called before
+-- `card "counted"`, though written after it: a render evaluates its
+-- values group by group, in the order of each group's first write
+-- (language.md §11.11), and the group of what reads nothing — the
+-- buttons' handlers and `card "fixed" 7` — writes first.
 import Browser
 import Html exposing (Html)
 

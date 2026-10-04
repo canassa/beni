@@ -56,6 +56,7 @@ const DomRowMount$p59 = (i$1, v$2) => {
   } else {
     Rt$restate(i$1.c0);
   }
+  i$1.l = i$1.c0.w || i$1.c0.l;
 };
 const DomRowMount$t59 = Rt$template("<ul>", 0);
 const DomRowMount$k59 = { m: (v$24, cx$25) => {
@@ -98,6 +99,7 @@ const DomRowMount$p91 = (i$29, v$30) => {
   } else {
     Rt$restate(i$29.c0);
   }
+  i$29.l = i$29.c0.w || i$29.c0.l;
 };
 const DomRowMount$t91 = Rt$template("<ul>", 0);
 const DomRowMount$k91 = { m: (v$47, cx$48) => {
@@ -143,6 +145,7 @@ const DomRowMount$p117 = (i$52, v$53) => {
   } else {
     Rt$restate(i$52.c0);
   }
+  i$52.l = i$52.c0.w || i$52.c0.l;
 };
 const DomRowMount$t117 = Rt$template("<ul>", 0);
 const DomRowMount$k117 = { m: (v$71, cx$72) => {

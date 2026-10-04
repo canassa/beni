@@ -52,6 +52,7 @@ const DomComponents$p14 = (i$1, v$2) => {
   } else {
     Rt$restate(i$1.c1);
   }
+  i$1.l = i$1.c0.l || i$1.c1.l;
 };
 const DomComponents$t14 = Rt$template("<main><!><!>", 0);
 const DomComponents$k14 = { m: (v$22, cx$23) => {

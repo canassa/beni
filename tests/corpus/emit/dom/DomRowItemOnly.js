@@ -57,6 +57,7 @@ const DomRowItemOnly$p53 = (i$1, v$2) => {
   } else {
     Rt$restate(i$1.c0);
   }
+  i$1.l = i$1.c0.w || i$1.c0.l;
 };
 const DomRowItemOnly$t53 = Rt$template("<table>", 0);
 const DomRowItemOnly$k53 = { m: (v$27, cx$28) => {
