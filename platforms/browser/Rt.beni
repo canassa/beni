@@ -174,6 +174,8 @@ slot parent marker cx =
         , d = False
         , r = Js.null
         , l = False
+        , w = False
+        , k = 0
         }
 
 
@@ -197,12 +199,13 @@ unit b cx =
 
 -- `b` shown where `i` is: `i` patched when `b` is of its kind, else a new
 -- instance in its place. The instance now shown. Handed the very block it
--- shows, it is patched again only when its kind must be, as `again` does
--- (written in place, so that a page with no live kind keeps none of it).
+-- shows, it is patched again only when the instance is live (`l`), as
+-- `again` does (written in place, so that a page with no live instance
+-- keeps none of it).
 pub patch : V, V, V → V
 patch i b cx =
     if Js.same b (Js.get i "b") then
-        if Js.to (Js.get (Js.get b "t") "l") then
+        if Js.to (Js.get (Js.get b "t") "l") && Js.to (Js.get i "l") then
             Js.to (Js.call (Js.get b "t") "p" [ i, Js.get b "v" ])
         i
     else if Js.same (Js.get b "t") (Js.get i "t") then
@@ -215,45 +218,102 @@ patch i b cx =
         n
 
 
--- `i` patched again with the block it shows, when its kind must be on
--- every render (`l`): it holds a controlled input, a value with an effect,
--- or a helper's or component's markup (backend.md §15.4, as amended).
+-- `i` patched again with the block it shows. Its caller asks first
+-- whether the instance is live (backend.md §15.4, as amended after the
+-- third review): `i.l`, which its kind's `p` and `m` keep, is true when it
+-- writes a `stateful` attribute, has a value a render evaluates every
+-- time, or holds a slot that is live in turn.
 again : V → ⊤
-again i =
-    t = Js.get i "t"
-    if Js.to (Js.get t "l") then
-        Js.to (Js.call t "p" [ i, Js.get (Js.get i "b") "v" ])
+again i = Js.to (Js.call (Js.get i "t") "p" [ i, Js.get (Js.get i "b") "v" ])
 
 
--- `(slot)`: what the slot shows patched again where it must be, though
--- a render skipped it — a group that did not run, a helper or a
--- component not called, a `Show` body or a list's rows left as they
--- were. A list's rows are, when the slot says so (`l`): a block row's —
--- and a `List Html` hole's blocks — by `again`, a row compiled in place
--- by its row function's `p` (`r`) with the item it shows. Only a live
--- row function's `p` is kept, and never the row function itself, so a
--- page whose rows are not live has its row objects specialised as before
--- (backend.md §9). A fallback or a single block by `again`.
+-- `(slot)`: what the slot shows patched again where it must be, though a
+-- render skipped it — a group that did not run, a helper or a component
+-- not called, a `Show` body left as it was. Only what is live is visited:
+-- the instance the slot shows when the slot says so (`l`), and a list's
+-- live rows when it says so (`w`, which is then `restateRows` itself, so
+-- that a page with no list keeps none of it).
 pub restate : V → ⊤
 restate s =
+    w = Js.get s "w"
+    if Js.to w then Js.to (Js.apply w [ s, Js.from 0 ])
     if Js.to (Js.get s "l") then
-        r = Js.get s "r"
-        Js.each (Js.get s "u") λi →
-            if Js.isUndefined (Js.get i "t") then
+        i = Js.get s "i"
+        again i
+        Js.set s "l" (Js.get i "l")
+
+
+-- A list's live rows restated, but those whose stamp (`rs`) is `stamp`:
+-- the rows this render's pass mounted or patched. A row compiled in place
+-- by the slot's `r` — its row function's `r`, which writes its `stateful`
+-- attributes from the values it keeps and restates its slots, or its `p`
+-- with the item it shows when it has a value a render evaluates every
+-- time — and any other row by `again`. The slot's `w` is then whether a
+-- row is still live.
+restateRows : V, Int → ⊤
+restateRows s stamp =
+    r = Js.get s "r"
+    any = Js.ref False
+    Js.each (Js.get s "u") λi →
+        if Js.to (Js.get i "l") then
+            if Js.to (Js.get i "rs") == stamp then
+                ⊤
+            else if Js.isUndefined (Js.get i "t") then
                 Js.to (Js.apply r [ i, Js.get i "x", Js.get i "y" ])
             else
                 again i
-    if Js.isNull (Js.get s "i") then ⊤ else again (Js.get s "i")
+            if Js.to (Js.get i "l") then Js.write any True
+    Js.set s "w" (if Js.read any then Js.from restateRows else Js.from False)
 
 
--- A list's rows restated from now on, and now, when its row function is
--- live or makes blocks (`restate`).
-liveRows : V, V → ⊤
-liveRows s row =
+-- A list's pass begins, when a row of it can be live (a row function's
+-- `l`, or any block row): a new stamp, and the row function's restate.
+startPass : V, V → ⊤
+startPass s row =
     if Js.to (Js.get row "l") || not (Js.isUndefined (Js.get row "b")) then
-        Js.set s "l" (Js.from True)
-        Js.set s "r" (Js.get row "p")
-        restate s
+        Js.set s "k" (Js.from (Js.to (Js.get s "k") + 1))
+        if Js.to (Js.get row "e") then
+            Js.set s "r" (Js.get row "p")
+        else if Js.isUndefined (Js.get row "r") then
+            ⊤
+        else
+            Js.set s "r" (Js.get row "r")
+
+
+-- A list's pass ends: the live rows it did not reach restated.
+endPass : V → ⊤
+endPass s =
+    w = Js.get s "w"
+    if Js.to w then Js.to (Js.apply w [ s, Js.get s "k" ])
+
+
+-- A row mounted or patched by this render's pass, when it is live —
+-- which only a row whose row function or kind can be is: stamped, and
+-- the slot told. A row that is not live is never restated, so needs
+-- neither.
+passed : V, V, V → ⊤
+passed s row i =
+    if
+        (if Js.isUndefined (Js.get row "b") then
+            Js.to (Js.get row "l")
+         else
+            Js.to (Js.get (Js.get i "t") "l")
+        )
+            && Js.to (Js.get i "l")
+    then
+        Js.set i "rs" (Js.get s "k")
+        Js.set s "w" (Js.from restateRows)
+
+
+-- The slot told whether the instance it now shows is live, when its kind
+-- can be (`l` on the kind: it writes a `stateful` attribute, evaluates a
+-- value on every render or has a slot), so a page none of whose kinds can
+-- be keeps none of this. A slot left saying so of an instance that is not
+-- live costs one `again`, after which `restate` corrects it.
+held : V, V → ⊤
+held s i =
+    if Js.to (Js.get (Js.get i "t") "l") then
+        Js.set s "l" (Js.get i "l")
 
 
 -- Put a new instance in the slot, in place of what it held.
@@ -264,6 +324,7 @@ place s i =
     else
         swap (Js.get s "i") i
     Js.set s "i" i
+    held s i
 
 
 -- `(slot, block)`: an `Html` hole.
@@ -276,8 +337,10 @@ childHtml s b =
         i = unit b (Js.get s "cx")
         put (parentOf s) i (Js.get s "m")
         Js.set s "i" i
+        held s i
     else
         Js.set s "i" (patch (Js.get s "i") b (Js.get s "cx"))
+        held s (Js.get s "i")
 
 
 -- ---- The program and its render loop -------------------------------------
@@ -622,6 +685,7 @@ childMaybe s b =
         else
             drop (Js.get s "i")
             Js.set s "i" Js.null
+            Js.set s "l" (Js.from False)
     else
         childHtml s b
 
@@ -654,7 +718,7 @@ childList s list =
         restate s
     else
         Js.set s "b" list
-        Js.set s "l" (Js.from True)
+        Js.set s "w" (Js.from False)
 
         if Js.isNull (Js.get s "u") then
             Js.set s "u" (Js.array [])
@@ -676,6 +740,10 @@ childrenFrom s u a k =
             i = unit (Js.at a k) (Js.get s "cx")
             put (parentOf s) i (Js.get s "m")
             Js.to (Js.call u "push" [ i ])
+        -- Every block was patched (`patch` patches a live one it is handed
+        -- again): the list's `w` is exact.
+        if Js.to (Js.get (Js.get (Js.at u k) "t") "l") && Js.to (Js.get (Js.at u k) "l") then
+            Js.set s "w" (Js.from restateRows)
         childrenFrom s u a (k + 1)
 
 
@@ -697,7 +765,8 @@ dropPast u k =
 -- and walks, and `p`, meeting nothing written yet, writes every value — so
 -- the code an edit runs is the code every mount ran, as a Solid effect's is.
 mountRow : V, V, Int, V → V
-mountRow row item position cx =
+mountRow row item position s =
+    cx = Js.get s "cx"
     i =
         if Js.isUndefined (Js.get row "b") then
             j = Js.call row "m" [ item, Js.from position, cx ]
@@ -715,18 +784,21 @@ mountRow row item position cx =
     Js.set i "kv" (Js.from 0)
     Js.set i "kc" Js.null
     Js.set i "kt" Js.null
+    passed s row i
     i
 
 
 -- The row patched with its item; a new instance when a block row's kind
 -- changed.
 patchRow : V, V, V, Int, V → V
-patchRow row i item position cx =
+patchRow row i item position s =
     if Js.isUndefined (Js.get row "b") then
         _ = Js.call row "p" [ i, item, Js.from position ]
+        passed s row i
         i
     else
-        n = patch i (Js.call row "b" [ item, Js.from position ]) cx
+        n = patch i (Js.call row "b" [ item, Js.from position ]) (Js.get s "cx")
+        passed s row n
 
         if Js.same n i then
             ⊤
@@ -1115,7 +1187,7 @@ startRows s a old keyOf row same was now stamp m p =
             Js.set i "kv" (Js.from stamp)
             startRows s a old keyOf row same was now stamp m (p + 1)
         else
-            n = patchRow row i item p (Js.get s "cx")
+            n = patchRow row i item p s
 
             if Js.same n i then
                 ⊤
@@ -1214,7 +1286,7 @@ lookUpRows s xs keyAt next row byKey p stamp unseen bEnd b kept =
         key = keyAt b
         h = Js.call byKey "get" [ key ]
         if Js.isUndefined h then
-            i = mountRow row (Js.at xs (b - p)) b (Js.get s "cx")
+            i = mountRow row (Js.at xs (b - p)) b s
             Js.set i "k" key
             Js.set i "kv" (Js.from unseen)
             _ = Js.call byKey "set" [ key, i ]
@@ -1247,7 +1319,7 @@ patchRows s old xs next row byKey p stamp unseen same was now n b =
                 || Js.same (Js.get i "k") was
                 || Js.same (Js.get i "k") now
         then
-            r = patchRow row i item b (Js.get s "cx")
+            r = patchRow row i item b s
             if Js.same r i then
                 ⊤
             else
@@ -1300,6 +1372,7 @@ forgetRows old byKey stamp a aEnd =
 -- the list is empty.
 pub forKeyed : V, V, V, V, V → ⊤
 forKeyed s items keyOf row inputs =
+    startPass s row
     g = Js.get row "g"
     rendered = not (Js.isNull (Js.get s "b"))
 
@@ -1346,7 +1419,7 @@ forKeyed s items keyOf row inputs =
             keyedPass s items keyOf row same was now
     -- A live row function's rows are each patched again, whether this
     -- render ran them or not: a row may hold a controlled input.
-    liveRows s row
+    endPass s
     childMaybe
         s
         (if Js.to (Js.get items "length") == 0 then
@@ -1470,7 +1543,7 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 
         i =
             if Js.isNullish found then
-                j = mountRow row item position (Js.get s "cx")
+                j = mountRow row item position s
                 Js.set j "k" key
 
                 if starts then
@@ -1484,7 +1557,7 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
                     || Js.same (Js.get found "k") now
             then
                 y = Js.get found "y"
-                n = patchRow row found item position (Js.get s "cx")
+                n = patchRow row found item position s
 
                 if Js.same n found then
                     ⊤
@@ -1536,6 +1609,7 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 -- shows item `k`, and rows past the end are removed.
 pub forPosition : V, V, V, V → ⊤
 forPosition s items row inputs =
+    startPass s row
     same = not (Js.isNull (Js.get s "b")) && sameInputs (Js.get s "y") inputs
 
     if Js.same items (Js.get s "b") && same then
@@ -1551,7 +1625,7 @@ forPosition s items row inputs =
         a = elements items
         positionsFrom s u a row same 0
         dropPast u (Js.to (Js.get a "length"))
-    liveRows s row
+    endPass s
     childMaybe
         s
         (if Js.to (Js.get items "length") == 0 then
@@ -1571,13 +1645,13 @@ positionsFrom s u a row same k =
         if k < Js.to (Js.get u "length") then
             i = Js.at u k
             if not same || not (Js.same (Js.get i "x") item) then
-                n = patchRow row i item k (Js.get s "cx")
+                n = patchRow row i item k s
                 Js.setAt u k n
                 Js.set n "x" item
             else
                 ⊤
         else
-            i = mountRow row item k (Js.get s "cx")
+            i = mountRow row item k s
 
             put
                 (parentOf s)
@@ -1601,6 +1675,7 @@ show s key b =
             && Js.same (Js.get s "x") key
     then
         Js.set s "i" (patch (Js.get s "i") b (Js.get s "cx"))
+        held s (Js.get s "i")
     else
         place s (unit b (Js.get s "cx"))
 
@@ -1615,6 +1690,7 @@ hide s f =
         childMaybe s f
     else if Js.same (Js.get s "y") (Js.from True) && not (Js.isNull (Js.get s "i")) then
         Js.set s "i" (patch (Js.get s "i") f (Js.get s "cx"))
+        held s (Js.get s "i")
     else
         place s (unit f (Js.get s "cx"))
 
@@ -1792,20 +1868,20 @@ mapKind =
             λv cx →
                 c = Js.from { f = Js.at v 1, up = cx }
                 h = slot Js.null Js.null c
-                Js.set h "i" (unit (Js.at v 0) c)
-                Js.from { s = Js.null, q = h, e = Js.null, c = c }
+                n = unit (Js.at v 0) c
+                Js.set h "i" n
+                Js.set h "l" (Js.get n "l")
+                Js.from { s = Js.null, q = h, e = Js.null, c = c, l = Js.get n "l" }
         , p =
             λi v →
                 Js.set (Js.get i "c") "f" (Js.at v 1)
                 -- The markup it maps, patched again when it is the same
-                -- and must be on every render (`restate`).
-                if Js.same (Js.at v 0) (Js.get (Js.get (Js.get i "q") "i") "b") then
-                    restate (Js.get i "q")
-                else
-                    Js.set
-                        (Js.get i "q")
-                        "i"
-                        (patch (Js.get (Js.get i "q") "i") (Js.at v 0) (Js.get i "c"))
+                -- and live (`patch`): the instance is as live as it.
+                h = Js.get i "q"
+                n = patch (Js.get h "i") (Js.at v 0) (Js.get i "c")
+                Js.set h "i" n
+                Js.set h "l" (Js.get n "l")
+                Js.set i "l" (Js.get n "l")
         }
 
 

@@ -146,6 +146,7 @@ const DomSelector$p173 = (i$1, v$2) => {
   } else {
     Rt$restate(i$1.c3);
   }
+  i$1.l = i$1.c0.w || i$1.c0.l || i$1.c1.w || i$1.c1.l || i$1.c2.w || i$1.c2.l || i$1.c3.w || i$1.c3.l || i$1.c4.w || i$1.c4.l;
 };
 const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>", 0);
 const DomSelector$k173 = { m: (v$72, cx$73) => {

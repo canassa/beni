@@ -1,0 +1,125 @@
+-- load
+console.log: keyed: "a"
+console.log: cell: "a"
+console.log: keyed: "b"
+console.log: cell: "b"
+console.log: position: "a"
+console.log: position: "b"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      "a"
+      <input id="k0" .value="a">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "b"
+      <input id="k1" .value="b">
+      <b>"b"</b>
+      <!---->
+    </p>
+    <!---->
+    <p>
+      "a"
+      <input id="p0" .value="a">
+    </p>
+    <p>
+      "b"
+      <input id="p1" .value="b">
+    </p>
+    <!---->
+  </main>
+</body>
+-- click #tick
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <p>
+      "a"
+      <input id="k0" .value="a">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "b"
+      <input id="k1" .value="b">
+      <b>"b"</b>
+      <!---->
+    </p>
+    <!---->
+    <p>
+      "a"
+      <input id="p0" .value="a">
+    </p>
+    <p>
+      "b"
+      <input id="p1" .value="b">
+    </p>
+    <!---->
+  </main>
+</body>
+-- input #k0 "abcdef"
+(the DOM did not change)
+-- input #p1 "abcdef"
+(the DOM did not change)
+-- input #k1 "xy"
+console.log: keyed: "xy"
+console.log: cell: "xy"
+console.log: position: "xy"
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <p>
+      "a"
+      <input id="k0" .value="a">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "xy"
+      <input id="k1" .value="xy">
+      <b>"xy"</b>
+      <!---->
+    </p>
+    <!---->
+    <p>
+      "a"
+      <input id="p0" .value="a">
+    </p>
+    <p>
+      "xy"
+      <input id="p1" .value="xy">
+    </p>
+    <!---->
+  </main>
+</body>
+-- click #tick
+<body>
+  <main>
+    <button id="tick">"2"</button>
+    <p>
+      "a"
+      <input id="k0" .value="a">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "xy"
+      <input id="k1" .value="xy">
+      <b>"xy"</b>
+      <!---->
+    </p>
+    <!---->
+    <p>
+      "a"
+      <input id="p0" .value="a">
+    </p>
+    <p>
+      "xy"
+      <input id="p1" .value="xy">
+    </p>
+    <!---->
+  </main>
+</body>

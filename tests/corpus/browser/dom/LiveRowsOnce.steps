@@ -1,0 +1,8 @@
+# Nothing a row reads changed: no row is evaluated.
+click #tick
+# A rejected edit: the inputs are put back, nothing is evaluated.
+input #k0 "abcdef"
+input #p1 "abcdef"
+# An accepted edit: that row once in each list, and no other.
+input #k1 "xy"
+click #tick

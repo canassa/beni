@@ -350,6 +350,11 @@ const Fn = struct {
     /// written under a test of its own field (in a group that may run
     /// again).
     guarded: []const bool = &.{},
+    /// A row's `m` or `p`: a `stateful` attribute keeps its value
+    /// (`a<k>`), which the row's `r` writes again.
+    row: bool = false,
+    /// The markup is live for its own sake (`selfLive`).
+    self_live: bool = false,
 };
 
 const Gen = struct {
@@ -472,22 +477,58 @@ const Gen = struct {
         });
     }
 
-    /// Whether a render that skips this markup must still patch it again
-    /// (`l`, backend.md §15.4): it writes a `stateful` attribute, one of its
-    /// values is evaluated on every render (`tree.everyRender`), or it has
-    /// a slot, whose markup may be either.
-    fn kindLive(g: *Gen, b: *const Body) m.Error!bool {
+    /// Whether a render that skips this markup must patch it again for its
+    /// own sake (backend.md §15.4, as amended after the third review): it
+    /// writes a `stateful` attribute, or — when `every`, for a grouped
+    /// root or a row, whose patch evaluates its values — one of its values
+    /// is evaluated on every render (`tree.everyRender`). Whether an
+    /// instance is live (`l`) is this, or any of its slots being live.
+    fn selfLive(g: *Gen, b: *const Body, every: bool) m.Error!bool {
         for (b.ops.items) |op| {
-            if (op.slotted()) return true;
             switch (op.what) {
                 .attribute => |x| if (g.stateful(x.item)) return true,
                 else => {},
             }
-            var values: std.ArrayList(m.Value.Index) = .empty;
-            try g.opValues(b, op, &values);
-            for (values.items) |v| if (g.tree.everyRender(v)) return true;
+            if (every and try g.everyValue(b, op)) return true;
         }
         return false;
+    }
+
+    fn everyValue(g: *Gen, b: *const Body, op: Op) m.Error!bool {
+        var values: std.ArrayList(m.Value.Index) = .empty;
+        try g.opValues(b, op, &values);
+        for (values.items) |v| if (g.tree.everyRender(v)) return true;
+        return false;
+    }
+
+    /// An instance's `l`: `true` when the markup is live for its own sake,
+    /// else whether one of its slots is (`c<k>.l`, and a list's `c<k>.w`),
+    /// each slot read by `slot`; null when it has no slot and is not.
+    fn liveOf(g: *Gen, b: *const Body, self: bool, f: *const Fn, from_locals: bool) m.Error!?m.Expr {
+        const js = g.jsb();
+        if (self) return try js.literal(.true);
+        var e: ?m.Expr = null;
+        for (b.ops.items, 0..) |op, k| {
+            if (!op.slotted()) continue;
+            const slot_ = if (from_locals) try g.ident(f.slots[k].?) else try g.fieldOf(f, "c{d}", .{k});
+            const parts: []const []const u8 = switch (op.what) {
+                .for_ => &.{ "w", "l" },
+                .html => |x| if (x.kind == .list_html) &.{"w"} else &.{"l"},
+                else => &.{"l"},
+            };
+            for (parts) |part| {
+                const x = try g.member(slot_, part);
+                e = if (e) |c| try js.binary(.logical_or, c, x) else x;
+            }
+        }
+        return e;
+    }
+
+    /// `i.l = …` at the end of a patch whose slots may have changed.
+    fn writeLive(g: *Gen, b: *const Body, f: *const Fn, self: bool) m.Error!void {
+        if (self) return;
+        const e = try g.liveOf(b, false, f, false) orelse return;
+        try g.jsb().assign(f.block, try g.member(try g.ident(f.i.?), "l"), e);
     }
 
     /// One group of a grouped root's ops: the paths it reads (positions in
@@ -792,6 +833,9 @@ const Gen = struct {
             };
             if (condition) |c| try js.@"if"(pblock, c, then, if (restates) otherwise else null) else try js.nested(pblock, then);
         }
+        const self = try g.selfLive(b, true);
+        patch.block = pblock;
+        try g.writeLive(b, &patch, self);
         g.cx.unbindInputs(index);
         const p_name = try g.cx.hoist(try g.print("p{d}", .{r.site.inst}), try js.arrow(&.{ i, pv }, pblock));
 
@@ -808,18 +852,16 @@ const Gen = struct {
                 else => {},
             };
         }
-        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .through = true, .grouped = true, .group_fields = fields.items, .direct = direct, .guarded = guards };
+        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .through = true, .grouped = true, .group_fields = fields.items, .direct = direct, .guarded = guards, .self_live = self };
         const object = try g.writeMount(b, &mount, t);
         const inst = try g.cx.fresh("i");
         try js.constant(mount.block, inst, object);
         try js.expression(mount.block, try js.call(try g.ident(p_name), &.{ try g.ident(inst), try g.ident(v) }));
         try js.@"return"(mount.block, try g.ident(inst));
-        // `l`: a kind a render must patch every time, which `Rt.patch`
-        // patches again when it is handed the block it shows.
         var props: std.ArrayList(m.Property) = .empty;
         try props.append(a_, .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) });
         try props.append(a_, .{ .key = "p", .value = try g.ident(p_name) });
-        if (try g.kindLive(b)) try props.append(a_, .{ .key = "l", .value = try js.literal(.true) });
+        if (try g.liveOf(b, self, &patch, false) != null) try props.append(a_, .{ .key = "l", .value = try js.literal(.true) });
         return g.cx.hoist(n.kind, try js.object(props.items));
     }
 
@@ -834,16 +876,22 @@ const Gen = struct {
         const t = try g.template(b, n.template);
         const v = try g.cx.fresh("v");
         const cx = try g.cx.fresh("cx");
-        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx };
+        // Its values are evaluated where the markup is, never by `p`: only
+        // a `stateful` write makes it live for its own sake.
+        const self = try g.selfLive(b, false);
+        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .self_live = self };
         try js.@"return"(mount.block, try g.writeMount(b, &mount, t));
         const i = try g.cx.fresh("i");
         const pv = try g.cx.fresh("v");
         var patch: Fn = .{ .block = try js.block(), .v = pv, .i = i };
         try g.writePatch(b, &patch, null, false);
+        try g.writeLive(b, &patch, self);
         var props: std.ArrayList(m.Property) = .empty;
         try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) });
         try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, pv }, patch.block) });
-        if (try g.kindLive(b)) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
+        // `l`: an instance of the kind can be live, so a slot showing one
+        // keeps whether it is (`Rt.held`).
+        if (try g.liveOf(b, self, &patch, false) != null) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
         return g.cx.hoist(n.kind, try js.object(props.items));
     }
 
@@ -907,8 +955,9 @@ const Gen = struct {
                 // `m` returns (§15.5, *a row mounts through its patch*).
                 const through = try g.mountsThroughPatch(&b, body, apart);
 
+                const self = try g.selfLive(&b, true);
                 const cx = try g.cx.fresh("cx");
-                var mount: Fn = .{ .block = try js.block(), .v = null, .cx = cx, .through = through };
+                var mount: Fn = .{ .block = try js.block(), .v = null, .cx = cx, .through = through, .row = true, .self_live = self };
                 if (!through) _ = try g.cx.rowValues(mount.block, f.row, item, reads, &.{});
                 try js.@"return"(mount.block, try g.writeMount(&b, &mount, t));
                 try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ item, position, cx }, mount.block) });
@@ -916,7 +965,7 @@ const Gen = struct {
                 const i = try g.cx.fresh("i");
                 const item2 = try g.cx.fresh("item");
                 const position2 = try g.cx.fresh("position");
-                var patch: Fn = .{ .block = try js.block(), .v = null, .i = i };
+                var patch: Fn = .{ .block = try js.block(), .v = null, .i = i, .row = true };
                 const apart_block = try js.block();
                 _ = try g.cx.rowValuesApart(patch.block, apart_block, f.row, item2, if (row.arity == 2) position2 else null, &.{}, try g.apartValues(&b, apart));
                 try g.writePatch(&b, &patch, apart, false);
@@ -927,10 +976,28 @@ const Gen = struct {
                     patch.block = main;
                     try js.@"if"(patch.block, try js.binary(.strict_ne, try g.ident(item2), try g.member(try g.ident(i), "x")), apart_block, null);
                 }
+                try g.writeLive(&b, &patch, self);
                 try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, item2, position2 }, patch.block) });
                 if (through) try props.append(g.a(), .{ .key = "w", .value = try js.literal(.true) });
-                // A row a render must patch again when it skips it.
-                if (try g.kindLive(&b)) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
+                // How a live row a render skips is patched again (backend.md
+                // §15.4, as amended after the third review): by `p` with
+                // the item it shows when it has a value evaluated on every
+                // render (`e`), else by `r`, which evaluates nothing.
+                var every = false;
+                for (b.ops.items) |op| if (try g.everyValue(&b, op)) {
+                    every = true;
+                };
+                // `l`: a row of it can be live, so a list keeps whether one
+                // is (`Rt.passed`).
+                if (every or try g.liveOf(&b, self, &patch, false) != null) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
+                if (every) {
+                    try props.append(g.a(), .{ .key = "e", .value = try js.literal(.true) });
+                } else if (try g.liveOf(&b, self, &patch, false) != null) {
+                    const ri = try g.cx.fresh("i");
+                    var restate: Fn = .{ .block = try js.block(), .v = null, .i = ri, .row = true };
+                    try g.writeRestate(&b, &restate);
+                    try props.append(g.a(), .{ .key = "r", .value = try js.arrow(&.{ri}, restate.block) });
+                }
             },
             .lambda, .function => {
                 const body = try js.block();
@@ -1576,6 +1643,12 @@ const Gen = struct {
             if (f.texts[k]) |x| try props.append(a_, .{ .key = try g.print("x{d}", .{k}), .value = try g.ident(x) });
         }
         try props.appendSlice(a_, fields.items);
+        // Whether the instance is live (`l`): for an `m` that leaves its
+        // writes to `p`, only when it is for its own sake, as `p` says the
+        // rest; else from the slots `m` has just filled.
+        if (f.grouped or f.through) {
+            if (f.self_live) try props.append(a_, .{ .key = "l", .value = try js.literal(.true) });
+        } else if (try g.liveOf(b, f.self_live, f, true)) |e| try props.append(a_, .{ .key = "l", .value = e });
         return js.object(props.items);
     }
 
@@ -1611,7 +1684,7 @@ const Gen = struct {
             },
             .attribute => |x| {
                 try g.writeAttribute(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
-                if (!x.constant) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
+                if (!x.constant or (f.row and g.stateful(x.item))) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
             .toggle => |x| {
                 // Only a class that is on is written at mount: a toggle off
@@ -1821,6 +1894,27 @@ const Gen = struct {
         }
     }
 
+    /// A row's `r`: what a render that skips it patches again, from what
+    /// it keeps — each `stateful` attribute's last value compared with the
+    /// page's, and each slot restated.
+    fn writeRestate(g: *Gen, b: *const Body, f: *Fn) m.Error!void {
+        const js = g.jsb();
+        for (b.ops.items, 0..) |op, i| {
+            const k: u32 = @intCast(i);
+            switch (op.what) {
+                .attribute => |x| if (g.stateful(x.item)) {
+                    const facts = g.tree.attributeFacts(x.item.attribute);
+                    const prop = g.tree.string(facts.property.?);
+                    const want = try g.propertyValue(x.item, try g.fieldOf(f, "a{d}", .{k}));
+                    const then = try js.block();
+                    try js.assign(then, try g.member(try g.node(f, x.t), prop), try g.propertyValue(x.item, try g.fieldOf(f, "a{d}", .{k})));
+                    try js.@"if"(f.block, try js.binary(.strict_ne, try g.member(try g.node(f, x.t), prop), want), then, null);
+                },
+                else => if (op.slotted()) try js.expression(f.block, try g.rt("restate", &.{try g.fieldOf(f, "c{d}", .{k})})),
+            }
+        }
+    }
+
     /// The patch function's statements, into `f.block`: a write only where
     /// a value is not the one written last.
     fn writePatch(g: *Gen, b: *const Body, f: *Fn, only: ?[]const bool, which: bool) m.Error!void {
@@ -1841,6 +1935,8 @@ const Gen = struct {
                         const want = try g.propertyValue(x.item, try g.read(b, f, x.value));
                         const then = try js.block();
                         try js.assign(then, try g.member(try g.node(f, x.t), prop), try g.propertyValue(x.item, try g.read(b, f, x.value)));
+                        // A row keeps it for `r` (`writeRestate`).
+                        if (f.row) try js.assign(f.block, try g.fieldOf(f, "a{d}", .{k}), try g.read(b, f, x.value));
                         try js.@"if"(f.block, try js.binary(.strict_ne, try g.member(try g.node(f, x.t), prop), want), then, null);
                         continue;
                     }

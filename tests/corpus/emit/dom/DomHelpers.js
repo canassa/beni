@@ -51,6 +51,7 @@ const DomHelpers$p27 = (i$15, v$16) => {
   } else {
     Rt$restate(i$15.c1);
   }
+  i$15.l = i$15.c0.l || i$15.c1.l;
 };
 const DomHelpers$t27 = Rt$template("<div><!><!>", 0);
 const DomHelpers$k27 = { m: (v$19, cx$20) => {
@@ -73,7 +74,7 @@ const DomHelpers$p44 = (i$27, v$28) => {
       const r$35 = DomHelpers$t42();
       const c$36 = Rt$slot(r$35, null, cx$34);
       Rt$childHtml(c$36, DomHelpers$label(item$32, 0));
-      return { s: r$35, q: null, e: r$35, c0: c$36, a0_0: item$32 };
+      return { s: r$35, q: null, e: r$35, c0: c$36, a0_0: item$32, l: c$36.l };
     }, p: (i$37, item$38, position$39) => {
       if (item$38 !== i$37.a0_0) {
         i$37.a0_0 = item$38;
@@ -81,99 +82,104 @@ const DomHelpers$p44 = (i$27, v$28) => {
       } else {
         Rt$restate(i$37.c0);
       }
-    }, l: true, i: false, f: null };
+      i$37.l = i$37.c0.l;
+    }, l: true, r: (i$40) => {
+      Rt$restate(i$40.c0);
+    }, i: false, f: null };
     Rt$forKeyed(i$27.c0, $in$29, null, made$31, null);
   } else {
     Rt$restate(i$27.c0);
   }
+  i$27.l = i$27.c0.w || i$27.c0.l;
 };
 const DomHelpers$t44 = Rt$template("<ul>", 0);
-const DomHelpers$k44 = { m: (v$40, cx$41) => {
-  const r$42 = DomHelpers$t44();
-  const c$43 = Rt$slot(r$42, null, cx$41);
-  const i$44 = { s: r$42, q: null, e: r$42, c0: c$43, g0_0: undefined };
-  DomHelpers$p44(i$44, v$40);
-  return i$44;
+const DomHelpers$k44 = { m: (v$41, cx$42) => {
+  const r$43 = DomHelpers$t44();
+  const c$44 = Rt$slot(r$43, null, cx$42);
+  const i$45 = { s: r$43, q: null, e: r$43, c0: c$44, g0_0: undefined };
+  DomHelpers$p44(i$45, v$41);
+  return i$45;
 }, p: DomHelpers$p44, l: true };
 const DomHelpers$t69 = Rt$template("<b> ", 0);
-const DomHelpers$k69 = { m: (v$46, cx$47) => {
-  const r$48 = DomHelpers$t69();
-  const w$49 = r$48.firstChild;
-  w$49.data = v$46[0];
-  return { s: r$48, q: null, e: r$48, w1: w$49, a0: v$46[0] };
-}, p: (i$50, v$51) => {
-  if (v$51[0] !== i$50.a0) {
-    i$50.a0 = v$51[0];
-    i$50.w1.data = v$51[0];
+const DomHelpers$k69 = { m: (v$47, cx$48) => {
+  const r$49 = DomHelpers$t69();
+  const w$50 = r$49.firstChild;
+  w$50.data = v$47[0];
+  return { s: r$49, q: null, e: r$49, w1: w$50, a0: v$47[0] };
+}, p: (i$51, v$52) => {
+  if (v$52[0] !== i$51.a0) {
+    i$51.a0 = v$52[0];
+    i$51.w1.data = v$52[0];
   }
-}, l: true };
-const DomHelpers$p85 = (i$52, v$53) => {
-  const $in$54 = v$53[0];
-  const x$55 = $in$54;
-  if (x$55 !== i$52.g0_0) {
-    i$52.g0_0 = x$55;
-    i$52.x0.data = x$55;
-    i$52.x1.data = x$55;
+} };
+const DomHelpers$p85 = (i$53, v$54) => {
+  const $in$55 = v$54[0];
+  const x$56 = $in$55;
+  if (x$56 !== i$53.g0_0) {
+    i$53.g0_0 = x$56;
+    i$53.x0.data = x$56;
+    i$53.x1.data = x$56;
   }
 };
 const DomHelpers$t85 = Rt$template("<i><!><!>", 0);
-const DomHelpers$k85 = { m: (v$56, cx$57) => {
-  const r$58 = DomHelpers$t85();
-  const w$59 = r$58.firstChild;
-  const w$60 = w$59.nextSibling;
-  const x$61 = Rt$insertText(r$58, w$59, "");
-  const x$62 = Rt$insertText(r$58, w$60, "");
-  const i$63 = { s: r$58, q: null, e: r$58, x0: x$61, x1: x$62, g0_0: undefined };
-  DomHelpers$p85(i$63, v$56);
-  return i$63;
+const DomHelpers$k85 = { m: (v$57, cx$58) => {
+  const r$59 = DomHelpers$t85();
+  const w$60 = r$59.firstChild;
+  const w$61 = w$60.nextSibling;
+  const x$62 = Rt$insertText(r$59, w$60, "");
+  const x$63 = Rt$insertText(r$59, w$61, "");
+  const i$64 = { s: r$59, q: null, e: r$59, x0: x$62, x1: x$63, g0_0: undefined };
+  DomHelpers$p85(i$64, v$57);
+  return i$64;
 }, p: DomHelpers$p85 };
-const DomHelpers$p96 = (i$64, v$65) => {
-  const $in$66 = v$65[0];
-  const $in$67 = v$65[1];
-  const x$68 = $in$66;
-  if (x$68 !== i$64.g0_0) {
-    i$64.g0_0 = x$68;
-    const $t$69 = DomHelpers$same(DomHelpers$eq$prim, $in$66, 1);
-    Rt$childHtml(i$64.c0, $t$69);
+const DomHelpers$p96 = (i$65, v$66) => {
+  const $in$67 = v$66[0];
+  const $in$68 = v$66[1];
+  const x$69 = $in$67;
+  if (x$69 !== i$65.g0_0) {
+    i$65.g0_0 = x$69;
+    const $t$70 = DomHelpers$same(DomHelpers$eq$prim, $in$67, 1);
+    Rt$childHtml(i$65.c0, $t$70);
   } else {
-    Rt$restate(i$64.c0);
+    Rt$restate(i$65.c0);
   }
-  if ($in$66 !== i$64.g1_0 || $in$67 !== i$64.g1_1) {
-    i$64.g1_0 = $in$66;
-    i$64.g1_1 = $in$67;
-    const $t$70 = $in$67($in$66);
-    Rt$childHtml(i$64.c1, $t$70);
+  if ($in$67 !== i$65.g1_0 || $in$68 !== i$65.g1_1) {
+    i$65.g1_0 = $in$67;
+    i$65.g1_1 = $in$68;
+    const $t$71 = $in$68($in$67);
+    Rt$childHtml(i$65.c1, $t$71);
   } else {
-    Rt$restate(i$64.c1);
+    Rt$restate(i$65.c1);
   }
-  if (i$64.g2 === undefined) {
-    i$64.g2 = true;
-    const $t$71 = Rt$text("t");
-    Rt$childHtml(i$64.c2, $t$71);
+  if (i$65.g2 === undefined) {
+    i$65.g2 = true;
+    const $t$72 = Rt$text("t");
+    Rt$childHtml(i$65.c2, $t$72);
   } else {
-    Rt$restate(i$64.c2);
+    Rt$restate(i$65.c2);
   }
+  i$65.l = i$65.c0.l || i$65.c1.l || i$65.c2.l;
 };
 const DomHelpers$t96 = Rt$template("<div><!><!><!>", 0);
-const DomHelpers$k96 = { m: (v$72, cx$73) => {
-  const r$74 = DomHelpers$t96();
-  const w$75 = r$74.firstChild;
-  const w$76 = w$75.nextSibling;
+const DomHelpers$k96 = { m: (v$73, cx$74) => {
+  const r$75 = DomHelpers$t96();
+  const w$76 = r$75.firstChild;
   const w$77 = w$76.nextSibling;
-  const c$78 = Rt$slot(r$74, w$75, cx$73);
-  const c$79 = Rt$slot(r$74, w$76, cx$73);
-  const c$80 = Rt$slot(r$74, w$77, cx$73);
-  const i$81 = { s: r$74, q: null, e: r$74, c0: c$78, c1: c$79, c2: c$80, g0_0: undefined, g1_0: undefined, g1_1: undefined, g2: undefined };
-  DomHelpers$p96(i$81, v$72);
-  return i$81;
+  const w$78 = w$77.nextSibling;
+  const c$79 = Rt$slot(r$75, w$76, cx$74);
+  const c$80 = Rt$slot(r$75, w$77, cx$74);
+  const c$81 = Rt$slot(r$75, w$78, cx$74);
+  const i$82 = { s: r$75, q: null, e: r$75, c0: c$79, c1: c$80, c2: c$81, g0_0: undefined, g1_0: undefined, g1_1: undefined, g2: undefined };
+  DomHelpers$p96(i$82, v$73);
+  return i$82;
 }, p: DomHelpers$p96, l: true };
 const DomHelpers$eq$prim = ($x, $y) => $x === $y;
 const DomHelpers$label = (name$1, n$2) => ({ t: DomHelpers$k10, v: [name$1, n$2] });
 const DomHelpers$page = (name$1, n$2) => ({ t: DomHelpers$k27, v: [name$1, n$2] });
 const DomHelpers$rows = (names$1) => ({ t: DomHelpers$k44, v: [names$1] });
 const DomHelpers$same = ($m$0, x$1, y$2) => {
-  const $t$45 = $m$0(x$1, y$2) ? "same" : "different";
-  return { t: DomHelpers$k69, v: [$t$45] };
+  const $t$46 = $m$0(x$1, y$2) ? "same" : "different";
+  return { t: DomHelpers$k69, v: [$t$46] };
 };
 const DomHelpers$others = (n$1) => {
   function twice$2(m$3) {
