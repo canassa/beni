@@ -7666,6 +7666,11 @@ The rules, exactly:
   last value, a helper's and a component's arguments compared one by one — except that an op whose
   arguments are all constant (`Tree.constant`) is made in its group, which runs once, rather than
   skipped in `p` and made in `m`.
+- **A group of one path** reads it once, into a name, and tests the name; an op whose value is
+  exactly that path (`tree.pathOf`: the local read through its fields, nothing more) and that keeps
+  nothing but its last value — a text hole, a plain attribute, a style entry, an event — writes the
+  name with no test of its own and keeps no value: the group ran because that very value changed.
+  `<p>{model.name}</p>` is `const x = in0.name; if (x !== i.g0_0) { i.g0_0 = x; i.w1.data = x; }`.
 - **Mount through the patch.** `m` clones, walks, makes the slots and a text hole's node (empty),
   writes an event's extractor, flags, listener and mount context and a constant attribute that
   needs code, builds the instance with every kept value `undefined` — a toggle's `false`, a class
