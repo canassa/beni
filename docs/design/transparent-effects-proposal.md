@@ -904,6 +904,17 @@ the single most valuable thing absent from it: a
 `requestAnimationFrame` latency histogram at budgets of 16, 64, 512 and 2048, in Chrome and Firefox.
 64 is therefore a starting value with an experiment attached to it (§11 Q3a).
 
+*Amended 2026-10-04* (`backend.md` §15.11, *A render at the end of a turn*; research 56 §6.1).
+Two platform hooks of core's scheduler. **`Task.onTurn f`**: every later drain runs as `f(drain)`,
+so a platform can do its own work when a drain ends — the browser renders what the drain's fibers
+sent. **`Task.fromHost f`**: `f` is a callback the platform registered with its host — a timer's —
+and the fibers it resumes are drained when it returns, in the same callback, instead of on the
+microtask the resumption would have queued; when a drain is already queued or running it changes
+nothing. Neither changes which fiber runs when relative to another: a drain at the end of a host
+callback runs exactly the work, in exactly the order, of the microtask it replaces, since nothing
+else can run between the two. `Task.sleep`'s timer uses `fromHost`; a promise reaction does not,
+because a throw inside one would become a rejection rather than the uncaught exception a defect is.
+
 ### 7.6 Bit-polymorphic functions
 
 `List.map` with a pure callback should be a plain loop; with an effectful one it must be

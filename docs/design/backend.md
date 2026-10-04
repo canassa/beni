@@ -8324,3 +8324,68 @@ optional when the runtime module is the whole runtime (`boundary.md` §5.2, §9.
 is deleted and `browser` names only `"markup": { "lowering": "dom", "module": "Rt" }`. A build
 writes no `runtime.foreign.mjs`; the entry file imports `run` and `start` from `Rt`'s output, as it
 already did, and a release build's one file is unchanged byte for byte.
+
+*Amended 2026-10-04: a render at the end of a turn* (the owner's decision on
+[`research/56`](research/56-matching-solid-1.md) §6.1, Fix A, and its §8 question 3;
+`plans/handover-2026-10-02.md` §2a item 6). The bullet *A message does not render at once* stands for
+every message but one kind: **a message sent during a *turn* renders when the turn ends, not on a
+microtask of its own.** A turn is a callback the host calls with nothing of the page's beneath it —
+so the host performs a microtask checkpoint when it returns, and the microtask flush would have run
+exactly there (HTML's *clean up after running script*). Rendering at that point instead of in a
+callback of its own changes no order a program can observe and removes one top-level callback per
+message, which is research 56 §2's whole fixed floor (an empty microtask costs 0.05 ms in
+js-framework-benchmark's trace). W28's substance is unchanged: messages are staged, a flush renders
+the staged ones once, `Browser.flush` and the after-render phase are as before. What is a turn:
+
+- **The delegated listener and `listen`'s stub, for an event whose `isTrusted` is true** — the
+  browser dispatched it, not `dispatchEvent` or `el.click()` from page script. Every handler of the
+  walk is in the one turn, so they are one render.
+- **A drain of core's scheduler, once a hosted program has mounted.** Fibers resume only in a drain,
+  and a drain runs only on a microtask, a macrotask (§7.5's escape), or at the end of a host
+  callback under `Task.fromHost` (below) — each with nothing beneath it. `Rt` hands core the turn
+  with `Task.onTurn` when it mounts a hosted program, and core runs each drain inside it.
+- **A timer beni registered** (`Task.sleep`'s): its callback calls `Task.fromHost`, under which
+  what the timer resumes is drained **when the callback returns**, in the same callback, not on the
+  microtask after it; that drain is a turn, so the timer's message renders before the callback
+  returns. A promise reaction is not run under `fromHost`: a throw inside one would become a
+  rejection instead of the uncaught exception a defect must be (`boundary.md` §9.8.10 (c)), so a
+  response's `.then` resumes as before and its drain — a microtask — is the turn. An event
+  listener is not run under it either: the host may dispatch an event while other code runs.
+
+**Not a turn**, so the microtask stays: an untrusted event (page script's synthetic clicks — a
+burst of them still renders once, after the script's task); an event the browser dispatches
+**inside a flush** — the `focus` or `blur` after-render work causes, or the `blur` of a focused
+node a patch removes — whose message renders in the next flush, never re-entrantly; a turn inside
+another (one render, at the outer one's end); and a message sent during the flush that ends a turn
+(its after-render phase), which queues the next flush on a microtask as before. A listener of a
+subscription (`Listen.on`, `Sub.on`) is not a turn yet: it is the platform's, not the runtime's, and
+the microtask it pays is the follow-up research 56 §8 question 3 leaves.
+
+**One case renders earlier than the microtask would have.** `isTrusted` says the browser dispatched
+an event, not that the stack beneath it is empty: page script calling `el.focus()` gets a trusted
+`focus` dispatched inside its call, and its message now renders before `focus()` returns. The page
+shows the same thing either way; only foreign JavaScript can tell, and it sees a render that was
+staged anyway.
+
+**The mechanism** (`platforms/browser/Rt.beni`). Two flags of the runtime, `turning` and
+`flushing`, and one function, `turn(trusted, f)`: when `trusted` holds and neither flag is set, it
+sets `turning`, calls `f`, clears it and flushes if a render is staged; otherwise it calls `f`. A
+mount's `send` that stages the first render while `turning` is set queues no microtask. `flush`
+sets `flushing` while it renders and runs the after-render phase. The delegated listener and
+`listen`'s stub call their handlers through `turn` with the event's `isTrusted`; a hosted mount
+gives `Task.onTurn` `λf → turn True f`. In core (`core/Task.beni`): `onTurn f` keeps `f`, and every
+drain is run as `f(drain)` once one is kept; `fromHost f` runs `f` with a flag set under which
+`schedule` queues no microtask, then drains if anything was scheduled — unless a drain was already
+queued or running, when it only runs `f`. A throw out of a turn leaves its flag set, which is moot:
+it stops the page (§9.8.10 (c)), and a stopped page renders nothing.
+
+**Cost.** One closure per trusted event and per drain; no compile time; no change to field
+identity, determinism or purity; no `catch`. Bytes: the release page of `emit/release/split/HolesPage`,
+which delegates `click`, is 1 708 → 1 767 brotli; a page with no event (the empty page) does not
+move; a page that reaches core's scheduler pays `fromHost` and `onTurn` as well. **Pinned by**
+`browser/dom/TrustedTurn` (a user's click renders before a later listener; its two handlers are
+one render; synthetic clicks keep the microtask, three in one task one render),
+`browser/tea/TimerTurn` (a timer's message renders before its callback returns) and
+`browser/tea/FocusInFlush` (a trusted `focus` inside a flush renders in the next one). The page
+driver's `press` step dispatches a trusted click — Chrome's own through `Input.dispatchMouseEvent`;
+happy-dom, which has no `isTrusted`, is given one (`tests/corpus/README.md`).
