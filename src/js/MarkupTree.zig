@@ -313,6 +313,9 @@ const Builder = struct {
     /// Per declaration, once the selector search walked it, each
     /// instruction's parent (`parentsOf`); empty until the first.
     parent_maps: []?[]const Parent = &.{},
+    /// Per declaration, `declEffectful`'s answer: 0 not asked, 1 being
+    /// asked, 2 no, 3 yes; empty until the first.
+    decl_effects: []u8 = &.{},
 
     const none = std.math.maxInt(u32);
 
@@ -517,8 +520,7 @@ const Builder = struct {
                     },
                     .fragment => children_nodes = try b.childList(c.children_start, c.children_end),
                 }
-                const site = b.in.dispatch.effectAt(c.callee);
-                try b.components.append(b.arena, .{ .props = props, .spread = spread, .children = children_value, .children_nodes = children_nodes, .impure = site.impure or site.own != .no });
+                try b.components.append(b.arena, .{ .props = props, .spread = spread, .children = children_value, .children_nodes = children_nodes, .impure = b.callImpure(c.callee.int(), c.callee.int()) });
                 try b.component_sources.append(b.arena, .{ .callee = c.callee, .props = .{ .start = c.props_start, .end = c.props_end } });
                 return b.addNode(.component, b.components.items.len - 1, c.token);
             },
@@ -1596,13 +1598,10 @@ const Builder = struct {
                     const def = bir_.extraData(@fromBackingInt(@intCast(datas[i].lhs)), Bir.LetDef);
                     if (def.params_end != def.params_start) continue;
                 },
-                .call, .method_call, .type_dispatch => {
+                .call => if (b.callImpure(i, datas[i].lhs)) return true,
+                .method_call, .type_dispatch => {
                     const site = b.in.dispatch.effectAt(@fromBackingInt(@intCast(i)));
-                    if (site.impure or site.own != .no) {
-                        const debug = tags[i] == .call and tags[datas[i].lhs] == .ext_value and
-                            b.in.debug_module != null and datas[datas[i].lhs].lhs == b.in.debug_module.?;
-                        if (!debug) return true;
-                    }
+                    if (site.impure or site.own != .no) return true;
                 },
                 else => {},
             }
@@ -1611,6 +1610,54 @@ const Builder = struct {
             stack.appendSlice(b.arena, found.items) catch return true;
         }
         return false;
+    }
+
+    /// Whether the call at `i`, of `callee` — a call instruction, or a
+    /// component's callee reference — may have an effect other than
+    /// `Debug`'s: the checker's answer, except that a call of `Debug`'s and
+    /// a call of a function of this module whose body has no other effect
+    /// (`declEffectful`) are not. A function of another module, or one
+    /// reached through a value, is taken at the checker's word.
+    fn callImpure(b: *Builder, i: u32, callee: u32) bool {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        const site = b.in.dispatch.effectAt(@fromBackingInt(@intCast(i)));
+        if (!site.impure and site.own == .no) return false;
+        switch (tags[callee]) {
+            .ext_value => return !(b.in.debug_module != null and datas[callee].lhs == b.in.debug_module.?),
+            .top => {
+                if (site.own != .no) return true;
+                const f = datas[callee].lhs;
+                if (f >= bir_.decls.len or !bir_.decls[f].kind.isValue()) return true;
+                return b.declEffectful(f);
+            },
+            else => return true,
+        }
+    }
+
+    /// Whether declaration `f`'s body may have an effect other than
+    /// `Debug`'s (`effectful`), answered once; a cycle is taken to.
+    fn declEffectful(b: *Builder, f: u32) bool {
+        const bir_ = b.bir();
+        if (b.decl_effects.len == 0) {
+            b.decl_effects = b.arena.alloc(u8, bir_.decls.len) catch return true;
+            @memset(b.decl_effects, 0);
+        }
+        switch (b.decl_effects[f]) {
+            1 => return true,
+            2 => return false,
+            3 => return true,
+            else => {},
+        }
+        b.decl_effects[f] = 1;
+        const body = bir_.decls[f].body.unwrap() orelse {
+            b.decl_effects[f] = 3;
+            return true;
+        };
+        const answer = b.effectful(body);
+        b.decl_effects[f] = if (answer) 3 else 2;
+        return answer;
     }
 
     // ---- Values that are the same on every evaluation (boundary.md §9.4.6, 1.4)

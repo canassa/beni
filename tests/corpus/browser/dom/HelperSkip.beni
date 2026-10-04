@@ -1,15 +1,18 @@
 -- A call of a top-level function in an `Html` hole is not made again while
 -- every argument is the one the hole was given last render (language.md
--- §11.6, §11.11; backend.md §15.3–§15.4). `Debug.log` in each helper's
--- body shows which calls happen. `card "counted" model.count` is called
--- when the count changes, and inside it `tag "counted"`, whose argument
--- did not, is not; `card "fixed" 7` is never called again. A helper given
--- a record built during the render, and a local function, are called
--- when what they read changes — `model.other` — and only then: the root
--- computes each value by the fields it reads (language.md §11.11, made
--- precise 2026-10-04), so the record is not built again when only the
--- count changed, and the local function, which captures nothing, is the
--- same function.
+-- §11.6, §11.11; backend.md §15.3–§15.4). `card` logs each call it gets,
+-- before its markup, and `Debug.log` inside each helper's markup shows
+-- what that markup computes. `card "counted" model.count` is called when
+-- the count changes, and inside it `tag "counted"`, whose argument did
+-- not, is not; `card "fixed" 7` is never called again — `Debug` in a
+-- helper's body does not make its call one a render must always make. A
+-- helper given a record built during the render is called when the field
+-- the record is built from changes, and only then: the root computes each
+-- value by the fields it reads (language.md §11.11, made precise
+-- 2026-10-04), so the record is not built again when only the count
+-- changed. A local function is a new function on every render and is
+-- called on every render; its markup computes `local` only when the
+-- number it is given changed.
 import Browser
 import Html exposing (Html)
 
@@ -40,6 +43,7 @@ tag name = <i>{Debug.log "tag" name}</i>
 
 card : String, Int → Html Msg
 card title n =
+    _ = Debug.log "card called" title
     <section>
         {tag title}
         <b>{Debug.log title n}</b>
