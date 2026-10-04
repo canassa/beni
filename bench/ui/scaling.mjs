@@ -9,16 +9,18 @@
 //                    [--build-only] [--no-build] [--beni=<path>] [--chrome=<path>]
 //
 // Quick by default (two or three points a sweep, one page of three samples
-// per point and subject, 4x only: about five minutes); `--full` takes every
-// point and two pages of four samples at 4x and four unthrottled (about an
-// hour). Run it from `nix develop .#browser`, after `node build.mjs` has
+// per point and subject); `--full` takes every point and two pages of four
+// samples. By default only beni (its development build, and the view-helper
+// variant of `derived`) and Solid 1 are measured, unthrottled; `--subjects=`
+// adds any of beni-release, beni-helper-release, solid2, p2 and vanillajs, and
+// `--throttle=4` measures under the table benchmark's CPU throttling instead. Run it from `nix develop .#browser`, after `node build.mjs` has
 // fetched the stylesheet and installed both Solids.
 //
 // Each sample is research 29's: one real click on a fresh page's `#go`,
 // click to paint from a Chrome trace (lib/trace.mjs, js-framework-
-// benchmark's method), CPU throttled 4x as the benchmark throttles its
-// update operations — and in full mode also at 1x, interleaved, because the
-// throttle's pauses swamp an update that takes less than a millisecond.
+// benchmark's method). Unthrottled by default: under 4x Chrome pauses the
+// main thread in slices, which adds about half a millisecond, at random, to
+// an update shorter than that.
 // Several samples are taken on one page, after warm-up clicks, each in a
 // trace of its own. The `stream` sweep is the one
 // exception: a 60 Hz stream of messages for three seconds in one trace,
@@ -48,11 +50,9 @@ const full = flag("full");
 const mode = full ? "full" : "quick";
 const repo = join(root, "../..");
 const beniExe = arg("beni", join(repo, "zig-out/bin/beni"));
-// The table benchmark's throttling for update operations, and in full mode
-// also none: under 4x Chrome pauses the main thread in slices, which adds
-// about half a millisecond, at random, to an update shorter than that.
-const THROTTLE = 4;
-const settings = full ? { pages: 2, samples: 4, warm: 5, throttles: [THROTTLE, 1] } : { pages: 1, samples: 3, warm: 3, throttles: [THROTTLE] };
+// CPU throttling: none by default; `--throttle=4` is the table benchmark's.
+const THROTTLE = Number(arg("throttle", "1"));
+const settings = full ? { pages: 2, samples: 4, warm: 5, throttles: [THROTTLE] } : { pages: 1, samples: 3, warm: 3, throttles: [THROTTLE] };
 
 // ---- The sweeps --------------------------------------------------------------
 
@@ -120,10 +120,11 @@ const sweeps = [
   },
 ];
 
-const baseSubjects = ["beni", "beni-release", "solid2", "solid1", "p2", "vanillajs"];
 const wantedSweeps = arg("sweeps", null)?.split(",") ?? sweeps.map((s) => s.id);
 for (const w of wantedSweeps) if (!sweeps.some((s) => s.id === w)) throw new Error(`unknown sweep ${w}`);
-const wantedSubjects = arg("subjects", null)?.split(",") ?? null;
+const defaultSubjects = ["beni", "beni-helper", "solid1"];
+const wantedSubjects = arg("subjects", null)?.split(",") ?? defaultSubjects;
+const wants = (name) => wantedSubjects.includes(name);
 const chosen = sweeps.filter((s) => wantedSweeps.includes(s.id));
 
 // ---- Generating and building -------------------------------------------------
@@ -160,14 +161,15 @@ function buildAll() {
     if (sweep.helper) beniPrograms.push(["src-helper", "beni-helper", m.beniHelper(p)]);
     for (const [src, out, text] of beniPrograms) {
       const changed = put(`${dir}/${src}/Main.beni`, text);
-      for (const [suffix, flags] of [["dev", []], ["rel", ["--release"]]]) {
+      const builds = [["dev", []], ["rel", ["--release"]]].filter(([suffix]) => suffix === "dev" || wants(`${out}-release`));
+      for (const [suffix, flags] of builds) {
         const outDir = `${dir}/${out}-${suffix}`;
         if (!changed && !rebuild && existsSync(join(root, outDir, "_main.mjs"))) continue;
         rmSync(join(root, outDir), { recursive: true, force: true });
         run(beniExe, ["build", "--platform=browser-tea", ...flags, "--no-cache", `--out=${outDir}`, `${dir}/${src}/Main.beni`]);
       }
     }
-    for (const v of [1, 2]) {
+    for (const v of [1, 2].filter((v) => wants(`solid${v}`))) {
       const src = `apps/solid${v}/gen/${tag}.jsx`;
       const changed = put(src, m.solid(v, p));
       if (changed || rebuild || !existsSync(join(root, dir, `solid${v}.js`))) (v === 1 ? solid1 : solid2).push([join(root, src), join(root, dir), `solid${v}`]);
@@ -205,7 +207,7 @@ const subjectsOf = (sweep, dir) => {
     { name: "vanillajs", kind: "script", src: `/${dir}/vanilla.js` },
   ];
   return list
-    .filter((s) => wantedSubjects === null || wantedSubjects.includes(s.name))
+    .filter((s) => wants(s.name))
     .map((s) => ({ ...s, subject: s.name, name: `${key}.${s.name}` }));
 };
 
@@ -411,8 +413,8 @@ for (const sweep of chosen) {
           }
           if (got === null) continue;
           result.samples.push(...got);
-          const at4 = got.filter((r) => r.throttle === THROTTLE).map((r) => r.script).sort((a, b) => a - b);
-          const med = at4[Math.floor(at4.length / 2)];
+          const at = got.filter((r) => r.throttle === THROTTLE).map((r) => r.script).sort((a, b) => a - b);
+          const med = at[Math.floor(at.length / 2)];
           console.log(`${sweep.id}/${op.id} ${String(p).padStart(6)} ${subject.subject.padEnd(20)} #${i} script ${med?.toFixed(3) ?? "—"} ms (${got.length})  [${((Date.now() - t0) / 1000).toFixed(0)} s]`);
         }
       }

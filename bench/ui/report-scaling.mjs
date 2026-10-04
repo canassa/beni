@@ -40,7 +40,7 @@ for (const sweep of data.sweeps) {
     const subjects = order.filter((s) => rows.some((r) => r.subject === s));
     const cell = (subject, p, col, t = 4) => rows.filter((r) => r.subject === subject && r.param === p && (r.throttle ?? 4) === t).map((r) => r[col]);
     console.log(`### ${sweep.id} / ${op}: ${sweep.what}\n`);
-    const cols = (op === "stream" ? [["script", 4], ["gc", 4], ["paint", 4]] : columns).filter(([c, t]) => rows.some((r) => (r.throttle ?? 4) === t));
+    const cols = (op === "stream" ? [["script", data.throttle], ["gc", data.throttle], ["paint", data.throttle]] : columns).filter(([c, t]) => rows.some((r) => (r.throttle ?? 4) === t));
     for (const [col, t] of cols) {
       const unit = op === "stream" ? "ms per message" : "ms";
       console.log(`**${col}, CPU ${t}x**, median ${unit} [interquartile range] (samples)\n`);
