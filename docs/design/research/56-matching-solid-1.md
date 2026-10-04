@@ -795,7 +795,7 @@ markup held a controlled input or their call an effect. Each is fixed with a pag
 on the compiler before it (`browser/dom/StatefulNested`, `EveryRenderNested`, `EveryRenderTop`,
 `ConstantWriteOnce`, `LetOneOwner`, `LetChain` — 79.9 billion instructions before, inside the
 budget after — `SkippedCallsLive` and `HelperSkip`), specified in `language.md` §11.11, `boundary.md`
-§9.4.6 and `backend.md` §15.4 as amended after review. **Still open, and older than this work:** a `For` row or a `Show` body that a render skips — its item and inputs unchanged — is not patched, so a controlled input inside a row keeps an edit `update` rejected; the same restate would close it, and it is not done here.
+§9.4.6 and `backend.md` §15.4 as amended after review. **Still open, and older than this work:** a `For` row or a `Show` body that a render skips — its item and inputs unchanged — is not patched, so a controlled input inside a row keeps an edit `update` rejected; the same restate would close it, and it is not done here. *(Closed by the second review, §9.8.)*
 
 Same batch, the slice-B compiler against the fixed one (`results/2026-10-04-r56-review-fixes.json`,
 2 pages × 4 samples; Solid 1 beside them), script ms, median:
@@ -846,6 +846,49 @@ time before the slice: walk the tail as part of the last leaf's loop rather than
 the first 32 changes and take the full pass beyond (no saving in bytes, a bound on work). Whether
 those reach 200 is not known until they are written; if they do not, the decision returns to the
 owner with the measured figure.
+
+### 9.8 After the second review: restate, not evaluate again
+
+The second review found §9.6's mechanism incomplete: markup reached through a helper call that is
+not itself the hole (`{if m.open then field "a" m.text else <span />}`, `Html.map (field …)`, a
+`let` or a `case` branch holding one) was still frozen, a top-level constant placed again was
+never reconciled (older than this work), a `For` row or `Show` body skipped with unchanged inputs
+neither, and §9.6's rule that a helper or component op runs every render had made calls with
+render-built arguments run every render. One design replaces §9.6's static one
+(`backend.md` §15.4, *A skipped group restates its slots*; `boundary.md` §9.4.6;
+`language.md` §11.11, all amended): a value is never evaluated again for the markup it holds. A
+skipped group's `else` restates its slots; `Rt.patch` handed the very block it shows patches it
+again when its kind is live; a `Show` left as it was restates its body; a `For` whose row
+function is live or makes blocks restates its rows. Helper and component calls are back in their
+groups (only an impure one runs every render), so `DomComponents` calls `Card$view` only when
+its group's paths change. Fixtures: `browser/dom/SkippedMarkupLive` (ten inputs, each
+rejected; every one kept its edit on the compiler before) and `HelperSkip`, whose `boxed` now logs
+each call and is not called when only the count changes.
+
+A first cut kept each list's row function in its slot for the restate; the release optimiser
+then could not see the table app's row objects whole and lost their specialisation (table app
+5 556 → 5 730 brotli). The slot now keeps only a live row function's `p`: 5 615 (+59), the rest
+being `restate` itself and the `else` branches. `emit/release/split/HolesPage` 1 796 → 1 844
+(+48); the empty page does not move (446).
+
+Same batch, the §9.6 compiler against this one (`results/2026-10-04-r56-review2.json`, 2 pages × 4
+samples), script ms, median:
+
+| point | §9.6 | restate | Solid 1 |
+|---|--:|--:|--:|
+| holes 10 | 0.077 | 0.073 | 0.071 |
+| holes 1 000 | 0.081 | 0.069 | 0.074 |
+| holes 10 000 | 0.101 | 0.085 | 0.077 |
+| rows 1 000, change | 0.122 | 0.120 | 0.084 |
+| rows 30 000, change | 0.434 | 0.434 | 0.096 |
+| derived 1 000 | 0.075 | 0.068 | 0.066 |
+| derived 100 000 | 0.075 | 0.076 | 0.071 |
+
+(`rows 30 000, swap` is bimodal page to page for both compilers, 0.80–1.30, and is not read.) The
+table, `…-review2-update.json` and `…-review2-select.json`: update every 10th, n = 30, §9.6 1.04
+[0.98–1.22], restate 1.00 [0.84–1.09], Solid 1 1.48; select, n = 20, 0.61 [0.47–0.76], 0.72
+[0.57–0.93], Solid 1 1.21 — interquartile ranges overlap. **Restating the rows of a skipped list
+costs no measured speed**: a list whose rows are not live is not walked.
 
 ## Appendix: reproducing
 
