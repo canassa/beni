@@ -107,38 +107,21 @@ functions can be called as methods on its type, so `price.add tax` is
 `Money.add price tax`, and a `where` clause asks for a method on any type.
 
 ```elm
--- Money.beni
-pub type Money
-    = Cents Int
+-- Vec.beni
+pub type Vec
+    = Vec Float Float
 
 
-pub add : Money, Money → Money
-add (Cents a) (Cents b) = Cents (a + b)
+pub add : Vec, Vec → Vec
+add (Vec a b) (Vec c d) = Vec (a + c) (b + d)
 ```
 
 ```elm
 -- Main.beni
-import Money exposing (Money)
-
-
-clamp : a, a, a → a
-    where a.compare : a, a → Order
-clamp low high x =
-    if x < low then
-        low
-    else if x > high then
-        high
-    else
-        x
-
-
-withFee : Money, Money → Money
-withFee amount fee = clamp (Money.Cents 0) (Money.Cents 10000) (amount.add fee)
+double : a → a
+    where a.add : a, a → a
+double x = x.add x
 ```
-
-`==` and `<` are methods too. They call the type's `eq` and `compare`, and the
-compiler derives both when a type does not write its own. That is why `clamp`
-works on `Money` here without any extra code.
 
 ### List patterns
 
