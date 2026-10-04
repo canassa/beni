@@ -1970,6 +1970,15 @@ effects land, a hole, prop, row or `Show` body whose expression is `impure` is n
 (`transparent-effects-proposal.md` §5's rule, applied here), so the skip stays unobservable in what a
 program does.
 
+*Amended 2026-10-04 by the owner* ([`research/56`](research/56-matching-solid-1.md) §6.2, Fix B):
+**a render may compute `view`'s values by group, not in source order.** The compiler may group the
+values of a template by the model fields they read and, on a render, evaluate only the groups whose
+fields changed, in an order that need not follow the source. A pure `view` gives the same page either
+way; the difference is visible only through `Debug` inside `view` (a line may print fewer times, or
+in another order), and `--release` refuses `Debug`. This is the rule that lets a `let` in `view`
+behave like a memoised value. Before the slice that builds it, the evidence on why Svelte moved from
+compiled dirty-checking to signals (X3) is read from primary sources.
+
 ### 11.12 Identity: an untouched field keeps its identity
 
 **A record update `{ r | a = x }` produces a record whose every field other than `a` is the very
