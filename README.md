@@ -316,10 +316,3 @@ zig build
 ```
 
 `serve` rebuilds and reloads the page on every save.
-
-## Learn more
-
-Each part of Beni is specified before it is built, and the specification is
-normative. Start with [`docs/design/language.md`](docs/design/language.md); the
-rest is in [`docs/design/`](docs/design/). Contributors should read
-[`CLAUDE.md`](CLAUDE.md) for the build, the test gates and the project rules.
