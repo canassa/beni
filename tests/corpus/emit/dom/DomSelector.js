@@ -1,150 +1,165 @@
-import { Rt$template, Rt$slot, Rt$forKeyed, Rt$delegate } from "./_platform/Rt.mjs";
-const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>", 0);
-const DomSelector$k173 = { m: (v$13, cx$14) => {
-  const r$15 = DomSelector$t173();
-  const w$16 = r$15.firstChild;
-  const w$17 = w$16.nextSibling;
-  const w$18 = w$17.nextSibling;
-  const w$19 = w$18.nextSibling;
-  const w$20 = w$19.nextSibling;
-  const c$21 = Rt$slot(r$15, w$16, cx$14);
-  const c$22 = Rt$slot(r$15, w$17, cx$14);
-  const c$23 = Rt$slot(r$15, w$18, cx$14);
-  const c$24 = Rt$slot(r$15, w$19, cx$14);
-  const c$25 = Rt$slot(r$15, w$20, cx$14);
-  Rt$forKeyed(c$21, v$13[0], v$13[1], v$13[2], v$13[3]);
-  Rt$forKeyed(c$22, v$13[4], v$13[5], v$13[6], v$13[7]);
-  Rt$forKeyed(c$23, v$13[8], null, v$13[9], v$13[10]);
-  Rt$forKeyed(c$24, v$13[11], v$13[12], v$13[13], v$13[14]);
-  Rt$forKeyed(c$25, v$13[15], v$13[16], v$13[17], v$13[18]);
-  return { s: r$15, q: null, e: r$15, c0: c$21, c1: c$22, c2: c$23, c3: c$24, c4: c$25 };
-}, p: (i$26, v$27) => {
-  Rt$forKeyed(i$26.c0, v$27[0], v$27[1], v$27[2], v$27[3]);
-  Rt$forKeyed(i$26.c1, v$27[4], v$27[5], v$27[6], v$27[7]);
-  Rt$forKeyed(i$26.c2, v$27[8], null, v$27[9], v$27[10]);
-  Rt$forKeyed(i$26.c3, v$27[11], v$27[12], v$27[13], v$27[14]);
-  Rt$forKeyed(i$26.c4, v$27[15], v$27[16], v$27[17], v$27[18]);
-} };
+import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$slot } from "./_platform/Rt.mjs";
 const DomSelector$t83 = Rt$template("<p> ", 0);
 const DomSelector$t108 = Rt$template("<p> ", 0);
+const DomSelector$t171 = Rt$template("<p> ", 0);
 const DomSelector$t127 = Rt$template("<p> ", 0);
 const DomSelector$t154 = Rt$template("<p><b> ", 0);
-const DomSelector$t171 = Rt$template("<p> ", 0);
+const DomSelector$p173 = (i$1, v$2) => {
+  const $in$3 = v$2[0];
+  if ($in$3.rows !== i$1.g0_0 || $in$3.selected !== i$1.g0_1) {
+    i$1.g0_0 = $in$3.rows;
+    i$1.g0_1 = $in$3.selected;
+    const $t$4 = $in$3.rows;
+    const $t$6 = ($p$5) => $p$5.id;
+    const $t$7 = $in$3.rows;
+    const $t$8 = (r$4) => r$4.id;
+    const $t$9 = $in$3.rows;
+    const $t$11 = ($p$10) => $p$10.id;
+    const made$12 = { m: (item$13, position$14, cx$15) => {
+      const r$16 = DomSelector$t83();
+      const w$17 = r$16.firstChild;
+      Rt$delegate(["click"]);
+      if (cx$15 !== null) {
+        r$16.$$cx = cx$15;
+      }
+      return { s: r$16, q: null, e: r$16, w0: r$16, w1: w$17, a0: undefined, a1: undefined, a2: undefined, x: undefined };
+    }, p: (i$18, item$19, position$20) => {
+      const $t$21 = DomSelector$rowClass($in$3, item$19);
+      if ($t$21 !== i$18.a0) {
+        i$18.w0.setAttribute("class", $t$21);
+        i$18.a0 = $t$21;
+      }
+      if (item$19 !== i$18.x) {
+        const $t$22 = { $: "Select", a: item$19.id };
+        const $t$23 = item$19.label;
+        if ($t$22 !== i$18.a1) {
+          i$18.a1 = $t$22;
+          i$18.w0.$$click = $t$22;
+        }
+        if ($t$23 !== i$18.a2) {
+          i$18.a2 = $t$23;
+          i$18.w1.data = $t$23;
+        }
+      }
+    }, w: true, i: false, f: null, g: 0, z: $in$3.selected.$ === "Just" ? $in$3.selected.a : $in$3.selected };
+    Rt$forKeyed(i$1.c0, $t$4, $t$6, made$12, [$in$3.selected]);
+    const made$24 = { m: (item$25, position$26, cx$27) => {
+      const r$28 = DomSelector$t108();
+      const w$29 = r$28.firstChild;
+      return { s: r$28, q: null, e: r$28, w0: r$28, w1: w$29, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$30, item$31, position$32) => {
+      const id$5 = item$31.id;
+      const label$6 = item$31.label;
+      const $t$33 = $in$3.selected.$ === "Just" && $in$3.selected.a === id$5 ? "on" : "";
+      if ($t$33 !== i$30.a0) {
+        i$30.w0.setAttribute("class", $t$33);
+        i$30.a0 = $t$33;
+      }
+      if (item$31 !== i$30.x) {
+        if (label$6 !== i$30.a1) {
+          i$30.a1 = label$6;
+          i$30.w1.data = label$6;
+        }
+      }
+    }, w: true, i: false, f: null, g: 0, z: $in$3.selected.$ === "Just" ? $in$3.selected.a : $in$3.selected };
+    Rt$forKeyed(i$1.c1, $t$7, $t$8, made$24, [$in$3.selected]);
+    const made$34 = { m: (item$35, position$36, cx$37) => {
+      const r$38 = DomSelector$t171();
+      const w$39 = r$38.firstChild;
+      return { s: r$38, q: null, e: r$38, w0: r$38, w1: w$39, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$40, item$41, position$42) => {
+      const $t$43 = DomSelector$isOn($in$3.selected, item$41.id);
+      if ($t$43 !== i$40.a0) {
+        i$40.w0.setAttribute("class", $t$43);
+        i$40.a0 = $t$43;
+      }
+      if (item$41 !== i$40.x) {
+        const $t$44 = item$41.label;
+        if ($t$44 !== i$40.a1) {
+          i$40.a1 = $t$44;
+          i$40.w1.data = $t$44;
+        }
+      }
+    }, w: true, i: false, f: null, g: 0, z: $in$3.selected.$ === "Just" ? $in$3.selected.a : $in$3.selected };
+    Rt$forKeyed(i$1.c4, $t$9, $t$11, made$34, [$in$3.selected]);
+  }
+  if ($in$3.ids !== i$1.g1_0 || $in$3.cursor !== i$1.g1_1) {
+    i$1.g1_0 = $in$3.ids;
+    i$1.g1_1 = $in$3.cursor;
+    const $t$45 = $in$3.ids;
+    const made$46 = { m: (item$47, position$48, cx$49) => {
+      const r$50 = DomSelector$t127();
+      const w$51 = r$50.firstChild;
+      return { s: r$50, q: null, e: r$50, w0: r$50, w1: w$51, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$52, item$53, position$54) => {
+      const $t$55 = item$53 !== $in$3.cursor ? "" : "at";
+      if ($t$55 !== i$52.a0) {
+        i$52.w0.setAttribute("class", $t$55);
+        i$52.a0 = $t$55;
+      }
+      if (item$53 !== i$52.x) {
+        if (item$53 !== i$52.a1) {
+          i$52.a1 = item$53;
+          i$52.w1.data = item$53;
+        }
+      }
+    }, w: true, i: false, f: null, g: 0, z: $in$3.cursor };
+    Rt$forKeyed(i$1.c2, $t$45, null, made$46, [$in$3.cursor]);
+  }
+  if ($in$3.rows !== i$1.g2_0 || $in$3.cursor !== i$1.g2_1 || $in$3.theme !== i$1.g2_2) {
+    i$1.g2_0 = $in$3.rows;
+    i$1.g2_1 = $in$3.cursor;
+    i$1.g2_2 = $in$3.theme;
+    const $t$56 = $in$3.rows;
+    const $t$58 = ($p$57) => $p$57.id;
+    const made$59 = { m: (item$60, position$61, cx$62) => {
+      const r$63 = DomSelector$t154();
+      const w$64 = r$63.firstChild;
+      const w$65 = w$64.firstChild;
+      return { s: r$63, q: null, e: r$63, w0: r$63, w1: w$64, w2: w$65, a0: undefined, a1: undefined, a2: undefined, x: undefined };
+    }, p: (i$66, item$67, position$68) => {
+      const $t$69 = $in$3.theme;
+      const $t$70 = $in$3.cursor === item$67.id ? "at" : "";
+      if ($t$69 !== i$66.a0) {
+        i$66.w0.setAttribute("class", $t$69);
+        i$66.a0 = $t$69;
+      }
+      if ($t$70 !== i$66.a1) {
+        i$66.w1.setAttribute("class", $t$70);
+        i$66.a1 = $t$70;
+      }
+      if (item$67 !== i$66.x) {
+        const $t$71 = item$67.label;
+        if ($t$71 !== i$66.a2) {
+          i$66.a2 = $t$71;
+          i$66.w2.data = $t$71;
+        }
+      }
+    }, w: true, i: false, f: null, g: 1, z: $in$3.cursor };
+    Rt$forKeyed(i$1.c3, $t$56, $t$58, made$59, [$in$3.theme, $in$3.cursor]);
+  }
+};
+const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>", 0);
+const DomSelector$k173 = { m: (v$72, cx$73) => {
+  const r$74 = DomSelector$t173();
+  const w$75 = r$74.firstChild;
+  const w$76 = w$75.nextSibling;
+  const w$77 = w$76.nextSibling;
+  const w$78 = w$77.nextSibling;
+  const w$79 = w$78.nextSibling;
+  const c$80 = Rt$slot(r$74, w$75, cx$73);
+  const c$81 = Rt$slot(r$74, w$76, cx$73);
+  const c$82 = Rt$slot(r$74, w$77, cx$73);
+  const c$83 = Rt$slot(r$74, w$78, cx$73);
+  const c$84 = Rt$slot(r$74, w$79, cx$73);
+  const i$85 = { s: r$74, q: null, e: r$74, c0: c$80, c1: c$81, c2: c$82, c3: c$83, c4: c$84, g0_0: undefined, g0_1: undefined, g1_0: undefined, g1_1: undefined, g2_0: undefined, g2_1: undefined, g2_2: undefined };
+  DomSelector$p173(i$85, v$72);
+  return i$85;
+}, p: DomSelector$p173 };
 const DomSelector$Msg$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const DomSelector$Msg$$eq = ($x, $y) => $x.a === $y.a;
 const DomSelector$rowClass = (model$1, row$2) => model$1.selected.$ === "Just" && model$1.selected.a === row$2.id ? "danger" : "";
 const DomSelector$isOn = (selected$1, id$2) => selected$1.$ === "Just" && selected$1.a === id$2 ? "on" : "";
-const DomSelector$table = (model$1) => {
-  const $t$1 = model$1.rows;
-  const $t$3 = ($p$2) => $p$2.id;
-  const $t$4 = model$1.rows;
-  const $t$5 = (r$4) => r$4.id;
-  const $t$6 = model$1.ids;
-  const $t$7 = model$1.rows;
-  const $t$9 = ($p$8) => $p$8.id;
-  const $t$10 = model$1.rows;
-  const $t$12 = ($p$11) => $p$11.id;
-  return { t: DomSelector$k173, v: [$t$1, $t$3, { m: (item$28, position$29, cx$30) => {
-    const r$31 = DomSelector$t83();
-    const w$32 = r$31.firstChild;
-    Rt$delegate(["click"]);
-    if (cx$30 !== null) {
-      r$31.$$cx = cx$30;
-    }
-    return { s: r$31, q: null, e: r$31, w0: r$31, w1: w$32, a0: undefined, a1: undefined, a2: undefined, x: undefined };
-  }, p: (i$33, item$34, position$35) => {
-    const $t$36 = DomSelector$rowClass(model$1, item$34);
-    if ($t$36 !== i$33.a0) {
-      i$33.w0.setAttribute("class", $t$36);
-      i$33.a0 = $t$36;
-    }
-    if (item$34 !== i$33.x) {
-      const $t$37 = { $: "Select", a: item$34.id };
-      const $t$38 = item$34.label;
-      if ($t$37 !== i$33.a1) {
-        i$33.a1 = $t$37;
-        i$33.w0.$$click = $t$37;
-      }
-      if ($t$38 !== i$33.a2) {
-        i$33.a2 = $t$38;
-        i$33.w1.data = $t$38;
-      }
-    }
-  }, w: true, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected], $t$4, $t$5, { m: (item$39, position$40, cx$41) => {
-    const r$42 = DomSelector$t108();
-    const w$43 = r$42.firstChild;
-    return { s: r$42, q: null, e: r$42, w0: r$42, w1: w$43, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$44, item$45, position$46) => {
-    const id$5 = item$45.id;
-    const label$6 = item$45.label;
-    const $t$47 = model$1.selected.$ === "Just" && model$1.selected.a === id$5 ? "on" : "";
-    if ($t$47 !== i$44.a0) {
-      i$44.w0.setAttribute("class", $t$47);
-      i$44.a0 = $t$47;
-    }
-    if (item$45 !== i$44.x) {
-      if (label$6 !== i$44.a1) {
-        i$44.a1 = label$6;
-        i$44.w1.data = label$6;
-      }
-    }
-  }, w: true, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected], $t$6, { m: (item$48, position$49, cx$50) => {
-    const r$51 = DomSelector$t127();
-    const w$52 = r$51.firstChild;
-    return { s: r$51, q: null, e: r$51, w0: r$51, w1: w$52, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$53, item$54, position$55) => {
-    const $t$56 = item$54 !== model$1.cursor ? "" : "at";
-    if ($t$56 !== i$53.a0) {
-      i$53.w0.setAttribute("class", $t$56);
-      i$53.a0 = $t$56;
-    }
-    if (item$54 !== i$53.x) {
-      if (item$54 !== i$53.a1) {
-        i$53.a1 = item$54;
-        i$53.w1.data = item$54;
-      }
-    }
-  }, w: true, i: false, f: null, g: 0, z: model$1.cursor }, [model$1.cursor], $t$7, $t$9, { m: (item$57, position$58, cx$59) => {
-    const r$60 = DomSelector$t154();
-    const w$61 = r$60.firstChild;
-    const w$62 = w$61.firstChild;
-    return { s: r$60, q: null, e: r$60, w0: r$60, w1: w$61, w2: w$62, a0: undefined, a1: undefined, a2: undefined, x: undefined };
-  }, p: (i$63, item$64, position$65) => {
-    const $t$66 = model$1.theme;
-    const $t$67 = model$1.cursor === item$64.id ? "at" : "";
-    if ($t$66 !== i$63.a0) {
-      i$63.w0.setAttribute("class", $t$66);
-      i$63.a0 = $t$66;
-    }
-    if ($t$67 !== i$63.a1) {
-      i$63.w1.setAttribute("class", $t$67);
-      i$63.a1 = $t$67;
-    }
-    if (item$64 !== i$63.x) {
-      const $t$68 = item$64.label;
-      if ($t$68 !== i$63.a2) {
-        i$63.a2 = $t$68;
-        i$63.w2.data = $t$68;
-      }
-    }
-  }, w: true, i: false, f: null, g: 1, z: model$1.cursor }, [model$1.theme, model$1.cursor], $t$10, $t$12, { m: (item$69, position$70, cx$71) => {
-    const r$72 = DomSelector$t171();
-    const w$73 = r$72.firstChild;
-    return { s: r$72, q: null, e: r$72, w0: r$72, w1: w$73, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$74, item$75, position$76) => {
-    const $t$77 = DomSelector$isOn(model$1.selected, item$75.id);
-    if ($t$77 !== i$74.a0) {
-      i$74.w0.setAttribute("class", $t$77);
-      i$74.a0 = $t$77;
-    }
-    if (item$75 !== i$74.x) {
-      const $t$78 = item$75.label;
-      if ($t$78 !== i$74.a1) {
-        i$74.a1 = $t$78;
-        i$74.w1.data = $t$78;
-      }
-    }
-  }, w: true, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected]] };
-};
+const DomSelector$table = (model$1) => ({ t: DomSelector$k173, v: [model$1] });
 export { DomSelector$Msg$$compare, DomSelector$Msg$$eq, DomSelector$table };
 //# sourceMappingURL=DomSelector.mjs.map

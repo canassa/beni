@@ -1,0 +1,36 @@
+-- A root computes its own values, by what they read (backend.md §15.4,
+-- *A root computes its own values*; boundary.md §9.4.6, 1.5). `view`'s
+-- block carries its input, `model`, and the kind's `p` reads the fields
+-- under one test per set of fields: the two writes that read
+-- `model.name` share one, `model.count` has its own, and a value that
+-- reads nothing — the title made by a call of constants — is written
+-- once, under a test that holds only at mount. The input's `value`,
+-- `stateful`, is compared with the page on every render, under no test.
+-- `m` writes nothing a value says: it clones, walks, keeps `undefined` in
+-- every field and calls `p`. In `ordered`, the `span`'s two attributes
+-- read `count` and `name`, whose groups would write them the other way
+-- round on a mount, so the two groups merge: an element's attributes are
+-- written in source order.
+import Html exposing (Html)
+
+
+type alias Model =
+    name : String
+    count : Int
+    text : String
+
+
+pub view : Model → Html msg
+view model =
+    <div class={model.name}>
+        <p title={String.fromInt 7}>{model.count}</p>
+        <b>{model.name}</b>
+        <input value={model.text} />
+    </div>
+
+
+pub ordered : Model → Html msg
+ordered model =
+    <div class={model.name}>
+        <span title={String.fromInt model.count} class={model.name}>x</span>
+    </div>

@@ -1,10 +1,10 @@
 -- load
-console.log: local: 0
-console.log: counted: 0
-console.log: tag: "counted"
-console.log: fixed: 7
 console.log: tag: "fixed"
+console.log: fixed: 7
+console.log: tag: "counted"
+console.log: counted: 0
 console.log: boxed: 0
+console.log: local: 0
 <body>
   <main>
     <button id="count">"count"</button>
@@ -26,9 +26,7 @@ console.log: boxed: 0
   </main>
 </body>
 -- click #count
-console.log: local: 0
 console.log: counted: 1
-console.log: boxed: 0
 <body>
   <main>
     <button id="count">"count"</button>
@@ -50,8 +48,8 @@ console.log: boxed: 0
   </main>
 </body>
 -- click #other
-console.log: local: 1
 console.log: boxed: 1
+console.log: local: 1
 <body>
   <main>
     <button id="count">"count"</button>

@@ -43,6 +43,10 @@ pub const Input = struct {
     /// What an `==` compares, which only the emitter's view of types can
     /// say: no selector is recognised without it (language.md §11.9).
     comparison: ?Comparison = null,
+    /// `Debug`'s module index: a call of one of its values is no effect
+    /// that keeps a grouped root's value from being skipped (language.md
+    /// §11.11, made precise 2026-10-04). Null: no call is exempt.
+    debug_module: ?u32 = null,
 };
 
 /// How an `==` or `/=` compares (language.md §11.9, *a selector*).
@@ -87,6 +91,48 @@ pub const Value = union(enum) {
     /// record reads, itself, or — when `ctor` is set — its field when it
     /// is that constructor and itself otherwise.
     probe: struct { input: Bir.ExtraIndex, ctor: Inst.OptionalIndex },
+    /// 1.5: a path through a local of the enclosing declaration that a
+    /// grouped root's values read (`Root.reads`).
+    read: Read,
+};
+
+/// A path through a local: `len` links, each a field's global symbol or a
+/// tuple slot with `Bir.tuple_link` set.
+pub const Read = struct {
+    local: u32,
+    len: u8 = 0,
+    links: [Bir.max_input_links]u32 = @splat(0),
+
+    fn prefixOf(a: Read, b: Read) bool {
+        return a.local == b.local and a.len <= b.len and std.mem.eql(u32, a.links[0..a.len], b.links[0..a.len]);
+    }
+
+    fn eql(a: Read, b: Read) bool {
+        return a.local == b.local and a.len == b.len and std.mem.eql(u32, a.links[0..a.len], b.links[0..a.len]);
+    }
+
+    fn key(r: Read) [2 + Bir.max_input_links]u32 {
+        var k: [2 + Bir.max_input_links]u32 = @splat(0);
+        k[0] = r.local;
+        k[1] = r.len;
+        @memcpy(k[2..][0..r.len], r.links[0..r.len]);
+        return k;
+    }
+
+    fn append(r: Read, link: u32) Read {
+        var q = r;
+        if (q.len < Bir.max_input_links) {
+            q.links[q.len] = link;
+            q.len += 1;
+        }
+        return q;
+    }
+
+    fn concat(r: Read, links: []const u32) Read {
+        var q = r;
+        for (links) |k| q = q.append(k);
+        return q;
+    }
 };
 
 /// What the compiler needs to place a row: the lambda, what `lowering`
@@ -119,6 +165,13 @@ pub const Built = struct {
     /// Parallel to `tree.items`: an event's payload extractor, as a value
     /// of the vocabulary module's interface, or `Dispatch.Markup.no_row`.
     extractors: []const u32,
+    /// Parallel to `tree.roots`: the declaration the root is in, or none.
+    root_decls: []const u32,
+    /// Parallel to `tree.roots`: whether the root's values can be
+    /// evaluated outside the function that encloses it as far as the tree
+    /// can tell — an `expression` root none of whose values holds a `?`.
+    /// The declaration's own conditions are the emitter's.
+    groupable: []const bool,
 
     /// The root whose instruction is `inst`.
     pub fn rootAt(b: *const Built, inst: u32) ?m.Root.Index {
@@ -146,6 +199,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
     for (0..b.roots.len) |i| try b.buildRoot(@intCast(i), @fromBackingInt(@intCast(b.root_insts.items[i])));
     try b.lambdaRoots();
     try b.selectors();
+    const reads = try b.rootReads();
     const item_only = try b.itemOnly();
     const constant = try b.constants();
     return .{
@@ -173,6 +227,9 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
             .requires = m.gated,
             .item_only = item_only,
             .constant = constant,
+            .value_reads = reads.value_reads,
+            .read_sets = reads.read_sets,
+            .every_render = reads.every_render,
         },
         .root_insts = b.root_insts.items,
         .node_tokens = b.node_tokens.items,
@@ -180,6 +237,8 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
         .rows = b.row_sources.items,
         .components = b.component_sources.items,
         .extractors = b.extractors.items,
+        .root_decls = reads.root_decls,
+        .groupable = reads.groupable,
     };
 }
 
@@ -801,6 +860,399 @@ const Builder = struct {
         var body: std.ArrayList(u32) = .empty;
         for (fd.inst_start.int()..fd.inst_end.int()) |i| try body.append(b.arena, @intCast(i));
         return b.hunt(h, f, body.items, inner.items, depth + 1);
+    }
+
+    // ---- What a root's values read (boundary.md §9.4.6, 1.5) -------------
+    //
+    // A value of an `expression` root reads each local of its declaration
+    // that one of its instructions uses and binds outside it, through a
+    // path: the chain of field accesses and tuple indices the use is the
+    // target of, or — where the use is an argument of a call of a top-level
+    // function of this module — what that function's summary says its body
+    // reads of the parameter, by the same rule, iterated to a fixpoint;
+    // every other use reads the local whole (language.md §11.9's analysis,
+    // which `bir/Lower.zig` makes for a row's inputs, made here for every
+    // value). A local function is itself a local, so a value calling one
+    // reads it whole. The slots that evaluate nothing read what they spell:
+    // a capture its local, an input or a probe its path, a class list and
+    // a helper call what their values read.
+
+    const Reads = struct {
+        value_reads: []const m.Range,
+        read_sets: []const u32,
+        every_render: []const bool,
+        root_decls: []const u32,
+        groupable: []const bool,
+    };
+
+    /// Per function of the module the analysis reached, per parameter, the
+    /// paths its body reads it through (relative to the parameter).
+    const Summaries = struct {
+        /// Per declaration of the module, its parameters' paths, once the
+        /// analysis reached it.
+        of: []?[]std.ArrayList(Read),
+        /// The declarations reached, in the order they were.
+        reached: std.ArrayList(u32) = .empty,
+
+        fn reach(sm: *Summaries, a: Allocator, f: u32, params: u32) Allocator.Error![]std.ArrayList(Read) {
+            if (sm.of[f]) |x| return x;
+            const fresh = try a.alloc(std.ArrayList(Read), params);
+            for (fresh) |*x| x.* = .empty;
+            sm.of[f] = fresh;
+            try sm.reached.append(a, f);
+            return fresh;
+        }
+    };
+
+    fn rootReads(b: *Builder) Allocator.Error!Reads {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const root_count = b.roots.len;
+        const root_decls = try b.arena.alloc(u32, root_count);
+        const groupable = try b.arena.alloc(bool, root_count);
+        @memset(groupable, false);
+        // Every value slot added below is past the roots' own.
+        var per_value: std.ArrayList(std.ArrayList(Read)) = .empty;
+        try per_value.resize(b.arena, b.values.items.len);
+        for (per_value.items) |*x| x.* = .empty;
+        var every: std.ArrayList(bool) = .empty;
+        try every.resize(b.arena, b.values.items.len);
+        @memset(every.items, false);
+        var summaries: Summaries = .{ .of = try b.arena.alloc(?[]std.ArrayList(Read), bir_.decls.len) };
+        @memset(summaries.of, null);
+
+        for (b.roots, 0..) |*root, ri| {
+            const inst = b.root_insts.items[ri];
+            root_decls[ri] = if (inst == none) none else (b.declOf(inst) orelse none);
+            if (root.kind != .expression or root_decls[ri] == none) continue;
+            const decl = root_decls[ri];
+            var ok = true;
+            for (0..root.values.len) |k| {
+                const v = root.values.start + k;
+                switch (b.values.items[v]) {
+                    .inst => |vi| {
+                        const lo = try b.runStart(vi);
+                        for (lo..vi.int() + 1) |i| if (tags[i] == .@"try") {
+                            ok = false;
+                        };
+                        try b.instReads(&summaries, decl, vi, lo, &per_value.items[v]);
+                        every.items[v] = b.effectful(vi);
+                    },
+                    .capture => |local| try addRead(b.arena, &per_value.items[v], .{ .local = local }),
+                    .input => |record| try addRead(b.arena, &per_value.items[v], b.readOfInput(record)),
+                    .probe => |probe| try addRead(b.arena, &per_value.items[v], b.readOfInput(probe.input)),
+                    .entries => |range| for (b.entries.items[range.start..][0..range.len]) |e| {
+                        if (e.value.dynamic) |dv| for (per_value.items[@backingInt(dv)].items) |r| try addRead(b.arena, &per_value.items[v], r);
+                    },
+                    .call => |c| for (0..c.args.len) |j| {
+                        for (per_value.items[c.args.start + j].items) |r| try addRead(b.arena, &per_value.items[v], r);
+                    },
+                    else => {},
+                }
+            }
+            groupable[ri] = ok;
+        }
+
+        // The reads, and the inputs they are through, each a slot of its
+        // root, distinct, in first-use order.
+        var value_reads = try b.arena.alloc(m.Range, b.values.items.len);
+        @memset(value_reads, .{ .start = 0, .len = 0 });
+        var read_sets: std.ArrayList(u32) = .empty;
+        for (b.roots, 0..) |*root, ri| {
+            if (root.kind != .expression or root_decls[ri] == none) continue;
+            var distinct: std.ArrayList(Read) = .empty;
+            var locals: std.ArrayList(u32) = .empty;
+            var position: std.AutoHashMapUnmanaged([2 + Bir.max_input_links]u32, u32) = .empty;
+            const decl_locals = bir_.decls[root_decls[ri]].locals_end - bir_.decls[root_decls[ri]].locals_start;
+            const seen_locals = try b.arena.alloc(bool, decl_locals);
+            @memset(seen_locals, false);
+            for (0..root.values.len) |k| for (per_value.items[root.values.start + k].items) |r| {
+                const gop = try position.getOrPut(b.arena, r.key());
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = @intCast(distinct.items.len);
+                    try distinct.append(b.arena, r);
+                }
+                if (r.local >= seen_locals.len) {
+                    if (std.mem.indexOfScalar(u32, locals.items, r.local) == null) try locals.append(b.arena, r.local);
+                } else if (!seen_locals[r.local]) {
+                    seen_locals[r.local] = true;
+                    try locals.append(b.arena, r.local);
+                }
+            };
+            const inputs_start: u32 = @intCast(b.values.items.len);
+            for (locals.items) |local| _ = try b.value(.{ .capture = local });
+            const reads_start: u32 = @intCast(b.values.items.len);
+            for (distinct.items) |r| _ = try b.value(.{ .read = r });
+            root.inputs = .{ .start = inputs_start, .len = @intCast(locals.items.len) };
+            root.reads = .{ .start = reads_start, .len = @intCast(distinct.items.len) };
+            for (0..root.values.len) |k| {
+                const v = root.values.start + k;
+                const start: u32 = @intCast(read_sets.items.len);
+                for (per_value.items[v].items) |r| try read_sets.append(b.arena, position.get(r.key()).?);
+                value_reads[v] = .{ .start = start, .len = @as(u32, @intCast(read_sets.items.len)) - start };
+            }
+        }
+        // The slots just added read nothing of their own.
+        const grown = try b.arena.alloc(m.Range, b.values.items.len);
+        @memset(grown, .{ .start = 0, .len = 0 });
+        @memcpy(grown[0..value_reads.len], value_reads);
+        value_reads = grown;
+        const every_all = try b.arena.alloc(bool, b.values.items.len);
+        @memset(every_all, false);
+        @memcpy(every_all[0..every.items.len], every.items);
+        return .{
+            .value_reads = value_reads,
+            .read_sets = read_sets.items,
+            .every_render = every_all,
+            .root_decls = root_decls,
+            .groupable = groupable,
+        };
+    }
+
+    /// A path set kept minimal: one with a prefix in the set adds nothing,
+    /// and one that is a prefix of others replaces them, in first-use order.
+    fn addRead(a: Allocator, set: *std.ArrayList(Read), r: Read) Allocator.Error!void {
+        for (set.items) |q| if (q.prefixOf(r)) return;
+        var i: usize = 0;
+        var placed = false;
+        while (i < set.items.len) {
+            if (r.prefixOf(set.items[i])) {
+                if (!placed) {
+                    set.items[i] = r;
+                    placed = true;
+                    i += 1;
+                } else _ = set.orderedRemove(i);
+            } else i += 1;
+        }
+        if (!placed) try set.append(a, r);
+    }
+
+    fn readOfInput(b: *const Builder, record: Bir.ExtraIndex) Read {
+        const bir_ = b.bir();
+        const input = bir_.extraData(record, Bir.MarkupInput);
+        var r: Read = .{ .local = input.local };
+        for (0..input.len) |k| {
+            const link = input.link(k);
+            r = r.append(if (link & Bir.tuple_link != 0) link else @backingInt(bir_.symbols[link]));
+        }
+        return r;
+    }
+
+    /// The first instruction of the contiguous run that ends at `inst` and
+    /// holds every instruction of its expression (`readsOnly`'s run).
+    fn runStart(b: *Builder, inst: Inst.Index) Allocator.Error!u32 {
+        var walked: std.ArrayList(u32) = .empty;
+        try b.subtree(inst, &walked);
+        var lo = inst.int();
+        for (walked.items) |i| lo = @min(lo, i);
+        return lo;
+    }
+
+    /// The paths value `inst` (of declaration `decl`, its run starting at
+    /// `lo`) reads through locals bound outside it.
+    fn instReads(b: *Builder, summaries: *Summaries, decl: u32, inst: Inst.Index, lo: u32, out: *std.ArrayList(Read)) Allocator.Error!void {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        const d = bir_.decls[decl];
+        var i = lo;
+        while (i <= inst.int()) : (i += 1) {
+            if (tags[i] != .local) continue;
+            const local = datas[i].lhs;
+            if (d.locals_start + local >= bir_.locals.len) {
+                try addRead(b.arena, out, .{ .local = local });
+                continue;
+            }
+            const binder = bir_.locals[d.locals_start + local].inst.int();
+            if (binder >= lo and binder <= inst.int()) continue;
+            try b.pathsOfUse(summaries, decl, i, inst.int(), .{ .local = local }, out);
+        }
+    }
+
+    /// Add to `out` the paths the use `u` (a `local` instruction of
+    /// `decl`) reads, each `base` extended: the accesses it is the target
+    /// of, up to `limit`, then a same-module function's summary when it is
+    /// that function's argument.
+    fn pathsOfUse(b: *Builder, summaries: *Summaries, decl: u32, u: u32, limit: u32, base: Read, out: *std.ArrayList(Read)) Allocator.Error!void {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        const parents = try b.parentsOf(decl);
+        const start = bir_.decls[decl].inst_start.int();
+        var path = base;
+        var cur = u;
+        while (true) {
+            const p = parents[cur - start];
+            if (p.inst == none or p.pos != 0 or p.inst > limit) break;
+            switch (tags[p.inst]) {
+                .field_access => path = path.append(@backingInt(bir_.symbols[datas[p.inst].rhs])),
+                .tuple_index => path = path.append(@min(datas[p.inst].rhs, Bir.tuple_link - 1) | Bir.tuple_link),
+                else => break,
+            }
+            cur = p.inst;
+        }
+        const p = parents[cur - start];
+        if (p.inst != none and p.inst <= limit and tags[p.inst] == .call and p.pos >= 1) {
+            const callee = datas[p.inst].lhs;
+            if (tags[callee] == .top) {
+                const f = datas[callee].lhs;
+                if (f < bir_.decls.len) {
+                    const fd = bir_.decls[f];
+                    if (fd.kind == .value and p.pos - 1 < fd.params and fd.params_end != fd.params_start) {
+                        const params = try b.summaryOf(summaries, f);
+                        for (params[p.pos - 1].items) |q| try addRead(b.arena, out, path.concat(q.links[0..q.len]));
+                        return;
+                    }
+                }
+            }
+        }
+        try addRead(b.arena, out, path);
+    }
+
+    /// Function `f`'s parameter summaries, computed to a fixpoint the
+    /// first time they are asked for: each grows from nothing, and the sets
+    /// only grow and are finite.
+    fn summaryOf(b: *Builder, summaries: *Summaries, f: u32) Allocator.Error![]std.ArrayList(Read) {
+        if (summaries.of[f]) |x| return x;
+        _ = try summaries.reach(b.arena, f, b.bir().decls[f].params);
+        var changed = true;
+        while (changed) {
+            changed = false;
+            var k: usize = 0;
+            while (k < summaries.reached.items.len) : (k += 1) {
+                const g = summaries.reached.items[k];
+                const next = try b.computeSummary(summaries, g);
+                const current = summaries.of[g].?;
+                for (next, current) |n, c| {
+                    if (!sameReads(n.items, c.items)) changed = true;
+                }
+                summaries.of[g] = next;
+            }
+        }
+        return summaries.of[f].?;
+    }
+
+    fn sameReads(a: []const Read, c: []const Read) bool {
+        if (a.len != c.len) return false;
+        for (a) |r| {
+            for (c) |q| {
+                if (r.eql(q)) break;
+            } else return false;
+        }
+        return true;
+    }
+
+    fn computeSummary(b: *Builder, summaries: *Summaries, f: u32) Allocator.Error![]std.ArrayList(Read) {
+        const bir_ = b.bir();
+        const d = bir_.decls[f];
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        const params = bir_.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
+        const out = try b.arena.alloc(std.ArrayList(Read), d.params);
+        for (out) |*x| x.* = .empty;
+        for (params, 0..) |param, k| {
+            if (k >= out.len) break;
+            switch (tags[param.int()]) {
+                .pat_record => {
+                    for (bir_.extraSlice(Bir.inlineRange(datas[param.int()]), u32)) |local| {
+                        if (d.locals_start + local >= bir_.locals.len) {
+                            try addRead(b.arena, &out[k], .{ .local = 0 });
+                            continue;
+                        }
+                        const name = bir_.locals[d.locals_start + local].name.unwrap() orelse {
+                            try addRead(b.arena, &out[k], .{ .local = 0 });
+                            continue;
+                        };
+                        try addRead(b.arena, &out[k], (Read{ .local = 0 }).append(@backingInt(bir_.symbols[name])));
+                    }
+                },
+                .pat_var => {
+                    const local = datas[param.int()].lhs;
+                    var i = d.inst_start.int();
+                    while (i < d.inst_end.int()) : (i += 1) {
+                        if (tags[i] == .local and datas[i].lhs == local) {
+                            // Through a summary as it stands: the fixpoint
+                            // asks again until none changes.
+                            try b.pathsOfUseIn(summaries, f, i, .{ .local = 0 }, &out[k]);
+                        }
+                    }
+                },
+                else => try addRead(b.arena, &out[k], .{ .local = 0 }),
+            }
+        }
+        return out;
+    }
+
+    /// `pathsOfUse` inside a summary: no limit, and a callee's summary as it
+    /// stands (registering it when first met, empty, for the fixpoint).
+    fn pathsOfUseIn(b: *Builder, summaries: *Summaries, decl: u32, u: u32, base: Read, out: *std.ArrayList(Read)) Allocator.Error!void {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        const parents = try b.parentsOf(decl);
+        const start = bir_.decls[decl].inst_start.int();
+        var path = base;
+        var cur = u;
+        while (true) {
+            const p = parents[cur - start];
+            if (p.inst == none or p.pos != 0) break;
+            switch (tags[p.inst]) {
+                .field_access => path = path.append(@backingInt(bir_.symbols[datas[p.inst].rhs])),
+                .tuple_index => path = path.append(@min(datas[p.inst].rhs, Bir.tuple_link - 1) | Bir.tuple_link),
+                else => break,
+            }
+            cur = p.inst;
+        }
+        const p = parents[cur - start];
+        if (p.inst != none and tags[p.inst] == .call and p.pos >= 1) {
+            const callee = datas[p.inst].lhs;
+            if (tags[callee] == .top) {
+                const f = datas[callee].lhs;
+                if (f < bir_.decls.len) {
+                    const fd = bir_.decls[f];
+                    if (fd.kind == .value and p.pos - 1 < fd.params and fd.params_end != fd.params_start) {
+                        const params = try summaries.reach(b.arena, f, fd.params);
+                        for (params[p.pos - 1].items) |q| try addRead(b.arena, out, path.concat(q.links[0..q.len]));
+                        return;
+                    }
+                }
+            }
+        }
+        try addRead(b.arena, out, path);
+    }
+
+    /// Whether evaluating `inst` may have an effect other than `Debug`'s:
+    /// a call under it, outside any function it makes, whose callee may be
+    /// impure or suspend (`js/Lower.zig`'s `mayHaveEffect`).
+    fn effectful(b: *Builder, inst: Inst.Index) bool {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        var stack: std.ArrayList(u32) = .empty;
+        stack.append(b.arena, inst.int()) catch return true;
+        var found: std.ArrayList(u32) = .empty;
+        while (stack.pop()) |i| {
+            switch (tags[i]) {
+                .lambda => continue,
+                .let_def => {
+                    const def = bir_.extraData(@fromBackingInt(@intCast(datas[i].lhs)), Bir.LetDef);
+                    if (def.params_end != def.params_start) continue;
+                },
+                .call, .method_call, .type_dispatch => {
+                    const site = b.in.dispatch.effectAt(@fromBackingInt(@intCast(i)));
+                    if (site.impure or site.own != .no) {
+                        const debug = tags[i] == .call and tags[datas[i].lhs] == .ext_value and
+                            b.in.debug_module != null and datas[datas[i].lhs].lhs == b.in.debug_module.?;
+                        if (!debug) return true;
+                    }
+                },
+                else => {},
+            }
+            found.clearRetainingCapacity();
+            b.operands(i, &found) catch return true;
+            stack.appendSlice(b.arena, found.items) catch return true;
+        }
+        return false;
     }
 
     // ---- Values that are the same on every evaluation (boundary.md §9.4.6, 1.4)

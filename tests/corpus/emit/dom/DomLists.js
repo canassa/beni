@@ -1,53 +1,75 @@
-import { Rt$template, Rt$slot, Rt$forKeyed, Rt$forPosition, Rt$insertText, Rt$show, Rt$hide } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$forKeyed, Rt$slot, Rt$insertText, Rt$forPosition, Rt$show, Rt$hide } from "./_platform/Rt.mjs";
 import { List$head } from "./_core/List.mjs";
-const DomLists$t18 = Rt$template("<li> ", 0);
-const DomLists$k18 = { m: (v$1, cx$2) => {
-  const r$3 = DomLists$t18();
-  const w$4 = r$3.firstChild;
-  w$4.data = v$1[0];
-  return { s: r$3, q: null, e: r$3, w1: w$4, a0: v$1[0] };
-}, p: (i$5, v$6) => {
-  if (v$6[0] !== i$5.a0) {
-    i$5.a0 = v$6[0];
-    i$5.w1.data = v$6[0];
+const DomLists$p18 = (i$1, v$2) => {
+  const $in$3 = v$2[0];
+  if ($in$3 !== i$1.g0_0) {
+    i$1.g0_0 = $in$3;
+    if ($in$3 !== i$1.a0) {
+      i$1.a0 = $in$3;
+      i$1.w1.data = $in$3;
+    }
   }
-} };
-const DomLists$t44 = Rt$template("<table><tbody>", 0);
-const DomLists$k44 = { m: (v$10, cx$11) => {
-  const r$12 = DomLists$t44();
-  const w$13 = r$12.firstChild;
-  const c$14 = Rt$slot(w$13, null, cx$11);
-  Rt$forKeyed(c$14, v$10[0], v$10[1], v$10[2], v$10[3]);
-  return { s: r$12, q: null, e: r$12, c0: c$14 };
-}, p: (i$15, v$16) => {
-  Rt$forKeyed(i$15.c0, v$16[0], v$16[1], v$16[2], v$16[3]);
-} };
+};
+const DomLists$t18 = Rt$template("<li> ", 0);
+const DomLists$k18 = { m: (v$4, cx$5) => {
+  const r$6 = DomLists$t18();
+  const w$7 = r$6.firstChild;
+  const i$8 = { s: r$6, q: null, e: r$6, w1: w$7, a0: undefined, g0_0: undefined };
+  DomLists$p18(i$8, v$4);
+  return i$8;
+}, p: DomLists$p18 };
 const DomLists$t42 = Rt$template("<tr><td> ", 0);
+const DomLists$p44 = (i$9, v$10) => {
+  const $in$11 = v$10[0];
+  if ($in$11.rows !== i$9.g0_0 || $in$11.selected !== i$9.g0_1) {
+    i$9.g0_0 = $in$11.rows;
+    i$9.g0_1 = $in$11.selected;
+    const $t$12 = $in$11.rows;
+    const $t$14 = ($p$13) => $p$13.id;
+    const made$15 = { m: (item$16, position$17, cx$18) => {
+      const $t$19 = item$16.id === $in$11.selected;
+      const $t$20 = item$16.label;
+      const r$21 = DomLists$t42();
+      const w$22 = r$21.firstChild;
+      const w$23 = w$22.firstChild;
+      if ($t$19) {
+        r$21.classList.toggle("danger", true);
+      }
+      w$23.data = $t$20;
+      return { s: r$21, q: null, e: r$21, w0: r$21, w2: w$23, a0: $t$19, a1: $t$20 };
+    }, p: (i$24, item$25, position$26) => {
+      const $t$27 = item$25.id === $in$11.selected;
+      if ($t$27 !== i$24.a0) {
+        i$24.a0 = $t$27;
+        i$24.w0.classList.toggle("danger", $t$27);
+      }
+      if (item$25 !== i$24.x) {
+        const $t$28 = item$25.label;
+        if ($t$28 !== i$24.a1) {
+          i$24.a1 = $t$28;
+          i$24.w2.data = $t$28;
+        }
+      }
+    }, i: false, f: null, g: 0, z: $in$11.selected };
+    Rt$forKeyed(i$9.c0, $t$12, $t$14, made$15, [$in$11.selected]);
+  }
+};
+const DomLists$t44 = Rt$template("<table><tbody>", 0);
+const DomLists$k44 = { m: (v$29, cx$30) => {
+  const r$31 = DomLists$t44();
+  const w$32 = r$31.firstChild;
+  const c$33 = Rt$slot(w$32, null, cx$30);
+  const i$34 = { s: r$31, q: null, e: r$31, c0: c$33, g0_0: undefined, g0_1: undefined };
+  DomLists$p44(i$34, v$29);
+  return i$34;
+}, p: DomLists$p44 };
 const DomLists$t62 = Rt$template("<li>none", 0);
-const DomLists$k62 = { m: (v$32, cx$33) => {
-  const r$34 = DomLists$t62();
-  return { s: r$34, q: null, e: r$34 };
-}, p: (i$35, v$36) => {
+const DomLists$k62 = { m: (v$40, cx$41) => {
+  const r$42 = DomLists$t62();
+  return { s: r$42, q: null, e: r$42 };
+}, p: (i$43, v$44) => {
 } };
 const DomLists$b62 = { t: DomLists$k62, v: null };
-const DomLists$t81 = Rt$template("<div><ol></ol><ul></ul><ul>", 0);
-const DomLists$k81 = { m: (v$38, cx$39) => {
-  const r$40 = DomLists$t81();
-  const w$41 = r$40.firstChild;
-  const w$42 = w$41.nextSibling;
-  const w$43 = w$42.nextSibling;
-  const c$44 = Rt$slot(w$41, null, cx$39);
-  const c$45 = Rt$slot(w$42, null, cx$39);
-  const c$46 = Rt$slot(w$43, null, cx$39);
-  Rt$forPosition(c$44, v$38[0], v$38[1], null);
-  Rt$forKeyed(c$45, v$38[2], null, v$38[3], v$38[4]);
-  Rt$forKeyed(c$46, v$38[5], null, v$38[6], null);
-  return { s: r$40, q: null, e: r$40, c0: c$44, c1: c$45, c2: c$46 };
-}, p: (i$47, v$48) => {
-  Rt$forPosition(i$47.c0, v$48[0], v$48[1], null);
-  Rt$forKeyed(i$47.c1, v$48[2], null, v$48[3], v$48[4]);
-  Rt$forKeyed(i$47.c2, v$48[5], null, v$48[6], null);
-} };
 const DomLists$t58 = Rt$template("<li>. <!>", 0);
 const DomLists$t72 = Rt$template("<li>blank", 0);
 const DomLists$k72 = { m: (v$64, cx$65) => {
@@ -56,139 +78,137 @@ const DomLists$k72 = { m: (v$64, cx$65) => {
 }, p: (i$67, v$68) => {
 } };
 const DomLists$b72 = { t: DomLists$k72, v: null };
-const DomLists$t77 = Rt$template("<li> ", 0);
-const DomLists$k77 = { m: (v$69, cx$70) => {
-  const r$71 = DomLists$t77();
-  const w$72 = r$71.firstChild;
-  w$72.data = v$69[0];
-  return { s: r$71, q: null, e: r$71, w1: w$72, a0: v$69[0] };
-}, p: (i$73, v$74) => {
-  if (v$74[0] !== i$73.a0) {
-    i$73.a0 = v$74[0];
-    i$73.w1.data = v$74[0];
+const DomLists$p77 = (i$69, v$70) => {
+  const $in$71 = v$70[0];
+  if ($in$71 !== i$69.g0_0) {
+    i$69.g0_0 = $in$71;
+    if ($in$71 !== i$69.a0) {
+      i$69.a0 = $in$71;
+      i$69.w1.data = $in$71;
+    }
   }
-} };
+};
+const DomLists$t77 = Rt$template("<li> ", 0);
+const DomLists$k77 = { m: (v$72, cx$73) => {
+  const r$74 = DomLists$t77();
+  const w$75 = r$74.firstChild;
+  const i$76 = { s: r$74, q: null, e: r$74, w1: w$75, a0: undefined, g0_0: undefined };
+  DomLists$p77(i$76, v$72);
+  return i$76;
+}, p: DomLists$p77 };
+const DomLists$p81 = (i$35, v$36) => {
+  const $in$37 = v$36[0];
+  if ($in$37.names !== i$35.g0_0) {
+    i$35.g0_0 = $in$37.names;
+    const $t$38 = $in$37.names;
+    const $t$39 = $in$37.names;
+    const $t$45 = $in$37.names;
+    const made$46 = { m: (item$47, position$48, cx$49) => {
+      const r$50 = DomLists$t58();
+      const w$51 = r$50.firstChild;
+      const w$52 = w$51.nextSibling;
+      const x$53 = Rt$insertText(r$50, w$51, position$48);
+      const x$54 = Rt$insertText(r$50, w$52, item$47);
+      return { s: r$50, q: null, e: r$50, x0: x$53, x1: x$54, a0: position$48, a1: item$47 };
+    }, p: (i$55, item$56, position$57) => {
+      if (position$57 !== i$55.a0) {
+        i$55.a0 = position$57;
+        i$55.x0.data = position$57;
+      }
+      if (item$56 !== i$55.x) {
+        if (item$56 !== i$55.a1) {
+          i$55.a1 = item$56;
+          i$55.x1.data = item$56;
+        }
+      }
+    }, i: true, f: null };
+    Rt$forPosition(i$35.c0, $t$38, made$46, null);
+    const made$58 = { b: (item$59, position$60) => DomLists$viewName(item$59), i: false, f: DomLists$b62 };
+    Rt$forKeyed(i$35.c1, $t$39, null, made$58, [DomLists$viewName]);
+    const made$61 = { b: (item$62, position$63) => {
+      const $t$77 = item$62 === "" ? DomLists$b72 : { t: DomLists$k77, v: [item$62] };
+      return $t$77;
+    }, i: false, f: null };
+    Rt$forKeyed(i$35.c2, $t$45, null, made$61, null);
+  }
+};
+const DomLists$t81 = Rt$template("<div><ol></ol><ul></ul><ul>", 0);
+const DomLists$k81 = { m: (v$78, cx$79) => {
+  const r$80 = DomLists$t81();
+  const w$81 = r$80.firstChild;
+  const w$82 = w$81.nextSibling;
+  const w$83 = w$82.nextSibling;
+  const c$84 = Rt$slot(w$81, null, cx$79);
+  const c$85 = Rt$slot(w$82, null, cx$79);
+  const c$86 = Rt$slot(w$83, null, cx$79);
+  const i$87 = { s: r$80, q: null, e: r$80, c0: c$84, c1: c$85, c2: c$86, g0_0: undefined };
+  DomLists$p81(i$87, v$78);
+  return i$87;
+}, p: DomLists$p81 };
 const DomLists$t96 = Rt$template("<p>none", 0);
-const DomLists$k96 = { m: (v$79, cx$80) => {
-  const r$81 = DomLists$t96();
-  return { s: r$81, q: null, e: r$81 };
-}, p: (i$82, v$83) => {
+const DomLists$k96 = { m: (v$94, cx$95) => {
+  const r$96 = DomLists$t96();
+  return { s: r$96, q: null, e: r$96 };
+}, p: (i$97, v$98) => {
 } };
 const DomLists$b96 = { t: DomLists$k96, v: null };
-const DomLists$t104 = Rt$template("<!>", 4);
-const DomLists$k104 = { m: (v$84, cx$85) => {
-  const r$86 = DomLists$t104();
-  const w$87 = r$86.firstChild;
-  const c$88 = Rt$slot(null, w$87, cx$85);
-  let key$89 = c$88;
-  let shown$90 = null;
-  if (v$84[0].$ === "Just") {
-    const value$91 = v$84[0].a;
-    key$89 = v$84[1](value$91);
-    shown$90 = value$91;
-    Rt$show(c$88, key$89, v$84[3](value$91));
-  } else {
-    Rt$hide(c$88, v$84[2]);
-  }
-  return { s: null, q: c$88, e: w$87, c0: c$88, a0k: key$89, a0v: shown$90, a0i0: v$84[4] };
-}, p: (i$92, v$93) => {
-  if (v$93[0].$ === "Just") {
-    const value$94 = v$93[0].a;
-    const key$95 = v$93[1](value$94);
-    if (key$95 !== i$92.a0k || value$94 !== i$92.a0v || v$93[4] !== i$92.a0i0) {
-      i$92.a0k = key$95;
-      i$92.a0v = value$94;
-      i$92.a0i0 = v$93[4];
-      Rt$show(i$92.c0, key$95, v$93[3](value$94));
-    }
-  } else {
-    i$92.a0k = i$92.c0;
-    Rt$hide(i$92.c0, v$93[2]);
-  }
-} };
 const DomLists$t102 = Rt$template("<p> of <!>", 0);
-const DomLists$k102 = { m: (v$99, cx$100) => {
-  const r$101 = DomLists$t102();
-  const w$102 = r$101.firstChild;
-  const w$103 = w$102.nextSibling;
-  const x$104 = Rt$insertText(r$101, w$102, v$99[0]);
-  const x$105 = Rt$insertText(r$101, w$103, v$99[1]);
-  return { s: r$101, q: null, e: r$101, x0: x$104, x1: x$105, a0: v$99[0], a1: v$99[1] };
-}, p: (i$106, v$107) => {
-  if (v$107[0] !== i$106.a0) {
-    i$106.a0 = v$107[0];
-    i$106.x0.data = v$107[0];
+const DomLists$k102 = { m: (v$105, cx$106) => {
+  const r$107 = DomLists$t102();
+  const w$108 = r$107.firstChild;
+  const w$109 = w$108.nextSibling;
+  const x$110 = Rt$insertText(r$107, w$108, v$105[0]);
+  const x$111 = Rt$insertText(r$107, w$109, v$105[1]);
+  return { s: r$107, q: null, e: r$107, x0: x$110, x1: x$111, a0: v$105[0], a1: v$105[1] };
+}, p: (i$112, v$113) => {
+  if (v$113[0] !== i$112.a0) {
+    i$112.a0 = v$113[0];
+    i$112.x0.data = v$113[0];
   }
-  if (v$107[1] !== i$106.a1) {
-    i$106.a1 = v$107[1];
-    i$106.x1.data = v$107[1];
+  if (v$113[1] !== i$112.a1) {
+    i$112.a1 = v$113[1];
+    i$112.x1.data = v$113[1];
   }
 } };
+const DomLists$p104 = (i$88, v$89) => {
+  const $in$90 = v$89[0];
+  if ($in$90.rows !== i$88.g0_0 || $in$90.selected !== i$88.g0_1) {
+    i$88.g0_0 = $in$90.rows;
+    i$88.g0_1 = $in$90.selected;
+    const $t$91 = List$head($in$90.rows);
+    const $t$93 = ($p$92) => $p$92.id;
+    const made$101 = (value$102) => {
+      const $t$103 = value$102.label;
+      const $t$104 = $in$90.selected;
+      return { t: DomLists$k102, v: [$t$103, $t$104] };
+    };
+    if ($t$91.$ === "Just") {
+      const value$99 = $t$91.a;
+      const key$100 = $t$93(value$99);
+      if (key$100 !== i$88.a0k || value$99 !== i$88.a0v || $in$90.selected !== i$88.a0i0) {
+        i$88.a0k = key$100;
+        i$88.a0v = value$99;
+        i$88.a0i0 = $in$90.selected;
+        Rt$show(i$88.c0, key$100, made$101(value$99));
+      }
+    } else {
+      i$88.a0k = i$88.c0;
+      Rt$hide(i$88.c0, DomLists$b96);
+    }
+  }
+};
+const DomLists$t104 = Rt$template("<!>", 4);
+const DomLists$k104 = { m: (v$114, cx$115) => {
+  const r$116 = DomLists$t104();
+  const w$117 = r$116.firstChild;
+  const c$118 = Rt$slot(null, w$117, cx$115);
+  const i$119 = { s: null, q: c$118, e: w$117, c0: c$118, a0k: undefined, a0v: undefined, a0i0: undefined, g0_0: undefined, g0_1: undefined };
+  DomLists$p104(i$119, v$114);
+  return i$119;
+}, p: DomLists$p104 };
 const DomLists$viewName = (name$1) => ({ t: DomLists$k18, v: [name$1] });
-const DomLists$table = (model$1) => {
-  const $t$7 = model$1.rows;
-  const $t$9 = ($p$8) => $p$8.id;
-  return { t: DomLists$k44, v: [$t$7, $t$9, { m: (item$17, position$18, cx$19) => {
-    const $t$20 = item$17.id === model$1.selected;
-    const $t$21 = item$17.label;
-    const r$22 = DomLists$t42();
-    const w$23 = r$22.firstChild;
-    const w$24 = w$23.firstChild;
-    if ($t$20) {
-      r$22.classList.toggle("danger", true);
-    }
-    w$24.data = $t$21;
-    return { s: r$22, q: null, e: r$22, w0: r$22, w2: w$24, a0: $t$20, a1: $t$21 };
-  }, p: (i$25, item$26, position$27) => {
-    const $t$28 = item$26.id === model$1.selected;
-    if ($t$28 !== i$25.a0) {
-      i$25.a0 = $t$28;
-      i$25.w0.classList.toggle("danger", $t$28);
-    }
-    if (item$26 !== i$25.x) {
-      const $t$29 = item$26.label;
-      if ($t$29 !== i$25.a1) {
-        i$25.a1 = $t$29;
-        i$25.w2.data = $t$29;
-      }
-    }
-  }, i: false, f: null, g: 0, z: model$1.selected }, [model$1.selected]] };
-};
-const DomLists$lists = (model$1) => {
-  const $t$30 = model$1.names;
-  const $t$31 = model$1.names;
-  const $t$37 = model$1.names;
-  return { t: DomLists$k81, v: [$t$30, { m: (item$49, position$50, cx$51) => {
-    const r$52 = DomLists$t58();
-    const w$53 = r$52.firstChild;
-    const w$54 = w$53.nextSibling;
-    const x$55 = Rt$insertText(r$52, w$53, position$50);
-    const x$56 = Rt$insertText(r$52, w$54, item$49);
-    return { s: r$52, q: null, e: r$52, x0: x$55, x1: x$56, a0: position$50, a1: item$49 };
-  }, p: (i$57, item$58, position$59) => {
-    if (position$59 !== i$57.a0) {
-      i$57.a0 = position$59;
-      i$57.x0.data = position$59;
-    }
-    if (item$58 !== i$57.x) {
-      if (item$58 !== i$57.a1) {
-        i$57.a1 = item$58;
-        i$57.x1.data = item$58;
-      }
-    }
-  }, i: true, f: null }, $t$31, { b: (item$60, position$61) => DomLists$viewName(item$60), i: false, f: DomLists$b62 }, [DomLists$viewName], $t$37, { b: (item$62, position$63) => {
-    const $t$75 = item$62 === "" ? DomLists$b72 : { t: DomLists$k77, v: [item$62] };
-    return $t$75;
-  }, i: false, f: null }] };
-};
-const DomLists$first = (model$1) => {
-  const $t$76 = List$head(model$1.rows);
-  const $t$78 = ($p$77) => $p$77.id;
-  return { t: DomLists$k104, v: [$t$76, $t$78, DomLists$b96, (value$96) => {
-    const $t$97 = value$96.label;
-    const $t$98 = model$1.selected;
-    return { t: DomLists$k102, v: [$t$97, $t$98] };
-  }, model$1.selected] };
-};
+const DomLists$table = (model$1) => ({ t: DomLists$k44, v: [model$1] });
+const DomLists$lists = (model$1) => ({ t: DomLists$k81, v: [model$1] });
+const DomLists$first = (model$1) => ({ t: DomLists$k104, v: [model$1] });
 export { DomLists$table, DomLists$lists, DomLists$first };
 //# sourceMappingURL=DomLists.mjs.map

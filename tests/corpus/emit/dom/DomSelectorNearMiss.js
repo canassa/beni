@@ -1,159 +1,169 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
-import { Rt$template, Rt$slot, Rt$forKeyed, Rt$forPosition } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$forKeyed, Rt$forPosition, Rt$slot } from "./_platform/Rt.mjs";
 import { Maybe$withDefault, Maybe$Maybe$$eq } from "./_core/Maybe.mjs";
-const DomSelectorNearMiss$t202 = Rt$template("<div><!><!><!><!><!><!>", 0);
-const DomSelectorNearMiss$k202 = { m: (v$17, cx$18) => {
-  const r$19 = DomSelectorNearMiss$t202();
-  const w$20 = r$19.firstChild;
-  const w$21 = w$20.nextSibling;
-  const w$22 = w$21.nextSibling;
-  const w$23 = w$22.nextSibling;
-  const w$24 = w$23.nextSibling;
-  const w$25 = w$24.nextSibling;
-  const c$26 = Rt$slot(r$19, w$20, cx$18);
-  const c$27 = Rt$slot(r$19, w$21, cx$18);
-  const c$28 = Rt$slot(r$19, w$22, cx$18);
-  const c$29 = Rt$slot(r$19, w$23, cx$18);
-  const c$30 = Rt$slot(r$19, w$24, cx$18);
-  const c$31 = Rt$slot(r$19, w$25, cx$18);
-  Rt$forKeyed(c$26, v$17[0], v$17[1], v$17[2], v$17[3]);
-  Rt$forKeyed(c$27, v$17[4], v$17[5], v$17[6], v$17[7]);
-  Rt$forKeyed(c$28, v$17[8], v$17[9], v$17[10], v$17[11]);
-  Rt$forPosition(c$29, v$17[12], v$17[13], v$17[14]);
-  Rt$forKeyed(c$30, v$17[15], v$17[16], v$17[17], v$17[18]);
-  Rt$forKeyed(c$31, v$17[19], v$17[20], v$17[21], v$17[22]);
-  return { s: r$19, q: null, e: r$19, c0: c$26, c1: c$27, c2: c$28, c3: c$29, c4: c$30, c5: c$31 };
-}, p: (i$32, v$33) => {
-  Rt$forKeyed(i$32.c0, v$33[0], v$33[1], v$33[2], v$33[3]);
-  Rt$forKeyed(i$32.c1, v$33[4], v$33[5], v$33[6], v$33[7]);
-  Rt$forKeyed(i$32.c2, v$33[8], v$33[9], v$33[10], v$33[11]);
-  Rt$forPosition(i$32.c3, v$33[12], v$33[13], v$33[14]);
-  Rt$forKeyed(i$32.c4, v$33[15], v$33[16], v$33[17], v$33[18]);
-  Rt$forKeyed(i$32.c5, v$33[19], v$33[20], v$33[21], v$33[22]);
-} };
 const DomSelectorNearMiss$t68 = Rt$template("<p> ", 0);
 const DomSelectorNearMiss$t98 = Rt$template("<p> ", 0);
 const DomSelectorNearMiss$t127 = Rt$template("<p> ", 0);
 const DomSelectorNearMiss$t152 = Rt$template("<p> ", 0);
-const DomSelectorNearMiss$t180 = Rt$template("<p> ", 0);
 const DomSelectorNearMiss$t200 = Rt$template("<p> ", 0);
+const DomSelectorNearMiss$t180 = Rt$template("<p> ", 0);
+const DomSelectorNearMiss$p202 = (i$1, v$2) => {
+  const $in$3 = v$2[0];
+  if ($in$3.rows !== i$1.g0_0 || $in$3.selected !== i$1.g0_1) {
+    i$1.g0_0 = $in$3.rows;
+    i$1.g0_1 = $in$3.selected;
+    const $t$4 = $in$3.rows;
+    const $t$6 = ($p$5) => $p$5.id;
+    const $t$7 = $in$3.rows;
+    const $t$9 = ($p$8) => $p$8.id;
+    const $t$10 = $in$3.rows;
+    const $t$12 = ($p$11) => $p$11.id;
+    const $t$13 = $in$3.rows;
+    const $t$14 = $in$3.rows;
+    const $t$16 = ($p$15) => $p$15.id;
+    const made$17 = { m: (item$18, position$19, cx$20) => {
+      const r$21 = DomSelectorNearMiss$t68();
+      const w$22 = r$21.firstChild;
+      return { s: r$21, q: null, e: r$21, w0: r$21, w1: w$22, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$23, item$24, position$25) => {
+      const $t$26 = $in$3.selected.$ === "Just" && $in$3.selected.a === item$24.parent ? "on" : "";
+      if ($t$26 !== i$23.a0) {
+        i$23.w0.setAttribute("class", $t$26);
+        i$23.a0 = $t$26;
+      }
+      if (item$24 !== i$23.x) {
+        const $t$27 = item$24.label;
+        if ($t$27 !== i$23.a1) {
+          i$23.a1 = $t$27;
+          i$23.w1.data = $t$27;
+        }
+      }
+    }, w: true, i: false, f: null };
+    Rt$forKeyed(i$1.c0, $t$4, $t$6, made$17, [$in$3.selected]);
+    const made$28 = { m: (item$29, position$30, cx$31) => {
+      const r$32 = DomSelectorNearMiss$t98();
+      const w$33 = r$32.firstChild;
+      return { s: r$32, q: null, e: r$32, w0: r$32, w1: w$33, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$34, item$35, position$36) => {
+      const $t$37 = $in$3.selected.$ === "Just" && $in$3.selected.a === item$35.id ? "on" : "";
+      const $t$38 = Maybe$withDefault($in$3.selected, 0);
+      if ($t$37 !== i$34.a0) {
+        i$34.w0.setAttribute("class", $t$37);
+        i$34.a0 = $t$37;
+      }
+      if ($t$38 !== i$34.a1) {
+        i$34.a1 = $t$38;
+        i$34.w1.data = $t$38;
+      }
+    }, w: true, i: false, f: null };
+    Rt$forKeyed(i$1.c1, $t$7, $t$9, made$28, [$in$3.selected]);
+    const made$39 = { m: (item$40, position$41, cx$42) => {
+      const r$43 = DomSelectorNearMiss$t127();
+      const w$44 = r$43.firstChild;
+      return { s: r$43, q: null, e: r$43, w0: r$43, w1: w$44, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$45, item$46, position$47) => {
+      const sel$8 = $in$3.selected;
+      const $t$48 = sel$8.$ === "Just" && sel$8.a === item$46.id ? "on" : "";
+      if ($t$48 !== i$45.a0) {
+        i$45.w0.setAttribute("class", $t$48);
+        i$45.a0 = $t$48;
+      }
+      if (item$46 !== i$45.x) {
+        const $t$49 = item$46.label;
+        if ($t$49 !== i$45.a1) {
+          i$45.a1 = $t$49;
+          i$45.w1.data = $t$49;
+        }
+      }
+    }, w: true, i: false, f: null };
+    Rt$forKeyed(i$1.c2, $t$10, $t$12, made$39, [$in$3.selected]);
+    const made$50 = { m: (item$51, position$52, cx$53) => {
+      const r$54 = DomSelectorNearMiss$t152();
+      const w$55 = r$54.firstChild;
+      return { s: r$54, q: null, e: r$54, w0: r$54, w1: w$55, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$56, item$57, position$58) => {
+      const $t$59 = $in$3.selected.$ === "Just" && $in$3.selected.a === item$57.id ? "on" : "";
+      if ($t$59 !== i$56.a0) {
+        i$56.w0.setAttribute("class", $t$59);
+        i$56.a0 = $t$59;
+      }
+      if (item$57 !== i$56.x) {
+        const $t$60 = item$57.label;
+        if ($t$60 !== i$56.a1) {
+          i$56.a1 = $t$60;
+          i$56.w1.data = $t$60;
+        }
+      }
+    }, w: true, i: false, f: null };
+    Rt$forPosition(i$1.c3, $t$13, made$50, [$in$3.selected]);
+    const made$61 = { m: (item$62, position$63, cx$64) => {
+      const r$65 = DomSelectorNearMiss$t200();
+      const w$66 = r$65.firstChild;
+      return { s: r$65, q: null, e: r$65, w0: r$65, w1: w$66, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$67, item$68, position$69) => {
+      const $t$70 = DomSelectorNearMiss$isOn($in$3.selected, item$68.id + 1);
+      if ($t$70 !== i$67.a0) {
+        i$67.w0.setAttribute("class", $t$70);
+        i$67.a0 = $t$70;
+      }
+      if (item$68 !== i$67.x) {
+        const $t$71 = item$68.label;
+        if ($t$71 !== i$67.a1) {
+          i$67.a1 = $t$71;
+          i$67.w1.data = $t$71;
+        }
+      }
+    }, w: true, i: false, f: null };
+    Rt$forKeyed(i$1.c5, $t$14, $t$16, made$61, [$in$3.selected]);
+  }
+  if ($in$3.rows !== i$1.g1_0 || $in$3.pick !== i$1.g1_1) {
+    i$1.g1_0 = $in$3.rows;
+    i$1.g1_1 = $in$3.pick;
+    const $t$72 = $in$3.rows;
+    const $t$74 = ($p$73) => $p$73.id;
+    const made$75 = { m: (item$76, position$77, cx$78) => {
+      const r$79 = DomSelectorNearMiss$t180();
+      const w$80 = r$79.firstChild;
+      return { s: r$79, q: null, e: r$79, w0: r$79, w1: w$80, a0: undefined, a1: undefined, x: undefined };
+    }, p: (i$81, item$82, position$83) => {
+      const $t$87 = DomSelectorNearMiss$eq$r$at(($p$84, $p$85, $p$86) => Maybe$Maybe$$eq(DomSelectorNearMiss$eq$prim, $p$84, $p$85, $p$86), { at: { $: "Just", a: item$82.id } }, $in$3.pick) ? "on" : "";
+      if ($t$87 !== i$81.a0) {
+        i$81.w0.setAttribute("class", $t$87);
+        i$81.a0 = $t$87;
+      }
+      if (item$82 !== i$81.x) {
+        const $t$88 = item$82.label;
+        if ($t$88 !== i$81.a1) {
+          i$81.a1 = $t$88;
+          i$81.w1.data = $t$88;
+        }
+      }
+    }, w: true, i: false, f: null };
+    Rt$forKeyed(i$1.c4, $t$72, $t$74, made$75, [$in$3.pick]);
+  }
+};
+const DomSelectorNearMiss$t202 = Rt$template("<div><!><!><!><!><!><!>", 0);
+const DomSelectorNearMiss$k202 = { m: (v$89, cx$90) => {
+  const r$91 = DomSelectorNearMiss$t202();
+  const w$92 = r$91.firstChild;
+  const w$93 = w$92.nextSibling;
+  const w$94 = w$93.nextSibling;
+  const w$95 = w$94.nextSibling;
+  const w$96 = w$95.nextSibling;
+  const w$97 = w$96.nextSibling;
+  const c$98 = Rt$slot(r$91, w$92, cx$90);
+  const c$99 = Rt$slot(r$91, w$93, cx$90);
+  const c$100 = Rt$slot(r$91, w$94, cx$90);
+  const c$101 = Rt$slot(r$91, w$95, cx$90);
+  const c$102 = Rt$slot(r$91, w$96, cx$90);
+  const c$103 = Rt$slot(r$91, w$97, cx$90);
+  const i$104 = { s: r$91, q: null, e: r$91, c0: c$98, c1: c$99, c2: c$100, c3: c$101, c4: c$102, c5: c$103, g0_0: undefined, g0_1: undefined, g1_0: undefined, g1_1: undefined };
+  DomSelectorNearMiss$p202(i$104, v$89);
+  return i$104;
+}, p: DomSelectorNearMiss$p202 };
 const DomSelectorNearMiss$eq$prim = ($x, $y) => $x === $y;
 const DomSelectorNearMiss$eq$r$at = ($m$0, $x, $y, $d = 0) => $d > 400 ? _derived$deep([$m$0, $x.at, $y.at], $d) : $m$0($x.at, $y.at, $d + 1);
 const DomSelectorNearMiss$isOn = (selected$1, id$2) => selected$1.$ === "Just" && selected$1.a === id$2 ? "on" : "";
-const DomSelectorNearMiss$table = (model$1) => {
-  const $t$1 = model$1.rows;
-  const $t$3 = ($p$2) => $p$2.id;
-  const $t$4 = model$1.rows;
-  const $t$6 = ($p$5) => $p$5.id;
-  const $t$7 = model$1.rows;
-  const $t$9 = ($p$8) => $p$8.id;
-  const $t$10 = model$1.rows;
-  const $t$11 = model$1.rows;
-  const $t$13 = ($p$12) => $p$12.id;
-  const $t$14 = model$1.rows;
-  const $t$16 = ($p$15) => $p$15.id;
-  return { t: DomSelectorNearMiss$k202, v: [$t$1, $t$3, { m: (item$34, position$35, cx$36) => {
-    const r$37 = DomSelectorNearMiss$t68();
-    const w$38 = r$37.firstChild;
-    return { s: r$37, q: null, e: r$37, w0: r$37, w1: w$38, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$39, item$40, position$41) => {
-    const $t$42 = model$1.selected.$ === "Just" && model$1.selected.a === item$40.parent ? "on" : "";
-    if ($t$42 !== i$39.a0) {
-      i$39.w0.setAttribute("class", $t$42);
-      i$39.a0 = $t$42;
-    }
-    if (item$40 !== i$39.x) {
-      const $t$43 = item$40.label;
-      if ($t$43 !== i$39.a1) {
-        i$39.a1 = $t$43;
-        i$39.w1.data = $t$43;
-      }
-    }
-  }, w: true, i: false, f: null }, [model$1.selected], $t$4, $t$6, { m: (item$44, position$45, cx$46) => {
-    const r$47 = DomSelectorNearMiss$t98();
-    const w$48 = r$47.firstChild;
-    return { s: r$47, q: null, e: r$47, w0: r$47, w1: w$48, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$49, item$50, position$51) => {
-    const $t$52 = model$1.selected.$ === "Just" && model$1.selected.a === item$50.id ? "on" : "";
-    const $t$53 = Maybe$withDefault(model$1.selected, 0);
-    if ($t$52 !== i$49.a0) {
-      i$49.w0.setAttribute("class", $t$52);
-      i$49.a0 = $t$52;
-    }
-    if ($t$53 !== i$49.a1) {
-      i$49.a1 = $t$53;
-      i$49.w1.data = $t$53;
-    }
-  }, w: true, i: false, f: null }, [model$1.selected], $t$7, $t$9, { m: (item$54, position$55, cx$56) => {
-    const r$57 = DomSelectorNearMiss$t127();
-    const w$58 = r$57.firstChild;
-    return { s: r$57, q: null, e: r$57, w0: r$57, w1: w$58, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$59, item$60, position$61) => {
-    const sel$8 = model$1.selected;
-    const $t$62 = sel$8.$ === "Just" && sel$8.a === item$60.id ? "on" : "";
-    if ($t$62 !== i$59.a0) {
-      i$59.w0.setAttribute("class", $t$62);
-      i$59.a0 = $t$62;
-    }
-    if (item$60 !== i$59.x) {
-      const $t$63 = item$60.label;
-      if ($t$63 !== i$59.a1) {
-        i$59.a1 = $t$63;
-        i$59.w1.data = $t$63;
-      }
-    }
-  }, w: true, i: false, f: null }, [model$1.selected], $t$10, { m: (item$64, position$65, cx$66) => {
-    const r$67 = DomSelectorNearMiss$t152();
-    const w$68 = r$67.firstChild;
-    return { s: r$67, q: null, e: r$67, w0: r$67, w1: w$68, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$69, item$70, position$71) => {
-    const $t$72 = model$1.selected.$ === "Just" && model$1.selected.a === item$70.id ? "on" : "";
-    if ($t$72 !== i$69.a0) {
-      i$69.w0.setAttribute("class", $t$72);
-      i$69.a0 = $t$72;
-    }
-    if (item$70 !== i$69.x) {
-      const $t$73 = item$70.label;
-      if ($t$73 !== i$69.a1) {
-        i$69.a1 = $t$73;
-        i$69.w1.data = $t$73;
-      }
-    }
-  }, w: true, i: false, f: null }, [model$1.selected], $t$11, $t$13, { m: (item$74, position$75, cx$76) => {
-    const r$77 = DomSelectorNearMiss$t180();
-    const w$78 = r$77.firstChild;
-    return { s: r$77, q: null, e: r$77, w0: r$77, w1: w$78, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$79, item$80, position$81) => {
-    const $t$85 = DomSelectorNearMiss$eq$r$at(($p$82, $p$83, $p$84) => Maybe$Maybe$$eq(DomSelectorNearMiss$eq$prim, $p$82, $p$83, $p$84), { at: { $: "Just", a: item$80.id } }, model$1.pick) ? "on" : "";
-    if ($t$85 !== i$79.a0) {
-      i$79.w0.setAttribute("class", $t$85);
-      i$79.a0 = $t$85;
-    }
-    if (item$80 !== i$79.x) {
-      const $t$86 = item$80.label;
-      if ($t$86 !== i$79.a1) {
-        i$79.a1 = $t$86;
-        i$79.w1.data = $t$86;
-      }
-    }
-  }, w: true, i: false, f: null }, [model$1.pick], $t$14, $t$16, { m: (item$87, position$88, cx$89) => {
-    const r$90 = DomSelectorNearMiss$t200();
-    const w$91 = r$90.firstChild;
-    return { s: r$90, q: null, e: r$90, w0: r$90, w1: w$91, a0: undefined, a1: undefined, x: undefined };
-  }, p: (i$92, item$93, position$94) => {
-    const $t$95 = DomSelectorNearMiss$isOn(model$1.selected, item$93.id + 1);
-    if ($t$95 !== i$92.a0) {
-      i$92.w0.setAttribute("class", $t$95);
-      i$92.a0 = $t$95;
-    }
-    if (item$93 !== i$92.x) {
-      const $t$96 = item$93.label;
-      if ($t$96 !== i$92.a1) {
-        i$92.a1 = $t$96;
-        i$92.w1.data = $t$96;
-      }
-    }
-  }, w: true, i: false, f: null }, [model$1.selected]] };
-};
+const DomSelectorNearMiss$table = (model$1) => ({ t: DomSelectorNearMiss$k202, v: [model$1] });
 export { DomSelectorNearMiss$table };
 //# sourceMappingURL=DomSelectorNearMiss.mjs.map

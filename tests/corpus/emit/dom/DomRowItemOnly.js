@@ -1,14 +1,69 @@
-import { Rt$template, Rt$slot, Rt$forKeyed, Rt$delegate } from "./_platform/Rt.mjs";
-const DomRowItemOnly$t53 = Rt$template("<table>", 0);
-const DomRowItemOnly$k53 = { m: (v$4, cx$5) => {
-  const r$6 = DomRowItemOnly$t53();
-  const c$7 = Rt$slot(r$6, null, cx$5);
-  Rt$forKeyed(c$7, v$4[0], v$4[1], v$4[2], v$4[3]);
-  return { s: r$6, q: null, e: r$6, c0: c$7 };
-}, p: (i$8, v$9) => {
-  Rt$forKeyed(i$8.c0, v$9[0], v$9[1], v$9[2], v$9[3]);
-} };
+import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$slot } from "./_platform/Rt.mjs";
 const DomRowItemOnly$t51 = Rt$template("<tr><td> </td><td><a> </a></td><td><a>x", 0);
+const DomRowItemOnly$p53 = (i$1, v$2) => {
+  const $in$3 = v$2[0];
+  if ($in$3.rows !== i$1.g0_0 || $in$3.selected !== i$1.g0_1) {
+    i$1.g0_0 = $in$3.rows;
+    i$1.g0_1 = $in$3.selected;
+    const $t$4 = $in$3.rows;
+    const $t$6 = ($p$5) => $p$5.id;
+    const made$7 = { m: (item$8, position$9, cx$10) => {
+      const r$11 = DomRowItemOnly$t51();
+      const w$12 = r$11.firstChild;
+      const w$13 = w$12.firstChild;
+      const w$14 = w$12.nextSibling;
+      const w$15 = w$14.firstChild;
+      const w$16 = w$15.firstChild;
+      const w$17 = w$14.nextSibling;
+      const w$18 = w$17.firstChild;
+      Rt$delegate(["click"]);
+      if (cx$10 !== null) {
+        w$15.$$cx = cx$10;
+      }
+      if (cx$10 !== null) {
+        w$18.$$cx = cx$10;
+      }
+      return { s: r$11, q: null, e: r$11, w0: r$11, w2: w$13, w4: w$15, w5: w$16, w7: w$18, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, x: undefined };
+    }, p: (i$19, item$20, position$21) => {
+      const $t$22 = $in$3.selected.$ === "Just" && $in$3.selected.a === item$20.id ? "danger" : "";
+      if ($t$22 !== i$19.a0) {
+        i$19.w0.setAttribute("class", $t$22);
+        i$19.a0 = $t$22;
+      }
+      if (item$20 !== i$19.x) {
+        const $t$23 = item$20.id;
+        const $t$24 = { $: "Select", a: item$20.id };
+        const $t$25 = item$20.label;
+        const $t$26 = { $: "Remove", a: item$20.id };
+        if ($t$23 !== i$19.a1) {
+          i$19.a1 = $t$23;
+          i$19.w2.data = $t$23;
+        }
+        if ($t$24 !== i$19.a2) {
+          i$19.a2 = $t$24;
+          i$19.w4.$$click = $t$24;
+        }
+        if ($t$25 !== i$19.a3) {
+          i$19.a3 = $t$25;
+          i$19.w5.data = $t$25;
+        }
+        if ($t$26 !== i$19.a4) {
+          i$19.a4 = $t$26;
+          i$19.w7.$$click = $t$26;
+        }
+      }
+    }, w: true, i: false, f: null, g: 0, z: $in$3.selected.$ === "Just" ? $in$3.selected.a : $in$3.selected };
+    Rt$forKeyed(i$1.c0, $t$4, $t$6, made$7, [$in$3.selected]);
+  }
+};
+const DomRowItemOnly$t53 = Rt$template("<table>", 0);
+const DomRowItemOnly$k53 = { m: (v$27, cx$28) => {
+  const r$29 = DomRowItemOnly$t53();
+  const c$30 = Rt$slot(r$29, null, cx$28);
+  const i$31 = { s: r$29, q: null, e: r$29, c0: c$30, g0_0: undefined, g0_1: undefined };
+  DomRowItemOnly$p53(i$31, v$27);
+  return i$31;
+}, p: DomRowItemOnly$p53 };
 const DomRowItemOnly$Msg$$order = { Select: 0, Remove: 1 };
 const DomRowItemOnly$Msg$$compare = ($x, $y) => {
   if ($x.$ !== $y.$) {
@@ -32,55 +87,6 @@ const DomRowItemOnly$Msg$$eq = ($x, $y) => {
       return $x.a === $y.a;
   }
 };
-const DomRowItemOnly$table = (model$1) => {
-  const $t$1 = model$1.rows;
-  const $t$3 = ($p$2) => $p$2.id;
-  return { t: DomRowItemOnly$k53, v: [$t$1, $t$3, { m: (item$10, position$11, cx$12) => {
-    const r$13 = DomRowItemOnly$t51();
-    const w$14 = r$13.firstChild;
-    const w$15 = w$14.firstChild;
-    const w$16 = w$14.nextSibling;
-    const w$17 = w$16.firstChild;
-    const w$18 = w$17.firstChild;
-    const w$19 = w$16.nextSibling;
-    const w$20 = w$19.firstChild;
-    Rt$delegate(["click"]);
-    if (cx$12 !== null) {
-      w$17.$$cx = cx$12;
-    }
-    if (cx$12 !== null) {
-      w$20.$$cx = cx$12;
-    }
-    return { s: r$13, q: null, e: r$13, w0: r$13, w2: w$15, w4: w$17, w5: w$18, w7: w$20, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, x: undefined };
-  }, p: (i$21, item$22, position$23) => {
-    const $t$24 = model$1.selected.$ === "Just" && model$1.selected.a === item$22.id ? "danger" : "";
-    if ($t$24 !== i$21.a0) {
-      i$21.w0.setAttribute("class", $t$24);
-      i$21.a0 = $t$24;
-    }
-    if (item$22 !== i$21.x) {
-      const $t$25 = item$22.id;
-      const $t$26 = { $: "Select", a: item$22.id };
-      const $t$27 = item$22.label;
-      const $t$28 = { $: "Remove", a: item$22.id };
-      if ($t$25 !== i$21.a1) {
-        i$21.a1 = $t$25;
-        i$21.w2.data = $t$25;
-      }
-      if ($t$26 !== i$21.a2) {
-        i$21.a2 = $t$26;
-        i$21.w4.$$click = $t$26;
-      }
-      if ($t$27 !== i$21.a3) {
-        i$21.a3 = $t$27;
-        i$21.w5.data = $t$27;
-      }
-      if ($t$28 !== i$21.a4) {
-        i$21.a4 = $t$28;
-        i$21.w7.$$click = $t$28;
-      }
-    }
-  }, w: true, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected]] };
-};
+const DomRowItemOnly$table = (model$1) => ({ t: DomRowItemOnly$k53, v: [model$1] });
 export { DomRowItemOnly$Msg$$compare, DomRowItemOnly$Msg$$eq, DomRowItemOnly$table };
 //# sourceMappingURL=DomRowItemOnly.mjs.map

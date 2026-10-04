@@ -8,7 +8,6 @@ console.log: view: 0
   </main>
 </body>
 -- press #edit
-console.log: view: 0
 console.log: focused: ⊤
 (a later listener ran)
 console.log: view: 1

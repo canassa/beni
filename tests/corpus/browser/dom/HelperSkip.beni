@@ -3,9 +3,13 @@
 -- §11.6, §11.11; backend.md §15.3–§15.4). `Debug.log` in each helper's
 -- body shows which calls happen. `card "counted" model.count` is called
 -- when the count changes, and inside it `tag "counted"`, whose argument
--- did not, is not; `card "fixed" 7` is never called again; a helper given
--- a record built during the render is called every render, and so is a
--- local function, which could capture what its arguments do not show.
+-- did not, is not; `card "fixed" 7` is never called again. A helper given
+-- a record built during the render, and a local function, are called
+-- when what they read changes — `model.other` — and only then: the root
+-- computes each value by the fields it reads (language.md §11.11, made
+-- precise 2026-10-04), so the record is not built again when only the
+-- count changed, and the local function, which captures nothing, is the
+-- same function.
 import Browser
 import Html exposing (Html)
 

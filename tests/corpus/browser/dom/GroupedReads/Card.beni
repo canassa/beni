@@ -1,0 +1,6 @@
+-- See Main.beni: a component whose body logs each call.
+import Html exposing (Html)
+
+
+pub view : { title : String } → Html msg
+view props = <h2>{Debug.log "card" props.title}</h2>

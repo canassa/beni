@@ -46,7 +46,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "dom",
-    .targets = .{ .major = 1, .minor = 4 },
+    .targets = .{ .major = 1, .minor = 5 },
     .runtime = &.{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
@@ -78,6 +78,9 @@ pub const lowering: m.Lowering = .{
     },
     .module = module,
     .root = root,
+    // A root computes its own values, by what they read (backend.md §15.4,
+    // *A root computes its own values*).
+    .groups = true,
 };
 
 /// Everything is hoisted by the roots that need it, where the enclosing
@@ -90,6 +93,7 @@ fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {
 fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr {
     const r = tree.root(index);
     var g: Gen = .{ .cx = cx, .tree = tree };
+    if (cx.grouped(index)) return g.groupedBlock(r, index);
     return g.block(&.{r.node}, r.site.inst, null);
 }
 
@@ -328,6 +332,11 @@ const Fn = struct {
     /// `m` of a row that mounts through its patch (§15.5): it writes only
     /// what `p` never does, and leaves every kept value `undefined`.
     through: bool = false,
+    /// A grouped root's `m` or `p` (backend.md §15.4, *A root computes its
+    /// own values*): every write is `p`'s, made in its op's group.
+    grouped: bool = false,
+    /// `m` of a grouped root: its groups' fields, each `undefined`.
+    group_fields: []const m.Property = &.{},
 };
 
 const Gen = struct {
@@ -420,6 +429,288 @@ const Gen = struct {
             .{ .key = "t", .value = try g.ident(kind) },
             .{ .key = "v", .value = try g.jsb().array(values) },
         });
+    }
+
+    // ---- Grouped roots (backend.md §15.4, *A root computes its own values*)
+
+    /// The block a grouped root evaluates to: its kind, hoisted once per
+    /// site, and its inputs.
+    fn groupedBlock(g: *Gen, r: m.Root, index: m.Root.Index) m.Error!m.Expr {
+        const js = g.jsb();
+        const n = try g.names(r.site.inst, null);
+        var b = try g.plan(&.{r.node}, r.site.inst);
+        // Markup that writes nothing is one hoisted block, as before.
+        if (b.ops.items.len == 0) return g.block(&.{r.node}, r.site.inst, null);
+        const kind = g.cx.hoisted(n.kind) orelse try g.hoistGroupedKind(&b, n, r, index);
+        if (r.inputs.len == 0) {
+            if (g.cx.hoisted(n.block)) |h| return g.ident(h);
+            return g.ident(try g.cx.hoist(n.block, try js.object(&.{
+                .{ .key = "t", .value = try g.ident(kind) },
+                .{ .key = "v", .value = try g.nul() },
+            })));
+        }
+        const values = try g.a().alloc(m.Expr, r.inputs.len);
+        for (values, 0..) |*v, k| v.* = try g.cx.value(r.inputs.at(@intCast(k)));
+        return js.object(&.{
+            .{ .key = "t", .value = try g.ident(kind) },
+            .{ .key = "v", .value = try js.array(values) },
+        });
+    }
+
+    /// One group of a grouped root's ops: the paths it reads (positions in
+    /// `Root.reads`), whether it runs on every render, and its ops.
+    const Group = struct {
+        reads: std.ArrayList(u32) = .empty,
+        every: bool = false,
+        first: u32,
+        ops: std.ArrayList(u32) = .empty,
+    };
+
+    /// The values an op is written from, and so evaluated in its group: its
+    /// operands' values, a list written in place's entries, and what a row,
+    /// a `Show`'s body, a component's call and its children are made of.
+    fn opValues(g: *Gen, b: *const Body, op: Op, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        const a_ = g.a();
+        switch (op.what) {
+            .attribute => |x| if (x.item.value.kind == .entries) for (g.tree.entriesOf(x.item.value.entries)) |e| {
+                if (e.value.dynamic) |dv| try out.append(a_, dv);
+            },
+            .component, .for_, .show => try g.nodeValues(op.node, false, out),
+            else => {},
+        }
+        for (b.operands.items, 0..) |o, k| {
+            if (!opReads(op, @intCast(k))) continue;
+            switch (o) {
+                .value => |v| try out.append(a_, v),
+                else => {},
+            }
+        }
+    }
+
+    /// Every value a node reads, its children's included, but not a row's
+    /// or a `Show`'s body (placed where the row is) nor a row's captures,
+    /// whose reads are its inputs (language.md §11.9).
+    fn nodeValues(g: *Gen, n: m.Node.Index, within: bool, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        const a_ = g.a();
+        const t = g.tree;
+        switch (t.kind(n)) {
+            .element => {
+                const e = t.element(n);
+                for (t.itemsOf(e.items)) |it| {
+                    if (it.value.dynamic) |v| try out.append(a_, v);
+                    if (it.value.kind == .entries) for (t.entriesOf(it.value.entries)) |entry| {
+                        if (entry.value.dynamic) |dv| try out.append(a_, dv);
+                    };
+                }
+                for (t.childrenOf(e.children)) |c| try g.nodeValues(c, true, out);
+            },
+            .fragment => for (t.childrenOf(t.fragment(n).children)) |c| try g.nodeValues(c, true, out),
+            .text => {},
+            .hole => {
+                const h = t.hole(n);
+                try out.append(a_, h.value);
+                if (h.call) |c| for (0..c.args.len) |k| try out.append(a_, c.args.at(@intCast(k)));
+            },
+            .component => {
+                const c = t.component(n);
+                if (c.spread) |v| try out.append(a_, v);
+                for (t.propsOf(c.props)) |prop| try out.append(a_, prop.value);
+                if (c.children) |v| try out.append(a_, v);
+                for (t.childrenOf(c.children_nodes)) |child| try g.nodeValues(child, true, out);
+            },
+            .for_ => {
+                const f = t.for_(n);
+                try out.append(a_, f.each);
+                if (f.key) |v| try out.append(a_, v);
+                if (f.fallback) |v| try out.append(a_, v);
+                try g.rowValuesOf(f.row, out);
+            },
+            .show => {
+                const s = t.show(n);
+                try out.append(a_, s.when);
+                if (s.key) |v| try out.append(a_, v);
+                if (s.fallback) |v| try out.append(a_, v);
+                try g.rowValuesOf(s.body, out);
+            },
+            else => {},
+        }
+        _ = within;
+    }
+
+    /// What a row reads of its enclosing root: its function, its inputs and
+    /// its selector's probe.
+    fn rowValuesOf(g: *Gen, ri: m.Row.Index, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        const a_ = g.a();
+        const row = g.tree.row(ri);
+        if (row.function) |v| try out.append(a_, v);
+        for (0..row.inputs.len) |k| try out.append(a_, row.inputs.at(@intCast(k)));
+        if (row.selector) |sel| try out.append(a_, sel.probe);
+    }
+
+    fn hoistGroupedKind(g: *Gen, b: *Body, n: Names, r: m.Root, index: m.Root.Index) m.Error!m.Name {
+        const js = g.jsb();
+        const a_ = g.a();
+        const ops = b.ops.items;
+        // A constant attribute that needs code is written by `p` too, so
+        // the instance keeps its element.
+        for (ops) |op| switch (op.what) {
+            .attribute => |x| b.store(x.t),
+            else => {},
+        };
+
+        // Each op's values and paths, and whether it runs on every render.
+        const op_values = try a_.alloc([]const m.Value.Index, ops.len);
+        const op_reads = try a_.alloc([]const u32, ops.len);
+        const op_every = try a_.alloc(bool, ops.len);
+        for (ops, 0..) |op, k| {
+            var values: std.ArrayList(m.Value.Index) = .empty;
+            try g.opValues(b, op, &values);
+            var reads: std.ArrayList(u32) = .empty;
+            var every = switch (op.what) {
+                .attribute => |x| g.stateful(x.item),
+                else => false,
+            };
+            for (values.items) |v| {
+                if (g.tree.everyRender(v)) every = true;
+                for (g.tree.readsOf(v)) |rd| {
+                    if (std.mem.indexOfScalar(u32, reads.items, rd) == null) try reads.append(a_, rd);
+                }
+            }
+            std.mem.sort(u32, reads.items, {}, std.sort.asc(u32));
+            op_values[k] = values.items;
+            op_reads[k] = reads.items;
+            op_every[k] = every;
+        }
+
+        // Ops that read the same paths are one group; `parent` merges them.
+        const parent = try a_.alloc(u32, ops.len);
+        var by_key: std.StringHashMapUnmanaged(u32) = .empty;
+        for (parent, 0..) |*x, k| {
+            const key = try std.fmt.allocPrint(a_, "{}:{any}", .{ op_every[k], op_reads[k] });
+            const gop = try by_key.getOrPut(a_, key);
+            if (!gop.found_existing) gop.value_ptr.* = @intCast(k);
+            x.* = gop.value_ptr.*;
+        }
+        // A value two ops read is evaluated in one group: theirs merge.
+        var top: u32 = 0;
+        for (op_values) |values| for (values) |v| {
+            top = @max(top, @backingInt(v) + 1);
+        };
+        const reader = try a_.alloc(u32, top);
+        @memset(reader, std.math.maxInt(u32));
+        for (op_values, 0..) |values, k| for (values) |v| {
+            const at = @backingInt(v);
+            if (reader[at] == std.math.maxInt(u32)) {
+                reader[at] = @intCast(k);
+                continue;
+            }
+            const gx = find(parent, reader[at]);
+            const gy = find(parent, @intCast(k));
+            if (gx != gy) parent[@max(gx, gy)] = @min(gx, gy);
+        };
+        // An element's attributes are written in source order on a mount:
+        // the groups of two that would not be merge, until none would.
+        const on = try a_.alloc(std.ArrayList(u32), b.tnodes.items.len);
+        for (on) |*x| x.* = .empty;
+        for (ops, 0..) |op, k| if (elementOf(op)) |t| try on[t].append(a_, @intCast(k));
+        const first = try a_.alloc(u32, ops.len);
+        var changed = true;
+        while (changed) {
+            changed = false;
+            @memset(first, std.math.maxInt(u32));
+            for (0..ops.len) |k| {
+                const root_ = find(parent, @intCast(k));
+                first[root_] = @min(first[root_], @as(u32, @intCast(k)));
+            }
+            for (on) |list| for (list.items, 0..) |x, xi| for (list.items[xi + 1 ..]) |y| {
+                const gx = find(parent, x);
+                const gy = find(parent, y);
+                if (gx != gy and first[gx] > first[gy]) {
+                    parent[@max(gx, gy)] = @min(gx, gy);
+                    changed = true;
+                }
+            };
+        }
+
+        // The groups, by their first op.
+        var groups: std.ArrayList(Group) = .empty;
+        const group_at = try a_.alloc(u32, ops.len);
+        @memset(group_at, std.math.maxInt(u32));
+        for (ops, 0..) |_, k| {
+            const root_ = find(parent, @intCast(k));
+            if (group_at[root_] == std.math.maxInt(u32)) {
+                group_at[root_] = @intCast(groups.items.len);
+                try groups.append(a_, .{ .first = @intCast(k) });
+            }
+            const gr = &groups.items[group_at[root_]];
+            try gr.ops.append(a_, @intCast(k));
+            gr.every = gr.every or op_every[k];
+            for (op_reads[k]) |rd| {
+                if (std.mem.indexOfScalar(u32, gr.reads.items, rd) == null) try gr.reads.append(a_, rd);
+            }
+        }
+
+        // `p`: the inputs, then each group under its test.
+        const i = try g.cx.fresh("i");
+        const pv = try g.cx.fresh("v");
+        const pblock = try js.block();
+        const inputs = try a_.alloc(m.Name, r.inputs.len);
+        for (inputs, 0..) |*x, k| {
+            x.* = try g.cx.fresh("in");
+            try js.constant(pblock, x.*, try js.index(try g.ident(pv), try g.num(@intCast(k))));
+        }
+        try g.cx.bindInputs(index, inputs);
+        var patch: Fn = .{ .block = pblock, .v = null, .i = i, .grouped = true };
+        var fields: std.ArrayList(m.Property) = .empty;
+        const undef = try js.literal(.undefined);
+        for (groups.items, 0..) |gr, gi| {
+            const then = try js.block();
+            var condition: ?m.Expr = null;
+            if (!gr.every) {
+                if (gr.reads.items.len == 0) {
+                    const field = try g.print("g{d}", .{gi});
+                    condition = try js.binary(.strict_eq, try g.member(try g.ident(i), field), undef);
+                    try js.assign(then, try g.member(try g.ident(i), field), try js.literal(.true));
+                    try fields.append(a_, .{ .key = field, .value = undef });
+                } else for (gr.reads.items, 0..) |rd, j| {
+                    const field = try g.print("g{d}_{d}", .{ gi, j });
+                    const path = r.reads.at(rd);
+                    const test_ = try js.binary(.strict_ne, try g.cx.value(path), try g.member(try g.ident(i), field));
+                    condition = if (condition) |c| try js.binary(.logical_or, c, test_) else test_;
+                    try js.assign(then, try g.member(try g.ident(i), field), try g.cx.value(path));
+                    try fields.append(a_, .{ .key = field, .value = undef });
+                }
+            }
+            var values: std.ArrayList(m.Value.Index) = .empty;
+            const mask = try a_.alloc(bool, ops.len);
+            @memset(mask, false);
+            for (gr.ops.items) |k| {
+                mask[k] = true;
+                try values.appendSlice(a_, op_values[k]);
+            }
+            try g.cx.rootValues(then, index, values.items);
+            patch.block = then;
+            patch.made = &.{};
+            try g.writePatch(b, &patch, mask, true);
+            if (condition) |c| try js.@"if"(pblock, c, then, null) else try js.nested(pblock, then);
+        }
+        g.cx.unbindInputs(index);
+        const p_name = try g.cx.hoist(try g.print("p{d}", .{r.site.inst}), try js.arrow(&.{ i, pv }, pblock));
+
+        // `m`: the clone and what only it writes, the instance, then `p`.
+        const t = try g.template(b, n.template);
+        const v = try g.cx.fresh("v");
+        const cx = try g.cx.fresh("cx");
+        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .through = true, .grouped = true, .group_fields = fields.items };
+        const object = try g.writeMount(b, &mount, t);
+        const inst = try g.cx.fresh("i");
+        try js.constant(mount.block, inst, object);
+        try js.expression(mount.block, try js.call(try g.ident(p_name), &.{ try g.ident(inst), try g.ident(v) }));
+        try js.@"return"(mount.block, try g.ident(inst));
+        return g.cx.hoist(n.kind, try js.object(&.{
+            .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) },
+            .{ .key = "p", .value = try g.ident(p_name) },
+        }));
     }
 
     /// The template's cloner, hoisted once.
@@ -1144,10 +1435,16 @@ const Gen = struct {
         // The writes, in source order.
         var fields: std.ArrayList(m.Property) = .empty;
         for (b.ops.items, 0..) |op, k| {
-            if (f.through) try g.mountOnlyOp(f, op, @intCast(k), &fields) else try g.mountOp(b, f, op, @intCast(k), &fields);
+            if (f.grouped)
+                try g.mountGroupedOp(b, f, op, @intCast(k), &fields)
+            else if (f.through)
+                try g.mountOnlyOp(f, op, @intCast(k), &fields)
+            else
+                try g.mountOp(b, f, op, @intCast(k), &fields);
         }
         // Not yet shown with any item: `p`'s test of the item holds.
-        if (f.through) try fields.append(a_, .{ .key = "x", .value = try js.literal(.undefined) });
+        if (f.through and !f.grouped) try fields.append(a_, .{ .key = "x", .value = try js.literal(.undefined) });
+        try fields.appendSlice(a_, f.group_fields);
 
         var props: std.ArrayList(m.Property) = .empty;
         const first: m.Expr, const q: m.Expr = switch (b.first.?) {
@@ -1299,6 +1596,54 @@ const Gen = struct {
         return true;
     }
 
+    /// What a grouped root's `m` writes of an op: what `p` never does — a
+    /// text hole's node, empty, and an event's extractor, flags, listener
+    /// and mount context — and each kept value's first state: `undefined`,
+    /// which no beni value is, a toggle's `false` and a class or style
+    /// list's `null`, so that `p`'s first write is the one `m` made.
+    fn mountGroupedOp(g: *Gen, b: *const Body, f: *Fn, op: Op, k: u32, fields: *std.ArrayList(m.Property)) m.Error!void {
+        const js = g.jsb();
+        const a_ = g.a();
+        if (op.node != .none) g.cx.at(op.node);
+        const undef = try js.literal(.undefined);
+        switch (op.what) {
+            .placeholder, .style => try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef }),
+            .text => |x| {
+                const n = try g.cx.fresh("x");
+                try js.constant(f.block, n, try g.rt("insertText", &.{ try g.parentOf(f, x.at, true), try g.markerOf(f, x.at), try g.str("") }));
+                f.texts[k] = n;
+                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
+            },
+            .attribute => |x| {
+                if (x.constant or g.stateful(x.item)) return;
+                const first = if (x.item.class == .class_list or x.item.class == .style_list) try g.nul() else undef;
+                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = first });
+            },
+            .toggle => try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try js.literal(.false) }),
+            .event => |x| {
+                try g.mountEvent(f, x, null);
+                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
+            },
+            .html, .for_ => {},
+            .helper => |x| for (x.args, 0..) |arg, j| {
+                if (g.constantOperand(b, arg)) continue;
+                try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = undef });
+            },
+            .component => |x| {
+                for (x.props, 0..) |prop, j| {
+                    if (g.constantOperand(b, prop)) continue;
+                    try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = undef });
+                }
+                if (x.children != null) try fields.append(a_, .{ .key = try g.print("a{d}c", .{k}), .value = undef });
+            },
+            .show => |x| {
+                try fields.append(a_, .{ .key = try g.print("a{d}k", .{k}), .value = undef });
+                try fields.append(a_, .{ .key = try g.print("a{d}v", .{k}), .value = undef });
+                for (x.inputs, 0..) |_, j| try fields.append(a_, .{ .key = try g.print("a{d}i{d}", .{ k, j }), .value = undef });
+            },
+        }
+    }
+
     /// What `m` writes of an op when `p` writes its value: an event's
     /// extractor, flags, listener and mount context. Every kept value is
     /// `undefined`, which no beni value is, so `p` writes it.
@@ -1364,7 +1709,12 @@ const Gen = struct {
                         try js.@"if"(f.block, try js.binary(.strict_ne, try g.member(try g.node(f, x.t), prop), want), then, null);
                         continue;
                     }
-                    if (x.constant) continue;
+                    if (x.constant) {
+                        // A grouped root writes it in the group that runs
+                        // once, where `m` wrote it before.
+                        if (f.grouped) try g.writeAttribute(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
+                        continue;
+                    }
                     const then = try js.block();
                     try g.writeAttribute(then, try g.node(f, x.t), x.item, try g.read(b, f, x.value), try g.fieldOf(f, "a{d}", .{k}));
                     try js.assign(then, try g.fieldOf(f, "a{d}", .{k}), try g.read(b, f, x.value));
@@ -1382,7 +1732,7 @@ const Gen = struct {
                     // made only when an argument changed (§11.6). A
                     // constant argument never does (`Tree.constant`), so
                     // a call of constants is made at mount only.
-                    if (x.args.len != 0 and g.allConstant(b, x.args)) continue;
+                    if (!f.grouped and x.args.len != 0 and g.allConstant(b, x.args)) continue;
                     var changed: ?m.Expr = null;
                     const then = try js.block();
                     for (x.args, 0..) |p, j| {
@@ -1395,7 +1745,7 @@ const Gen = struct {
                     if (changed) |c| try js.@"if"(f.block, c, then, null) else try js.nested(f.block, then);
                 },
                 .component => |x| {
-                    if (x.children == null and g.allConstant(b, x.props)) continue;
+                    if (!f.grouped and x.children == null and g.allConstant(b, x.props)) continue;
                     var changed: ?m.Expr = null;
                     const then = try js.block();
                     for (x.props, 0..) |p, j| {
@@ -1410,7 +1760,7 @@ const Gen = struct {
                         try js.assign(then, try g.fieldOf(f, "a{d}c", .{k}), try g.read(b, f, ch));
                     }
                     try js.expression(then, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.componentCall(b, f, op.node, x.thunk, x.children) }));
-                    try js.@"if"(f.block, changed.?, then, null);
+                    if (changed) |c| try js.@"if"(f.block, c, then, null) else try js.nested(f.block, then);
                 },
                 .for_ => |x| try js.expression(f.block, try g.forCall(b, f, x.mode, try g.fieldOf(f, "c{d}", .{k}), x.each, x.key, x.row, x.inputs)),
                 .show => |x| {
@@ -1619,6 +1969,23 @@ const Gen = struct {
         return g.ident(it);
     }
 };
+
+/// The representative of op `k`'s group.
+fn find(parent: []u32, k: u32) u32 {
+    var at = k;
+    while (parent[at] != at) at = parent[at];
+    return at;
+}
+
+/// The element an attribute, a class entry or a style entry is written on.
+fn elementOf(op: Op) ?u32 {
+    return switch (op.what) {
+        .attribute => |x| x.t,
+        .toggle => |x| x.t,
+        .style => |x| x.t,
+        else => null,
+    };
+}
 
 /// Whether `op` reads operand `k`, in any of its forms.
 fn opReads(op: Op, k: u32) bool {
