@@ -2,3 +2,5 @@ out/
 apps/solid2/node_modules/
 apps/solid1/node_modules/
 .beni-cache/
+apps/solid1/gen/
+apps/solid2/gen/
