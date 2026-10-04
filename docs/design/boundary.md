@@ -1714,12 +1714,14 @@ read.** For a root of kind `expression`:
   an effect other than `Debug`'s — a call, outside any function the value makes, whose callee may
   be `impure` or suspend (`transparent-effects-proposal.md` §16.2's `impure` answer) and is not
   one of `Debug`'s — or it holds a **live** root: an `expression` root that writes a `stateful`
-  attribute or has such a value (`language.md` §11.11, amended). A grouped root evaluates such a
+  attribute, places a helper call or a component, or has such a value (`language.md` §11.11, amended). A grouped root evaluates such a
   value on every render; a lowering must also make a live root a new value each time it is
   evaluated, so that the slot holding it patches it.
 - **`tree.pathOf(v)`**, per value, the position in `Root.reads` of the path the value is exactly —
   a local of the enclosing declaration read through at most four field or tuple accesses and
   nothing more — or null: such a value changed exactly when that path did.
+- **`Component.impure`**: the component's call may have an effect other than `Debug`'s (the
+  checker's answer for the call it means); a lowering never skips it.
 - **`Lowering.groups`**: a lowering that sets it may be handed roots whose values the compiler has
   **not** evaluated where the root stands. **`cx.grouped(root)`** says whether this root is one:
   true when the lowering sets `groups` and the compiler can evaluate the root's values outside the
