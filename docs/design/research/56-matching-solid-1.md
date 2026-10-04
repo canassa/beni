@@ -887,8 +887,71 @@ samples), script ms, median:
 (`rows 30 000, swap` is bimodal page to page for both compilers, 0.80–1.30, and is not read.) The
 table, `…-review2-update.json` and `…-review2-select.json`: update every 10th, n = 30, §9.6 1.04
 [0.98–1.22], restate 1.00 [0.84–1.09], Solid 1 1.48; select, n = 20, 0.61 [0.47–0.76], 0.72
-[0.57–0.93], Solid 1 1.21 — interquartile ranges overlap. **Restating the rows of a skipped list
-costs no measured speed**: a list whose rows are not live is not walked.
+[0.57–0.93], Solid 1 1.21 — interquartile ranges overlap. *Corrected by the third review (§9.9):*
+the claim that followed here — "a list whose rows are not live is not walked" — was false. A
+row was live whenever its markup held a slot, a block row's and a `List Html` hole's always, and
+a live compiled row was restated by its `p`, which evaluates every value of the row; a list
+restated every live row after its pass, the rows it had just patched included. None of the
+points above has such a row, which is why they did not move.
+
+### 9.9 After the third review: what is live is decided at run time
+
+The third review found four costs §9.8 introduced: a live compiled row re-evaluated in full on
+every render (each `Debug.log` in a row printed on every message), every live row patched twice
+in a render that patched it, a list of blocks walked on every render whatever it held, and every
+slot under a skipped group visited. One change answers all four (`backend.md` §15.4, as amended
+after the third review): **liveness is a property of the instance, kept at run time** (`i.l`,
+written by its kind's `p` from its slots; a slot's `l`, a list's `w`), so a restate visits only
+instances that are live — under a tree of helpers none of which holds an input, nothing; a row
+compiled in place is restated by its row function's `r`, which writes its `stateful` attributes
+from the values the row keeps and restates its slots, **evaluating nothing**; and a list's pass
+stamps the live rows it patched and restates only the others. A kind or row function that cannot
+be live carries no `l` and the runtime keeps no bookkeeping for it, and a list's `w` is the row
+walk itself, so a page with no list ships none of it. Fixture: `browser/dom/LiveRowsOnce` — rows
+with a controlled input, a helper and `Debug.log`, keyed and positional; on the §9.8 compiler
+every message printed every row and a mount printed each twice, now a row prints only when its
+item changed.
+
+Same batch, four subjects — master (`2bac01c1f`, before §9.8), §9.8 (`246bd8b74`), now, Solid 1
+— (`results/2026-10-04-r56-review3.json`, `…-review3-helper-rows.json`, 2 pages × 4 samples),
+script ms, median. Three sweeps are new (`bench/ui/apps/scaling/`): `live`, N keyed rows each
+holding a controlled input and a helper's markup, `helperRows`, the same with the input replaced
+by text, and `tree`, a recursive helper D levels deep (2^(D+1) − 1 calls); in each an unrelated
+counter ticks.
+
+| point | master | §9.8 | now | Solid 1 |
+|---|--:|--:|--:|--:|
+| holes 10 | 0.078 | 0.074 | 0.074 | 0.071 |
+| holes 1 000 | 0.071 | 0.075 | 0.077 | 0.074 |
+| holes 10 000 | 0.091 | 0.088 | 0.087 | 0.080 |
+| rows 1 000, change | 0.126 | 0.116 | 0.121 | 0.082 |
+| rows 30 000, change | 0.423 | 0.446 | 0.428 | 0.098 |
+| derived 100 000 | 0.072 | 0.072 | 0.073 | 0.075 |
+| helper rows 1 000 | 0.074 | 0.094 | 0.074 | 0.075 |
+| helper rows 10 000 | 0.085 | 0.240 | 0.086 | 0.081 |
+| helper tree, 8 191 calls | 0.171 | 0.177 | 0.081 | 0.082 |
+| live rows 100 | 0.067 | 0.092 | 0.123 | 0.073 |
+| live rows 1 000 | 0.073 | 0.303 | 0.255 | 0.072 |
+| live rows 10 000 | 0.090 | 2.987 | 2.247 | 0.088 |
+
+A tree of helpers and rows that hold only a helper now cost what master's do — master never
+visited them, and was wrong for the ones that held an input. **Live rows still cost a visit per
+row per render**: 0.22 µs a row — its `r`, the read of its input's `value` from the page to
+compare with the one the row keeps, and its helper slot's check; the same rows without the input
+are not visited at all (helper rows above), so the visit is the whole cost. That is the price of the guarantee as specified — a
+controlled input shows the model after every render, wherever it stands — paid by every input on
+the page on every message, where master paid nothing and kept a rejected edit, and Solid keeps
+no such guarantee. Making it proportional to the inputs the user actually edited (an `input`
+listener that records the edited elements, reconciled after the render) is a change of §15.3's
+contract, recorded here as the next step rather than taken.
+
+The table benchmark, n = 10 (`…-review3-table.json`; n = 30 for update and select,
+`…-review3-update-select.json`): master / §9.8 / now / Solid 1 — create 1k 3.59 / 3.48 / 3.48 /
+3.80, replace 7.46 / 7.51 / 7.47 / 8.72, update every 10th 1.11 / 1.11 / 1.12 / 1.49, select 0.76 /
+0.69 / 0.71 / 1.30, swap 0.70 / 0.73 / 0.85 / 1.27, remove 0.42 / 0.45 / 0.44 / 0.50, create 10k
+38.1 / 37.9 / 38.0 / 43.3, append 4.19 / 4.23 / 4.21 / 3.95, clear 16.5 / 15.9 / 15.3 / 16.3 — every
+beni interquartile range overlaps the others'. Bytes, release, brotli: the table app 5 556 /
+5 615 / 5 639, `emit/release/split/HolesPage` 1 796 / 1 844 / 1 870, the empty page 446 throughout.
 
 ## Appendix: reproducing
 
