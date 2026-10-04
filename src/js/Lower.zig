@@ -10748,32 +10748,28 @@ pub const Lowerer = struct {
     fn markupRootValues(l: *Lowerer, block: beni_markup.Block, index: beni_markup.Root.Index, values: []const beni_markup.Value.Index) Allocator.Error!void {
         const st = l.mk.?;
         const root = st.built.tree.root(index);
-        const wanted = try l.scratch.alloc(bool, root.values.len);
-        @memset(wanted, false);
         var stmts: StmtList = .empty;
+        // The root's own instruction values among them, in the root's
+        // order, and a moved `let`, evaluated as a value is.
+        var own: std.ArrayList(u32) = .empty;
         for (values) |v| {
             const at = @backingInt(v);
-            if (at >= root.values.start and at < root.values.start + root.values.len) wanted[at - root.values.start] = true;
-            // A moved `let`, evaluated as a value is.
+            if (at >= root.values.start and at < root.values.start + root.values.len) try own.append(l.scratch, at);
             if (at >= root.lets.start and at < root.lets.start + root.lets.len) {
                 try l.markupBind(&stmts, at, st.built.values[at].let_value.inst);
             }
         }
-        try l.markupValuesSome(&stmts, root, wanted);
-        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
-    }
-
-    /// The instruction values of `root` that `wanted` marks, into `out`.
-    fn markupValuesSome(l: *Lowerer, out: *StmtList, root: beni_markup.Root, wanted: []const bool) Allocator.Error!void {
-        const st = l.mk.?;
-        for (root.values.start..root.values.start + root.values.len, 0..) |v, k| {
-            if (!wanted[k]) continue;
-            const inst = switch (st.built.values[v]) {
-                .inst => |i| i,
-                else => continue,
-            };
-            try l.markupBind(out, v, inst);
+        std.mem.sort(u32, own.items, {}, std.sort.asc(u32));
+        var last: ?u32 = null;
+        for (own.items) |at| {
+            if (last == at) continue;
+            last = at;
+            switch (st.built.values[at]) {
+                .inst => |inst| try l.markupBind(&stmts, at, inst),
+                else => {},
+            }
         }
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
     }
 
     /// Evaluate value slot `v`, instruction `inst`, into `out`, bound where

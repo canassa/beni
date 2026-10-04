@@ -1005,6 +1005,9 @@ const Builder = struct {
         var value_reads = try b.arena.alloc(m.Range, b.values.items.len);
         @memset(value_reads, .{ .start = 0, .len = 0 });
         var read_sets: std.ArrayList(u32) = .empty;
+        // Per value of a root, the read it is exactly, plus one.
+        const paths_at = try b.arena.alloc(u32, b.values.items.len);
+        @memset(paths_at, 0);
         // Each let slot's reads, in slot order, and the lets moved.
         var let_reads: std.ArrayList(m.Range) = .empty;
         var moved_lets: std.ArrayList(MovedLet) = .empty;
@@ -1051,6 +1054,9 @@ const Builder = struct {
                 const v = root.values.start + k;
                 const start: u32 = @intCast(read_sets.items.len);
                 for (per_value.items[v].items) |r| try read_sets.append(b.arena, position.get(r.key()).?);
+                if (exact[v]) |r| if (position.get(r.key())) |at| {
+                    paths_at[v] = at + 1;
+                };
                 value_reads[v] = .{ .start = start, .len = @as(u32, @intCast(read_sets.items.len)) - start };
             }
         }
@@ -1071,19 +1077,7 @@ const Builder = struct {
         }.lessThan);
         const value_paths = try b.arena.alloc(u32, b.values.items.len);
         @memset(value_paths, 0);
-        for (b.roots) |root| {
-            if (root.reads.len == 0) continue;
-            for (0..root.values.len) |k| {
-                const v = root.values.start + k;
-                const r = exact[v] orelse continue;
-                for (0..root.reads.len) |j| {
-                    if (b.values.items[root.reads.start + j].read.eql(r)) {
-                        value_paths[v] = @intCast(j + 1);
-                        break;
-                    }
-                }
-            }
-        }
+        @memcpy(value_paths[0..paths_at.len], paths_at);
         const every_all = try b.arena.alloc(bool, b.values.items.len);
         @memset(every_all, false);
         @memcpy(every_all[0..every.items.len], every.items);

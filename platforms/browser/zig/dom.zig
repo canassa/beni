@@ -482,13 +482,12 @@ const Gen = struct {
             .component, .for_, .show => try g.nodeValues(op.node, false, out),
             else => {},
         }
-        for (b.operands.items, 0..) |o, k| {
-            if (!opReads(op, @intCast(k))) continue;
-            switch (o) {
-                .value => |v| try out.append(a_, v),
-                else => {},
-            }
-        }
+        var ks: std.ArrayList(u32) = .empty;
+        try opOperandList(a_, op, &ks);
+        for (ks.items) |k| switch (b.operands.items[k]) {
+            .value => |v| try out.append(a_, v),
+            else => {},
+        };
     }
 
     /// Every value a node reads, its children's included, but not a row's
@@ -2093,6 +2092,38 @@ fn elementOf(op: Op) ?u32 {
         .style => |x| x.t,
         else => null,
     };
+}
+
+/// Every operand `op` reads, in any of its forms: `opReads`'s, listed.
+fn opOperandList(a: Allocator, op: Op, out: *std.ArrayList(u32)) Allocator.Error!void {
+    switch (op.what) {
+        .placeholder => |x| try out.append(a, x.value),
+        .text => |x| try out.append(a, x.value),
+        .attribute => |x| try out.append(a, x.value),
+        .toggle => |x| try out.append(a, x.value),
+        .style => |x| try out.append(a, x.value),
+        .event => |x| try out.append(a, x.handler),
+        .html => |x| try out.append(a, x.value),
+        .helper => |x| try out.appendSlice(a, x.args),
+        .component => |x| {
+            try out.append(a, x.thunk);
+            if (x.children) |c| try out.append(a, c);
+            try out.appendSlice(a, x.props);
+        },
+        .for_ => |x| {
+            try out.append(a, x.each);
+            try out.append(a, x.row);
+            if (x.key) |k| try out.append(a, k);
+            if (x.inputs) |k| try out.append(a, k);
+        },
+        .show => |x| {
+            try out.append(a, x.when);
+            try out.append(a, x.body);
+            if (x.key) |k| try out.append(a, k);
+            if (x.fallback) |k| try out.append(a, k);
+            try out.appendSlice(a, x.inputs);
+        },
+    }
 }
 
 /// Whether `op` reads operand `k`, in any of its forms.
