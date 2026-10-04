@@ -1714,6 +1714,9 @@ read.** For a root of kind `expression`:
   `Debug`'s — a call, outside any function the value makes, whose callee may be `impure` or
   suspend (`transparent-effects-proposal.md` §16.2's `impure` answer) and is not one of `Debug`'s:
   a grouped root evaluates such a value on every render (`language.md` §11.11).
+- **`tree.pathOf(v)`**, per value, the position in `Root.reads` of the path the value is exactly —
+  a local of the enclosing declaration read through at most four field or tuple accesses and
+  nothing more — or null: such a value changed exactly when that path did.
 - **`Lowering.groups`**: a lowering that sets it may be handed roots whose values the compiler has
   **not** evaluated where the root stands. **`cx.grouped(root)`** says whether this root is one:
   true when the lowering sets `groups` and the compiler can evaluate the root's values outside the
