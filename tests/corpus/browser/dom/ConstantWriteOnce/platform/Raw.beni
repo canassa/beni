@@ -1,0 +1,9 @@
+--! See Main.beni: an element with a constant `raw` attribute between two
+--! that change, written in a platform package, where `innerHTML` is no
+--! warning.
+
+import Html exposing (Html)
+
+
+pub box : Int → Html msg
+box n = <div title={String.fromInt n} innerHTML="<input id=raw>" lang={String.fromInt n} />

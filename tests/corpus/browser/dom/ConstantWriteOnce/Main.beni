@@ -1,0 +1,29 @@
+-- A constant attribute that needs code — here a `raw` one, `innerHTML` —
+-- is written once, at mount (backend.md §15.4, *A root computes its own
+-- values*), even when it sits between two attributes of its element that
+-- change: the group that writes them runs again, and the raw content is
+-- not written again. Written again, it would replace the input inside it,
+-- losing what was typed there.
+import Browser
+import Html exposing (Html)
+import Raw
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Int → Int
+update msg n = n + 1
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="inc" onClick={Inc}>inc</button>
+        {Raw.box n}
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = 0, update = update, view = view }

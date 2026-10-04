@@ -1,0 +1,28 @@
+-- A view that reads nothing of its model still evaluates a value that may
+-- have an effect on every render (language.md §11.11, made precise
+-- 2026-10-04): its markup has no input, and is a new block on each render
+-- rather than one hoisted block a render would leave alone, so
+-- `Random.value` draws anew after each message.
+import Browser
+import Html exposing (Html)
+import Random
+
+
+type Msg
+    = Roll
+
+
+update : Msg, Int → Int
+update msg n = n + 1
+
+
+view : Int → Html Msg
+view _ =
+    <main>
+        <button id="roll" onClick={Roll}>roll</button>
+        <p>{Random.value (Random.int 1 1000000)}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = 0, update = update, view = view }

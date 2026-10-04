@@ -1,0 +1,46 @@
+-- A value that may have an effect is evaluated on every render
+-- (language.md §11.11, made precise 2026-10-04), wherever it stands: in
+-- an `if` hole's markup, in a helper of this module, and in a `let` that
+-- calls one — whatever the fields it reads. `Random.value` draws anew on
+-- each render, so each line changes on a message that touches none of
+-- the fields it reads.
+import Browser
+import Html exposing (Html)
+import Random
+
+
+type Msg
+    = Other
+
+
+type alias Model =
+    n : Int
+    o : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Other →
+            { m | o = m.o + 1 }
+
+
+roll : Int → Int
+roll k = k + Random.value (Random.int 1 1000000)
+
+
+view : Model → Html Msg
+view m =
+    r = roll 0
+
+    <main>
+        <button id="other" onClick={Other}>other</button>
+        <p id="o">{m.o}</p>
+        {if m.n > 100 then <b>x</b> else <i id="nested">{Random.value (Random.int 1 1000000)}</i>}
+        <p id="helper">{roll m.n}</p>
+        <p id="let">{r}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { n = 0, o = 0 }, update = update, view = view }

@@ -1,0 +1,7 @@
+# Each edit is rejected: every input shows its model value again.
+input #top "abcdef"
+input #nested "abcdef"
+input #let "abcdef"
+input #locked "hello"
+# An accepted edit reaches every input bound to the text.
+input #nested "abc"

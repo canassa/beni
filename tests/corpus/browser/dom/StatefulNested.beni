@@ -1,0 +1,44 @@
+-- A controlled input inside markup that is itself a value — in an `if`
+-- hole, in a `let` of markup, or nested with a constant `value` — is
+-- reconciled on every render, as one at the top of the view is
+-- (backend.md §15.3, `stateful`; language.md §11.11, made precise
+-- 2026-10-04: a stateful attribute is evaluated on every render). An edit
+-- `update` rejects returns the model it was given, so nothing the view
+-- reads has changed; the render still puts each input's value back. A
+-- markup root that holds such an input is patched on every render, and so
+-- is every root whose value holds it; a `let` of such markup is not moved
+-- into the root that reads it.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Typed String
+
+
+type alias Model =
+    text : String
+    open : Bool
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Typed s →
+            if String.length s > 3 then m else { m | text = s }
+
+
+view : Model → Html Msg
+view m =
+    viaLet = <input id="let" value={m.text} onInput={Typed} />
+
+    <main>
+        <input id="top" value={m.text} onInput={Typed} />
+        {if m.open then <input id="nested" value={m.text} onInput={Typed} /> else <span />}
+        {viaLet}
+        {if m.open then <input id="locked" value="locked" onInput={Typed} /> else <span />}
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { text = "ab", open = True }, update = update, view = view }

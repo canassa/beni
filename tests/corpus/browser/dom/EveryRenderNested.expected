@@ -1,0 +1,30 @@
+-- load
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <p id="o">"0"</p>
+    <i id="nested">"526478"</i>
+    <p id="helper">"306532"</p>
+    <p id="let">"530269"</p>
+  </main>
+</body>
+-- click #other
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <p id="o">"1"</p>
+    <i id="nested">"172872"</i>
+    <p id="helper">"937408"</p>
+    <p id="let">"463182"</p>
+  </main>
+</body>
+-- click #other
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <p id="o">"2"</p>
+    <i id="nested">"773462"</i>
+    <p id="helper">"22674"</p>
+    <p id="let">"690282"</p>
+  </main>
+</body>
