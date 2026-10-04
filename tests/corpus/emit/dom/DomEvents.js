@@ -25,37 +25,38 @@ const DomEvents$p16 = (i$1, v$2) => {
       i$1.w3.$$keydown = $t$7;
     }
   }
-  if ($in$3 !== i$1.g1_0) {
-    i$1.g1_0 = $in$3;
-    const $t$8 = { $: "Clicked", a: $in$3 };
-    if ($t$8 !== i$1.a1) {
-      i$1.a1 = $t$8;
-      i$1.w1.$$click = $t$8;
+  const x$8 = $in$3;
+  if (x$8 !== i$1.g1_0) {
+    i$1.g1_0 = x$8;
+    const $t$9 = { $: "Clicked", a: $in$3 };
+    if ($t$9 !== i$1.a1) {
+      i$1.a1 = $t$9;
+      i$1.w1.$$click = $t$9;
     }
   }
 };
 const DomEvents$t16 = Rt$template("<form><button>go</button><input>", 0);
-const DomEvents$k16 = { m: (v$9, cx$10) => {
-  const r$11 = DomEvents$t16();
-  const w$12 = r$11.firstChild;
-  const w$13 = w$12.nextSibling;
+const DomEvents$k16 = { m: (v$10, cx$11) => {
+  const r$12 = DomEvents$t16();
+  const w$13 = r$12.firstChild;
+  const w$14 = w$13.nextSibling;
   Rt$delegate(["submit", "click", "input", "keydown"]);
-  r$11.$$submitF = 1;
-  if (cx$10 !== null) {
-    r$11.$$cx = cx$10;
+  r$12.$$submitF = 1;
+  if (cx$11 !== null) {
+    r$12.$$cx = cx$11;
   }
-  if (cx$10 !== null) {
-    w$12.$$cx = cx$10;
+  if (cx$11 !== null) {
+    w$13.$$cx = cx$11;
   }
-  w$13.$$inputX = Html$targetValue;
-  if (cx$10 !== null) {
-    w$13.$$cx = cx$10;
+  w$14.$$inputX = Html$targetValue;
+  if (cx$11 !== null) {
+    w$14.$$cx = cx$11;
   }
-  Rt$listen(w$13, "focus", 0);
-  w$13.$$keydownX = Rt$identity;
-  const i$14 = { s: r$11, q: null, e: r$11, w0: r$11, w1: w$12, w3: w$13, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, g0: undefined, g1_0: undefined };
-  DomEvents$p16(i$14, v$9);
-  return i$14;
+  Rt$listen(w$14, "focus", 0);
+  w$14.$$keydownX = Rt$identity;
+  const i$15 = { s: r$12, q: null, e: r$12, w0: r$12, w1: w$13, w3: w$14, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, g0: undefined, g1_0: undefined };
+  DomEvents$p16(i$15, v$10);
+  return i$15;
 }, p: DomEvents$p16 };
 const DomEvents$view = (n$1) => ({ t: DomEvents$k16, v: [n$1] });
 export { DomEvents$view };

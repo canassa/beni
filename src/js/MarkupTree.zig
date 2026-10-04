@@ -251,6 +251,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
             .value_reads = reads.value_reads,
             .read_sets = reads.read_sets,
             .every_render = reads.every_render,
+            .value_paths = reads.value_paths,
         },
         .root_insts = b.root_insts.items,
         .node_tokens = b.node_tokens.items,
@@ -903,6 +904,7 @@ const Builder = struct {
         value_reads: []const m.Range,
         read_sets: []const u32,
         every_render: []const bool,
+        value_paths: []const u32,
         root_decls: []const u32,
         groupable: []const bool,
         moved_lets: []const MovedLet,
@@ -945,6 +947,9 @@ const Builder = struct {
         var every: std.ArrayList(bool) = .empty;
         try every.resize(b.arena, b.values.items.len);
         @memset(every.items, false);
+        // Per value, the path it is exactly, when it is one.
+        const exact = try b.arena.alloc(?Read, b.values.items.len);
+        @memset(exact, null);
         var summaries: Summaries = .{ .of = try b.arena.alloc(?[]std.ArrayList(Read), bir_.decls.len) };
         @memset(summaries.of, null);
         const moved = try b.arena.alloc([]Moved, root_count);
@@ -977,6 +982,7 @@ const Builder = struct {
                         };
                         try b.instReads(&summaries, decl, vi, lo, &per_value.items[v]);
                         every.items[v] = b.effectful(vi);
+                        exact[v] = b.exactPath(decl, vi, moved[ri]);
                     },
                     .capture => |local| try addRead(b.arena, &per_value.items[v], .{ .local = local }),
                     .input => |record| try addRead(b.arena, &per_value.items[v], b.readOfInput(record)),
@@ -1063,6 +1069,21 @@ const Builder = struct {
                 return x.def < y.def;
             }
         }.lessThan);
+        const value_paths = try b.arena.alloc(u32, b.values.items.len);
+        @memset(value_paths, 0);
+        for (b.roots) |root| {
+            if (root.reads.len == 0) continue;
+            for (0..root.values.len) |k| {
+                const v = root.values.start + k;
+                const r = exact[v] orelse continue;
+                for (0..root.reads.len) |j| {
+                    if (b.values.items[root.reads.start + j].read.eql(r)) {
+                        value_paths[v] = @intCast(j + 1);
+                        break;
+                    }
+                }
+            }
+        }
         const every_all = try b.arena.alloc(bool, b.values.items.len);
         @memset(every_all, false);
         @memcpy(every_all[0..every.items.len], every.items);
@@ -1070,6 +1091,7 @@ const Builder = struct {
             .value_reads = value_reads,
             .read_sets = read_sets.items,
             .every_render = every_all,
+            .value_paths = value_paths,
             .root_decls = root_decls,
             .groupable = groupable,
             .moved_lets = moved_lets.items,
@@ -1204,6 +1226,38 @@ const Builder = struct {
             for (found.items) |*mv| try substitute(b.arena, found.items, &mv.reads);
         }
         return found.items;
+    }
+
+    /// The path value `inst` is exactly — a local of `decl` that no moved
+    /// `let` binds, read through at most four field or tuple accesses —
+    /// or null.
+    fn exactPath(b: *Builder, decl: u32, inst: Inst.Index, moved: []const Moved) ?Read {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        var links: [Bir.max_input_links]u32 = undefined;
+        var n: usize = 0;
+        var cur = inst.int();
+        while (true) : (cur = datas[cur].lhs) {
+            const link: u32 = switch (tags[cur]) {
+                .field_access => @backingInt(bir_.symbols[datas[cur].rhs]),
+                .tuple_index => @min(datas[cur].rhs, Bir.tuple_link - 1) | Bir.tuple_link,
+                else => break,
+            };
+            if (n == Bir.max_input_links) return null;
+            links[n] = link;
+            n += 1;
+        }
+        if (tags[cur] != .local) return null;
+        const local = datas[cur].lhs;
+        for (moved) |mv| if (mv.local == local) return null;
+        if (bir_.decls[decl].locals_start + local >= bir_.locals.len) return null;
+        var r: Read = .{ .local = local };
+        while (n > 0) {
+            n -= 1;
+            r = r.append(links[n]);
+        }
+        return r;
     }
 
     fn inRuns(runs: []const [2]u32, i: u32) bool {

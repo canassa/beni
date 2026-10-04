@@ -337,6 +337,10 @@ const Fn = struct {
     grouped: bool = false,
     /// `m` of a grouped root: its groups' fields, each `undefined`.
     group_fields: []const m.Property = &.{},
+    /// A grouped root, per op: the name its group read its one path into
+    /// when the op writes exactly that path, which needs no test of its own
+    /// and keeps no value (null otherwise).
+    direct: []const ?m.Name = &.{},
 };
 
 const Gen = struct {
@@ -690,10 +694,32 @@ const Gen = struct {
             try js.constant(pblock, name, try g.member(try g.ident(i), kept));
             try g.cx.bindLet(index, @intCast(k), name);
         }
+        const direct = try a_.alloc(?m.Name, ops.len);
+        @memset(direct, null);
+        patch.direct = direct;
         for (groups.items, 0..) |gr, gi| {
             const then = try js.block();
             var condition: ?m.Expr = null;
-            if (!gr.every) {
+            // A group that reads one path reads it once, into a name; an
+            // op that writes exactly that path writes the name, untested.
+            const one: ?m.Name = if (!gr.every and gr.reads.items.len == 1) blk: {
+                const x = try g.cx.fresh("x");
+                try js.constant(pblock, x, try g.cx.value(r.reads.at(gr.reads.items[0])));
+                break :blk x;
+            } else null;
+            var skip: std.ArrayList(m.Value.Index) = .empty;
+            if (one) |x| for (gr.ops.items) |k| {
+                const v = directValue(g, b, ops[k]) orelse continue;
+                if (g.tree.pathOf(v) != gr.reads.items[0]) continue;
+                direct[k] = x;
+                try skip.append(a_, v);
+            };
+            if (one) |x| {
+                const field = try g.print("g{d}_0", .{gi});
+                condition = try js.binary(.strict_ne, try g.ident(x), try g.member(try g.ident(i), field));
+                try js.assign(then, try g.member(try g.ident(i), field), try g.ident(x));
+                try fields.append(a_, .{ .key = field, .value = undef });
+            } else if (!gr.every) {
                 if (gr.reads.items.len == 0) {
                     const field = try g.print("g{d}", .{gi});
                     condition = try js.binary(.strict_eq, try g.member(try g.ident(i), field), undef);
@@ -713,7 +739,10 @@ const Gen = struct {
             @memset(mask, false);
             for (gr.ops.items) |k| {
                 mask[k] = true;
-                try values.appendSlice(a_, op_values[k]);
+                for (op_values[k]) |v| {
+                    if (direct[k] != null and std.mem.indexOfScalar(m.Value.Index, skip.items, v) != null) continue;
+                    try values.append(a_, v);
+                }
             }
             try g.cx.rootValues(then, index, values.items);
             patch.block = then;
@@ -728,7 +757,7 @@ const Gen = struct {
         const t = try g.template(b, n.template);
         const v = try g.cx.fresh("v");
         const cx = try g.cx.fresh("cx");
-        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .through = true, .grouped = true, .group_fields = fields.items };
+        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .through = true, .grouped = true, .group_fields = fields.items, .direct = direct };
         const object = try g.writeMount(b, &mount, t);
         const inst = try g.cx.fresh("i");
         try js.constant(mount.block, inst, object);
@@ -1633,6 +1662,19 @@ const Gen = struct {
         const a_ = g.a();
         if (op.node != .none) g.cx.at(op.node);
         const undef = try js.literal(.undefined);
+        if (k < f.direct.len and f.direct[k] != null) {
+            // What `m` still writes of an event; no kept value.
+            switch (op.what) {
+                .event => |x| try g.mountEvent(f, x, null),
+                .text => |x| {
+                    const n = try g.cx.fresh("x");
+                    try js.constant(f.block, n, try g.rt("insertText", &.{ try g.parentOf(f, x.at, true), try g.markerOf(f, x.at), try g.str("") }));
+                    f.texts[k] = n;
+                },
+                else => {},
+            }
+            return;
+        }
         switch (op.what) {
             .placeholder, .style => try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef }),
             .text => |x| {
@@ -1742,6 +1784,10 @@ const Gen = struct {
                         if (f.grouped) try g.writeAttribute(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
                         continue;
                     }
+                    if (k < f.direct.len) if (f.direct[k]) |d| {
+                        try g.writeAttribute(f.block, try g.node(f, x.t), x.item, try g.ident(d), null);
+                        continue;
+                    };
                     const then = try js.block();
                     try g.writeAttribute(then, try g.node(f, x.t), x.item, try g.read(b, f, x.value), try g.fieldOf(f, "a{d}", .{k}));
                     try js.assign(then, try g.fieldOf(f, "a{d}", .{k}), try g.read(b, f, x.value));
@@ -1886,6 +1932,16 @@ const Gen = struct {
     /// `if (v !== i.aK) { i.aK = v; <write>; }`.
     fn guarded(g: *Gen, b: *const Body, f: *Fn, v: u32, k: u32, target: m.Expr, w: Write) m.Error!void {
         const js = g.jsb();
+        if (k < f.direct.len) if (f.direct[k]) |x| {
+            // Its group ran because the path it writes changed.
+            switch (w) {
+                .data => try js.assign(f.block, try g.member(target, "data"), try g.ident(x)),
+                .property => |p| try js.assign(f.block, try g.member(target, p), try g.ident(x)),
+                .toggle => |n| try js.expression(f.block, try g.method(try g.member(target, "classList"), "toggle", &.{ try g.str(n), try g.ident(x) })),
+                .style => |n| try js.expression(f.block, try g.method(try g.member(target, "style"), "setProperty", &.{ try g.str(n), try g.ident(x) })),
+            }
+            return;
+        };
         const then = try js.block();
         try js.assign(then, try g.fieldOf(f, "a{d}", .{k}), try g.read(b, f, v));
         switch (w) {
@@ -1996,6 +2052,31 @@ const Gen = struct {
         return g.ident(it);
     }
 };
+
+/// The one value an op writes when the group's name may stand for it: a
+/// text hole, a plain attribute, a style entry or an event, none of which
+/// keeps more than its last value. A toggle writes `false` at mount only
+/// when it must, and a class or style list, a `stateful` property and a
+/// constant need what only their own test keeps.
+fn directValue(g: *Gen, b: *const Body, op: Op) ?m.Value.Index {
+    const k = switch (op.what) {
+        .placeholder => |x| x.value,
+        .text => |x| x.value,
+        .style => |x| x.value,
+        .event => |x| x.handler,
+        .attribute => |x| blk: {
+            if (x.constant or g.stateful(x.item)) return null;
+            if (x.item.class == .class_list or x.item.class == .style_list) return null;
+            if (x.item.value.kind != .dynamic) return null;
+            break :blk x.value;
+        },
+        else => return null,
+    };
+    return switch (b.operands.items[k]) {
+        .value => |v| v,
+        else => null,
+    };
+}
 
 /// The representative of op `k`'s group.
 fn find(parent: []u32, k: u32) u32 {
