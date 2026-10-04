@@ -226,14 +226,11 @@ bindings to JavaScript. Every line of JavaScript in a build lives in the
 platform, written to report each documented failure as a typed value, so
 libraries are pure Beni and cannot break the guarantees.
 
-Beni ships with these platforms:
+Beni ships with three platforms:
 
-- **`node`**: programs and tests run under Node.
-- **`browser`**: the DOM, events, HTTP, storage, routing and timers.
-- **`browser-tea`**: The Elm Architecture on top of `browser`, with commands,
-  subscriptions and keyed, cancellable effects.
-- **`html`**: the shared HTML vocabulary, so one view can render in the
-  browser or to a string under Node.
+- **`node`**: command-line programs and server code.
+- **`browser`**: web pages, with the DOM, HTTP, storage and routing.
+- **`browser-tea`**: web pages written in The Elm Architecture.
 
 Markup is part of the language, written as JSX and typed against the
 platform's vocabulary:
