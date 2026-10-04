@@ -1,0 +1,5 @@
+# A tick: "label" again, and not "sorted".
+click #tick
+# Another list: "sorted" once.
+click #add
+click #tick

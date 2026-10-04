@@ -8361,6 +8361,9 @@ pub const Lowerer = struct {
             const p = l.pos(def);
             switch (l.bir.instTag(def)) {
                 .let_def => {
+                    // A `let` only a grouped root reads is that root's to
+                    // evaluate (`boundary.md` §9.4.6, 1.5, `Root.lets`).
+                    if (l.markupMovedLet(def)) continue;
                     const payload = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
                     const params = l.bir.extraSlice(
                         .{ .start = payload.params_start, .end = payload.params_end },
@@ -10684,6 +10687,27 @@ pub const Lowerer = struct {
         return answer;
     }
 
+    /// Whether the `let_def` `def` was moved into a root its lowering
+    /// evaluates: the tree moved it, and that root is grouped.
+    fn markupMovedLet(l: *Lowerer, def: Inst.Index) bool {
+        const st = l.mk orelse return false;
+        const root = st.built.movedLet(def.int()) orelse return false;
+        return l.markupGrouped(@fromBackingInt(@intCast(root)));
+    }
+
+    /// `cx.bindLet`: the `k`-th `let` of root `index` read under `name`,
+    /// until the root's inputs are unbound.
+    fn markupBindLet(l: *Lowerer, index: beni_markup.Root.Index, k: u32, bound_to: beni_markup.Name) Allocator.Error!void {
+        const st = l.mk.?;
+        const root = st.built.tree.root(index);
+        if (k >= root.lets.len) return;
+        const local = st.built.values[root.lets.start + k].let_value.local;
+        if (local >= l.local_names.len) return;
+        const top = &st.binds.items[st.binds.items.len - 1];
+        try top.lets.append(l.scratch, .{ local, l.local_names[local] });
+        l.local_names[local] = @fromBackingInt(@intCast(@backingInt(bound_to)));
+    }
+
     /// `cx.bindInputs`: each input's local read under the name given, and
     /// a new function's label scope, until `unbindInputs`.
     fn markupBindInputs(l: *Lowerer, index: beni_markup.Root.Index, names: []const beni_markup.Name) Allocator.Error!void {
@@ -10705,6 +10729,12 @@ pub const Lowerer = struct {
         const top = st.binds.pop() orelse return;
         std.debug.assert(top.root == index);
         const root = st.built.tree.root(index);
+        var j = top.lets.items.len;
+        while (j > 0) {
+            j -= 1;
+            const saved = top.lets.items[j];
+            l.local_names[saved[0]] = saved[1];
+        }
         for (0..root.inputs.len) |k| {
             const local = st.built.values[root.inputs.start + k].capture;
             if (local < l.local_names.len) l.local_names[local] = top.names[k];
@@ -10720,11 +10750,15 @@ pub const Lowerer = struct {
         const root = st.built.tree.root(index);
         const wanted = try l.scratch.alloc(bool, root.values.len);
         @memset(wanted, false);
+        var stmts: StmtList = .empty;
         for (values) |v| {
             const at = @backingInt(v);
             if (at >= root.values.start and at < root.values.start + root.values.len) wanted[at - root.values.start] = true;
+            // A moved `let`, evaluated as a value is.
+            if (at >= root.lets.start and at < root.lets.start + root.lets.len) {
+                try l.markupBind(&stmts, at, st.built.values[at].let_value.inst);
+            }
         }
-        var stmts: StmtList = .empty;
         try l.markupValuesSome(&stmts, root, wanted);
         try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
     }
@@ -10790,7 +10824,7 @@ pub const Lowerer = struct {
         const p = st.pos;
         const at = @backingInt(v);
         switch (st.built.values[at]) {
-            .inst => switch (st.bound[at]) {
+            .inst, .let_value => switch (st.bound[at]) {
                 .name => |n| return l.ident(n, p),
                 .node => |node| {
                     const d = l.b.dataOf(node);
@@ -11116,6 +11150,9 @@ const InputBind = struct {
     root: beni_markup.Root.Index,
     names: []const JsIr.NameIndex,
     case_depth: u32,
+    /// The root's `let`s bound since (`cx.bindLet`), each with its local's
+    /// name before.
+    lets: std.ArrayList(struct { u32, JsIr.NameIndex }) = .empty,
 };
 
 /// One pair of program start data (`boundary.md` §9.4.5).
@@ -11248,6 +11285,10 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn unbindInputs(impl: *anyopaque, r: M.Root.Index) void {
         lowerer(impl).markupUnbindInputs(r);
+    }
+
+    fn bindLet(impl: *anyopaque, r: M.Root.Index, k: u32, bound_to: M.Name) E!void {
+        return lowerer(impl).markupBindLet(r, k, bound_to);
     }
 
     fn rootValues(impl: *anyopaque, into: M.Block, r: M.Root.Index, values: []const M.Value.Index) E!void {
@@ -11457,6 +11498,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .grouped = grouped,
         .bind_inputs = bindInputs,
         .unbind_inputs = unbindInputs,
+        .bind_let = bindLet,
         .root_values = rootValues,
         .component_call = componentCall,
         .extractor = extractor,

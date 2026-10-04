@@ -1,0 +1,60 @@
+-- load
+console.log: label: "many"
+console.log: sorted: [1,2,3]
+<body>
+  <main>
+    <button id="tick">"tick"</button>
+    <button id="add">"add"</button>
+    <p>"2"</p>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+  </main>
+</body>
+-- click #tick
+console.log: label: "many"
+<body>
+  <main>
+    <button id="tick">"tick"</button>
+    <button id="add">"add"</button>
+    <p>"3"</p>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+  </main>
+</body>
+-- click #add
+console.log: label: "many"
+console.log: sorted: [1,2,3,7]
+<body>
+  <main>
+    <button id="tick">"tick"</button>
+    <button id="add">"add"</button>
+    <p>"3"</p>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"7"</li>
+    </ul>
+  </main>
+</body>
+-- click #tick
+console.log: label: "many"
+<body>
+  <main>
+    <button id="tick">"tick"</button>
+    <button id="add">"add"</button>
+    <p>"4"</p>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"7"</li>
+    </ul>
+  </main>
+</body>

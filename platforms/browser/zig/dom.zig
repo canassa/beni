@@ -663,6 +663,33 @@ const Gen = struct {
         var patch: Fn = .{ .block = pblock, .v = null, .i = i, .grouped = true };
         var fields: std.ArrayList(m.Property) = .empty;
         const undef = try js.literal(.undefined);
+        // The `let`s only this root reads, first, each under the test of
+        // what it reads, and kept: `d<k>` (backend.md §15.4, *The `let`
+        // rule*).
+        for (0..r.lets.len) |k| {
+            const lv = r.lets.at(@intCast(k));
+            const then = try js.block();
+            const kept = try g.print("d{d}", .{k});
+            var condition: ?m.Expr = null;
+            const reads = g.tree.readsOf(lv);
+            if (reads.len == 0) {
+                condition = try js.binary(.strict_eq, try g.member(try g.ident(i), kept), undef);
+            } else for (reads, 0..) |rd, j| {
+                const field = try g.print("l{d}_{d}", .{ k, j });
+                const path = r.reads.at(rd);
+                const test_ = try js.binary(.strict_ne, try g.cx.value(path), try g.member(try g.ident(i), field));
+                condition = if (condition) |c| try js.binary(.logical_or, c, test_) else test_;
+                try js.assign(then, try g.member(try g.ident(i), field), try g.cx.value(path));
+                try fields.append(a_, .{ .key = field, .value = undef });
+            }
+            try g.cx.rootValues(then, index, &.{lv});
+            try js.assign(then, try g.member(try g.ident(i), kept), try g.cx.value(lv));
+            try js.@"if"(pblock, condition.?, then, null);
+            try fields.append(a_, .{ .key = kept, .value = undef });
+            const name = try g.cx.fresh("let");
+            try js.constant(pblock, name, try g.member(try g.ident(i), kept));
+            try g.cx.bindLet(index, @intCast(k), name);
+        }
         for (groups.items, 0..) |gr, gi| {
             const then = try js.block();
             var condition: ?m.Expr = null;
