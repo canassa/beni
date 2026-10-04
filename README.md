@@ -158,24 +158,22 @@ total xs =
 
 ### Colorless functions
 
-There is no `async` and no `await`. The compiler infers which functions may
-wait, and the runtime suspends and resumes them. A newer search below cancels
-the one still sleeping.
+There is no `async` and no `await`. A function that waits on the network is
+called like any other function, and so are the functions that call it.
 
 ```elm
-update msg model =
-    case msg of
-        Typed q →
-            ( { model | query = q }, Cmd.keyed Search Cmd.Restart (search q _) )
-
-        Found hits →
-            ( { model | results = hits }, Cmd.none )
+fetchName : Int → Result Http.Error String
+fetchName id = Http.get { url = "/users/${String.fromInt id}", expect = Http.expectString }
 
 
-search : String, Cmd.Send Msg → ⊤
-search q send =
-    Time.sleep (Time.millis 250)
-    send (Found (lookup q))
+greet : Int → String
+greet id =
+    case fetchName id of
+        Ok name →
+            "Hello, ${name}"
+
+        Err _ →
+            "Hello, stranger"
 ```
 
 ### A fiber runtime
