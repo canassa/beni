@@ -1729,6 +1729,18 @@ read.** For a root of kind `expression`:
   evaluate it in a render in which one of its paths is not `===` to what it was at the value's last
   evaluation, and at the first (`language.md` §11.11, as amended 2026-10-04).
 
+**A `let` read only by the root** (*the same day*, research 56 §6.2's `let` rule): **`Root.lets`**,
+values of a grouped root that each are one `let` of the enclosing declaration — a constant one,
+`shown = top model.items`, bound outside the root, whose every use in the declaration is inside the
+root's values, and whose expression holds no `?` and has no effect but `Debug`'s — in source order.
+The compiler does not evaluate such a `let` where it is written: it is a value of the root, read
+through its own paths (`tree.readsOf` of a `Root.lets` value), and a value that uses it reads what
+the `let` reads instead of the `let` itself; it is never one of `Root.inputs`.
+**`cx.bindLet(root, k, name)`** makes the `k`-th `let`'s local read under `name` until
+`cx.unbindInputs(root)`, and `cx.rootValues` evaluates a `Root.lets` value as it does an
+instruction value. A lowering must evaluate a `let` before any value that uses it in a render that
+evaluates both, and must give a value that uses it the `let`'s value as last evaluated.
+
 A root `cx.grouped` answers false for is lowered exactly as before. `ssr` does not set `groups`;
 `dom` targets 1.5 (`backend.md` §15.3, *A root computes its own values*).
 

@@ -7676,6 +7676,21 @@ The rules, exactly:
 - **Markup that writes nothing** (no op) is the hoisted block it was, `{ t, v: null }`, with no `p`
   to call.
 
+*The `let` rule* (the same day; research 56 §6.2, Fix B's second part). A `let` of the enclosing
+function that only the root's values use (`Root.lets`) is not written where it stands: `p`
+evaluates it first, after binding the inputs, under its own test, and keeps it in the instance —
+
+```js
+if (in0.items !== i.l0_0) { i.l0_0 = in0.items; const $t$1 = Main$top(in0.items); i.d0 = $t$1; }
+const shown = i.d0;                          // `cx.bindLet`: the let's local, for every group after
+```
+
+— so `shown = top model.items` in `view` is computed when `model.items` is not the list it was
+computed from, and otherwise not at all, which is Solid's `createMemo` recovered from the reads. A
+group whose ops read `shown` reads `model.items`, so it runs exactly when `shown` may be another
+list, and reads the one kept. A `let` used anywhere else — in a condition that chooses between two
+roots, in two roots — stays where it is, an input like any other local.
+
 A row's root is not a grouped root: §15.5's rows keep their inputs and item tests. A root inside a
 `For` row, a `Show` body or another root's value is grouped as any root: its block is made where it
 is evaluated, inside the enclosing `p` or row, from the inputs bound there.
