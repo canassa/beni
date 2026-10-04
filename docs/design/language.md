@@ -1993,6 +1993,16 @@ is what it is compared with; so is a value that may have an effect — the effec
 (`--release` refuses `Debug`, so no shipped program can tell). `Random.value` or `Time.now` in a
 `view` therefore answers anew on every render, as it did before.
 
+**A `let` read only by markup is a value of that markup** (the owner's decision of 2026-10-04, the
+rule the amendment above names). A constant `let` of the function enclosing a markup root — a name
+bound to an expression, not a function — whose every use is inside that root's values is evaluated
+as one of them: at the root's first render, and later only in a render in which one of the paths
+its expression reads is not `===` to what it was when it was last evaluated; a value that uses it
+reads those paths, and the `let`'s last value. So `shown = top model.items` in a `view` is
+computed again only when `model.items` is another list. A `let` used anywhere outside the root,
+one whose expression may have an effect other than `Debug`'s, and one that defines a function, is
+evaluated where it is written, as before.
+
 ### 11.12 Identity: an untouched field keeps its identity
 
 **A record update `{ r | a = x }` produces a record whose every field other than `a` is the very
