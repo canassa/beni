@@ -784,6 +784,69 @@ against Solid 1's 0.468. In a trace (`static:50`): B 0.105, release 0.091, Solid
   group and the per-op tests left inside a group that reads several paths.
 - **The table's append** in the development build (5.64 / 5.20); `--release` 5.06.
 
+### 9.6 After the review: the fixes, re-measured
+
+The review of A and B found markup nested in a value no longer patched on every render (a
+controlled input in an `if` hole or a `let` of markup kept a rejected edit; `Random.value` in a
+view that reads nothing, or nested, stopped drawing), a `let` two roots could take evaluated by
+both, a constant `raw` attribute written again whenever its group reran, a cubic pass over a
+view's `let`s, and — older than slice B — helper calls and components skipped even when their
+markup held a controlled input or their call an effect. Each is fixed with a page fixture that fails
+on the compiler before it (`browser/dom/StatefulNested`, `EveryRenderNested`, `EveryRenderTop`,
+`ConstantWriteOnce`, `LetOneOwner`, `LetChain` — 79.9 billion instructions before, inside the
+budget after — `SkippedCallsLive` and `HelperSkip`), specified in `language.md` §11.11, `boundary.md`
+§9.4.6 and `backend.md` §15.4 as amended after review. **Still open, and older than this work:** a `For` row or a `Show` body that a render skips — its item and inputs unchanged — is not patched, so a controlled input inside a row keeps an edit `update` rejected; the same restate would close it, and it is not done here.
+
+Same batch, the slice-B compiler against the fixed one (`results/2026-10-04-r56-review-fixes.json`,
+2 pages × 4 samples; Solid 1 beside them), script ms, median:
+
+| point | B | fixed | Solid 1 |
+|---|--:|--:|--:|
+| holes 10 | 0.090 | 0.091 | 0.084 |
+| holes 1 000 | 0.098 | 0.097 | 0.082 |
+| holes 10 000 | 0.116 | 0.111 | 0.095 |
+| rows 1 000, change | 0.139 | 0.133 | 0.095 |
+| derived 100 000 | 0.093 | 0.091 | 0.090 |
+
+The table's update-every-10th, n = 30 (`…-review-fixes-update.json`): A 1.07 [0.96–1.36], B 1.34
+[1.08–1.51], fixed 1.15 [1.03–1.43], Solid 1 1.74 — the three beni builds' interquartile ranges
+overlap, so B's apparent cost on this operation is not established; select, n = 20: B 0.82, fixed
+0.74, Solid 1 1.54. **The fixes cost no measured speed.** Bytes: the empty page does not move; a
+page that maps markup (`Html.map`) or calls a helper or component pays `restate` (HolesPage +49
+brotli).
+
+### 9.7 Slice C, option 2: how the renderer reaches a core function (proposal)
+
+*Opinion, for the specification.* The owner chose to take `$diff` off the trie header so that
+only a page with a keyed list pays for it. The renderer is `Rt.beni`, a platform module; the
+function must read a trie's private fields, which `backend.md` §4 keeps to `core/List` (readers
+see `length`, `Array.isArray` and `$plain()` only). The options under `boundary.md`'s rules:
+
+1. **A public `List` function** (`List.changes`). Refused: it is not a function of its arguments'
+   values — two equal lists answer differently by where they came from — so a program could
+   observe sharing, which beni promises it cannot (`language.md` §11.12).
+2. **A core-private value the code generator names** (as it names `unsafeGet`). Refused: those are
+   for code the compiler writes, and `Rt.beni` is source, which can name only what an interface
+   exposes.
+3. **A privileged core module, `Js.Lists`, importable only where `Js` is** (recommended). `Js` is
+   already refused outside platform packages (`check/bad/JsOutsidePlatform`); the rule extends to
+   the modules under it. `core/Js/Lists.beni` holds `diff : List a, List a → Js.Value` — the
+   `[ position, element, … ]` array or null of §4's *fourth point* — written in beni over `Js`,
+   reading the header's fields, and the protocol section says this module, like `List`, may read
+   them. `Rt.forKeyed` imports it; reachability keeps it exactly where a keyed `For` is rendered,
+   and a program that makes tries without one ships none of it.
+
+**Bytes**, from the C branch (`r56-slice-C-over-budget`): the release rows page paid +296 brotli
+with `$diff` a key of every trie header and the functions in `List`; the key itself is about 10
+of those, so option 3 costs **≈ 285 bytes on a page with a keyed list and a trie, and 0 on any
+other** (the C branch charged +200 to every program that builds a trie, `emit/release/app/
+SpecMaybe` 825 → 1 025). That is still over the 200 budget. Levers, each to be measured one at a
+time before the slice: walk the tail as part of the last leaf's loop rather than a call of its own
+(≈ 20); fold `edited`'s key check into `forKeyed`'s existing start-rows pass (≈ 30); answer only
+the first 32 changes and take the full pass beyond (no saving in bytes, a bound on work). Whether
+those reach 200 is not known until they are written; if they do not, the decision returns to the
+owner with the measured figure.
+
 ## Appendix: reproducing
 
 ```sh
