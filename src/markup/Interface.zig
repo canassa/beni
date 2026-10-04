@@ -135,6 +135,18 @@ pub const Tree = struct {
     /// `Debug`'s (language.md §11.11): a lowering evaluates such a value of
     /// a grouped root on every render. Empty: none may.
     every_render: []const bool = &.{},
+    /// 1.5: per value, `k + 1` when the value is exactly its root's `k`-th
+    /// read — a local read through its fields and nothing more — and 0
+    /// otherwise. Empty: none is known to be.
+    value_paths: []const u32 = &.{},
+
+    /// The position in its root's `reads` of the path value `v` is
+    /// exactly, if it is one (`value_paths`).
+    pub fn pathOf(t: *const Tree, v: Value.Index) ?u32 {
+        const at = @backingInt(v);
+        if (at >= t.value_paths.len or t.value_paths[at] == 0) return null;
+        return t.value_paths[at] - 1;
+    }
 
     /// Whether value `v` is the same on every evaluation (`constant`).
     pub fn isConstant(t: *const Tree, v: Value.Index) bool {
