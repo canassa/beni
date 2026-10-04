@@ -36,30 +36,173 @@ largest shapes n =
 
 ## The language
 
-Beni has custom types and records, pattern matching with exhaustiveness
-checking, and type inference throughout. Values are immutable and functions are
-pure. A missing value is a `Maybe` and a failure is a `Result`, and the type
-checker proves that every `case` handles every value.
+### Custom types and pattern matching
 
-Functions take all their arguments at once. A call is never partially applied by
-accident, and when you do want partial application you write it, as in
-`List.map xs (scale 2 _)`. A type's functions can be called as methods
-(`point.distance other`), resolved at compile time, and a function can require
-them of its argument (`where a.compare : a, a → Order`).
-
-Effects need no special syntax. The compiler infers which functions may wait, on
-a timer or on the network, and the runtime handles the rest, including
-cancellation, timeouts, retries and structured concurrency:
+A custom type lists every shape a value can take. A `case` must handle all of
+them, so adding a new shape later points you at every place that needs to
+change.
 
 ```elm
+type Payment
+    = Cash
+    | Card String
+    | Voucher Int
+
+
+describe : Payment → String
+describe payment =
+    case payment of
+        Cash →
+            "cash"
+
+        Card last4 →
+            "card ending in ${last4}"
+
+        Voucher amount →
+            "voucher for ${String.fromInt amount}"
+```
+
+### Immutable records
+
+Records hold named fields. Updating one gives you a new record and leaves the
+old one as it was.
+
+```elm
+type alias User =
+    name : String
+    age : Int
+
+
+birthday : User → User
+birthday user = { user | age = user.age + 1 }
+```
+
+### Type inference
+
+Annotations are optional. The compiler infers the most general type, here
+`List number → List number`.
+
+```elm
+double xs = List.map xs λx → x * 2
+```
+
+### No currying
+
+A function takes all its arguments in one call. Partial application is written
+out with `_`, so it never happens by accident.
+
+```elm
+scale : Float, Float → Float
+scale factor x = factor * x
+
+
+doubled : List Float
+doubled = List.map [ 1.0, 2.0, 3.0 ] (scale 2 _)
+```
+
+### Static dispatch
+
+The power of type classes without the complexity. A type's methods are the
+functions its module exports, so `price.add tax` calls `Money.add`. Generic
+code asks for a method with `where`, and the compiler finds it in the module
+that declares the type. There are no instance declarations, no orphan rules
+and no global coherence checks, because there is only ever one place to look.
+Every call is resolved at compile time and costs the same as a direct function
+call.
+
+```elm
+-- Money.beni
+pub type Money
+    = Cents Int
+
+
+pub add : Money, Money → Money
+add (Cents a) (Cents b) = Cents (a + b)
+```
+
+```elm
+-- Main.beni
+import Money exposing (Money)
+
+
+clamp : a, a, a → a
+    where a.compare : a, a → Order
+clamp low high x =
+    if x < low then
+        low
+    else if x > high then
+        high
+    else
+        x
+
+
+withFee : Money, Money → Money
+withFee amount fee = clamp (Money.Cents 0) (Money.Cents 10000) (amount.add fee)
+```
+
+`==` and `<` are methods too. They call the type's `eq` and `compare`, and the
+compiler derives both when a type does not write its own. That is why `clamp`
+works on `Money` here without any extra code.
+
+### List patterns
+
+Lists are written and matched with brackets. `…rest` takes the remaining
+elements.
+
+```elm
+total : List Int → Int
+total xs =
+    case xs of
+        [] →
+            0
+
+        [ x, …rest ] →
+            x + total rest
+```
+
+### Colorless functions
+
+There is no `async` and no `await`. The compiler infers which functions may
+wait, and the runtime suspends and resumes them. A newer search below cancels
+the one still sleeping.
+
+```elm
+update msg model =
+    case msg of
+        Typed q →
+            ( { model | query = q }, Cmd.keyed Search Cmd.Restart (search q _) )
+
+        Found hits →
+            ( { model | results = hits }, Cmd.none )
+
+
 search : String, Cmd.Send Msg → ⊤
 search q send =
     Time.sleep (Time.millis 250)
     send (Found (lookup q))
 ```
 
-`schema` declarations describe data coming from outside, such as JSON over
-HTTP, and compile to their own parsers and printers with typed errors.
+### Schemas
+
+A `schema` describes data from outside the program, such as JSON. It compiles to
+a parser and a printer, and a parse failure is a typed value, not an exception.
+
+```elm
+schema Item =
+    id : Int
+    title : String
+    done : Bool
+
+
+firstTitle : String → String
+firstTitle json =
+    case Item.parse json of
+        Ok item →
+            item.title
+
+        Err _ →
+            "invalid"
+```
 
 ## Platforms
 
