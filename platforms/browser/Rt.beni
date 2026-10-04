@@ -173,6 +173,7 @@ slot parent marker cx =
         , z = Js.null
         , d = False
         , r = Js.null
+        , l = False
         }
 
 
@@ -227,24 +228,32 @@ again i =
 -- `(slot)`: what the slot shows patched again where it must be, though
 -- a render skipped it — a group that did not run, a helper or a
 -- component not called, a `Show` body or a list's rows left as they
--- were. A list's rows are patched again when its row function is live
--- (`l`), a list of blocks block by block; a fallback or a single
--- block by `again`.
+-- were. A list's rows are, when the slot says so (`l`): a block row's —
+-- and a `List Html` hole's blocks — by `again`, a row compiled in place
+-- by its row function's `p` (`r`) with the item it shows. Only a live
+-- row function's `p` is kept, and never the row function itself, so a
+-- page whose rows are not live has its row objects specialised as before
+-- (backend.md §9). A fallback or a single block by `again`.
 pub restate : V → ⊤
 restate s =
-    u = Js.get s "u"
-    r = Js.get s "r"
-    if Js.isNull u then
-        ⊤
-    else if Js.isNull r then
-        Js.each u λi → again i
-    else if Js.to (Js.get r "l") then
-        Js.each u λi →
-            if Js.isUndefined (Js.get r "b") then
-                Js.to (Js.call r "p" [ i, Js.get i "x", Js.get i "y" ])
+    if Js.to (Js.get s "l") then
+        r = Js.get s "r"
+        Js.each (Js.get s "u") λi →
+            if Js.isUndefined (Js.get i "t") then
+                Js.to (Js.apply r [ i, Js.get i "x", Js.get i "y" ])
             else
                 again i
     if Js.isNull (Js.get s "i") then ⊤ else again (Js.get s "i")
+
+
+-- A list's rows restated from now on, and now, when its row function is
+-- live or makes blocks (`restate`).
+liveRows : V, V → ⊤
+liveRows s row =
+    if Js.to (Js.get row "l") || not (Js.isUndefined (Js.get row "b")) then
+        Js.set s "l" (Js.from True)
+        Js.set s "r" (Js.get row "p")
+        restate s
 
 
 -- Put a new instance in the slot, in place of what it held.
@@ -645,6 +654,7 @@ childList s list =
         restate s
     else
         Js.set s "b" list
+        Js.set s "l" (Js.from True)
 
         if Js.isNull (Js.get s "u") then
             Js.set s "u" (Js.array [])
@@ -1336,8 +1346,7 @@ forKeyed s items keyOf row inputs =
             keyedPass s items keyOf row same was now
     -- A live row function's rows are each patched again, whether this
     -- render ran them or not: a row may hold a controlled input.
-    Js.set s "r" row
-    if Js.to (Js.get row "l") then restate s
+    liveRows s row
     childMaybe
         s
         (if Js.to (Js.get items "length") == 0 then
@@ -1542,8 +1551,7 @@ forPosition s items row inputs =
         a = elements items
         positionsFrom s u a row same 0
         dropPast u (Js.to (Js.get a "length"))
-    Js.set s "r" row
-    if Js.to (Js.get row "l") then restate s
+    liveRows s row
     childMaybe
         s
         (if Js.to (Js.get items "length") == 0 then

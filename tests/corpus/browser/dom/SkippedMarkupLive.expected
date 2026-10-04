@@ -23,6 +23,8 @@
       <input id="k0" .value="r0">
     </p>
     <!---->
+    <input id="q0" .value="r0">
+    <!---->
   </main>
 </body>
 -- input #a "abcdef"
@@ -42,4 +44,6 @@
 -- input #p0 "abcdef"
 (the DOM did not change)
 -- input #k0 "abcdef"
+(the DOM did not change)
+-- input #q0 "abcdef"
 (the DOM did not change)
