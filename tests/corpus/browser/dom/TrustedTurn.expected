@@ -1,0 +1,35 @@
+-- load
+console.log: view: 0
+<body>
+  <section>
+    <button id="go">"go"</button>
+    <p>"0"</p>
+  </section>
+</body>
+-- press #go
+console.log: view: 11
+(a later listener ran)
+<body>
+  <section>
+    <button id="go">"go"</button>
+    <p>"11"</p>
+  </section>
+</body>
+-- click #go 1
+(the step's task ended)
+console.log: view: 22
+<body>
+  <section>
+    <button id="go">"go"</button>
+    <p>"22"</p>
+  </section>
+</body>
+-- click #go 3
+(the step's task ended)
+console.log: view: 55
+<body>
+  <section>
+    <button id="go">"go"</button>
+    <p>"55"</p>
+  </section>
+</body>

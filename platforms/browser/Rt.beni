@@ -249,6 +249,34 @@ phase : Js.Ref V
 phase = Js.ref Js.null
 
 
+-- A turn runs (`backend.md` §15.11, *A render at the end of a turn*): an
+-- event the browser dispatched, or a drain of core's scheduler, is being
+-- handled with no flush and no other turn beneath it. A flush a message
+-- queues meanwhile runs when the turn ends, not on a microtask of its own.
+turning : Js.Ref Bool
+turning = Js.ref False
+
+
+-- A flush runs: an event the browser dispatches inside one — the `focus`
+-- after-render work causes — is no turn of its own.
+flushing : Js.Ref Bool
+flushing = Js.ref False
+
+
+-- Run `f` as a turn when `trusted` holds and nothing beneath it is a turn
+-- or a flush; otherwise just run it. A turn's flush runs when `f` returns,
+-- where the microtask it replaces would have run.
+turn : Bool, sync (⊤ → ⊤) → ⊤
+turn trusted f =
+    if trusted && not (Js.read turning || Js.read flushing) then
+        Js.write turning True
+        f ⊤
+        Js.write turning False
+        if Js.read scheduled then flush ⊤
+    else
+        f ⊤
+
+
 -- ---- A defect stops the page (`boundary.md` §9.8.10 (c)) -----------------
 --
 -- A throw out of a program's own code — a handler, `update`, a render,
@@ -408,6 +436,7 @@ flush ⊤ =
         Js.finally
             (λ⊤ →
                 Js.write scheduled False
+                Js.write flushing True
                 renders = Js.read queued
                 Js.write queued (Js.array [])
                 Js.each renders λrender → Js.to (Js.apply render [])
@@ -416,6 +445,7 @@ flush ⊤ =
                     ⊤
                 else
                     Js.to (Js.apply (Js.read phase) [])
+                Js.write flushing False
                 Js.write ok True
             )
             λ⊤ → if Js.read ok then ⊤ else stop ⊤
@@ -463,6 +493,10 @@ startOne m =
     if Js.isUndefined (Js.get m "h") then
         mount (Js.get m "a") root
     else
+        -- Only a hosted program runs fibers: each drain of core's
+        -- scheduler is a turn, so what its fibers send renders when it
+        -- ends.
+        Task.onTurn λf → turn True f
         mount
             (Js.apply (Js.get m "h")
                 [ root
@@ -511,10 +545,14 @@ mount program root =
                         ⊤
                     else
                         Js.write scheduled True
-                        Js.to
-                            (Js.apply (Js.global "queueMicrotask")
-                                [ Js.from λ⊤ → microtask ⊤ ]
-                            )
+                        -- A turn flushes when it ends.
+                        if Js.read turning then
+                            ⊤
+                        else
+                            Js.to
+                                (Js.apply (Js.global "queueMicrotask")
+                                    [ Js.from λ⊤ → microtask ⊤ ]
+                                )
                 Js.write model (Js.call program "update" [ msg, Js.read model ])
         )
     childHtml s (Js.call program "view" [ Js.read model ])
@@ -1797,12 +1835,13 @@ mountAbove n =
 -- node with a handler for the event, until one stops it. An event inside
 -- a program mounted in another's markup goes on into the outer one, as
 -- the DOM's own bubbling does, and each handler's message goes to the
--- program that rendered it.
+-- program that rendered it. An event the browser dispatched is a turn:
+-- every handler of the walk is one render, when the walk ends.
 delegated : V → ⊤
 delegated event =
     type_ : String
     type_ = Js.to (Js.get event "type")
-    bubble event "$$${type_}" (Js.get event "target")
+    turn (Js.to (Js.get event "isTrusted")) λ⊤ → bubble event "$$${type_}" (Js.get event "target")
 
 
 bubble : V, String, V → ⊤
@@ -1858,6 +1897,6 @@ listen el name flags =
                 if Js.isUndefined (Js.get el key) then
                     ⊤
                 else
-                    fire el event key flags
+                    turn (Js.to (Js.get event "isTrusted")) λ⊤ → fire el event key flags
             ]
         )

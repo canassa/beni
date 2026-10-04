@@ -1,0 +1,61 @@
+-- An event the browser dispatches inside a flush is no turn
+-- (backend.md §15.11, *A render at the end of a turn*). After-render work
+-- focuses the input the render just showed; the browser fires its `focus`
+-- — trusted — while the flush's after-render phase runs, and the message
+-- the handler sends renders in the next flush, after that work has
+-- finished: "focused" is logged before the view that counts the focus,
+-- never a render inside the one running.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Edit
+    | Focused
+
+
+type alias Model =
+    editing : Bool
+    focuses : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Edit →
+            ( { model | editing = True }, Cmd.afterRender focusField )
+
+        Focused →
+            ( { model | focuses = model.focuses + 1 }, Cmd.none )
+
+
+focusField : Cmd.Send Msg → ⊤
+focusField _ =
+    case Dom.focus "field" of
+        Ok ⊤ →
+            Debug.log "focused" ⊤
+
+        Err _ →
+            Debug.log "not focused" ⊤
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="edit" onClick={Edit}>edit</button>
+        {if model.editing then <input id="field" onFocus={λ_ → Focused} /> else <span />}
+        <p>{Debug.log "view" model.focuses}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { editing = False, focuses = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

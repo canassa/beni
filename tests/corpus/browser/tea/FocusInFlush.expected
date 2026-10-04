@@ -1,0 +1,21 @@
+-- load
+console.log: view: 0
+<body>
+  <main>
+    <button id="edit">"edit"</button>
+    <span></span>
+    <p>"0"</p>
+  </main>
+</body>
+-- press #edit
+console.log: view: 0
+console.log: focused: ⊤
+(a later listener ran)
+console.log: view: 1
+<body>
+  <main>
+    <button id="edit">"edit"</button>
+    <input id="field" .value="" :focus>
+    <p>"1"</p>
+  </main>
+</body>

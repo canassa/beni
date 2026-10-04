@@ -1,0 +1,6 @@
+# A user's click: both handlers, one render, before the later listener.
+press #go
+# Page script's click: one render, after the step's task.
+click #go 1
+# Three of them in one task: six messages, one render after the task.
+click #go 3

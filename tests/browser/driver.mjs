@@ -59,11 +59,21 @@
 //                               or `(keyup's …)` when its dispatch returns
 //   dblclick <selector>         a bubbling, cancelable `dblclick` MouseEvent
 //                               (`detail` 2), alone: no `click`s before it
+//   press <selector>            a user's click: trusted, as the browser
+//                               dispatches one with nothing of the page's
+//                               beneath it (Chrome: `Input.dispatchMouseEvent`
+//                               at the element's centre); a listener the
+//                               driver added on the window, after every
+//                               listener of the page, logs `(a later listener
+//                               ran)`
 //   focus <selector>            `.focus()`
 //   blur <selector>             `.blur()`
-//   advance <ms>                move the page's virtual clock on by `ms`,
+//   advance <ms> [tasks]        move the page's virtual clock on by `ms`,
 //                               firing each timer that comes due, in
-//                               order, the page settling after each
+//                               order, the page settling after each; with
+//                               `tasks`, `(the timer's task ended)` is logged
+//                               as each timer's callback returns, before any
+//                               microtask it queued
 //   event <window|document> <name> [<n>]
 //                               `n` (default 1) plain `Event`s of that name
 //                               on the window or the document, in one task
@@ -134,7 +144,11 @@
 // A selector is one CSS selector without spaces (`#id`, `li:nth-child(2)>a`)
 // and must match an element. Events are dispatched with `dispatchEvent`, in
 // both DOMs, so none is trusted and `key` types nothing: text goes in with
-// `input`.
+// `input`. The two exceptions are trusted as Chrome makes them: `press`, and
+// the focus events a `focus()` or `blur()` call fires. happy-dom has no
+// `isTrusted`, so the prelude gives it one that says so (an emulation: a
+// trusted event here is still dispatched from the driver's stack, where
+// Chrome runs microtasks between two listeners of a user's click).
 
 import { Console } from "node:console";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -311,6 +325,45 @@ function prelude() {
     return `a thrown ${typeof error}: ${show(error)}`;
   };
   record.describe = describe;
+  // Trusted events. Chrome says which events it dispatched itself in
+  // `isTrusted`; happy-dom has no `isTrusted` at all, so here it is read
+  // from a set: the `press` step's click is in it, and so is every focus
+  // event fired while a `focus()` or `blur()` call runs, which Chrome
+  // dispatches as its own (trusted) whoever called the method. Every other
+  // event — `dispatchEvent`'s, the other steps' — is untrusted, in both.
+  // happy-dom's classes are shared by every page of one process, so the
+  // emulation is installed once and found again by the next page.
+  if (Event.prototype.__beniTrust !== undefined) {
+    record.trust = Event.prototype.__beniTrust;
+  } else if (new Event("beni").isTrusted === undefined) {
+    const trusted = new WeakSet();
+    const focusing = new Set(["focus", "blur", "focusin", "focusout"]);
+    let inside = 0;
+    record.trust = (event) => {
+      trusted.add(event);
+      return event;
+    };
+    Object.defineProperty(Event.prototype, "__beniTrust", { value: record.trust });
+    Object.defineProperty(Event.prototype, "isTrusted", {
+      configurable: true,
+      get() {
+        return trusted.has(this) || (inside !== 0 && focusing.has(this.type));
+      },
+    });
+    for (const name of ["focus", "blur"]) {
+      const method = HTMLElement.prototype[name];
+      HTMLElement.prototype[name] = function (...args) {
+        inside += 1;
+        try {
+          return method.apply(this, args);
+        } finally {
+          inside -= 1;
+        }
+      };
+    }
+  } else {
+    record.trust = null;
+  }
   globalThis.addEventListener("error", (event) => record.errors.push(describe(event.error ?? event.message)));
   globalThis.addEventListener("unhandledrejection", (event) => record.errors.push(describe(event.reason)));
   // Every listener the page adds to the window or the document from here
@@ -390,7 +443,15 @@ function step(s) {
         if (t === null) break;
         clock.timers = clock.timers.filter((c) => c !== t);
         clock.now = t.due;
-        t.fn(...t.args);
+        // A timer's callback runs as a task of its own: what it throws is
+        // reported to the window's `error` listeners, as a host reports it,
+        // and the clock goes on.
+        try {
+          t.fn(...t.args);
+        } catch (error) {
+          dispatchEvent(new ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) }));
+        }
+        if (s.tasks) globalThis.__beniHarness.log.push("(the timer's task ended)");
         await new Promise((done) => clock.real(done, 0));
       }
       clock.now = target;
@@ -597,6 +658,19 @@ function step(s) {
     case "dblclick":
       target.dispatchEvent(new MouseEvent("dblclick", { ...init, button: 0, detail: 2 }));
       return null;
+    // A user's click, trusted. Chrome's is the driver's to send, at the
+    // element's centre: this answers where that is. happy-dom's is
+    // dispatched here, `isTrusted` as the prelude reads it.
+    case "press": {
+      addEventListener("click", () => globalThis.__beniHarness.log.push("(a later listener ran)"), { once: true });
+      const trust = globalThis.__beniHarness.trust;
+      if (trust === null) {
+        const r = target.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }
+      target.dispatchEvent(trust(new MouseEvent("click", { ...init, button: 0, detail: 1 })));
+      return null;
+    }
     case "focus":
       target.focus();
       return null;
@@ -735,8 +809,11 @@ if (stepsPath !== undefined) {
     const [, command, selector, argument] = m;
     const s = { line: written, where, command, selector, throws };
     if (command === "advance") {
-      if (argument !== undefined || !/^[0-9]+$/.test(selector)) usage(`${where}: \`advance\` takes a number of milliseconds`);
+      if ((argument !== undefined && argument !== "tasks") || !/^[0-9]+$/.test(selector)) {
+        usage(`${where}: \`advance\` takes a number of milliseconds and at most \`tasks\``);
+      }
       s.ms = Number(selector);
+      s.tasks = argument === "tasks";
     } else if (command === "url" || command === "hash") {
       try {
         s.text = JSON.parse(argument === undefined ? selector : "");
@@ -823,7 +900,7 @@ if (stepsPath !== undefined) {
       }
     } else if (command === "flush") {
       s.more = argument === undefined ? [] : argument.split(/\s+/);
-    } else if (command === "click" || command === "dblclick" || command === "focus" || command === "blur") {
+    } else if (command === "click" || command === "dblclick" || command === "focus" || command === "blur" || command === "press") {
       if (argument !== undefined) usage(`${where}: \`${command}\` takes a selector only`);
     } else if (command === "input" || command === "type") {
       try {
@@ -1023,6 +1100,13 @@ async function chromePage(endpoint) {
       if (r.exceptionDetails) throw new Error(`${fn.name} failed in Chrome: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
       return r.result.value;
     },
+    // A trusted click at a point of the page, as a user's: pressed and
+    // released, each resolved once the renderer has handled it.
+    click: async (x, y) => {
+      for (const type of ["mousePressed", "mouseReleased"]) {
+        await send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: 1 }, sessionId);
+      }
+    },
     close: async () => {
       await send("Target.closeTarget", { targetId });
       socket.close();
@@ -1124,7 +1208,9 @@ async function runPage(entry, fiber) {
         for (const [i, t] of tasks.entries()) {
           if (i !== 0) await page.run(settle);
           const why = await page.run(step, t);
-          if (why !== null) return `${s.where}: ${s.line}: ${why}`;
+          // A `press` in Chrome: the click goes in as a user's would.
+          if (why !== null && typeof why === "object") await page.click(why.x, why.y);
+          else if (why !== null) return `${s.where}: ${s.line}: ${why}`;
         }
         return null;
       }, s.throws);

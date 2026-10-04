@@ -1,0 +1,50 @@
+-- A timer's callback is a turn (backend.md §15.11, *A render at the end
+-- of a turn*). A command sleeps 100 ms and sends `Woke`: when the timer
+-- fires, the fiber it wakes runs and the message it sends renders before
+-- the timer's callback returns — `(the timer's task ended)` comes after
+-- the view — rather than on microtasks after it.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Start
+    | Woke
+
+
+update : Msg, String → String × Cmd Msg
+update msg state =
+    case msg of
+        Start →
+            ( "sleeping", Cmd.perform nap )
+
+        Woke →
+            ( "awake", Cmd.none )
+
+
+nap : Cmd.Send Msg → ⊤
+nap send =
+    Time.sleep (Time.millis 100)
+    Debug.log "woke" ⊤
+    send Woke
+
+
+view : String → Html Msg
+view state =
+    <main>
+        <button id="start" onClick={Start}>start</button>
+        <p>{Debug.log "view" state}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( "idle", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

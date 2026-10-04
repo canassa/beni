@@ -1,0 +1,36 @@
+-- A render at the end of a turn (backend.md §15.11, *A render at the end
+-- of a turn*). A click the browser dispatched — `press` — renders when
+-- the runtime's listener returns: before a listener after it, here the
+-- driver's on the window. Its walk runs two handlers, the button's and
+-- the section's, and they are one render. A click page script dispatches
+-- is untrusted and keeps the microtask: one click renders after its task,
+-- and three in one task are six messages and still one render.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Inner
+    | Outer
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Inner →
+            n + 1
+
+        Outer →
+            n + 10
+
+
+view : Int → Html Msg
+view n =
+    <section onClick={Outer}>
+        <button id="go" onClick={Inner}>go</button>
+        <p>{Debug.log "view" n}</p>
+    </section>
+
+
+main : Browser.Program
+main = Browser.program { init = 0, update = update, view = view }
