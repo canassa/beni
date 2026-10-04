@@ -7689,13 +7689,16 @@ The rules, exactly:
   has an `else` that calls `Rt.restate(slot)` for every op of the group that holds a slot — an
   `Html` hole, a helper, a component, `Html.map`, a `For`, a `Show` — and a `Show` whose value
   and inputs are unchanged restates its own. `Rt.restate` patches the slot's instance again with
-  the block it shows when its kind carries `l`, and a list's rows when its row function carries
-  `l`: a compiled row by its `p` with the item it shows, a block row (and every instance of a
-  `List Html` hole) by its kind's. **`l: true`** is on a kind that writes a `stateful` attribute,
+  the block it shows when its kind carries `l`, and a list's rows when the slot says so (its
+  `l`): a block row's, and a `List Html` hole's blocks, by their kind's `again`; a row compiled
+  in place, when its row function carries `l`, by that function's `p` with the item the row
+  shows. The slot keeps only that `p` (`r`), never the row function: a row function stored in a
+  slot is one the release optimiser can no longer see whole, and the table app lost its rows'
+  specialisation to it (+174 brotli bytes before the change, +59 after, §9's facts). **`l: true`** is on a kind that writes a `stateful` attribute,
   has a value `tree.everyRender` answers true for, or holds a slot — the markup a slot shows may be
   either — and on `Html.map`'s kind, whose `p` restates what it maps when handed the same markup;
-  a row function carries it on the same terms. A `For` restates its live rows at the end of every
-  render that reaches it, the ones it patched included. **`Rt.patch`** handed the very block its
+  a row function carries it on the same terms. A `For` whose row function is live or makes blocks
+  restates its rows at the end of every render that reaches it, the ones it patched included. **`Rt.patch`** handed the very block its
   instance shows calls `again` on it: a hoisted block, a `let`'s value, a top-level constant
   placed again is patched again when its kind is live. A restate thus reaches markup nested at
   any depth without evaluating again the value that holds it, so the value's group test still
