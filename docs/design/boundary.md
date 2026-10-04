@@ -1720,8 +1720,12 @@ read.** For a root of kind `expression`:
 - **`tree.pathOf(v)`**, per value, the position in `Root.reads` of the path the value is exactly —
   a local of the enclosing declaration read through at most four field or tuple accesses and
   nothing more — or null: such a value changed exactly when that path did.
-- **`Component.impure`**: the component's call may have an effect other than `Debug`'s (the
-  checker's answer for the call it means); a lowering never skips it.
+- **`Component.impure`**: the component's call may have an effect other than `Debug`'s; a lowering
+  never skips it. For it and for a helper call's `everyRender`, a call is impure when the checker
+  says its callee may be, except that a call of `Debug`'s is not, and neither is a call of a
+  function of the same module whose body has no effect but `Debug`'s (asked once per function; a
+  cycle is taken to be impure). Another module's function, and a function reached through a value,
+  are taken at the checker's word.
 - **`Lowering.groups`**: a lowering that sets it may be handed roots whose values the compiler has
   **not** evaluated where the root stands. **`cx.grouped(root)`** says whether this root is one:
   true when the lowering sets `groups` and the compiler can evaluate the root's values outside the
