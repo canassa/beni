@@ -1994,13 +1994,16 @@ is what it is compared with; so is a value that may have an effect — the effec
 `view` therefore answers anew on every render, as it did before. *Amended the same day, after
 review — skipped calls* (it was never applied to §11.6 and §11.8, and is now): **a helper call or a
 component that may have an effect other than `Debug`'s is never skipped**, and **a skipped one
-keeps what it shows current**: the markup it returned last is patched again on every render, so a
-controlled input it renders is reconciled and a value inside it that must run every render runs;
-only the call, and the markup that needs no patch, are saved. *And:* **wherever such a value or such an attribute stands, the markup holding it is patched on
-every render** — markup in an `if`, a `case` branch or a `let`, nested at any depth, and every
-markup value whose own value holds it — so a controlled input nested in a branch is reconciled
-exactly as one at the top of the view is, and a view that reads nothing of its model still draws
-anew.
+keeps what it shows current**: the markup it returned last is patched again on every render that
+skips the call, so a controlled input it renders is reconciled and a value inside it that must run
+every render runs; only the call, and the markup that needs no patch, are saved. *And, as amended
+after the second review:* **wherever such a value or such an attribute stands, a render that does
+not evaluate the markup holding it patches that markup again** — markup in an `if`, a `case`
+branch or a `let`, reached through a helper or `Html.map`, a top-level constant, a `Show` body,
+a `For` row, nested at any depth — so a controlled input nested anywhere is reconciled exactly as
+one at the top of the view is, and a view that reads nothing of its model still draws anew. The
+value holding such markup is **not** evaluated again for its sake: what it showed last is patched
+in place, so its group's test still skips it.
 
 **A `let` read only by markup is a value of that markup** (the owner's decision of 2026-10-04, the
 rule the amendment above names). A constant `let` of the function enclosing a markup root — a name
@@ -2009,8 +2012,7 @@ as one of them: at the root's first render, and later only in a render in which 
 its expression reads is not `===` to what it was when it was last evaluated; a value that uses it
 reads those paths, and the `let`'s last value. So `shown = top model.items` in a `view` is
 computed again only when `model.items` is another list. A `let` used anywhere outside the root,
-one whose expression may have an effect other than `Debug`'s or holds markup that is patched on
-every render (above), and one that defines a function — bound to a lambda, or written with
+one whose expression may have an effect other than `Debug`'s, and one that defines a function — bound to a lambda, or written with
 parameters — is evaluated where it is written, as before. **A `let` is a value of one root at
 most**: when two roots could take it (the `h1` in `header = <h1>{title}</h1>` and the root that
 reads `header`), the innermost does, and it is evaluated once per render that needs it.

@@ -7676,26 +7676,33 @@ The rules, exactly:
   needs code, builds the instance with every kept value `undefined` — a toggle's `false`, a class
   or style list's `null`, so the first write is the one `m` used to make — and calls `p`. Every
   value's code is written once, in `p`: not in `view`, `m` and `p` as before.
-- **What still runs every render** is one test per group and the untested groups: an edit to a
-  field no value reads costs comparisons and nothing else, however many values the root has.
-- **A helper call or a component** (`language.md` §11.6, §11.8, as amended after review) is written
-  on every render, in a group with no test: its arguments compared with the ones kept, and when
-  one changed the call made; when none did, `Rt.restate(slot)`, which patches the slot's instance
-  again with the block it shows if its kind carries `l`. A call that may have an effect
-  (`tree.everyRender` of the hole's value, `Component.impure`) is made every time. A call of
-  constants is made once, under a field of its own, then restated. **`l: true`** is on a kind
-  that has a group with no test (a `stateful` write, an every-render value, a helper or a
-  component) — on a root that is not grouped, one with a `stateful` write, a helper or a
-  component — and on `Html.map`'s kind, whose `p` restates what it maps when it is handed the same
-  markup; a restate reaches markup nested at any depth through those `p`s, since a live root
-  nested in a value makes that value an every-render one, a new block each time. Since
-  a helper's or a component's markup may need it, a root that places one is live, and so are the
-  values that hold it (`boundary.md` §9.4.6).
+- **What still runs every render** is one test per group, the untested groups, and a restate of
+  each slot in a skipped group (below): an edit to a field no value reads costs comparisons, and
+  the walk of the live markup under the slots it skipped, however many values the root has.
+- **A helper call or a component** (`language.md` §11.6, §11.8, as amended after review) is an op
+  of the group its arguments' paths make, like any other: when the group runs, its arguments are
+  compared with the ones kept, and when one changed the call is made; when none did,
+  `Rt.restate(slot)`. A call that may have an effect (`tree.everyRender` of the hole's value,
+  `Component.impure`) is in no group and made every time. A call of constants is made once, under
+  a field of its own, then restated.
+- **A skipped group restates its slots** (*amended after the second review*): the group's test
+  has an `else` that calls `Rt.restate(slot)` for every op of the group that holds a slot — an
+  `Html` hole, a helper, a component, `Html.map`, a `For`, a `Show` — and a `Show` whose value
+  and inputs are unchanged restates its own. `Rt.restate` patches the slot's instance again with
+  the block it shows when its kind carries `l`, and a list's rows when its row function carries
+  `l`: a compiled row by its `p` with the item it shows, a block row (and every instance of a
+  `List Html` hole) by its kind's. **`l: true`** is on a kind that writes a `stateful` attribute,
+  has a value `tree.everyRender` answers true for, or holds a slot — the markup a slot shows may be
+  either — and on `Html.map`'s kind, whose `p` restates what it maps when handed the same markup;
+  a row function carries it on the same terms. A `For` restates its live rows at the end of every
+  render that reaches it, the ones it patched included. **`Rt.patch`** handed the very block its
+  instance shows calls `again` on it: a hoisted block, a `let`'s value, a top-level constant
+  placed again is patched again when its kind is live. A restate thus reaches markup nested at
+  any depth without evaluating again the value that holds it, so the value's group test still
+  skips it, and what it does costs a walk of the live kinds under it — none for a kind without
+  `l`.
 - **Markup that writes nothing** (no op) is the hoisted block it was, `{ t, v: null }`, with no `p`
-  to call. *Amended after review:* a root with no input is hoisted the same way only when it is not
-  **live** — no `stateful` write and no value `tree.everyRender` answers true for; a live one is a
-  new `{ t, v: null }` each time it is evaluated, so the slot holding it patches it, and the
-  values of the roots that hold it are every-render values themselves (`boundary.md` §9.4.6).
+  to call; so is a root with no input, live or not, since `Rt.patch` patches a live one again.
 - **A constant attribute that needs code** (a URL, a property, a `raw` one) is written in `p` under
   a test of its own field, `if (i.a<k> === undefined) { …; i.a<k> = true; }`, so it is written
   once, at mount, in source order among its element's attributes, whatever group it is in.
