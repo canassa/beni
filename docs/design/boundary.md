@@ -1690,6 +1690,48 @@ render to render: it is `===` to the last one by construction, so a helper call 
 whose other arguments are unchanged is skipped as §9.4.4 allows. `ssr` ignores it; `dom` targets
 1.4 (`backend.md` §15.3–§15.4).
 
+**Version 1.5** (*amended 2026-10-04*, additive and gated on nothing; research 56 §6.2, Fix B, the
+owner's decision): **a root may carry its inputs, and the lowering compute its values by what they
+read.** For a root of kind `expression`:
+
+- **`Root.inputs`**, values of the root that each read one **local** of the enclosing declaration
+  whole — every local any of the root's values reads, bound outside the root, in first-use order;
+  and **`Root.reads`**, values that each read one **path** through one of those locals (the local
+  itself, or a chain of field accesses and tuple indices through it, at most four links), every
+  path any value reads, distinct, in first-use order. Both evaluate nothing and may be asked for
+  wherever the root's values may.
+- **`tree.readsOf(v)`**, per value of the root — the instruction values, and the slots of its rows'
+  captures, inputs and selector probes, its helper calls and class lists — the positions in
+  `Root.reads` of the paths it reads. The analysis is `language.md` §11.9's for a row's inputs,
+  applied to every value: a use of a local that is a field access or a tuple index is that path;
+  a use as an argument of a top-level function of the same module reads what that function's
+  summary says it reads of the parameter, iterated to a fixpoint; every other use — an argument of
+  another module's function or of a local function, a `case`, a record, a list, a call of the local
+  itself — reads the whole local. A value whose paths are all `===` to what they were when it was
+  last evaluated has the same value, because it reads nothing else that can change: beni has no
+  mutation, a top-level value never changes, and a local function is itself a local.
+- **`tree.everyRender(v)`**, per value, whether evaluating it may have an effect other than
+  `Debug`'s — a call, outside any function the value makes, whose callee may be `impure` or
+  suspend (`transparent-effects-proposal.md` §16.2's `impure` answer) and is not one of `Debug`'s:
+  a grouped root evaluates such a value on every render (`language.md` §11.11).
+- **`Lowering.groups`**: a lowering that sets it may be handed roots whose values the compiler has
+  **not** evaluated where the root stands. **`cx.grouped(root)`** says whether this root is one:
+  true when the lowering sets `groups` and the compiler can evaluate the root's values outside the
+  enclosing function — the enclosing declaration takes no evidence, its own or a `let`
+  function's (`static-dispatch-spike.md` §8.1), may not suspend, has no suspendable body and is
+  not being lowered in the suspendable form (`transparent-effects-proposal.md` §16.2), and no
+  value holds a `?` (which returns from the enclosing function). For such a root, a lowering evaluates the values
+  itself, inside its own functions, by **`cx.bindInputs(root, names)`** — every input's local read
+  under the name given, until **`cx.unbindInputs(root)`**, nested innermost first — and
+  **`cx.rootValues(block, root, values)`**, which evaluates the instruction values among `values`
+  into `block`, in the root's order. What the root evaluates to where it stands may then read only
+  `Root.inputs`. A lowering may evaluate a value of such a root zero times in a render, and must
+  evaluate it in a render in which one of its paths is not `===` to what it was at the value's last
+  evaluation, and at the first (`language.md` §11.11, as amended 2026-10-04).
+
+A root `cx.grouped` answers false for is lowered exactly as before. `ssr` does not set `groups`;
+`dom` targets 1.5 (`backend.md` §15.3, *A root computes its own values*).
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

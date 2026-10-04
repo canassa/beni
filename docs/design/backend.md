@@ -7622,6 +7622,64 @@ and compares only a helper's or a component's other arguments, and a helper or c
 arguments are all constant is called at mount and never again — the skip of §11.6 and §11.8,
 decided at compile time. Pinned by `emit/dom/DomHelpers`.
 
+*Amended 2026-10-04: a root computes its own values* (the owner's decision on research 56 §6.2,
+Fix B; `boundary.md` §9.4.6, version 1.5; `language.md` §11.11, as amended). §15.3's "there is no
+compute half" is withdrawn for every root `cx.grouped` answers true for — under `dom`, nearly every
+root: **the block carries the root's inputs, not its values**, and the kind computes each value
+inside `p`, **only when a path it reads changed**. `view model = <p>{model.name}</p>` is
+`Main$view = (model) => ({ t: Main$k3, v: [model] })`, and the kind:
+
+```js
+const Main$p3 = (i, v) => {
+  const model = v[0];
+  if (model.name !== i.g0_0) {
+    i.g0_0 = model.name;
+    const $t$1 = model.name;                 // the value, as `view` computed it
+    if ($t$1 !== i.a0) { i.a0 = $t$1; i.w1.data = $t$1; }
+  }
+};
+const Main$k3 = { m: (v, cx) => { const r = Main$t3(); …walks, slots…; const i = { …, a0: undefined, g0_0: undefined }; Main$p3(i, v); return i; }, p: Main$p3 };
+```
+
+The rules, exactly:
+
+- **Inputs.** `v` is `Root.inputs`, in order; `p` binds each to a name (`cx.bindInputs`) and reads
+  every value and path through them. A root with no input is the hoisted block `{ t, v: null }`.
+- **Groups.** Each write of the kind — an op of §15.3's table: a text hole, an attribute, a class or
+  style entry, an event, a markup hole, a helper call, a component, a `For`, a `Show` — reads the
+  values its operands are made of, a component's children and a `For`'s or `Show`'s row included,
+  and so the union of their paths (`tree.readsOf`). Ops that read the same set of paths are one
+  **group**, ordered by its first op; a group's values are evaluated (`cx.rootValues`) and its ops
+  written, in source order, under one test: **any of its paths not `===` the one the group last
+  saw** — each kept in an instance field `g<group>_<k>`. A group that reads no path — constants,
+  and values such as `Set 3` that read nothing — is tested on its field `g<group>` being
+  `undefined`, so it runs once, at mount. **A `stateful` property** (§15.3's table), and an op one
+  of whose values may have an effect other than `Debug`'s (`tree.everyRender`), is written in a
+  group with no test: the first is compared with the page, not with the model, and the second may
+  answer differently with nothing changed (`Random.value`, `Time.now`).
+- **One value, one group.** A value two ops read — an operand a lowering shares — is evaluated
+  once, so the two ops' groups are merged.
+- **Element order.** The attributes, class and style entries of one element are written in source
+  order on every mount: groups whose order would write two of them the other way round are merged
+  into one, whose paths are both groups' (merging only makes a group run more often).
+- **Within a group** each op is written exactly as `p` wrote it before — a hole compared with its
+  last value, a helper's and a component's arguments compared one by one — except that an op whose
+  arguments are all constant (`Tree.constant`) is made in its group, which runs once, rather than
+  skipped in `p` and made in `m`.
+- **Mount through the patch.** `m` clones, walks, makes the slots and a text hole's node (empty),
+  writes an event's extractor, flags, listener and mount context and a constant attribute that
+  needs code, builds the instance with every kept value `undefined` — a toggle's `false`, a class
+  or style list's `null`, so the first write is the one `m` used to make — and calls `p`. Every
+  value's code is written once, in `p`: not in `view`, `m` and `p` as before.
+- **What still runs every render** is one test per group and the untested groups: an edit to a
+  field no value reads costs comparisons and nothing else, however many values the root has.
+- **Markup that writes nothing** (no op) is the hoisted block it was, `{ t, v: null }`, with no `p`
+  to call.
+
+A row's root is not a grouped root: §15.5's rows keep their inputs and item tests. A root inside a
+`For` row, a `Show` body or another root's value is grouped as any root: its block is made where it
+is evaluated, inside the enclosing `p` or row, from the inputs bound there.
+
 ### 15.5 `For` and `Show` in the `dom` lowering
 
 `For` is Solid 2's list (research 27 §7.1), with **dom-expressions' `reconcileArrays` without

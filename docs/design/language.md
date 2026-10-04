@@ -1979,6 +1979,20 @@ in another order), and `--release` refuses `Debug`. This is the rule that lets a
 behave like a memoised value. Before the slice that builds it, the evidence on why Svelte moved from
 compiled dirty-checking to signals (X3) is read from primary sources.
 
+*Made precise 2026-10-04, as built* (X3 read: research 56 §6.5's amendment; `backend.md` §15.4,
+*A root computes its own values*). **A value of a markup root is evaluated at the root's first
+render, and in a later render only when one of the paths it reads is not `===` to what it was at
+the value's last evaluation**; otherwise the page keeps what that value wrote. Its paths are the
+locals it reads from outside the markup, each through the fields it reads (§11.9's analysis: field
+accesses, and arguments of same-module functions by what they read; the whole local for any other
+use). The values a render evaluates run **group by group** — a group being the writes that read
+the same paths, in the order of their first write — and in source order within a group. A
+`stateful` attribute's value (§11.5) is evaluated on every render, since the page, not the model,
+is what it is compared with; so is a value that may have an effect — the effects sentence above —
+**except one of `Debug`'s**, which is grouped like any other, so that a fixture can count what runs
+(`--release` refuses `Debug`, so no shipped program can tell). `Random.value` or `Time.now` in a
+`view` therefore answers anew on every render, as it did before.
+
 ### 11.12 Identity: an untouched field keeps its identity
 
 **A record update `{ r | a = x }` produces a record whose every field other than `a` is the very
