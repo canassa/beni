@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <button id="roll">"roll"</button>
+    <p>"530269"</p>
+  </main>
+</body>
+-- click #roll
+<body>
+  <main>
+    <button id="roll">"roll"</button>
+    <p>"306532"</p>
+  </main>
+</body>
+-- click #roll
+<body>
+  <main>
+    <button id="roll">"roll"</button>
+    <p>"526478"</p>
+  </main>
+</body>

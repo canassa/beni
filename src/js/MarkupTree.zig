@@ -86,7 +86,7 @@ pub const Value = union(enum) {
     callee: Inst.Index,
     /// That hole's call, made of its callee's slot and its arguments' —
     /// instruction slots of the root — where it is asked for.
-    call: struct { callee: u32, args: m.Value.Range },
+    call: struct { callee: u32, args: m.Value.Range, inst: Inst.Index },
     /// A selector's probe (`Row.selector`): the input the `Bir.MarkupInput`
     /// record reads, itself, or — when `ctor` is set — its field when it
     /// is that constructor and itself otherwise.
@@ -484,7 +484,7 @@ const Builder = struct {
                     for (args) |arg| _ = try b.value(.{ .inst = arg });
                     const range: m.Value.Range = .{ .start = args_start, .len = @intCast(args.len) };
                     const callee_value = try b.value(.{ .callee = callee });
-                    const call = try b.value(.{ .call = .{ .callee = @backingInt(callee_value), .args = range } });
+                    const call = try b.value(.{ .call = .{ .callee = @backingInt(callee_value), .args = range, .inst = h.value } });
                     try b.holes.append(b.arena, .{ .value = call, .kind = kind, .call = .{ .callee = callee_value, .args = range } });
                     return b.addNode(.hole, b.holes.items.len - 1, h.token);
                 };
@@ -954,34 +954,93 @@ const Builder = struct {
         @memset(summaries.of, null);
         const moved = try b.arena.alloc([]Moved, root_count);
         for (moved) |*x| x.* = &.{};
-        // Every root's value runs, to tell an outermost root from one
-        // inside another's value: only an outermost root takes `let`s.
-        var runs: std.ArrayList([2]u32) = .empty;
-        for (b.roots) |root| {
-            if (root.kind != .expression) continue;
-            for (0..root.values.len) |k| switch (b.values.items[root.values.start + k]) {
-                .inst => |vi| try runs.append(b.arena, .{ try b.runStart(vi), vi.int() }),
-                else => {},
-            };
-        }
+        // Per root, whether a render must patch it every time: it writes a
+        // `stateful` attribute, or one of its values is evaluated on every
+        // render (language.md §11.11).
+        const live = try b.arena.alloc(bool, root_count);
+        @memset(live, false);
 
+        // Each root's declaration, whether its values hold a `?`, the values
+        // evaluated on every render and the live roots — inner roots
+        // first: a root's instruction comes before that of the root whose
+        // value holds it, and roots are in instruction order.
+        var bad_decls = try std.DynamicBitSetUnmanaged.initEmpty(b.arena, bir_.decls.len);
         for (b.roots, 0..) |*root, ri| {
             const inst = b.root_insts.items[ri];
             root_decls[ri] = if (inst == none) none else (b.declOf(inst) orelse none);
             if (root.kind != .expression or root_decls[ri] == none) continue;
-            const decl = root_decls[ri];
             var ok = true;
-            moved[ri] = try b.movedLets(&summaries, decl, root.*, inst, runs.items);
             for (0..root.values.len) |k| {
                 const v = root.values.start + k;
-                switch (b.values.items[v]) {
-                    .inst => |vi| {
+                every.items[v] = switch (b.values.items[v]) {
+                    .inst => |vi| blk: {
                         const lo = try b.runStart(vi);
                         for (lo..vi.int() + 1) |i| if (tags[i] == .@"try") {
                             ok = false;
                         };
-                        try b.instReads(&summaries, decl, vi, lo, &per_value.items[v]);
-                        every.items[v] = b.effectful(vi);
+                        break :blk b.effectful(vi) or b.holdsLive(lo, vi.int(), live);
+                    },
+                    .call => |c| blk: {
+                        if (b.effectful(c.inst)) break :blk true;
+                        for (0..c.args.len) |j| if (every.items[c.args.start + j]) break :blk true;
+                        break :blk false;
+                    },
+                    .entries => |range| blk: {
+                        for (b.entries.items[range.start..][0..range.len]) |e| {
+                            if (e.value.dynamic) |dv| if (every.items[@backingInt(dv)]) break :blk true;
+                        }
+                        break :blk false;
+                    },
+                    else => false,
+                };
+                if (every.items[v]) live[ri] = true;
+            }
+            if (b.writesStateful(root.node)) live[ri] = true;
+            groupable[ri] = ok;
+            if (!ok) bad_decls.set(root_decls[ri]);
+        }
+        // One answer per declaration: a root inside another's value, or in
+        // a `let` moved into another, is lowered with it.
+        for (b.roots, 0..) |root, ri| {
+            if (root.kind == .expression and root_decls[ri] != none and bad_decls.isSet(root_decls[ri])) groupable[ri] = false;
+        }
+
+        // The `let`s each root takes: only a root inside no other root's
+        // value takes any, and a `let` two roots could take goes to the
+        // first in instruction order — the innermost, since a root nested
+        // in another's `let` comes before it. One owner per `let`.
+        var in_value = try std.DynamicBitSetUnmanaged.initEmpty(b.arena, bir_.insts.len);
+        for (b.roots) |root| {
+            if (root.kind != .expression) continue;
+            for (0..root.values.len) |k| switch (b.values.items[root.values.start + k]) {
+                .inst => |vi| in_value.setRangeValue(.{ .start = try b.runStart(vi), .end = vi.int() + 1 }, true),
+                else => {},
+            };
+        }
+        var owned = try std.DynamicBitSetUnmanaged.initEmpty(b.arena, bir_.insts.len);
+        for (b.roots, 0..) |root, ri| {
+            if (root.kind != .expression or root_decls[ri] == none) continue;
+            const inst = b.root_insts.items[ri];
+            if (in_value.isSet(inst)) continue;
+            const all = try b.movedLets(&summaries, root_decls[ri], root, inst, live);
+            var mine: std.ArrayList(Moved) = .empty;
+            for (all) |mv| {
+                if (owned.isSet(mv.def)) continue;
+                owned.set(mv.def);
+                try mine.append(b.arena, mv);
+            }
+            moved[ri] = mine.items;
+        }
+
+        // What each value reads, through the `let`s its own root took.
+        for (b.roots, 0..) |root, ri| {
+            if (root.kind != .expression or root_decls[ri] == none) continue;
+            const decl = root_decls[ri];
+            for (0..root.values.len) |k| {
+                const v = root.values.start + k;
+                switch (b.values.items[v]) {
+                    .inst => |vi| {
+                        try b.instReads(&summaries, decl, vi, try b.runStart(vi), &per_value.items[v]);
                         exact[v] = b.exactPath(decl, vi, moved[ri]);
                     },
                     .capture => |local| try addRead(b.arena, &per_value.items[v], .{ .local = local }),
@@ -997,7 +1056,6 @@ const Builder = struct {
                 }
                 try substitute(b.arena, moved[ri], &per_value.items[v]);
             }
-            groupable[ri] = ok;
         }
 
         // The reads, and the inputs they are through, each a slot of its
@@ -1114,33 +1172,78 @@ const Builder = struct {
         }
     }
 
+    /// Whether instructions `lo … hi` hold a live root (`rootReads`): the
+    /// markup instruction of an `expression` root already found live.
+    fn holdsLive(b: *const Builder, lo: u32, hi: u32, live: []const bool) bool {
+        const tags = b.bir().insts.items(.tag);
+        var i = lo;
+        while (i <= hi) : (i += 1) {
+            if (tags[i] != .markup) continue;
+            const at = b.rootIndexOf(i) orelse continue;
+            if (b.roots[at].kind == .expression and live[at]) return true;
+        }
+        return false;
+    }
+
+    /// Whether the markup at `n` writes a `stateful` attribute (its own,
+    /// not a row's or a `Show` body's, which are roots of their own).
+    fn writesStateful(b: *const Builder, n: m.Node.Index) bool {
+        if (n == .none) return false;
+        const node_ = b.nodes.items[@backingInt(n)];
+        switch (node_.kind) {
+            .element => {
+                const e = b.elements.items[node_.payload];
+                for (b.items.items[e.items.start..][0..e.items.len]) |it| {
+                    if (it.kind == .attribute and it.attribute != .none and b.attribute_facts.items[@backingInt(it.attribute)].stateful) return true;
+                }
+                for (b.children.items[e.children.start..][0..e.children.len]) |c| if (b.writesStateful(c)) return true;
+                return false;
+            },
+            .fragment => {
+                const f = b.fragments.items[node_.payload];
+                for (b.children.items[f.children.start..][0..f.children.len]) |c| if (b.writesStateful(c)) return true;
+                return false;
+            },
+            .component => {
+                const c = b.components.items[node_.payload];
+                for (b.children.items[c.children_nodes.start..][0..c.children_nodes.len]) |x| if (b.writesStateful(x)) return true;
+                return false;
+            },
+            else => return false,
+        }
+    }
+
     /// The constant `let`s of declaration `decl` that only root `root`
     /// (at instruction `root_inst`) reads — every use of each inside one of
     /// the root's values, or inside another such `let`'s expression — when
-    /// the root is inside no other root's value, the `let` binds no
-    /// function, its expression holds no `?` and has no effect but
-    /// `Debug`'s, and no function lies between it and the root. In source
-    /// order, each with what it reads, a `let` it uses replaced by what
-    /// that one reads.
-    fn movedLets(b: *Builder, summaries: *Summaries, decl: u32, root: m.Root, root_inst: u32, runs: []const [2]u32) Allocator.Error![]Moved {
+    /// the `let` binds no function, its expression holds no `?`, has no
+    /// effect but `Debug`'s and holds no live root, and no function lies
+    /// between it and the root. In source order, each with what it reads, a
+    /// `let` it uses replaced by what that one reads. Linear in the
+    /// declaration: a `let` reads only earlier ones, so whether one is kept
+    /// is decided after every later one, in one pass from the last.
+    fn movedLets(b: *Builder, summaries: *Summaries, decl: u32, root: m.Root, root_inst: u32, live: []const bool) Allocator.Error![]Moved {
         const bir_ = b.bir();
         const tags = bir_.insts.items(.tag);
         const datas = bir_.insts.items(.data);
         const d = bir_.decls[decl];
-        // An outermost root only.
-        for (runs) |r| {
-            if (r[0] <= root_inst and root_inst <= r[1]) return &.{};
-        }
-        // The root's own value runs.
-        var mine: std.ArrayList([2]u32) = .empty;
+        const start = d.inst_start.int();
+        const len = d.inst_end.int() - start;
+        // The root's own value runs, as a set of the declaration's
+        // instructions.
+        var mine = try std.DynamicBitSetUnmanaged.initEmpty(b.arena, len);
+        var any = false;
         for (0..root.values.len) |k| switch (b.values.items[root.values.start + k]) {
-            .inst => |vi| try mine.append(b.arena, .{ try b.runStart(vi), vi.int() }),
+            .inst => |vi| {
+                mine.setRangeValue(.{ .start = (try b.runStart(vi)) - start, .end = vi.int() + 1 - start }, true);
+                any = true;
+            },
             else => {},
         };
-        if (mine.items.len == 0) return &.{};
+        if (!any) return &.{};
         const parents = try b.parentsOf(decl);
-        const start = d.inst_start.int();
         var found: std.ArrayList(Moved) = .empty;
+        var runs: std.ArrayList(u32) = .empty;
         const locals = bir_.locals[d.locals_start..d.locals_end];
         for (locals, 0..) |local, li| {
             if (local.kind != .let) continue;
@@ -1152,7 +1255,7 @@ const Builder = struct {
             if (tags[rhs.int()] == .lambda) continue;
             // Outside the root, and the root within its scope with no
             // function between.
-            if (inRuns(mine.items, def)) continue;
+            if (mine.isSet(def - start)) continue;
             const let_inst = parents[def - start].inst;
             if (let_inst == none or tags[let_inst] != .let) continue;
             var cur = root_inst;
@@ -1173,53 +1276,63 @@ const Builder = struct {
             for (lo..rhs.int() + 1) |i| if (tags[i] == .@"try") {
                 bad = true;
             };
-            if (bad or b.effectful(rhs)) continue;
+            if (bad or b.effectful(rhs) or b.holdsLive(lo, rhs.int(), live)) continue;
             try found.append(b.arena, .{ .local = @intCast(li), .def = def, .inst = rhs });
+            try runs.append(b.arena, lo);
         }
-        // Drop each whose uses are not all inside the root or another kept
-        // `let`'s expression, until none is dropped.
-        var changed = true;
-        while (changed) {
-            changed = false;
-            var k: usize = 0;
-            while (k < found.items.len) {
-                const mv = found.items[k];
-                var ok = true;
-                var i = start;
-                while (i < d.inst_end.int()) : (i += 1) {
-                    if (tags[i] != .local or datas[i].lhs != mv.local) continue;
-                    if (inRuns(mine.items, i)) continue;
-                    const in_let = for (found.items) |other| {
-                        if (other.local == mv.local) continue;
-                        const olo = try b.runStart(other.inst);
-                        if (olo <= i and i <= other.inst.int()) break true;
-                    } else false;
-                    if (!in_let) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (ok) {
-                    k += 1;
-                } else {
-                    _ = found.orderedRemove(k);
-                    changed = true;
-                }
-            }
-        }
-        std.mem.sort(Moved, found.items, {}, struct {
-            fn lessThan(_: void, x: Moved, y: Moved) bool {
-                return x.def < y.def;
+        if (found.items.len == 0) return &.{};
+        // In definition order.
+        const order = try b.arena.alloc(u32, found.items.len);
+        for (order, 0..) |*o, k| o.* = @intCast(k);
+        std.mem.sort(u32, order, found.items, struct {
+            fn lessThan(f: []const Moved, x: u32, y: u32) bool {
+                return f[x].def < f[y].def;
             }
         }.lessThan);
-        // What each reads; a `let` it uses, what that one reads.
-        for (found.items) |*mv| {
+        // Per instruction, the candidate whose expression holds it; per
+        // local, the candidate it is.
+        const holder = try b.arena.alloc(u32, len);
+        @memset(holder, none);
+        for (order) |k| {
+            @memset(holder[runs.items[k] - start .. found.items[k].inst.int() + 1 - start], k);
+        }
+        const of_local = try b.arena.alloc(u32, locals.len);
+        @memset(of_local, none);
+        for (found.items, 0..) |mv, k| of_local[mv.local] = @intCast(k);
+        const kept = try b.arena.alloc(bool, found.items.len);
+        @memset(kept, true);
+        // Every use of each candidate, in one walk.
+        var uses: std.ArrayList(std.ArrayList(u32)) = .empty;
+        try uses.resize(b.arena, found.items.len);
+        for (uses.items) |*u| u.* = .empty;
+        for (start..d.inst_end.int()) |i| {
+            if (tags[i] != .local) continue;
+            const local = datas[i].lhs;
+            if (local >= of_local.len or of_local[local] == none) continue;
+            try uses.items[of_local[local]].append(b.arena, @intCast(i));
+        }
+        var j = order.len;
+        while (j > 0) {
+            j -= 1;
+            const k = order[j];
+            for (uses.items[k].items) |u| {
+                if (mine.isSet(u - start)) continue;
+                const h = holder[u - start];
+                if (h == none or h == k or !kept[h]) {
+                    kept[k] = false;
+                    break;
+                }
+            }
+        }
+        var out: std.ArrayList(Moved) = .empty;
+        for (order) |k| if (kept[k]) try out.append(b.arena, found.items[k]);
+        // What each reads; a `let` it uses, what that one reads — final
+        // already, since it comes before.
+        for (out.items, 0..) |*mv, k| {
             try b.instReads(summaries, decl, mv.inst, try b.runStart(mv.inst), &mv.reads);
+            try substitute(b.arena, out.items[0..k], &mv.reads);
         }
-        for (0..found.items.len) |_| {
-            for (found.items) |*mv| try substitute(b.arena, found.items, &mv.reads);
-        }
-        return found.items;
+        return out.items;
     }
 
     /// The path value `inst` is exactly — a local of `decl` that no moved
@@ -1252,13 +1365,6 @@ const Builder = struct {
             r = r.append(links[n]);
         }
         return r;
-    }
-
-    fn inRuns(runs: []const [2]u32, i: u32) bool {
-        for (runs) |r| {
-            if (r[0] <= i and i <= r[1]) return true;
-        }
-        return false;
     }
 
     /// A path set kept minimal: one with a prefix in the set adds nothing,

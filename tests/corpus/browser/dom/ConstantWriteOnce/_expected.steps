@@ -1,0 +1,3 @@
+# Typed into the raw content, then the attributes around it change.
+input #raw "kept"
+click #inc

@@ -341,6 +341,12 @@ const Fn = struct {
     /// when the op writes exactly that path, which needs no test of its own
     /// and keeps no value (null otherwise).
     direct: []const ?m.Name = &.{},
+    /// A grouped root's `p`, writing the group that runs at mount only.
+    once: bool = false,
+    /// A grouped root's `m`: per op, whether it is a constant attribute
+    /// written under a test of its own field (in a group that may run
+    /// again).
+    guarded: []const bool = &.{},
 };
 
 const Gen = struct {
@@ -446,7 +452,10 @@ const Gen = struct {
         // Markup that writes nothing is one hoisted block, as before.
         if (b.ops.items.len == 0) return g.block(&.{r.node}, r.site.inst, null);
         const kind = g.cx.hoisted(n.kind) orelse try g.hoistGroupedKind(&b, n, r, index);
-        if (r.inputs.len == 0) {
+        // A root a render must patch every time (a `stateful` write, a value
+        // evaluated on every render) is a new block every time it is
+        // evaluated, so the slot holding it patches it.
+        if (r.inputs.len == 0 and !try g.kindLive(&b)) {
             if (g.cx.hoisted(n.block)) |h| return g.ident(h);
             return g.ident(try g.cx.hoist(n.block, try js.object(&.{
                 .{ .key = "t", .value = try g.ident(kind) },
@@ -459,6 +468,22 @@ const Gen = struct {
             .{ .key = "t", .value = try g.ident(kind) },
             .{ .key = "v", .value = try js.array(values) },
         });
+    }
+
+    /// Whether a render must patch this markup every time it is evaluated:
+    /// it writes a `stateful` attribute, or one of its values is evaluated
+    /// on every render (`tree.everyRender`).
+    fn kindLive(g: *Gen, b: *const Body) m.Error!bool {
+        for (b.ops.items) |op| {
+            switch (op.what) {
+                .attribute => |x| if (g.stateful(x.item)) return true,
+                else => {},
+            }
+            var values: std.ArrayList(m.Value.Index) = .empty;
+            try g.opValues(b, op, &values);
+            for (values.items) |v| if (g.tree.everyRender(v)) return true;
+        }
+        return false;
     }
 
     /// One group of a grouped root's ops: the paths it reads (positions in
@@ -746,6 +771,7 @@ const Gen = struct {
             try g.cx.rootValues(then, index, values.items);
             patch.block = then;
             patch.made = &.{};
+            patch.once = !gr.every and gr.reads.items.len == 0;
             try g.writePatch(b, &patch, mask, true);
             if (condition) |c| try js.@"if"(pblock, c, then, null) else try js.nested(pblock, then);
         }
@@ -756,7 +782,16 @@ const Gen = struct {
         const t = try g.template(b, n.template);
         const v = try g.cx.fresh("v");
         const cx = try g.cx.fresh("cx");
-        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .through = true, .grouped = true, .group_fields = fields.items, .direct = direct };
+        const guards = try a_.alloc(bool, ops.len);
+        @memset(guards, false);
+        for (groups.items) |gr| {
+            if (!gr.every and gr.reads.items.len == 0) continue;
+            for (gr.ops.items) |k| switch (ops[k].what) {
+                .attribute => |x| guards[k] = x.constant and !g.stateful(x.item),
+                else => {},
+            };
+        }
+        var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .through = true, .grouped = true, .group_fields = fields.items, .direct = direct, .guarded = guards };
         const object = try g.writeMount(b, &mount, t);
         const inst = try g.cx.fresh("i");
         try js.constant(mount.block, inst, object);
@@ -1683,7 +1718,12 @@ const Gen = struct {
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
             },
             .attribute => |x| {
-                if (x.constant or g.stateful(x.item)) return;
+                if (g.stateful(x.item)) return;
+                if (x.constant) {
+                    // Its field exists only where its write is guarded.
+                    if (k < f.guarded.len and f.guarded[k]) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
+                    return;
+                }
                 const first = if (x.item.class == .class_list or x.item.class == .style_list) try g.nul() else undef;
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = first });
             },
@@ -1780,7 +1820,17 @@ const Gen = struct {
                     if (x.constant) {
                         // A grouped root writes it in the group that runs
                         // once, where `m` wrote it before.
-                        if (f.grouped) try g.writeAttribute(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
+                        // A grouped root writes it once, at mount, where its
+                        // group puts it in source order, and never again:
+                        // its group may run on later renders.
+                        if (f.grouped and f.once) {
+                            try g.writeAttribute(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
+                        } else if (f.grouped) {
+                            const once = try js.block();
+                            try g.writeAttribute(once, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
+                            try js.assign(once, try g.fieldOf(f, "a{d}", .{k}), try js.literal(.true));
+                            try js.@"if"(f.block, try js.binary(.strict_eq, try g.fieldOf(f, "a{d}", .{k}), try js.literal(.undefined)), once, null);
+                        }
                         continue;
                     }
                     if (k < f.direct.len) if (f.direct[k]) |d| {

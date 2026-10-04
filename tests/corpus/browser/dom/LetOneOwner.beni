@@ -1,0 +1,43 @@
+-- A `let` two roots could take is taken by one (boundary.md §9.4.6,
+-- `Root.lets`): `title` is read only by the `h1`, and that markup is a
+-- `let` read only by `main`, so both roots could compute it; it is
+-- computed once per change of `model.title` and not otherwise.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = IncN
+    | Retitle
+
+
+type alias Model =
+    title : String
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        IncN →
+            { model | n = model.n + 1 }
+
+        Retitle →
+            { model | title = "${model.title}!" }
+
+
+view : Model → Html Msg
+view model =
+    title = Debug.log "title" (String.toUpper model.title)
+    header = <h1>{title}</h1>
+
+    <main>
+        <button id="n" onClick={IncN}>n</button>
+        <button id="t" onClick={Retitle}>t</button>
+        {header}
+        <p>{model.n}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { title = "hi", n = 0 }, update = update, view = view }

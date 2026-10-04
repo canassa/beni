@@ -1,0 +1,27 @@
+-- load
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <div title="0" lang="0">
+      <input id="raw" .value="">
+    </div>
+  </main>
+</body>
+-- input #raw "kept"
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <div title="0" lang="0">
+      <input id="raw" .value="kept">
+    </div>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <div title="1" lang="1">
+      <input id="raw" .value="kept">
+    </div>
+  </main>
+</body>
