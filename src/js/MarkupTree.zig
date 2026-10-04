@@ -957,16 +957,10 @@ const Builder = struct {
         @memset(summaries.of, null);
         const moved = try b.arena.alloc([]Moved, root_count);
         for (moved) |*x| x.* = &.{};
-        // Per root, whether a render must patch it every time: it writes a
-        // `stateful` attribute, or one of its values is evaluated on every
-        // render (language.md §11.11).
-        const live = try b.arena.alloc(bool, root_count);
-        @memset(live, false);
-
-        // Each root's declaration, whether its values hold a `?`, the values
-        // evaluated on every render and the live roots — inner roots
-        // first: a root's instruction comes before that of the root whose
-        // value holds it, and roots are in instruction order.
+        // Each root's declaration, whether its values hold a `?`, and the
+        // values evaluated on every render. Markup nested in a value that a
+        // render skips is kept current by the runtime (`Rt.restate`,
+        // backend.md §15.4), not by evaluating the value again.
         var bad_decls = try std.DynamicBitSetUnmanaged.initEmpty(b.arena, bir_.decls.len);
         for (b.roots, 0..) |*root, ri| {
             const inst = b.root_insts.items[ri];
@@ -981,7 +975,7 @@ const Builder = struct {
                         for (lo..vi.int() + 1) |i| if (tags[i] == .@"try") {
                             ok = false;
                         };
-                        break :blk b.effectful(vi) or b.holdsLive(lo, vi.int(), live);
+                        break :blk b.effectful(vi);
                     },
                     .call => |c| blk: {
                         if (b.effectful(c.inst)) break :blk true;
@@ -996,9 +990,7 @@ const Builder = struct {
                     },
                     else => false,
                 };
-                if (every.items[v]) live[ri] = true;
             }
-            if (b.writesStateful(root.node)) live[ri] = true;
             groupable[ri] = ok;
             if (!ok) bad_decls.set(root_decls[ri]);
         }
@@ -1025,7 +1017,7 @@ const Builder = struct {
             if (root.kind != .expression or root_decls[ri] == none) continue;
             const inst = b.root_insts.items[ri];
             if (in_value.isSet(inst)) continue;
-            const all = try b.movedLets(&summaries, root_decls[ri], root, inst, live);
+            const all = try b.movedLets(&summaries, root_decls[ri], root, inst);
             var mine: std.ArrayList(Moved) = .empty;
             for (all) |mv| {
                 if (owned.isSet(mv.def)) continue;
@@ -1175,56 +1167,16 @@ const Builder = struct {
         }
     }
 
-    /// Whether instructions `lo … hi` hold a live root (`rootReads`): the
-    /// markup instruction of an `expression` root already found live.
-    fn holdsLive(b: *const Builder, lo: u32, hi: u32, live: []const bool) bool {
-        const tags = b.bir().insts.items(.tag);
-        var i = lo;
-        while (i <= hi) : (i += 1) {
-            if (tags[i] != .markup) continue;
-            const at = b.rootIndexOf(i) orelse continue;
-            if (b.roots[at].kind == .expression and live[at]) return true;
-        }
-        return false;
-    }
-
-    /// Whether the markup at `n` must be patched on every render for its
-    /// own sake: it writes a `stateful` attribute, or places a helper's or
-    /// a component's markup, which may (language.md §11.11). A row's or a
-    /// `Show` body's markup is a root of its own.
-    fn writesStateful(b: *const Builder, n: m.Node.Index) bool {
-        if (n == .none) return false;
-        const node_ = b.nodes.items[@backingInt(n)];
-        switch (node_.kind) {
-            .element => {
-                const e = b.elements.items[node_.payload];
-                for (b.items.items[e.items.start..][0..e.items.len]) |it| {
-                    if (it.kind == .attribute and it.attribute != .none and b.attribute_facts.items[@backingInt(it.attribute)].stateful) return true;
-                }
-                for (b.children.items[e.children.start..][0..e.children.len]) |c| if (b.writesStateful(c)) return true;
-                return false;
-            },
-            .fragment => {
-                const f = b.fragments.items[node_.payload];
-                for (b.children.items[f.children.start..][0..f.children.len]) |c| if (b.writesStateful(c)) return true;
-                return false;
-            },
-            .component => return true,
-            .hole => return b.holes.items[node_.payload].call != null,
-            else => return false,
-        }
-    }
-
     /// The constant `let`s of declaration `decl` that only root `root`
     /// (at instruction `root_inst`) reads — every use of each inside one of
     /// the root's values, or inside another such `let`'s expression — when
     /// the `let` binds no function, its expression holds no `?`, has no
-    /// effect but `Debug`'s and holds no live root, and no function lies
+    /// effect but `Debug`'s, and no function lies
     /// between it and the root. In source order, each with what it reads, a
     /// `let` it uses replaced by what that one reads. Linear in the
     /// declaration: a `let` reads only earlier ones, so whether one is kept
     /// is decided after every later one, in one pass from the last.
-    fn movedLets(b: *Builder, summaries: *Summaries, decl: u32, root: m.Root, root_inst: u32, live: []const bool) Allocator.Error![]Moved {
+    fn movedLets(b: *Builder, summaries: *Summaries, decl: u32, root: m.Root, root_inst: u32) Allocator.Error![]Moved {
         const bir_ = b.bir();
         const tags = bir_.insts.items(.tag);
         const datas = bir_.insts.items(.data);
@@ -1278,7 +1230,7 @@ const Builder = struct {
             for (lo..rhs.int() + 1) |i| if (tags[i] == .@"try") {
                 bad = true;
             };
-            if (bad or b.effectful(rhs) or b.holdsLive(lo, rhs.int(), live)) continue;
+            if (bad or b.effectful(rhs)) continue;
             try found.append(b.arena, .{ .local = @intCast(li), .def = def, .inst = rhs });
             try runs.append(b.arena, lo);
         }

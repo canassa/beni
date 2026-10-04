@@ -1,4 +1,4 @@
-import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$slot } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 const DomRowItemOnly$t51 = Rt$template("<tr><td> </td><td><a> </a></td><td><a>x", 0);
 const DomRowItemOnly$p53 = (i$1, v$2) => {
   const $in$3 = v$2[0];
@@ -54,6 +54,8 @@ const DomRowItemOnly$p53 = (i$1, v$2) => {
       }
     }, w: true, i: false, f: null, g: 0, z: $in$3.selected.$ === "Just" ? $in$3.selected.a : $in$3.selected };
     Rt$forKeyed(i$1.c0, $t$4, $t$6, made$7, [$in$3.selected]);
+  } else {
+    Rt$restate(i$1.c0);
   }
 };
 const DomRowItemOnly$t53 = Rt$template("<table>", 0);
@@ -63,7 +65,7 @@ const DomRowItemOnly$k53 = { m: (v$27, cx$28) => {
   const i$31 = { s: r$29, q: null, e: r$29, c0: c$30, g0_0: undefined, g0_1: undefined };
   DomRowItemOnly$p53(i$31, v$27);
   return i$31;
-}, p: DomRowItemOnly$p53 };
+}, p: DomRowItemOnly$p53, l: true };
 const DomRowItemOnly$Msg$$order = { Select: 0, Remove: 1 };
 const DomRowItemOnly$Msg$$compare = ($x, $y) => {
   if ($x.$ !== $y.$) {

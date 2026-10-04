@@ -1,4 +1,4 @@
-import { Rt$template, Rt$forKeyed, Rt$slot, Rt$insertText, Rt$forPosition, Rt$show, Rt$hide } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$forKeyed, Rt$restate, Rt$slot, Rt$insertText, Rt$forPosition, Rt$show, Rt$hide } from "./_platform/Rt.mjs";
 import { List$head } from "./_core/List.mjs";
 const DomLists$p18 = (i$1, v$2) => {
   const $in$3 = v$2[0];
@@ -50,6 +50,8 @@ const DomLists$p44 = (i$10, v$11) => {
       }
     }, i: false, f: null, g: 0, z: $in$12.selected };
     Rt$forKeyed(i$10.c0, $t$13, $t$15, made$16, [$in$12.selected]);
+  } else {
+    Rt$restate(i$10.c0);
   }
 };
 const DomLists$t44 = Rt$template("<table><tbody>", 0);
@@ -60,7 +62,7 @@ const DomLists$k44 = { m: (v$30, cx$31) => {
   const i$35 = { s: r$32, q: null, e: r$32, c0: c$34, g0_0: undefined, g0_1: undefined };
   DomLists$p44(i$35, v$30);
   return i$35;
-}, p: DomLists$p44 };
+}, p: DomLists$p44, l: true };
 const DomLists$t62 = Rt$template("<li>none", 0);
 const DomLists$k62 = { m: (v$42, cx$43) => {
   const r$44 = DomLists$t62();
@@ -127,6 +129,10 @@ const DomLists$p81 = (i$36, v$37) => {
       return $t$80;
     }, i: false, f: null };
     Rt$forKeyed(i$36.c2, $t$47, null, made$63, null);
+  } else {
+    Rt$restate(i$36.c0);
+    Rt$restate(i$36.c1);
+    Rt$restate(i$36.c2);
   }
 };
 const DomLists$t81 = Rt$template("<div><ol></ol><ul></ul><ul>", 0);
@@ -141,7 +147,7 @@ const DomLists$k81 = { m: (v$81, cx$82) => {
   const i$90 = { s: r$83, q: null, e: r$83, c0: c$87, c1: c$88, c2: c$89, g0_0: undefined };
   DomLists$p81(i$90, v$81);
   return i$90;
-}, p: DomLists$p81 };
+}, p: DomLists$p81, l: true };
 const DomLists$t96 = Rt$template("<p>none", 0);
 const DomLists$k96 = { m: (v$97, cx$98) => {
   const r$99 = DomLists$t96();
@@ -187,11 +193,15 @@ const DomLists$p104 = (i$91, v$92) => {
         i$91.a0v = value$102;
         i$91.a0i0 = $in$93.selected;
         Rt$show(i$91.c0, key$103, made$104(value$102));
+      } else {
+        Rt$restate(i$91.c0);
       }
     } else {
       i$91.a0k = i$91.c0;
       Rt$hide(i$91.c0, DomLists$b96);
     }
+  } else {
+    Rt$restate(i$91.c0);
   }
 };
 const DomLists$t104 = Rt$template("<!>", 4);
@@ -202,7 +212,7 @@ const DomLists$k104 = { m: (v$117, cx$118) => {
   const i$122 = { s: null, q: c$121, e: w$120, c0: c$121, a0k: undefined, a0v: undefined, a0i0: undefined, g0_0: undefined, g0_1: undefined };
   DomLists$p104(i$122, v$117);
   return i$122;
-}, p: DomLists$p104 };
+}, p: DomLists$p104, l: true };
 const DomLists$viewName = (name$1) => ({ t: DomLists$k18, v: [name$1] });
 const DomLists$table = (model$1) => ({ t: DomLists$k44, v: [model$1] });
 const DomLists$lists = (model$1) => ({ t: DomLists$k81, v: [model$1] });

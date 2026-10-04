@@ -455,10 +455,9 @@ const Gen = struct {
         // Markup that writes nothing is one hoisted block, as before.
         if (b.ops.items.len == 0) return g.block(&.{r.node}, r.site.inst, null);
         const kind = g.cx.hoisted(n.kind) orelse try g.hoistGroupedKind(&b, n, r, index);
-        // A root a render must patch every time (a `stateful` write, a value
-        // evaluated on every render) is a new block every time it is
-        // evaluated, so the slot holding it patches it.
-        if (r.inputs.len == 0 and !try g.kindLive(&b)) {
+        // A root with no input is one hoisted block; a slot handed it again
+        // patches it again only when its kind is live (`Rt.patch`).
+        if (r.inputs.len == 0) {
             if (g.cx.hoisted(n.block)) |h| return g.ident(h);
             return g.ident(try g.cx.hoist(n.block, try js.object(&.{
                 .{ .key = "t", .value = try g.ident(kind) },
@@ -473,14 +472,15 @@ const Gen = struct {
         });
     }
 
-    /// Whether a render must patch this markup every time it is evaluated:
-    /// it writes a `stateful` attribute, or one of its values is evaluated
-    /// on every render (`tree.everyRender`).
+    /// Whether a render that skips this markup must still patch it again
+    /// (`l`, backend.md §15.4): it writes a `stateful` attribute, one of its
+    /// values is evaluated on every render (`tree.everyRender`), or it has
+    /// a slot, whose markup may be either.
     fn kindLive(g: *Gen, b: *const Body) m.Error!bool {
         for (b.ops.items) |op| {
+            if (op.slotted()) return true;
             switch (op.what) {
                 .attribute => |x| if (g.stateful(x.item)) return true,
-                .helper, .component => return true,
                 else => {},
             }
             var values: std.ArrayList(m.Value.Index) = .empty;
@@ -598,13 +598,12 @@ const Gen = struct {
             var values: std.ArrayList(m.Value.Index) = .empty;
             try g.opValues(b, op, &values);
             var reads: std.ArrayList(u32) = .empty;
-            // A helper's or a component's markup may hold what a render
-            // must patch every time; only a call that reads nothing can be
-            // left to its group's test, which none is: it runs every render,
-            // and is skipped by its own arguments' test (`callOrRestate`).
+            // A call that may have an effect is made on every render; any
+            // other slot is restated when its group is skipped.
             var every = switch (op.what) {
                 .attribute => |x| g.stateful(x.item),
-                .helper, .component => true,
+                .helper => |x| x.impure,
+                .component => |x| x.impure,
                 else => false,
             };
             for (values.items) |v| {
@@ -782,7 +781,16 @@ const Gen = struct {
             patch.made = &.{};
             patch.once = !gr.every and gr.reads.items.len == 0;
             try g.writePatch(b, &patch, mask, true);
-            if (condition) |c| try js.@"if"(pblock, c, then, null) else try js.nested(pblock, then);
+            // A skipped group's slots are restated: what they show may hold
+            // a controlled input or an every-render value at any depth
+            // (backend.md §15.4, as amended after the second review).
+            const otherwise = try js.block();
+            var restates = false;
+            for (gr.ops.items) |k| if (ops[k].slotted()) {
+                try js.expression(otherwise, try g.rt("restate", &.{try g.fieldOf(&patch, "c{d}", .{k})}));
+                restates = true;
+            };
+            if (condition) |c| try js.@"if"(pblock, c, then, if (restates) otherwise else null) else try js.nested(pblock, then);
         }
         g.cx.unbindInputs(index);
         const p_name = try g.cx.hoist(try g.print("p{d}", .{r.site.inst}), try js.arrow(&.{ i, pv }, pblock));
@@ -921,6 +929,8 @@ const Gen = struct {
                 }
                 try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, item2, position2 }, patch.block) });
                 if (through) try props.append(g.a(), .{ .key = "w", .value = try js.literal(.true) });
+                // A row a render must patch again when it skips it.
+                if (try g.kindLive(&b)) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
             },
             .lambda, .function => {
                 const body = try js.block();
@@ -1915,7 +1925,11 @@ const Gen = struct {
                         try js.assign(again, try g.fieldOf(f, "a{d}i{d}", .{ k, j }), try g.read(b, f, in));
                     }
                     try js.expression(again, try g.rt("show", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.ident(key), try js.call(try g.read(b, f, x.body), &.{try g.ident(it)}) }));
-                    try js.@"if"(then, changed, again, null);
+                    // The body unchanged and skipped: what it shows kept
+                    // current all the same (`Rt.restate`).
+                    const same = try js.block();
+                    try js.expression(same, try g.rt("restate", &.{try g.fieldOf(f, "c{d}", .{k})}));
+                    try js.@"if"(then, changed, again, same);
                     const otherwise = try js.block();
                     // The slot stands for "nothing shown": no key is it.
                     try js.assign(otherwise, try g.fieldOf(f, "a{d}k", .{k}), try g.fieldOf(f, "c{d}", .{k}));

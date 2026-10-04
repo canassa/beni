@@ -172,6 +172,7 @@ slot parent marker cx =
         , y = Js.null
         , z = Js.null
         , d = False
+        , r = Js.null
         }
 
 
@@ -194,10 +195,14 @@ unit b cx =
 
 
 -- `b` shown where `i` is: `i` patched when `b` is of its kind, else a new
--- instance in its place. The instance now shown.
+-- instance in its place. The instance now shown. Handed the very block it
+-- shows, it is patched again only when its kind must be, as `again` does
+-- (written in place, so that a page with no live kind keeps none of it).
 pub patch : V, V, V → V
 patch i b cx =
     if Js.same b (Js.get i "b") then
+        if Js.to (Js.get (Js.get b "t") "l") then
+            Js.to (Js.call (Js.get b "t") "p" [ i, Js.get b "v" ])
         i
     else if Js.same (Js.get b "t") (Js.get i "t") then
         _ = Js.call (Js.get b "t") "p" [ i, Js.get b "v" ]
@@ -219,10 +224,27 @@ again i =
         Js.to (Js.call t "p" [ i, Js.get (Js.get i "b") "v" ])
 
 
--- `(slot)`: what the slot shows patched again when it must be on every
--- render — the markup of a helper or a component whose call was skipped.
+-- `(slot)`: what the slot shows patched again where it must be, though
+-- a render skipped it — a group that did not run, a helper or a
+-- component not called, a `Show` body or a list's rows left as they
+-- were. A list's rows are patched again when its row function is live
+-- (`l`), a list of blocks block by block; a fallback or a single
+-- block by `again`.
 pub restate : V → ⊤
-restate s = if Js.isNull (Js.get s "i") then ⊤ else again (Js.get s "i")
+restate s =
+    u = Js.get s "u"
+    r = Js.get s "r"
+    if Js.isNull u then
+        ⊤
+    else if Js.isNull r then
+        Js.each u λi → again i
+    else if Js.to (Js.get r "l") then
+        Js.each u λi →
+            if Js.isUndefined (Js.get r "b") then
+                Js.to (Js.call r "p" [ i, Js.get i "x", Js.get i "y" ])
+            else
+                again i
+    if Js.isNull (Js.get s "i") then ⊤ else again (Js.get s "i")
 
 
 -- Put a new instance in the slot, in place of what it held.
@@ -620,7 +642,7 @@ elements list =
 pub childList : V, V → ⊤
 childList s list =
     if Js.same list (Js.get s "b") then
-        ⊤
+        restate s
     else
         Js.set s "b" list
 
@@ -1312,6 +1334,10 @@ forKeyed s items keyOf row inputs =
             ⊤
         else
             keyedPass s items keyOf row same was now
+    -- A live row function's rows are each patched again, whether this
+    -- render ran them or not: a row may hold a controlled input.
+    Js.set s "r" row
+    if Js.to (Js.get row "l") then restate s
     childMaybe
         s
         (if Js.to (Js.get items "length") == 0 then
@@ -1516,6 +1542,8 @@ forPosition s items row inputs =
         a = elements items
         positionsFrom s u a row same 0
         dropPast u (Js.to (Js.get a "length"))
+    Js.set s "r" row
+    if Js.to (Js.get row "l") then restate s
     childMaybe
         s
         (if Js.to (Js.get items "length") == 0 then

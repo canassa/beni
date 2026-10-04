@@ -1,0 +1,95 @@
+-- A controlled input keeps showing the model however a render reaches
+-- it, when that render skips the markup holding it (backend.md §15.4,
+-- as amended after the second review; language.md §11.11). Every input
+-- here refuses an edit past three characters, so the model does not
+-- change and nothing a render evaluates is new: each input is put back
+-- only because what holds it is restated — markup reached through a
+-- helper behind an `if`, a `case`, `Html.map` or a `let`; a top-level
+-- constant; a helper whose own markup branches; a `Show` body; and the
+-- rows of a positional and a keyed `For`, compiled in place or holding
+-- a helper's markup.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Typed String
+    | Row Int String
+
+
+type alias Item =
+    id : Int
+    label : String
+
+
+type alias Model =
+    text : String
+    open : Bool
+    shown : Maybe String
+    rows : List Item
+
+
+accept : String → Bool
+accept s = String.length s ≤ 3
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Typed s →
+            if accept s then { m | text = s } else m
+
+        Row id s →
+            if accept s then
+                { m | rows = List.map m.rows λr → if r.id == id then { r | label = s } else r }
+            else
+                m
+
+
+field : String, String → Html Msg
+field id t = <input id={id} value={t} onInput={Typed} />
+
+
+banner : Html Msg
+banner = <input id="top" value="fixed" onInput={Typed} />
+
+
+wrap : (String → String), String → Html Msg
+wrap f t =
+    <div>
+        {if String.length t < 100 then <input id="w" value={f t} onInput={Typed} /> else <span />}
+    </div>
+
+
+view : Model → Html Msg
+view m =
+    d = field "d" m.text
+
+    <main>
+        {if m.open then field "a" m.text else <span />}
+        {Html.map (field "b" m.text) identity}
+        {d}
+        {case m.open of
+            True →
+                field "e" m.text
+            False →
+                <span />
+        }
+        {banner}
+        {wrap identity m.text}
+        <Show when={m.shown} keyed>{λs → <input id="s" value={s} onInput={Typed} />}</Show>
+        <For each={m.rows} keyed={False}>
+            {λr → <input id="p${String.fromInt r.id}" value={r.label} onInput={Row r.id _} />}
+        </For>
+        <For each={m.rows} keyed={.id}>{λr → <p>{field "k${String.fromInt r.id}" r.label}</p>}</For>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init =
+            { text = "ab", open = True, shown = Just "sh", rows = [ { id = 0, label = "r0" } ] }
+        , update = update
+        , view = view
+        }
