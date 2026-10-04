@@ -27,7 +27,9 @@ const DomHelpers$k10 = { m: (v$7, cx$8) => {
 const DomHelpers$p27 = (i$15, v$16) => {
   const $in$17 = v$16[0];
   const $in$18 = v$16[1];
-  {
+  if ($in$17 !== i$15.g0_0 || $in$18 !== i$15.g0_1) {
+    i$15.g0_0 = $in$17;
+    i$15.g0_1 = $in$18;
     if ($in$17 !== i$15.a0_0 || $in$18 !== i$15.a0_1) {
       i$15.a0_0 = $in$17;
       i$15.a0_1 = $in$18;
@@ -35,14 +37,19 @@ const DomHelpers$p27 = (i$15, v$16) => {
     } else {
       Rt$restate(i$15.c0);
     }
+  } else {
+    Rt$restate(i$15.c0);
   }
-  {
+  if (i$15.g1 === undefined) {
+    i$15.g1 = true;
     if (i$15.a1 === undefined) {
       Rt$childHtml(i$15.c1, DomHelpers$label("fixed", 1));
       i$15.a1 = true;
     } else {
       Rt$restate(i$15.c1);
     }
+  } else {
+    Rt$restate(i$15.c1);
   }
 };
 const DomHelpers$t27 = Rt$template("<div><!><!>", 0);
@@ -52,7 +59,7 @@ const DomHelpers$k27 = { m: (v$19, cx$20) => {
   const w$23 = w$22.nextSibling;
   const c$24 = Rt$slot(r$21, w$22, cx$20);
   const c$25 = Rt$slot(r$21, w$23, cx$20);
-  const i$26 = { s: r$21, q: null, e: r$21, c0: c$24, c1: c$25, a0_0: undefined, a0_1: undefined, a1: undefined };
+  const i$26 = { s: r$21, q: null, e: r$21, c0: c$24, c1: c$25, a0_0: undefined, a0_1: undefined, a1: undefined, g0_0: undefined, g0_1: undefined, g1: undefined };
   DomHelpers$p27(i$26, v$19);
   return i$26;
 }, p: DomHelpers$p27, l: true };
@@ -74,8 +81,10 @@ const DomHelpers$p44 = (i$27, v$28) => {
       } else {
         Rt$restate(i$37.c0);
       }
-    }, i: false, f: null };
+    }, l: true, i: false, f: null };
     Rt$forKeyed(i$27.c0, $in$29, null, made$31, null);
+  } else {
+    Rt$restate(i$27.c0);
   }
 };
 const DomHelpers$t44 = Rt$template("<ul>", 0);
@@ -85,7 +94,7 @@ const DomHelpers$k44 = { m: (v$40, cx$41) => {
   const i$44 = { s: r$42, q: null, e: r$42, c0: c$43, g0_0: undefined };
   DomHelpers$p44(i$44, v$40);
   return i$44;
-}, p: DomHelpers$p44 };
+}, p: DomHelpers$p44, l: true };
 const DomHelpers$t69 = Rt$template("<b> ", 0);
 const DomHelpers$k69 = { m: (v$46, cx$47) => {
   const r$48 = DomHelpers$t69();
@@ -126,17 +135,23 @@ const DomHelpers$p96 = (i$64, v$65) => {
     i$64.g0_0 = x$68;
     const $t$69 = DomHelpers$same(DomHelpers$eq$prim, $in$66, 1);
     Rt$childHtml(i$64.c0, $t$69);
+  } else {
+    Rt$restate(i$64.c0);
   }
   if ($in$66 !== i$64.g1_0 || $in$67 !== i$64.g1_1) {
     i$64.g1_0 = $in$66;
     i$64.g1_1 = $in$67;
     const $t$70 = $in$67($in$66);
     Rt$childHtml(i$64.c1, $t$70);
+  } else {
+    Rt$restate(i$64.c1);
   }
   if (i$64.g2 === undefined) {
     i$64.g2 = true;
     const $t$71 = Rt$text("t");
     Rt$childHtml(i$64.c2, $t$71);
+  } else {
+    Rt$restate(i$64.c2);
   }
 };
 const DomHelpers$t96 = Rt$template("<div><!><!><!>", 0);
@@ -151,7 +166,7 @@ const DomHelpers$k96 = { m: (v$72, cx$73) => {
   const i$81 = { s: r$74, q: null, e: r$74, c0: c$78, c1: c$79, c2: c$80, g0_0: undefined, g1_0: undefined, g1_1: undefined, g2: undefined };
   DomHelpers$p96(i$81, v$72);
   return i$81;
-}, p: DomHelpers$p96 };
+}, p: DomHelpers$p96, l: true };
 const DomHelpers$eq$prim = ($x, $y) => $x === $y;
 const DomHelpers$label = (name$1, n$2) => ({ t: DomHelpers$k10, v: [name$1, n$2] });
 const DomHelpers$page = (name$1, n$2) => ({ t: DomHelpers$k27, v: [name$1, n$2] });

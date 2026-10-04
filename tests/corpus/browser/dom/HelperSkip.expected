@@ -1,10 +1,11 @@
 -- load
-console.log: card called: "counted"
-console.log: tag: "counted"
-console.log: counted: 0
 console.log: card called: "fixed"
 console.log: tag: "fixed"
 console.log: fixed: 7
+console.log: card called: "counted"
+console.log: tag: "counted"
+console.log: counted: 0
+console.log: boxed called: 0
 console.log: boxed: 0
 console.log: local: 0
 <body>
@@ -51,6 +52,7 @@ console.log: counted: 1
   </main>
 </body>
 -- click #other
+console.log: boxed called: 1
 console.log: boxed: 1
 console.log: local: 1
 <body>

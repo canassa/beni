@@ -1,0 +1,45 @@
+-- load
+<body>
+  <main>
+    <input id="a" .value="ab">
+    <!---->
+    <input id="b" .value="ab">
+    <!---->
+    <input id="d" .value="ab">
+    <!---->
+    <input id="e" .value="ab">
+    <!---->
+    <input id="top" .value="fixed">
+    <!---->
+    <div>
+      <input id="w" .value="ab">
+    </div>
+    <!---->
+    <input id="s" .value="sh">
+    <!---->
+    <input id="p0" .value="r0">
+    <!---->
+    <p>
+      <input id="k0" .value="r0">
+    </p>
+    <!---->
+  </main>
+</body>
+-- input #a "abcdef"
+(the DOM did not change)
+-- input #b "abcdef"
+(the DOM did not change)
+-- input #d "abcdef"
+(the DOM did not change)
+-- input #e "abcdef"
+(the DOM did not change)
+-- input #top "abcdef"
+(the DOM did not change)
+-- input #w "abcdef"
+(the DOM did not change)
+-- input #s "abcdef"
+(the DOM did not change)
+-- input #p0 "abcdef"
+(the DOM did not change)
+-- input #k0 "abcdef"
+(the DOM did not change)

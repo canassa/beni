@@ -1,4 +1,4 @@
-import { Rt$template, Rt$childHtml, Rt$slot, Rt$childMaybe, Rt$childList, Rt$text, Rt$insertText, Rt$map } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$childHtml, Rt$restate, Rt$slot, Rt$childMaybe, Rt$childList, Rt$text, Rt$insertText, Rt$map } from "./_platform/Rt.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 const DomChildren$t9 = Rt$template("<b>on", 0);
 const DomChildren$k9 = { m: (v$5, cx$6) => {
@@ -21,6 +21,8 @@ const DomChildren$p16 = (i$1, v$2) => {
     i$1.g0_0 = x$4;
     const $t$15 = $in$3 ? DomChildren$b9 : DomChildren$b13;
     Rt$childHtml(i$1.c0, $t$15);
+  } else {
+    Rt$restate(i$1.c0);
   }
 };
 const DomChildren$t16 = Rt$template("<div>", 0);
@@ -30,7 +32,7 @@ const DomChildren$k16 = { m: (v$16, cx$17) => {
   const i$20 = { s: r$18, q: null, e: r$18, c0: c$19, g0_0: undefined };
   DomChildren$p16(i$20, v$16);
   return i$20;
-}, p: DomChildren$p16 };
+}, p: DomChildren$p16, l: true };
 const DomChildren$p42 = (i$21, v$22) => {
   const $in$23 = v$22[0];
   const x$24 = $in$23.one;
@@ -38,18 +40,24 @@ const DomChildren$p42 = (i$21, v$22) => {
     i$21.g0_0 = x$24;
     const $t$25 = $in$23.one;
     Rt$childHtml(i$21.c0, $t$25);
+  } else {
+    Rt$restate(i$21.c0);
   }
   const x$26 = $in$23.maybe;
   if (x$26 !== i$21.g1_0) {
     i$21.g1_0 = x$26;
     const $t$27 = $in$23.maybe;
     Rt$childMaybe(i$21.c1, $t$27.a);
+  } else {
+    Rt$restate(i$21.c1);
   }
   const x$28 = $in$23.many;
   if (x$28 !== i$21.g2_0) {
     i$21.g2_0 = x$28;
     const $t$29 = $in$23.many;
     Rt$childList(i$21.c2, $t$29);
+  } else {
+    Rt$restate(i$21.c2);
   }
 };
 const DomChildren$t42 = Rt$template("<section><h1>title</h1><!><ul>", 0);
@@ -63,7 +71,7 @@ const DomChildren$k42 = { m: (v$30, cx$31) => {
   const i$38 = { s: r$32, q: null, e: r$32, c0: c$35, c1: c$36, c2: c$37, g0_0: undefined, g1_0: undefined, g2_0: undefined };
   DomChildren$p42(i$38, v$30);
   return i$38;
-}, p: DomChildren$p42 };
+}, p: DomChildren$p42, l: true };
 const DomChildren$p53 = (i$39, v$40) => {
   const $in$41 = v$40[0];
   const x$42 = $in$41;
@@ -72,6 +80,8 @@ const DomChildren$p53 = (i$39, v$40) => {
     const $t$43 = Rt$text($in$41);
     i$39.x0.data = x$42;
     Rt$childHtml(i$39.c1, $t$43);
+  } else {
+    Rt$restate(i$39.c1);
   }
 };
 const DomChildren$t53 = Rt$template("Hi <hr><!>", 4);
@@ -85,7 +95,7 @@ const DomChildren$k53 = { m: (v$44, cx$45) => {
   const i$52 = { s: w$47, q: null, e: w$49, x0: x$51, c1: c$50, g0_0: undefined };
   DomChildren$p53(i$52, v$44);
   return i$52;
-}, p: DomChildren$p53 };
+}, p: DomChildren$p53, l: true };
 const DomChildren$p66 = (i$53, v$54) => {
   const $in$55 = v$54[0];
   const x$56 = $in$55;
@@ -93,6 +103,8 @@ const DomChildren$p66 = (i$53, v$54) => {
     i$53.g0_0 = x$56;
     const $t$57 = Rt$map($in$55, String$fromInt);
     Rt$childHtml(i$53.c0, $t$57);
+  } else {
+    Rt$restate(i$53.c0);
   }
 };
 const DomChildren$t66 = Rt$template("<div>", 0);
@@ -102,7 +114,7 @@ const DomChildren$k66 = { m: (v$58, cx$59) => {
   const i$62 = { s: r$60, q: null, e: r$60, c0: c$61, g0_0: undefined };
   DomChildren$p66(i$62, v$58);
   return i$62;
-}, p: DomChildren$p66 };
+}, p: DomChildren$p66, l: true };
 const DomChildren$branch = (on$1) => ({ t: DomChildren$k16, v: [on$1] });
 const DomChildren$holes = (r$1) => ({ t: DomChildren$k42, v: [r$1] });
 const DomChildren$fragment = (name$1) => ({ t: DomChildren$k53, v: [name$1] });

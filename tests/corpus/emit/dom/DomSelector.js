@@ -1,4 +1,4 @@
-import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$slot } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 const DomSelector$t83 = Rt$template("<p> ", 0);
 const DomSelector$t108 = Rt$template("<p> ", 0);
 const DomSelector$t171 = Rt$template("<p> ", 0);
@@ -82,6 +82,10 @@ const DomSelector$p173 = (i$1, v$2) => {
       }
     }, w: true, i: false, f: null, g: 0, z: $in$3.selected.$ === "Just" ? $in$3.selected.a : $in$3.selected };
     Rt$forKeyed(i$1.c4, $t$9, $t$11, made$34, [$in$3.selected]);
+  } else {
+    Rt$restate(i$1.c0);
+    Rt$restate(i$1.c1);
+    Rt$restate(i$1.c4);
   }
   if ($in$3.ids !== i$1.g1_0 || $in$3.cursor !== i$1.g1_1) {
     i$1.g1_0 = $in$3.ids;
@@ -105,6 +109,8 @@ const DomSelector$p173 = (i$1, v$2) => {
       }
     }, w: true, i: false, f: null, g: 0, z: $in$3.cursor };
     Rt$forKeyed(i$1.c2, $t$45, null, made$46, [$in$3.cursor]);
+  } else {
+    Rt$restate(i$1.c2);
   }
   if ($in$3.rows !== i$1.g2_0 || $in$3.cursor !== i$1.g2_1 || $in$3.theme !== i$1.g2_2) {
     i$1.g2_0 = $in$3.rows;
@@ -137,6 +143,8 @@ const DomSelector$p173 = (i$1, v$2) => {
       }
     }, w: true, i: false, f: null, g: 1, z: $in$3.cursor };
     Rt$forKeyed(i$1.c3, $t$56, $t$58, made$59, [$in$3.theme, $in$3.cursor]);
+  } else {
+    Rt$restate(i$1.c3);
   }
 };
 const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>", 0);
@@ -155,7 +163,7 @@ const DomSelector$k173 = { m: (v$72, cx$73) => {
   const i$85 = { s: r$74, q: null, e: r$74, c0: c$80, c1: c$81, c2: c$82, c3: c$83, c4: c$84, g0_0: undefined, g0_1: undefined, g1_0: undefined, g1_1: undefined, g2_0: undefined, g2_1: undefined, g2_2: undefined };
   DomSelector$p173(i$85, v$72);
   return i$85;
-}, p: DomSelector$p173 };
+}, p: DomSelector$p173, l: true };
 const DomSelector$Msg$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const DomSelector$Msg$$eq = ($x, $y) => $x.a === $y.a;
 const DomSelector$rowClass = (model$1, row$2) => model$1.selected.$ === "Just" && model$1.selected.a === row$2.id ? "danger" : "";

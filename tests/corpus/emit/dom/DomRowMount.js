@@ -1,4 +1,4 @@
-import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$slot } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 import { String$fromInt, String$compare } from "./_core/String.mjs";
 const DomRowMount$t57 = Rt$template("<li><a> </a><input>", 0);
@@ -53,6 +53,8 @@ const DomRowMount$p59 = (i$1, v$2) => {
       }
     }, w: true, i: false, f: null, g: 0, z: $in$3.picked };
     Rt$forKeyed(i$1.c0, $t$4, $t$6, made$7, [$in$3.picked]);
+  } else {
+    Rt$restate(i$1.c0);
   }
 };
 const DomRowMount$t59 = Rt$template("<ul>", 0);
@@ -62,7 +64,7 @@ const DomRowMount$k59 = { m: (v$24, cx$25) => {
   const i$28 = { s: r$26, q: null, e: r$26, c0: c$27, g0_0: undefined, g0_1: undefined };
   DomRowMount$p59(i$28, v$24);
   return i$28;
-}, p: DomRowMount$p59 };
+}, p: DomRowMount$p59, l: true };
 const DomRowMount$t89 = Rt$template("<li>", 0);
 const DomRowMount$p91 = (i$29, v$30) => {
   const $in$31 = v$30[0];
@@ -93,6 +95,8 @@ const DomRowMount$p91 = (i$29, v$30) => {
       }
     }, i: false, f: null, g: 0, z: $in$31.picked };
     Rt$forKeyed(i$29.c0, $t$32, $t$34, made$35, [$in$31.picked]);
+  } else {
+    Rt$restate(i$29.c0);
   }
 };
 const DomRowMount$t91 = Rt$template("<ul>", 0);
@@ -102,7 +106,7 @@ const DomRowMount$k91 = { m: (v$47, cx$48) => {
   const i$51 = { s: r$49, q: null, e: r$49, c0: c$50, g0_0: undefined, g0_1: undefined };
   DomRowMount$p91(i$51, v$47);
   return i$51;
-}, p: DomRowMount$p91 };
+}, p: DomRowMount$p91, l: true };
 const DomRowMount$t115 = Rt$template("<li> ", 0);
 const DomRowMount$p117 = (i$52, v$53) => {
   const $in$54 = v$53[0];
@@ -136,6 +140,8 @@ const DomRowMount$p117 = (i$52, v$53) => {
       }
     }, i: false, f: null, g: 0, z: $in$54.picked };
     Rt$forKeyed(i$52.c0, $t$55, $t$57, made$58, [$in$54.picked]);
+  } else {
+    Rt$restate(i$52.c0);
   }
 };
 const DomRowMount$t117 = Rt$template("<ul>", 0);
@@ -145,7 +151,7 @@ const DomRowMount$k117 = { m: (v$71, cx$72) => {
   const i$75 = { s: r$73, q: null, e: r$73, c0: c$74, g0_0: undefined, g0_1: undefined };
   DomRowMount$p117(i$75, v$71);
   return i$75;
-}, p: DomRowMount$p117 };
+}, p: DomRowMount$p117, l: true };
 const DomRowMount$Msg$$order = { Pick: 0, Typed: 1 };
 const DomRowMount$Msg$$compare = ($x, $y) => {
   if ($x.$ !== $y.$) {

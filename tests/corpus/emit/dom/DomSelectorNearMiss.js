@@ -1,5 +1,5 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
-import { Rt$template, Rt$forKeyed, Rt$forPosition, Rt$slot } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$forKeyed, Rt$forPosition, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 import { Maybe$withDefault, Maybe$Maybe$$eq } from "./_core/Maybe.mjs";
 const DomSelectorNearMiss$t68 = Rt$template("<p> ", 0);
 const DomSelectorNearMiss$t98 = Rt$template("<p> ", 0);
@@ -115,6 +115,12 @@ const DomSelectorNearMiss$p202 = (i$1, v$2) => {
       }
     }, w: true, i: false, f: null };
     Rt$forKeyed(i$1.c5, $t$14, $t$16, made$61, [$in$3.selected]);
+  } else {
+    Rt$restate(i$1.c0);
+    Rt$restate(i$1.c1);
+    Rt$restate(i$1.c2);
+    Rt$restate(i$1.c3);
+    Rt$restate(i$1.c5);
   }
   if ($in$3.rows !== i$1.g1_0 || $in$3.pick !== i$1.g1_1) {
     i$1.g1_0 = $in$3.rows;
@@ -140,6 +146,8 @@ const DomSelectorNearMiss$p202 = (i$1, v$2) => {
       }
     }, w: true, i: false, f: null };
     Rt$forKeyed(i$1.c4, $t$72, $t$74, made$75, [$in$3.pick]);
+  } else {
+    Rt$restate(i$1.c4);
   }
 };
 const DomSelectorNearMiss$t202 = Rt$template("<div><!><!><!><!><!><!>", 0);
@@ -160,7 +168,7 @@ const DomSelectorNearMiss$k202 = { m: (v$89, cx$90) => {
   const i$104 = { s: r$91, q: null, e: r$91, c0: c$98, c1: c$99, c2: c$100, c3: c$101, c4: c$102, c5: c$103, g0_0: undefined, g0_1: undefined, g1_0: undefined, g1_1: undefined };
   DomSelectorNearMiss$p202(i$104, v$89);
   return i$104;
-}, p: DomSelectorNearMiss$p202 };
+}, p: DomSelectorNearMiss$p202, l: true };
 const DomSelectorNearMiss$eq$prim = ($x, $y) => $x === $y;
 const DomSelectorNearMiss$eq$r$at = ($m$0, $x, $y, $d = 0) => $d > 400 ? _derived$deep([$m$0, $x.at, $y.at], $d) : $m$0($x.at, $y.at, $d + 1);
 const DomSelectorNearMiss$isOn = (selected$1, id$2) => selected$1.$ === "Just" && selected$1.a === id$2 ? "on" : "";

@@ -1,0 +1,10 @@
+# Each edit is refused; each input shows the model again.
+input #a "abcdef"
+input #b "abcdef"
+input #d "abcdef"
+input #e "abcdef"
+input #top "abcdef"
+input #w "abcdef"
+input #s "abcdef"
+input #p0 "abcdef"
+input #k0 "abcdef"

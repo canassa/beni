@@ -51,7 +51,9 @@ card title n =
 
 
 boxed : { n : Int } → Html Msg
-boxed r = <p>{Debug.log "boxed" r.n}</p>
+boxed r =
+    _ = Debug.log "boxed called" r.n
+    <p>{Debug.log "boxed" r.n}</p>
 
 
 view : Model → Html Msg
