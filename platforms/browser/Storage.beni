@@ -43,11 +43,18 @@ get area key =
     if Js.isNullish s then
         Nothing
     else
-        v = Js.call s "getItem" [ Js.from key ]
-        if Js.isNull v then
-            Nothing
-        else
-            Just (Js.to v)
+        -- A read never stops the page: whatever `getItem` throws, the key
+        -- holds nothing.
+        Js.catchIf
+            (λ⊤ →
+                v = Js.call s "getItem" [ Js.from key ]
+                if Js.isNull v then
+                    Nothing
+                else
+                    Just (Js.to v)
+            )
+            (λ_ → True)
+            λ_ → Nothing
 
 
 --| Store the text under the key, replacing what was there.
