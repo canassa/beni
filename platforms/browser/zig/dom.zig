@@ -1790,7 +1790,9 @@ const Gen = struct {
     /// What a grouped root's `m` writes of an op: what `p` never does — a
     /// text hole's node, empty, and an event's extractor, flags, listener
     /// and mount context — and each kept value's first state: `undefined`,
-    /// which no beni value is, a toggle's `false` and a class or style
+    /// which no value the checker lets an op hold is (a `⊤` may be
+    /// `undefined` under `--release`, but no hole or attribute takes one;
+    /// an event's `⊤` message is a known gap), a toggle's `false` and a class or style
     /// list's `null`, so that `p`'s first write is the one `m` made.
     fn mountGroupedOp(g: *Gen, b: *const Body, f: *Fn, op: Op, k: u32, fields: *std.ArrayList(m.Property)) m.Error!void {
         const js = g.jsb();
@@ -1859,7 +1861,8 @@ const Gen = struct {
 
     /// What `m` writes of an op when `p` writes its value: an event's
     /// extractor, flags, listener and mount context. Every kept value is
-    /// `undefined`, which no beni value is, so `p` writes it.
+    /// `undefined`, which no value the checker lets an op hold is (as
+    /// `mountGroupedOp` says), so `p` writes it.
     fn mountOnlyOp(g: *Gen, f: *Fn, op: Op, k: u32, fields: *std.ArrayList(m.Property)) m.Error!void {
         const js = g.jsb();
         const a_ = g.a();
@@ -1946,8 +1949,6 @@ const Gen = struct {
                         continue;
                     }
                     if (x.constant) {
-                        // A grouped root writes it in the group that runs
-                        // once, where `m` wrote it before.
                         // A grouped root writes it once, at mount, where its
                         // group puts it in source order, and never again:
                         // its group may run on later renders.
