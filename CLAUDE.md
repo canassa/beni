@@ -530,6 +530,30 @@ a workaround is equally at fault.
 
 ## Operational
 
+### Work lands through pull requests
+
+The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
+(`canassa/beni`); nothing is pushed to `master` directly.
+
+1. Branch from an up-to-date `origin/master`, one slice per branch, named for
+   what it does. Run `zig build gates` green before opening the PR (rule 4); a
+   branch that rebased past a run-hash change re-records its hashes first.
+2. Open the PR with `gh pr create`. The body says what changes and why, the
+   measurements a claim rests on, any known debt accepted on purpose, and
+   anything the reviewer should look at twice.
+3. **The Claude Code Review workflow** (`.github/workflows/claude-code-review.yml`)
+   reviews every PR when it is opened and on every push, and posts inline
+   comments. To ask it something or request another pass, comment on the PR with
+   `@claude …` (`.github/workflows/claude.yml`).
+4. **The review is advice, not law.** Answer every finding: fix it in a new
+   commit, or reply on the PR saying why you disagree. This document and the
+   design documents outrank the reviewer — a suggestion that would break a rule
+   here (raise a budget, add a broad `catch`, bend the design) is declined with
+   the rule named.
+5. Merge when the gates are green and every finding is fixed or answered:
+   `gh pr merge --rebase --delete-branch`, so each slice keeps its own commits
+   on `master`. Never force-push `master`.
+
 ### Captain's log — `plans/diary.md` (APPEND AFTER EVERY SESSION)
 
 `plans/diary.md` is an **append-only** captain's log of all work on this repo.
