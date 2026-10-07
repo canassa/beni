@@ -54,7 +54,7 @@ const DomEvents$k16 = { m: (v$10, cx$11) => {
   }
   Rt$listen(w$14, "focus", 0);
   w$14.$$keydownX = Rt$identity;
-  const i$15 = { s: r$12, q: null, e: r$12, w0: r$12, w1: w$13, w3: w$14, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, g0: undefined, g1_0: undefined };
+  const i$15 = { s: r$12, q: null, e: r$12, w0: r$12, w1: w$13, w3: w$14, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, g0: undefined, g1_0: NaN };
   DomEvents$p16(i$15, v$10);
   return i$15;
 }, p: DomEvents$p16 };

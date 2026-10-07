@@ -20,7 +20,7 @@ const DomHelpers$k10 = { m: (v$7, cx$8) => {
   const w$11 = w$10.nextSibling;
   const x$12 = Rt$insertText(r$9, w$10, "");
   const x$13 = Rt$insertText(r$9, w$11, "");
-  const i$14 = { s: r$9, q: null, e: r$9, x0: x$12, x1: x$13, g0_0: undefined, g1_0: undefined };
+  const i$14 = { s: r$9, q: null, e: r$9, x0: x$12, x1: x$13, g0_0: NaN, g1_0: NaN };
   DomHelpers$p10(i$14, v$7);
   return i$14;
 }, p: DomHelpers$p10 };
@@ -60,7 +60,7 @@ const DomHelpers$k27 = { m: (v$19, cx$20) => {
   const w$23 = w$22.nextSibling;
   const c$24 = Rt$slot(r$21, w$22, cx$20);
   const c$25 = Rt$slot(r$21, w$23, cx$20);
-  const i$26 = { s: r$21, q: null, e: r$21, c0: c$24, c1: c$25, a0_0: undefined, a0_1: undefined, a1: undefined, g0_0: undefined, g0_1: undefined, g1: undefined };
+  const i$26 = { s: r$21, q: null, e: r$21, c0: c$24, c1: c$25, a0_0: undefined, a0_1: undefined, a1: undefined, g0_0: NaN, g0_1: NaN, g1: undefined };
   DomHelpers$p27(i$26, v$19);
   return i$26;
 }, p: DomHelpers$p27, l: true };
@@ -96,7 +96,7 @@ const DomHelpers$t44 = Rt$template("<ul>", 0);
 const DomHelpers$k44 = { m: (v$41, cx$42) => {
   const r$43 = DomHelpers$t44();
   const c$44 = Rt$slot(r$43, null, cx$42);
-  const i$45 = { s: r$43, q: null, e: r$43, c0: c$44, g0_0: undefined };
+  const i$45 = { s: r$43, q: null, e: r$43, c0: c$44, g0_0: NaN };
   DomHelpers$p44(i$45, v$41);
   return i$45;
 }, p: DomHelpers$p44, l: true };
@@ -128,7 +128,7 @@ const DomHelpers$k85 = { m: (v$57, cx$58) => {
   const w$61 = w$60.nextSibling;
   const x$62 = Rt$insertText(r$59, w$60, "");
   const x$63 = Rt$insertText(r$59, w$61, "");
-  const i$64 = { s: r$59, q: null, e: r$59, x0: x$62, x1: x$63, g0_0: undefined };
+  const i$64 = { s: r$59, q: null, e: r$59, x0: x$62, x1: x$63, g0_0: NaN };
   DomHelpers$p85(i$64, v$57);
   return i$64;
 }, p: DomHelpers$p85 };
@@ -169,7 +169,7 @@ const DomHelpers$k96 = { m: (v$73, cx$74) => {
   const c$79 = Rt$slot(r$75, w$76, cx$74);
   const c$80 = Rt$slot(r$75, w$77, cx$74);
   const c$81 = Rt$slot(r$75, w$78, cx$74);
-  const i$82 = { s: r$75, q: null, e: r$75, c0: c$79, c1: c$80, c2: c$81, g0_0: undefined, g1_0: undefined, g1_1: undefined, g2: undefined };
+  const i$82 = { s: r$75, q: null, e: r$75, c0: c$79, c1: c$80, c2: c$81, g0_0: NaN, g1_0: NaN, g1_1: NaN, g2: undefined };
   DomHelpers$p96(i$82, v$73);
   return i$82;
 }, p: DomHelpers$p96, l: true };

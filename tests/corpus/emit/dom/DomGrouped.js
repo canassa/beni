@@ -36,7 +36,7 @@ const DomGrouped$k21 = { m: (v$8, cx$9) => {
   const w$13 = w$11.nextSibling;
   const w$14 = w$13.firstChild;
   const w$15 = w$13.nextSibling;
-  const i$16 = { s: r$10, q: null, e: r$10, w0: r$10, w1: w$11, w2: w$12, w4: w$14, w5: w$15, a1: undefined, g0_0: undefined, g1: undefined, g2_0: undefined, l: true };
+  const i$16 = { s: r$10, q: null, e: r$10, w0: r$10, w1: w$11, w2: w$12, w4: w$14, w5: w$15, a1: undefined, g0_0: NaN, g1: undefined, g2_0: NaN, l: true };
   DomGrouped$p21(i$16, v$8);
   return i$16;
 }, p: DomGrouped$p21, l: true };
@@ -66,7 +66,7 @@ const DomGrouped$t36 = Rt$template("<div><span>x", 0);
 const DomGrouped$k36 = { m: (v$23, cx$24) => {
   const r$25 = DomGrouped$t36();
   const w$26 = r$25.firstChild;
-  const i$27 = { s: r$25, q: null, e: r$25, w0: r$25, w1: w$26, a0: undefined, a1: undefined, a2: undefined, g0_0: undefined, g0_1: undefined };
+  const i$27 = { s: r$25, q: null, e: r$25, w0: r$25, w1: w$26, a0: undefined, a1: undefined, a2: undefined, g0_0: NaN, g0_1: NaN };
   DomGrouped$p36(i$27, v$23);
   return i$27;
 }, p: DomGrouped$p36 };
@@ -95,7 +95,7 @@ const DomGrouped$t50 = Rt$template("<p> ", 0);
 const DomGrouped$k50 = { m: (v$34, cx$35) => {
   const r$36 = DomGrouped$t50();
   const w$37 = r$36.firstChild;
-  const i$38 = { s: r$36, q: null, e: r$36, w0: r$36, w1: w$37, a0: undefined, a1: undefined, l0_0: undefined, d0: undefined, g0_0: undefined };
+  const i$38 = { s: r$36, q: null, e: r$36, w0: r$36, w1: w$37, a0: undefined, a1: undefined, l0_0: NaN, d0: undefined, g0_0: NaN };
   DomGrouped$p50(i$38, v$34);
   return i$38;
 }, p: DomGrouped$p50 };

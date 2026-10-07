@@ -30,7 +30,7 @@ const DomChildren$t16 = Rt$template("<div>", 0);
 const DomChildren$k16 = { m: (v$16, cx$17) => {
   const r$18 = DomChildren$t16();
   const c$19 = Rt$slot(r$18, null, cx$17);
-  const i$20 = { s: r$18, q: null, e: r$18, c0: c$19, g0_0: undefined };
+  const i$20 = { s: r$18, q: null, e: r$18, c0: c$19, g0_0: NaN };
   DomChildren$p16(i$20, v$16);
   return i$20;
 }, p: DomChildren$p16, l: true };
@@ -70,7 +70,7 @@ const DomChildren$k42 = { m: (v$30, cx$31) => {
   const c$35 = Rt$slot(r$32, w$33, cx$31);
   const c$36 = Rt$slot(r$32, w$34, cx$31);
   const c$37 = Rt$slot(w$34, null, cx$31);
-  const i$38 = { s: r$32, q: null, e: r$32, c0: c$35, c1: c$36, c2: c$37, g0_0: undefined, g1_0: undefined, g2_0: undefined };
+  const i$38 = { s: r$32, q: null, e: r$32, c0: c$35, c1: c$36, c2: c$37, g0_0: NaN, g1_0: NaN, g2_0: NaN };
   DomChildren$p42(i$38, v$30);
   return i$38;
 }, p: DomChildren$p42, l: true };
@@ -95,7 +95,7 @@ const DomChildren$k53 = { m: (v$44, cx$45) => {
   const w$49 = w$48.nextSibling;
   const c$50 = Rt$slot(null, w$49, cx$45);
   const x$51 = Rt$insertText(r$46, w$48, "");
-  const i$52 = { s: w$47, q: null, e: w$49, x0: x$51, c1: c$50, g0_0: undefined };
+  const i$52 = { s: w$47, q: null, e: w$49, x0: x$51, c1: c$50, g0_0: NaN };
   DomChildren$p53(i$52, v$44);
   return i$52;
 }, p: DomChildren$p53, l: true };
@@ -115,7 +115,7 @@ const DomChildren$t66 = Rt$template("<div>", 0);
 const DomChildren$k66 = { m: (v$58, cx$59) => {
   const r$60 = DomChildren$t66();
   const c$61 = Rt$slot(r$60, null, cx$59);
-  const i$62 = { s: r$60, q: null, e: r$60, c0: c$61, g0_0: undefined };
+  const i$62 = { s: r$60, q: null, e: r$60, c0: c$61, g0_0: NaN };
   DomChildren$p66(i$62, v$58);
   return i$62;
 }, p: DomChildren$p66, l: true };

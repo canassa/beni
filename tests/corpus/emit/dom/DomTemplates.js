@@ -33,7 +33,7 @@ const DomTemplates$k19 = { m: (v$12, cx$13) => {
   const x$18 = Rt$insertText(r$14, w$15, "");
   const x$19 = Rt$insertText(r$14, w$16, "");
   const x$20 = Rt$insertText(r$14, w$17, "");
-  const i$21 = { s: r$14, q: null, e: r$14, x0: x$18, x1: x$19, x2: x$20, g0_0: undefined, g1_0: undefined, g2_0: undefined };
+  const i$21 = { s: r$14, q: null, e: r$14, x0: x$18, x1: x$19, x2: x$20, g0_0: NaN, g1_0: NaN, g2_0: NaN };
   DomTemplates$p19(i$21, v$12);
   return i$21;
 }, p: DomTemplates$p19 };
@@ -58,7 +58,7 @@ const DomTemplates$k32 = { m: (v$27, cx$28) => {
   const w$32 = w$30.nextSibling;
   const w$33 = w$32.firstChild;
   const w$34 = w$33.firstChild;
-  const i$35 = { s: r$29, q: null, e: r$29, w2: w$31, w5: w$34, g0_0: undefined, g1_0: undefined };
+  const i$35 = { s: r$29, q: null, e: r$29, w2: w$31, w5: w$34, g0_0: NaN, g1_0: NaN };
   DomTemplates$p32(i$35, v$27);
   return i$35;
 }, p: DomTemplates$p32 };
@@ -88,7 +88,7 @@ const DomTemplates$p51 = (i$36, v$37) => {
 const DomTemplates$t51 = Rt$template("<div aria-label=static><input disabled type=text>", 0);
 const DomTemplates$k51 = { m: (v$43, cx$44) => {
   const r$45 = DomTemplates$t51();
-  const i$46 = { s: r$45, q: null, e: r$45, w0: r$45, g0_0: undefined, g1_0: undefined, g2_0: undefined, g3_0: undefined };
+  const i$46 = { s: r$45, q: null, e: r$45, w0: r$45, g0_0: NaN, g1_0: NaN, g2_0: NaN, g3_0: NaN };
   DomTemplates$p51(i$46, v$43);
   return i$46;
 }, p: DomTemplates$p51 };

@@ -63,7 +63,7 @@ const DomRowItemOnly$t53 = Rt$template("<table>", 0);
 const DomRowItemOnly$k53 = { m: (v$27, cx$28) => {
   const r$29 = DomRowItemOnly$t53();
   const c$30 = Rt$slot(r$29, null, cx$28);
-  const i$31 = { s: r$29, q: null, e: r$29, c0: c$30, g0_0: undefined, g0_1: undefined };
+  const i$31 = { s: r$29, q: null, e: r$29, c0: c$30, g0_0: NaN, g0_1: NaN };
   DomRowItemOnly$p53(i$31, v$27);
   return i$31;
 }, p: DomRowItemOnly$p53, l: true };

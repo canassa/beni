@@ -166,7 +166,7 @@ const DomSelectorNearMiss$k202 = { m: (v$89, cx$90) => {
   const c$101 = Rt$slot(r$91, w$95, cx$90);
   const c$102 = Rt$slot(r$91, w$96, cx$90);
   const c$103 = Rt$slot(r$91, w$97, cx$90);
-  const i$104 = { s: r$91, q: null, e: r$91, c0: c$98, c1: c$99, c2: c$100, c3: c$101, c4: c$102, c5: c$103, g0_0: undefined, g0_1: undefined, g1_0: undefined, g1_1: undefined };
+  const i$104 = { s: r$91, q: null, e: r$91, c0: c$98, c1: c$99, c2: c$100, c3: c$101, c4: c$102, c5: c$103, g0_0: NaN, g0_1: NaN, g1_0: NaN, g1_1: NaN };
   DomSelectorNearMiss$p202(i$104, v$89);
   return i$104;
 }, p: DomSelectorNearMiss$p202, l: true };

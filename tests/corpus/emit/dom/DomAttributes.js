@@ -19,7 +19,7 @@ const DomAttributes$p27 = (i$1, v$2) => {
 const DomAttributes$t27 = Rt$template("<tr class=row style=font-size:12px><td>x", 0);
 const DomAttributes$k27 = { m: (v$7, cx$8) => {
   const r$9 = DomAttributes$t27();
-  const i$10 = { s: r$9, q: null, e: r$9, w0: r$9, a0: false, g0_0: undefined, g1_0: undefined };
+  const i$10 = { s: r$9, q: null, e: r$9, w0: r$9, a0: false, g0_0: NaN, g1_0: NaN };
   DomAttributes$p27(i$10, v$7);
   return i$10;
 }, p: DomAttributes$p27 };
@@ -47,7 +47,7 @@ const DomAttributes$p48 = (i$11, v$12) => {
 const DomAttributes$t48 = Rt$template("<p>x", 0);
 const DomAttributes$k48 = { m: (v$18, cx$19) => {
   const r$20 = DomAttributes$t48();
-  const i$21 = { s: r$20, q: null, e: r$20, w0: r$20, a0: null, a1: null, g0_0: undefined, g1_0: undefined };
+  const i$21 = { s: r$20, q: null, e: r$20, w0: r$20, a0: null, a1: null, g0_0: NaN, g1_0: NaN };
   DomAttributes$p48(i$21, v$18);
   return i$21;
 }, p: DomAttributes$p48 };
@@ -79,7 +79,7 @@ const DomAttributes$k68 = { m: (v$28, cx$29) => {
   const w$31 = r$30.firstChild;
   const w$32 = w$31.nextSibling;
   const w$33 = w$32.nextSibling;
-  const i$34 = { s: r$30, q: null, e: r$30, w0: r$30, w1: w$31, w2: w$32, w4: w$33, g0_0: undefined, l: true };
+  const i$34 = { s: r$30, q: null, e: r$30, w0: r$30, w1: w$31, w2: w$32, w4: w$33, g0_0: NaN, l: true };
   DomAttributes$p68(i$34, v$28);
   return i$34;
 }, p: DomAttributes$p68, l: true };
