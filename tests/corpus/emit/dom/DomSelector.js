@@ -161,7 +161,7 @@ const DomSelector$k173 = { m: (v$72, cx$73) => {
   const c$82 = Rt$slot(r$74, w$77, cx$73);
   const c$83 = Rt$slot(r$74, w$78, cx$73);
   const c$84 = Rt$slot(r$74, w$79, cx$73);
-  const i$85 = { s: r$74, q: null, e: r$74, c0: c$80, c1: c$81, c2: c$82, c3: c$83, c4: c$84, g0_0: undefined, g0_1: undefined, g1_0: undefined, g1_1: undefined, g2_0: undefined, g2_1: undefined, g2_2: undefined };
+  const i$85 = { s: r$74, q: null, e: r$74, c0: c$80, c1: c$81, c2: c$82, c3: c$83, c4: c$84, g0_0: NaN, g0_1: NaN, g1_0: NaN, g1_1: NaN, g2_0: NaN, g2_1: NaN, g2_2: NaN };
   DomSelector$p173(i$85, v$72);
   return i$85;
 }, p: DomSelector$p173, l: true };

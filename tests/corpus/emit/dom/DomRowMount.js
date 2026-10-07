@@ -62,7 +62,7 @@ const DomRowMount$t59 = Rt$template("<ul>", 0);
 const DomRowMount$k59 = { m: (v$24, cx$25) => {
   const r$26 = DomRowMount$t59();
   const c$27 = Rt$slot(r$26, null, cx$25);
-  const i$28 = { s: r$26, q: null, e: r$26, c0: c$27, g0_0: undefined, g0_1: undefined };
+  const i$28 = { s: r$26, q: null, e: r$26, c0: c$27, g0_0: NaN, g0_1: NaN };
   DomRowMount$p59(i$28, v$24);
   return i$28;
 }, p: DomRowMount$p59, l: true };
@@ -105,7 +105,7 @@ const DomRowMount$t91 = Rt$template("<ul>", 0);
 const DomRowMount$k91 = { m: (v$47, cx$48) => {
   const r$49 = DomRowMount$t91();
   const c$50 = Rt$slot(r$49, null, cx$48);
-  const i$51 = { s: r$49, q: null, e: r$49, c0: c$50, g0_0: undefined, g0_1: undefined };
+  const i$51 = { s: r$49, q: null, e: r$49, c0: c$50, g0_0: NaN, g0_1: NaN };
   DomRowMount$p91(i$51, v$47);
   return i$51;
 }, p: DomRowMount$p91, l: true };
@@ -151,7 +151,7 @@ const DomRowMount$t117 = Rt$template("<ul>", 0);
 const DomRowMount$k117 = { m: (v$71, cx$72) => {
   const r$73 = DomRowMount$t117();
   const c$74 = Rt$slot(r$73, null, cx$72);
-  const i$75 = { s: r$73, q: null, e: r$73, c0: c$74, g0_0: undefined, g0_1: undefined };
+  const i$75 = { s: r$73, q: null, e: r$73, c0: c$74, g0_0: NaN, g0_1: NaN };
   DomRowMount$p117(i$75, v$71);
   return i$75;
 }, p: DomRowMount$p117, l: true };

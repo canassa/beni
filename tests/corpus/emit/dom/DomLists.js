@@ -12,7 +12,7 @@ const DomLists$t18 = Rt$template("<li> ", 0);
 const DomLists$k18 = { m: (v$5, cx$6) => {
   const r$7 = DomLists$t18();
   const w$8 = r$7.firstChild;
-  const i$9 = { s: r$7, q: null, e: r$7, w1: w$8, g0_0: undefined };
+  const i$9 = { s: r$7, q: null, e: r$7, w1: w$8, g0_0: NaN };
   DomLists$p18(i$9, v$5);
   return i$9;
 }, p: DomLists$p18 };
@@ -60,7 +60,7 @@ const DomLists$k44 = { m: (v$30, cx$31) => {
   const r$32 = DomLists$t44();
   const w$33 = r$32.firstChild;
   const c$34 = Rt$slot(w$33, null, cx$31);
-  const i$35 = { s: r$32, q: null, e: r$32, c0: c$34, g0_0: undefined, g0_1: undefined };
+  const i$35 = { s: r$32, q: null, e: r$32, c0: c$34, g0_0: NaN, g0_1: NaN };
   DomLists$p44(i$35, v$30);
   return i$35;
 }, p: DomLists$p44, l: true };
@@ -91,7 +91,7 @@ const DomLists$t77 = Rt$template("<li> ", 0);
 const DomLists$k77 = { m: (v$75, cx$76) => {
   const r$77 = DomLists$t77();
   const w$78 = r$77.firstChild;
-  const i$79 = { s: r$77, q: null, e: r$77, w1: w$78, g0_0: undefined };
+  const i$79 = { s: r$77, q: null, e: r$77, w1: w$78, g0_0: NaN };
   DomLists$p77(i$79, v$75);
   return i$79;
 }, p: DomLists$p77 };
@@ -146,7 +146,7 @@ const DomLists$k81 = { m: (v$81, cx$82) => {
   const c$87 = Rt$slot(w$84, null, cx$82);
   const c$88 = Rt$slot(w$85, null, cx$82);
   const c$89 = Rt$slot(w$86, null, cx$82);
-  const i$90 = { s: r$83, q: null, e: r$83, c0: c$87, c1: c$88, c2: c$89, g0_0: undefined };
+  const i$90 = { s: r$83, q: null, e: r$83, c0: c$87, c1: c$88, c2: c$89, g0_0: NaN };
   DomLists$p81(i$90, v$81);
   return i$90;
 }, p: DomLists$p81, l: true };
@@ -212,7 +212,7 @@ const DomLists$k104 = { m: (v$117, cx$118) => {
   const r$119 = DomLists$t104();
   const w$120 = r$119.firstChild;
   const c$121 = Rt$slot(null, w$120, cx$118);
-  const i$122 = { s: null, q: c$121, e: w$120, c0: c$121, a0k: undefined, a0v: undefined, a0i0: undefined, g0_0: undefined, g0_1: undefined };
+  const i$122 = { s: null, q: c$121, e: w$120, c0: c$121, a0k: undefined, a0v: undefined, a0i0: undefined, g0_0: NaN, g0_1: NaN };
   DomLists$p104(i$122, v$117);
   return i$122;
 }, p: DomLists$p104, l: true };

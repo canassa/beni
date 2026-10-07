@@ -1,0 +1,41 @@
+-- A group whose only read is a `⊤` field still runs at mount (backend.md
+-- §15.4, *A root computes its own values*). Under `--release` a function
+-- whose result is `⊤` writes none, so `nothing 3` is `undefined` — the
+-- value a group's last-seen field starts as — and a guard that only
+-- asked "has it changed?" skipped the group on mount: the paragraph
+-- stayed empty.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Inc
+
+
+type alias Model =
+    n : Int
+    u : ⊤
+
+
+update : Msg, Model → Model
+update msg model = { model | n = model.n + 1 }
+
+
+nothing : Int → ⊤
+nothing n = if n > 0 then nothing (n - 1) else ⊤
+
+
+label : ⊤ → String
+label ⊤ = "unit"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="inc" onClick={Inc}>{String.fromInt model.n}</button>
+        <p>{label model.u}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { n = 0, u = nothing 3 }, update = update, view = view }

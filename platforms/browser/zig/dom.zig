@@ -740,6 +740,11 @@ const Gen = struct {
         var patch: Fn = .{ .block = pblock, .v = null, .i = i, .grouped = true };
         var fields: std.ArrayList(m.Property) = .empty;
         const undef = try js.literal(.undefined);
+        // What a read-path field holds before the first render: `NaN`, which
+        // differs from every value — `undefined` would not, since under
+        // `--release` a `⊤` may be `undefined` (§4, *A `()` result is not
+        // written*) and a group reading only one would never run at mount.
+        const unseen = try js.number("NaN");
         // The `let`s only this root reads, first, each under the test of
         // what it reads, and kept: `d<k>` (backend.md §15.4, *The `let`
         // rule*).
@@ -757,7 +762,7 @@ const Gen = struct {
                 const test_ = try js.binary(.strict_ne, try g.cx.value(path), try g.member(try g.ident(i), field));
                 condition = if (condition) |c| try js.binary(.logical_or, c, test_) else test_;
                 try js.assign(then, try g.member(try g.ident(i), field), try g.cx.value(path));
-                try fields.append(a_, .{ .key = field, .value = undef });
+                try fields.append(a_, .{ .key = field, .value = unseen });
             }
             try g.cx.rootValues(then, index, &.{lv});
             try js.assign(then, try g.member(try g.ident(i), kept), try g.cx.value(lv));
@@ -791,7 +796,7 @@ const Gen = struct {
                 const field = try g.print("g{d}_0", .{gi});
                 condition = try js.binary(.strict_ne, try g.ident(x), try g.member(try g.ident(i), field));
                 try js.assign(then, try g.member(try g.ident(i), field), try g.ident(x));
-                try fields.append(a_, .{ .key = field, .value = undef });
+                try fields.append(a_, .{ .key = field, .value = unseen });
             } else if (!gr.every) {
                 if (gr.reads.items.len == 0) {
                     const field = try g.print("g{d}", .{gi});
@@ -804,7 +809,7 @@ const Gen = struct {
                     const test_ = try js.binary(.strict_ne, try g.cx.value(path), try g.member(try g.ident(i), field));
                     condition = if (condition) |c| try js.binary(.logical_or, c, test_) else test_;
                     try js.assign(then, try g.member(try g.ident(i), field), try g.cx.value(path));
-                    try fields.append(a_, .{ .key = field, .value = undef });
+                    try fields.append(a_, .{ .key = field, .value = unseen });
                 }
             }
             var values: std.ArrayList(m.Value.Index) = .empty;

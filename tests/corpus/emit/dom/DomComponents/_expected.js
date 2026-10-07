@@ -61,7 +61,7 @@ const DomComponents$k14 = { m: (v$22, cx$23) => {
   const w$26 = w$25.nextSibling;
   const c$27 = Rt$slot(r$24, w$25, cx$23);
   const c$28 = Rt$slot(r$24, w$26, cx$23);
-  const i$29 = { s: r$24, q: null, e: r$24, c0: c$27, c1: c$28, a0_0: undefined, a0c: undefined, a1c: undefined, g0_0: undefined, g0_1: undefined, g1: undefined };
+  const i$29 = { s: r$24, q: null, e: r$24, c0: c$27, c1: c$28, a0_0: undefined, a0c: undefined, a1c: undefined, g0_0: NaN, g0_1: NaN, g1: undefined };
   DomComponents$p14(i$29, v$22);
   return i$29;
 }, p: DomComponents$p14, l: true };
