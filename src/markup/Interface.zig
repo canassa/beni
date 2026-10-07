@@ -60,7 +60,7 @@ pub const Lowering = struct {
     /// to.
     root: *const fn (cx: *Context, tree: *const Tree, root: Root.Index) Error!Expr,
     /// 1.5: the lowering evaluates a grouped root's values itself
-    /// (`Context.grouped`), so the compiler does not where the root stands.
+    /// (`Context.grouped`), so the compiler does not evaluate them where the root stands.
     groups: bool = false,
 };
 
