@@ -375,13 +375,23 @@ flushing = Js.ref False
 
 -- Run `f` as a turn when `trusted` holds and nothing beneath it is a turn
 -- or a flush; otherwise just run it. A turn's flush runs when `f` returns,
--- where the microtask it replaces would have run.
+-- where the microtask it replaces would have run. A turn is a guard like
+-- `run`'s: however `f` ends the turn is over, and a throw no guard inside
+-- it saw — one out of this runtime itself — stops the page rather than
+-- leave it never rendering again.
 turn : Bool, sync (⊤ → ⊤) → ⊤
 turn trusted f =
     if trusted && not (Js.read turning || Js.read flushing) then
+        ok = Js.ref False
         Js.write turning True
-        f ⊤
-        Js.write turning False
+        Js.finally
+            (λ⊤ →
+                f ⊤
+                Js.write ok True
+            )
+            λ⊤ →
+                Js.write turning False
+                if Js.read ok then ⊤ else stop ⊤
         if Js.read scheduled then flush ⊤
     else
         f ⊤
@@ -555,10 +565,11 @@ flush ⊤ =
                     ⊤
                 else
                     Js.to (Js.apply (Js.read phase) [])
-                Js.write flushing False
                 Js.write ok True
             )
-            λ⊤ → if Js.read ok then ⊤ else stop ⊤
+            λ⊤ →
+                Js.write flushing False
+                if Js.read ok then ⊤ else stop ⊤
 
 
 -- `(program)`: start every program the array holds, in order.
