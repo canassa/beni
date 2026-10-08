@@ -1,0 +1,1 @@
+12000 Conduit (examples/conduit, 3 400 lines, 16 modules) is built twice per case, and its release build alone is ~5 800M; the owner approved this budget on 2026-10-08 (research 62 §1.3). Remove once the release optimiser's cost on large programs is fixed.

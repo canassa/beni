@@ -148,6 +148,22 @@ var process_start: Io.Timestamp = undefined;
 pub const Unit = enum { none, instructions, cpu_us };
 pub var budget_unit: Unit = .none;
 pub var budget_limit: u64 = 0;
+/// The budget in instructions as configured, kept when the unit falls back
+/// to CPU time so a case's own budget can be scaled to it (`caseLimit`).
+pub var budget_instructions: u64 = 0;
+
+/// The limit for a corpus case that carries its own budget, in millions of
+/// instructions (a `.budget` file, owner-approved; `tests/corpus/README.md`),
+/// in the unit the runner measures: the CPU-time fallback scales the global
+/// limit by the same ratio.
+pub fn caseLimit(millions: u64) u64 {
+    const instructions = millions * 1_000_000;
+    return switch (budget_unit) {
+        .none => 0,
+        .instructions => instructions,
+        .cpu_us => if (budget_instructions == 0) budget_limit else budget_limit * instructions / budget_instructions,
+    };
+}
 
 /// The budget in instructions (`zig build -Dtest-budget=`, in millions),
 /// and the CPU time it corresponds to, the fallback.
@@ -296,6 +312,7 @@ pub fn open(the_io: Io, environ: std.process.Environ, argv0: []const u8) void {
     const instructions = envNumber(environ, budget_instructions_env_var);
     const cpu_ms = envNumber(environ, budget_cpu_ms_env_var);
     fallback_cpu_us = cpu_ms * std.time.us_per_ms;
+    budget_instructions = instructions;
     if (instructions != 0) {
         budget_unit = .instructions;
         budget_limit = instructions;
