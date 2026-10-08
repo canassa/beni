@@ -919,7 +919,10 @@ from S1**, before any guarantee machinery is built on the design:
    too. It is compared **structurally**: a scalar by `===`; a list by length and then each
    element structurally; a record, tuple or constructor field by field, recursively, to the
    leaves; a function value not at all. The identity rule holds for exactly one check, `get(xs,
-   i) === insts[i].it`, because a `For` assigns the very object it shows. Any difference is a defect (§8.2, naming the hole, list or branch). **It
+   i) === insts[i].it`, because a `For` assigns the very object it shows. A derived value
+   longer than 1 000 elements is compared by length and its first and last 100 elements only, so
+   the development check stays usable on large lists; the cap is a known limit of the check, not
+   of the guarantee (§16). Any difference is a defect (§8.2, naming the hole, list or branch). **It
    must change nothing unless the compiler is wrong**, so it skips what evaluating again would
    change: an every-render group (`Random.value`, `Time.now`: a different value each time is
    not a missed write), and any value whose evaluation **reaches** a `Debug` call — directly
@@ -1228,7 +1231,7 @@ research 60 wrote where one exists, and at S8.
    Each is the design failing on a real shape, found before a line of the lowering is written:
    the Imba failure (O(view) per event) and the size blow-up, caught at S0 instead of S6.
 2. **S0, the floor**: the empty mounted page is over 500 B brotli, or imports anything of `Rt`
-   but `send` and `run` — the design is carrying a runtime it did not justify. The 300 B target
+   but `send`, `run` and the `unset` sentinel (§5.3) — the design is carrying a runtime it did not justify. The 300 B target
    is the estimate; 500 is where a reconciler's or a dispatcher's worth of bytes has crept in
    unreached, which is the one failure this tripwire exists for.
 3. **S1**: the holes handler is not one compare and one write (`emit/direct/`), or holes 10 000
@@ -1432,3 +1435,7 @@ No limit can make a page wrong; a limit makes a message do more work than it nee
   the platform.
 
 *Amendments go below this line, dated, without renumbering.*
+- **The development verify check samples large derived lists.** After each message, the
+  development build re-checks every value it computed. For a derived list longer than 1 000
+  elements it compares the length and the first and last 100 elements only. A missed write in
+  the middle of such a list is caught by the fuzzer and the page tests, not by this check.
