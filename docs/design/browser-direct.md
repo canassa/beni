@@ -141,17 +141,22 @@ function, named by the key (`Main$h$Edit`, `Main$h$GotEditorMsg$EnteredTitle`; s
    common case: the `case msg of` is gone, its arms are the handlers.
 2. **Top-level derived values** (§5.4) — those belonging to no branch arm — whose read sets
    conflict with `writes(κ)`, recomputed in dependency order into their slots. An arm's derived
-   values are not here: they run at the arm's mount and in step 4 under the arm's liveness
+   values are not here: they run at the arm's mount and first in the arm's visit of step 3, under the arm's liveness
    (§5.4, §5.5), because step 1 may have made the model another variant and the arm's old
    liveness would still read as true until step 3 switches it.
-3. **Structure**: the branches (§5.5) whose scrutinee reads conflict, outermost first — a branch
-   switch tears the old arm down and mounts the new one — then the edit scripts (§6.2) of every
-   list write in `writes(κ)`, in the source order of their `For` sites; each may make, move or
-   remove nodes.
-4. **Values**: per live arm, outermost first, the arm's derived values that conflict (in
-   dependency order), then the groups (§5.3) whose read sets conflict with `writes(κ)`, in the
-   order of their first hole; the row holes an edit script marked; the selector's two rows
-   (§6.4).
+3. **Structure and values, per arm, outermost first.** The top level is the outermost arm, and
+   its nested branches' live arms follow it, each visited as a whole before the next and only
+   under its liveness. For each arm, in this order: **(a)** its derived values that conflict
+   with `writes(κ)` (§5.4), in dependency order — before anything of the arm reads them, which
+   is what a flat "structure, then values" order got wrong (a `For each={shown}` inside a page
+   arm would have reconciled against the stale `shown`); **(b)** its nested branches whose
+   scrutinee reads conflict (§5.5) — a switch tears the old arm down and mounts the new one,
+   and a kept arm is then visited in its turn; **(c)** the edit scripts (§6.2) of every list
+   write in `writes(κ)` whose `For` is the arm's, in the source order of the sites; **(d)** its
+   groups (§5.3) whose read sets conflict, in the order of their first hole, the row holes an
+   edit script marked, and the selector's two rows (§6.4). Mount (§5.5) runs the same four in
+   the same order on every arm it mounts.
+4. *(folded into 3: there is no separate value step; each arm's values follow its structure.)*
 5. *(withdrawn: there is one after-render point, `end()` in §4.3, after every queued message of
    the dispatch has applied; §10.2.)*
 6. **Effects**: the command of step 1 is handed to the command driver; the subscription diff runs
@@ -169,7 +174,7 @@ impossible by construction. Pinned by `browser/direct/LateResponse` (a message f
 longer shown, and one for a `Show` that closed).
 
 A key whose write set is empty (a command-only message, 18 % of research 61's constructors) is
-steps 1 and 6. A key of class `*` (`value ρ`) runs step 3 for every list and step 4 for every
+steps 1 and 6. A key of class `*` (`value ρ`) runs step 3 over every arm, every list and every
 group: **`patchAll`**, one outlined function per program that exists only when some key needs
 it (Conduit's `ChangedUrl` does; research 62 §3.1). That is the Elm fallback — compare
 everything — kept as the rule `compile-away.md` §2 states: an unknown write set is a cost, never
@@ -215,7 +220,11 @@ the template, so:
   reaching a row the same dispatch detached: it is **delivered**, with the item the row showed
   (the instance is still the handler property's), as Elm delivers it. Pinned by
   `browser/direct/EventReadsModel` (a handler removes the focused input; the blur's message
-  carries the new model's value) and `browser/direct/DetachedRowEvent`.
+  carries the new model's value) and `browser/direct/DetachedRowEvent`. The same holds of what
+  a queued body reads from the event's node: a queued `e.target.value` is read after the running
+  handler's own writes to that control, so it sees what the handler wrote, not what the user
+  typed before it — narrow today, since only a `blur` or `focus` a DOM write fires can queue,
+  and `EventReadsModel` pins that reading too.
 - **Outside every `For` row**, each handler node gets `addEventListener(name, e => send(l, e))`
   at mount. The DOM's own bubbling delivers the event to an ancestor's handler node after a
   descendant's, which is Elm's order; `stopPropagation` declared on the event's row calls
@@ -239,8 +248,14 @@ the template, so:
   row root, runs the buffer only if that root is this list's (`$r.list === this list`) and
   otherwise **discards** it — those nodes were the inner list's, whose own listener has already
   run them — and goes on with an empty buffer until it reaches its own row root; a program's
-  mount root counts as another list's row root. The order that results is Elm's: the inner
-  row's handlers, then the outer row's, each once. Pinned by `browser/direct/NestedFor` (a
+  mount root counts as another list's row root. `$r.list` is the **list's run-time identity** —
+  the descriptor or instance array of this mount — never its static site, so two mounts of a
+  function-built program (§8.2) that hold nested lists are told apart. **A `stopPropagation`
+  node** inside a row stops the walk *after* running the buffer up to and including that node,
+  provided the walk has not crossed another list's row root since it last discarded (the
+  stopper is this list's row's): the stopper's own body and the bodies below it run, the
+  native `e.stopPropagation()` is called, and nothing above runs. The order that results is
+  Elm's: the inner row's handlers, then the outer row's, each once. Pinned by `browser/direct/NestedFor` (a
   `For` in a `For` row, a click on the inner row's button and on the outer row's cell) and
   `browser/direct/NestedPrograms` (a program mounted inside another's list row). **An event that does not
   bubble** — `focus`, `blur`, `mouseenter`, `mouseleave`, `scroll`, `load`, the media events —
@@ -254,7 +269,8 @@ the template, so:
   stays unless a listener per row is as fast to mount and no larger (§13's `create` criterion),
   in which case rows get direct listeners for every event and no walk exists anywhere. Pinned by
   `browser/direct/RowBlur` (a blur in a row), `browser/direct/StopInRow` (a row handler that
-  stops propagation keeps an outer direct listener from firing).
+  stops propagation: its own message is sent, a handler below it in the row is sent first, and
+  an outer direct listener does not fire).
 - **Which program** an event belongs to is known at compile time: a program's handler nodes are
   in its own templates, and its listeners call its own handlers. Two programs on one page (§9.3)
   need no walk to a mount root.
@@ -394,7 +410,13 @@ recursive helper (the helper tree sweep) and a few `List Html` holes.
 **A helper called from several unique sites is a shared site, and inlining has a size gate.** A
 helper's markup is inlined at a call site only when every call site's copy together is no larger
 than one outlined copy plus its calls — the release optimiser's single-use rule measured in
-bytes, applied to markup. The table app's `button`, six calls of constants, inlines to six
+bytes, applied to markup — with this **default**: the sizes are the emitted JavaScript's
+minified byte counts (brotli is not additive and is measured, not used, by the gate), a call
+site's share of the outlined form is 24 bytes (an instance record, a mount call and the group
+calls), and a helper of n call sites is inlined when `n × inlined ≤ outlined + n × 24`; a
+helper whose markup is constants only (the table app's `button`) is always inlined, since its
+copy is template text. The release optimiser's own solver can refine the constants; this is
+the number the design starts from. The table app's `button`, six calls of constants, inlines to six
 template strings and six listeners and nothing else, so it passes. A Conduit form-field helper
 called thirty times does not: it becomes a **shared site**, its template string and its group
 functions emitted once with an instance parameter, each call site holding an instance record
@@ -449,11 +471,15 @@ and a message that writes `items` recomputes once and then runs the groups that 
 source order, since a `let` reads only earlier ones. **A derived value belongs to the innermost
 branch arm whose markup reads it** (a `let` inside a page's `view`, a `let` bound inside an
 `if`'s `then` markup): it is computed at that arm's mount, after the arm's slots are reset and
-before the arm's groups, and recomputed in step 4 under the arm's liveness (§4.1), never in
-step 2, where the model may already be another variant and the read would be a `TypeError`. A
-derived value read by markup of two arms, or by top-level markup, is top-level and is step 2's.
-Pinned by `browser/direct/LetInArm` (a `let` inside a page arm, `A → B → A`, the message that
-switches arms also writing what the `let` reads).
+before anything else of the arm, and recomputed **first in the arm's visit** of step 3 under
+the arm's liveness (§4.1, (a) before (b)–(d)) — before the arm's nested branches, its `For`
+sites' scripts and its groups read it — and never in step 2, where the model may already be
+another variant and the read would be a `TypeError`. A derived value read by markup of two
+arms, or by top-level markup, is top-level and is step 2's. Pinned by `browser/direct/LetInArm`:
+a `let` inside a page arm under `A → B → A`, the message that switches arms also writing what
+the `let` reads; and, with no arm switch, a `let` that feeds both a nested `if` (`if List.isEmpty
+shown`) and a `<For each={shown}>`, where the message adds an item the `let` keeps — the new
+row appears and the `if` flips in the same dispatch.
 
 ### 5.5 Branches and `Show`
 
@@ -470,9 +496,12 @@ runtime call.
 
 **Teardown resets the arm's slots.** An arm's slots are module-level (§5.2) and outlive its
 nodes, so without a reset an `A → B → A` switch with unchanged model values would find every
-slot equal to its value, write nothing, and leave the new nodes blank. So teardown writes the
-sentinel `undefined` — which no beni value is, today's rule for a fresh instance (`backend.md`
-§15.5) — into every slot of the arm: its hole slots, its derived values, its nested branches'
+slot equal to its value, write nothing, and leave the new nodes blank. So teardown writes **the
+sentinel** into every slot of the arm — one module-level `const unset = {}` of `Rt`, an object
+no value can be `===` to, and not `undefined`, which today's fresh instances use
+(`backend.md` §15.5) but which a `⊤`-typed value is under `--release` (`backend.md` §4: `⊤` is
+`null`, or `undefined` in release), so that a `Maybe ⊤` scrutinee's slot could read as unwritten
+—: its hole slots, its derived values, its nested branches'
 `br`, and it empties its lists' instance arrays (and key maps) after removing their rows. Mount
 then runs, in this order: the arm's derived values (§5.4), the arm's nested branches (each
 evaluated and mounted the same way, recursively), its lists (every row made), and every group
@@ -618,11 +647,11 @@ those two, as today's `forKeyed` does and as js-framework-benchmark's vanilla do
 vanilla. The map is maintained by `make` and by the scripts that remove rows; a list with neither
 a selector nor a reconciler has none.
 
-**Order, and a row that is gone.** The selector visit is part of step 4 and runs after step 3's
-scripts (§4.1), so the map is the list's current shape when it is read. The two probes — the
+**Order, and a row that is gone.** The selector visit is part of the arm's (d), after its (c)
+scripts (§4.1 step 3), so the map is the list's current shape when it is read. The two probes — the
 old selector value, kept in the selector's own slot, and the new one — are looked up in the
 map, and **a probe no row has is skipped**: a `Remove id` that also clears `selected` removed
-the selected row in step 3, and the visit finds nothing for the old probe; a row the same arm
+the selected row in (c), and the visit finds nothing for the old probe; a row the same arm
 inserted was made with the current selection and needs no visit. A probe that is `Nothing`, or
 a key no row has, finds nothing, as today's runtime's probe value "no key is" does. Pinned by
 `browser/direct/SelectAndRemove` (remove the selected row, select a row and remove another,
@@ -868,15 +897,22 @@ from S1**, before any guarantee machinery is built on the design:
    site: every scalar hole's value against its slot; every branch scrutinee re-evaluated
    against `br`; every derived value recomputed against its slot; every list's items against
    its instances — `xs.length === insts.length` and `get(xs, i) === insts[i].it` for each
-   `i`; a nested branch's and a row's holes recursively. Any difference is a defect (§8.2,
-   naming the hole, list or branch). **It must change nothing unless the compiler is wrong**,
-   so it skips what evaluating again would change: an every-render group (`Random.value`,
-   `Time.now`: a different value each time is not a missed write), and any value whose
-   expression contains a `Debug` call (evaluating it again would print again, and
-   `GroupedReads`-shaped fixtures count prints); a correct handler leaves everything else equal
-   to its slot, so a page with a correct compiler runs the same with verify on and off, and
-   `browser/direct/VerifyQuiet` (every-render values and `Debug.log`s in a view, verify on)
-   pins that it does. It catches the Svelte 3 class at its first occurrence, on every
+   `i`; a nested branch's and a row's holes recursively. **A derived value is never compared by
+   identity**: recomputing a `filter`, a `map` or a record gives a fresh object on every
+   correct dispatch. It is compared by what its readers can see — a scalar by `===`; a list by
+   length and element identity (`get(a, i) === get(b, i)`), the comparison the identity walk
+   makes; a record, tuple or constructor field by field, recursively, to the leaves; a function
+   value not at all. Any difference is a defect (§8.2, naming the hole, list or branch). **It
+   must change nothing unless the compiler is wrong**, so it skips what evaluating again would
+   change: an every-render group (`Random.value`, `Time.now`: a different value each time is
+   not a missed write), and any value whose evaluation **reaches** a `Debug` call — directly
+   or through any function it calls, transitively over the call graph, which the compiler
+   already knows per function because `--release`'s `debug_in_release` refuses exactly those
+   (evaluating it again would print again, and `GroupedReads`-shaped fixtures count prints); a
+   correct handler leaves everything else equal to its slot, so a page with a correct compiler
+   runs the same with verify on and off, and `browser/direct/VerifyQuiet` pins that it does:
+   every-render values, a `Debug.log` in a view hole, a hole calling a helper that logs two
+   calls deep, and a list-valued `let` recomputed and compared per element, all with verify on. It catches the Svelte 3 class at its first occurrence, on every
    development page a developer runs and on every development page of the corpus. Its cost in
    development is a full compare per dispatch, today's cost.
 
@@ -964,8 +1000,8 @@ twin for subscriptions, and that the twin would take the routing subscription of
 `Dom.rendered`, after-render work (`Hosted.afterRender`, focus after a render) and
 `Browser.flush` were defined against a render loop. On this platform: the after-render point of a
 dispatch is `end()` (§4.3), after every write of the handler and of the sends it queued, where the
-waits resume in order and the after-render work runs; a message such work sends is a new
-dispatch. **`Browser.flush` is a no-op** — there is nothing queued to flush; it stays in the API
+waits resume in order and the after-render work runs; a message such work sends is queued and
+applied **in the same dispatch**, by §4.3's loop, before `end()` runs again. **`Browser.flush` is a no-op** — there is nothing queued to flush; it stays in the API
 so a program builds on both platforms, and its documentation says so (Q3, §15).
 
 ## 11. What the compiler analyses
@@ -1370,5 +1406,10 @@ No limit can make a page wrong; a limit makes a message do more work than it nee
   other's writes.
 - **An event fired by a handler's own DOM write** (a `blur` on an input the handler removed)
   runs after that handler and reads the model the handler made (Q1).
+- **After-render work that always sends and waits again** (a `Dom.rendered` continuation that
+  sends a message and registers another wait, every time) keeps the dispatch going: each
+  message applies, `end()` runs again, and the page never returns to the browser — the same
+  hang today's microtask loop has with the same program, and a defect of the program, not of
+  the platform.
 
 *Amendments go below this line, dated, without renumbering.*
