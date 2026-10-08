@@ -1675,3 +1675,8 @@ thread with the checker's stack, after every module is checked, and summaries ar
 demand from `update`'s walk. That is deterministic by construction (§7's other bullets hold
 unchanged) and costs 4.8 ms on Conduit (research 63 §4); per-module parallelism waits until a
 measurement asks for it.
+
+**A capped view's hole list is incomplete** (review of the pass, V1). When the dump prints
+`view (cap W)`, the holes it lists read ρ and are dynamic, but holes the walk never reached are
+not listed at all. A consumer must treat `view (cap W)` as "the hole list is unavailable" and
+keep that program on today's whole-view path. It must never patch only the holes the list names.
