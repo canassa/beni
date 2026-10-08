@@ -39,6 +39,7 @@
 // builds of the compiler are compared under the same noise.
 
 import { execSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadavg } from "node:os";
@@ -60,6 +61,9 @@ const full = flag("full");
 const mode = full ? "full" : "quick";
 const repo = join(root, "../..");
 const beniExe = arg("beni", join(repo, "zig-out/bin/beni"));
+// The compiler a page was built by: a page built by another beni is built
+// again, even when its source did not change.
+const beniId = existsSync(beniExe) ? createHash("sha256").update(readFileSync(beniExe)).digest("hex") : "";
 // CPU throttling: none by default; `--throttle=4` is the table benchmark's.
 const THROTTLE = Number(arg("throttle", "1"));
 const settings = full ? { pages: 2, samples: 4, warm: 5, throttles: [THROTTLE] } : { pages: 1, samples: 3, warm: 3, throttles: [THROTTLE] };
@@ -199,9 +203,12 @@ function buildAll() {
       const builds = [["dev", []], ["rel", ["--release"]]].filter(([suffix]) => suffix === "dev" || wants(`${out}-release`));
       for (const [suffix, flags] of builds) {
         const outDir = `${dir}/${out}-${suffix}`;
-        if (!changed && !rebuild && existsSync(join(root, outDir, "_main.mjs"))) continue;
+        const stamp = join(root, outDir, ".built-by");
+        const same = existsSync(stamp) && readFileSync(stamp, "utf8") === beniId;
+        if (!changed && !rebuild && same && existsSync(join(root, outDir, "_main.mjs"))) continue;
         rmSync(join(root, outDir), { recursive: true, force: true });
         run(beniExe, ["build", "--platform=browser-tea", ...flags, "--no-cache", `--out=${outDir}`, `${dir}/${src}/Main.beni`]);
+        writeFileSync(stamp, beniId);
       }
     }
     for (const v of variants) {
