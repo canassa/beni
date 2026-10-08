@@ -165,6 +165,10 @@ pub const check = struct {
         pub const Decl = @import("check/constrain/Decl.zig");
     };
 };
+pub const writes = struct {
+    pub const Writes = @import("writes/Writes.zig");
+    pub const Core = @import("writes/Core.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
     pub const ast = @import("dump/ast.zig");
@@ -173,6 +177,7 @@ pub const dump = struct {
     pub const types = @import("dump/types.zig");
     pub const graph = @import("dump/graph.zig");
     pub const dispatch = @import("dump/dispatch.zig");
+    pub const writes = @import("dump/writes.zig");
 };
 pub const render = struct {
     pub const text = @import("render/text.zig");
@@ -191,6 +196,7 @@ test {
     std.testing.refAllDecls(cache);
     std.testing.refAllDecls(check);
     std.testing.refAllDecls(dump);
+    std.testing.refAllDecls(writes);
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(js);
     std.testing.refAllDecls(build);

@@ -28,7 +28,7 @@ pub const usage =
     \\  serve    build --watch, and serve the output over HTTP with live reload
     \\  check   parse, lower and resolve every module against core; report diagnostics
     \\  fmt      format in place, or --check to verify, or --stdout to print
-    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types|graph|dispatch)
+    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes)
     \\  version  print the version
     \\  help     print this text
     \\
@@ -75,11 +75,11 @@ pub const usage =
     \\  --stdout                  print the formatted text instead of writing it
     \\
     \\dump options:
-    \\  --stage=tokens|ast|bir|interface|raw|types|graph|dispatch
+    \\  --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes
     \\                            which representation to print (required)
     \\  --positions               include source positions
     \\  --platform=<name>         as check's, for the stages that resolve imports (interface, raw,
-    \\                            types, graph, dispatch); refused on the others
+    \\                            types, graph, dispatch, writes); refused on the others
     \\
     \\exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O failure
     \\
@@ -92,7 +92,7 @@ pub const DiagnosticsFormat = enum { text, json };
 /// see a difference in the bytes `fast-compiler.md` §8.1 hashes.
 /// It exists so a test can assert "the same at every `--jobs`" about the
 /// record and not about a printer.
-pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch };
+pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes };
 
 /// Options every subcommand accepts.
 pub const Common = struct {
@@ -395,6 +395,9 @@ pub const Dump = struct {
     /// refuses it on the others rather than accepting a flag that does
     /// nothing, which is the rule `--source-maps` set (backend.md §2).
     platform: ?[]const u8 = null,
+    /// `--writes-work=<n>` — hidden, test-only: the write-set pass's work
+    /// cap W (write-sets.md §6.1), lowered so a fixture can reach it.
+    writes_work: ?u64 = null,
     file: []const u8,
 };
 
@@ -1034,18 +1037,29 @@ const DumpSpecific = struct {
     stage: ?Stage = null,
     positions: bool = false,
     platform: ?[]const u8 = null,
+    writes_work: ?u64 = null,
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
             if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
         } else if (std.mem.eql(u8, name, "--stage")) {
-            const v = value orelse return needsValue(name, "tokens|ast|bir|interface|raw|types|graph|dispatch");
+            const v = value orelse return needsValue(name, "tokens|ast|bir|interface|raw|types|graph|dispatch|writes");
             self.stage = std.meta.stringToEnum(Stage, v) orelse
-                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir, interface, raw, types, graph or dispatch)", .{v});
+                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir, interface, raw, types, graph, dispatch or writes)", .{v});
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--positions")) {
             if (value != null) return noValue(name);
             self.positions = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--writes-work")) {
+            // Hidden and test-only (write-sets.md §6.1, N6): lowers the
+            // write-set pass's work cap W so a fixture can reach it under
+            // the test budget, as `--allow-debug` lets the release corpus
+            // keep its instrument. Absent from `usage` on purpose.
+            const v = value orelse return needsValue(name, "<n>");
+            self.writes_work = std.fmt.parseUnsigned(u64, v, 10) catch
+                return Usage.init("beni: invalid value '{s}' for --writes-work (expected a positive integer)", .{v});
+            if (self.writes_work.? == 0) return Usage.init("beni: invalid value '{s}' for --writes-work (expected a positive integer)", .{v});
             self.consumed = true;
         }
         return null;
@@ -1056,7 +1070,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     var s: Scanner(DumpSpecific) = .{};
     defer s.positionals.deinit(gpa);
     if (try s.scan(gpa, args)) |u| return .{ .usage = u };
-    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch", .{}) };
+    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes", .{}) };
     // A platform is a package of MODULES, so it changes what an import
     // resolves to and nothing else. The stages below it are a function of
     // one file's own bytes, and accepting the flag there would be a flag
@@ -1064,7 +1078,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     // (backend.md §2).
     if (s.specific.platform != null and !stageResolvesImports(stage)) {
         return .{ .usage = .init(
-            "beni: --platform has no effect on --stage={t}; it applies to interface, raw, types, graph and dispatch",
+            "beni: --platform has no effect on --stage={t}; it applies to interface, raw, types, graph, dispatch and writes",
             .{stage},
         ) };
     }
@@ -1072,11 +1086,13 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     // whole project's interfaces or dispatch tables, checker.md §3 and
     // static-dispatch-spike.md §7.3); either way it is one path.
     if (s.positionals.items.len != 1) return .{ .usage = .init("beni: dump needs exactly one file", .{}) };
+    if (s.specific.writes_work != null and stage != .writes) return .{ .usage = .init("beni: --writes-work applies to --stage=writes only", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
         .stage = stage,
         .positions = s.specific.positions,
         .platform = s.specific.platform,
+        .writes_work = s.specific.writes_work,
         .file = s.positionals.items[0],
     } } };
 }
@@ -1087,7 +1103,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
 pub fn stageResolvesImports(stage: Stage) bool {
     return switch (stage) {
         .tokens, .ast, .bir => false,
-        .interface, .raw, .types, .graph, .dispatch => true,
+        .interface, .raw, .types, .graph, .dispatch, .writes => true,
     };
 }
 
@@ -1201,9 +1217,9 @@ test "dump: stage, positions, exactly one file" {
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .graph, .file = "src" } }, &.{ "dump", "--stage=graph", "src" });
-    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch", &.{ "dump", "Main.beni" });
-    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface|raw|types|graph|dispatch", &.{ "dump", "--stage", "Main.beni" });
-    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast, bir, interface, raw, types, graph or dispatch)", &.{ "dump", "--stage=cst", "Main.beni" });
+    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes", &.{ "dump", "Main.beni" });
+    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes", &.{ "dump", "--stage", "Main.beni" });
+    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast, bir, interface, raw, types, graph, dispatch or writes)", &.{ "dump", "--stage=cst", "Main.beni" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast", "A.beni", "B.beni" });
     try expectUsage("beni: option '--positions' does not take a value", &.{ "dump", "--stage=ast", "--positions=1", "A.beni" });
@@ -1281,7 +1297,7 @@ test "check and dump take --platform; fmt does not, and neither does a per-file 
     // for the ones that are a function of the file's own bytes rather than
     // accepting a flag that does nothing (backend.md §2's `--source-maps`
     // rule).
-    for ([_][:0]const u8{ "--stage=interface", "--stage=raw", "--stage=types", "--stage=graph", "--stage=dispatch" }) |stage| {
+    for ([_][:0]const u8{ "--stage=interface", "--stage=raw", "--stage=types", "--stage=graph", "--stage=dispatch", "--stage=writes" }) |stage| {
         const result = try parse(testing.allocator, &.{ "dump", stage, "--platform=node", "M.beni" });
         switch (result) {
             .command => |c| {
@@ -1295,15 +1311,15 @@ test "check and dump take --platform; fmt does not, and neither does a per-file 
         }
     }
     try expectUsage(
-        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph and dispatch",
+        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph, dispatch and writes",
         &.{ "dump", "--stage=ast", "--platform=node", "M.beni" },
     );
     try expectUsage(
-        "beni: --platform has no effect on --stage=tokens; it applies to interface, raw, types, graph and dispatch",
+        "beni: --platform has no effect on --stage=tokens; it applies to interface, raw, types, graph, dispatch and writes",
         &.{ "dump", "--platform=node", "--stage=tokens", "M.beni" },
     );
     try expectUsage(
-        "beni: --platform has no effect on --stage=bir; it applies to interface, raw, types, graph and dispatch",
+        "beni: --platform has no effect on --stage=bir; it applies to interface, raw, types, graph, dispatch and writes",
         &.{ "dump", "--stage=bir", "--platform=node", "M.beni" },
     );
     // `fmt` resolves nothing: formatting is per file.
