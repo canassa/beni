@@ -1,0 +1,943 @@
+-- url "/editor/how-to-train-your-dragon"
+-- store local "conduit" "{\"user\":{\"email\":\"jake@example.com\",\"token\":\"j4k3\",\"username\":\"jake\",\"bio\":null,\"image\":null}}"
+-- load
+(fetch 1: GET /api/articles/how-to-train-your-dragon {"authorization":"Token j4k3"})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 1 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <ul class="error-messages"></ul>
+            <form id="editor-form">
+              <fieldset>
+                <fieldset class="form-group">
+                  <input id="title" class="form-control form-control-lg" placeholder="Article Title" .value="How to train your dragon">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="description" class="form-control" placeholder="What's this article about?" .value="Ever wonder how?">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="body" class="form-control" rows="8" placeholder="Write your article (in markdown)" .value="It takes a Jacobian"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="tags" class="form-control" placeholder="Enter tags" .value="dragons training">
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">"Update Article"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #title " "
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <ul class="error-messages"></ul>
+            <form id="editor-form">
+              <fieldset>
+                <fieldset class="form-group">
+                  <input id="title" class="form-control form-control-lg" placeholder="Article Title" .value=" ">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="description" class="form-control" placeholder="What's this article about?" .value="Ever wonder how?">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="body" class="form-control" rows="8" placeholder="Write your article (in markdown)" .value="It takes a Jacobian"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="tags" class="form-control" placeholder="Enter tags" .value="dragons training">
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">"Update Article"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #editor-form>fieldset>button
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <ul class="error-messages">
+              <li>"title can't be blank."</li>
+            </ul>
+            <form id="editor-form">
+              <fieldset>
+                <fieldset class="form-group">
+                  <input id="title" class="form-control form-control-lg" placeholder="Article Title" .value=" ">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="description" class="form-control" placeholder="What's this article about?" .value="Ever wonder how?">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="body" class="form-control" rows="8" placeholder="Write your article (in markdown)" .value="It takes a Jacobian"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="tags" class="form-control" placeholder="Enter tags" .value="dragons training">
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">"Update Article"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #title "How to train your dragon, again"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <ul class="error-messages">
+              <li>"title can't be blank."</li>
+            </ul>
+            <form id="editor-form">
+              <fieldset>
+                <fieldset class="form-group">
+                  <input id="title" class="form-control form-control-lg" placeholder="Article Title" .value="How to train your dragon, again">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="description" class="form-control" placeholder="What's this article about?" .value="Ever wonder how?">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="body" class="form-control" rows="8" placeholder="Write your article (in markdown)" .value="It takes a Jacobian"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="tags" class="form-control" placeholder="Enter tags" .value="dragons training">
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">"Update Article"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #editor-form>fieldset>button
+(fetch 2: PUT /api/articles/how-to-train-your-dragon {"authorization":"Token j4k3","content-type":"application/json"} "{\"article\":{\"title\":\"How to train your dragon, again\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"]}}")
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <ul class="error-messages"></ul>
+            <form id="editor-form">
+              <fieldset disabled="">
+                <fieldset class="form-group">
+                  <input id="title" class="form-control form-control-lg" placeholder="Article Title" .value="How to train your dragon, again">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="description" class="form-control" placeholder="What's this article about?" .value="Ever wonder how?">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="body" class="form-control" rows="8" placeholder="Write your article (in markdown)" .value="It takes a Jacobian"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="tags" class="form-control" placeholder="Enter tags" .value="dragons training">
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">"Update Article"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 2 422 "{\"errors\":{\"title\":[\"has already been taken\"]}}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <ul class="error-messages">
+              <li>"{\"errors\":{\"title\":[\"has already been taken\"]}}"</li>
+            </ul>
+            <form id="editor-form">
+              <fieldset>
+                <fieldset class="form-group">
+                  <input id="title" class="form-control form-control-lg" placeholder="Article Title" .value="How to train your dragon, again">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="description" class="form-control" placeholder="What's this article about?" .value="Ever wonder how?">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="body" class="form-control" rows="8" placeholder="Write your article (in markdown)" .value="It takes a Jacobian"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="tags" class="form-control" placeholder="Enter tags" .value="dragons training">
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">"Update Article"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #title "How to train your dragon, twice"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <ul class="error-messages">
+              <li>"{\"errors\":{\"title\":[\"has already been taken\"]}}"</li>
+            </ul>
+            <form id="editor-form">
+              <fieldset>
+                <fieldset class="form-group">
+                  <input id="title" class="form-control form-control-lg" placeholder="Article Title" .value="How to train your dragon, twice">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="description" class="form-control" placeholder="What's this article about?" .value="Ever wonder how?">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="body" class="form-control" rows="8" placeholder="Write your article (in markdown)" .value="It takes a Jacobian"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="tags" class="form-control" placeholder="Enter tags" .value="dragons training">
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">"Update Article"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #editor-form>fieldset>button
+(fetch 3: PUT /api/articles/how-to-train-your-dragon {"authorization":"Token j4k3","content-type":"application/json"} "{\"article\":{\"title\":\"How to train your dragon, twice\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"]}}")
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="editor-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-10 offset-md-1 col-xs-12">
+            <ul class="error-messages"></ul>
+            <form id="editor-form">
+              <fieldset disabled="">
+                <fieldset class="form-group">
+                  <input id="title" class="form-control form-control-lg" placeholder="Article Title" .value="How to train your dragon, twice">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="description" class="form-control" placeholder="What's this article about?" .value="Ever wonder how?">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="body" class="form-control" rows="8" placeholder="Write your article (in markdown)" .value="It takes a Jacobian"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="tags" class="form-control" placeholder="Enter tags" .value="dragons training">
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">"Update Article"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 3 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon-twice\",\"title\":\"How to train your dragon, twice\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-19T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+(fetch 4: GET /api/articles/how-to-train-your-dragon-twice {"authorization":"Token j4k3"})
+(fetch 5: GET /api/articles/how-to-train-your-dragon-twice/comments {"authorization":"Token j4k3"})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <!---->
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- location
+(location: /article/how-to-train-your-dragon-twice)
+(the DOM did not change)
+-- respond 4 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon-twice\",\"title\":\"How to train your dragon, twice\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-19T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="article-page">
+      <div class="banner">
+        <div class="container">
+          <h1>"How to train your dragon, twice"</h1>
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <a class="btn btn-outline-secondary btn-sm" href="/editor/how-to-train-your-dragon-twice">
+                <i class="ion-edit"></i>
+                " Edit Article"
+              </a>
+              " "
+              <button class="btn btn-outline-danger btn-sm">
+                <i class="ion-trash-a"></i>
+                " Delete Article"
+              </button>
+            </span>
+          </div>
+          <!---->
+          <!---->
+          <!---->
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row article-content">
+          <div class="col-md-12">
+            <div class="article-content">
+              <p>"It takes a Jacobian"</p>
+            </div>
+            <!---->
+            <ul class="tag-list">
+              <li class="tag-default tag-pill tag-outline">"dragons"</li>
+              <li class="tag-default tag-pill tag-outline">"training"</li>
+            </ul>
+            <!---->
+          </div>
+        </div>
+        <hr>
+        <div class="article-actions">
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <a class="btn btn-outline-secondary btn-sm" href="/editor/how-to-train-your-dragon-twice">
+                <i class="ion-edit"></i>
+                " Edit Article"
+              </a>
+              " "
+              <button class="btn btn-outline-danger btn-sm">
+                <i class="ion-trash-a"></i>
+                " Delete Article"
+              </button>
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-xs-12 col-md-8 offset-md-2">
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 5 200 "{\"comments\":[]}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/jake">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "jake"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="article-page">
+      <div class="banner">
+        <div class="container">
+          <h1>"How to train your dragon, twice"</h1>
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <a class="btn btn-outline-secondary btn-sm" href="/editor/how-to-train-your-dragon-twice">
+                <i class="ion-edit"></i>
+                " Edit Article"
+              </a>
+              " "
+              <button class="btn btn-outline-danger btn-sm">
+                <i class="ion-trash-a"></i>
+                " Delete Article"
+              </button>
+            </span>
+          </div>
+          <!---->
+          <!---->
+          <!---->
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row article-content">
+          <div class="col-md-12">
+            <div class="article-content">
+              <p>"It takes a Jacobian"</p>
+            </div>
+            <!---->
+            <ul class="tag-list">
+              <li class="tag-default tag-pill tag-outline">"dragons"</li>
+              <li class="tag-default tag-pill tag-outline">"training"</li>
+            </ul>
+            <!---->
+          </div>
+        </div>
+        <hr>
+        <div class="article-actions">
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <a class="btn btn-outline-secondary btn-sm" href="/editor/how-to-train-your-dragon-twice">
+                <i class="ion-edit"></i>
+                " Edit Article"
+              </a>
+              " "
+              <button class="btn btn-outline-danger btn-sm">
+                <i class="ion-trash-a"></i>
+                " Delete Article"
+              </button>
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-xs-12 col-md-8 offset-md-2">
+            <form id="comment-form" class="card comment-form">
+              <div class="card-block">
+                <textarea id="comment" class="form-control" placeholder="Write a comment..." rows="3" .value=""></textarea>
+              </div>
+              <div class="card-footer">
+                <img class="comment-author-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+                <button class="btn btn-sm btn-primary">"Post Comment"</button>
+              </div>
+            </form>
+            <!---->
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- title
+(title: "How to train your dragon, twice — Conduit")
+(the DOM did not change)

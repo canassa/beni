@@ -1,0 +1,357 @@
+--! Writing an article, new or edited: the form, checked before it is sent,
+--! the article loaded into it when it is an edit, and the server's
+--! answer. elm-spa-example's `Page.Article.Editor`, whose status says at
+--! once whether the article is new or edited and where its save is.
+
+import Api exposing (Cred)
+import Article exposing (Article)
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Page
+import Route
+import Session exposing (Session)
+
+
+pub type alias Model =
+    session : Session
+    status : Status
+
+
+pub type Status
+    = -- An edited article: its slug, and where the edit is.
+        Loading String
+    | LoadingSlowly String
+    | LoadingFailed String
+    | Saving String Form
+    | Editing String (List Problem) Form
+    -- A new article.
+    | EditingNew (List Problem) Form
+    | Creating Form
+
+
+pub type Problem
+    = InvalidEntry ValidatedField String
+    | ServerError String
+
+
+pub type ValidatedField
+    = Title
+    | Body
+
+
+pub type alias Form =
+    title : String
+    body : String
+    description : String
+    tags : String
+
+
+pub initNew : Session → Model × Cmd Msg
+initNew session =
+    ( { session = session
+      , status = EditingNew [] { title = "", body = "", description = "", tags = "" }
+      }
+    , Cmd.none
+    )
+
+
+pub initEdit : Session, String → Model × Cmd Msg
+initEdit session slug =
+    ( { session = session, status = Loading slug }
+    , Cmd.batch
+        [ Cmd.task (λ⊤ → Article.fetch (Session.cred session) slug) (CompletedArticleLoad slug _)
+        , Page.slowThreshold PassedSlowLoadThreshold
+        ]
+    )
+
+
+pub type Msg
+    = ClickedSave Cred
+    | EnteredBody String
+    | EnteredDescription String
+    | EnteredTags String
+    | EnteredTitle String
+    | CompletedCreate (Result Api.Error Article)
+    | CompletedEdit (Result Api.Error Article)
+    | CompletedArticleLoad String (Result Api.Error Article)
+    | PassedSlowLoadThreshold
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedSave cred →
+            ( status, cmd ) = save cred model.status
+            ( { model | status = status }, cmd )
+
+        EnteredTitle title →
+            updateForm (λform → { form | title = title }) model
+
+        EnteredDescription description →
+            updateForm (λform → { form | description = description }) model
+
+        EnteredTags tags →
+            updateForm (λform → { form | tags = tags }) model
+
+        EnteredBody body →
+            updateForm (λform → { form | body = body }) model
+
+        CompletedCreate (Ok article) →
+            ( model
+            , Cmd.do λ⊤ →
+                Route.replaceUrl (Session.navKey model.session) (Route.Article article.slug)
+            )
+
+        CompletedCreate (Err error) →
+            ( { model | status = savingError error model.status }, Cmd.none )
+
+        CompletedEdit (Ok article) →
+            ( model
+            , Cmd.do λ⊤ →
+                Route.replaceUrl (Session.navKey model.session) (Route.Article article.slug)
+            )
+
+        CompletedEdit (Err error) →
+            ( { model | status = savingError error model.status }, Cmd.none )
+
+        CompletedArticleLoad slug (Err _) →
+            ( { model | status = LoadingFailed slug }, Cmd.none )
+
+        CompletedArticleLoad _ (Ok article) →
+            status =
+                Editing article.slug []
+                    { title = article.title
+                    , body = article.body
+                    , description = article.description
+                    , tags = String.join article.tags " "
+                    }
+            ( { model | status = status }, Cmd.none )
+
+        PassedSlowLoadThreshold →
+            status =
+                case model.status of
+                    Loading slug →
+                        LoadingSlowly slug
+
+                    other →
+                        other
+            ( { model | status = status }, Cmd.none )
+
+
+save : Cred, Status → Status × Cmd Msg
+save cred status =
+    case status of
+        Editing slug _ form →
+            case validate form of
+                [] →
+                    ( Saving slug form
+                    , Cmd.task (λ⊤ → Article.update cred slug (fields form)) CompletedEdit
+                    )
+
+                problems →
+                    ( Editing slug problems form, Cmd.none )
+
+        EditingNew _ form →
+            case validate form of
+                [] →
+                    ( Creating form
+                    , Cmd.task (λ⊤ → Article.create cred (fields form)) CompletedCreate
+                    )
+
+                problems →
+                    ( EditingNew problems form, Cmd.none )
+
+        _ →
+            -- Nothing to save, or a save already sent.
+            ( status, Cmd.none )
+
+
+savingError : Api.Error, Status → Status
+savingError error status =
+    problems = List.map (Api.errorMessages error) ServerError
+    case status of
+        Saving slug form →
+            Editing slug problems form
+
+        Creating form →
+            EditingNew problems form
+
+        _ →
+            status
+
+
+-- Change the form, wherever the status keeps it.
+updateForm : (Form → Form), Model → Model × Cmd Msg
+updateForm transform model =
+    newModel =
+        case model.status of
+            Loading _ →
+                model
+
+            LoadingSlowly _ →
+                model
+
+            LoadingFailed _ →
+                model
+
+            Saving slug form →
+                { model | status = Saving slug (transform form) }
+
+            Editing slug errors form →
+                { model | status = Editing slug errors (transform form) }
+
+            EditingNew errors form →
+                { model | status = EditingNew errors (transform form) }
+
+            Creating form →
+                { model | status = Creating (transform form) }
+    ( newModel, Cmd.none )
+
+
+validate : Form → List Problem
+validate form =
+    title =
+        if String.isEmpty (String.trim form.title) then
+            [ InvalidEntry Title "title can't be blank." ]
+        else
+            []
+    body =
+        if String.isEmpty (String.trim form.body) then
+            [ InvalidEntry Body "body can't be blank." ]
+        else
+            []
+    title ++ body
+
+
+fields : Form → Article.Fields
+fields form =
+    { title = String.trim form.title
+    , description = String.trim form.description
+    , body = String.trim form.body
+    , tags = List.filter (String.split form.tags " ") λtag → not (String.isEmpty tag)
+    }
+
+
+pub toSession : Model → Session
+toSession model = model.session
+
+
+-- ---- View ----------------------------------------------------------------------
+
+pub view : Model → { title : String, content : Html Msg }
+view model =
+    { title =
+        case model.status of
+            EditingNew _ _ →
+                "New Article"
+
+            Creating _ →
+                "New Article"
+
+            _ →
+                "Edit Article"
+    , content =
+        case Session.cred model.session of
+            Just cred →
+                viewAuthenticated cred model
+
+            Nothing →
+                <p>Sign in to edit this article.</p>
+    }
+
+
+viewAuthenticated : Cred, Model → Html Msg
+viewAuthenticated cred model =
+    <div class="editor-page">
+        <div class="container page">
+            <div class="row">
+                <div class="col-md-10 offset-md-1 col-xs-12">
+                    {case model.status of
+                        Loading _ →
+                            <></>
+
+                        LoadingSlowly _ →
+                            Page.loading
+
+                        LoadingFailed _ →
+                            <p>Article failed to load.</p>
+
+                        Saving _ form →
+                            viewForm cred [] form True "Update Article"
+
+                        Editing _ problems form →
+                            viewForm cred problems form False "Update Article"
+
+                        EditingNew problems form →
+                            viewForm cred problems form False "Publish Article"
+
+                        Creating form →
+                            viewForm cred [] form True "Publish Article"
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+viewForm : Cred, List Problem, Form, Bool, String → Html Msg
+viewForm cred problems form saving label =
+    <>
+        <ul class="error-messages">
+            <For each={problems} keyed={False}>
+                {λproblem →
+                    <li>
+                        {case problem of
+                            InvalidEntry _ text →
+                                text
+
+                            ServerError text →
+                                text
+                        }
+                    </li>
+                }
+            </For>
+        </ul>
+        <form id="editor-form" onSubmit={λ_ → ClickedSave cred}>
+            <fieldset disabled={saving}>
+                <fieldset class="form-group">
+                    <input
+                        id="title"
+                        class="form-control form-control-lg"
+                        placeholder="Article Title"
+                        value={form.title}
+                        onInput={EnteredTitle}
+                    />
+                </fieldset>
+                <fieldset class="form-group">
+                    <input
+                        id="description"
+                        class="form-control"
+                        placeholder="What's this article about?"
+                        value={form.description}
+                        onInput={EnteredDescription}
+                    />
+                </fieldset>
+                <fieldset class="form-group">
+                    <textarea
+                        id="body"
+                        class="form-control"
+                        rows={8}
+                        placeholder="Write your article (in markdown)"
+                        value={form.body}
+                        onInput={EnteredBody}
+                    />
+                </fieldset>
+                <fieldset class="form-group">
+                    <input
+                        id="tags"
+                        class="form-control"
+                        placeholder="Enter tags"
+                        value={form.tags}
+                        onInput={EnteredTags}
+                    />
+                </fieldset>
+                <button class="btn btn-lg pull-xs-right btn-primary">{label}</button>
+            </fieldset>
+        </form>
+    </>

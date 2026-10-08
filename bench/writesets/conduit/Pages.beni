@@ -1,0 +1,109 @@
+-- Conduit's pages and its feed, each mounted as a program of its own, so
+-- that `classify.mjs` measures each page's messages against the page's own
+-- model: what a compiler that followed `Main.update`'s dispatch into the
+-- page a message is for would see (research 62 §3.2). Not a program anyone
+-- runs; it is read with Conduit's modules beside it:
+--
+--     node bench/writesets/classify.mjs examples/conduit/src+bench/writesets/conduit/Pages.beni
+import ArticlePage
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Editor
+import Feed
+import Home
+import Login
+import ProfilePage
+import Register
+import Session exposing (Session)
+import Settings
+import Sub
+import Tea
+
+
+guest : Session
+guest = Session.Guest (Navigation.key ⊤)
+
+
+home : Tea.Program
+home =
+    Tea.element
+        { init = Home.init guest
+        , update = Home.update
+        , view = λmodel → (Home.view model).content
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+feed : Tea.Program
+feed =
+    Tea.element
+        { init = ( Feed.init guest 1 { articles = [], total = 0 }, Cmd.none )
+        , update = Feed.update
+        , view = Feed.viewArticles
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+article : Tea.Program
+article =
+    Tea.element
+        { init = ArticlePage.init guest "a-slug"
+        , update = ArticlePage.update
+        , view = λmodel → (ArticlePage.view model).content
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+editor : Tea.Program
+editor =
+    Tea.element
+        { init = Editor.initNew guest
+        , update = Editor.update
+        , view = λmodel → (Editor.view model).content
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+login : Tea.Program
+login =
+    Tea.element
+        { init = Login.init guest
+        , update = Login.update
+        , view = λmodel → (Login.view model).content
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+register : Tea.Program
+register =
+    Tea.element
+        { init = Register.init guest
+        , update = Register.update
+        , view = λmodel → (Register.view model).content
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+settings : Tea.Program
+settings =
+    Tea.element
+        { init = Settings.init guest
+        , update = Settings.update
+        , view = λmodel → (Settings.view model).content
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+profile : Tea.Program
+profile =
+    Tea.element
+        { init = ProfilePage.init guest "a-user" ProfilePage.MyArticles
+        , update = ProfilePage.update
+        , view = λmodel → (ProfilePage.view model).content
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ home, feed, article, editor, login, register, settings, profile ]

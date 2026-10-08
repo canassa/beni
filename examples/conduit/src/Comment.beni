@@ -1,0 +1,66 @@
+--! An article's comments: what the API says of one, and the requests that
+--! list, post and delete them. elm-spa-example's `Article.Comment`.
+
+import Api exposing (Cred)
+import Author exposing (Author)
+import Http
+
+
+pub schema CommentJson =
+    id : Int
+    createdAt : String
+    updatedAt : String
+    body : String
+    author : Author.ProfileJson
+
+
+pub schema CommentList =
+    comments : List CommentJson
+
+
+pub schema CommentEnvelope =
+    comment : CommentJson
+
+
+pub schema NewComment =
+    comment :
+        body : String
+
+
+pub type alias Comment =
+    id : Int
+    body : String
+    createdAt : String
+    author : Author
+
+
+fromJson : Maybe Cred, CommentJson.Type → Comment
+fromJson maybeCred json =
+    { id = json.id
+    , body = json.body
+    , createdAt = json.createdAt
+    , author = Author.fromJson maybeCred json.author
+    }
+
+
+pub list : Maybe Cred, String → Result Api.Error (List Comment)
+list maybeCred slug =
+    Result.map (Api.get (Api.url [ "articles", slug, "comments" ] []) maybeCred CommentList.parse) λjson →
+        List.map json.comments (fromJson maybeCred _)
+
+
+pub post : Cred, String, String → Result Api.Error Comment
+post cred slug text =
+    Result.map
+        (Api.post
+            (Api.url [ "articles", slug, "comments" ] [])
+            (Just cred)
+            (Http.jsonBody (NewComment.schema ⊤) { comment = { body = text } })
+            CommentEnvelope.parse
+        )
+        λjson → fromJson (Just cred) json.comment
+
+
+pub delete : Cred, String, Int → Result Api.Error ⊤
+delete cred slug id =
+    Api.delete (Api.url [ "articles", slug, "comments", String.fromInt id ] []) cred Api.ignored

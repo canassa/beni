@@ -1,0 +1,194 @@
+--! Signing up: a form of user name, e-mail and password, checked before it
+--! is sent, and the server's answer. elm-spa-example's `Page.Register`.
+
+import Api exposing (Viewer)
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Route
+import Session exposing (Session)
+
+
+pub type alias Form =
+    username : String
+    email : String
+    password : String
+
+
+pub type Problem
+    = InvalidEntry ValidatedField String
+    | ServerError String
+
+
+pub type ValidatedField
+    = Username
+    | Email
+    | Password
+
+
+pub type alias Model =
+    session : Session
+    problems : List Problem
+    form : Form
+
+
+pub init : Session → Model × Cmd Msg
+init session =
+    ( { session = session, problems = [], form = { username = "", email = "", password = "" } }
+    , Cmd.none
+    )
+
+
+pub type Msg
+    = SubmittedForm
+    | EnteredUsername String
+    | EnteredEmail String
+    | EnteredPassword String
+    | CompletedRegister (Result Api.Error Viewer)
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        SubmittedForm →
+            case validate model.form of
+                [] →
+                    form = model.form
+                    ( { model | problems = [] }
+                    , Cmd.task
+                        (λ⊤ →
+                            Api.register
+                                (String.trim form.username)
+                                (String.trim form.email)
+                                form.password
+                        )
+                        CompletedRegister
+                    )
+
+                problems →
+                    ( { model | problems = problems }, Cmd.none )
+
+        EnteredUsername username →
+            updateForm (λform → { form | username = username }) model
+
+        EnteredEmail email →
+            updateForm (λform → { form | email = email }) model
+
+        EnteredPassword password →
+            updateForm (λform → { form | password = password }) model
+
+        CompletedRegister (Err error) →
+            ( { model | problems = List.map (Api.errorMessages error) ServerError }, Cmd.none )
+
+        CompletedRegister (Ok viewer) →
+            key = Session.navKey model.session
+            ( { model | session = Session.LoggedIn key viewer }
+            , Cmd.do λ⊤ →
+                Api.storeViewer viewer
+                Route.replaceUrl key Route.Home
+            )
+
+
+updateForm : (Form → Form), Model → Model × Cmd Msg
+updateForm transform model = ( { model | form = transform model.form }, Cmd.none )
+
+
+minPasswordChars : Int
+minPasswordChars = 6
+
+
+validate : Form → List Problem
+validate form = List.concatMap [ Username, Email, Password ] λfield →
+    case field of
+        Username →
+            if String.isEmpty (String.trim form.username) then
+                [ InvalidEntry Username "username can't be blank." ]
+            else
+                []
+
+        Email →
+            if String.isEmpty (String.trim form.email) then
+                [ InvalidEntry Email "email can't be blank." ]
+            else
+                []
+
+        Password →
+            if String.isEmpty form.password then
+                [ InvalidEntry Password "password can't be blank." ]
+            else if String.length form.password < minPasswordChars then
+                [ InvalidEntry
+                    Password
+                    "password must be at least ${String.fromInt minPasswordChars} characters long."
+                ]
+            else
+                []
+
+
+pub toSession : Model → Session
+toSession model = model.session
+
+
+-- ---- View ----------------------------------------------------------------------
+
+pub view : Model → { title : String, content : Html Msg }
+view model =
+    { title = "Register"
+    , content =
+        <div class="cred-page">
+            <div class="container page">
+                <div class="row">
+                    <div class="col-md-6 offset-md-3 col-xs-12">
+                        <h1 class="text-xs-center">Sign up</h1>
+                        <p class="text-xs-center">
+                            <a href={Route.href Route.Login}>Have an account?</a>
+                        </p>
+                        <ul class="error-messages">
+                            <For each={model.problems} keyed={False}>
+                                {λproblem →
+                                    <li>
+                                        {case problem of
+                                            InvalidEntry _ text →
+                                                text
+
+                                            ServerError text →
+                                                text
+                                        }
+                                    </li>
+                                }
+                            </For>
+                        </ul>
+                        <form id="register-form" onSubmit={λ_ → SubmittedForm}>
+                            <fieldset class="form-group">
+                                <input
+                                    id="username"
+                                    class="form-control form-control-lg"
+                                    placeholder="Username"
+                                    value={model.form.username}
+                                    onInput={EnteredUsername}
+                                />
+                            </fieldset>
+                            <fieldset class="form-group">
+                                <input
+                                    id="email"
+                                    class="form-control form-control-lg"
+                                    placeholder="Email"
+                                    value={model.form.email}
+                                    onInput={EnteredEmail}
+                                />
+                            </fieldset>
+                            <fieldset class="form-group">
+                                <input
+                                    id="password"
+                                    class="form-control form-control-lg"
+                                    type="password"
+                                    placeholder="Password"
+                                    value={model.form.password}
+                                    onInput={EnteredPassword}
+                                />
+                            </fieldset>
+                            <button class="btn btn-lg btn-primary pull-xs-right">Sign up</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }

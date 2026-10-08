@@ -1,0 +1,402 @@
+--! One article: its body, its author with a follow button, its favorite
+--! button, the edit and delete buttons when the viewer wrote it, and its
+--! comments with a form to post one. elm-spa-example's `Page.Article`.
+
+import Api exposing (Cred)
+import Article exposing (Article)
+import Author exposing (Author)
+import Cmd exposing (Cmd)
+import Comment exposing (Comment)
+import Html exposing (Html)
+import Page
+import Route
+import Session exposing (Session)
+
+
+pub type Status a
+    = Loading
+    | LoadingSlowly
+    | Loaded a
+    | Failed
+
+
+--| The comment being written: typed, or sent and waiting for the server.
+pub type CommentText
+    = Editing String
+    | Sending String
+
+
+pub type alias Model =
+    session : Session
+    errors : List String
+    comments : Status (CommentText × List Comment)
+    article : Status Article
+
+
+pub init : Session, String → Model × Cmd Msg
+init session slug =
+    maybeCred = Session.cred session
+    ( { session = session, errors = [], comments = Loading, article = Loading }
+    , Cmd.batch
+        [ Cmd.task (λ⊤ → Article.fetch maybeCred slug) CompletedLoadArticle
+        , Cmd.task (λ⊤ → Comment.list maybeCred slug) CompletedLoadComments
+        , Page.slowThreshold PassedSlowLoadThreshold
+        ]
+    )
+
+
+pub type Msg
+    = ClickedDeleteArticle Cred String
+    | ClickedDeleteComment Cred String Int
+    | ClickedDismissErrors
+    | ClickedFavorite Cred String
+    | ClickedUnfavorite Cred String
+    | ClickedFollow Cred String
+    | ClickedUnfollow Cred String
+    | ClickedPostComment Cred String
+    | EnteredCommentText String
+    | CompletedLoadArticle (Result Api.Error Article)
+    | CompletedLoadComments (Result Api.Error (List Comment))
+    | CompletedDeleteArticle (Result Api.Error ⊤)
+    | CompletedDeleteComment Int (Result Api.Error ⊤)
+    | CompletedFavoriteChange (Result Api.Error Article)
+    | CompletedFollowChange (Result Api.Error Author)
+    | CompletedPostComment (Result Api.Error Comment)
+    | PassedSlowLoadThreshold
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedDismissErrors →
+            ( { model | errors = [] }, Cmd.none )
+
+        ClickedFavorite cred slug →
+            ( model, Cmd.task (λ⊤ → Article.favorite cred slug) CompletedFavoriteChange )
+
+        ClickedUnfavorite cred slug →
+            ( model, Cmd.task (λ⊤ → Article.unfavorite cred slug) CompletedFavoriteChange )
+
+        CompletedLoadArticle (Ok article) →
+            ( { model | article = Loaded article }, Cmd.none )
+
+        CompletedLoadArticle (Err _) →
+            ( { model | article = Failed }, Cmd.none )
+
+        CompletedLoadComments (Ok comments) →
+            ( { model | comments = Loaded ( Editing "", comments ) }, Cmd.none )
+
+        CompletedLoadComments (Err _) →
+            ( { model | comments = Failed }, Cmd.none )
+
+        CompletedFavoriteChange (Ok newArticle) →
+            ( { model | article = Loaded newArticle }, Cmd.none )
+
+        CompletedFavoriteChange (Err error) →
+            ( { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
+
+        ClickedUnfollow cred name →
+            ( model, Cmd.task (λ⊤ → Author.unfollow cred name) CompletedFollowChange )
+
+        ClickedFollow cred name →
+            ( model, Cmd.task (λ⊤ → Author.follow cred name) CompletedFollowChange )
+
+        CompletedFollowChange (Ok newAuthor) →
+            case model.article of
+                Loaded article →
+                    ( { model | article = Loaded { article | author = newAuthor } }, Cmd.none )
+
+                _ →
+                    ( model, Cmd.none )
+
+        CompletedFollowChange (Err error) →
+            ( { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
+
+        EnteredCommentText text →
+            case model.comments of
+                Loaded ( Editing _, comments ) →
+                    ( { model | comments = Loaded ( Editing text, comments ) }, Cmd.none )
+
+                _ →
+                    ( model, Cmd.none )
+
+        ClickedPostComment cred slug →
+            case model.comments of
+                Loaded ( Editing "", _ ) →
+                    -- Nothing to post.
+                    ( model, Cmd.none )
+
+                Loaded ( Editing text, comments ) →
+                    ( { model | comments = Loaded ( Sending text, comments ) }
+                    , Cmd.task (λ⊤ → Comment.post cred slug text) CompletedPostComment
+                    )
+
+                _ →
+                    ( model, Cmd.none )
+
+        CompletedPostComment (Ok comment) →
+            case model.comments of
+                Loaded ( _, comments ) →
+                    ( { model | comments = Loaded ( Editing "", [ comment, …comments ] ) }
+                    , Cmd.none
+                    )
+
+                _ →
+                    ( model, Cmd.none )
+
+        CompletedPostComment (Err error) →
+            comments =
+                case model.comments of
+                    Loaded ( Sending text, list ) →
+                        Loaded ( Editing text, list )
+
+                    other →
+                        other
+            ( { model | comments = comments, errors = model.errors ++ Api.errorMessages error }
+            , Cmd.none
+            )
+
+        ClickedDeleteComment cred slug id →
+            ( model, Cmd.task (λ⊤ → Comment.delete cred slug id) (CompletedDeleteComment id _) )
+
+        CompletedDeleteComment id (Ok ⊤) →
+            case model.comments of
+                Loaded ( commentText, comments ) →
+                    ( { model
+                        | comments = Loaded ( commentText, List.filter comments λc → c.id ≠ id )
+                      }
+                    , Cmd.none
+                    )
+
+                _ →
+                    ( model, Cmd.none )
+
+        CompletedDeleteComment _ (Err error) →
+            ( { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
+
+        ClickedDeleteArticle cred slug →
+            ( model, Cmd.task (λ⊤ → Article.delete cred slug) CompletedDeleteArticle )
+
+        CompletedDeleteArticle (Ok ⊤) →
+            ( model, Cmd.do λ⊤ → Route.replaceUrl (Session.navKey model.session) Route.Home )
+
+        CompletedDeleteArticle (Err error) →
+            ( { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
+
+        PassedSlowLoadThreshold →
+            article =
+                case model.article of
+                    Loading →
+                        LoadingSlowly
+
+                    other →
+                        other
+            comments =
+                case model.comments of
+                    Loading →
+                        LoadingSlowly
+
+                    other →
+                        other
+            ( { model | article = article, comments = comments }, Cmd.none )
+
+
+pub toSession : Model → Session
+toSession model = model.session
+
+
+-- ---- View ----------------------------------------------------------------------
+
+pub view : Model → { title : String, content : Html Msg }
+view model =
+    case model.article of
+        Loaded article →
+            { title = article.title
+            , content =
+                <div class="article-page">
+                    <div class="banner">
+                        <div class="container">
+                            <h1>{article.title}</h1>
+                            {viewMeta model article}
+                            {Page.viewErrors ClickedDismissErrors model.errors}
+                        </div>
+                    </div>
+                    <div class="container page">
+                        <div class="row article-content">
+                            <div class="col-md-12">
+                                {Article.body article.body}
+                                {Article.tagList article.tags}
+                            </div>
+                        </div>
+                        <hr />
+                        <div class="article-actions">{viewMeta model article}</div>
+                        <div class="row">
+                            <div class="col-xs-12 col-md-8 offset-md-2">
+                                {viewComments model article.slug}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+        Loading →
+            { title = "Article", content = <></> }
+
+        LoadingSlowly →
+            { title = "Article", content = Page.loading }
+
+        Failed →
+            { title = "Article", content = Page.loadingError "article" }
+
+
+viewMeta : Model, Article → Html Msg
+viewMeta model article =
+    profile = Author.profile article.author
+    name = profile.username
+    <div class="article-meta">
+        <a href={Route.href (Route.Profile name)}>{Author.avatar profile.image ""}</a>
+        <div class="info">
+            {Author.link article.author}
+            {Article.timestamp article.createdAt}
+        </div>
+        {case Session.cred model.session of
+            Just cred →
+                viewButtons cred article
+
+            Nothing →
+                <></>
+        }
+    </div>
+
+
+viewButtons : Cred, Article → Html Msg
+viewButtons cred article =
+    name = Author.username article.author
+    case article.author of
+        Author.IsViewer _ →
+            <span>
+                <a
+                    class="btn btn-outline-secondary btn-sm"
+                    href={Route.href (Route.EditArticle article.slug)}
+                >
+                    <i class="ion-edit" />
+                    {" Edit Article"}
+                </a>
+                {" "}
+                <button
+                    class="btn btn-outline-danger btn-sm"
+                    onClick={ClickedDeleteArticle cred article.slug}
+                >
+                    <i class="ion-trash-a" />
+                    {" Delete Article"}
+                </button>
+            </span>
+
+        _ →
+            <span>
+                {Author.followButton
+                    (ClickedFollow cred name)
+                    (ClickedUnfollow cred name)
+                    article.author
+                }
+                {" "}
+                {Article.favoriteButton
+                    article
+                    (ClickedFavorite cred article.slug)
+                    (ClickedUnfavorite cred article.slug)
+                    ""
+                }
+            </span>
+
+
+viewComments : Model, String → Html Msg
+viewComments model slug =
+    case model.comments of
+        Loaded ( commentText, comments ) →
+            <>
+                {viewAddComment model.session slug commentText}
+                <For each={comments} keyed={.id}>
+                    {viewComment (Session.cred model.session) slug _}
+                </For>
+            </>
+
+        Loading →
+            <></>
+
+        LoadingSlowly →
+            Page.loading
+
+        Failed →
+            Page.loadingError "comments"
+
+
+viewAddComment : Session, String, CommentText → Html Msg
+viewAddComment session slug commentText =
+    case Session.viewer session of
+        Just viewer →
+            ( text, sending ) =
+                case commentText of
+                    Editing str →
+                        ( str, False )
+
+                    Sending str →
+                        ( str, True )
+            <form
+                id="comment-form"
+                class="card comment-form"
+                onSubmit={λ_ → ClickedPostComment viewer.cred slug}
+            >
+                <div class="card-block">
+                    <textarea
+                        id="comment"
+                        class="form-control"
+                        placeholder="Write a comment..."
+                        rows={3}
+                        value={text}
+                        disabled={sending}
+                        onInput={EnteredCommentText}
+                    />
+                </div>
+                <div class="card-footer">
+                    {Author.avatar viewer.image "comment-author-img"}
+                    <button class="btn btn-sm btn-primary" disabled={sending}>Post Comment</button>
+                </div>
+            </form>
+
+        Nothing →
+            <p>
+                <a href={Route.href Route.Login}>Sign in</a>
+                {" or "}
+                <a href={Route.href Route.Register}>sign up</a>
+                {" to add comments on this article."}
+            </p>
+
+
+viewComment : Maybe Cred, String, Comment → Html Msg
+viewComment maybeCred slug comment =
+    profile = Author.profile comment.author
+    <div class="card">
+        <div class="card-block"><p class="card-text">{comment.body}</p></div>
+        <div class="card-footer">
+            <a class="comment-author" href={Route.href (Route.Profile profile.username)}>
+                {Author.avatar profile.image "comment-author-img"}
+            </a>
+            {" "}
+            <a class="comment-author" href={Route.href (Route.Profile profile.username)}>
+                {profile.username}
+            </a>
+            {Article.timestamp comment.createdAt}
+            {case ( comment.author, maybeCred ) of
+                ( Author.IsViewer _, Just cred ) →
+                    <span class="mod-options">
+                        <i
+                            class="ion-trash-a"
+                            onClick={ClickedDeleteComment cred slug comment.id}
+                        />
+                    </span>
+
+                _ →
+                    <></>
+            }
+        </div>
+    </div>

@@ -1,0 +1,120 @@
+--! What every page shares: the frame around its content (the navigation
+--! bar, which marks the page the viewer is on, and the footer), the error
+--! list, and the loading indicators. elm-spa-example's `Page` and
+--! `Loading`.
+
+import Api exposing (Viewer)
+import Author
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Route exposing (Route)
+import Tea
+import Time
+
+
+--| Which page the navigation bar marks as the current one.
+pub type Active
+    = Other
+    | Home
+    | Login
+    | Register
+    | Settings
+    | Profile String
+    | NewArticle
+
+
+pub frame : Maybe Viewer, Active, { title : String, content : Html msg } → Tea.Document msg
+frame maybeViewer active page =
+    { title = page.title ++ " — Conduit"
+    , body =
+        <div class="app">
+            {header maybeViewer active}
+            {page.content}
+            {footer}
+        </div>
+    }
+
+
+header : Maybe Viewer, Active → Html msg
+header maybeViewer active =
+    <nav class="navbar navbar-light">
+        <div class="container">
+            <a class="navbar-brand" href={Route.href Route.Home}>conduit</a>
+            <ul class="nav navbar-nav pull-xs-right">
+                {navbarLink active Home Route.Home "Home"}
+                {case maybeViewer of
+                    Just viewer →
+                        name = viewer.cred.username
+                        <>
+                            {navbarLink active NewArticle Route.NewArticle "New Article"}
+                            {navbarLink active Settings Route.Settings "Settings"}
+                            <li
+                                class={[ ( "nav-item", True )
+                                       , ( "active", active == Profile name )
+                                       ]
+                                      }
+                            >
+                                <a class="nav-link" href={Route.href (Route.Profile name)}>
+                                    {Author.avatar viewer.image "user-pic"}
+                                    {name}
+                                </a>
+                            </li>
+                            {navbarLink active Other Route.Logout "Sign out"}
+                        </>
+
+                    Nothing →
+                        <>
+                            {navbarLink active Login Route.Login "Sign in"}
+                            {navbarLink active Register Route.Register "Sign up"}
+                        </>
+                }
+            </ul>
+        </div>
+    </nav>
+
+
+navbarLink : Active, Active, Route, String → Html msg
+navbarLink active page route label =
+    <li class={[ ( "nav-item", True ), ( "active", active == page && page ≠ Other ) ]}>
+        <a class="nav-link" href={Route.href route}>{label}</a>
+    </li>
+
+
+footer : Html msg
+footer =
+    <footer>
+        <div class="container">
+            <a class="logo-font" href="/">conduit</a>
+            <span class="attribution">
+                An interactive learning project from Thinkster. Code &amp; design licensed under MIT.
+            </span>
+        </div>
+    </footer>
+
+
+--| The errors a page has collected, with a button that dismisses them.
+pub viewErrors : msg, List String → Html msg
+viewErrors dismiss errors =
+    if List.isEmpty errors then
+        <></>
+    else
+        <div class="error-messages">
+            <For each={errors} keyed={False}>{λerror → <p>{error}</p>}</For>
+            <button id="dismiss-errors" onClick={dismiss}>Ok</button>
+        </div>
+
+
+-- ---- Loading -----------------------------------------------------------------
+
+pub loading : Html msg
+loading = <div class="loading">Loading...</div>
+
+
+pub loadingError : String → Html msg
+loadingError what = <div class="loading-error">{"Error loading ${what}."}</div>
+
+
+--| A message sent once a load has taken long enough that the page should
+--| say it is loading, rather than flash an indicator for a quick answer.
+pub slowThreshold : msg → Cmd msg
+slowThreshold passed = Cmd.task (λ⊤ → Time.sleep (Time.millis 500)) λ_ → passed

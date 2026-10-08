@@ -1,0 +1,239 @@
+--! An article: what the API says of it, the requests that read and change
+--! one, and the pieces of markup every page that shows one shares.
+--! elm-spa-example's `Article`, `Article.Body`, `Article.Slug`,
+--! `Article.Tag` and `Timestamp`.
+
+import Api exposing (Cred)
+import Author exposing (Author)
+import Html exposing (Html)
+import Http
+import Route
+import Url.Builder
+
+
+pub schema ArticleJson =
+    slug : String
+    title : String
+    description : String
+    body : String
+    tagList : List String
+    createdAt : String
+    updatedAt : String
+    favorited : Bool
+    favoritesCount : Int
+    author : Author.ProfileJson
+
+
+pub schema ArticleEnvelope =
+    article : ArticleJson
+
+
+pub schema ArticleList =
+    articles : List ArticleJson
+    articlesCount : Int
+
+
+pub schema TagList =
+    tags : List String
+
+
+--| What a new or edited article sends.
+pub schema ArticleForm =
+    article :
+        title : String
+        description : String
+        body : String
+        tagList : List String
+
+
+pub type alias Article =
+    slug : String
+    title : String
+    description : String
+    body : String
+    tags : List String
+    createdAt : String
+    favorited : Bool
+    favoritesCount : Int
+    author : Author
+
+
+pub fromJson : Maybe Cred, ArticleJson.Type → Article
+fromJson maybeCred json =
+    { slug = json.slug
+    , title = json.title
+    , description = json.description
+    , body = json.body
+    , tags = json.tagList
+    , createdAt = json.createdAt
+    , favorited = json.favorited
+    , favoritesCount = json.favoritesCount
+    , author = Author.fromJson maybeCred json.author
+    }
+
+
+-- ---- Requests ----------------------------------------------------------------
+
+single : Maybe Cred, Result Api.Error ArticleEnvelope.Type → Result Api.Error Article
+single maybeCred result = Result.map result λenvelope → fromJson maybeCred envelope.article
+
+
+pub fetch : Maybe Cred, String → Result Api.Error Article
+fetch maybeCred slug =
+    single maybeCred (Api.get (Api.url [ "articles", slug ] []) maybeCred ArticleEnvelope.parse)
+
+
+pub favorite : Cred, String → Result Api.Error Article
+favorite cred slug =
+    single
+        (Just cred)
+        (Api.post
+            (Api.url [ "articles", slug, "favorite" ] [])
+            (Just cred)
+            Http.emptyBody
+            ArticleEnvelope.parse
+        )
+
+
+pub unfavorite : Cred, String → Result Api.Error Article
+unfavorite cred slug =
+    single
+        (Just cred)
+        (Api.delete (Api.url [ "articles", slug, "favorite" ] []) cred ArticleEnvelope.parse)
+
+
+pub delete : Cred, String → Result Api.Error ⊤
+delete cred slug = Api.delete (Api.url [ "articles", slug ] []) cred Api.ignored
+
+
+pub type alias Fields =
+    title : String
+    description : String
+    body : String
+    tags : List String
+
+
+formBody : Fields → Http.Body
+formBody fields =
+    Http.jsonBody (ArticleForm.schema ⊤)
+        { article =
+            { title = fields.title
+            , description = fields.description
+            , body = fields.body
+            , tagList = fields.tags
+            }
+        }
+
+
+pub create : Cred, Fields → Result Api.Error Article
+create cred fields =
+    single
+        (Just cred)
+        (Api.post (Api.url [ "articles" ] []) (Just cred) (formBody fields) ArticleEnvelope.parse)
+
+
+pub update : Cred, String, Fields → Result Api.Error Article
+update cred slug fields =
+    single
+        (Just cred)
+        (Api.put (Api.url [ "articles", slug ] []) cred (formBody fields) ArticleEnvelope.parse)
+
+
+--| One page of articles, and how many there are in all.
+pub type alias Page =
+    articles : List Article
+    total : Int
+
+
+--| Which articles a feed lists.
+pub type Source
+    = Global
+    | YourFeed
+    | Tagged String
+    | ByAuthor String
+    | FavoritedBy String
+
+
+pub articlesPerPage : Int
+articlesPerPage = 10
+
+
+pub list : Maybe Cred, Source, Int → Result Api.Error Page
+list maybeCred source page =
+    paging =
+        [ Url.Builder.int "limit" articlesPerPage
+        , Url.Builder.int "offset" ((page - 1) * articlesPerPage)
+        ]
+    address =
+        case source of
+            Global →
+                Api.url [ "articles" ] paging
+
+            YourFeed →
+                Api.url [ "articles", "feed" ] paging
+
+            Tagged tag →
+                Api.url [ "articles" ] ([ Url.Builder.string "tag" tag ] ++ paging)
+
+            ByAuthor name →
+                Api.url [ "articles" ] ([ Url.Builder.string "author" name ] ++ paging)
+
+            FavoritedBy name →
+                Api.url [ "articles" ] ([ Url.Builder.string "favorited" name ] ++ paging)
+    Result.map (Api.get address maybeCred ArticleList.parse) λjson →
+        { articles = List.map json.articles (fromJson maybeCred _), total = json.articlesCount }
+
+
+pub tags : ⊤ → Result Api.Error (List String)
+tags ⊤ = Result.map (Api.get (Api.url [ "tags" ] []) Nothing TagList.parse) .tags
+
+
+-- ---- Views -------------------------------------------------------------------
+
+-- GAP: the API's dates are ISO 8601 strings (`2016-02-18T03:22:56.637Z`), and
+-- Conduit shows them as "February 18, 2016". That needs date helpers in core
+-- (ISO 8601 parsing to `Time.Posix`, a time zone, month names; after Elm's
+-- `Time` and `rtfeldman/elm-iso8601-date-strings`). Until then the date is
+-- shown as the API sent it.
+pub timestamp : String → Html msg
+timestamp iso = <span class="date">{iso}</span>
+
+
+-- GAP: an article's body is Markdown, and Conduit renders it as HTML. That
+-- needs a Markdown → `Html` library in beni (a CommonMark subset, specified
+-- first; elm-explorations/markdown is the Elm one). Until then the body is
+-- shown as its text, paragraphs split on blank lines.
+pub body : String → Html msg
+body markdown =
+    <div class="article-content">
+        <For each={String.split markdown "\n\n"} keyed={False}>{λpara → <p>{para}</p>}</For>
+    </div>
+
+
+pub tagList : List String → Html msg
+tagList names =
+    <ul class="tag-list">
+        <For each={names} keyed={False}>
+            {λtag → <li class="tag-default tag-pill tag-outline">{tag}</li>}
+        </For>
+    </ul>
+
+
+--| The heart button, filled when the viewer has favorited the article.
+pub favoriteButton : Article, msg, msg, String → Html msg
+favoriteButton article clickedFavorite clickedUnfavorite extra =
+    if article.favorited then
+        <button class="btn btn-primary btn-sm ${extra}" onClick={clickedUnfavorite}>
+            <i class="ion-heart" />
+            {" ${String.fromInt article.favoritesCount}"}
+        </button>
+    else
+        <button class="btn btn-outline-primary btn-sm ${extra}" onClick={clickedFavorite}>
+            <i class="ion-heart" />
+            {" ${String.fromInt article.favoritesCount}"}
+        </button>
+
+
+pub link : Article, Html msg → Html msg
+link article content =
+    <a class="preview-link" href={Route.href (Route.Article article.slug)}>{content}</a>

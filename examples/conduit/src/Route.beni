@@ -1,0 +1,94 @@
+--! The pages' addresses: which route an address is, and the address of a
+--! route. Conduit's spec uses `#/` addresses; this app uses paths, which
+--! `Tea.application` routes without a fragment parser.
+
+import Browser.Navigation as Navigation
+import Url exposing (Url)
+import Url.Parser exposing (Parser, map, oneOf, s, slash, string, top)
+
+
+pub type Route
+    = Home
+    | Root
+    | Login
+    | Logout
+    | Register
+    | Settings
+    | Article String
+    | Profile String
+    | Favorited String
+    | NewArticle
+    | EditArticle String
+
+
+parser : Parser (Route → a) a
+parser =
+    oneOf
+        [ top ▷ map Home
+        , s "login" ▷ map Login
+        , s "logout" ▷ map Logout
+        , s "settings" ▷ map Settings
+        , s "register" ▷ map Register
+        , slash (s "article") string ▷ map Article
+        , slash (slash (s "profile") string) (s "favorites") ▷ map Favorited
+        , slash (s "profile") string ▷ map Profile
+        , s "editor" ▷ map NewArticle
+        , slash (s "editor") string ▷ map EditArticle
+        ]
+
+
+pub fromUrl : Url → Maybe Route
+fromUrl url = Url.Parser.parse parser url
+
+
+pub href : Route → String
+href route =
+    case route of
+        Home →
+            "/"
+
+        Root →
+            "/"
+
+        Login →
+            "/login"
+
+        Logout →
+            "/logout"
+
+        Register →
+            "/register"
+
+        Settings →
+            "/settings"
+
+        Article slug →
+            "/article/${slug}"
+
+        Profile username →
+            "/profile/${username}"
+
+        Favorited username →
+            "/profile/${username}/favorites"
+
+        NewArticle →
+            "/editor"
+
+        EditArticle slug →
+            "/editor/${slug}"
+
+
+--| Go to the route, replacing the current history entry. A refused change
+--| (the browser throttling a burst of them) leaves the page where it is.
+pub replaceUrl : Navigation.Key, Route → ⊤
+replaceUrl key route =
+    case Navigation.replaceUrl key (href route) of
+        _ →
+            ⊤
+
+
+pub pushUrl : Navigation.Key, String → ⊤
+pushUrl key address =
+    case Navigation.pushUrl key address of
+        _ →
+            ⊤

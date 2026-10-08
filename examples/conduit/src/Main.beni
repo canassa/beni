@@ -1,0 +1,259 @@
+-- Conduit, the RealWorld example app (https://github.com/gothinkster/realworld):
+-- a Medium clone with a feed, articles, comments, profiles and an editor,
+-- written the way elm-spa-example writes it in Elm. The model is the page
+-- the viewer is on, each page a model, messages, an `update` and a `view`
+-- of its own; a change of address replaces the page, handing it the
+-- session the old one had.
+import Api
+import ArticlePage
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Editor
+import Home
+import Html exposing (Html)
+import Login
+import Page
+import ProfilePage
+import Register
+import Route exposing (Route)
+import Session exposing (Session)
+import Settings
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Model
+    = Redirect Session
+    | NotFound Session
+    | Home Home.Model
+    | Settings Settings.Model
+    | Login Login.Model
+    | Register Register.Model
+    | Profile String ProfilePage.Model
+    | Article ArticlePage.Model
+    | Editor (Maybe String) Editor.Model
+
+
+init : Url, Navigation.Key → Model × Cmd Msg
+init url key =
+    changeRouteTo (Route.fromUrl url) (Redirect (Session.fromViewer key (Api.storedViewer ⊤)))
+
+
+-- ---- View ------------------------------------------------------------------------
+
+view : Model → Tea.Document Msg
+view model =
+    viewer = Session.viewer (toSession model)
+    case model of
+        Redirect _ →
+            Page.frame viewer Page.Other { title = "", content = <></> }
+
+        NotFound _ →
+            Page.frame viewer Page.Other
+                { title = "Page Not Found"
+                , content =
+                    <main id="content" class="container" tabindex={-1}>
+                        <h1>Not Found</h1>
+                    </main>
+                }
+
+        Settings settings →
+            viewPage viewer Page.Settings GotSettingsMsg (Settings.view settings)
+
+        Home home →
+            viewPage viewer Page.Home GotHomeMsg (Home.view home)
+
+        Login login →
+            viewPage viewer Page.Login GotLoginMsg (Login.view login)
+
+        Register register →
+            viewPage viewer Page.Register GotRegisterMsg (Register.view register)
+
+        Profile username profile →
+            viewPage viewer (Page.Profile username) GotProfileMsg (ProfilePage.view profile)
+
+        Article article →
+            viewPage viewer Page.Other GotArticleMsg (ArticlePage.view article)
+
+        Editor Nothing editor →
+            viewPage viewer Page.NewArticle GotEditorMsg (Editor.view editor)
+
+        Editor (Just _) editor →
+            viewPage viewer Page.Other GotEditorMsg (Editor.view editor)
+
+
+viewPage :
+      Maybe Api.Viewer
+    , Page.Active
+    , (msg → Msg)
+    , { title : String, content : Html msg }
+    → Tea.Document Msg
+viewPage viewer active toMsg page =
+    Page.frame viewer active { title = page.title, content = Html.map page.content toMsg }
+
+
+-- ---- Update ----------------------------------------------------------------------
+
+type Msg
+    = ChangedUrl Url
+    | ClickedLink Browser.UrlRequest
+    | GotHomeMsg Home.Msg
+    | GotSettingsMsg Settings.Msg
+    | GotLoginMsg Login.Msg
+    | GotRegisterMsg Register.Msg
+    | GotProfileMsg ProfilePage.Msg
+    | GotArticleMsg ArticlePage.Msg
+    | GotEditorMsg Editor.Msg
+
+
+toSession : Model → Session
+toSession page =
+    case page of
+        Redirect session →
+            session
+
+        NotFound session →
+            session
+
+        Home home →
+            Home.toSession home
+
+        Settings settings →
+            Settings.toSession settings
+
+        Login login →
+            Login.toSession login
+
+        Register register →
+            Register.toSession register
+
+        Profile _ profile →
+            ProfilePage.toSession profile
+
+        Article article →
+            ArticlePage.toSession article
+
+        Editor _ editor →
+            Editor.toSession editor
+
+
+changeRouteTo : Maybe Route, Model → Model × Cmd Msg
+changeRouteTo maybeRoute model =
+    session = toSession model
+    case maybeRoute of
+        Nothing →
+            ( NotFound session, Cmd.none )
+
+        Just Route.Root →
+            ( model, Cmd.do λ⊤ → Route.replaceUrl (Session.navKey session) Route.Home )
+
+        Just Route.Logout →
+            -- GAP: elm-spa-example hears the stored user change through a
+            -- port, in every tab. There is no subscription to `storage`
+            -- events (`Storage.onChange`), so this tab signs out by itself
+            -- and other open tabs keep the old session until reloaded.
+            key = Session.navKey session
+            ( Redirect (Session.Guest key)
+            , Cmd.do λ⊤ →
+                Api.logout ⊤
+                Route.replaceUrl key Route.Home
+            )
+
+        Just Route.NewArticle →
+            updateWith (Editor Nothing _) GotEditorMsg (Editor.initNew session)
+
+        Just (Route.EditArticle slug) →
+            updateWith (Editor (Just slug) _) GotEditorMsg (Editor.initEdit session slug)
+
+        Just Route.Settings →
+            updateWith Settings GotSettingsMsg (Settings.init session)
+
+        Just Route.Home →
+            updateWith Home GotHomeMsg (Home.init session)
+
+        Just Route.Login →
+            updateWith Login GotLoginMsg (Login.init session)
+
+        Just Route.Register →
+            updateWith Register GotRegisterMsg (Register.init session)
+
+        Just (Route.Profile username) →
+            updateWith
+                (Profile username _)
+                GotProfileMsg
+                (ProfilePage.init session username ProfilePage.MyArticles)
+
+        Just (Route.Favorited username) →
+            updateWith
+                (Profile username _)
+                GotProfileMsg
+                (ProfilePage.init session username ProfilePage.FavoritedArticles)
+
+        Just (Route.Article slug) →
+            updateWith Article GotArticleMsg (ArticlePage.init session slug)
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case ( msg, model ) of
+        ( ClickedLink urlRequest, _ ) →
+            case urlRequest of
+                Browser.Internal url →
+                    ( model
+                    , Cmd.do λ⊤ →
+                        Route.pushUrl (Session.navKey (toSession model)) (Url.toString url)
+                    )
+
+                Browser.External href →
+                    ( model, Cmd.do λ⊤ → loaded (Navigation.load href) )
+
+        ( ChangedUrl url, _ ) →
+            changeRouteTo (Route.fromUrl url) model
+
+        ( GotSettingsMsg subMsg, Settings settings ) →
+            updateWith Settings GotSettingsMsg (Settings.update subMsg settings)
+
+        ( GotLoginMsg subMsg, Login login ) →
+            updateWith Login GotLoginMsg (Login.update subMsg login)
+
+        ( GotRegisterMsg subMsg, Register register ) →
+            updateWith Register GotRegisterMsg (Register.update subMsg register)
+
+        ( GotHomeMsg subMsg, Home home ) →
+            updateWith Home GotHomeMsg (Home.update subMsg home)
+
+        ( GotProfileMsg subMsg, Profile username profile ) →
+            updateWith (Profile username _) GotProfileMsg (ProfilePage.update subMsg profile)
+
+        ( GotArticleMsg subMsg, Article article ) →
+            updateWith Article GotArticleMsg (ArticlePage.update subMsg article)
+
+        ( GotEditorMsg subMsg, Editor slug editor ) →
+            updateWith (Editor slug _) GotEditorMsg (Editor.update subMsg editor)
+
+        ( _, _ ) →
+            -- A message for a page the viewer has already left.
+            ( model, Cmd.none )
+
+
+updateWith : (subModel → Model), (subMsg → Msg), subModel × Cmd subMsg → Model × Cmd Msg
+updateWith toModel toMsg ( subModel, subCmd ) = ( toModel subModel, Cmd.map subCmd ⊤ toMsg )
+
+
+-- An external link the browser refuses to follow leaves the page as it is.
+loaded : Result Navigation.Error ⊤ → ⊤
+loaded _ = ⊤
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = ClickedLink
+        , onUrlChange = ChangedUrl
+        }

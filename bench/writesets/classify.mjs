@@ -9,7 +9,9 @@
 //
 //   BENI=<beni> node bench/writesets/classify.mjs [--table|--list|--json] [--set=dom] [<program>…]
 //
-// A <program> is a .beni file or a directory of them (one program). With no
+// A <program> is a .beni file or a directory of them (one program), or several
+// of either joined with `+` (research 62 reads Conduit's pages with
+// `examples/conduit/src+bench/writesets/conduit/Pages.beni`). With no
 // program it runs research 61's TEA corpus, or with --set=dom its renderer
 // corpus. --table prints research 61 §4's table, --list its Appendix A, and
 // no flag every constructor's writes and every hole's read set.
@@ -32,7 +34,7 @@ for (const a of process.argv.slice(2)) {
   else if (a === "--table") asTable = true;
   else if (a === "--list") asList = true;
   else if (a.startsWith("--set=")) set = a.slice(6);
-  else programArgs.push(path.resolve(a));
+  else programArgs.push(a.split("+").map((p) => path.resolve(p)).join("+"));
 }
 
 // ---- S-expression reader over the AST dump --------------------------------
@@ -81,11 +83,15 @@ const atoms = (nd) => nd.xs.filter((x) => typeof x === "string");
 
 // ---- Programs -------------------------------------------------------------
 
+// A program is a .beni file, a directory of them, or several of either joined
+// with `+` (an application's directory and a measuring module beside it).
 function loadModules(target) {
-  const files = statSync(target).isDirectory()
-    ? readdirSync(target).filter((f) => f.endsWith(".beni")).map((f) => path.join(target, f))
-    : [target];
+  const files = target.split("+").flatMap((t) =>
+    statSync(t).isDirectory() ? readdirSync(t).filter((f) => f.endsWith(".beni")).map((f) => path.join(t, f)) : [t],
+  );
   const mods = new Map();
+  // A declaration's name, past its `pub` and `opaque` (`(type_decl pub Msg …)`).
+  const declName = (d) => atoms(d).find((x) => x !== "pub" && x !== "opaque");
   for (const f of files) {
     const text = execFileSync(beni, ["dump", "--stage=ast", f], { encoding: "utf8" });
     const ast = parseSexpr(text);
@@ -97,9 +103,9 @@ function loadModules(target) {
         m.defs.set(d.xs[0], { name: d.xs[0], params: ks.slice(0, -1), body: ks[ks.length - 1], mod: m });
       } else if (d.k === "foreign_value") {
         m.defs.set(d.xs[0], { name: d.xs[0], foreign: true, mod: m });
-      } else if (d.k === "annotation") m.annots.set(d.xs[0], kids(d)[0]);
-      else if (d.k === "type_decl") m.types.set(d.xs[0], kids(d).filter((c) => c.k === "constructor").map((c) => c.xs[0]));
-      else if (d.k === "type_alias") m.aliases.set(d.xs[0], kids(d)[0]);
+      } else if (d.k === "annotation") m.annots.set(declName(d), kids(d)[0]);
+      else if (d.k === "type_decl") m.types.set(declName(d), kids(d).filter((c) => c.k === "constructor").map((c) => c.xs[0]));
+      else if (d.k === "type_alias") m.aliases.set(declName(d), kids(d)[0]);
       else if (d.k === "import") {
         const at = atoms(d);
         const asIx = at.indexOf("as");
@@ -471,11 +477,19 @@ function withCond(v, reads) {
 function typeAt(mods, mod, ty, p) {
   // Returns "list" | "record" | "scalar" | "other" for the type at path p.
   let t = ty;
+  // An alias is looked up where the type naming it was written (`mod`, then
+  // the module an alias came from), then in any module, as before.
+  let cur = mod;
   const resolveAlias = (t) => {
     for (let n = 0; n < 10 && t && t.k === "type_con"; n++) {
       const nm = t.xs[0];
+      const dot = nm.lastIndexOf(".");
+      const base = nm.slice(dot + 1);
       let al = null;
-      for (const m of mods.values()) if (m.aliases.has(nm.slice(nm.lastIndexOf(".") + 1))) al = m.aliases.get(nm.slice(nm.lastIndexOf(".") + 1));
+      const home = cur && (dot < 0 ? cur : mods.get(cur.imports.get(nm.slice(0, dot)) ?? nm.slice(0, dot)));
+      if (home && home.aliases.has(base)) al = home.aliases.get(base);
+      else if (home && home.types.has(base)) break; // a custom type of its own, not an alias
+      else for (const m of mods.values()) if (m.aliases.has(base)) { al = m.aliases.get(base); if (cur) cur = m; }
       if (!al) break;
       t = al;
     }
@@ -504,7 +518,7 @@ function writes(v, P, ctx, out) {
   v = force(v);
   const ps = P.join(".") || "(model)";
   const ty = () => {
-    const t = typeAt(ctx.mods, null, ctx.modelType, P);
+    const t = typeAt(ctx.mods, ctx.modelMod, ctx.modelType, P);
     return t === "other" && P.length === 0 && ctx.initKind ? ctx.initKind : t;
   };
   switch (v.t) {
@@ -611,15 +625,123 @@ function isMarkupy(ev, e, env, mod, depth = 0) {
     }
     case "ident": {
       const v = env.get(e.xs[0]);
-      if (v && v.t === "thunk") return isMarkupy(ev, v.e, v.env, mod, depth + 1);
+      if (v && v.t === "thunk") return isMarkupy(ev, v.e, v.env, v.mod ?? mod, depth + 1);
       if (!env.has(e.xs[0])) {
         const d = ev.resolve(e.xs[0], mod);
         return !!(d && !d.foreign && d.params.length === 0 && isMarkupy(ev, d.body, new Map(), d.mod, depth + 1));
       }
       return false;
     }
+    // A record holding markup: a Tea.Document, or a page's { title, content }.
+    case "record": return ks.some((f) => isMarkupy(ev, kids(f)[0], env, mod, depth + 1));
+    case "field_access": return fieldsOf(ev, ks[0], fieldName(e), env, mod, depth + 1).some((x) => isMarkupy(ev, x.e, x.env, x.mod, depth + 1));
     default: return false;
   }
+}
+
+const fieldName = (e) => e.xs[0].replace(/^\./, "");
+
+// The expressions a field of a record-valued expression can be, through
+// parentheses, lets, branches, helpers and thunks; [] when unknown.
+function fieldsOf(ev, e, name, env, mod, depth = 0) {
+  if (depth > 20 || !e) return [];
+  const ks = kids(e);
+  switch (e.k) {
+    case "paren": return fieldsOf(ev, ks[0], name, env, mod, depth + 1);
+    case "block": return fieldsOf(ev, ks[ks.length - 1], name, env, mod, depth + 1);
+    case "record": {
+      const f = ks.find((x) => x.xs[0] === name);
+      return f ? [{ e: kids(f)[0], env, mod }] : [];
+    }
+    case "case": return ks.slice(1).flatMap((b) => fieldsOf(ev, kids(b)[1], name, env, mod, depth + 1));
+    case "if": return [...fieldsOf(ev, ks[1], name, env, mod, depth + 1), ...fieldsOf(ev, ks[2], name, env, mod, depth + 1)];
+    case "apply": {
+      const f = ks[0];
+      if (f.k !== "ident" || env.has(f.xs[0])) return [];
+      const d = ev.resolve(f.xs[0], mod);
+      return d && !d.foreign ? fieldsOf(ev, d.body, name, new Map(), d.mod, depth + 1) : [];
+    }
+    case "ident": {
+      const v = env.get(e.xs[0]);
+      if (v && v.t === "thunk") return fieldsOf(ev, v.e, name, v.env, v.mod ?? mod, depth + 1);
+      if (env.has(e.xs[0])) return [];
+      const d = ev.resolve(e.xs[0], mod);
+      return d && !d.foreign && d.params.length === 0 ? fieldsOf(ev, d.body, name, new Map(), d.mod, depth + 1) : [];
+    }
+    default: return [];
+  }
+}
+
+// A helper's parameters, bound where it is called: a plain name as a thunk of
+// its argument (so markup or a record passed in is walked where it is placed),
+// any other pattern to the argument's value.
+function bindArgs(ev, d, an, env, mod) {
+  const en = new Map();
+  d.params.forEach((p, i) => {
+    if (p.k === "pat_var") en.set(p.xs[0], { t: "thunk", e: an[i], env, mod, ev: { eval: (x, en2) => ev.eval(x, en2, mod) } });
+    else ev.bind(p, ev.eval(an[i], env, mod), en);
+  });
+  return en;
+}
+
+// Walk the field `name` of a record-valued expression, as walkChild walks markup.
+function walkField(ev, e, name, env, mod, ctx, row, depth, whole) {
+  const ks = kids(e);
+  const fallback = () => ctx.holes.push({ kind: "child", reads: [...readsOf(ev.eval(whole.e, whole.env, whole.mod))], row });
+  if (depth > 30) return;
+  switch (e.k) {
+    case "paren": return walkField(ev, ks[0], name, env, mod, ctx, row, depth + 1, whole);
+    case "record": {
+      const f = ks.find((x) => x.xs[0] === name);
+      return f ? walkChild(ev, kids(f)[0], env, mod, ctx, row, depth + 1) : fallback();
+    }
+    case "block": {
+      const en = letEnv(ev, ks, env, mod);
+      return walkField(ev, ks[ks.length - 1], name, en, mod, ctx, row, depth + 1, whole);
+    }
+    case "case": {
+      const sc = ev.eval(ks[0], env, mod);
+      ctx.holes.push({ kind: "switch", reads: [...readsOf(sc)], row });
+      for (const br of ks.slice(1)) {
+        const bk = kids(br);
+        const en = new Map(env);
+        ev.bind(bk[0], sc, en);
+        walkField(ev, bk[1], name, en, mod, ctx, row, depth + 1, whole);
+      }
+      return;
+    }
+    case "if":
+      ctx.holes.push({ kind: "switch", reads: [...readsOf(ev.eval(ks[0], env, mod))], row });
+      walkField(ev, ks[1], name, env, mod, ctx, row, depth + 1, whole);
+      return walkField(ev, ks[2], name, env, mod, ctx, row, depth + 1, whole);
+    case "apply": {
+      const f = ks[0];
+      const d = f.k === "ident" && !env.has(f.xs[0]) ? ev.resolve(f.xs[0], mod) : null;
+      if (!d || d.foreign) return fallback();
+      return walkField(ev, d.body, name, bindArgs(ev, d, ks.slice(1), env, mod), d.mod, ctx, row, depth + 1, whole);
+    }
+    case "ident": {
+      const v = env.get(e.xs[0]);
+      if (v && v.t === "thunk") return walkField(ev, v.e, name, v.env, v.mod ?? mod, ctx, row, depth + 1, whole);
+      const d = env.has(e.xs[0]) ? null : ev.resolve(e.xs[0], mod);
+      if (!d || d.foreign || d.params.length) return fallback();
+      return walkField(ev, d.body, name, new Map(), d.mod, ctx, row, depth + 1, whole);
+    }
+    default: return fallback();
+  }
+}
+
+// The lets of a block, bound as walkChild binds them.
+function letEnv(ev, ks, env, mod) {
+  const en = new Map(env);
+  for (const s of ks.slice(0, -1)) {
+    if (s.k === "let_def") {
+      const sk = kids(s);
+      if (sk.length > 1) en.set(s.xs[0], { t: "fn", params: sk.slice(0, -1), body: sk[sk.length - 1], env: en, mod });
+      else en.set(s.xs[0], { t: "thunk", e: sk[0], env: en, mod, ev: { eval: (x, en2) => ev.eval(x, en2, mod) } });
+    } else if (s.k === "let_pattern") { const sk = kids(s); ev.bind(sk[0], ev.eval(sk[1], en, mod), en); }
+  }
+  return en;
 }
 
 function walkView(ev, e, env, mod, ctx, row) {
@@ -662,7 +784,15 @@ function walkView(ev, e, env, mod, ctx, row) {
         const d = ev.resolve(fnV.callee, fnV.mod);
         if (d && !d.foreign) {
           const en = new Map();
-          ev.bind(d.params[0], elem, en);
+          // `{row model _}`: the row is the placeholder's argument, the
+          // others the ones written; a bare `{row}` takes it first.
+          const partial = fnV.partial && fnV.partial.length ? fnV.partial : [null];
+          let k = 0;
+          d.params.forEach((p, i) => {
+            const a = i < partial.length ? partial[i] : null;
+            if (a === null && k++ === 0) ev.bind(p, elem, en);
+            else if (a !== null) ev.bind(p, a, en);
+          });
           walkChild(ev, d.body, en, d.mod, ctx, newRow);
         }
       }
@@ -676,8 +806,9 @@ function walkView(ev, e, env, mod, ctx, row) {
 function walkChild(ev, e, env, mod, ctx, row, depth = 0) {
   const ks = kids(e);
   if (depth > 30) return;
-  if (e.k === "record" && depth === 0) {
-    // Tea.Document: { title, body }: the title is one hole, the body markup.
+  if (e.k === "record" && (depth === 0 || isMarkupy(ev, e, env, mod))) {
+    // Tea.Document: { title, body }: the title is one hole, the body markup;
+    // the same for such a record a helper makes.
     for (const f of ks) walkChild(ev, kids(f)[0], env, mod, ctx, row, depth + 1);
     return;
   }
@@ -688,6 +819,7 @@ function walkChild(ev, e, env, mod, ctx, row, depth = 0) {
   }
   switch (e.k) {
     case "markup_element": case "markup_fragment": case "markup_for": return walkView(ev, e, env, mod, ctx, row);
+    case "field_access": return walkField(ev, ks[0], fieldName(e), env, mod, ctx, row, depth + 1, { e, env, mod });
     case "paren": return walkChild(ev, ks[0], env, mod, ctx, row, depth + 1);
     case "block": {
       const en = new Map(env);
@@ -721,13 +853,11 @@ function walkChild(ev, e, env, mod, ctx, row, depth = 0) {
       const [f, ...an] = ks;
       if (f.xs[0] === "Html.map") return walkChild(ev, an[0], env, mod, ctx, row, depth + 1);
       const d = ev.resolve(f.xs[0], mod);
-      const en = new Map();
-      d.params.forEach((p, i) => ev.bind(p, ev.eval(an[i], env, mod), en));
-      return walkChild(ev, d.body, en, d.mod, ctx, row, depth + 1);
+      return walkChild(ev, d.body, bindArgs(ev, d, an, env, mod), d.mod, ctx, row, depth + 1);
     }
     case "ident": {
       const v = env.get(e.xs[0]);
-      if (v && v.t === "thunk") return walkChild(ev, v.e, v.env, mod, ctx, row, depth + 1);
+      if (v && v.t === "thunk") return walkChild(ev, v.e, v.env, v.mod ?? mod, ctx, row, depth + 1);
       const d = ev.resolve(e.xs[0], mod);
       return walkChild(ev, d.body, new Map(), d.mod, ctx, row, depth + 1);
     }
@@ -823,14 +953,20 @@ function msgCtors(ev, prog, updV, mods) {
   // The annotation's first parameter, else the type declaring the first constructor pattern met.
   const mod = prog.mod;
   let tname = null;
+  let annMod = mod;
   const uf = prog.fs.get("update");
   if (uf.k === "ident") {
     const d = ev.resolve(uf.xs[0], mod);
     const an = d && d.mod.annots.get(d.name);
-    if (an && an.k === "type_fn") tname = kids(an)[0].xs[0];
+    if (an && an.k === "type_fn") { tname = kids(an)[0].xs[0]; annMod = d.mod; }
   }
+  // The type as the annotation's module names it: its own, an imported
+  // module's (`Home.Msg`), else any module's of that name.
   const findType = (n) => {
-    const base = n.slice(n.lastIndexOf(".") + 1);
+    const dot = n.lastIndexOf(".");
+    const base = n.slice(dot + 1);
+    const home = dot < 0 ? annMod : mods.get(annMod.imports.get(n.slice(0, dot)) ?? n.slice(0, dot));
+    if (home && home.types.has(base)) return home.types.get(base);
     for (const m of mods.values()) if (m.types.has(base)) return m.types.get(base);
     return null;
   };
@@ -895,15 +1031,16 @@ function analyse(target) {
     // The model's type: the annotation's second parameter when there is one,
     // else the module's own `Model` alias.
     let modelType = null;
+    let modelMod = null;
     const uf = prog.fs.get("update");
     if (uf.k === "ident") {
       const d = ev.resolve(uf.xs[0], prog.mod);
       const an = d && d.mod.annots.get(d.name);
-      if (an && an.k === "type_fn") modelType = kids(an)[1];
+      if (an && an.k === "type_fn") { modelType = kids(an)[1]; modelMod = d.mod; }
     }
     if (!modelType && prog.mod.aliases.has("Model")) modelType = { k: "type_con", xs: ["Model"] };
     const initE = initAt(ev, prog.fs.get("init"), prog.mod, []);
-    const ctx = { mods, modelType, initKind: initE && initE.k === "list" ? "list" : null };
+    const ctx = { mods, modelType, modelMod, initKind: initE && initE.k === "list" ? "list" : null };
     const origins = ctorOrigins(mods, prog, ctors);
     const cons = [];
     const allWrites = [];
@@ -996,7 +1133,7 @@ function corpus() {
 const targets = programArgs.length ? programArgs : corpus();
 const all = [];
 for (const t of targets) {
-  const name = path.relative(repo, t);
+  const name = t.split("+").map((p) => path.relative(repo, p)).join("+");
   try {
     all.push({ program: name, programs: analyse(t) });
   } catch (err) {
