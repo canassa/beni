@@ -1,0 +1,43 @@
+-- writes: W spent in `init` (the review of the read-only pass, B3;
+-- `write-sets.md` §6.1). Under a tiny hidden `--writes-work`
+-- (`CapWInit.writes-work`) the walk of `init` reaches the cap: `init` is
+-- then not literal anywhere, and the key starts a budget of its own (which
+-- this tiny one also exhausts: `(cap W)`, `value ρ`). A cap is the top of
+-- its lattice, never an error, so the dump still exits 0.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+
+
+type Msg
+    = Inc
+
+
+start : Int → Model
+start n = { a = n + 1, b = n + 2, c = n + 3 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | a = model.a + 1 }
+
+
+view : Model → Html Msg
+view model = <p>{model.b}</p>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = start (List.foldl [ 1, 2, 3, 4, 5, 6, 7, 8 ] 0 λx n → x + n)
+        , update = update
+        , view = view
+        }

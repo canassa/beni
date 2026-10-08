@@ -1,0 +1,35 @@
+-- writes: two programs in one dump (the review of the read-only pass, B2).
+-- `A` and `B` build the same term — a record of `count` over a value the
+-- pass cannot relate to the model — but their models differ: here the other
+-- field is `name`, in `B` it is `flag`. Placing it writes `node ρ` and
+-- `value` at every field of THIS program's model, so `B`'s key must say
+-- `ρ.flag`, whichever program the dump analysed first.
+-- `ordering_test.zig` dumps each module alone and the two together.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    name : String
+
+
+type Msg
+    = Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Reset →
+            fresh = List.foldl [] model λ_ acc → acc
+            { fresh | count = 0 }
+
+
+view : Model → Html Msg
+view model = <p>{model.name}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { count = 0, name = "a" }, update = update, view = view }

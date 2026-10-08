@@ -1,0 +1,31 @@
+--! The second program of `writes/TwoPrograms/`: the same term as `A`'s
+--! over a model whose other field is `flag`.
+
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    flag : Bool
+
+
+type Msg
+    = Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Reset →
+            fresh = List.foldl [] model λ_ acc → acc
+            { fresh | count = 0 }
+
+
+view : Model → Html Msg
+view model = <p>{model.count}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { count = 0, flag = False }, update = update, view = view }

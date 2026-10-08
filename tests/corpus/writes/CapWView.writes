@@ -1,0 +1,14 @@
+program CapWView.main : Tea.sandbox
+  model CapWView.Model
+  init
+    literal ρ
+  key (any)                                       exact      ∅
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  view (cap W)
+  hole CapWView.beni:34:12                        dynamic    reads ρ
+  hole CapWView.beni:35:12                        dynamic    reads ρ
+  hole CapWView.beni:36:12                        dynamic    reads ρ
+  hole CapWView.beni:37:12                        dynamic    reads ρ
+  hole CapWView.beni:38:12                        dynamic    reads ρ
+  hole CapWView.beni:39:12                        dynamic    reads ρ
+  holes 6: static 0, literal 0, static-key 0, dynamic 6

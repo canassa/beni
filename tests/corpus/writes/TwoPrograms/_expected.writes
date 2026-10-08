@@ -1,0 +1,16 @@
+program A.main : Tea.sandbox
+  model A.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.count; value ρ.name
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole A.beni:31:17                               dynamic    reads ρ.name
+  holes 1: static 0, literal 0, static-key 0, dynamic 1
+program B.main : Tea.sandbox
+  model B.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.count; value ρ.flag
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole B.beni:27:17                               dynamic    reads ρ.count
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

@@ -102,12 +102,27 @@ pub fn write(w: *std.Io.Writer, gpa: Allocator, a: *Writes, run: Writes.Run, pos
             try w.print("  keys {d}: bounded {d} ({d}%), exact {d}, indexed {d}, structural {d}, * {d}; capped {d}\n", .{
                 n, bounded, if (n == 0) 0 else bounded * 100 / n, counts[0], counts[1], counts[2], counts[3], capped,
             });
-            for (prog.summaries) |s| {
-                try w.print("  summary {s}.{s}", .{ a.moduleName(s.module), a.declNameOf(s.module, s.decl) });
-                try writeCaps(w, s.caps);
-                try w.writeByte('\n');
+            // One line per capped summary, sorted by text: an id would move
+            // with the order declarations are written in.
+            var lines: std.ArrayList([]u8) = .empty;
+            defer {
+                for (lines.items) |l| gpa.free(l);
+                lines.deinit(gpa);
             }
+            for (prog.summaries) |s| {
+                line.clearRetainingCapacity();
+                try line.writer.print("  summary {s}.{s}", .{ a.moduleName(s.module), a.declNameOf(s.module, s.decl) });
+                try writeCaps(&line.writer, s.caps);
+                try lines.append(gpa, try gpa.dupe(u8, line.written()));
+            }
+            std.mem.sort([]u8, lines.items, {}, struct {
+                fn less(_: void, x: []u8, y: []u8) bool {
+                    return std.mem.lessThan(u8, x, y);
+                }
+            }.less);
+            for (lines.items) |l| try w.print("{s}\n", .{l});
         }
+        if (prog.view_capped) try w.writeAll("  view (cap W)\n");
         // Holes, by module name and position.
         const order = try gpa.alloc(usize, prog.holes.len);
         defer gpa.free(order);

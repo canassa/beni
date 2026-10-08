@@ -1,0 +1,46 @@
+-- writes: W spent in `view` (the review of the read-only pass, B4;
+-- `write-sets.md` §6.1). Under the hidden `--writes-work`
+-- (`CapWView.writes-work`) the key's walk fits and the view's does not.
+-- A view cut short would list some holes with some of their reads and
+-- leave others out; instead the program says `view (cap W)` and every hole
+-- the walk met is `dynamic`, reading ρ — the top, so no hole is ever called
+-- static on the strength of a walk that did not finish.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+    d : Int
+
+
+type Msg
+    = Stay
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Stay →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{model.a}</p>
+        <p>{model.b}</p>
+        <p>{model.c}</p>
+        <p>{model.d}</p>
+        <p>{model.a + model.b}</p>
+        <p>{model.c + model.d}</p>
+        <p>{model.a + model.c}</p>
+        <p>{model.b + model.d}</p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { a = 0, b = 0, c = 0, d = 0 }, update = update, view = view }
