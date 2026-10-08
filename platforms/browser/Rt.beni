@@ -2110,15 +2110,13 @@ pub identity : V → V
 identity event = event
 
 
--- Send the message `node`'s handler makes of `event` to the program whose
--- mount node is nearest above it, through every `Html.map` it is inside,
--- innermost first. The search starts at the node's parent: a program
--- renders only inside its mount node, so a mount node's own handler is
--- the program's around it. `flags` may be `undefined`, a node that
--- declared neither: its bits are then 0. A stopped page calls no handler,
--- and a handler or an `update` that throws stops it.
-fire : V, V, String, String, Int → ⊤
-fire node event key payload flags =
+-- Send the message `node`'s handler makes of `event` to `root`, the mount
+-- node of the program that rendered it (null for none), through every
+-- `Html.map` it is inside, innermost first. `flags` may be `undefined`,
+-- a node that declared neither: its bits are then 0. A stopped page calls
+-- no handler, and a handler or an `update` that throws stops it.
+fire : V, V, String, String, Int, V → ⊤
+fire node event key payload flags root =
     if Js.read dead then
         ⊤
     else
@@ -2139,8 +2137,6 @@ fire node event key payload flags =
                          else
                             Js.call node key [ Js.apply x [ event ] ]
                         )
-
-                root = mountAbove (Js.get node "parentNode")
 
                 if Js.isNull root then
                     ⊤
@@ -2163,7 +2159,10 @@ through c msg =
         through (Js.get c "up") (Js.call c "f" [ msg ])
 
 
--- The nearest mount node from `n` up, or null.
+-- The nearest mount node from `n` up, or null. The search for a
+-- handler's program starts at the handler node's parent: a program renders
+-- only inside its mount node, so a mount node's own handler is the
+-- program's around it.
 mountAbove : V → V
 mountAbove n =
     if Js.isNull n || not (Js.isUndefined (Js.get n "$$root")) then
@@ -2179,28 +2178,49 @@ mountAbove n =
 -- program that rendered it. An event the browser dispatched is a turn:
 -- every handler of the walk is one render, when the walk ends.
 --
+-- The walk has a second pointer, `root`: the mount node of the program
+-- whose markup the walk is in, looked for once from the target. When the
+-- walk reaches it, the program around it is looked for from its parent,
+-- since a mount node's own handler is the program's around it; the
+-- handlers above, up to that program's mount node, are its own. The walk
+-- ends where no program is around — at once at the page's body, which no
+-- program's markup is around (a program's markup is inside its mount
+-- node, and `<html>`'s children are its head and its body) — since no
+-- handler is above the outermost mount node.
+--
 -- The three property names an event's handler is read by are built once
 -- per name, when its listener is registered, and handed to the listener:
 -- a name concatenated per event is a new string, which a property lookup
 -- must first find in V8's string table.
 delegated : String, String, String, V → ⊤
 delegated key flagged payload event = turn (Js.to (Js.get event "isTrusted")) λ⊤ →
-    bubble event key flagged payload (Js.get event "target")
+    target = Js.get event "target"
+    bubble event key flagged payload target (mountAbove target)
 
 
-bubble : V, String, String, String, V → ⊤
-bubble event key flagged payload node =
-    if Js.isNull node then
+bubble : V, String, String, String, V, V → ⊤
+bubble event key flagged payload node root =
+    if Js.isNull root then
         ⊤
-    else if not (Js.isUndefined (Js.get node key)) && not (Js.to (Js.get node "disabled")) then
-        flags = Js.to (Js.get node flagged)
-        fire node event key payload flags
-        if Js.bitAnd flags 2 ≠ 0 then
-            ⊤
-        else
-            bubble event key flagged payload (Js.get node "parentNode")
     else
-        bubble event key flagged payload (Js.get node "parentNode")
+        owner =
+            if not (Js.same node root) then
+                root
+            else if Js.same node (Js.get (Js.global "document") "body") then
+                -- No program's markup is around the page's body.
+                Js.null
+            else
+                mountAbove (Js.get node "parentNode")
+
+        if not (Js.isUndefined (Js.get node key)) && not (Js.to (Js.get node "disabled")) then
+            flags = Js.to (Js.get node flagged)
+            fire node event key payload flags owner
+            if Js.bitAnd flags 2 ≠ 0 then
+                ⊤
+            else
+                bubble event key flagged payload (Js.get node "parentNode") owner
+        else
+            bubble event key flagged payload (Js.get node "parentNode") owner
 
 
 -- The delegated names listened for so far.
@@ -2249,6 +2269,7 @@ listen el name flags =
                 if Js.isUndefined (Js.get el key) then
                     ⊤
                 else
-                    turn (Js.to (Js.get event "isTrusted")) λ⊤ → fire el event key payload flags
+                    turn (Js.to (Js.get event "isTrusted")) λ⊤ →
+                        fire el event key payload flags (mountAbove (Js.get el "parentNode"))
             ]
         )

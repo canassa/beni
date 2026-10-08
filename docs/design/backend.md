@@ -7521,7 +7521,8 @@ node also gets, at mount, `el.$$clickX = extractor` (or the runtime's identity w
 raw event). The runtime's one listener per delegated name walks up from the target to the first node
 with a `$$click`, applies the row's `preventDefault` and `stopPropagation`, computes the message —
 `X ? h(X(event)) : h` — passes it through the node's map chain (below), and sends it to the program
-whose mount root it reaches next (§15.11). A **non-delegated** event attaches, at mount, one stable
+whose mount root it reaches next (§15.11). *(The walk goes on past that first node, as the DOM's
+bubbling does: §15.11, amended 2026-10-08, states it exactly.)* A **non-delegated** event attaches, at mount, one stable
 listener through the runtime's `listen` that reads the node's current `$$<name>` and then does the
 same — the only workable design when handlers are fresh closures that cannot be compared
 (`plans/browser-platform.md` §2.3). **Delegated names are registered at program start**, through the
@@ -8678,3 +8679,39 @@ programs, nested, under a user's click and a burst).
   against the build before it in the same batch): 19.9 → 17.8 µs development, 21.0 → 18.2
   `--release`. The table app's release bundle, through terser and brotli 11, is 5 510 → 5 505
   bytes; the empty page, which delegates nothing, does not move.
+- **One walk finds the handlers and their program.** The delegated listener's semantics, stated
+  once (they are the DOM's bubbling, restricted to the handlers beni wrote, and they are what the
+  listener did before):
+  - The handlers that run are those on the target and its ancestors, **innermost first**, each
+    node's `$$<name>` once. A node whose `disabled` is true is passed over, its handler not run,
+    and the walk goes on past it. A node with no handler is passed over.
+  - A handler whose declaration says `preventDefault` calls it before the handler runs; one that
+    says `stopPropagation` runs, calls it, and is **the last to run** — no ancestor's handler runs,
+    in this program or a program around it.
+  - Each handler's message goes to the program whose mount node is the nearest **strictly above**
+    the handler's node: a mount node's own handler is the program's around it. Its `Html.map`
+    contexts are applied innermost first (§15.3).
+  - Each message is applied (`update` runs) before the next handler is called, so a `Debug.log`
+    in a handler and one in `update` interleave as they always have.
+  - Past a program's mount node the walk goes on into the program around it, if one is.
+
+  What changed is how. The walk went up from the target to the document, and for each handler it
+  met, a second walk went up from the handler's node to its mount node (`mountAbove`). Now the walk
+  carries its program's mount node with it, `root`, looked for once from the target; every handler
+  met before the walk reaches `root` is that program's, and at `root` the program around it is
+  looked for from its parent. So the nodes between a handler and its mount node are passed twice at
+  most, not once per handler; and **the walk ends where no program is around**, at once when `root`
+  is the page's body — no program's markup is around the body, since a program renders inside its
+  mount node and the body's parent is `<html>` — instead of going on to the document. A
+  non-delegated event's stub (`listen`) still looks for its node's mount node itself; `fire` is
+  handed the mount node instead of looking for it.
+
+  Three other forms were built and measured (`plumbing.mjs --mode=cdp`, 16 pages, one batch,
+  against step 1; bytes are the table app's release bundle through terser and brotli 11, 5 505
+  after step 1). Gathering a segment's handlers — the first in a variable, others in an array — and
+  calling them at its mount node, research 59 §1.6's proposal: −1.3 to −1.6 µs, +184 bytes, the
+  state carried through the loop. The same with every handler in an array: +0.6 µs (slower) and
+  +78 bytes. This form without the body's shortcut, the walk going on above the body to the
+  document: −0.3 µs, +23 bytes. **This form: −0.9 µs, +46 bytes** (5 505 → 5 551; `mountAbove` is
+  a function again, a loop the release optimiser does not write inside the walk's loop). Taken for
+  most of the gathering form's time at a quarter of its bytes.
