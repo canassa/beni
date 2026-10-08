@@ -96,8 +96,8 @@ emitted once and called; one is inlined only when it has a single caller. The sp
 
 **R6. One keyed pass** (research 59 §4). Keyed `For` is 1 478 B of the table app because beni
 ships two keyed passes where Solid ships one. Measure whether `Rt.trimmed`'s prefix/suffix/swap
-pass still earns its bytes once R5 gives list edits their own path. The owner kept it for speed
-on 2026-10-04, so a removal goes back to the owner with numbers.
+pass still earns its bytes once R5 gives list edits their own path. *The owner, 2026-10-08:* the
+2026-10-04 decision to keep it is open; keep or remove it by the measurements, judged by §1.
 
 ### Track M — the model half (the wall research 60 found)
 
@@ -154,9 +154,13 @@ traced, load recorded, one batch per comparison, pages rebuilt by the compiler u
 
 At most three agents at a time; only one browser batch at a time (a lock file, as on 2026-10-08).
 
-## 6. Decisions still the owner's
+## 6. Decisions
 
-- R2's change to `backend.md` §15.3: how a controlled input's guarantee is kept.
-- R6: removing `Rt.trimmed`, if the measurements say so.
-- Anything M2 finds against `List`'s representation.
+*Taken by the owner, 2026-10-08:*
+- **R2 approved:** controlled inputs are kept by the edited-inputs set (`backend.md` §15.3 to
+  be amended). The spec lists every way an input's value can change and how each is caught.
+- **R6 open:** the 2026-10-04 decision to keep `Rt.trimmed` is not binding; the measurements decide.
+
+*Still the owner's:*
+- Anything M2 finds against `List`'s representation. Report it to the owner; do not act on it.
 - Restating any criterion in §1. Not to be proposed again without new evidence.
