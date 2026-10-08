@@ -15,6 +15,16 @@
 // program it runs research 61's TEA corpus, or with --set=dom its renderer
 // corpus. --table prints research 61 §4's table, --list its Appendix A, and
 // no flag every constructor's writes and every hole's read set.
+//
+// --root (research 62) reports, per mounted program, the constructors that
+// write the model's ROOT: a write at path `(model)` that is not `*`. The
+// rules call it exact when the model is not a record (§2.2's `*` row needs a
+// record), but it conflicts with every read, so a handler would mark every
+// group. With --table it prints one row per mounted program and the bounded
+// and exact+indexed shares with root writes counted as unbounded; without, it
+// marks them `(root)` in the listing. --skip=<where>,… leaves those mounted
+// programs out (`--skip=main` for Conduit's pages alone). Neither flag
+// changes any output without it.
 
 import { execFileSync } from "node:child_process";
 import { statSync, readdirSync } from "node:fs";
@@ -26,6 +36,8 @@ let beni = process.env.BENI ?? path.join(repo, "zig-out/fast/bin/beni");
 let asJson = false;
 let asTable = false;
 let asList = false;
+let asRoot = false;
+const skip = new Set();
 let set = "tea";
 const programArgs = [];
 for (const a of process.argv.slice(2)) {
@@ -33,6 +45,8 @@ for (const a of process.argv.slice(2)) {
   else if (a === "--json") asJson = true;
   else if (a === "--table") asTable = true;
   else if (a === "--list") asList = true;
+  else if (a === "--root") asRoot = true;
+  else if (a.startsWith("--skip=")) for (const w of a.slice(7).split(",")) skip.add(w);
   else if (a.startsWith("--set=")) set = a.slice(6);
   else programArgs.push(a.split("+").map((p) => path.resolve(p)).join("+"));
 }
@@ -487,7 +501,7 @@ function typeAt(mods, mod, ty, p) {
       const base = nm.slice(dot + 1);
       let al = null;
       const home = cur && (dot < 0 ? cur : mods.get(cur.imports.get(nm.slice(0, dot)) ?? nm.slice(0, dot)));
-      if (home && home.aliases.has(base)) al = home.aliases.get(base);
+      if (home && home.aliases.has(base)) { al = home.aliases.get(base); cur = home; }
       else if (home && home.types.has(base)) break; // a custom type of its own, not an alias
       else for (const m of mods.values()) if (m.aliases.has(base)) { al = m.aliases.get(base); if (cur) cur = m; }
       if (!al) break;
@@ -1140,7 +1154,38 @@ for (const t of targets) {
     all.push({ program: name, error: String(err.stack).split("\n").slice(0, 3).join(" | ") });
   }
 }
-if (asJson) {
+const isRoot = (c) => c.cls !== "star" && c.writes.some((w) => w.path === "(model)");
+if (asRoot) {
+  for (const p of all) if (!p.error) p.programs = p.programs.filter((q) => !skip.has(q.where));
+}
+if (asRoot && asTable) {
+  const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : "–");
+  const zero = () => ({ ctors: 0, exact: 0, nothing: 0, indexed: 0, structural: 0, star: 0, root: 0, replaced: 0, precise: 0 });
+  const tot = zero();
+  console.log("| program | ctors | exact (of which writes nothing) | indexed | structural | * | root | with a list replaced | bounded | bounded, root as unbounded | exact+indexed | exact+indexed, root as unbounded | exact+indexed, no list replaced |");
+  console.log("|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|");
+  const row = (name, s) =>
+    console.log(`| ${name} | ${s.ctors} | ${s.exact} (${s.nothing}) | ${s.indexed} | ${s.structural} | ${s.star} | ${s.root} | ${s.replaced} | ${s.ctors - s.star} (${pct(s.ctors - s.star, s.ctors)}) | ${s.ctors - s.star - s.root} (${pct(s.ctors - s.star - s.root, s.ctors)}) | ${s.exact + s.indexed} (${pct(s.exact + s.indexed, s.ctors)}) | ${s.exact + s.indexed - s.root} (${pct(s.exact + s.indexed - s.root, s.ctors)}) | ${s.precise} (${pct(s.precise, s.ctors)}) |`);
+  for (const p of all) {
+    if (p.error) { console.log(`| ${p.program} | ERROR ${p.error} |`); continue; }
+    for (const q of p.programs) {
+      if (q.excluded) continue;
+      const s = zero();
+      for (const c of q.ctors) {
+        s.ctors++;
+        s[c.cls]++;
+        if (c.empty) s.nothing++;
+        if (isRoot(c)) s.root++;
+        if (c.flags.includes("list-replaced")) s.replaced++;
+        if ((c.cls === "exact" || c.cls === "indexed") && !c.flags.includes("list-replaced")) s.precise++;
+      }
+      for (const k of Object.keys(tot)) tot[k] += s[k];
+      row(`${p.program} (${q.where})`, s);
+    }
+  }
+  row("**total**", tot);
+} else if (asJson) {
+  if (asRoot) for (const p of all) for (const q of p.programs ?? []) for (const c of q.ctors) c.root = isRoot(c);
   console.log(JSON.stringify(all, null, 1));
 } else if (asList) {
   // One line per program: each constructor and its class. E exact, I indexed,
@@ -1203,7 +1248,7 @@ if (asJson) {
     if (p.error) { console.log(`## ${p.program}\nERROR ${p.error}\n`); continue; }
     for (const q of p.programs) {
       console.log(`## ${p.program} :: ${q.where}`);
-      for (const c of q.ctors) console.log(`  ${c.ctor.padEnd(18)} ${c.cls.padEnd(10)} ${c.origin.padEnd(11)} ${c.writes.map((w) => `${w.path} [${w.cls}${w.flag ? "," + w.flag : ""}: ${w.why}]`).join("; ") || "(writes nothing)"}`);
+      for (const c of q.ctors) console.log(`  ${c.ctor.padEnd(18)} ${(asRoot && isRoot(c) ? c.cls + " (root)" : c.cls).padEnd(10)} ${c.origin.padEnd(11)} ${c.writes.map((w) => `${w.path} [${w.cls}${w.flag ? "," + w.flag : ""}: ${w.why}]`).join("; ") || "(writes nothing)"}`);
       const hc = {};
       for (const h of q.holes) hc[h.cls] = (hc[h.cls] ?? 0) + 1;
       console.log(`  holes ${JSON.stringify(hc)} events ${q.events}`);
