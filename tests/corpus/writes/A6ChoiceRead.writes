@@ -1,0 +1,8 @@
+program A6ChoiceRead.main : Tea.sandbox
+  model A6ChoiceRead.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.on
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole A6ChoiceRead.beni:32:13                    dynamic    reads ρ.on
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

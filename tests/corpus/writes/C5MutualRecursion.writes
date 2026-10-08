@@ -1,0 +1,8 @@
+program C5MutualRecursion.main : Tea.sandbox
+  model C5MutualRecursion.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.a; value ρ.b
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole C5MutualRecursion.beni:44:17               static     reads ρ.c
+  holes 1: static 1, literal 0, static-key 0, dynamic 0

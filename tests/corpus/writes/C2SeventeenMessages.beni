@@ -1,0 +1,148 @@
+-- writes: the first review's C2 (`write-sets.md` §3.1, §6.1, §8.3 item
+-- 10). A page `update` of seventeen constructors behind `GotPageMsg`: its
+-- `case` is on a path, so its `Alt` is keyed — as wide as its type and no
+-- wider, exempt from A — and each of the seventeen keys selects its own arm:
+-- seventeen exact keys, each writing its own field, and no `cap A`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type PageMsg
+    = M1
+    | M2
+    | M3
+    | M4
+    | M5
+    | M6
+    | M7
+    | M8
+    | M9
+    | M10
+    | M11
+    | M12
+    | M13
+    | M14
+    | M15
+    | M16
+    | M17
+
+
+type alias Page =
+    f1 : Int
+    f2 : Int
+    f3 : Int
+    f4 : Int
+    f5 : Int
+    f6 : Int
+    f7 : Int
+    f8 : Int
+    f9 : Int
+    f10 : Int
+    f11 : Int
+    f12 : Int
+    f13 : Int
+    f14 : Int
+    f15 : Int
+    f16 : Int
+    f17 : Int
+
+
+type Msg
+    = GotPageMsg PageMsg
+
+
+type alias Model =
+    page : Page
+
+
+pageUpdate : PageMsg, Page → Page
+pageUpdate msg p =
+    case msg of
+        M1 →
+            { p | f1 = 1 }
+
+        M2 →
+            { p | f2 = 1 }
+
+        M3 →
+            { p | f3 = 1 }
+
+        M4 →
+            { p | f4 = 1 }
+
+        M5 →
+            { p | f5 = 1 }
+
+        M6 →
+            { p | f6 = 1 }
+
+        M7 →
+            { p | f7 = 1 }
+
+        M8 →
+            { p | f8 = 1 }
+
+        M9 →
+            { p | f9 = 1 }
+
+        M10 →
+            { p | f10 = 1 }
+
+        M11 →
+            { p | f11 = 1 }
+
+        M12 →
+            { p | f12 = 1 }
+
+        M13 →
+            { p | f13 = 1 }
+
+        M14 →
+            { p | f14 = 1 }
+
+        M15 →
+            { p | f15 = 1 }
+
+        M16 →
+            { p | f16 = 1 }
+
+        M17 →
+            { p | f17 = 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        GotPageMsg sub →
+            { model | page = pageUpdate sub model.page }
+
+
+view : Model → Html Msg
+view model = <p>{model.page.f1}</p>
+
+
+page0 : Page
+page0 =
+    { f1 = 0
+    , f2 = 0
+    , f3 = 0
+    , f4 = 0
+    , f5 = 0
+    , f6 = 0
+    , f7 = 0
+    , f8 = 0
+    , f9 = 0
+    , f10 = 0
+    , f11 = 0
+    , f12 = 0
+    , f13 = 0
+    , f14 = 0
+    , f15 = 0
+    , f16 = 0
+    , f17 = 0
+    }
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { page = page0 }, update = update, view = view }

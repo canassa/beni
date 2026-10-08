@@ -1,0 +1,43 @@
+-- writes: the adversarial review's A2 (`write-sets.md` §3.2, §8.3 item 2).
+-- `Loaded (Just x)` can fail with the tag `Loaded` in place, so it gives
+-- the default arm no negation: there `Failed reason` is built where the tag may
+-- have been anything, and the write is `value ρ.status`, not a `node` at
+-- the status with a `Failed#0` write below it.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Status
+    = Loading
+    | Loaded (Maybe Int)
+    | Failed String
+
+
+type alias Model =
+    status : Status
+    count : Int
+
+
+type Msg
+    = Fail String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Fail reason →
+            case model.status of
+                Loaded (Just x) →
+                    { model | count = x }
+
+                _ →
+                    { model | status = Failed reason }
+
+
+view : Model → Html Msg
+view model = <p>{model.count}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { status = Loading, count = 0 }, update = update, view = view }

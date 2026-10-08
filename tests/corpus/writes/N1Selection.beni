@@ -1,0 +1,47 @@
+-- writes: the second review's N1 (`write-sets.md` §3.1, §4.2, §8.3 item
+-- 12). `f`'s summary keeps an alternative per arm; called with
+-- `Loaded Nothing`, the first arm's pattern `Loaded (Just _)` fails at
+-- `Nothing` against `Just`, so that alternative is dropped and the default
+-- one kept: `node ρ; value ρ.b` — not `value ρ.a`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Status
+    = Idle
+    | Loaded (Maybe Int)
+
+
+type alias Model =
+    a : Int
+    b : Int
+
+
+type Msg
+    = Go
+
+
+f : Status, Model → Model
+f s m =
+    case s of
+        Loaded (Just _) →
+            { m | a = 1 }
+
+        _ →
+            { m | b = 2 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            f (Loaded Nothing) model
+
+
+view : Model → Html Msg
+view model = <p>{model.a}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { a = 0, b = 0 }, update = update, view = view }

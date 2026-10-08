@@ -1,0 +1,14 @@
+program BaseRules.main : Tea.sandbox
+  model BaseRules.Model
+  init
+    literal ρ
+  key Stay                                        exact      ∅
+  key Bump                                        exact      node ρ; value ρ.count
+  key Deep                                        exact      node ρ; node ρ.inner; value ρ.inner.a
+  key Reset                                       exact      node ρ; value ρ.label
+  key Swap                                        exact      node ρ; value ρ.inner
+  keys 5: bounded 5 (100%), exact 5, indexed 0, structural 0, * 0; capped 0
+  hole BaseRules.beni:58:12                       dynamic    reads ρ.label
+  hole BaseRules.beni:59:12                       dynamic    reads ρ.inner.b
+  hole BaseRules.beni:60:12                       dynamic    reads ρ.count
+  holes 3: static 0, literal 0, static-key 0, dynamic 3

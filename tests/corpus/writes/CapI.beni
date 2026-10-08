@@ -1,0 +1,46 @@
+-- writes: the cap I = 4 (`write-sets.md` §4.3, §6.1, O2). `grow` wraps a
+-- field once more on every unfolding, so each round of its fixpoint adds an
+-- alternative one constructor deeper than the last and no round repeats the
+-- one before. After four rounds its summary is `Fresh` of its parameters —
+-- above every fixpoint, so sound — which the dump names on a `summary` line;
+-- the key that calls it is `value ρ`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Nest
+    = Leaf
+    | Wrap Nest
+
+
+type alias Model =
+    nest : Nest
+    count : Int
+
+
+type Msg
+    = Grow Int
+
+
+grow : Int, Model → Model
+grow n m =
+    if n == 0 then
+        m
+    else
+        grow (n - 1) { m | nest = Wrap m.nest }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Grow n →
+            grow n model
+
+
+view : Model → Html Msg
+view model = <p>{model.count}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { nest = Leaf, count = 0 }, update = update, view = view }

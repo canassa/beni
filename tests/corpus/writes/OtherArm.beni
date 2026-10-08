@@ -1,0 +1,59 @@
+-- writes: `other → other` (`write-sets.md` §3.1, §3.2): a `case` whose
+-- arms are kept apart until the value lands, and a later arm that binds the
+-- scrutinee's own path. `Slow` turns `Loading` into `LoadingSlowly` and
+-- leaves every other status as it was: the `Alt` lands at `ρ.feed` as
+-- `value ρ.feed` (the first arm's literal), not as `value ρ`. `Keep` is the
+-- same shape with no arm that changes anything: the default arm re-binds
+-- `ρ.feed` at `ρ.feed`, which is the very value, so ∅ beyond the rebuilt
+-- record.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Status
+    = Loading
+    | LoadingSlowly
+    | Loaded Int
+
+
+type alias Model =
+    feed : Status
+    tags : String
+
+
+type Msg
+    = Slow
+    | Keep
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Slow →
+            feed =
+                case model.feed of
+                    Loading →
+                        LoadingSlowly
+
+                    other →
+                        other
+            { model | feed = feed }
+
+        Keep →
+            feed =
+                case model.feed of
+                    other →
+                        other
+            { model | feed = feed }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{model.tags}</p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { feed = Loading, tags = "none" }, update = update, view = view }

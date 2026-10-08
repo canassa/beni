@@ -1,0 +1,8 @@
+program B7AppendAndElement.main : Tea.sandbox
+  model B7AppendAndElement.Model
+  init
+    literal ρ
+  key (any)                                       structural node ρ; value ρ.xs ⟨append⟩; node ρ.xs[*]; value ρ.xs[*].f
+  keys 1: bounded 1 (100%), exact 0, indexed 0, structural 1, * 0; capped 0
+  hole B7AppendAndElement.beni:35:17              dynamic    reads ρ.xs
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

@@ -1,0 +1,128 @@
+program NoEditing.main : Tea.element
+  model NoEditing.Model
+  init
+    literal ρ.draft
+  key Typed                                       exact      node ρ; value ρ.draft
+  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
+  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key ToggleAll                                   structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key Destroy                                     structural node ρ; value ρ.todos ⟨removeSome⟩
+  key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
+  key UrlChanged · Just                           exact      node ρ; value ρ.filter
+  key UrlChanged · _                              exact      node ρ; value ρ.filter
+  keys 8: bounded 8 (100%), exact 3, indexed 1, structural 4, * 0; capped 0
+  hole NoEditing.beni:184:17                      dynamic    reads ρ.draft
+  hole NoEditing.beni:189:31                      dynamic    reads ρ.todos
+  hole NoEditing.beni:194:17                      dynamic    reads ρ.todos
+  hole NoEditing.beni:199:18                      dynamic    reads ρ.todos
+  hole NoEditing.beni:201:29                      dynamic    reads ρ.todos
+  hole NoEditing.beni:206:37                      dynamic    reads ρ.todos
+  hole NoEditing.beni:209:40                      dynamic    reads ρ.todos
+  hole NoEditing.beni:217:32                      dynamic    reads ρ.todos
+  hole NoEditing.beni:219:25                      dynamic    reads ρ.todos
+  hole NoEditing.beni:219:55                      dynamic    reads ρ.todos
+  hole NoEditing.beni:226:34                      dynamic    reads ρ.filter
+  hole NoEditing.beni:228:40                      dynamic    reads ρ.filter
+  hole NoEditing.beni:231:43                      dynamic    reads ρ.filter
+  hole NoEditing.beni:239:17                      dynamic    reads ρ.todos
+  holes 14: static 0, literal 0, static-key 0, dynamic 14
+program NoRouting.main : Tea.element
+  model NoRouting.Model
+  init
+    literal ρ.draft; ρ.editing; ρ.filter
+  key Typed                                       exact      node ρ; value ρ.draft
+  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
+  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key ToggleAll                                   structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key Destroy                                     structural node ρ; value ρ.todos ⟨removeSome⟩
+  key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
+  key SetFilter                                   exact      node ρ; value ρ.filter
+  key StartEdit                                   exact      node ρ; value ρ.editing
+  key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
+  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  keys 11: bounded 11 (100%), exact 4, indexed 1, structural 6, * 0; capped 0
+  hole NoRouting.beni:240:17                      dynamic    reads ρ.editing.Just#0.draft
+  hole NoRouting.beni:261:17                      dynamic    reads ρ.draft
+  hole NoRouting.beni:266:31                      dynamic    reads ρ.todos
+  hole NoRouting.beni:271:17                      dynamic    reads ρ.todos
+  hole NoRouting.beni:276:18                      dynamic    reads ρ.todos
+  hole NoRouting.beni:279:29                      dynamic    reads ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; ρ.todos
+  hole NoRouting.beni:288:37                      dynamic    reads ρ.todos
+  hole NoRouting.beni:292:37                      dynamic    reads ρ.todos
+  hole NoRouting.beni:296:29                      dynamic    reads ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; ρ.todos
+  hole NoRouting.beni:302:32                      dynamic    reads ρ.todos
+  hole NoRouting.beni:304:25                      dynamic    reads ρ.todos
+  hole NoRouting.beni:304:55                      dynamic    reads ρ.todos
+  hole NoRouting.beni:314:25                      dynamic    reads ρ.filter
+  hole NoRouting.beni:323:25                      dynamic    reads ρ.filter
+  hole NoRouting.beni:332:25                      dynamic    reads ρ.filter
+  hole NoRouting.beni:342:17                      dynamic    reads ρ.todos
+  holes 16: static 0, literal 0, static-key 0, dynamic 16
+program NoStorage.main : Tea.element
+  model NoStorage.Model
+  init
+    literal ρ.draft; ρ.editing; ρ.nextId; ρ.todos
+  key Typed                                       exact      node ρ; value ρ.draft
+  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
+  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key ToggleAll                                   structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key Destroy                                     structural node ρ; value ρ.todos ⟨removeSome⟩
+  key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
+  key UrlChanged · Just                           exact      node ρ; value ρ.filter
+  key UrlChanged · _                              exact      node ρ; value ρ.filter
+  key StartEdit                                   exact      node ρ; value ρ.editing
+  key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
+  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  keys 12: bounded 12 (100%), exact 5, indexed 1, structural 6, * 0; capped 0
+  hole NoStorage.beni:219:17                      dynamic    reads ρ.editing.Just#0.draft
+  hole NoStorage.beni:240:17                      dynamic    reads ρ.draft
+  hole NoStorage.beni:245:31                      dynamic    reads ρ.todos
+  hole NoStorage.beni:250:17                      dynamic    reads ρ.todos
+  hole NoStorage.beni:255:18                      dynamic    reads ρ.todos
+  hole NoStorage.beni:258:29                      dynamic    reads ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; ρ.todos
+  hole NoStorage.beni:267:37                      dynamic    reads ρ.todos
+  hole NoStorage.beni:271:37                      dynamic    reads ρ.todos
+  hole NoStorage.beni:275:29                      dynamic    reads ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; ρ.todos
+  hole NoStorage.beni:281:32                      dynamic    reads ρ.todos
+  hole NoStorage.beni:283:25                      dynamic    reads ρ.todos
+  hole NoStorage.beni:283:55                      dynamic    reads ρ.todos
+  hole NoStorage.beni:290:34                      dynamic    reads ρ.filter
+  hole NoStorage.beni:292:40                      dynamic    reads ρ.filter
+  hole NoStorage.beni:295:43                      dynamic    reads ρ.filter
+  hole NoStorage.beni:303:17                      dynamic    reads ρ.todos
+  holes 16: static 0, literal 0, static-key 0, dynamic 16
+program Sandbox.main : Tea.sandbox
+  model Sandbox.Model
+  init
+    literal ρ
+  key Typed                                       exact      node ρ; value ρ.draft
+  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
+  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key ToggleAll                                   structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key Destroy                                     structural node ρ; value ρ.todos ⟨removeSome⟩
+  key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
+  key SetFilter                                   exact      node ρ; value ρ.filter
+  key StartEdit                                   exact      node ρ; value ρ.editing
+  key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
+  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  keys 11: bounded 11 (100%), exact 4, indexed 1, structural 6, * 0; capped 0
+  hole Sandbox.beni:186:17                        dynamic    reads ρ.editing.Just#0.draft
+  hole Sandbox.beni:207:17                        dynamic    reads ρ.draft
+  hole Sandbox.beni:212:31                        dynamic    reads ρ.todos
+  hole Sandbox.beni:217:17                        dynamic    reads ρ.todos
+  hole Sandbox.beni:222:18                        dynamic    reads ρ.todos
+  hole Sandbox.beni:225:29                        dynamic    reads ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; ρ.todos
+  hole Sandbox.beni:234:37                        dynamic    reads ρ.todos
+  hole Sandbox.beni:238:37                        dynamic    reads ρ.todos
+  hole Sandbox.beni:242:29                        dynamic    reads ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; ρ.todos
+  hole Sandbox.beni:248:32                        dynamic    reads ρ.todos
+  hole Sandbox.beni:250:25                        dynamic    reads ρ.todos
+  hole Sandbox.beni:250:55                        dynamic    reads ρ.todos
+  hole Sandbox.beni:260:25                        dynamic    reads ρ.filter
+  hole Sandbox.beni:269:25                        dynamic    reads ρ.filter
+  hole Sandbox.beni:278:25                        dynamic    reads ρ.filter
+  hole Sandbox.beni:288:17                        dynamic    reads ρ.todos
+  holes 16: static 0, literal 0, static-key 0, dynamic 16

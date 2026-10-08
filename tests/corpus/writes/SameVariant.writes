@@ -1,0 +1,12 @@
+program SameVariant.main : Tea.sandbox
+  model SameVariant.Model
+  init
+    literal ρ
+  key Edit                                        exact      node ρ; node ρ.status; node ρ.status.Loaded#0; value ρ.status.Loaded#0.title
+  key Wrap                                        exact      node ρ; node ρ.box; value ρ.box.Box#0
+  key Settle                                      exact      node ρ; node ρ.phase; value ρ.phase.Saved#0
+  key Fail                                        exact      node ρ; value ρ.status
+  keys 4: bounded 4 (100%), exact 4, indexed 0, structural 0, * 0; capped 0
+  hole SameVariant.beni:88:9                      dynamic    reads ρ.status; ρ.status.Loaded#0.body
+  hole SameVariant.beni:90:20                     dynamic    reads ρ.status.Loaded#0.body
+  holes 2: static 0, literal 0, static-key 0, dynamic 2

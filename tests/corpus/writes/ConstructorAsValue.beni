@@ -1,0 +1,63 @@
+-- writes: a constructor passed as a function value, bare and through a
+-- placeholder, and re-applied by a higher-order helper (`write-sets.md`
+-- §4.2, §10.1): `updateWith Page _` and `updateWith (Pair tag _) _` are seen
+-- through to the constructor, so under the arm that matched the same
+-- variant the write lands below it — `node ρ`, `node ρ.Page#0`, the
+-- counter's field — and `Pair`'s first argument, passed through the
+-- placeholder, is the very value it was.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Counter =
+    n : Int
+    label : String
+
+
+type Model
+    = Page Counter
+    | Pair String Counter
+
+
+type Msg
+    = Inc
+    | Rename String
+
+
+updateWith : (Counter → Model), Counter → Model
+updateWith toModel counter = toModel counter
+
+
+bump : Counter → Counter
+bump counter = { counter | n = counter.n + 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case ( msg, model ) of
+        ( Inc, Page counter ) →
+            updateWith Page (bump counter)
+
+        ( Inc, Pair tag counter ) →
+            updateWith (Pair tag _) (bump counter)
+
+        ( Rename name, Pair _ counter ) →
+            Pair name counter
+
+        ( Rename _, Page _ ) →
+            model
+
+
+view : Model → Html Msg
+view model =
+    case model of
+        Page counter →
+            <p>{counter.label}</p>
+
+        Pair tag _ →
+            <p>{tag}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = Page { n = 0, label = "a" }, update = update, view = view }

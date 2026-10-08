@@ -1,0 +1,62 @@
+-- writes: the adversarial review's A1 (`write-sets.md` §3.2, §4.4, §8.3
+-- item 1). The first arm tests two paths — the message's tag and the
+-- page's — so its failure says nothing about either, and the fallthrough
+-- `( _, _ )` can run for `GotHomeMsg` when the page is another one: every
+-- `GotHomeMsg · X` key holds the fallthrough's `value ρ.warning`, which a
+-- rule that negated the first arm would have missed.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type HomeMsg
+    = Clicked
+    | Typed String
+
+
+type alias HomeModel =
+    clicks : Int
+    text : String
+
+
+type Page
+    = Home HomeModel
+    | Other
+
+
+type Msg
+    = GotHomeMsg HomeMsg
+    | Leave
+
+
+type alias Model =
+    page : Page
+    warning : String
+
+
+homeUpdate : HomeMsg, HomeModel → HomeModel
+homeUpdate msg home =
+    case msg of
+        Clicked →
+            { home | clicks = home.clicks + 1 }
+
+        Typed s →
+            { home | text = s }
+
+
+update : Msg, Model → Model
+update msg model =
+    case ( msg, model.page ) of
+        ( GotHomeMsg sub, Home home ) →
+            { model | page = Home (homeUpdate sub home) }
+
+        ( _, _ ) →
+            { model | warning = "stale" }
+
+
+view : Model → Html Msg
+view model = <p>{model.warning}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { page = Other, warning = "" }, update = update, view = view }

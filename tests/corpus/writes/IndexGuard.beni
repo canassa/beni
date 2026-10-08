@@ -1,0 +1,67 @@
+-- writes: guards on an `indexedMap` index (`write-sets.md` §3.3,
+-- *Guards on an index*; §10.4). `SwapRows` is the table app's: `List.get`
+-- at 1 and 998, then an `indexedMap` whose callback answers another row
+-- only where `i == 1` or `i == 998` — the writes are at `[1]` and `[998]`,
+-- not `[*]`. `Every10` guards on `Int.mod i 10 == 0`, which is no index
+-- equality: `[*]`, with the element's own `label` write below it.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+
+
+type Msg
+    = SwapRows
+    | Every10
+
+
+swapRows : List Row → List Row
+swapRows rows =
+    case ( List.get rows 1, List.get rows 998 ) of
+        ( Just a, Just b ) →
+            List.indexedMap rows λi row →
+                if i == 1 then
+                    b
+                else if i == 998 then
+                    a
+                else
+                    row
+
+        _ →
+            rows
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        SwapRows →
+            { model | rows = swapRows model.rows }
+
+        Every10 →
+            { model
+                | rows =
+                    List.indexedMap model.rows λi row →
+                        if Int.mod i 10 == 0 then
+                            { row | label = row.label ++ " !!!" }
+                        else
+                            row
+            }
+
+
+view : Model → Html Msg
+view model =
+    <table>
+        <For each={model.rows} keyed={False}>{λrow → <tr><td>{row.label}</td></tr>}</For>
+    </table>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { rows = [] }, update = update, view = view }

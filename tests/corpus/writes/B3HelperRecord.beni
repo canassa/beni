@@ -1,0 +1,35 @@
+-- writes: B3's other shape (`write-sets.md` §1.1, §8.3 item 6): the
+-- program record is returned by a helper rather than written where it is
+-- handed to `Tea.sandbox`, so the pass cannot trace `main` to a record of
+-- the required shape: `program <unrecognised>`, `key * * value ρ` — and
+-- its view, a lambda inside the same record, is not traced either, so no
+-- hole is listed at all: none can be called static.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+type alias App =
+    init : Model
+    update : Msg, Model → Model
+    view : Model → Html Msg
+
+
+app : ⊤ → App
+app _ =
+    { init = { count = 0 }
+    , update = λ_ model → { model | count = model.count + 1 }
+    , view = λmodel → <p>{model.count}</p>
+    }
+
+
+main : Browser.Program
+main = Tea.sandbox (app ⊤)

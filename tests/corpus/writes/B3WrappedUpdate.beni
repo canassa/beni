@@ -1,0 +1,44 @@
+-- writes: the adversarial review's B3 (`write-sets.md` §1.1, §8.1, §8.3
+-- item 6). `update` is wrapped by a helper: a field computed by a call is
+-- not a program the pass recognises, so the dump says so — one key, `*`,
+-- writing `value ρ`, and every hole `dynamic`. "No program found" is never
+-- "no writes".
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    count : Int
+    title : String
+
+
+type Msg
+    = Inc
+
+
+withLogging : (Msg, Model → Model × Cmd Msg) → (Msg, Model → Model × Cmd Msg)
+withLogging f = λmsg model → f msg model
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Inc →
+            ( { model | count = model.count + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model = <p>{model.title}</p>
+
+
+main : Browser.Program
+main =
+    Tea.element
+        { init = ( { count = 0, title = "t" }, Cmd.none )
+        , update = withLogging update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,101 @@
+-- writes: a constructor re-applied at the path whose tag is known
+-- (`write-sets.md` §3.4's `Con` rows, §3.2). `Edit` rebuilds `Loaded` under
+-- the arm that matched `Loaded`: `node` at the status, `value` at the one
+-- field of the form it changed. `Wrap` rebuilds `Box`, a type of one
+-- constructor, with no `case` at all (the single-constructor rule). `Settle`
+-- rebuilds `Saved` in an arm reached only after `Loading` and `Saving`
+-- arms, where negation leaves one constructor (the one-constructor-left
+-- rule). `Fail` builds `Failed` where the tag was `Loaded`: the tag may
+-- differ, so `value` at the status.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Form =
+    title : String
+    body : String
+
+
+type Status
+    = Loading
+    | Loaded Form
+    | Failed
+
+
+type Phase
+    = Draft
+    | Saving
+    | Saved Int
+
+
+type Box
+    = Box Int Int
+
+
+type alias Model =
+    status : Status
+    box : Box
+    phase : Phase
+
+
+type Msg
+    = Edit String
+    | Wrap
+    | Settle
+    | Fail
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Edit text →
+            case model.status of
+                Loaded form →
+                    { model | status = Loaded { form | title = text } }
+
+                _ →
+                    model
+
+        Wrap →
+            case model.box of
+                Box a b →
+                    { model | box = Box (a + 1) b }
+
+        Settle →
+            case model.phase of
+                Draft →
+                    model
+
+                Saving →
+                    model
+
+                _ →
+                    { model | phase = Saved 1 }
+
+        Fail →
+            case model.status of
+                Loaded _ →
+                    { model | status = Failed }
+
+                _ →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {case model.status of
+            Loaded form →
+                <p>{form.body}</p>
+
+            _ →
+                <p>…</p>
+        }
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { status = Loading, box = Box 0 0, phase = Draft }, update = update, view = view }

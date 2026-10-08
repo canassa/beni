@@ -1,0 +1,39 @@
+-- writes: the adversarial review's B7 (`write-sets.md` §2.4, §8.3 item 8).
+-- One key appends to the list on one arm and rewrites a field of every
+-- element on the other. Joining the two keeps both: `value ρ.xs ⟨append⟩`
+-- AND the element write `value ρ.xs[*].f` below it, which a join that let
+-- the list's tag swallow its elements would have dropped.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Item =
+    f : Int
+
+
+type alias Model =
+    xs : List Item
+    grow : Bool
+
+
+type Msg
+    = Step
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Step →
+            if model.grow then
+                { model | xs = List.push model.xs { f = 0 } }
+            else
+                { model | xs = List.map model.xs λx → { x | f = x.f + 1 } }
+
+
+view : Model → Html Msg
+view model = <p>{List.length model.xs}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { xs = [], grow = True }, update = update, view = view }

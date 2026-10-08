@@ -1,0 +1,77 @@
+-- The identities the write-set pass's core rows rest on that no other
+-- fixture pins (`write-sets.md` §3.7, §5.4 item 3; `src/writes/Core.zig`),
+-- observed through a test platform's `refEq` (`backend.md` §15.8):
+--
+--   * `Debug.log tag x` returns `x` itself, not a copy — a promise the
+--     write-set document makes, so that `update = λmsg model → Debug.log
+--     "m" model` writes nothing;
+--   * `push`, `cons`, `reverse` keep each element's identity;
+--   * `get`, `head` and `last` answer `Just` of the element itself;
+--   * `filterMap` whose callback answers `Just` of its element keeps it.
+--
+-- Every line prints `same`; a line that prints `copied` is a sibling that no
+-- longer honours its row.
+import Debug
+import Identity
+import List
+import Node
+
+
+type alias Row =
+    id : Int
+
+
+show : String, Bool → String
+show label b =
+    if b then
+        label ++ " same"
+    else
+        label ++ " copied"
+
+
+firstIs : List Row, Row → Bool
+firstIs xs r =
+    case xs of
+        [ x, …_ ] →
+            Identity.refEq x r
+
+        [] →
+            False
+
+
+lastIs : List Row, Row → Bool
+lastIs xs r =
+    case List.last xs of
+        Just x →
+            Identity.refEq x r
+
+        Nothing →
+            False
+
+
+justIs : Maybe Row, Row → Bool
+justIs m r =
+    case m of
+        Just x →
+            Identity.refEq x r
+
+        Nothing →
+            False
+
+
+main : Node.Program
+main =
+    a = { id = 1 }
+    b = { id = 2 }
+    rows = [ a, b ]
+    Node.printLines
+        [ show "Debug.log" (Identity.refEq (Debug.log "row" a) a)
+        , show "Debug.log list" (Identity.refEq (Debug.log "rows" rows) rows)
+        , show "push element" (firstIs (List.push rows { id = 3 }) a)
+        , show "cons element" (lastIs (List.cons { id = 0 } rows) b)
+        , show "reverse element" (lastIs (List.reverse rows) a)
+        , show "get element" (justIs (List.get rows 1) b)
+        , show "head element" (justIs (List.head rows) a)
+        , show "last element" (justIs (List.last rows) b)
+        , show "filterMap element" (firstIs (List.filterMap rows λr → Just r) a)
+        ]

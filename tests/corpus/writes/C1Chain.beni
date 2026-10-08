@@ -1,0 +1,403 @@
+-- writes: the first review's C1 (`write-sets.md` §3.1, §6.1, §8.3 item 9).
+-- Thirty lines `aₙ = if … then aₙ₋₁ else bₙ₋₁` (and `bₙ` the other way
+-- round) in a helper `update` calls: each line reads both of the line
+-- before, so the value is a DAG of 2n nodes and a tree of 2ⁿ. Terms are
+-- shared and a join of the same choice is flattened, so the helper's
+-- summary is the two values it can return, and the key's set is `value` at
+-- the one field written — not `Fresh`, not `value ρ`, and no cap.
+-- `tests/blackbox/perf_test.zig` times the chain at two lengths.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    pick : Int
+
+
+type Msg
+    = Go
+
+
+pick : Int, Int, Int → Int
+pick c x y =
+    a0 = x
+
+    b0 = y
+
+    a1 =
+        if c == 1 then
+            a0
+        else
+            b0
+
+    b1 =
+        if c == 101 then
+            b0
+        else
+            a0
+
+    a2 =
+        if c == 2 then
+            a1
+        else
+            b1
+
+    b2 =
+        if c == 102 then
+            b1
+        else
+            a1
+
+    a3 =
+        if c == 3 then
+            a2
+        else
+            b2
+
+    b3 =
+        if c == 103 then
+            b2
+        else
+            a2
+
+    a4 =
+        if c == 4 then
+            a3
+        else
+            b3
+
+    b4 =
+        if c == 104 then
+            b3
+        else
+            a3
+
+    a5 =
+        if c == 5 then
+            a4
+        else
+            b4
+
+    b5 =
+        if c == 105 then
+            b4
+        else
+            a4
+
+    a6 =
+        if c == 6 then
+            a5
+        else
+            b5
+
+    b6 =
+        if c == 106 then
+            b5
+        else
+            a5
+
+    a7 =
+        if c == 7 then
+            a6
+        else
+            b6
+
+    b7 =
+        if c == 107 then
+            b6
+        else
+            a6
+
+    a8 =
+        if c == 8 then
+            a7
+        else
+            b7
+
+    b8 =
+        if c == 108 then
+            b7
+        else
+            a7
+
+    a9 =
+        if c == 9 then
+            a8
+        else
+            b8
+
+    b9 =
+        if c == 109 then
+            b8
+        else
+            a8
+
+    a10 =
+        if c == 10 then
+            a9
+        else
+            b9
+
+    b10 =
+        if c == 110 then
+            b9
+        else
+            a9
+
+    a11 =
+        if c == 11 then
+            a10
+        else
+            b10
+
+    b11 =
+        if c == 111 then
+            b10
+        else
+            a10
+
+    a12 =
+        if c == 12 then
+            a11
+        else
+            b11
+
+    b12 =
+        if c == 112 then
+            b11
+        else
+            a11
+
+    a13 =
+        if c == 13 then
+            a12
+        else
+            b12
+
+    b13 =
+        if c == 113 then
+            b12
+        else
+            a12
+
+    a14 =
+        if c == 14 then
+            a13
+        else
+            b13
+
+    b14 =
+        if c == 114 then
+            b13
+        else
+            a13
+
+    a15 =
+        if c == 15 then
+            a14
+        else
+            b14
+
+    b15 =
+        if c == 115 then
+            b14
+        else
+            a14
+
+    a16 =
+        if c == 16 then
+            a15
+        else
+            b15
+
+    b16 =
+        if c == 116 then
+            b15
+        else
+            a15
+
+    a17 =
+        if c == 17 then
+            a16
+        else
+            b16
+
+    b17 =
+        if c == 117 then
+            b16
+        else
+            a16
+
+    a18 =
+        if c == 18 then
+            a17
+        else
+            b17
+
+    b18 =
+        if c == 118 then
+            b17
+        else
+            a17
+
+    a19 =
+        if c == 19 then
+            a18
+        else
+            b18
+
+    b19 =
+        if c == 119 then
+            b18
+        else
+            a18
+
+    a20 =
+        if c == 20 then
+            a19
+        else
+            b19
+
+    b20 =
+        if c == 120 then
+            b19
+        else
+            a19
+
+    a21 =
+        if c == 21 then
+            a20
+        else
+            b20
+
+    b21 =
+        if c == 121 then
+            b20
+        else
+            a20
+
+    a22 =
+        if c == 22 then
+            a21
+        else
+            b21
+
+    b22 =
+        if c == 122 then
+            b21
+        else
+            a21
+
+    a23 =
+        if c == 23 then
+            a22
+        else
+            b22
+
+    b23 =
+        if c == 123 then
+            b22
+        else
+            a22
+
+    a24 =
+        if c == 24 then
+            a23
+        else
+            b23
+
+    b24 =
+        if c == 124 then
+            b23
+        else
+            a23
+
+    a25 =
+        if c == 25 then
+            a24
+        else
+            b24
+
+    b25 =
+        if c == 125 then
+            b24
+        else
+            a24
+
+    a26 =
+        if c == 26 then
+            a25
+        else
+            b25
+
+    b26 =
+        if c == 126 then
+            b25
+        else
+            a25
+
+    a27 =
+        if c == 27 then
+            a26
+        else
+            b26
+
+    b27 =
+        if c == 127 then
+            b26
+        else
+            a26
+
+    a28 =
+        if c == 28 then
+            a27
+        else
+            b27
+
+    b28 =
+        if c == 128 then
+            b27
+        else
+            a27
+
+    a29 =
+        if c == 29 then
+            a28
+        else
+            b28
+
+    b29 =
+        if c == 129 then
+            b28
+        else
+            a28
+
+    a30 =
+        if c == 30 then
+            a29
+        else
+            b29
+
+    b30 =
+        if c == 130 then
+            b29
+        else
+            a29
+    a30
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            { model | count = pick model.pick model.count 1 }
+
+
+view : Model → Html Msg
+view model = <p>{model.count}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { count = 0, pick = 0 }, update = update, view = view }

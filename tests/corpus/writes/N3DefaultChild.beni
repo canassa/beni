@@ -1,0 +1,41 @@
+-- writes: the second review's N3 (`write-sets.md` §4.4, §8.3 item 13). The
+-- message type has three constructors and `update` names two, then ends in
+-- `_`: the split has a default child for the constructor no arm names, so
+-- there are three leaves, `A`, `B` and `_`, the last writing `ρ.seen` — and
+-- every constructor of the type is under exactly one of them.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    b : Int
+    seen : Bool
+
+
+type Msg
+    = A
+    | B
+    | C
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        A →
+            { model | a = 1 }
+
+        B →
+            { model | b = 1 }
+
+        _ →
+            { model | seen = True }
+
+
+view : Model → Html Msg
+view model = <p>{model.a}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { a = 0, b = 0, seen = False }, update = update, view = view }

@@ -1,0 +1,82 @@
+-- writes: the cap A = 16 (`write-sets.md` §3.1, §6.1, O2). A `case` on an
+-- `Int` is no constructor test, so its `Alt` is plain; with seventeen arms
+-- it is one wider than A, and is `Fresh` of everything it reads. Each arm
+-- updates the model, so the key's set is `value ρ`, marked `(cap A)`: the
+-- top, never an error.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    n : Int
+    a : Int
+
+
+type Msg
+    = Go
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            case model.n of
+                1 →
+                    { model | a = 1 }
+
+                2 →
+                    { model | a = 2 }
+
+                3 →
+                    { model | a = 3 }
+
+                4 →
+                    { model | a = 4 }
+
+                5 →
+                    { model | a = 5 }
+
+                6 →
+                    { model | a = 6 }
+
+                7 →
+                    { model | a = 7 }
+
+                8 →
+                    { model | a = 8 }
+
+                9 →
+                    { model | a = 9 }
+
+                10 →
+                    { model | a = 10 }
+
+                11 →
+                    { model | a = 11 }
+
+                12 →
+                    { model | a = 12 }
+
+                13 →
+                    { model | a = 13 }
+
+                14 →
+                    { model | a = 14 }
+
+                15 →
+                    { model | a = 15 }
+
+                16 →
+                    { model | a = 16 }
+
+                _ →
+                    { model | a = 0 }
+
+
+view : Model → Html Msg
+view model = <p>{model.a}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { n = 0, a = 0 }, update = update, view = view }

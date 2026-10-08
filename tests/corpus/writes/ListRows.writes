@@ -1,0 +1,27 @@
+program ListRows.main : Tea.sandbox
+  model ListRows.Model
+  init
+    literal ρ
+  key MapSame                                     exact      node ρ
+  key MapField                                    structural node ρ; node ρ.rows ⟨kept⟩; node ρ.rows[*]; value ρ.rows[*].label
+  key Keep                                        structural node ρ; value ρ.rows ⟨removeSome⟩
+  key Pick                                        structural node ρ; value ρ.rows ⟨removeSome⟩
+  key Touch                                       indexed    node ρ; node ρ.rows ⟨kept⟩; node ρ.rows[i]; value ρ.rows[i].label
+  key Put                                         indexed    node ρ; node ρ.rows ⟨kept⟩; node ρ.rows[i]; value ρ.rows[i].id; value ρ.rows[i].label
+  key Exchange                                    indexed    node ρ; value ρ.rows ⟨swap 0 1⟩
+  key Add                                         indexed    node ρ; value ρ.rows ⟨append⟩
+  key Join                                        indexed    node ρ; value ρ.rows ⟨append⟩
+  key Front                                       indexed    node ρ; value ρ.rows ⟨prepend⟩
+  key Trim                                        structural node ρ; value ρ.rows ⟨removeSome⟩
+  key Rest                                        indexed    node ρ; value ρ.rows ⟨replaced⟩
+  key Into                                        indexed    node ρ; value ρ.rows ⟨insert i⟩
+  key Out                                         indexed    node ρ; value ρ.rows ⟨removeAt i⟩
+  key Order                                       structural node ρ; value ρ.rows ⟨permute⟩
+  key First                                       exact      node ρ; value ρ.first
+  key Count                                       exact      node ρ; value ρ.total
+  keys 17: bounded 17 (100%), exact 3, indexed 9, structural 5, * 0; capped 0
+  hole ListRows.beni:119:10                       dynamic    reads ρ.rows
+  hole ListRows.beni:119:53                       static-key reads ρ.rows[*].id
+  hole ListRows.beni:119:78                       dynamic    reads ρ.rows[*].label
+  hole ListRows.beni:120:12                       dynamic    reads ρ.total
+  holes 4: static 0, literal 0, static-key 1, dynamic 3

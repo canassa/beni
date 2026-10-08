@@ -1,0 +1,50 @@
+-- writes: the second review's N2 (`write-sets.md` §3.4's `kept` row, §10.5,
+-- §8.3 item 14). TodoMVC's `Toggle`: a `map` whose callback rebuilds the
+-- todo with the given id and answers every other one itself. The element's
+-- result is diffed against its own root and rebased to the position, so the
+-- write is `node ρ.todos[*]; value ρ.todos[*].completed` and the row's
+-- `title` hole, which only that key could reach, stays `static`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Todo =
+    id : Int
+    title : String
+    completed : Bool
+
+
+type alias Model =
+    todos : List Todo
+
+
+type Msg
+    = Toggle Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle id →
+            { model
+                | todos =
+                    List.map model.todos λt →
+                        if t.id == id then
+                            { t | completed = not t.completed }
+                        else
+                            t
+            }
+
+
+view : Model → Html Msg
+view model =
+    <ul>
+        <For each={model.todos} keyed={.id}>
+            {λt → <li class={if t.completed then "done" else ""}>{t.title}</li>}
+        </For>
+    </ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { todos = [] }, update = update, view = view }

@@ -1,0 +1,8 @@
+program CapK.main : Tea.sandbox
+  model CapK.Model
+  init
+    literal ρ
+  key (any)                                       exact (cap k) node ρ; node ρ.l1; node ρ.l1.l2; node ρ.l1.l2.l3; node ρ.l1.l2.l3.l4; node ρ.l1.l2.l3.l4.l5; node ρ.l1.l2.l3.l4.l5.l6; node ρ.l1.l2.l3.l4.l5.l6.l7; value ρ.l1.l2.l3.l4.l5.l6.l7.l8
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 1
+  hole CapK.beni:99:17                            dynamic    reads ρ.l1.l2.l3.l4.l5.l6.l7.l8
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

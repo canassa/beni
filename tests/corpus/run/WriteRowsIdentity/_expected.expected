@@ -1,0 +1,11 @@
+row: { id = 1 }
+rows: [{ id = 1 },{ id = 2 }]
+Debug.log same
+Debug.log list same
+push element same
+cons element same
+reverse element same
+get element same
+head element same
+last element same
+filterMap element same

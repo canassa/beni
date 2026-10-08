@@ -1,0 +1,31 @@
+-- writes: the adversarial review's A4 (`write-sets.md` §2.3, §2.5, §8.3
+-- item 3). `Set id v` writes `value ρ.xs[id]`; a hole reads `List.head
+-- model.xs`, which is `ρ.xs[0]`. The two positions are spelled differently
+-- but `id` may be 0 at run time, so they may coincide and the hole is
+-- `dynamic` under `Set`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    xs : List String
+
+
+type Msg
+    = Set Int String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Set id v →
+            { model | xs = List.set model.xs id v }
+
+
+view : Model → Html Msg
+view model = <p>{Maybe.withDefault (List.head model.xs) ""}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { xs = [ "a" ] }, update = update, view = view }

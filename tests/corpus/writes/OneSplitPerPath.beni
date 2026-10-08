@@ -1,0 +1,46 @@
+-- writes: one split per path (`write-sets.md` §4.4, amended by the third
+-- review; §8.3 item 17). Two `case msg of` in a row over a type of three
+-- constructors, the first naming `A`, the second `B`, each ending in `_`:
+-- the message is split once, at its tag, into `A`, `B` and `_` — three
+-- leaves, not nine — and the second `case` is analysed under the key the
+-- first already decided.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+
+
+type Msg
+    = A
+    | B
+    | C
+
+
+update : Msg, Model → Model
+update msg model =
+    first =
+        case msg of
+            A →
+                { model | a = 1 }
+
+            _ →
+                model
+    case msg of
+        B →
+            { first | b = 1 }
+
+        _ →
+            { first | c = 1 }
+
+
+view : Model → Html Msg
+view model = <p>{model.a}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { a = 0, b = 0, c = 0 }, update = update, view = view }

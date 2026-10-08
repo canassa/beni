@@ -1,0 +1,26 @@
+program Main.main : Tea.sandbox
+  model Main.Model
+  init
+    literal ρ
+  key Run                                         indexed    node ρ; value ρ.nextId; value ρ.rows ⟨replaced⟩; value ρ.seed
+  key RunLots                                     indexed    node ρ; value ρ.nextId; value ρ.rows ⟨replaced⟩; value ρ.seed
+  key Add                                         indexed    node ρ; value ρ.nextId; value ρ.rows ⟨append⟩; value ρ.seed
+  key Update                                      structural node ρ; node ρ.rows ⟨kept⟩; node ρ.rows[*]; value ρ.rows[*].label
+  key Clear                                       indexed    node ρ; value ρ.rows ⟨clear⟩
+  key SwapRows                                    indexed    node ρ; node ρ.rows ⟨kept⟩; value ρ.rows[1]; value ρ.rows[998]
+  key Select                                      exact      node ρ; value ρ.selected
+  key Remove                                      structural node ρ; value ρ.rows ⟨removeSome⟩
+  keys 8: bounded 8 (100%), exact 1, indexed 5, structural 2, * 0; capped 0
+  hole Main.beni:202:65                           static     reads ∅
+  hole Main.beni:203:13                           static     reads ∅
+  hole Main.beni:216:25                           static     reads ∅
+  hole Main.beni:217:25                           static     reads ∅
+  hole Main.beni:218:25                           static     reads ∅
+  hole Main.beni:219:25                           static     reads ∅
+  hole Main.beni:220:25                           static     reads ∅
+  hole Main.beni:221:25                           static     reads ∅
+  hole Main.beni:228:18                           dynamic    reads ρ.rows
+  hole Main.beni:230:29                           dynamic    reads ρ.rows[*].id; ρ.selected
+  hole Main.beni:231:50                           static-key reads ρ.rows[*].id
+  hole Main.beni:232:77                           dynamic    reads ρ.rows[*].label
+  holes 12: static 8, literal 0, static-key 1, dynamic 3

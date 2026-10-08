@@ -1,0 +1,50 @@
+-- writes: what `init` makes literal (`write-sets.md` §3.5) and which holes
+-- may be baked (§9.1, B5, N4). `init` is a `Tea.element` pair whose model
+-- is a record of literals, so `literal ρ`. No message writes `title` or
+-- `note`: the `title` hole is exactly a model path whose `init` is a plain
+-- string, alone under an `h1`, so `literal`; `note`'s string holds `&`,
+-- which the serialiser would escape, so it is only `static`; the count is
+-- an `Int` — `static`, never baked (O8).
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    title : String
+    note : String
+    count : Int
+    hits : Int
+
+
+type Msg
+    = Hit
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Hit →
+            ( { model | hits = model.hits + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <h1>{model.title}</h1>
+        <p>{model.note}</p>
+        <span>{model.count}</span>
+        <span>{model.hits}</span>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.element
+        { init = ( { title = "Conduit", note = "A & B", count = 3, hits = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,53 @@
+-- writes: the adversarial review's A3 (`write-sets.md` §2.5, §8.3 item 3).
+-- `SwapRows` writes `value ρ.rows[1]` and `ρ.rows[998]`; a positional
+-- `For`'s row reads `ρ.rows[*].label`, and `[1]` may be the very position
+-- `[*]` stands for, so the row hole is `dynamic` under `SwapRows` — the
+-- only key there is.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+
+
+type Msg
+    = SwapRows
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        SwapRows →
+            case ( List.get model.rows 1, List.get model.rows 998 ) of
+                ( Just a, Just b ) →
+                    { model
+                        | rows =
+                            List.indexedMap model.rows λi row →
+                                if i == 1 then
+                                    b
+                                else if i == 998 then
+                                    a
+                                else
+                                    row
+                    }
+
+                _ →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <ul>
+        <For each={model.rows} keyed={False}>{λrow → <li>{row.label}</li>}</For>
+    </ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { rows = [] }, update = update, view = view }

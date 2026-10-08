@@ -1,0 +1,10 @@
+program A1Fallthrough.main : Tea.sandbox
+  model A1Fallthrough.Model
+  init
+    literal ρ
+  key GotHomeMsg · Clicked                        exact      node ρ; node ρ.page; node ρ.page.Home#0; value ρ.page.Home#0.clicks; value ρ.warning
+  key GotHomeMsg · Typed                          exact      node ρ; node ρ.page; node ρ.page.Home#0; value ρ.page.Home#0.text; value ρ.warning
+  key _                                           exact      node ρ; value ρ.warning
+  keys 3: bounded 3 (100%), exact 3, indexed 0, structural 0, * 0; capped 0
+  hole A1Fallthrough.beni:58:17                   dynamic    reads ρ.warning
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

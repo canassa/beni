@@ -1,0 +1,59 @@
+--! An opaque feed: its model a wrapper of one constructor.
+
+import Html exposing (Html)
+
+
+type alias Item =
+    slug : String
+    title : String
+    liked : Bool
+
+
+type alias Internals =
+    items : List Item
+    errors : List String
+
+
+pub opaque type Model
+    = Model Internals
+
+
+pub type Msg
+    = Dismiss
+    | Like String
+    | Failed String
+
+
+pub init : Model
+init = Model { items = [], errors = [] }
+
+
+pub update : Msg, Model → Model
+update msg (Model model) =
+    case msg of
+        Dismiss →
+            Model { model | errors = [] }
+
+        Like slug →
+            Model
+                { model
+                    | items =
+                        List.map model.items λi →
+                            if i.slug == slug then
+                                { i | liked = True }
+                            else
+                                i
+                }
+
+        Failed reason →
+            Model { model | errors = model.errors ++ [ reason ] }
+
+
+pub view : Model → Html Msg
+view (Model model) =
+    <ul>
+        <For each={model.items} keyed={.slug}>
+            {λi → <li id={i.slug} class={if i.liked then "liked" else ""}>{i.title}</li>}
+        </For>
+        <For each={model.errors} keyed={False}>{λerr → <li>{err}</li>}</For>
+    </ul>

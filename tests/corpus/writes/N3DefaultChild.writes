@@ -1,0 +1,10 @@
+program N3DefaultChild.main : Tea.sandbox
+  model N3DefaultChild.Model
+  init
+    literal ρ
+  key A                                           exact      node ρ; value ρ.a
+  key B                                           exact      node ρ; value ρ.b
+  key _                                           exact      node ρ; value ρ.seen
+  keys 3: bounded 3 (100%), exact 3, indexed 0, structural 0, * 0; capped 0
+  hole N3DefaultChild.beni:37:17                  dynamic    reads ρ.a
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

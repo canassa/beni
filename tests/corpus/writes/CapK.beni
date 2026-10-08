@@ -1,0 +1,111 @@
+-- writes: the cap k = 8 (`write-sets.md` §2.2, §6.1, O1). `Deep` writes a
+-- field ten steps below the model; a path is cut at eight, so the write is
+-- `value` at the eight-step prefix — which covers everything under it — and
+-- the key says `(cap k)`. A hole that reads the field two steps further
+-- down is still `dynamic`: a cut never loses a write.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias L9 =
+    l10 : Int
+
+
+type alias L8 =
+    l9 : L9
+
+
+type alias L7 =
+    l8 : L8
+
+
+type alias L6 =
+    l7 : L7
+
+
+type alias L5 =
+    l6 : L6
+
+
+type alias L4 =
+    l5 : L5
+
+
+type alias L3 =
+    l4 : L4
+
+
+type alias L2 =
+    l3 : L3
+
+
+type alias L1 =
+    l2 : L2
+
+
+type alias Model =
+    l1 : L1
+
+
+type Msg
+    = Deep
+
+
+set9 : L9 → L9
+set9 x = { x | l10 = 1 }
+
+
+set8 : L8 → L8
+set8 x = { x | l9 = set9 x.l9 }
+
+
+set7 : L7 → L7
+set7 x = { x | l8 = set8 x.l8 }
+
+
+set6 : L6 → L6
+set6 x = { x | l7 = set7 x.l7 }
+
+
+set5 : L5 → L5
+set5 x = { x | l6 = set6 x.l6 }
+
+
+set4 : L4 → L4
+set4 x = { x | l5 = set5 x.l5 }
+
+
+set3 : L3 → L3
+set3 x = { x | l4 = set4 x.l4 }
+
+
+set2 : L2 → L2
+set2 x = { x | l3 = set3 x.l3 }
+
+
+set1 : L1 → L1
+set1 x = { x | l2 = set2 x.l2 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Deep →
+            { model | l1 = set1 model.l1 }
+
+
+view : Model → Html Msg
+view model = <p>{model.l1.l2.l3.l4.l5.l6.l7.l8.l9.l10}</p>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            { l1 =
+                { l2 = { l3 = { l4 = { l5 = { l6 = { l7 = { l8 = { l9 = { l10 = 0 } } } } } } } } }
+            }
+        , update = update
+        , view = view
+        }

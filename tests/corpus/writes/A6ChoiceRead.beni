@@ -1,0 +1,36 @@
+-- writes: the adversarial review's A6 (`write-sets.md` §3.6, §8.3 item 5).
+-- `label` is chosen by control flow over `model.on`; both arms are
+-- literals, but which one holds is the scrutinee's, so the hole reads
+-- `ρ.on` — and `Toggle` writes it: `dynamic`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    on : Bool
+
+
+type Msg
+    = Toggle
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | on = not model.on }
+
+
+view : Model → Html Msg
+view model =
+    label =
+        if model.on then
+            "On"
+        else
+            "Off"
+    <button>{label}</button>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { on = False }, update = update, view = view }
