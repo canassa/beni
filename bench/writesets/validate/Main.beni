@@ -1,0 +1,106 @@
+-- The classifier's own check (research 61 §3): one constructor per rule,
+-- including the ones the corpus never reaches. The expected class of each
+-- constructor is the comment above its branch.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Item =
+    id : Int
+    name : String
+
+
+type alias Model =
+    count : Int
+    items : List Item
+    title : String
+
+
+type Msg
+    = Inc
+    | Load String
+    | Rename Int String
+    | Swap
+    | Sort
+    | Restore String
+    | Repeat Int
+    | Reset
+
+
+decode : String → Maybe Model
+decode s =
+    if String.isEmpty s then
+        Nothing
+    else
+        Just { count = String.length s, items = [], title = s }
+
+
+items : String → List Item
+items s = List.map (String.words s) λw → { id = String.length w, name = w }
+
+
+bumpTimes : Int, Model → Model
+bumpTimes n model =
+    if n ≤ 0 then
+        model
+    else
+        bumpTimes (n - 1) { model | count = model.count + 1 }
+
+
+fresh : Model
+fresh = { count = 0, items = [], title = "validate" }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        -- exact: one field
+        Inc →
+            { model | count = model.count + 1 }
+
+        -- exact, a list replaced by a helper's result
+        Load s →
+            { model | items = items s }
+
+        -- indexed: List.update k
+        Rename k s →
+            { model | items = List.update model.items k λi → { i | name = s } }
+
+        -- indexed: List.swap
+        Swap →
+            { model | items = List.swap model.items 0 1 }
+
+        -- structural: a permutation
+        Sort →
+            { model | items = List.sortBy model.items .name }
+
+        -- *: the whole model from a core function's result
+        Restore s →
+            Maybe.withDefault (decode s) model
+
+        -- *: a recursion over the model the analysis does not summarise
+        Repeat n →
+            bumpTimes n model
+
+        -- indexed: every field from a literal, and `items = []` is a clear
+        Reset →
+            fresh
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <h1>{model.title}</h1>
+        <p>{model.count}</p>
+        <ul>
+            <For each={model.items} keyed={.id}>
+                {λi → <li id={"item-${String.fromInt i.id}"}>{i.name}</li>}
+            </For>
+        </ul>
+        <button onClick={Inc}>inc</button>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = fresh, update = update, view = view }
