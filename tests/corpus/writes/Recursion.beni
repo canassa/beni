@@ -1,0 +1,58 @@
+-- writes: a recursive helper, summarised by a fixpoint (`write-sets.md`
+-- §4.3). `bumpTimes` returns the model or a record update of it on every
+-- unfolding, so it settles: `value ρ.count`, no cap. `buildFrom` threads a
+-- list through an accumulator and returns it: nothing relates its result to
+-- the old model by identity, so the list it builds is `value ρ.items`, as
+-- it should be, and still no `value ρ`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    items : List Int
+    label : String
+
+
+type Msg
+    = Repeat Int
+    | Build Int
+
+
+bumpTimes : Int, Model → Model
+bumpTimes n model =
+    if n == 0 then
+        model
+    else
+        bumpTimes (n - 1) { model | count = model.count + 1 }
+
+
+buildFrom : Int, List Int → List Int
+buildFrom n acc =
+    if n == 0 then
+        acc
+    else
+        buildFrom (n - 1) [ n, …acc ]
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Repeat n →
+            bumpTimes n model
+
+        Build n →
+            { model | items = buildFrom n [] }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{model.label}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox { init = { count = 0, items = [], label = "fixed" }, update = update, view = view }

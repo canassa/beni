@@ -1,0 +1,12 @@
+program KeyTree.main : Tea.sandbox
+  model KeyTree.Model
+  init
+    literal ρ
+  key Page · Form · Title                         exact      node ρ; node ρ.form; value ρ.form.title
+  key Page · Form · Body                          exact      node ρ; node ρ.form; value ρ.form.body
+  key Page · Reset                                exact      node ρ; node ρ.form; value ρ.form.body; value ρ.form.title
+  key Quit                                        exact      node ρ; value ρ.done
+  keys 4: bounded 4 (100%), exact 4, indexed 0, structural 0, * 0; capped 0
+  hole KeyTree.beni:70:13                         dynamic    reads ρ.form.title
+  hole KeyTree.beni:71:12                         dynamic    reads ρ.form.body
+  holes 2: static 0, literal 0, static-key 0, dynamic 2

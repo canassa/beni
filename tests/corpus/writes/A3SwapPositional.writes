@@ -1,0 +1,9 @@
+program A3SwapPositional.main : Tea.sandbox
+  model A3SwapPositional.Model
+  init
+    literal ρ
+  key (any)                                       indexed    node ρ; node ρ.rows ⟨kept⟩; value ρ.rows[1]; value ρ.rows[998]
+  keys 1: bounded 1 (100%), exact 0, indexed 1, structural 0, * 0; capped 0
+  hole A3SwapPositional.beni:48:10                dynamic    reads ρ.rows
+  hole A3SwapPositional.beni:48:58                dynamic    reads ρ.rows[*].label
+  holes 2: static 0, literal 0, static-key 0, dynamic 2

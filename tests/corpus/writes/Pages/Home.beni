@@ -1,0 +1,36 @@
+--! A page with a tab and a feed of its own.
+
+import Feed
+import Html exposing (Html)
+
+
+pub type alias Model =
+    tab : String
+    feed : Feed.Model
+
+
+pub type Msg
+    = ClickedTab String
+    | GotFeedMsg Feed.Msg
+
+
+pub init : Model
+init = { tab = "all", feed = Feed.init }
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        ClickedTab tab →
+            { model | tab = tab }
+
+        GotFeedMsg sub →
+            { model | feed = Feed.update sub model.feed }
+
+
+pub view : Model → Html Msg
+view model =
+    <main>
+        <h1>{model.tab}</h1>
+        {Html.map (Feed.view model.feed) GotFeedMsg}
+    </main>

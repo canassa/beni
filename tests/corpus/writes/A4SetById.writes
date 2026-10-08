@@ -1,0 +1,8 @@
+program A4SetById.main : Tea.sandbox
+  model A4SetById.Model
+  init
+    literal ρ
+  key (any)                                       indexed    node ρ; node ρ.xs ⟨kept⟩; value ρ.xs[id]
+  keys 1: bounded 1 (100%), exact 0, indexed 1, structural 0, * 0; capped 0
+  hole A4SetById.beni:27:17                       dynamic    reads ρ.xs[0]
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

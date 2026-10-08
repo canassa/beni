@@ -1,0 +1,51 @@
+-- writes: the cap D = 8 (`write-sets.md` §4.2, §6.1, O2). `run` applies a
+-- function-valued parameter, so its summary is an application node, and
+-- `update` hands it a lambda that calls `run` again with another lambda,
+-- five deep: each level instantiates `run`'s summary and reduces its
+-- application by walking the lambda, nesting two levels at a time. Past
+-- eight the application is `Fresh`, the key is `value ρ`, and it says
+-- `(cap D)`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    x : Int
+
+
+type Msg
+    = Go
+
+
+run : (Model → Model), Model → Model
+run k m = k m
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            run
+                (λm1 →
+                    run
+                        (λm2 →
+                            run
+                                (λm3 →
+                                    run
+                                        (λm4 → run (λm5 → { m5 | x = 1 }) m4)
+                                        m3
+                                )
+                                m2
+                        )
+                        m1
+                )
+                model
+
+
+view : Model → Html Msg
+view model = <p>{model.x}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { x = 0 }, update = update, view = view }

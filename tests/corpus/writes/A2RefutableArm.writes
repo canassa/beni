@@ -1,0 +1,8 @@
+program A2RefutableArm.main : Tea.sandbox
+  model A2RefutableArm.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.count; value ρ.status
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole A2RefutableArm.beni:39:17                  dynamic    reads ρ.count
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

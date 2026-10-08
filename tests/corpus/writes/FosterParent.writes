@@ -1,0 +1,9 @@
+program FosterParent.main : Tea.sandbox
+  model FosterParent.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.clicks
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole FosterParent.beni:32:17                    static     reads ρ.name
+  hole FosterParent.beni:33:21                    literal    reads ρ.name
+  holes 2: static 1, literal 1, static-key 0, dynamic 0

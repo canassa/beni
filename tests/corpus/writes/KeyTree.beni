@@ -1,0 +1,78 @@
+-- writes: a key tree three deep (`write-sets.md` §4.4). The message is a
+-- page's message, which is a form's message, and each level is matched by
+-- a function the one above hands its payload to: `update` splits at the
+-- message, `updatePage` at `Page`'s payload, `updateForm` at `Form`'s. The
+-- leaves are `Page · Form · Title`, `Page · Form · Body`, `Page · Reset`
+-- and `Quit`, each with the write of its own arm only.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type FormMsg
+    = Title String
+    | Body String
+
+
+type PageMsg
+    = Form FormMsg
+    | Reset
+
+
+type Msg
+    = Page PageMsg
+    | Quit
+
+
+type alias Draft =
+    title : String
+    body : String
+
+
+type alias Model =
+    form : Draft
+    done : Bool
+
+
+updateForm : FormMsg, Draft → Draft
+updateForm msg form =
+    case msg of
+        Title t →
+            { form | title = t }
+
+        Body b →
+            { form | body = b }
+
+
+updatePage : PageMsg, Model → Model
+updatePage msg model =
+    case msg of
+        Form sub →
+            { model | form = updateForm sub model.form }
+
+        Reset →
+            { model | form = { title = "", body = "" } }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Page sub →
+            updatePage sub model
+
+        Quit →
+            { model | done = True }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <h1>{model.form.title}</h1>
+        <p>{model.form.body}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { form = { title = "", body = "" }, done = False }, update = update, view = view }

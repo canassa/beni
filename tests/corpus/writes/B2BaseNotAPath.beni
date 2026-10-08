@@ -1,0 +1,42 @@
+-- writes: the adversarial review's B2 (`write-sets.md` §4.2, §3.4's
+-- full-record row, §8.3 item 7). `bump` updates `n` of whatever record it
+-- is handed. `Composed` hands it `{ model | m = 1 }`: the two updates
+-- compose, `node ρ; value ρ.m; value ρ.n`. `Opaque` hands it a value the
+-- analysis cannot relate to the model (a fold's result): the record it
+-- builds has `n` written and every other field `Fresh`, which placed at ρ
+-- is the same three writes — a field of the type at ρ, not lost.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    m : Int
+    n : Int
+
+
+type Msg
+    = Composed
+    | Opaque
+
+
+bump : Model → Model
+bump r = { r | n = r.n + 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Composed →
+            bump { model | m = 1 }
+
+        Opaque →
+            bump (List.foldl [] model λ_ acc → acc)
+
+
+view : Model → Html Msg
+view model = <p>{model.m}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { m = 0, n = 0 }, update = update, view = view }

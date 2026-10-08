@@ -1,0 +1,52 @@
+-- writes: Conduit's shape in three modules (`write-sets.md` §10.1–§10.3).
+-- The model is a union of pages rebuilt with its own variant through a
+-- higher-order helper, a page nests an opaque feed, and messages are
+-- dispatched across modules: each key's write lands under its own page and
+-- its own feed (`GotHomeMsg · GotFeedMsg · Dismiss` writes the feed's
+-- `errors` only), and the fallthrough writes nothing.
+-- `ordering_test.zig` dumps it with every module's declarations reversed.
+import Browser
+import Home
+import Html exposing (Html)
+import Tea
+
+
+type Model
+    = HomePage Home.Model
+    | Blank String
+
+
+type Msg
+    = GotHomeMsg Home.Msg
+    | Reset
+
+
+updateWith : (sub → Model), sub → Model
+updateWith toModel sub = toModel sub
+
+
+update : Msg, Model → Model
+update msg model =
+    case ( msg, model ) of
+        ( GotHomeMsg sub, HomePage home ) →
+            updateWith HomePage (Home.update sub home)
+
+        ( Reset, _ ) →
+            Blank ""
+
+        ( _, _ ) →
+            model
+
+
+view : Model → Html Msg
+view model =
+    case model of
+        HomePage home →
+            Html.map (Home.view home) GotHomeMsg
+
+        Blank text →
+            <p>{text}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = HomePage Home.init, update = update, view = view }

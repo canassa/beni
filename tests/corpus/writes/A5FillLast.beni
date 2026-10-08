@@ -1,0 +1,45 @@
+-- writes: the adversarial review's A5 (`write-sets.md` §2.3, §3.4, §3.7,
+-- §8.3 item 4). `Fill` maps every element to the LAST one: the callback
+-- answers `Same(ρ.todos[?])`, which is some element's identity but not the
+-- element it was handed, so the map is not identity and the element write
+-- is `value ρ.todos[*]` — not ∅, which a rule that took `t` for the element
+-- would have said.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Todo =
+    title : String
+    done : Bool
+
+
+type alias Model =
+    todos : List Todo
+
+
+type Msg
+    = Fill
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Fill →
+            case List.last model.todos of
+                Just t →
+                    { model | todos = List.map model.todos λ_ → t }
+
+                Nothing →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <ul>
+        <For each={model.todos} keyed={False}>{λt → <li>{t.title}</li>}</For>
+    </ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { todos = [] }, update = update, view = view }

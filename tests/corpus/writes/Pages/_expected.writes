@@ -1,0 +1,20 @@
+program Main.main : Tea.sandbox
+  model Main.Model
+  init
+    literal ρ
+  key GotHomeMsg · ClickedTab                     exact      node ρ; node ρ.HomePage#0; value ρ.HomePage#0.tab
+  key GotHomeMsg · GotFeedMsg · Dismiss           indexed    node ρ; node ρ.HomePage#0; node ρ.HomePage#0.feed; node ρ.HomePage#0.feed.Model#0; value ρ.HomePage#0.feed.Model#0.errors ⟨clear⟩
+  key GotHomeMsg · GotFeedMsg · Like              structural node ρ; node ρ.HomePage#0; node ρ.HomePage#0.feed; node ρ.HomePage#0.feed.Model#0; node ρ.HomePage#0.feed.Model#0.items ⟨kept⟩; node ρ.HomePage#0.feed.Model#0.items[*]; value ρ.HomePage#0.feed.Model#0.items[*].liked
+  key GotHomeMsg · GotFeedMsg · Failed            indexed    node ρ; node ρ.HomePage#0; node ρ.HomePage#0.feed; node ρ.HomePage#0.feed.Model#0; value ρ.HomePage#0.feed.Model#0.errors ⟨append⟩
+  key Reset                                       *          value ρ
+  keys 5: bounded 4 (80%), exact 1, indexed 2, structural 1, * 1; capped 0
+  hole Feed.beni:55:10                            dynamic    reads ρ.HomePage#0.feed.Model#0.items
+  hole Feed.beni:56:23                            static-key reads ρ.HomePage#0.feed.Model#0.items[*].slug
+  hole Feed.beni:56:35                            dynamic    reads ρ.HomePage#0.feed.Model#0.items[*].liked
+  hole Feed.beni:56:75                            dynamic    reads ρ.HomePage#0.feed.Model#0.items[*].title
+  hole Feed.beni:58:10                            dynamic    reads ρ.HomePage#0.feed.Model#0.errors
+  hole Feed.beni:58:60                            dynamic    reads ρ.HomePage#0.feed.Model#0.errors[*]
+  hole Home.beni:34:13                            dynamic    reads ρ.HomePage#0.tab
+  hole Home.beni:35:9                             dynamic    reads ρ.HomePage#0.feed.Model#0.errors; ρ.HomePage#0.feed.Model#0.errors[*]; ρ.HomePage#0.feed.Model#0.items; ρ.HomePage#0.feed.Model#0.items[*].liked; ρ.HomePage#0.feed.Model#0.items[*].slug; ρ.HomePage#0.feed.Model#0.items[*].title
+  hole Main.beni:48:16                            dynamic    reads ρ.Blank#0
+  holes 9: static 0, literal 0, static-key 1, dynamic 8

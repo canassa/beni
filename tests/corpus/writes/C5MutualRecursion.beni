@@ -1,0 +1,48 @@
+-- writes: the first review's C5 (`write-sets.md` §4.3, §8.3 item 11). A
+-- mutually recursive pair, each writing one field and handing the model
+-- to the other. The component is iterated to its fixpoint within I = 4
+-- rounds: `value` at the two fields, and no `cap I`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+
+
+type Msg
+    = Run Int
+
+
+stepA : Int, Model → Model
+stepA n m =
+    if n == 0 then
+        m
+    else
+        stepB (n - 1) { m | a = m.a + 1 }
+
+
+stepB : Int, Model → Model
+stepB n m =
+    if n == 0 then
+        m
+    else
+        stepA (n - 1) { m | b = m.b + 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Run n →
+            stepA n model
+
+
+view : Model → Html Msg
+view model = <p>{model.c}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { a = 0, b = 0, c = 0 }, update = update, view = view }

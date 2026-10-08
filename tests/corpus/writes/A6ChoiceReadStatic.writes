@@ -1,0 +1,8 @@
+program A6ChoiceReadStatic.main : Tea.sandbox
+  model A6ChoiceReadStatic.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.clicks
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole A6ChoiceReadStatic.beni:33:13              static     reads ρ.on
+  holes 1: static 1, literal 0, static-key 0, dynamic 0

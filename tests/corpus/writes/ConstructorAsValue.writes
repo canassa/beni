@@ -1,0 +1,10 @@
+program ConstructorAsValue.main : Tea.sandbox
+  model ConstructorAsValue.Model
+  init
+    literal ρ
+  key Inc                                         exact      node ρ; node ρ.Page#0; value ρ.Page#0.n; node ρ.Pair#1; value ρ.Pair#1.n
+  key Rename                                      exact      node ρ; value ρ.Pair#0
+  keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
+  hole ConstructorAsValue.beni:56:16              literal    reads ρ.Page#0.label
+  hole ConstructorAsValue.beni:59:16              dynamic    reads ρ.Pair#0
+  holes 2: static 0, literal 1, static-key 0, dynamic 1

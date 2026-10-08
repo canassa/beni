@@ -1,0 +1,54 @@
+-- writes: an `init` not all of which is literal (`write-sets.md` §3.5):
+-- `Tea.application`'s `init` is a function of the address, and the model it
+-- builds holds the address's path, which `Fresh` is. The `path` hole is
+-- written by no message, so it is `static` — and not `literal`, since the
+-- value is not a literal at `init`; `name` and `seen` are literal, so
+-- `literal ρ.name; ρ.seen`.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type alias Model =
+    path : String
+    name : String
+    seen : Int
+
+
+type Msg
+    = Changed Url
+    | Requested Browser.UrlRequest
+
+
+init : Url, Navigation.Key → Model × Cmd Msg
+init url _ = ( { path = url.path, name = "home", seen = 0 }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Changed _ →
+            ( { model | seen = model.seen + 1 }, Cmd.none )
+
+        Requested _ →
+            ( model, Cmd.none )
+
+
+view : Model → Tea.Document Msg
+view model = { title = model.name, body = <p>{model.path}</p> }
+
+
+main : Browser.Program
+main =
+    Tea.application
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = Requested
+        , onUrlChange = Changed
+        }

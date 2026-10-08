@@ -1,0 +1,70 @@
+-- writes: the base rules of `write-sets.md` §3.3 and §3.4, one key each.
+-- `Stay` returns the model itself: the identity case, ∅. `Bump` is a record
+-- update: `node ρ` and `value` at the field. `Deep` updates a record two
+-- levels down: `node` at each level, `value` at the field, and the sibling
+-- `inner.b` untouched. `Reset` builds a new record naming every field
+-- (N7): `node ρ` and `value` at each field written from something other
+-- than the field itself — `count` keeps `model.count`, so it is not written.
+-- `Swap` places another old value at a path: `value` there (§3.4's second
+-- row).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Inner =
+    a : Int
+    b : Int
+
+
+type alias Model =
+    count : Int
+    inner : Inner
+    other : Inner
+    label : String
+
+
+type Msg
+    = Stay
+    | Bump
+    | Deep
+    | Reset
+    | Swap
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Stay →
+            model
+
+        Bump →
+            { model | count = model.count + 1 }
+
+        Deep →
+            inner = model.inner
+            { model | inner = { inner | a = 1 } }
+
+        Reset →
+            { count = model.count, inner = model.inner, other = model.other, label = "" }
+
+        Swap →
+            { model | inner = model.other }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{model.label}</p>
+        <p>{model.inner.b}</p>
+        <p>{model.count}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { count = 0, inner = { a = 0, b = 0 }, other = { a = 1, b = 1 }, label = "start" }
+        , update = update
+        , view = view
+        }

@@ -1,0 +1,24 @@
+program C2SeventeenMessages.main : Tea.sandbox
+  model C2SeventeenMessages.Model
+  init
+    literal ρ
+  key GotPageMsg · M1                             exact      node ρ; node ρ.page; value ρ.page.f1
+  key GotPageMsg · M2                             exact      node ρ; node ρ.page; value ρ.page.f2
+  key GotPageMsg · M3                             exact      node ρ; node ρ.page; value ρ.page.f3
+  key GotPageMsg · M4                             exact      node ρ; node ρ.page; value ρ.page.f4
+  key GotPageMsg · M5                             exact      node ρ; node ρ.page; value ρ.page.f5
+  key GotPageMsg · M6                             exact      node ρ; node ρ.page; value ρ.page.f6
+  key GotPageMsg · M7                             exact      node ρ; node ρ.page; value ρ.page.f7
+  key GotPageMsg · M8                             exact      node ρ; node ρ.page; value ρ.page.f8
+  key GotPageMsg · M9                             exact      node ρ; node ρ.page; value ρ.page.f9
+  key GotPageMsg · M10                            exact      node ρ; node ρ.page; value ρ.page.f10
+  key GotPageMsg · M11                            exact      node ρ; node ρ.page; value ρ.page.f11
+  key GotPageMsg · M12                            exact      node ρ; node ρ.page; value ρ.page.f12
+  key GotPageMsg · M13                            exact      node ρ; node ρ.page; value ρ.page.f13
+  key GotPageMsg · M14                            exact      node ρ; node ρ.page; value ρ.page.f14
+  key GotPageMsg · M15                            exact      node ρ; node ρ.page; value ρ.page.f15
+  key GotPageMsg · M16                            exact      node ρ; node ρ.page; value ρ.page.f16
+  key GotPageMsg · M17                            exact      node ρ; node ρ.page; value ρ.page.f17
+  keys 17: bounded 17 (100%), exact 17, indexed 0, structural 0, * 0; capped 0
+  hole C2SeventeenMessages.beni:122:17            dynamic    reads ρ.page.f1
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

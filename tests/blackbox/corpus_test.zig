@@ -118,6 +118,7 @@ const Kind = enum {
     fmt,
     bir,
     dispatch,
+    writes,
     check_good,
     check_bad,
     check_args,
@@ -137,6 +138,7 @@ const Kind = enum {
             .fmt => "fmt",
             .bir => "bir",
             .dispatch => "dispatch",
+            .writes => "writes",
             .check_good => "check/good",
             .check_bad => "check/bad",
             .check_args => "check/args",
@@ -160,6 +162,7 @@ const Kind = enum {
             .fmt, .run, .browser => "expected",
             .bir => "bir",
             .dispatch => "dispatch",
+            .writes => "writes",
             .check_good => "iface",
             .emit => "js",
             .check_depth, .regress => null,
@@ -175,7 +178,7 @@ const Kind = enum {
     /// Whether a subdirectory of the kind is a PROJECT fixture rather than
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad or kind == .dispatch or
+        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .writes or
             kind == .build_bad or kind == .build_bad_release or kind == .run or kind == .browser;
     }
 
@@ -197,7 +200,7 @@ const Kind = enum {
     fn partOf(kind: Kind, pass: RunPass) Part {
         return switch (kind) {
             .parse_good, .parse_bad, .fmt, .bir, .regress => .parse,
-            .check_good, .check_bad, .check_args, .check_depth, .dispatch => .check,
+            .check_good, .check_bad, .check_args, .check_depth, .dispatch, .writes => .check,
             .build_bad, .build_bad_release, .emit => .build,
             .run => switch (pass) {
                 .dev, .dev_library, .dev_fiber => .run_dev,
@@ -239,6 +242,14 @@ test "corpus: bir" {
 // invisible in `--stage=types` and obvious here.
 test "corpus: dispatch" {
     try walk(.dispatch);
+}
+
+// The write-set pass's dump (`write-sets.md` §8.1): per message key the
+// write set, per view hole its class. Its own kind for `dispatch/`'s reason:
+// an output of a pass, printed with no ids, and the contract R3 and R4 will
+// read. Every fixture is built for `browser-tea`, whose programs it reads.
+test "corpus: writes" {
+    try walk(.writes);
 }
 
 test "corpus: check/good" {
@@ -1224,6 +1235,7 @@ const Case = struct {
             .fmt => try c.format(),
             .bir => try c.lowering(),
             .dispatch => try c.dispatching(),
+            .writes => try c.writeSets(),
             .check_good => try c.checkGood(),
             .check_bad, .check_args => try c.bad(),
             .check_depth => try c.depth(),
@@ -2299,6 +2311,56 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=dispatch", path });
         try expectExit(0, r);
         try c.expectGolden("dispatch", r.stdout);
+    }
+
+    /// The write sets of a program (`write-sets.md` §8.1): the fixture must
+    /// check clean for `browser-tea`, and `dump --stage=writes` is the
+    /// golden. A project may take its modules from elsewhere
+    /// (`_expected.sources`, Conduit's gate) and may carry a `.writes-work`
+    /// holding the hidden `--writes-work` cap (§6.1, N6). A fixture with a
+    /// `.gate` is the gate of §8.2: its `keys` lines must show two thirds
+    /// bounded, a second assertion on the same output, so a regression in
+    /// precision fails even when the golden is re-blessed.
+    fn writeSets(c: Case) !void {
+        const path = if (c.goldenExists("sources"))
+            std.mem.trim(u8, try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("sources"), c.arena, .limited(4096)), " \t\r\n")
+        else
+            try c.fixturePath();
+        const checked = try c.compiler(&.{ "check", "--platform=browser-tea", path });
+        try expectExit(0, checked);
+        if (checked.stderr.len != 0) {
+            detail("{s}: a writes fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--platform=browser-tea" });
+        if (c.goldenExists("writes-work")) {
+            const n = std.mem.trim(u8, try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("writes-work"), c.arena, .limited(64)), " \t\r\n");
+            try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--writes-work={s}", .{n}));
+        }
+        try args.append(c.arena, path);
+        const r = try c.compiler(args.items);
+        try expectExit(0, r);
+        try c.expectGolden("writes", r.stdout);
+        if (c.goldenExists("gate")) {
+            var lines = std.mem.splitScalar(u8, r.stdout, '\n');
+            var seen = false;
+            while (lines.next()) |line| {
+                const prefix = "  keys ";
+                if (!std.mem.startsWith(u8, line, prefix)) continue;
+                seen = true;
+                const colon = std.mem.indexOfScalar(u8, line, ':') orelse return error.GateLineMalformed;
+                const total = try std.fmt.parseUnsigned(u32, line[prefix.len..colon], 10);
+                const b_at = (std.mem.indexOf(u8, line, "bounded ") orelse return error.GateLineMalformed) + "bounded ".len;
+                const b_end = std.mem.indexOfScalarPos(u8, line, b_at, ' ') orelse return error.GateLineMalformed;
+                const bounded = try std.fmt.parseUnsigned(u32, line[b_at..b_end], 10);
+                if (3 * bounded < 2 * total) {
+                    detail("{s}: the gate needs two thirds of the keys bounded (§8.2): {s}\n", .{ c.fixture.name, line });
+                    return error.WriteSetGateFailed;
+                }
+            }
+            if (!seen) return error.GateLineMissing;
+        }
     }
 
     /// A module — or a project — that resolves clean: exit 0, no

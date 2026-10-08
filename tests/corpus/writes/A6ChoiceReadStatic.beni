@@ -1,0 +1,37 @@
+-- writes: A6's other half (`write-sets.md` §3.6, §9.1, §8.3 item 5). The
+-- same `label`, and no message writes `ρ.on`: the hole is `static`, reads
+-- `ρ.on` — and is never `literal`, because its value is chosen at run time
+-- and is not exactly a model path, whatever `init` says `on` is.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    on : Bool
+    clicks : Int
+
+
+type Msg
+    = Click
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Click →
+            { model | clicks = model.clicks + 1 }
+
+
+view : Model → Html Msg
+view model =
+    label =
+        if model.on then
+            "On"
+        else
+            "Off"
+    <button>{label}</button>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { on = False, clicks = 0 }, update = update, view = view }

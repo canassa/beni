@@ -1,0 +1,8 @@
+program CapA.main : Tea.sandbox
+  model CapA.Model
+  init
+    literal ρ
+  key (any)                                       * (cap A) value ρ
+  keys 1: bounded 0 (0%), exact 0, indexed 0, structural 0, * 1; capped 1
+  hole CapA.beni:78:17                            dynamic    reads ρ.a
+  holes 1: static 0, literal 0, static-key 0, dynamic 1

@@ -1,0 +1,39 @@
+-- writes: what may be baked, by its parent (`write-sets.md` §9.1, amended
+-- by the third review; §8.3 item 16). `init` gives `name` a plain string
+-- and no message writes it. Under `td` the hole is exactly that path, alone
+-- in an ordinary element: `literal`. Directly under `tr`, where the HTML
+-- parser would move text out of the table, it is `static` and not
+-- `literal`: mounted from its expression, as today.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : String
+    clicks : Int
+
+
+type Msg
+    = Click
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Click →
+            { model | clicks = model.clicks + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <table>
+        <tbody>
+            <tr>{model.name}</tr>
+            <tr><td>{model.name}</td></tr>
+        </tbody>
+    </table>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { name = "Ada", clicks = 0 }, update = update, view = view }

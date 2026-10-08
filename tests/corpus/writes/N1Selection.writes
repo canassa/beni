@@ -1,0 +1,8 @@
+program N1Selection.main : Tea.sandbox
+  model N1Selection.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.b
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole N1Selection.beni:43:17                     static     reads ρ.a
+  holes 1: static 1, literal 0, static-key 0, dynamic 0

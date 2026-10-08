@@ -1,0 +1,126 @@
+-- writes: every `List` row of the core summary table (`write-sets.md`
+-- §3.7, `src/writes/Core.zig`), one key each. `MapSame`'s callback answers
+-- its element, so the list is the very list (∅ beyond the rebuilt record:
+-- `run/ListIndexedIdentity`'s "map identity"); `MapField` rewrites a field
+-- of every element (`node ρ.rows[*]`, `value` at the field — the element's
+-- result diffed against its own root, N2); `Keep` filters
+-- (`⟨removeSome⟩`); `Pick` keeps `Just` of the element itself; `Touch`
+-- updates one position by the message's index; `Put` sets one; `Exchange`
+-- swaps two; `Add`, `Join` and `Front` append, `++` and prepend; `Trim`
+-- takes a prefix; `Rest` keeps the tail through `Maybe.withDefault`, a body
+-- summarised from `core/` with no row; `Into` and `Out` insert and remove at
+-- a position; `Order` sorts; `First` reads `head` into another field;
+-- `Count` folds (`Fresh`, `value` at the field).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    first : Maybe Row
+    total : Int
+
+
+type Msg
+    = MapSame
+    | MapField
+    | Keep
+    | Pick
+    | Touch Int
+    | Put Int
+    | Exchange
+    | Add
+    | Join
+    | Front
+    | Trim
+    | Rest
+    | Into Int
+    | Out Int
+    | Order
+    | First
+    | Count
+
+
+row : Row
+row = { id = 0, label = "new" }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        MapSame →
+            { model | rows = List.map model.rows λr → r }
+
+        MapField →
+            { model | rows = List.map model.rows λr → { r | label = "x" } }
+
+        Keep →
+            { model | rows = List.filter model.rows λr → r.id > 0 }
+
+        Pick →
+            { model
+                | rows =
+                    List.filterMap model.rows λr →
+                        if r.id > 0 then
+                            Just r
+                        else
+                            Nothing
+            }
+
+        Touch i →
+            { model | rows = List.update model.rows i λr → { r | label = "t" } }
+
+        Put i →
+            { model | rows = List.set model.rows i row }
+
+        Exchange →
+            { model | rows = List.swap model.rows 0 1 }
+
+        Add →
+            { model | rows = List.push model.rows row }
+
+        Join →
+            { model | rows = model.rows ++ [ row ] }
+
+        Front →
+            { model | rows = [ row, …model.rows ] }
+
+        Trim →
+            { model | rows = List.take model.rows 3 }
+
+        Rest →
+            { model | rows = Maybe.withDefault (List.tail model.rows) [] }
+
+        Into i →
+            { model | rows = List.insertAt model.rows i row }
+
+        Out i →
+            { model | rows = List.removeAt model.rows i }
+
+        Order →
+            { model | rows = List.sortBy model.rows λr → r.id }
+
+        First →
+            { model | first = List.head model.rows }
+
+        Count →
+            { model | total = List.foldl model.rows 0 λr n → n + r.id }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <For each={model.rows} keyed={.id}>{λr → <p id={String.fromInt r.id}>{r.label}</p>}</For>
+        <p>{model.total}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox { init = { rows = [], first = Nothing, total = 0 }, update = update, view = view }

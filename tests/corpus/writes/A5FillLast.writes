@@ -1,0 +1,9 @@
+program A5FillLast.main : Tea.sandbox
+  model A5FillLast.Model
+  init
+    literal ρ
+  key (any)                                       structural node ρ; node ρ.todos ⟨kept⟩; value ρ.todos[*]
+  keys 1: bounded 1 (100%), exact 0, indexed 0, structural 1, * 0; capped 0
+  hole A5FillLast.beni:40:10                      dynamic    reads ρ.todos
+  hole A5FillLast.beni:40:57                      dynamic    reads ρ.todos[*].title
+  holes 2: static 0, literal 0, static-key 0, dynamic 2

@@ -1,0 +1,175 @@
+-- writes: the cap L = 256 (`write-sets.md` §4.4, §6.1, O2, N3). Seventeen
+-- outer messages, each carrying an inner one of eighteen constructors
+-- that `update` matches sixteen of by name and the rest with `_`: a full
+-- tree would have 17 × 17 leaves. Splitting stops at 256: the outer
+-- messages split first, then each inner split while the count allows, and
+-- the rest stay leaves of their own, marked `(cap L)`, whose set is the
+-- join of every child they would have had — the default child's
+-- `value ρ.seen` included.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Inner
+    = I1
+    | I2
+    | I3
+    | I4
+    | I5
+    | I6
+    | I7
+    | I8
+    | I9
+    | I10
+    | I11
+    | I12
+    | I13
+    | I14
+    | I15
+    | I16
+    | I17
+    | I18
+
+
+type Msg
+    = O1 Inner
+    | O2 Inner
+    | O3 Inner
+    | O4 Inner
+    | O5 Inner
+    | O6 Inner
+    | O7 Inner
+    | O8 Inner
+    | O9 Inner
+    | O10 Inner
+    | O11 Inner
+    | O12 Inner
+    | O13 Inner
+    | O14 Inner
+    | O15 Inner
+    | O16 Inner
+    | O17 Inner
+
+
+type alias Model =
+    hits : Int
+    seen : Bool
+
+
+inner : Inner, Model → Model
+inner msg model =
+    case msg of
+        I1 →
+            { model | hits = 1 }
+
+        I2 →
+            { model | hits = 2 }
+
+        I3 →
+            { model | hits = 3 }
+
+        I4 →
+            { model | hits = 4 }
+
+        I5 →
+            { model | hits = 5 }
+
+        I6 →
+            { model | hits = 6 }
+
+        I7 →
+            { model | hits = 7 }
+
+        I8 →
+            { model | hits = 8 }
+
+        I9 →
+            { model | hits = 9 }
+
+        I10 →
+            { model | hits = 10 }
+
+        I11 →
+            { model | hits = 11 }
+
+        I12 →
+            { model | hits = 12 }
+
+        I13 →
+            { model | hits = 13 }
+
+        I14 →
+            { model | hits = 14 }
+
+        I15 →
+            { model | hits = 15 }
+
+        I16 →
+            { model | hits = 16 }
+
+        _ →
+            { model | seen = True }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        O1 sub →
+            inner sub model
+
+        O2 sub →
+            inner sub model
+
+        O3 sub →
+            inner sub model
+
+        O4 sub →
+            inner sub model
+
+        O5 sub →
+            inner sub model
+
+        O6 sub →
+            inner sub model
+
+        O7 sub →
+            inner sub model
+
+        O8 sub →
+            inner sub model
+
+        O9 sub →
+            inner sub model
+
+        O10 sub →
+            inner sub model
+
+        O11 sub →
+            inner sub model
+
+        O12 sub →
+            inner sub model
+
+        O13 sub →
+            inner sub model
+
+        O14 sub →
+            inner sub model
+
+        O15 sub →
+            inner sub model
+
+        O16 sub →
+            inner sub model
+
+        O17 sub →
+            inner sub model
+
+
+view : Model → Html Msg
+view model = <p>{model.hits}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { hits = 0, seen = False }, update = update, view = view }
