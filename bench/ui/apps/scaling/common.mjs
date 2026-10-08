@@ -45,3 +45,82 @@ export const scriptRoot = `const root = document.createElement("div");
 root.className = "container";
 document.body.appendChild(root);
 `;
+
+// P3, research 60: what message-indexed rendering (research 58 §9) would
+// emit for each page. Every P3 page reaches this loop. A handler per `Msg`
+// constructor runs that constructor's `update` branch, applies the list
+// edit script the branch implies, and marks the groups its write set can
+// reach; `render`, written per page, runs the marked groups, each
+// comparing what it reads with what it last wrote. A trusted event renders
+// when its handler returns; any other message (a synthetic click, a burst
+// of them) queues one microtask, so a burst renders once: beni's rule
+// since research 56's A. A handler or a render that throws stops the page
+// (`dead`) with no `catch`: the exception reaches the console, as in
+// beni's release build.
+export const p3Loop = `let dirty = 0;
+let scheduled = false;
+let turning = false;
+let dead = false;
+const flush = () => {
+  scheduled = false;
+  let ok = false;
+  try {
+    render();
+    ok = true;
+  } finally {
+    if (!ok) dead = true;
+  }
+};
+const schedule = () => {
+  if (!scheduled) {
+    scheduled = true;
+    if (!turning) queueMicrotask(() => scheduled && !dead && flush());
+  }
+};
+const mark = (groups) => {
+  dirty |= groups;
+  schedule();
+};
+const send = (trusted, handler, a, b) => {
+  if (dead) return;
+  const outer = trusted && !turning;
+  let ok = false;
+  if (outer) turning = true;
+  try {
+    handler(a, b);
+    ok = true;
+  } finally {
+    if (outer) turning = false;
+    if (!ok) dead = true;
+  }
+  if (outer && scheduled) flush();
+};
+`;
+
+// The rows a list edit marked: each runs its row groups at the flush.
+export const p3Rows = `let marked = [];
+const markRow = (i) => {
+  if (!i.m) {
+    i.m = true;
+    marked.push(i);
+  }
+  schedule();
+};
+`;
+
+// A P3 page's root template is used once, so it is parsed and adopted, not
+// kept for cloning.
+export const p3Root = (html) => `const root = (() => {
+  const t = document.createElement("template");
+  t.innerHTML = ${JSON.stringify(html)};
+  return t.content.firstChild;
+})();
+`;
+
+// A row template, kept and cloned per row.
+export const p3RowTemplate = (html) => `const rowProto = (() => {
+  const t = document.createElement("template");
+  t.innerHTML = ${JSON.stringify(html)};
+  return t.content.firstChild;
+})();
+`;

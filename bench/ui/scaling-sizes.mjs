@@ -14,6 +14,7 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
+import { hoisted } from "./lib/imports.mjs";
 import { root } from "./lib/serve.mjs";
 
 const require = createRequire(join(root, "apps/solid2/package.json"));
@@ -31,7 +32,7 @@ const walk = (dir) =>
 
 const measure = async (files) => {
   const texts = [];
-  for (const f of files) texts.push((await minify(readFileSync(f, "utf8"), { compress: true, mangle: true, module: true })).code);
+  for (const f of files) texts.push((await minify(typeof f === "string" ? readFileSync(f, "utf8") : f.text, { compress: true, mangle: true, module: true })).code);
   const all = Buffer.from(texts.join("\n"));
   return {
     files: files.length,
@@ -52,6 +53,10 @@ for (const sweep of readdirSync(scaling).filter((d) => statSync(join(scaling, d)
       beni: existsSync(join(dir, "beni-rel")) ? walk(join(dir, "beni-rel")) : null,
       solid1: existsSync(join(dir, "solid1.js")) ? [join(dir, "solid1.js")] : null,
       vanillajs: existsSync(join(dir, "vanilla.js")) ? [join(dir, "vanilla.js")] : null,
+      p2: existsSync(join(dir, "p2.js")) ? [join(dir, "p2.js")] : null,
+      // P3 (research 60) with the core modules it imports from beni-dev,
+      // scope-hoisted into one module as beni --release ships.
+      p3: existsSync(join(dir, "p3.js")) ? [{ text: hoisted(join(dir, "p3.js")) }] : null,
     };
     result[sweep][p] = {};
     for (const [name, files] of Object.entries(subjects)) if (files !== null) result[sweep][p][name] = await measure(files);
@@ -62,8 +67,8 @@ const out = arg("out", null);
 if (out !== null) writeFileSync(join(root, out), JSON.stringify(result, null, 1) + "\n");
 for (const [sweep, points] of Object.entries(result)) {
   console.log(`\n### ${sweep}: minified, then brotli 11 / gzip -9, bytes\n`);
-  console.log("| point | beni `--release` | Solid 1 | vanilla |");
-  console.log("|--:|--:|--:|--:|");
+  console.log("| point | beni `--release` | Solid 1 | vanilla | P2 | P3 |");
+  console.log("|--:|--:|--:|--:|--:|--:|");
   const cell = (m) => (m === undefined ? "—" : `${m.brotli} / ${m.gzip}`);
-  for (const [p, s] of Object.entries(points)) console.log(`| ${p} | ${cell(s.beni)} | ${cell(s.solid1)} | ${cell(s.vanillajs)} |`);
+  for (const [p, s] of Object.entries(points)) console.log(`| ${p} | ${cell(s.beni)} | ${cell(s.solid1)} | ${cell(s.vanillajs)} | ${cell(s.p2)} | ${cell(s.p3)} |`);
 }
