@@ -3,26 +3,35 @@
 *2026-10-08. The order of work toward the owner's goal: **vanilla JavaScript is the floor, and
 beni's output should come as close to it as it can, in speed and in bytes**. Sources: research 58
 (the design and the criteria), 59 (where the time and bytes go today), 60 (the design written by
-hand and measured), 61 (how often a message's writes are known). This is a plan, not a contract:
-every slice is specified in `docs/design/` before it is built (rule 1), and the plan follows the
-slices' measurements.*
+hand and measured), 61 and 62 (how often a message's writes are known). This is a plan, not a
+contract: every slice is specified in `docs/design/` before it is built (rule 1), and the plan
+follows the slices' measurements.*
+
+*Rewritten 2026-10-09 around the owner's decision of 2026-10-08 to stop patching today's
+`browser` platform and rewrite P3 from first principles as a second platform, `browser-direct`,
+specified in [`docs/design/browser-direct.md`](../docs/design/browser-direct.md). §1, §2, the
+names R2–R6, M1–M4, B1, V1–V3 and §6 are kept so that documents pointing here still resolve; each
+item of §3–§4 now says whether it survives, merges into a direct slice, or is dropped; §5 is the
+new order; §7 is the direct platform's slices. Section numbers are never renumbered.*
 
 ## 1. The bar: research 58's criteria, kept as written
 
 **The owner, 2026-10-08:** keep the criteria. They judge the whole output, model included, and
 are not restated after research 60 missed them.
 
-| criterion (research 58 §9) | beni today | P3 by hand (research 60) |
-|---|--:|--:|
-| flat sweeps ≤ **1.15×** vanilla, untraced: holes 10 / holes 10 000 / live rows 10 000 / depth 128 | 1.64 / 1.67 / 46.5 / 2.57 | 1.18 / 1.04 / 1.25 / 1.29 |
-| list sweeps ≤ **1.3×**: rows 30 000 one-row edit / swap | 5.63 / 8.36 | 1.31 / 0.98 |
-| table app bundle ≤ **2×** vanilla (≤ 2 830 B) | 5 510 B (3.89×) | 3 454 B (2.44×) |
-| every table operation ≤ **1.2×** vanilla (a goal in §9, not a kill criterion) | 7 of 9 | 8 of 9 (swap 4.2×) |
+| criterion (research 58 §9) | beni today | P3 by hand (research 60) | `browser-direct`, expected (design §13) |
+|---|--:|--:|--:|
+| flat sweeps ≤ **1.15×** vanilla, untraced: holes 10 / holes 10 000 / live rows 10 000 / depth 128 | 1.64 / 1.67 / 46.5 / 2.57 | 1.18 / 1.04 / 1.25 / 1.29 | ≤ 1.15 / ≤ 1.15 / ≤ 1.15 / ≤ 1.3 until S7, then ≤ 1.15 |
+| list sweeps ≤ **1.3×**: rows 30 000 one-row edit / swap | 5.63 / 8.36 | 1.31 / 0.98 | ≤ 1.3 (≤ 1.15 after S7) / ≤ 1.0 |
+| table app bundle ≤ **2×** vanilla (≤ 2 830 B) | 5 510 B (3.89×) | 3 454 B (2.44×) | ≈ 2 650 B [estimate]; the criterion most likely to miss, by core's `List` |
+| every table operation ≤ **1.2×** vanilla (a goal in §9, not a kill criterion) | 7 of 9 | 8 of 9 (swap 4.2×) | 9 of 9, `select` ≤ 1.0× |
 
-*Untraced is research 60's real-click mode. Ratios come from that report's batch.*
+*Untraced is research 60's real-click mode. Ratios come from that report's batch. The last column
+is the design's expected landing, not a measurement; each slice replaces it with a number.*
 
 **Every slice reports this table**, measured traced and untraced against vanilla, P2, P3 and
-Solid 1, with bytes (`scaling-sizes.mjs`, `sizes.mjs`), on the same machine in one batch. A
+Solid 1, with bytes (`scaling-sizes.mjs`, `sizes.mjs`), on the same machine in one batch — and,
+since 2026-10-09, on **both platforms** (`beni` and `beni-direct`, development and release). A
 slice's result is the change in these numbers. A slice that moves none of them needs a reason
 to exist.
 
@@ -34,145 +43,138 @@ to exist.
 - **An unknown write set is a cost, never an error** (rule 7). No slice restricts what `update` may
   call or how it is written. A message whose writes cannot be bounded runs today's path.
 - **The guarantees stay:** controlled inputs show the model, a defect stops the page, no broad
-  `catch` (rule 9), and one render per turn (bursts).
+  `catch` (rule 9), and messages apply in order, each once. *(Amended 2026-10-09: "one render per
+  turn" is a property of today's platform; on `browser-direct` a handler writes as it runs and
+  there is no render — design §4.3, the owner's Q2.)*
 - **Differential testing.** Every specialised path is checked against the general one on every
-  `browser/` corpus page, step by step, before it merges.
+  `browser/` corpus page, step by step, before it merges. *(Amended 2026-10-09: on
+  `browser-direct` the general path is today's platform — every `browser/direct/` fixture is built
+  for both and both transcripts must equal the golden, design §12.3.)*
 - **Red first, no bending** (rules 3 and 10). Every slice has fixtures that fail first. A slice
   that hits a wall stops and reports it; it does not change the design or the bar.
+- **Every byte of runtime justifies itself** (the owner, 2026-10-08: "adding runtime is a
+  balancing act"). A runtime piece is shipped only by a page that reaches it, and the design's
+  cost table (§3 there) says what each buys. A fast path added to machinery the direct platform
+  replaces is patching, and is not done (the R1 withdrawal, §6).
 
-## 3. The work, in order
+## 3. The work, in order — what survives, merges or is dropped
 
-Each item: what it is, its source, what it should move, and what it needs.
+Each item keeps its name and source; its state after the rewrite is in bold.
 
 ### Track R — the renderer and its runtime
 
-**R1. The per-message plumbing** (research 59 §1.6). These are runtime and emitter changes, and
-no guarantee changes. They should take beni from 19.4 to about 12.6 µs per real click, against
-P2's 11.7.
-- Build `$$click`/`$$clickF`/`$$clickX` once per registered event type instead of per event
-  (1.9 µs).
-- One walk that finds both the handlers and the mount, which keeps bubbling to ancestors'
-  handlers (1.2 µs). The spec must state the bubbling semantics.
-- One pending-render slot per mount on a trusted turn, keeping one render per turn (1.4 µs).
-- A root whose kind never changes is patched with the model directly, with no `{t, v}` pair
-  (1.3 µs).
-- `$$cx` only under `Html.map` (0.6 µs); `turn` inline (0.4 µs).
+**R1. The per-message plumbing** (research 59 §1.6). **Dropped.** Three of its fast paths were
+built on 2026-10-08 (constant property names, one walk per mount node, one render slot per
+turn, map flags) and the owner withdrew and reverted them the same day: they sped up machinery
+the direct platform replaces (design §4.2–§4.3 remove the walk, the queue, the built names and
+the context chain outright). The measurement stays (research 59 §1); the `DefectInTurnRender`
+guard it found is kept.
 
-**R2. Controlled inputs by an edited-inputs set** (research 58 §5(c); research 60 §5.2). The
-delegated input listener marks the input it handled. After the render, only marked inputs are
-reconciled with the model. A form `reset` marks the form's inputs. This changes `backend.md`
-§15.3's contract, so it is specified first. It should take live rows 10 000 from 46.5× to P2's
-level. Fixtures: typed and rejected, typed and accepted, autofill, reset, a row removed while
-marked. This replaces the handover's "live rows, next slice".
+**R2. Controlled inputs by an edited-inputs set** (research 58 §5(c); research 60 §5.2).
+**Survives, shared.** Built on `browser` on 2026-10-08 (`backend.md` §15.3, *Controlled inputs*);
+the direct platform reuses the contract and the code, reconciling at the end of the dispatch
+(design §8.1, slice S4). It took live rows 10 000 from 46.5× to P2's level on P3.
 
-**R3. Values that never change** (research 58 §4 W2). A hole whose paths no `update` branch
-writes is written at mount only, with no group and no comparison. If `init` gives it a literal,
-it is part of the template's HTML. Research 60: holes 10 000 goes from 61 905 B to 442 B.
-Research 61: 27% of holes overall, none in TodoMVC, 13 of 16 in the table app. Specified in
-`backend.md` §15.4. Needs the whole-program write summary that R4 also uses, so build that once.
-*2026-10-08:* that summary is specified in `docs/design/write-sets.md` (§1.2 "never written",
-§3.5 `literal`, §9.1).
+**R3. Values that never change** (research 58 §4 W2). **Merges into S1.** The consumer of
+`write-sets.md` §9.1 is the direct lowering's template (design §5.1); it is not built on
+`browser`. Research 61: 27% of holes overall, 0 of 16 in TodoMVC, 13 of 16 in the table app, so
+it is credited with bytes and mount on component-style pages and with no speed on list-heavy ones.
 
-**R4. Per-message write sets and handlers** (research 58 §4 W1/W3, §9). For each `Msg`
-constructor, emit a handler that:
-- runs that `update` branch;
-- marks only the groups whose read paths meet the constructor's write set;
-- leaves the flush to run the marked groups once, keeping comparisons and staging.
+**R4. Per-message write sets and handlers** (research 58 §4 W1/W3, §9). **Merges into S1–S3: it
+is the direct platform's dispatch** (design §4), with the specifics kept — beni's selector
+(design §6.4), guard-aware writes (`write-sets.md` §3.3), `Debug.log` order by `language.md`
+§11.11 — and one specific changed: handlers write directly and stage nothing (design §4.3, the
+owner's Q2). *2026-10-08, the owner's decision after V1 (research 62):* the analysis is built
+**with nested-message dispatch and same-variant analysis**, as a sound static analysis, and
+**gated** on a read-only pass first — `docs/design/write-sets.md` (§4.4 keys, §8 the gate, §9.2)
+— which stands unchanged: the pass is shared compiler work and the direct platform is its first
+consumer. R4 is not built on `browser`.
 
-A constructor whose write set is unbounded marks everything, which is today's path. Groups are
-emitted once and called; one is inlined only when it has a single caller. The specifics:
-- **Keep beni's selector:** dropping it made `select` 45% slower (research 60 §5.5).
-- **Add guard-aware writes** (`if i == k`, `if mod i 10 == 0` inside `indexedMap`), which
-  research 60 §5.4 found the table app needs.
-- **`Debug.log` order** follows `language.md` §11.11.
-- **Before the spec, run V1** (§4).
-- *2026-10-08, the owner's decision after V1 (research 62):* R4 is built **with nested-message
-  dispatch and same-variant analysis**, as a sound static analysis, and **gated** on a
-  read-only pass first. The analysis, the dump (`beni dump --stage=writes`), the gate (≥ ⅔ of
-  Conduit's leaf keys bounded) and what R4 may do with the result are
-  `docs/design/write-sets.md` (§4.4 keys, §8 the gate, §9.2).
+**R5. List edits read off `update`.** **Merges into S2–S3** (design §6.2–§6.3), in the same
+order, the most common first: append and clear; the `map` idiom through the identity walk
+(core's `map` already keeps `===` elements, so slice C's diff is not needed for it); `filter`
+through the merge; `List.update k`, `set`, `swap`, `removeAt` as exact scripts (no user in the
+repository, research 61 §4.2; built because they are the cheapest scripts and the sweeps use
+them). The parked branch `r56-slice-C-over-budget` stays reference only.
 
-**R5. List edits read off `update`**, in research 61's order, the most common first:
-1. **Append and clear** (57 append writes in the corpus).
-2. **`List.map` that keeps unchanged parts of the trie**, plus slice C's diff under option 2
-   (research 56 §9.7). This reaches the `List.map (λr → if r.id == id …)` idiom that is half of
-   real apps' messages (research 61). The parked branch `r56-slice-C-over-budget` is reference
-   only.
-3. **`filter` that removes by key**: a pattern to recognise, not a general mechanism.
-4. **`List.update k`, `set`, `swap`, `removeAt`**: no current use in the repository, so last.
-
-**R6. One keyed pass** (research 59 §4). Keyed `For` is 1 478 B of the table app because beni
-ships two keyed passes where Solid ships one. Measure whether `Rt.trimmed`'s prefix/suffix/swap
-pass still earns its bytes once R5 gives list edits their own path. *The owner, 2026-10-08:* the
-2026-10-04 decision to keep it is open; keep or remove it by the measurements, judged by §1.
+**R6. One keyed pass** (research 59 §4). **Merges into S3**: the direct platform ships one
+reconciler, P3's, and only for a list some key replaces or permutes (design §6.3). *The owner,
+2026-10-08:* the 2026-10-04 decision to keep `Rt.trimmed` on `browser` is open; it is now moot
+for `browser` (no further renderer work there) and decided for `browser-direct`.
 
 ### Track M — the model half (the wall research 60 found)
 
-**M1. Depth: no per-level functions** (research 59 §3; research 60 §4.3). Two changes:
-- the emitter calls each level's patch directly, instead of through `Rt$patch`'s dispatch to a
-  different function at each level (about half of depth 128's cost);
-- nested record updates do not emit one function per level (one recursive function recovered a
-  third of P3's gap).
+**M1. Depth: no per-level functions** (research 59 §3; research 60 §4.3). **Merges into S4 and
+S7.** The dispatch half (`Rt$patch` through 128 kinds) does not exist on the direct platform — a
+nested update is the arm plus the groups its write set reaches (design §7.3); the copy half is
+S7's in-place update (design §7.4). Not built on `browser`.
 
-**M2. `List` when it runs cold** (research 60 §5.1, §6(a)). A single `List.update` on a
-30 000-element trie costs 0.03 ms in the page and 0.25 µs hot, because model code runs once per
-message and never gets optimised. Measure core's cold paths in the page, not in a loop. Find what
-makes the trie path copy expensive when cold. Also measure the trie's share of the table app's
-bytes: research 59 counts 526 B, pulled in by prepending rows. Rule 10 applies here: `List`'s
-design (one array-backed sequence) is the owner's decision. A finding against it is reported,
-not acted on.
+**M2. `List` when it runs cold** (research 60 §5.1, §6(a)). **Survives as a measurement, in S2
+and S3**, on both platforms: the rows ablation (research 60 §4.3) and B1's part-by-part bytes,
+plus the building-loop rule (design §7.2) that keeps an accumulator loop's list a plain array.
+Rule 10 applies: `List`'s design is the owner's; a finding against it is reported, not acted on.
 
-**M3. Updating the top-level model in place** (research 58 §4 W4, §5(b); research 55). Once R4
-leaves the renderer no reason to keep the old model, a `Model` that is provably held only by the
-runtime can be updated in place. This removes the copies behind depth and, past V8's 1 020-field
-limit (research 59 §2), the dictionary-mode cliff. Specified after R4 lands; inner types later.
+**M3. Updating the top-level model in place** (research 58 §4 W4, §5(b); research 55).
+**Becomes S7**, with its proof obligation written (design §7.4: ownership, and the two rules that
+keep identity compares and in-place writes apart) and the owner's W27 amendment (Q4) before it.
 
-**M4. Wide models.** Below V8's limit, beni's growth with width is the root patch comparing every
-field (research 59 §2). R4 removes those comparisons. Past 1 020 fields, V8 itself is the cliff
-and nothing is planned for it (research 58 §2.4).
+**M4. Wide models.** **Merges into S1 and S7.** Below V8's limit the growth was the root patch's
+compares, which per-key handlers remove (S1); past 1 020 fields the spread is V8's dictionary
+cliff until in-place (S7).
 
 ### Track B — bytes outside the renderer
 
-**B1.** Re-measure the table app part by part after R1, R5 and R6 (research 59 §4's method). The
-remaining distance to ≤ 2 830 B is expected to be core's `List` (research 60 §4.6: ~1.2 kB) and
-R6's keyed pass. What to do about core's `List` is decided from that measurement, under M2's
-rule 10 caveat.
+**B1.** **Survives.** Re-measure the table app part by part (research 59 §4's method) on both
+platforms at S3 and at S5, and TodoMVC at S5. The remaining distance to ≤ 2 830 B on the direct
+platform is expected to be core's `List` (research 60 §4.6: ~1.2 kB before the building-loop
+rule; design §13 estimates ~400 B after). What to do about core's `List` is decided from that
+measurement, under M2's rule 10 caveat.
 
 ## 4. Validation that gates the analysis work
 
-**V1. A realistic application before R4 and R5 are specified** (research 61 §7). 65 of the 71
-programs research 61 counted are our own fixtures, and none contains the idioms that make a write
-set unbounded (restoring the model from a decoder, undo history, recursion over the model). The
-RealWorld app (Conduit) already planned in the handover is the candidate. Re-run
-`bench/writesets/classify.mjs` on it. The bar is research 58's: if fewer than about two thirds of
-its constructors have bounded write sets, R4 and R5 shrink to R2, R3 and R5's append/clear.
+**V1. A realistic application before R4 and R5 are specified** (research 61 §7). **Done**:
+research 62 (Conduit) found 11% of dispatched constructors bounded as the classifier read them
+and 94–97% with nested dispatch and same-variant rebuilds, which the owner then put into the
+analysis; the gate is now `write-sets.md` §8.2 (≥ ⅔ of Conduit's leaf keys bounded), run as a
+corpus case, and the direct platform's S6 criterion.
 
-**V2.** Every slice's measurement follows §1 and research 60's protocol: real-click untraced plus
-traced, load recorded, one batch per comparison, pages rebuilt by the compiler under test
-(`scaling.mjs` stamps each page with the beni that built it).
+**V2.** **Survives.** Every slice's measurement follows §1 and research 60's protocol: real-click
+untraced plus traced, load recorded, one batch per comparison, pages rebuilt by the compiler under
+test (`scaling.mjs` stamps each page with the beni that built it) — on both platforms, with the
+subjects and pages design §12.2 lists, a slice's batch under fifteen minutes and the full batch
+opt-in.
 
-**V3. Adversarial agents try to break the page** (the owner, 2026-10-08). Once R3 and R4 consume
-the write-set analysis (`docs/design/write-sets.md`), and again after every later slice that
-specialises rendering, agents write beni programs designed to make a page show something its
-model does not hold: a stale value, a missing or extra element, a controlled input out of sync, a
-wrong row after a list edit. They also try to reach a run-time error or a page that stops. Each
-attempt runs as a `browser/` fixture, specialised against the general render (the differential
-check of §2), in happy-dom and in Chrome. A program that breaks the page is a defect: it gets a
-red-first fixture and a fix, and the spec rule it got past is corrected. The campaign reports
-what it tried, not only what it found. It covers write-set limits (§ *the limits, in plain words*
-of `write-sets.md`), list edits, nested pages, controlled inputs (R2), event plumbing (R1), and
-anything the specialiser assumes.
+**V3. Adversarial agents try to break the page** (the owner, 2026-10-08). **Survives, on the
+direct platform**, after S4 and again after S6, and after every later slice that specialises
+rendering: agents write beni programs designed to make a page show something its model does not
+hold: a stale value, a missing or extra element, a controlled input out of sync, a wrong row after
+a list edit. They also try to reach a run-time error or a page that stops. Each attempt runs as a
+`browser/direct/` fixture built for both platforms (the differential check of §2), in happy-dom
+and in Chrome. A program that breaks the page is a defect: it gets a red-first fixture and a fix,
+and the spec rule it got past is corrected. The campaign reports what it tried, not only what it
+found. It covers write-set limits (`write-sets.md`'s *the limits, in plain words*), list edit
+scripts, branches, nested pages, controlled inputs, direct and delegated events, `Html.map`
+composition, two programs on a page, and anything the lowering assumes.
 
 ## 5. Order, and what can run in parallel
 
-1. **Now, in parallel:** R1 and R2 (both runtime, different code), and V1 (build Conduit).
-2. **Then:** R3, with the write summary it shares with R4; M1.
-3. **Then, after V1's verdict:** R4, then R5 in the order above.
-4. **Alongside R4/R5:** M2's measurement.
-5. **Then:** M3, R6, B1.
-6. **After R3 and R4, and after every later rendering slice:** V3.
+*Rewritten 2026-10-09.*
 
-At most three agents at a time; only one browser batch at a time (a lock file, as on 2026-10-08).
+1. **Now:** the write-set analysis's read-only pass and dump (`write-sets.md` §8), already in
+   progress, shared compiler work with no platform consumer yet; and **S0** (§7), which needs
+   nothing of it.
+2. **Then, in order:** S1, S2, S3 — the first three slices, each on the previous, each measured
+   on both platforms. After S3 the direct platform has either met the table app's targets or
+   shown which piece cannot (design §13's kill criteria 1–4), before any guarantee machinery is
+   built on it.
+3. **Then:** S4 (guarantees and the rest of rendering), then the first V3 campaign.
+4. **Then:** S5 (effects and TodoMVC), with Q5 taken before it; S6 (Conduit), then the second V3.
+5. **Then, after Q4:** S7 (in-place update).
+6. **Then:** S8, the decision: one batch, one report, one platform kept.
+
+Nothing further is built on `browser`'s renderer or runtime while the two platforms are compared:
+a defect there is fixed; a fast path there is patching (§2). At most three agents at a time; only
+one browser batch at a time (a lock file, as on 2026-10-08).
 
 ## 6. Decisions
 
@@ -184,6 +186,45 @@ At most three agents at a time; only one browser batch at a time (a lock file, a
   plain words at the end of `docs/design/write-sets.md`. **V3 added**: adversarial agents try to break
   the page once the analysis has consumers.
 
+*Taken by the owner, 2026-10-08, later the same day:*
+- **R1's fast paths withdrawn and reverted** (commits `914220c91`, `3dca026cb`, `73cc03f9f`):
+  they sped up machinery the compile-away work replaces; a fast path on that machinery is
+  patching. The measured record (research 59) stays.
+- **Rewrite P3 from scratch and first principles, on a separate platform, so the current one can
+  still be compared with it.** "The target is fast and small runtime"; vanilla is the floor in
+  speed and bytes; "my size/speed rule was about the minimizer step, not for adding runtime;
+  adding runtime is a balancing act." The design is `docs/design/browser-direct.md`
+  (2026-10-09); this plan's §7 is its build order.
+
 *Still the owner's:*
-- Anything M2 finds against `List`'s representation. Report it to the owner; do not act on it.
+- Anything M2 or B1 finds against `List`'s representation. Report it to the owner; do not act on it.
 - Restating any criterion in §1. Not to be proposed again without new evidence.
+- The design's open questions Q1–Q6 (`browser-direct.md` §15): an uncompilable program shape
+  refused on the direct platform; direct writes in place of the render loop (reverses W28 and
+  research 56's A); `Browser.flush` a no-op; W27 amended for in-place update; subscriptions that
+  cannot suspend off fibers; TEA as the direct platform's architecture. Q2 and Q1 are needed
+  before S1; Q5 before S5; Q4 before S7.
+
+## 7. The direct platform's slices
+
+*Added 2026-10-09.* The slices of `docs/design/browser-direct.md` §14, with their state. Each is
+specified before it is built, has red-first fixtures (`browser/direct/`, `emit/direct/`), and is
+measured on both platforms, P3, vanilla and Solid 1 in one batch (§1's table). A slice that misses
+its kill criterion (design §13) stops and reports; it does not bend the design or the bar.
+
+| slice | what it builds | proves / kill criterion | state |
+|---|---|---|---|
+| **S0** — the platform and the harness | `platforms/browser-direct/` (manifest, `Tea` with `sandbox`, `Rt` with `send` and `run`, `zig/direct.zig`) registered in `build.zig`; the program hook in the markup interface (`boundary.md` §9.4.6, a dated minor version); a static `view` mounted; the harness subjects `beni-direct`/`beni-direct-release`; `bench/size.mjs`'s page line; `browser/direct/Hello` built both ways | the empty page ≤ 300 B brotli (today 1 234) and imports nothing of `Rt` but `send` and `run`; the two platforms measured side by side | todo |
+| **S1** — holes | text and attribute holes, constancy and baking (R3), per-key handlers with direct writes (R4), direct listeners, groups and slots; the holes, width, burst and stream sweeps | the holes handler is one compare and one write; holes 10 000 ≤ 1.15× untraced; bytes grow with N by the HTML only | todo; needs Q1 and Q2 |
+| **S2** — rows | `For` keyed and positional, row templates and instances, static-key holes, the exact edit scripts (R5's `set`/`update`/swap/append/prepend/clear/insert/remove), the delegated list listener measured against a listener per row; the rows sweep | rows edit ≤ 1.3×, swap ≤ 1.0×; no reconciler in a bundle whose keys are all exact; `List`'s cold cost measured (M2) | todo |
+| **S3** — the table app | the one reconciler (R6) for `replaced`/`permute`, the identity walk and the filter merge (R5), the selector and key map, helper inlining, the building-loop rule in the backend (both platforms), `Html.map` static composition, the dispatcher for carriers; B1's part-by-part bytes on both platforms | every table operation ≤ 1.2×, `select` ≤ 1.0×; bytes ≤ 2 830 or the miss attributed to core's `List` | todo |
+| **S4** — guarantees and the rest of rendering | controlled inputs (R2, shared), defects, crash screen and teardown, branches and `Show`, derived values, nested updates (M1's dispatch half), the value path for recursive helpers and `List Html` holes, two programs on a page; the live, derived, depth, helper-rows and helper-tree sweeps; the first V3 campaign after it | live rows ≤ 1.15×, derived flat, depth ≤ 1.3×; every `browser/dom/` transcript equal on both platforms | todo |
+| **S5** — effects and TodoMVC | `Tea.element`/`document`/`application`, the command driver copied and driven by handlers, subscriptions diffed by write set, the after-render point, `flush` a no-op (Q3); every `browser/tea/` fixture; `bench/todomvc/` with a vanilla subject | TodoMVC bytes ≤ 2× vanilla TodoMVC and below Svelte 4's 4 246; its three messages ≤ 1.2× vanilla; both improve on today's platform or the win was constancy (kill 5) | todo; needs Q5 |
+| **S6** — Conduit | nested keys and same-variant rebuilds through handlers, `patchAll` for the `*` key, the three Conduit scripts on both platforms, bytes and three timed messages; the second V3 campaign | ≥ ⅔ of keys bounded (the gate); ≤ 10 % of dispatches reach `patchAll`; bytes ≤ 0.7× today's 30 842 | todo |
+| **S7** — in-place update (M3, M4's cliff) | the ownership analysis and the assignments in handlers; the identity fixtures extended with design §7.4's two rules | width, depth and rows at ≤ 1.15× | todo; needs Q4 |
+| **S8** — the decision | one batch of everything on both platforms, P3, vanilla and Solid 1; one report | the owner keeps one platform and the other is deleted | todo |
+
+**Shared and not shared** (design §12.1): the compiler, its analyses, `core`, `html`, `browser`'s
+capability modules and the defect teardown, the corpus driver and the bench harness are one copy;
+the `direct` lowering, its `Rt` and its `Tea` (the command driver copied, ~300 lines) are the
+platform's own and go with it at S8.
