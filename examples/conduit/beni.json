@@ -1,0 +1,4 @@
+{
+  "name": "conduit",
+  "build": { "platform": "browser-tea", "paths": ["src"], "out": "out" }
+}

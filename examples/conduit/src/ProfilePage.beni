@@ -1,0 +1,275 @@
+--! A user's profile: their picture, bio and follow button, and a feed of
+--! the articles they wrote or favorited. elm-spa-example's `Page.Profile`.
+
+import Api exposing (Cred)
+import Article
+import Author exposing (Author)
+import Cmd exposing (Cmd)
+import Feed
+import Html exposing (Html)
+import Page
+import Route
+import Session exposing (Session)
+
+
+pub type Status a
+    = Loading String
+    | LoadingSlowly String
+    | Loaded a
+    | Failed String
+
+
+pub type FeedTab
+    = MyArticles
+    | FavoritedArticles
+
+
+pub type alias Model =
+    session : Session
+    errors : List String
+    feedTab : FeedTab
+    feedPage : Int
+    author : Status Author
+    feed : Status Feed.Model
+
+
+type Key
+    = FeedLoad
+
+
+pub init : Session, String, FeedTab → Model × Cmd Msg
+init session username feedTab =
+    maybeCred = Session.cred session
+    ( { session = session
+      , errors = []
+      , feedTab = feedTab
+      , feedPage = 1
+      , author = Loading username
+      , feed = Loading username
+      }
+    , Cmd.batch
+        [ Cmd.task (λ⊤ → Author.fetch username maybeCred) (CompletedAuthorLoad username _)
+        , fetchFeed session feedTab username 1
+        , Page.slowThreshold PassedSlowLoadThreshold
+        ]
+    )
+
+
+pub type Msg
+    = ClickedDismissErrors
+    | ClickedFollow Cred String
+    | ClickedUnfollow Cred String
+    | ClickedTab FeedTab
+    | ClickedFeedPage Int
+    | CompletedFollowChange (Result Api.Error Author)
+    | CompletedAuthorLoad String (Result Api.Error Author)
+    | CompletedFeedLoad String (Result Api.Error Feed.Model)
+    | GotFeedMsg Feed.Msg
+    | PassedSlowLoadThreshold
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedDismissErrors →
+            ( { model | errors = [] }, Cmd.none )
+
+        ClickedUnfollow cred name →
+            ( model, Cmd.task (λ⊤ → Author.unfollow cred name) CompletedFollowChange )
+
+        ClickedFollow cred name →
+            ( model, Cmd.task (λ⊤ → Author.follow cred name) CompletedFollowChange )
+
+        ClickedTab tab →
+            ( { model | feedTab = tab, feedPage = 1 }
+            , fetchFeed model.session tab (currentUsername model) 1
+            )
+
+        ClickedFeedPage page →
+            ( { model | feedPage = page }
+            , fetchFeed model.session model.feedTab (currentUsername model) page
+            )
+
+        CompletedFollowChange (Ok newAuthor) →
+            ( { model | author = Loaded newAuthor }, Cmd.none )
+
+        CompletedFollowChange (Err error) →
+            ( { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
+
+        CompletedAuthorLoad _ (Ok author) →
+            ( { model | author = Loaded author }, Cmd.none )
+
+        CompletedAuthorLoad username (Err _) →
+            ( { model | author = Failed username }, Cmd.none )
+
+        CompletedFeedLoad _ (Ok feed) →
+            ( { model | feed = Loaded feed }, Cmd.none )
+
+        CompletedFeedLoad username (Err _) →
+            ( { model | feed = Failed username }, Cmd.none )
+
+        GotFeedMsg subMsg →
+            case model.feed of
+                Loaded feed →
+                    ( newFeed, subCmd ) = Feed.update subMsg feed
+                    ( { model | feed = Loaded newFeed }, Cmd.map subCmd ⊤ GotFeedMsg )
+
+                _ →
+                    ( model, Cmd.none )
+
+        PassedSlowLoadThreshold →
+            author =
+                case model.author of
+                    Loading username →
+                        LoadingSlowly username
+
+                    other →
+                        other
+            feed =
+                case model.feed of
+                    Loading username →
+                        LoadingSlowly username
+
+                    other →
+                        other
+            ( { model | author = author, feed = feed }, Cmd.none )
+
+
+currentUsername : Model → String
+currentUsername model =
+    case model.author of
+        Loading username →
+            username
+
+        LoadingSlowly username →
+            username
+
+        Loaded author →
+            Author.username author
+
+        Failed username →
+            username
+
+
+fetchFeed : Session, FeedTab, String, Int → Cmd Msg
+fetchFeed session feedTab username page =
+    source =
+        case feedTab of
+            MyArticles →
+                Article.ByAuthor username
+
+            FavoritedArticles →
+                Article.FavoritedBy username
+    Cmd.keyed FeedLoad Cmd.Restart λsend →
+        send
+            (CompletedFeedLoad
+                username
+                (Result.map (Article.list (Session.cred session) source page) λloaded →
+                    Feed.init session page loaded
+                )
+            )
+
+
+pub toSession : Model → Session
+toSession model = model.session
+
+
+-- ---- View ----------------------------------------------------------------------
+
+pub view : Model → { title : String, content : Html Msg }
+view model =
+    title =
+        case model.author of
+            Loaded author →
+                case author of
+                    Author.IsViewer _ →
+                        "My Profile"
+
+                    _ →
+                        "Profile — " ++ Author.username author
+
+            Loading username →
+                "Profile — " ++ username
+
+            LoadingSlowly username →
+                "Profile — " ++ username
+
+            Failed username →
+                "Profile — " ++ username
+    { title = title
+    , content =
+        case model.author of
+            Loaded author →
+                viewProfile model author
+
+            Loading _ →
+                <></>
+
+            LoadingSlowly _ →
+                Page.loading
+
+            Failed _ →
+                Page.loadingError "profile"
+    }
+
+
+viewProfile : Model, Author → Html Msg
+viewProfile model author =
+    profile = Author.profile author
+    <div class="profile-page">
+        {Page.viewErrors ClickedDismissErrors model.errors}
+        <div class="user-info">
+            <div class="container">
+                <div class="row">
+                    <div class="col-xs-12 col-md-10 offset-md-1">
+                        {Author.avatar profile.image "user-img"}
+                        <h4>{profile.username}</h4>
+                        <p>{Maybe.withDefault profile.bio ""}</p>
+                        {case Session.cred model.session of
+                            Just cred →
+                                Author.followButton
+                                    (ClickedFollow cred profile.username)
+                                    (ClickedUnfollow cred profile.username)
+                                    author
+
+                            Nothing →
+                                <></>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="container">
+            <div class="row">
+                <div class="col-xs-12 col-md-10 offset-md-1">
+                    {case model.feed of
+                        Loaded feed →
+                            <div class="articles-toggle">
+                                {Feed.viewTabs
+                                    [ ( "My Articles"
+                                      , model.feedTab == MyArticles
+                                      , ClickedTab MyArticles
+                                      )
+                                    , ( "Favorited Articles"
+                                      , model.feedTab == FavoritedArticles
+                                      , ClickedTab FavoritedArticles
+                                      )
+                                    ]
+                                }
+                                {Html.map (Feed.viewArticles feed) GotFeedMsg}
+                                {Feed.viewPagination ClickedFeedPage feed}
+                            </div>
+
+                        Loading _ →
+                            <></>
+
+                        LoadingSlowly _ →
+                            Page.loading
+
+                        Failed _ →
+                            Page.loadingError "feed"
+                    }
+                </div>
+            </div>
+        </div>
+    </div>

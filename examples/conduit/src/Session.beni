@@ -1,0 +1,45 @@
+--! Who is using the page: a signed-in `Viewer`, or a guest. Every page
+--! keeps the session it was opened with, and hands it back to `Main` when
+--! the route changes.
+
+import Api exposing (Cred, Viewer)
+import Browser.Navigation as Navigation
+
+
+pub type Session
+    = LoggedIn Navigation.Key Viewer
+    | Guest Navigation.Key
+
+
+pub navKey : Session → Navigation.Key
+navKey session =
+    case session of
+        LoggedIn key _ →
+            key
+
+        Guest key →
+            key
+
+
+pub viewer : Session → Maybe Viewer
+viewer session =
+    case session of
+        LoggedIn _ v →
+            Just v
+
+        Guest _ →
+            Nothing
+
+
+pub cred : Session → Maybe Cred
+cred session = Maybe.map (viewer session) .cred
+
+
+pub fromViewer : Navigation.Key, Maybe Viewer → Session
+fromViewer key maybeViewer =
+    case maybeViewer of
+        Just v →
+            LoggedIn key v
+
+        Nothing →
+            Guest key

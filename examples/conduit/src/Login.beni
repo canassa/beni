@@ -1,0 +1,163 @@
+--! Signing in: a form of e-mail and password, checked before it is sent,
+--! and the server's answer — the signed-in user, kept for the next visit,
+--! or its reasons for refusing. elm-spa-example's `Page.Login`.
+
+import Api exposing (Viewer)
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Route
+import Session exposing (Session)
+
+
+pub type alias Form =
+    email : String
+    password : String
+
+
+pub type Problem
+    = InvalidEntry ValidatedField String
+    | ServerError String
+
+
+pub type ValidatedField
+    = Email
+    | Password
+
+
+pub type alias Model =
+    session : Session
+    problems : List Problem
+    form : Form
+
+
+pub init : Session → Model × Cmd Msg
+init session =
+    ( { session = session, problems = [], form = { email = "", password = "" } }, Cmd.none )
+
+
+pub type Msg
+    = SubmittedForm
+    | EnteredEmail String
+    | EnteredPassword String
+    | CompletedLogin (Result Api.Error Viewer)
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        SubmittedForm →
+            case validate model.form of
+                [] →
+                    ( { model | problems = [] }
+                    , Cmd.task
+                        (λ⊤ → Api.login (String.trim model.form.email) model.form.password)
+                        CompletedLogin
+                    )
+
+                problems →
+                    ( { model | problems = problems }, Cmd.none )
+
+        EnteredEmail email →
+            updateForm (λform → { form | email = email }) model
+
+        EnteredPassword password →
+            updateForm (λform → { form | password = password }) model
+
+        CompletedLogin (Err error) →
+            ( { model | problems = List.map (Api.errorMessages error) ServerError }, Cmd.none )
+
+        CompletedLogin (Ok viewer) →
+            key = Session.navKey model.session
+            ( { model | session = Session.LoggedIn key viewer }
+            , Cmd.do λ⊤ →
+                Api.storeViewer viewer
+                Route.replaceUrl key Route.Home
+            )
+
+
+-- Change the form, as each field's input does.
+updateForm : (Form → Form), Model → Model × Cmd Msg
+updateForm transform model = ( { model | form = transform model.form }, Cmd.none )
+
+
+validate : Form → List Problem
+validate form = List.concatMap [ Email, Password ] λfield →
+    case field of
+        Email →
+            if String.isEmpty (String.trim form.email) then
+                [ InvalidEntry Email "email can't be blank." ]
+            else
+                []
+
+        Password →
+            if String.isEmpty form.password then
+                [ InvalidEntry Password "password can't be blank." ]
+            else
+                []
+
+
+pub toSession : Model → Session
+toSession model = model.session
+
+
+-- ---- View ----------------------------------------------------------------------
+
+pub view : Model → { title : String, content : Html Msg }
+view model =
+    { title = "Login"
+    , content =
+        <div class="cred-page">
+            <div class="container page">
+                <div class="row">
+                    <div class="col-md-6 offset-md-3 col-xs-12">
+                        <h1 class="text-xs-center">Sign in</h1>
+                        <p class="text-xs-center">
+                            <a href={Route.href Route.Register}>Need an account?</a>
+                        </p>
+                        {viewProblems model.problems}
+                        <form id="login-form" onSubmit={λ_ → SubmittedForm}>
+                            <fieldset class="form-group">
+                                <input
+                                    id="email"
+                                    class="form-control form-control-lg"
+                                    placeholder="Email"
+                                    value={model.form.email}
+                                    onInput={EnteredEmail}
+                                />
+                            </fieldset>
+                            <fieldset class="form-group">
+                                <input
+                                    id="password"
+                                    class="form-control form-control-lg"
+                                    type="password"
+                                    placeholder="Password"
+                                    value={model.form.password}
+                                    onInput={EnteredPassword}
+                                />
+                            </fieldset>
+                            <button class="btn btn-lg btn-primary pull-xs-right">Sign in</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+
+viewProblems : List Problem → Html msg
+viewProblems problems =
+    <ul class="error-messages">
+        <For each={problems} keyed={False}>
+            {λproblem →
+                <li>
+                    {case problem of
+                        InvalidEntry _ text →
+                            text
+
+                        ServerError text →
+                            text
+                    }
+                </li>
+            }
+        </For>
+    </ul>

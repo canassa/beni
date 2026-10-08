@@ -1,0 +1,1757 @@
+-- url "/"
+-- store local "conduit" "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":null,\"image\":null}}"
+-- load
+(fetch 1: GET /api/articles/feed?limit=10&offset=0 {"authorization":"Token t0k3n"})
+(fetch 2: GET /api/tags {})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <!---->
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 1 200 "{\"articles\":[],\"articlesCount\":25}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <ul class="pagination">
+                <li class="page-item active">
+                  <a class="page-link" href="" id="page-1">"1"</a>
+                </li>
+                <li class="page-item">
+                  <a class="page-link" href="" id="page-2">"2"</a>
+                </li>
+                <li class="page-item">
+                  <a class="page-link" href="" id="page-3">"3"</a>
+                </li>
+              </ul>
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 2 200 "{\"tags\":[\"dragons\",\"beni\"]}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <ul class="pagination">
+                <li class="page-item active">
+                  <a class="page-link" href="" id="page-1">"1"</a>
+                </li>
+                <li class="page-item">
+                  <a class="page-link" href="" id="page-2">"2"</a>
+                </li>
+                <li class="page-item">
+                  <a class="page-link" href="" id="page-3">"3"</a>
+                </li>
+              </ul>
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <div class="tag-list">
+                <a class="tag-pill tag-default" href="" id="tag-dragons">"dragons"</a>
+                <a class="tag-pill tag-default" href="" id="tag-beni">"beni"</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #page-3
+(click's default prevented)
+(fetch 3: GET /api/articles/feed?limit=10&offset=20 {"authorization":"Token t0k3n"})
+(the DOM did not change)
+-- click #tag-beni
+(click's default prevented)
+(fetch 3 aborted: AbortError)
+(fetch 4: GET /api/articles?tag=beni&limit=10&offset=0 {"authorization":"Token t0k3n"})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Global Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"#beni"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <ul class="pagination">
+                <li class="page-item active">
+                  <a class="page-link" href="" id="page-1">"1"</a>
+                </li>
+                <li class="page-item">
+                  <a class="page-link" href="" id="page-2">"2"</a>
+                </li>
+                <li class="page-item">
+                  <a class="page-link" href="" id="page-3">"3"</a>
+                </li>
+              </ul>
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <div class="tag-list">
+                <a class="tag-pill tag-default" href="" id="tag-dragons">"dragons"</a>
+                <a class="tag-pill tag-default" href="" id="tag-beni">"beni"</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 3 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+(fetch 3 was aborted: nothing hears the answer)
+(the DOM did not change)
+-- respond 4 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Global Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"#beni"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <div class="tag-list">
+                <a class="tag-pill tag-default" href="" id="tag-dragons">"dragons"</a>
+                <a class="tag-pill tag-default" href="" id="tag-beni">"beni"</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click .nav-link[href="/profile/ada"]
+(click's default prevented)
+(fetch 5: GET /api/profiles/ada {"authorization":"Token t0k3n"})
+(fetch 6: GET /api/articles?author=ada&limit=10&offset=0 {"authorization":"Token t0k3n"})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <!---->
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 5 200 "{\"profile\":{\"username\":\"ada\",\"bio\":\"hi\",\"image\":null,\"following\":false}}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="profile-page">
+      <!---->
+      <div class="user-info">
+        <div class="container">
+          <div class="row">
+            <div class="col-xs-12 col-md-10 offset-md-1">
+              <img class="user-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <h4>"ada"</h4>
+              <p>"hi"</p>
+              <!---->
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="container">
+        <div class="row">
+          <div class="col-xs-12 col-md-10 offset-md-1">
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 6 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="profile-page">
+      <!---->
+      <div class="user-info">
+        <div class="container">
+          <div class="row">
+            <div class="col-xs-12 col-md-10 offset-md-1">
+              <img class="user-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <h4>"ada"</h4>
+              <p>"hi"</p>
+              <!---->
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="container">
+        <div class="row">
+          <div class="col-xs-12 col-md-10 offset-md-1">
+            <div class="articles-toggle">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"My Articles"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Favorited Articles"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click .articles-toggle>.feed-toggle>ul>li:nth-child(2)>a
+(click's default prevented)
+(fetch 7: GET /api/articles?favorited=ada&limit=10&offset=0 {"authorization":"Token t0k3n"})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="profile-page">
+      <!---->
+      <div class="user-info">
+        <div class="container">
+          <div class="row">
+            <div class="col-xs-12 col-md-10 offset-md-1">
+              <img class="user-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <h4>"ada"</h4>
+              <p>"hi"</p>
+              <!---->
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="container">
+        <div class="row">
+          <div class="col-xs-12 col-md-10 offset-md-1">
+            <div class="articles-toggle">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"My Articles"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Favorited Articles"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 7 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+(the DOM did not change)
+-- location
+(location: /profile/ada)
+(the DOM did not change)
+-- click .nav-link[href="/settings"]
+(click's default prevented)
+(fetch 8: GET /api/user {"authorization":"Token t0k3n"})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="settings-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Your Settings"</h1>
+            <ul class="error-messages"></ul>
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 8 200 "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":null,\"image\":null}}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="settings-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Your Settings"</h1>
+            <ul class="error-messages"></ul>
+            <form id="settings-form">
+              <fieldset>
+                <fieldset class="form-group">
+                  <input id="avatar" class="form-control" placeholder="URL of profile picture" .value="">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="username" class="form-control form-control-lg" placeholder="Username" .value="ada">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="bio" class="form-control form-control-lg" rows="8" placeholder="Short bio about you" .value=""></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="email" class="form-control form-control-lg" placeholder="Email" .value="ada@example.com">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="">
+                </fieldset>
+                <button class="btn btn-lg btn-primary pull-xs-right">"Update Settings"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #bio "Countess"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="settings-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Your Settings"</h1>
+            <ul class="error-messages"></ul>
+            <form id="settings-form">
+              <fieldset>
+                <fieldset class="form-group">
+                  <input id="avatar" class="form-control" placeholder="URL of profile picture" .value="">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="username" class="form-control form-control-lg" placeholder="Username" .value="ada">
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea id="bio" class="form-control form-control-lg" rows="8" placeholder="Short bio about you" .value="Countess"></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="email" class="form-control form-control-lg" placeholder="Email" .value="ada@example.com">
+                </fieldset>
+                <fieldset class="form-group">
+                  <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="">
+                </fieldset>
+                <button class="btn btn-lg btn-primary pull-xs-right">"Update Settings"</button>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #settings-form>fieldset>button
+(fetch 9: PUT /api/user {"authorization":"Token t0k3n","content-type":"application/json"} "{\"user\":{\"email\":\"ada@example.com\",\"username\":\"ada\",\"bio\":\"Countess\",\"image\":null}}")
+(the DOM did not change)
+-- respond 9 200 "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":\"Countess\",\"image\":null}}" Content-Type: "application/json"
+(fetch 10: GET /api/articles/feed?limit=10&offset=0 {"authorization":"Token t0k3n"})
+(fetch 11: GET /api/tags {})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <!---->
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- location
+(location: /)
+(the DOM did not change)
+-- storage local
+(localStorage: {"conduit":"{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":\"Countess\",\"image\":null}}"})
+(the DOM did not change)
+-- respond 10 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 11 200 "{\"tags\":[]}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <div class="tag-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click .nav-link[href="/logout"]
+(click's default prevented)
+(fetch 12: GET /api/articles?limit=10&offset=0 {})
+(fetch 13: GET /api/tags {})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <div class="banner">
+        <div class="container">
+          <h1 class="logo-font">"conduit"</h1>
+          <p>"A place to share your knowledge."</p>
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <!---->
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- location
+(location: /)
+(the DOM did not change)
+-- storage local
+(localStorage: {})
+(the DOM did not change)
+-- respond 12 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <div class="banner">
+        <div class="container">
+          <h1 class="logo-font">"conduit"</h1>
+          <p>"A place to share your knowledge."</p>
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 13 200 "{\"tags\":[]}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <div class="banner">
+        <div class="container">
+          <h1 class="logo-font">"conduit"</h1>
+          <p>"A place to share your knowledge."</p>
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <div class="tag-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click .nav-link[href="/register"]
+(click's default prevented)
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign up"</h1>
+            <p class="text-xs-center">
+              <a href="/login">"Have an account?"</a>
+            </p>
+            <ul class="error-messages"></ul>
+            <form id="register-form">
+              <fieldset class="form-group">
+                <input id="username" class="form-control form-control-lg" placeholder="Username" .value="">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign up"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #register-form>button
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign up"</h1>
+            <p class="text-xs-center">
+              <a href="/login">"Have an account?"</a>
+            </p>
+            <ul class="error-messages">
+              <li>"username can't be blank."</li>
+              <li>"email can't be blank."</li>
+              <li>"password can't be blank."</li>
+            </ul>
+            <form id="register-form">
+              <fieldset class="form-group">
+                <input id="username" class="form-control form-control-lg" placeholder="Username" .value="">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign up"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #username "bo"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign up"</h1>
+            <p class="text-xs-center">
+              <a href="/login">"Have an account?"</a>
+            </p>
+            <ul class="error-messages">
+              <li>"username can't be blank."</li>
+              <li>"email can't be blank."</li>
+              <li>"password can't be blank."</li>
+            </ul>
+            <form id="register-form">
+              <fieldset class="form-group">
+                <input id="username" class="form-control form-control-lg" placeholder="Username" .value="bo">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign up"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #email "bo@example.com"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign up"</h1>
+            <p class="text-xs-center">
+              <a href="/login">"Have an account?"</a>
+            </p>
+            <ul class="error-messages">
+              <li>"username can't be blank."</li>
+              <li>"email can't be blank."</li>
+              <li>"password can't be blank."</li>
+            </ul>
+            <form id="register-form">
+              <fieldset class="form-group">
+                <input id="username" class="form-control form-control-lg" placeholder="Username" .value="bo">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="bo@example.com">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign up"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #password "abc"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign up"</h1>
+            <p class="text-xs-center">
+              <a href="/login">"Have an account?"</a>
+            </p>
+            <ul class="error-messages">
+              <li>"username can't be blank."</li>
+              <li>"email can't be blank."</li>
+              <li>"password can't be blank."</li>
+            </ul>
+            <form id="register-form">
+              <fieldset class="form-group">
+                <input id="username" class="form-control form-control-lg" placeholder="Username" .value="bo">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="bo@example.com">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="abc">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign up"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #register-form>button
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign up"</h1>
+            <p class="text-xs-center">
+              <a href="/login">"Have an account?"</a>
+            </p>
+            <ul class="error-messages">
+              <li>"password must be at least 6 characters long."</li>
+            </ul>
+            <form id="register-form">
+              <fieldset class="form-group">
+                <input id="username" class="form-control form-control-lg" placeholder="Username" .value="bo">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="bo@example.com">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="abc">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign up"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>

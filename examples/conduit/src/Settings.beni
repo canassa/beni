@@ -1,0 +1,311 @@
+--! The viewer's settings: their profile loaded into a form, edited, and
+--! saved back — the password only when one is typed. elm-spa-example's
+--! `Page.Settings`.
+
+import Api exposing (Cred, Viewer)
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Page
+import Route
+import Schema exposing (Missing, Present)
+import Session exposing (Session)
+
+
+pub type alias Form =
+    avatar : String
+    bio : String
+    email : String
+    username : String
+    password : String
+
+
+pub type Status
+    = Loading
+    | LoadingSlowly
+    | Loaded Form
+    | Failed
+
+
+pub type Problem
+    = InvalidEntry ValidatedField String
+    | ServerError String
+
+
+pub type ValidatedField
+    = Username
+    | Email
+    | Password
+
+
+pub type alias Model =
+    session : Session
+    problems : List Problem
+    status : Status
+
+
+pub schema UpdateJson =
+    user :
+        email : String
+        username : String
+        bio : String
+        image : String nullable
+        password : String optional
+
+
+pub init : Session → Model × Cmd Msg
+init session =
+    case Session.cred session of
+        Just cred →
+            ( { session = session, problems = [], status = Loading }
+            , Cmd.batch
+                [ Cmd.task (λ⊤ → load cred) CompletedFormLoad
+                , Page.slowThreshold PassedSlowLoadThreshold
+                ]
+            )
+
+        Nothing →
+            ( { session = session, problems = [], status = Failed }, Cmd.none )
+
+
+load : Cred → Result Api.Error Form
+load cred =
+    Result.map (Api.get (Api.url [ "user" ] []) (Just cred) Api.UserEnvelope.parse) λenvelope →
+        user = envelope.user
+        { avatar = Maybe.withDefault (Api.fromNullable user.image) ""
+        , bio = Maybe.withDefault (Api.fromNullable user.bio) ""
+        , email = user.email
+        , username = user.username
+        , password = ""
+        }
+
+
+pub type Msg
+    = CompletedFormLoad (Result Api.Error Form)
+    | SubmittedForm
+    | EnteredEmail String
+    | EnteredUsername String
+    | EnteredPassword String
+    | EnteredBio String
+    | EnteredAvatar String
+    | CompletedSave (Result Api.Error Viewer)
+    | PassedSlowLoadThreshold
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        CompletedFormLoad (Ok form) →
+            ( { model | status = Loaded form }, Cmd.none )
+
+        CompletedFormLoad (Err _) →
+            ( { model | status = Failed }, Cmd.none )
+
+        SubmittedForm →
+            case ( model.status, Session.cred model.session ) of
+                ( Loaded form, Just cred ) →
+                    case validate form of
+                        [] →
+                            ( { model | problems = [] }
+                            , Cmd.task (λ⊤ → save cred form) CompletedSave
+                            )
+
+                        problems →
+                            ( { model | problems = problems }, Cmd.none )
+
+                _ →
+                    ( model, Cmd.none )
+
+        EnteredEmail email →
+            updateForm (λform → { form | email = email }) model
+
+        EnteredUsername username →
+            updateForm (λform → { form | username = username }) model
+
+        EnteredPassword password →
+            updateForm (λform → { form | password = password }) model
+
+        EnteredBio bio →
+            updateForm (λform → { form | bio = bio }) model
+
+        EnteredAvatar avatar →
+            updateForm (λform → { form | avatar = avatar }) model
+
+        CompletedSave (Err error) →
+            ( { model | problems = List.map (Api.errorMessages error) ServerError }, Cmd.none )
+
+        CompletedSave (Ok viewer) →
+            key = Session.navKey model.session
+            ( { model | session = Session.LoggedIn key viewer }
+            , Cmd.do λ⊤ →
+                Api.storeViewer viewer
+                Route.replaceUrl key Route.Home
+            )
+
+        PassedSlowLoadThreshold →
+            case model.status of
+                Loading →
+                    ( { model | status = LoadingSlowly }, Cmd.none )
+
+                _ →
+                    ( model, Cmd.none )
+
+
+-- Change the form, when there is one to change.
+updateForm : (Form → Form), Model → Model × Cmd Msg
+updateForm transform model =
+    case model.status of
+        Loaded form →
+            ( { model | status = Loaded (transform form) }, Cmd.none )
+
+        _ →
+            ( model, Cmd.none )
+
+
+save : Cred, Form → Result Api.Error Viewer
+save cred form =
+    body =
+        Http.jsonBody (UpdateJson.schema ⊤)
+            { user =
+                { email = form.email
+                , username = form.username
+                , bio = form.bio
+                , image =
+                    Api.toNullable
+                        (if String.isEmpty form.avatar then Nothing else Just form.avatar)
+                , password = if String.isEmpty form.password then Missing else Present form.password
+                }
+            }
+    Result.map (Api.put (Api.url [ "user" ] []) cred body Api.UserEnvelope.parse) λenvelope →
+        Api.viewerFromJson envelope.user
+
+
+validate : Form → List Problem
+validate form =
+    username =
+        if String.isEmpty (String.trim form.username) then
+            [ InvalidEntry Username "username can't be blank." ]
+        else
+            []
+    email =
+        if String.isEmpty (String.trim form.email) then
+            [ InvalidEntry Email "email can't be blank." ]
+        else
+            []
+    password =
+        if not (String.isEmpty form.password) && String.length form.password < 6 then
+            [ InvalidEntry Password "password must be at least 6 characters long." ]
+        else
+            []
+    username ++ email ++ password
+
+
+pub toSession : Model → Session
+toSession model = model.session
+
+
+-- ---- View ----------------------------------------------------------------------
+
+pub view : Model → { title : String, content : Html Msg }
+view model =
+    { title = "Settings"
+    , content =
+        <div class="settings-page">
+            <div class="container page">
+                <div class="row">
+                    <div class="col-md-6 offset-md-3 col-xs-12">
+                        <h1 class="text-xs-center">Your Settings</h1>
+                        <ul class="error-messages">
+                            <For each={model.problems} keyed={False}>
+                                {λproblem →
+                                    <li>
+                                        {case problem of
+                                            InvalidEntry _ text →
+                                                text
+
+                                            ServerError text →
+                                                text
+                                        }
+                                    </li>
+                                }
+                            </For>
+                        </ul>
+                        {case model.status of
+                            Loaded form →
+                                viewForm form
+
+                            Loading →
+                                <></>
+
+                            LoadingSlowly →
+                                Page.loading
+
+                            Failed →
+                                case Session.cred model.session of
+                                    Just _ →
+                                        Page.loadingError "page"
+
+                                    Nothing →
+                                        <p>Sign in to view your settings.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+
+viewForm : Form → Html Msg
+viewForm form =
+    <form id="settings-form" onSubmit={λ_ → SubmittedForm}>
+        <fieldset>
+            <fieldset class="form-group">
+                <input
+                    id="avatar"
+                    class="form-control"
+                    placeholder="URL of profile picture"
+                    value={form.avatar}
+                    onInput={EnteredAvatar}
+                />
+            </fieldset>
+            <fieldset class="form-group">
+                <input
+                    id="username"
+                    class="form-control form-control-lg"
+                    placeholder="Username"
+                    value={form.username}
+                    onInput={EnteredUsername}
+                />
+            </fieldset>
+            <fieldset class="form-group">
+                <textarea
+                    id="bio"
+                    class="form-control form-control-lg"
+                    rows={8}
+                    placeholder="Short bio about you"
+                    value={form.bio}
+                    onInput={EnteredBio}
+                />
+            </fieldset>
+            <fieldset class="form-group">
+                <input
+                    id="email"
+                    class="form-control form-control-lg"
+                    placeholder="Email"
+                    value={form.email}
+                    onInput={EnteredEmail}
+                />
+            </fieldset>
+            <fieldset class="form-group">
+                <input
+                    id="password"
+                    class="form-control form-control-lg"
+                    type="password"
+                    placeholder="Password"
+                    value={form.password}
+                    onInput={EnteredPassword}
+                />
+            </fieldset>
+            <button class="btn btn-lg btn-primary pull-xs-right">Update Settings</button>
+        </fieldset>
+    </form>

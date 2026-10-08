@@ -1,0 +1,249 @@
+--! The home page: a banner, the feed under one of its tabs — the viewer's
+--! own feed, the global feed, or a tag's — a page at a time, and the
+--! popular tags beside it. elm-spa-example's `Page.Home`.
+
+import Api
+import Article
+import Cmd exposing (Cmd)
+import Feed
+import Html exposing (Html)
+import Page
+import Session exposing (Session)
+
+
+pub type Status a
+    = Loading
+    | LoadingSlowly
+    | Loaded a
+    | Failed
+
+
+pub type FeedTab
+    = YourFeed
+    | GlobalFeed
+    | TagFeed String
+
+
+pub type alias Model =
+    session : Session
+    feedTab : FeedTab
+    feedPage : Int
+    feed : Status Feed.Model
+    tags : Status (List String)
+
+
+-- The key the feed's request runs under: a new tab or page cancels the
+-- request still running for the old one.
+type Key
+    = FeedLoad
+
+
+pub init : Session → Model × Cmd Msg
+init session =
+    feedTab =
+        case Session.cred session of
+            Just _ →
+                YourFeed
+
+            Nothing →
+                GlobalFeed
+    ( { session = session, feedTab = feedTab, feedPage = 1, feed = Loading, tags = Loading }
+    , Cmd.batch
+        [ fetchFeed session feedTab 1
+        , Cmd.task (λ⊤ → Article.tags ⊤) CompletedTagsLoad
+        , Page.slowThreshold PassedSlowLoadThreshold
+        ]
+    )
+
+
+pub type Msg
+    = ClickedTag String
+    | ClickedTab FeedTab
+    | ClickedFeedPage Int
+    | CompletedFeedLoad (Result Api.Error Feed.Model)
+    | CompletedTagsLoad (Result Api.Error (List String))
+    | GotFeedMsg Feed.Msg
+    | PassedSlowLoadThreshold
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedTag tag →
+            feedTab = TagFeed tag
+            ( { model | feedTab = feedTab, feedPage = 1 }, fetchFeed model.session feedTab 1 )
+
+        ClickedTab tab →
+            ( { model | feedTab = tab, feedPage = 1 }, fetchFeed model.session tab 1 )
+
+        ClickedFeedPage page →
+            ( { model | feedPage = page }, fetchFeed model.session model.feedTab page )
+
+        CompletedFeedLoad (Ok feed) →
+            ( { model | feed = Loaded feed }, Cmd.none )
+
+        CompletedFeedLoad (Err _) →
+            ( { model | feed = Failed }, Cmd.none )
+
+        CompletedTagsLoad (Ok tags) →
+            ( { model | tags = Loaded tags }, Cmd.none )
+
+        CompletedTagsLoad (Err _) →
+            ( { model | tags = Failed }, Cmd.none )
+
+        GotFeedMsg subMsg →
+            case model.feed of
+                Loaded feed →
+                    ( newFeed, subCmd ) = Feed.update subMsg feed
+                    ( { model | feed = Loaded newFeed }, Cmd.map subCmd ⊤ GotFeedMsg )
+
+                _ →
+                    ( model, Cmd.none )
+
+        PassedSlowLoadThreshold →
+            feed =
+                case model.feed of
+                    Loading →
+                        LoadingSlowly
+
+                    other →
+                        other
+            tags =
+                case model.tags of
+                    Loading →
+                        LoadingSlowly
+
+                    other →
+                        other
+            ( { model | feed = feed, tags = tags }, Cmd.none )
+
+
+fetchFeed : Session, FeedTab, Int → Cmd Msg
+fetchFeed session feedTab page =
+    maybeCred = Session.cred session
+    source =
+        case feedTab of
+            YourFeed →
+                Article.YourFeed
+
+            GlobalFeed →
+                Article.Global
+
+            TagFeed tag →
+                Article.Tagged tag
+    Cmd.keyed FeedLoad Cmd.Restart λsend →
+        send
+            (CompletedFeedLoad
+                (Result.map (Article.list maybeCred source page) λloaded →
+                    Feed.init session page loaded
+                )
+            )
+
+
+pub toSession : Model → Session
+toSession model = model.session
+
+
+-- ---- View ----------------------------------------------------------------------
+
+pub view : Model → { title : String, content : Html Msg }
+view model =
+    { title = "Home"
+    , content =
+        <div class="home-page">
+            {case model.session of
+                Session.LoggedIn _ _ →
+                    <></>
+
+                Session.Guest _ →
+                    <div class="banner">
+                        <div class="container">
+                            <h1 class="logo-font">conduit</h1>
+                            <p>A place to share your knowledge.</p>
+                        </div>
+                    </div>
+            }
+            <div class="container page">
+                <div class="row">
+                    <div class="col-md-9">
+                        {case model.feed of
+                            Loaded feed →
+                                <div class="feed">
+                                    {viewTabs model.session model.feedTab}
+                                    {Html.map (Feed.viewArticles feed) GotFeedMsg}
+                                    {Feed.viewPagination ClickedFeedPage feed}
+                                </div>
+
+                            Loading →
+                                <></>
+
+                            LoadingSlowly →
+                                Page.loading
+
+                            Failed →
+                                Page.loadingError "feed"
+                        }
+                    </div>
+                    <div class="col-md-3">
+                        <div class="sidebar">
+                            <p>Popular Tags</p>
+                            {case model.tags of
+                                Loaded tags →
+                                    viewTags tags
+
+                                Loading →
+                                    <></>
+
+                                LoadingSlowly →
+                                    Page.loading
+
+                                Failed →
+                                    Page.loadingError "tags"
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+
+viewTabs : Session, FeedTab → Html Msg
+viewTabs session active =
+    yours =
+        case Session.cred session of
+            Just _ →
+                [ ( "Your Feed", active == YourFeed, ClickedTab YourFeed ) ]
+
+            Nothing →
+                []
+    tagged =
+        case active of
+            TagFeed tag →
+                [ ( "#" ++ tag, True, ClickedTag tag ) ]
+
+            _ →
+                []
+    Feed.viewTabs
+        (yours ++ [ ( "Global Feed", active == GlobalFeed, ClickedTab GlobalFeed ) ] ++ tagged)
+
+
+viewTags : List String → Html Msg
+viewTags tags =
+    <div class="tag-list">
+        <For each={tags} keyed={False}>
+            {λtag →
+                <a
+                    class="tag-pill tag-default"
+                    id="tag-${tag}"
+                    href=""
+                    onClick={λevent →
+                                Html.preventDefault event
+                                ClickedTag tag
+                            }
+                >
+                    {tag}
+                </a>
+            }
+        </For>
+    </div>

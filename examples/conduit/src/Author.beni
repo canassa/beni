@@ -1,0 +1,146 @@
+--! The author of an article or a comment, and the user a profile page
+--! shows: their profile, and how the viewer relates to them — the viewer
+--! themself, followed, or not followed. elm-spa-example's `Author`,
+--! `Profile` and `Avatar`.
+
+import Api exposing (Cred)
+import Html exposing (Html)
+import Http
+import Route
+import Schema exposing (Nullable)
+
+
+pub schema ProfileJson =
+    username : String
+    bio : String nullable
+    image : String nullable
+    following : Bool
+
+
+pub schema ProfileEnvelope =
+    profile : ProfileJson
+
+
+pub type alias Profile =
+    username : String
+    bio : Maybe String
+    image : Maybe String
+
+
+pub type Author
+    = IsViewer Profile
+    | IsFollowing Profile
+    | IsNotFollowing Profile
+
+
+pub fromJson : Maybe Cred, ProfileJson.Type → Author
+fromJson maybeCred json =
+    p =
+        { username = json.username
+        , bio = Api.fromNullable json.bio
+        , image = Api.fromNullable json.image
+        }
+    case maybeCred of
+        Just cred →
+            if cred.username == json.username then
+                IsViewer p
+            else if json.following then
+                IsFollowing p
+            else
+                IsNotFollowing p
+
+        Nothing →
+            IsNotFollowing p
+
+
+pub profile : Author → Profile
+profile author =
+    case author of
+        IsViewer p →
+            p
+
+        IsFollowing p →
+            p
+
+        IsNotFollowing p →
+            p
+
+
+pub username : Author → String
+username author = (profile author).username
+
+
+-- ---- Requests ----------------------------------------------------------------
+
+pub fetch : String, Maybe Cred → Result Api.Error Author
+fetch name maybeCred =
+    Result.map (Api.get (Api.url [ "profiles", name ] []) maybeCred ProfileEnvelope.parse) λenvelope →
+        fromJson maybeCred envelope.profile
+
+
+pub follow : Cred, String → Result Api.Error Author
+follow cred name =
+    Result.map
+        (Api.post
+            (Api.url [ "profiles", name, "follow" ] [])
+            (Just cred)
+            Http.emptyBody
+            ProfileEnvelope.parse
+        )
+        λenvelope → fromJson (Just cred) envelope.profile
+
+
+pub unfollow : Cred, String → Result Api.Error Author
+unfollow cred name =
+    Result.map (Api.delete (Api.url [ "profiles", name, "follow" ] []) cred ProfileEnvelope.parse) λenvelope →
+        fromJson (Just cred) envelope.profile
+
+
+-- ---- Views -------------------------------------------------------------------
+
+defaultAvatar : String
+defaultAvatar = "https://static.productionready.io/images/smiley-cyrus.jpg"
+
+
+pub avatarSrc : Maybe String → String
+avatarSrc image =
+    case image of
+        Just "" →
+            defaultAvatar
+
+        Just src →
+            src
+
+        Nothing →
+            defaultAvatar
+
+
+pub avatar : Maybe String, String → Html msg
+avatar image cls = <img class={cls} src={avatarSrc image} />
+
+
+pub link : Author → Html msg
+link author =
+    name = username author
+    <a class="author" href={Route.href (Route.Profile name)}>{name}</a>
+
+
+--| The follow button of an author the viewer does not write as: follow or
+--| unfollow, and nothing for the viewer themself.
+pub followButton : msg, msg, Author → Html msg
+followButton clickedFollow clickedUnfollow author =
+    case author of
+        IsViewer _ →
+            <></>
+
+        IsFollowing p →
+            <button class="btn btn-sm action-btn btn-secondary" onClick={clickedUnfollow}>
+                <i class="ion-plus-round" />
+                {" Unfollow ${p.username}"}
+            </button>
+
+        IsNotFollowing p →
+            <button class="btn btn-sm action-btn btn-outline-secondary" onClick={clickedFollow}>
+                <i class="ion-plus-round" />
+                {" Follow ${p.username}"}
+            </button>

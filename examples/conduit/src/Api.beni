@@ -1,0 +1,292 @@
+--! Talking to the Conduit API (https://realworld-docs.netlify.app/specifications/backend/endpoints/):
+--! who is signed in, how a request carries their token, where the
+--! endpoints are, and what a failed request means to a page.
+--!
+--! elm-spa-example's `Api` and `Viewer` in one module: the signed-in user
+--! (`Viewer`) holds the credentials (`Cred`) every authenticated request
+--! sends, and is kept in `localStorage` between visits.
+
+import Http
+import Schema exposing (NonNull, Null, Nullable)
+import Storage exposing (Local)
+import Url.Builder exposing (QueryParameter)
+
+
+-- ---- Credentials and the signed-in user ----------------------------------
+
+--| What an authenticated request needs: who, and their token.
+pub type alias Cred =
+    username : String
+    token : String
+
+
+--| The user the API answers for `/api/users/login`, `/api/users` and
+--| `/api/user`.
+pub schema UserJson =
+    email : String
+    token : String
+    username : String
+    bio : String nullable
+    image : String nullable
+
+
+pub schema UserEnvelope =
+    user : UserJson
+
+
+--| The signed-in user: their credentials and what the header and the
+--| settings page show of them.
+pub type alias Viewer =
+    cred : Cred
+    email : String
+    bio : Maybe String
+    image : Maybe String
+
+
+pub viewerFromJson : UserJson.Type → Viewer
+viewerFromJson json =
+    { cred = { username = json.username, token = json.token }
+    , email = json.email
+    , bio = fromNullable json.bio
+    , image = fromNullable json.image
+    }
+
+
+viewerToJson : Viewer → UserJson.Type
+viewerToJson viewer =
+    { email = viewer.email
+    , token = viewer.cred.token
+    , username = viewer.cred.username
+    , bio = toNullable viewer.bio
+    , image = toNullable viewer.image
+    }
+
+
+--| A JSON `null` as a `Maybe`. A schema declaration's `nullable` field is a
+--| `Schema.Nullable`, and the program's types use `Maybe`.
+pub fromNullable : Nullable a → Maybe a
+fromNullable n =
+    case n of
+        Null →
+            Nothing
+
+        NonNull a →
+            Just a
+
+
+pub toNullable : Maybe a → Nullable a
+toNullable m =
+    case m of
+        Nothing →
+            Null
+
+        Just a →
+            NonNull a
+
+
+-- ---- Storage ---------------------------------------------------------------
+
+storageKey : String
+storageKey = "conduit"
+
+
+--| The user kept from an earlier visit, if any and if it still parses.
+pub storedViewer : ⊤ → Maybe Viewer
+storedViewer ⊤ =
+    case Storage.get Local storageKey of
+        Just text →
+            case UserEnvelope.parse text of
+                Ok envelope →
+                    Just (viewerFromJson envelope.user)
+
+                Err _ →
+                    Nothing
+
+        Nothing →
+            Nothing
+
+
+--| Keep the user for the next visit. A browser that refuses (quota,
+--| storage withheld) keeps them for this visit only.
+pub storeViewer : Viewer → ⊤
+storeViewer viewer =
+    case UserEnvelope.print { user = viewerToJson viewer } of
+        Ok text →
+            case Storage.set Local storageKey text of
+                _ →
+                    ⊤
+
+        Err _ →
+            ⊤
+
+
+pub logout : ⊤ → ⊤
+logout ⊤ = Storage.remove Local storageKey
+
+
+-- ---- Endpoints ---------------------------------------------------------------
+
+--| `/api/<paths…>?<query>`.
+pub url : List String, List QueryParameter → String
+url paths params = Url.Builder.absolute ([ "api" ] ++ paths) params
+
+
+-- ---- Errors ------------------------------------------------------------------
+
+--| Why a request failed, as a page shows it: the server refused the input
+--| with its messages (a 422), or the request failed otherwise.
+pub type Error
+    = Rejected (List String)
+    | Failed Http.Error
+
+
+--| The messages a page lists for a failed request.
+pub errorMessages : Error → List String
+errorMessages error =
+    case error of
+        Rejected messages →
+            messages
+
+        Failed (Http.BadStatus 401) →
+            [ "You need to sign in again." ]
+
+        Failed (Http.BadStatus 404) →
+            [ "Not found." ]
+
+        Failed (Http.BadStatus code) →
+            [ "The server answered ${String.fromInt code}." ]
+
+        Failed (Http.BadBody _) →
+            [ "The server's answer could not be read." ]
+
+        Failed Http.Timeout →
+            [ "The server took too long to answer." ]
+
+        Failed Http.NetworkError →
+            [ "The server could not be reached." ]
+
+        Failed _ →
+            [ "The request could not be sent." ]
+
+
+-- GAP: the API's validation errors are `{"errors": {"<field>": ["<message>", …]}}`,
+-- an object whose keys are data. Reading it needs a `Dict` schema builder
+-- (`Schema.dict : Schema e a → Schema (Dict String e) (Dict String a)`,
+-- schema.md S8), and with it this would be
+--
+--     Dict.foldr errors.errors [] λfield messages acc →
+--         List.map messages (λm → field ++ " " ++ m) ++ acc
+--
+-- Until then the body is shown as it came.
+serverErrors : String → List String
+serverErrors body = [ body ]
+
+
+-- How every request here reads its answer: a 2xx body by the schema, a
+-- 422 as the server's messages, any other status as `BadStatus`.
+expecting : (String → Result (List Schema.Issue) a) → Http.Expect Error a
+expecting parse = Http.expectStringResponse λresponse →
+    case response of
+        Http.GoodStatus_ _ body →
+            Result.mapError (parse body) λissues → Failed (Http.BadBody issues)
+
+        Http.BadStatus_ meta body →
+            if meta.statusCode == 422 then
+                Err (Rejected (serverErrors body))
+            else
+                Err (Failed (Http.BadStatus meta.statusCode))
+
+        Http.BadUrl_ u →
+            Err (Failed (Http.BadUrl u))
+
+        Http.BadRequest_ problem →
+            Err (Failed (Http.BadRequest problem))
+
+        Http.Timeout_ →
+            Err (Failed Http.Timeout)
+
+        Http.NetworkError_ →
+            Err (Failed Http.NetworkError)
+
+
+headers : Maybe Cred → List Http.Header
+headers maybeCred =
+    case maybeCred of
+        Just cred →
+            [ Http.header "Authorization" "Token ${cred.token}" ]
+
+        Nothing →
+            []
+
+
+-- One request: its method, its address, whose it is, its body, and how
+-- its answer parses.
+send :
+      String
+    , String
+    , Maybe Cred
+    , Http.Body
+    , (String → Result (List Schema.Issue) a)
+    → Result Error a
+send method address maybeCred body parse =
+    Http.request
+        { method = method
+        , headers = headers maybeCred
+        , url = address
+        , body = body
+        , expect = expecting parse
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+pub get : String, Maybe Cred, (String → Result (List Schema.Issue) a) → Result Error a
+get address maybeCred parse = send "GET" address maybeCred Http.emptyBody parse
+
+
+pub post : String, Maybe Cred, Http.Body, (String → Result (List Schema.Issue) a) → Result Error a
+post address maybeCred body parse = send "POST" address maybeCred body parse
+
+
+pub put : String, Cred, Http.Body, (String → Result (List Schema.Issue) a) → Result Error a
+put address cred body parse = send "PUT" address (Just cred) body parse
+
+
+pub delete : String, Cred, (String → Result (List Schema.Issue) a) → Result Error a
+delete address cred parse = send "DELETE" address (Just cred) Http.emptyBody parse
+
+
+--| An answer whose body nothing reads.
+pub ignored : String → Result (List Schema.Issue) ⊤
+ignored _ = Ok ⊤
+
+
+-- ---- Signing in and up -------------------------------------------------------
+
+pub schema LoginJson =
+    user :
+        email : String
+        password : String
+
+
+pub schema RegisterJson =
+    user :
+        username : String
+        email : String
+        password : String
+
+
+pub login : String, String → Result Error Viewer
+login email password =
+    body = Http.jsonBody (LoginJson.schema ⊤) { user = { email = email, password = password } }
+    Result.map (post (url [ "users", "login" ] []) Nothing body UserEnvelope.parse) λenvelope →
+        viewerFromJson envelope.user
+
+
+pub register : String, String, String → Result Error Viewer
+register username email password =
+    body =
+        Http.jsonBody (RegisterJson.schema ⊤)
+            { user = { username = username, email = email, password = password } }
+    Result.map (post (url [ "users" ] []) Nothing body UserEnvelope.parse) λenvelope →
+        viewerFromJson envelope.user

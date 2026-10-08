@@ -1,0 +1,175 @@
+--! A feed of article previews, as the home page and the profile page show
+--! one: the previews, their favorite buttons, the page links, and the
+--! errors a favorite can fail with. elm-spa-example's `Article.Feed`: an
+--! opaque model with its own messages, nested in the page's.
+
+import Api exposing (Cred)
+import Article exposing (Article)
+import Author
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Page
+import Route
+import Session exposing (Session)
+
+
+pub opaque type Model
+    = Model Internals
+
+
+type alias Internals =
+    session : Session
+    errors : List String
+    articles : List Article
+    page : Int
+    total : Int
+
+
+pub init : Session, Int, Article.Page → Model
+init session page loaded =
+    Model
+        { session = session
+        , errors = []
+        , articles = loaded.articles
+        , page = page
+        , total = loaded.total
+        }
+
+
+pub type Msg
+    = ClickedDismissErrors
+    | ClickedFavorite Cred String
+    | ClickedUnfavorite Cred String
+    | CompletedFavorite (Result Api.Error Article)
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg (Model model) =
+    case msg of
+        ClickedDismissErrors →
+            ( Model { model | errors = [] }, Cmd.none )
+
+        ClickedFavorite cred slug →
+            ( Model model, Cmd.task (λ⊤ → Article.favorite cred slug) CompletedFavorite )
+
+        ClickedUnfavorite cred slug →
+            ( Model model, Cmd.task (λ⊤ → Article.unfavorite cred slug) CompletedFavorite )
+
+        CompletedFavorite (Ok article) →
+            ( Model { model | articles = List.map model.articles (replaceArticle article _) }
+            , Cmd.none
+            )
+
+        CompletedFavorite (Err error) →
+            ( Model { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
+
+
+replaceArticle : Article, Article → Article
+replaceArticle new old = if new.slug == old.slug then new else old
+
+
+-- ---- Views -------------------------------------------------------------------
+
+pub viewArticles : Model → Html Msg
+viewArticles (Model model) =
+    <>
+        {Page.viewErrors ClickedDismissErrors model.errors}
+        {if List.isEmpty model.articles then
+            <div class="article-preview">No articles are here... yet.</div>
+         else
+            <div class="article-list">
+                <For each={model.articles} keyed={.slug}>
+                    {viewPreview (Session.cred model.session) _}
+                </For>
+            </div>
+        }
+    </>
+
+
+viewPreview : Maybe Cred, Article → Html Msg
+viewPreview maybeCred article =
+    profile = Author.profile article.author
+    summary =
+        <>
+            <h1>{article.title}</h1>
+            <p>{article.description}</p>
+            <span>Read more...</span>
+            {Article.tagList article.tags}
+        </>
+    <div class="article-preview">
+        <div class="article-meta">
+            <a href={Route.href (Route.Profile profile.username)}>
+                {Author.avatar profile.image ""}
+            </a>
+            <div class="info">
+                {Author.link article.author}
+                {Article.timestamp article.createdAt}
+            </div>
+            {case maybeCred of
+                Just cred →
+                    Article.favoriteButton
+                        article
+                        (ClickedFavorite cred article.slug)
+                        (ClickedUnfavorite cred article.slug)
+                        "pull-xs-right"
+
+                Nothing →
+                    <></>
+            }
+        </div>
+        {Article.link article summary}
+    </div>
+
+
+--| The page links, each sending `clicked` with its page number.
+pub viewPagination : (Int → msg), Model → Html msg
+viewPagination clicked (Model model) =
+    pages = (model.total + Article.articlesPerPage - 1) // Article.articlesPerPage
+    if pages > 1 then
+        <ul class="pagination">
+            <For each={List.range 1 pages} keyed={False}>
+                {λn →
+                    <li class={[ ( "page-item", True ), ( "active", n == model.page ) ]}>
+                        <a
+                            class="page-link"
+                            id="page-${String.fromInt n}"
+                            href=""
+                            onClick={λevent →
+                                        Html.preventDefault event
+                                        clicked n
+                                    }
+                        >
+                            {String.fromInt n}
+                        </a>
+                    </li>
+                }
+            </For>
+        </ul>
+    else
+        <></>
+
+
+--| The tabs above a feed: each is its label, whether it is the active one,
+--| and the message a click sends.
+pub viewTabs : List (String × Bool × msg) → Html msg
+viewTabs tabs =
+    <div class="feed-toggle">
+        <ul class="nav nav-pills outline-active">
+            <For each={tabs} keyed={False}>
+                {λ( label, active, clicked ) →
+                    <li class="nav-item">
+                        <a
+                            class={[ ( "nav-link", True ), ( "active", active ) ]}
+                            href=""
+                            onClick={λevent →
+                                        Html.preventDefault event
+                                        clicked
+                                    }
+                        >
+                            {label}
+                        </a>
+                    </li>
+                }
+            </For>
+        </ul>
+    </div>
