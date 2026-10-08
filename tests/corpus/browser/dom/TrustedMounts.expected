@@ -1,0 +1,83 @@
+-- load
+console.log: outer renders: "bumps 0, taps 0, frames 0"
+console.log: inner renders: 0
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <p>"bumps 0, taps 0, frames 0"</p>
+    <div id="frame">
+      <section id="inner">
+        <div>
+          <button id="inc">"inc"</button>
+          <p>"0"</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+-- press #inc
+console.log: inner counted: 1
+console.log: outer got: Tapped
+console.log: outer got: Framed
+console.log: inner renders: 1
+console.log: outer renders: "bumps 0, taps 1, frames 1"
+(a later listener ran)
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <p>"bumps 0, taps 1, frames 1"</p>
+    <div id="frame">
+      <section id="inner">
+        <div>
+          <button id="inc">"inc"</button>
+          <p>"1"</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+-- press #bump
+console.log: outer got: Bump
+console.log: outer renders: "bumps 1, taps 1, frames 1"
+(a later listener ran)
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <p>"bumps 1, taps 1, frames 1"</p>
+    <div id="frame">
+      <section id="inner">
+        <div>
+          <button id="inc">"inc"</button>
+          <p>"1"</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+-- click #inc 3
+console.log: inner counted: 2
+console.log: outer got: Tapped
+console.log: outer got: Framed
+console.log: inner counted: 3
+console.log: outer got: Tapped
+console.log: outer got: Framed
+console.log: inner counted: 4
+console.log: outer got: Tapped
+console.log: outer got: Framed
+(the step's task ended)
+console.log: inner renders: 4
+console.log: outer renders: "bumps 1, taps 4, frames 4"
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <p>"bumps 1, taps 4, frames 4"</p>
+    <div id="frame">
+      <section id="inner">
+        <div>
+          <button id="inc">"inc"</button>
+          <p>"4"</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>

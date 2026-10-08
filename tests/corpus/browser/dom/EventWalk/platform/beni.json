@@ -1,0 +1,7 @@
+{
+  "platform": true,
+  "name": "walk",
+  "platforms": ["browser"],
+  "reexports": ["Html", "Browser"],
+  "markup": { "vocabulary": "Walk", "type": "Html.Html" }
+}

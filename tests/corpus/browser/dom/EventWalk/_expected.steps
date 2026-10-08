@@ -1,0 +1,15 @@
+# Three handlers, innermost first, and the section's stops the walk: the
+# outer `div`'s handler does not run.
+click #deep
+press #deep
+# A node with no handler is passed over, and so is a disabled element's.
+click #bare
+press #within
+# The default is prevented, and the walk goes on to the outer handler.
+click #prevent
+press #prevent
+# Through the map, then on out of it.
+click #mapped
+press #mapped
+# Three clicks in one task: nine messages, one render.
+click #deep 3

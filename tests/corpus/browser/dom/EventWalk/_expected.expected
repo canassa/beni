@@ -1,0 +1,400 @@
+-- load
+console.log: view: 0
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"0"</p>
+    <ol></ol>
+  </main>
+</body>
+-- click #deep
+console.log: handler: "deep"
+console.log: update: "deep"
+console.log: handler: "inner"
+console.log: update: "inner"
+console.log: handler: "mid, which stops"
+console.log: update: "mid, which stops"
+console.log: view: 3
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"3"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+    </ol>
+  </main>
+</body>
+-- press #deep
+console.log: handler: "deep"
+console.log: update: "deep"
+console.log: handler: "inner"
+console.log: update: "inner"
+console.log: handler: "mid, which stops"
+console.log: update: "mid, which stops"
+console.log: view: 6
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"6"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+    </ol>
+  </main>
+</body>
+-- click #bare
+console.log: update: "free"
+console.log: handler: "outer"
+console.log: update: "outer"
+(a later listener ran)
+console.log: view: 8
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"8"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"free"</li>
+      <li>"outer"</li>
+    </ol>
+  </main>
+</body>
+-- press #within
+console.log: handler: "outer"
+console.log: update: "outer"
+console.log: view: 9
+(a later listener ran)
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"9"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"free"</li>
+      <li>"outer"</li>
+      <li>"outer"</li>
+    </ol>
+  </main>
+</body>
+-- click #prevent
+console.log: update: "prevented"
+console.log: handler: "outer"
+console.log: update: "outer"
+(click's default prevented)
+console.log: view: 11
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"11"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"free"</li>
+      <li>"outer"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+    </ol>
+  </main>
+</body>
+-- press #prevent
+console.log: update: "prevented"
+console.log: handler: "outer"
+console.log: update: "outer"
+console.log: view: 13
+(a later listener ran)
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"13"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"free"</li>
+      <li>"outer"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+    </ol>
+  </main>
+</body>
+-- click #mapped
+console.log: update: "mapped, through the map"
+console.log: handler: "outer"
+console.log: update: "outer"
+console.log: view: 15
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"15"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"free"</li>
+      <li>"outer"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+      <li>"mapped, through the map"</li>
+      <li>"outer"</li>
+    </ol>
+  </main>
+</body>
+-- press #mapped
+console.log: update: "mapped, through the map"
+console.log: handler: "outer"
+console.log: update: "outer"
+console.log: view: 17
+(a later listener ran)
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"17"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"free"</li>
+      <li>"outer"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+      <li>"mapped, through the map"</li>
+      <li>"outer"</li>
+      <li>"mapped, through the map"</li>
+      <li>"outer"</li>
+    </ol>
+  </main>
+</body>
+-- click #deep 3
+console.log: handler: "deep"
+console.log: update: "deep"
+console.log: handler: "inner"
+console.log: update: "inner"
+console.log: handler: "mid, which stops"
+console.log: update: "mid, which stops"
+console.log: handler: "deep"
+console.log: update: "deep"
+console.log: handler: "inner"
+console.log: update: "inner"
+console.log: handler: "mid, which stops"
+console.log: update: "mid, which stops"
+console.log: handler: "deep"
+console.log: update: "deep"
+console.log: handler: "inner"
+console.log: update: "inner"
+console.log: handler: "mid, which stops"
+console.log: update: "mid, which stops"
+(the step's task ended)
+console.log: view: 26
+<body>
+  <main>
+    <div id="outer">
+      <section id="mid">
+        <p id="inner">
+          <button id="deep">"deep"</button>
+        </p>
+      </section>
+      <p id="free">
+        <span id="bare">"bare"</span>
+      </p>
+      <fieldset id="off" disabled="">
+        <span id="within">"within"</span>
+      </fieldset>
+      <button id="prevent">"prevent"</button>
+      <button id="mapped">"mapped"</button>
+    </div>
+    <p id="renders">"26"</p>
+    <ol>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"free"</li>
+      <li>"outer"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+      <li>"prevented"</li>
+      <li>"outer"</li>
+      <li>"mapped, through the map"</li>
+      <li>"outer"</li>
+      <li>"mapped, through the map"</li>
+      <li>"outer"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+      <li>"deep"</li>
+      <li>"inner"</li>
+      <li>"mid, which stops"</li>
+    </ol>
+  </main>
+</body>
