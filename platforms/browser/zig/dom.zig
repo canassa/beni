@@ -1913,14 +1913,9 @@ const Gen = struct {
         } else {
             try js.expression(f.block, try g.rt("listen", &.{ try g.node(f, x.t), try g.str(dom_name), try g.num(flags) }));
         }
-        // Inside an `Html.map` the node holds the mount context (once, with
-        // its first event) and a delegated event's flags carry bit 4, which
-        // tells the listener to read the context: outside every map it
-        // reads neither (backend.md §15.11, amended 2026-10-08).
-        if (x.context or facts.delegated) {
+        if (x.context) {
             const then = try js.block();
-            if (x.context) try js.assign(then, try g.member(try g.node(f, x.t), "$$cx"), try g.ident(f.cx.?));
-            if (facts.delegated) try js.assign(then, try g.member(try g.node(f, x.t), try g.print("{s}F", .{key})), try g.num(flags | 4));
+            try js.assign(then, try g.member(try g.node(f, x.t), "$$cx"), try g.ident(f.cx.?));
             try js.@"if"(f.block, try js.binary(.strict_ne, try g.ident(f.cx.?), try g.nul()), then, null);
         }
     }
