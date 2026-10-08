@@ -35,7 +35,7 @@ pub const Positions = struct {
 const column: usize = 50;
 
 fn pad(w: *std.Io.Writer, used: usize) std.Io.Writer.Error!void {
-    if (used >= column) {
+    if (used + 2 > column) {
         try w.writeByte('\n');
         try w.splatByteAll(' ', column);
         return;

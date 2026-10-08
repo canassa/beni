@@ -37,7 +37,8 @@ program Main.main : Tea.application
   key GotHomeMsg · GotFeedMsg · ClickedDismissErrors
                                                   indexed    node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0; node ρ.Home#0.feed.Loaded#0.Model#0; value ρ.Home#0.feed.Loaded#0.Model#0.errors ⟨clear⟩
   key GotHomeMsg · GotFeedMsg · ClickedFavorite   exact      node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0
-  key GotHomeMsg · GotFeedMsg · ClickedUnfavorite exact      node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0
+  key GotHomeMsg · GotFeedMsg · ClickedUnfavorite
+                                                  exact      node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0
   key GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok
                                                   structural node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0; node ρ.Home#0.feed.Loaded#0.Model#0; node ρ.Home#0.feed.Loaded#0.Model#0.articles ⟨kept⟩; value ρ.Home#0.feed.Loaded#0.Model#0.articles[*]
   key GotHomeMsg · GotFeedMsg · CompletedFavorite · Err
@@ -49,9 +50,11 @@ program Main.main : Tea.application
   key GotProfileMsg · ClickedTab                  exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.feedPage; value ρ.Profile#1.feedTab
   key GotProfileMsg · ClickedFeedPage             exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.feedPage
   key GotProfileMsg · CompletedFollowChange · Ok  exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.author
-  key GotProfileMsg · CompletedFollowChange · Err indexed    node ρ; node ρ.Profile#1; value ρ.Profile#1.errors ⟨append⟩
+  key GotProfileMsg · CompletedFollowChange · Err
+                                                  indexed    node ρ; node ρ.Profile#1; value ρ.Profile#1.errors ⟨append⟩
   key GotProfileMsg · CompletedAuthorLoad#1 · Ok  exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.author
-  key GotProfileMsg · CompletedAuthorLoad#1 · Err exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.author
+  key GotProfileMsg · CompletedAuthorLoad#1 · Err
+                                                  exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.author
   key GotProfileMsg · CompletedFeedLoad#1 · Ok    exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.feed
   key GotProfileMsg · CompletedFeedLoad#1 · Err   exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.feed
   key GotProfileMsg · GotFeedMsg · ClickedDismissErrors
@@ -71,7 +74,8 @@ program Main.main : Tea.application
   key GotArticleMsg · CompletedLoadArticle · Ok   exact      node ρ; node ρ.Article#0; value ρ.Article#0.article
   key GotArticleMsg · CompletedLoadArticle · Err  exact      node ρ; node ρ.Article#0; value ρ.Article#0.article
   key GotArticleMsg · CompletedLoadComments · Ok  exact      node ρ; node ρ.Article#0; value ρ.Article#0.comments
-  key GotArticleMsg · CompletedLoadComments · Err exact      node ρ; node ρ.Article#0; value ρ.Article#0.comments
+  key GotArticleMsg · CompletedLoadComments · Err
+                                                  exact      node ρ; node ρ.Article#0; value ρ.Article#0.comments
   key GotArticleMsg · CompletedFavoriteChange · Ok
                                                   exact      node ρ; node ρ.Article#0; value ρ.Article#0.article
   key GotArticleMsg · CompletedFavoriteChange · Err
@@ -79,7 +83,8 @@ program Main.main : Tea.application
   key GotArticleMsg · ClickedUnfollow             exact      node ρ
   key GotArticleMsg · ClickedFollow               exact      node ρ
   key GotArticleMsg · CompletedFollowChange · Ok  exact      node ρ; node ρ.Article#0; node ρ.Article#0.article; node ρ.Article#0.article.Loaded#0; value ρ.Article#0.article.Loaded#0.author
-  key GotArticleMsg · CompletedFollowChange · Err indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩
+  key GotArticleMsg · CompletedFollowChange · Err
+                                                  indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩
   key GotArticleMsg · EnteredCommentText          exact      node ρ; node ρ.Article#0; node ρ.Article#0.comments; node ρ.Article#0.comments.Loaded#0; node ρ.Article#0.comments.Loaded#0.0; value ρ.Article#0.comments.Loaded#0.0.Editing#0
   key GotArticleMsg · ClickedPostComment          exact      node ρ; node ρ.Article#0; node ρ.Article#0.comments; node ρ.Article#0.comments.Loaded#0; value ρ.Article#0.comments.Loaded#0.0
   key GotArticleMsg · CompletedPostComment · Ok   indexed    node ρ; node ρ.Article#0; node ρ.Article#0.comments; node ρ.Article#0.comments.Loaded#0; value ρ.Article#0.comments.Loaded#0.0; value ρ.Article#0.comments.Loaded#0.1 ⟨prepend⟩
@@ -90,7 +95,8 @@ program Main.main : Tea.application
   key GotArticleMsg · CompletedDeleteComment#1 · Err
                                                   indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩
   key GotArticleMsg · ClickedDeleteArticle        exact      node ρ
-  key GotArticleMsg · CompletedDeleteArticle · Ok exact      node ρ
+  key GotArticleMsg · CompletedDeleteArticle · Ok
+                                                  exact      node ρ
   key GotArticleMsg · CompletedDeleteArticle · Err
                                                   indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩
   key GotArticleMsg · PassedSlowLoadThreshold     exact      node ρ; node ρ.Article#0; value ρ.Article#0.article; value ρ.Article#0.comments
@@ -103,7 +109,8 @@ program Main.main : Tea.application
   key GotEditorMsg · CompletedCreate · Err        exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
   key GotEditorMsg · CompletedEdit · Ok           exact      node ρ
   key GotEditorMsg · CompletedEdit · Err          exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
-  key GotEditorMsg · CompletedArticleLoad#1 · Err exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
+  key GotEditorMsg · CompletedArticleLoad#1 · Err
+                                                  exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
   key GotEditorMsg · CompletedArticleLoad#1 · Ok  exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
   key GotEditorMsg · PassedSlowLoadThreshold      exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
   keys 91: bounded 90 (98%), exact 71, indexed 16, structural 3, * 1; capped 0
