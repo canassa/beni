@@ -8743,3 +8743,20 @@ programs, nested, under a user's click and a burst).
 - **`turn` written in place is not taken.** The delegated listener with `turn`'s body in place of
   the closure it hands it measured no change (−0.45 against −0.48 µs for the step before it, 24
   pages, one batch) for 20 bytes, and is not built.
+- **The root's `{t, v}` pair is kept.** Research 59 §1.6 proposed patching a root whose kind never
+  changes with the model directly, without `view`'s block and the generic `childHtml`/`patch`. Before
+  building the emitter half, the render was edited by hand on the 10-hole page's development build
+  (after the steps above; 24 pages, clicks 6–200, two batches): calling the kind's `p` on the
+  instance with a new `[model]` was **+1.0 µs**, with one values array kept and written +0.7, and
+  keeping `view` but skipping the generic patch when the kinds match +1.5 — slower, not faster,
+  except in the coldest clicks (6–20: −0.5 to −1.0). Research 59 saw the same alone (+2.0) and
+  measured its −1.3 only with the walk, the queue and the guards already gone. No guarantee is at
+  stake, so it is a measurement and not a rule: the step is not built until a form of it is faster
+  across clicks, which the per-message write sets of `plans/compile-away.md` R4 may change.
+
+  **Together** (`bench/ui/results/2026-10-08-r1-final-*.json`; 24 pages, one batch): a real click
+  on the 10-hole page is 20.1 → **16.1 µs** in development and 21.1 → 17.2 with `--release`,
+  against P2's 12.3 and vanilla's 10.6 — 3.9 of research 59's 7.7 µs gap. Untraced in
+  `scaling.mjs` (2 × 12 samples), holes 10 is 1.50 → 1.17× vanilla and holes 10 000 1.54 → 1.25×.
+  Bytes: the empty page does not move (446 brotli, release); the table app's release bundle is
+  5 510 → 5 610 (+100, terser and brotli 11), the cost of steps 2, 3 and the flag above.
