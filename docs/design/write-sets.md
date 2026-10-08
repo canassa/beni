@@ -45,8 +45,9 @@ diagnostic. A failing gate is a finding, not a reason to bend the design (rule 1
    match on, so the unit of dispatch is a **message key** — a path of constructor tags through the
    message, `GotEditorMsg · EnteredTitle` — and the write set is per key (§4.4).
 7. Every bound is a cap that yields `value` at the root or a fresh value, never an error, and
-   every join is over finite sets, so the analysis terminates and is linear in the program for
-   all but pathological inputs (§6). It is deterministic by construction (§7).
+   every join is over finite sets, so the analysis terminates; its work is bounded by a budget
+   per key and per summary, and on the programs measured it is a few walks of `update` and
+   `view` (§6). It is deterministic by construction (§7).
 8. Before any code generation reads it, `beni dump --stage=writes` prints the whole result — per
    message key its write set and class, per view hole whether it is static, literal at `init`, or
    dynamic — and the gate is that dump run on Conduit (§8). R3 and R4 consume it as §9 says.
@@ -57,9 +58,16 @@ diagnostic. A failing gate is a finding, not a reason to bend the design (rule 1
 
 A **program** here is a record literal with `init`, `update` and `view` fields handed to a
 platform function whose result type is the platform's `Program` (`Tea.sandbox`, `Tea.element`,
-`Tea.application`, `Browser.program`; the record may be built inline or named). Its **model
-type** is the type of `update`'s second parameter, and its **message type** the type of the
-first. For each program the analysis computes:
+`Tea.application`, `Browser.program`), where the record is written inline or is a top-level
+value whose body is that literal, and where each of the three fields is a top-level function, a
+lambda, or a top-level value (for `init`). Its **model type** is the type of `update`'s second
+parameter, and its **message type** the type of the first. **Any other shape is
+unrecognised** — a field computed by a call (`update = withLogging update`), a record a helper
+builds, a program whose `main` the pass cannot trace to such a record — and an unrecognised
+program has one key, `*`, with the write set `value ρ`, and every hole **dynamic** (*amended
+2026-10-08, B3*). "No program found" is never "no writes": a consumer may use the result only
+of a recognised program, and the dump prints `program <unrecognised>` for the rest (§8.1). For
+each recognised program the analysis computes:
 
 - **`writes(κ)`** for every **message key** κ (§4.4): the write set of `update m model` for every
   message `m` the key describes, over every model `model` of the model type. For a program whose
@@ -142,8 +150,16 @@ through `Model#0` like any single-constructor type's (§2.6).
 **Spelling.** `ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author` is the author of some article
 in the home page's loaded feed. The dump prints paths this way (§8.1).
 
-**Prefix order.** `p ⊑ q` when `p` is a prefix of `q`. `[*]` is treated as a prefix of `[κ]`
-for every κ (`p[*] ⊑ p[κ]`), so "some element" sits above "this element".
+**Two orders** (*amended 2026-10-08, A3–A5*). **Exact prefix**, `p ⊑ q`: `p` is a prefix of
+`q` step by step, where two steps are equal only when they are the same field, the same tuple
+index, the same constructor and position, or two list steps whose index symbols are **equal**
+(§2.3); a `[*]` step equals no step, itself included. The exact order is what `diff` (§3.4) and
+the invariant of §2.4 use. **May-prefix**, `p ⊑̃ q`: `|p| ≤ |q|` and each step of `p` **may
+coincide** with the step of `q` at the same position — equal steps may coincide, `[*]` may
+coincide with every list step, and two list steps `[κ₁]`, `[κ₂]` may coincide **unless both are
+literals and differ**. The may-prefix order is what **conflict** (§2.5) uses, because two
+positions the program spells differently (`[id]`, `[0]`, `[i + 1]`) can be the same slot at run
+time, and the one disjointness this domain can state is literal against literal.
 
 ### 2.2 The k-limit
 
@@ -152,6 +168,14 @@ represented**: a write below the cut becomes a `value` write at the k-step prefi
 below the cut is a read of its k-step prefix. Both directions are sound — a `value` write at a
 prefix covers every path under it, and a read of a prefix conflicts with everything a deeper
 read would — and both lose only precision below the cut (Jones & Muchnick 1979, §11).
+
+**The cut never truncates a `Same`** (*amended 2026-10-08, B4*). Equality of paths (`q = p` in
+§3.4, the exact prefix order) is decided on **uncut** paths; an abstract value `Same(q)` with
+`|q| > k` is not `Same` of the k-prefix but **`Fresh({ q's k-prefix })`**, and a `Rec`, `Con`,
+`Tup` or `Lst` that would sit deeper than k is `Fresh` likewise (§3.1). So two different paths at
+depth nine never become one path at depth eight, `diff` never answers `∅` for a deep value, and
+§1.3's third clause holds literally: the only thing at or below depth k that a deep write
+produces is a `value` write at its k-prefix.
 
 Why 8 and not slice B's 4. Slice B's read paths are at most four links *from a local*
 (`boundary.md` §9.4.6), and a local of a nested page's view is itself several steps from ρ:
@@ -176,6 +200,14 @@ An **index symbol** κ in `[κ]` is one of:
 - an **index parameter** ιⱼ of a callback (`List.indexedMap`, `List.update`'s position), which
   a guard may fix to an expression (§3.3, *guards*);
 - **`?`**, unknown: the step then means `[*]`.
+
+**When two index symbols are equal** (*amended 2026-10-08, A4–A5*): two literals with the same
+value; two expressions that are the **same BIR instruction** (one occurrence, not two spellings
+of one text — a pure expression evaluated once has one value); two index parameters that are the
+same ιⱼ under the same facts. Nothing else is equal, and `[*]` and `[?]` are equal to nothing,
+themselves included: a `Same(q)` whose path holds `[*]` or `[?]` names *some* element's
+identity and is never the identity of a placement path (§3.4). Equality is what `diff` asks;
+conflict asks the weaker *may coincide* of §2.1.
 
 A write at a list path carries an **edit tag** saying how the list's **shape** — its length and
 the order of its elements — relates to the old list's, as `backend.md` §4 (*Identity*) and
@@ -203,7 +235,10 @@ A **write** is a path with a **kind**, `node` or `value`, and, at a list path, a
 invariant that **every proper prefix of a written path is at least `node`**: `W(q) ≥ node`
 for every `q ⊏ p` with `W(p) ≠ none`. The order is pointwise over `none < node < value`, join
 is pointwise maximum, and edit tags join as: equal tags stay, `kept` under a different tag is the
-other tag, two different tags are `replaced`. **Top** is `value` at ρ: "everything".
+other tag, two different tags are `replaced`. **The tag join removes no entry below the list
+path** (*amended 2026-10-08, B7*): an element write `p[κ].f` is an entry of its own, kept
+through every join, so a `kept` write joined with an `append` leaves `value p ⟨append⟩` *and*
+`value p[κ].f` in the set, and R5 sees both. **Top** is `value` at ρ: "everything".
 
 The lattice is finite for a fixed program: the paths of length ≤ k over a program's types are
 finitely many (every step is a field name, an index symbol drawn from the finitely many
@@ -218,16 +253,23 @@ nothing about what is below `p`.
 
 ### 2.5 Conflict
 
-A read of model path `r` **conflicts** with a write set `W` when
+A read of model path `r` **conflicts** with a write set `W` when (*amended 2026-10-08, A3, A4,
+B6*)
 
-> some `value` write `w` has `w ⊑ r` or `r ⊑ w`, or `W(r) = node`, or `r` is below a `node`
-> write whose list step is `[*]`.
+> some `value` write `w` has `w ⊑̃ r` or `r ⊑̃ w`, or some `node` write `w` has `w ⊑̃ r` and
+> `|w| = |r|`,
 
-A `value` write above or below a read can change what the read sees; a `node` write at the very
-path can; a `node` write at a *proper prefix* of the read cannot — that is the whole point of
-the kind — unless the prefix's step is `[*]`, which stands for an unknown position. This is
-research 61 §2.3's rule ("one path is a prefix of the other") with `node` writes added, and it
-is what §1.2's two promises are stated through.
+with `⊑̃` the may-prefix order of §2.1. A `value` write above or below a read can change what
+the read sees; a `node` write at a path the read's own path may coincide with can; a `node`
+write at a *proper* may-prefix of the read cannot — that is the whole point of the kind. So
+`SwapRows`' `value ρ.rows[1]` conflicts with a positional row's `ρ.rows[*].label` (`[1]` may
+coincide with `[*]`), `Set id`'s `value ρ.xs[id]` conflicts with a hole reading `ρ.xs[0]` (`[id]`
+may coincide with `[0]`), and `Toggle`'s `node ρ.todos[*]` does **not** conflict with a row's
+`ρ.todos[*].title`: the record at some position was rebuilt, its `title` is the very value it
+was, and the list's length and order are kept. The earlier clause "or `r` is below a `node`
+write whose list step is `[*]`" is withdrawn: may-coincidence does its work, and it contradicted
+§10.5. This is research 61 §2.3's rule ("one path is a prefix of the other") with `node` writes
+and index aliasing added, and it is what §1.2's two promises are stated through. §5.2 proves it.
 
 ### 2.6 Unions and opaque wrappers
 
@@ -271,8 +313,28 @@ a ::= Same(p)                       the very value at path p (identity)
                                     from the model paths in D (D a finite set of paths, or ρ)
     | Fun(λ)                        a function value: a lambda or a top-level function with
                                     the abstract values it closes over (§4.2)
-    | Alt([ (Γ₁, a₁) … (Γₙ, aₙ) ])   one of several, each under the tag facts Γᵢ (§3.2)
+    | Alt(s, [ (Γ₁, a₁) … (Γₙ, aₙ) ])   one of several, each under the tag facts Γᵢ (§3.2),
+                                    chosen by the scrutinee s (an abstract value, kept for
+                                    anchoring, §3.6)
 ```
+
+**Two kinds of `Alt`** (*amended 2026-10-08, C2*). A **keyed** `Alt` is one a `case` makes on a
+scrutinee `Same(p)` with constructor patterns: its alternatives are distinguished by the fact
+`tag(p) = C`, one per constructor the arms name plus at most one default, so its width is
+bounded by the type's constructor count and it is exempt from the width cap A below. A message
+key (§4.4) or a `Con` argument at instantiation (§4.2) selects one of its alternatives
+outright. Every other `Alt` — an `if`, a `case` on a value that is not a path, a join of
+summaries in a fixpoint — is **plain** and counts against A.
+
+Elsewhere in this document an `Alt` is written without its scrutinee, `Alt([ (Γᵢ, aᵢ) ])`, when
+only the alternatives matter; the scrutinee is always carried.
+
+**Terms are shared.** Abstract values are hash-consed: structurally equal terms are one node,
+so a chain of `let aₙ = if cₙ then aₙ₋₁ else aₙ₋₁'` is a DAG of 2n nodes and not a tree of 2ⁿ,
+and `diff` is memoised on `(node, p, Γ)` with Γ interned as a sorted set (*amended 2026-10-08,
+C1*). The **size cap S** (§6.1) counts DAG nodes and applies to **every** term the analysis
+builds — a summary, a key's result, a lambda body's value at a call site — not only to
+summaries; and the **depth** below counts an `Alt` as a level like any constructor.
 
 Every abstract value has a **concretisation**, the set of JavaScript values it stands for given
 an old model `M` (and, for πᵢ and εⱼ roots, the argument values). It is stated in §5.1; the
@@ -287,8 +349,9 @@ rules below are written against it. Three remarks the rules depend on:
   later placed into the model loses nothing: `feed = case model.feed of Loading →
   LoadingSlowly; other → other` is `Alt([ (tag(ρ.feed)=Loading, Lit LoadingSlowly),
   (tag(ρ.feed)≠Loading, Same(ρ.feed)) ])`, and it is only when it lands at `ρ.feed` that §3.4
-  turns it into `value ρ.feed`. An `Alt` holds at most **A = 16** alternatives; a join that
-  would make more is `Fresh` of the union of their dependencies (*open choice O2*).
+  turns it into `value ρ.feed`. A **plain** `Alt` holds at most **A = 16** alternatives; a join
+  that would make more is `Fresh` of the union of their dependencies (*open choice O2*). A keyed
+  `Alt` is bounded by its type instead (above).
 
 **Depth.** An abstract value nested more than k constructors, records, tuples or lists deep is
 cut: the part below the cut becomes `Fresh`. Paths and values share one limit, and for the same
@@ -312,14 +375,29 @@ tags are what make a same-variant rebuild recognisable.
   `[ x, …rest ]` binds `x` to `Same(p[0])` and `rest` to `Lst(p, removeSome)` — a view, which
   `backend.md` §4 makes `same` as the old tail but not `===` to any old path, so `Same` would
   be wrong.
-- A later arm is analysed under the **negation** of the constructor patterns of the arms before
-  it at the same path: `tag(p) ≠ {C₁ … Cᵢ₋₁}`. `other → other` in the example above gets
-  `tag(ρ.feed) ≠ {Loading}` and binds `other` to `Same(ρ.feed)`.
-- If `a` is `Con(C, parts)`, the arm for `C` binds its variables to the parts and the other arms
-  are **not analysed** (they cannot run); if `a` is `Alt`, each alternative is matched
-  separately under its own Γ and the results are joined. Otherwise (`Fresh`, `Lit`) the
-  scrutinee is unknown, the arms are analysed with no refinement, and variables bound by a
-  constructor pattern over it are `Fresh(D)` with the scrutinee's dependencies.
+- A later arm is analysed under the **negation** of the earlier arms' patterns — but only of an
+  earlier arm whose pattern is a **single-path, irrefutable-below test** (*amended 2026-10-08,
+  A1–A2*): a constructor pattern `C x₁ … xₙ` on a scrutinee `Same(p)` whose sub-patterns are
+  all irrefutable (variables, wildcards, tuple or record patterns of those), or a tuple or
+  record pattern with **exactly one** such constructor pattern among its components and the
+  rest irrefutable. Such an arm fails to match for one reason only, the tag at `p` is not `C`,
+  so the later arm gets `tag(p) ≠ {C}`, and `other → other` in the example above gets
+  `tag(ρ.feed) ≠ {Loading}` and binds `other` to `Same(ρ.feed)`. An arm whose pattern tests
+  **two or more paths** (`( GotHomeMsg sub, Home home )`) can fail because either tag differs — a
+  disjunction this Γ cannot hold — and an arm with a **refutable sub-pattern** (`Loaded (Just
+  x)`, `Loaded ( Editing "", _ )`) can fail with the outer tag in place; **neither contributes a
+  negation fact**, and the arms after them are analysed as if they were absent. The positive
+  facts of an arm's own pattern, nested ones included, are always sound: the arm ran, so they
+  hold.
+- If `a` is `Con(C, parts)`, the arm for `C` binds its variables to the parts; an arm whose
+  **own pattern** requires a tag other than `C` at the scrutinee's root is **not analysed** (it
+  cannot run); a wildcard or variable arm, and an arm for `C` with a refutable sub-pattern, is.
+  If `a` is `Alt`, each alternative is matched separately under its own Γ and the results are
+  joined. Otherwise (`Fresh`, `Lit`) the scrutinee is unknown, the arms are analysed with no
+  refinement, and variables bound by a constructor pattern over it are `Fresh(D)` with the
+  scrutinee's dependencies. The one rule for skipping an arm, here and in §4.4, is that **its
+  own pattern contradicts a fact that holds**; a negation fact never skips an arm, it only
+  refines the value `other → other` binds.
 
 **The single-constructor rule.** For a type with exactly one constructor `C`, `tag(p) = C` holds
 at every path `p` of that type without a `case`. This is what makes an opaque wrapper
@@ -338,6 +416,13 @@ msg ↦ the key's message value (§4.4) }`. After each rule, one sentence says w
 **Variables.** `⟦x⟧ = env(x)`. A variable is what it was bound to; in particular `model` is
 `Same(ρ)`, and `( model, Cmd.none )` therefore writes nothing — the **identity case**, which is
 the base of everything else.
+
+**Top-level values** (*amended 2026-10-08, B3*). A reference to a top-level value `v` (not a
+function: `initialModel`, `emptyForm`, `adjectives`) is `⟦body of v⟧(∅, { })`, the body
+analysed once per program with an empty environment and memoised: a closed term, so it holds no
+`Same` and is a `Lit`, a structure of literals, or `Fresh(∅)`. Placed into the model it is a
+`value` write; under `init` it is what `literal` (§3.5) reads. A top-level value of a function
+type is `Fun` of its body's lambda.
 
 **Literals.** `⟦c⟧ = Lit(c)`. A nullary constructor is a literal; so are numbers, strings and
 characters. (Two evaluations of a string literal need not be `===` in JavaScript; a `Lit` placed
@@ -413,8 +498,8 @@ flush; a message it sends later is dispatched by its own key. An `impure` call i
 write set's meaning, because the claim is about the returned model only. `Debug.log x` returns
 `x` itself and has a row saying so (§3.7); `Debug.todo` is `Fresh(∅)` (it does not return).
 
-**`foreign` and anything unsummarisable** is `Fresh(D)`, with `D` the union of its arguments'
-dependencies. Wherever a `Fresh` lands in the model it is a `value` write there (§3.4). This is
+**`foreign`, a `Js` intrinsic, and anything unsummarisable** is `Fresh(D)`, with `D` the union
+of its arguments' dependencies. Wherever a `Fresh` lands in the model it is a `value` write there (§3.4). This is
 the one rule that can produce `value ρ`, and `compile-away.md` §2 says what that costs: today's
 path.
 
@@ -437,8 +522,8 @@ of paths at or below `p` whose value may not be `M@…`:
 
 | `a` | `diff(a, p, Γ)` | why |
 |---|---|---|
-| `Same(q)`, `q = p` | `∅` | the very value |
-| `Same(q)`, `q ≠ p` | `{ value p }` | an old value, but another one — it may happen to be `===` (`other → other` re-bound at the same path is `q = p`, not this row) |
+| `Same(q)`, `q = p` exactly (§2.1's exact order on uncut paths, index symbols equal by §2.3) and `q` holds no `[*]` or `[?]` step | `∅` | the very value |
+| `Same(q)`, otherwise | `{ value p }` | an old value, but another one, or *some* element's — it may happen to be `===` (`other → other` re-bound at the same path is `q = p`, not this row; `λ_ → t` with `t ↦ Same(ρ.todos[*])` mapped over `ρ.todos` is this row, *amended 2026-10-08, A5*) |
 | `Lit(c)` | `{ value p }` | a literal is never promised identical |
 | `Rec(b, fs)`, `b = p` | `{ node p } ∪ ⋃_f diff(fs[f], p.f, Γ)` | §11.12: unnamed fields keep identity |
 | `Rec(b, fs)`, `b ≠ p` or none | `{ value p }` | a record built from another one, or fresh |
@@ -470,8 +555,10 @@ would say.
 flags), each `Fresh`. Its result's model component is an abstract value `a₀` with no `Same` in
 it. **`literal(p)`** holds when `proj(a₀, p)` — projected through `Rec`, `Con`, `Tup` and literal
 `Lst` nodes — is `Lit(c)`, a `Con` or `Rec` or `Tup` whose parts are all literal, or an empty
-list; it fails at `Fresh`, `Alt`, a non-empty list built by a call, and a `Fun`. R3 bakes such a
-path's value into the template's HTML when nothing writes it (§9.1). Conduit's `init` is
+list; it fails at `Fresh`, `Alt`, a non-empty list built by a call, and a `Fun`. R3 bakes a
+hole's value into the template's HTML only when the hole is exactly such a path, nothing writes
+it, and its literal is a string (§9.1, B5): `literal(p)` is a fact about the model, and baking
+needs one about the hole too. Conduit's `init` is
 `changeRouteTo (Route.fromUrl url) (Redirect …)`, an `Alt` over routes with `Fresh` pages, so
 nothing of it is literal — and research 62 §4's literal-init holes read nothing of the model at
 all, which is `literal` trivially (an empty read set).
@@ -491,7 +578,12 @@ holes) is analysed with `env = { model ↦ Same(ρ) }`, pattern-bound locals ref
   or the base's path;
 - **`D`**, every path in it, when it is `Fresh(D)`: a value computed from those paths may change
   when any of them does;
-- every alternative's anchors for an `Alt`.
+- for an `Alt(s, …)`, **the scrutinee's anchors, the path of every tag fact of every
+  alternative, and every alternative's anchors** (*amended 2026-10-08, A6*): which alternative
+  holds is decided by the scrutinee, so a value chosen by control flow over the model reads what
+  the choice read. `label = if model.on then "On" else "Off"` anchors to `ρ.on`, and a `case
+  model.status of Loading → "…"; _ → "…"` anchors to `ρ.status`, though every arm is a literal.
+  `deps` follows the same rule: `deps(Alt(s, alts)) = deps(s) ∪ paths(Γᵢ) ∪ ⋃ deps(aᵢ)`.
 
 A row variable of a `For` over a list at `q` anchors to `q[*]` (slice B binds it to the item;
 `language.md` §11.9). A local anchored at ρ itself — `view model` used whole — reads everything,
@@ -509,8 +601,12 @@ A row gives a core function's result as an abstract value over its arguments' ab
 an old value — when it is not, the result is `Fresh(deps)` unless the row says otherwise. Every
 row cites the guarantee it rests on; `backend.md` §4 (*Identity: what an operation returns
 unchanged*) is the source for lists. A callback argument `f` is applied by §4.2 with its element
-parameter bound to `Same(εⱼ)` — the element at `p[*]` — and, where there is one, its index
-parameter to ιⱼ; "`f` is identity" means its result is `Same(εⱼ)` under every alternative.
+parameter bound to `Same(εⱼ)` — **a root of its own**, which stands for the element at `p[*]`
+but is **not** the path `p[*]` and unifies with nothing else (*amended 2026-10-08, A5*) — and,
+where there is one, its index parameter to ιⱼ; "`f` is identity" means its result is exactly
+`Same(εⱼ)`, the root, under every alternative. A callback that returns `Same(ρ.todos[*])` (an
+element it was handed some other way) is not identity, and its `map` is `Lst(p, kept, *,
+Same(ρ.todos[*]))`, which is `value p[*]` by §3.4's second row.
 
 | function | result | rests on |
 |---|---|---|
@@ -527,7 +623,7 @@ parameter to ιⱼ; "`f` is identity" means its result is `Same(εⱼ)` under ev
 | `List.pop`, `take`, `drop`, `slice`, `tail` (as `Just`) | `Lst(p, removeSome)` | a view or a prefix shares elements |
 | `List.insertAt xs κ v` / `removeAt xs κ` | `Lst(p, insert κ)` / `Lst(p, removeAt κ)` | out of range returns `xs` |
 | `List.reverse`, `sort`, `sortBy`, `sortWith` | `Lst(p, permute)` | element identity always (invariant 6) |
-| `List.get xs κ`, `head`, `last` | `Alt([ Con(Just, [Same(p[κ])]), Lit Nothing ])` (`[0]`, `[?]` for `last`) | an element read is the element |
+| `List.get xs κ`, `head`, `last` | `Alt([ Con(Just, [Same(p[κ])]), Lit Nothing ])` (`[0]` for `head`, `[?]` for `last` — a `Same` that is never identity at a placement path, §2.3, and anchors to `p[*]`) | an element read is the element |
 | `List.length`, `isEmpty`, `member`, `all`, `any`, `sum`, `product`, `maximum`, `minimum` | `Fresh(deps)` scalars or `Maybe`s | — |
 | `List.foldl`, `foldr`, `concat`, `concatMap`, `initialize`, `range`, `repeat`, `singleton`, `intersperse`, `partition`, `unzip` | `Fresh(deps)` | no identity promised |
 | `Dict.*`, `Set.*` | `Fresh(deps)` (§2.6, O3) | — |
@@ -562,6 +658,11 @@ is a term over `π₁ … πₙ` — `Rec(π₂, { status ↦ Alt([ (tag(π₂.s
 [Same(π₂.status.Saving#0), App(Same(π₁), [Same(π₂.status.Saving#1)])])), … ]) })` is
 `Editor.updateForm`'s — and it is computed once per function, whatever the number of calls.
 
+**Roots are unique per function** (*amended 2026-10-08, B1*): `πᵢ` is short for `πᵢ^f`, the
+i-th parameter of `f`, and no two functions share a root, so a summary that holds another
+function's roots — a `Fun` closing over a callee's environment, a term a callee returned —
+cannot be rewritten by its caller's instantiation except where the caller's own roots appear.
+
 This is Sharir & Pnueli's functional approach (1981, §11): a procedure's effect is a function
 from its input abstract value to its output, and a call applies the function. Here the function
 is a **symbolic term** and application is **substitution**, which is cheaper than re-analysing
@@ -581,7 +682,17 @@ built one, `Fresh` for the rest — and every tag fact `tag(πᵢ.s) = C` in an 
 `tag(q.s) = C` when `aᵢ` is `Same(q)`, by the fact's truth when `proj(aᵢ, s)` is a `Con` or
 `Lit` (an alternative whose fact is false is dropped), and by **no fact** otherwise, in which
 case the alternative stays and the `Con` it builds is a `value` write where it lands (§3.4).
-Then every application node is reduced:
+A **keyed** `Alt` on `πᵢ.s` (§3.1) whose argument is a `Con`, a `Lit` or a `Same(q)` with a
+fact at `q.s` in Γ is replaced by the one alternative that holds. Substitution **descends into
+every sub-term, a `Fun`'s closed-over environment included** (*amended 2026-10-08, B1*), and it
+touches only the callee's own roots (§4.1). **A base that is not a path** (*amended 2026-10-08,
+B2*): a `Rec(πᵢ.s, fs)` whose argument projects to `Same(q)` becomes `Rec(q.s, fs)`; to
+`Rec(b, gs)` becomes `Rec(b, gs ∪ fs)` with `fs` overriding (`Fresh` for the fields of neither
+when `b` is none); to anything else becomes `Rec(none, fs ∪ { every other field of the type ↦
+Fresh(deps(arg)) })`. A `Lst(πᵢ.s, tag, κ, a)` whose argument projects to `Same(q)` becomes
+`Lst(q.s, tag, κ, a)`; to `Lst(b, kept, κ', a')` with `tag = kept` becomes `Lst(b, kept, …)`
+holding both element writes; to anything else becomes `Lst(none, replaced)`. Then every
+application node is reduced:
 
 - `App(Fun(λ), args)` with `λ = λy₁ … yₘ → e` closing over `env`: `⟦e⟧(Γ, env[yⱼ ↦ argⱼ])`,
   the lambda's body analysed with the arguments. A constructor passed as a value (`Home`,
@@ -613,8 +724,11 @@ alternative (`Alt([])`, which joins as nothing and instantiates to nothing), eac
 analysed with the current summaries, and the round repeats until no summary changes. Each round
 can only add alternatives, deepen terms, or turn a term into `Fresh`: the summaries ascend in a
 lattice of finite height (§2.4 and §3.1's caps), so the iteration stops. It is **bounded** at
-**I = 3 rounds** (*open choice O2*); a component not stable after three has every summary
-replaced by `Fresh(deps of its parameters)`, which is above every fixpoint and so sound (§5.3).
+**I = 4 rounds** (*open choice O2; amended 2026-10-08, C5*): a round that changes no summary is
+the one that detects stability, so I rounds allow I − 1 ascents — `bumpTimes` needs two ascents
+and a third round to confirm, a mutually recursive pair one more — and a component not stable
+after I has every summary replaced by `Fresh(deps of its parameters)`, which is above every
+fixpoint and so sound (§5.3).
 
 What this recovers and what it gives up. A loop that walks a list and rebuilds the model at the
 end (`bumpTimes n model = if n == 0 then model else bumpTimes (n − 1) { model | count = model.count
@@ -639,8 +753,12 @@ is **the path of constructors `update` and its callees actually match on**, noth
 does not, and an inner message handed whole to something `Fresh` stops the split there.
 
 Formally, `writes(κ)` is `diff` of `update`'s result analysed under the message facts
-`tag(μ.s) = C` for every step of κ, with the arms those facts exclude not analysed (§3.2's
-`Con` scrutinee rule, applied to μ). A key is a **leaf** when no arm reachable under it splits μ
+`tag(μ.s) = C` for every step of κ, with an arm skipped **only when its own pattern requires a
+tag at some `μ.s` that the key's facts contradict** (§3.2's skipping rule, *amended 2026-10-08,
+A1*). A fallthrough arm — `( _, _ ) → …` after `( GotHomeMsg sub, Home home ) → …` — is analysed
+for every key, because the earlier arm's two-path pattern contributes no negation and the
+fallthrough can run for `GotHomeMsg` when the model is another page; what it writes
+(`{ model | warning = "stale message" }`: `value ρ.warning`) is in every key's set. A key is a **leaf** when no arm reachable under it splits μ
 further; the dispatch table (§9.2) has one entry per leaf. The tree holds at most **L = 256**
 leaves per program (*open choice O2*); past that, splitting stops and the remaining keys are
 their parent's, with the parent's write set the join of what it covers. Conduit's tree has 9
@@ -701,12 +819,19 @@ By induction on `e`. The cases that carry the argument:
   which is `language.md` §11.12's promise, kept by every pass of every build. With `r ∈
   γ(Same(p))`, the result has `g === M@p.g` for `g ≠ f` and `f ∈ γ(⟦e⟧)`, which is
   `γ(Rec(p, { f ↦ ⟦e⟧ }))`. With `r ∈ γ(Rec(b, fs))` the same, composed. Otherwise `Fresh`.
-- **`case`.** Exactly one arm runs; call it `i`. The pattern matched, so the facts `Γᵢ` of §3.2
-  hold of `M` (a constructor pattern on `Same(p)` matched means `M@p` has that tag; the earlier
-  arms' patterns did not match, so their negations hold), and the variables it bound are the
-  parts, which are in the `γ` of `Same(p.C#j)` (parts of `M@p`) or of the `Con`'s parts. By the
-  induction hypothesis the arm's value is in `γ(aᵢ)`, and `Γᵢ` holds, so it is in `γ(Alt)`. An
-  arm the §3.2 `Con` rule skipped cannot have run: the scrutinee's tag was known.
+- **`case`.** Exactly one arm runs; call it `i`. The pattern matched, so the positive facts of
+  §3.2 hold of `M` (a constructor pattern on `Same(p)` matched means `M@p` has that tag, nested
+  ones included), and the variables it bound are the parts, which are in the `γ` of
+  `Same(p.C#j)` (parts of `M@p`) or of the `Con`'s parts. **The negation lemma** (*amended
+  2026-10-08, A1–A2*): a negation fact `tag(p) ≠ {C}` is added only for an earlier arm whose
+  pattern is a single-path, irrefutable-below test on `Same(p)`; such a pattern matches **iff**
+  `M@p` has tag `C` (every sub-pattern matches whatever it meets, and no other path is
+  tested), so its failure to match is exactly `tag(p) ≠ C`. A two-path pattern fails when
+  either tag differs and a refutable sub-pattern fails with the outer tag in place, which is why
+  neither yields a fact; they yield none, and an arm analysed with fewer facts has a larger
+  `γ`. By the induction hypothesis the arm's value is in `γ(aᵢ)`, and `Γᵢ` holds, so it is in
+  `γ(Alt)`. An arm skipped by §3.2's rule cannot have run: its own pattern needs a tag the
+  known tag of the scrutinee, or the key's fact at μ, contradicts, and that fact holds.
 - **`let`**: the bound value is in `γ(⟦e₁⟧)` by induction, so the environment stays correct.
 - **Calls** (§4.2). Let `S = ⟦body⟧(∅, { xᵢ ↦ Same(πᵢ) })`. By the claim applied to the body with
   `πᵢ` bound to the actual argument `Vᵢ`, the result is in `γ(S)` read with `πᵢ@ = Vᵢ`. The
@@ -738,7 +863,23 @@ what makes `p.C#i` *defined* in both models, so that a changed path below `p` is
 `C#i` and not an undefined one; without the fact, `value p` covers everything; `Tup` likewise;
 `Lst` by its tag's promise; `Alt` by the alternative that holds. The prefix closure adds `node`
 at the ancestors, which a new object at `p` indeed rebuilds (a spread per level), and the k-cut
-replaces a cover by a wider one.
+replaces a cover by a wider one. The first row needs `γ(Same(q))` to be the **singleton**
+`{ M@p }`, which is why it asks for `q = p` on uncut paths with index symbols equal by §2.3 and
+no `[*]`/`[?]` step: `γ(Same(p[*]))` is the set of all elements, and `γ(Same(p[κ]))` with κ
+another instruction may be another element (*amended 2026-10-08, A5*).
+
+**Conflict is correct** (*amended 2026-10-08, A3–A4*). *If a hole's anchored read `r` sees a
+different value — some path `q` with `q = r`, `q ⊑ r` or `r ⊑ q` on concrete positions is
+changed — then `r` conflicts with `W` by §2.5.* The changed `q` is covered: a `value` write `w ⊑
+q` or `node q ∈ W`. On concrete positions, `w`, `q` and `r` are related by exact prefix with
+every list step a concrete index; a syntactic step of `w` or `r` that stands for that index —
+a literal, an expression, `[*]` — may coincide with any other step standing for the same index
+unless the two are distinct literals, which cannot both stand for one index. So `w ⊑ q` and
+(`q ⊑ r` or `r ⊑ q`) give `w ⊑̃ r` or `r ⊑̃ w`, and `node q` with `q = r` gives a `node` write
+`w` with `w ⊑̃ r` and `|w| = |r|`. A `node` write at a proper prefix of `r` is excluded on
+purpose: it says the object there is new, and nothing about `r`'s own slot, whose value is the
+old one unless some deeper write covers it — and that deeper write is in `W` by the clause
+above.
 
 ### 5.3 The fixpoint is sound
 
@@ -798,31 +939,47 @@ it lands — never a diagnostic. The caps, each an *open choice O2* with a recom
 
 | cap | bounds | at the cap |
 |---|---|---|
-| k = 8 | path and value depth | `value` at the k-prefix; reads cut likewise |
-| A = 16 | alternatives in one `Alt` | `Fresh(⋃ deps)` |
+| k = 8 | path and value depth, `Alt` levels included | `value` at the k-prefix; `Fresh` for a deeper term; reads cut likewise |
+| A = 16 | alternatives in one **plain** `Alt` (a keyed `Alt` is bounded by its type, §3.1) | `Fresh(⋃ deps)` |
 | D = 8 | nested instantiation depth | the application is `Fresh` |
-| I = 3 | rounds of a recursive component | every summary of the component is `Fresh` |
-| S = 4 096 | nodes in one summary term | the summary is `Fresh` |
+| I = 4 | rounds of a recursive component | every summary of the component is `Fresh` |
+| S = 4 096 | DAG nodes in **any** term: a summary, a key's result, a lambda's value at a call | the term is `Fresh` |
+| W = 2²⁰ | **work**: node visits by `⟦·⟧`, `inst` and `diff` (memo hits included) for one summary or one key | the summary is `Fresh`; the key is `value ρ` |
 | L = 256 | leaves of a program's key tree | splitting stops; keys share their parent's set |
 
-Like the cap of 64 inferred constraints (`static-dispatch-spike.md` §10.11), each bounds a
-blow-up a program can reach by accident — a `case` of twenty arms in a helper called from a
-`case` of twenty arms is 400 alternatives — and each is lifted by writing the program another
-way, which nobody is asked to do: the cost of the cap is a coarser handler for that message, and
-`compile-away.md` §2's rule stands. The dump marks a cap that fired (§8.1) so that a coarse
-result has a stated cause.
+*Amended 2026-10-08, C1–C2.* The width cap alone bounded nothing: a chain of `if`s nests `Alt`s
+without widening any, and `diff` over nested `Alt`s under growing Γ can visit a shared DAG
+exponentially often. **W caps the work itself**, counted per summary and per key, and S counts
+every term; both are the real bound, and the others are the shapes that reach it first. And
+width was the wrong thing to cap for a `case` on a message: a page `update` with seventeen
+constructors would have made every one of its keys `Fresh` — all its messages, not one — which
+is why a `case` on a path is a keyed `Alt`, as wide as its type and no wider, and selected whole
+by a key. (Conduit's `ArticlePage` has seventeen; under the first draft's rule its seventeen
+keys would all have been `value ρ.Article#0`.) Like the cap of 64 inferred constraints
+(`static-dispatch-spike.md` §10.11), each cap bounds a blow-up a program can reach by accident
+and is lifted by writing the program another way, which nobody is asked to do: the cost of a cap
+is a coarser handler for the summary or key it fired in — a `Fresh` summary coarsens every key
+through it, which is the cost of the shape, not of one message — and `compile-away.md` §2's rule
+stands. The dump marks a cap that fired (§8.1) so that a coarse result has a stated cause.
 
 ### 6.2 Cost on real programs
 
-One body walk per function, once, for its summary: linear in the program's size. One
-instantiation per call site, costing the size of the callee's summary (bounded by S) times the
-depth of nesting (bounded by D). One analysis of `update` per message key, which is one walk of
-`update`'s body per key with the arms a key excludes skipped — so the sum over keys is about one
-walk of each arm per key that reaches it, which for a `case msg of` is one walk of the body in
-total plus one per nested split. The view's anchoring is one walk of `view` and of the markup
-helpers it reaches. Conduit: 3 387 lines, about 100 keys, a handful of summaries wider than a
-screen; the estimate is a few milliseconds in ReleaseFast, which is within the noise of its
-150 ms check (research 62 §1.3). The pass is budgeted with the checker: the 250k LOC/s target
+*Amended 2026-10-08, C3–C4.* **The bound**: the work of the pass is at most
+`(functions + keys) · W` node visits plus one walk of `view` and the markup helpers it reaches,
+because every summary and every key stops at W. **Within that bound**, a function's summary is
+one walk of its body plus the instantiations it makes; an instantiation costs the callee's
+summary size (≤ S) and, for a lambda argument, the lambda body's analysis at that site — so
+higher-order fan-out is real: `twice f x = f (f x)` nested D levels is bᴰ lambda analyses, which
+W, not D, is what stops. A key is **one walk of `update`'s body** under its facts, with the
+arms its facts contradict skipped; code shared before the split — a `let` chain, helpers called
+before `case msg of` — is walked **once per key**, so the sum over keys is up to `L` walks of
+that shared part, not one. The claim "linear in the program" is therefore withdrawn: the pass is
+**linear in the program on inputs that hit no cap** (every body walked once, each call site
+instantiating a bounded summary, each key skipping all but its arms), and bounded by the caps
+on every input. Conduit: 3 387 lines, about 100 keys, a handful of summaries wider than a
+screen, no cap expected to fire; the estimate is a few milliseconds in ReleaseFast, which is
+within the noise of its 150 ms check (research 62 §1.3), and the figure is reported, not
+assumed. The pass is budgeted with the checker: the 250k LOC/s target
 of `fast-compiler.md` §2 is for checking, the whole of `update`'s and `view`'s cost here is
 another walk of their bodies, and the pass reports its own time under `--self-profile`
 (`writes` beside `check` and `emit_module`), so a regression is a number. A program with no
@@ -900,7 +1057,12 @@ program Main.main : Tea.application
   **indexed** when some list write has any other tag or a `[κ]` with κ an expression; **exact**
   otherwise. (**Bounded** is every class but `*`.) The classes are a reading for people and for
   the gate; consumers read the set.
-- **`keys`**: the count of leaf keys, and per class; `capped` is how many a cap coarsened.
+- **`keys`**: the count of leaf keys, and per class; `capped` is how many a cap coarsened, and
+  a `cap W` or `cap S` that fired in a summary is printed once under a `summary <name> (cap …)`
+  line after the keys, so a coarse key can be traced to the helper that caused it.
+- **`program <unrecognised>`** (§1.1, B3): printed for a `main` of a `Program` type the pass
+  could not trace to a record literal of the required shape, with one line `key * * value ρ`
+  and every hole `dynamic`; a build for a markup platform with no `main` at all prints nothing.
 - **`init`**: `literal` followed by the paths `literal(p)` holds at, or `<none>`.
 - **`hole`**: the markup hole's position (module, line, column of its `{`), its class —
   **static** (no key's set conflicts with any anchored read, §2.5), **literal** (static, and
@@ -930,6 +1092,19 @@ analysis of §3–§4 makes 65 of 65 page keys bounded and all but `ChangedUrl` 
 document expects **about 100 of 101**, and the gate is cleared with room or the analysis has a
 defect the dump shows.
 
+*Re-checked 2026-10-08 under the amended rules (A1–A6, B1–B7, C1–C5).* **The expected figure
+does not change.** A1: Conduit's fallthrough `( _, _ ) → ( model, Cmd.none )` is now analysed
+for every key and writes nothing. A2: every refutable sub-pattern in Conduit's updates
+(`Loaded ( Editing "", _ )`, `Loaded ( Sending text, list )`) is followed by an arm that returns
+the scrutinee or the model itself, so the lost negations cost nothing; `CompletedPostComment ·
+Err` is still `node ρ.…comments.Loaded#0` with `value` at the `CommentText` only, from the
+arm's positive facts. A5: `replaceArticle` was never identity, so `Feed`'s map stays
+`value …articles[*]`. C2 is the one correction that moves a number, the other way: under the
+first draft's width cap `ArticlePage`'s seventeen constructors would have made its summary
+`Fresh` and its seventeen keys `value ρ.Article#0` — bounded, so the ratio stood, but coarse —
+and the keyed `Alt` keeps them exact. So: about 100 of 101 bounded, one `*` (`ChangedUrl`), and
+the article page's keys as research 62's Appendix A lists them.
+
 The gate is run by the tool, not by hand, as a corpus case: `tests/corpus/writes/Conduit/`
 whose golden is the whole dump and whose harness check is the `keys` line's ratio — a second
 assertion on the same output, so that a regression in precision fails the gates even when the
@@ -955,14 +1130,53 @@ argument — the last is new); an index guard and a residue guard; a key tree th
 cap, at the smallest input that reaches it (one test per cap, `write-tests`' rule); `init`
 literal and not. The determinism scenario of §7. None of these is a matrix.
 
+*Added 2026-10-08, from the adversarial review's counterexamples (E). Each is a `writes/`
+golden the read-only pass must pass before any consumer reads its result:*
+
+1. **A1** — `( GotHomeMsg sub, Home home ) → …; ( _, _ ) → ( { model | warning = "stale" },
+   Cmd.none )`. Golden: every `GotHomeMsg · X` key holds `value ρ.warning`.
+2. **A2** — `case model.status of Loaded (Just x) → …; _ → { model | status = Failed e }`.
+   Golden: `value ρ.status`, not `node ρ.status; … Failed#0`.
+3. **A3/A4** — the table app's `SwapRows` and a `Set id v` key, with a positional `For` row hole
+   reading `row.label` and a hole reading `List.head model.xs`. Golden: the row hole is
+   `dynamic` under `SwapRows`, the `head` hole is `dynamic` under `Set`.
+4. **A5** — `Fill → case List.last model.todos of Just t → { model | todos = List.map
+   model.todos (λ_ → t) }`. Golden: `value ρ.todos[*]`.
+5. **A6** — `view model = label = if model.on then "On" else "Off"; <button>{label}</button>`.
+   Golden: `hole … dynamic reads ρ.on` (with a `Toggle` key writing `ρ.on`), and `static
+   reads ρ.on` — never `literal` — when nothing writes it.
+6. **B3** — `Tea.element { …, update = withLogging update }` and a program record a helper
+   returns. Golden: `program <unrecognised>`, `key * * value ρ`, every hole `dynamic`.
+7. **B2** — a helper `bump r = { r | n = r.n + 1 }` called on `{ model | m = 1 }` and on a
+   `Fresh` value. Golden: `node ρ; value ρ.m; value ρ.n` and `value ρ` respectively.
+8. **B7** — a key that appends on one arm and writes `[*].f` on another. Golden: both
+   `value ρ.xs ⟨append⟩` and `value ρ.xs[*].f` present.
+9. **C1** — thirty `let aₙ = if cₙ then aₙ₋₁ else aₙ₋₁'` lines in a helper `update` calls,
+   as a **`test-pending-perf` scenario** until the pass exists and a `test-perf` one after:
+   the pass must finish within the budget and, hash-consed, within W; the golden is the key's
+   set, which is `value` at the one field written, not `Fresh`.
+10. **C2** — a page `update` of seventeen constructors behind `GotPageMsg`. Golden: seventeen
+    exact keys, no `cap A`.
+11. **C5** — a mutually recursive pair that lands (`stepA`/`stepB` each writing one field).
+    Golden: `value` at the two fields, no `cap I`.
+
 ## 9. What the consumers may do, and what stays at run time
 
 ### 9.1 R3 — values that never change
 
 A hole whose anchored reads (§3.6) conflict with no key's write set (§2.5) is **static**: R3
-writes it at mount, with no group field, no test and no comparison. A static hole whose reads
-are all `literal` under `init` (§3.5) is part of the template's HTML, with no code at all. A
-hole with an empty read set is both. R3 must still: write every other hole as today; treat a
+writes it at mount, with no group field, no test and no comparison. A static hole is **baked**
+into the template's HTML, with no code at all, only when (*amended 2026-10-08, B5*) **its
+expression is exactly a model path** (`tree.pathOf`, `boundary.md` §9.4.6: a local read
+through field and tuple accesses and nothing more, anchored to `p`) **and `init` gives `p` a
+string literal** — the one value the template can hold verbatim with no evaluator between the
+source and the page. A hole with an empty read set whose expression is a string literal is
+baked likewise. Nothing else is: `String.fromInt (model.count + 1)`, a `Float`, a `Bool`, an
+`if` over literals (A6's `label`) would need a compile-time evaluator bit-exact with the
+runtime (`-0`, `NaN`, `Int` past 2⁵³, float printing), and this slice names none (*open choice
+O8*: widen to integer literals once the backend's printer is specified as the evaluator). A
+static hole that is not baked is written once at mount from its expression, which costs the
+code and nothing per render. R3 must still: write every other hole as today; treat a
 hole inside a `For` row by the row's own rules (`backend.md` §15.5 — a row's item is an input,
 not a path, and `static-key` is the per-row-instance reading of research 61 §2.3); and keep
 `backend.md` §15.4's restate of slots, since a static hole may hold markup that is live.
@@ -1097,8 +1311,11 @@ Only alternatives that fix ι differ from the element, so the `indexedMap` row g
 key SwapRows    indexed    node ρ; node ρ.rows ⟨kept⟩; value ρ.rows[1]; value ρ.rows[998]
 ```
 
-— the exact edit research 60 §5.4 asked for, which R5 turns into two row patches. `Update`'s
-guard is `Int.mod i 10 == 0`: no index fact, so `[*]` with the element's write `{ label }`:
+— the exact edit research 60 §5.4 asked for, which R5 turns into two row patches. For R4 the
+two `value` writes conflict with a row's `ρ.rows[*].label` by may-coincidence (§2.5: `[1]` and
+`[*]`), so a positional `For`'s rows are marked and rows 1 and 998 repaint; a keyed `For`'s
+move with their items. `Update`'s guard is `Int.mod i 10 == 0`: no index fact, so `[*]` with
+the element's write `{ label }`:
 
 ```
 key Update    structural    node ρ; node ρ.rows ⟨kept⟩; node ρ.rows[*]; value ρ.rows[*].label
@@ -1185,9 +1402,13 @@ recommended values and re-run under others.
 - **O1 — k = 8**, counted from the program's model root, with reads anchored and cut the same
   way (§2.2). Recommended: 8. The alternative, slice B's 4, cuts Conduit's pages at their
   status variants and loses the same-variant precision this slice exists for.
-- **O2 — the caps** A = 16, D = 8, I = 3, S = 4 096, L = 256 (§6.1). Recommended as stated;
-  each is a top, never an error, and the dump marks when one fires, so they can be moved on
-  evidence.
+- **O2 — the caps** A = 16 (plain `Alt`s only), D = 8, I = 4, S = 4 096 (every term),
+  W = 2²⁰ (work per summary and per key), L = 256 (§6.1). Recommended as stated; each is a top,
+  never an error, and the dump marks when one fires, so they can be moved on evidence. W is the
+  one that bounds the pass; the others name the shapes that reach it.
+- **O8 — what R3 may bake** (§9.1): only a hole that is exactly a model path whose `init` value
+  is a string literal. Recommended as stated; widening to integer literals needs the backend's
+  number printing named as the evaluator, and is a later amendment.
 - **O3 — no positions in `Dict` or `Set`** (§2.6). Recommended: none now. Conduit and research
   61's corpus hold no dict in a model that a view reads by key; a `Dict` step (`{key}`) can be
   added later without renumbering anything.
