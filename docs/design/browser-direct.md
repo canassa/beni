@@ -30,9 +30,9 @@ key's write set can reach — each write guarded by one comparison with the valu
 is no `view` at run time, no block, no kind, no instance for markup that exists once, no render loop,
 no microtask, no message object unless the program makes a message a value, and no list
 reconciler unless some message replaces or permutes a list. What ships as runtime is a short list,
-each item paid for only by a page that reaches it: a twelve-line dispatch guard (defects, re-entrant
-sends), the controlled-input edited set, one keyed reconciler, the fiber kernel, and the crash
-screen in development. The model stays immutable and updated by spread; a later slice updates it in
+each item paid for only by a page that reaches it: a dispatch guard of a dozen lines (defects,
+re-entrant sends, every entry into program code), the controlled-input edited set, one keyed
+reconciler, the fiber kernel, and the crash screen in development. The model stays immutable and updated by spread; a later slice updates it in
 place where the compiler proves the written path unshared. Everything the language promises stays:
 no runtime errors, exhaustive matches, managed effects, inputs that always show the model, a defect
 that stops the page.
@@ -44,8 +44,10 @@ handlers take the payload as parameters and never build a message for a view eve
 the reconciler is emitted only for a list some key replaces or permutes, and the rows' selector is
 kept (§6); the model half is not beni's output verbatim: the arm is specialised to the key, an
 accumulator loop builds a plain array, a derived `let` is recomputed only by the keys that can
-change it, and in-place update is specified with its proof obligation (§7). **What is different
-from today's `browser`**: everything in §3's table whose "today" column says runtime.
+change it, and in-place update is specified with its proof obligation (§7); and the design
+carries two early oracles of its own — differential fuzzing against today's platform and a
+development-only verify mode (§8.3) — from the first slice that writes a hole. **What is
+different from today's `browser`**: everything in §3's table whose "today" column says runtime.
 
 ## 1. Terms
 
@@ -96,7 +98,7 @@ reasoning and is to be replaced by the slice that builds the piece.
 | **the message** | nothing: the handler is the message | compile time | nothing: the listener calls the key's handler with the payload as arguments (§4.1); a message object exists only where the program makes one a value (§4.4) | 0 | 0 | one object per event |
 | **state transition** | `tick++` | run time | the key's `update` arm, inlined, over the immutable model (§7.1); in place where proved unshared (§7.4) | a spread per record on the path, ~20–50 ns each **[estimate, 58 §4]**; 0 in place | the arm, as today | the whole `update` with its `case` |
 | **change detection** | none | compile time (which holes) + run time (whether the value differs) | the handler calls only the groups the key's write set conflicts with; each compares a leaf value with the one last written (§5.3) | one `!==` per hole the key can reach — 40 % of holes on average **[measured, 61 §4.1]** | ~6 B per dynamic hole **[measured, 59 §4.2]**, plus ~2 B per (key, group) call | every group of the root compared on every message |
-| **scheduling** | none | — | none: writes happen in the handler (§4.3) | 0 | ~60 B: the dispatch guard (§4.3) | the queue, the microtask, the turn: 1.4 + 0.4 µs **[measured, 59 §1]** |
+| **scheduling** | none | — | none: writes happen in the handler (§4.3) | 0 | ~100 B **[estimate]**: the dispatch guard (§4.3) | the queue, the microtask, the turn: 1.4 + 0.4 µs **[measured, 59 §1]** |
 | **DOM creation** | `innerHTML`, `cloneNode` | compile time | the same | parity **[measured, 60 §4.5]** | the template | the same |
 | **DOM update** | `node.data = x` | compile time | the same write, in the handler | the write: ~5 µs cold **[measured, 59 §1.4]** | the write | the same |
 | **a row's edit** | `trs[k]`, two `insertBefore` | compile time (which rows) + run time (`k`) | the edit script for the key's edit tag over an instance array (§6.2) | O(1) for an indexed edit; O(n) compares for the `map` idiom; O(n) for a filter | ~40–80 B per edit script **[estimate from P3]** | the keyed pass over every row |
@@ -104,7 +106,7 @@ reasoning and is to be replaced by the slice that builds the piece.
 | **selection** | `selectedRow` kept, two class writes | compile time (the selector) | the two rows found through the list's key map (§6.4) | O(1) | the key map, ~60 B, only for a list with a selector or a reconciler | the selector, through `forKeyed` |
 | **memory** | `data[]`, `trs[]` | — | one module-level slot per group; one instance per row | — | — | the same, plus blocks and kinds |
 | **controlled inputs** | nothing: never reconciled | run time (the user's edit) | the edited set of `backend.md` §15.3, reconciled at the end of the dispatch, shipped only when a `stateful` attribute exists (§8.1) | O(touched) | ~250 B when used **[estimate]** | the same, since 2026-10-08 |
-| **defects** | an exception reaches the console | run time | the guard: `try … finally` setting `dead`, no `catch` (§8.2); the crash screen in development; `Task.shutdown` when the page reaches `Task` | ≈ 0 **[measured, 59 §1.3: the guards cost nothing]** | ~60 B; the screen in development only | the same |
+| **defects** | an exception reaches the console | run time | the guard: `try … finally` setting `dead`, no `catch`, around every entry — listener bodies, `end()`, `run` and the mount (§8.2); the crash screen in development; `Task.shutdown` when the page reaches `Task` | ≈ 0 **[measured, 59 §1.3: the guards cost nothing]** | inside the ~100 B above; the screen in development only | the same |
 | **effects** | `fetch`, `setTimeout` by hand | run time | the handler hands its `Cmd` to the command driver after its writes; the subscription diff runs only in handlers whose key can change what `subscriptions` reads (§10) | as today's `Tea`, minus a diff per render | `core/Task` and the driver, only when reached | the same, with the diff on every render |
 | **generality** | code for this page's shapes only | compile time | code for this program's shapes only: an unreached runtime piece is not written | — | the empty page ≤ 300 B **[target]** | 1 234 B **[measured, `backend.md` §15.11]** |
 
@@ -123,6 +125,10 @@ function, named by the key (`Main$h$Edit`, `Main$h$GotEditorMsg$EnteredTitle`; s
 `--release`), whose parameters are the payload fields along the key — for `Edit Int String`,
 `(id, s)` — and whose body is, in this order:
 
+0. **The old model.** A handler whose scripts need the model before the arm — an index symbol
+   that reads it (`write-sets.md` §2.3), a derived value's old input — binds `const old = model`
+   first; one that does not, does not. The instance arrays of §6.1 hold the old *shape* of every
+   list, so a script's guard (§6.2) never needs the old list itself.
 1. **The arm.** The code of `update`'s arm for κ, inlined, with the pattern's variables bound to
    the parameters and `model` bound to the program's module-level `model` variable; the arm's
    result replaces `model` (`model = …`), and for a `Tea.element` program its second component
@@ -135,21 +141,38 @@ function, named by the key (`Main$h$Edit`, `Main$h$GotEditorMsg$EnteredTitle`; s
    common case: the `case msg of` is gone, its arms are the handlers.
 2. **Derived values** (§5.4) whose read sets conflict with `writes(κ)`, recomputed in dependency
    order into their slots.
-3. **Structure**: the edit scripts (§6.2) of every list write in `writes(κ)`, then the branches
-   (§5.5) whose scrutinee reads conflict — each may make, move or remove nodes.
+3. **Structure**: the branches (§5.5) whose scrutinee reads conflict, outermost first — a branch
+   switch tears the old arm down and mounts the new one — then the edit scripts (§6.2) of every
+   list write in `writes(κ)`, in the source order of their `For` sites; each may make, move or
+   remove nodes.
 4. **Values**: the groups (§5.3) whose read sets conflict with `writes(κ)`, in the order of their
-   first hole; the row holes an edit script marked.
+   first hole; the row holes an edit script marked; the selector's two rows (§6.4).
 5. **The after-render point**: the `Dom.rendered` waits and after-render work queued during
    steps 1–4 run here, in order (§10.2).
 6. **Effects**: the command of step 1 is handed to the command driver; the subscription diff runs
    if `writes(κ)` conflicts with what `subscriptions` reads (§10.1).
+
+**Every step runs under its branch's liveness.** A group, a script, a selector visit or a derived
+value that belongs to a branch arm (§5.5) — a page of Conduit's union, the `then` of an `if` in a
+hole, a `Show`'s body — is emitted inside a test that the arm is the one shown, `if (br3 === 1)
+{ … }`, nested for nested branches, and is never called otherwise. The handler for
+`GotHomeMsg · Loaded` that arrives after the page moved to `Article` (a late HTTP answer) runs its
+arm — which `write-sets.md` §4.4's fallthrough makes a no-op on another page — then finds the
+home branch not shown and reads nothing of `ρ.Home#0`. A path read of a variant that is not
+there would be a `TypeError`, which the language forbids; the liveness test is what makes it
+impossible by construction. Pinned by `browser/direct/LateResponse` (a message for a page no
+longer shown, and one for a `Show` that closed).
 
 A key whose write set is empty (a command-only message, 18 % of research 61's constructors) is
 steps 1 and 6. A key of class `*` (`value ρ`) runs step 3 for every list and step 4 for every
 group: **`patchAll`**, one outlined function per program that exists only when some key needs
 it (Conduit's `ChangedUrl` does; research 62 §3.1). That is the Elm fallback — compare
 everything — kept as the rule `compile-away.md` §2 states: an unknown write set is a cost, never
-an error.
+an error. **An opaque `update`** — `update = withLogging update`, a record a helper builds, any
+program whose `update` the analysis cannot key (`write-sets.md` §1.1's unrecognised program) —
+is the same case taken to its end: one key, `*`, one handler `h$All(msg)` that calls the `update`
+function with a message built as a value (§4.4) and then `patchAll`. No shape of `update` is
+refused (rule 7); it is only slower, by today's amount, and the dump says so (§11).
 
 **What the handler never does**: decide "unchanged" from the analysis alone. Every group it calls
 compares before it writes (`write-sets.md` §9.2); the analysis only chooses which groups to call.
@@ -159,28 +182,52 @@ compares before it writes (`write-sets.md` §9.2); the analysis only chooses whi
 A handler node is an element with an `on…` attribute. The fact "which node, which handler" is in
 the template, so:
 
-- **Outside every `For` row**, each handler node gets `addEventListener(name, listener)` at
-  mount, where `listener` is an arrow that reads the payload (the event, or the extractor's result
-  for a payload-form handler) and calls `send` with the key's handler and the arguments the
-  handler expression names — `onClick={Select model.id}` becomes `send(h$Select, model.id)` read
-  at the event, not captured. The DOM's own bubbling delivers the event to an ancestor's handler
-  node after a descendant's, which is Elm's order; `stopPropagation` declared on the event's row
-  calls `e.stopPropagation()`, `preventDefault` likewise. Cost: one listener object per handler
-  node, made once; nothing per message beyond the browser's dispatch. A page has tens of such
-  nodes, not thousands: the thousands are in rows.
-- **Inside a `For` row**, one listener per event name on the list's **parent element** (the
-  element whose children the rows are), added at the list's mount, shipped with that list. At an
-  event it walks from `e.target` up to the row's root element, calling `send` for each node that
-  carries a handler property (`$h`, set at the row's mount, holding the key's handler and reading
-  the arguments from the row's instance `$r`, which the row's root carries), innermost first; it
-  stops at a node whose declaration says `stopPropagation` and at the row's root, after which the
-  DOM's bubbling reaches the direct listeners above. A removed row's walk stops at the detached
-  root. This is dom-expressions' delegation restricted to a list (research 58 §4: "delegation
-  inside rows" is part of the irreducible runtime), and js-framework-benchmark's own vanilla
-  delegates on the `<tbody>` the same way; **S2 measures mount of 1 000 and 10 000 rows with a
-  listener per row against it**, and the per-list listener stays unless a listener per row is as
-  fast to mount and no larger (§13's `create` criterion), in which case rows get direct
-  listeners too and no walk exists anywhere.
+- **A site's listener body.** For every handler node the lowering emits one **listener body**
+  `l(e)`: a function of the event that reads the payload — the extractor's result for a
+  payload-form handler, the arguments the handler expression names (`onClick={Select model.id}`
+  reads `model.id`), a row's instance through its root — and calls the key's handler with them,
+  at whatever arity the handler has. The DOM listener is `e => send(l, e)`: the body runs
+  **inside the guard** (§4.3), so a throw in the payload read is a defect like any other.
+- **Read at the event, not captured** (*Elm differs here, and §15's Q1 is the owner's*). Elm's
+  `onClick (Select model.id)` captures the value at the last `view`; this platform reads
+  `model.id` when the listener body runs. The two agree whenever the page and the model are in
+  step, and they always are when a body runs: dispatches are serialised (§4.3), so a body runs
+  either outside any dispatch, with the page showing the model, or queued after the dispatch
+  that was running, with the page showing that dispatch's result. The one observable difference
+  is an event a handler's own DOM write fires synchronously — a `blur` when the focused input is
+  removed: Elm would hand the blur's message the value the previous view captured; here the body
+  runs after the handler and reads the model the handler made. The same holds for a row's event
+  reaching a row the same dispatch detached: it is **delivered**, with the item the row showed
+  (the instance is still the handler property's), as Elm delivers it. Pinned by
+  `browser/direct/EventReadsModel` (a handler removes the focused input; the blur's message
+  carries the new model's value) and `browser/direct/DetachedRowEvent`.
+- **Outside every `For` row**, each handler node gets `addEventListener(name, e => send(l, e))`
+  at mount. The DOM's own bubbling delivers the event to an ancestor's handler node after a
+  descendant's, which is Elm's order; `stopPropagation` declared on the event's row calls
+  `e.stopPropagation()`, `preventDefault` likewise. Cost: one listener per handler node, made
+  once; nothing per message beyond the browser's dispatch. A page has tens of such nodes, not
+  thousands: the thousands are in rows.
+- **Inside a `For` row**, for an event whose vocabulary row says `delegated` (`EventFacts.
+  delegated`, `boundary.md` §9.4.2 — the bubbling events: `click`, `input`, `keydown`, …), one
+  listener per event name on the list's **parent element** (the element whose children the rows
+  are), added at the list's mount, shipped with that list. At an event it walks from `e.target`
+  up to the row's root element, calling the listener body of each node that carries one (`$h`,
+  set at the row's mount, holding the body; the row's root carries its instance, `$r`),
+  innermost first; at a node whose declaration says `stopPropagation` it calls the native
+  `e.stopPropagation()` and stops the walk, so the direct listeners above the list do not fire
+  either; otherwise the DOM's bubbling reaches them after the walk. **An event that does not
+  bubble** — `focus`, `blur`, `mouseenter`, `mouseleave`, `scroll`, `load`, the media events —
+  cannot be delegated; its vocabulary row says so (`delegated: false`), and a row node with such
+  a handler gets a **direct listener** at `make`, exactly as a node outside a list does.
+  TodoMVC's edit field is `onBlur`, so its rows pay one listener each for it; dom-expressions
+  makes the same split. This is delegation restricted to a list and to the events it can serve
+  (research 58 §4: "delegation inside rows" is part of the irreducible runtime), and
+  js-framework-benchmark's own vanilla delegates on the `<tbody>` the same way; **S2 measures
+  mount of 1 000 and 10 000 rows with a listener per row against it**, and the per-list listener
+  stays unless a listener per row is as fast to mount and no larger (§13's `create` criterion),
+  in which case rows get direct listeners for every event and no walk exists anywhere. Pinned by
+  `browser/direct/RowBlur` (a blur in a row), `browser/direct/StopInRow` (a row handler that
+  stops propagation keeps an outer direct listener from firing).
 - **Which program** an event belongs to is known at compile time: a program's handler nodes are
   in its own templates, and its listeners call its own handlers. Two programs on one page (§9.3)
   need no walk to a mount root.
@@ -202,38 +249,50 @@ and stream criteria keep the stream (K per 60 Hz tick) at or under vanilla. *Thi
 owner's W28 render loop (Solid 2's microtask flush) and research 56's A (render at the end of a
 trusted dispatch): open question Q2 (§15).*
 
-What the dispatch guard does, and all it does (`send` in `Rt`, twelve lines, ~60 B):
+What the dispatch guard does, and all it does (`send` in `Rt`, ~100 B **[estimate]**, written
+in beni over `Js` as today's `Rt` is; the JavaScript below is its shape):
 
 ```js
 let dead = false, running = false, queue = null;
-const send = (h, a, b, c) => {
+const send = (f, x) => {                 // f: a listener body, `dispatch`, or the mount; x: its one argument
   if (dead) return;
-  if (running) { (queue ??= []).push(h, a, b, c); return; }   // re-entrant: §9.8.4 rule 2
+  if (running) { (queue ??= []).push(f, x); return; }   // re-entrant: §9.8.4 rule 2
   running = true;
   let ok = false;
   try {
-    h(a, b, c);
-    while (queue !== null && queue.length > 0) { const q = queue; queue = null; for (…) q[i](q[i+1], …); }
+    f(x);
+    while (queue !== null) { const q = queue; queue = null; for (let i = 0; i < q.length; i += 2) q[i](q[i + 1]); }
+    end();                               // the edited-set reconcile and the after-render point, §8.1, §10.2
     ok = true;
   } finally {
     running = false;
-    if (!ok) dead = true;          // the defect: §8.2
+    if (!ok) dead = true;                // the defect: §8.2
   }
-  end();                           // the edited-set reconcile and the after-render point, §8.1, §10.2
 };
 ```
 
+- **Two arguments, always.** `f` is a function of one argument — a listener body with its event
+  (§4.2), `dispatch` with a message value (§4.4), the mount with its program (§8.2) — and the
+  body applies the key's handler at any arity. So the payload's arity is the handler's business,
+  never the guard's, and nothing is dropped on the queued path.
 - **Order** (`boundary.md` §9.8.4): messages apply one at a time, in the order of their sends,
   each exactly once; a send made during a dispatch — from a fiber that answers at once, from
-  anything `update` calls — is queued and applied when the running handler returns, never
-  re-entrantly. The queue is allocated on the first re-entrant send and is `null` otherwise.
-- **`end()`** runs once per outermost dispatch: it reconciles the controls the dispatch marked
-  (§8.1) and resumes the after-render waits (§10.2). A page with neither has an `end` that does
-  nothing, and reachability drops the call under `--release`.
+  anything `update` calls, from an event a DOM write fired synchronously — is queued and applied
+  when the running body returns, never re-entrantly. The queue is allocated on the first
+  re-entrant send and is `null` otherwise.
+- **`end()` is inside the guarded region**, after the queue is drained: it reconciles the
+  controls the dispatch marked (§8.1) and resumes the after-render waits and work (§10.2),
+  which is program code and may throw. A page with neither has an `end` that does nothing, and
+  reachability drops the call under `--release`. A message such work sends is queued by the
+  `running` flag and drained by a second loop around `end` — the handler, the drain and `end`
+  repeat until nothing is queued — so after-render work's messages apply in this dispatch.
 - There is **no `catch`** (CLAUDE.md rule 9): a throw passes through `finally` to the host.
+- **Everything that runs program code enters through `send`**: listener bodies, `dispatch`,
+  `run`'s mount, a fiber's resumption. Nothing of the program runs outside the guard, which is
+  what §8.2's definition of a defect requires.
 
-What vanilla does at run time here: nothing. The sixty bytes buy the ordering guarantee and the
-defect rule, and research 59 §1.3 found a `try … finally` guard costs no time.
+What vanilla does at run time here: nothing. The hundred bytes buy the ordering guarantee and
+the defect rule, and research 59 §1.3 found a `try … finally` guard costs no time.
 
 ### 4.4 When a message is a value
 
@@ -291,9 +350,29 @@ record** `{ e, …nodes, …slots }` made at its mount, as a row's is, and its g
 instance as a parameter. A row is the common case and §6 is its contract; the other three go
 through the **value path**: the site is a *kind* `{ m, p }` as today's `dom` emits
 (`backend.md` §15.3–§15.4, blocks and slots), placed through a slot. The value path ships
-`slot`/`place`/`patch` (~200 B, **[estimate]**) only for a program that has such a site, and
-`--self-profile` counts them (`markup_value_roots`), so a program that drifts onto it is a number.
-Research 61's corpus has one recursive helper (the helper tree sweep) and a few `List Html` holes.
+`slot`/`place`/`patch` (~200 B, **[estimate]**) only for a program that has such a site. It is
+today's runtime kept as a fallback, so it is **counted before it is built**: `beni dump
+--stage=writes` prints `markup_value_roots` per program from S0 (§11), and the S0 stats gate
+(§14) reports it for every corpus app, the table app, TodoMVC and Conduit, so the share of a
+program on the old path is a number before S4 writes a line of it. Research 61's corpus has one
+recursive helper (the helper tree sweep) and a few `List Html` holes.
+
+**A helper called from several unique sites is a shared site, and inlining has a size gate.** A
+helper's markup is inlined at a call site only when every call site's copy together is no larger
+than one outlined copy plus its calls — the release optimiser's single-use rule measured in
+bytes, applied to markup. The table app's `button`, six calls of constants, inlines to six
+template strings and six listeners and nothing else, so it passes. A Conduit form-field helper
+called thirty times does not: it becomes a **shared site**, its template string and its group
+functions emitted once with an instance parameter, each call site holding an instance record
+and its own node handles, and the handlers calling the groups with each live instance. A shared
+site is not the value path — no kind, no slot, no block — and costs one object per call site.
+The same gate applies to `--release`'s specialisation of a helper to a key (§4.1): a `validate`
+helper forty keys call is specialised only where the specialised copies are smaller than the
+one copy plus its message rebuilds, which the release optimiser's combined solver decides by
+bytes (`backend.md` §9). And the (key, group) pairs are counted: the dump prints, per program,
+the number of pairs and the share of groups a root-level read makes every key call (a header
+showing `model.session` conflicts with most keys), so the "~2 B per pair" of §3 is measured on
+Conduit at S0 and the 0.7× target of §13 rests on a number.
 
 ### 5.3 Groups and slots
 
@@ -338,16 +417,28 @@ source order, since a `let` reads only earlier ones.
 ### 5.5 Branches and `Show`
 
 A hole whose expression is an `if` or `case` choosing between markups, and a `Show`, is a
-**branch**: a slot holding which branch is shown and the nodes it holds, module-level for a unique
-site. Each branch's markup is its own template and group code. A handler whose write set
-conflicts with the scrutinee's reads (and, for a keyed `Show`, the key's) re-evaluates the
-condition: the same branch, and the branch's groups that conflict run; another branch, and the old
-nodes are removed, the new branch's template is cloned, mounted (its groups called) and inserted
-at the slot's marker. That is `childHtml`'s "same kind, patch; other kind, remount"
+**branch**: a slot holding which arm is shown (`br3`, the arm's index, or `-1` for a `Show`'s
+`Nothing`) and the nodes it holds, module-level for a unique site. Each arm's markup is its own
+template and group code, and each arm's groups, scripts, lists and derived values belong to that
+arm and run only under its liveness (§4.1). A handler whose write set conflicts with the
+scrutinee's reads (and, for a keyed `Show`, the key's) re-evaluates the condition: the same arm,
+and the arm's groups that conflict run; another arm, and the old arm is **torn down** and the
+new one **mounted**. That is `childHtml`'s "same kind, patch; other kind, remount"
 (`backend.md` §15.4) decided by emitted code at the one site that needs it, with no block and no
-runtime call. A branch whose arms are text only is a text hole with a conditional expression and
-no branch at all. The nodes of a branch not shown are not kept: a branch switch remounts, which
-is what keeps an input's value from leaking between `then` and `else` (`backend.md` §15.2).
+runtime call.
+
+**Teardown resets the arm's slots.** An arm's slots are module-level (§5.2) and outlive its
+nodes, so without a reset an `A → B → A` switch with unchanged model values would find every
+slot equal to its value, write nothing, and leave the new nodes blank. So teardown writes the
+sentinel `undefined` — which no beni value is, today's rule for a fresh instance (`backend.md`
+§15.5) — into every slot of the arm: its hole slots, its derived values, its nested branches'
+`br`, and it empties its lists' instance arrays (and key maps) after removing their rows. Mount
+then calls every group of the arm, and every compare fails, so every hole is written from the
+model. Pinned by `browser/direct/BranchReturn` (`A → B → A` and `Just → Nothing → Just` with
+the same values; a Conduit-shaped `Home → Article → Home`). A branch whose arms are text only
+is a text hole with a conditional expression and no branch at all. The nodes of an arm not
+shown are not kept: a switch remounts, which is what keeps an input's value from leaking between
+`then` and `else` (`backend.md` §15.2).
 
 ## 6. Lists
 
@@ -367,6 +458,15 @@ module-level for a unique list. The list's place in the DOM is its parent elemen
 after the list (a marker, or `null` when the rows are the parent's last children), known from the
 template. Instances are the vanilla author's `trs[]`; `it` is the item the row shows.
 
+**What a row carries on its nodes is measured, not assumed.** The shape above writes `$r` on the
+row's root and `$h` on each handler node: one object and two or three expando properties per row,
+which change the DOM wrapper's shape and which vanilla does not have (js-framework-benchmark's
+vanilla reads the row's id from the cell's text and looks the index up). S2 compares three forms
+on mount (`create 1k`, `create 10k`) and on a row event: expandos as above; **no expandos** — the
+delegated listener finds the row's instance by the key read from the DOM and the list's key map,
+or by the row's index among `parent.children`; and a `WeakMap` from node to instance. The form
+that mounts fastest and is no larger ships, and `emit/direct/` pins it.
+
 The row's groups are the row's holes by read set, as §5.3, with the item as a root (`write-sets.md`
 §3.7's εⱼ): a hole reading `row.label` is in the group `[*].label`; one reading
 `(model.selected, row.id)` is the **class group**, read by a selector (§6.4). Research 60's
@@ -378,7 +478,7 @@ For a list write in `writes(κ)` at the `For`'s path, the handler does, by tag:
 
 | tag (`write-sets.md` §2.3) | from | the script | cost |
 |---|---|---|---|
-| `kept`, `[κ]` with sub-writes | `List.update xs k f`, `set`, an `indexedMap` with index guards | `const i = insts[k]; i.it = a[k];` then the row groups the sub-writes conflict with, on that instance (`[1]` and `[998]` for the table's `SwapRows`: two rows) | O(1) per index |
+| `kept`, `[κ]` with sub-writes | `List.update xs k f`, `set`, an `indexedMap` with index guards | `const i = insts[k]; i.it = get(xs, k);` then the row groups the sub-writes conflict with, on that instance (`[1]` and `[998]` for the table's `SwapRows`: two rows). `get` is core's `unsafeGet`, O(1) on a plain list and O(log₃₂ n) on a trie; an indexed script never flattens the list | O(1) per index |
 | `kept`, `[*]` with sub-writes | the `map` idiom, `indexedMap` with a residue guard | the **identity walk**: `for j in 0…n: if (insts[j].it !== a[j]) { insts[j].it = a[j]; …row groups the sub-writes conflict with }` — sound because `map` returns `===` elements where `f` returned its element (`backend.md` §4, *Identity*) | O(n) compares, O(changed) writes; the table's `update every 10th`: 1 000 compares, 100 writes, research 58 §9's 0.8–0.9 ms |
 | `append` | `push`, `[ …xs, x ]`, `xs ++ ys` | make the new rows, append in one fragment | O(new) |
 | `prepend` | `[ x, …xs ]` | make, insert before the first row | O(new) |
@@ -388,11 +488,42 @@ For a list write in `writes(κ)` at the `For`'s path, the handler does, by tag:
 | `removeSome` | `filter`, `take`, `drop`, `pop`, `slice` | the **merge**: walk old instances and new items together by item identity, removing the instances whose item is not next in the new list | O(n) compares, O(removed) DOM |
 | `permute`, `replaced`, a cap, `value` at the list from `Fresh` | `sort`, `reverse`, a list from a payload or a builder, an unsummarised call | the keyed reconciler (§6.3) | O(n) |
 
-Every script first tests **whether the list changed**: `List.update` out of range and
-`List.swap xs i i` return `xs` itself (`backend.md` §4), so a handler compares the new list with
-the old (`!==`, or `same` for views) before it edits, as research 60 §3.2 did; an unchanged list
-edits nothing. A positional `For` (`keyed={False}`) uses the same scripts over positions, and
-`replaced` becomes the positional pass (patch `min(n, m)` rows, append or remove the rest).
+**A script is guarded by its tag's own condition, never by the list's identity.** `List.update`
+out of range and `List.swap xs i i` return `xs` itself (`backend.md` §4), so something must keep
+a no-op edit from touching rows; but a test `newList !== oldList` would be wrong the day §7.4
+writes a list in place (then `new === old` always), and would make every earlier slice's
+`emit/direct/` shape change at S7. So the guard is computed from what the handler has — the new
+list and the instance array, which holds the old shape:
+
+| tag | the guard |
+|---|---|
+| `kept [κ]`, `set κ` | `0 ≤ κ < insts.length` and `get(xs, κ) !== insts[κ].it` (the element changed, not the list) |
+| `swap κ₁ κ₂` | both in range and `κ₁ !== κ₂` |
+| `append` / `prepend` | `xs.length > insts.length`; the new rows are the last (first) `xs.length − insts.length` items |
+| `clear` | `insts.length > 0` |
+| `insert κ` / `removeAt κ` | in range: `xs.length === insts.length + 1` (`− 1`) |
+| `kept [*]`, `removeSome` | none: the identity walk and the merge are their own guards |
+
+A positional `For` (`keyed={False}`) uses the same scripts over positions, and `replaced`
+becomes the positional pass (patch `min(n, m)` rows, append or remove the rest). Pinned by
+`browser/direct/NoOpEdits` (an update out of range, a swap of a row with itself, an empty
+append, a clear of an empty list: no row touched, which `Debug.log` in the row shows).
+
+**How tags compose.** One list, one key, one script: the write set carries one tag per list
+path, joined by `write-sets.md` §2.4 — equal tags stay, `kept` under another tag is the other
+tag, two different tags are `replaced`, and element writes survive every join — so an arm that
+appends on one branch and maps on another is `replaced` for that list, and the reconciler runs;
+an expression that composes two edits (`List.map f rows ++ [x]`, `List.set (List.filter …) k v`)
+is `Fresh` to the core rows and so `replaced` too. The handler runs the one script the joined
+tag names, and for several lists written by one key, the scripts in the source order of the
+`For` sites. The reconciler is therefore reached by composition more often than by sorting;
+the dump's `reconciler` line (§11) names the keys that reach it, so a surprise is a line.
+
+**What is read how.** An indexed script reads one element by `get`; the identity walk, the
+merge and the reconciler read the whole list once through the protocol (`Array.isArray(xs) ? xs
+: xs.$plain()`) — O(n) for a trie whose header is new, which it is after any write to it, and
+which is the cost of the idiom (the walk is O(n) anyway). A plain list, which §7.2's rule keeps
+UI lists, costs nothing to read.
 
 The index κ is **handler-evaluable** by definition (`write-sets.md` §2.3): the handler has the
 payload and the old model, so `insts[id]` is one array read. A row hole that reads the row's
@@ -445,6 +576,16 @@ those two, as today's `forKeyed` does and as js-framework-benchmark's vanilla do
 vanilla. The map is maintained by `make` and by the scripts that remove rows; a list with neither
 a selector nor a reconciler has none.
 
+**Order, and a row that is gone.** The selector visit is part of step 4 and runs after step 3's
+scripts (§4.1), so the map is the list's current shape when it is read. The two probes — the
+old selector value, kept in the selector's own slot, and the new one — are looked up in the
+map, and **a probe no row has is skipped**: a `Remove id` that also clears `selected` removed
+the selected row in step 3, and the visit finds nothing for the old probe; a row the same arm
+inserted was made with the current selection and needs no visit. A probe that is `Nothing`, or
+a key no row has, finds nothing, as today's runtime's probe value "no key is" does. Pinned by
+`browser/direct/SelectAndRemove` (remove the selected row, select a row and remove another,
+select a row inserted by the same message).
+
 ### 6.5 What a list costs in bytes
 
 Per `For` site: the row template, `make` (~80 B), the scripts the program's keys need
@@ -487,21 +628,29 @@ document changes none of it (CLAUDE.md rule 10). What it adds is on the compiler
   never called. That is `backend.md` §8's rule extended to the accumulator shape, specified there
   when built (slice S3), shared by both platforms; it removes the trie from the table app and from
   every Elm-style `go acc` loop, and makes `RunLots` one array of 10 000 rows.
-- **The renderer reads a list through the protocol** (`length`, `Array.isArray`, `$plain()`), once
-  per handler that reads it, into a local `a`; a trie's `$plain()` is computed once per header and
-  cached (`backend.md` §4, invariant 1).
+- **An indexed script reads one element** (`get`, §6.2); only a walk over the whole list reads
+  it through the protocol (`length`, `Array.isArray`, `$plain()`), once per handler, into a
+  local. A trie's `$plain()` is cached per header (`backend.md` §4, invariant 1), and a header
+  is new after every write, so a walk after a write to a trie flattens it: O(n), the walk's own
+  order.
 - **A `List.update`/`set` on a long list** copies ≤ 256 elements or path-copies a trie; research
   60 §4.3 measured one such call at 0.03 ms cold on 30 000 rows, and that is the price of an
   immutable list until §7.4 writes the slot in place. §13 prices it in the rows criterion.
 
 What the page ships of `List` is what it reaches: a TodoMVC's `map`, `filter` and `append` on a
 plain list are a few hundred bytes (research 59 §4.1: `indexedMap` 88, `filter` 82, `append` 188
-in context); the trie's write half ships only for a program that pushes, prepends or sets past the
-thresholds outside a building loop. That is a finding about `List` for the owner, not a change
-asked for: **a program that prepends to a long list outside a loop pays ~500 B for the trie,
-and the alternative — a plain copy, O(n) per prepend — is a time cost, not a guarantee.** The
-size and speed of `List` for small and large lists are measured in S2 and S3 on both platforms
-and reported in `plans/compile-away.md` B1.
+in context); the trie's write half ships for a program that pushes, prepends or sets past the
+thresholds outside a building loop — and **`set` past 256 elements births a trie as `cons` past
+32 does** (`backend.md` §4, *the read/write split*: "a trie is born only in a writer"), so a
+program that calls `List.update` or `List.swap` on a 1 000-row list ships the write half though
+it never prepends. The table app as written does not (`SwapRows` and `Update` are `indexedMap`,
+which builds a plain list), but the rows sweep does (`List.update` on 30 000), and the S0 stats
+gate (§14) measures the write half's bytes under a `set`-only program with `size-parts.mjs`
+before §13's table-app estimate is believed. That is a finding about `List` for the owner, not
+a change asked for: **a program that prepends to, or sets into, a long list pays ~500 B for the
+trie, and the alternative — a plain copy, O(n) per write — is a time cost, not a guarantee.**
+The size and speed of `List` for small and large lists are measured in S2 and S3 on both
+platforms and reported in `plans/compile-away.md` B1.
 
 ### 7.3 Nested pages and same-variant rebuilds
 
@@ -532,18 +681,30 @@ static, whole-program property of a path, computed by the same interpreter as th
 > (`onClick={Save model.form}`), never passed to `Debug` or `Js`, and never a value a `For` row
 > shows as its item (an instance's `it` holds it).
 
+**A list's container and its elements are owned separately.** For a list path `p`, condition (2)
+is asked of the list value itself — the array — and (1) of what is placed at `p`; the elements
+at `p[*]` are a path of their own with their own answer. A `For`'s instances hold the *items*
+(`it`), never the list (scripts are driven by tags, §6.2, so no instance array keeps a reference
+to the list it shows), so `model.rows` can be **container-owned** while `model.rows[*]` is not:
+`List.update rows k f` on a container-owned, **plain** (`Array.isArray` at run time; a trie is
+written through `set` as before) list is `a[k] = f(a[k])` in place — the slot assigned, the item
+still built by `f`'s spread — and `List.set`, `swap`, `push`, `insertAt` and `removeAt`
+likewise. The element path is owned, and the item written in place, only when (2) holds of the
+elements too, which it does not for any list a `For` shows.
+
 The root `ρ` of a `Tea.sandbox` whose `update` never returns `model` from inside a message and
 never logs it is owned by (1) and (2); the depth page's `child` chain is owned at every level;
-the width page's fields are owned; the table app's `rows` is **not** (the rows are instances'
-items: `it` is a reference outside the model) while `selected`, `nextId` and `seed` are. For an
+the width page's fields are owned; the table app's and the rows sweep's `rows` are
+container-owned and their elements are not; `selected`, `nextId` and `seed` are owned. For an
 owned path the handler emits the assignments and skips the spreads; for a path that is not, the
 arm's spreads stay. **Two rules keep the page right**:
 
 - **A group never decides "unchanged" by the identity of an object on an in-place-written path.**
   Slots hold leaf values (§5.3); the identity walk of §6.2 compares items, and an item's path is
-  never owned by (2)'s last clause. So in-place writes and identity compares never meet, which is
-  the renderer-side blocker research 55's header note named and this design removes by
-  construction.
+  never owned by (2)'s last clause; a script's guard is its tag's condition and never the list's
+  identity (§6.2), so an in-place `a[k] = v` is still followed by the row's write. So in-place
+  writes and identity compares never meet, which is the renderer-side blocker research 55's
+  header note named and this design removes by construction.
 - **The old model is dead after the arm.** Nothing holds it: there is no `view` to hand it to, no
   `lastRendered` to compare with (today's `backend.md` §15.11 check is gone), and (2) says no
   program value does. `language.md` §11.12's promise — an untouched field keeps its identity — is
@@ -562,9 +723,16 @@ compiler makes itself, since the array is unshared by (2)). In bytes, a nested w
 
 ### 8.1 Controlled inputs
 
-The promise is `backend.md` §15.3's, unchanged: after every dispatch, every element with a
-`stateful` attribute shows the model's value, though the user changed it and `update` rejected
-the change. The mechanism is the **edited set** specified there (the owner's R2 decision), reused
+The promise is `backend.md` §15.3's, unchanged, and it covers **exactly the properties the
+vocabulary declares `stateful`**: in `html`, `value` on `input`, `select` and `textarea`,
+`checked` on `input`, `selected` on `option`. After every dispatch, every element with one of
+those attributes shows the model's value in that property, though the user changed it and
+`update` rejected the change. Nothing else the user can change is covered — `open` on `details`
+and `dialog`, `scrollTop`, a `<select>`'s selection through `value` on a `multiple` select beyond
+its first option (`backend.md` §15.3 lists these) — exactly as on today's platform: such a
+property is compared with the value last written, not with the page, so a model that returns to
+its previous value after the user changed the page writes nothing. A vocabulary that declares
+another attribute `stateful` extends the promise and must name the event that reveals its change. The mechanism is the **edited set** specified there (the owner's R2 decision), reused
 whole: `control(el, prop, v)` writes the property when the page's differs and keeps `v` on the
 element; four capture listeners (`input`, `change`, `click`, `reset`) and `pageshow` mark the
 controls an edit may have changed; the runtime's own writes mark them too; `end()` (§4.3)
@@ -576,23 +744,63 @@ control — research 60 §3.3 measured the live-rows page at P2's level with exa
 
 ### 8.2 Defects
 
-A **defect** is a throw that escapes a handler, a group, a script, a listener or the mount.
-`send`'s `finally` sets `dead` (§4.3), after which every `send` returns at once; the throw goes on
-to the host unchanged and is reported as an uncaught exception; in a development build an `error`
-listener installed at `run` shows the crash screen; and when the page reaches `core/Task`, the
-stop calls `Task.shutdown`, whose teardown — every finaliser once, every host resource released,
-no other program code run — is `boundary.md` §9.8.14, unchanged and shared with today's
-platform. No `catch` anywhere (rule 9). A page that reaches no `Task` ships none of the teardown.
-Cost: the guard, measured free (research 59 §1.3); the screen, development only.
+A **defect** is a throw that escapes program code, and every entry into program code is a
+`send` (§4.3): a listener body with its payload read, a handler, a group, a script, a derived
+value, `end()`'s after-render work, a fiber's resumption through `dispatch`, and `run`'s mount —
+`run` mounts every program by `send(mount, program)`, so a throw in `init` or in a mount's first
+groups is a defect like any other. `send`'s `finally` sets `dead`, after which every `send`
+returns at once; the throw goes on to the host unchanged and is reported as an uncaught
+exception; in a development build an `error` listener installed at `run` shows the crash
+screen; and when the page reaches `core/Task`, the stop calls `Task.shutdown`, whose teardown —
+every finaliser once, every host resource released, no other program code run — is
+`boundary.md` §9.8.14, unchanged and shared with today's platform. No `catch` anywhere (rule 9).
+A page that reaches no `Task` ships none of the teardown. Cost: the guard, measured free
+(research 59 §1.3); the screen, development only. Pinned by `browser/direct/DefectInListener`
+(a throw in a payload extractor), `DefectInAfterRender` and `DefectInMount`, beside today's
+`Defect*` pages.
+
+**A program value mounted twice is a fault, never an alias.** A unique site's state is
+module-level per program value (§5.2), so `Browser.programs [ main, main ]`, or `mountAt`
+applied twice to one program, would share one `model` and one set of slots and show one page's
+writes in the other. The compiler refuses the static case — the same program site twice in a
+`programs` list literal, or a `mountAt` of a program already in one — with
+`program_mounted_twice`, and `run` refuses the rest before any program renders, as it refuses a
+missing element or one that already holds a program (`backend.md` §15.11: a fault of the page).
+A guarantee is at stake (two mounts would show a wrong page), so this is an error and not a
+warning (rule 7). Pinned by `build/bad/DirectMountedTwice`; the run-time refusal follows today's
+rule and, like today's, has no page fixture (an uncaught exception fails a page case).
 
 ### 8.3 The page is a function of the model
 
 This is the guarantee the analysis stands in for, and it is kept by two things: `write-sets.md`
 §1.3's soundness (every changed path is covered by the key's write set, so every hole that reads
 it is in a group the handler calls) and the comparison in every group (a covered hole whose value
-did not change is not written). It is **tested** by the differential harness (§12.3): every
-`browser/` fixture is built for both platforms and the transcripts must be equal after every step,
-and V3's adversarial campaign (`compile-away.md` §4) attacks it directly.
+did not change is not written). A missed write — an aliasing the analysis did not see, a core
+row that overstates a guarantee, a `Js` call summarised wrongly — would be a stale screen that
+nothing on the page catches: the Svelte 3 failure. So it is **tested three ways, and two of them
+from S1**, before any guarantee machinery is built on the design:
+
+1. **The differential corpus** (§12.3): every `browser/` fixture is built for both platforms and
+   the transcripts must be equal after every step; V3's adversarial campaign
+   (`compile-away.md` §4) attacks it directly from S4.
+2. **Differential fuzzing, from S1.** The compiler knows the key tree and every key's payload
+   types, and prints them under a hidden `--keys` dump. `tests/browser/fuzz.mjs` generates
+   random message sequences from it — random `Int`s, `String`s, `Bool`s, constructors of the
+   payload types, and for a view event a random handler node of the page — and replays each
+   sequence on the program built for `browser-tea`, which compares every group on every message
+   and so is an independent oracle, and for `browser-direct`, DOM-equal (`p3-verify.mjs`'s
+   comparison) after every step. The gates run it with fixed seeds within the test budget on
+   every `browser/direct/` program, as the determinism test runs the corpus at `--jobs=1` and
+   `--jobs=8`; `zig build fuzz` runs long sweeps. A difference is a defect with a red-first
+   fixture and a rule corrected in `write-sets.md`.
+3. **A development-only verify mode, from S1.** A development build of this platform emits,
+   beside the handlers, `verifyAll()`: every group of every live site in compare-only mode, and a
+   defect (§8.2, with the hole named) if any hole's value would differ from its slot. `send`
+   calls it at the end of every dispatch in development; `--release` emits none of it. It
+   changes nothing unless the compiler is wrong — a correct handler leaves every slot equal to
+   its value — so it is consistent with §8.4, and it catches the Svelte 3 class at its first
+   occurrence, on every development page a developer runs and on every development page of the
+   corpus. Its cost in development is a full compare per dispatch, today's cost.
 
 ### 8.4 Development and release
 
@@ -659,7 +867,13 @@ program with commands has one.
 
 What ships: `core/Task` and the driver, by reachability, as today — the empty `Tea.element` page
 and the `fibers` line of `bench/size.mjs` are the numbers, and §13 keeps research 51's finding in
-view: TodoMVC's one routing subscription pulled 1 948 B of fiber kernel. This document does not
+view: TodoMVC's one routing subscription pulled 1 948 B of fiber kernel. This is the one piece of
+the platform that is a generic run-time loop by nature — the dispatcher, the keyed table, the
+policies, outlets, `settle` and the kernel behind them — and the design keeps it as such on
+purpose: effects are not compile-away material, and "only where reached" is the whole of what
+this platform does for them. For a real application that is most of the bytes above the
+renderer's, which is why Q5 and the fiber kernel's own size work (`plans/effects-plan.md`)
+matter to §13's application targets more than anything in §4–§6. This document does not
 change the fiber runtime (its bar is Effect v4 parity, `plans/effects-plan.md`); it notes for the
 owner that `boundary.md` §9.8.11's rule — a command that cannot wait runs with no fiber — has no
 twin for subscriptions, and that the twin would take the routing subscription off the kernel
@@ -696,9 +910,15 @@ All on the compiler's side, platform-independent, consumed by the `direct` lower
    platforms.
 
 None produces a diagnostic; every limit yields the coarse answer (the value path, the dispatcher,
-the spread, the trie), never an error (rule 7). Each is dumped: `beni dump --stage=writes` gains
-a `site` line per root (`unique`/`instanced`/`value`), a `carriers` line, and in S7 an `owned`
-list, so a coarse answer has a stated cause.
+the spread, the trie, the `*` key), never an error (rule 7). Each is dumped, **from S0, before
+any of it is consumed**: `beni dump --stage=writes` gains, per program, a `site` line per root
+(`unique`/`shared`/`instanced`/`value`), `markup_value_roots` (the count on the value path), a
+`carriers` line, a `pairs` line (the (key, group) pairs and the share of groups every key
+calls), a `reconciler` line (the lists some key writes `replaced`/`permute`/`*`, with the keys),
+a `patchAll` line (the keys of class `*`), and in S7 an `owned` list. These are the S0 **stats
+gate** (§14): the numbers §13's kill criteria name, measured on every corpus app, the table app,
+TodoMVC and Conduit by the analysis alone, so a design that fails on Conduit's shape is stopped
+at S0 and not at S6.
 
 ### 11.1 The program lowering interface
 
@@ -713,10 +933,23 @@ into a block with the message's fields bound to given names and returns the resu
 `cx.writes(key)`, `cx.reads(value)`, `cx.conflicts(key, value)`, `cx.site(root)`,
 `cx.carriers()`, `cx.literal(path)`; and the init value. The lowering returns the program's mount
 expression, which the platform's program constructor (`Tea.sandbox`, a `foreign` the lowering
-recognises as a program site) evaluates to. **A program record the pass does not recognise**
-(`update = withLogging update`; a record a helper builds) has no key tree and cannot be compiled
-by this lowering; the build is refused with `program_not_compiled`, naming the shape the lowering
-needs and the `browser-tea` platform that accepts any shape (Q1, §15).
+recognises as a program site) evaluates to.
+
+**What the hook needs, and the one thing it cannot do without.** It needs `view`: a function
+whose body the compiler can reach as markup — the record's `view` field a top-level function or
+a lambda, or a value the write-set summaries resolve to one (`view = Page.frame viewBody`,
+through its summary). It needs `init` as a value. It does **not** need `update` to be keyed: an
+`update` the analysis cannot key (`write-sets.md` §1.1's unrecognised shapes — `update =
+withLogging update`, a record a helper builds whose `update` the summary cannot resolve) is the
+single `*` key of §4.1, `h$All`, with every message a value and `patchAll` after the call. So
+no shape of `update` is refused, and the hook degrades to today's cost, never to an error (rule
+7). The one refusal left is a `view` the compiler cannot reach as markup — a function value
+chosen at run time (`view = if flag then viewA else viewB` with `flag` a run-time value), a
+`view` from a payload — and it is refused with `view_not_compiled` because **no fallback
+exists**: this platform has no run-time renderer to hand an unknown function to, and building
+one would be today's platform. The message names what was found, the shape needed, and
+`browser-tea`, which renders any `view`. Research 61's and 62's programs have no such `view`;
+the dump counts it (`program <unrecognised>`) so its frequency is known before it is ever hit.
 
 The exact signatures are written into `boundary.md` §9.4.6 as a dated version when S0 builds them,
 as every interface version has been.
@@ -786,30 +1019,36 @@ and driven through the same `.steps`; both transcripts must equal the one golden
 pins (§14), so the whole existing page corpus becomes the differential test research 58 §8 item 2
 requires, with happy-dom in the gates and headless Chrome under `test-browser`. `p3-verify.mjs`'s
 DOM-equality check (every element, attribute, text and input value, comments skipped) is the
-same comparison for the bench pages. `emit/direct/` and `emit/release/direct/` pin shapes:
+same comparison for the bench pages, and for the fuzz sequences of §8.3, which replay random
+key sequences on both platforms from S1. `emit/direct/` and `emit/release/direct/` pin shapes:
 that a handler is one compare and one write, that a page has no reconciler, that a static hole
-is text.
+is text. The development verify mode (§8.3) runs on every development page of the direct kind,
+so every fixture step is also a full compare of every group.
 
 ## 13. Targets and kill criteria
 
 Research 58 §9's criteria are the owner's bar and are kept as written in
 `plans/compile-away.md` §1; they judge the whole output, model included. This section says what
 this design expects against them, per page class, in vanilla multiples, untraced real clicks.
+**Every figure in the table is a hypothesis**: the P3 numbers are a hand-written page's
+(research 60), the rest are this document's estimates, and nothing here is a measurement of a
+generated program until the slice named measures it. The last column says what would have to be
+true for the criterion to be met, not that it is.
 
-| page class | speed, expected landing | bytes, expected landing | criterion met? |
+| page class | speed, hypothesis | bytes, hypothesis | what it rests on |
 |---|---|---|---|
-| **empty page** (`bench/size.mjs` `page`) | — | ≤ 300 B brotli; today 1 234 | — |
-| **static-heavy** (holes 10 / 10 000, width ≤ 256, helper rows, helper tree) | ≤ 1.15× (P3: 1.18 / 1.04 with a flush this design drops; the floor is the one DOM write) | holes: the HTML + ≤ 300 B at any N (P3: 394 / 442); 0 B per static hole | **yes** |
-| **width 1 024** | ≤ 1.3× until S7, then ≤ 1.15×; before S7 V8's dictionary cliff stays (research 59 §2) | ≤ 2 B per field | after S7 |
-| **depth 128** | ≤ 1.3× until S7 (P3: 1.29), then ≤ 1.15× | ≤ 4 B per level | after S7 |
-| **long keyed list, one edit** (rows 30 000) | ≤ 1.3× until S7 (P3: 1.31, 0.03 ms of it `List.update` on a trie), then ≤ 1.15× | ~1.5 kB (P3: 1 643) | **yes** at 1.3; 1.15 after S7 |
-| **swap** (rows 30 000) | ≤ 1.0× (P3: 0.98) | the same page | **yes** |
-| **live rows 10 000** | ≤ 1.15× (P3: 1.25 at a 5 µs clock, with the flush) | ≤ 1.1 kB | expected, at the clock's edge |
-| **derived 100 000** | flat, ≤ 1.15× | ≤ 1 kB | **yes** |
-| **bursts K ≥ 30, stream** | ≤ 1.0× vanilla (vanilla writes K times too); K = 1–10 ≤ 1.15× | — | **yes**; gives up the 13 % at K = 1 000 |
-| **the table app** | every operation ≤ 1.2×; `select` ≤ 1.0× (the selector kept); `swap` ≤ 1.2× with the exact edit from `List.swap` or the index guards (`write-sets.md` §10.4) | ≤ 2× vanilla = 2 830 B: P3's own module 2 243 + core after §7.2's building loop ≈ 400 → **≈ 2 650 [estimate]** | **expected, with little room**: the bytes criterion is the one most likely to miss, by core's `List` |
-| **TodoMVC** | the three messages ≤ 1.2× vanilla TodoMVC | ≤ 2× vanilla TodoMVC, and below Svelte 4's 4 246 (today 5 317 sandbox, 10 053 with routing) | expected: one reconciler (its `For` is over a filtered list), no dispatcher in the sandbox, no kinds, blocks or slots |
-| **Conduit** | every key's handler bounded but `ChangedUrl`; a page message ≤ the frame's one DOM write + the page's groups | ≤ 0.7× today's 30 842 brotli | expected on keys; bytes depend on the fiber kernel's share |
+| **empty page** (`bench/size.mjs` `page`: one program mounted at the body, `send`, `run`, no `mountAt`/`programs`) | — | ≤ 300 B brotli **[estimate]**; today 1 234; P3's loop and root were about 150 | the guard (~100 B), `run` and the mount, and nothing else reached |
+| **static-heavy** (holes 10 / 10 000, width ≤ 256, helper rows, helper tree) | ≤ 1.15× (P3 by hand: 1.18 / 1.04, with a flush this design drops; the floor is the one DOM write) | holes: the HTML + ≤ 300 B at any N (P3: 394 / 442); 0 B per static hole | §4.1, §5.1; S1 |
+| **width 1 024** | ≤ 1.3× until S7, then ≤ 1.15×; before S7 V8's dictionary cliff stays (research 59 §2) | ≤ 2 B per field | S1, then §7.4 at S7 |
+| **depth 128** | ≤ 1.3× until S7 (P3: 1.29), then ≤ 1.15× | ≤ 4 B per level | S4, then §7.4 at S7 |
+| **long keyed list, one edit** (rows 30 000) | ≤ 1.3× until S7 (P3: 1.31, 0.03 ms of it `List.update` on a trie); ≤ 1.15× after S7 **only if** the list is container-owned and plain (§7.4) — the rows sweep's is; a list that is a trie keeps the path copy and the 1.3× | ~1.5 kB (P3: 1 643) | §6.2; S2, then S7 |
+| **swap** (rows 30 000) | ≤ 1.0× (P3: 0.98) | the same page | §6.2; S2 |
+| **live rows 10 000** | ≤ 1.15× (P3: 1.25 at a 5 µs clock, with the flush) | ≤ 1.1 kB | §8.1; S4 |
+| **derived 100 000** | flat, ≤ 1.15× | ≤ 1 kB | §5.4; S4 |
+| **bursts and stream** | **the K = 1 ratio at every K**: ≤ 1.15× for all K, and the stream not worse than K = 1. With no batching, K messages cost K times the per-message path (guard, arm, spread, compares, write), so the ratio to vanilla is the one-message ratio; the 13 % win at K = 1 000 was the batching this design deletes, and before S7 every message also pays a model spread vanilla's `tick++` does not | — | §4.3; S1 |
+| **the table app** | every operation ≤ 1.2×; `select` ≤ 1.0× (the selector kept); `swap` ≤ 1.2× with the exact edit from `List.swap` or the index guards (`write-sets.md` §10.4); **and no operation slower than P3** (below) | ≤ 2× vanilla = 2 830 B: P3's own module 2 243 + core after §7.2's building loop ≈ 400 → **≈ 2 650 [estimate]**, a 6 % margin on an estimate, and the ≈ 400 holds only if the trie's write half is not reached (§7.2: the S0 stats gate measures it) | §6; S3 |
+| **TodoMVC** (`bench/todomvc/apps/beni/`, at **100 todos and 1 000 todos**: add one, toggle one, clear completed) | the three messages ≤ 1.2× vanilla TodoMVC at 100 todos; at 1 000, toggle-one is O(n) through the reconciler (§6.2, a `For` over a filtered list) where vanilla is O(1), so the target there is ≤ 1.3× and the measurement says what the derived-`each` precision §6.2 allows would buy | the **routing build** (the corpus page, no editing: today 10 053 B) ≤ 2× vanilla TodoMVC and below Svelte 4's 4 246 (tastejs's, persistence included) — **which depends on Q5** (§15): with the routing subscription on the fiber kernel, 1 948 B of it is the kernel (research 51 §0.2) and the target is out of reach; the sandbox build (today 5 317) is reported beside it | §6.3, §10.1; S5 |
+| **Conduit** | every key's handler bounded but `ChangedUrl`; a page message ≤ the frame's one DOM write + the page's groups | ≤ 0.7× today's 30 842 brotli, **if** the (key, group) pair count and the shared-site gate (§5.2) hold the handlers linear; the S0 stats gate gives the count | §4, §5.2; S0 for the counts, S6 for the bytes |
 
 **Which of research 58's criteria this design expects to miss, and why.** None on speed, with
 the width and depth and long-list points reaching 1.15× only at S7 (in-place), which research 58
@@ -819,27 +1058,52 @@ rest is core's `List`, which §7.2's building loop cuts but does not remove (`ap
 `indexedMap`, `filter` stay). If it misses by core alone, that is reported as a finding on `List`
 for the owner and not restated (rule 10, and `compile-away.md` §6).
 
+**The number that justifies a compiler over a hand-written page.** P3 is a page a person wrote
+with the facts a compiler has; a generated page that is no better than P3 is P3 renamed, at the
+price of a second platform. So at S3, on the table app in one batch: the generated page is **no
+slower than P3 on any of the nine operations** (within one page's spread), **faster on `select`
+by at least 30 %** (the selector P3 dropped) and **on `swap`** (the exact edit P3 could not
+read), and **no larger than 0.85× P3's 3 454 B** (P3 with its trie and its loop removed is about
+2 900 B; the generated page must be under that, which is where §7.2's rule and §4.3's guard
+show). If any of the three fails, the design stops at S3 and the report says which mechanism
+did not deliver. The same comparison is repeated at S5 on TodoMVC against the P3-shaped pages
+research 60 wrote where one exists, and at S8.
+
 **Kill criteria, so the design fails early and not as "P3 again"**, checked at the slice named:
 
-1. **S0**: the empty mounted page is over 500 B brotli, or imports anything of `Rt` but `send`
-   and `run` — the design is carrying a runtime it did not justify.
-2. **S1**: the holes handler is not one compare and one write (`emit/direct/`), or holes 10 000
+1. **S0, the stats gate** (analysis only, no lowering needed — the numbers §11 dumps, over
+   every corpus app, the table app, TodoMVC and Conduit): fewer than two thirds of Conduit's
+   keys bounded (the write-set gate), or `patchAll` keys reached by more than 10 % of the
+   dispatches the three Conduit scripts make (the driver logs each dispatch's key), or the
+   value-root count above a handful on any app, or the (key, group) pair count on Conduit
+   growing faster than linearly in keys, or the trie's write half shipping under a `set`-only
+   program when §13's estimates assumed not — each is the design failing on a real shape, found
+   before a line of the lowering is written: the Imba failure (O(view) per event) and the size
+   blow-up, caught at S0 instead of S6.
+2. **S0, the floor**: the empty mounted page is over 500 B brotli, or imports anything of `Rt`
+   but `send` and `run` — the design is carrying a runtime it did not justify. The 300 B target
+   is the estimate; 500 is where a reconciler's or a dispatcher's worth of bytes has crept in
+   unreached, which is the one failure this tripwire exists for.
+3. **S1**: the holes handler is not one compare and one write (`emit/direct/`), or holes 10 000
    is over 1.15× untraced, or the page grows with N by more than the HTML — the handler path is
-   not direct.
-3. **S2**: the rows edit is over 1.3× or the swap over 1.0×, or the bundle holds the reconciler
+   not direct. And from S1 the fuzz and the verify mode (§8.3) run on every direct page.
+4. **S2**: the rows edit is over 1.3× or the swap over 1.0×, or the bundle holds the reconciler
    for a page whose keys are all exact — edit scripts are not being read off the write set.
-4. **S3**: any table operation over 1.2× or `select` over 1.0×, or bytes over 2× by more than
-   core's measured share — the Million failure (a win on the sweeps and not on the app).
-5. **S5**: TodoMVC's bytes or its three messages do not improve on today's platform — the win was
+5. **S3**: any table operation over 1.2× or `select` over 1.0×, or bytes over 2× by more than
+   core's measured share — the Million failure (a win on the sweeps and not on the app); **or
+   the generated page does not beat P3 as §13 states** — P3 renamed. And the TodoMVC-shaped
+   fixture (a filtered `For` with a toggle, `browser/direct/FilteredFor`, measured at 100 and
+   1 000 todos) is in S3's batch, so the dynamic-hole shape is measured before S4, not at S5.
+6. **S5**: TodoMVC's bytes or its three messages do not improve on today's platform — the win was
    constancy, which TodoMVC has none of (research 61), and the architecture buys nothing on a
    list-heavy app whose `For` reaches the reconciler on every list message: the Million failure
    again, seen from the other side.
-6. **S6**: fewer than two thirds of Conduit's keys bounded (the write-set gate), or the share of
-   dispatches that call `patchAll` on the three scripts above 10 % — the Imba failure, O(view)
-   per event in disguise.
-7. **At every slice**: a transcript that differs between the two platforms, or a V3 program that
-   shows something its model does not hold — the Svelte 3 failure, a stale screen from analysis.
-   A single one is a defect with a red-first fixture, and a rule corrected in `write-sets.md`.
+7. **S6**: the S0 numbers re-measured on the built platform disagree with the analysis's — a
+   handler calling more groups than its pairs, `patchAll` reached more often than the keys say.
+8. **At every slice**: a transcript that differs between the two platforms, a fuzz sequence that
+   differs, a verify-mode defect, or a V3 program that shows something its model does not hold —
+   the Svelte 3 failure, a stale screen from analysis. A single one is a defect with a red-first
+   fixture, and a rule corrected in `write-sets.md`.
 
 ## 14. The build order
 
@@ -848,73 +1112,100 @@ additions in `boundary.md` §9.4.6, the backend rules in `backend.md`), red-firs
 measured on both platforms, P3, vanilla and Solid 1 in one batch. The slices are
 `plans/compile-away.md` §7's, where their state is kept; this is what each contains and proves.
 
-- **S0 — the platform and the harness.** `platforms/browser-direct/` registered in `build.zig`
-  with the `direct` lowering and `Rt`; the program hook (§11.1); `Tea.sandbox` with a `view` of
-  static markup only; `run`, `mountAt`, `programs`; the `send` guard; `emit/direct/Hello`,
+- **S0 — the stats gate, the platform and the harness.** First the **stats gate**: the dump
+  lines of §11 (`site`, `markup_value_roots`, `carriers`, `pairs`, `reconciler`, `patchAll`)
+  built into `dump --stage=writes` and run by `bench/writesets/stats.mjs` over every corpus app,
+  the table app, TodoMVC and Conduit, with the Conduit driver logging each dispatch's key on
+  the three scripts, and `size-parts.mjs` on a `set`-only program for the trie's write half —
+  §13's kill criterion 1, which needs no lowering. Then `platforms/browser-direct/` registered
+  in `build.zig` with the `direct` lowering and `Rt`; the program hook (§11.1); `Tea.sandbox`
+  with a `view` of static markup only; `run`, `mountAt`, `programs`, the mount inside the guard
+  and the mounted-twice refusal (§8.2); the `send` guard; `emit/direct/Hello`,
   `browser/direct/Hello` built both ways; the harness subjects and `bench/size.mjs`'s page line.
-  **Proves**: a program can be lowered as a whole through the interface; the floor is ≤ 300 B;
-  the two platforms can be measured side by side. *Kill criterion 1.*
-- **S1 — holes.** Text and attribute holes, constancy and baking (§5.1), per-key handlers with
-  direct writes and direct listeners (§4.1–§4.3), groups and slots (§5.3), the holes, width,
-  burst and stream sweeps, `browser/dom/Holes`, `ConstantWriteOnce`, `GroupedReads`,
-  `TrustedTurn` (re-stated for direct writes), `DefectInHandler`. *Kill criterion 2.*
+  **Proves**: the design holds on real programs' shapes by the analysis alone; a program can be
+  lowered as a whole through the interface; the floor is ≤ 300 B; the two platforms can be
+  measured side by side. *Kill criteria 1 and 2.*
+- **S1 — holes, and the two oracles.** *Q1 and Q2 answered before it starts.* Text and attribute
+  holes, constancy and baking (§5.1), per-key handlers with direct writes and direct listeners
+  (§4.1–§4.3, the listener body inside the guard, read-at-event), the `*` key for an opaque
+  `update` (§4.1), groups and slots (§5.3); **differential fuzzing and the development verify
+  mode** (§8.3), run on every `browser/direct/` program from here on; the holes, width, burst
+  and stream sweeps; `browser/dom/Holes`, `ConstantWriteOnce`, `GroupedReads`, `TrustedTurn`
+  (re-stated for direct writes), `DefectInHandler`, and the new `EventReadsModel`,
+  `DefectInListener`, `DefectInMount`. *Kill criterion 3.*
 - **S2 — rows.** `For` keyed and positional, row templates, instances, static-key holes, the
-  exact edit scripts (`set`/`update κ`, swap, append, prepend, clear, insert, remove), the
-  delegated list listener and its mount measurement against a listener per row (§4.2), the rows
-  sweep, `browser/dom/Keyed`, `KeyedInPlace`, `RowItemOnly`, `RowMountOrder`, `ForAtEnds`,
-  `ForForms`. *Kill criterion 3.*
-- **S3 — the table app.** The reconciler (§6.3) for `replaced`/`permute`, the identity walk and
-  the filter merge, the selector and key map (§6.4), helper inlining and constant calls (§9.2),
-  the building-loop rule (§7.2, in the backend, both platforms), `Html.map` static composition
-  (§9.1), the dispatcher for carriers (§4.4); the table benchmark and B1's part-by-part bytes on
-  both platforms; `browser/dom/KeyedEnds`, `KeyedMoves`, `KeyedReplace`, `Selector`,
-  `HelperSkip`, `NullaryHelperSkip`, `tea/Counters`, `LatestTagger`. *Kill criterion 4.*
+  exact edit scripts with their tag guards (§6.2: `set`/`update κ`, swap, append, prepend,
+  clear, insert, remove), the delegated list listener for delegatable events and direct
+  listeners for the rest (§4.2), the mount measurement of listener placement and of expandos
+  against a lookup (§6.1), the rows sweep; `browser/dom/Keyed`, `KeyedInPlace`, `RowItemOnly`,
+  `RowMountOrder`, `ForAtEnds`, `ForForms`, and the new `NoOpEdits`, `RowBlur`, `StopInRow`,
+  `DetachedRowEvent`. *Kill criterion 4.*
+- **S3 — the table app, and the TodoMVC shape.** The reconciler (§6.3) for
+  `replaced`/`permute`, the identity walk and the filter merge, the selector and key map with
+  their order (§6.4), helper inlining under the size gate and shared sites (§5.2, §9.2), the
+  building-loop rule (§7.2, in the backend, both platforms), `Html.map` static composition
+  (§9.1), the dispatcher for carriers (§4.4); the table benchmark against vanilla **and P3**
+  (§13's P3 criterion), B1's part-by-part bytes on both platforms; the TodoMVC-shaped fixture
+  `browser/direct/FilteredFor` measured at 100 and 1 000 todos; `browser/dom/KeyedEnds`,
+  `KeyedMoves`, `KeyedReplace`, `Selector`, `HelperSkip`, `NullaryHelperSkip`, `tea/Counters`,
+  `LatestTagger`, and the new `SelectAndRemove`. *Kill criterion 5.*
 - **S4 — guarantees and the rest of rendering.** Controlled inputs by the edited set (§8.1),
-  defects, the crash screen and the teardown (§8.2), branches and `Show` (§5.5), derived values
-  (§5.4), nested updates (§7.3), the value path for recursive helpers and `List Html` holes
-  (§5.2), two programs on a page (§9.3); the live, derived, depth, helper-rows and helper-tree
-  sweeps; every `browser/dom/Controlled*`, `Defect*`, `Blocks`, `ShowAndBranches`,
-  `LetInMarkup`, `LetOneOwner`, `EveryRender*`, `TwoPrograms`, `MountedPrograms`. The first V3
-  campaign runs after it.
-- **S5 — effects and TodoMVC.** `Tea.element`, `document`, `application`; the command driver
-  copied and driven by handlers, subscriptions diffed by write set (§10.1), the after-render
-  point and `flush`'s no-op (§10.2), messages from fibers through the dispatcher; every
-  `browser/tea/` fixture; `bench/todomvc/` with its vanilla subject, parity and size. *Kill
-  criterion 5.*
+  defects, the crash screen and the teardown (§8.2), branches and `Show` with teardown's slot
+  reset and liveness (§5.5, §4.1), derived values (§5.4), nested updates (§7.3), the value path
+  for recursive helpers and `List Html` holes (§5.2), two programs on a page (§9.3); the live,
+  derived, depth, helper-rows and helper-tree sweeps; every `browser/dom/Controlled*`,
+  `Defect*`, `Blocks`, `ShowAndBranches`, `LetInMarkup`, `LetOneOwner`, `EveryRender*`,
+  `TwoPrograms`, `MountedPrograms`, and the new `BranchReturn`, `LateResponse`,
+  `DefectInAfterRender`. The first V3 campaign runs after it.
+- **S5 — effects and TodoMVC.** *Q5 answered before its target is set.* `Tea.element`,
+  `document`, `application`; the command driver copied and driven by handlers, subscriptions
+  diffed by write set (§10.1), the after-render point and `flush`'s no-op (§10.2), messages
+  from fibers through the dispatcher; every `browser/tea/` fixture; `bench/todomvc/` with its
+  vanilla subject, parity and size, the routing and sandbox builds both reported. *Kill
+  criterion 6.*
 - **S6 — Conduit.** Nested keys and same-variant rebuilds through the handlers, `patchAll` for
-  the `*` key, the three Conduit scripts on both platforms, bytes and the three timed messages;
-  the second V3 campaign. *Kill criterion 6.*
-- **S7 — in-place update.** The ownership analysis (§7.4, §11 item 4), the assignments in the
-  handlers, the width, depth and rows criteria at 1.15×, `backend.md` §15.8's identity fixtures
-  extended with the two rules of §7.4; the owner's W27 amendment (Q4) taken before it starts.
+  the `*` key, the three Conduit scripts on both platforms, bytes and the three timed messages,
+  the S0 numbers re-measured on the built platform; the second V3 campaign. *Kill criterion 7.*
+- **S7 — in-place update.** *Q4 answered before it starts.* The ownership analysis (§7.4, §11
+  item 4) with container and element ownership apart, the assignments in the handlers, the
+  width, depth and rows criteria at 1.15×, `backend.md` §15.8's identity fixtures extended with
+  the two rules of §7.4.
 - **S8 — the decision.** One batch of everything on both platforms, P3, vanilla and Solid 1,
   one report, and the owner keeps one platform; the other's lowering, runtime and `Tea` are
   deleted, and the survivor's name is the owner's.
 
-Slices S1–S3 are the first three; after S3 the design has either reached the table app's targets
-or shown which piece cannot, before any guarantee machinery is built on it.
+Slices S0–S3 are the first; S0's stats gate is the earliest stop, and after S3 the design has
+either reached the table app's targets, beaten P3, and shown its cost on the TodoMVC shape, or
+shown which piece cannot, before any guarantee machinery is built on it.
 
 ## 15. Open questions for the owner
 
-Only those that change what developers can write, a guarantee, or a prior decision. Internal
-parameters are decided above (the thresholds, the caps, the outlining rule, the delegated list
-listener) and their limits are in plain words in §16.
+*Re-derived 2026-10-09 after the adversarial review.* Only those that change what developers
+can write, a guarantee, or a prior decision. Internal parameters are decided above (the
+thresholds, the caps, the outlining and inlining gates, the delegated list listener, the
+mounted-twice refusal, which is an error because aliasing is a wrong page) and their limits are
+in plain words in §16. The refusal of a program shape (the first draft's Q1) is withdrawn: an
+`update` of any shape is the single `*` key (§4.1, §11.1), and the one refusal left — a `view`
+no compiler can reach as markup — has no fallback on a platform with no run-time renderer, is
+not a question, and is reported under §16.
 
-- **Q1 — A program shape the compiler cannot compile is refused on this platform.** A program
-  record that is not a literal with `init`, `update` and `view` as plain functions
-  (`write-sets.md` §1.1: `update = withLogging update`, a record a helper returns) has no key
-  tree, and this lowering has no `view` to run instead. Today's platform accepts any shape.
-  *Recommendation*: refuse with `program_not_compiled`, naming the shape and pointing at
-  `browser-tea`, through S8; count how often it fires; add a generic fallback (the whole view as
-  one `*` group through the value path) only if a real program needs it. No guarantee is at
-  stake — it is a capability gap on one platform while two exist — and the alternative, carrying
-  today's whole runtime in this platform for the rare shape, is what the rewrite exists to avoid.
+- **Q1 — A view event's payload is read at the event, not captured at the last view** (§4.2).
+  Elm captures `Select model.id` when `view` runs; this platform reads `model.id` when the
+  listener body runs, which is always with the page and the model in step. The one observable
+  difference: an event a handler's own DOM write fires synchronously (a `blur` on a removed
+  input) gets the model the handler made, where Elm would hand it the previous view's value;
+  and an event on a row the same dispatch detached is delivered with the row's item. It changes
+  what a program can observe in that corner, so it is the owner's. *Recommendation*: read at
+  the event. It is the only reading with no closure per event and no message object, it is the
+  more consistent one (the message carries the state the page shows), and
+  `browser/direct/EventReadsModel` pins it.
 - **Q2 — Direct writes replace the render loop.** W28 chose Solid 2's microtask flush; research
   56's A moved the render to the end of a trusted dispatch; both batch K messages in one task
   into one render. This design writes in the handler and renders nothing (§4.3): K messages are K
-  writes, as in vanilla. *Recommendation*: take it. Nothing a program can observe changes (DOM
-  reads happen only through `Dom` after a dispatch), the burst win was 13 % at K = 1 000 and a
-  cost at K = 1, and the stream criterion keeps the page at or under vanilla.
+  writes, as in vanilla, so a burst costs K times one message and the K = 1 ratio holds at every
+  K (§13). *Recommendation*: take it. Nothing a program can observe changes (DOM reads happen
+  only through `Dom` after a dispatch), the burst win was 13 % at K = 1 000 and a cost at K = 1,
+  and the stream criterion is "not worse than one message".
 - **Q3 — `Browser.flush` becomes a no-op and `Dom.rendered` resolves at the end of the
   dispatch.** Both were defined against a loop. *Recommendation*: keep both names and types so
   one source builds on both platforms, document the meaning per platform, and delete `flush`
@@ -927,9 +1218,11 @@ listener) and their limits are in plain words in §16.
   the model half is where the remaining gap is (research 60 says it is).
 - **Q5 — A subscription whose body cannot suspend runs with no fiber**, the twin of
   `boundary.md` §9.8.11's rule for commands. It changes nothing a program can observe and would
-  take TodoMVC's routing subscription off the fiber kernel (research 51 §0.2: 1 948 B). It is a
-  guarantee-adjacent change to the effects contract, so it is the owner's. *Recommendation*: yes,
-  specified in `boundary.md` §9.8.5 before S5.
+  take TodoMVC's routing subscription off the fiber kernel (research 51 §0.2: 1 948 B), on which
+  §13's TodoMVC bytes target depends: without it the routing build cannot reach Svelte 4's
+  4 246 B, and the target is restated as the sandbox build's. It is a guarantee-adjacent change
+  to the effects contract, so it is the owner's. *Recommendation*: yes, specified in
+  `boundary.md` §9.8.5 before S5's target is set.
 - **Q6 — TEA is this platform's architecture, not a layer on it.** `boundary.md` §9.1 makes an
   architecture a platform layered on a base `Program`; here the architecture is what the
   compiler compiles, so there is no low-level `Program` another architecture could be written
@@ -937,8 +1230,10 @@ listener) and their limits are in plain words in §16.
   stays the base for a library-style architecture while both exist, and S8 decides.
 
 **Reported, not asked** (rule 10): `List`'s thresholds and the trie's ~500 B for a program that
-prepends to a long list outside a loop (§7.2) are measured in S2/S3 and reported in B1; nothing
-here changes them.
+prepends to, or sets into, a long list outside a loop (§7.2) are measured at S0 and in S2/S3 and
+reported in B1; nothing here changes them. And the one refusal (`view_not_compiled`, §11.1):
+reported with its count from the dump, because it has no fallback and is expected never to fire
+on a program anyone has written.
 
 ## 16. The limits, in plain words
 
@@ -962,7 +1257,18 @@ No limit can make a page wrong; a limit makes a message do more work than it nee
   outside a list is called by the browser directly.
 - **The model is copied on the written path** (a spread per record) until S7 proves the path
   unshared; a record of more than 1 020 fields is slow to copy in V8 (research 59 §2) until then.
-- **A program whose `init`/`update`/`view` are not plain functions in one record** is refused on
-  this platform (Q1) and builds on `browser-tea`.
+- **An `update` the analysis cannot key** (wrapped by a helper, or in a record a helper builds)
+  is one message kind that "may change everything": every message builds a value, calls your
+  `update`, and re-checks the whole page, as today's platform does on every message. The page
+  is right; it is slower by today's amount.
+- **A `view` that is not a function the compiler can reach as markup** — chosen at run time,
+  or arriving in a message — cannot be compiled by this platform at all, because the platform
+  has no renderer to hand it to; the build says so and names `browser-tea`, which renders any
+  `view`. No program in the repository is written this way.
+- **A program value mounted twice on one page** is refused, at build time where the compiler
+  can see it and at start otherwise, because two mounts would share one state and show each
+  other's writes.
+- **An event fired by a handler's own DOM write** (a `blur` on an input the handler removed)
+  runs after that handler and reads the model the handler made (Q1).
 
 *Amendments go below this line, dated, without renumbering.*
