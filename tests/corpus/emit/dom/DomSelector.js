@@ -21,6 +21,7 @@ const DomSelector$p173 = (i$1, v$2) => {
       Rt$delegate(["click"]);
       if (cx$15 !== null) {
         r$16.$$cx = cx$15;
+        r$16.$$clickF = 4;
       }
       return { s: r$16, q: null, e: r$16, w0: r$16, w1: w$17, a0: undefined, a1: undefined, a2: undefined, x: undefined };
     }, p: (i$18, item$19, position$20) => {

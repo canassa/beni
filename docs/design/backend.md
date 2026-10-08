@@ -7540,7 +7540,9 @@ mounted with a context that is not `null` gets, at mount, `el.$$cx = cx` (one gu
 order. Because `p` changes `f` in place, a map whose function changed rewrites no handler inside it,
 Elm's own trick (its tagger chain, research 24 §1, `VirtualDom.js:772-818`). **Cost**: every kind's `m` takes
 the context argument; inside a mapped subtree, one property write per event node at mount and a walk
-of the chain per event; outside every map, nothing. `text(s)` — the other primitive — returns a
+of the chain per event; outside every map, nothing. *(Amended 2026-10-08, §15.11: a delegated
+event's flags also carry bit 4 inside a map, so that outside every map the listener does not read
+`$$cx` either.)* `text(s)` — the other primitive — returns a
 block of the runtime's text kind, one text node patched as a `string` hole is.
 
 **The `dom` runtime's well-known exports**, declared by the lowering (`boundary.md` §9.4.5) — the
@@ -8731,3 +8733,13 @@ programs, nested, under a user's click and a burst).
   cost the empty page 31 bytes; what costs is the flush's call, its guard and the loop, which this
   removes from a turn and does not touch elsewhere. Bytes: the table app 5 551 → 5 598 (+47), the
   empty page unchanged (it has no turn).
+- **`$$cx` is read only inside an `Html.map`.** Every delegated event node mounted with a context
+  that is not `null` gets, in the same guarded block as its `$$cx`, its flags again with bit 4 set:
+  `if (cx !== null) { el.$$cx = cx; el.$$clickF = 4; }` (`flags | 4`, a constant). The listener
+  applies the map chain only when bit 4 is set; outside every map it does not ask the node for a
+  `$$cx` it does not have — a lookup that misses, on a cold node, every click. A non-delegated
+  event's stub sets bit 4 itself and reads `$$cx` as before. Measured: −0.5 µs; the table app
+  5 598 → 5 610 bytes (+12, the second flag write in each kind's guarded block).
+- **`turn` written in place is not taken.** The delegated listener with `turn`'s body in place of
+  the closure it hands it measured no change (−0.45 against −0.48 µs for the step before it, 24
+  pages, one batch) for 20 bytes, and is not built.
