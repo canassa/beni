@@ -179,6 +179,58 @@ test "the write-set dump is the same with every module's declarations reversed, 
     });
 }
 
+// Two capped summaries print one line each, sorted by their text: with the
+// declarations of `writes/CapI.beni` reversed, the functions' ids swap and
+// the dump does not move (the review of the read-only pass, B5).
+test "the write-set dump's capped summaries are the same with the declarations reversed" {
+    var s = try Scenario.init("the write-set dump's summaries, reversed");
+    defer s.deinit();
+    const a = s.arena();
+    const path = "tests/corpus/writes/CapI.beni";
+    try s.w.write("written/CapI.beni", try source(a, path, .written));
+    try s.w.write("reversed/CapI.beni", try source(a, path, .reversed));
+    var dumps: [2][]const u8 = undefined;
+    for ([_][]const u8{ "written/CapI.beni", "reversed/CapI.beni" }, &dumps) |file, *slot| {
+        const run = try s.w.runWith(&.{ "dump", "--stage=writes", "--platform=browser-tea", file }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        slot.* = try withoutHolePositions(a, run.stdout);
+    }
+    const same = std.mem.eql(u8, dumps[0], dumps[1]);
+    const lines = std.mem.count(u8, dumps[0], "\n  summary ");
+    try s.finish(.{
+        .green = same and lines == 2,
+        .signature = if (!same) "exit=0 order-differs" else if (lines != 2) "exit=0 summaries-missing" else "",
+        .detail = if (same) "" else try std.mem.replaceOwned(u8, a, try std.fmt.allocPrint(a, "written: {s} reversed: {s}", .{ dumps[0], dumps[1] }), "\n", " | "),
+    });
+}
+
+// Each program of a dump is analysed as if it were alone (the review of the
+// read-only pass, B2): `writes/TwoPrograms/`'s two `main`s build the same
+// term over different models, and the directory's dump is each module's own
+// dump, one after the other.
+test "each program of a write-set dump is the same as when it is dumped alone" {
+    var s = try Scenario.init("the write-set dump of two programs, alone and together");
+    defer s.deinit();
+    const a = s.arena();
+    for ([_][]const u8{ "A", "B" }) |m| {
+        const path = try std.fmt.allocPrint(a, "tests/corpus/writes/TwoPrograms/{s}.beni", .{m});
+        try s.w.write(try std.fmt.allocPrint(a, "two/{s}.beni", .{m}), try readRepo(a, path));
+    }
+    var outs: [3][]const u8 = undefined;
+    for ([_][]const u8{ "two", "two/A.beni", "two/B.beni" }, &outs) |target, *slot| {
+        const run = try s.w.runWith(&.{ "dump", "--stage=writes", "--platform=browser-tea", target }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        slot.* = run.stdout;
+    }
+    const alone = try std.mem.concat(a, u8, &.{ outs[1], outs[2] });
+    const same = std.mem.eql(u8, outs[0], alone);
+    try s.finish(.{
+        .green = same,
+        .signature = if (same) "" else "exit=0 together-differs",
+        .detail = if (same) "" else try std.mem.replaceOwned(u8, a, try std.fmt.allocPrint(a, "together: {s} alone: {s}", .{ outs[0], alone }), "\n", " | "),
+    });
+}
+
 /// A writes dump with each `hole` line's position left out and the hole
 /// lines sorted: what a reordering of declarations may move.
 fn withoutHolePositions(a: std.mem.Allocator, dump: []const u8) ![]const u8 {

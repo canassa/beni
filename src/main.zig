@@ -460,13 +460,11 @@ fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, std
     }) catch return fail(stderr, "beni: out of memory", .{});
     defer a.deinit();
     const result = onBigStackResult(struct {
-        fn go(w: *Writes) Writes.Error!Writes.Run {
+        fn go(w: *Writes) std.mem.Allocator.Error!Writes.Run {
             return w.run();
         }
-    }.go, .{a}) catch |err| switch (err) {
-        error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
-        error.WorkCap => return fail(stderr, "beni: the write-set pass ran out of work outside a key", .{}),
-    };
+    }.go, .{a}) catch
+        return fail(stderr, "beni: out of memory", .{});
     session.profile.end(0, token, .writes, beni.Profile.Event.no_file, 0);
     const Pos = struct {
         fn get(ctx: *const anyopaque, module: u32, tok: u32) beni.dump.writes.Position {

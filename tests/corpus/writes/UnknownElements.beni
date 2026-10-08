@@ -1,0 +1,54 @@
+-- writes: two elements whose positions are unknown are two elements (the
+-- review of the read-only pass, B1; `write-sets.md` §2.3: `[?]` is equal to
+-- nothing, itself included). `[ …init, a, b ]` binds `a` and `b` past the
+-- spread, both at `ρ.items[?]`. A fact about `a`'s tag says nothing about
+-- `b`'s, so under `a = Open` the arm `b = Closed` is reachable and the key
+-- writes `value ρ.count` — not ∅, which a fact keyed on the shared path
+-- would have given by skipping that arm.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Status
+    = Open
+    | Closed
+
+
+type alias Model =
+    items : List Status
+    count : Int
+
+
+type Msg
+    = Check
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Check →
+            case model.items of
+                [ …_, a, b ] →
+                    case a of
+                        Open →
+                            case b of
+                                Closed →
+                                    { model | count = 1 }
+
+                                Open →
+                                    model
+
+                        Closed →
+                            model
+
+                _ →
+                    model
+
+
+view : Model → Html Msg
+view model = <p>{model.count}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { items = [], count = 0 }, update = update, view = view }

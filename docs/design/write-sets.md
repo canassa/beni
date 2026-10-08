@@ -345,7 +345,8 @@ so a chain of `let aₙ = if cₙ then aₙ₋₁ else aₙ₋₁'` is a DAG of 
 and `diff` is memoised on `(node, p, Γ)` with Γ interned as a sorted set (*amended 2026-10-08,
 C1*). The **size cap S** (§6.1) counts DAG nodes and applies to **every** term the analysis
 builds — a summary, a key's result, a lambda body's value at a call site — not only to
-summaries; and the **depth** below counts an `Alt` as a level like any constructor.
+summaries; and the **depth** below counts a plain `Alt` as a level like any constructor, and a
+keyed one not (*amended 2026-10-09*, item 1 of that amendment).
 
 Every abstract value has a **concretisation**, the set of JavaScript values it stands for given
 an old model `M` (and, for πᵢ and εⱼ roots, the argument values). It is stated in §5.1; the
@@ -1638,3 +1639,39 @@ research 63 §5 has the evidence for each.
     `update`'s walk rather than from a precomputed call graph (the order is the program's text, so
     §7 holds), and a component that does not settle makes every member `Fresh` (§4.3); `diff` skips
     an alternative whose facts contradict its context.
+
+### *Amended 2026-10-09 (review of the read-only pass):* five defects, and what the pass is
+
+The pull request's adversarial review found two unsound rules in the pass, one cap that errored and
+one that truncated; each is fixed with a fixture that failed before the fix.
+
+1. **No tag fact at a `[*]` or `[?]` path** (§2.3, §3.2). `[ …init, a, b ]` binds `a` and `b` to
+   one path, `ρ.items[?]`: two different elements. A fact about one is no fact about the other, so
+   a tag fact is never added, consulted, carried through instantiation or used for a negation at a
+   path that holds a `[*]` or `[?]` step; `Γ ⊢ tag(p) = C` there holds only by the
+   single-constructor rule. A callback whose result is ⊥ (`Alt([])`) is not "identity" for the
+   `map` row. (`writes/UnknownElements`.)
+2. **Each program is analysed as if alone** (§7). `diff`'s memo, the summaries, their caps and the
+   memoised top-level values are cleared for each program of a dump: a write set depends on the
+   program's model type (§3.4's full-record row), so a memo shared with another program could drop
+   a field that program does not have. (`writes/TwoPrograms`; `ordering_test.zig` dumps each
+   module alone and the two together.)
+3. **W in `init` is `init`'s** (§6.1). The keys start with a budget of their own; a program whose
+   walk spends W outside every walk that catches it is the top — one key writing `value ρ`, its
+   view cut short — and the dump never exits with an error for a cap. (`writes/CapWInit`.)
+4. **A view that reaches W says so** (§6.1, §8.1). The program prints `view (cap W)` and every hole
+   the walk met reads ρ and is `dynamic`; the hole list of a capped view is not complete, and a
+   consumer reads the line as "no hole of this view is known static". (`writes/CapWView`.)
+5. **Smaller.** An index symbol (§2.3) is an integer literal or a `Same` of a path rooted at μ, ρ
+   or π with no `[*]`/`[?]` step; a computed index (`[i + 1]`, a `foreign`'s result) is `[?]` —
+   coarser than §2.3 allows, never wider. `summary` lines are sorted by their text (`ordering_test`
+   reverses `writes/CapI`'s two). The core rows apply to `core/` only, never to a platform module
+   of the same name. A `case` over an `Alt` scrutinee is a plain `Alt` (it was marked keyed,
+   exempting it from A; precision only).
+
+**The pass is single-threaded.** §6.3 and §7 describe summaries computed per module on the
+checker's schedule; as built, the whole pass — summaries, keys, `init`, `view` — runs once, on one
+thread with the checker's stack, after every module is checked, and summaries are computed on
+demand from `update`'s walk. That is deterministic by construction (§7's other bullets hold
+unchanged) and costs 4.8 ms on Conduit (research 63 §4); per-module parallelism waits until a
+measurement asks for it.

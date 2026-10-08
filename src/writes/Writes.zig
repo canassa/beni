@@ -338,7 +338,9 @@ pub const Program = struct {
     init_literals: []const u32,
     keys: []const Key,
     summaries: []const Capped,
-    holes: []const Hole,
+    holes: []Hole,
+    /// The view's walk reached W: every hole reads ρ, and the dump says so.
+    view_capped: bool = false,
 };
 
 pub const Capped = struct { module: u32, decl: u32, caps: Caps };
@@ -745,21 +747,23 @@ pub fn symLit(a: *const Writes, s: u32) i64 {
     return @bitCast(u);
 }
 
-/// The index symbol of an argument (§2.3): a literal, a handler-evaluable
-/// expression (no root but ρ, μ or a summary's π), or `?`.
+/// The index symbol of an argument (§2.3): an integer literal, or a read of
+/// the message, the old model or a summary's parameter — a `Same` of a
+/// path rooted at μ, ρ or π with no `[*]` or `[?]` in it, which an R4
+/// handler can evaluate before it patches. Anything computed (`i + 1`, a
+/// `foreign`'s result) is `?`: coarser than §2.3, never wider (research 63).
 fn mkSym(a: *Writes, m: u32, inst: Inst.Index, t: u32) Error!u32 {
     if (a.termTag(t) == .lit and a.termWord(t, 1) == lit_int) {
         const u: u64 = @as(u64, a.termWord(t, 2)) | (@as(u64, a.termWord(t, 3)) << 32);
         return a.mkLitSym(@bitCast(u));
     }
-    const d = try a.deps(t);
-    for (a.deps_t.get(d)) |p| {
-        switch (a.pathKind(a.rootOf(p))) {
-            .rho, .mu, .pi => {},
-            else => return sym_unknown,
-        }
+    if (a.termTag(t) != .same) return sym_unknown;
+    const p = a.termWord(t, 1);
+    switch (a.pathKind(a.rootOf(p))) {
+        .rho, .mu, .pi => {},
+        else => return sym_unknown,
     }
-    if (a.termTag(t) == .fresh and a.deps_t.len(d) == 0) return sym_unknown;
+    if (!a.factPath(p)) return sym_unknown;
     return a.syms.intern(a.gpa, &.{ @backingInt(SymKind.expr), m, inst.int(), t });
 }
 
@@ -955,11 +959,21 @@ fn gammaExcludes(a: *const Writes, g: u32, p: u32, c: u32) bool {
 /// negation leaving `c`.
 fn knowsTag(a: *const Writes, g: u32, p: u32, c: u32) bool {
     if (a.siblings(c).count == 1) return true;
+    if (!a.factPath(p)) return false;
     if (a.tagKnown(g, p)) |k| return k == c;
     return false;
 }
 
+/// Whether a tag fact may be kept at `p`: not when `p` holds a `[*]` or
+/// `[?]` step, which stands for SOME element and is equal to nothing,
+/// itself included (§2.3) — a fact about one such element is no fact about
+/// another that interns to the same path.
+fn factPath(a: *const Writes, p: u32) bool {
+    return !a.hasStarOrUnknown(p);
+}
+
 fn contradicts(a: *const Writes, g: u32, p: u32, c: u32) bool {
+    if (!a.factPath(p)) return false;
     if (a.gammaExcludes(g, p, c)) return true;
     if (a.tagKnown(g, p)) |k| return k != c;
     return false;
@@ -985,8 +999,9 @@ fn termDepth(a: *const Writes, t: u32) u8 {
     return a.term_depth.items[t];
 }
 
-/// Intern a term built in `scratch[mark..]`, with its depth. A term deeper
-/// than k is `Fresh` of what it reads (§3.1, *Depth*).
+/// Intern a term built in `scratch[mark..]`, with its height. Nothing is cut
+/// here: `capSize` cuts a finished term top-down below level k (§3.1, *Depth*,
+/// as amended), and the height only tells it whether to look.
 fn finish(a: *Writes, mark: usize, depth: u32) Error!u32 {
     defer a.scratch.shrinkRetainingCapacity(mark);
     const before = a.terms.count();
@@ -1558,7 +1573,7 @@ fn matchFacts(a: *Writes, f: *Frame, pat: Inst.Index, v: u32, g: u32, out: *Matc
                         out.ok = false;
                         return;
                     }
-                    if (a.siblings(c).count > 1) try out.facts.append(a.gpa, .{ .kind = .pos, .key = p, .val = c });
+                    if (a.siblings(c).count > 1 and a.factPath(p)) try out.facts.append(a.gpa, .{ .kind = .pos, .key = p, .val = c });
                 },
                 .con => if (a.termWord(v, 1) != c) {
                     out.ok = false;
@@ -1614,7 +1629,7 @@ fn negationOf(a: *Writes, m: u32, pat: Inst.Index, v: u32) Error!?Fact {
     switch (b.instTag(pat)) {
         .pat_as => return a.negationOf(m, @fromBackingInt(data.lhs), v),
         .pat_ctor => {
-            if (a.termTag(v) != .same) return null;
+            if (a.termTag(v) != .same or !a.factPath(a.termWord(v, 1))) return null;
             const c = a.ctorTarget(m, @fromBackingInt(data.lhs)) orelse return null;
             if (a.siblings(c).count == 1) return null;
             for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |i| if (!a.irrefutable(m, i)) return null;
@@ -1812,7 +1827,9 @@ fn caseOn(a: *Writes, f: *Frame, s: u32, branches: []const Inst.Index, g: u32) E
             const g2 = (try a.gammaJoin(g, it.gamma)) orelse continue;
             try items.append(a.gpa, .{ .gamma = it.gamma, .term = try a.caseOn(f, it.term, branches, g2) });
         }
-        return a.mkAlt(s, a.termWord(s, 2) == 1, items.items);
+        // Plain: a keyed `Alt` is a `case` on a path (§3.1); this one is a join
+        // over another `Alt`'s alternatives, which counts against A and depth.
+        return a.mkAlt(s, false, items.items);
     }
     var items: std.ArrayList(AltItem) = .empty;
     defer items.deinit(a.gpa);
@@ -2035,7 +2052,8 @@ fn funArity(a: *Writes, t: u32) u32 {
 fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Inst.Index, g: u32) Error!u32 {
     const decl = a.bir(m).decls[d];
     if (a.in.packages[m] != .app) {
-        if (Core.row(a.in.module_names[m], a.declName(m, d))) |r| return a.applyRow(r, site_m, site, args, g);
+        // The rows are core's: a platform module of the same name is not `List`.
+        if (a.in.packages[m] == .core) if (Core.row(a.in.module_names[m], a.declName(m, d))) |r| return a.applyRow(r, site_m, site, args, g);
         if (a.in.packages[m] == .platform) return a.freshCall(args);
     }
     if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.freshCall(args);
@@ -2341,7 +2359,7 @@ fn substGamma(a: *Writes, sub: *const Subst, g: u32) Error!?u32 {
             .pos, .neg => {
                 const v = try a.substPath(sub, f.key);
                 switch (a.termTag(v)) {
-                    .same => try facts.append(a.gpa, .{ .kind = f.kind, .key = a.termWord(v, 1), .val = f.val }),
+                    .same => if (a.factPath(a.termWord(v, 1))) try facts.append(a.gpa, .{ .kind = f.kind, .key = a.termWord(v, 1), .val = f.val }),
                     .con => {
                         const is = a.termWord(v, 1) == f.val;
                         if ((f.kind == .pos) != is) return null;
@@ -2499,6 +2517,7 @@ fn isIdentity(a: *Writes, r: u32, eps: u32) bool {
     switch (a.termTag(r)) {
         .same => return a.termWord(r, 1) == eps,
         .alt => {
+            if (a.altLen(r) == 0) return false;
             for (0..a.altLen(r)) |i| if (!a.isIdentity(a.altItem(r, @intCast(i)).term, eps)) return false;
             return true;
         },
@@ -2630,6 +2649,7 @@ fn keepsOrDrops(a: *Writes, r: u32, eps: u32) bool {
             return false;
         },
         .alt => {
+            if (a.altLen(r) == 0) return false;
             for (0..a.altLen(r)) |i| if (!a.keepsOrDrops(a.altItem(r, @intCast(i)).term, eps)) return false;
             return true;
         },
@@ -3208,7 +3228,7 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
 // ---------------------------------------------------------------------------
 
 fn stepMayCoincide(a: *const Writes, x: u32, y: u32) bool {
-    if (x == y) return a.pathKind(x) != .star and !(a.pathKind(x) == .index and a.pathA(x) == sym_unknown) or true;
+    if (x == y) return true;
     const kx = a.pathKind(x);
     const ky = a.pathKind(y);
     const lx = kx == .index or kx == .star;
@@ -3313,7 +3333,7 @@ pub const Run = struct {
 
 /// Analyse every program whose `main` is in a target module, in module
 /// index order.
-pub fn run(a: *Writes) Error!Run {
+pub fn run(a: *Writes) Allocator.Error!Run {
     var programs: std.ArrayList(Program) = .empty;
     const n = a.in.graph.count();
     for (0..n) |mi| {
@@ -3324,7 +3344,11 @@ pub fn run(a: *Writes) Error!Run {
             if (decl.kind != .value or decl.params != 0) continue;
             if (!std.mem.eql(u8, a.declName(m, @intCast(di)), "main")) continue;
             const body = decl.body.unwrap() orelse continue;
-            try a.programsOf(m, @intCast(di), body, &programs);
+            a.programsOf(m, @intCast(di), body, &programs) catch |err| switch (err) {
+                // `programsOf` turns W into the top program; nothing else spends it.
+                error.WorkCap => unreachable,
+                else => |e| return e,
+            };
         }
     }
     // Several programs written in one declaration are numbered in order.
@@ -3380,12 +3404,39 @@ fn programsOf(a: *Writes, m: u32, d: u32, body: Inst.Index, out: *std.ArrayList(
             recognised = false;
         };
     }
-    var prog = try a.analyseProgram(m, kind orelse .sandbox, if (recognised) fields else null, fields);
+    var prog = a.analyseProgram(m, kind orelse .sandbox, if (recognised) fields else null, fields) catch |err| switch (err) {
+        // Every walk catches W itself; should one ever not, the program is
+        // the top — one key writing ρ, its view cut short — never an error.
+        error.WorkCap => Program{
+            .module = m,
+            .decl = d,
+            .index = null,
+            .kind = kind orelse .sandbox,
+            .recognised = recognised,
+            .type_module = none,
+            .type_inst = none,
+            .init_literals = &.{},
+            .keys = try a.arena().dupe(Key, &.{.{ .steps = &.{}, .writes = try a.arena().dupe(Write, &.{value(rho_path)}), .caps = .{ .w = true } }}),
+            .summaries = &.{},
+            .holes = &.{},
+            .view_capped = true,
+        },
+        else => |e| return e,
+    };
     prog.decl = d;
     try out.append(a.arena(), prog);
 }
 
 fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_fields: ?Fields) Error!Program {
+    // Each program is analysed as if it were alone (§7): a write set depends
+    // on the program's model type (§3.4's full-record row), and a summary's
+    // caps are listed for the program that reached it.
+    a.diff_memo.clearRetainingCapacity();
+    @memset(a.summaries, .absent);
+    @memset(a.summary_caps, .{});
+    @memset(a.top_values, none);
+    a.ctx = .{ .mode = .closed };
+    a.inst_depth = 0;
     for (a.holes.items) |*h| {
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
@@ -3446,6 +3497,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         var lits: std.ArrayList(u32) = .empty;
         try a.literalPaths(init_model, rho_path, &lits);
         prog.init_literals = lits.items;
+        // What `init` spent is its own: the keys start with a budget of theirs.
+        a.ctx = .{ .mode = .closed };
         // Keys (§4.4).
         const update_fun = try a.eval(&frame, upd, 0);
         var keys: std.ArrayList(Key) = .empty;
@@ -3461,12 +3514,19 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         a.ctx = .{ .mode = .view };
         const view_fun = try a.eval(&frame, vi, 0);
         _ = a.applyDirect(view_fun, &.{try a.mkSame(rho_path)}, 0) catch |err| switch (err) {
-            error.WorkCap => {},
+            error.WorkCap => prog.view_capped = true,
             else => |e| return e,
         };
     };
     a.ctx = .{ .mode = .closed };
     prog.holes = try a.finishHoles(init_model);
+    // A view cut short says so, and every hole it met reads ρ: the top,
+    // never a partial read set (§6.1).
+    if (prog.view_capped) for (prog.holes) |*h| {
+        h.reads = try a.arena().dupe(u32, &.{rho_path});
+        h.bake = false;
+        h.key_paths = &.{};
+    };
     var capped: std.ArrayList(Capped) = .empty;
     for (a.summary_caps, 0..) |c, id| {
         if (!c.w and !c.s and !c.i) continue;
@@ -3645,7 +3705,7 @@ fn isPlainStringLit(a: *Writes, t: u32) bool {
     return plainString(a.bytesOf(id, &buf));
 }
 
-fn finishHoles(a: *Writes, init_model: u32) Error![]const Hole {
+fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
     const out = try a.arena().alloc(Hole, a.holes.items.len);
     for (a.holes.items, out) |*h, *o| {
         std.mem.sort(u32, h.reads.items, {}, std.sort.asc(u32));
@@ -3708,7 +3768,7 @@ pub fn keyClass(a: *const Writes, ws: []const Write) KeyClass {
 pub const HoleClass = enum { static, literal, static_key, dynamic };
 
 pub fn holeClass(a: *const Writes, prog: *const Program, h: *const Hole) HoleClass {
-    if (!prog.recognised) return .dynamic;
+    if (!prog.recognised or prog.view_capped) return .dynamic;
     var static = true;
     for (prog.keys) |k| {
         for (h.reads) |r| if (a.conflicts(r, k.writes)) {

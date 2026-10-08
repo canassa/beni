@@ -3,7 +3,9 @@
 -- alternative one constructor deeper than the last and no round repeats the
 -- one before. After four rounds its summary is `Fresh` of its parameters —
 -- above every fixpoint, so sound — which the dump names on a `summary` line;
--- the key that calls it is `value ρ`.
+-- the key that calls it is `value ρ`. `deepen` does the same to another
+-- field, so there are two such lines, printed in the order of their text:
+-- `ordering_test.zig` reverses the declarations and expects the same dump.
 import Browser
 import Html exposing (Html)
 import Tea
@@ -16,11 +18,13 @@ type Nest
 
 type alias Model =
     nest : Nest
+    other : Nest
     count : Int
 
 
 type Msg
     = Grow Int
+    | Deepen Int
 
 
 grow : Int, Model → Model
@@ -31,11 +35,22 @@ grow n m =
         grow (n - 1) { m | nest = Wrap m.nest }
 
 
+deepen : Int, Model → Model
+deepen n m =
+    if n == 0 then
+        m
+    else
+        deepen (n - 1) { m | other = Wrap m.other }
+
+
 update : Msg, Model → Model
 update msg model =
     case msg of
         Grow n →
             grow n model
+
+        Deepen n →
+            deepen n model
 
 
 view : Model → Html Msg
@@ -43,4 +58,4 @@ view model = <p>{model.count}</p>
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { nest = Leaf, count = 0 }, update = update, view = view }
+main = Tea.sandbox { init = { nest = Leaf, other = Leaf, count = 0 }, update = update, view = view }
