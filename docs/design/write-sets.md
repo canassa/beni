@@ -1582,3 +1582,59 @@ The dump's name (O6) is `writes`; core functions' rules live in a table in the c
 full-render fallback (§9). Beyond the fixtures in §8.3, `plans/compile-away.md` V3 sends
 adversarial agents to write beni pages that try to make a page show something the model doesn't
 hold.
+
+### *Amended 2026-10-09 (the read-only pass, as built; research 63):* what building it settled
+
+The pass is `src/writes/Writes.zig`, the core table `src/writes/Core.zig` (O4), the dump
+`src/dump/writes.zig`; its fixtures are `tests/corpus/writes/`, and the gate (§8.2) is
+`writes/Conduit/`, 90 of 91 leaf keys bounded. It runs only for `beni dump --stage=writes`: nothing
+reads it, so no build runs it and no emitted byte changed. Building it settled the following, each
+a resolution of a place where this document was ambiguous or could not give its own examples;
+research 63 §5 has the evidence for each.
+
+1. **Depth (§3.1, C1).** A keyed `Alt` is not a level of depth, as it is exempt from A; a plain
+   one is. The cut is applied top-down to every finished term — a summary, a call's value, a key's
+   result — so that what is cut is the part below level k and never the root. Read the other way,
+   Conduit's `GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok` (nine levels with its keyed `Alt`s)
+   was `value ρ`.
+2. **The join a fixpoint climbs (§3.1, §4.3).** A plain `Alt` is kept in a normal form: an
+   alternative that is itself a plain `Alt` on the same scrutinee (or on none) is replaced by its
+   alternatives under both sets of facts, ⊥ joins as nothing, and equal alternatives are one.
+   Without it every round of `bumpTimes` nested the last and no recursion settled before I.
+3. **A record update of an `Alt` (§3.3).** `{ r | f = e }` with `⟦r⟧` an `Alt` is the `Alt` of the
+   updates of its alternatives, as `proj` of an `Alt` already is. It is exact; the `base = none`
+   rule wrote every field of the third review's own one-split-per-path fixture.
+4. **`[]` placed (§3.4).** `Lst(none, clear)` at `p` is `value p ⟨clear⟩`, as §2.6 and §10.3
+   print it; `clear` promises an empty list whatever the base.
+5. **The type at a placement path (B2, N7).** "Every other field of the type" is read from
+   `update`'s annotation, through aliases, constructor arguments and `List`'s parameter; when
+   `update` has none, the write is `value p`.
+6. **The dump's `literal` (§8.1, §8.3 items 5 and 16).** A hole is `literal` when §9.1 lets R3
+   bake it (exactly a model path whose `init` value is a plain string, or an empty read set and a
+   plain string literal; alone; under an allowlisted parent), not merely when its reads are literal
+   at `init`. Items 5 and 16 require it; §8.1's sentence is superseded.
+7. **A hole is a source position (§3.6, §8.1).** Its reads are the union over every call that
+   reaches it, each the dependencies of the hole's value with the program's own functions inlined
+   at their calls; a template is per position, so a consumer can bake or mount only what every call
+   agrees on. (§8.1's example counts research 62's 507 call sites; Conduit has 145 positions.) An
+   attribute with a value — braced or interpolated — is a hole; an event binding is not; a hole in
+   `core/` or a platform is not printed.
+8. **Key names.** The constructors along a key's path are printed even where no `case` split them
+   (a single-constructor wrapper: `GotPageMsg · M1`); a program whose message is never split has one
+   key, `(any)`; an unrecognised program prints its declaration, `program <unrecognised>
+   (Main.main)`; a program mounted by `Browser.programs`, `Browser.mountAt` or a top-level value
+   holding the call is recognised and named by that declaration.
+9. **Classes and research 61 (§8.1, §8.2).** §8.1's classes stand: `value ρ` is `*` whatever its
+   tag, and `⟨replaced⟩` is indexed. They name some sets differently from research 61's prototype
+   (a root write of an `Int` or `List` model; a list replaced), which §8.2's "no coarser on every
+   constructor" did not foresee: the comparison is of write sets, and on research 61's corpus no
+   write set is coarser (research 63 §3).
+10. **The W fixture (§8.3 item 15).** Shared terms and the normal form of item 2 make C1's chain a
+    few hundred visits, below `--writes-work=4096`; the fixture writes the chain in `update` over
+    the model under `--writes-work=256`. A cap that fires in a summary is printed for I as well as
+    W and S.
+11. **Not built, coarse and sound.** A method call whose evidence is a `where` parameter is `Fresh`
+    rather than an application node (§3.3, *Static dispatch*); recursion is found on demand from
+    `update`'s walk rather than from a precomputed call graph (the order is the program's text, so
+    §7 holds), and a component that does not settle makes every member `Fresh` (§4.3); `diff` skips
+    an alternative whose facts contradict its context.
