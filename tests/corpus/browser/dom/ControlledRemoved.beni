@@ -1,0 +1,57 @@
+-- A control the user edited is marked until its program's next render
+-- (backend.md §15.3, *Controlled inputs*); the render may take it off the
+-- page first — a row removed, a `Show` hidden — and reconciling a control
+-- no longer on the page does nothing anyone sees. A row that stays, and a
+-- body shown again, show the model.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Remove Int
+    | Toggle
+    | Tick
+
+
+type alias Model =
+    rows : List Int
+    open : Bool
+    n : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Remove k →
+            { m | rows = List.filter m.rows λr → r ≠ k }
+
+        Toggle →
+            { m | open = not m.open }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <For each={m.rows} keyed={λr → r}>
+            {λr →
+                <p>
+                    <input id="r${String.fromInt r}" value="row ${String.fromInt r}" />
+                    <button id="x${String.fromInt r}" onClick={Remove r}>x</button>
+                </p>
+            }
+        </For>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <Show when={if m.open then Just m.n else Nothing} keyed={λ_ → 0}>
+            {λn → <input id="shown" value="count ${String.fromInt n}" />}
+        </Show>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { rows = [ 1, 2, 3 ], open = True, n = 0 }, update = update, view = view }

@@ -1,0 +1,63 @@
+-- A controlled element shows the model after every render, by the
+-- edited-inputs set (backend.md §15.3, *Controlled inputs*): the runtime
+-- marks what the user changed and reconciles it when the render ends. Each
+-- case is one a set that marked only the element a handler was found on
+-- would get wrong: a text input with no handler, put back by an unrelated
+-- render; a checkbox whose click renders before its `input` is dispatched
+-- (a user's click, `press`, renders at the end of its own turn, and the
+-- box changed before it); a radio group, where checking one unchecks
+-- another with no event on it; and a select. Typed and rejected, typed and
+-- accepted.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Typed String
+    | Pick String
+    | Tick
+
+
+type alias Model =
+    text : String
+    on : Bool
+    choice : String
+    n : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Typed s →
+            if String.length s > 3 then m else { m | text = s }
+
+        -- "c" is refused, from the radios and the select alike.
+        Pick c →
+            if c == "c" then m else { m | choice = c }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <input id="text" value={m.text} onInput={Typed} />
+        <input id="free" value={m.text} />
+        <div onClick={Tick}><input id="box" type="checkbox" checked={m.on} /></div>
+        <input id="ra" type="radio" name="g" checked={m.choice == "a"} onClick={Pick "a"} />
+        <input id="rb" type="radio" name="g" checked={m.choice == "b"} onClick={Pick "b"} />
+        <input id="rc" type="radio" name="g" checked={m.choice == "c"} onClick={Pick "c"} />
+        <select id="sel" value={m.choice} onInput={Pick}>
+            <option value="a">a</option>
+            <option value="b">b</option>
+            <option value="c">c</option>
+        </select>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { text = "ab", on = False, choice = "a", n = 0 }, update = update, view = view }

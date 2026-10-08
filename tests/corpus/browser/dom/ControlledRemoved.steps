@@ -1,0 +1,8 @@
+# Two rows edited, one of them removed by the render that follows.
+input #r2 "edited"
+input #r3 "edited"
+click #x2
+# The body edited, then hidden; shown again it shows the model.
+input #shown "edited"
+click #toggle
+click #toggle

@@ -1,0 +1,18 @@
+# Typed and rejected, then typed and accepted.
+input #text "abcdef"
+input #text "xy"
+# No handler: nothing renders, so the edit stays until a render.
+input #free "zzzz"
+click #tick
+# A user's click on the box renders (its parent's handler) before the
+# box's `input`: the box goes back to the model all the same. (Focused
+# first: Chrome's own click focuses it, happy-dom's does not.)
+focus #box
+press #box
+# A radio `update` refuses: the one it unchecked is checked again.
+click #rc
+# One it accepts.
+click #rb
+# The select: refused, then accepted.
+input #sel "c"
+input #sel "a"

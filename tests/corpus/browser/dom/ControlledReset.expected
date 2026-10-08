@@ -1,0 +1,112 @@
+-- load
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <form id="form">
+      <input id="text" .value="ab">
+      <input id="box" type="checkbox" .value="on" .checked=true>
+      <select id="sel" .value="b">
+        <option value="a">"a"</option>
+        <option value="b">"b"</option>
+      </select>
+      <input id="plain" .value="">
+      <button id="reset" type="reset">"reset"</button>
+    </form>
+  </main>
+</body>
+-- input #text "xy"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <form id="form">
+      <input id="text" .value="xy">
+      <input id="box" type="checkbox" .value="on" .checked=true>
+      <select id="sel" .value="b">
+        <option value="a">"a"</option>
+        <option value="b">"b"</option>
+      </select>
+      <input id="plain" .value="">
+      <button id="reset" type="reset">"reset"</button>
+    </form>
+  </main>
+</body>
+-- input #plain "free"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <form id="form">
+      <input id="text" .value="xy">
+      <input id="box" type="checkbox" .value="on" .checked=true>
+      <select id="sel" .value="b">
+        <option value="a">"a"</option>
+        <option value="b">"b"</option>
+      </select>
+      <input id="plain" .value="free">
+      <button id="reset" type="reset">"reset"</button>
+    </form>
+  </main>
+</body>
+-- click #reset
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <form id="form">
+      <input id="text" .value="">
+      <input id="box" type="checkbox" .value="on" .checked=false>
+      <select id="sel" .value="a">
+        <option value="a">"a"</option>
+        <option value="b">"b"</option>
+      </select>
+      <input id="plain" .value="">
+      <button id="reset" type="reset">"reset"</button>
+    </form>
+  </main>
+</body>
+-- advance 0
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <form id="form">
+      <input id="text" .value="xy">
+      <input id="box" type="checkbox" .value="on" .checked=true>
+      <select id="sel" .value="b">
+        <option value="a">"a"</option>
+        <option value="b">"b"</option>
+      </select>
+      <input id="plain" .value="">
+      <button id="reset" type="reset">"reset"</button>
+    </form>
+  </main>
+</body>
+-- click #reset
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <form id="form">
+      <input id="text" .value="">
+      <input id="box" type="checkbox" .value="on" .checked=false>
+      <select id="sel" .value="a">
+        <option value="a">"a"</option>
+        <option value="b">"b"</option>
+      </select>
+      <input id="plain" .value="">
+      <button id="reset" type="reset">"reset"</button>
+    </form>
+  </main>
+</body>
+-- click #tick
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <form id="form">
+      <input id="text" .value="xy">
+      <input id="box" type="checkbox" .value="on" .checked=true>
+      <select id="sel" .value="b">
+        <option value="a">"a"</option>
+        <option value="b">"b"</option>
+      </select>
+      <input id="plain" .value="">
+      <button id="reset" type="reset">"reset"</button>
+    </form>
+  </main>
+</body>

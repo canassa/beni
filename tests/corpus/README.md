@@ -109,6 +109,10 @@ project) against it, one step per line, `#` for a comment:
                                 in the same task, then `(flushed)`; with
                                 several selectors, each in turn, in one task
     input <selector> "<text>"   set `.value`, then `input`
+    set <selector> "<text>"     set `.value` and dispatch nothing: a write no
+                                event reveals, which only code outside beni
+                                can make (`backend.md` §15.3, *Controlled
+                                inputs*)
     type <selector> "<text>"    per character, in a task of its own: append
                                 it to the live `.value`, then `input`
     key <selector> <key> [<modifier>…] [code:<code>]

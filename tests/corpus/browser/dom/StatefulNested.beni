@@ -1,13 +1,11 @@
 -- A controlled input inside markup that is itself a value — in an `if`
--- hole, in a `let` of markup, or nested with a constant `value` — is
--- reconciled on every render, as one at the top of the view is
--- (backend.md §15.3, `stateful`; language.md §11.11, made precise
--- 2026-10-04: a stateful attribute is evaluated on every render). An edit
--- `update` rejects returns the model it was given, so nothing the view
--- reads has changed; the render still puts each input's value back. A
--- markup root that holds such an input is patched on every render, and so
--- is every root whose value holds it; a `let` of such markup is not moved
--- into the root that reads it.
+-- hole, in a `let` of markup, or nested with a constant `value` — is put
+-- back after a render as one at the top of the view is (backend.md §15.3,
+-- *Controlled inputs*, amended 2026-10-08: the edit marks it, and the
+-- render ends by putting marked controls back; before, every such input
+-- was reconciled on every render, and the markup holding it patched). An
+-- edit `update` rejects returns the model it was given, so nothing the
+-- view reads has changed; the render still puts each input's value back.
 import Browser
 import Html exposing (Html)
 

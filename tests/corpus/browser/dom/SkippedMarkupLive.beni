@@ -3,8 +3,11 @@
 -- as amended after the second review; language.md §11.11). Every input
 -- here refuses an edit past three characters, so the model does not
 -- change and nothing a render evaluates is new: each input is put back
--- only because what holds it is restated — markup reached through a
--- helper behind an `if`, a `case`, `Html.map` or a `let`; a top-level
+-- only because the edit marked it and the render ends by putting marked
+-- controls back (backend.md §15.3, *Controlled inputs*, amended
+-- 2026-10-08; before, because what holds it was restated) — markup
+-- reached through a helper behind an `if`, a `case`, `Html.map` or a
+-- `let`; a top-level
 -- constant; a helper whose own markup branches; a `Show` body; and the
 -- rows of a positional and a keyed `For`, compiled in place, holding a
 -- helper's markup, or made by a function.

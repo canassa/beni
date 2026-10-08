@@ -5,9 +5,11 @@
 -- list likewise, a dynamic entry one `style.setProperty`. Any other list
 -- goes through the runtime's `classes` or `styles`, handed the previous
 -- list to take away what only it held. A `property` attribute is a
--- property write, a `stateful` one compared with the page's live value
--- rather than the last value written, so an edit the model rejected is put
--- back. A URL goes through `safeUrl`, a quoted `src` included.
+-- property write, a `stateful` one `control`'s, which compares it with the
+-- page's live value rather than the last value written and keeps it on the
+-- element, so an edit the model rejected is put back when the render ends
+-- (§15.3, *Controlled inputs*). A URL goes through `safeUrl`, a quoted
+-- `src` included.
 import Html exposing (Html)
 
 

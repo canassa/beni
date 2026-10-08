@@ -46,6 +46,8 @@
 //                               `(flushed)`; with several selectors, each
 //                               in turn, all in that one task
 //   input <selector> "<text>"   set `.value`, then a bubbling `input` InputEvent
+//   set <selector> "<text>"     set `.value` and dispatch nothing: a write no
+//                               event reveals, as a script outside beni makes
 //   type <selector> "<text>"    per character, a task of its own: append it to
 //                               the live `.value`, then an `input` InputEvent;
 //                               the page settles between two characters, as
@@ -638,6 +640,10 @@ function step(s) {
       }
       return null;
     }
+    case "set":
+      if (!("value" in target)) return `\`${s.selector}\` has no \`value\``;
+      target.value = s.text;
+      return null;
     case "input":
       if (!("value" in target)) return `\`${s.selector}\` has no \`value\``;
       target.value = s.text;
@@ -902,7 +908,7 @@ if (stepsPath !== undefined) {
       s.more = argument === undefined ? [] : argument.split(/\s+/);
     } else if (command === "click" || command === "dblclick" || command === "focus" || command === "blur" || command === "press") {
       if (argument !== undefined) usage(`${where}: \`${command}\` takes a selector only`);
-    } else if (command === "input" || command === "type") {
+    } else if (command === "input" || command === "type" || command === "set") {
       try {
         s.text = JSON.parse(argument ?? "");
       } catch {

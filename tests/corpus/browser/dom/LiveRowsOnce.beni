@@ -1,9 +1,10 @@
 -- A row that a render skips is not evaluated again, even when it is live
 -- (backend.md §15.4, as amended after the third review). Each row holds
--- a controlled input and a helper's markup, so a render restates it —
--- the input compared with the value the row keeps, the helper's slot
--- visited — without evaluating its values: `Debug.log` in the row and in
--- the helper prints only when that row's item changed. A row the pass
+-- a controlled input and a helper's markup; a rejected edit is put back
+-- by the reconcile that ends the render (§15.3, *Controlled inputs*,
+-- amended 2026-10-08), and the row is never evaluated for it:
+-- `Debug.log` in the row and in the helper prints only when that row's
+-- item changed. A row the pass
 -- patched is not restated after it, so an accepted edit prints its row
 -- once, and a mount prints each row once. Both lists: keyed and by
 -- position.

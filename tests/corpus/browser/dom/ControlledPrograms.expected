@@ -1,0 +1,65 @@
+-- load
+<body>
+  <main>
+    <button id="outer-tick">"0"</button>
+    <input id="outer-text" .value="outer">
+    <div id="inner">
+      <section>
+        <button id="inner-tick">"0"</button>
+        <input id="inner-text" .value="inner">
+      </section>
+    </div>
+  </main>
+</body>
+-- input #outer-text "edited"
+<body>
+  <main>
+    <button id="outer-tick">"0"</button>
+    <input id="outer-text" .value="edited">
+    <div id="inner">
+      <section>
+        <button id="inner-tick">"0"</button>
+        <input id="inner-text" .value="inner">
+      </section>
+    </div>
+  </main>
+</body>
+-- input #inner-text "edited"
+<body>
+  <main>
+    <button id="outer-tick">"0"</button>
+    <input id="outer-text" .value="edited">
+    <div id="inner">
+      <section>
+        <button id="inner-tick">"0"</button>
+        <input id="inner-text" .value="edited">
+      </section>
+    </div>
+  </main>
+</body>
+-- click #outer-tick
+<body>
+  <main>
+    <button id="outer-tick">"1"</button>
+    <input id="outer-text" .value="outer">
+    <div id="inner">
+      <section>
+        <button id="inner-tick">"0"</button>
+        <input id="inner-text" .value="edited">
+      </section>
+    </div>
+  </main>
+</body>
+-- click #inner-tick
+<body>
+  <main>
+    <button id="outer-tick">"1"</button>
+    <input id="outer-text" .value="outer">
+    <div id="inner">
+      <section>
+        <button id="inner-tick">"1"</button>
+        <input id="inner-text" .value="inner">
+      </section>
+    </div>
+  </main>
+</body>

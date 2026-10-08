@@ -78,6 +78,13 @@ pub const lowering: m.Lowering = .{
         // `(slot)`: what the slot shows patched again when it must be on
         // every render — a skipped helper's or component's markup.
         .{ .name = "restate", .arity = 1 },
+        // `(el, prop, value)`: a `stateful` attribute's write, its value
+        // kept on the element for the page's side of the promise.
+        .{ .name = "control", .arity = 3 },
+        // `(el)`: a controlled element a write of this render may have
+        // changed, put back when the render ends (§15.3, *Controlled
+        // inputs*).
+        .{ .name = "edited", .arity = 1 },
     },
     .module = module,
     .root = root,
@@ -478,19 +485,16 @@ const Gen = struct {
     }
 
     /// Whether a render that skips this markup must patch it again for its
-    /// own sake (backend.md §15.4, as amended after the third review): it
-    /// writes a `stateful` attribute, or — when `every`, for a grouped
-    /// root or a row, whose patch evaluates its values — one of its values
-    /// is evaluated on every render (`tree.everyRender`). Whether an
-    /// instance is live (`l`) is this, or any of its slots being live.
+    /// own sake (backend.md §15.4, as amended after the third review and
+    /// on 2026-10-08): when `every`, for a grouped root or a row, whose
+    /// patch evaluates its values, one of its values is evaluated on every
+    /// render (`tree.everyRender`). A `stateful` attribute no longer is a
+    /// reason: the controls a render may leave changed are marked and put
+    /// back (§15.3, *Controlled inputs*). Whether an instance is live (`l`)
+    /// is this, or any of its slots being live.
     fn selfLive(g: *Gen, b: *const Body, every: bool) m.Error!bool {
-        for (b.ops.items) |op| {
-            switch (op.what) {
-                .attribute => |x| if (g.stateful(x.item)) return true,
-                else => {},
-            }
-            if (every and try g.everyValue(b, op)) return true;
-        }
+        if (!every) return false;
+        for (b.ops.items) |op| if (try g.everyValue(b, op)) return true;
         return false;
     }
 
@@ -640,9 +644,10 @@ const Gen = struct {
             try g.opValues(b, op, &values);
             var reads: std.ArrayList(u32) = .empty;
             // A call that may have an effect is made on every render; any
-            // other slot is restated when its group is skipped.
+            // other slot is restated when its group is skipped. A
+            // `stateful` attribute is tested like any op (§15.3,
+            // *Controlled inputs*).
             var every = switch (op.what) {
-                .attribute => |x| g.stateful(x.item),
                 .helper => |x| x.impure,
                 .component => |x| x.impure,
                 else => false,
@@ -827,13 +832,16 @@ const Gen = struct {
             patch.made = &.{};
             patch.once = !gr.every and gr.reads.items.len == 0;
             try g.writePatch(b, &patch, mask, true);
+            // A control a write of the group's may have changed is marked
+            // (§15.3, *Controlled inputs*, the runtime's marks).
+            try g.writeMarks(b, &patch, then, gr.ops.items);
             // A skipped group's slots are restated: what they show may hold
-            // a controlled input or an every-render value at any depth
-            // (backend.md §15.4, as amended after the second review).
+            // an every-render value at any depth (backend.md §15.4, as
+            // amended after the second review).
             const otherwise = try js.block();
             var restates = false;
             for (gr.ops.items) |k| if (ops[k].slotted()) {
-                try js.expression(otherwise, try g.rt("restate", &.{try g.fieldOf(&patch, "c{d}", .{k})}));
+                try g.writeRestateSlot(b, &patch, otherwise, ops[k], try g.fieldOf(&patch, "c{d}", .{k}));
                 restates = true;
             };
             if (condition) |c| try js.@"if"(pblock, c, then, if (restates) otherwise else null) else try js.nested(pblock, then);
@@ -881,15 +889,18 @@ const Gen = struct {
         const t = try g.template(b, n.template);
         const v = try g.cx.fresh("v");
         const cx = try g.cx.fresh("cx");
-        // Its values are evaluated where the markup is, never by `p`: only
-        // a `stateful` write makes it live for its own sake.
+        // Its values are evaluated where the markup is, never by `p`, so
+        // it is never live for its own sake.
         const self = try g.selfLive(b, false);
         var mount: Fn = .{ .block = try js.block(), .v = v, .cx = cx, .self_live = self };
-        try js.@"return"(mount.block, try g.writeMount(b, &mount, t));
+        const instance = try g.writeMount(b, &mount, t);
+        try g.writeMarks(b, &mount, mount.block, null);
+        try js.@"return"(mount.block, instance);
         const i = try g.cx.fresh("i");
         const pv = try g.cx.fresh("v");
         var patch: Fn = .{ .block = try js.block(), .v = pv, .i = i };
         try g.writePatch(b, &patch, null, false);
+        try g.writeMarks(b, &patch, patch.block, null);
         try g.writeLive(b, &patch, self);
         var props: std.ArrayList(m.Property) = .empty;
         try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) });
@@ -964,7 +975,9 @@ const Gen = struct {
                 const cx = try g.cx.fresh("cx");
                 var mount: Fn = .{ .block = try js.block(), .v = null, .cx = cx, .through = through, .row = true, .self_live = self };
                 if (!through) _ = try g.cx.rowValues(mount.block, f.row, item, reads, &.{});
-                try js.@"return"(mount.block, try g.writeMount(&b, &mount, t));
+                const instance = try g.writeMount(&b, &mount, t);
+                if (!through) try g.writeMarks(&b, &mount, mount.block, null);
+                try js.@"return"(mount.block, instance);
                 try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ item, position, cx }, mount.block) });
 
                 const i = try g.cx.fresh("i");
@@ -981,6 +994,7 @@ const Gen = struct {
                     patch.block = main;
                     try js.@"if"(patch.block, try js.binary(.strict_ne, try g.ident(item2), try g.member(try g.ident(i), "x")), apart_block, null);
                 }
+                try g.writeMarks(&b, &patch, patch.block, null);
                 try g.writeLive(&b, &patch, self);
                 try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, item2, position2 }, patch.block) });
                 if (through) try props.append(g.a(), .{ .key = "w", .value = try js.literal(.true) });
@@ -1688,8 +1702,12 @@ const Gen = struct {
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
             .attribute => |x| {
+                if (g.stateful(x.item)) {
+                    try g.writeControl(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value));
+                    return;
+                }
                 try g.writeAttribute(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
-                if (!x.constant or (f.row and g.stateful(x.item))) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
+                if (!x.constant) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
             .toggle => |x| {
                 // Only a class that is on is written at mount: a toggle off
@@ -1902,25 +1920,77 @@ const Gen = struct {
         }
     }
 
-    /// A row's `r`: what a render that skips it patches again, from what
-    /// it keeps — each `stateful` attribute's last value compared with the
-    /// page's, and each slot restated.
+    /// A row's `r`: what a render that skips it patches again — each slot
+    /// restated. It evaluates nothing, and keeps no `stateful` value: the
+    /// controls a render may leave changed are marked and put back
+    /// (§15.3, *Controlled inputs*).
     fn writeRestate(g: *Gen, b: *const Body, f: *Fn) m.Error!void {
-        const js = g.jsb();
         for (b.ops.items, 0..) |op, i| {
-            const k: u32 = @intCast(i);
-            switch (op.what) {
-                .attribute => |x| if (g.stateful(x.item)) {
-                    const facts = g.tree.attributeFacts(x.item.attribute);
-                    const prop = g.tree.string(facts.property.?);
-                    const want = try g.propertyValue(x.item, try g.fieldOf(f, "a{d}", .{k}));
-                    const then = try js.block();
-                    try js.assign(then, try g.member(try g.node(f, x.t), prop), try g.propertyValue(x.item, try g.fieldOf(f, "a{d}", .{k})));
-                    try js.@"if"(f.block, try js.binary(.strict_ne, try g.member(try g.node(f, x.t), prop), want), then, null);
-                },
-                else => if (op.slotted()) try js.expression(f.block, try g.rt("restate", &.{try g.fieldOf(f, "c{d}", .{k})})),
-            }
+            if (op.slotted()) try g.writeRestateSlot(b, f, f.block, op, try g.fieldOf(f, "c{d}", .{@as(u32, @intCast(i))}));
         }
+    }
+
+    /// `Rt.restate(slot)` for a skipped op's slot; when the slot is inside
+    /// a controlled element of the template and what it shows is still
+    /// live after the restate — so the restate may have written under it —
+    /// the element is marked (§15.3, *Controlled inputs*, the runtime's
+    /// marks).
+    fn writeRestateSlot(g: *Gen, b: *const Body, f: *const Fn, into: m.Block, op: Op, s: m.Expr) m.Error!void {
+        const js = g.jsb();
+        try js.expression(into, try g.rt("restate", &.{s}));
+        const under = try g.controlsOver(b, op);
+        if (under.len == 0) return;
+        const then = try js.block();
+        for (under) |t| try js.expression(then, try g.rt("edited", &.{try g.node(f, t)}));
+        try js.@"if"(into, try js.binary(.logical_or, try g.member(s, "l"), try g.member(s, "w")), then, null);
+    }
+
+    /// `Rt.edited(el)` for each controlled element of the template that a
+    /// write of the given ops (every op, for null) may have changed: the
+    /// element itself, by any write but its own `stateful` one, and every
+    /// controlled element above the op's node.
+    fn writeMarks(g: *Gen, b: *const Body, f: *const Fn, into: m.Block, only: ?[]const u32) m.Error!void {
+        const js = g.jsb();
+        var seen: std.ArrayList(u32) = .empty;
+        const all = try g.a().alloc(u32, b.ops.items.len);
+        for (all, 0..) |*x, k| x.* = @intCast(k);
+        for (only orelse all) |k| for (try g.controlsOver(b, b.ops.items[k])) |t| {
+            if (std.mem.indexOfScalar(u32, seen.items, t) == null) try seen.append(g.a(), t);
+        };
+        for (seen.items) |t| try js.expression(into, try g.rt("edited", &.{try g.node(f, t)}));
+    }
+
+    /// The controlled elements of the template a write of `op` may change:
+    /// every one above the node it writes, and the element it writes
+    /// itself when the write is an attribute the HTML standard lets change
+    /// a control's value or checkedness (`resetting`). An event's handler,
+    /// a class or a style changes nothing a control shows.
+    fn controlsOver(g: *Gen, b: *const Body, op: Op) m.Error![]const u32 {
+        var out: std.ArrayList(u32) = .empty;
+        var at: ?u32 = switch (op.what) {
+            .attribute => |x| blk: {
+                if (!g.stateful(x.item) and resetting(g.tree.string(x.item.name)) and g.controlled(b, x.t)) try out.append(g.a(), x.t);
+                break :blk b.tnodes.items[x.t].parent;
+            },
+            .toggle => |x| b.tnodes.items[x.t].parent,
+            .style => |x| b.tnodes.items[x.t].parent,
+            .placeholder => |x| x.t,
+            .event => null,
+            else => if (op.place()) |p| p.parent else null,
+        };
+        while (at) |t| : (at = b.tnodes.items[t].parent) {
+            if (g.controlled(b, t)) try out.append(g.a(), t);
+        }
+        return out.items;
+    }
+
+    /// Whether a `stateful` attribute is written on template node `t`.
+    fn controlled(g: *Gen, b: *const Body, t: u32) bool {
+        for (b.ops.items) |op| switch (op.what) {
+            .attribute => |x| if (x.t == t and g.stateful(x.item)) return true,
+            else => {},
+        };
+        return false;
     }
 
     /// The patch function's statements, into `f.block`: a write only where
@@ -1936,16 +2006,10 @@ const Gen = struct {
                 .text => |x| try g.guarded(b, f, x.value, k, try g.fieldOf(f, "x{d}", .{k}), .data),
                 .attribute => |x| {
                     if (g.stateful(x.item)) {
-                        // Compared with the page's own value, so an edit the
-                        // model rejected is put back (§15.3).
-                        const facts = g.tree.attributeFacts(x.item.attribute);
-                        const prop = g.tree.string(facts.property.?);
-                        const want = try g.propertyValue(x.item, try g.read(b, f, x.value));
-                        const then = try js.block();
-                        try js.assign(then, try g.member(try g.node(f, x.t), prop), try g.propertyValue(x.item, try g.read(b, f, x.value)));
-                        // A row keeps it for `r` (`writeRestate`).
-                        if (f.row) try js.assign(f.block, try g.fieldOf(f, "a{d}", .{k}), try g.read(b, f, x.value));
-                        try js.@"if"(f.block, try js.binary(.strict_ne, try g.member(try g.node(f, x.t), prop), want), then, null);
+                        // Kept on the element and compared with the page's
+                        // own value, so an edit the model took is not
+                        // written back (§15.3, *Controlled inputs*).
+                        try g.writeControl(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value));
                         continue;
                     }
                     if (x.constant) {
@@ -2072,7 +2136,7 @@ const Gen = struct {
         return switch (op.what) {
             .placeholder => |x| try one(g, x.value),
             .text => |x| try one(g, x.value),
-            .attribute => |x| if (g.stateful(x.item)) null else try one(g, x.value),
+            .attribute => |x| try one(g, x.value),
             .toggle => |x| try one(g, x.value),
             .style => |x| try one(g, x.value),
             .event => |x| try one(g, x.handler),
@@ -2083,8 +2147,8 @@ const Gen = struct {
     }
 
     /// Per op of a row's body, whether everything it writes reads only the
-    /// item (`Tree.itemOnly`). A `stateful` property is compared with the
-    /// page on every patch (§15.3), so it is never one.
+    /// item (`Tree.itemOnly`). A `stateful` property may be one, as any
+    /// write may (§15.3, *Controlled inputs*, amended 2026-10-08).
     fn itemOnlyOps(g: *Gen, b: *const Body) m.Error![]bool {
         const out = try g.a().alloc(bool, b.ops.items.len);
         for (b.ops.items, out) |op, *o| {
@@ -2190,6 +2254,13 @@ const Gen = struct {
         return e;
     }
 
+    /// A `stateful` attribute's write: `control(el, "prop", v)`, which
+    /// keeps `v` on the element and writes it when the page's differs.
+    fn writeControl(g: *Gen, into: m.Block, el: m.Expr, it: m.Item, v: m.Expr) m.Error!void {
+        const prop = g.tree.string(g.tree.attributeFacts(it.attribute).property.?);
+        try g.jsb().expression(into, try g.rt("control", &.{ el, try g.str(prop), try g.propertyValue(it, v) }));
+    }
+
     fn propertyValue(g: *Gen, it: m.Item, v: m.Expr) !m.Expr {
         return switch (it.class) {
             .maybe_string => g.cx.maybe(v),
@@ -2275,6 +2346,15 @@ fn directValue(g: *Gen, b: *const Body, op: Op) ?m.Value.Index {
         .value => |v| v,
         else => null,
     };
+}
+
+/// The attributes of a form control whose write may change its value or
+/// checkedness by the HTML standard's own steps — a new `type` sanitises
+/// the value, `min`, `max` and `step` clamp a range's, `multiple` and
+/// `size` make a select choose again (backend.md §15.3, *Controlled
+/// inputs*, the runtime's marks).
+fn resetting(name: []const u8) bool {
+    return among(name, &.{ "type", "min", "max", "step", "multiple", "size" });
 }
 
 /// The representative of op `k`'s group.

@@ -647,6 +647,7 @@ mount program root =
         λ⊤ →
             Js.write waiting False
             childHtml s (Js.call program "view" [ Js.read model ])
+            renderEnded root
 
     Js.set
         root
@@ -677,6 +678,7 @@ mount program root =
                 Js.write model (Js.call program "update" [ msg, Js.read model ])
         )
     childHtml s (Js.call program "view" [ Js.read model ])
+    renderEnded root
 
 
 microtask : ⊤ → ⊤
@@ -1707,6 +1709,195 @@ hide s f =
 
     Js.set s "x" Js.null
     Js.set s "y" (Js.from True)
+
+
+-- ---- Controlled inputs (backend.md §15.3, *Controlled inputs*) ----------
+--
+-- A controlled element keeps the model's value of each `stateful`
+-- property it has as `$$s[prop]`. What may have changed one without the
+-- model is marked — by the user, in a set of its program's (`$$e` on the
+-- mount node), by a write of the runtime's, in `touched` — and put back
+-- when its program's render ends.
+
+-- `(el, prop, v)`: a `stateful` attribute's value, kept on the element and
+-- written when the page's is not it, so an edit the model took is not
+-- written back. The first call listens for what changes a control
+-- without the model.
+pub control : V, String, V → ⊤
+control el prop v =
+    if Js.isUndefined (Js.get el "$$s") then
+        Js.set el "$$s" (Js.construct (Js.global "Object") [])
+        if Js.read watching then ⊤ else watchEdits ⊤
+    Js.set (Js.get el "$$s") prop v
+    if Js.same (Js.get el prop) v then ⊤ else Js.set el prop v
+
+
+-- The controls a write of the render under way may have changed.
+touched : V
+touched = Js.array []
+
+
+-- `(el)`: a controlled element a write of this render's may have changed
+-- — another of its attributes, or something inside it.
+pub edited : V → ⊤
+edited el = Js.to (Js.call touched "push" [ el ])
+
+
+-- A render of the program mounted at `root` has ended. What runs then is
+-- set by the first `control` (`putBackMarked`), so a page with no
+-- controlled element ships none of it, as a page with no hosted program
+-- ships no after-render phase.
+afterRender : Js.Ref V
+afterRender = Js.ref Js.null
+
+
+renderEnded : V → ⊤
+renderEnded root =
+    if Js.isNullish (Js.read afterRender) then
+        ⊤
+    else
+        Js.to (Js.apply (Js.read afterRender) [ root ])
+
+
+-- What it and the user marked put back to the model, and the marks
+-- cleared.
+putBackMarked : V → ⊤
+putBackMarked root =
+    if Js.to (Js.get touched "length") ≠ 0 then
+        Js.each touched λel → putBack el
+        Js.set touched "length" (Js.from 0)
+    marked = Js.get root "$$e"
+    if Js.isUndefined marked then
+        ⊤
+    else if Js.to (Js.get marked "size") ≠ 0 then
+        Js.each marked λel → putBack el
+        Js.to (Js.call marked "clear" [])
+
+
+-- Each property a control keeps written back where the page's differs.
+putBack : V → ⊤
+putBack el =
+    s = Js.get el "$$s"
+    if Js.isUndefined s then
+        ⊤
+    else
+        Js.each (Js.call (Js.global "Object") "keys" [ s ]) λk →
+            key : String
+            key = Js.to k
+            v = Js.get s key
+            if Js.same (Js.get el key) v then ⊤ else Js.set el key v
+
+
+-- `el` and what changes with it with no event of its own, each handed to
+-- `f`: every radio named as it is — a superset of its group — and every
+-- option of a select.
+affected : V, (V → ⊤) → ⊤
+affected el f =
+    f el
+    tag : String
+    tag = Js.to (Js.get el "localName")
+    if tag == "select" then
+        Js.each (Js.get el "options") f
+    else if
+        tag == "input" && Js.to (Js.get el "type") == "radio" && Js.to (Js.get el "name") ≠ ""
+    then
+        Js.each (Js.call (Js.global "document") "getElementsByName" [ Js.get el "name" ]) f
+
+
+-- A control the user may have changed, marked for the program whose mount
+-- node is nearest above it.
+markEdit : V → ⊤
+markEdit el =
+    if Js.isUndefined (Js.get el "$$s") then
+        ⊤
+    else
+        root = mountAbove (Js.get el "parentNode")
+        if Js.isNull root then
+            ⊤
+        else if Js.isUndefined (Js.get root "$$e") then
+            Js.set root "$$e" (Js.construct (Js.global "Set") [ Js.array [ el ] ])
+        else
+            Js.to (Js.call (Js.get root "$$e") "add" [ el ])
+
+
+-- Controls changed after the dispatch of the event that marked them — a
+-- `reset` resets them then, a click whose default was prevented puts a
+-- box back then — put back in a task after it.
+heldBack : V
+heldBack = Js.array []
+
+
+holdEdit : V → ⊤
+holdEdit el =
+    if Js.to (Js.get heldBack "length") == 0 then
+        Js.to (Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → putBackHeld ⊤, Js.from 0 ])
+    Js.to (Js.call heldBack "push" [ el ])
+
+
+putBackHeld : ⊤ → ⊤
+putBackHeld ⊤ =
+    held_ = Js.call heldBack "splice" [ Js.from 0 ]
+    if Js.read dead then ⊤ else Js.each held_ λel → putBack el
+
+
+watching : Js.Ref Bool
+watching = Js.ref False
+
+
+-- The listeners, in the capture phase so that a control is marked before
+-- any handler's message renders, and whether or not it has a handler.
+watchEdits : ⊤ → ⊤
+watchEdits ⊤ =
+    Js.write watching True
+    Js.write afterRender (Js.from putBackMarked)
+    document = Js.global "document"
+    Js.each (Js.array [ Js.from "input", Js.from "change", Js.from "click", Js.from "reset" ]) λname →
+        Js.to (Js.call document "addEventListener" [ name, Js.from edits, Js.from True ])
+    Js.to
+        (Js.call (Js.global "window") "addEventListener"
+            [ Js.from "pageshow", Js.from λ_ → pageShown ⊤ ]
+        )
+
+
+-- What an event says may have changed without the model: its control,
+-- for `input` and `change`; a checkbox or radio, for `click`, which
+-- changed before the click was dispatched and may be put back after it;
+-- every control of the form, for `reset`, which resets them after it.
+edits : V → ⊤
+edits event =
+    target = Js.get event "target"
+    type_ : String
+    type_ = Js.to (Js.get event "type")
+    if type_ == "reset" then
+        Js.each (Js.get target "elements") λel →
+            affected el λx →
+                markEdit x
+                holdEdit x
+    else if type_ == "click" then
+        kind : String
+        kind = Js.to (Js.get target "type")
+        if
+            Js.to (Js.get target "localName") == "input" && (kind == "checkbox" || kind == "radio")
+        then
+            affected target λx →
+                markEdit x
+                holdEdit x
+    else
+        affected target λx → markEdit x
+
+
+-- The page is shown, after the browser restored what its form controls
+-- held on a reload or a history step: every control put back.
+pageShown : ⊤ → ⊤
+pageShown ⊤ =
+    if Js.read dead then
+        ⊤
+    else
+        Js.each
+            (Js.call (Js.global "document") "querySelectorAll"
+                [ Js.from "input,select,textarea,option" ]
+            )
+            λel → putBack el
 
 
 -- ---- Attributes (backend.md §15.3, §15.6) --------------------------------
