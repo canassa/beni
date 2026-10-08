@@ -70,6 +70,8 @@ writes is written at mount only, with no group and no comparison. If `init` give
 it is part of the template's HTML. Research 60: holes 10 000 goes from 61 905 B to 442 B.
 Research 61: 27% of holes overall, none in TodoMVC, 13 of 16 in the table app. Specified in
 `backend.md` §15.4. Needs the whole-program write summary that R4 also uses, so build that once.
+*2026-10-08:* that summary is specified in `docs/design/write-sets.md` (§1.2 "never written",
+§3.5 `literal`, §9.1).
 
 **R4. Per-message write sets and handlers** (research 58 §4 W1/W3, §9). For each `Msg`
 constructor, emit a handler that:
@@ -84,6 +86,11 @@ emitted once and called; one is inlined only when it has a single caller. The sp
   research 60 §5.4 found the table app needs.
 - **`Debug.log` order** follows `language.md` §11.11.
 - **Before the spec, run V1** (§4).
+- *2026-10-08, the owner's decision after V1 (research 62):* R4 is built **with nested-message
+  dispatch and same-variant analysis**, as a sound static analysis, and **gated** on a
+  read-only pass first. The analysis, the dump (`beni dump --stage=writes`), the gate (≥ ⅔ of
+  Conduit's leaf keys bounded) and what R4 may do with the result are
+  `docs/design/write-sets.md` (§4.4 keys, §8 the gate, §9.2).
 
 **R5. List edits read off `update`**, in research 61's order, the most common first:
 1. **Append and clear** (57 append writes in the corpus).
