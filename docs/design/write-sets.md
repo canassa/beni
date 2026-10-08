@@ -202,9 +202,11 @@ An **index symbol** κ in `[κ]` is one of:
 - **`?`**, unknown: the step then means `[*]`.
 
 **When two index symbols are equal** (*amended 2026-10-08, A4–A5*): two literals with the same
-value; two expressions that are the **same BIR instruction** (one occurrence, not two spellings
-of one text — a pure expression evaluated once has one value); two index parameters that are the
-same ιⱼ under the same facts. Nothing else is equal, and `[*]` and `[?]` are equal to nothing,
+value; two expressions that are the **same BIR instruction under the same substitution** (one
+occurrence, not two spellings of one text — a pure expression evaluated once has one value; an
+expression inside a summary is a term over the callee's roots, and two calls of that callee
+instantiate it to two different terms unless their arguments are the same, §4.2, N5); two
+index parameters that are the same ιⱼ under the same facts. Nothing else is equal, and `[*]` and `[?]` are equal to nothing,
 themselves included: a `Same(q)` whose path holds `[*]` or `[?]` names *some* element's
 identity and is never the identity of a placement path (§3.4). Equality is what `diff` asks;
 conflict asks the weaker *may coincide* of §2.1.
@@ -318,13 +320,22 @@ a ::= Same(p)                       the very value at path p (identity)
                                     anchoring, §3.6)
 ```
 
-**Two kinds of `Alt`** (*amended 2026-10-08, C2*). A **keyed** `Alt` is one a `case` makes on a
-scrutinee `Same(p)` with constructor patterns: its alternatives are distinguished by the fact
-`tag(p) = C`, one per constructor the arms name plus at most one default, so its width is
-bounded by the type's constructor count and it is exempt from the width cap A below. A message
-key (§4.4) or a `Con` argument at instantiation (§4.2) selects one of its alternatives
-outright. Every other `Alt` — an `if`, a `case` on a value that is not a path, a join of
-summaries in a fixpoint — is **plain** and counts against A.
+**Two kinds of `Alt`** (*amended 2026-10-08, C2; corrected the same day, N1*). A **keyed** `Alt`
+is one a `case` makes on a scrutinee `Same(p)` with constructor patterns: **one alternative per
+arm**, in arm order, each carrying its arm's **whole pattern** (two arms for one constructor —
+`Loaded (Just x) → …; Loaded Nothing → …` — are two alternatives) and the facts §3.2 gives the
+arm; its width is bounded by the number of arms, which the type bounds in practice, and it is
+exempt from the width cap A below. **Selection** by a message key (§4.4) or by an argument at
+instantiation (§4.2) **keeps every alternative that is not contradicted**: an alternative is
+dropped only when its arm's pattern, **matched fully** against what is known of the scrutinee —
+a `Con` and the `Con`s and `Lit`s inside it, a tag fact at the path — fails at a step whose
+shape is known; a pattern that meets a part nothing decides (`Fresh`, a variable) is kept, and
+so is every wildcard and variable arm. For `Loaded (Just _) → …; _ → …` applied to
+`Con(Loaded, [Lit Nothing])`, the first alternative fails at `Nothing` against `Just` and is
+dropped, the default is kept; applied to `Con(Loaded, [Fresh])`, both are kept and joined. This
+is §3.2's `Con`-scrutinee rule, stated once more for selection: an arm is skipped only when its
+own pattern cannot match. Every other `Alt` — an `if`, a `case` on a value that is not a path, a
+join of summaries in a fixpoint — is **plain** and counts against A.
 
 Elsewhere in this document an `Alt` is written without its scrutinee, `Alt([ (Γᵢ, aᵢ) ])`, when
 only the alternatives matter; the scrutinee is always carried.
@@ -389,9 +400,13 @@ tags are what make a same-variant rebuild recognisable.
   negation fact**, and the arms after them are analysed as if they were absent. The positive
   facts of an arm's own pattern, nested ones included, are always sound: the arm ran, so they
   hold.
-- If `a` is `Con(C, parts)`, the arm for `C` binds its variables to the parts; an arm whose
-  **own pattern** requires a tag other than `C` at the scrutinee's root is **not analysed** (it
-  cannot run); a wildcard or variable arm, and an arm for `C` with a refutable sub-pattern, is.
+- If `a` is `Con(C, parts)`, an arm is **not analysed** only when its **own pattern, matched
+  fully against the known shape** — `C` and the `Con`s and `Lit`s among `parts`, recursively —
+  fails at a step whose shape is known (it cannot run); every other arm is analysed, with its
+  variables bound to the parts it matches: a wildcard or variable arm, an arm for `C` whose
+  refutable sub-pattern meets a `Fresh` part, and, in arm order, every later arm not
+  contradicted (*amended 2026-10-08, N1*: `Loaded (Just _)` against `Con(Loaded, [Lit
+  Nothing])` fails at `Nothing` and is skipped; the `_` arm after it runs).
   If `a` is `Alt`, each alternative is matched separately under its own Γ and the results are
   joined. Otherwise (`Fresh`, `Lit`) the scrutinee is unknown, the arms are analysed with no
   refinement, and variables bound by a constructor pattern over it are `Fresh(D)` with the
@@ -526,11 +541,12 @@ of paths at or below `p` whose value may not be `M@…`:
 | `Same(q)`, otherwise | `{ value p }` | an old value, but another one, or *some* element's — it may happen to be `===` (`other → other` re-bound at the same path is `q = p`, not this row; `λ_ → t` with `t ↦ Same(ρ.todos[*])` mapped over `ρ.todos` is this row, *amended 2026-10-08, A5*) |
 | `Lit(c)` | `{ value p }` | a literal is never promised identical |
 | `Rec(b, fs)`, `b = p` | `{ node p } ∪ ⋃_f diff(fs[f], p.f, Γ)` | §11.12: unnamed fields keep identity |
-| `Rec(b, fs)`, `b ≠ p` or none | `{ value p }` | a record built from another one, or fresh |
+| `Rec(none, fs)`, `fs` naming **every** field of the record type at `p` | `{ node p } ∪ ⋃_f diff(fs[f], p.f, Γ)` | a new object whose every field is known (*amended 2026-10-08, N7*): `{ a = model.a, b = 1 }` at ρ is `node ρ; value ρ.b` |
+| `Rec(b, fs)`, `b ≠ p`, or `b` none with a field missing | `{ value p }` | a record built from another old one, or one the cut truncated |
 | `Con(C, parts)`, `Γ ⊢ tag(p) = C` | `{ node p } ∪ ⋃ᵢ diff(partᵢ, p.C#i, Γ)` | the tag is known preserved, so the parts are at their paths |
 | `Con(C, parts)`, otherwise | `{ value p }` | the tag may differ |
 | `Tup(parts)` | `{ node p } ∪ ⋃ᵢ diff(partᵢ, p.i, Γ)` | a tuple's components are at their indices |
-| `Lst(b, tag, κ, a')`, `b = p`, `tag = kept` | `{ node p ⟨kept⟩ } ∪ diff(a', p[κ], Γ)` | an element write; `κ` is `*` when unknown |
+| `Lst(b, tag, κ, a')`, `b = p`, `tag = kept` | `{ node p ⟨kept⟩ } ∪ diff(a', εⱼ, Γ)[εⱼ := p[κ]]` | an element write at the written position; `κ` is `*` when unknown. **The element result is diffed against the callback's own root εⱼ as the placement root** (*amended 2026-10-08, N2*): `diff` is run with εⱼ in place of the path, so `Same(εⱼ)` is identity and `Rec(εⱼ, fs)` is a `node` write with its fields' writes, and every write path `εⱼ.s` that comes out is rewritten to `p[κ].s`. Sound because `kept` puts the result for element i at position i. It holds for the εⱼ root only: a `Same(ρ.todos[*])` in `a'` is still §3.4's second row (`Fill` stays `value p[*]`), and `Toggle` is `node p[*]; value p[*].completed` |
 | `Lst(b, tag, …)`, `b = p`, other tag | `{ value p ⟨tag⟩ }` | the shape changed as the tag says |
 | `Lst(b, …)`, `b ≠ p` or none | `{ value p ⟨replaced⟩ }` | another list |
 | `Fresh(D)`, `Fun` | `{ value p }` | unknown |
@@ -682,8 +698,16 @@ built one, `Fresh` for the rest — and every tag fact `tag(πᵢ.s) = C` in an 
 `tag(q.s) = C` when `aᵢ` is `Same(q)`, by the fact's truth when `proj(aᵢ, s)` is a `Con` or
 `Lit` (an alternative whose fact is false is dropped), and by **no fact** otherwise, in which
 case the alternative stays and the `Con` it builds is a `value` write where it lands (§3.4).
-A **keyed** `Alt` on `πᵢ.s` (§3.1) whose argument is a `Con`, a `Lit` or a `Same(q)` with a
-fact at `q.s` in Γ is replaced by the one alternative that holds. Substitution **descends into
+A **keyed** `Alt` on `πᵢ.s` (§3.1) whose argument projects to a `Con`, a `Lit` or a `Same(q)`
+with a fact at `q.s` in Γ **keeps every alternative not contradicted** by matching each arm's
+whole pattern against that shape (§3.1's selection, *amended 2026-10-08, N1*) — one alternative
+when the shape decides every step of every pattern, several otherwise, joined as the `Alt` they
+remain. **Index symbols in a summary are terms over the callee's roots** (*amended 2026-10-08,
+N5*): `[πᵢ.k]`, `[πᵢ.k + 1]`, and substitution rewrites them like any other term, so that
+`[k]` in `List.set xs k v`'s caller becomes the caller's own argument expression, and §2.3's
+equality is decided on the **instantiated** terms — two symbols are equal when they are the
+same instruction under the same substitution, never because two calls of one helper share its
+text. Substitution **descends into
 every sub-term, a `Fun`'s closed-over environment included** (*amended 2026-10-08, B1*), and it
 touches only the callee's own roots (§4.1). **A base that is not a path** (*amended 2026-10-08,
 B2*): a `Rec(πᵢ.s, fs)` whose argument projects to `Same(q)` becomes `Rec(q.s, fs)`; to
@@ -746,8 +770,14 @@ _)`. The **key tree** of a program is built by analysing `update` with `msg ↦ 
 suffix `s` of constructor steps — directly (`case msg of`), through a tuple (`case ( msg, model )
 of`), or inside a function the message was passed to (`Home.update sub home` with `sub ↦
 Same(μ.GotHomeMsg#0)`, whose `case msg of` splits `μ.GotHomeMsg#0`). Each constructor pattern of
-such a `case` is one child key; the analysis of that arm continues with the matched variables
-bound to `Same(μ.s.C#j)`, which is what lets a deeper `case` split further. So the dispatch key
+such a `case` is one child key, **and the constructors of the type at `μ.s` that no arm names
+get one `default` child together** (*amended 2026-10-08, N3*), written `· _` in the dump, under
+which every arm naming a constructor at `μ.s` is skipped by the own-pattern rule and the
+wildcard and variable arms are analysed; a split whose arms name every constructor has no
+default child. The analysis of a named arm continues with the matched variables bound to
+`Same(μ.s.C#j)`, which is what lets a deeper `case` split further. So every constructor of the
+message type, at every depth the tree reaches, is under exactly one leaf — a named one or a
+default — which is what lets §9.2 treat an unknown tag as a defect. So the dispatch key
 is **the path of constructors `update` and its callees actually match on**, nothing more — a
 `Result` payload matched with `Ok`/`Err` splits (`CompletedFavorite · Ok`), a `String` payload
 does not, and an inner message handed whole to something `Fresh` stops the split there.
@@ -761,7 +791,9 @@ fallthrough can run for `GotHomeMsg` when the model is another page; what it wri
 (`{ model | warning = "stale message" }`: `value ρ.warning`) is in every key's set. A key is a **leaf** when no arm reachable under it splits μ
 further; the dispatch table (§9.2) has one entry per leaf. The tree holds at most **L = 256**
 leaves per program (*open choice O2*); past that, splitting stops and the remaining keys are
-their parent's, with the parent's write set the join of what it covers. Conduit's tree has 9
+their parent's, with the parent's write set the join of what it covers — every named child it
+would have had **and its default child** (N3), so that a parent leaf still covers every
+constructor below it. Conduit's tree has 9
 top-level keys, 65 page keys below seven of them, 4 feed keys below two of those, and a few
 `Ok`/`Err` splits: about 100 leaves.
 
@@ -831,7 +863,21 @@ By induction on `e`. The cases that carry the argument:
   neither yields a fact; they yield none, and an arm analysed with fewer facts has a larger
   `γ`. By the induction hypothesis the arm's value is in `γ(aᵢ)`, and `Γᵢ` holds, so it is in
   `γ(Alt)`. An arm skipped by §3.2's rule cannot have run: its own pattern needs a tag the
-  known tag of the scrutinee, or the key's fact at μ, contradicts, and that fact holds.
+  known tag of the scrutinee, or the key's fact at μ, contradicts, and that fact holds. **The
+  selection lemma** (*amended 2026-10-08, N1*), for a keyed `Alt` selected by an argument or a
+  key: the concrete scrutinee `v` is in `γ` of the known shape (a `Con` with its known parts, or
+  a value with the key's tags), and the arm that ran matched `v`; a dropped alternative's pattern
+  fails at a step whose shape is known, so it fails on every value in that `γ`, `v` included,
+  so it is not the arm that ran. The arm that ran is therefore among the kept alternatives, and
+  its value is in their join. Keeping alternatives the shape does not decide only enlarges the
+  join.
+- **The element rebasing** (*amended 2026-10-08, N2*), for `Lst(p, kept, κ, a')` from a `map`,
+  `indexedMap` or `update`: by the row's guarantee the result `L'` has `L`'s length and
+  `L'[i] = f(L[i])` for every written position i, with `f(L[i]) ∈ γ(a')` read with `εⱼ@ = L[i]`.
+  Placing `L'` at `p` changes, below `p[i]`, exactly the paths changed between `L[i]` and
+  `f(L[i])`, which `diff(a', εⱼ, Γ)` with `εⱼ@ = L[i]` covers by this same lemma, and the rewrite
+  `εⱼ := p[i]` puts the cover at the position. The rebasing is of the root εⱼ only: a
+  `Same(q)` with `q` a model path is unrelated to position i and keeps its own row.
 - **`let`**: the bound value is in `γ(⟦e₁⟧)` by induction, so the environment stays correct.
 - **Calls** (§4.2). Let `S = ⟦body⟧(∅, { xᵢ ↦ Same(πᵢ) })`. By the claim applied to the body with
   `πᵢ` bound to the actual argument `Vᵢ`, the result is in `γ(S)` read with `πᵢ@ = Vᵢ`. The
@@ -950,7 +996,20 @@ it lands — never a diagnostic. The caps, each an *open choice O2* with a recom
 *Amended 2026-10-08, C1–C2.* The width cap alone bounded nothing: a chain of `if`s nests `Alt`s
 without widening any, and `diff` over nested `Alt`s under growing Γ can visit a shared DAG
 exponentially often. **W caps the work itself**, counted per summary and per key, and S counts
-every term; both are the real bound, and the others are the shapes that reach it first. And
+every term; both are the real bound, and the others are the shapes that reach it first.
+
+**What W counts, and what it does not** (*amended 2026-10-08, N6*). W counts **node visits**
+of `⟦·⟧`, `inst` and `diff`, memo hits included. It does not count what a visit does beside
+visiting: a join of two write sets costs their sizes (each at most S paths, since a set comes
+from a term of at most S nodes, so a join is ≤ 2S per visit); interning a Γ costs its size
+(≤ the depth of nested `case`s, ≤ k levels of facts); hash-consing a node costs one hash of its
+children. So the pass's work is bounded by `(functions + L) · W · O(S)` elementary steps in the
+worst case — bounded, **not** fast against `fast-compiler.md` §2's budgets, which is why the
+caps are sized so that no program measured reaches them and why the dump marks the ones that
+do. **The fixture that reaches W** (§8.3) cannot do so under the test budget with W = 2²⁰ and
+CLAUDE.md rule 10 forbids raising the budget: it runs under a **hidden, test-only
+`--writes-work=<n>`** that lowers W for that run, as the release corpus runs under
+`--allow-debug`, and the golden shows the key marked `(cap W)` as `value ρ`. And
 width was the wrong thing to cap for a `case` on a message: a page `update` with seventeen
 constructors would have made every one of its keys `Fresh` — all its messages, not one — which
 is why a `case` on a path is a keyed `Alt`, as wide as its type and no wider, and selected whole
@@ -1147,8 +1206,20 @@ golden the read-only pass must pass before any consumer reads its result:*
    reads ρ.on` — never `literal` — when nothing writes it.
 6. **B3** — `Tea.element { …, update = withLogging update }` and a program record a helper
    returns. Golden: `program <unrecognised>`, `key * * value ρ`, every hole `dynamic`.
-7. **B2** — a helper `bump r = { r | n = r.n + 1 }` called on `{ model | m = 1 }` and on a
-   `Fresh` value. Golden: `node ρ; value ρ.m; value ρ.n` and `value ρ` respectively.
+7. **B2** — a helper `bump r = { r | n = r.n + 1 }` over a model `{ m, n }`, called on
+   `{ model | m = 1 }` and on a `Fresh` value. Golden (*aligned 2026-10-08, N7, with §4.2 and
+   §3.4's full-record row*): `node ρ; value ρ.m; value ρ.n` for both — the first composes the
+   two updates, the second is a record of two `Fresh` fields placed at ρ.
+12. **N1** — `f s m = case s of Loaded (Just _) → { m | a = 1 }; _ → { m | b = 2 }` called as
+    `f (Loaded Nothing) model`. Golden: `node ρ; value ρ.b` — not `value ρ.a`.
+13. **N3** — a message type of three constructors whose `update` names two and ends in `_ →
+    { model | seen = True }`. Golden: three leaves, `A`, `B` and `_`, the last `value ρ.seen`;
+    and under L, a parent whose set holds the default's write.
+14. **N2** — TodoMVC's `Toggle` as §10.5 prints it. Golden: `node ρ.todos[*]; value
+    ρ.todos[*].completed`, with the row's `title` hole `static` under that key alone; and `Fill`
+    (item 4) still `value ρ.todos[*]`.
+15. **N6** — the C1 chain under the hidden `--writes-work=4096`. Golden: the key `(cap W)` as
+    `value ρ`; the same program without the flag is item 9's golden.
 8. **B7** — a key that appends on one arm and writes `[*].f` on another. Golden: both
    `value ρ.xs ⟨append⟩` and `value ρ.xs[*].f` present.
 9. **C1** — thirty `let aₙ = if cₙ then aₙ₋₁ else aₙ₋₁'` lines in a helper `update` calls,
@@ -1169,9 +1240,17 @@ writes it at mount, with no group field, no test and no comparison. A static hol
 into the template's HTML, with no code at all, only when (*amended 2026-10-08, B5*) **its
 expression is exactly a model path** (`tree.pathOf`, `boundary.md` §9.4.6: a local read
 through field and tuple accesses and nothing more, anchored to `p`) **and `init` gives `p` a
-string literal** — the one value the template can hold verbatim with no evaluator between the
-source and the page. A hole with an empty read set whose expression is a string literal is
-baked likewise. Nothing else is: `String.fromInt (model.count + 1)`, a `Float`, a `Bool`, an
+plain string literal** — the one value the template can hold verbatim with no evaluator between
+the source and the page — **and the hole stands alone in its text position**. *Plain* (*amended
+2026-10-08, N4*): non-empty, with no character the HTML serialiser would escape or the parser
+would alter — none of `&`, `<`, `>`, `"`, `'`, no control character or NUL, and no leading
+newline — so that the bytes written are the bytes the page shows. *Alone*: the hole's neighbours
+in its parent are elements or nothing, never a text run or another hole, and its parent is not
+`pre` or `textarea`; a baked string makes exactly one text node where the hole's slot was, so
+the template's walk is unchanged. A hole with an empty read set whose expression is a plain
+string literal, standing alone, is baked likewise. Every other static hole — empty, escaped,
+adjacent, in a `pre` — is mounted from its expression, which `backend.md` §15.3 already
+specifies and which is correct for every string. Nothing else is: `String.fromInt (model.count + 1)`, a `Float`, a `Bool`, an
 `if` over literals (A6's `label`) would need a compile-time evaluator bit-exact with the
 runtime (`-0`, `NaN`, `Int` past 2⁵³, float printing), and this slice names none (*open choice
 O8*: widen to integer literals once the backend's printer is specified as the evaluator). A
@@ -1191,7 +1270,8 @@ dispatch cost of the key's tag reads added and nothing else. R4 must still, at r
 "possibly" (research 58 §3.3's lesson from Svelte; `compile-away.md` §2); dispatch on the
 message's tags along the key; handle a message whose key has no entry (a cap-coarsened key is
 its parent's; a tag the tree does not know is a defect, not a fallback, because the key tree
-covers the message type); and keep every guarantee `compile-away.md` §2 lists. What R4 may not
+covers the message type — every constructor at every split is under a named child or the
+split's default child, §4.4); and keep every guarantee `compile-away.md` §2 lists. What R4 may not
 do: skip the comparison for a `node` write (an object was rebuilt; a group reading it whole must
 run), or decide "unchanged" from anything but a comparison.
 
@@ -1405,7 +1485,10 @@ recommended values and re-run under others.
 - **O2 — the caps** A = 16 (plain `Alt`s only), D = 8, I = 4, S = 4 096 (every term),
   W = 2²⁰ (work per summary and per key), L = 256 (§6.1). Recommended as stated; each is a top,
   never an error, and the dump marks when one fires, so they can be moved on evidence. W is the
-  one that bounds the pass; the others name the shapes that reach it.
+  one that bounds the pass; the others name the shapes that reach it. W counts node visits only
+  (§6.1, N6): the bound it gives is `(functions + L) · W · O(S)` steps, which is a bound and
+  not a speed, and the fixture that reaches it runs under a hidden test-only `--writes-work`,
+  never a raised test budget.
 - **O8 — what R3 may bake** (§9.1): only a hole that is exactly a model path whose `init` value
   is a string literal. Recommended as stated; widening to integer literals needs the backend's
   number printing named as the evaluator, and is a later amendment.
