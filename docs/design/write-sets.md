@@ -1533,3 +1533,52 @@ recommended values and re-run under others.
   weighs breaking it sees both (§5.4, item 2). Recommended: one sentence there when R3 lands.
 
 *Amendments go below this line, dated, without renumbering.*
+
+### *Amended 2026-10-08 (the owner):* the recommendations are taken; the limits, in plain words
+
+The owner took every recommendation in §12 as written (O1–O8). This section says what each limit
+means for someone writing a beni program. **No limit can make a page wrong.** When a program
+reaches one, the analysis assumes more may have changed than really did. The page then does
+today's work for that message, checking the affected parts of the view and writing only what
+differs. It is slower, never stale.
+
+- **A model nested more than 8 levels deep** (O1). A change deeper than eight steps from the top
+  of the model (page → form → section → field → …) is treated as "everything below the eighth
+  step may have changed". The view parts reading anywhere under it re-check on that message.
+  Conduit's deepest paths are about nine steps, and only those last steps are affected.
+- **A very large or tangled `update`** (O2). The analysis does a bounded amount of work per
+  message. The things that reach the bound are:
+  - a single `if`/`case` chain with more than 16 alternatives that isn't a `case` on a type's
+    constructors (a `case` over constructors has no limit);
+  - helper calls nested more than 8 deep inside `update`;
+  - recursion over the model that doesn't settle in 4 rounds;
+  - an expression of more than 4 096 parts;
+  - a function or message whose analysis exceeds the work budget;
+  - more than 256 distinct messages under one split.
+
+  A message that reaches any of them is treated as "may change everything", which is today's
+  behaviour. `beni dump --stage=writes` says which limit fired, so a slow message can be found.
+- **What goes straight into the HTML template** (O8). Only a view value that is exactly a model
+  field whose `init` is a plain, non-empty string, with no `&`, `<`, `>` or quotes, shown under
+  an ordinary element (`div`, `span`, `p`, a heading, `li`, `a`, `button`, `label`, a table
+  cell, …). Everything else that never changes is written once when the page mounts, and is
+  never checked again. Numbers aren't baked yet.
+- **Dictionaries and sets** (O3). A change to one key of a `Dict` or `Set` counts as a change to
+  the whole collection. Every view part reading that dictionary re-checks on that message.
+- **The model in the message's page** (O5). A message meant for one page that arrives while
+  another is showing still marks the parts its `update` arm could have touched. That costs a
+  few comparisons and changes nothing on screen.
+- **Programs the pass doesn't recognise.** A program whose `update` is not a plain function
+  reachable from `main` gets no analysis: every message is "may change everything" and every
+  view value is dynamic. One example is an `update` wrapped by a helper the compiler can't see
+  through.
+- **`foreign` and `Js` calls** return values the analysis knows nothing about, so whatever they
+  produce counts as changed.
+
+The dump's name (O6) is `writes`; core functions' rules live in a table in the compiler (O4);
+`backend.md` §9 gets its sentence when R3 lands (O7).
+
+**Checking the "never wrong" claim.** Every consumer keeps the run-time comparison and the
+full-render fallback (§9). Beyond the fixtures in §8.3, `plans/compile-away.md` V3 sends
+adversarial agents to write beni pages that try to make a page show something the model doesn't
+hold.

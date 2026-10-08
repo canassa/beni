@@ -151,6 +151,18 @@ its constructors have bounded write sets, R4 and R5 shrink to R2, R3 and R5's ap
 traced, load recorded, one batch per comparison, pages rebuilt by the compiler under test
 (`scaling.mjs` stamps each page with the beni that built it).
 
+**V3. Adversarial agents try to break the page** (the owner, 2026-10-08). Once R3 and R4 consume
+the write-set analysis (`docs/design/write-sets.md`), and again after every later slice that
+specialises rendering, agents write beni programs designed to make a page show something its
+model does not hold: a stale value, a missing or extra element, a controlled input out of sync, a
+wrong row after a list edit. They also try to reach a run-time error or a page that stops. Each
+attempt runs as a `browser/` fixture, specialised against the general render (the differential
+check of §2), in happy-dom and in Chrome. A program that breaks the page is a defect: it gets a
+red-first fixture and a fix, and the spec rule it got past is corrected. The campaign reports
+what it tried, not only what it found. It covers write-set limits (§ *the limits, in plain words*
+of `write-sets.md`), list edits, nested pages, controlled inputs (R2), event plumbing (R1), and
+anything the specialiser assumes.
+
 ## 5. Order, and what can run in parallel
 
 1. **Now, in parallel:** R1 and R2 (both runtime, different code), and V1 (build Conduit).
@@ -158,6 +170,7 @@ traced, load recorded, one batch per comparison, pages rebuilt by the compiler u
 3. **Then, after V1's verdict:** R4, then R5 in the order above.
 4. **Alongside R4/R5:** M2's measurement.
 5. **Then:** M3, R6, B1.
+6. **After R3 and R4, and after every later rendering slice:** V3.
 
 At most three agents at a time; only one browser batch at a time (a lock file, as on 2026-10-08).
 
@@ -167,6 +180,9 @@ At most three agents at a time; only one browser batch at a time (a lock file, a
 - **R2 approved:** controlled inputs are kept by the edited-inputs set (`backend.md` §15.3 to
   be amended). The spec lists every way an input's value can change and how each is caught.
 - **R6 open:** the 2026-10-04 decision to keep `Rt.trimmed` is not binding; the measurements decide.
+- **The write-set analysis's open choices (O1–O8) taken as recommended**; its limits are written in
+  plain words at the end of `docs/design/write-sets.md`. **V3 added**: adversarial agents try to break
+  the page once the analysis has consumers.
 
 *Still the owner's:*
 - Anything M2 finds against `List`'s representation. Report it to the owner; do not act on it.
