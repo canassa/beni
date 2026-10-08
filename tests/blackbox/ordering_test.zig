@@ -147,6 +147,67 @@ test "an alias that drops its parameter names the same types reversed" {
     try s.finish(.{ .green = same, .signature = if (same) "" else "exit=0 types-differ", .detail = if (same) "" else try std.mem.replaceOwned(u8, a, try std.fmt.allocPrint(a, "written: {s} reversed: {s}", .{ blocks[0], blocks[1] }), "\n", " | ") });
 }
 
+// The write-set pass is a function of the program's text (`write-sets.md`
+// §7, CLAUDE.md rule 5): the same three-module program, `writes/Pages/`,
+// with every module's declarations reversed gives the same dump — only the
+// holes' positions move, so they are compared without them, as a sorted set
+// — and the dump is byte-identical at `--jobs=1` and `--jobs=8`.
+test "the write-set dump is the same with every module's declarations reversed, and at any --jobs" {
+    var s = try Scenario.init("the write-set dump, reversed and at --jobs=8");
+    defer s.deinit();
+    const a = s.arena();
+    const modules = [_][]const u8{ "Main", "Home", "Feed" };
+    for (modules) |m| {
+        const path = try std.fmt.allocPrint(a, "tests/corpus/writes/Pages/{s}.beni", .{m});
+        try s.w.write(try std.fmt.allocPrint(a, "written/{s}.beni", .{m}), try source(a, path, .written));
+        try s.w.write(try std.fmt.allocPrint(a, "reversed/{s}.beni", .{m}), try source(a, path, .reversed));
+    }
+    var dumps: [3][]const u8 = undefined;
+    const runs = [3][2][]const u8{ .{ "--jobs=1", "written" }, .{ "--jobs=8", "written" }, .{ "--jobs=1", "reversed" } };
+    for (runs, &dumps) |r, *slot| {
+        const run = try s.w.runWith(&.{ "dump", "--stage=writes", "--platform=browser-tea", r[0], r[1] }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        slot.* = run.stdout;
+    }
+    const jobs_same = std.mem.eql(u8, dumps[0], dumps[1]);
+    const order_same = std.mem.eql(u8, try withoutHolePositions(a, dumps[0]), try withoutHolePositions(a, dumps[2]));
+    const keys = std.mem.count(u8, dumps[0], "\n  key ");
+    try s.finish(.{
+        .green = jobs_same and order_same and keys == 5,
+        .signature = if (!jobs_same) "exit=0 jobs-differ" else if (!order_same) "exit=0 order-differs" else if (keys != 5) "exit=0 keys-missing" else "",
+        .detail = if (order_same) "" else try std.mem.replaceOwned(u8, a, try std.fmt.allocPrint(a, "written: {s} reversed: {s}", .{ dumps[0], dumps[2] }), "\n", " | "),
+    });
+}
+
+/// A writes dump with each `hole` line's position left out and the hole
+/// lines sorted: what a reordering of declarations may move.
+fn withoutHolePositions(a: std.mem.Allocator, dump: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var holes: std.ArrayList([]const u8) = .empty;
+    var it = std.mem.splitScalar(u8, dump, '\n');
+    while (it.next()) |line| {
+        if (std.mem.startsWith(u8, line, "  hole ")) {
+            const rest = std.mem.trimStart(u8, line["  hole ".len..], " ");
+            const colon = std.mem.indexOfScalar(u8, rest, ':') orelse rest.len;
+            const space = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
+            try holes.append(a, try std.fmt.allocPrint(a, "{s} {s}", .{ rest[0..colon], std.mem.trimStart(u8, rest[space..], " ") }));
+            continue;
+        }
+        try out.appendSlice(a, line);
+        try out.append(a, '\n');
+    }
+    std.mem.sort([]const u8, holes.items, {}, struct {
+        fn lessThan(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.lessThan(u8, x, y);
+        }
+    }.lessThan);
+    for (holes.items) |h| {
+        try out.appendSlice(a, h);
+        try out.append(a, '\n');
+    }
+    return out.items;
+}
+
 /// `path`'s program with its declarations reversed builds, and prints
 /// exactly `twin`.
 fn expectReversedPrints(comptime path: []const u8, twin: []const u8) !void {
