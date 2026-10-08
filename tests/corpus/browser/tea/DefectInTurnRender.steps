@@ -1,0 +1,5 @@
+press #inc
+throws press #bad
+# Stopped: nothing is applied or rendered.
+press #fix
+press #inc

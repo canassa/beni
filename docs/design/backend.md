@@ -8715,3 +8715,19 @@ programs, nested, under a user's click and a burst).
   document: −0.3 µs, +23 bytes. **This form: −0.9 µs, +46 bytes** (5 505 → 5 551; `mountAbove` is
   a function again, a loop the release optimiser does not write inside the walk's loop). Taken for
   most of the gathering form's time at a quarter of its bytes.
+- **A turn renders its first program itself.** During a turn (§15.11, *A render at the end of a
+  turn*) on a page with no after-render phase — no hosted program — the first program a message
+  goes to does not push its render onto the queue: the render waits in one slot, `pending`, and
+  the turn calls it when the handlers have run, inside the turn's own guard, with `flushing` set as
+  a flush sets it, so a throw stops the page and an event the browser dispatches during the render
+  is no turn. Any other program's render, and every render outside a turn, is queued and flushed
+  as before, after the slot's; a message sent during the slot's render (a `blur` the patch causes)
+  queues the next flush on a microtask as before, and the turn's end flushes only what was queued
+  before it rendered. Still one render per program per turn, in the order the programs were sent
+  messages, and a burst of untrusted events still renders once, on the microtask.
+
+  Measured against the step before (24 pages, one batch): −0.9 µs. The queue itself — a slot in
+  front of the array that the flush still emptied, research 59 §1.6's wording — measured −0.1 and
+  cost the empty page 31 bytes; what costs is the flush's call, its guard and the loop, which this
+  removes from a turn and does not touch elsewhere. Bytes: the table app 5 551 → 5 598 (+47), the
+  empty page unchanged (it has no turn).
