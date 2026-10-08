@@ -28,14 +28,16 @@ writes it in Elm (`examples/conduit/`). Every figure is **[measured]** by
    constructors the runtime dispatches is bounded** (§3.1).
 5. Followed into the pages and the feed, **61 of 65 (94%)** are bounded; the 4 that are not are
    `Feed`'s, whose opaque `Model Internals` wrapper makes every write a root write. 16 of the 61
-   are bounded only coarsely, at a status variant rebuilt around its own parts
+   are bounded only coarsely, at a status variant rebuilt around its own parts (listed in §5)
    (`Loaded ( Editing text, comments )`, `Editing slug problems (transform form)`). The wrappers
    also hide every list idiom the app has: the map-by-slug, the filter-by-id and the prepend all
    read as *exact* at the wrapper (§3.2, §5).
 6. **Verdict:** against the constructors R4 dispatches on, Conduit is **11% bounded, below two
    thirds, so by the plan's criterion R4 and R5 shrink** to R2, R3 and R5's append/clear —
-   unless R4's specification takes on nested-message dispatch and same-variant rebuilds, under
-   which Conduit's constructors are 94% bounded by the tool and all of them by hand (§6).
+   unless R4's specification takes on nested-message dispatch and same-variant rebuilds. The
+   tool implements neither: its 94% for the pages comes from analysing each page's `update` as
+   a program of its own, which already assumes nested dispatch, and what same-variant rebuilds
+   would add (every constructor bounded) is counted by hand, not measured (§6).
 7. Four capability gaps were stubbed visibly — the `Dict` schema for 422 bodies, Markdown,
    dates, and a storage-change subscription — each with a `-- GAP:` comment (§7).
 
@@ -123,7 +125,8 @@ multi-module application at all; each leaves research 61's three outputs (`--tab
    module was ever found. Every corpus program of research 61 declares its types without `pub`.
 2. **Names resolved where they are written.** A `Msg` or a `Model` was looked up by its last
    segment in whichever module came last; Conduit has eight of each. Now the annotation's module
-   is asked first, and an alias lookup stops at a custom type of the same name.
+   is asked first, an alias lookup stops at a custom type of the same name, and a name inside an
+   alias is resolved in the module the alias came from.
 3. **A program of several roots** (`a+b`), so a measuring module can sit beside the application.
 4. **A `Tea.Document` made by a helper.** Markup reached through a record field (`page.content`,
    `(Home.view model).content`) or a record built by a function (`Page.frame … { title, body }`)
@@ -131,6 +134,23 @@ multi-module application at all; each leaves research 61's three outputs (`--tab
    to its arguments where it is called.
 5. **A row written as a placeholder call** (`{viewPreview maybeCred _}`): the row was bound to the
    first parameter, not the placeholder's.
+
+Fixes 1, 2, 3 and 5 change no rule. **Fix 4 widens research 61 §2.3's hole walking**, in three
+ways:
+
+- a record holding markup is walked as a `Tea.Document` is, at any depth, every field of it
+  (not only at the view's top, and not only `title` and `body`), so a record that also held a
+  non-markup field would give that field a hole of its own;
+- a `case` or `if` on the way to a record field the view reads (`ArticlePage.view`'s `case
+  model.article of Loaded article → { title, content }`) gets a `switch` hole, though its
+  branches are records, not markup;
+- **every** helper's plain-name parameters are now bound as thunks of the call's arguments, not
+  as their values, so that markup passed to a helper is walked where the helper places it. The
+  reads a parameter contributes are the same either way.
+
+None of the three moves a research 61 result: `master`'s classifier and this one give
+byte-identical output on research 61's `--table` (84 lines), `--table --set=dom` (51),
+`--list` (75), the full listing (610) and the full `--set=dom` listing (389).
 
 Two levels are measured:
 
@@ -140,9 +160,15 @@ Two levels are measured:
   its `view` as a program of its own, plus `Feed` (which `Home` and `ProfilePage` delegate to),
   65 constructors. It only measures; it is checked and formatted, and not built.
 
-A write whose path is the model's root is reported separately (**root**): the classifier calls it
-*exact* — the root rule for `*` needs a record model — but it conflicts with every read path, so a
-handler would mark every group, which is today's path.
+**Root writes.** A write whose path is the model's root (`(model)`) and that is not `*` is a
+**root write**: the classifier calls it *exact* — research 61 §2.2's `*` row needs a record
+model — but it conflicts with every read path, so a handler would mark every group, which is
+today's path. Counting it as unbounded is a reading this report adds on top of research 61's
+rules, not one of them. The tool reports it with `--root` (which changes no output without it):
+`--root --table` gives one row per mounted program with a `root` column and the bounded and
+exact + indexed counts both ways, and `--root` alone marks root writers `(root)` in the listing.
+Every figure in §3 and §6, and Appendix A's `(root)` markers, come from those reports (§8). The
+holes a constructor reaches (§3, Appendix A) are the listing's `touched` count, in `--json`.
 
 ## 3. Results — constructors
 
@@ -155,7 +181,7 @@ handler would mark every group, which is today's path.
 | `GotHomeMsg`, `GotSettingsMsg`, `GotLoginMsg`, `GotRegisterMsg`, `GotProfileMsg`, `GotArticleMsg`, `GotEditorMsg` | exact | yes | 241 each |
 
 **Tool: 9 of 9 bounded (100%), exact + indexed 100%. Counting a root write as unbounded: 1 of 9
-(11%), exact + indexed 11%.**
+(11%), exact + indexed 11%** (`--root --table examples/conduit/src`).
 
 ### 3.2 The pages and the feed
 
@@ -171,8 +197,9 @@ handler would mark every group, which is today's path.
 | profile | 10 | 8 (2) | 2 | 0 | 0 | 0 | 0 | 23% |
 | **total** | **65** | **54 (8)** | **11** | **0** | **0** | **4** | **6** | **35%** |
 
-**Tool: 65 of 65 bounded (100%), exact + indexed 100% (92% with no list replaced). Counting root
-writes as unbounded: 61 of 65 (94%), exact + indexed 94%.** 27 of the 65 reach more than half of
+**Tool: 65 of 65 bounded (100%) and exact + indexed 100%; exact + indexed with no list replaced
+59 of 65 (91%). Counting root writes as unbounded: 61 of 65 (94%), exact + indexed 61 of 65
+(94%)** (`--root --table --skip=main` on the pages; the mean share is from `--json`). 27 of the 65 reach more than half of
 their page's holes, and 13 reach every dynamic hole of their page (editor's 9, feed's 4).
 
 Research 61's applications (TodoMVC, the table) were 47–53% exact + indexed with 47% structural.
@@ -215,8 +242,30 @@ The 9 static holes are of two kinds: what a page shows of the session (the comme
 | **a union of pages, rebuilt with its own variant** | `Main.update`: `( GotHomeMsg sub, Home home ) → updateWith Home GotHomeMsg (Home.update sub home)` | 7 | root | the `Home` variant kept, the page's writes below `Home#0` |
 | **a route change** | `ChangedUrl → changeRouteTo …` | 1 | root | genuinely a new page: every hole of the old page goes, the new page mounts; the frame's reads of the session are the only holes that survive |
 | **an opaque record wrapper** | `Feed`: `Model { model \| articles = List.map … }` | 4 | root of the feed | `Model` kept; `articles` mapped by slug (structural), `errors` appended or cleared (indexed) |
-| **a status variant rebuilt around its own parts** | `Editing slug errors (transform form)`, `Loaded (transform form)`, `Loaded ( Editing text, comments )`, `Loaded { article \| author = a }`, `Loaded newFeed` | 16 | exact at `status` / `comments` / `article` / `feed` | one field of the form; the comment draft; the author; the feed's own writes |
+| **a status variant rebuilt around its own parts** | `Editing slug errors (transform form)`, `Loaded (transform form)`, `Loaded ( Editing text, comments )`, `Loaded { article \| author = a }`, `Loaded newFeed` | 16 (listed below) | exact at `status` / `comments` / `article` / `feed` | one field of the form; the comment draft; the author; the feed's own writes |
 | **list edits under a wrapper** | `Loaded ( Editing "", [ comment, …comments ] )`, `Loaded ( text, List.filter comments … )` | 2 | exact at `comments` | prepend (indexed); filter by id (structural) |
+
+**The 16, by hand.** A constructor is counted when, on some branch, it rebuilds the variant it
+matched around that value's own parts; one whose write changes the variant (`Loading` →
+`LoadingSlowly`, `Saving` → `Editing`, `Loading` → `Loaded` from decoded data) or replaces
+the value from a payload (`Loaded newArticle`) is not, because a write of the whole path is
+then what a person would say too:
+
+- Editor (4): `EnteredTitle`, `EnteredDescription`, `EnteredBody`, `EnteredTags` — not
+  `ClickedSave` (`Editing` → `Saving`), `CompletedCreate` and `CompletedEdit` (`Ok`: nothing;
+  `Err`: `Saving` → `Editing`), `CompletedArticleLoad` (`Loading` → `Editing`),
+  `PassedSlowLoadThreshold`;
+- Settings (5): `EnteredEmail`, `EnteredUsername`, `EnteredPassword`, `EnteredBio`,
+  `EnteredAvatar` — not `CompletedFormLoad` (`Loading` → `Loaded`) or `PassedSlowLoadThreshold`;
+- Article (5): `EnteredCommentText`, `ClickedPostComment`, `CompletedPostComment`,
+  `CompletedDeleteComment` (`Loaded` kept around the comment list), `CompletedFollowChange`
+  (`Loaded { article | author = … }`) — not `CompletedFavoriteChange` (`Loaded newArticle`, a
+  payload), `CompletedLoadArticle`, `CompletedLoadComments`;
+- Home (1) and Profile (1): `GotFeedMsg` (`Loaded newFeed` under `Loaded feed`).
+
+Of the 16 `status` writes in Appendix A, then, 9 are rebuilds and 7 are variant changes; the
+list-edit row below overlaps this one (its 2 are `CompletedPostComment` and
+`CompletedDeleteComment`).
 
 Every `*`-in-effect is one of the first three rows: 8 root writes in Main and 4 in `Feed`. None is
 research 61's `*` patterns (restore from a decoder, recursion over the model, undo snapshot):
@@ -245,8 +294,8 @@ write set (exact + indexed + structural), R4 and R5 shrink to R2, R3 and R5's ap
 | level | bounded, tool | bounded, root counted as unbounded | exact + indexed, tool | exact + indexed, root as unbounded |
 |---|--:|--:|--:|--:|
 | Main (what R4 as specified dispatches on) | 9/9 (100%) | **1/9 (11%)** | 100% | **11%** |
-| pages + feed (dispatch followed into the page) | 65/65 (100%) | 61/65 (94%) | 100% | 94% |
-| pages + feed, with same-variant rebuilds **[by hand]** | 65/65 | 65/65 | 63/65 (97%) | 63/65 (97%) |
+| pages + feed, each page's `update` analysed as its own program (assumes nested dispatch) | 65/65 (100%) | 61/65 (94%) | 100% | 94% |
+| the same, **if** same-variant rebuilds were analysed — **[by hand]**, not measured | 65/65 | 65/65 | 63/65 (97%) | 63/65 (97%) |
 
 R4 as `compile-away.md` §3 specifies it emits one handler per `Msg` constructor. Conduit's `Msg`
 has 9, and 8 of them write the whole model: R4 would mark every group for 8 of 9 messages, which
@@ -254,9 +303,14 @@ is today's path with extra code. **By the criterion as stated, Conduit fails it 
 R5 shrink to R2, R3 and R5's append/clear.**
 
 The finding behind the number matters more than the number: the deciding factor is not list
-idioms, persistence or undo, but **nested pages**. If R4's specification includes same-variant
-rebuilds and dispatch on the message path (§5 items 1–2), Conduit is 94% bounded by the tool
-(97% by hand), its list edits become visible to R5, and the criterion is met with room. Whether
+idioms, persistence or undo, but **nested pages**. The two lower rows of the table are not a
+measurement of the analysis R4 would need. The tool implements neither part of it: the 94% row
+comes from `Pages.beni` mounting each page's `update` as a program of its own, which is nested
+dispatch assumed, not analysed — the Main row and that row differ only by that assumption — and
+the tool has no same-variant rule, so the last row is what such a rule would give, counted by
+hand from §5. What they say is that if R4's specification includes dispatch on the message path
+and same-variant rebuilds (§5 items 1–2), Conduit's constructors are no longer root writes, its
+list edits become visible to R5, and the criterion would be met with room. Whether
 that analysis is in scope is the decision this measurement hands to R4's spec; without it, R4 has
 nothing to work with on an elm-spa-shaped application.
 
@@ -303,6 +357,11 @@ BENI=zig-out/bin/beni node bench/writesets/classify.mjs examples/conduit/src+ben
 BENI=zig-out/bin/beni node bench/writesets/classify.mjs --table examples/conduit/src+bench/writesets/conduit/Pages.beni
 BENI=zig-out/bin/beni node bench/writesets/classify.mjs --json  examples/conduit/src+bench/writesets/conduit/Pages.beni
 
+# root writes: §3.1's 11%, §3.2's 94%, Appendix A's (root) markers
+BENI=zig-out/bin/beni node bench/writesets/classify.mjs --root --table examples/conduit/src
+BENI=zig-out/bin/beni node bench/writesets/classify.mjs --root --table --skip=main examples/conduit/src+bench/writesets/conduit/Pages.beni
+BENI=zig-out/bin/beni node bench/writesets/classify.mjs --root examples/conduit/src+bench/writesets/conduit/Pages.beni
+
 # the parked page scripts, development and release
 (cd examples/conduit && ../../zig-out/bin/beni build)
 node tests/browser/driver.mjs --dom=tests/browser/happy-dom.mjs examples/conduit/out/_main.mjs \
@@ -314,7 +373,7 @@ constructor's writes.
 
 ## Appendix A — every constructor
 
-`root` marks a write at the model's root (§2). *Sent by*: `event` from the view, `async` from a
+`(root)` marks a root writer, as `--root` prints it (§2). *Sent by*: `event` from the view, `async` from a
 command, `host` from `onUrlRequest`/`onUrlChange`, `unsent` built by an `init` the measuring module
 does not mount (`Editor.initEdit`).
 
@@ -439,7 +498,7 @@ does not mount (`Editor.initEdit`).
 
 ## Appendix B — hand checks
 
-24 constructors, every root write among them, checked against the source. The tool's paths agree
+29 constructors, every root write among them, checked against the source. The tool's paths agree
 with every one; where its path is coarser than a person's, the note says why.
 
 | program · constructor | by hand | tool | note |
@@ -466,5 +525,9 @@ with every one; where its path is coarser than a person's, the note says why.
 | Editor · `EnteredTitle` | `status.<variant>.title`, whichever variant holds the form | exact `status` | `updateForm`'s seven arms |
 | Editor · `ClickedSave` | `Editing` → `Saving` (or `Editing` with problems) | exact `status` | a variant change: `status` is right |
 | Settings · `EnteredBio` | `status.Loaded#0.bio` | exact `status` | |
+| Settings · `CompletedFormLoad` | `status`: `Loading`/`LoadingSlowly` → `Loaded form` (decoded), or → `Failed` | exact `status` | a variant change: `status` is right |
+| Settings · `CompletedSave` | `Ok`: `session` (the viewer saved; the page then navigates away); `Err`: `problems` replaced by the server's | exact `problems` (list replaced), `session` | agrees |
+| Editor · `CompletedEdit` | `Ok`: nothing (a navigation command); `Err`: `Saving slug form` → `Editing slug problems form` | exact `status` | the join of the two; `Ok` alone writes nothing |
+| Editor · `CompletedArticleLoad` | `status`: `Loading slug` → `Editing slug [] form` from the article, or → `LoadingFailed slug` | exact `status` | a variant change: `status` is right |
 | Login · `SubmittedForm` | `problems` cleared or replaced by `validate`'s list | indexed, list replaced | |
 | Profile · `CompletedFollowChange` | `author` replaced; or `errors` appended | indexed | |
