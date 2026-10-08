@@ -351,6 +351,13 @@ queued : Js.Ref V
 queued = Js.ref (Js.array [])
 
 
+-- The render of the first program a message goes to during a turn, on a
+-- page with no after-render phase: the turn's end calls it itself, with
+-- no queue to push, swap or loop and no flush (`backend.md` §15.11).
+pending : Js.Ref V
+pending = Js.ref Js.null
+
+
 scheduled : Js.Ref Bool
 scheduled = Js.ref False
 
@@ -383,16 +390,30 @@ turn : Bool, sync (⊤ → ⊤) → ⊤
 turn trusted f =
     if trusted && not (Js.read turning || Js.read flushing) then
         ok = Js.ref False
+        later = Js.ref False
         Js.write turning True
         Js.finally
             (λ⊤ →
                 f ⊤
+                -- The first program a message went to renders here, as the
+                -- flush would, under this guard; any other is the flush's.
+                Js.write later (Js.read scheduled)
+                render = Js.read pending
+
+                if Js.isNull render then
+                    ⊤
+                else
+                    Js.write pending Js.null
+                    Js.write turning False
+                    Js.write flushing True
+                    Js.to (Js.apply render [])
                 Js.write ok True
             )
             λ⊤ →
                 Js.write turning False
+                Js.write flushing False
                 if Js.read ok then ⊤ else stop ⊤
-        if Js.read scheduled then flush ⊤
+        if Js.read later then flush ⊤
     else
         f ⊤
 
@@ -662,19 +683,26 @@ mount program root =
                     ⊤
                 else
                     Js.write waiting True
-                    _ = Js.call (Js.read queued) "push" [ Js.from render ]
-                    if Js.read scheduled then
-                        ⊤
+
+                    if
+                        Js.read turning && Js.isNull (Js.read phase) && Js.isNull (Js.read pending)
+                    then
+                        Js.write pending (Js.from render)
                     else
-                        Js.write scheduled True
-                        -- A turn flushes when it ends.
-                        if Js.read turning then
+                        _ = Js.call (Js.read queued) "push" [ Js.from render ]
+
+                        if Js.read scheduled then
                             ⊤
                         else
-                            Js.to
-                                (Js.apply (Js.global "queueMicrotask")
-                                    [ Js.from λ⊤ → microtask ⊤ ]
-                                )
+                            Js.write scheduled True
+                            -- A turn flushes when it ends.
+                            if Js.read turning then
+                                ⊤
+                            else
+                                Js.to
+                                    (Js.apply (Js.global "queueMicrotask")
+                                        [ Js.from λ⊤ → microtask ⊤ ]
+                                    )
                 Js.write model (Js.call program "update" [ msg, Js.read model ])
         )
     childHtml s (Js.call program "view" [ Js.read model ])
