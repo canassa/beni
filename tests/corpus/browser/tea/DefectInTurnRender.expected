@@ -1,0 +1,37 @@
+-- load
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- press #inc
+(a later listener ran)
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- throws press #bad
+(a later listener ran)
+(threw: Error: TODO: view threw)
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="inc">"inc"</button>
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: view threw"</div>
+</body>
+-- press #fix
+(a later listener ran)
+(the DOM did not change)
+-- press #inc
+(a later listener ran)
+(the DOM did not change)

@@ -1,0 +1,29 @@
+-- load
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- press #inc
+(a later listener ran)
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- throws press #bad
+(a later listener ran)
+(threw: Error: TODO: view threw)
+(the DOM did not change)
+-- press #fix
+(a later listener ran)
+(the DOM did not change)
+-- press #inc
+(a later listener ran)
+(the DOM did not change)
