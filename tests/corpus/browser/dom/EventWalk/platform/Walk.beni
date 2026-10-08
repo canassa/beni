@@ -1,0 +1,36 @@
+--! A test vocabulary for the delegated listener's walk: `html`'s has no
+--! event whose declaration says `stopPropagation`, so this one names any
+--! element and any attribute, as the oracle's does, and declares `click`
+--! three ways — plain, stopping propagation and preventing the default.
+
+import Html exposing (Html)
+
+
+--| The event object a handler is handed.
+pub foreign type Event
+
+
+--| The text, as a text hole shows it.
+pub markup text : String → Html msg
+
+
+--| The same markup, its messages passed through the function.
+pub markup map : Html a, (a → b) → Html b
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub attribute "disabled" : Bool
+
+
+pub event "onClick" delegated : Event
+
+
+pub event "onClickStop" name "click" delegated stopPropagation : Event
+
+
+pub event "onClickPrevent" name "click" delegated preventDefault : Event

@@ -1,0 +1,6 @@
+# Three messages to two programs in one turn: each renders once.
+press #inc
+# `outer` alone.
+press #bump
+# Page script's clicks, three in one task: each program renders once.
+click #inc 3

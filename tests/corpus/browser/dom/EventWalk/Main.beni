@@ -1,0 +1,60 @@
+-- The delegated listener's walk (backend.md §15.3, *Events*; §15.11,
+-- *Mount*), as the DOM's own bubbling would run the handlers: from the
+-- target up, every node with a handler for the event, innermost first,
+-- each message applied before the next handler is called — the `Debug.log`
+-- in a handler and the one in `update` interleave — until a handler whose
+-- declaration says `stopPropagation`, which still runs and is the last.
+-- A disabled element's handler is passed over and the walk goes on past
+-- it; a node with no handler is passed over; a handler inside `Html.map`
+-- sends through the map and the walk goes on to the handlers outside it.
+-- A handler whose declaration says `preventDefault` prevents the click's
+-- default. Every step is run twice: as page script's click, which renders
+-- after its task, and as a user's (`press`), which renders before a later
+-- listener; and a burst of three page-script clicks renders once.
+import Browser
+import Html exposing (Html)
+import Walk exposing (Event)
+
+
+type Msg
+    = Hit String
+
+
+update : Msg, List String → List String
+update (Hit what) log =
+    _ = Debug.log "update" what
+    log ++ [ what ]
+
+
+-- A handler that takes the event, so that it can log when it is called.
+logged : String, Event → Msg
+logged what _ =
+    _ = Debug.log "handler" what
+    Hit what
+
+
+view : List String → Html Msg
+view log =
+    <main>
+        <div id="outer" onClick={logged "outer" _}>
+            <section id="mid" onClickStop={logged "mid, which stops" _}>
+                <p id="inner" onClick={logged "inner" _}>
+                    <button id="deep" onClick={logged "deep" _}>deep</button>
+                </p>
+            </section>
+            <p id="free" onClick={Hit "free"}><span id="bare">bare</span></p>
+            <fieldset id="off" disabled={True} onClick={Hit "disabled"}>
+                <span id="within">within</span>
+            </fieldset>
+            <button id="prevent" onClickPrevent={Hit "prevented"}>prevent</button>
+            {Html.map (<button id="mapped" onClick={"mapped"}>mapped</button>) λs →
+                Hit "${s}, through the map"
+            }
+        </div>
+        <p id="renders">{Debug.log "view" (List.length log)}</p>
+        <ol>{List.map log λline → <li>{line}</li>}</ol>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = [], update = update, view = view }

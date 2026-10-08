@@ -1,0 +1,83 @@
+-- Two programs on one page, under a user's click (backend.md §15.11,
+-- *Mount* and *A render at the end of a turn*): `outer` mounts at the
+-- body and renders `<section id="inner">`, where `inner` mounts. A user's
+-- click on `inner`'s button reaches `inner`, then bubbling on, the
+-- section's handler — `inner`'s mount node, so `outer`'s — and the
+-- frame's, both `outer`'s: three messages to two programs in one turn,
+-- and each program renders once, `inner` first because its message came
+-- first, before a later listener runs. A user's click in `outer` reaches
+-- `outer` alone. Page script's clicks, three in one task, render each
+-- program once after the task.
+import Browser
+import Html exposing (Html)
+
+
+type OuterMsg
+    = Bump
+    | Tapped
+    | Framed
+
+
+type alias Outer =
+    bumps : Int
+    taps : Int
+    frames : Int
+
+
+updateOuter : OuterMsg, Outer → Outer
+updateOuter msg model =
+    case Debug.log "outer got" msg of
+        Bump →
+            { model | bumps = model.bumps + 1 }
+
+        Tapped →
+            { model | taps = model.taps + 1 }
+
+        Framed →
+            { model | frames = model.frames + 1 }
+
+
+viewOuter : Outer → Html OuterMsg
+viewOuter model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <p>
+            {Debug.log
+                "outer renders"
+                "bumps ${String.fromInt model.bumps}, taps ${String.fromInt model.taps}, frames ${String.fromInt model.frames}"
+            }
+        </p>
+        <div id="frame" onClick={Framed}>
+            <section id="inner" onClick={Tapped} />
+        </div>
+    </main>
+
+
+type InnerMsg
+    = Inc
+
+
+updateInner : InnerMsg, Int → Int
+updateInner msg n =
+    case msg of
+        Inc →
+            Debug.log "inner counted" (n + 1)
+
+
+viewInner : Int → Html InnerMsg
+viewInner n =
+    <div>
+        <button id="inc" onClick={Inc}>inc</button>
+        <p>{Debug.log "inner renders" n}</p>
+    </div>
+
+
+main : Browser.Program
+main =
+    Browser.programs
+        [ Browser.program
+            { init = { bumps = 0, taps = 0, frames = 0 }, update = updateOuter, view = viewOuter }
+        , Browser.mountAt
+            (Browser.program { init = 0, update = updateInner, view = viewInner })
+            "inner"
+        ]
