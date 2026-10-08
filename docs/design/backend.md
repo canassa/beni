@@ -7625,6 +7625,52 @@ before; `open` on `<details>` and `<dialog>` is a plain attribute, compared with
 written, not with the page. A vocabulary that declares `open` `stateful` must add `toggle` (which
 does not bubble, so only the capture listener sees it) to the names above.
 
+**Where the edited set stops**, each case with what it does (amended after review, 2026-10-08):
+
+- **Events the runtime has nothing to do with.** The four names are listened for on the whole
+  document, so any script's `reset`, `click` or `input` at any element or at the document reaches
+  the listener (one at the window never does). Each branch reads only
+  properties that are `undefined` where missing — a `type`, a `localName`, `$$s` — and a `reset`
+  iterates `elements` only when its target is a `<form>`: a `reset` dispatched at a `div` or the
+  document once threw there, and the throw stopped the page. An `input` from a `contenteditable`
+  element or a custom element marks nothing. Pinned by `browser/dom/ControlledStrayEvents`, which
+  fails without the guard.
+- **An edit in one program whose only handler is another's.** A control is marked for the program
+  whose mount node is nearest above it. A control in an inner program B whose `input` handler sits
+  on an element of the outer program A sends its message to A, and only A renders: B's control
+  keeps the rejected edit until B renders. The design that visited every control had the same
+  limit, since a render visited only its own program's controls. Putting back every program's marks
+  at the end of a turn would close it, at the cost that a program's controls are written by
+  another program's render; `browser/dom/ControlledPrograms` pins that a render reconciles only its
+  own program, and this stays a stated limit.
+- **Shadow DOM.** Inside a shadow root `event.target` is retargeted to the host, and `mountAbove`
+  stops at the shadow root. No beni program renders into a shadow root — a program mounts at
+  `document.body` or at `getElementById` of the document, and the `dom` lowering makes none — so no
+  controlled element can be inside one, and `composedPath()[0]` would find only elements with no
+  `$$s`. Should a platform ever mount into a shadow root, the listener must read
+  `composedPath()[0]` and the mount walk must cross the host.
+- **Composition (IME).** Each composition update is an `input` (`insertCompositionText`), so a
+  composing control is marked, and a render that lands mid-composition — a rejected update, or an
+  unrelated message — puts the model's value back while the IME holds a composition, which commits
+  or loses it as that IME does. The previous design did the same on every render. A composition the
+  user cancels ends with an `input` in Chrome and Firefox (the text removed), which marks it as any
+  edit; a browser that reverts a cancelled composition with no `input` leaves the composed text
+  until the control is next marked — the one case in this table no event reveals that is not
+  covered, recorded here rather than guessed at.
+- **`<select multiple>`.** Its selection is controlled through each option's `selected`, which
+  marking the select marks. `value` may also be bound on it, and then means what the DOM property
+  means: writing selects the first option with that value and deselects the rest, reading gives the
+  first selected option's value. So a second selection the user adds leaves `value` unchanged and is
+  not put back: `value` on a multiple select controls the first selection only.
+- **Writes to `name` and `form`.** Moving a checked radio into a group, by its `name` or its form
+  owner, unchecks the group's other checked radio. That changes a control only when the model has
+  two checked radios in one group, a model no page can show (above), so neither attribute is among
+  the ones that mark.
+- **What the marks hold.** A program's set (`$$e`) holds the controls marked for it, removed
+  elements included, until that program's next render clears it; a program that never renders
+  again keeps them. The runtime's list (`touched`) is cleared by the end of every render, and a
+  render that throws stops the page.
+
 **The runtime's marks.** A write of the runtime's can change a control's property too: a `select`
 whose options a `For` renders had its `value` written at mount before any option existed, and
 showed its first option until the next render; an option's `value` changed, a `type` set after
