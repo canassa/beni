@@ -7494,7 +7494,7 @@ written in source order, attributes and events interleaved (`language.md` §11.5
 | attribute, `bool` | present as `""` or absent | guarded |
 | attribute, `maybe_string` | absent on `Nothing`, through `cx.maybe` | guarded |
 | attribute, fact `property` | `el[prop] = v` | guarded |
-| attribute, fact `stateful` | `el[prop] = v` | **compared with the live value**, `if (el[prop] !== v) el[prop] = v;`, so a rejected edit does not stay on screen (research 36 §4.8); no instance field |
+| attribute, fact `stateful` | `el[prop] = v` | **compared with the live value**, `if (el[prop] !== v) el[prop] = v;`, so a rejected edit does not stay on screen (research 36 §4.8); no instance field. *Amended 2026-10-08:* in both, `control(el, "prop", v)`, which also keeps `v` on the element for the page's side of the promise, and in `p` only when the op's group runs (*Controlled inputs*, below) |
 | attribute, fact `url`; an escape the markup section records `url` (*amended 2026-09-29*, `language.md` §11.5) | through the runtime's `safeUrl`; a literal checked by the lowering instead, by the same pattern, and baked into the template — `""` for a script URL — unless its answer turns on a character outside ASCII (*amended 2026-10-02*, research 51 §5) | guarded |
 | attribute, fact `raw` | through the runtime's `rawHtml` | guarded |
 | attribute, `svg` namespace prefix (`xlink:href`) | `setAttributeNS` through the runtime | guarded |
@@ -7565,6 +7565,91 @@ runtime, `boundary.md` §9.2, §15.11) and the `html` primitives `text` (1) and 
 | `safeUrl` | 1 | a URL, or `""` for a script URL — Elm's rule, which keeps a `view` from injecting script (research 24 §6.3) |
 | `rawHtml` | 2 | `(el, markup)`: the `raw` escape hatch |
 | `listen` | 3 | `(el, name, flags)`: the stable stub of a non-delegated event |
+| `control` | 3 | `(el, prop, v)`: a `stateful` attribute's model value, kept on the element and written when the page's differs (*Controlled inputs*, amended 2026-10-08) |
+| `edited` | 1 | `(el)`: a controlled element a write of this render may have changed, reconciled when the render ends (*Controlled inputs*) |
+
+**Controlled inputs** (*amended 2026-10-08*: the owner's decision on research 58 §5(c), approved
+for `plans/compile-away.md` slice R2; research 60 §3.3 built it by hand). **The promise is
+unchanged**: after every render of a program, every element that has a `stateful` attribute — a
+**controlled** element; in `html`'s vocabulary `value` on `input`, `select` and `textarea`,
+`checked` on `input`, `selected` on `option` — shows in that property the value the model gave it,
+wherever the element stands, though the user changed it and `update` rejected the change. What
+changes is how it is kept. §15.4 (as amended after the third review) kept it by visiting every
+controlled element on every render, through the live instances above it: 2.4 ms a message for
+10 000 rows each holding an input (research 56 §9.9), all of it spent finding nothing to do. It
+is now kept in two halves, each proportional to what changed.
+
+- **The model's side.** A `stateful` op is an op of its group like any other (§15.4): tested on
+  the paths its value reads, evaluated only when one changed, written by `control(el, prop, v)`,
+  which keeps `v` on the element (`el.$$s[prop]`, an object the first call makes) and writes the
+  property only when the page's is not `===` it — compared with the page, so an accepted edit is
+  not written back and the caret stays where the user left it. A `stateful` attribute no longer
+  makes an instance live: a row keeps no `a<k>` for it, its `r` writes none, and it may be written
+  under a row's item test (§15.5, *What reads only the item*).
+- **The page's side.** An element whose property may have changed without the model is
+  **marked**, and when a render ends, every element marked for that program is **reconciled** —
+  each property it keeps compared with the page's and written when not `===` — and the marks are
+  cleared. A user's marks belong to the program whose mount node is nearest above the element
+  (one set per mount, `$$e` on the mount node), so a render reconciles only its own program's
+  controls; the runtime's own marks (below) belong to the render that made them. Reconciling
+  evaluates nothing.
+
+**Every way a control's property can change without the model**, what reveals it, and what the
+runtime does. The runtime listens, in the capture phase on the document, for `input`, `change`,
+`click` and `reset`, and on the window for `pageshow` — added once, by the first `control` call,
+so a page with no controlled element adds none; capture runs before every delegated listener
+(they are bubble listeners on the document), so a control is marked before any handler's message
+renders, and a control with no handler is marked as well.
+
+| Source | What reveals it | What the runtime does |
+|---|---|---|
+| Typing; IME composition (every composition update); paste; cut; drop into a text control or drag text out of it; undo and redo; spellcheck replacement; a `datalist` or history suggestion taken | `input` on the control (`inputType` `insertText`, `insertCompositionText`, `insertFromPaste`, `deleteByCut`, `insertFromDrop`, `deleteByDrag`, `historyUndo`, `historyRedo`, `insertReplacementText`, …) | marks it |
+| Autofill and autocomplete by the browser or a password manager | `input` and `change` on each control filled | marks each |
+| A number's stepper or arrow keys, a range dragged, a date, time or colour picker, a file chosen | `input`, then `change` | marks it |
+| A `<select>`'s choice, by mouse or keyboard (arrows, type-ahead) | `input` and `change` on the select; its options' `selected` change with **no event of their own** | marks the select and each of its options |
+| A checkbox or radio clicked, through its `<label>`, or by the keyboard (space; a radio group's arrows) | `click` on the control. Its checkedness changes **before** the `click` is dispatched (the legacy pre-activation steps), and `input` and `change` follow the dispatch — so a trusted click's render, at the end of its turn (§15.11), comes before them | marks it on `click`, and again on `input` and `change` |
+| A radio unchecked because another radio of its group was checked | **no event on it** — every event is the checked radio's | marking a radio marks every radio named as it is (`document.getElementsByName`), a superset of its group |
+| A checkbox or radio click whose default a listener prevented | **none**: the checkedness is put back after the dispatch, after every listener and after the render a trusted click's turn made | the `click` also **holds** it (and a radio's namesakes): held controls are reconciled in a task after the dispatch (`setTimeout(…, 0)`), whether or not a render comes |
+| A form `reset` (a reset button, by mouse or keyboard) | `reset` on the form, dispatched **before** the controls are reset (happy-dom resets them first); nothing on the controls | marks and holds every element of `form.elements` and their options |
+| The browser restoring form state on reload or history navigation | **none**: restoration happens while the page loads, before `pageshow` | on `pageshow`, every controlled element of the page is reconciled (one `querySelectorAll`); a page restored from the back/forward cache comes back with its memory, model and page agreeing, and the same pass writes nothing |
+| The runtime's own write on the control or inside it: another of its attributes (`type`, `min`, `max`, `step`, `multiple`, `size`), an option's value or text, options a slot adds or removes, a controlled option's `selected` inside a controlled select | none | the write marks it (*the runtime's marks*, below) |
+| A page script, a browser extension, or the test driver's `set` step, writing the property with no event | **none** | **not seen.** In beni only platform code can reach the DOM — `foreign` and `Js` are core's and the platforms' (rule 6) — and no platform writes a `stateful` property except through `control`. Code outside beni is outside the promise: the previous design corrected such a write on the program's next render, this one does not. Form-filling extensions dispatch `input`, as every framework needs them to, and that is caught. |
+
+Two kinds of change are **not part of the promise**, and were not before. *A model no page can
+show* — two radios of one group both checked, a `select` value none of its options has, a range
+value outside `min`…`max`, text in a number input: the browser shows its own sanitised value, and
+`control` and a reconcile write the model's again each time they run, as the previous design did on
+every render. *A property the vocabulary does not declare `stateful`*: `contenteditable` binds
+no property — its content is markup the runtime owns, and an edit to it is outside the promise as
+before; `open` on `<details>` and `<dialog>` is a plain attribute, compared with the value last
+written, not with the page. A vocabulary that declares `open` `stateful` must add `toggle` (which
+does not bubble, so only the capture listener sees it) to the names above.
+
+**The runtime's marks.** A write of the runtime's can change a control's property too: a `select`
+whose options a `For` renders had its `value` written at mount before any option existed, and
+showed its first option until the next render; an option's `value` changed, a `type` set after
+`value`, likewise. So an op of the same template that writes the controlled element itself — an
+attribute the HTML standard lets change a control's value or checkedness: `type` (the value is
+sanitised again), `min`, `max` and `step` (a range's is clamped), `multiple` and `size` (a select
+chooses again); not an `id`, a class, a style or a handler — or anything inside it — an attribute,
+a text, a slot placed inside it, or a `stateful` attribute of a controlled descendant — marks the
+element when it is written, by `edited(el)`: in a grouped root, at the end of the group's test when the group runs,
+and, after a skipped group's restate of such a slot, when the slot is still live (`l` or `w`); in a
+kind that is not grouped and in a row, at the end of `m` and `p`, and in a row's `r` as a skipped
+group does. These marks are a list of the runtime's, reconciled when the render that made them
+ends — a render runs to its end without yielding, so they are its program's. Markup another kind
+places inside a controlled element is reached through the slot's op.
+
+**Cost.** Per render, a reconcile of the marked controls and nothing else; per event of the four
+names, one capture listener, which for an `input`, `change` or a checkable's `click` walks from
+the control to its mount node; a `reset` or a checkable's `click` a timer. An unrelated message
+visits no control: the 10 000-row page's message costs what the same rows without the input cost.
+Pinned by `browser/dom/ControlledEdits` (typed and rejected, typed and accepted, a control with no
+handler, a checkbox whose click renders before its `input`, a radio group whose choice `update`
+rejects, a select), `ControlledReset`, `ControlledRemoved` (a row removed and a `Show` hidden while
+marked), `ControlledPrograms` (two programs, each reconciling only its own controls),
+`ControlledOptions` (a select whose options a `For` renders) and `ControlledUnseen` (an unrelated
+message visits no control: a value set with no event stays; `pageshow` reconciles it).
 
 ### 15.4 Blocks: where markup that escapes goes
 
@@ -7736,6 +7821,17 @@ A row's root is not a grouped root: §15.5's rows keep their inputs and item tes
 `For` row, a `Show` body or another root's value is grouped as any root: its block is made where it
 is evaluated, inside the enclosing `p` or row, from the inputs bound there.
 
+*Amended 2026-10-08: a `stateful` attribute is neither untested nor live* (§15.3, *Controlled
+inputs*). The rules above that name it are withdrawn for it: it is tested on its paths like any
+op, not written in a group with no test (*Groups*), and writing one does not make an instance
+live (*A skipped group restates its slots*) — an instance is live when it has a value its patch
+evaluates on every render or holds a slot whose content is live. A row compiled in place keeps no
+value for it and its `r` only restates its slots; a kind, a row function or a list none of whose
+markup has such a value or slot keeps no liveness at all, so a list of rows that each hold a
+controlled input and a helper's markup is not walked by a render that changes nothing they read.
+What the visits did is the reconcile's: the controls an edit or a write marked, at the end of the
+render.
+
 ### 15.5 `For` and `Show` in the `dom` lowering
 
 `For` is Solid 2's list (research 27 §7.1), with **dom-expressions' `reconcileArrays` without
@@ -7766,7 +7862,9 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   the row with, which it sets after `p` returns. That is P2's split by hand (research 29 §7.1). A
   write goes under the test only when every value it reads is item-only; a `stateful` property,
   which is compared with the page on every patch, a component, a `For` and a `Show` never do.
-  Pinned by `emit/dom/DomRowItemOnly` and `browser/dom/RowItemOnly`.
+  Pinned by `emit/dom/DomRowItemOnly` and `browser/dom/RowItemOnly`. *Amended 2026-10-08*
+  (§15.3, *Controlled inputs*): a `stateful` property is no longer compared with the page on
+  every patch, so it goes under the test as any write does.
 - **A selector** (*amended 2026-09-30*, research 39 §12; `language.md` §11.9): select lost to Solid 1
   by 1.23–1.32× because Solid's `createSelector` notifies the two rows whose selection changed and
   beni ran the `p` of all thousand. The compiler now recognises the row input `language.md` §11.9

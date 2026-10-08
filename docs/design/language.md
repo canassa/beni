@@ -2005,6 +2005,17 @@ one at the top of the view is, and a view that reads nothing of its model still 
 value holding such markup is **not** evaluated again for its sake: what it showed last is patched
 in place, so its group's test still skips it.
 
+*Amended 2026-10-08 — controlled inputs by an edited set* (`backend.md` §15.3, *Controlled
+inputs*; `plans/compile-away.md`, R2). **A `stateful` attribute's value is no longer evaluated on
+every render**: it is grouped like any other value, evaluated at the first render and later only
+when a path it reads changed. The promise it served is kept and unchanged — after every render a
+controlled element shows the model's value, though the user changed it and `update` rejected the
+change — but the page, not the view, is what is reconciled: the runtime marks the controls a
+user's edit or one of its own writes may have changed, and puts each back to the value it last
+wrote when the render ends. Markup that holds a controlled element is therefore no longer patched
+again for its sake on a render that skips it; only an every-render value still makes it so.
+`Debug.log` in a `stateful` attribute's value prints when that value is evaluated, like any other.
+
 **A `let` read only by markup is a value of that markup** (the owner's decision of 2026-10-04, the
 rule the amendment above names). A constant `let` of the function enclosing a markup root — a name
 bound to an expression, not a function — whose every use is inside that root's values is evaluated
