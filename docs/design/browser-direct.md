@@ -139,16 +139,21 @@ function, named by the key (`Main$h$Edit`, `Main$h$GotEditorMsg$EnteredTitle`; s
    which case no message exists. An arm that reads `msg` whole (`Debug.log "msg" msg`,
    `remember msg`) rebuilds it the same way. **Nothing dispatches on a constructor** in the
    common case: the `case msg of` is gone, its arms are the handlers.
-2. **Derived values** (§5.4) whose read sets conflict with `writes(κ)`, recomputed in dependency
-   order into their slots.
+2. **Top-level derived values** (§5.4) — those belonging to no branch arm — whose read sets
+   conflict with `writes(κ)`, recomputed in dependency order into their slots. An arm's derived
+   values are not here: they run at the arm's mount and in step 4 under the arm's liveness
+   (§5.4, §5.5), because step 1 may have made the model another variant and the arm's old
+   liveness would still read as true until step 3 switches it.
 3. **Structure**: the branches (§5.5) whose scrutinee reads conflict, outermost first — a branch
    switch tears the old arm down and mounts the new one — then the edit scripts (§6.2) of every
    list write in `writes(κ)`, in the source order of their `For` sites; each may make, move or
    remove nodes.
-4. **Values**: the groups (§5.3) whose read sets conflict with `writes(κ)`, in the order of their
-   first hole; the row holes an edit script marked; the selector's two rows (§6.4).
-5. **The after-render point**: the `Dom.rendered` waits and after-render work queued during
-   steps 1–4 run here, in order (§10.2).
+4. **Values**: per live arm, outermost first, the arm's derived values that conflict (in
+   dependency order), then the groups (§5.3) whose read sets conflict with `writes(κ)`, in the
+   order of their first hole; the row holes an edit script marked; the selector's two rows
+   (§6.4).
+5. *(withdrawn: there is one after-render point, `end()` in §4.3, after every queued message of
+   the dispatch has applied; §10.2.)*
 6. **Effects**: the command of step 1 is handed to the command driver; the subscription diff runs
    if `writes(κ)` conflicts with what `subscriptions` reads (§10.1).
 
@@ -186,8 +191,18 @@ the template, so:
   `l(e)`: a function of the event that reads the payload — the extractor's result for a
   payload-form handler, the arguments the handler expression names (`onClick={Select model.id}`
   reads `model.id`), a row's instance through its root — and calls the key's handler with them,
-  at whatever arity the handler has. The DOM listener is `e => send(l, e)`: the body runs
-  **inside the guard** (§4.3), so a throw in the payload read is a defect like any other.
+  at whatever arity the handler has. The DOM listener is `e => { flags; send(l, e); }`: the
+  body runs **inside the guard** (§4.3), so a throw in the payload read is a defect like any
+  other. **The event's flags run in the DOM listener, synchronously, before `send`**: the
+  declaration's `preventDefault` and `stopPropagation` (`EventFacts`, known at compile time) are
+  native calls the lowering writes into the DOM listener itself, never into the body, because a
+  body that arrives while a dispatch is running is queued (§4.3) and runs after the event has
+  finished dispatching, when `preventDefault()` and `stopPropagation()` do nothing and
+  `e.currentTarget` is `null`. Only the message part is ever queued. A payload extractor reads
+  `e.target` and the event's own fields, which survive the dispatch; one that read
+  `currentTarget` would not, and `html`'s declare none. Pinned by `browser/direct/SubmitFromWrite`
+  (a `submit` with `preventDefault` fired synchronously by a handler's own DOM write — a button
+  the handler enables and the browser's implicit submission — does not navigate).
 - **Read at the event, not captured** (*Elm differs here, and §15's Q1 is the owner's*). Elm's
   `onClick (Select model.id)` captures the value at the last `view`; this platform reads
   `model.id` when the listener body runs. The two agree whenever the page and the model are in
@@ -211,11 +226,23 @@ the template, so:
   delegated`, `boundary.md` §9.4.2 — the bubbling events: `click`, `input`, `keydown`, …), one
   listener per event name on the list's **parent element** (the element whose children the rows
   are), added at the list's mount, shipped with that list. At an event it walks from `e.target`
-  up to the row's root element, calling the listener body of each node that carries one (`$h`,
-  set at the row's mount, holding the body; the row's root carries its instance, `$r`),
-  innermost first; at a node whose declaration says `stopPropagation` it calls the native
-  `e.stopPropagation()` and stops the walk, so the direct listeners above the list do not fire
-  either; otherwise the DOM's bubbling reaches them after the walk. **An event that does not
+  up to **this list's** row root, collecting the listener bodies of the nodes that carry one
+  (`$h`, set at the row's mount, holding the body; a row's root carries its instance, `$r`,
+  which names its list), and runs them innermost first; at a node whose declaration says
+  `stopPropagation` it calls the native `e.stopPropagation()` and stops, so the direct
+  listeners above the list do not fire either; a `preventDefault` is applied as the walk passes
+  the node, synchronously; otherwise the DOM's bubbling reaches the listeners above after the
+  walk. **A walk never crosses another list's rows or another program's nodes.** A `For` inside
+  a row, or a program mounted inside a row, puts a second delegated listener below this one,
+  and the DOM fires the inner one first; the outer listener's walk then starts at the same
+  target, inside the inner row. So the walk **buffers** the bodies it meets and, on reaching a
+  row root, runs the buffer only if that root is this list's (`$r.list === this list`) and
+  otherwise **discards** it — those nodes were the inner list's, whose own listener has already
+  run them — and goes on with an empty buffer until it reaches its own row root; a program's
+  mount root counts as another list's row root. The order that results is Elm's: the inner
+  row's handlers, then the outer row's, each once. Pinned by `browser/direct/NestedFor` (a
+  `For` in a `For` row, a click on the inner row's button and on the outer row's cell) and
+  `browser/direct/NestedPrograms` (a program mounted inside another's list row). **An event that does not
   bubble** — `focus`, `blur`, `mouseenter`, `mouseleave`, `scroll`, `load`, the media events —
   cannot be delegated; its vocabulary row says so (`delegated: false`), and a row node with such
   a handler gets a **direct listener** at `make`, exactly as a node outside a list does.
@@ -261,8 +288,11 @@ const send = (f, x) => {                 // f: a listener body, `dispatch`, or t
   let ok = false;
   try {
     f(x);
-    while (queue !== null) { const q = queue; queue = null; for (let i = 0; i < q.length; i += 2) q[i](q[i + 1]); }
-    end();                               // the edited-set reconcile and the after-render point, §8.1, §10.2
+    for (;;) {
+      while (queue !== null) { const q = queue; queue = null; for (let i = 0; i < q.length; i += 2) q[i](q[i + 1]); }
+      end();                             // the edited-set reconcile and the after-render point, §8.1, §10.2
+      if (queue === null) break;         // a message `end()`'s work sent: apply it in this dispatch
+    }
     ok = true;
   } finally {
     running = false;
@@ -280,12 +310,16 @@ const send = (f, x) => {                 // f: a listener body, `dispatch`, or t
   anything `update` calls, from an event a DOM write fired synchronously — is queued and applied
   when the running body returns, never re-entrantly. The queue is allocated on the first
   re-entrant send and is `null` otherwise.
-- **`end()` is inside the guarded region**, after the queue is drained: it reconciles the
-  controls the dispatch marked (§8.1) and resumes the after-render waits and work (§10.2),
-  which is program code and may throw. A page with neither has an `end` that does nothing, and
-  reachability drops the call under `--release`. A message such work sends is queued by the
-  `running` flag and drained by a second loop around `end` — the handler, the drain and `end`
-  repeat until nothing is queued — so after-render work's messages apply in this dispatch.
+- **`end()` is inside the guarded region and inside the loop**, after the queue is drained: it
+  reconciles the controls the dispatch marked (§8.1) and resumes the after-render waits and
+  work (§10.2), which is program code and may throw. A message such work sends — a
+  `Dom.rendered` continuation that sends, `afterRender` work that sends — is queued by the
+  `running` flag, and the `for (;;)` above drains it and runs `end()` again, until an `end()`
+  queues nothing; so it applies in this dispatch and is never stranded until a later one. A
+  page with neither controls nor after-render work has an `end` that does nothing, and
+  reachability drops the call under `--release`. Pinned by `browser/direct/RenderedSends` (a
+  `Dom.rendered` continuation sends a message; the page shows it before the dispatch ends, and
+  a `Debug.log` in `end`'s order shows the second `end`).
 - There is **no `catch`** (CLAUDE.md rule 9): a throw passes through `finally` to the host.
 - **Everything that runs program code enters through `send`**: listener bodies, `dispatch`,
   `run`'s mount, a fiber's resumption. Nothing of the program runs outside the guard, which is
@@ -412,7 +446,14 @@ set, before the groups that read it. On the derived sweep (top 50 of N sorted; r
 table) a message that writes an unrelated field recomputes nothing, as today's grouped root does,
 and a message that writes `items` recomputes once and then runs the groups that read `shown`. A
 `let` that reads a derived value reads the slot and inherits its read set; dependency order is
-source order, since a `let` reads only earlier ones.
+source order, since a `let` reads only earlier ones. **A derived value belongs to the innermost
+branch arm whose markup reads it** (a `let` inside a page's `view`, a `let` bound inside an
+`if`'s `then` markup): it is computed at that arm's mount, after the arm's slots are reset and
+before the arm's groups, and recomputed in step 4 under the arm's liveness (§4.1), never in
+step 2, where the model may already be another variant and the read would be a `TypeError`. A
+derived value read by markup of two arms, or by top-level markup, is top-level and is step 2's.
+Pinned by `browser/direct/LetInArm` (a `let` inside a page arm, `A → B → A`, the message that
+switches arms also writing what the `let` reads).
 
 ### 5.5 Branches and `Show`
 
@@ -433,8 +474,9 @@ slot equal to its value, write nothing, and leave the new nodes blank. So teardo
 sentinel `undefined` — which no beni value is, today's rule for a fresh instance (`backend.md`
 §15.5) — into every slot of the arm: its hole slots, its derived values, its nested branches'
 `br`, and it empties its lists' instance arrays (and key maps) after removing their rows. Mount
-then calls every group of the arm, and every compare fails, so every hole is written from the
-model. Pinned by `browser/direct/BranchReturn` (`A → B → A` and `Just → Nothing → Just` with
+then runs, in this order: the arm's derived values (§5.4), the arm's nested branches (each
+evaluated and mounted the same way, recursively), its lists (every row made), and every group
+of the arm — and every compare fails, so every hole is written from the model. Pinned by `browser/direct/BranchReturn` (`A → B → A` and `Just → Nothing → Just` with
 the same values; a Conduit-shaped `Home → Article → Home`). A branch whose arms are text only
 is a text hole with a conditional expression and no branch at all. The nodes of an arm not
 shown are not kept: a switch remounts, which is what keeps an input's value from leaking between
@@ -736,9 +778,19 @@ another attribute `stateful` extends the promise and must name the event that re
 whole: `control(el, prop, v)` writes the property when the page's differs and keeps `v` on the
 element; four capture listeners (`input`, `change`, `click`, `reset`) and `pageshow` mark the
 controls an edit may have changed; the runtime's own writes mark them too; `end()` (§4.3)
-reconciles the marked controls and clears the marks. What changes is only *when*: the reconcile
-runs at the end of the outermost dispatch, which is where "the render ends" is on a platform with
-no render. The listeners are installed by the first `control` call, so a page with no controlled
+reconciles the marked controls and clears the marks. What changes is *when*, and in the
+promise's favour. Today a control with no handler is marked and reconciled "when a render
+ends" (`backend.md` §15.3), which is the next render some other message makes; until then the
+edit stays on screen. Here the four names also get a **bubble-phase listener on the document**,
+added with the capture ones by the first `control` call, which calls `send(noop, e)` — a body
+that does nothing — so that `end()` runs and reconciles the marks **after every user edit**,
+handler or none. It runs after every element listener, so a control's own handler has already
+dispatched and reconciled, and the no-op's `end()` finds nothing marked; it is a few bytes, only
+on a page with a control, and it makes the promise "after every dispatch *and after every edit*
+a controlled element shows the model". A `reset`'s and a prevented checkable click's held
+controls are reconciled in the timer today's design already uses. Pinned by
+`browser/direct/ControlledNoHandler` (typing into a control with no handler is put back at
+once; today's platform leaves it until the next message). The listeners are installed by the first `control` call, so a page with no controlled
 element ships none of this (~250 B when used, **[estimate]**), and an unrelated message visits no
 control — research 60 §3.3 measured the live-rows page at P2's level with exactly this.
 
@@ -759,16 +811,25 @@ A page that reaches no `Task` ships none of the teardown. Cost: the guard, measu
 (a throw in a payload extractor), `DefectInAfterRender` and `DefectInMount`, beside today's
 `Defect*` pages.
 
-**A program value mounted twice is a fault, never an alias.** A unique site's state is
-module-level per program value (§5.2), so `Browser.programs [ main, main ]`, or `mountAt`
-applied twice to one program, would share one `model` and one set of slots and show one page's
-writes in the other. The compiler refuses the static case — the same program site twice in a
-`programs` list literal, or a `mountAt` of a program already in one — with
-`program_mounted_twice`, and `run` refuses the rest before any program renders, as it refuses a
+**A program built by a function has state per mount; one program value mounted twice is a
+fault, never an alias.** A program site reached through a function with parameters —
+`counter start = Tea.sandbox { init = start, … }` used as `programs [ counter 0, counter 5 ]` —
+is two program values, and each mount gets its own state: such a site's `model`, node handles,
+slots and lists live in a **mount record** allocated by `run` per mount (the shared-site form
+of §5.2 applied to the program), and its handlers take the record; a site that is a top-level
+constant (`main = Tea.sandbox …`, the common case) keeps module-level state. That is rule 7's
+escape, built in. What cannot be allowed is one program *value* mounted twice —
+`programs [ main, main ]`, or `mountAt` applied twice to one constant — because the two mounts
+would share one `model` and one set of slots and show one page's writes in the other: the
+compiler refuses the static case (the same top-level program value named twice in a `programs`
+literal, or in one and in a `mountAt`) with `program_mounted_twice`, whose message names the
+escape — *build the program with a function so each mount is its own value* — and `run`
+refuses the rest before any program renders (a `$mounted` mark on the value), as it refuses a
 missing element or one that already holds a program (`backend.md` §15.11: a fault of the page).
-A guarantee is at stake (two mounts would show a wrong page), so this is an error and not a
-warning (rule 7). Pinned by `build/bad/DirectMountedTwice`; the run-time refusal follows today's
-rule and, like today's, has no page fixture (an uncaught exception fails a page case).
+A guarantee is at stake (two mounts would show a wrong page), so the aliasing case is an error
+and not a warning. Pinned by `browser/direct/ProgramsByFunction` (`counter 0` and `counter 5`,
+each counting on its own) and `build/bad/DirectMountedTwice`; the run-time refusal follows
+today's rule and, like today's, has no page fixture (an uncaught exception fails a page case).
 
 ### 8.3 The page is a function of the model
 
@@ -783,24 +844,41 @@ from S1**, before any guarantee machinery is built on the design:
 1. **The differential corpus** (§12.3): every `browser/` fixture is built for both platforms and
    the transcripts must be equal after every step; V3's adversarial campaign
    (`compile-away.md` §4) attacks it directly from S4.
-2. **Differential fuzzing, from S1.** The compiler knows the key tree and every key's payload
-   types, and prints them under a hidden `--keys` dump. `tests/browser/fuzz.mjs` generates
-   random message sequences from it — random `Int`s, `String`s, `Bool`s, constructors of the
-   payload types, and for a view event a random handler node of the page — and replays each
-   sequence on the program built for `browser-tea`, which compares every group on every message
-   and so is an independent oracle, and for `browser-direct`, DOM-equal (`p3-verify.mjs`'s
-   comparison) after every step. The gates run it with fixed seeds within the test budget on
+2. **Differential fuzzing, from S1.** `tests/browser/fuzz.mjs` generates random message
+   sequences — random `Int`s, `String`s, `Bool`s, constructors of the payload types, and for a
+   view event a random handler node of the page — and replays each sequence on the program
+   built for `browser-tea`, which compares every group on every message and so is an
+   independent oracle, and for `browser-direct`, DOM-equal (`p3-verify.mjs`'s comparison) after
+   every step. **Where the messages come from**: from the **message type**, as the checker
+   records it (every constructor and its payload types, under a hidden `--msg-types` dump), not
+   from the key tree the lowering consumes — so a constructor the key tree mis-filed is still
+   generated, and reaches the direct page through its dispatcher, which a fuzz build emits
+   whether or not the program has carriers (a hidden, test-only `--fuzz` flag, as the release
+   corpus has `--allow-debug`). What the fuzzer shares with the lowering is only the checker's
+   type table, which both platforms also share; a mistake there is `write-sets.md`'s default
+   child rule's to catch (every constructor is under some leaf), and the gap that remains — a
+   constructor that exists in neither the type table nor the tree — cannot arise, since the
+   tree is built from the table. The gates run it with fixed seeds within the test budget on
    every `browser/direct/` program, as the determinism test runs the corpus at `--jobs=1` and
    `--jobs=8`; `zig build fuzz` runs long sweeps. A difference is a defect with a red-first
    fixture and a rule corrected in `write-sets.md`.
 3. **A development-only verify mode, from S1.** A development build of this platform emits,
-   beside the handlers, `verifyAll()`: every group of every live site in compare-only mode, and a
-   defect (§8.2, with the hole named) if any hole's value would differ from its slot. `send`
-   calls it at the end of every dispatch in development; `--release` emits none of it. It
-   changes nothing unless the compiler is wrong — a correct handler leaves every slot equal to
-   its value — so it is consistent with §8.4, and it catches the Svelte 3 class at its first
-   occurrence, on every development page a developer runs and on every development page of the
-   corpus. Its cost in development is a full compare per dispatch, today's cost.
+   beside the handlers, `verifyAll()`, which `send` calls at the end of every dispatch in
+   development and `--release` never emits. It checks **values and structure** of every live
+   site: every scalar hole's value against its slot; every branch scrutinee re-evaluated
+   against `br`; every derived value recomputed against its slot; every list's items against
+   its instances — `xs.length === insts.length` and `get(xs, i) === insts[i].it` for each
+   `i`; a nested branch's and a row's holes recursively. Any difference is a defect (§8.2,
+   naming the hole, list or branch). **It must change nothing unless the compiler is wrong**,
+   so it skips what evaluating again would change: an every-render group (`Random.value`,
+   `Time.now`: a different value each time is not a missed write), and any value whose
+   expression contains a `Debug` call (evaluating it again would print again, and
+   `GroupedReads`-shaped fixtures count prints); a correct handler leaves everything else equal
+   to its slot, so a page with a correct compiler runs the same with verify on and off, and
+   `browser/direct/VerifyQuiet` (every-render values and `Debug.log`s in a view, verify on)
+   pins that it does. It catches the Svelte 3 class at its first occurrence, on every
+   development page a developer runs and on every development page of the corpus. Its cost in
+   development is a full compare per dispatch, today's cost.
 
 ### 8.4 Development and release
 
@@ -848,7 +926,9 @@ the value path (§5.2).
 is compiled on its own — its own `model`, slots, handlers, lists, listeners — in one module, its
 state namespaced by program. A program mounted inside another's markup receives its own events
 through its own listeners; the event then bubbles to the outer program's handler nodes by the
-DOM's bubbling, as `tests/corpus/browser/tea/TwoPrograms` pins. One `send` guard serves the page:
+DOM's bubbling, as `tests/corpus/browser/tea/TwoPrograms` pins — and an outer list's delegated
+walk never runs the inner program's handlers, because it discards what it collected below a
+mount root as it discards another list's rows (§4.2; `browser/direct/NestedPrograms`). One `send` guard serves the page:
 the ordering rule is page-wide (`boundary.md` §9.8.4 rule 2), and so is `dead`.
 
 ## 10. Effects
@@ -1072,14 +1152,27 @@ research 60 wrote where one exists, and at S8.
 **Kill criteria, so the design fails early and not as "P3 again"**, checked at the slice named:
 
 1. **S0, the stats gate** (analysis only, no lowering needed — the numbers §11 dumps, over
-   every corpus app, the table app, TodoMVC and Conduit): fewer than two thirds of Conduit's
-   keys bounded (the write-set gate), or `patchAll` keys reached by more than 10 % of the
-   dispatches the three Conduit scripts make (the driver logs each dispatch's key), or the
-   value-root count above a handful on any app, or the (key, group) pair count on Conduit
-   growing faster than linearly in keys, or the trie's write half shipping under a `set`-only
-   program when §13's estimates assumed not — each is the design failing on a real shape, found
-   before a line of the lowering is written: the Imba failure (O(view) per event) and the size
-   blow-up, caught at S0 instead of S6.
+   every corpus app, the table app, TodoMVC and Conduit), any of:
+   - fewer than two thirds of Conduit's keys bounded (the write-set gate);
+   - **static**, independent of any script: the share of the message type's constructors that
+     lie under a `*` key, counted per leaf constructor (a `*` key over a sub-message counts
+     every constructor beneath it), above 5 % on Conduit or on any corpus app;
+   - **dynamic**: `patchAll` reached by more than 10 % of the dispatches of Conduit's three
+     corpus scripts (the driver logs each dispatch's key) — `Reader`, `Editor` and **`Tour`,
+     which navigates** (page 3, a tag, a profile, settings, sign-out: every `ChangedUrl` is a
+     `*` dispatch), so the known `*` key is in the count, and a script that never navigated
+     could not game it;
+   - more than **3 value roots** in any program, or value roots above **5 % of its sites**;
+   - the (key, group) pair count growing faster than linearly in the number of keys, fitted
+     over the series of programs ordered by key count — the corpus apps, TodoMVC, the table
+     app, and Conduit's Main and its eight pages each as a program (research 62's `Pages.beni`)
+     — with the test that pairs ÷ keys on the largest program is no more than **2×** its
+     value on the median one;
+   - the trie's write half shipping under a `set`-only program when §13's estimates assumed
+     not.
+
+   Each is the design failing on a real shape, found before a line of the lowering is written:
+   the Imba failure (O(view) per event) and the size blow-up, caught at S0 instead of S6.
 2. **S0, the floor**: the empty mounted page is over 500 B brotli, or imports anything of `Rt`
    but `send` and `run` — the design is carrying a runtime it did not justify. The 300 B target
    is the estimate; 500 is where a reconciler's or a dispatcher's worth of bytes has crept in
@@ -1089,8 +1182,11 @@ research 60 wrote where one exists, and at S8.
    not direct. And from S1 the fuzz and the verify mode (§8.3) run on every direct page.
 4. **S2**: the rows edit is over 1.3× or the swap over 1.0×, or the bundle holds the reconciler
    for a page whose keys are all exact — edit scripts are not being read off the write set.
-5. **S3**: any table operation over 1.2× or `select` over 1.0×, or bytes over 2× by more than
-   core's measured share — the Million failure (a win on the sweeps and not on the app); **or
+5. **S3**: any table operation over 1.2× or `select` over 1.0×, or bytes over 2 830 with the
+   bundle's **non-core part** (the whole minus core's in-context share, `size-parts.mjs`'s
+   leave-one-out) over **2 400 B** or core's share over **600 B** — a miss by the non-core part
+   is the Million failure (a win on the sweeps and not on the app), a miss by core alone is
+   reported to the owner under rule 10 and is not the design's; **or
    the generated page does not beat P3 as §13 states** — P3 renamed. And the TodoMVC-shaped
    fixture (a filtered `For` with a toggle, `browser/direct/FilteredFor`, measured at 100 and
    1 000 todos) is in S3's batch, so the dynamic-hole shape is measured before S4, not at S5.
@@ -1112,7 +1208,8 @@ additions in `boundary.md` §9.4.6, the backend rules in `backend.md`), red-firs
 measured on both platforms, P3, vanilla and Solid 1 in one batch. The slices are
 `plans/compile-away.md` §7's, where their state is kept; this is what each contains and proves.
 
-- **S0 — the stats gate, the platform and the harness.** First the **stats gate**: the dump
+- **S0 — the stats gate, the platform and the harness.** *Q6 answered before it starts: the
+  platform's layering is its shape.* First the **stats gate**: the dump
   lines of §11 (`site`, `markup_value_roots`, `carriers`, `pairs`, `reconciler`, `patchAll`)
   built into `dump --stage=writes` and run by `bench/writesets/stats.mjs` over every corpus app,
   the table app, TodoMVC and Conduit, with the Conduit driver logging each dispatch's key on
@@ -1132,14 +1229,14 @@ measured on both platforms, P3, vanilla and Solid 1 in one batch. The slices are
   mode** (§8.3), run on every `browser/direct/` program from here on; the holes, width, burst
   and stream sweeps; `browser/dom/Holes`, `ConstantWriteOnce`, `GroupedReads`, `TrustedTurn`
   (re-stated for direct writes), `DefectInHandler`, and the new `EventReadsModel`,
-  `DefectInListener`, `DefectInMount`. *Kill criterion 3.*
+  `SubmitFromWrite`, `VerifyQuiet`, `DefectInListener`, `DefectInMount`. *Kill criterion 3.*
 - **S2 — rows.** `For` keyed and positional, row templates, instances, static-key holes, the
   exact edit scripts with their tag guards (§6.2: `set`/`update κ`, swap, append, prepend,
   clear, insert, remove), the delegated list listener for delegatable events and direct
   listeners for the rest (§4.2), the mount measurement of listener placement and of expandos
   against a lookup (§6.1), the rows sweep; `browser/dom/Keyed`, `KeyedInPlace`, `RowItemOnly`,
   `RowMountOrder`, `ForAtEnds`, `ForForms`, and the new `NoOpEdits`, `RowBlur`, `StopInRow`,
-  `DetachedRowEvent`. *Kill criterion 4.*
+  `DetachedRowEvent`, `NestedFor`. *Kill criterion 4.*
 - **S3 — the table app, and the TodoMVC shape.** The reconciler (§6.3) for
   `replaced`/`permute`, the identity walk and the filter merge, the selector and key map with
   their order (§6.4), helper inlining under the size gate and shared sites (§5.2, §9.2), the
@@ -1149,13 +1246,16 @@ measured on both platforms, P3, vanilla and Solid 1 in one batch. The slices are
   `browser/direct/FilteredFor` measured at 100 and 1 000 todos; `browser/dom/KeyedEnds`,
   `KeyedMoves`, `KeyedReplace`, `Selector`, `HelperSkip`, `NullaryHelperSkip`, `tea/Counters`,
   `LatestTagger`, and the new `SelectAndRemove`. *Kill criterion 5.*
-- **S4 — guarantees and the rest of rendering.** Controlled inputs by the edited set (§8.1),
+- **S4 — guarantees and the rest of rendering.** *Q3 answered before it starts: `flush` and
+  `Dom.rendered` are used from here.* Controlled inputs by the edited set and the no-op send
+  after an edit (§8.1),
   defects, the crash screen and the teardown (§8.2), branches and `Show` with teardown's slot
   reset and liveness (§5.5, §4.1), derived values (§5.4), nested updates (§7.3), the value path
   for recursive helpers and `List Html` holes (§5.2), two programs on a page (§9.3); the live,
   derived, depth, helper-rows and helper-tree sweeps; every `browser/dom/Controlled*`,
   `Defect*`, `Blocks`, `ShowAndBranches`, `LetInMarkup`, `LetOneOwner`, `EveryRender*`,
-  `TwoPrograms`, `MountedPrograms`, and the new `BranchReturn`, `LateResponse`,
+  `TwoPrograms`, `MountedPrograms`, and the new `BranchReturn`, `LateResponse`, `LetInArm`,
+  `RenderedSends`, `ControlledNoHandler`, `ProgramsByFunction`, `NestedPrograms`,
   `DefectInAfterRender`. The first V3 campaign runs after it.
 - **S5 — effects and TodoMVC.** *Q5 answered before its target is set.* `Tea.element`,
   `document`, `application`; the command driver copied and driven by handlers, subscriptions
