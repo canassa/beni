@@ -1,0 +1,13 @@
+# Events the runtime hears and has nothing to do with.
+event #plain reset
+event document reset
+event window reset
+event document click
+event document input
+event #editable input
+event #custom input
+event #custom change
+event #custom click
+# The page still keeps its promise, and still renders.
+input #text "abcdef"
+click #tick

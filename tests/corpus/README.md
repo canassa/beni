@@ -137,10 +137,10 @@ project) against it, one step per line, `#` for a comment:
                                 before any microtask it queued; a callback
                                 that throws is reported to the window's
                                 `error` listeners, as a host reports it
-    event <window|document> <name> [<n>]
+    event <window|document|selector> <name> [<n>]
                                 `n` (default 1) plain `Event`s of that
-                                name on the window or the document, in one
-                                task
+                                name on the window, the document or the
+                                element, in one task
     url "<url>"                 `history.replaceState` to the URL, relative to
                                 the page's (`"?q=1#/active"`); nothing fires
     hash "<#fragment>"          the same, then one `popstate` and one
