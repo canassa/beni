@@ -114,6 +114,11 @@ a release build of Conduit that fits, and a way for a project fixture to name so
 corpus (a 20-line `_expected.sources` pointer in `corpus_test.zig`'s `writeSources` was
 prototyped and worked; it is not committed, since nothing in the corpus would use it yet).
 
+*Update, 2026-10-08:* the owner granted Conduit its own budget. The three scripts are now corpus
+cases `tests/corpus/browser/tea/ConduitReader`, `ConduitEditor` and `ConduitTour`, each with a
+12 000M `.budget` and an `_expected.sources` pointing at `examples/conduit/src`
+(`tests/corpus/README.md`, *Budgets*). The release optimiser's cost is still queued as a defect.
+
 ## 2. Method
 
 The classifier is research 61's, rules unchanged (§2.2–§2.3 there). It needed five fixes to read a

@@ -629,9 +629,15 @@ const Walker = struct {
                     };
                     const spent = meter.read() -% spent_start;
                     _ = world.timing.cases_spent.fetchAdd(spent, .monotonic);
-                    if (passed and world.timing.budget_unit != .none and spent > world.timing.budget_limit) {
+                    const own = case.ownBudget() catch |err| {
+                        std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
+                        _ = wk.failures.fetchAdd(1, .monotonic);
+                        continue;
+                    };
+                    const budget = if (own) |millions| world.timing.caseLimit(millions) else world.timing.budget_limit;
+                    if (passed and world.timing.budget_unit != .none and spent > budget) {
                         const got = world.timing.describe(spent);
-                        const limit = world.timing.describe(world.timing.budget_limit);
+                        const limit = world.timing.describe(budget);
                         std.debug.print("FAIL: {d} {s}, over the budget of {d} (the case's own and its children's): {s}/{s}\n", .{
                             got.value, got.unit, limit.value, fixture.dir, fixture.name,
                         });
@@ -1237,6 +1243,21 @@ const Case = struct {
         }
     }
 
+    /// The case's own budget in millions of instructions, from its
+    /// `.budget` file (`_expected.budget` in a project), or null for the
+    /// global one. The owner grants these one by one for large programs
+    /// (`tests/corpus/README.md`, *Budgets*): the file's first word is the
+    /// limit, and the rest of it must say why, so none is added silently.
+    fn ownBudget(c: Case) !?u64 {
+        if (!c.goldenExists("budget")) return null;
+        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("budget"), c.arena, .limited(4096));
+        var words = std.mem.tokenizeAny(u8, text, " \t\r\n");
+        const first = words.next() orelse return error.BudgetFileEmpty;
+        const millions = std.fmt.parseUnsigned(u64, first, 10) catch return error.BudgetNotANumber;
+        if (words.next() == null) return error.BudgetWithoutReason;
+        return millions;
+    }
+
     fn goldenExists(c: Case, ext: []const u8) bool {
         const p = c.goldenPath(ext) catch return false;
         Io.Dir.cwd().access(testing.io, p, .{}) catch return false;
@@ -1787,7 +1808,14 @@ const Case = struct {
     fn writeSources(c: Case) ![]const []const u8 {
         var sources: std.ArrayList([]const u8) = .empty;
         if (c.fixture.project) {
-            const dir_path = try c.fixturePath();
+            // A project may take its modules from elsewhere in the repository:
+            // `_expected.sources` holds that directory's repo-relative path, so
+            // several scripts can drive one program kept outside the corpus
+            // (`examples/conduit/src`; `tests/corpus/README.md`).
+            const dir_path = if (c.goldenExists("sources"))
+                std.mem.trim(u8, try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("sources"), c.arena, .limited(4096)), " \t\r\n")
+            else
+                try c.fixturePath();
             var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
             defer dir.close(testing.io);
             var it = dir.iterate();
