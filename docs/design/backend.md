@@ -8657,3 +8657,24 @@ one render; synthetic clicks keep the microtask, three in one task one render),
 `browser/tea/FocusInFlush` (a trusted `focus` inside a flush renders in the next one). The page
 driver's `press` step dispatches a trusted click — Chrome's own through `Input.dispatchMouseEvent`;
 happy-dom, which has no `isTrusted`, is given one (`tests/corpus/README.md`).
+
+*Amended 2026-10-08: the per-message plumbing* ([`research/59`](research/59-where-the-per-message-cost-goes.md)
+§1.6; `plans/compile-away.md`, R1). Research 59 timed a user's click on the 10-hole page at 19.4 µs
+in beni against 11.7 in P2's hand-written page, and attributed about 6.8 µs of the gap to pieces
+of the listener and the loop that buy no guarantee. Each is removed below without changing what
+a page does: one render per turn, bursts batched, the DOM's bubbling order, a defect stopping the
+page, `Debug.log`'s order. The pages that pin it beyond the fixtures named above are
+`browser/dom/EventWalk` (the walk, `stopPropagation`, `preventDefault`, a disabled element and
+`Html.map`, each as page script's click and as a user's) and `browser/dom/TrustedMounts` (two
+programs, nested, under a user's click and a burst).
+
+- **An event's property names are built once per name.** The node properties a delegated event
+  is read by — `$$<name>`, `$$<name>F`, `$$<name>X` — are built when `delegate` first registers
+  the name, and the listener registered for it is a closure that holds them; `listen` builds its
+  two when it attaches. Built per event, as before, each was a new string, which every property
+  lookup made with it had first to find in V8's string table (research 59 §1.3: 1.9 µs a click,
+  the largest piece).
+  Measured (`bench/ui/plumbing.mjs --mode=cdp`, the 10-hole page, 8 pages × clicks 6–120,
+  against the build before it in the same batch): 19.9 → 17.8 µs development, 21.0 → 18.2
+  `--release`. The table app's release bundle, through terser and brotli 11, is 5 510 → 5 505
+  bytes; the empty page, which delegates nothing, does not move.

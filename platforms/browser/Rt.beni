@@ -2117,8 +2117,8 @@ identity event = event
 -- the program's around it. `flags` may be `undefined`, a node that
 -- declared neither: its bits are then 0. A stopped page calls no handler,
 -- and a handler or an `update` that throws stops it.
-fire : V, V, String, Int → ⊤
-fire node event key flags =
+fire : V, V, String, String, Int → ⊤
+fire node event key payload flags =
     if Js.read dead then
         ⊤
     else
@@ -2129,7 +2129,7 @@ fire node event key flags =
 
         Js.finally
             (λ⊤ →
-                x = Js.get node "${key}X"
+                x = Js.get node payload
 
                 msg =
                     through
@@ -2178,26 +2178,29 @@ mountAbove n =
 -- the DOM's own bubbling does, and each handler's message goes to the
 -- program that rendered it. An event the browser dispatched is a turn:
 -- every handler of the walk is one render, when the walk ends.
-delegated : V → ⊤
-delegated event =
-    type_ : String
-    type_ = Js.to (Js.get event "type")
-    turn (Js.to (Js.get event "isTrusted")) λ⊤ → bubble event "$$${type_}" (Js.get event "target")
+--
+-- The three property names an event's handler is read by are built once
+-- per name, when its listener is registered, and handed to the listener:
+-- a name concatenated per event is a new string, which a property lookup
+-- must first find in V8's string table.
+delegated : String, String, String, V → ⊤
+delegated key flagged payload event = turn (Js.to (Js.get event "isTrusted")) λ⊤ →
+    bubble event key flagged payload (Js.get event "target")
 
 
-bubble : V, String, V → ⊤
-bubble event key node =
+bubble : V, String, String, String, V → ⊤
+bubble event key flagged payload node =
     if Js.isNull node then
         ⊤
     else if not (Js.isUndefined (Js.get node key)) && not (Js.to (Js.get node "disabled")) then
-        flags = Js.to (Js.get node "${key}F")
-        fire node event key flags
+        flags = Js.to (Js.get node flagged)
+        fire node event key payload flags
         if Js.bitAnd flags 2 ≠ 0 then
             ⊤
         else
-            bubble event key (Js.get node "parentNode")
+            bubble event key flagged payload (Js.get node "parentNode")
     else
-        bubble event key (Js.get node "parentNode")
+        bubble event key flagged payload (Js.get node "parentNode")
 
 
 -- The delegated names listened for so far.
@@ -2212,8 +2215,15 @@ delegate names = Js.each names λname →
         ⊤
     else
         _ = Js.call registered "add" [ name ]
+        typed : String
+        typed = Js.to name
+        key = "$$${typed}"
+        flagged = "${key}F"
+        payload = "${key}X"
         Js.to
-            (Js.call (Js.global "document") "addEventListener" [ name, Js.from delegated ])
+            (Js.call (Js.global "document") "addEventListener"
+                [ name, Js.from λevent → delegated key flagged payload event ]
+            )
 
 
 -- `(data)`: the program's start data — the delegated names of every
@@ -2231,6 +2241,7 @@ start data =
 pub listen : V, String, Int → ⊤
 listen el name flags =
     key = "$$${name}"
+    payload = "${key}X"
     Js.to
         (Js.call el "addEventListener"
             [ Js.from name
@@ -2238,6 +2249,6 @@ listen el name flags =
                 if Js.isUndefined (Js.get el key) then
                     ⊤
                 else
-                    turn (Js.to (Js.get event "isTrusted")) λ⊤ → fire el event key flags
+                    turn (Js.to (Js.get event "isTrusted")) λ⊤ → fire el event key payload flags
             ]
         )

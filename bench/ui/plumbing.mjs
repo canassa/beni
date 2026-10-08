@@ -11,6 +11,7 @@
 //                     [--subjects=beni,beni-release,solid1,p2,vanillajs,...]
 //                     [--pages=4] [--reps=30] [--n=1000] [--warm=2000]
 //                     [--clicks=200] [--taskset=8-15] [--out=results/<file>.json]
+//                     [--extra=<name>=<dir under out/>,...]
 //
 // Modes:
 //   loop     in the page, hot: `warm` clicks, then `reps` timed runs of `n`
@@ -146,6 +147,13 @@ const all = {
   vanillajs: { kind: "script", src: `/out/${base}/vanilla.js` },
 };
 for (const [name, edits] of Object.entries(ablations)) all[`abl-${name}`] = { kind: "beni", dir: `${base}/beni-dev`, edits: [...(mode === "cdp" ? [] : shimDev), ...edits] };
+// `--extra=<name>=<dir under out/>,…`: beni builds made elsewhere — another
+// compiler's, kept from before a change — measured as they are, in cdp
+// mode only (loop mode's shim is written against one build's text).
+for (const e of arg("extra", null)?.split(",") ?? []) {
+  const [name, dir] = e.split("=");
+  all[name] = { kind: "beni", dir, edits: [] };
+}
 
 const wanted = arg("subjects", "beni,beni-release,solid1,p2,vanillajs").split(",");
 const subjects = wanted.map((name) => {
