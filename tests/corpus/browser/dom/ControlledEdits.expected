@@ -1,0 +1,159 @@
+-- load
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <input id="text" .value="ab">
+    <input id="free" .value="ab">
+    <div>
+      <input id="box" type="checkbox" .value="on" .checked=false>
+    </div>
+    <input id="ra" type="radio" name="g" .value="on" .checked=true>
+    <input id="rb" type="radio" name="g" .value="on" .checked=false>
+    <input id="rc" type="radio" name="g" .value="on" .checked=false>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>
+-- input #text "abcdef"
+(the DOM did not change)
+-- input #text "xy"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <input id="text" .value="xy">
+    <input id="free" .value="xy">
+    <div>
+      <input id="box" type="checkbox" .value="on" .checked=false>
+    </div>
+    <input id="ra" type="radio" name="g" .value="on" .checked=true>
+    <input id="rb" type="radio" name="g" .value="on" .checked=false>
+    <input id="rc" type="radio" name="g" .value="on" .checked=false>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>
+-- input #free "zzzz"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <input id="text" .value="xy">
+    <input id="free" .value="zzzz">
+    <div>
+      <input id="box" type="checkbox" .value="on" .checked=false>
+    </div>
+    <input id="ra" type="radio" name="g" .value="on" .checked=true>
+    <input id="rb" type="radio" name="g" .value="on" .checked=false>
+    <input id="rc" type="radio" name="g" .value="on" .checked=false>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>
+-- click #tick
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <input id="text" .value="xy">
+    <input id="free" .value="xy">
+    <div>
+      <input id="box" type="checkbox" .value="on" .checked=false>
+    </div>
+    <input id="ra" type="radio" name="g" .value="on" .checked=true>
+    <input id="rb" type="radio" name="g" .value="on" .checked=false>
+    <input id="rc" type="radio" name="g" .value="on" .checked=false>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>
+-- focus #box
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <input id="text" .value="xy">
+    <input id="free" .value="xy">
+    <div>
+      <input id="box" type="checkbox" .value="on" .checked=false :focus>
+    </div>
+    <input id="ra" type="radio" name="g" .value="on" .checked=true>
+    <input id="rb" type="radio" name="g" .value="on" .checked=false>
+    <input id="rc" type="radio" name="g" .value="on" .checked=false>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>
+-- press #box
+(a later listener ran)
+<body>
+  <main>
+    <button id="tick">"2"</button>
+    <input id="text" .value="xy">
+    <input id="free" .value="xy">
+    <div>
+      <input id="box" type="checkbox" .value="on" .checked=false :focus>
+    </div>
+    <input id="ra" type="radio" name="g" .value="on" .checked=true>
+    <input id="rb" type="radio" name="g" .value="on" .checked=false>
+    <input id="rc" type="radio" name="g" .value="on" .checked=false>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>
+-- click #rc
+(the DOM did not change)
+-- click #rb
+<body>
+  <main>
+    <button id="tick">"2"</button>
+    <input id="text" .value="xy">
+    <input id="free" .value="xy">
+    <div>
+      <input id="box" type="checkbox" .value="on" .checked=false :focus>
+    </div>
+    <input id="ra" type="radio" name="g" .value="on" .checked=false>
+    <input id="rb" type="radio" name="g" .value="on" .checked=true>
+    <input id="rc" type="radio" name="g" .value="on" .checked=false>
+    <select id="sel" .value="b">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>
+-- input #sel "c"
+(the DOM did not change)
+-- input #sel "a"
+<body>
+  <main>
+    <button id="tick">"2"</button>
+    <input id="text" .value="xy">
+    <input id="free" .value="xy">
+    <div>
+      <input id="box" type="checkbox" .value="on" .checked=false :focus>
+    </div>
+    <input id="ra" type="radio" name="g" .value="on" .checked=true>
+    <input id="rb" type="radio" name="g" .value="on" .checked=false>
+    <input id="rc" type="radio" name="g" .value="on" .checked=false>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>

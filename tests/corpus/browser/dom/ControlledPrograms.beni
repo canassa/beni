@@ -1,0 +1,46 @@
+-- Two programs on one page, the second mounted in the first's markup
+-- (backend.md §15.3, *Controlled inputs*): a control's marks belong to the
+-- program whose mount node is nearest above it, and a render reconciles
+-- only its own program's. An edit to the inner program's control stays
+-- while the outer one renders, and goes when the inner one does — what
+-- each program showed under the design that visited its own controls on
+-- every render.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Tick
+
+
+outer : Browser.Program
+outer =
+    Browser.program
+        { init = 0
+        , update = λTick n → n + 1
+        , view =
+            λn →
+                <main>
+                    <button id="outer-tick" onClick={Tick}>{n}</button>
+                    <input id="outer-text" value="outer" />
+                    <div id="inner" />
+                </main>
+        }
+
+
+inner : Browser.Program
+inner =
+    Browser.program
+        { init = 0
+        , update = λTick n → n + 1
+        , view =
+            λn →
+                <section>
+                    <button id="inner-tick" onClick={Tick}>{n}</button>
+                    <input id="inner-text" value="inner" />
+                </section>
+        }
+
+
+main : Browser.Program
+main = Browser.programs [ outer, Browser.mountAt inner "inner" ]

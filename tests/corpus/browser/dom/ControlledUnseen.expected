@@ -1,0 +1,142 @@
+-- load
+console.log: keyed: "a"
+console.log: cell: "a"
+console.log: keyed: "b"
+console.log: cell: "b"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      "a"
+      <input id="k0" .value="a">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "b"
+      <input id="k1" .value="b">
+      <b>"b"</b>
+      <!---->
+    </p>
+    <!---->
+    <input id="p0" .value="a">
+    <input id="p1" .value="b">
+    <!---->
+  </main>
+</body>
+-- set #k0 "zz"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      "a"
+      <input id="k0" .value="zz">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "b"
+      <input id="k1" .value="b">
+      <b>"b"</b>
+      <!---->
+    </p>
+    <!---->
+    <input id="p0" .value="a">
+    <input id="p1" .value="b">
+    <!---->
+  </main>
+</body>
+-- set #p1 "zz"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      "a"
+      <input id="k0" .value="zz">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "b"
+      <input id="k1" .value="b">
+      <b>"b"</b>
+      <!---->
+    </p>
+    <!---->
+    <input id="p0" .value="a">
+    <input id="p1" .value="zz">
+    <!---->
+  </main>
+</body>
+-- click #tick
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <p>
+      "a"
+      <input id="k0" .value="zz">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "b"
+      <input id="k1" .value="b">
+      <b>"b"</b>
+      <!---->
+    </p>
+    <!---->
+    <input id="p0" .value="a">
+    <input id="p1" .value="zz">
+    <!---->
+  </main>
+</body>
+-- event window pageshow
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <p>
+      "a"
+      <input id="k0" .value="a">
+      <b>"a"</b>
+      <!---->
+    </p>
+    <p>
+      "b"
+      <input id="k1" .value="b">
+      <b>"b"</b>
+      <!---->
+    </p>
+    <!---->
+    <input id="p0" .value="a">
+    <input id="p1" .value="b">
+    <!---->
+  </main>
+</body>
+-- input #k1 "abcdef"
+(the DOM did not change)
+-- input #p0 "abcdef"
+(the DOM did not change)
+-- input #k0 "xy"
+console.log: keyed: "xy"
+console.log: cell: "xy"
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <p>
+      "xy"
+      <input id="k0" .value="xy">
+      <b>"xy"</b>
+      <!---->
+    </p>
+    <p>
+      "b"
+      <input id="k1" .value="b">
+      <b>"b"</b>
+      <!---->
+    </p>
+    <!---->
+    <input id="p0" .value="xy">
+    <input id="p1" .value="b">
+    <!---->
+  </main>
+</body>

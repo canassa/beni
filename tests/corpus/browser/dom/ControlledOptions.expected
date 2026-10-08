@@ -1,0 +1,51 @@
+-- load
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <button id="add">"add"</button>
+    <select id="sel" .value="b">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+    </select>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <button id="add">"add"</button>
+    <select id="sel" .value="d">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+      <option value="d">"d"</option>
+    </select>
+  </main>
+</body>
+-- input #sel "a"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <button id="add">"add"</button>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+      <option value="d">"d"</option>
+    </select>
+  </main>
+</body>
+-- click #tick
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <button id="add">"add"</button>
+    <select id="sel" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="c">"c"</option>
+      <option value="d">"d"</option>
+    </select>
+  </main>
+</body>

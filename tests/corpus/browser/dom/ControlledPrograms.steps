@@ -1,0 +1,6 @@
+# Both edited; the outer program renders and puts back only its own.
+input #outer-text "edited"
+input #inner-text "edited"
+click #outer-tick
+# The inner one renders: its own goes back.
+click #inner-tick

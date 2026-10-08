@@ -1,0 +1,130 @@
+-- load
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      <input id="r1" .value="row 1">
+      <button id="x1">"x"</button>
+    </p>
+    <p>
+      <input id="r2" .value="row 2">
+      <button id="x2">"x"</button>
+    </p>
+    <p>
+      <input id="r3" .value="row 3">
+      <button id="x3">"x"</button>
+    </p>
+    <button id="toggle">"toggle"</button>
+    <input id="shown" .value="count 0">
+    <!---->
+  </main>
+</body>
+-- input #r2 "edited"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      <input id="r1" .value="row 1">
+      <button id="x1">"x"</button>
+    </p>
+    <p>
+      <input id="r2" .value="edited">
+      <button id="x2">"x"</button>
+    </p>
+    <p>
+      <input id="r3" .value="row 3">
+      <button id="x3">"x"</button>
+    </p>
+    <button id="toggle">"toggle"</button>
+    <input id="shown" .value="count 0">
+    <!---->
+  </main>
+</body>
+-- input #r3 "edited"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      <input id="r1" .value="row 1">
+      <button id="x1">"x"</button>
+    </p>
+    <p>
+      <input id="r2" .value="edited">
+      <button id="x2">"x"</button>
+    </p>
+    <p>
+      <input id="r3" .value="edited">
+      <button id="x3">"x"</button>
+    </p>
+    <button id="toggle">"toggle"</button>
+    <input id="shown" .value="count 0">
+    <!---->
+  </main>
+</body>
+-- click #x2
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      <input id="r1" .value="row 1">
+      <button id="x1">"x"</button>
+    </p>
+    <p>
+      <input id="r3" .value="row 3">
+      <button id="x3">"x"</button>
+    </p>
+    <button id="toggle">"toggle"</button>
+    <input id="shown" .value="count 0">
+    <!---->
+  </main>
+</body>
+-- input #shown "edited"
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      <input id="r1" .value="row 1">
+      <button id="x1">"x"</button>
+    </p>
+    <p>
+      <input id="r3" .value="row 3">
+      <button id="x3">"x"</button>
+    </p>
+    <button id="toggle">"toggle"</button>
+    <input id="shown" .value="edited">
+    <!---->
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      <input id="r1" .value="row 1">
+      <button id="x1">"x"</button>
+    </p>
+    <p>
+      <input id="r3" .value="row 3">
+      <button id="x3">"x"</button>
+    </p>
+    <button id="toggle">"toggle"</button>
+    <!---->
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <p>
+      <input id="r1" .value="row 1">
+      <button id="x1">"x"</button>
+    </p>
+    <p>
+      <input id="r3" .value="row 3">
+      <button id="x3">"x"</button>
+    </p>
+    <button id="toggle">"toggle"</button>
+    <input id="shown" .value="count 0">
+    <!---->
+  </main>
+</body>

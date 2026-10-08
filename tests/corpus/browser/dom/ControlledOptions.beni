@@ -1,0 +1,58 @@
+-- A select whose options a `For` renders (backend.md §15.3, *Controlled
+-- inputs*, the runtime's marks): its `value` is written before any of its
+-- options exists, at mount and whenever an option comes with the value
+-- that names it, so the select shows another option until something puts
+-- the value back. A write the runtime makes inside a controlled element
+-- marks it, and the render ends with it reconciled. The design that
+-- visited every control on every render showed the first option after
+-- the load and after `Add`, until the next render.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Pick String
+    | Add
+    | Tick
+
+
+type alias Model =
+    options : List String
+    choice : String
+    n : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Pick c →
+            { m | choice = c }
+
+        -- A new option, chosen in the same message.
+        Add →
+            { m | options = List.push m.options "d", choice = "d" }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <button id="add" onClick={Add}>add</button>
+        <select id="sel" value={m.choice} onInput={Pick}>
+            <For each={m.options} keyed={λo → o}>
+                {λo → <option value={o}>{o}</option>}
+            </For>
+        </select>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { options = [ "a", "b", "c" ], choice = "b", n = 0 }
+        , update = update
+        , view = view
+        }

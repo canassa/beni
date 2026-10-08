@@ -1,0 +1,10 @@
+# Written with no event: an unrelated render leaves both.
+set #k0 "zz"
+set #p1 "zz"
+click #tick
+# `pageshow` puts every control back.
+event window pageshow
+# Rejected edits are put back; an accepted one prints its row once.
+input #k1 "abcdef"
+input #p0 "abcdef"
+input #k0 "xy"

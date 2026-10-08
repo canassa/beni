@@ -1,0 +1,49 @@
+-- A form `reset` changes its controls with no event on any of them, and
+-- its `reset` event comes before the change (backend.md §15.3, *Controlled
+-- inputs*): the runtime marks and holds the form's controls, and puts them
+-- back to the model in a task after the reset, with no render needed — and
+-- a render before then reconciles them too. The previous design left the
+-- defaults on the page until the program's next render.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Typed String
+    | Tick
+
+
+type alias Model =
+    text : String
+    n : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Typed s →
+            { m | text = s }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <form id="form">
+            <input id="text" value={m.text} onInput={Typed} />
+            <input id="box" type="checkbox" checked={True} />
+            <select id="sel" value="b">
+                <option value="a">a</option>
+                <option value="b">b</option>
+            </select>
+            <input id="plain" />
+            <button id="reset" type="reset">reset</button>
+        </form>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { text = "ab", n = 0 }, update = update, view = view }

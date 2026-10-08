@@ -5,7 +5,9 @@
 -- `model.name` share one, `model.count` has its own, and a value that
 -- reads nothing — the title made by a call of constants — is written
 -- once, under a test that holds only at mount. The input's `value`,
--- `stateful`, is compared with the page on every render, under no test.
+-- `stateful`, is tested on `model.text` like any value and written by
+-- `control`, which compares it with the page (§15.3, *Controlled inputs*,
+-- amended 2026-10-08); the kind is not live.
 -- `m` writes nothing a value says: it clones, walks, keeps `undefined` in
 -- every field and calls `p`. In `ordered`, the `span`'s two attributes
 -- read `count` and `name`, whose groups would write them the other way

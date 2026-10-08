@@ -1,0 +1,70 @@
+-- A message that changes nothing a row reads visits no row (backend.md
+-- §15.3, *Controlled inputs*; §15.4, as amended 2026-10-08): a controlled
+-- input no longer makes its row live. What shows it is a value written
+-- with no event (the driver's `set`, as a script outside beni would):
+-- nothing marks it, so a render leaves it — where the design that visited
+-- every control on every render put it back. `pageshow`, which follows
+-- the browser's restoring of form state, reconciles every control.
+-- Rejected edits are still put back, keyed and by position.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Edit Int String
+    | Tick
+
+
+type alias Item =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Item
+    n : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Edit id s →
+            if String.length s > 3 then
+                m
+            else
+                { m | rows = List.map m.rows λr → if r.id == id then { r | label = s } else r }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+cell : String → Html Msg
+cell s = <b>{Debug.log "cell" s}</b>
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <For each={m.rows} keyed={.id}>
+            {λr →
+                <p>
+                    {Debug.log "keyed" r.label}
+                    <input id="k${String.fromInt r.id}" value={r.label} onInput={Edit r.id _} />
+                    {cell r.label}
+                </p>
+            }
+        </For>
+        <For each={m.rows} keyed={False}>
+            {λr → <input id="p${String.fromInt r.id}" value={r.label} onInput={Edit r.id _} />}
+        </For>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { rows = [ { id = 0, label = "a" }, { id = 1, label = "b" } ], n = 0 }
+        , update = update
+        , view = view
+        }
