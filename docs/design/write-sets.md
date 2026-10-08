@@ -630,7 +630,7 @@ Same(ρ.todos[*]))`, which is `value p[*]` by §3.4's second row.
 | `List.indexedMap xs f` | as `map`, with the index facts of §3.3: `Lst(p, kept, [e₁…eₘ], …)` when guards fix the written positions | the same |
 | `List.filter xs f` | `Lst(p, removeSome)` | `filter` keeps every element's identity and order |
 | `List.filterMap xs f` | `Fresh` — unless `f`'s result is `Con(Just, [Same(εⱼ)])` or `Lit Nothing` under every alternative, then `Lst(p, removeSome)` | elements kept are `===` |
-| `List.update xs κ f` | `Same(p)` when `f` is identity; else `Lst(p, kept, [κ], f's result)` with `f`'s element `Same(p[κ])` | `update` out of range or writing the identical value returns `xs` |
+| `List.update xs κ f` | `Same(p)` when `f` is identity; else `Lst(p, kept, [κ], f's result)` with `f`'s element bound to **`Same(εⱼ)`** as `map`'s is (*amended 2026-10-08*: so that `{ row \| label = … }` rebases to `node p[κ]; value p[κ].label` by §3.4's `kept` row, instead of `value p[κ]`) | `update` out of range or writing the identical value returns `xs` |
 | `List.set xs κ v` | `Lst(p, kept, [κ], ⟦v⟧)` | likewise |
 | `List.swap xs κ₁ κ₂` | `Lst(p, swap κ₁ κ₂)` | `swap xs i i` and out of range return `xs` |
 | `List.push xs v`, `List.append xs [ v… ]`, `[ …xs, v ]` | `Lst(p, append)` | the old elements keep identity and position |
@@ -775,7 +775,12 @@ get one `default` child together** (*amended 2026-10-08, N3*), written `· _` in
 which every arm naming a constructor at `μ.s` is skipped by the own-pattern rule and the
 wildcard and variable arms are analysed; a split whose arms name every constructor has no
 default child. The analysis of a named arm continues with the matched variables bound to
-`Same(μ.s.C#j)`, which is what lets a deeper `case` split further. So every constructor of the
+`Same(μ.s.C#j)`, which is what lets a deeper `case` split further. **A `case` whose scrutinee
+path already carries a decided tag fact adds no children** (*amended 2026-10-08, third
+review*): a second `case msg of` after the first, or one inside a helper the first arm calls, is
+analysed under the key's fact at `μ.s` with its arms selected by §3.1's rule — the key already
+says which constructor it is — so a message is split once per path and two sequential `case`s
+on `msg` give the same three leaves one would. So every constructor of the
 message type, at every depth the tree reaches, is under exactly one leaf — a named one or a
 default — which is what lets §9.2 treat an unknown tag as a defect. So the dispatch key
 is **the path of constructors `update` and its callees actually match on**, nothing more — a
@@ -822,7 +827,10 @@ concretisation `γ(a)` is the set of JavaScript values `a` stands for:
 - `γ(Same(p)) = { M@p }` (one value, the very object; the empty set when `M@p` is undefined);
 - `γ(Lit(c))` = the values equal to `c` as a JavaScript primitive or nullary tag;
 - `γ(Rec(b, fs))` = the records `r` with `r.f ∈ γ(fs[f])` for `f ∈ fs` and `r.f === M@b.f` for
-  every other field (every record when `b` is none and the field is `Fresh`);
+  every other field — a clause that is **vacuous when `b` is none and `fs` names every field**
+  of the type, which is the only `b = none` form §3.3 builds and the one §3.4's full-record row
+  reads (*noted 2026-10-08*); a `Rec(none, fs)` with a field missing can arise only from the
+  cut and is `value` where it lands;
 - `γ(Con(C, parts))` = the values with tag `C` whose i-th argument is in `γ(partᵢ)`;
 - `γ(Tup(parts))` likewise by index;
 - `γ(Lst(b, tag, κ, a'))` = the lists `L'` related to `L = M@b` as the tag of §2.3 promises,
@@ -1220,6 +1228,12 @@ golden the read-only pass must pass before any consumer reads its result:*
     (item 4) still `value ρ.todos[*]`.
 15. **N6** — the C1 chain under the hidden `--writes-work=4096`. Golden: the key `(cap W)` as
     `value ρ`; the same program without the flag is item 9's golden.
+16. **Foster-parenting** (§9.1's allowlist) — `<tr>{model.name}</tr>` with `init` giving `name`
+    a plain string and no key writing it. Golden: the hole is `static` and **not** `literal`,
+    mounted from its expression; the same hole under `<td>` is `literal`.
+17. **One split per path** (§4.4) — an `update` with two sequential `case msg of`
+    expressions over a type of three constructors, the first naming `A`, the second `B`, each
+    ending in `_`. Golden: three leaves, `A`, `B` and `_`, not nine.
 8. **B7** — a key that appends on one arm and writes `[*].f` on another. Golden: both
    `value ρ.xs ⟨append⟩` and `value ρ.xs[*].f` present.
 9. **C1** — thirty `let aₙ = if cₙ then aₙ₋₁ else aₙ₋₁'` lines in a helper `update` calls,
@@ -1245,9 +1259,18 @@ the source and the page — **and the hole stands alone in its text position**. 
 2026-10-08, N4*): non-empty, with no character the HTML serialiser would escape or the parser
 would alter — none of `&`, `<`, `>`, `"`, `'`, no control character or NUL, and no leading
 newline — so that the bytes written are the bytes the page shows. *Alone*: the hole's neighbours
-in its parent are elements or nothing, never a text run or another hole, and its parent is not
-`pre` or `textarea`; a baked string makes exactly one text node where the hole's slot was, so
-the template's walk is unchanged. A hole with an empty read set whose expression is a plain
+in its parent are elements or nothing, never a text run or another hole, **and its parent is
+one of an allowlist of ordinary flow-content elements** (*amended 2026-10-08, third review*):
+`div`, `span`, `p`, `h1`–`h6`, `li`, `a`, `button`, `label`, `td`, `th`, `caption`, `summary`,
+`strong`, `em`, `b`, `i`, `small`, `code`, `section`, `article`, `header`, `footer`, `nav`,
+`main`, `aside`, `figcaption`, `legend`, `option`, `dt`, `dd`. Nothing else qualifies — not
+`pre` and `textarea` (the leading-newline rule), and not the table and select scaffolding
+(`table`, `thead`, `tbody`, `tfoot`, `tr`, `colgroup`, `select`, `optgroup`), where the HTML
+parser foster-parents or drops text that sits directly inside — so a hole the parser would move
+is mounted from its expression into the node the template walk expects, exactly as today. An
+allowlist, not a denylist, because the parser's exceptions are its business to extend and the
+template's walk must be right for every parent. A baked string makes exactly one text node
+where the hole's slot was, so the template's walk is unchanged. A hole with an empty read set whose expression is a plain
 string literal, standing alone, is baked likewise. Every other static hole — empty, escaped,
 adjacent, in a `pre` — is mounted from its expression, which `backend.md` §15.3 already
 specifies and which is correct for every string. Nothing else is: `String.fromInt (model.count + 1)`, a `Float`, a `Bool`, an
