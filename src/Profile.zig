@@ -150,6 +150,9 @@ pub const Phase = enum {
     /// and the removal of what only the previous build wrote.
     write,
     render,
+    /// The write-set pass (`write-sets.md` §6.2), once per run that asks
+    /// for it, after checking: its cost is a number beside `check`.
+    writes,
 };
 
 pub const Counter = enum {

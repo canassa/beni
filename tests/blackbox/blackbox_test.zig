@@ -1192,7 +1192,7 @@ test "dump without a stage is a usage error and does nothing" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
-    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch\n", dump_bad.stderr);
+    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes\n", dump_bad.stderr);
     try testing.expectEqualStrings("", dump_bad.stdout);
 
     // ┌─────────────────────────────────────────┐

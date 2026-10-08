@@ -502,7 +502,7 @@ test "--platform is refused where it would do nothing" {
     );
     try testing.expectEqual(@as(u8, 2), dumped.exit_code);
     try testing.expectEqualStrings(
-        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph and dispatch\n",
+        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph, dispatch and writes\n",
         dumped.stderr,
     );
 }

@@ -201,7 +201,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     const phases: Session.Phases = switch (dump.stage) {
         .tokens, .ast => Session.parse_phases,
         .bir => Session.lower_phases,
-        .interface, .raw, .types, .dispatch => Session.check_phases,
+        .interface, .raw, .types, .dispatch, .writes => Session.check_phases,
         // The graph is what `resolve_phases` builds first, and nothing
         // after it changes an edge (`static-dispatch-spike.md` §6.8), so
         // this dump stops before a single module is checked.
@@ -217,6 +217,12 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     if (dump.stage == .graph) {
         beni.dump.graph.write(stdout, gpa, &session.graph, &session.interner) catch return 2;
         return dumpExit(summary, 0);
+    }
+    // `--stage=writes` is about the PROGRAM: every `main` under the path,
+    // a file or a directory, with the whole program it reaches.
+    if (dump.stage == .writes) {
+        if (summary.errors > 0) return dumpExit(summary, 0);
+        return dumpExit(summary, dumpWrites(gpa, &session, stdout, stderr, dump));
     }
     // `--stage=interface` takes a directory as well as a file: a project's
     // interfaces in path order are exactly what a `check/good` corpus
@@ -303,7 +309,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
                 &session.interner,
             ) catch return 2;
         },
-        .graph => unreachable, // handled above: the graph is not one file's
+        .graph, .writes => unreachable, // handled above: neither is one file's
         .types => {
             const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
             if (m.int() >= session.checked.modules.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});
@@ -410,6 +416,91 @@ fn dumpProjectDispatch(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Wr
     }
     if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
     return 0;
+}
+
+/// The write-set pass over every program whose `main` is in the file or
+/// under the directory `dump.file` names (write-sets.md §8.1).
+fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
+    const Writes = beni.writes.Writes;
+    const n = session.graph.count();
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    const target = storePath(&buffer, dump.file);
+    const birs = gpa.alloc(*const beni.Bir, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(birs);
+    const names = gpa.alloc([]const u8, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(names);
+    const packages = gpa.alloc(SourceStore.Package, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(packages);
+    const targets = gpa.alloc(bool, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(targets);
+    var any = false;
+    for (0..n) |i| {
+        const m: beni.resolve.Graph.Index = @fromBackingInt(@intCast(i));
+        const f = session.graph.moduleFile(m);
+        birs[i] = session.artifacts.bir(f);
+        names[i] = session.store.moduleName(f);
+        packages[i] = session.graph.modulePackage(m);
+        const p = session.store.path(f);
+        targets[i] = !session.store.isEmbedded(f) and (std.mem.eql(u8, p, target) or underDir(p, target));
+        any = any or targets[i];
+    }
+    if (!any) return fail(stderr, "beni: dump needs at least one module", .{});
+    const token = session.profile.begin();
+    const a = Writes.init(.{
+        .gpa = gpa,
+        .graph = &session.graph,
+        .birs = birs,
+        .provenance = session.resolution.provenance,
+        .dispatch = session.checked.dispatch,
+        .interner = &session.interner,
+        .module_names = names,
+        .packages = packages,
+        .targets = targets,
+        .work_cap = dump.writes_work orelse Writes.default_work,
+    }) catch return fail(stderr, "beni: out of memory", .{});
+    defer a.deinit();
+    const result = onBigStackResult(struct {
+        fn go(w: *Writes) Writes.Error!Writes.Run {
+            return w.run();
+        }
+    }.go, .{a}) catch |err| switch (err) {
+        error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
+        error.WorkCap => return fail(stderr, "beni: the write-set pass ran out of work outside a key", .{}),
+    };
+    session.profile.end(0, token, .writes, beni.Profile.Event.no_file, 0);
+    const Pos = struct {
+        fn get(ctx: *const anyopaque, module: u32, tok: u32) beni.dump.writes.Position {
+            const s: *const Session = @ptrCast(@alignCast(ctx));
+            const f = s.graph.moduleFile(@fromBackingInt(@intCast(module)));
+            const line_starts = s.store.lineStarts(f);
+            const spans = s.artifacts.spans(f);
+            if (line_starts.len == 0 or tok >= spans.len()) return .{ .line = 1, .col = 1 };
+            const pos = @import("diagnostic").position(line_starts, s.store.bytes(f), spans.starts[tok]);
+            return .{ .line = pos.line, .col = pos.col };
+        }
+    };
+    beni.dump.writes.write(stdout, gpa, a, result, .{ .ctx = session, .get = Pos.get }) catch return 2;
+    if (dump.common.self_profile) |path| session.writeProfile(path) catch {};
+    return 0;
+}
+
+/// `onBigStack` for a function with a result: the pass walks expression
+/// trees by recursion, as every other tree walk does.
+fn onBigStackResult(comptime function: anytype, args: anytype) @typeInfo(@TypeOf(function)).@"fn".return_type.? {
+    const R = @typeInfo(@TypeOf(function)).@"fn".return_type.?;
+    const Runner = struct {
+        args: @TypeOf(args),
+        result: R = undefined,
+
+        fn go(r: *@This()) void {
+            r.result = @call(.auto, function, r.args);
+        }
+    };
+    var runner: Runner = .{ .args = args };
+    const thread = std.Thread.spawn(.{ .stack_size = Session.check_stack_size }, Runner.go, .{&runner}) catch
+        return @call(.auto, function, args);
+    thread.join();
+    return runner.result;
 }
 
 fn moduleOf(session: *const Session, file: SourceStore.Index) ?beni.resolve.Graph.Index {
