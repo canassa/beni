@@ -1435,6 +1435,9 @@ No limit can make a page wrong; a limit makes a message do more work than it nee
   the platform.
 
 *Amendments go below this line, dated, without renumbering.*
+
+### *Amended 2026-10-09 (the manager, from the fifth review):* one more limit
+
 - **The development verify check samples large derived lists.** After each message, the
   development build re-checks every value it computed. For a derived list longer than 1 000
   elements it compares the length and the first and last 100 elements only. A missed write in
