@@ -150,12 +150,18 @@ function, named by the key (`Main$h$Edit`, `Main$h$GotEditorMsg$EnteredTitle`; s
    with `writes(κ)` (§5.4), in dependency order — before anything of the arm reads them, which
    is what a flat "structure, then values" order got wrong (a `For each={shown}` inside a page
    arm would have reconciled against the stale `shown`); **(b)** its nested branches whose
-   scrutinee reads conflict (§5.5) — a switch tears the old arm down and mounts the new one,
-   and a kept arm is then visited in its turn; **(c)** the edit scripts (§6.2) of every list
-   write in `writes(κ)` whose `For` is the arm's, in the source order of the sites; **(d)** its
-   groups (§5.3) whose read sets conflict, in the order of their first hole, the row holes an
-   edit script marked, and the selector's two rows (§6.4). Mount (§5.5) runs the same four in
-   the same order on every arm it mounts.
+   scrutinee reads conflict (§5.5) — a switch tears the old arm down and mounts the new one
+   from the current model, and **an arm mounted earlier in this dispatch is not visited again**:
+   its lists, groups and derived values were built from the model after step 1, and a visit
+   would run its scripts a second time (a `swap` against rows already in their new order);
+   a kept arm is visited in its turn; **the live nested arms are read after (b) has run**,
+   never snapshotted before it, so a torn-down arm is not visited and a newly mounted one is
+   skipped; **(c)** the edit scripts (§6.2) of every list write in `writes(κ)` whose `For` is
+   the arm's, in the source order of the sites; **(d)** its groups (§5.3) whose read sets
+   conflict, in the order of their first hole, the row holes an edit script marked, and the
+   selector's two rows (§6.4). Mount (§5.5) runs the same four in the same order on every arm
+   it mounts. Pinned by `browser/direct/SwapAndShow` (one message makes a hidden `Show` visible
+   and swaps two rows of the list inside it: the rows appear once, in the new order).
 4. *(folded into 3: there is no separate value step; each arm's values follow its structure.)*
 5. *(withdrawn: there is one after-render point, `end()` in §4.3, after every queued message of
    the dispatch has applied; §10.2.)*
@@ -439,6 +445,13 @@ what the hole last wrote, and writes on difference — `backend.md` §15.3's tab
 per hole kind, unchanged. A group of one path whose holes are exactly that path is the one-line
 form, `const x = model.name; if (x !== g3) { g3 = x; w3.data = x; }`.
 
+- **Every slot is declared `= unset`** — the module-level slots of a unique site, an instance
+  record's fields, a branch's `br`, a derived value's slot — and never left `undefined`, because
+  a `⊤`-typed value is `undefined` under `--release` (`backend.md` §4) and a slot that started
+  as `undefined` would read as already holding it: a `⊤` hole or a `Maybe ⊤` scrutinee would
+  never be written at first mount. `unset` is one module-level `const unset = {}` of `Rt`, which
+  no value is `===` to; teardown writes it back (§5.5). Pinned by `browser/direct/UnitHoles` (a
+  `⊤`-typed hole and a `Maybe ⊤` scrutinee, first mount, under `--release`).
 - **Slots hold leaf values, never structures, for a scalar hole**; a hole that shows a structure
   — a markup value, a list, a `Maybe Html` — is written when its key writes it (a `value` write
   at or above its path) and compared by identity only where this document says identity holds
@@ -469,13 +482,16 @@ table) a message that writes an unrelated field recomputes nothing, as today's g
 and a message that writes `items` recomputes once and then runs the groups that read `shown`. A
 `let` that reads a derived value reads the slot and inherits its read set; dependency order is
 source order, since a `let` reads only earlier ones. **A derived value belongs to the innermost
-branch arm whose markup reads it** (a `let` inside a page's `view`, a `let` bound inside an
-`if`'s `then` markup): it is computed at that arm's mount, after the arm's slots are reset and
+branch arm that encloses every one of its readers**, and to the top level when no arm does (a
+`let` inside a page's `view` read only by that page's markup; a `let` bound inside an `if`'s
+`then` markup; a `let` read by an outer arm's group and by a nested arm's belongs to the outer
+arm, so that the outer groups never read a slot nobody computed): it is computed at that arm's
+mount, after the arm's slots are reset and
 before anything else of the arm, and recomputed **first in the arm's visit** of step 3 under
 the arm's liveness (§4.1, (a) before (b)–(d)) — before the arm's nested branches, its `For`
 sites' scripts and its groups read it — and never in step 2, where the model may already be
-another variant and the read would be a `TypeError`. A derived value read by markup of two
-arms, or by top-level markup, is top-level and is step 2's. Pinned by `browser/direct/LetInArm`:
+another variant and the read would be a `TypeError`. A derived value read by top-level markup,
+or by two arms no single arm encloses, is top-level and is step 2's. Pinned by `browser/direct/LetInArm`:
 a `let` inside a page arm under `A → B → A`, the message that switches arms also writing what
 the `let` reads; and, with no arm switch, a `let` that feeds both a nested `if` (`if List.isEmpty
 shown`) and a `<For each={shown}>`, where the message adds an item the `let` keeps — the new
@@ -569,7 +585,7 @@ list and the instance array, which holds the old shape:
 | tag | the guard |
 |---|---|
 | `kept [κ]`, `set κ` | `0 ≤ κ < insts.length` and `get(xs, κ) !== insts[κ].it` (the element changed, not the list) |
-| `swap κ₁ κ₂` | both in range and `κ₁ !== κ₂` |
+| `swap κ₁ κ₂` | both in range, `κ₁ !== κ₂`, and the data moved: `get(xs, κ₁) !== insts[κ₁].it` — so the script is idempotent, and a list already in its new order (a `swap xs i i`, or rows an arm's mount built from the new model) is left alone |
 | `append` / `prepend` | `xs.length > insts.length`; the new rows are the last (first) `xs.length − insts.length` items |
 | `clear` | `insts.length > 0` |
 | `insert κ` / `removeAt κ` | in range: `xs.length === insts.length + 1` (`− 1`) |
@@ -898,11 +914,12 @@ from S1**, before any guarantee machinery is built on the design:
    against `br`; every derived value recomputed against its slot; every list's items against
    its instances — `xs.length === insts.length` and `get(xs, i) === insts[i].it` for each
    `i`; a nested branch's and a row's holes recursively. **A derived value is never compared by
-   identity**: recomputing a `filter`, a `map` or a record gives a fresh object on every
-   correct dispatch. It is compared by what its readers can see — a scalar by `===`; a list by
-   length and element identity (`get(a, i) === get(b, i)`), the comparison the identity walk
-   makes; a record, tuple or constructor field by field, recursively, to the leaves; a function
-   value not at all. Any difference is a defect (§8.2, naming the hole, list or branch). **It
+   identity, at any depth**: recomputing a `filter`, a `map` or a record gives a fresh object
+   on every correct dispatch, and a `List.map (λt → { t | done = True })` gives fresh elements
+   too. It is compared **structurally**: a scalar by `===`; a list by length and then each
+   element structurally; a record, tuple or constructor field by field, recursively, to the
+   leaves; a function value not at all. The identity rule holds for exactly one check, `get(xs,
+   i) === insts[i].it`, because a `For` assigns the very object it shows. Any difference is a defect (§8.2, naming the hole, list or branch). **It
    must change nothing unless the compiler is wrong**, so it skips what evaluating again would
    change: an every-render group (`Random.value`, `Time.now`: a different value each time is
    not a missed write), and any value whose evaluation **reaches** a `Debug` call — directly
@@ -912,7 +929,8 @@ from S1**, before any guarantee machinery is built on the design:
    correct handler leaves everything else equal to its slot, so a page with a correct compiler
    runs the same with verify on and off, and `browser/direct/VerifyQuiet` pins that it does:
    every-render values, a `Debug.log` in a view hole, a hole calling a helper that logs two
-   calls deep, and a list-valued `let` recomputed and compared per element, all with verify on. It catches the Svelte 3 class at its first occurrence, on every
+   calls deep, a list-valued `let` recomputed and compared per element, and a derived list of
+   fresh records (`List.map` building a record per element), all with verify on. It catches the Svelte 3 class at its first occurrence, on every
    development page a developer runs and on every development page of the corpus. Its cost in
    development is a full compare per dispatch, today's cost.
 
@@ -1265,7 +1283,8 @@ measured on both platforms, P3, vanilla and Solid 1 in one batch. The slices are
   mode** (§8.3), run on every `browser/direct/` program from here on; the holes, width, burst
   and stream sweeps; `browser/dom/Holes`, `ConstantWriteOnce`, `GroupedReads`, `TrustedTurn`
   (re-stated for direct writes), `DefectInHandler`, and the new `EventReadsModel`,
-  `SubmitFromWrite`, `VerifyQuiet`, `DefectInListener`, `DefectInMount`. *Kill criterion 3.*
+  `SubmitFromWrite`, `VerifyQuiet`, `UnitHoles`, `DefectInListener`, `DefectInMount`. *Kill
+  criterion 3.*
 - **S2 — rows.** `For` keyed and positional, row templates, instances, static-key holes, the
   exact edit scripts with their tag guards (§6.2: `set`/`update κ`, swap, append, prepend,
   clear, insert, remove), the delegated list listener for delegatable events and direct
@@ -1291,7 +1310,7 @@ measured on both platforms, P3, vanilla and Solid 1 in one batch. The slices are
   derived, depth, helper-rows and helper-tree sweeps; every `browser/dom/Controlled*`,
   `Defect*`, `Blocks`, `ShowAndBranches`, `LetInMarkup`, `LetOneOwner`, `EveryRender*`,
   `TwoPrograms`, `MountedPrograms`, and the new `BranchReturn`, `LateResponse`, `LetInArm`,
-  `RenderedSends`, `ControlledNoHandler`, `ProgramsByFunction`, `NestedPrograms`,
+  `SwapAndShow`, `RenderedSends`, `ControlledNoHandler`, `ProgramsByFunction`, `NestedPrograms`,
   `DefectInAfterRender`. The first V3 campaign runs after it.
 - **S5 — effects and TodoMVC.** *Q5 answered before its target is set.* `Tea.element`,
   `document`, `application`; the command driver copied and driven by handlers, subscriptions
