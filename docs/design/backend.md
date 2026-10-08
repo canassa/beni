@@ -7878,6 +7878,12 @@ controlled input and a helper's markup is not walked by a render that changes no
 What the visits did is the reconcile's: the controls an edit or a write marked, at the end of the
 render.
 
+*Pointer, 2026-10-08:* which groups a message can reach — the **write set** per message key,
+with the anchoring of `Root.reads` to model paths and the conflict rule a consumer applies — is
+specified in [`write-sets.md`](write-sets.md) (§1 the contract, §2.5 conflict, §3.6 anchoring,
+§9 what R3 and R4 may do with it). Nothing above changes: a group still runs on a comparison,
+and the write set only says which groups need not be tested.
+
 ### 15.5 `For` and `Show` in the `dom` lowering
 
 `For` is Solid 2's list (research 27 §7.1), with **dom-expressions' `reconcileArrays` without
