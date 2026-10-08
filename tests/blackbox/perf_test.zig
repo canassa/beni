@@ -797,6 +797,77 @@ test "a derived comparison per declaration checks within 2.5× its a < b control
     try s.finish("a derived comparison per declaration", try s.controlRatio("Tup.beni", "IntLt.beni", 5, 250));
 }
 
+// The write-set pass over the first review's C1 (`write-sets.md` §3.1,
+// §6.1, §8.3 item 9): `n` lines `aᵢ = if … then aᵢ₋₁ else bᵢ₋₁` (and `bᵢ`
+// the other way round) in a helper `update` calls, each reading both of the
+// line before — a DAG of 2n nodes and a tree of 2ⁿ. Hash-consed terms, a
+// flattened join and `diff` memoised on (term, path, Γ) make it linear; a
+// pass that expanded the tree could not finish at n = 30, and §8.3 asked
+// for this scenario before the pass existed (it was red then: the stage did
+// not exist). `dump --stage=writes`, whose `check` is linear too.
+// Calibration (ReleaseFast): see the detail line. n = 1 000.
+test "the write-set pass over a chain of n doubly-read lets is linear in n" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("C.beni", try chainProgram(s.arena(), 1_000));
+    try s.w.write("C2.beni", try chainProgram(s.arena(), 2_000));
+    const dump = [_][]const u8{ "dump", "--stage=writes", "--jobs=1", "--platform=browser-tea" };
+    const verdict = try s.ratioOf(&dump, "C.beni", "C2.beni", 1_000, &.{});
+    try s.finish("the write-set pass over C1's chain", verdict);
+}
+
+/// C1's program: a `pick` helper of `n` chained `if` lines, called from a
+/// `Tea.sandbox`'s `update`.
+fn chainProgram(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena,
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\type alias Model =
+        \\    count : Int
+        \\    pick : Int
+        \\
+        \\
+        \\type Msg
+        \\    = Go
+        \\
+        \\
+        \\pick : Int, Int, Int → Int
+        \\pick c x y =
+        \\    a0 = x
+        \\    b0 = y
+        \\
+    );
+    for (1..n + 1) |i| try out.print(arena,
+        \\    a{d} = if c == {d} then a{d} else b{d}
+        \\    b{d} = if c == {d} then b{d} else a{d}
+        \\
+    , .{ i, i, i - 1, i - 1, i, i + n, i - 1, i - 1 });
+    try out.print(arena,
+        \\    a{d}
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Go →
+        \\            {{ model | count = pick model.pick model.count 1 }}
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view model = <p>{{model.count}}</p>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Tea.sandbox {{ init = {{ count = 0, pick = 0 }}, update = update, view = view }}
+        \\
+    , .{n});
+    return out.items;
+}
+
 /// `nestedPair` as a program: `main` prints whether `v` holds.
 fn nestedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
