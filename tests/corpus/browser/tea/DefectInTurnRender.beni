@@ -1,0 +1,49 @@
+-- A throw in `view` during the render that ends a user's click — a turn
+-- (backend.md §15.11, *A render at the end of a turn*), whose first
+-- program renders under the turn's own guard — stops the page as a throw
+-- in a flush does (boundary.md §9.8.10 (c)): the host reports it, and no
+-- later message is applied or rendered, so "fix" changes nothing. The
+-- development build's crash screen carries the error the host reported;
+-- the release build adds nothing (`DefectInTurnRender.release-expected`).
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Bad
+    | Fix
+    | Inc
+
+
+type alias Model =
+    count : Int
+    bad : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bad →
+            { model | bad = True }
+
+        Fix →
+            { model | bad = False }
+
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    if model.bad then
+        Debug.todo "view threw"
+    <main>
+        <p id="count">{String.fromInt model.count}</p>
+        <button id="bad" onClick={Bad}>bad</button>
+        <button id="fix" onClick={Fix}>fix</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { count = 0, bad = False }, update = update, view = view }

@@ -8760,3 +8760,11 @@ programs, nested, under a user's click and a burst).
   `scaling.mjs` (2 × 12 samples), holes 10 is 1.50 → 1.17× vanilla and holes 10 000 1.54 → 1.25×.
   Bytes: the empty page does not move (446 brotli, release); the table app's release bundle is
   5 510 → 5 610 (+100, terser and brotli 11), the cost of steps 2, 3 and the flag above.
+
+  *Reverted 2026-10-08 (the owner):* steps 2 and 3 and the bit-4 flag are withdrawn. They made
+  the document-level delegated walk and the flush queue faster, and that machinery is what the
+  compile-away work replaces with direct listeners, per-list delegation and per-message handlers
+  (research 60 §2, `plans/compile-away.md`). The owner judged 100 bytes for fast paths on code
+  being replaced unacceptable. Only step 1, event property names built once per name, remains,
+  being both faster and smaller. The text above stays as the measured record. The runtime is
+  step 1 on top of the controlled-input runtime.
