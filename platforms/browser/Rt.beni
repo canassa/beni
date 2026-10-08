@@ -1869,11 +1869,16 @@ edits event =
     type_ : String
     type_ = Js.to (Js.get event "type")
     -- (Only an `input` has the `type` `checkbox` or `radio`, and only a
-    -- controlled element is marked or put back.)
+    -- controlled element is marked or put back. The target may be any
+    -- element, the document or the window, since any script can dispatch
+    -- these names: each branch reads only what is `undefined`, not a
+    -- throw, where it is missing — but for `reset`, only a form has the
+    -- `elements` iterated.)
     kind : String
     kind = Js.to (Js.get target "type")
     if type_ == "reset" then
-        Js.each (Js.get target "elements") λel → affected el markAndHold
+        if Js.to (Js.get target "localName") == "form" then
+            Js.each (Js.get target "elements") λel → affected el markAndHold
     else if type_ ≠ "click" then
         affected target markEdit
     else if kind == "checkbox" || kind == "radio" then

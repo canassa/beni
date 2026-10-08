@@ -1,0 +1,46 @@
+-- The runtime listens for `input`, `change`, `click` and `reset` on the
+-- whole document once a page has a controlled element (backend.md §15.3,
+-- *Controlled inputs*), so it hears events it has nothing to do with:
+-- a `reset` some script dispatches at an element that is not a form, or
+-- at the document; a `click` on the document; an `input` from an element
+-- that is not a form control. Each marks nothing and throws nothing, and
+-- the page goes on: a rejected edit is still put back, and a click still
+-- renders. Before the fix, a `reset` not at a form read the `elements`
+-- it has not, and the throw stopped the page.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Typed String
+    | Tick
+
+
+type alias Model =
+    text : String
+    n : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Typed s →
+            if String.length s > 3 then m else { m | text = s }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <input id="text" value={m.text} onInput={Typed} />
+        <div id="plain">plain</div>
+        <div id="editable" contenteditable="true">editable</div>
+        <my-field id="custom" />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { text = "ab", n = 0 }, update = update, view = view }

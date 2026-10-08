@@ -76,9 +76,10 @@
 //                               `tasks`, `(the timer's task ended)` is logged
 //                               as each timer's callback returns, before any
 //                               microtask it queued
-//   event <window|document> <name> [<n>]
+//   event <window|document|selector> <name> [<n>]
 //                               `n` (default 1) plain `Event`s of that name
-//                               on the window or the document, in one task
+//                               on the window, the document or the element,
+//                               in one task
 //   url "<url>"                 `history.replaceState` to the URL, relative to
 //                               the page's (`"?q=1#/active"`); nothing fires
 //   hash "<#fragment>"          the same, then one `popstate` and one
@@ -597,7 +598,8 @@ function step(s) {
     return null;
   }
   if (s.command === "event") {
-    const on = s.selector === "window" ? globalThis : document;
+    const on = s.selector === "window" ? globalThis : s.selector === "document" ? document : document.querySelector(s.selector);
+    if (on === null) return `no element matches \`${s.selector}\``;
     for (let n = 0; n < s.count; n++) on.dispatchEvent(new Event(s.name));
     return null;
   }
@@ -845,8 +847,8 @@ if (stepsPath !== undefined) {
       s.name = argument;
     } else if (command === "event") {
       const e = (argument ?? "").match(/^([a-z]+)(?:\s+([1-9][0-9]*))?$/);
-      if ((selector !== "window" && selector !== "document") || e === null) {
-        usage(`${where}: \`event\` takes \`window\` or \`document\`, an event name and at most a count`);
+      if (e === null) {
+        usage(`${where}: \`event\` takes \`window\`, \`document\` or a selector, an event name and at most a count`);
       }
       s.name = e[1];
       s.count = e[2] === undefined ? 1 : Number(e[2]);

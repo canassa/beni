@@ -1,0 +1,40 @@
+-- load
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <input id="text" .value="ab">
+    <div id="plain">"plain"</div>
+    <div id="editable" contenteditable="true">"editable"</div>
+    <my-field id="custom"></my-field>
+  </main>
+</body>
+-- event #plain reset
+(the DOM did not change)
+-- event document reset
+(the DOM did not change)
+-- event window reset
+(the DOM did not change)
+-- event document click
+(the DOM did not change)
+-- event document input
+(the DOM did not change)
+-- event #editable input
+(the DOM did not change)
+-- event #custom input
+(the DOM did not change)
+-- event #custom change
+(the DOM did not change)
+-- event #custom click
+(the DOM did not change)
+-- input #text "abcdef"
+(the DOM did not change)
+-- click #tick
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <input id="text" .value="ab">
+    <div id="plain">"plain"</div>
+    <div id="editable" contenteditable="true">"editable"</div>
+    <my-field id="custom"></my-field>
+  </main>
+</body>
