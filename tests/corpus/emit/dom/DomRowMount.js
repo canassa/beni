@@ -17,12 +17,10 @@ const DomRowMount$p59 = (i$1, v$2) => {
       Rt$delegate(["click", "input"]);
       if (cx$10 !== null) {
         w$12.$$cx = cx$10;
-        w$12.$$clickF = 4;
       }
       w$14.$$inputX = Html$targetValue;
       if (cx$10 !== null) {
         w$14.$$cx = cx$10;
-        w$14.$$inputF = 4;
       }
       return { s: r$11, q: null, e: r$11, w0: r$11, w1: w$12, w2: w$13, w3: w$14, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, x: undefined };
     }, p: (i$15, item$16, position$17) => {

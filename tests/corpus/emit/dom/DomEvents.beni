@@ -6,9 +6,7 @@
 -- `preventDefault` is a flag on the node. An event that is not delegated
 -- gets one stable listener at mount, which reads the handler the node
 -- holds when it fires. A node with a handler records the mount context
--- when there is one, for `Html.map`, and each delegated event's flags
--- then carry bit 4, which tells the listener to read it (backend.md
--- §15.11, amended 2026-10-08). This is a `--library` build, which
+-- when there is one, for `Html.map`. This is a `--library` build, which
 -- has no program start: each kind registers the names it delegates.
 import Html exposing (Html)
 

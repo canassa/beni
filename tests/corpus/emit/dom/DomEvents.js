@@ -44,22 +44,16 @@ const DomEvents$k16 = { m: (v$10, cx$11) => {
   r$12.$$submitF = 1;
   if (cx$11 !== null) {
     r$12.$$cx = cx$11;
-    r$12.$$submitF = 5;
   }
   if (cx$11 !== null) {
     w$13.$$cx = cx$11;
-    w$13.$$clickF = 4;
   }
   w$14.$$inputX = Html$targetValue;
   if (cx$11 !== null) {
     w$14.$$cx = cx$11;
-    w$14.$$inputF = 4;
   }
   Rt$listen(w$14, "focus", 0);
   w$14.$$keydownX = Rt$identity;
-  if (cx$11 !== null) {
-    w$14.$$keydownF = 4;
-  }
   const i$15 = { s: r$12, q: null, e: r$12, w0: r$12, w1: w$13, w3: w$14, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, g0: undefined, g1_0: NaN };
   DomEvents$p16(i$15, v$10);
   return i$15;

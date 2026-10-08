@@ -2130,9 +2130,8 @@ map html f = Js.from { t = mapKind, v = Js.array [ html, f ] }
 -- An event node holds its handler as `$$<name>`, a payload extractor as
 -- `$$<name>X` when the handler takes a payload, its declaration's
 -- `preventDefault` (1) and `stopPropagation` (2) as `$$<name>F`, and the
--- mount context of the `Html.map`s it is inside as `$$cx`, with bit 4 of
--- each delegated event's flags set. A program's mount node holds its
--- `send` as `$$root`.
+-- mount context of the `Html.map`s it is inside as `$$cx`. A program's
+-- mount node holds its `send` as `$$root`.
 
 -- The payload of an event whose handler takes the event itself.
 pub identity : V → V
@@ -2141,11 +2140,9 @@ identity event = event
 
 -- Send the message `node`'s handler makes of `event` to `root`, the mount
 -- node of the program that rendered it (null for none), through every
--- `Html.map` it is inside, innermost first: bit 4 of `flags` says the node
--- is inside one and holds the contexts as `$$cx`, which a node outside
--- every map is not asked for. `flags` may be `undefined`, a node that
--- declared nothing: its bits are then 0. A stopped page calls no handler,
--- and a handler or an `update` that throws stops it.
+-- `Html.map` it is inside, innermost first. `flags` may be `undefined`,
+-- a node that declared neither: its bits are then 0. A stopped page calls
+-- no handler, and a handler or an `update` that throws stops it.
 fire : V, V, String, String, Int, V → ⊤
 fire node event key payload flags root =
     if Js.read dead then
@@ -2160,13 +2157,14 @@ fire node event key payload flags root =
             (λ⊤ →
                 x = Js.get node payload
 
-                made =
-                    if Js.isUndefined x then
-                        Js.get node key
-                    else
-                        Js.call node key [ Js.apply x [ event ] ]
-
-                msg = if Js.bitAnd flags 4 == 0 then made else through (Js.get node "$$cx") made
+                msg =
+                    through
+                        (Js.get node "$$cx")
+                        (if Js.isUndefined x then
+                            Js.get node key
+                         else
+                            Js.call node key [ Js.apply x [ event ] ]
+                        )
 
                 if Js.isNull root then
                     ⊤
@@ -2287,8 +2285,7 @@ start data =
 
 
 -- `(el, name, flags)`: a listener of the element's own for an event that
--- is not delegated; it reads the handler the node holds when it fires,
--- and the node's mount contexts, which its flags do not say it holds.
+-- is not delegated; it reads the handler the node holds when it fires.
 pub listen : V, String, Int → ⊤
 listen el name flags =
     key = "$$${name}"
@@ -2301,12 +2298,6 @@ listen el name flags =
                     ⊤
                 else
                     turn (Js.to (Js.get event "isTrusted")) λ⊤ →
-                        fire
-                            el
-                            event
-                            key
-                            payload
-                            (Js.bitOr flags 4)
-                            (mountAbove (Js.get el "parentNode"))
+                        fire el event key payload flags (mountAbove (Js.get el "parentNode"))
             ]
         )

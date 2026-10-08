@@ -19,11 +19,9 @@ const DomRowItemOnly$p53 = (i$1, v$2) => {
       Rt$delegate(["click"]);
       if (cx$10 !== null) {
         w$15.$$cx = cx$10;
-        w$15.$$clickF = 4;
       }
       if (cx$10 !== null) {
         w$18.$$cx = cx$10;
-        w$18.$$clickF = 4;
       }
       return { s: r$11, q: null, e: r$11, w0: r$11, w2: w$13, w4: w$15, w5: w$16, w7: w$18, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined, x: undefined };
     }, p: (i$19, item$20, position$21) => {
