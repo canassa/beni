@@ -22,7 +22,7 @@ import { analyse, categories } from "./lib/trace.mjs";
 
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const pick = (all, key, list) => (list === null ? all : list.split(",").map((n) => all.find((x) => x[key] === n) ?? (() => { throw new Error(`unknown ${n}`); })()));
-const subjects = pick(allSubjects, "name", arg("subjects", "beni,beni-release,solid2,solid1,p2,vanillajs"));
+const subjects = pick(allSubjects, "name", arg("subjects", "beni,beni-release,solid2,solid1,p2,p3,vanillajs"));
 const benchmarks = pick(allBenchmarks, "id", arg("benchmarks", null));
 const n = Number(arg("n", "10"));
 const out = join(root, arg("out", "out/cpu.json"));

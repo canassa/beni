@@ -12,6 +12,8 @@ export const subjects = [
   { name: "solid2", kind: "solid", entry: "bench" },
   { name: "solid1", kind: "solid", src: "/out/solid1/main.js", module: false },
   { name: "p2", kind: "script", body: "static", src: "/apps/p2/bench.js" },
+  // Research 60: message-indexed rendering by hand; imports core from out/beni-dev.
+  { name: "p3", kind: "script", src: "/apps/p3/bench.js", module: true },
   { name: "vanillajs", kind: "script", body: "static", src: "/out/jfb/Main.js" },
   ...(existsSync(extra) ? JSON.parse(readFileSync(extra, "utf8")) : []),
 ];

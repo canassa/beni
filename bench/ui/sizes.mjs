@@ -10,6 +10,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
+import { hoisted } from "./lib/imports.mjs";
 import { root } from "./lib/serve.mjs";
 
 const require = createRequire(join(root, "apps/solid2/package.json"));
@@ -29,6 +30,9 @@ const subjects = [
   ["Solid 2.0.0-rc.9", [join(root, "out/solid2/bench.js")]],
   ["Solid 1.9.15", [join(root, "out/solid1/main.js")]],
   ["P2 (hand-written)", [join(root, "apps/p2/bench.js")]],
+  // P3 with the core modules it imports from out/beni-dev, scope-hoisted
+  // into one module, the shape beni --release ships.
+  ["P3 (research 60)", [{ text: hoisted(join(root, "apps/p3/bench.js")) }]],
   ["vanillajs", [join(root, "out/jfb/Main.js")]],
 ];
 
@@ -44,7 +48,7 @@ const measure = (texts) => {
 console.log("| subject | files | as served raw | gzip -9 | brotli 11 | minified raw | minified brotli |");
 console.log("|---|--:|--:|--:|--:|--:|--:|");
 for (const [name, files] of subjects) {
-  const texts = files.map((f) => readFileSync(f, "utf8"));
+  const texts = files.map((f) => (typeof f === "string" ? readFileSync(f, "utf8") : f.text));
   const served = measure(texts);
   const minified = [];
   for (const t of texts) minified.push((await minify(t, { compress: true, mangle: true, module: true })).code);

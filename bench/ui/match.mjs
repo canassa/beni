@@ -85,6 +85,7 @@ const baseSubjects = (c) => {
     { name: "solid1", kind: "solid", src: `/out/${dir}/solid1.js`, module: false },
     { name: "solid2", kind: "solid", src: `/out/${dir}/solid2.js` },
     { name: "p2", kind: "script", src: `/out/${dir}/p2.js` },
+    { name: "p3", kind: "script", src: `/out/${dir}/p3.js`, module: true },
     { name: "vanillajs", kind: "script", src: `/out/${dir}/vanilla.js` },
   ].filter((s) => existsSync(join(root, s.dir ? `out/${s.dir}` : s.src)));
 };

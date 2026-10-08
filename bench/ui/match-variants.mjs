@@ -337,4 +337,39 @@ const next = [
   { name: "next", from: "beni", sweeps: ["depth", "table"], edits: () => evflush },
 ];
 
-export const variants = [...ablations, ...proposalA, ...proposalB, ...proposalC, ...next];
+// Research 60: ablations of P3's rows page, to find what its one-row edit
+// pays above vanilla. Diagnoses, not candidates. A P3 copy imports core
+// from the build it sat beside, so the import is made absolute first.
+const p3Import = (c) => ["main.js", "./beni-dev/_core/", `/out/scaling/${c.sweep}/${c.p}/beni-dev/_core/`];
+const p3Ablations = [
+  // The model half's list work out: the instance gets the new row without
+  // `List.update` (the model's list is left as it was).
+  {
+    name: "p3-abl-nolist",
+    from: "p3",
+    sweeps: ["rows"],
+    edits: (c) => [
+      p3Import(c),
+      ["main.js", /rows: List\$update\(model\.rows, (\d+), \(row\) => \(\{ \.\.\.row, label: `changed \$\{version\}` \}\)\) \};\n  if \(model\.rows !== old\) \{\n    const i = insts\[\d+\];\n    i\.it = List\$unsafeGet\(model\.rows, \d+\);/, (s) => s.replace(/rows: List[\s\S]*?i\.it = List\$unsafeGet\(model\.rows, (\d+)\);/, (_, k) => `rows: model.rows };\n  {\n    const i = insts[${k}];\n    i.it = { ...i.it, label: \`changed \${version}\` };`)],
+    ],
+  },
+  // The depth page's path copied by one recursive function, as P2's is,
+  // in place of beni's 128 `bumpK` functions: what the model half's shape
+  // costs.
+  {
+    name: "p3-abl-onebump",
+    from: "p3",
+    sweeps: ["depth"],
+    edits: (c) => [["main.js", "root: bump1(model.root)", `root: (function b(n, k) { return k === ${c.p} ? { ...n, v: n.v + 1 } : { ...n, child: b(n.child, k + 1) }; })(model.root, 1)`]],
+  },
+  // Vanilla holding what P3 holds per row (an instance and its text
+  // node's wrapper): what holding 30 000 of them costs a message.
+  {
+    name: "vanilla-wrappers",
+    from: "vanillajs",
+    sweeps: ["rows"],
+    edits: () => [["main.js", "const data = [];", "const data = [];\nwindow.__held = [];"], ["main.js", "  trs.push(tr);", "  trs.push(tr);\n  window.__held.push({ e: tr, it: data.at(-1), lb: tr.firstChild.nextSibling.firstChild.firstChild, l: \"\", m: false });"]],
+  },
+];
+
+export const variants = [...ablations, ...proposalA, ...proposalB, ...proposalC, ...next, ...p3Ablations];
