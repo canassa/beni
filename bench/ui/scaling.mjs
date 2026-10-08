@@ -8,7 +8,7 @@
 //   node scaling.mjs [--full] [--sweeps=holes,rows,...] [--subjects=beni,solid1,...]
 //                    [--taskset=4-7] [--out=results/<date>-scaling-<mode>.json]
 //                    [--build-only] [--no-build] [--beni=<path>] [--chrome=<path>]
-//                    [--variants=<name>=<path to beni>,...]
+//                    [--variants=<name>=<path to beni>,...] [--params=<p>,...]
 //                    [--points=<sweep>=<p>/<p>/...,...] [--untraced[=synthetic]]
 //
 // `--points` measures the named values of a sweep's parameter only.
@@ -208,6 +208,10 @@ const defaultSubjects = ["beni", "beni-helper", "solid1"];
 const wantedSubjects = [...(arg("subjects", null)?.split(",") ?? defaultSubjects), ...variants.map((v) => `beni-${v.name}`)];
 const wants = (name) => wantedSubjects.includes(name);
 const chosen = sweeps.filter((s) => wantedSweeps.includes(s.id));
+// `--params=256,512,1000`: these points instead of each chosen sweep's own
+// list (points the list does not have are allowed).
+const paramsArg = arg("params", null);
+if (paramsArg !== null) for (const s of chosen) s.params = { ...s.params, [mode]: paramsArg.split(",").map(Number) };
 
 // ---- Generating and building -------------------------------------------------
 
