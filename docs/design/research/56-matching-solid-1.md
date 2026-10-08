@@ -912,7 +912,7 @@ with a controlled input, a helper and `Debug.log`, keyed and positional; on the 
 every message printed every row and a mount printed each twice, now a row prints only when its
 item changed.
 
-Same batch, four subjects — master (`2bac01c1f`, before §9.8), §9.8 (`246bd8b74`), now, Solid 1
+Same batch, four subjects — "master" (*corrected in §9.10:* the slice branch at `2bac01c1f`, before §9.8, not `master`), §9.8 (`246bd8b74`), now, Solid 1
 — (`results/2026-10-04-r56-review3.json`, `…-review3-helper-rows.json`, 2 pages × 4 samples),
 script ms, median. Three sweeps are new (`bench/ui/apps/scaling/`): `live`, N keyed rows each
 holding a controlled input and a helper's markup, `helperRows`, the same with the input replaced
@@ -952,6 +952,58 @@ The table benchmark, n = 10 (`…-review3-table.json`; n = 30 for update and sel
 38.1 / 37.9 / 38.0 / 43.3, append 4.19 / 4.23 / 4.21 / 3.95, clear 16.5 / 15.9 / 15.3 / 16.3 — every
 beni interquartile range overlaps the others'. Bytes, release, brotli: the table app 5 556 /
 5 615 / 5 639, `emit/release/split/HolesPage` 1 796 / 1 844 / 1 870, the empty page 446 throughout.
+
+### 9.10 As merged, against Solid 1 and vanilla JS (2026-10-08)
+
+*Facts.* A and B with every review fix, as merged to `master` (`84de8d94d`), measured for the first
+time, with vanilla JavaScript on every sweep as the floor. The full tables, the method and the
+caveats are [`bench/ui/results/2026-10-08-scaling.md`](../../../bench/ui/results/2026-10-08-scaling.md).
+2 pages × 4 samples per point, 1x, script ms, median.
+
+*A correction to §9.9:* its column headed "master" is the slice branch at `2bac01c1f`, which already
+had A, B and §9.6's fixes. It is not the `master` of that day. The live-rows, helper-rows and
+helper-tree sweeps have never been run on the compiler before A.
+
+| point | beni | Solid 1 | vanilla | beni ÷ Solid 1 |
+|---|--:|--:|--:|--:|
+| holes 10 | 0.103 | 0.092 | 0.044 | 1.12 |
+| holes 10 000 | 0.124 | 0.098 | 0.045 | 1.27 |
+| rows 1 000, change | 0.148 | 0.091 | 0.049 | 1.63 |
+| rows 30 000, change | 0.442 | 0.117 | 0.061 | 3.78 |
+| rows 30 000, swap | 0.835 | 5.38 | 0.101 | 0.16 |
+| width 256 | 0.105 | 0.106 | 0.041 | 0.99 |
+| width 1 024 | 0.377 | 0.097 | 0.043 | 3.89 |
+| depth 16 | 0.121 | 0.115 | 0.043 | 1.05 |
+| depth 128 | 0.306 | 0.210 | 0.042 | 1.46 |
+| derived 100 000 | 0.094 | 0.093 | 0.044 | 1.01 |
+| live rows 1 000 | 0.300 | 0.088 | 0.043 | 3.41 |
+| live rows 10 000 | 2.42 | 0.108 | 0.049 | 22.4 |
+| helper rows 10 000 | 0.099 | 0.100 | 0.046 | 0.99 |
+| helper tree, D = 12 | 0.088 | 0.091 | 0.045 | 0.97 |
+| burst 1 | 0.179 | 0.123 | 0.054 | 1.46 |
+| burst 100 | 0.836 | 1.19 | 0.738 | 0.70 |
+
+The table benchmark (n = 10, script ms; beni, `--release`, Solid 1, vanilla):
+- create 1k: 4.55, 4.65, 4.90, 4.67
+- replace: 10.1, 10.5, 11.8, 9.68
+- update every 10th: 1.45, 1.51, 1.68, 0.71
+- select: 0.90, 0.99, 1.70, 1.39
+- swap: 0.97, 0.95, 1.76, 0.39
+- remove: 0.48, 0.47, 0.56, 0.53
+- create 10k: 49.4, 48.9, 55.5, 47.6
+- append: 5.62, 5.00, 5.23, 4.88
+- clear: 22.4, 21.6, 22.5, 21.2
+
+The development build is ahead of Solid 1 on seven operations, level on clear and behind on append.
+The release build is ahead on all nine.
+
+**What the batch says.**
+- **Where beni matches Solid 1, both are about 2× vanilla** (0.04–0.05 ms per message).
+- **§9.5's list still stands, with three changes:**
+  - **Live rows now lead it.** 0.24 µs a row, 22× Solid 1 at 10 000 rows; the next slice.
+  - **A deep model (64–128 levels) is 1.3–1.5× Solid 1.** This report did not name it before.
+  - **Large views are 1.20–1.27× at 1 000–10 000 holes.** Earlier batches put them nearer.
+- **The long keyed list's one-row edit is 3.8× at 30 000 rows,** as before, until slice C lands.
 
 ## Appendix: reproducing
 
