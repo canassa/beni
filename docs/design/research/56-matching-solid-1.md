@@ -1005,6 +1005,15 @@ The release build is ahead on all nine.
   - **Large views are 1.20–1.27× at 1 000–10 000 holes.** Earlier batches put them nearer.
 - **The long keyed list's one-row edit is 3.8× at 30 000 rows,** as before, until slice C lands.
 
+**Size** (minified, brotli 11; beni's `--release` build). The report's §3 has every point.
+- **On small programs beni is the smaller:** holes 10 is 1 241 bytes against Solid 1's 2 948,
+  and the helper tree is half Solid 1's size.
+- **On the other fixed apps (rows, derived, live rows, helper rows) the two are level, within 7%.**
+- **beni grows faster per element:** 6.1 bytes a hole against 5.3, 16.0 a model field against
+  5.9, 13.8 a level of depth against 3.2. Solid 1 becomes the smaller past about 3 000 holes or
+  300 fields: 1.73× at 1 024 fields.
+- **The table app:** beni 5 510 bytes, Solid 1 4 354, vanilla 1 415.
+
 ## Appendix: reproducing
 
 ```sh
