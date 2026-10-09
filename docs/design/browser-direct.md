@@ -1940,3 +1940,44 @@ the scripts rest on is `write-sets.md`'s amendment *which `[*]` is a row's own*.
 - **The fuzzer** (§8.3) sends, besides single messages, **bursts**: one generated message sent
   up to forty times in one action, so a page's own `push` and prepend take a list past the
   trie's thresholds (32), which single messages in thirty steps do not reach.
+
+### *Amended 2026-10-09 (slice S2, as built; research 67):* rows
+
+S2 is built as its amendment above specifies (`boundary.md` §9.4.6, version 1.8;
+`platforms/browser-direct/zig/direct.zig`, `Direct.beni`'s list functions). What building and
+measuring it settled:
+
+- **What marks a row and a handler node: expandos, by measurement** (§6.1). `bench/ui/rowstate.mjs`
+  measured five forms of one rows page, hand-written so that only the mechanism differs, from
+  real clicks, untraced, ten pages each (research 67 §3). Mount at 1 000 / 10 000 / 30 000 rows,
+  relative to expandos: a listener per row **1.11 / 1.09 / 1.10**; an index lookup among the
+  parent's children 0.97 / 0.97 / 0.99, but its row event is O(n) — 0.21 / 0.40 / 0.74 ms against
+  0.17 / 0.24 / 0.26; a key map read through the page 0.99 / 1.03 / 0.99, which needs the key shown
+  in the row, so is not a general form; a `WeakMap` 1.03 / 1.01 / 1.07. **The delegated listener
+  stays** (§4.2: a listener per row mounts 9–11 % slower), **and so do the expandos** `$r` and
+  `$<event>`: no other general form mounts measurably faster, the index form's 1–3 % is inside its
+  quartiles while its event grows with the list, and the five forms are within 20 B of each other
+  but a listener per row (139 B, which ships no walk). `emit/direct/ListScripts` pins the shape.
+- **A row's item is kept current wherever an element is written**, even where no row group reads
+  what was written: a row's listener body reads its item at the event (Q1), so a `List.update`
+  that changes a field no hole shows still visits that row (`Direct.row`). Found by the verify
+  mode on `KeyedInPlace`'s second list.
+- **Two rows side by side swap by one move**, the first row's, as a keyed reconcile moves them, so
+  the second keeps its focus; two rows apart move both. Found by the sweep's fuzz.
+- **The release optimiser specialises `make`'s calls**: a list whose rows read neither their
+  position nor an enclosing row is made with the item alone (`a.m(b)`), the descriptor and the
+  position dropped where nothing reads them.
+- **A keyed edit is not rank-correct where a key repeats** — an open defect, not a choice.
+  `language.md` §11.9 matches rows that share a key by their rank; S2's scripts edit the row at
+  the index, so after `removeAt`, `insert`, `prepend`, `swap` or a key change at an index whose key
+  occurs again in the list, a row's node (its focus, the text of an uncontrolled input) can sit on
+  another item than `browser-tea` puts it on. The page's text, every hole and every row's item, is
+  the same on both. Pinned by `browser/direct/DuplicateKeys` with a `.tea-expected`, and found by
+  the sweep's fuzz on `KeyedInPlace` (forty duplicates, then a removal). The fix is S3's: a keyed
+  script hands its edit to §6.3's reconciler when the key it touches is not unique — a count per
+  key kept by `make` and the removals, which S2 measured nothing of.
+- **K3 as built**: a list baked is written as text with every end tag (no implied end tag is
+  relied on: rows run into one another); in a release build its rows are adopted only when they
+  hold a handler, so a menu with no handler costs the template and nothing else.
+- **The verify mode on lists** is O(n) per list per dispatch — the rows sweep's development build
+  takes 15.6 ms at 30 000 rows against 0.088 for its release build — a development-only cost.
