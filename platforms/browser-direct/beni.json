@@ -1,0 +1,9 @@
+{
+  "platform": true,
+  "name": "browser-direct",
+  "platforms": ["browser"],
+  "program": "Browser.Program",
+  "markup": { "lowering": "direct", "module": "Direct" },
+  "zig": "zig/root.zig",
+  "reexports": ["Html", "Browser", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events", "Browser.Navigation", "Random", "Storage", "Log"]
+}

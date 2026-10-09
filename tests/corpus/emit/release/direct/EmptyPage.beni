@@ -1,0 +1,17 @@
+-- The floor of `browser-direct` under `--release` (docs/design/browser-
+-- direct.md §13, kill criterion 2): the empty mounted page is the dispatch
+-- guard, `run` and its mount, and nothing else — no template cloner, no
+-- slot, no render loop, no dispatcher, no reconciler. The mount writes
+-- nothing for markup with no nodes, and `init`'s value, read by nothing, is
+-- not kept. The whole file is the golden, so a byte of runtime that creeps
+-- in unreached shows here.
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ = <></>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = {}, update = λ_ m → m, view = view }

@@ -1,0 +1,27 @@
+-- A static page on `browser-direct` (docs/design/browser-direct.md §5.1,
+-- §11.1): the program hook hands the lowering the `Tea.sandbox` call, and
+-- the call is the constructor applied to the program's mount — `init`
+-- evaluated inside it, then the whole page written once as one string, the
+-- same text `browser`'s `dom` lowering writes for this markup. There is no
+-- `view` and no `update` in the output (the hook consumed both), no
+-- template cloner, and nothing imported of the runtime module: `Rt.run`
+-- hands the mount its node and a `template` element.
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ =
+    <main>
+        <h1 class="title">Hello</h1>
+        <p>A static page, &amp; nothing to change.</p>
+        <hr />
+    </main>
+
+
+update : {}, {} → {}
+update _ model = model
+
+
+main : Tea.Program
+main = Tea.sandbox { init = {}, update = update, view = view }

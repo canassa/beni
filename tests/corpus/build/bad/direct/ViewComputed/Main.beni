@@ -1,0 +1,20 @@
+-- `view_not_compiled` (docs/design/browser-direct.md §11.1): a `view` a
+-- call computes when the page runs is no function whose body the compiler
+-- can reach as markup, and `browser-direct` has no renderer to hand it to,
+-- so the build refuses it at the field and names `browser-tea`. The
+-- function it returns is markup used as a value, which slice S0 refuses
+-- too (§5.2).
+import Html exposing (Html)
+import Tea
+
+
+plain : {} → Html {}
+plain _ = <p>plain</p>
+
+
+pick : Bool → ({} → Html {})
+pick _ = plain
+
+
+main : Tea.Program
+main = Tea.sandbox { init = {}, update = λ_ m → m, view = pick True }

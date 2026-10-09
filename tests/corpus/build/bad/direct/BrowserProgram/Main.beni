@@ -1,0 +1,14 @@
+-- `Browser.program` is `browser`'s own program, which `browser-direct`'s
+-- runtime does not run (docs/design/browser-direct.md §15, Q6): the build
+-- refuses it at the call, `not_implemented`, and names `Tea.sandbox`,
+-- rather than a page that throws when it starts.
+import Browser
+import Html exposing (Html)
+
+
+view : {} → Html {}
+view _ = <p>base</p>
+
+
+main : Browser.Program
+main = Browser.program { init = {}, update = λ_ m → m, view = view }

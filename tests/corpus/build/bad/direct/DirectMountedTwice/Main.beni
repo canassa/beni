@@ -1,0 +1,20 @@
+-- `program_mounted_twice` (docs/design/browser-direct.md §8.2): one
+-- top-level program value placed twice — here in a `programs` list and in a
+-- `mountAt` inside it — would be one state mounted twice on
+-- `browser-direct`, so the build refuses it at the second `counter`, and
+-- the message names the escape: a program built by a function.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ = <p>count</p>
+
+
+counter : Tea.Program
+counter = Tea.sandbox { init = {}, update = λ_ m → m, view = view }
+
+
+main : Tea.Program
+main = Browser.programs [ counter, Browser.mountAt counter "other" ]
