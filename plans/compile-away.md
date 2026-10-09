@@ -225,19 +225,16 @@ one browser batch at a time (a lock file, as on 2026-10-08).
   (2026-10-09); this plan's §7 is its build order.
 
 *Taken by the owner, 2026-10-09:*
+- **The direct platform's questions Q1–Q6 (`browser-direct.md` §15) taken as recommended**: payload
+  read at the event; direct writes, no batching; `flush` a no-op and `Dom.rendered` at the end of
+  the dispatch; W27 amended for in-place update before S7; non-suspending subscriptions off fibers
+  before S5; TEA as the direct platform's architecture. "Start building it." S0 starts.
 - **Track U deferred:** reducing unknown messages (the tier model and six analysis extensions)
   is planned but starts later; the direct platform begins with `patchAll` as specified.
 
 *Still the owner's:*
 - Anything M2 or B1 finds against `List`'s representation. Report it to the owner; do not act on it.
 - Restating any criterion in §1. Not to be proposed again without new evidence.
-- The design's open questions Q1–Q6 (`browser-direct.md` §15, re-derived 2026-10-09 after the
-  adversarial review): a view event's payload read at the event rather than captured at the
-  last view; direct writes in place of the render loop (reverses W28 and research 56's A);
-  `Browser.flush` a no-op; W27 amended for in-place update; subscriptions that cannot suspend
-  off fibers; TEA as the direct platform's architecture. Q6 is needed before S0; Q1 and Q2
-  before S1; Q3 before S4; Q5 before S5's target; Q4 before S7. (The first draft's refusal of a program shape is withdrawn:
-  an opaque `update` is the single `*` key, rule 7.)
 
 ## 7. The direct platform's slices
 

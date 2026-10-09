@@ -1442,3 +1442,22 @@ No limit can make a page wrong; a limit makes a message do more work than it nee
   development build re-checks every value it computed. For a derived list longer than 1 000
   elements it compares the length and the first and last 100 elements only. A missed write in
   the middle of such a list is caught by the fuzzer and the page tests, not by this check.
+
+### *Amended 2026-10-09 (the owner):* the open questions are decided
+
+The owner took every recommendation of §15:
+- **Q1:** a view event's payload is read at the event, not captured at the last view.
+- **Q2:** direct writes replace the render loop. There is no batching: K messages are K writes,
+  as in vanilla.
+- **Q3:** `Browser.flush` and `Dom.rendered` keep their names and types. On this platform
+  `flush` does nothing and `Dom.rendered` resolves at the end of the dispatch; `flush` goes
+  with the losing platform at S8.
+- **Q4:** W27 (`language.md` §11.12) is to be amended for in-place update, before S7: an
+  untouched value keeps its identity, and a written value's container may be rebuilt in place
+  where the compiler proves it unshared.
+- **Q5:** a subscription whose body cannot suspend runs with no fiber, specified in
+  `boundary.md` §9.8.5 before S5's target is set.
+- **Q6:** TEA is this platform's architecture, not a layer on a base `Program`. `browser` stays
+  the base for a library-style architecture while both exist; S8 decides.
+
+§15's questions are settled, and S0 may start.
