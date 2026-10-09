@@ -1822,3 +1822,21 @@ No budget is raised. Three `browser/direct/` pages are over it with the value fu
 §6): `Holes` 4 597, `MessageKeys` 4 382 and `VerifyQuiet` 5 007 million instructions — each a
 page of seven compiles (four builds, two `--fuzz` builds, a dump). The gates pass them on their
 recorded run hashes, as they pass `browser/tea/ApiAndRoutes`.
+
+### *Amended 2026-10-09 (the owner): §5.1's baking widened, and the over-budget pages*
+
+**§5.1, *A static hole is text*,** follows `write-sets.md` §9.1 as the owner widened O8 the same
+day: an `Int` within 2⁵³, a string with any character but NUL (escaped), and an attribute's
+string or `Int` value (an empty one included; an empty text is not, since the page's text node
+would be missing) are written into the template, and no code writes them. A `Float` stays mount
+code. The development verify mode checks every baked text hole and attribute after every dispatch,
+the value computed again from the model and compared, as text, with what `init` gave. Research 66
+§3 has kill criterion 3's bytes re-measured.
+
+**§8.3's value fuzz, for the pages it would take over the budget** (the owner's decision): a
+`browser/direct/` page whose two `--fuzz` builds and dump would take it over the 4.3-billion
+instruction budget keeps **event-only fuzzing in the gates** and gets its **value fuzzing in `zig
+build fuzz`**. It is an explicit, named opt-out: the list `value_fuzz_in_sweep` in
+`tests/blackbox/corpus_test.zig`, each page with its reason (today `Holes`, `MessageKeys` and
+`VerifyQuiet`), and the gate's fuzz report for such a page begins `value fuzz: in \`zig build fuzz\`
+(budget)`. No budget is raised and no `.budget` file is added.
