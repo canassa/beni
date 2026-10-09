@@ -2057,6 +2057,8 @@ const Case = struct {
         const tea = pass == .tea_dev or pass == .tea_release;
         const golden = if (chrome and c.goldenExists("chrome-expected"))
             "chrome-expected"
+        else if (pass == .tea_release and c.goldenExists("tea-release-expected"))
+            "tea-release-expected"
         else if (tea and c.goldenExists("tea-expected"))
             "tea-expected"
         else if ((pass == .release or pass == .tea_release) and c.goldenExists("release-expected"))

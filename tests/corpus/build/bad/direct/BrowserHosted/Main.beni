@@ -1,0 +1,20 @@
+-- `Browser.hosted`, the low-level form `browser-tea` is written over, is
+-- refused at the call on `browser-direct`, `not_implemented`, naming
+-- `Tea.element` (docs/design/browser-direct.md §15, Q6): its runtime does
+-- not run hosted programs, so the page would otherwise throw when it starts.
+import Browser
+import Html exposing (Html)
+
+
+view : {} → Html {}
+view _ = <p>hosted</p>
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → {}
+        , update = λ_ _ m → m
+        , settle = λ_ m → m
+        , view = view
+        }

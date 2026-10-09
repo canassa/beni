@@ -97,14 +97,17 @@ applyFrom q i =
 
 -- ---- A defect stops the page (§8.2) -------------------------------------
 
--- A throw ended a dispatch: the page stops, and a development build shows
--- the crash screen. A release build has no code for one; the host reports
--- the throw.
+-- A throw ended a dispatch: the page stops — `dead` first, so a throw
+-- while the screen is drawn cannot leave the page running — and a
+-- development build shows the crash screen, which installs the `error`
+-- listener that adds the host's report of the throw to it (§8.2, as
+-- amended). A release build has no code for one; the host reports the
+-- throw.
 stop : ⊤ → ⊤
 stop ⊤ =
+    Js.write dead True
     if Js.development ⊤ then
         crashScreen ⊤
-    Js.write dead True
 
 
 -- An overlay above the page, which it leaves in place to inspect, the same
@@ -198,7 +201,9 @@ mountOne m =
         Js.throw
             (Js.construct (Js.global "Error")
                 [ Js.from
-                    (if Js.isNull root then
+                    (if Js.isNull root && Js.isNull (Js.get m "n") then
+                        "the page has no body to mount a program at"
+                     else if Js.isNull root then
                         "no element has the id \"${id}\" to mount a program at"
                      else if Js.isNull (Js.get m "n") then
                         "the page's body already holds a program"

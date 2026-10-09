@@ -1,0 +1,21 @@
+-- One program value held in a local and placed twice: the build cannot see
+-- it (`program_mounted_twice` reads top-level values only), so `run`
+-- refuses it, before any program renders, as a defect of the page
+-- (docs/design/browser-direct.md §8.2): nothing is mounted, and the
+-- development build shows the crash screen. `browser-tea` keeps a state per
+-- mount, so it renders the first and then refuses the second for the body
+-- it already holds (`LocalMountedTwice.tea-expected`,
+-- `.tea-release-expected`); the release builds show no screen.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ = <p>twice</p>
+
+
+main : Tea.Program
+main =
+    p = Tea.sandbox { init = {}, update = λ_ m → m, view = view }
+    Browser.programs [ p, p ]

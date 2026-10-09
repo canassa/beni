@@ -27,10 +27,10 @@ is not reported here. Every figure is **[measured]** by the commands in §5.*
    click, untraced, in Chrome; `browser-tea` is 1.41× and 1.62× (release). The hello gap is
    0.115 ms of cold code — the guard, `run` and the mount compiled on their first call — on a
    0.225 ms vanilla mount.
-5. The two platforms show the same page for every `browser/direct/` fixture but one, `InitThrows`,
-   where they differ **by design** (§3): on `browser-direct` `init` runs inside the mount, so a
+5. The two platforms show the same page for every `browser/direct/` fixture but two, where they
+   differ **by design** (§3): `InitThrows` (on `browser-direct` `init` runs inside the mount, so a
    throw there is a defect with a crash screen; on `browser-tea` it runs where `main` is evaluated,
-   while the module loads, before any guard.
+   while the module loads, before any guard) and `LocalMountedTwice` (one value mounted twice).
 
 ## 1. What was built
 
@@ -59,7 +59,7 @@ twice (a `$mounted` mark) and before any program renders. The template text is `
 (`dom.staticTemplate`, the `dom` plan of markup that writes nothing), so both platforms parse the
 same characters.
 
-**What S0 refuses, naming the slice**, all at build time (`build/bad/direct/`): a hole, an event,
+**What S0 refuses, naming the slice**, all at build time (`build/bad/direct/`): a hole, an event, a custom element, `is` or a lazy `img`/`iframe` (`dom`'s flag 1),
 a computed attribute (S1); `For` (S2); a component (S3); `Show`, a controlled attribute, markup as
 a value, `Html.text` and `Html.map` (S4); `Tea.element`, `document`, `application` (S5); a `view`
 of another module, a computed `update`, a record not written at the call (S1); a `view` computed at
@@ -96,11 +96,16 @@ release, against one golden:
   inside the mount (§8.2: "a throw in `init` … is a defect like any other") and shows the crash
   screen; `browser-tea` builds the record where `main` is evaluated, so the throw happens while the
   module loads, before `run` installs anything, and its page shows only the host's report. The
-  harness takes a `<name>.tea-expected` for such a specified difference; this is the only one.
+  harness takes a `<name>.tea-expected` for such a specified difference; `InitThrows` is one.
   It is observable only through a throw or a `Debug` call in `init`, and it is in the direct
   platform's favour (the page is stopped as a defect, not left half loaded). A finding for the
   owner, not a defect: §12.3's "one golden" holds for every page except one whose `init` has an
   effect.
+- `LocalMountedTwice`: one program value in a local, placed twice — which the build cannot see —
+  is refused by `run` before anything renders on `browser-direct`; `browser-tea`, whose state is
+  per mount, renders the first and refuses the second for the body it already holds. The second
+  specified difference (`.tea-expected`, `.tea-release-expected`): the refusal is this platform's
+  rule (§8.2).
 
 `emit/direct/Hello` pins the development mount; `emit/release/direct/EmptyPage` the whole floor.
 

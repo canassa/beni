@@ -106,7 +106,9 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
         else => return cx.programReport(.update, .not_implemented,
             \\`browser-direct` does not compile an `update` that is computed — a call such as
             \\`withLogging update`, a local — yet: it is the single `*` message key, which
-            \\arrives with slice S1 (`docs/design/browser-direct.md` §4.1, §14).
+            \\arrives with slice S1 (`docs/design/browser-direct.md` §4.1, §14). This is a
+            \\gap in what the platform compiles, not a rule of the language: no guarantee is
+            \\at stake, and the program is fine as written.
         ++ " " ++ until_then),
     }
     switch (p.view) {
@@ -142,6 +144,18 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
         \\`browser-direct` does not compile a `view` whose root is an SVG or MathML element
         \\other than `<svg>` or `<math>` yet: it arrives with slice S1
         \\(`docs/design/browser-direct.md` §14).
+    ++ " " ++ until_then);
+    // A custom element, a customised built-in and a lazy image or frame,
+    // which `dom` imports rather than clones so that the page upgrades or
+    // loads them (`dom`'s flag 1). The mount adopts them by `append`, which
+    // no page fixture in Chrome has yet shown to be the same, so they wait
+    // for one.
+    if (page.flags & 1 != 0) return cx.notImplemented(r.node,
+        \\`browser-direct` does not compile a `view` holding a custom element, an element
+        \\with `is`, or an `<img>` or `<iframe>` with `loading` yet: `browser` imports these
+        \\so that the page upgrades or loads them, and the direct mount's adoption of them is
+        \\not yet shown to do the same. It arrives with slice S1
+        \\(`docs/design/browser-direct.md` §5.1, §14).
     ++ " " ++ until_then);
     return mount(cx, tree, r.node, page.html);
 }

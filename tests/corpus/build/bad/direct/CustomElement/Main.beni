@@ -1,0 +1,14 @@
+-- A custom element, which `browser`'s `dom` imports rather than clones so
+-- that the page upgrades it (its template's flag 1), is `not_implemented`
+-- on `browser-direct` until a page in Chrome shows the direct mount's
+-- adoption does the same (docs/design/browser-direct.md §5.1, §14).
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ = <my-widget>custom</my-widget>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = {}, update = λ_ m → m, view = view }

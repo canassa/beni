@@ -343,7 +343,7 @@ platforms** from its one source — `browser-direct` and `browser-tea`, dev
 and release, four pages — against one golden, since the two platforms are
 each other's oracle. A difference the design specifies (one is §8.2's
 `init`, evaluated inside the mount on `browser-direct` and where `main` is
-evaluated on `browser-tea`) is a `<name>.tea-expected`, which the
+evaluated on `browser-tea`) is a `<name>.tea-expected` (and `.tea-release-expected` when the release build differs), which the
 `browser-tea` builds read instead and never bless, with its reason in the
 fixture's comment. Their run hash lines are `dev`, `release`, `tea_dev`
 and `tea_release`.
