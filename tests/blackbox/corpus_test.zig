@@ -2244,6 +2244,9 @@ const Case = struct {
         .{ .name = "Holes.beni", .why = "4 597 million instructions with the value fuzz" },
         .{ .name = "MessageKeys.beni", .why = "4 382 million instructions with the value fuzz" },
         .{ .name = "VerifyQuiet.beni", .why = "5 007 million instructions with the value fuzz" },
+        .{ .name = "BakedQuoting.beni", .why = "4 315 million instructions with the value fuzz" },
+        .{ .name = "BakedValues.beni", .why = "4 339 million instructions with the value fuzz" },
+        .{ .name = "UnitHoles.beni", .why = "4 331 million instructions with the value fuzz" },
     };
 
     var fuzz_flag_mutex: Io.Mutex = .init;

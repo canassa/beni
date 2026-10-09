@@ -137,14 +137,26 @@ const MessageKeys$main = Tea$sandbox(($root$1, $t$2) => {
     if (!Direct$same($t$54, $s$17)) {
       Direct$wrong("the text hole at MessageKeys.beni:51:22", $s$17, $t$54);
     }
+    if ($w$9.data !== `${$t$54}`) {
+      Direct$wrong("the text hole at MessageKeys.beni:51:22 in the document", $w$9.data, `${$t$54}`);
+    }
     if (!Direct$same($t$55, $s$18)) {
       Direct$wrong("the attribute `class` at MessageKeys.beni:52:24", $s$18, $t$55);
+    }
+    if ($w$10.getAttribute("class") !== `${$t$55}`) {
+      Direct$wrong("the attribute `class` at MessageKeys.beni:52:24 in the document", $w$10.getAttribute("class"), `${$t$55}`);
     }
     if (!Direct$same($t$56, $s$19)) {
       Direct$wrong("the text hole at MessageKeys.beni:53:13", $s$19, $t$56);
     }
+    if ($w$11.data !== `${$t$56}`) {
+      Direct$wrong("the text hole at MessageKeys.beni:53:13 in the document", $w$11.data, `${$t$56}`);
+    }
     if (!Direct$same($t$57, $s$20)) {
       Direct$wrong("the text hole at MessageKeys.beni:58:21", $s$20, $t$57);
+    }
+    if ($w$16.data !== `${$t$57}`) {
+      Direct$wrong("the text hole at MessageKeys.beni:58:21 in the document", $w$16.data, `${$t$57}`);
     }
   });
 });

@@ -71,6 +71,9 @@ const OpaqueUpdate$main = Tea$sandbox(($root$1, $t$2) => {
     if (!Direct$same($t$30, $s$15)) {
       Direct$wrong("the text hole at OpaqueUpdate.beni:40:22", $s$15, $t$30);
     }
+    if ($w$13.data !== `${$t$30}`) {
+      Direct$wrong("the text hole at OpaqueUpdate.beni:40:22 in the document", $w$13.data, `${$t$30}`);
+    }
   });
 });
 export { OpaqueUpdate$main };

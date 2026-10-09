@@ -761,18 +761,17 @@ const Page = struct {
             try checked.append(pg.a(), @intCast(k));
         }
         // What the template holds verbatim: each baked text hole and
-        // attribute, its value computed again and compared, as text, with
-        // the text `init` gave it (the URL check aside, which acts on the
-        // text and not the model).
+        // attribute, its value computed again, and the page's node read
+        // and compared with what a write of that value would leave there.
         var baked: std.ArrayList(Baked) = .empty;
-        for (pg.b.baked_holes.items) |n| {
-            const facts = cx.programHole(.{ .node = n });
-            try baked.append(pg.a(), .{ .value = pg.tree.hole(n).value, .text = facts.bake.?, .what = try std.fmt.allocPrint(pg.a(), "the text {s} baked into the page", .{if (facts.where.len != 0) facts.where else "hole"}) });
+        for (pg.b.baked_holes.items) |x| {
+            const facts = cx.programHole(.{ .node = x.what });
+            try baked.append(pg.a(), .{ .value = pg.tree.hole(x.what).value, .t = x.t, .item = null, .what = try std.fmt.allocPrint(pg.a(), "the text {s} baked into the page", .{if (facts.where.len != 0) facts.where else "hole"}) });
         }
-        for (pg.b.baked_items.items) |i| {
-            const facts = cx.programHole(.{ .item = i });
-            const it = pg.tree.items[i];
-            try baked.append(pg.a(), .{ .value = it.value.dynamic.?, .text = facts.bake.?, .what = try std.fmt.allocPrint(pg.a(), "the attribute `{s}` at {s} baked into the page", .{ pg.tree.string(it.name), if (facts.where.len != 0) facts.where else "?" }) });
+        for (pg.b.baked_items.items) |x| {
+            const facts = cx.programHole(.{ .item = x.what });
+            const it = pg.tree.items[x.what];
+            try baked.append(pg.a(), .{ .value = it.value.dynamic.?, .t = x.t, .item = it, .what = try std.fmt.allocPrint(pg.a(), "the attribute `{s}` at {s} baked into the page", .{ pg.tree.string(it.name), if (facts.where.len != 0) facts.where else "?" }) });
         }
         var kept: std.ArrayList(Baked) = .empty;
         for (baked.items) |x| if (!cx.reachesDebug(x.value)) {
@@ -788,20 +787,73 @@ const Page = struct {
             const op = pg.ops()[k];
             const leaf = try pg.leafOf(op, pg.valueOf(op).?);
             const then = try js.block();
-            try js.expression(then, try pg.rt("wrong", &.{ try js.string(try pg.describe(op, k)), try pg.ident(pg.slots[k].?), try pg.leafOf(op, pg.valueOf(op).?) }));
+            const what = try pg.describe(op, k);
+            try js.expression(then, try pg.rt("wrong", &.{ try js.string(what), try pg.ident(pg.slots[k].?), try pg.leafOf(op, pg.valueOf(op).?) }));
             try js.@"if"(blk, try js.unary(.not, try pg.rt("same", &.{ leaf, try pg.ident(pg.slots[k].?) })), then, null);
+            // The page itself, not only the slot: a write that stored the
+            // right value and left the wrong text is a missed write too.
+            const v = pg.valueOf(op).?;
+            const at = try std.fmt.allocPrint(pg.a(), "{s} in the document", .{what});
+            switch (op.what) {
+                .placeholder => |x| try pg.checkNode(blk, at, pg.walks[x.t].?, null, v),
+                .text => try pg.checkNode(blk, at, pg.texts[k].?, null, v),
+                .attribute => |x| try pg.checkNode(blk, at, pg.walks[x.t].?, x.item, v),
+                else => {},
+            }
         }
-        for (kept.items) |x| {
-            const shown = try js.template(&.{ .{ .text = "" }, .{ .expr = try cx.value(x.value) } });
-            const then = try js.block();
-            try js.expression(then, try pg.rt("wrong", &.{ try js.string(x.what), try js.string(x.text), try js.template(&.{ .{ .text = "" }, .{ .expr = try cx.value(x.value) } }) }));
-            try js.@"if"(blk, try js.binary(.strict_ne, shown, try js.string(x.text)), then, null);
-        }
+        for (kept.items) |x| try pg.checkNode(blk, x.what, pg.walks[x.t].?, x.item, x.value);
         cx.programViewLeave();
         try js.expression(pg.body, try pg.rt("verify", &.{try js.arrow(&.{}, blk)}));
     }
 
-    const Baked = struct { value: m.Value.Index, text: []const u8, what: []const u8 };
+    const Baked = struct { value: m.Value.Index, t: u32, item: ?m.Item, what: []const u8 };
+
+    /// The verify mode's read of the page (§8.3, as amended): a text node's
+    /// `data`, or an element's attribute `item`, compared with the string
+    /// a write of value `v` leaves there (`dom`'s `writeAttribute`). An
+    /// attribute the page writes as a property, raw markup, a list or a
+    /// state is not read.
+    fn checkNode(pg: *Page, blk: m.Block, what: []const u8, node: m.Name, item: ?m.Item, v: m.Value.Index) m.Error!void {
+        const js = pg.jsb();
+        const cond = try pg.readAndExpected(node, item, v) orelse return;
+        const msg = (try pg.readAndExpected(node, item, v)).?;
+        const then = try js.block();
+        try js.expression(then, try pg.rt("wrong", &.{ try js.string(what), msg[0], msg[1] }));
+        try js.@"if"(blk, try js.binary(.strict_ne, cond[0], cond[1]), then, null);
+    }
+
+    /// What the page shows at `node` and what a write of `v` leaves there,
+    /// or null for a write the verify mode does not read back.
+    fn readAndExpected(pg: *Page, node: m.Name, item: ?m.Item, v: m.Value.Index) m.Error!?[2]m.Expr {
+        const cx = pg.cx;
+        const js = pg.jsb();
+        const it = item orelse return .{
+            try js.member(try pg.ident(node), "data"),
+            try js.template(&.{ .{ .text = "" }, .{ .expr = try cx.value(v) } }),
+        };
+        if (it.kind != .attribute and it.kind != .escape) return null;
+        if (it.kind == .attribute and it.attribute != .none) {
+            const f = pg.tree.attributeFacts(it.attribute);
+            if (f.property != null or f.raw or f.stateful) return null;
+        }
+        const expected = switch (it.class) {
+            .string, .int, .float => if (it.url)
+                try pg.rt("safeUrl", &.{try cx.value(v)})
+            else
+                try js.template(&.{ .{ .text = "" }, .{ .expr = try cx.value(v) } }),
+            .bool => try js.cond(try cx.value(v), try js.string(""), try js.literal(.null)),
+            .maybe_string => try js.cond(
+                try cx.isJust(try cx.value(v)),
+                if (it.url)
+                    try pg.rt("safeUrl", &.{try cx.maybe(try cx.value(v))})
+                else
+                    try js.template(&.{ .{ .text = "" }, .{ .expr = try cx.maybe(try cx.value(v)) } }),
+                try js.literal(.null),
+            ),
+            else => return null,
+        };
+        return .{ try js.call(try js.member(try pg.ident(node), "getAttribute"), &.{try js.string(pg.tree.string(it.name))}), expected };
+    }
 
     /// The hole an op writes, for the verify mode's message.
     fn describe(pg: *Page, op: dom.Op, k: u32) m.Error![]const u8 {

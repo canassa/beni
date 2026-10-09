@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button id="inc">"0"</button>
+    <p id="ws" data-ff="a\fb" data-tab="a\tb" data-lf="a\nb" data-cr="a\rb" data-sp="a b" data-gt="a>b" data-eq="a=b" data-bt="a`b" data-sq="a'b" data-dq="a\"b" data-lt="a<b" data-slash="a/">"ws"</p>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="inc">"1"</button>
+    <p id="ws" data-ff="a\fb" data-tab="a\tb" data-lf="a\nb" data-cr="a\rb" data-sp="a b" data-gt="a>b" data-eq="a=b" data-bt="a`b" data-sq="a'b" data-dq="a\"b" data-lt="a<b" data-slash="a/">"ws"</p>
+  </main>
+</body>

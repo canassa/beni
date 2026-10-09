@@ -1907,3 +1907,21 @@ prints such holes `literal`. Fixtures: `browser/direct/BakedValues` and `emit/di
 (an `Int`, a negative one, a string with `<&"'` in text and in an attribute, an `Int` attribute,
 an empty attribute, a `javascript:` URL baked; an `Int` past 2⁵³, a `Float` and an empty text
 not); `writes/InitLiteral`'s golden moves (`note`'s `&` and `count`'s `Int` are now `literal`).
+
+### *Amended 2026-10-09 (PR #36's review): quoting a baked attribute*
+
+O8 widened's attribute escaping left a value unquoted unless it held space, tab, LF, CR, a quote,
+`` ` ``, `=`, `<` or `>`, or ended in `/`. The HTML standard's unquoted-attribute-value state also
+ends the value at **form feed (U+000C)**, so `data-ff=a<FF>b` was the value `a` and a second
+attribute `b`. The rule is now that state's set, in full: a value is quoted when it holds tab,
+LF, FF or space (which end it), `>` (which ends the tag), `"`, `'`, `<`, `=` or `` ` `` (parse
+errors there), or CR (LF after preprocessing; escaped as `&#13;` either way), or ends in `/`; `&`
+is escaped quoted or not, and NUL, replaced by the parser quoted or not, is never baked. Quoting
+every value instead was measured on the release bundles (terser, then brotli 11). On the holes
+sweep, whose quoted values are its baked `class` attributes, it moved 10, 1 000 and 10 000 holes
+by 0, −2 and 0 B, for 10% more raw template at 10 000. The width sweep bakes no attribute; quoting
+its four constants moved 4, 16 and 64 by +1, +2 and −48 B, which is brotli's context at that size
+rather than a property of quoting. Quoting constants too would change the template a constant
+attribute gets on `browser`, whose output stays byte-identical, and quoting only baked values
+would put two rules in one template, so the standard's set stays the rule. Fixture:
+`browser/direct/BakedQuoting`, one attribute to each character.

@@ -51,8 +51,14 @@ const ConstantWriteOnce$main = Tea$sandbox(($root$1, $t$2) => {
     if (!Direct$same($t$21, $s$9)) {
       Direct$wrong("the attribute `title` at ConstantWriteOnce.beni:21:12", $s$9, $t$21);
     }
+    if ($w$8.getAttribute("title") !== `${$t$21}`) {
+      Direct$wrong("the attribute `title` at ConstantWriteOnce.beni:21:12 in the document", $w$8.getAttribute("title"), `${$t$21}`);
+    }
     if (!Direct$same($t$22, $s$11)) {
       Direct$wrong("the attribute `lang` at ConstantWriteOnce.beni:21:48", $s$11, $t$22);
+    }
+    if ($w$8.getAttribute("lang") !== `${$t$22}`) {
+      Direct$wrong("the attribute `lang` at ConstantWriteOnce.beni:21:48 in the document", $w$8.getAttribute("lang"), `${$t$22}`);
     }
   });
 });

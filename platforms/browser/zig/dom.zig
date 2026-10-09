@@ -254,9 +254,11 @@ pub const Body = struct {
     /// wrapper.
     root_element: ?struct { name: []const u8, namespace: m.ElementFacts.Namespace } = null,
     /// What `Gen.bake` and `Gen.bake_item` baked into the template: the
-    /// text holes, and the attributes by their index in `Tree.items`.
-    baked_holes: std.ArrayList(m.Node.Index) = .empty,
-    baked_items: std.ArrayList(u32) = .empty,
+    /// text holes, and the attributes by their index in `Tree.items`, each
+    /// with its template node — the text node, the element — which a
+    /// development build walks to, for its verify mode to read.
+    baked_holes: std.ArrayList(Baked(m.Node.Index)) = .empty,
+    baked_items: std.ArrayList(Baked(u32)) = .empty,
     /// A `--library` build's delegated event names, which `m` registers.
     delegated: std.ArrayList([]const u8) = .empty,
     /// The root site, for the names of the kinds it makes.
@@ -1268,12 +1270,14 @@ pub const Gen = struct {
                     // gives: that text, as the template's own (§5.1).
                     if (g.bake) |bake| if (g.tree.kind(n) == .hole) if (bake(g.cx, n)) |text| {
                         try escapeText(g.a(), &b.html, text);
-                        try b.baked_holes.append(g.a(), n);
-                        if (!in_text) {
-                            _ = try b.tnode(g.a(), parent, index, .text);
-                            index += 1;
-                            in_text = true;
-                        }
+                        // Alone under its parent (§5.1): the text node is
+                        // its own.
+                        std.debug.assert(!in_text);
+                        const t = try b.tnode(g.a(), parent, index, .text);
+                        index += 1;
+                        in_text = true;
+                        try b.baked_holes.append(g.a(), .{ .what = n, .t = t });
+                        if (!g.cx.build.release) b.mark(t);
                         continue;
                     };
                     in_text = false;
@@ -1480,7 +1484,8 @@ pub const Gen = struct {
                     const script: ?bool = if (it.url) scriptUrl(text) else false;
                     if (script) |s| {
                         try bakeAttribute(g.a(), &b.html, name, if (s) "" else text);
-                        try b.baked_items.append(g.a(), index);
+                        try b.baked_items.append(g.a(), .{ .what = index, .t = t });
+                        if (!g.cx.build.release) b.mark(t);
                         return raw;
                     }
                 };
@@ -2482,6 +2487,11 @@ fn opReads(op: Op, k: u32) bool {
     };
 }
 
+/// A value baked into the template, and its template node.
+pub fn Baked(comptime T: type) type {
+    return struct { what: T, t: u32 };
+}
+
 /// Whether an attribute's value may be baked into the template: one the
 /// template writes as text — not a property, not raw, not a namespaced
 /// name (written with `setAttributeNS`), and of a `String` or `Int` class.
@@ -2521,10 +2531,15 @@ fn bakeAttribute(a: Allocator, out: *std.ArrayList(u8), name: []const u8, value:
     try out.append(a, '=');
     // A value that ends in `/` is quoted too: `href=#/>` is `#/` to the
     // HTML standard's parser, and `#` to happy-dom's, which reads the `/>`
-    // as a self-closing tag.
+    // as a self-closing tag. Otherwise quoted for every character the
+    // standard's unquoted-attribute-value state does not take as part of
+    // the value: tab, LF, FF and space end it, and `>` the tag (CR is LF
+    // after preprocessing); `"`, `'`, `<`, `=` and `` ` `` are parse errors
+    // there. `&` is escaped either way. NUL, which the parser replaces
+    // quoted or not, is never in a baked value (`Writes.bakeText`).
     const quoted = value[value.len - 1] == '/' or for (value) |c| {
         switch (c) {
-            ' ', '\t', '\n', '\r', '"', '\'', '`', '=', '<', '>' => break true,
+            ' ', '\t', '\n', '\x0c', '\r', '"', '\'', '`', '=', '<', '>' => break true,
             else => {},
         }
     } else false;
