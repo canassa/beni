@@ -1,0 +1,17 @@
+# Mark row 2's node and row 3's.
+input #alone>li:nth-child(2)>input "two's"
+input #alone>li:nth-child(3)>input "three's"
+# Same keys, same order: the text stays with rows 2 and 3.
+click #relabel
+click #mark
+# Row 2's class changes; its node stays.
+click #toggle
+click #toggle
+# A second key 2 renders twice; removed, the rest stay where they were.
+click #duplicate
+click #relabel
+click #dedupe
+click #mark
+# Moved rows take their nodes with them.
+click #swap
+click #clear

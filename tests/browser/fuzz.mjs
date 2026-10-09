@@ -47,6 +47,13 @@
 //     `$$root` (`browser-tea`) or the dispatcher a `--fuzz` build emits,
 //     `globalThis.__beniFuzz.send(program, msg)` (`browser-direct`).
 //
+// Now and then a message, or a click, is a **burst**: sent 33 to 40 times
+// in one action, so a list a program pushes to or prepends to grows past
+// the trie's threshold (32), which single actions in a short sequence do
+// not reach (browser-direct.md §8.3, as amended for S2). Whether an action
+// is a burst comes from a second stream of the seed, so the sequence of
+// actions is the one the seed drew before bursts existed.
+//
 // Every action but a message is one of the driver's steps, written as a
 // `.steps` script writes it, so a sequence of them is a script the driver
 // replays — a red-first fixture.
@@ -149,7 +156,7 @@ function fuzzMounts() {
 // synchronously: a throw it lets out is reported to the page's `error`
 // listeners by the DOM, exactly as one out of a click's listener is, and
 // the step that sent it throws as a click step that throws does.
-function fuzzSend({ program, value }) {
+function fuzzSend({ program, value, count }) {
   let send;
   const direct = globalThis.__beniFuzz;
   if (direct !== undefined) {
@@ -160,9 +167,12 @@ function fuzzSend({ program, value }) {
     if (globalThis.__beniFuzzSend === undefined) return "the page has no guarded send: build it with --fuzz";
     send = () => globalThis.__beniFuzzSend(mount, value);
   }
-  const carrier = document.createElement("span");
-  carrier.addEventListener("beni-fuzz-send", send);
-  carrier.dispatchEvent(new Event("beni-fuzz-send"));
+  // A burst is that many sends, each its own event, as a burst of clicks.
+  for (let n = 0; n < (count ?? 1); n++) {
+    const carrier = document.createElement("span");
+    carrier.addEventListener("beni-fuzz-send", send);
+    carrier.dispatchEvent(new Event("beni-fuzz-send"));
+  }
   return null;
 }
 
@@ -505,7 +515,7 @@ const bodies = ['""', '"ok"', '"[]"', '"{}"', '"{\\"a\\":1}"', '"[1,2]"'];
 // (`types`, null for a program sent none), and the fixture's answers.
 // While the sweep lasts — every sendable constructor of every program, in
 // order — half the actions are messages; then three in ten.
-function actions(rng, types, answers) {
+function actions(rng, types, answers, bursts) {
   const sweep = [];
   types.forEach((type, program) => {
     if (type !== null) for (const tag of constructors(type).sendable) sweep.push({ program, tag });
@@ -525,7 +535,12 @@ function actions(rng, types, answers) {
       const v = message(types[program], tag, rng, offer);
       if (v !== none) {
         const prefix = types.length > 1 ? `program ${program}: ` : "";
-        return { line: `message ${prefix}${show(types[program][0], types[program][1], [], v)}`, message: { program, value: v } };
+        // A burst now and then: the one message sent past 32 times, so a
+        // program's own pushes and prepends take a list into a trie
+        // (browser-direct.md §8.3, as amended for S2).
+        const count = bursts.next() < 1 / 8 ? 33 + bursts.int(8) : 1;
+        const times = count === 1 ? "" : ` ×${count}`;
+        return { line: `message ${prefix}${show(types[program][0], types[program][1], [], v)}${times}`, message: { program, value: v, count } };
       }
     }
     if (offer.pending.length !== 0 && takes(0.15)) {
@@ -574,6 +589,12 @@ function actions(rng, types, answers) {
     // Clicks go to controls more often than to the rest.
     const t = controls.length !== 0 && kind < 0.85 ? rng.pick(controls) : rng.pick(targets);
     if (kind > 0.95) return { line: `dblclick ${t.selector}`, s: { command: "dblclick", selector: t.selector } };
+    // A burst of clicks now and then, as a burst of messages: past 32, so
+    // a list a click pushes to becomes a trie.
+    if (kind > 0.9) {
+      const count = 33 + bursts.int(8);
+      return { line: `click ${t.selector} ${count}`, s: { command: "click", selector: t.selector, count } };
+    }
     return { line: `click ${t.selector}`, s: { command: "click", selector: t.selector } };
   };
   return next;
@@ -865,7 +886,7 @@ export async function fuzz(spec, host) {
   });
   try {
     for (const [index, seed] of spec.seeds.entries()) {
-      const a = await play(spec.a, [], actions(random(seed), sent, answers), spec.steps);
+      const a = await play(spec.a, [], actions(random(seed), sent, answers, random(seed ^ 0x5bd1e995)), spec.steps);
       // The first seed again on build `a`, when the run may be recorded
       // (`replay`): a page that does not replay itself would make every
       // verdict below a coin, and a recorded verdict is not run again.

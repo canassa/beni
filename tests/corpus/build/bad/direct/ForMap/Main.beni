@@ -1,0 +1,30 @@
+-- A message that maps every row of a keyed `For` (`List.map`) needs §6.2's
+-- identity walk, which slice S3 adds (docs/design/browser-direct.md §14):
+-- S2 refuses it at the `For`, naming the message.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Bump
+
+
+type alias Row =
+    id : Int
+    n : Int
+
+
+view : List Row → Html Msg
+view rows =
+    <ul onClick={Bump}>
+        <For each={rows} keyed={.id}>{λr → <li>{String.fromInt r.n}</li>}</For>
+    </ul>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = [ { id = 1, n = 0 } ]
+        , update = λBump rows → List.map rows λr → { r | n = r.n + 1 }
+        , view = view
+        }

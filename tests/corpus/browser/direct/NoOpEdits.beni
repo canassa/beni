@@ -1,0 +1,62 @@
+-- A script is guarded by its tag's condition, never by the list's identity
+-- (browser-direct.md §6.2): an update out of range, a swap of a row with
+-- itself and an append of nothing return the list itself, and a clear of an
+-- empty list changes nothing, so no row is touched. `Debug.log` in each row
+-- shows when one is made or written: these four messages log nothing. An
+-- update in range writes its one row.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = UpdateOut
+    | SwapSelf
+    | AppendNothing
+    | ClearEmpty
+    | UpdateIn
+
+
+type alias Model =
+    rows : List String
+    empty : List String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        UpdateOut →
+            { model | rows = List.update model.rows 99 λs → "${s}!" }
+
+        SwapSelf →
+            { model | rows = List.swap model.rows 1 1 }
+
+        AppendNothing →
+            { model | rows = model.rows ++ [] }
+
+        ClearEmpty →
+            { model | empty = [] }
+
+        UpdateIn →
+            { model | rows = List.update model.rows 1 λs → "${s}!" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="out" onClick={UpdateOut}>out</button>
+        <button id="self" onClick={SwapSelf}>self</button>
+        <button id="nothing" onClick={AppendNothing}>nothing</button>
+        <button id="clear" onClick={ClearEmpty}>clear</button>
+        <button id="in" onClick={UpdateIn}>in</button>
+        <ul>
+            <For each={model.rows} keyed={λs → s}>{λs → <li>{Debug.log "row" s}</li>}</For>
+        </ul>
+        <ol>
+            <For each={model.empty} keyed={False}>{λs → <li>{Debug.log "empty" s}</li>}</For>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { rows = [ "a", "b", "c" ], empty = [] }, update = update, view = view }

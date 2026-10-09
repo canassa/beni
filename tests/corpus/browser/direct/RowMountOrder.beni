@@ -1,0 +1,93 @@
+-- `browser/dom/RowMountOrder` rebuilt for slice S2 (browser-direct.md §6, as
+-- amended for S2): the order a keyed row's values are evaluated in when it
+-- is made and when it is visited. `Debug.log` in each value shows it. At
+-- `make` every row's values run in source order; a mark, which every row
+-- reads, visits every row and runs only the value that reads it; a label
+-- written at an index visits that row and runs only the value that reads
+-- the label. That is the documented difference (`.tea-expected`): on
+-- `browser-tea` a row whose item changed runs both of its values, the
+-- model's first, and here a value runs only when what it reads was written
+-- (§4.1: a handler calls only the groups its key's writes reach). The
+-- original's rename is a `List.map`, slice S3's identity walk; here it is
+-- `List.update`, and its append is `List.push`.
+--
+-- `#after` writes the value that reads the model first and the item-only
+-- one after it, `#before` the other way round, `#toggled` has a class
+-- toggle.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Mark
+    | Rename
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    mark : String
+
+
+marked : Model, Row → String
+marked model r = Debug.log "mark" "${model.mark}${String.fromInt r.id}"
+
+
+named : String, Row → String
+named list r = Debug.log "${list} label" r.label
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | rows = List.push model.rows { id = 3, label = "c" } }
+
+        Mark →
+            { model | mark = "*" }
+
+        Rename →
+            { model | rows = List.update model.rows 0 λr → { r | label = "A" } }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="mark" onClick={Mark}>mark</button>
+        <button id="rename" onClick={Rename}>rename</button>
+        <ul id="after">
+            <For each={model.rows} keyed={.id}>
+                {λr → <li class={marked model r}>{named "after" r}</li>}
+            </For>
+        </ul>
+        <ul id="before">
+            <For each={model.rows} keyed={.id}>
+                {λr → <li title={named "before" r} class={marked model r} />}
+            </For>
+        </ul>
+        <ul id="toggled">
+            <For each={model.rows} keyed={.id}>
+                {λr →
+                    <li class={[ ( "on", model.mark == "*" ) ]} title={marked model r}>
+                        {named "toggled" r}
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" } ], mark = "" }
+        , update = update
+        , view = view
+        }

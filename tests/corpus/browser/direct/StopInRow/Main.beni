@@ -1,0 +1,57 @@
+-- A row handler that stops propagation (browser-direct.md §4.2): the list's
+-- walk runs the bodies it collected below the stopper and the stopper's
+-- own, innermost first, then stops the event natively — so neither the
+-- row's root handler nor the direct listener above the list runs. A click
+-- on the row outside the stopper reaches both. A row handler whose
+-- declaration says `preventDefault` prevents the link's default as the
+-- walk passes it.
+import Browser
+import Html exposing (Html)
+import Stop exposing (Event)
+import Tea
+
+
+type alias Model =
+    log : List String
+    rows : List Int
+
+
+hit : String, Model → Model
+hit what model = { model | log = List.push model.log what }
+
+
+view : Model → Html String
+view model =
+    <main onClick={"main"}>
+        <ul>
+            <For each={model.rows} keyed={λn → n}>
+                {λn →
+                    <li id="row${String.fromInt n}" onClick={"row ${String.fromInt n}"}>
+                        <span
+                            id="stop${String.fromInt n}"
+                            onClickStop={"stopper ${String.fromInt n}"}
+                        >
+                            <button
+                                id="button${String.fromInt n}"
+                                onClick={"button ${String.fromInt n}"}
+                            >
+                                go
+                            </button>
+                        </span>
+                        <a
+                            id="link${String.fromInt n}"
+                            href="#elsewhere"
+                            onClickPrevent={"link ${String.fromInt n}"}
+                        >
+                            link
+                        </a>
+                    </li>
+                }
+            </For>
+        </ul>
+        <p id="log">{String.join model.log ", "}</p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { log = [], rows = [ 1, 2 ] }, update = hit, view = view }

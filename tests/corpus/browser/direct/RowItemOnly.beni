@@ -1,0 +1,65 @@
+-- `browser/dom/RowItemOnly` rebuilt for slice S2 (browser-direct.md §6, as
+-- amended for S2): a row group runs only where a key's writes reach it.
+-- `Debug.log` on each row's label shows when it is computed. A selection
+-- reaches every row's class — a read of the model, not of the row's item —
+-- and computes no label; each row's handler still sends its own row's
+-- message after it. A relabelled item computes its label again and writes
+-- it; the others do not. The original's relabel is a `List.map`, the
+-- identity walk of slice S3; here it is `List.update`. The selection visits
+-- every row: §6.4's selector, which visits two, is slice S3's.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick Int
+    | Relabel
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    selected : Maybe Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick id →
+            { model | selected = Just id }
+
+        Relabel →
+            { model | rows = List.update model.rows 1 λrow → { row | label = "${row.label}!" } }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <ul>
+            <For each={model.rows} keyed={.id}>
+                {λrow →
+                    <li class={if model.selected == Just row.id then "on" else ""}>
+                        <a id="pick${String.fromInt row.id}" onClick={Pick row.id}>
+                            {Debug.log "label" row.label}
+                        </a>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            { rows = [ { id = 1, label = "one" }, { id = 2, label = "two" } ], selected = Nothing }
+        , update = update
+        , view = view
+        }

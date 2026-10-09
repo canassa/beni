@@ -1,0 +1,44 @@
+-- load
+console.log: row: "a"
+console.log: row: "b"
+console.log: row: "c"
+<body>
+  <main>
+    <button id="out">"out"</button>
+    <button id="self">"self"</button>
+    <button id="nothing">"nothing"</button>
+    <button id="clear">"clear"</button>
+    <button id="in">"in"</button>
+    <ul>
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"c"</li>
+    </ul>
+    <ol></ol>
+  </main>
+</body>
+-- click #out
+(the DOM did not change)
+-- click #self
+(the DOM did not change)
+-- click #nothing
+(the DOM did not change)
+-- click #clear
+(the DOM did not change)
+-- click #in
+console.log: row: "b!"
+<body>
+  <main>
+    <button id="out">"out"</button>
+    <button id="self">"self"</button>
+    <button id="nothing">"nothing"</button>
+    <button id="clear">"clear"</button>
+    <button id="in">"in"</button>
+    <ul>
+      <li>"a"</li>
+      <li>"b!"</li>
+      <li>"c"</li>
+    </ul>
+    <ol></ol>
+  </main>
+</body>

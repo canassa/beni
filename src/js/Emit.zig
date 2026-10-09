@@ -435,6 +435,314 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     return e.diagnostics.toOwnedSlice(gpa);
 }
 
+/// Version 1.8 of the program hook (`boundary.md` §9.4.6): each `For` of one
+/// program's `view`, and what each key's write set does to its rows
+/// (`browser-direct.md` §6.2, as amended for S2), read off the write-set
+/// pass while it is alive. A row group is called at one row for a read
+/// bound to the row's own item, on every row otherwise (`write-sets.md`'s
+/// amendment *which `[*]` is a row's own*).
+const DirectLists = struct {
+    e: *Emitter,
+    w: *Writes,
+    prog: *const Writes.Program,
+    key_writes: []const []const Writes.Write,
+    /// Per hole of `prog`: its group number.
+    group_of: []const u32,
+    /// Per hole of `prog`, in its order: what the lowering reads.
+    holes: []Lower.Direct.Hole,
+    /// `groups × keys`, as `Lower.Direct.Program.calls`.
+    conflicts: []const bool,
+    keys: usize,
+    out: std.ArrayList(Lower.Direct.List) = .empty,
+    indices: std.ArrayList(Lower.Direct.IndexRecipe) = .empty,
+    /// The pass's index symbol each of `indices` is.
+    index_syms: std.ArrayList(u32) = .empty,
+
+    const Index = beni_markup.Program.Index;
+    const Edit = beni_markup.Program.Edit;
+    const none = Writes.none;
+
+    fn arena(d: *DirectLists) Allocator {
+        return d.e.scratch;
+    }
+
+    fn build(d: *DirectLists) !void {
+        const holes = d.prog.holes;
+        for (holes, 0..) |h, li| {
+            if (h.kind != .each or (h.form != .for_keyed and h.form != .for_positional)) continue;
+            // The `For`s around this one, outermost first, then this one.
+            var chain: std.ArrayList(u32) = .empty;
+            var at: u32 = @intCast(li);
+            while (at != none and chain.items.len <= 16) : (at = holes[at].list) try chain.insert(d.arena(), 0, at);
+            const per_key = try d.arena().alloc([]const Edit, d.keys);
+            for (per_key, 0..) |*edits, k| edits.* = try d.editsOf(chain.items, k);
+            try d.out.append(d.arena(), .{
+                .module = h.module,
+                .token = h.token,
+                .exact = h.each_path != none,
+                .baked = try d.bake(@intCast(li), chain.items.len),
+                .edits = per_key,
+            });
+        }
+        std.mem.sort(Lower.Direct.List, d.out.items, {}, struct {
+            fn less(_: void, x: Lower.Direct.List, y: Lower.Direct.List) bool {
+                return x.module < y.module or (x.module == y.module and x.token < y.token);
+            }
+        }.less);
+    }
+
+    /// The `Program.Index` of index symbol `s`.
+    fn index(d: *DirectLists, s: u32) !Index {
+        if (s == Writes.sym_star) return .every;
+        if (s == Writes.sym_unknown) return .unknown;
+        for (d.index_syms.items, 0..) |x, i| if (x == s) return @fromBackingInt(@intCast(i));
+        try d.index_syms.append(d.arena(), s);
+        try d.indices.append(d.arena(), try d.recipe(s));
+        return @fromBackingInt(@intCast(d.indices.items.len - 1));
+    }
+
+    /// How a handler evaluates index symbol `s` (`browser-direct.md` §6.2,
+    /// as amended for S2): an integer; a path of the message's constructor
+    /// fields, then fields and tuple components; a path of the old model
+    /// through fields and tuple components. Anything else it cannot.
+    fn recipe(d: *DirectLists, s: u32) !Lower.Direct.IndexRecipe {
+        const w = d.w;
+        switch (w.symKind(s)) {
+            .lit => return .{ .literal = w.symLit(s) },
+            .expr => {},
+            else => return .unknown,
+        }
+        const t = w.symWord(s, 3);
+        if (w.termTag(t) != .same) return .unknown;
+        const p = w.termWord(t, 1);
+        var buf: [Writes.k_limit + 1]u32 = undefined;
+        const all = w.steps(p, &buf);
+        var out: std.ArrayList(Lower.Direct.IndexStep) = .empty;
+        var first: usize = 0;
+        var field: u32 = 0;
+        const root = w.pathKind(w.rootOf(p));
+        switch (root) {
+            .mu => {
+                if (all.len == 0 or w.pathKind(all[0]) != .ctor) return .unknown;
+                field = w.pathB(all[0]);
+                first = 1;
+            },
+            .rho => {},
+            else => return .unknown,
+        }
+        for (all[first..]) |st| switch (w.pathKind(st)) {
+            .field => try out.append(d.arena(), .{ .field = w.pathA(st) }),
+            .tuple => try out.append(d.arena(), .{ .tuple = w.pathA(st) }),
+            else => return .unknown,
+        };
+        return if (root == .mu) .{ .message = .{ .field = field, .steps = out.items } } else .{ .model = out.items };
+    }
+
+    /// The index `w` takes at list path `p`'s element step — when it
+    /// passes through an element of the list — or null.
+    fn through(d: *DirectLists, path: u32, p: u32) !?Index {
+        const w = d.w;
+        if (p == none) return null;
+        if (w.pathLen(path) <= w.pathLen(p) or !w.mayPrefix(p, path)) return null;
+        var buf: [Writes.k_limit + 1]u32 = undefined;
+        const st = w.steps(path, &buf)[w.pathLen(p)];
+        return switch (w.pathKind(st)) {
+            .index => try d.index(w.pathA(st)),
+            .star => .every,
+            else => null,
+        };
+    }
+
+    /// Key `k`'s edits of the last `For` of `chain`.
+    fn editsOf(d: *DirectLists, chain: []const u32, k: usize) ![]const Edit {
+        const w = d.w;
+        const holes = d.prog.holes;
+        const n = chain.len;
+        const li = chain[n - 1];
+        const list = holes[li];
+        const writes = d.key_writes[k];
+        var out: std.ArrayList(Edit) = .empty;
+        // Whether every `For` of the chain is exact: only then can a write
+        // name the rows it is in by index.
+        var addressed = true;
+        for (chain) |c| if (holes[c].each_path == none) {
+            addressed = false;
+        };
+        const keyed = list.form == .for_keyed;
+        // The list's own shape, and its elements' writes.
+        if (addressed) for (writes) |wr| {
+            var outer: std.ArrayList(Index) = .empty;
+            var inside = true;
+            var set_above = false;
+            for (chain[0 .. n - 1]) |c| {
+                const x = try d.through(wr.path, holes[c].each_path) orelse {
+                    // `List.set` on a list around this one: the row it
+                    // sets shows another item, whose list this is.
+                    const pc = holes[c].each_path;
+                    if (wr.kind == .value and wr.edit == .set and wr.s1 != none and w.pathLen(wr.path) == w.pathLen(pc) and w.mayPrefix(pc, wr.path)) {
+                        try outer.append(d.arena(), try d.index(wr.s1));
+                        set_above = true;
+                    } else inside = false;
+                    break;
+                };
+                try outer.append(d.arena(), x);
+            }
+            if (!inside) continue;
+            if (set_above) {
+                while (outer.items.len < n - 1) try outer.append(d.arena(), .every);
+                try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .replaced } });
+                continue;
+            }
+            const p = list.each_path;
+            const lw = w.pathLen(wr.path);
+            const lp = w.pathLen(p);
+            if (lw == lp and w.mayPrefix(p, wr.path)) {
+                if (wr.kind != .value) continue;
+                try d.addShape(&out, outer.items, wr);
+            } else if (lw < lp and w.mayPrefix(wr.path, p)) {
+                if (wr.kind != .value) continue;
+                try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .replaced } });
+            } else if (try d.through(wr.path, p)) |at| {
+                // An element write: its row's groups whose bound reads it
+                // changes, and the key where it may change.
+                var groups: std.ArrayList(u32) = .empty;
+                for (holes, 0..) |h, hi| {
+                    if (h.list != li or h.kind == .each) continue;
+                    for (h.reads, h.bound) |r, b| {
+                        if (b < n) continue;
+                        if (w.conflicts(r, &.{wr})) {
+                            try addGroup(d.arena(), &groups, d.group_of[hi]);
+                            break;
+                        }
+                    }
+                }
+                const rekey = keyed and (list.key_path == none or w.conflicts(list.key_path, &.{wr}));
+                if (at == .every or at == .unknown) try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .all } });
+                // Even with no group to call: the row's item is what its
+                // listener bodies read at the event (Q1), so it is kept current.
+                try d.addEdit(&out, outer.items, .{ .rows = .{ .at = if (at == .unknown) .every else at, .groups = groups.items, .rekey = rekey } });
+            }
+        };
+        // A derived list, or one under a derived `For`: replaced whenever a
+        // write meets what its `each` reads.
+        if (!addressed) for (list.reads, list.bound) |r, b| for (writes) |wr| {
+            if (!w.conflicts(r, &.{wr})) continue;
+            const outer = try d.outerOf(chain, wr, b) orelse continue;
+            try d.addEdit(&out, outer, .{ .shape = .{ .tag = .replaced } });
+        };
+        // Every row, for a row group's read not bound to the row.
+        for (holes, 0..) |h, hi| {
+            if (h.list != li or h.kind == .each) continue;
+            for (h.reads, h.bound) |r, b| {
+                if (b >= n) continue;
+                for (writes) |wr| {
+                    if (!w.conflicts(r, &.{wr})) continue;
+                    const outer = try d.outerOf(chain, wr, b) orelse continue;
+                    var groups: std.ArrayList(u32) = .empty;
+                    try groups.append(d.arena(), d.group_of[hi]);
+                    try d.addEdit(&out, outer, .{ .rows = .{ .at = .every, .groups = groups.items } });
+                }
+            }
+        }
+        return out.items;
+    }
+
+    /// The enclosing `For`s' rows a write that meets a read bound `b` deep
+    /// is in: the write's index at each of the first `b`, every row past
+    /// them; null when the write is at or above one of those lists — its
+    /// own edit, which makes those rows again.
+    fn outerOf(d: *DirectLists, chain: []const u32, wr: Writes.Write, b: u8) !?[]const Index {
+        const holes = d.prog.holes;
+        var outer: std.ArrayList(Index) = .empty;
+        for (chain[0 .. chain.len - 1], 0..) |c, j| {
+            if (j < b and holes[c].each_path != none) {
+                try outer.append(d.arena(), try d.through(wr.path, holes[c].each_path) orelse return null);
+            } else try outer.append(d.arena(), .every);
+        }
+        return outer.items;
+    }
+
+    fn addShape(d: *DirectLists, out: *std.ArrayList(Edit), outer: []const Index, wr: Writes.Write) !void {
+        const Tag = beni_markup.Program.Tag;
+        const tag: Tag = switch (wr.edit) {
+            .set => .set,
+            .append => .append,
+            .prepend => .prepend,
+            .clear => .clear,
+            .insert => .insert,
+            .remove_at => .remove_at,
+            .swap => .swap,
+            .remove_some => .remove_some,
+            .permute => .permute,
+            // `kept` names no shape: its element writes are their own.
+            .kept => return,
+            .none, .replaced => .replaced,
+        };
+        const one: Index = if (wr.s1 != none) try d.index(wr.s1) else .unknown;
+        const two: Index = if (wr.s2 != none) try d.index(wr.s2) else .unknown;
+        try d.addEdit(out, outer, .{ .shape = .{ .tag = tag, .a = one, .b = two } });
+    }
+
+    /// Add an edit, merging rows at the same index under the same rows.
+    fn addEdit(d: *DirectLists, out: *std.ArrayList(Edit), outer: []const Index, what: Edit.What) !void {
+        for (out.items) |*x| {
+            if (!std.mem.eql(Index, x.outer, outer)) continue;
+            switch (what) {
+                .shape => |s| if (x.what == .shape and std.meta.eql(x.what.shape, s)) return,
+                .rows => |r| if (x.what == .rows and x.what.rows.at == r.at) {
+                    var groups: std.ArrayList(u32) = .empty;
+                    try groups.appendSlice(d.arena(), x.what.rows.groups);
+                    for (r.groups) |g| try addGroup(d.arena(), &groups, g);
+                    x.what.rows.groups = groups.items;
+                    x.what.rows.rekey = x.what.rows.rekey or r.rekey;
+                    return;
+                },
+            }
+        }
+        try out.append(d.arena(), .{ .outer = try d.arena().dupe(Index, outer), .what = what });
+    }
+
+    fn addGroup(a: Allocator, groups: *std.ArrayList(u32), g: u32) !void {
+        if (std.mem.indexOfScalar(u32, groups.items, g) != null) return;
+        const at = for (groups.items, 0..) |x, i| {
+            if (x > g) break i;
+        } else groups.items.len;
+        try groups.insert(a, at, g);
+    }
+
+    /// K3 (`browser-direct.md` §6, as amended for S2): the rows `init` gives
+    /// a list of the view's own that no key writes, each of whose row holes
+    /// no key writes either and bakes for every row — their texts set on
+    /// the holes — or null.
+    fn bake(d: *DirectLists, li: u32, depth: usize) !?u32 {
+        const holes = d.prog.holes;
+        const list = holes[li];
+        if (depth != 1 or list.each_path == none or list.init_rows.len == 0) return null;
+        if (!d.static(li)) return null;
+        for (holes, 0..) |h, hi| {
+            if (h.list != li) continue;
+            if (h.kind == .each or h.row_path == none or (h.kind == .child and !h.alone) or !d.static(@intCast(hi))) return null;
+        }
+        for (holes, 0..) |h, hi| {
+            if (h.list != li) continue;
+            const texts = try d.arena().alloc(?[]const u8, list.init_rows.len);
+            for (texts, list.init_rows) |*text, row| {
+                // Into the build's memory: the pass's is freed before lowering.
+                text.* = try d.arena().dupe(u8, (d.w.rowBake(row, h.row_path, h.kind) catch return null) orelse return null);
+            }
+            d.holes[hi].rows = texts;
+        }
+        return @intCast(list.init_rows.len);
+    }
+
+    /// No key's write set conflicts with the hole's reads.
+    fn static(d: *DirectLists, hi: u32) bool {
+        const g = d.group_of[hi];
+        for (0..d.keys) |k| if (d.conflicts[g * d.keys + k]) return false;
+        return true;
+    }
+};
+
 const Emitter = struct {
     gpa: Allocator,
     scratch: Allocator,
@@ -2096,18 +2404,26 @@ const Emitter = struct {
             }
             out.keys = keys;
             out.steps = steps;
-            // The holes, by read set: equal sets are one group.
+            // The holes, by read set: equal sets are one group — and, since
+            // version 1.8, equal bound depths (a row's own read and the
+            // whole list's are two groups).
             var groups: std.ArrayList([]const u32) = .empty;
+            var group_bounds: std.ArrayList([]const u8) = .empty;
             const holes = try a.alloc(Lower.Direct.Hole, prog.holes.len);
+            const group_of = try a.alloc(u32, prog.holes.len);
             const rho = [_]u32{Writes.rho_path};
-            for (prog.holes, holes) |h, *o| {
+            const unbound = [_]u8{0};
+            for (prog.holes, holes, group_of) |h, *o, *go| {
                 const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
-                const group: u32 = for (groups.items, 0..) |g, gi| {
-                    if (std.mem.eql(u32, g, reads)) break @intCast(gi);
+                const bounds: []const u8 = if (prog.view_capped) &unbound else h.bound;
+                const group: u32 = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
+                    if (std.mem.eql(u32, g, reads) and std.mem.eql(u8, gb, bounds)) break @intCast(gi);
                 } else blk: {
                     try groups.append(a, reads);
+                    try group_bounds.append(a, bounds);
                     break :blk @intCast(groups.items.len - 1);
                 };
+                go.* = group;
                 const file = e.graph().moduleFile(@fromBackingInt(@intCast(h.module)));
                 const at = e.tokenPosition(file, h.token);
                 o.* = .{
@@ -2118,6 +2434,15 @@ const Emitter = struct {
                     .where = try std.fmt.allocPrint(a, "{s}:{d}:{d}", .{ std.fs.path.basename(e.session.store.path(file)), at.line, at.col }),
                 };
             }
+            const conflicts = try a.alloc(bool, groups.items.len * keys.len);
+            for (groups.items, 0..) |g, gi| for (key_writes, 0..) |kw, ki| {
+                conflicts[gi * keys.len + ki] = for (g) |r| {
+                    if (w.conflicts(r, kw)) break true;
+                } else false;
+            };
+            // Version 1.8: the lists, and K3's per-row texts.
+            var lists: DirectLists = .{ .e = e, .w = w, .prog = prog, .key_writes = key_writes, .group_of = group_of, .holes = holes, .conflicts = conflicts, .keys = keys.len };
+            try lists.build();
             std.mem.sort(Lower.Direct.Hole, holes, {}, struct {
                 fn less(_: void, x: Lower.Direct.Hole, y: Lower.Direct.Hole) bool {
                     return x.module < y.module or (x.module == y.module and x.token < y.token);
@@ -2125,13 +2450,9 @@ const Emitter = struct {
             }.less);
             out.holes = holes;
             out.groups = @intCast(groups.items.len);
-            const conflicts = try a.alloc(bool, groups.items.len * keys.len);
-            for (groups.items, 0..) |g, gi| for (key_writes, 0..) |kw, ki| {
-                conflicts[gi * keys.len + ki] = for (g) |r| {
-                    if (w.conflicts(r, kw)) break true;
-                } else false;
-            };
             out.calls = conflicts;
+            out.lists = lists.out.items;
+            out.indices = lists.indices.items;
         }
         e.direct = .{ .programs = programs };
         if (!e.options.release) try e.debugReach();

@@ -1,0 +1,18 @@
+-- A `For` row that is an `if` around its markup is a branch, which slice S4
+-- compiles (docs/design/browser-direct.md §5.5, §14): S2 refuses it at the
+-- `For`, never a row that shows one arm for good.
+import Html exposing (Html)
+import Tea
+
+
+view : List Int → Html {}
+view xs =
+    <ul>
+        <For each={xs} keyed={False}>
+            {λx → if x > 1 then <li>big</li> else <li>small</li>}
+        </For>
+    </ul>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = [ 1, 2 ], update = λ_ m → m, view = view }

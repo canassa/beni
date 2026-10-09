@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.7: what the compiler hands a platform's markup lowering, and everything
+//! 1.8: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -28,8 +28,10 @@ const std = @import("std");
 /// a program lowering compiles messages and holes with (`programKeys`,
 /// `programHole`, `programCalls`, `programUpdate`, `programArm`,
 /// `programViewEnter`, `programMessage`, `programDispatch`), `reachesDebug`
-/// and `Build.fuzz`.
-pub const version: Version = .{ .major = 1, .minor = 7 };
+/// and `Build.fuzz`, 1.8 the calls a program lowering compiles a `For`'s rows
+/// with (`programList`, `programEdits`, `programIndex`, `rowValuesOf`,
+/// `programRowBake`).
+pub const version: Version = .{ .major = 1, .minor = 8 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -199,6 +201,51 @@ pub const Program = struct {
         /// Where the hole is written, `Main.beni:12:9`, for a message that
         /// names it; empty when the pass did not see it.
         where: []const u8 = "",
+    };
+
+    /// 1.8: what `Context.programList` says of one `For` of the program's
+    /// `view`.
+    pub const ListFacts = struct {
+        /// Its `each` is exactly a path of the model or of an enclosing
+        /// row's item (`browser-direct.md` §6.2): a key's edits name what
+        /// changed. False: a derived list, which every key whose writes
+        /// conflict with its reads `replaced`.
+        exact: bool,
+        /// K3 (`browser-direct.md` §6, as amended for S2): the number of
+        /// rows `init` gives, each written into the template
+        /// (`Context.programRowBake`); null when the list is made at mount.
+        baked: ?u32 = null,
+    };
+
+    /// 1.8: an index symbol of a key's edits (`write-sets.md` §2.3), which
+    /// `Context.programIndex` evaluates; `every` stands for every row, and
+    /// `unknown` for a position the handler cannot compute.
+    pub const Index = enum(u32) {
+        every = std.math.maxInt(u32),
+        unknown = std.math.maxInt(u32) - 1,
+        _,
+    };
+
+    /// 1.8: a list's edit tag (`write-sets.md` §2.3), as an edit says it.
+    pub const Tag = enum(u8) { set, append, prepend, clear, insert, remove_at, swap, all, remove_some, permute, replaced, _ };
+
+    /// 1.8: one thing a key's write set does to a `For`'s rows
+    /// (`Context.programEdits`).
+    pub const Edit = struct {
+        /// The rows of the enclosing `For`s it is under, outermost first:
+        /// one index per enclosing `For` (`every`: in each of its rows).
+        outer: []const Index,
+        what: What,
+
+        pub const What = union(enum) {
+            /// The list's shape: its tag and the tag's index symbols
+            /// (`unknown` where the tag has none).
+            shape: struct { tag: Tag, a: Index = .unknown, b: Index = .unknown },
+            /// The rows at `at` (`every`: each row): call the row groups
+            /// `groups` (`HoleFacts.group` numbers) on them; `rekey` when
+            /// the row's key may change there.
+            rows: struct { at: Index, groups: []const u32, rekey: bool = false },
+        };
     };
 
     /// 1.7: what a view event's handler value makes when its event fires
@@ -912,6 +959,42 @@ pub const Context = struct {
     pub fn reachesDebug(cx: *Context, v: Value.Index) bool {
         return cx.vtable.reaches_debug(cx.impl, v);
     }
+
+    /// 1.8, inside `Lowering.program` only: what the write-set pass says
+    /// of a `For` node of the program's `view`.
+    pub fn programList(cx: *Context, node: Node.Index) Program.ListFacts {
+        return cx.vtable.program_list(cx.impl, node);
+    }
+
+    /// 1.8, inside `Lowering.program` only: what key `key`'s write set
+    /// does to the rows of `For` node `node` (`browser-direct.md` §6.2):
+    /// its shape edits and its row visits, each under the enclosing `For`s'
+    /// rows it is in. Empty: the key changes nothing the list shows.
+    pub fn programEdits(cx: *Context, key: u32, node: Node.Index) []const Program.Edit {
+        return cx.vtable.program_edits(cx.impl, key, node);
+    }
+
+    /// 1.8, inside `Lowering.program` only: index symbol `index` of key
+    /// `key`'s edits, evaluated into `block` from the handler's `params`
+    /// and the old model `model` (the arm has not replaced it); null when the handler
+    /// cannot evaluate it.
+    pub fn programIndex(cx: *Context, key: u32, block: Block, params: []const Name, model: Expr, index: Program.Index) Error!?Expr {
+        return cx.vtable.program_index(cx.impl, key, block, params, model, index);
+    }
+
+    /// 1.8: `rowValues` for the values named in `values` only — each a value
+    /// of the row's root — with the item and position bound and the row's
+    /// `let`s evaluated, in the root's order; none binds the item alone.
+    pub fn rowValuesOf(cx: *Context, block: Block, row: Row.Index, item: Name, index: ?Name, values: []const Value.Index) Error!void {
+        return cx.vtable.row_values_of(cx.impl, block, row, item, index, values);
+    }
+
+    /// 1.8, inside `Lowering.program` only: the text the template holds for
+    /// row `row` of a `For` K3 bakes, in the place of a hole of its row,
+    /// verbatim; null when that hole is not baked.
+    pub fn programRowBake(cx: *Context, hole: Program.HoleRef, row: u32) ?[]const u8 {
+        return cx.vtable.program_row_bake(cx.impl, hole, row);
+    }
 };
 
 /// `JsIr` restricted to what a template needs. Assignment is a statement,
@@ -1077,6 +1160,11 @@ pub const VTable = struct {
     program_message: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
     program_dispatch: *const fn (impl: *anyopaque, block: Block, msg: Expr, handlers: []const Name) Error!void,
     reaches_debug: *const fn (impl: *anyopaque, v: Value.Index) bool,
+    program_list: *const fn (impl: *anyopaque, node: Node.Index) Program.ListFacts,
+    program_edits: *const fn (impl: *anyopaque, key: u32, node: Node.Index) []const Program.Edit,
+    program_index: *const fn (impl: *anyopaque, key: u32, block: Block, params: []const Name, model: Expr, index: Program.Index) Error!?Expr,
+    row_values_of: *const fn (impl: *anyopaque, block: Block, row: Row.Index, item: Name, index: ?Name, values: []const Value.Index) Error!void,
+    program_row_bake: *const fn (impl: *anyopaque, hole: Program.HoleRef, row: u32) ?[]const u8,
 
     literal: *const fn (impl: *anyopaque, which: Literal, text: []const u8) Error!Expr,
     template: *const fn (impl: *anyopaque, parts: []const TemplatePart) Error!Expr,

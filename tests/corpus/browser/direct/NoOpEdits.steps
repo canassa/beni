@@ -1,0 +1,7 @@
+# Four edits that change no row: nothing logged.
+click #out
+click #self
+click #nothing
+click #clear
+# One that does: its row only.
+click #in

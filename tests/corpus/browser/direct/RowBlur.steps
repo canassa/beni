@@ -1,0 +1,6 @@
+# Focus one row's input, then another's: a focus, a blur, a focus.
+focus #in1
+focus #in2
+# A row made by a message listens too.
+click #add
+focus #in3

@@ -1,0 +1,22 @@
+-- `browser-direct`'s slice S2 compiles a keyed `For` whose every edit is a
+-- script (docs/design/browser-direct.md §6, as amended for S2); a message
+-- that reverses the list needs §6.3's reconciler, so the build is
+-- `not_implemented` at the `For`, naming the message and slice S3 — never a
+-- page that shows the old order.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Reverse
+
+
+view : List Int → Html Msg
+view xs =
+    <ul onClick={Reverse}>
+        <For each={xs} keyed={λx → x}>{λx → <li>{String.fromInt x}</li>}</For>
+    </ul>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = [ 1, 2 ], update = λReverse xs → List.reverse xs, view = view }
