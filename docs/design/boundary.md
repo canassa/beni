@@ -1765,6 +1765,67 @@ evaluates both, and must give a value that uses it the `let`'s value as last eva
 A root `cx.grouped` answers false for is lowered exactly as before. `ssr` does not set `groups`;
 `dom` targets 1.5 (`backend.md` §15.3, *A root computes its own values*).
 
+**Version 1.6** (*amended 2026-10-09*, additive and gated on nothing; `browser-direct.md` §11.1,
+slice S0): **the program hook** — a lowering may compile a whole program of The Elm Architecture
+where its constructor is called, rather than its markup one root at a time. A lowering that sets
+none of the four fields below is handed exactly what 1.5 hands it. S0 builds what a program whose
+`view` is static markup needs; `browser-direct.md` §11.1's other calls (`cx.arm`, `cx.writes`,
+`cx.reads`, `cx.conflicts`, `cx.site`, `cx.carriers`, `cx.literal`) are added by the slices that
+consume them, each as a minor version of its own.
+
+- **`Lowering.programs`**, the program constructors the lowering compiles whole, each a `foreign`
+  of its platform named by module and value (`Tea.sandbox`). The compiler finds **every call** of
+  one in a surviving declaration before any declaration is lowered. A use of one that is not the
+  callee of a call — `List.map apps Tea.sandbox` — makes programs whose `view`s are known only at
+  run time, and is **`view_not_compiled`** at the use. An entry may carry **`refused`**, a message:
+  every use of that value is then `not_implemented` with it, and the hook never sees it — how a
+  lowering turns away another architecture's constructor its runtime cannot run (`browser-direct`
+  refuses `Browser.program` and `Browser.hosted`).
+- **`Lowering.program(cx, tree, program) Expr`**, called where each call stands, **instead of
+  evaluating the call's argument**. It returns the program's **mount**, and the call is compiled as
+  the constructor applied to it — so the constructor's own JavaScript makes the platform's
+  `Program` value of the mount (for `browser-direct`, `[{ a: mount, n: null }]`, the shape
+  `Browser.mountAt` and `Browser.programs` already rewrite). The record is never evaluated as a
+  value; what the lowering needs of it, it asks for. **`Program`** describes the call as the
+  compiler found it (`write-sets.md` §1.1's shape): `constructor`, its index in `programs`;
+  `record`, whether the argument is a record literal written at the call; and for `view` and
+  `update` a **`Shape`** — `markup` (a top-level function of this module, or a lambda written in
+  the record, whose body is markup written in place; `view_root` is then that root of this module's
+  tree), `function` (one whose body is anything else), `other_module`, or `computed` (a call, a
+  local, a value). A module that calls a constructor and writes no markup of its own is handed an
+  empty tree; `module` is not run for it.
+- **`cx.programInit(block) Expr`**: the program's `init`, evaluated into `block` and bound to a
+  name that `--release` keeps when `init` may have an effect (`backend.md` §9's rule for any such
+  binding), and that name. At most once per program. So `init` is evaluated where the lowering
+  places it — for `browser-direct`, inside the mount, which runs inside the dispatch guard — and
+  nowhere else.
+- **`cx.programReport(part, code, message)`** reports `not_implemented` or `view_not_compiled` at
+  the call, its `init`, its `update` or its `view`; **`cx.notImplemented(node, message)`** reports
+  `not_implemented` at a markup node. Both are the lowering's way to refuse a program it does not
+  compile *yet*, naming what will compile it — a diagnostic, never a silent miscompile. §9.4.7's
+  "the one code a lowering may raise" now reads: `markup_restructured`, and these two.
+- **What the hook consumes is not emitted.** A `view` or `update` that is a function of the
+  calling module, not `pub`, not the entry, named by no method, and named by nothing in a surviving
+  declaration but program records, is not written: the hook compiled what it needed of it. Its
+  callees survive reachability as before (`backend.md` §9 is unchanged), which over-approximates
+  and is sound. A `view` that is `pub` or named elsewhere is written as the function it is, and
+  its markup is a value (below).
+- **`Lowering.no_markup_values`**, a message: the lowering has no run-time value of the markup
+  type. A markup root lowered anywhere but as a program's `view_root`, and every use of a markup
+  primitive, is then `not_implemented` with that message, and the markup runtime is **not held to
+  the vocabulary's primitives** (§9.4.5's union leaves them out): nothing can call one.
+- **`Lowering.placements`**, the values that place programs on a page (`Browser.programs`, its
+  list; `Browser.mountAt`, its first argument). A lowering lists them when one program value
+  mounted twice would share one state: the compiler walks `main`'s placements — through the
+  top-level values of its module that hold placements — and a top-level program value named twice
+  among what they place is **`program_mounted_twice`** at the second (`browser-direct.md` §8.2).
+  A program value only the run time can see twice (a local) is the runtime's to refuse.
+
+The host-access rule of §9.4.4 gains one pair of writes for a lowering whose mount the runtime
+hands a node and a `template` element (`browser-direct`'s `run`): the mount writes the template
+element's `innerHTML` and appends its `content` to the node. Both objects are the runtime's grants;
+the lowering names no host global. `direct` targets 1.6 (`browser-direct.md`, *As built, S0*).
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
