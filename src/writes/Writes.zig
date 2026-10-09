@@ -3019,6 +3019,15 @@ fn diff(a: *Writes, t: u32, p: u32, g: u32) Error!u32 {
 }
 
 fn diffChild(a: *Writes, t: u32, p: u32, kind: PathKind, x: u32, y: u32, g: u32, ws: *WsBuilder) Error!void {
+    // The invariant tag reads rest on (write-sets.md, amended 2026-10-09:
+    // tag reads, item 3): a write descends through a constructor step only
+    // from the `Con` row, which has written `node p` under `Γ ⊢ tag(p) = C`.
+    if (std.debug.runtime_safety and kind == .ctor) {
+        if (!a.knowsTag(g, p, x)) std.debug.panic("writes: a descent below {d} through a constructor whose tag is not known", .{p});
+        for (ws.items) |w| {
+            if (w.path == p and w.kind == .node) break;
+        } else std.debug.panic("writes: a descent below {d} through a constructor with no `node` written there", .{p});
+    }
     const q = (try a.extend(p, kind, x, y)) orelse return a.wsAdd(ws, value(p));
     var sub: WsBuilder = .empty;
     defer sub.deinit(a.gpa);
@@ -3118,13 +3127,22 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
 fn closure(a: *Writes, ws: *WsBuilder) Allocator.Error!void {
     var i: usize = 0;
     while (i < ws.items.len) : (i += 1) {
-        var q = a.pathParent(ws.items[i].path);
-        while (q != none) : (q = a.pathParent(q)) {
+        var child = ws.items[i].path;
+        var q = a.pathParent(child);
+        while (q != none) : ({
+            child = q;
+            q = a.pathParent(q);
+        }) {
             var found = false;
             for (ws.items) |w| if (w.path == q) {
                 found = true;
             };
-            if (!found) try ws.append(a.gpa, .{ .path = q, .kind = .node });
+            if (found) continue;
+            // A `node` the closure adds above a constructor step would claim
+            // a tag kept that no `Con` row proved (write-sets.md, amended
+            // 2026-10-09: tag reads, item 3).
+            if (std.debug.runtime_safety and a.pathKind(child) == .ctor) std.debug.panic("writes: the prefix closure would write `node` above a constructor step at {d}", .{q});
+            try ws.append(a.gpa, .{ .path = q, .kind = .node });
         }
     }
 }

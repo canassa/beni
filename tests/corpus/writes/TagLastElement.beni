@@ -1,0 +1,56 @@
+-- writes: the last element's tag against `List.set` at a computed index
+-- (`write-sets.md`, amended 2026-10-09: tag reads, item 2). `[ …init, last ]`
+-- binds `last` to `ρ.items[?]`, and the `case` on it reads
+-- `tag ρ.items[?]`; the list pattern itself reads `ρ.items` whole (its
+-- length decides the arm), which covers the tag read, so the dump prints
+-- the whole read alone. `Finish` sets the element at `model.at + 1`, a
+-- computed index (`value ρ.items[?]`), which may be the last: the hole is
+-- `dynamic`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Item
+    = Todo String
+    | Done String
+
+
+type alias Model =
+    items : List Item
+    at : Int
+
+
+type Msg
+    = Finish
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Finish →
+            { model | items = List.set model.items (model.at + 1) (Done "") }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>
+            {case model.items of
+                [ …init, last ] →
+                    case last of
+                        Todo _ →
+                            "todo"
+
+                        Done _ →
+                            "done"
+
+                _ →
+                    "empty"
+            }
+        </p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { items = [], at = 0 }, update = update, view = view }

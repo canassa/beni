@@ -1,0 +1,73 @@
+-- writes: a `case` on a tuple (`write-sets.md`, amended 2026-10-09: tag
+-- reads, item 1). A tuple pattern reads each component by the pattern there.
+-- The first hole matches `( model.page, model.name )`: a constructor pattern
+-- on the page (`tag ρ.page`) and a literal on the name (`ρ.name`, whole); the
+-- arm also shows the name. `Rename` writes the name, so it is `dynamic`. The
+-- second hole matches `( model.page, Ready 0 )`: the second component is a
+-- constructor the pass knows, which reads nothing, so the hole reads
+-- `tag ρ.page` alone; `Tick` rebuilds `Ready` (`node ρ.page`), and it is
+-- `static`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Page
+    = Waiting
+    | Ready Int
+
+
+type alias Model =
+    page : Page
+    name : String
+
+
+type Msg
+    = Rename String
+    | Tick
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Rename text →
+            { model | name = text }
+
+        Tick →
+            case model.page of
+                Ready n →
+                    { model | page = Ready (n + 1) }
+
+                Waiting →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>
+            {case ( model.page, model.name ) of
+                ( Ready _, "" ) →
+                    "unnamed"
+
+                ( Ready _, other ) →
+                    other
+
+                ( Waiting, _ ) →
+                    "waiting"
+            }
+        </p>
+        <p>
+            {case ( model.page, Ready 0 ) of
+                ( Ready _, Ready _ ) →
+                    "both ready"
+
+                _ →
+                    "waiting"
+            }
+        </p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { page = Waiting, name = "" }, update = update, view = view }
