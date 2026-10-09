@@ -22,3 +22,11 @@ program C2SeventeenMessages.main : Tea.sandbox
   keys 17: bounded 17 (100%), exact 17, indexed 0, structural 0, * 0; capped 0
   hole C2SeventeenMessages.beni:122:17            dynamic    reads ρ.page.f1
   holes 1: static 0, literal 0, static-key 0, dynamic 1
+  site C2SeventeenMessages.beni:122:14            unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 17: under * 0 (0%)
+  pairs 1 over 17 keys and 1 groups (0.06 per key); every key calls 0 of 1 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

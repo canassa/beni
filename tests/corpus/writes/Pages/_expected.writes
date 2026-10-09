@@ -18,3 +18,17 @@ program Main.main : Tea.sandbox
   hole Home.beni:35:9                             dynamic    reads ρ.HomePage#0.feed.Model#0.errors; ρ.HomePage#0.feed.Model#0.errors[*]; ρ.HomePage#0.feed.Model#0.items; ρ.HomePage#0.feed.Model#0.items[*].liked; ρ.HomePage#0.feed.Model#0.items[*].slug; ρ.HomePage#0.feed.Model#0.items[*].title
   hole Main.beni:48:16                            dynamic    reads ρ.Blank#0
   holes 9: static 0, literal 0, static-key 1, dynamic 8
+  site Feed.beni:54:5                             unique
+  site Feed.beni:56:19                            instanced
+  site Feed.beni:58:56                            instanced
+  site Home.beni:33:5                             unique
+  site Main.beni:48:13                            unique
+  sites 5: unique 3, shared 0, instanced 2, value 0
+  markup_value_roots 0 (0% of 5 sites)
+  carriers no
+  constructors 5: under * 1 (20%)
+  pairs 10 over 4 keys and 9 groups (2.50 per key); every key calls 0 of 9 groups (0%)
+  list Feed.beni:55:10                            reconciler Reset *
+  list Feed.beni:58:10                            positional Reset *
+  reconciler 1 of 1 lists
+  patchAll Reset

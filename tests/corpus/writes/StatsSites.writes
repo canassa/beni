@@ -1,0 +1,37 @@
+program StatsSites.main : Tea.sandbox
+  model StatsSites.Model
+  init
+    literal ρ
+  key Bump                                        exact      node ρ; value ρ.count
+  key Retitle                                     exact      node ρ; value ρ.title
+  keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
+  hole StatsSites.beni:39:17                      dynamic    reads ρ.count
+  hole StatsSites.beni:43:14                      static     reads ∅
+  hole StatsSites.beni:51:17                      literal    reads ρ.tree.Node#0
+  hole StatsSites.beni:52:22                      static     reads ρ.tree.Node#1
+  hole StatsSites.beni:59:13                      dynamic    reads ρ.title
+  hole StatsSites.beni:60:9                       dynamic    reads ρ.count
+  hole StatsSites.beni:61:9                       dynamic    reads ρ.count
+  hole StatsSites.beni:62:9                       static     reads ∅
+  hole StatsSites.beni:63:9                       static     reads ∅
+  hole StatsSites.beni:64:10                      static     reads ρ.tags
+  hole StatsSites.beni:64:57                      static     reads ρ.tags[*]
+  hole StatsSites.beni:65:12                      static     reads ρ.tags; ρ.tags[*]
+  hole StatsSites.beni:65:41                      static     reads ρ.tags[*]
+  hole StatsSites.beni:66:13                      static     reads ρ.tree; ρ.tree.Node#0; ρ.tree.Node#1; ρ.tree.Node#1[*]
+  holes 14: static 9, literal 1, static-key 0, dynamic 4
+  site StatsSites.beni:39:11                      shared     2 calls
+  site StatsSites.beni:43:11                      unique
+  site StatsSites.beni:50:13                      value      recursive
+  site StatsSites.beni:58:5                       unique
+  site StatsSites.beni:64:53                      instanced
+  site StatsSites.beni:65:38                      value      list
+  sites 6: unique 2, shared 1, instanced 1, value 2
+  markup_value_roots 2 (33% of 6 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 3 over 2 keys and 10 groups (1.50 per key); every key calls 0 of 10 groups (0%)
+  list StatsSites.beni:52:22                      scripts
+  list StatsSites.beni:64:10                      scripts
+  reconciler 0 of 1 lists
+  patchAll <none>

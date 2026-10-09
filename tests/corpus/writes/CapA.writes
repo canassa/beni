@@ -6,3 +6,11 @@ program CapA.main : Tea.sandbox
   keys 1: bounded 0 (0%), exact 0, indexed 0, structural 0, * 1; capped 1
   hole CapA.beni:78:17                            dynamic    reads ρ.a
   holes 1: static 0, literal 0, static-key 0, dynamic 1
+  site CapA.beni:78:14                            unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 1 (100%)
+  pairs 0 over 0 keys and 1 groups (0.00 per key); every key calls 0 of 1 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll (any)

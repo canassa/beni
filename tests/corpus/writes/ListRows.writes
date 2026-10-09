@@ -25,3 +25,13 @@ program ListRows.main : Tea.sandbox
   hole ListRows.beni:119:78                       dynamic    reads ρ.rows[*].label
   hole ListRows.beni:120:12                       dynamic    reads ρ.total
   holes 4: static 0, literal 0, static-key 1, dynamic 3
+  site ListRows.beni:118:5                        unique
+  site ListRows.beni:119:50                       instanced
+  sites 2: unique 1, shared 0, instanced 1, value 0
+  markup_value_roots 0 (0% of 2 sites)
+  carriers no
+  constructors 17: under * 0 (0%)
+  pairs 41 over 17 keys and 4 groups (2.41 per key); every key calls 0 of 4 groups (0%)
+  list ListRows.beni:119:10                       reconciler Rest ⟨replaced⟩; Order ⟨permute⟩
+  reconciler 1 of 1 lists
+  patchAll <none>

@@ -296,6 +296,12 @@ pub const KeyStep = struct {
     path: u32,
     /// The constructor, or `none` for the default child.
     ctor: u32,
+    /// How many constructors of the split type the step stands for: 1 for
+    /// a named one, the unnamed siblings for the default child.
+    covers: u32 = 1,
+    /// A constructor of the split type, for its module (browser-direct.md,
+    /// amended 2026-10-09 for S0: `constructors`).
+    type_ctor: u32 = none,
 };
 
 pub const Key = struct {
@@ -305,6 +311,35 @@ pub const Key = struct {
 };
 
 pub const HoleKind = enum { child, attribute, each };
+
+/// What a hole of kind `each` is the list, or the value, of.
+pub const Form = enum { none, for_keyed, for_positional, show };
+
+/// A markup root's class (browser-direct.md §5.2, and its S0 amendment).
+pub const SiteClass = enum { unique, shared, instanced, value };
+
+/// Why a site is on the value path.
+pub const ValueWhy = enum { none, list, recursive };
+
+pub const Site = struct {
+    module: u32,
+    token: u32,
+    class: SiteClass,
+    /// Visits of the view walk: its call sites, with helpers inlined.
+    calls: u32,
+    why: ValueWhy,
+};
+
+/// An `Html.map` whose function is not a constructor's shape (§9.1); the
+/// module is `none` where the call is not in the program's own modules.
+pub const MapSite = struct { module: u32, token: u32 };
+
+/// Why a program's messages are run-time values (browser-direct.md §11).
+pub const Carriers = struct {
+    commands: bool = false,
+    maps: []const MapSite = &.{},
+    msg_whole: bool = false,
+};
 
 pub const Hole = struct {
     module: u32,
@@ -321,6 +356,13 @@ pub const Hole = struct {
     literal_path: u32,
     /// The hole sits in a keyed `For`'s row whose key path is this.
     key_paths: []const u32,
+    /// The index of the site holding it, into `Program.sites`.
+    site: u32 = none,
+    /// For an `each` hole: the form it is the list or the value of.
+    form: Form = .none,
+    /// For an `each` hole: the model path the value is exactly, on every
+    /// visit, or `none` (a derived list).
+    each_path: u32 = none,
 };
 
 pub const Program = struct {
@@ -341,6 +383,12 @@ pub const Program = struct {
     holes: []Hole,
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
+    /// The markup roots the view walk reached, in the order it met them
+    /// (`Hole.site` indexes this; the dump sorts by position).
+    sites: []const Site = &.{},
+    carriers: Carriers = .{},
+    /// The message type's constructor count, or 0 when unknown.
+    msg_ctors: u32 = 0,
 };
 
 pub const Capped = struct { module: u32, decl: u32, caps: Caps };
@@ -372,6 +420,20 @@ const Ctx = struct {
     split_path: u32 = none,
     /// View mode: the key path of the keyed `For` row being walked.
     row_key: u32 = none,
+    /// View mode: how many `For` rows, and list elements, the walk is in.
+    in_row: u32 = 0,
+    in_list: u32 = 0,
+};
+
+const SiteAcc = struct {
+    module: u32,
+    token: u32,
+    visits: u32 = 0,
+    row: bool = false,
+    list: bool = false,
+    /// The functions holding the root on each visit, as `active` keys: the
+    /// top-level declaration's and the innermost function's.
+    holders: std.ArrayList(u64) = .empty,
 };
 
 const HoleAcc = struct {
@@ -385,6 +447,10 @@ const HoleAcc = struct {
     literal_ok: bool = true,
     in_row: bool = true,
     key_paths: std.ArrayList(u32) = .empty,
+    site: u32 = none,
+    form: Form = .none,
+    /// `unvisited`, the one model path every visit's value is, or `none`.
+    each_path: u32 = unvisited,
 
     const unvisited: u32 = none - 2;
     const string_literal: u32 = none;
@@ -432,6 +498,21 @@ cut_memo: std.HashMapUnmanaged(SubstKey, u32, std.hash_map.AutoContext(SubstKey)
 next_inst_id: u32 = 0,
 holes: std.ArrayList(HoleAcc) = .empty,
 hole_index: std.HashMapUnmanaged(HoleKey, u32, std.hash_map.AutoContext(HoleKey), std.hash_map.default_max_load_percentage) = .empty,
+/// The S0 stats (browser-direct.md §11): the markup roots the view walk
+/// visits and the one it is in, the functions it is in (`active` keys) and
+/// those that re-entered themselves.
+sites: std.ArrayList(SiteAcc) = .empty,
+site_index: std.HashMapUnmanaged(HoleKey, u32, std.hash_map.AutoContext(HoleKey), std.hash_map.default_max_load_percentage) = .empty,
+cur_site: u32 = none,
+holders: std.ArrayList(u64) = .empty,
+recursive: std.ArrayList(u64) = .empty,
+/// Message paths a key's walk let out whole (§11's `msg whole`), and the
+/// `Html.map`s whose function is not a constructor's shape.
+mu_escapes: std.ArrayList(u32) = .empty,
+map_sites: std.ArrayList(MapSite) = .empty,
+/// Per term id: the number of the last `noteMu` walk that visited it.
+mu_seen: std.ArrayList(u32) = .empty,
+mu_walk: u32 = 0,
 
 /// `Maybe` and `Basics` constructors the rows build.
 ctor_just: u32 = none,
@@ -520,6 +601,14 @@ pub fn deinit(a: *Writes) void {
     }
     a.holes.deinit(gpa);
     a.hole_index.deinit(gpa);
+    for (a.sites.items) |*st| st.holders.deinit(gpa);
+    a.sites.deinit(gpa);
+    a.site_index.deinit(gpa);
+    a.holders.deinit(gpa);
+    a.recursive.deinit(gpa);
+    a.mu_escapes.deinit(gpa);
+    a.map_sites.deinit(gpa);
+    a.mu_seen.deinit(gpa);
     a.arena_state.deinit();
     gpa.destroy(a);
 }
@@ -1712,6 +1801,9 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
             const items = b.extraSlice(Bir.inlineRange(data), Inst.Index);
             if (items.len == 0) return a.mkLst(none, .clear, none, none, &.{});
             const vals = try a.arena().alloc(u32, items.len);
+            // Markup written as a list's element is a `List Html` value.
+            a.ctx.in_list += 1;
+            defer a.ctx.in_list -= 1;
             for (items, vals) |item, *v| v.* = try a.eval(f, item, g);
             return a.mkLstLit(vals);
         },
@@ -2017,6 +2109,7 @@ fn indexGuard(a: *Writes, f: *Frame, iota: u32, other: u32, other_inst: Inst.Ind
 fn freshCall(a: *Writes, args: []const u32) Error!u32 {
     var d: u32 = 0;
     for (args) |x| d = try a.depsUnion(d, try a.deps(x));
+    if (a.ctx.mode == .key) for (args) |x| try a.noteMu(x);
     if (a.ctx.mode == .view) {
         const fr = try a.mkFresh(d);
         for (args) |x| {
@@ -2053,8 +2146,27 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
     const decl = a.bir(m).decls[d];
     if (a.in.packages[m] != .app) {
         // The rows are core's: a platform module of the same name is not `List`.
-        if (a.in.packages[m] == .core) if (Core.row(a.in.module_names[m], a.declName(m, d))) |r| return a.applyRow(r, site_m, site, args, g);
-        if (a.in.packages[m] == .platform) return a.freshCall(args);
+        if (a.in.packages[m] == .core) if (Core.row(a.in.module_names[m], a.declName(m, d))) |r| {
+            // Markup a `List` function's callback builds is a list's element.
+            const in_list = a.ctx.mode == .view and std.mem.eql(u8, a.in.module_names[m], "List");
+            if (in_list) a.ctx.in_list += 1;
+            defer if (in_list) {
+                a.ctx.in_list -= 1;
+            };
+            return a.applyRow(r, site_m, site, args, g);
+        };
+        if (a.in.packages[m] == .platform) {
+            if (a.ctx.mode == .view and args.len == 2 and std.mem.eql(u8, a.in.module_names[m], "Html") and
+                std.mem.eql(u8, a.declName(m, d), "map") and !a.ctorShape(args[1]))
+            {
+                const at: MapSite = if (a.in.packages[site_m] == .app and site.int() < a.bir(site_m).insts.len)
+                    .{ .module = site_m, .token = a.bir(site_m).insts.items(.main_token)[site.int()] }
+                else
+                    .{ .module = none, .token = 0 };
+                try a.map_sites.append(a.gpa, at);
+            }
+            return a.freshCall(args);
+        }
     }
     if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.freshCall(args);
     if (decl.params == 0) return a.apply(try a.topValue(m, d, g), args, g);
@@ -2110,11 +2222,13 @@ fn applyClosure(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
     const b = a.bir(m);
     const key: u64 = (@as(u64, m) << 32) | inst.int();
     if (std.mem.indexOfScalar(u64, a.active.items, key) != null or a.inst_depth >= cap_inst_depth) {
-        if (a.inst_depth >= cap_inst_depth) a.ctx.caps.d = true;
+        if (a.inst_depth >= cap_inst_depth) a.ctx.caps.d = true else try a.noteRecursive(key);
         return a.freshCall(args);
     }
     try a.active.append(a.gpa, key);
     defer _ = a.active.pop();
+    try a.holders.append(a.gpa, key);
+    defer _ = a.holders.pop();
     a.inst_depth += 1;
     defer a.inst_depth -= 1;
     var f = try a.newFrame(m, d, 0);
@@ -2145,16 +2259,29 @@ fn joinTry(a: *Writes, f: *Frame, r: u32) Error!u32 {
     return a.mkAlt(none, false, &.{ .{ .gamma = 0, .term = r }, .{ .gamma = 0, .term = try a.mkFresh(f.try_deps) } });
 }
 
+fn directKey(m: u32, d: u32) u64 {
+    return (@as(u64, m) << 32) | (@as(u64, 1) << 62) | d;
+}
+
+/// A function the view walk re-entered: the markup it holds is on the
+/// value path (browser-direct.md §5.2: a recursive helper).
+fn noteRecursive(a: *Writes, key: u64) Allocator.Error!void {
+    if (a.ctx.mode != .view) return;
+    if (std.mem.indexOfScalar(u64, a.recursive.items, key) == null) try a.recursive.append(a.gpa, key);
+}
+
 /// Walk `(m, d)`'s body with `args` bound: the key's walk of `update`, the
 /// view's inlining, `init`.
 fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32) Error!u32 {
-    const key: u64 = (@as(u64, m) << 32) | (@as(u64, 1) << 62) | d;
+    const key = directKey(m, d);
     if (std.mem.indexOfScalar(u64, a.active.items, key) != null or a.inst_depth >= cap_inst_depth) {
-        if (a.inst_depth >= cap_inst_depth) a.ctx.caps.d = true;
+        if (a.inst_depth >= cap_inst_depth) a.ctx.caps.d = true else try a.noteRecursive(key);
         return a.freshCall(args);
     }
     try a.active.append(a.gpa, key);
     defer _ = a.active.pop();
+    try a.holders.append(a.gpa, key);
+    defer _ = a.holders.pop();
     a.inst_depth += 1;
     defer a.inst_depth -= 1;
     const b = a.bir(m);
@@ -2540,7 +2667,12 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
     switch (row) {
         .fresh => return a.freshCall(args),
         .debug_todo => return a.freshEmpty(),
-        .debug_log => return if (args.len == 2) args[1] else a.freshCall(args),
+        .debug_log => {
+            if (args.len != 2) return a.freshCall(args);
+            // Logged whole, a message is a value (browser-direct.md §11).
+            if (a.ctx.mode == .key) try a.noteMu(args[1]);
+            return args[1];
+        },
         .map, .update => {
             if (row == .map and args.len != 2) return a.freshCall(args);
             if (row == .update and args.len != 3) return a.freshCall(args);
@@ -2561,23 +2693,28 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
             return a.indexedResult(p, xs, eps, iota, r);
         },
         .filter, .remove_some, .permute => {
-            if (row != .remove_some) for (args[1..]) |fun| {
-                if (a.termTag(fun) == .fun) {
-                    const eps = try a.mintEps(xs);
+            // Which elements are kept, and in what order, is what the
+            // callback answers and what the counts say: the result reads
+            // those too (write-sets.md §3.6, amended 2026-10-09 for S0).
+            var read: u32 = 0;
+            var eps: u32 = none;
+            for (args[1..]) |x| {
+                if (row != .remove_some and a.termTag(x) == .fun) {
+                    eps = try a.mintEps(xs);
                     const e = try a.mkSame(eps);
                     const xs2 = [_]u32{ e, e };
-                    _ = try a.apply(fun, xs2[0..@min(2, a.funArity(fun))], g);
-                }
-            };
+                    read = try a.depsUnion(read, try a.deps(try a.apply(x, xs2[0..@min(2, a.funArity(x))], g)));
+                } else read = try a.depsUnion(read, try a.deps(x));
+            }
             const p = a.listBase(xs) orelse return a.freshCall(args);
-            return a.mkLst(p, if (row == .permute) .permute else .remove_some, none, none, &.{});
+            return a.mkLst(p, if (row == .permute) .permute else .remove_some, none, none, try a.readsElem(xs, eps, read));
         },
         .filter_map => {
             if (args.len != 2) return a.freshCall(args);
             const eps = try a.mintEps(xs);
             const r = try a.apply(args[1], &.{try a.mkSame(eps)}, g);
             const p = a.listBase(xs) orelse return a.freshCall(args);
-            if (a.keepsOrDrops(r, eps)) return a.mkLst(p, .remove_some, none, none, &.{});
+            if (a.keepsOrDrops(r, eps)) return a.mkLst(p, .remove_some, none, none, try a.readsElem(xs, eps, try a.deps(r)));
             return a.freshCall(args);
         },
         .set => {
@@ -2624,9 +2761,25 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
                 .head => try a.mkLitSym(0),
                 else => sym_unknown,
             };
-            return a.maybeOf(try a.mkSameStep(p, .index, s, 0));
+            const at = try a.mkSameStep(p, .index, s, 0);
+            // An index the program computes is `[?]`, and the element read
+            // reads what the index read (§3.6, amended 2026-10-09 for S0);
+            // a model path's own index is anchored by `anchorPath`.
+            if (row == .get and s == sym_unknown) return a.maybeOf(try a.mkFresh(try a.depsUnion(try a.deps(at), try a.deps(args[1]))));
+            return a.maybeOf(at);
         },
     }
+}
+
+/// The one element a non-`kept` list carries for its reads: a `Fresh` of
+/// what deciding its shape read, which `diff` never reads (an edit other
+/// than `kept` is a `value` write of the list) and `deps` does.
+fn readsElem(a: *Writes, xs: u32, eps0: u32, read: u32) Error![]const Elem {
+    if (a.deps_t.len(read) == 0) return &.{};
+    const eps = if (eps0 == none) try a.mintEps(xs) else eps0;
+    const out = try a.arena().alloc(Elem, 1);
+    out[0] = .{ .index = sym_star, .eps = eps, .term = try a.mkFresh(read) };
+    return out;
 }
 
 /// `Alt([ Just v, Nothing ])`.
@@ -3054,9 +3207,32 @@ const allowlist = [_][]const u8{
 fn evalMarkup(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     const b = a.bir(f.m);
     const root: Bir.ExtraIndex = @fromBackingInt(b.instData(inst).lhs);
+    const saved = a.cur_site;
+    defer a.cur_site = saved;
+    if (a.ctx.mode == .view and a.in.packages[f.m] == .app) try a.visitSite(f, b.insts.items(.main_token)[inst.int()]);
     var d: u32 = 0;
     try a.walkMarkup(f, root, g, &d, null);
     return a.mkFresh(d);
+}
+
+/// One visit of the view walk to a markup root (browser-direct.md §5.2).
+fn visitSite(a: *Writes, f: *Frame, token: u32) Allocator.Error!void {
+    const gop = try a.site_index.getOrPut(a.gpa, .{ .module = f.m, .token = token });
+    if (!gop.found_existing) {
+        gop.value_ptr.* = @intCast(a.sites.items.len);
+        try a.sites.append(a.gpa, .{ .module = f.m, .token = token });
+    }
+    const s = &a.sites.items[gop.value_ptr.*];
+    s.visits += 1;
+    if (a.ctx.in_row > 0) s.row = true;
+    if (a.ctx.in_list > 0) s.list = true;
+    const top = directKey(f.m, f.decl);
+    if (std.mem.indexOfScalar(u64, s.holders.items, top) == null) try s.holders.append(a.gpa, top);
+    if (a.holders.items.len > 0) {
+        const inner = a.holders.items[a.holders.items.len - 1];
+        if (std.mem.indexOfScalar(u64, s.holders.items, inner) == null) try s.holders.append(a.gpa, inner);
+    }
+    a.cur_site = gop.value_ptr.*;
 }
 
 fn isEvent(a: *Writes, m: u32, node: u32) bool {
@@ -3131,6 +3307,8 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
                 list = try a.eval(f, l, g);
                 d.* = try a.depsUnion(d.*, try a.deps(list));
                 try a.recordHole(f, fm.token, .each, l, list, false);
+                const form: Form = if (b.markupKind(node) == .show) .show else if (fm.mode == .literal_false) .for_positional else .for_keyed;
+                try a.noteEach(f, fm.token, form, list);
             }
             if (fm.fallback.unwrap()) |fb| d.* = try a.depsUnion(d.*, try a.deps(try a.eval(f, fb, g)));
             if (fm.row == Bir.none_extra) return;
@@ -3154,6 +3332,10 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
             const arity = if (a.termTag(fun) == .fun) a.funArity(fun) else 1;
             const index = try a.mkFresh(try a.deps(list));
             const args = [_]u32{ item, index };
+            if (is_for) a.ctx.in_row += 1;
+            defer if (is_for) {
+                a.ctx.in_row -= 1;
+            };
             const r = try a.apply(fun, args[0..@min(arity, 2)], g);
             d.* = try a.depsUnion(d.*, try a.deps(r));
         },
@@ -3170,7 +3352,19 @@ fn anchors(a: *Writes, t: u32, out: *std.ArrayList(u32)) Error!void {
 fn anchorPath(a: *Writes, p: u32, out: *std.ArrayList(u32), depth: u32) Error!void {
     const root = a.rootOf(p);
     switch (a.pathKind(root)) {
-        .rho => if (std.mem.indexOfScalar(u32, out.items, p) == null) try out.append(a.gpa, p),
+        .rho => {
+            if (std.mem.indexOfScalar(u32, out.items, p) == null) try out.append(a.gpa, p);
+            // `ρ.rows[model.sel]` also reads `ρ.sel`: which element is shown
+            // is what the index says (write-sets.md §3.6, amended
+            // 2026-10-09 for S0).
+            if (depth > 16) return;
+            var buf: [k_limit + 1]u32 = undefined;
+            for (a.steps(p, &buf)) |s| {
+                if (a.pathKind(s) != .index or a.symKind(a.pathA(s)) != .expr) continue;
+                const d = try a.deps(a.symWord(a.pathA(s), 3));
+                for (0..a.deps_t.len(d)) |i| try a.anchorPath(a.deps_t.word(d, i), out, depth + 1);
+            }
+        },
         .eps, .iota => {
             if (depth > 16) return a.anchorPath(rho_path, out, depth);
             const id = a.pathA(root);
@@ -3203,7 +3397,7 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
     const gop = try a.hole_index.getOrPut(a.gpa, .{ .module = f.m, .token = token });
     if (!gop.found_existing) {
         gop.value_ptr.* = @intCast(a.holes.items.len);
-        try a.holes.append(a.gpa, .{ .module = f.m, .token = token, .kind = kind, .alone = alone });
+        try a.holes.append(a.gpa, .{ .module = f.m, .token = token, .kind = kind, .alone = alone, .site = a.cur_site });
     }
     const h = &a.holes.items[gop.value_ptr.*];
     var reads: std.ArrayList(u32) = .empty;
@@ -3221,6 +3415,93 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
     if (lp == none - 1) h.literal_ok = false;
     if (h.literal_path == HoleAcc.unvisited) h.literal_path = lp else if (h.literal_path != lp) h.literal_ok = false;
     if (a.ctx.row_key == none) h.in_row = false else if (std.mem.indexOfScalar(u32, h.key_paths.items, a.ctx.row_key) == null) try h.key_paths.append(a.gpa, a.ctx.row_key);
+}
+
+/// An `each` hole's form, and the one model path its value is on every
+/// visit (browser-direct.md §6.2: the scripts apply to a `For` whose `each`
+/// is exactly a model path).
+fn noteEach(a: *Writes, f: *Frame, token: u32, form: Form, t: u32) Error!void {
+    if (a.ctx.mode != .view) return;
+    if (a.in.packages[f.m] != .app) return;
+    const i = a.hole_index.get(.{ .module = f.m, .token = token }) orelse return;
+    const h = &a.holes.items[i];
+    h.form = form;
+    var p: u32 = none;
+    if (a.termTag(t) == .same) {
+        var reads: std.ArrayList(u32) = .empty;
+        defer reads.deinit(a.gpa);
+        try a.anchors(t, &reads);
+        if (reads.items.len == 1) p = reads.items[0];
+    }
+    if (h.each_path == HoleAcc.unvisited) h.each_path = p else if (h.each_path != p) h.each_path = none;
+}
+
+/// Whether `t` is a function §9.1 composes at compile time: a constructor,
+/// a constructor under a placeholder (`λx → C a x`), or a choice of those.
+fn ctorShape(a: *Writes, t: u32) bool {
+    switch (a.termTag(t)) {
+        .fun => {
+            const kind: FunKind = @fromBackingInt(a.termWord(t, 1));
+            switch (kind) {
+                .ctor => return true,
+                .lambda => {
+                    const m = a.termWord(t, 2);
+                    const b = a.bir(m);
+                    const body: Inst.Index = @fromBackingInt(b.instData(@fromBackingInt(a.termWord(t, 4))).rhs);
+                    if (b.instTag(body) != .call) return false;
+                    return a.ctorTarget(m, @fromBackingInt(b.instData(body).lhs)) != null;
+                },
+                else => return false,
+            }
+        },
+        .alt => {
+            if (a.altLen(t) == 0) return false;
+            for (0..a.altLen(t)) |i| if (!a.ctorShape(a.altItem(t, @intCast(i)).term)) return false;
+            return true;
+        },
+        else => return false,
+    }
+}
+
+/// Record the message paths `t` holds whole — a `Same` of one, inside the
+/// structures `t` builds — where the key's walk lets the value out
+/// (browser-direct.md §11's `msg whole`). A `Fresh` is not looked into: a
+/// closure's environment is its whole frame, `msg` included, so its deps
+/// name the message whether or not the closure reads it.
+fn noteMu(a: *Writes, t: u32) Allocator.Error!void {
+    // A walk's visited terms: a column stamped with this walk's number.
+    a.mu_walk +%= 1;
+    if (a.mu_walk == 0) {
+        @memset(a.mu_seen.items, 0);
+        a.mu_walk = 1;
+    }
+    try a.noteMuIn(t);
+}
+
+fn noteMuIn(a: *Writes, t: u32) Allocator.Error!void {
+    if (t >= a.mu_seen.items.len) try a.mu_seen.appendNTimes(a.gpa, 0, t + 1 - a.mu_seen.items.len);
+    if (a.mu_seen.items[t] == a.mu_walk) return;
+    a.mu_seen.items[t] = a.mu_walk;
+    switch (a.termTag(t)) {
+        .same => try a.noteMuPath(a.termWord(t, 1)),
+        .rec => {
+            var i: u32 = 3;
+            while (i < a.termLen(t)) : (i += 2) try a.noteMuIn(a.termWord(t, i + 1));
+        },
+        .con, .app => {
+            var i: u32 = if (a.termTag(t) == .con) 2 else 1;
+            while (i < a.termLen(t)) : (i += 1) try a.noteMuIn(a.termWord(t, i));
+        },
+        .tup, .lst_lit => for (1..a.termLen(t)) |i| try a.noteMuIn(a.termWord(t, i)),
+        .lst => for (0..a.lstElems(t)) |i| try a.noteMuIn(a.lstElem(t, @intCast(i)).term),
+        .alt => for (0..a.altLen(t)) |i| try a.noteMuIn(a.altItem(t, @intCast(i)).term),
+        else => {},
+    }
+}
+
+fn noteMuPath(a: *Writes, p: u32) Allocator.Error!void {
+    if (a.pathKind(a.rootOf(p)) != .mu) return;
+    if (std.mem.indexOfScalar(u32, a.mu_escapes.items, p) == null) try a.mu_escapes.append(a.gpa, p);
 }
 
 // ---------------------------------------------------------------------------
@@ -3443,6 +3724,13 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     }
     a.holes.clearRetainingCapacity();
     a.hole_index.clearRetainingCapacity();
+    for (a.sites.items) |*st| st.holders.deinit(a.gpa);
+    a.sites.clearRetainingCapacity();
+    a.site_index.clearRetainingCapacity();
+    a.cur_site = none;
+    a.recursive.clearRetainingCapacity();
+    a.mu_escapes.clearRetainingCapacity();
+    a.map_sites.clearRetainingCapacity();
     a.model_type = null;
     var prog: Program = .{
         .module = m,
@@ -3472,6 +3760,11 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                         prog.type_module = t.m;
                         prog.type_inst = ps[1].int();
                         a.model_type = .{ .m = t.m, .inst = ps[1].int(), .env = &.{} };
+                        // The message type's constructors, for `(any)`.
+                        switch (try a.tyResolve(.{ .m = t.m, .inst = ps[0].int(), .env = &.{} })) {
+                            .nominal => |n| prog.msg_ctors = @intCast(a.bir(n.m).declCtors(a.bir(n.m).decls[n.d]).len),
+                            else => {},
+                        }
                     }
                 }
             }
@@ -3526,6 +3819,13 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         h.reads = try a.arena().dupe(u32, &.{rho_path});
         h.bake = false;
         h.key_paths = &.{};
+        h.each_path = none;
+    };
+    prog.sites = try a.finishSites(prog.holes);
+    prog.carriers = .{
+        .commands = kind == .element or kind == .document or kind == .application,
+        .maps = try a.finishMaps(),
+        .msg_whole = a.msgWhole(prog.keys),
     };
     var capped: std.ArrayList(Capped) = .empty;
     for (a.summary_caps, 0..) |c, id| {
@@ -3562,6 +3862,8 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
         };
         if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
         r = try a.capSize(r);
+        // A message placed in the model is a value (browser-direct.md §11).
+        try a.noteMu(r);
         const id = a.diff(r, rho_path, g) catch |err| switch (err) {
             error.WorkCap => break :blk false,
             else => |e| return e,
@@ -3592,7 +3894,7 @@ fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *
             leaves.* = leaves.* - 1 + children;
             for (ctors) |c| {
                 const g2 = (try a.gammaAdd(g, &.{.{ .kind = .pos, .key = res.split, .val = c }})) orelse continue;
-                try path_steps.append(a.gpa, .{ .path = res.split, .ctor = c });
+                try path_steps.append(a.gpa, .{ .path = res.split, .ctor = c, .type_ctor = c });
                 try a.keyTree(kind, update_fun, g2, path_steps, keys, leaves);
                 _ = path_steps.pop();
             }
@@ -3601,7 +3903,7 @@ fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *
                 defer negs.deinit(a.gpa);
                 for (ctors) |c| try negs.append(a.gpa, .{ .kind = .neg, .key = res.split, .val = c });
                 if (try a.gammaAdd(g, negs.items)) |g2| {
-                    try path_steps.append(a.gpa, .{ .path = res.split, .ctor = none });
+                    try path_steps.append(a.gpa, .{ .path = res.split, .ctor = none, .covers = sib.count - @as(u32, @intCast(ctors.len)), .type_ctor = ctors[0] });
                     try a.keyTree(kind, update_fun, g2, path_steps, keys, leaves);
                     _ = path_steps.pop();
                 }
@@ -3725,9 +4027,187 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
             .bake = bake,
             .literal_path = h.literal_path,
             .key_paths = if (h.in_row) try a.arena().dupe(u32, h.key_paths.items) else &.{},
+            .site = h.site,
+            .form = h.form,
+            .each_path = if (h.each_path == HoleAcc.unvisited) none else h.each_path,
         };
     }
     return out;
+}
+
+/// Each site's class (browser-direct.md §5.2, and its S0 amendment), in the
+/// order the walk met them; `Hole.site` indexes this.
+fn finishSites(a: *Writes, holes: []const Hole) Error![]Site {
+    const out = try a.arena().alloc(Site, a.sites.items.len);
+    for (a.sites.items, out, 0..) |*s, *o, i| {
+        var recursive = false;
+        for (s.holders.items) |k| if (std.mem.indexOfScalar(u64, a.recursive.items, k) != null) {
+            recursive = true;
+        };
+        var reads_model = false;
+        for (holes) |h| if (h.site == i and h.reads.len > 0) {
+            reads_model = true;
+        };
+        const why: ValueWhy = if (s.list) .list else if (recursive) .recursive else .none;
+        const class: SiteClass = if (why != .none)
+            .value
+        else if (s.row)
+            .instanced
+        else if (s.visits > 1 and reads_model)
+            .shared
+        else
+            .unique;
+        o.* = .{ .module = s.module, .token = s.token, .class = class, .calls = s.visits, .why = why };
+    }
+    return out;
+}
+
+fn finishMaps(a: *Writes) Error![]MapSite {
+    var out: std.ArrayList(MapSite) = .empty;
+    for (a.map_sites.items) |m| {
+        for (out.items) |x| {
+            if (x.module == m.module and x.token == m.token) break;
+        } else try out.append(a.arena(), m);
+    }
+    return out.items;
+}
+
+/// Whether some key let the message, or a sub-message the key tree splits,
+/// out whole (browser-direct.md §11's `msg whole`).
+fn msgWhole(a: *Writes, keys: []const Key) bool {
+    for (a.mu_escapes.items) |p| {
+        if (p == mu_path) return true;
+        for (keys) |k| for (k.steps) |s| {
+            if (s.path == p) return true;
+        };
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// The S0 stats (browser-direct.md §11, and its S0 amendment)
+// ---------------------------------------------------------------------------
+
+/// The program's message constructors, and those under a `*` key.
+pub const Constructors = struct { total: u32, star: u32 };
+
+pub fn constructorShare(a: *const Writes, gpa: Allocator, prog: *const Program) Allocator.Error!Constructors {
+    if (!prog.recognised) return .{ .total = 1, .star = 1 };
+    // Each message constructor as the (split path, constructor) of the last
+    // step a module of the program's own package declares.
+    const Entry = struct { path: u32, ctor: u32, covers: u32, star: bool };
+    var list: std.ArrayList(Entry) = .empty;
+    defer list.deinit(gpa);
+    for (prog.keys) |k| {
+        const star = a.keyClass(k.writes) == .star;
+        var e: Entry = .{ .path = none, .ctor = none, .covers = @max(prog.msg_ctors, 1), .star = star };
+        var i = k.steps.len;
+        while (i > 0) {
+            i -= 1;
+            const s = k.steps[i];
+            if (s.type_ctor == none or a.in.packages[a.ctor_module[s.type_ctor]] != .app) continue;
+            e = .{ .path = s.path, .ctor = s.ctor, .covers = s.covers, .star = star };
+            break;
+        }
+        for (list.items) |*x| {
+            if (x.path == e.path and x.ctor == e.ctor) {
+                x.star = x.star or e.star;
+                break;
+            }
+        } else try list.append(gpa, e);
+    }
+    var out: Constructors = .{ .total = 0, .star = 0 };
+    for (list.items) |e| {
+        out.total += e.covers;
+        if (e.star) out.star += e.covers;
+    }
+    return out;
+}
+
+/// The (key, group) pairs (§5.2): groups are a site's holes by anchored read
+/// set, over holes that read something; pairs are summed over bounded keys.
+pub const Pairs = struct { pairs: u32, keys: u32, groups: u32, every: u32 };
+
+pub fn pairCount(a: *const Writes, gpa: Allocator, prog: *const Program) Allocator.Error!Pairs {
+    // The groups: one representative hole each.
+    var groups: std.ArrayList(usize) = .empty;
+    defer groups.deinit(gpa);
+    for (prog.holes, 0..) |h, i| {
+        if (h.reads.len == 0) continue;
+        for (groups.items) |j| {
+            const g = prog.holes[j];
+            if (g.site == h.site and std.mem.eql(u32, g.reads, h.reads)) break;
+        } else try groups.append(gpa, i);
+    }
+    var out: Pairs = .{ .pairs = 0, .keys = 0, .groups = @intCast(groups.items.len), .every = 0 };
+    const calls = try gpa.alloc(u32, groups.items.len);
+    defer gpa.free(calls);
+    @memset(calls, 0);
+    if (prog.recognised) for (prog.keys) |k| {
+        if (a.keyClass(k.writes) == .star) continue;
+        out.keys += 1;
+        for (groups.items, calls) |j, *c| {
+            for (prog.holes[j].reads) |r| if (a.conflicts(r, k.writes)) {
+                c.* += 1;
+                out.pairs += 1;
+                break;
+            };
+        }
+    };
+    if (out.keys > 0) for (calls) |c| {
+        if (c == out.keys) out.every += 1;
+    };
+    return out;
+}
+
+/// Why a key reaches a list's reconciler (§6.3).
+pub const Why = union(enum) { tag: Edit, value, prefix: u32, derived, star };
+
+pub const Reach = struct { key: u32, why: Why };
+
+/// The keys that reach the reconciler for `For` hole `h`: by the write at
+/// the list's path, a `value` write above it, a conflict with a derived
+/// list's reads, or a `*` key.
+pub fn reconcilerKeys(a: *const Writes, gpa: Allocator, prog: *const Program, h: *const Hole) Allocator.Error![]Reach {
+    var out: std.ArrayList(Reach) = .empty;
+    for (prog.keys, 0..) |k, ki| {
+        const key: u32 = @intCast(ki);
+        if (a.keyClass(k.writes) == .star) {
+            try out.append(gpa, .{ .key = key, .why = .star });
+            continue;
+        }
+        if (h.each_path == none) {
+            for (h.reads) |r| if (a.conflicts(r, k.writes)) {
+                try out.append(gpa, .{ .key = key, .why = .derived });
+                break;
+            };
+            continue;
+        }
+        const p = h.each_path;
+        for (k.writes) |w| {
+            if (!a.mayPrefix(w.path, p)) continue;
+            if (a.pathLen(w.path) < a.pathLen(p)) {
+                if (w.kind == .value) {
+                    try out.append(gpa, .{ .key = key, .why = .{ .prefix = w.path } });
+                    break;
+                }
+                continue;
+            }
+            if (w.kind != .value) continue;
+            switch (w.edit) {
+                .permute, .replaced => {
+                    try out.append(gpa, .{ .key = key, .why = .{ .tag = w.edit } });
+                    break;
+                },
+                .none => {
+                    try out.append(gpa, .{ .key = key, .why = .value });
+                    break;
+                },
+                else => {},
+            }
+        }
+    }
+    return out.toOwnedSlice(gpa);
 }
 
 // ---------------------------------------------------------------------------

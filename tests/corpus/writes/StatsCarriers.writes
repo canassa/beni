@@ -1,0 +1,23 @@
+program StatsCarriers.main : Tea.sandbox
+  model StatsCarriers.Model
+  init
+    literal ρ
+  key Child                                       exact      node ρ; value ρ.pokes
+  key Tagged                                      exact      ∅
+  key Ping                                        exact      node ρ; value ρ.last
+  key Pong                                        exact      node ρ; value ρ.last
+  keys 4: bounded 4 (100%), exact 4, indexed 0, structural 0, * 0; capped 0
+  hole StatsCarriers.beni:59:12                   dynamic    reads ρ.pokes
+  hole StatsCarriers.beni:60:9                    static     reads ∅
+  hole StatsCarriers.beni:61:9                    dynamic    reads ρ
+  hole StatsCarriers.beni:62:9                    static     reads ∅
+  holes 4: static 2, literal 0, static-key 0, dynamic 2
+  site StatsCarriers.beni:53:13                   unique
+  site StatsCarriers.beni:58:5                    unique
+  sites 2: unique 2, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 2 sites)
+  carriers yes: Html.map StatsCarriers.beni:62:10; msg whole
+  constructors 4: under * 0 (0%)
+  pairs 4 over 4 keys and 2 groups (1.00 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

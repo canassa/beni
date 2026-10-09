@@ -1,0 +1,76 @@
+-- writes: the S0 `site` lines (browser-direct.md §5.2, and its amendment of
+-- 2026-10-09). `view`'s root is unique; `badge`, called twice with a model
+-- read, is shared with 2 calls; `label`, called twice with constants only,
+-- stays unique (inlined, §5.2's size gate); the `For` row is instanced; the
+-- markup a `List.map` callback builds is on the value path (`list`), and so
+-- is the recursive `viewTree`'s (`recursive`): 2 value roots of 6 sites.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Tree
+    = Node String (List Tree)
+
+
+type alias Model =
+    title : String
+    count : Int
+    tags : List String
+    tree : Tree
+
+
+type Msg
+    = Bump
+    | Retitle String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | count = model.count + 1 }
+
+        Retitle t →
+            { model | title = t }
+
+
+badge : Int → Html Msg
+badge n = <span>{n}</span>
+
+
+label : String → Html Msg
+label s = <b>{s}</b>
+
+
+viewTree : Tree → Html Msg
+viewTree tree =
+    case tree of
+        Node name children →
+            <li>
+                {name}
+                <ul><For each={children} keyed={False}>{λc → viewTree c}</For></ul>
+            </li>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <h1>{model.title}</h1>
+        {badge model.count}
+        {badge model.count}
+        {label "a"}
+        {label "b"}
+        <For each={model.tags} keyed={λt → t}>{λt → <em>{t}</em>}</For>
+        <p>{List.map model.tags λt → <i>{t}</i>}</p>
+        <ul>{viewTree model.tree}</ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { title = "t", count = 0, tags = [], tree = Node "root" [] }
+        , update = update
+        , view = view
+        }

@@ -1,0 +1,67 @@
+-- writes: the S0 `carriers` line (browser-direct.md §4.4, §9.1, §11, and
+-- the amendment of 2026-10-09). A `Tea.sandbox` whose messages all come
+-- from its own markup has none; this one has two reasons for a dispatcher:
+-- an `Html.map` over `wrap`, a function that is not a constructor (the
+-- `Html.map` over `Child`, a constructor, and over `Tagged 1 _`, one under
+-- a placeholder, are composed at compile time and are not listed), and
+-- `Ping`, whose arm stores the message itself in the model (`msg whole`).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type ChildMsg
+    = Poke
+
+
+type Msg
+    = Child ChildMsg
+    | Tagged Int ChildMsg
+    | Ping
+    | Pong
+
+
+type alias Model =
+    last : Maybe Msg
+    pokes : Int
+
+
+wrap : ChildMsg → Msg
+wrap m =
+    case m of
+        Poke →
+            Pong
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Child _ →
+            { model | pokes = model.pokes + 1 }
+
+        Tagged _ _ →
+            model
+
+        Ping →
+            { model | last = Just msg }
+
+        Pong →
+            { model | last = Nothing }
+
+
+viewChild : Html ChildMsg
+viewChild = <button onClick={Poke}>poke</button>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{model.pokes}</p>
+        {Html.map viewChild Child}
+        {Html.map viewChild (Tagged 1 _)}
+        {Html.map viewChild wrap}
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { last = Nothing, pokes = 0 }, update = update, view = view }

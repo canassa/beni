@@ -9,3 +9,11 @@ program InitLiteral.main : Tea.element
   hole InitLiteral.beni:38:15                     static     reads ρ.count
   hole InitLiteral.beni:39:15                     dynamic    reads ρ.hits
   holes 4: static 2, literal 1, static-key 0, dynamic 1
+  site InitLiteral.beni:35:5                      unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers yes: commands
+  constructors 1: under * 0 (0%)
+  pairs 1 over 1 keys and 4 groups (1.00 per key); every key calls 1 of 4 groups (25%)
+  reconciler 0 of 0 lists
+  patchAll <none>

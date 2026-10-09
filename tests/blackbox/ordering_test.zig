@@ -150,8 +150,9 @@ test "an alias that drops its parameter names the same types reversed" {
 // The write-set pass is a function of the program's text (`write-sets.md`
 // §7, CLAUDE.md rule 5): the same three-module program, `writes/Pages/`,
 // with every module's declarations reversed gives the same dump — only the
-// holes' positions move, so they are compared without them, as a sorted set
-// — and the dump is byte-identical at `--jobs=1` and `--jobs=8`.
+// positions of holes, sites and lists move, so they are compared without
+// them, as a sorted set — and the dump is byte-identical at `--jobs=1` and
+// `--jobs=8`.
 test "the write-set dump is the same with every module's declarations reversed, and at any --jobs" {
     var s = try Scenario.init("the write-set dump, reversed and at --jobs=8");
     defer s.deinit();
@@ -231,18 +232,34 @@ test "each program of a write-set dump is the same as when it is dumped alone" {
     });
 }
 
-/// A writes dump with each `hole` line's position left out and the hole
-/// lines sorted: what a reordering of declarations may move.
+/// A writes dump with the position left out of each line that starts with
+/// one — `hole`, and the S0 stats' `site` and `list` (browser-direct.md §16,
+/// amended 2026-10-09) — and those lines sorted; and `carriers`' `Html.map`
+/// positions left out: what a reordering of declarations may move.
 fn withoutHolePositions(a: std.mem.Allocator, dump: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     var holes: std.ArrayList([]const u8) = .empty;
     var it = std.mem.splitScalar(u8, dump, '\n');
-    while (it.next()) |line| {
-        if (std.mem.startsWith(u8, line, "  hole ")) {
-            const rest = std.mem.trimStart(u8, line["  hole ".len..], " ");
+    next: while (it.next()) |line| {
+        for ([_][]const u8{ "  hole ", "  site ", "  list " }) |head| {
+            if (!std.mem.startsWith(u8, line, head)) continue;
+            const rest = std.mem.trimStart(u8, line[head.len..], " ");
             const colon = std.mem.indexOfScalar(u8, rest, ':') orelse rest.len;
             const space = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
-            try holes.append(a, try std.fmt.allocPrint(a, "{s} {s}", .{ rest[0..colon], std.mem.trimStart(u8, rest[space..], " ") }));
+            try holes.append(a, try std.fmt.allocPrint(a, "{s}{s} {s}", .{ head[2..], rest[0..colon], std.mem.trimStart(u8, rest[space..], " ") }));
+            continue :next;
+        }
+        if (std.mem.startsWith(u8, line, "  carriers ")) {
+            // `Html.map Main.beni:94:62` without its line and column.
+            var parts = std.mem.splitSequence(u8, line, "; ");
+            var first = true;
+            while (parts.next()) |part| {
+                if (!first) try out.appendSlice(a, "; ");
+                first = false;
+                const at = std.mem.indexOf(u8, part, ".beni:");
+                try out.appendSlice(a, if (at) |i| part[0 .. i + ".beni".len] else part);
+            }
+            try out.append(a, '\n');
             continue;
         }
         try out.appendSlice(a, line);

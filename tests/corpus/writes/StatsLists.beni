@@ -1,0 +1,81 @@
+-- writes: the S0 `list` and `reconciler` lines (browser-direct.md §6.2–§6.3,
+-- and its amendment of 2026-10-09). The keyed `For` over `model.rows` is
+-- reconciled by `Sort` (`⟨permute⟩`) and by `Load` (a list from the payload,
+-- `⟨value⟩`), and not by `Add` (an append, a script); the one over
+-- `model.box.items` by `Swap`, whose `value` write is above it; the one over
+-- a filter of `model.rows` is derived, so every key that writes what it reads
+-- reaches it; the one over `model.log` only ever grows, so it is scripts;
+-- `keyed={False}` over `model.rows` is the positional pass. Three of four
+-- keyed lists need the reconciler.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Box =
+    items : List Row
+
+
+type alias Model =
+    rows : List Row
+    box : Box
+    query : String
+    log : List String
+
+
+type Msg
+    = Add
+    | Sort
+    | Load (List Row)
+    | Swap Box
+    | Query String
+    | Note String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | rows = List.push model.rows { id = 0, label = "new" } }
+
+        Sort →
+            { model | rows = List.sortBy model.rows λr → r.label }
+
+        Load rows →
+            { model | rows = rows }
+
+        Swap box →
+            { model | box = box }
+
+        Query q →
+            { model | query = q }
+
+        Note s →
+            { model | log = List.push model.log s }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <For each={model.rows} keyed={.id}>{λr → <p>{r.label}</p>}</For>
+        <For each={model.box.items} keyed={.id}>{λr → <p>{r.label}</p>}</For>
+        <For each={List.filter model.rows λr → r.label == model.query} keyed={.id}>
+            {λr → <p>{r.label}</p>}
+        </For>
+        <For each={model.log} keyed={λs → s}>{λs → <p>{s}</p>}</For>
+        <For each={model.rows} keyed={False}>{λr → <p>{r.label}</p>}</For>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { rows = [], box = { items = [] }, query = "", log = [] }
+        , update = update
+        , view = view
+        }

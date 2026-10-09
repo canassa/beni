@@ -1,0 +1,40 @@
+program StatsLists.main : Tea.sandbox
+  model StatsLists.Model
+  init
+    literal ρ
+  key Add                                         indexed    node ρ; value ρ.rows ⟨append⟩
+  key Sort                                        structural node ρ; value ρ.rows ⟨permute⟩
+  key Load                                        exact      node ρ; value ρ.rows
+  key Swap                                        exact      node ρ; value ρ.box
+  key Query                                       exact      node ρ; value ρ.query
+  key Note                                        indexed    node ρ; value ρ.log ⟨append⟩
+  keys 6: bounded 6 (100%), exact 3, indexed 2, structural 1, * 0; capped 0
+  hole StatsLists.beni:65:10                      dynamic    reads ρ.rows
+  hole StatsLists.beni:65:53                      dynamic    reads ρ.rows[*].label
+  hole StatsLists.beni:66:10                      dynamic    reads ρ.box.items
+  hole StatsLists.beni:66:58                      dynamic    reads ρ.box.items[*].label
+  hole StatsLists.beni:67:10                      dynamic    reads ρ.query; ρ.rows; ρ.rows[*].label
+  hole StatsLists.beni:68:22                      dynamic    reads ρ.query; ρ.rows; ρ.rows[*].label
+  hole StatsLists.beni:70:10                      dynamic    reads ρ.log
+  hole StatsLists.beni:70:55                      static-key reads ρ.log[*]
+  hole StatsLists.beni:71:10                      dynamic    reads ρ.rows
+  hole StatsLists.beni:71:55                      dynamic    reads ρ.rows[*].label
+  holes 10: static 0, literal 0, static-key 1, dynamic 9
+  site StatsLists.beni:64:5                       unique
+  site StatsLists.beni:65:50                      instanced
+  site StatsLists.beni:66:55                      instanced
+  site StatsLists.beni:68:19                      instanced
+  site StatsLists.beni:70:52                      instanced
+  site StatsLists.beni:71:52                      instanced
+  sites 6: unique 1, shared 0, instanced 5, value 0
+  markup_value_roots 0 (0% of 6 sites)
+  carriers no
+  constructors 6: under * 0 (0%)
+  pairs 21 over 6 keys and 9 groups (3.50 per key); every key calls 0 of 9 groups (0%)
+  list StatsLists.beni:65:10                      reconciler Sort ⟨permute⟩; Load ⟨value⟩
+  list StatsLists.beni:66:10                      reconciler Swap value ρ.box
+  list StatsLists.beni:67:10                      reconciler Add derived; Sort derived; Load derived; Query derived
+  list StatsLists.beni:70:10                      scripts
+  list StatsLists.beni:71:10                      positional Sort ⟨permute⟩; Load ⟨value⟩
+  reconciler 3 of 4 lists
+  patchAll <none>

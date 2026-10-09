@@ -1,0 +1,74 @@
+-- writes: the S0 `constructors` line, kill criterion 1's static share
+-- (browser-direct.md §13, and the amendment of 2026-10-09). The message
+-- constructors are counted at the last constructor of this package along
+-- each key: `Child`'s three (the key tree follows the sub-message into
+-- `updateChild`), `Loaded` once (its `Ok`/`Err` split is a `Result`'s, a
+-- payload's), `Replace`, and the default child's two (`Quiet`, `Still`):
+-- seven. `Replace` puts its payload at the root, `value ρ`, so it is the
+-- one under `*` and the one `patchAll` names. A payload placed whole is not
+-- a message placed whole: `carriers no`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type ChildMsg
+    = Inc
+    | Dec
+    | Set Int
+
+
+type Msg
+    = Child ChildMsg
+    | Loaded (Result String Int)
+    | Replace Model
+    | Quiet
+    | Still
+
+
+type alias Model =
+    child : Int
+    n : Int
+    seen : Bool
+
+
+updateChild : ChildMsg, Int → Int
+updateChild sub c =
+    case sub of
+        Inc →
+            c + 1
+
+        Dec →
+            c - 1
+
+        Set n →
+            n
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Child sub →
+            { model | child = updateChild sub model.child }
+
+        Loaded r →
+            case r of
+                Ok n →
+                    { model | n = n }
+
+                Err _ →
+                    model
+
+        Replace m →
+            m
+
+        _ →
+            { model | seen = True }
+
+
+view : Model → Html Msg
+view model = <p>{model.child}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { child = 0, n = 0, seen = False }, update = update, view = view }

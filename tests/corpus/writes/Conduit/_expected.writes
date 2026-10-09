@@ -261,3 +261,101 @@ program Main.main : Tea.application
   hole Settings.beni:295:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.email
   hole Settings.beni:305:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.password
   holes 145: static 19, literal 6, static-key 0, dynamic 120
+  site Article.beni:199:17                        instanced
+  site Article.beni:208:5                         unique
+  site Article.beni:209:73                        instanced
+  site Article.beni:215:5                         instanced
+  site Article.beni:217:21                        instanced
+  site Article.beni:226:9                         instanced
+  site Article.beni:231:9                         instanced
+  site Article.beni:239:5                         instanced
+  site ArticlePage.beni:216:17                    unique
+  site ArticlePage.beni:243:44                    unique
+  site ArticlePage.beni:256:5                     shared     2 calls
+  site ArticlePage.beni:267:17                    unique
+  site ArticlePage.beni:277:13                    shared     2 calls
+  site ArticlePage.beni:296:13                    shared     2 calls
+  site ArticlePage.beni:316:13                    unique
+  site ArticlePage.beni:324:13                    unique
+  site ArticlePage.beni:344:13                    unique
+  site ArticlePage.beni:367:13                    unique
+  site ArticlePage.beni:378:5                     instanced
+  site ArticlePage.beni:391:21                    instanced
+  site ArticlePage.beni:399:21                    instanced
+  site Author.beni:119:20                         instanced
+  site Author.beni:125:5                          instanced
+  site Author.beni:134:13                         unique
+  site Author.beni:137:13                         shared     3 calls
+  site Author.beni:143:13                         shared     3 calls
+  site Editor.beni:259:17                         unique
+  site Editor.beni:265:5                          shared     2 calls
+  site Editor.beni:271:29                         unique
+  site Editor.beni:277:29                         unique
+  site Editor.beni:299:5                          shared     8 calls
+  site Editor.beni:303:21                         instanced
+  site Feed.beni:75:5                             shared     2 calls
+  site Feed.beni:78:13                            unique
+  site Feed.beni:80:13                            shared     2 calls
+  site Feed.beni:93:9                             instanced
+  site Feed.beni:99:5                             instanced
+  site Feed.beni:117:21                           instanced
+  site Feed.beni:129:9                            shared     2 calls
+  site Feed.beni:132:21                           instanced
+  site Feed.beni:149:9                            unique
+  site Feed.beni:156:5                            shared     2 calls
+  site Feed.beni:160:21                           instanced
+  site Home.beni:153:9                            unique
+  site Home.beni:156:21                           unique
+  site Home.beni:159:21                           unique
+  site Home.beni:171:33                           unique
+  site Home.beni:178:33                           unique
+  site Home.beni:195:37                           unique
+  site Home.beni:233:5                            unique
+  site Home.beni:236:17                           instanced
+  site Login.beni:109:9                           unique
+  site Login.beni:149:5                           unique
+  site Login.beni:152:17                          instanced
+  site Main.beni:51:66                            unique
+  site Main.beni:57:21                            unique
+  site Page.beni:30:9                             shared     10 calls
+  site Page.beni:40:5                             shared     10 calls
+  site Page.beni:48:25                            shared     10 calls
+  site Page.beni:66:25                            shared     10 calls
+  site Page.beni:78:5                             shared     60 calls
+  site Page.beni:85:5                             unique
+  site Page.beni:99:9                             unique
+  site Page.beni:101:9                            shared     4 calls
+  site Page.beni:102:56                           instanced
+  site Page.beni:110:11                           unique
+  site Page.beni:114:21                           unique
+  site ProfilePage.beni:206:17                    unique
+  site ProfilePage.beni:219:5                     unique
+  site ProfilePage.beni:236:33                    unique
+  site ProfilePage.beni:247:29                    unique
+  site ProfilePage.beni:264:29                    unique
+  site Register.beni:136:9                        unique
+  site Register.beni:147:37                       instanced
+  site Settings.beni:213:9                        unique
+  site Settings.beni:221:37                       instanced
+  site Settings.beni:238:33                       unique
+  site Settings.beni:249:41                       unique
+  site Settings.beni:260:5                        unique
+  sites 79: unique 39, shared 17, instanced 23, value 0
+  markup_value_roots 0 (0% of 79 sites)
+  carriers yes: commands
+  constructors 69: under * 1 (1%)
+  pairs 829 over 90 keys and 106 groups (9.21 per key); every key calls 0 of 106 groups (0%)
+  list Article.beni:209:10                        positional ChangedUrl *; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
+  list Article.beni:216:10                        positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
+  list ArticlePage.beni:318:18                    reconciler ChangedUrl *; GotArticleMsg · CompletedLoadComments · Ok value ρ.Article#0.comments; GotArticleMsg · CompletedLoadComments · Err value ρ.Article#0.comments; GotArticleMsg · PassedSlowLoadThreshold value ρ.Article#0.comments
+  list Editor.beni:301:14                         positional ChangedUrl *; GotEditorMsg · ClickedSave derived; GotEditorMsg · CompletedCreate · Err derived; GotEditorMsg · CompletedEdit · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Ok derived; GotEditorMsg · PassedSlowLoadThreshold derived
+  list Feed.beni:81:18                            reconciler ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived
+  list Feed.beni:130:14                           positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived
+  list Feed.beni:158:14                           positional ChangedUrl *; GotHomeMsg · ClickedTag derived; GotHomeMsg · ClickedTab derived; GotProfileMsg · ClickedTab derived
+  list Home.beni:234:10                           positional ChangedUrl *; GotHomeMsg · CompletedTagsLoad · Ok value ρ.Home#0.tags; GotHomeMsg · CompletedTagsLoad · Err value ρ.Home#0.tags; GotHomeMsg · PassedSlowLoadThreshold value ρ.Home#0.tags
+  list Login.beni:150:10                          positional ChangedUrl *; GotLoginMsg · SubmittedForm ⟨replaced⟩; GotLoginMsg · CompletedLogin · Err ⟨value⟩
+  list Page.beni:102:14                           positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · ClickedDismissErrors derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · ClickedDismissErrors derived; GotProfileMsg · CompletedFollowChange · Err derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · ClickedDismissErrors derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · ClickedDismissErrors derived; GotArticleMsg · CompletedFavoriteChange · Err derived; GotArticleMsg · CompletedFollowChange · Err derived; GotArticleMsg · CompletedPostComment · Err derived; GotArticleMsg · CompletedDeleteComment#1 · Err derived; GotArticleMsg · CompletedDeleteArticle · Err derived
+  list Register.beni:145:30                       positional ChangedUrl *; GotRegisterMsg · SubmittedForm ⟨replaced⟩; GotRegisterMsg · CompletedRegister · Err ⟨value⟩
+  list Settings.beni:219:30                       positional ChangedUrl *; GotSettingsMsg · SubmittedForm ⟨replaced⟩; GotSettingsMsg · CompletedSave · Err ⟨value⟩
+  reconciler 2 of 2 lists
+  patchAll ChangedUrl

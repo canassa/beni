@@ -1,0 +1,49 @@
+-- writes: the S0 `pairs` line (browser-direct.md §5.2–§5.3, and the
+-- amendment of 2026-10-09). A group is a site's holes with one read set:
+-- `<main>`'s three holes reading `model.count` (the `if` reads it too) are
+-- one group, its hole reading `model.name` another, and `<b>`'s hole a
+-- third; `<i>`'s constant reads nothing and is no group. Every key writes
+-- `count`, so every key calls the two `count` groups — the root-level read
+-- §5.2 counts — and `Rename` also calls the `name` group: 2 + 3 + 2 = 7
+-- pairs over 3 keys.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    name : String
+
+
+type Msg
+    = Inc
+    | Rename String
+    | Clear
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+        Rename s →
+            { model | name = s, count = model.count + 1 }
+
+        Clear →
+            { model | count = 0 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <header>{model.count}</header>
+        <p>{model.name}</p>
+        <p>{model.count}</p>
+        {if model.count > 10 then <b>{model.count}</b> else <i>{"small"}</i>}
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { count = 0, name = "n" }, update = update, view = view }
