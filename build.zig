@@ -119,6 +119,14 @@ const unit_shards = 12;
 /// The same for the compare generator's unit tests.
 const compare_shards = 2;
 
+/// The seeds of `zig build fuzz`'s page sweep: 1 to 50.
+const fuzz_sweep_seeds = blk: {
+    @setEvalBranchQuota(100_000);
+    var text: []const u8 = "1";
+    for (2..51) |k| text = text ++ std.fmt.comptimePrint(",{d}", .{k});
+    break :blk text;
+};
+
 /// The black-box test files `test-blackbox` runs besides the corpus walker,
 /// each with the number of processes it is split into. `test-run-hashes`
 /// records them and `coverage` measures them.
@@ -138,6 +146,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/ordering_test.zig", 2 },
     .{ "tests/blackbox/platform_test.zig", 1 },
     .{ "tests/blackbox/oracle_test.zig", 2 },
+    .{ "tests/blackbox/page_fuzz_test.zig", 1 },
 };
 
 /// Where `coverage-run` installs the instrumented compiler the suites
@@ -543,6 +552,12 @@ pub fn build(b: *std.Build) void {
     // process shared by every case.
     const browser_step = b.step("test-browser", "Run the browser/ corpus in a headless Chrome instead of happy-dom");
     browser_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .browser = "chrome", .budget = false }).step);
+
+    // The page fuzzer's long sweep (docs/design/browser-direct.md §8.3):
+    // every fuzzed `browser/` fixture with fifty seeds of sixty steps, where
+    // the gates run two of fifteen. Part of `fuzz`: no record covers a sweep
+    // and no budget holds it. Takes `-Dcorpus`.
+    fuzz_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .fuzz_seeds = fuzz_sweep_seeds, .fuzz_steps = "60", .budget = false }).step);
 
     // The run hashes' own scenarios drive the corpus walker, a test binary
     // that runs one scenario program (`run_hash_probe.zig`, compiled without
@@ -1943,6 +1958,10 @@ const HarnessEnvironment = struct {
     /// The corpus walker's `BENI_BROWSER`: `chrome` runs the `browser/`
     /// pages in Chrome instead of happy-dom.
     browser: []const u8 = "",
+    /// The corpus walker's `BENI_FUZZ_SEEDS` and `BENI_FUZZ_STEPS`: a page
+    /// fuzz longer than the gates' (`zig build fuzz`).
+    fuzz_seeds: []const u8 = "",
+    fuzz_steps: []const u8 = "",
     /// Whether each test and corpus case is held to the CPU budget
     /// (`tests/test_runner.zig`): every run the gates make is.
     budget: bool = true,
@@ -2038,6 +2057,8 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
         r.setEnvironmentVariable("BENI_BROWSER", env.browser);
         r.setEnvironmentVariable("BENI_CHROME", bb.chrome);
+        r.setEnvironmentVariable("BENI_FUZZ_SEEDS", env.fuzz_seeds);
+        r.setEnvironmentVariable("BENI_FUZZ_STEPS", env.fuzz_steps);
         // The gates' budget in instructions, for the pending scenarios whose
         // finding is that they do not fit it (`pending_test.zig`).
         r.setEnvironmentVariable("BENI_PENDING_BUDGET_INSTRUCTIONS", bb.budget.instructions);

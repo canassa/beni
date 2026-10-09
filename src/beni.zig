@@ -178,6 +178,7 @@ pub const dump = struct {
     pub const graph = @import("dump/graph.zig");
     pub const dispatch = @import("dump/dispatch.zig");
     pub const writes = @import("dump/writes.zig");
+    pub const msg_types = @import("dump/msg_types.zig");
 };
 pub const render = struct {
     pub const text = @import("render/text.zig");

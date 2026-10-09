@@ -396,6 +396,15 @@ pub const Program = struct {
     carriers: Carriers = .{},
     /// The message type's constructor count, or 0 when unknown.
     msg_ctors: u32 = 0,
+    /// The top-level declaration `update` names, or `none` for an `update`
+    /// that is not one: where the checker's scheme of it is, which the
+    /// fuzzer's message type is read from (`dump --stage=writes
+    /// --msg-types`, browser-direct.md §8.3, amended 2026-10-09).
+    update_module: u32 = none,
+    update_decl: u32 = none,
+    /// For an `update` written as a lambda (`λmsg model → …`) whose first
+    /// parameter is a name: that local, module-wide, in `update_module`.
+    update_param_local: u32 = none,
 };
 
 pub const Capped = struct { module: u32, decl: u32, caps: Caps };
@@ -3866,7 +3875,17 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         var frame = try a.newFrame(fs.m, fs.frame_decl, 0);
         // The model type: `update`'s second parameter, as annotated.
         const upd = fs.update.?;
+        const fb = a.bir(fs.m);
+        if (fb.instTag(upd) == .lambda and fs.frame_decl < fb.decls.len) {
+            const params = fb.extraSlice(fb.subRange(@fromBackingInt(fb.instData(upd).lhs)), Inst.Index);
+            if (params.len != 0 and fb.instTag(params[0]) == .pat_var) {
+                prog.update_module = fs.m;
+                prog.update_param_local = fb.decls[fs.frame_decl].locals_start + fb.instData(params[0]).lhs;
+            }
+        }
         if (a.valueTarget(fs.m, upd)) |t| {
+            prog.update_module = t.m;
+            prog.update_decl = t.d;
             const decl = a.bir(t.m).decls[t.d];
             if (decl.annotation.unwrap()) |ann| {
                 const ab = a.bir(t.m);

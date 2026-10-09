@@ -398,6 +398,10 @@ pub const Dump = struct {
     /// `--writes-work=<n>` — hidden, test-only: the write-set pass's work
     /// cap W (write-sets.md §6.1), lowered so a fixture can reach it.
     writes_work: ?u64 = null,
+    /// `--msg-types` — hidden, test-only: with `--stage=writes`, print each
+    /// program's message type for the page fuzzer instead of its write
+    /// sets (browser-direct.md §8.3, amended 2026-10-09).
+    msg_types: bool = false,
     file: []const u8,
 };
 
@@ -1038,6 +1042,7 @@ const DumpSpecific = struct {
     positions: bool = false,
     platform: ?[]const u8 = null,
     writes_work: ?u64 = null,
+    msg_types: bool = false,
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
@@ -1060,6 +1065,13 @@ const DumpSpecific = struct {
             self.writes_work = std.fmt.parseUnsigned(u64, v, 10) catch
                 return Usage.init("beni: invalid value '{s}' for --writes-work (expected a positive integer)", .{v});
             if (self.writes_work.? == 0) return Usage.init("beni: invalid value '{s}' for --writes-work (expected a positive integer)", .{v});
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--msg-types")) {
+            // Hidden and test-only (browser-direct.md §8.3): the message
+            // types the page fuzzer generates values of. Absent from
+            // `usage` on purpose, as `--writes-work` is.
+            if (value != null) return noValue(name);
+            self.msg_types = true;
             self.consumed = true;
         }
         return null;
@@ -1087,12 +1099,14 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     // static-dispatch-spike.md §7.3); either way it is one path.
     if (s.positionals.items.len != 1) return .{ .usage = .init("beni: dump needs exactly one file", .{}) };
     if (s.specific.writes_work != null and stage != .writes) return .{ .usage = .init("beni: --writes-work applies to --stage=writes only", .{}) };
+    if (s.specific.msg_types and stage != .writes) return .{ .usage = .init("beni: --msg-types applies to --stage=writes only", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
         .stage = stage,
         .positions = s.specific.positions,
         .platform = s.specific.platform,
         .writes_work = s.specific.writes_work,
+        .msg_types = s.specific.msg_types,
         .file = s.positionals.items[0],
     } } };
 }
@@ -1435,6 +1449,17 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     );
     try testing.expect(std.mem.indexOf(u8, usage, "--roundtrip-frontend") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "frontend") == null);
+
+    // `--msg-types`, the page fuzzer's (browser-direct.md §8.3): `dump
+    // --stage=writes`'s alone, since the write-set pass finds the programs.
+    try expectCommand(
+        .{ .dump = .{ .stage = .writes, .msg_types = true, .file = "M.beni" } },
+        &.{ "dump", "--stage=writes", "--msg-types", "M.beni" },
+    );
+    try expectUsage("beni: option '--msg-types' does not take a value", &.{ "dump", "--stage=writes", "--msg-types=1", "M.beni" });
+    try expectUsage("beni: --msg-types applies to --stage=writes only", &.{ "dump", "--stage=types", "--msg-types", "M.beni" });
+    try expectUsage("beni: unknown option '--msg-types'; run 'beni help' for usage", &.{ "check", "--msg-types", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "msg-types") == null);
 }
 
 test "--cache-build-id is check's and build's, hidden, and nobody else's" {

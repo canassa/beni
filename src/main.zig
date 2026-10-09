@@ -181,7 +181,8 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     options.platform = if (Cli.stageResolvesImports(dump.stage)) dump.platform else null;
     // `--stage=types` prints local bindings' types, and a `Var` means
     // nothing once its store is gone (checker.md §5).
-    options.keep_type_stores = dump.stage == .types;
+    // `--msg-types` reads the checker's scheme of each program's `update`.
+    options.keep_type_stores = dump.stage == .types or dump.msg_types;
     // The chain is read before any source, as `check` and `build` read it
     // (platform.zig): a `--platform` that names nothing is the same exit 2
     // and the same line.
@@ -466,6 +467,11 @@ fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, std
     }.go, .{a}) catch
         return fail(stderr, "beni: out of memory", .{});
     session.profile.end(0, token, .writes, beni.Profile.Event.no_file, 0);
+    if (dump.msg_types) {
+        const cx: beni.dump.msg_types.Context = .{ .birs = birs, .types = &session.checked.types, .interner = &session.interner };
+        beni.dump.msg_types.write(stdout, gpa, a, result, session.checked.modules, &cx) catch return 2;
+        return 0;
+    }
     const Pos = struct {
         fn get(ctx: *const anyopaque, module: u32, tok: u32) beni.dump.writes.Position {
             const s: *const Session = @ptrCast(@alignCast(ctx));

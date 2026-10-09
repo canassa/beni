@@ -348,6 +348,18 @@ evaluated on `browser-tea`) is a `<name>.tea-expected` (and `.tea-release-expect
 fixture's comment. Their run hash lines are `dev`, `release`, `tea_dev`
 and `tea_release`.
 
+**The page fuzzer** (`docs/design/browser-direct.md` §8.3 and its
+2026-10-09 amendment, `tests/browser/fuzz.mjs`) runs on every
+`browser/direct/` page without a `.tea-expected` — its `browser-tea` build
+against its `browser-direct` build — and on every `browser/tea/` page, its
+development build against its release build: two seeds of fifteen random
+steps, the two pages compared after each, in the driver's process after the
+fixture's pages. A difference fails the case with the seed, the step, the
+sequence shrunk, and the smallest element where the pages differ; a
+sequence of view events is printed as a `.steps` script, the red-first
+fixture of the defect. A fuzz that agreed is the `fuzz` line of the
+fixture's run hash. `zig build fuzz` runs fifty seeds of sixty steps.
+
 **`emit/release/split/`** — release applications, whose golden is
 `_main.mjs` whole — are built with `--platform=browser`, the `dom` lowering
 over a markup runtime that is the beni module `Rt` and a hand-written file
