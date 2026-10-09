@@ -2198,6 +2198,13 @@ const Case = struct {
         // `browser/tea/` pair only in `zig build fuzz`'s sweep.
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
         if (!c.fixture.differential and !sweep) return pair;
+        // A `browser/direct/` page whose value fuzz would take it over the
+        // budget fuzzes events in the gates, and values in the sweep
+        // (browser-direct.md §8.3, the owner's decision of 2026-10-09).
+        if (!sweep) for (value_fuzz_in_sweep) |entry| if (std.mem.eql(u8, entry.name, c.fixture.name)) {
+            pair.note = "value fuzz: in `zig build fuzz` (budget)";
+            return pair;
+        };
         if (!try fuzzFlag(c)) return pair;
         for (sides, [_][]const u8{ "fuzz-a", "fuzz-b" }) |side, out| {
             var args: std.ArrayList([]const u8) = .empty;
@@ -2227,6 +2234,17 @@ const Case = struct {
         pair.types = "_types.jsonl";
         return pair;
     }
+
+    /// The `browser/direct/` pages whose value fuzz runs only in `zig build
+    /// fuzz`, each with why: their two `--fuzz` builds and the dump would
+    /// take them over the instruction budget (browser-direct.md §8.3, the
+    /// owner's decision of 2026-10-09). The gates fuzz their events, and
+    /// the report says where their values went. No budget is raised.
+    const value_fuzz_in_sweep = [_]struct { name: []const u8, why: []const u8 }{
+        .{ .name = "Holes.beni", .why = "4 597 million instructions with the value fuzz" },
+        .{ .name = "MessageKeys.beni", .why = "4 382 million instructions with the value fuzz" },
+        .{ .name = "VerifyQuiet.beni", .why = "5 007 million instructions with the value fuzz" },
+    };
 
     var fuzz_flag_mutex: Io.Mutex = .init;
     var fuzz_flag: ?bool = null;

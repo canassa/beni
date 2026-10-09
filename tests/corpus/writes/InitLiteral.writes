@@ -5,10 +5,10 @@ program InitLiteral.main : Tea.element
   key (any)                                       exact      node ρ; value ρ.hits
   keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
   hole InitLiteral.beni:36:13                     literal    reads ρ.title
-  hole InitLiteral.beni:37:12                     static     reads ρ.note
-  hole InitLiteral.beni:38:15                     static     reads ρ.count
+  hole InitLiteral.beni:37:12                     literal    reads ρ.note
+  hole InitLiteral.beni:38:15                     literal    reads ρ.count
   hole InitLiteral.beni:39:15                     dynamic    reads ρ.hits
-  holes 4: static 2, literal 1, static-key 0, dynamic 1
+  holes 4: static 0, literal 3, static-key 0, dynamic 1
   site InitLiteral.beni:35:5                      unique
   sites 1: unique 1, shared 0, instanced 0, value 0
   markup_value_roots 0 (0% of 1 sites)

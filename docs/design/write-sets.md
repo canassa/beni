@@ -1868,3 +1868,42 @@ covers `[ …init, last ]`'s `tag ρ.items[?]` against `List.set` at a computed 
 pattern's whole read covers the tag read, and the hole was `dynamic` before and after; only the
 printed reads changed. `writes/TagEquality` checks that a derived `==` reads the whole value; it
 is a regression guard and passed before.
+
+### *Amended 2026-10-09 (the owner): O8 widened — what is baked*
+
+Kill criterion 3 of `browser-direct.md` fired on bytes at S1 (research 66 §3): a hole no key
+writes but §9.1 would not bake was written by mount code, about 3.5 B a hole. The owner widened
+O8, before S1 merges. §9.1's rule now reads: a static hole is **baked** — its value written into
+the template, with no code — when its expression is exactly a model path `p` (`tree.pathOf`),
+`init` gives `p` a value the template can hold exactly, and the hole is either a **text hole**
+standing alone under an allowlisted parent (unchanged: the parent allowlist and the *alone* rule
+stand, so no text sits directly in `table`, `tr`, `select` and the rest) or an **attribute**. A
+text hole whose expression is a string literal and reads nothing is baked as before. What the
+template can hold exactly:
+
+- **A `String`**, any string but one holding NUL (which the HTML parser replaces with U+FFFD).
+  The lowering escapes what the parser would read as markup: in text `&`, `<` and a carriage
+  return (`&amp;`, `&lt;`, `&#13;`); in an attribute also `"`, quoting the value where it holds
+  whitespace, a quote, `` ` ``, `=`, `<`, `>` or ends in `/` (`dom`'s `bakeAttribute`, the same
+  escaping a constant attribute gets). *Plain* (N4) is withdrawn: escaping makes the bytes the
+  page shows the bytes `init` gave.
+- **The empty string, as an attribute value only.** A text hole's node exists, empty, when the
+  mount writes `""`; a template holding no text there has no node, so the page's structure would
+  differ. An empty text hole stays mount code.
+- **An `Int` whose magnitude is at most 2⁵³**, printed in decimal (a negative literal, which is
+  `Basics.negate` of one, included; the pass folds it to a literal, §3.5). Every integer in that
+  range is a double exactly, and JavaScript's `Number`-to-string conversion prints such a double
+  as exactly its decimal digits, with no exponent below 10²¹ and `-0` as `0`, so the page shows
+  what the mount's `String(n)` would. An `Int` past 2⁵³ is not baked: the literal's digits and the
+  double's are not the same.
+- **Not a `Float`**, a `Char`, a `Bool` or anything else: printing them exactly would need §9.1's
+  bit-exact evaluator, which this amendment does not build.
+
+An attribute is baked only where the template writes it as text: not a property, not `raw`, not
+`stateful`, not a namespaced name (written with `setAttributeNS`); a URL attribute's text goes
+through the same check a constant URL does, so a `javascript:` URL is baked as `""` and one the
+check cannot decide without Unicode's whitespace stays mount code. `beni dump --stage=writes`
+prints such holes `literal`. Fixtures: `browser/direct/BakedValues` and `emit/direct/BakedValues`
+(an `Int`, a negative one, a string with `<&"'` in text and in an attribute, an `Int` attribute,
+an empty attribute, a `javascript:` URL baked; an `Int` past 2⁵³, a `Float` and an empty text
+not); `writes/InitLiteral`'s golden moves (`note`'s `&` and `count`'s `Int` are now `literal`).

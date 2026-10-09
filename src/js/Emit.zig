@@ -2114,7 +2114,7 @@ const Emitter = struct {
                     .module = h.module,
                     .token = h.token,
                     .group = group,
-                    .bake = if (h.bake) try a.dupe(u8, h.bake_text) else "",
+                    .bake = if (h.bake) try a.dupe(u8, h.bake_text) else null,
                     .where = try std.fmt.allocPrint(a, "{s}:{d}:{d}", .{ std.fs.path.basename(e.session.store.path(file)), at.line, at.col }),
                 };
             }

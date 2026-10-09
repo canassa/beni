@@ -253,6 +253,10 @@ pub const Body = struct {
     /// A single top-level element: its name and namespace, for the SVG
     /// wrapper.
     root_element: ?struct { name: []const u8, namespace: m.ElementFacts.Namespace } = null,
+    /// What `Gen.bake` and `Gen.bake_item` baked into the template: the
+    /// text holes, and the attributes by their index in `Tree.items`.
+    baked_holes: std.ArrayList(m.Node.Index) = .empty,
+    baked_items: std.ArrayList(u32) = .empty,
     /// A `--library` build's delegated event names, which `m` registers.
     delegated: std.ArrayList([]const u8) = .empty,
     /// The root site, for the names of the kinds it makes.
@@ -396,6 +400,9 @@ pub const Gen = struct {
     /// text in the template, with no op.
     direct: bool = false,
     bake: ?*const fn (cx: *m.Context, n: m.Node.Index) ?[]const u8 = null,
+    /// The same for an attribute, by its index in `Tree.items`: its value,
+    /// written into the template as a constant's is.
+    bake_item: ?*const fn (cx: *m.Context, item: u32) ?[]const u8 = null,
 
     fn a(g: *Gen) Allocator {
         return g.cx.arena;
@@ -1261,6 +1268,7 @@ pub const Gen = struct {
                     // gives: that text, as the template's own (§5.1).
                     if (g.bake) |bake| if (g.tree.kind(n) == .hole) if (bake(g.cx, n)) |text| {
                         try escapeText(g.a(), &b.html, text);
+                        try b.baked_holes.append(g.a(), n);
                         if (!in_text) {
                             _ = try b.tnode(g.a(), parent, index, .text);
                             index += 1;
@@ -1465,6 +1473,17 @@ pub const Gen = struct {
                 }
             },
             .dynamic => {
+                // A value the program never writes, which `init` gives as
+                // text the template can hold: baked as a constant is, the
+                // URL check included (browser-direct.md §5.1).
+                if (g.bake_item) |bake| if (bakeable(it, facts, name)) if (bake(g.cx, index)) |text| {
+                    const script: ?bool = if (it.url) scriptUrl(text) else false;
+                    if (script) |s| {
+                        try bakeAttribute(g.a(), &b.html, name, if (s) "" else text);
+                        try b.baked_items.append(g.a(), index);
+                        return raw;
+                    }
+                };
                 const value = try b.operand(g.a(), .{ .value = it.value.dynamic.? });
                 try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false, .index = index } } });
             },
@@ -2461,6 +2480,16 @@ fn opReads(op: Op, k: u32) bool {
         .for_ => |x| x.each == k or x.row == k or (x.key != null and x.key.? == k) or (x.inputs != null and x.inputs.? == k),
         .show => |x| x.when == k or x.body == k or (x.key != null and x.key.? == k) or (x.fallback != null and x.fallback.? == k) or std.mem.indexOfScalar(u32, x.inputs, k) != null,
     };
+}
+
+/// Whether an attribute's value may be baked into the template: one the
+/// template writes as text — not a property, not raw, not a namespaced
+/// name (written with `setAttributeNS`), and of a `String` or `Int` class.
+fn bakeable(it: m.Item, facts: ?m.AttributeFacts, name: []const u8) bool {
+    if (it.kind != .attribute and it.kind != .escape) return false;
+    if (it.class != .string and it.class != .int) return false;
+    if (facts) |f| if (f.property != null or f.raw or f.stateful) return false;
+    return namespaceOf(name) == null;
 }
 
 /// The namespace of a prefixed attribute name the page writes with
