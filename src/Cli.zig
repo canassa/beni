@@ -296,6 +296,14 @@ pub const Build = struct {
     /// (`schema.md` §10). It changes no answer — that is what the corpus
     /// asserts — and no user has a reason to reach for it.
     schema_library: bool = false,
+    /// `--fuzz` — **hidden**, for `--allow-debug`'s reason: a test-only
+    /// build for differential fuzzing (`browser-direct.md` §8.3, as
+    /// amended for S1). Under a lowering that compiles programs whole, each
+    /// mounted program's node holds, as `$$root`, a function that applies
+    /// a message value to it — what `browser-tea`'s runtime always does —
+    /// so a harness can send the same messages to both platforms. A build
+    /// for any other lowering is unchanged.
+    fuzz: bool = false,
     /// `--watch` (`frontend.md` §10.3): build, then rebuild on every change
     /// to the inputs until SIGINT.
     watch: bool = false,
@@ -725,6 +733,7 @@ const BuildSpecific = struct {
     library: bool = false,
     allow_debug: bool = false,
     schema_library: bool = false,
+    fuzz: bool = false,
     watch: bool = false,
     poll_interval_ms: ?u32 = null,
     cache: Cache = .{},
@@ -763,6 +772,11 @@ const BuildSpecific = struct {
             // The fourth hidden flag (see `Build.schema_library`).
             if (value != null) return noValue(name);
             self.schema_library = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--fuzz")) {
+            // The fifth hidden flag (see `Build.fuzz`).
+            if (value != null) return noValue(name);
+            self.fuzz = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--watch")) {
             if (value != null) return noValue(name);
@@ -828,6 +842,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
         .schema_library = s.specific.schema_library,
+        .fuzz = s.specific.fuzz,
         .source_maps = s.specific.source_maps orelse !s.specific.release,
         .watch = s.specific.watch,
         .poll_interval_ms = s.specific.poll_interval_ms orelse default_poll_interval_ms,

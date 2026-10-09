@@ -1,0 +1,41 @@
+-- A `submit` whose declaration says `preventDefault` has its default
+-- prevented in the DOM listener itself, synchronously, before the message
+-- is sent (browser-direct.md §4.2): the click on the submit button writes
+-- the page as its handler runs, then the browser submits the form, and the
+-- submit's listener prevents the navigation whatever a handler's write
+-- just did. The form's message is read at the event, so it carries the
+-- count the click's message made.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Clicked
+    | Submitted Int
+
+
+type alias Model =
+    clicks : Int
+    submitted : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Clicked →
+            { model | clicks = model.clicks + 1 }
+
+        Submitted n →
+            { model | submitted = [ …model.submitted, n ] }
+
+
+view : Model → Html Msg
+view model =
+    <form id="form" onSubmit={Submitted model.clicks}>
+        <button id="go" type="submit" onClick={Clicked}>go {String.fromInt model.clicks}</button>
+        <p id="submitted">{String.join (List.map model.submitted String.fromInt) ","}</p>
+    </form>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { clicks = 0, submitted = [] }, update = update, view = view }

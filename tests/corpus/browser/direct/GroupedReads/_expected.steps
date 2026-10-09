@@ -1,0 +1,13 @@
+# One field: "a", "a+b", "total".
+click #a
+# Another: "a+b" and "total".
+click #b
+# A field read inside a function of this module: "x" and "total".
+click #x
+# A field nothing but another module's function reads.
+click #y
+click #pick
+# "message" is read at the click on browser-direct.
+click #set
+# The model as it was: only what may have an effect.
+click #noop

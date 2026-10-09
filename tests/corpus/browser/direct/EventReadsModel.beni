@@ -1,0 +1,43 @@
+-- A view event's payload is read when the event fires, not captured when
+-- the view was last shown (browser-direct.md §4.2, the owner's Q1). A click
+-- on the button runs its handler, which writes the model, and then bubbles
+-- to the section, whose message `Saw model.n` is read now: it carries the
+-- model the button's message made. `browser-tea` captured it at the last
+-- render, so its section reports the value before the click
+-- (`EventReadsModel.tea-expected`) — the one difference Q1 names, reached in
+-- slice S1 by bubbling; the shape that removes the focused input, a `blur`
+-- a handler's own write fires, needs branches and is slice S4's.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Saw Int
+
+
+type alias Model =
+    n : Int
+    seen : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Saw k →
+            { model | seen = [ …model.seen, k ] }
+
+
+view : Model → Html Msg
+view model =
+    <section onClick={Saw model.n}>
+        <button id="inc" onClick={Inc}>inc</button>
+        <p id="seen">{String.join (List.map model.seen String.fromInt) ","}</p>
+    </section>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { n = 0, seen = [] }, update = update, view = view }

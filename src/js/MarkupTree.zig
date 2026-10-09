@@ -169,6 +169,8 @@ pub const Built = struct {
     rows: []const RowSource,
     /// Parallel to `tree.components`.
     components: []const ComponentSource,
+    /// Parallel to `tree.items`: the token each item was written at.
+    item_tokens: []const u32 = &.{},
     /// Parallel to `tree.items`: an event's payload extractor, as a value
     /// of the vocabulary module's interface, or `Dispatch.Markup.no_row`.
     extractors: []const u32,
@@ -293,6 +295,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
         .rows = b.row_sources.items,
         .components = b.component_sources.items,
         .extractors = b.extractors.items,
+        .item_tokens = b.item_tokens.items,
         .root_decls = reads.root_decls,
         .groupable = reads.groupable,
         .moved_lets = reads.moved_lets,
@@ -329,6 +332,7 @@ const Builder = struct {
     /// Parallel to `items`: an event's payload extractor, as a value of the
     /// vocabulary module's interface, or `Dispatch.Markup.no_row`.
     extractors: std.ArrayList(u32) = .empty,
+    item_tokens: std.ArrayList(u32) = .empty,
     entries: std.ArrayList(m.Entry) = .empty,
     props: std.ArrayList(m.Prop) = .empty,
     children: std.ArrayList(m.Node.Index) = .empty,
@@ -1988,6 +1992,7 @@ const Builder = struct {
             try b.items.append(b.arena, out);
             const extractor = if (kind == .event) if (row) |r| r.extractor else Dispatch.Markup.no_row else Dispatch.Markup.no_row;
             try b.extractors.append(b.arena, extractor);
+            try b.item_tokens.append(b.arena, item.token);
         }
         return .{ .start = range_start, .len = @as(u32, @intCast(b.items.items.len)) - range_start };
     }

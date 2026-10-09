@@ -1,0 +1,38 @@
+-- The holes page's shape (browser-direct.md §13, kill criterion 3): one
+-- hole a key writes among holes nothing writes. The handler for `Tick` is
+-- its arm and one group call, and the group is one compare and one write;
+-- the hole `init` gives a plain string is baked into the template, and the
+-- number nothing writes is written once at mount and never compared.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Tick
+
+
+type alias Model =
+    tick : Int
+    title : String
+    fixed : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Tick →
+            { model | tick = model.tick + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <h1>{model.title}</h1>
+        <p>{String.fromInt model.fixed}</p>
+        <button onClick={Tick}>tick</button>
+        <p>{String.fromInt model.tick}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { tick = 0, title = "Holes", fixed = 7 }, update = update, view = view }

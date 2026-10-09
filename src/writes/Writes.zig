@@ -370,6 +370,10 @@ pub const Hole = struct {
     /// For an `each` hole: the model path the value is exactly, on every
     /// visit, or `none` (a derived list).
     each_path: u32 = none,
+    /// When `bake`: the text the template holds in the hole's place — the
+    /// plain string `init` gives `literal_path`, or the literal itself
+    /// (`browser-direct.md` §5.1, write-sets.md §9.1).
+    bake_text: []const u8 = "",
 };
 
 pub const Program = struct {
@@ -467,6 +471,8 @@ const HoleAcc = struct {
     form: Form = .none,
     /// `unvisited`, the one model path every visit's value is, or `none`.
     each_path: u32 = unvisited,
+    /// The string literal's term, when the hole's expression is one.
+    lit_term: u32 = none,
 
     const unvisited: u32 = none - 2;
     const string_literal: u32 = none;
@@ -3528,6 +3534,7 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
         lp = a.termWord(t, 1);
     } else if (kind == .child and b.instTag(inst) == .string) {
         lp = HoleAcc.string_literal;
+        h.lit_term = t;
     }
     if (lp == none - 1) h.literal_ok = false;
     if (h.literal_path == HoleAcc.unvisited) h.literal_path = lp else if (h.literal_path != lp) h.literal_ok = false;
@@ -3798,6 +3805,17 @@ fn programsOf(a: *Writes, m: u32, d: u32, body: Inst.Index, out: *std.ArrayList(
         if (std.mem.eql(u8, name, "mountAt") and args.len == 2) return a.programsOf(m, d, args[0], out);
     };
     if (!a.isPlatformCall(m, body)) return;
+    try out.append(a.arena(), try a.programOfCall(m, d, body));
+}
+
+/// The program a call of a platform's program constructor makes, analysed
+/// (§1.1): unrecognised when the constructor or the record is not of the
+/// required shape.
+fn programOfCall(a: *Writes, m: u32, d: u32, body: Inst.Index) Error!Program {
+    const b = a.bir(m);
+    const data = b.instData(body);
+    const callee: Inst.Index = @fromBackingInt(data.lhs);
+    const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index);
     const kind = a.programKind(m, callee);
     const fields: ?Fields = if (kind != null and args.len == 1) a.programRecord(m, d, args[0]) else null;
     var recognised = kind != null and fields != null;
@@ -3830,7 +3848,47 @@ fn programsOf(a: *Writes, m: u32, d: u32, body: Inst.Index, out: *std.ArrayList(
         else => |e| return e,
     };
     prog.decl = d;
-    try out.append(a.arena(), prog);
+    return prog;
+}
+
+/// One program constructor's call, found where it stands, and its program.
+pub const Call = struct { module: u32, inst: u32, program: Program };
+
+/// Every call of a program constructor in a value declaration of an
+/// application module, in module index and instruction order, each
+/// analysed as a program of its own: what a markup lowering that compiles
+/// programs whole consumes (`browser-direct.md` §11.1). Unlike `run`, it
+/// does not start from `main`, so a program a function builds is found too.
+pub fn runCalls(a: *Writes) Allocator.Error![]const Call {
+    var calls: std.ArrayList(Call) = .empty;
+    const n = a.in.graph.count();
+    for (0..n) |mi| {
+        const m: u32 = @intCast(mi);
+        if (a.in.packages[m] != .app) continue;
+        const b = a.bir(m);
+        const tags = b.insts.items(.tag);
+        const data = b.insts.items(.data);
+        for (b.decls, 0..) |decl, di| {
+            if (!decl.kind.isValue()) continue;
+            var at = decl.inst_start.int();
+            while (at < decl.inst_end.int()) : (at += 1) {
+                if (tags[at] != .call) continue;
+                if (a.programKind(m, @fromBackingInt(data[at].lhs)) == null) continue;
+                const prog = a.programOfCall(m, @intCast(di), @fromBackingInt(@intCast(at))) catch |err| switch (err) {
+                    error.WorkCap => unreachable,
+                    else => |e| return e,
+                };
+                try calls.append(a.arena(), .{ .module = m, .inst = @intCast(at), .program = prog });
+            }
+        }
+    }
+    return calls.items;
+}
+
+/// A constructor id's module and its index among that module's `Bir.ctors`.
+pub fn ctorPlace(a: *const Writes, c: u32) struct { module: u32, index: u32 } {
+    const m = a.ctor_module[c];
+    return .{ .module = m, .index = c - a.ctor_base[m] };
 }
 
 fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_fields: ?Fields) Error!Program {
@@ -4163,6 +4221,8 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
             };
         }
         if (bake and h.literal_path == HoleAcc.string_literal) bake = h.reads.items.len == 0;
+        var bake_text: []const u8 = "";
+        if (bake) bake_text = try a.bakeText(if (h.literal_path == HoleAcc.string_literal) h.lit_term else (try a.initAt(init_model, h.literal_path)) orelse none);
         o.* = .{
             .module = h.module,
             .token = h.token,
@@ -4174,9 +4234,21 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
             .site = h.site,
             .form = h.form,
             .each_path = if (h.each_path == HoleAcc.unvisited) none else h.each_path,
+            .bake_text = bake_text,
         };
     }
     return out;
+}
+
+/// The bytes of a string literal term, in the arena; empty for anything
+/// else (a literal hole whose bytes the pass did not keep is then mounted
+/// from its expression).
+fn bakeText(a: *Writes, t: u32) Allocator.Error![]const u8 {
+    if (t == none or a.termTag(t) != .lit or a.termWord(t, 1) != lit_string) return "";
+    const id = a.termWord(t, 2);
+    const buf = try a.arena().alloc(u8, a.bytes_t.word(id, 0));
+    const text = a.bytesOf(id, buf);
+    return if (plainString(text)) text else "";
 }
 
 fn wholeReadAbove(a: *const Writes, reads: []const u32, p: u32) bool {

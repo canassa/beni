@@ -127,7 +127,7 @@ pub fn staticTemplate(cx: *m.Context, tree: *const m.Tree, nodes: []const m.Node
 // ---- The plan of one template -------------------------------------------
 
 /// One node of a template, in the order the template's HTML writes it.
-const TNode = struct {
+pub const TNode = struct {
     /// The element it is a child of; null at the template's top level.
     parent: ?u32,
     /// Its position among its parent's nodes.
@@ -141,12 +141,12 @@ const TNode = struct {
 
 /// Where a slot's content goes: under `parent` (the top level when null),
 /// before `marker`.
-const Place = struct {
+pub const Place = struct {
     parent: ?u32,
     marker: Marker,
 };
 
-const Marker = union(enum) {
+pub const Marker = union(enum) {
     /// Appended: the slot is its parent's last content.
     none,
     node: u32,
@@ -157,19 +157,19 @@ const Marker = union(enum) {
 
 /// One write, in source order. Each operand is an index into
 /// `Body.operands`.
-const Op = struct {
+pub const Op = struct {
     node: m.Node.Index,
     what: What,
 
-    const What = union(enum) {
+    pub const What = union(enum) {
         /// A text hole that is its parent's only child: a text node of the
         /// template.
         placeholder: struct { t: u32, value: u32 },
         /// Any other text hole: a text node made at mount.
         text: struct { at: Place, value: u32 },
-        attribute: struct { t: u32, item: m.Item, value: u32, constant: bool },
-        toggle: struct { t: u32, name: []const u8, value: u32 },
-        style: struct { t: u32, name: []const u8, value: u32 },
+        attribute: struct { t: u32, item: m.Item, value: u32, constant: bool, index: u32 = 0 },
+        toggle: struct { t: u32, name: []const u8, value: u32, index: u32 = 0 },
+        style: struct { t: u32, name: []const u8, value: u32, index: u32 = 0 },
         event: struct { t: u32, item: m.Item, index: u32, handler: u32, context: bool },
         html: struct { at: Place, kind: m.HoleKind, value: u32 },
         /// A helper call in an `html` hole (`Hole.call`): made only when an
@@ -203,7 +203,7 @@ const Op = struct {
 
 /// What a template's code reads: a value of the markup's root, or a
 /// function made where the markup is evaluated.
-const Operand = union(enum) {
+pub const Operand = union(enum) {
     value: m.Value.Index,
     /// A constant attribute that still needs code: a URL, a property.
     constant: m.Constant,
@@ -231,9 +231,9 @@ const Operand = union(enum) {
 
 /// A template's first node: a node of the template, a text hole's node, or
 /// a slot's content.
-const First = union(enum) { node: u32, text: u32, slot: u32 };
+pub const First = union(enum) { node: u32, text: u32, slot: u32 };
 
-const Body = struct {
+pub const Body = struct {
     html: std.ArrayList(u8) = .empty,
     flags: u8 = 0,
     tnodes: std.ArrayList(TNode) = .empty,
@@ -381,9 +381,15 @@ const Fn = struct {
     self_live: bool = false,
 };
 
-const Gen = struct {
+pub const Gen = struct {
     cx: *m.Context,
     tree: *const m.Tree,
+    /// Planning for `browser-direct`'s `direct` lowering (browser-direct.md
+    /// §5.1): an event contributes no delegation start data — the page's
+    /// listeners are on its nodes — and a hole `bake` gives text for is that
+    /// text in the template, with no op.
+    direct: bool = false,
+    bake: ?*const fn (cx: *m.Context, n: m.Node.Index) ?[]const u8 = null,
 
     fn a(g: *Gen) Allocator {
         return g.cx.arena;
@@ -929,7 +935,7 @@ const Gen = struct {
     }
 
     /// An operand made where the markup is evaluated.
-    fn make(g: *Gen, o: Operand) m.Error!m.Expr {
+    pub fn make(g: *Gen, o: Operand) m.Error!m.Expr {
         const js = g.jsb();
         return switch (o) {
             .value => |v| g.cx.value(v),
@@ -1083,7 +1089,7 @@ const Gen = struct {
 
     // ---- Planning -------------------------------------------------------
 
-    fn plan(g: *Gen, nodes: []const m.Node.Index, site: u32) m.Error!Body {
+    pub fn plan(g: *Gen, nodes: []const m.Node.Index, site: u32) m.Error!Body {
         var b: Body = .{ .site = site };
         try g.childNodes(&b, null, nodes, .{}, null, .normal);
         if (b.top == 0) {
@@ -1124,7 +1130,7 @@ const Gen = struct {
         return b;
     }
 
-    fn stateful(g: *Gen, it: m.Item) bool {
+    pub fn stateful(g: *Gen, it: m.Item) bool {
         if (it.kind != .attribute or it.attribute == .none) return false;
         return g.tree.attributeFacts(it.attribute).stateful;
     }
@@ -1245,6 +1251,17 @@ const Gen = struct {
                     index += 1;
                 },
                 .hole, .component, .for_, .show => {
+                    // A hole the program never writes, whose text `init`
+                    // gives: that text, as the template's own (§5.1).
+                    if (g.bake) |bake| if (g.tree.kind(n) == .hole) if (bake(g.cx, n)) |text| {
+                        try escapeText(g.a(), &b.html, text);
+                        if (!in_text) {
+                            _ = try b.tnode(g.a(), parent, index, .text);
+                            index += 1;
+                            in_text = true;
+                        }
+                        continue;
+                    };
                     in_text = false;
                     const text_hole = g.tree.kind(n) == .hole and switch (g.tree.hole(n).kind) {
                         .text_string, .text_number, .text_char, .text_bool => true,
@@ -1387,7 +1404,7 @@ const Gen = struct {
                 .event => {
                     const facts = g.tree.eventFacts(it.event);
                     const dom_name = g.tree.string(facts.dom_name);
-                    if (facts.delegated) {
+                    if (facts.delegated and !g.direct) {
                         if (g.cx.build.library) {
                             if (!among(dom_name, b.delegated.items)) try b.delegated.append(g.a(), dom_name);
                         } else try g.cx.start("delegate", dom_name);
@@ -1406,14 +1423,14 @@ const Gen = struct {
                     } } });
                     had_event = true;
                 },
-                .attribute, .escape => raw = try g.attribute(b, t, it) or raw,
+                .attribute, .escape => raw = try g.attribute(b, t, it, index) or raw,
                 else => unreachable,
             }
         }
         return raw;
     }
 
-    fn attribute(g: *Gen, b: *Body, t: u32, it: m.Item) m.Error!bool {
+    fn attribute(g: *Gen, b: *Body, t: u32, it: m.Item, index: u32) m.Error!bool {
         const name = g.tree.string(it.name);
         const facts: ?m.AttributeFacts = if (it.kind == .attribute and it.attribute != .none) g.tree.attributeFacts(it.attribute) else null;
         const raw = facts != null and facts.?.raw;
@@ -1432,7 +1449,7 @@ const Gen = struct {
                 const coded = raw or script == null or (facts != null and facts.?.property != null);
                 if (coded) {
                     const value = try b.operand(g.a(), .{ .constant = c });
-                    try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = true } } });
+                    try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = true, .index = index } } });
                     return raw;
                 }
                 switch (c.kind) {
@@ -1443,12 +1460,12 @@ const Gen = struct {
             },
             .dynamic => {
                 const value = try b.operand(g.a(), .{ .value = it.value.dynamic.? });
-                try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false } } });
+                try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false, .index = index } } });
             },
             .entries => {
-                if (!try g.entriesInPlace(b, t, it)) {
+                if (!try g.entriesInPlace(b, t, it, index)) {
                     const value = try b.operand(g.a(), .{ .value = it.value.dynamic.? });
-                    try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false } } });
+                    try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false, .index = index } } });
                 }
             },
             else => unreachable,
@@ -1462,7 +1479,7 @@ const Gen = struct {
     /// toggle or a property of its own. False when its names do not allow
     /// it — two alike, or one that is empty or holds whitespace — and the
     /// runtime writes the list.
-    fn entriesInPlace(g: *Gen, b: *Body, t: u32, it: m.Item) m.Error!bool {
+    fn entriesInPlace(g: *Gen, b: *Body, t: u32, it: m.Item, index: u32) m.Error!bool {
         const entries = g.tree.entriesOf(it.value.entries);
         for (entries, 0..) |e, j| {
             const name = g.tree.string(e.name);
@@ -1495,9 +1512,9 @@ const Gen = struct {
                 else => {
                     const value = try b.operand(g.a(), .{ .value = e.value.dynamic.? });
                     const what: Op.What = if (it.class == .class_list)
-                        .{ .toggle = .{ .t = t, .name = name, .value = value } }
+                        .{ .toggle = .{ .t = t, .name = name, .value = value, .index = index } }
                     else
-                        .{ .style = .{ .t = t, .name = name, .value = value } };
+                        .{ .style = .{ .t = t, .name = name, .value = value, .index = index } };
                     try b.ops.append(g.a(), .{ .node = .none, .what = what });
                 },
             }
@@ -2236,7 +2253,7 @@ const Gen = struct {
     /// What an attribute writes, by its facts and its value's class
     /// (§15.3's table). `previous` is the list a class or style list
     /// replaces, in `p`.
-    fn writeAttribute(g: *Gen, into: m.Block, el: m.Expr, it: m.Item, v: m.Expr, previous: ?m.Expr) m.Error!void {
+    pub fn writeAttribute(g: *Gen, into: m.Block, el: m.Expr, it: m.Item, v: m.Expr, previous: ?m.Expr) m.Error!void {
         const js = g.jsb();
         const name = g.tree.string(it.name);
         const facts: ?m.AttributeFacts = if (it.kind == .attribute and it.attribute != .none) g.tree.attributeFacts(it.attribute) else null;

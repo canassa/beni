@@ -401,7 +401,7 @@ fn writeSet(w: *std.Io.Writer, gpa: Allocator, a: *Writes, ws: []const Writes.Wr
 /// The key as constructor names joined by ` · ` (§8.1): a constructor whose
 /// argument the next split is under is written `C#i` when it has more than
 /// one argument; the default child is `_`.
-fn writeKeyName(w: *std.Io.Writer, a: *Writes, k: Writes.Key) std.Io.Writer.Error!void {
+pub fn writeKeyName(w: *std.Io.Writer, a: *Writes, k: Writes.Key) std.Io.Writer.Error!void {
     if (k.steps.len == 0) return w.writeAll("(any)");
     // The constructors along each split's path, then the split's own: a
     // single-constructor wrapper no `case` split is still named.

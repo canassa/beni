@@ -1,0 +1,1 @@
+[{"code":"not_implemented","severity":"error","span":{"file":"Main.beni","start":{"line":10,"col":16},"end":{"line":10,"col":19}},"title":"NOT IMPLEMENTED YET","message":"`browser-direct` does not compile a `For` yet: it arrives with slice S2\n(`docs/design/browser-direct.md` §6, §14). Build this program with\n`--platform=browser-tea` until then."}]

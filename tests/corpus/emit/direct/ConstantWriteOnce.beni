@@ -1,0 +1,26 @@
+-- A constant attribute that needs code is written once and never again
+-- (browser-direct.md §5.1, §5.3), though it sits between two attributes of
+-- its element that a key writes: the three are one group, in source order,
+-- and the constant is guarded by a slot of its own. Here the constant is a
+-- URL whose script check turns on a character outside ASCII, which the
+-- template cannot hold and the runtime's `safeUrl` writes; `innerHTML`,
+-- the other such attribute, is a warning in the root package
+-- (`browser/dom/ConstantWriteOnce` pins its behaviour on `browser`).
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button onClick={Inc}>inc</button>
+        <a title={String.fromInt n} href="é/x" lang={String.fromInt n}>link</a>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = 0, update = λInc n → n + 1, view = view }

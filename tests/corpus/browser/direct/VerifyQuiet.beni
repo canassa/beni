@@ -1,0 +1,63 @@
+-- The development verify mode changes nothing on a page the compiler got
+-- right (browser-direct.md §8.3, as amended): after every dispatch it
+-- computes each hole again from the model and compares it with what the
+-- hole wrote, by structure — a class list `List.map` builds fresh, of fresh
+-- tuples, is equal and not identical — and it never evaluates a value twice
+-- that would act differently the second time: an every-message value
+-- (`Random.value`), a `Debug.log` in a hole, and a hole whose helper logs
+-- two calls deep. The transcript is the release build's, which has no
+-- verify mode, and `browser-tea`'s: each value logs once per run.
+import Html exposing (Html)
+import Random
+import Tea
+
+
+type Msg
+    = Inc
+    | Other
+
+
+type alias Model =
+    n : Int
+    other : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Other →
+            { model | other = model.other + 1 }
+
+
+deep : Int → Int
+deep n = deeper (n + 1)
+
+
+deeper : Int → Int
+deeper n = Debug.log "deeper" n
+
+
+classesOf : Int → List (String × Bool)
+classesOf n = List.map (List.range 0 n) λk → ( "c${String.fromInt k}", True )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="inc" onClick={Inc}>inc</button>
+        <button id="other" onClick={Other}>other</button>
+        <p id="log">{Debug.log "n" model.n}</p>
+        <p id="deep">{deep model.n}</p>
+        <p id="list" class={classesOf model.n}>
+            {String.fromInt (List.length (classesOf model.n))}
+        </p>
+        <p id="other-n">{model.other}</p>
+        <p id="dice">{Random.value (Random.int 1 6) > 0}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { n = 0, other = 0 }, update = update, view = view }

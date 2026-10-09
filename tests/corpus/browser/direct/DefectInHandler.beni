@@ -1,0 +1,25 @@
+-- A markup handler that throws stops the page (boundary.md §9.8.10 (c)):
+-- re-stated for `browser-direct` (browser-direct.md §4.2, §8.2): the listener
+-- body runs inside the guard, so the throw stops the page and no later click
+-- calls a handler or applies a message. The development
+-- build's crash screen carries the error; the release build adds nothing
+-- (`DefectInHandler.release-expected`).
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+view : Int → Html Msg
+view count =
+    <main>
+        <p id="count">{String.fromInt count}</p>
+        <button id="boom" onClick={λ_ → Debug.todo "handler threw"}>boom</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = 0, update = λInc count → count + 1, view = view }

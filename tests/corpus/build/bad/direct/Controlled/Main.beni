@@ -1,0 +1,13 @@
+-- A controlled attribute (`value`) is the edited set of slice S4
+-- (docs/design/browser-direct.md §8.1, §14): `not_implemented` at its
+-- element in S1.
+import Html exposing (Html)
+import Tea
+
+
+view : String → Html {}
+view s = <input value={s} />
+
+
+main : Tea.Program
+main = Tea.sandbox { init = "x", update = λ_ m → m, view = view }
