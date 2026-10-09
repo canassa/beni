@@ -1786,20 +1786,39 @@ building it settled, each a resolution of a place this document left open or cou
   holes, against 0.1 for `browser-tea` (research 66 §3). It is a development-only cost and no
   criterion judges it; a page that needs a faster development build could check static holes
   once at mount.
-- **`--fuzz`, the differential fuzzer's interface** (§8.3 item 2), hidden and test-only:
-  - `beni dump --stage=writes --messages --platform=<p> <file>` prints, per program its `main`
-    reaches, one line of JSON: `{"program", "message": <type>, "types": {…}}`. A type is
-    `{"type":"Module.Name","args":[…]}`, `{"record":{…}}`, `{"tuple":[…]}`, `{"unit":true}`,
-    `{"function":true}`, `{"param":i}` or `{"unknown":true}`; each custom type it reaches lists its
-    constructors and their argument types, and how a development build represents its values:
-    `"bool"`, `"bare"` (the constructor's name, a string) or `"tagged"` (`{ $: name, a, b, … }`,
-    the slots padded with `null` to `"fields"`). Records are plain objects, tuples `{ a, b, … }`,
-    lists arrays, `Int` and `Float` numbers, `String` and `Char` strings (`backend.md` §4).
-    `beni dump --stage=writes` itself lists the keys.
-  - `beni build --platform=browser-direct --fuzz …` gives each mounted program's node (the body,
-    or `mountAt`'s element) a `$$root(message)` that sends the message value through the dispatch
-    guard and the dispatcher, synchronously. `browser-tea`'s node always has a `$$root` that
-    applies a message; it renders in a microtask, so a harness awaits one before reading the page.
-    Under `--fuzz`, on both platforms, no `case` arm on a constructor of the application's own
-    modules is dropped for being built nowhere (`backend.md` §9), so every constructor's arm runs.
-    Nothing else changes; a build for another lowering is unchanged.
+- **`--fuzz` meets the contract above** (§8.3's amendment, items 1–4), on both platforms, in
+  development and release. Item 1: every constructor of every module is a root of elimination,
+  so no arm is dropped for a constructor nothing builds. Item 2: each program's message type,
+  written as the annotation of the `update` its record names, seeds the release boundary
+  (`Fields.close`), so it and every type its payloads name keep string tags and field names;
+  a program whose `update` has no written annotation (a lambda) keeps every name of the build.
+  Item 3: a mount registers its dispatcher first thing (`Direct.fuzzMount`), so
+  `globalThis.__beniFuzz.send(program, msg)` numbers programs in mount order, sends through the
+  guard, and throws for an index with no program; under `--fuzz` a static `view` takes the same
+  path, so every program has a dispatcher. `--msg-types` (the fuzzer's) lists the types.
+
+### *Amended 2026-10-09 (the manager, at S1):* which pairs the gates fuzz with message values
+
+§8.3 requires value fuzzing from S1 **on every `browser/direct/` program**; it does not require it
+on `browser/tea/` pages. Sending messages as values costs a page two more builds (the `--fuzz`
+pair) and a `--msg-types` dump, and on the `browser/tea/` pages that pushed 55 of them over the
+4.3-billion-instruction budget. So, amending the contract's *Messages as values in the gates*:
+
+- **The gates** (`fuzzPair`) send values only on the `browser/direct/` pairs (`browser-tea`
+  against `browser-direct`, development builds, built again with `--fuzz`). A `browser/tea/`
+  pair (development against release) keeps its event-only fuzz in the gates.
+- **`zig build fuzz`'s sweep** sends values on both kinds of pair.
+- **A value enters through the defect guard on both platforms**, as an event does: on
+  `browser-direct` through `__beniFuzz.send` (`send`); on `browser-tea` through
+  `globalThis.__beniFuzzSend(node, msg)`, which a `--fuzz` build's markup installs
+  (`Rt.fuzzInstall`, shipped by no other build) and which calls the mount's `$$root` inside the
+  same guard and turn an untrusted event's handler runs in, so a throw in `update` stops the page
+  as one from a click does. The fuzzer sends either one from a listener of a node of its own,
+  dispatched synchronously, so a throw is reported to the page's `error` listeners as a click's
+  is. A `--fuzz` pair is built with the fixture's own `platform/` when it has one, and its
+  message types are dumped from the project's directory, not its files one by one.
+
+No budget is raised. Three `browser/direct/` pages are over it with the value fuzz (research 66
+§6): `Holes` 4 597, `MessageKeys` 4 382 and `VerifyQuiet` 5 007 million instructions — each a
+page of seven compiles (four builds, two `--fuzz` builds, a dump). The gates pass them on their
+recorded run hashes, as they pass `browser/tea/ApiAndRoutes`.

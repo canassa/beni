@@ -2188,9 +2188,16 @@ const Case = struct {
             const platform = c.fixture.platform orelse return null;
             if (!std.mem.eql(u8, platform, "browser-tea") or pages[0] == null or pages[1] == null) return null;
             pair = .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
-            sides = .{ &.{"--platform=browser-tea"}, &.{ "--platform=browser-tea", "--release", "--allow-debug" } };
+            // The fixture's own platform: `platform/` when it has one.
+            sides = .{ &.{platform_arg}, &.{ platform_arg, "--release", "--allow-debug" } };
         }
         pair.script = script.name;
+        // Messages as values cost a page two more builds and a dump
+        // (browser-direct.md §8.3, amended for S1): the gates send them on
+        // every `browser/direct/` pair, as §8.3 requires from S1, and a
+        // `browser/tea/` pair only in `zig build fuzz`'s sweep.
+        const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
+        if (!c.fixture.differential and !sweep) return pair;
         if (!try fuzzFlag(c)) return pair;
         for (sides, [_][]const u8{ "fuzz-a", "fuzz-b" }) |side, out| {
             var args: std.ArrayList([]const u8) = .empty;
@@ -2205,10 +2212,15 @@ const Case = struct {
             }
         }
         var dump: std.ArrayList([]const u8) = .empty;
-        try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", "--platform=browser-tea" });
-        try dump.appendSlice(c.arena, sources);
+        // One path: a project's directory, whose modules import each other,
+        // or the one file.
+        try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) "--platform=browser-tea" else platform_arg });
+        try dump.append(c.arena, if (c.fixture.project) "." else sources[0]);
         const dumped = try c.inProject(dump.items);
-        if (dumped.exit_code != 0) return error.MsgTypesDumpFailed;
+        if (dumped.exit_code != 0) {
+            detail("{s} [fuzz]: the message types dump failed\n{s}\n", .{ c.fixture.name, dumped.stderr });
+            return error.MsgTypesDumpFailed;
+        }
         try c.w.write("_types.jsonl", dumped.stdout);
         pair.a = "fuzz-a";
         pair.b = "fuzz-b";
