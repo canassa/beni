@@ -270,30 +270,51 @@ pub const Fuzz = struct {
     /// project, when both builds take messages as values: development
     /// builds of `browser-tea`, or `--fuzz` builds.
     types: ?[]const u8 = null,
+    /// The fixture's `.steps`, a file of the project: the answers it gives
+    /// its requests, which the fuzzer gives too.
+    script: ?[]const u8 = null,
+    /// Patterns of the log lines the two builds may differ on, and nothing
+    /// else (`fuzz.mjs`'s `ignore`).
+    ignore: []const []const u8 = &.{},
+    /// Whether the two builds' crash screens are the same, so a body is
+    /// compared after both threw.
+    crash: enum { same, own } = .own,
+    /// Play the first seed twice on build `a` and fail when the two
+    /// disagree: set wherever the verdict may be recorded, so a page that
+    /// does not replay itself never passes into a record. Not part of the
+    /// record's digest: it changes no verdict of a page that replays.
+    replay: bool = false,
     /// The seeds, `1,2,…`, and the steps of each sequence.
     seeds: []const u8 = gate_seeds,
     steps: u32 = gate_steps,
 };
 
-/// What the gates run: two fixed seeds of fifteen steps each, so a run's
-/// verdict is a function of its inputs and its record can stand for it.
-/// `zig build fuzz` runs longer ones (`BENI_FUZZ_SEEDS`, `BENI_FUZZ_STEPS`).
-pub const gate_seeds = "1,2";
-pub const gate_steps = 15;
+/// What the gates run: one fixed seed of thirty steps, so a run's verdict
+/// is a function of its inputs and its record can stand for it. One seed
+/// and not two of fifteen: a page and its module graph cost more than
+/// fifteen steps, and `browser/tea/ApiAndRoutes`, whose two builds take
+/// 3.4 of its 4.3 billion instructions, has room for two pages only.
+/// `zig build fuzz` runs fifty seeds (`BENI_FUZZ_SEEDS`, `BENI_FUZZ_STEPS`).
+pub const gate_seeds = "1";
+pub const gate_steps = 30;
 
 /// The spec `fuzz.mjs` reads, for `f`: JSON, every path relative to the
 /// project.
 pub fn fuzzSpec(arena: Allocator, f: Fuzz) ![]const u8 {
     for (f.seeds) |ch| if (!std.ascii.isDigit(ch) and ch != ',') return error.BadFuzzSeeds;
     var out: std.Io.Writer.Allocating = .init(arena);
-    try out.writer.print("{{\"a\":{f},\"b\":{f},\"labelA\":{f},\"labelB\":{f},\"types\":", .{
+    const w = &out.writer;
+    try w.print("{{\"a\":{f},\"b\":{f},\"labelA\":{f},\"labelB\":{f},\"types\":", .{
         std.json.fmt(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{f.a}), .{}),
         std.json.fmt(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{f.b}), .{}),
         std.json.fmt(f.label_a, .{}),
         std.json.fmt(f.label_b, .{}),
     });
-    if (f.types) |t| try out.writer.print("{f},\"values\":true", .{std.json.fmt(t, .{})}) else try out.writer.writeAll("null,\"values\":false");
-    try out.writer.print(",\"seeds\":[{s}],\"steps\":{d},\"shrink\":true}}\n", .{ f.seeds, f.steps });
+    if (f.types) |t| try w.print("{f},\"values\":true", .{std.json.fmt(t, .{})}) else try w.writeAll("null,\"values\":false");
+    try w.writeAll(",\"script\":");
+    if (f.script) |s| try w.print("{f}", .{std.json.fmt(s, .{})}) else try w.writeAll("null");
+    try w.print(",\"ignore\":{f},\"crash\":\"{t}\",\"replay\":{}", .{ std.json.fmt(f.ignore, .{}), f.crash, f.replay });
+    try w.print(",\"seeds\":[{s}],\"steps\":{d},\"shrink\":true}}\n", .{ f.seeds, f.steps });
     return out.written();
 }
 
@@ -316,16 +337,20 @@ pub fn fuzz(w: *World, h: Harness, chrome: ?[]const u8, f: Fuzz, timeout_ms: i64
 /// The record line of a fuzz run that agreed (`run_hash.lineWith`, pass
 /// `fuzz`): it covers build `a`'s output tree as a page's line covers its
 /// build, and as inputs the DOM, the driver, the fuzzer, build `b`'s tree,
-/// the message types and the spec.
+/// the message types, the script and the spec.
 pub fn fuzzLine(arena: Allocator, w: *World, h: Harness, f: Fuzz) ![]const u8 {
     const b_line = try run_hash.lineWith(arena, w, f.b, "tree", "", "", null);
     const types: []const u8 = if (f.types) |t| try w.read(t) else "";
-    return run_hash.lineWith(arena, w, f.a, "fuzz", "spec", try fuzzSpec(arena, f), .{ .dom = dom_id, .inputs = try arena.dupe(run_hash.Page.Input, &.{
+    const script: []const u8 = if (f.script) |s| try w.read(s) else "";
+    var digested = f;
+    digested.replay = false;
+    return run_hash.lineWith(arena, w, f.a, "fuzz", "spec", try fuzzSpec(arena, digested), .{ .dom = dom_id, .inputs = try arena.dupe(run_hash.Page.Input, &.{
         .{ .name = "dom sha-256", .bytes = dom_sha256 },
         .{ .name = "driver", .bytes = h.driver_bytes },
         .{ .name = "fuzz", .bytes = h.fuzz_bytes },
         .{ .name = "b", .bytes = b_line[std.mem.lastIndexOfScalar(u8, b_line, ' ').? + 1 ..] },
         .{ .name = "types", .bytes = types },
+        .{ .name = "script", .bytes = script },
     }) });
 }
 

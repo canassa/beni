@@ -1993,7 +1993,7 @@ const Case = struct {
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
         // process, after the pages.
-        const fuzz_plan: ?FuzzPlan = if (c.fuzzPair(pages)) |pair| try c.fuzzPlan(pair, h, record) else null;
+        const fuzz_plan: ?FuzzPlan = if (try c.fuzzPair(pages, script, sources, platform_arg)) |pair| try c.fuzzPlan(pair, h, record) else null;
         var entries: std.ArrayList(browser.Entry) = .empty;
         for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .fiber = p.pass == .dev_fiber });
         if (fuzz_plan) |f| if (!f.skip) try entries.append(c.arena, .{ .path = FuzzPlan.spec, .fuzz = true });
@@ -2164,18 +2164,71 @@ const Case = struct {
     /// `browser-tea` and `browser-direct` development builds, unless the
     /// fixture says the two differ (a `.tea-expected`); a `browser/tea/`
     /// page's development and release builds, which must behave alike
-    /// (backend.md §9). Messages go as values only where both builds take
-    /// them; neither pair does yet — the direct platform's dispatcher is
-    /// its `--fuzz` flag's, and a release build's values are not the
-    /// development representation — so these are view and host events.
-    fn fuzzPair(c: Case, pages: [5]?PagePlan) ?browser.Fuzz {
+    /// (backend.md §9).
+    ///
+    /// Messages go as values only between two `--fuzz` builds
+    /// (browser-direct.md §8.3, amended 2026-10-09): such a build keeps
+    /// every constructor of the message type and takes the development
+    /// representation, in release too, and a direct one has a dispatcher.
+    /// So when the compiler has the flag, the pair is two more builds made
+    /// with it, and the message types are dumped; until then it is the
+    /// fixture's own builds, and the fuzz is view and host events.
+    fn fuzzPair(c: Case, pages: [5]?PagePlan, script: Script, sources: []const []const u8, platform_arg: []const u8) !?browser.Fuzz {
+        var pair: browser.Fuzz = undefined;
+        // What each side is built with, when the pair is `--fuzz` builds.
+        var sides: [2][]const []const u8 = undefined;
         if (c.fixture.differential) {
             if (pages[0] == null or pages[3] == null or c.goldenExists("tea-expected")) return null;
-            return .{ .a = pageOut(.tea_dev), .b = pageOut(.dev), .label_a = "browser-tea", .label_b = "browser-direct" };
+            // The two platforms' crash screens are the same (amended
+            // 2026-10-09, S0); a `Debug.log` in a view prints when its
+            // group runs, which differs between them (§8.4).
+            pair = .{ .a = pageOut(.tea_dev), .b = pageOut(.dev), .label_a = "browser-tea", .label_b = "browser-direct", .crash = .same, .ignore = &.{"^console\\.log: "} };
+            sides = .{ &.{"--platform=browser-tea"}, &.{platform_arg} };
+        } else {
+            const platform = c.fixture.platform orelse return null;
+            if (!std.mem.eql(u8, platform, "browser-tea") or pages[0] == null or pages[1] == null) return null;
+            pair = .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
+            sides = .{ &.{"--platform=browser-tea"}, &.{ "--platform=browser-tea", "--release", "--allow-debug" } };
         }
-        const platform = c.fixture.platform orelse return null;
-        if (!std.mem.eql(u8, platform, "browser-tea") or pages[0] == null or pages[1] == null) return null;
-        return .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
+        pair.script = script.name;
+        if (!try fuzzFlag(c)) return pair;
+        for (sides, [_][]const u8{ "fuzz-a", "fuzz-b" }) |side, out| {
+            var args: std.ArrayList([]const u8) = .empty;
+            try args.appendSlice(c.arena, &.{"build"});
+            try args.appendSlice(c.arena, side);
+            try args.appendSlice(c.arena, &.{ "--fuzz", try std.fmt.allocPrint(c.arena, "--out={s}", .{out}) });
+            try args.appendSlice(c.arena, sources);
+            const built = try c.inProject(args.items);
+            if (built.exit_code != 0) {
+                detail("{s} [fuzz]: the --fuzz build failed\n{s}\n", .{ c.fixture.name, built.stderr });
+                return error.BuildFailed;
+            }
+        }
+        var dump: std.ArrayList([]const u8) = .empty;
+        try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", "--platform=browser-tea" });
+        try dump.appendSlice(c.arena, sources);
+        const dumped = try c.inProject(dump.items);
+        if (dumped.exit_code != 0) return error.MsgTypesDumpFailed;
+        try c.w.write("_types.jsonl", dumped.stdout);
+        pair.a = "fuzz-a";
+        pair.b = "fuzz-b";
+        pair.types = "_types.jsonl";
+        return pair;
+    }
+
+    var fuzz_flag_mutex: Io.Mutex = .init;
+    var fuzz_flag: ?bool = null;
+
+    /// Whether the compiler under test has `build --fuzz`: asked once per
+    /// process, of a build with no path, which the flag's parser answers
+    /// before it looks for one.
+    fn fuzzFlag(c: Case) !bool {
+        fuzz_flag_mutex.lockUncancelable(testing.io);
+        defer fuzz_flag_mutex.unlock(testing.io);
+        if (fuzz_flag) |known| return known;
+        const r = try c.inProject(&.{ "build", "--platform=browser-tea", "--fuzz" });
+        fuzz_flag = std.mem.indexOf(u8, r.stderr, "unknown option '--fuzz'") == null;
+        return fuzz_flag.?;
     }
 
     /// A fixture's page fuzz: what it compares, its record line, and
@@ -2199,6 +2252,9 @@ const Case = struct {
         if (c.cfg.fuzz_steps) |n| pair.steps = n;
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
         const checking = c.cfg.run_hashes == .check and c.cfg.mode == .strict and c.cfg.chrome == null and !sweep;
+        // A verdict that may be recorded, or a sweep's, proves the page
+        // replays itself first.
+        pair.replay = c.cfg.run_hashes == .record or sweep;
         try browser.writeFuzzSpec(c.arena, c.w, pair, FuzzPlan.spec);
         const line = try browser.fuzzLine(c.arena, c.w, h, pair);
         return .{ .pair = pair, .line = line, .skip = checking and run_hash.listed(record, line), .checked = checking };
