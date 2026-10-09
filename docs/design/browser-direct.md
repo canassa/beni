@@ -1179,7 +1179,7 @@ true for the criterion to be met, not that it is.
 | **width 1 024** | ≤ 1.3× until S7, then ≤ 1.15×; before S7 V8's dictionary cliff stays (research 59 §2) | ≤ 2 B per field | S1, then §7.4 at S7 |
 | **depth 128** | ≤ 1.3× until S7 (P3: 1.29), then ≤ 1.15× | ≤ 4 B per level | S4, then §7.4 at S7 |
 | **long keyed list, one edit** (rows 30 000) | ≤ 1.3× until S7 (P3: 1.31, 0.03 ms of it `List.update` on a trie); ≤ 1.15× after S7 **only if** the list is container-owned and plain (§7.4) — the rows sweep's is; a list that is a trie keeps the path copy and the 1.3× | ~1.5 kB (P3: 1 643) | §6.2; S2, then S7 |
-| **swap** (rows 30 000) | ≤ 1.0× (P3: 0.98) | the same page | §6.2; S2 |
+| **swap** (rows 30 000) | ≤ 1.15× and no slower than P3 until S7, then ≤ 1.0× (P3: 0.98 in research 60, 1.12 in research 67's batch; the rest is the model's `List.swap`, §7.4) — *amended 2026-10-10, the owner* | the same page | §6.2; S2, then S7 |
 | **live rows 10 000** | ≤ 1.15× (P3: 1.25 at a 5 µs clock, with the flush) | ≤ 1.1 kB | §8.1; S4 |
 | **derived 100 000** | flat, ≤ 1.15× | ≤ 1 kB | §5.4; S4 |
 | **bursts and stream** | **the K = 1 ratio at every K**: ≤ 1.15× for all K, and the stream not worse than K = 1. With no batching, K messages cost K times the per-message path (guard, arm, spread, compares, write), so the ratio to vanilla is the one-message ratio; the 13 % win at K = 1 000 was the batching this design deletes, and before S7 every message also pays a model spread vanilla's `tick++` does not | — | §4.3; S1 |
@@ -1237,7 +1237,8 @@ research 60 wrote where one exists, and at S8.
 3. **S1**: the holes handler is not one compare and one write (`emit/direct/`), or holes 10 000
    is over 1.15× untraced, or the page grows with N by more than the HTML — the handler path is
    not direct. And from S1 the fuzz and the verify mode (§8.3) run on every direct page.
-4. **S2**: the rows edit is over 1.3× or the swap over 1.0×, or the bundle holds the reconciler
+4. **S2**: the rows edit is over 1.3× or the swap over 1.15× or slower than P3 (amended
+   2026-10-10; ≤ 1.0× moves to S7), or the bundle holds the reconciler
    for a page whose keys are all exact — edit scripts are not being read off the write set.
 5. **S3**: any table operation over 1.2× or `select` over 1.0×, or bytes over 2 830 with the
    bundle's **non-core part** (the whole minus core's in-context share, `size-parts.mjs`'s
@@ -1981,3 +1982,18 @@ measuring it settled:
   hold a handler, so a menu with no handler costs the template and nothing else.
 - **The verify mode on lists** is O(n) per list per dispatch — the rows sweep's development build
   takes 15.6 ms at 30 000 rows against 0.088 for its release build — a development-only cost.
+
+### *Amended 2026-10-10 (the owner): the swap's bar moves to S7*
+
+Kill criterion 4 fired on the swap at 30 000 rows: **0.127 ms against vanilla's 0.113, 1.12×**,
+with the bar at 1.0× (research 67 §3). The generated page equals P3, written by hand, in the same
+batch (0.127), so the DOM half is at its floor. The remainder is the model's: `List.swap` builds
+a new list and the model record is spread, where vanilla swaps two slots. The gap is about
+10–15 µs at every N, including 10 rows where no trie exists, so it is the immutable update's
+fixed cost more than the trie's path copy.
+
+§13 had already given the rows edit's model cost to S7 and had not done so for the swap, whose
+bar came from P3's 0.98 on another day. **The owner moved it the same way**: until S7 the swap
+must stay within 1.15× vanilla and no slower than P3; S7 (in-place updates of a list nobody
+else holds, §7.4) owns ≤ 1.0×, and S7's kill criterion includes the swap from here on. The
+fixed cost per message is to be profiled (record spread against list copy) before S7 is designed.
