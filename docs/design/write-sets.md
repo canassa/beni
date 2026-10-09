@@ -1706,3 +1706,152 @@ page showing another model's value. Each is fixed, and `writes/ReadsOfShape` pin
 
 None of the three changes a write set; on the corpus only TodoMVC's holes move (they gain
 `ρ.filter` and `ρ.todos[*].completed`). Research 64 has the context.
+
+### *Amended 2026-10-09 (the owner): tag reads*
+
+The S0 stats gate (research 64 §4) found Conduit's header reading the whole model. The header
+shows the session through `toSession model`, a `case` over the page variant, and since A6 an
+`Alt`'s anchors include its scrutinee's: a read of ρ. A read of ρ conflicts with every `node ρ`
+(§2.5), and every page key writes one, so every key marked the header. What the `case` reads of ρ
+is **which constructor** it holds, and that is exactly what a `node` write keeps. The owner
+approved telling the two apart. This amendment adds a second kind of read; nothing about writes
+changes.
+
+**1. The read kind.** An anchored read (§3.6) is either a **value read** of a path `r`, as
+before — it sees `M@r` and everything below it — or a **tag read** of a path `p`, written
+`tag p`: it sees only which constructor `M@p` has. A tag read of `p` *sees a change* in
+`(M, M')` when `M@p` and `M'@p` have different tags or `p` is defined in one and not the other
+(§1.3). Tag reads arise from pattern matching, and only there:
+
+- **A `case`'s scrutiny.** A `case` whose scrutinee is not an `Alt` reads what matching each
+  arm's pattern against the scrutinee's abstract value reads, over **every** arm (an arm the
+  facts skip included, which only adds reads): a constructor pattern on `Same(p)`, at a type of
+  two or more constructors, reads `tag p`, and its sub-patterns read, by this same rule, at
+  `p.C#i`; at a type of one constructor it reads nothing at `p` (the single-constructor rule:
+  the tag cannot change) and its sub-patterns are read as before. A tuple pattern reads its
+  components'; a variable, wildcard, unit or record pattern reads nothing — a variable that is
+  used is read where it is used, as every local is. A **literal** or **list** pattern reads the
+  value it meets **whole** (it tests a string, a number, a length, not a tag). A constructor
+  pattern against a `Con` reads nothing at that level, since the constructor is known, and
+  reads its parts by the same rule. Against anything else — `Fresh`, an `Alt`, a value the
+  k-limit cut (§2.2) — a pattern reads that value's dependencies whole.
+- **A tag fact's path.** A6's "the path of every tag fact of every alternative" is a tag read:
+  a fact `tag(p) = C` or `tag(p) ≠ S` (§3.2) holds or fails on the constructor at `p` and on
+  nothing else.
+
+So for a `case`, A6's anchor is: **the pattern reads above, the tag reads of the alternatives'
+facts, and every alternative's anchors**, and `deps(Alt(s, alts)) = reads(patterns, s) ∪
+tag(paths(Γᵢ)) ∪ ⋃ deps(aᵢ)`. For every other `Alt` — a `case` whose scrutinee is itself an
+`Alt` (a value chosen by control flow, such as `toSession model` matched by `Session.viewer`),
+an `if` over a value that is not a path, a join of summaries, `List.head`'s `Maybe` — A6 stands
+unchanged: the scrutinee's dependencies, read whole, because what chose there is not a pattern
+on a path. In a summary (§4.1) a tag read `tag πᵢ.s` is a term like any other: instantiation
+(§4.2) makes it `tag q.s` when the argument projects to `Same(q.s)`, nothing when it projects to
+a `Con` (the constructor is known), and the projection's dependencies, whole, otherwise.
+
+**In the dump** (§8.1) a tag read is printed `tag ρ.status`, and sorts right after the path it
+names. A tag read of `p` is left out of a hole's list when the same hole has a value read of `p`
+or of a prefix of `p`: that read already conflicts with every write the tag read does (below).
+
+**2. The conflict rule.** A tag read `tag p` conflicts with a write set `W` when
+
+> some `value` write `w ∈ W` has `w ⊑̃ p`,
+
+with `⊑̃` §2.1's may-prefix order — a `value` write at `p` or at any prefix of it, list positions
+coinciding as §2.5 says. It **never** conflicts with a `node` write, and never with a write
+strictly below `p`. Value reads keep §2.5's rule. Write by write, what that means:
+
+| write | conflicts with `tag p` | why |
+|---|---|---|
+| `value p` (a `Con` whose tag `Γ` does not know, a `Lit`, a nullary constructor, `Same(q ≠ p)`, `Fresh`, `Fun`, a `Rec` of another base) | yes | the constructor may be another |
+| `value w`, `w` a proper prefix of `p` (a record replaced above, `value ρ` of a page switch or of cap W) | yes | everything below `w`, the tag at `p` included, may be new — or `p` may no longer be defined |
+| a list edit, `value l ⟨append⟩ … ⟨replaced⟩`, `l ⊏ p` | yes, a `value` write at a prefix | the elements' positions, hence what `l[κ]` names, may move |
+| an element write `value l[κ]`, `value l[*]`, `value l[?]`, `p = l[κ'].s` | yes when `[κ]` may coincide with `[κ']` | the element at that position may have another constructor |
+| the k-cut: a write below depth k, `value` at its k-prefix (§2.2) | yes when that prefix is `⊑̃ p` | a cut write is a `value` write |
+| a cap: `Fresh` where it lands (A, S, D, I), `value ρ` for a key past W (§6.1) | yes, as a `value` write | the top of the lattice |
+| a join: `node` and `value` at one path join to `value` (§2.4) | yes | the join is a `value` write |
+| `node p` | no | only a rebuild with the same constructor writes it (item 3) |
+| `node l ⟨kept⟩`, `l ⊏ p` | no | length and order are kept; each element write is an entry of its own (B7), and is in the rows above |
+| any write strictly below `p` | no | §2.4's invariant puts `node` or `value` at `p`, and those rows decide |
+
+**3. Soundness.** §5.2's conflict lemma, extended: *if the constructor at `p` differs between `M`
+and `M'`, or `p` is defined in only one of them, then some `value` write `w ∈ writes(κ)` has
+`w ⊑̃ p`.* A tag read is made only at a path of a custom type of two or more constructors
+(item 1), and positions are read concretely, as A3–A4's proof reads them:
+
+- *The constructor at `p` differs.* Then `M'@p` is not `M@p`, so `p` is changed and §1.3 covers
+  it: a `value` write `w ⊑ p`, which is the claim, or `node p ∈ W` (the third clause, a path
+  longer than k, cannot hold: a tag read is never at a cut path, item 6). **`node p` keeps the
+  constructor.** `diff` (§3.4) writes `node p` in five rows and the prefix closure. `Rec`, the
+  full-record `Rec`, `Tup` and `Lst … ⟨kept⟩` are rows for a record, a tuple and a list — not a
+  custom type, so never at a path a tag read names. The `Con` row writes `node p` only under
+  `Γ ⊢ tag(p) = C` for the very constructor `C` it builds; `Γ` holds of `M` (§5.2's claim), so
+  `M@p` has tag `C` — by a fact, by negation leaving `C`, or because `C` is the type's only
+  constructor — and so does the value placed. The prefix closure puts `node q` only at a proper
+  prefix of a written path, and `diff` reaches a path below `q` only by descending through `q`
+  from one of those rows in the same alternative (`diffChild`), or by the `kept` row's rebasing
+  of writes the same rows produced at the root εⱼ, whose facts are the element's own; so every
+  `node` the closure adds is one a row already wrote. Joins only raise `node` to `value`, and
+  every cap and cut writes `value`. So `node p` with a changed constructor is impossible, and a
+  `value` write `w ⊑ p` exists.
+- *`p` is defined in only one model.* Some step of `p` cannot be followed in the other: a
+  constructor step `q.C#i ⊑ p` where the tag at `q` differs, or a list step `l[κ] ⊑ p` out of
+  range in one. The first is the case above at `q`, a path of a custom type of several
+  constructors: a `value` write `w ⊑ q ⊑ p`. The second changes `l`'s length, which no `node`
+  write at a list path allows (`⟨kept⟩` keeps it), and every other write at `l` is `value`: so
+  `value w ⊑ l ⊑ p`.
+
+So every write that can change a constructor is a `value` write at or above it, which the tag
+read conflicts with; and a write strictly below `p`, or a `node` write anywhere, cannot change
+it. Pattern reads are sound for the reason A6's anchors are: the arm that ran was chosen by the
+tags its pattern tests, the values its literal and list sub-patterns test, and nothing else
+(§5.2's `case`), and each of those is read; what the arm then computes is its alternative's
+anchors, read as before.
+
+**4. With A6** (control dependence): A6 is refined, not withdrawn. Every path A6 anchors is still
+anchored; the scrutinee of a `case` on a path and the facts' paths are now tag reads where only
+the tag decided, and value reads where more did. `label = if model.on then "On" else "Off"`
+reads `tag ρ.on` (`Bool` is a type of two constructors): `Toggle`'s `value ρ.on` still
+conflicts, and a hole reading `tag ρ.on` with nothing writing `ρ.on` is still `static`, never
+`literal` (§9.1: it is not a path expression). A `case` on a value that is not a path keeps A6's
+whole read, and so does every `Alt` no pattern made — which is why `Session.viewer (toSession
+model)` reads each page's session whole, and sign-in, which replaces it, reaches the header.
+
+**5. With A1, A2 and N1** (refutable patterns): a `case` on a nested path reads the tag at each
+path it tests — `Loaded (Just x)` reads `tag ρ.status` and `tag ρ.status.Loaded#0` — and a
+literal sub-pattern reads its value whole: `Loaded (Named "")` reads
+`ρ.status.Loaded#0.Named#0`, so renaming, which keeps both constructors, still reaches the hole.
+Arms are read whether or not §3.2 or N1 skips them, and negation facts, which come only from
+single-path tests (A1–A2), are tag reads like positive ones. Nothing about which facts an arm
+gets changes.
+
+**6. With the k-limit and the caps.** A tag goes no deeper than its path, so `tag p` is
+represented for every represented `p`, `|p| = k` included. A path past the cut is not
+represented (§2.2): a pattern that tests it meets a `Fresh` of the k-prefix and reads that
+prefix **whole** — **a cut path is a whole-value read, never a tag read** — and a summary's tag
+read rebased past k (§4.2, §3.6's εⱼ anchors) is cut to its k-prefix and read whole. A cap's
+`Fresh` (A, S) carries every read of what it replaced, tag reads included, which are reads
+only; a view past W reads ρ whole (§6.1, as amended).
+
+**7. What R3 and the direct platform may conclude.** For **R3** (§9.1): a hole whose tag reads
+meet no `value` write at or above their paths, and whose value reads conflict with nothing, is
+`static` — it shows the same thing for the page's life, by §1.2 with this conflict rule — and
+R3 writes it once at mount. A tag read never makes a hole `literal`: baking stays the exact-path
+rule of B5. For the **direct platform**'s handlers (`browser-direct.md`, R4 §9.2): a key whose
+writes at and above `p` are all `node` need not mark a group whose read at `p` is a tag read, and
+a key with a `value` write at or above it must. Nothing else changes at run time: a marked group
+still compares before it writes (§9.2), and a `*` key still runs `patchAll`. A tag read is a
+claim about what decides the group's *choice*; what the chosen arm shows is read by its own
+paths, so a group's code may read below `p`, and those reads are in its set.
+
+Fixtures, each failing before this amendment: `writes/TagHeader/` (Conduit's header in small:
+typing leaves it `static`; navigation through a helper and sign-in make it `dynamic`),
+`writes/TagSwitchHelper` (a page switch joined in a helper), `writes/TagNested` (a nested
+variant), `writes/TagRefutable` (a literal sub-pattern), `writes/TagAbove` (a `value` write two
+levels above), `writes/TagListElement` (an element's tag, `[i]` against `[*]`) and
+`writes/TagCut` (a tag read at depth k, a whole read past it). Each but the last has a hole the
+rule keeps `dynamic` and one it makes `static`. Every existing `writes/` golden was re-checked:
+no hole changes class; reads gain `tag` where only a tag decided (A6's two fixtures,
+`SameVariant`, `ReadsOfShape`, `N2Toggle`, TodoMVC, `Pages`, Conduit), `StatsSites` loses a read
+of a type of one constructor, `Pages` loses a tag read a whole read covers, and Conduit's and
+`SameVariant`'s `pairs` fall. Research 64's addendum has the gate's numbers.

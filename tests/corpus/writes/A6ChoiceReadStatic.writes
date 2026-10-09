@@ -4,7 +4,7 @@ program A6ChoiceReadStatic.main : Tea.sandbox
     literal ρ
   key (any)                                       exact      node ρ; value ρ.clicks
   keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
-  hole A6ChoiceReadStatic.beni:33:13              static     reads ρ.on
+  hole A6ChoiceReadStatic.beni:33:13              static     reads tag ρ.on
   holes 1: static 1, literal 0, static-key 0, dynamic 0
   site A6ChoiceReadStatic.beni:33:5               unique
   sites 1: unique 1, shared 0, instanced 0, value 0

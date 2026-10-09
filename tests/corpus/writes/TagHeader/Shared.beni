@@ -1,0 +1,72 @@
+--! The page union of `writes/TagHeader/`, Conduit's header in small
+--! (`write-sets.md`, amended 2026-10-09: tag reads). The header shows the
+--! session through `toSession model`, a `case` over the page variant: the
+--! `case` reads WHICH page ρ is (`tag ρ`), and the arm reads that page's
+--! session. Three programs share this view and differ in their `update`:
+--! `Typing` writes inside the editor page and leaves the header `static`;
+--! `Navigate` switches the page through a helper and `SignIn` replaces a
+--! page's session, and each leaves it `dynamic`.
+
+import Html exposing (Html)
+
+
+pub type Session
+    = LoggedIn String
+    | Guest
+
+
+pub type alias EditorPage =
+    session : Session
+    title : String
+
+
+pub type alias HomePage =
+    session : Session
+    count : Int
+
+
+pub type Model
+    = Home HomePage
+    | Editor EditorPage
+
+
+pub toSession : Model → Session
+toSession model =
+    case model of
+        Home h →
+            h.session
+
+        Editor ed →
+            ed.session
+
+
+sessionName : Session → String
+sessionName session =
+    case session of
+        LoggedIn name →
+            name
+
+        Guest →
+            "Sign in"
+
+
+editorTitle : Model → String
+editorTitle model =
+    case model of
+        Editor ed →
+            ed.title
+
+        Home _ →
+            ""
+
+
+pub view : Model → Html msg
+view model =
+    <main>
+        <nav>{sessionName (toSession model)}</nav>
+        <h1>{editorTitle model}</h1>
+    </main>
+
+
+pub start : Model
+start = Editor { session = Guest, title = "" }

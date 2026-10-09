@@ -1,0 +1,69 @@
+-- writes: a refutable pattern reads what its literal tests, not only tags
+-- (`write-sets.md`, amended 2026-10-09: tag reads; A2). `Loaded (Named "")`
+-- chooses its arm by the string under two constructors, so the hole reads
+-- `tag ρ.status`, `tag ρ.status.Loaded#0` AND the string whole; `Rename`
+-- keeps both constructors (`node`) and writes the string, and the hole is
+-- `dynamic`. Were the string read as a tag, it would be `static` and show
+-- "unnamed" after a rename. The second hole tests only the outer tag and is
+-- `static`; before tag reads it read ρ.status whole and was `dynamic`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Label
+    = Named String
+    | Anonymous
+
+
+type Status
+    = Loaded Label
+    | Empty
+
+
+type alias Model =
+    status : Status
+
+
+type Msg
+    = Rename String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Rename text →
+            case model.status of
+                Loaded (Named _) →
+                    { model | status = Loaded (Named text) }
+
+                _ →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>
+            {case model.status of
+                Loaded (Named "") →
+                    "unnamed"
+
+                _ →
+                    "named"
+            }
+        </p>
+        <p>
+            {case model.status of
+                Loaded _ →
+                    "loaded"
+
+                Empty →
+                    "empty"
+            }
+        </p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { status = Loaded (Named "") }, update = update, view = view }

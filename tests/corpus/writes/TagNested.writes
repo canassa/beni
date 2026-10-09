@@ -1,0 +1,17 @@
+program TagNested.main : Tea.sandbox
+  model TagNested.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; node ρ.status; value ρ.status.Loaded#0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole TagNested.beni:47:13                       dynamic    reads tag ρ.status; tag ρ.status.Loaded#0
+  hole TagNested.beni:59:13                       static     reads tag ρ.status
+  holes 2: static 1, literal 0, static-key 0, dynamic 1
+  site TagNested.beni:45:5                        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 1 over 1 keys and 2 groups (1.00 per key); every key calls 1 of 2 groups (50%)
+  reconciler 0 of 0 lists
+  patchAll <none>

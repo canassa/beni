@@ -1,0 +1,18 @@
+program TagSwitchHelper.main : Tea.sandbox
+  model TagSwitchHelper.Model
+  init
+    literal ρ
+  key Settle                                      exact      node ρ; value ρ.page; value ρ.page.Ready#0
+  key Bump                                        exact      node ρ; node ρ.panel; value ρ.panel.Open#0
+  keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
+  hole TagSwitchHelper.beni:87:12                 dynamic    reads tag ρ.page
+  hole TagSwitchHelper.beni:88:12                 static     reads tag ρ.panel
+  holes 2: static 1, literal 0, static-key 0, dynamic 1
+  site TagSwitchHelper.beni:86:5                  unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 1 over 2 keys and 2 groups (0.50 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

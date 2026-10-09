@@ -9,7 +9,7 @@ program ReadsOfShape.main : Tea.sandbox
   keys 4: bounded 4 (100%), exact 4, indexed 0, structural 0, * 0; capped 0
   hole ReadsOfShape.beni:68:12                    dynamic    reads ρ.done; ρ.rows; ρ.rows[*].done
   hole ReadsOfShape.beni:69:12                    dynamic    reads ρ.limit; ρ.rows
-  hole ReadsOfShape.beni:70:12                    dynamic    reads ρ.by; ρ.rows; ρ.rows[*].id
+  hole ReadsOfShape.beni:70:12                    dynamic    reads tag ρ.by; ρ.rows; ρ.rows[*].id
   hole ReadsOfShape.beni:71:12                    dynamic    reads ρ.rows[model.sel]; ρ.rows[model.sel].id; ρ.sel
   hole ReadsOfShape.beni:72:12                    dynamic    reads ρ.rows[?]; ρ.sel
   holes 5: static 0, literal 0, static-key 0, dynamic 5
