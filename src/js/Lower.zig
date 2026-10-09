@@ -922,6 +922,10 @@ pub const Lowerer = struct {
     /// built into a list: a tail self-call's argument to its own slot, and
     /// the scrutinee of a `case` on one.
     scalar_raw: std.ArrayList(Inst.Index) = .empty,
+    /// The accumulator of the loop being lowered, if it has one: a read of
+    /// its local is the exit's join (§8, *Accumulators build a plain
+    /// array*).
+    acc_now: ?AccNow = null,
     /// Per local of `list_binds_decl`: where a list pattern binds it — the
     /// pattern, the item's index, and whether it is the spread — for §7's
     /// re-consing rule (`reconsOf`), made the first time a call asks.
@@ -2601,6 +2605,12 @@ pub const Lowerer = struct {
         /// `$root`, the fresh array every step pushes its heads onto and
         /// every exit hands over. `.none` unless `builds`.
         root: JsIr.NameIndex = .none,
+        /// An ACCUMULATOR the loop builds in an owned plain array (§8,
+        /// *Accumulators build a plain array*): the slot every tail
+        /// self-call passes unchanged or with heads prepended (appended),
+        /// read nowhere else but as an exit's value. Set by
+        /// `markAccumulator`, which then makes the slot not carried.
+        acc: ?Acc = null,
         /// What the jumps wrote that `functionOrLoop` rewrites when the loop
         /// reassigns its parameters in place (§8, *In place, when nothing
         /// captures*).
@@ -2665,7 +2675,21 @@ pub const Lowerer = struct {
         };
 
         const no_local: u32 = std.math.maxInt(u32);
+
+        const Acc = struct {
+            /// Its slot, evidence counted.
+            slot: u32,
+            local: u32,
+            /// `[ …acc, h ]` steps; `[ h, …acc ]` otherwise.
+            append: bool,
+            /// `$acc`, the array the steps push onto; set by `loopOf`.
+            builder: JsIr.NameIndex = .none,
+        };
     };
+
+    /// The accumulator `exprValue` writes as its exit value while a loop
+    /// that has one is lowered (§8, *Accumulators build a plain array*).
+    const AccNow = struct { local: u32, decl: ?u32, builder: JsIr.NameIndex, append: bool };
 
     /// A list local a loop carries as an offset into a base array (§8,
     /// *Scalar views*): a parameter the rule applies to, or a `rest` a
@@ -2728,6 +2752,7 @@ pub const Lowerer = struct {
         var jumps: Loop.Jumps = .{};
         var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .ev_let = ev_let, .slots = slots, .jumps = &jumps };
         if (!l.markTails(body, &loop)) return l.functionOf(evidence, ev_let, params, body, suspendable);
+        if (!suspendable) try l.markAccumulator(&loop, body);
         loop.ready = l.mayGoInPlace(params, body);
 
         // A new function is a new label scope (§7).
@@ -2801,6 +2826,17 @@ pub const Lowerer = struct {
         const scalar_at = try l.scratch.alloc(?usize, slots.len);
         @memset(scalar_at, null);
         if (!l.suspendable) try l.scalarSlots(loop, body, scalar_at);
+        // An accumulator's destination (§8, *Accumulators build a plain
+        // array*): one fresh array the steps push onto, joined with the
+        // entry value at an exit.
+        var acc_decl: ?Node.Index = null;
+        const saved_acc = l.acc_now;
+        defer l.acc_now = saved_acc;
+        if (loop.acc) |*acc| {
+            acc.builder = try l.fixedName("$acc");
+            acc_decl = try l.add(.const_decl, p, @backingInt(acc.builder), (try l.arrayNode(&.{}, p)).int());
+            l.acc_now = .{ .local = acc.local, .decl = l.decl_index, .builder = acc.builder, .append = acc.append };
+        } else l.acc_now = null;
         try l.tailStmts(&loop_body, body, loop);
         // A suspension point in the loop's body: the fast path stays in the
         // loop, and the slow path re-enters the function with its slots
@@ -2881,6 +2917,7 @@ pub const Lowerer = struct {
             try head.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(param, p)).int(), offset.int()));
         }
         if (loop.builds) try head.append(l.scratch, before);
+        if (acc_decl) |decl| try head.append(l.scratch, decl);
         try head.append(l.scratch, while_node);
         return .{ .names = names.items, .stmts = head.items };
     }
@@ -3238,6 +3275,12 @@ pub const Lowerer = struct {
     }
 
     fn isListCons(l: *Lowerer, callee: Inst.Index) bool {
+        return l.isListFn(callee, InternPool.WellKnown.cons);
+    }
+
+    /// Whether `callee` names core's `List.<function>`, keyed as
+    /// `isListCons` keys `cons`.
+    fn isListFn(l: *Lowerer, callee: Inst.Index, function: InternPool.WellKnown) bool {
         const d = l.bir.instData(callee);
         const base: Symbol = switch (l.bir.instTag(callee)) {
             .top => blk: {
@@ -3257,7 +3300,7 @@ pub const Lowerer = struct {
             },
             else => return false,
         };
-        return base == InternPool.WellKnown.cons.symbol();
+        return base == function.symbol();
     }
 
     /// Whether a tail self-call is reachable through `inst`'s tail
@@ -3533,6 +3576,191 @@ pub const Lowerer = struct {
         }
     }
 
+    /// What `markAccumulator` counts of one slot: the reads of its local it
+    /// has accounted for, and the kind of step it found.
+    const AccScan = struct {
+        arg: usize,
+        local: u32,
+        allowed: u32 = 0,
+        pushes: bool = false,
+        append: ?bool = null,
+    };
+
+    /// §8, *Accumulators build a plain array*: the first parameter slot
+    /// of `loop` that every tail self-call passes unchanged, with heads
+    /// prepended (`[ h, …acc ]`) or with heads appended (`[ …acc, h ]`,
+    /// `acc ++ [ h ]`) — one kind in one function, and at least one step —
+    /// and that is read nowhere else but as an exit's value: the whole of
+    /// it, or an element of a tuple or record literal the exit is. Then
+    /// the slot is the loop's accumulator, and not carried: its parameter
+    /// keeps the entry value for the whole call. Every read of the local
+    /// in the function is counted, so a read anywhere else — a `case`, a
+    /// call's argument, a closure — leaves the loop as it was.
+    fn markAccumulator(l: *Lowerer, loop: *Loop, body: Inst.Index) !void {
+        if (loop.builds) return;
+        var start = @backingInt(body);
+        for (loop.slots) |slot| {
+            if (slot.pattern.unwrap()) |pattern| start = @min(start, @backingInt(pattern));
+        }
+        const tags = l.bir.insts.items(.tag);
+        const datas = l.bir.insts.items(.data);
+        for (loop.slots, 0..) |*slot, i| {
+            if (i < loop.evidence or slot.local == Loop.no_local or !slot.carried or slot.unwritten) continue;
+            var scan: AccScan = .{ .arg = i - loop.evidence, .local = slot.local };
+            if (!l.accTails(body, loop, &scan) or !scan.pushes) continue;
+            var total: u32 = 0;
+            // `==`, not a switch with an `else` prong (`Inst.Tag.set`).
+            for (tags[start .. @backingInt(body) + 1], datas[start .. @backingInt(body) + 1]) |tag, d| {
+                if (tag == .local and d.lhs == slot.local) total += 1;
+            }
+            if (total != scan.allowed) continue;
+            loop.acc = .{ .slot = @intCast(i), .local = slot.local, .append = scan.append.? };
+            slot.carried = false;
+            return;
+        }
+    }
+
+    /// `markAccumulator`'s walk of the tail positions under `inst`: false
+    /// where a self-call passes the slot anything but an accepted step.
+    fn accTails(l: *Lowerer, inst: Inst.Index, loop: *const Loop, scan: *AccScan) bool {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .let => return l.accTails(@fromBackingInt(@intCast(d.rhs)), loop, scan),
+            .case => {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) != .branch) continue;
+                    if (!l.accTails(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), loop, scan)) return false;
+                }
+                return true;
+            },
+            .call => {
+                if (l.isSelfCall(inst, loop)) {
+                    const arg = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)[scan.arg];
+                    if (l.isLocal(arg, scan.local)) {
+                        scan.allowed += 1;
+                        return true;
+                    }
+                    const append = if (l.prependHeads(arg, scan.local) != null) false else if (l.appendHeads(arg, scan.local) != null) true else return false;
+                    if (scan.append) |kind| if (kind != append) return false;
+                    scan.append = append;
+                    scan.pushes = true;
+                    scan.allowed += 1;
+                    return true;
+                }
+                if (l.logicalRight(inst)) |right| return l.accTails(right, loop, scan);
+                return true;
+            },
+            .local => {
+                if (d.lhs == scan.local) scan.allowed += 1;
+                return true;
+            },
+            .tuple => {
+                for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |e| {
+                    if (l.isLocal(e, scan.local)) scan.allowed += 1;
+                }
+                return true;
+            },
+            .record => {
+                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| {
+                    if (l.isLocal(f.value, scan.local)) scan.allowed += 1;
+                }
+                return true;
+            },
+            else => return true,
+        }
+    }
+
+    fn isLocal(l: *Lowerer, inst: Inst.Index, local: u32) bool {
+        return l.bir.instTag(inst) == .local and l.bir.instData(inst).lhs == local;
+    }
+
+    /// The heads of `[ h1, …, hk, …acc ]` — `List.cons h1 (… (List.cons hk
+    /// acc))` — in written order, or null for any other instruction.
+    fn prependHeads(l: *Lowerer, inst: Inst.Index, local: u32) ?[]const Inst.Index {
+        var heads: std.ArrayList(Inst.Index) = .empty;
+        var at = inst;
+        while (l.consTail(at)) |tail| {
+            const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(at).rhs))), Inst.Index);
+            heads.append(l.scratch, args[0]) catch return null;
+            at = tail;
+        }
+        if (heads.items.len == 0 or !l.isLocal(at, local)) return null;
+        return heads.items;
+    }
+
+    /// The heads of `[ …acc, h1, …, hk ]` or `acc ++ [ h1, …, hk ]` — a
+    /// list `append` of the local and a list literal — or null.
+    fn appendHeads(l: *Lowerer, inst: Inst.Index, local: u32) ?[]const Inst.Index {
+        if (l.bir.instTag(inst) != .call) return null;
+        const d = l.bir.instData(inst);
+        const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        if (args.len != 2 or l.rootsOf(inst).len != 0) return null;
+        if (!l.isListFn(callee, InternPool.WellKnown.append) and !l.in.dispatch.isListAppend(inst)) return null;
+        if (!l.isLocal(args[0], local) or l.bir.instTag(args[1]) != .list) return null;
+        const heads = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[1])), Inst.Index);
+        if (heads.len == 0) return null;
+        return heads;
+    }
+
+    /// An accumulator at an exit: `List$close($acc.reverse(), acc)` for a
+    /// prepending one — what the steps pushed, newest first, then the entry
+    /// value, or the entry value itself when nothing was pushed — and
+    /// `List$append(acc, $acc)` for an appending one.
+    fn accumulatorExit(l: *Lowerer, acc: AccNow, p: u32) !Node.Index {
+        const entry = try l.ident(try l.localName(acc.local), p);
+        const builder = try l.ident(acc.builder, p);
+        if (acc.append) return l.call(try l.coreValue(.List, .append, p), &.{ entry, builder }, p);
+        const reverse = try l.interner.getOrPut(l.gpa, "reverse");
+        const reversed = try l.call(try l.member(builder, reverse, p), &.{}, p);
+        return l.call(try l.ident(try l.closeName(p), p), &.{ reversed, entry }, p);
+    }
+
+    /// A tail self-call's arguments, the accumulator's heads in its place
+    /// (§8, *Accumulators build a plain array*): each evaluated in written
+    /// order, then `$acc.push(…)` — the heads reversed for a prepending
+    /// accumulator — before the jump's assignments, so a value written
+    /// before the heads is bound first. The accumulator's own entry is
+    /// left undefined: its slot is not carried.
+    fn accumulatorArgs(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) ![]Node.Index {
+        const acc = loop.acc.?;
+        const p = l.pos(inst);
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
+        const at = acc.slot - loop.evidence;
+        const arg = args[at];
+        const heads: []const Inst.Index = if (l.isLocal(arg, acc.local))
+            &.{}
+        else if (acc.append) l.appendHeads(arg, acc.local).? else l.prependHeads(arg, acc.local).?;
+        var flat: std.ArrayList(Inst.Index) = .empty;
+        try flat.appendSlice(l.scratch, args[0..at]);
+        try flat.appendSlice(l.scratch, heads);
+        try flat.appendSlice(l.scratch, args[at + 1 ..]);
+        const values = try l.orderedExprs(out, flat.items, false);
+        if (heads.len != 0) {
+            // Only an order something can observe is kept: a value with an
+            // effect, or any value when a head has one.
+            var heads_effect = false;
+            for (heads) |h| heads_effect = heads_effect or l.mayHaveEffect(h);
+            const pin_heads = !acc.append and heads.len > 1;
+            for (values[0 .. at + (if (pin_heads) heads.len else 0)], 0..) |*value, k| {
+                if (l.isAtom(value.*)) continue;
+                if (!heads_effect and !l.mayHaveEffect(flat.items[k])) continue;
+                const n = try l.fresh(l.well.temp);
+                try l.constDecl(out, n, value.*, l.pos(flat.items[k]));
+                value.* = try l.ident(n, p);
+            }
+            const pushed = try l.scratch.alloc(Node.Index, heads.len);
+            for (pushed, 0..) |*h, k| h.* = values[at + (if (acc.append) k else heads.len - 1 - k)];
+            const push = try l.call(try l.member(try l.ident(acc.builder, p), l.well.push, p), pushed, p);
+            try out.append(l.scratch, try l.add(.expr_stmt, p, push.int(), Node.Data.unused));
+        }
+        const written = try l.scratch.alloc(Node.Index, args.len);
+        @memcpy(written[0..at], values[0..at]);
+        written[at] = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        @memcpy(written[at + 1 ..], values[at + heads.len ..]);
+        return written;
+    }
+
     /// A tail self-call: the argument expressions, the assignments to the
     /// carried slots in parameter order, and `continue <label>`. The
     /// `continue` is LABELLED and not bare, because §7's decision trees put
@@ -3558,7 +3786,10 @@ pub const Lowerer = struct {
             const scalar = l.scalars.items[k];
             if (scalar.label == loop.label and scalar.slot == loop.evidence + j) try l.scalar_raw.append(l.scratch, arg);
         }
-        const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+        const written = if (loop.acc != null)
+            try l.accumulatorArgs(out, inst, loop)
+        else
+            try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
         const values = try l.scratch.alloc(Node.Index, loop.slots.len);
         for (loop.slots, values, 0..) |slot, *value, i| {
             if (!slot.carried) continue;
@@ -4306,6 +4537,12 @@ pub const Lowerer = struct {
         const p = l.pos(inst);
         l.region = inst;
         if (l.deadArm(inst)) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        // A loop's accumulator is read only at an exit (`markAccumulator`):
+        // there its value is what the steps pushed joined with the entry
+        // value (§8, *Accumulators build a plain array*).
+        if (l.acc_now) |acc| if (l.bir.instTag(inst) == .local and d.lhs == acc.local and std.meta.eql(l.decl_index, acc.decl)) {
+            return l.accumulatorExit(acc, p);
+        };
         switch (l.bir.instTag(inst)) {
             .int, .float => return l.numberNode(l.bir.bytes(inst), p),
             .char => {
@@ -9163,6 +9400,7 @@ pub const Lowerer = struct {
         jumps.* = .{};
         var loop: Loop = .{ .label = .none, .self = .{ .top = index }, .evidence = 0, .slots = slots, .jumps = jumps, .exit = exit };
         if (!l.markTails(l.bodyOf(index), &loop) or loop.builds) return null;
+        try l.markAccumulator(&loop, l.bodyOf(index));
         // Where the value is bound or discarded, the call is no shorter
         // than the copies: the loop is taken in whatever its arguments are.
         if (exit != .@"return") return loop;

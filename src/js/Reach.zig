@@ -777,7 +777,7 @@ pub const Builder = struct {
             }
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
-            try b.listEdges(m, bir, d, &decl_targets);
+            try b.listEdges(m, bir, @intCast(i), d, &decl_targets);
             try b.memberUses(m, bir, d, &guards, &decl_targets);
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
@@ -877,11 +877,13 @@ pub const Builder = struct {
     /// calls it (`backend.md` §8). Coarse by a little: a pattern that reads no
     /// element or binds no tail still keeps the two alive, which costs
     /// their export and never a wrong program.
-    fn listEdges(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, out: *std.ArrayList(Target)) Allocator.Error!void {
+    fn listEdges(b: *Builder, m: Graph.Index, bir: *const Bir, index: u32, d: Bir.Decl, out: *std.ArrayList(Target)) Allocator.Error!void {
         var pattern = false;
         var end = false;
         var cons = false;
         var append = false;
+        var onto_local = false;
+        var self_call = false;
         const dispatch = b.in.dispatchOf(m);
         const list = b.in.graph.lookup(.core, InternPool.WellKnown.List.symbol());
         var inst = d.inst_start.int();
@@ -899,8 +901,22 @@ pub const Builder = struct {
             } else if (tag == .call) {
                 if (!append and dispatch.isListAppend(at)) append = true;
                 if (!cons and list != null) cons = b.isBuildingStep(m, bir, list.?, data);
+                if (!onto_local and list != null) onto_local = b.isConsOntoLocal(m, bir, list.?, data);
+                const callee: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                if (callee.int() < bir.insts.len) switch (bir.instTag(callee)) {
+                    .top => if (bir.instData(callee).lhs == index) {
+                        self_call = true;
+                    },
+                    .local => self_call = true,
+                    else => {},
+                };
             }
         }
+        // An accumulator loop's exit joins with `close` (§8, *Accumulators
+        // build a plain array*): a declaration that prepends onto a local
+        // and calls itself or a `let` function may be one. A superset of
+        // the loops the emitter rewrites, as `isBuildingStep` is.
+        if (onto_local and self_call) cons = true;
         const picks = [_]struct { bool, ?Node }{
             .{ pattern, b.list_get },
             .{ pattern, b.list_view },
@@ -923,9 +939,26 @@ pub const Builder = struct {
     /// onto a name, a literal or a parameter (`[ x, ...acc ]`) never is,
     /// so a program that only prepends onto what it holds ships no `close`.
     fn isBuildingStep(b: *Builder, m: Graph.Index, bir: *const Bir, list: Graph.Index, data: Bir.Inst.Data) bool {
-        const cons_node = b.list_cons orelse return false;
+        const args = b.consArgs(m, bir, list, data) orelse return false;
+        return switch (bir.instTag(args[1])) {
+            .call, .let, .case => true,
+            else => false,
+        };
+    }
+
+    /// Whether the call `data` is `List.cons x acc` onto a local: a step of
+    /// an accumulator (§8, *Accumulators build a plain array*) when the
+    /// declaration also loops.
+    fn isConsOntoLocal(b: *Builder, m: Graph.Index, bir: *const Bir, list: Graph.Index, data: Bir.Inst.Data) bool {
+        const args = b.consArgs(m, bir, list, data) orelse return false;
+        return bir.instTag(args[1]) == .local;
+    }
+
+    /// The two arguments of a call of `List.cons`, or null.
+    fn consArgs(b: *Builder, m: Graph.Index, bir: *const Bir, list: Graph.Index, data: Bir.Inst.Data) ?[]const Bir.Inst.Index {
+        const cons_node = b.list_cons orelse return null;
         const callee: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
-        if (callee.int() >= bir.insts.len) return false;
+        if (callee.int() >= bir.insts.len) return null;
         const named = switch (bir.instTag(callee)) {
             .ext_value => blk: {
                 const d = bir.instData(callee);
@@ -936,13 +969,10 @@ pub const Builder = struct {
             .top => m == list and bir.instData(callee).lhs == cons_node.index,
             else => false,
         };
-        if (!named) return false;
+        if (!named) return null;
         const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
-        if (args.len != 2) return false;
-        return switch (bir.instTag(args[1])) {
-            .call, .let, .case => true,
-            else => false,
-        };
+        if (args.len != 2) return null;
+        return args;
     }
 
     /// The build's schema plans, read as `SchemaLower` reads them; null

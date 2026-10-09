@@ -1,5 +1,5 @@
 import { String$length, String$fromInt } from "./_core/String.mjs";
-import { List$cons } from "./_core/List.mjs";
+import { List$close } from "./_core/List.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const TailCallInPlace$sum = (n$1, acc$2) => {
   while (!(n$1 <= 0)) {
@@ -25,15 +25,15 @@ const TailCallInPlace$logged = (a$1, b$2) => {
   }
   return b$2;
 };
-const TailCallInPlace$closures = ($in$0, $in$1) => {
+const TailCallInPlace$closures = ($in$0, acc$2) => {
+  const $acc = [];
   for (;;) {
     const n$1 = $in$0;
-    const acc$2 = $in$1;
     if (n$1 <= 0) {
-      return acc$2;
+      return List$close($acc.reverse(), acc$2);
     } else {
+      $acc.push((x$3) => x$3 + n$1);
       $in$0 = n$1 - 1;
-      $in$1 = List$cons((x$3) => x$3 + n$1, acc$2);
     }
   }
 };
