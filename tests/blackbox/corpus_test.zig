@@ -2258,6 +2258,11 @@ const Case = struct {
         .{ .name = "UnitHoles.beni", .why = "4 331 million instructions with the value fuzz" },
         // Slice S2's pages (browser-direct.md §6, as amended for S2): a list's
         // page and its four builds, with the value fuzz's two more and a dump.
+        // S1's pages pushed over by S2: each of a page's seven builds checks
+        // the runtime module `Direct`, which S2's list functions grew.
+        .{ .name = "DefectInHandler.beni", .why = "4 395 million instructions with the value fuzz, since S2" },
+        .{ .name = "DefectInListener.beni", .why = "4 411 million instructions with the value fuzz, since S2" },
+        .{ .name = "DefectInMount.beni", .why = "4 307 million instructions with the value fuzz, since S2" },
         .{ .name = "BakedList.beni", .why = "5 119 million instructions with the value fuzz" },
         .{ .name = "DetachedRowEvent.beni", .why = "4 508 million instructions with the value fuzz" },
         .{ .name = "ForAtEnds.beni", .why = "5 185 million instructions with the value fuzz" },
