@@ -1,0 +1,1063 @@
+{
+ "chrome": "Chrome/153.0.8010.36",
+ "node": "v24.19.0",
+ "beni": "beni 0.1.0-m1 1d18c6620b1e5d1e616819b15890efcf",
+ "commit": "d06fd60683afe33c88de9c4e0bd2d86dae52c998",
+ "dirty": true,
+ "taskset": "8-15",
+ "started": "2026-10-09T01:12:02.601Z",
+ "pages": 15,
+ "rows": [
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 0,
+   "load": 5.38,
+   "ms": 0.5050000250339508
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 0,
+   "load": 5.38,
+   "ms": 0.38499999046325684
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 0,
+   "load": 5.38,
+   "ms": 0.3400000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 0,
+   "load": 5.38,
+   "ms": 0.3149999976158142
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 0,
+   "load": 5.38,
+   "ms": 0.2250000238418579
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 1,
+   "load": 5.38,
+   "ms": 0.3700000047683716
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 1,
+   "load": 5.38,
+   "ms": 0.35499998927116394
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 1,
+   "load": 5.38,
+   "ms": 0.4050000011920929
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 1,
+   "load": 5.38,
+   "ms": 0.21000000834465027
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 1,
+   "load": 5.38,
+   "ms": 0.48500001430511475
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 2,
+   "load": 5.38,
+   "ms": 0.38999998569488525
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 2,
+   "load": 5.27,
+   "ms": 0.3400000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 2,
+   "load": 5.27,
+   "ms": 0.2150000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 2,
+   "load": 5.27,
+   "ms": 0.49000000953674316
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 2,
+   "load": 5.27,
+   "ms": 0.38499999046325684
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 3,
+   "load": 5.27,
+   "ms": 0.32499998807907104
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 3,
+   "load": 5.27,
+   "ms": 0.2150000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 3,
+   "load": 5.27,
+   "ms": 0.5249999761581421
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 3,
+   "load": 5.27,
+   "ms": 0.35499998927116394
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 3,
+   "load": 5.27,
+   "ms": 0.3499999940395355
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 4,
+   "load": 5.27,
+   "ms": 0.23999997973442078
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 4,
+   "load": 5.27,
+   "ms": 0.5
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 4,
+   "load": 5.27,
+   "ms": 0.35500001907348633
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 4,
+   "load": 5.27,
+   "ms": 0.39000001549720764
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 4,
+   "load": 5.27,
+   "ms": 0.3400000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 5,
+   "load": 5.27,
+   "ms": 0.5049999952316284
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 5,
+   "load": 5.27,
+   "ms": 0.4350000023841858
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 5,
+   "load": 5.27,
+   "ms": 0.35499998927116394
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 5,
+   "load": 5.27,
+   "ms": 0.33500000834465027
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 5,
+   "load": 5.27,
+   "ms": 0.22999998927116394
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 6,
+   "load": 5.27,
+   "ms": 0.38499999046325684
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 6,
+   "load": 5.27,
+   "ms": 0.3400000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 6,
+   "load": 5.27,
+   "ms": 0.375
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 6,
+   "load": 5.27,
+   "ms": 0.2150000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 6,
+   "load": 5.27,
+   "ms": 0.5900000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 7,
+   "load": 5.27,
+   "ms": 0.3499999940395355
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 7,
+   "load": 5.27,
+   "ms": 0.320000022649765
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 7,
+   "load": 5.27,
+   "ms": 0.2199999988079071
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 7,
+   "load": 5.27,
+   "ms": 0.4950000047683716
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 7,
+   "load": 5.27,
+   "ms": 0.36500000953674316
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 8,
+   "load": 5.27,
+   "ms": 0.320000022649765
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 8,
+   "load": 5.27,
+   "ms": 0.20499998331069946
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 8,
+   "load": 5.27,
+   "ms": 0.5250000059604645
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 8,
+   "load": 5.27,
+   "ms": 0.35999998450279236
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 8,
+   "load": 5.27,
+   "ms": 0.3400000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 9,
+   "load": 5.27,
+   "ms": 0.2150000035762787
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 9,
+   "load": 5.27,
+   "ms": 0.5
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 9,
+   "load": 5.27,
+   "ms": 0.3499999940395355
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 9,
+   "load": 5.27,
+   "ms": 0.36500000953674316
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 9,
+   "load": 5.27,
+   "ms": 0.3449999988079071
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 10,
+   "load": 5.27,
+   "ms": 0.48000001907348633
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 10,
+   "load": 5.27,
+   "ms": 0.375
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 10,
+   "load": 5.27,
+   "ms": 0.3649999797344208
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 10,
+   "load": 5.27,
+   "ms": 0.3499999940395355
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 10,
+   "load": 5.27,
+   "ms": 0.22499999403953552
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 11,
+   "load": 5.27,
+   "ms": 0.375
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 11,
+   "load": 5.27,
+   "ms": 0.35499998927116394
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 11,
+   "load": 5.27,
+   "ms": 0.32500001788139343
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 11,
+   "load": 5.27,
+   "ms": 0.23999997973442078
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 11,
+   "load": 5.27,
+   "ms": 0.5049999952316284
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 12,
+   "load": 5.27,
+   "ms": 0.33000001311302185
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 12,
+   "load": 5.27,
+   "ms": 0.35499998927116394
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 12,
+   "load": 5.27,
+   "ms": 0.2250000238418579
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 12,
+   "load": 5.27,
+   "ms": 0.5300000011920929
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 12,
+   "load": 5.27,
+   "ms": 0.3499999940395355
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 13,
+   "load": 5.27,
+   "ms": 0.33500000834465027
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 13,
+   "load": 5.27,
+   "ms": 0.22999998927116394
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 13,
+   "load": 5.27,
+   "ms": 0.48500001430511475
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 13,
+   "load": 5.27,
+   "ms": 0.35999998450279236
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 13,
+   "load": 5.27,
+   "ms": 0.3449999988079071
+  },
+  {
+   "size": "hello",
+   "subject": "vanillajs",
+   "page": 14,
+   "load": 5.27,
+   "ms": 0.2250000238418579
+  },
+  {
+   "size": "hello",
+   "subject": "beni",
+   "page": 14,
+   "load": 5.27,
+   "ms": 0.5199999809265137
+  },
+  {
+   "size": "hello",
+   "subject": "beni-release",
+   "page": 14,
+   "load": 5.27,
+   "ms": 0.3349999785423279
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct",
+   "page": 14,
+   "load": 5.27,
+   "ms": 0.39500001072883606
+  },
+  {
+   "size": "hello",
+   "subject": "beni-direct-release",
+   "page": 14,
+   "load": 5.27,
+   "ms": 0.3400000035762787
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 0,
+   "load": 5.27,
+   "ms": 2.020000010728836
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 0,
+   "load": 5.27,
+   "ms": 2.009999990463257
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 0,
+   "load": 5.27,
+   "ms": 1.4899999797344208
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 0,
+   "load": 5.27,
+   "ms": 1.5
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 0,
+   "load": 5.27,
+   "ms": 1.304999977350235
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 1,
+   "load": 5.27,
+   "ms": 1.7549999952316284
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 1,
+   "load": 5.27,
+   "ms": 1.4600000083446503
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 1,
+   "load": 5.27,
+   "ms": 1.6349999904632568
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 1,
+   "load": 5.27,
+   "ms": 1.2750000059604645
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 1,
+   "load": 5.27,
+   "ms": 1.9099999964237213
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 2,
+   "load": 5.27,
+   "ms": 1.550000011920929
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 2,
+   "load": 5.27,
+   "ms": 1.4199999868869781
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 2,
+   "load": 5.27,
+   "ms": 1.3499999940395355
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 2,
+   "load": 5.27,
+   "ms": 2.0750000178813934
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 2,
+   "load": 5.27,
+   "ms": 1.9099999964237213
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 3,
+   "load": 5.27,
+   "ms": 1.5400000214576721
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 3,
+   "load": 5.27,
+   "ms": 1.425000011920929
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 3,
+   "load": 5.27,
+   "ms": 2.050000011920929
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 3,
+   "load": 5.27,
+   "ms": 2.0150000154972076
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 3,
+   "load": 5.27,
+   "ms": 1.6150000095367432
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 4,
+   "load": 5.27,
+   "ms": 1.3550000190734863
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 4,
+   "load": 5.27,
+   "ms": 2.044999986886978
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 4,
+   "load": 5.25,
+   "ms": 1.949999988079071
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 4,
+   "load": 5.25,
+   "ms": 1.5750000178813934
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 4,
+   "load": 5.25,
+   "ms": 1.5799999833106995
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 5,
+   "load": 5.25,
+   "ms": 2
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 5,
+   "load": 5.25,
+   "ms": 1.949999988079071
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 5,
+   "load": 5.25,
+   "ms": 1.6050000190734863
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 5,
+   "load": 5.25,
+   "ms": 1.5650000274181366
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 5,
+   "load": 5.25,
+   "ms": 1.4000000059604645
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 6,
+   "load": 5.25,
+   "ms": 2.0150000154972076
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 6,
+   "load": 5.25,
+   "ms": 1.5150000154972076
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 6,
+   "load": 5.25,
+   "ms": 1.625
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 6,
+   "load": 5.25,
+   "ms": 1.594999998807907
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 6,
+   "load": 5.25,
+   "ms": 1.9650000035762787
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 7,
+   "load": 5.25,
+   "ms": 1.820000022649765
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 7,
+   "load": 5.25,
+   "ms": 1.5149999856948853
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 7,
+   "load": 5.25,
+   "ms": 1.4350000023841858
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 7,
+   "load": 5.25,
+   "ms": 2.0550000071525574
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 7,
+   "load": 5.25,
+   "ms": 1.9550000131130219
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 8,
+   "load": 5.25,
+   "ms": 1.5799999833106995
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 8,
+   "load": 5.25,
+   "ms": 1.4099999964237213
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 8,
+   "load": 5.25,
+   "ms": 1.9150000214576721
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 8,
+   "load": 5.25,
+   "ms": 1.8799999952316284
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 8,
+   "load": 5.25,
+   "ms": 1.5850000083446503
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 9,
+   "load": 5.25,
+   "ms": 1.405000001192093
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 9,
+   "load": 5.25,
+   "ms": 2.125
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 9,
+   "load": 5.25,
+   "ms": 2.0150000154972076
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 9,
+   "load": 5.25,
+   "ms": 1.5349999964237213
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 9,
+   "load": 5.25,
+   "ms": 1.6150000095367432
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 10,
+   "load": 5.25,
+   "ms": 1.9950000047683716
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 10,
+   "load": 5.25,
+   "ms": 1.9650000035762787
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 10,
+   "load": 5.25,
+   "ms": 1.655000001192093
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 10,
+   "load": 5.25,
+   "ms": 1.6700000166893005
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 10,
+   "load": 5.25,
+   "ms": 1.4099999964237213
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 11,
+   "load": 5.25,
+   "ms": 1.9749999940395355
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 11,
+   "load": 5.25,
+   "ms": 1.4200000166893005
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 11,
+   "load": 5.25,
+   "ms": 1.4500000178813934
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 11,
+   "load": 5.25,
+   "ms": 1.3100000023841858
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 11,
+   "load": 5.25,
+   "ms": 1.854999989271164
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 12,
+   "load": 5.25,
+   "ms": 1.4849999845027924
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 12,
+   "load": 5.25,
+   "ms": 1.4500000178813934
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 12,
+   "load": 5.25,
+   "ms": 1.2849999964237213
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 12,
+   "load": 5.25,
+   "ms": 1.8650000095367432
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 12,
+   "load": 5.25,
+   "ms": 2.115000009536743
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 13,
+   "load": 5.25,
+   "ms": 1.9850000143051147
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 13,
+   "load": 5.25,
+   "ms": 1.7599999904632568
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 13,
+   "load": 5.25,
+   "ms": 2.5399999916553497
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 13,
+   "load": 5.25,
+   "ms": 2.310000002384186
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 13,
+   "load": 5.25,
+   "ms": 2.199999988079071
+  },
+  {
+   "size": "list1000",
+   "subject": "vanillajs",
+   "page": 14,
+   "load": 5.25,
+   "ms": 1.7999999821186066
+  },
+  {
+   "size": "list1000",
+   "subject": "beni",
+   "page": 14,
+   "load": 5.25,
+   "ms": 2.6649999916553497
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-release",
+   "page": 14,
+   "load": 5.25,
+   "ms": 2.6400000154972076
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct",
+   "page": 14,
+   "load": 5.25,
+   "ms": 2.1900000274181366
+  },
+  {
+   "size": "list1000",
+   "subject": "beni-direct-release",
+   "page": 14,
+   "load": 5.25,
+   "ms": 2.134999990463257
+  }
+ ],
+ "finished": "2026-10-09T01:12:12.839Z"
+}

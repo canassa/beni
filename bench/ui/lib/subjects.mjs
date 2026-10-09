@@ -9,6 +9,10 @@ const extra = new URL("../out/extra-subjects.json", import.meta.url);
 export const subjects = [
   { name: "beni", kind: "beni", dir: "beni-dev" },
   { name: "beni-release", kind: "beni", dir: "beni-rel" },
+  // The same sources built for `browser-direct` (browser-direct.md §12.2);
+  // skipped, with the compiler's reason, while its slices cannot build them.
+  { name: "beni-direct", kind: "beni", dir: "beni-direct-dev" },
+  { name: "beni-direct-release", kind: "beni", dir: "beni-direct-rel" },
   { name: "solid2", kind: "solid", entry: "bench" },
   { name: "solid1", kind: "solid", src: "/out/solid1/main.js", module: false },
   { name: "p2", kind: "script", body: "static", src: "/apps/p2/bench.js" },

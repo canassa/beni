@@ -22,7 +22,10 @@
 // per point and subject); `--full` takes every point and two pages of four
 // samples. By default only beni (its development build, and the view-helper
 // variant of `derived`) and Solid 1 are measured, unthrottled; `--subjects=`
-// adds any of beni-release, beni-helper-release, solid2, p2, p3 and vanillajs, and
+// adds any of beni-release, beni-helper-release, beni-direct, beni-direct-release
+// (the same source built for `browser-direct`; a page its slices cannot build is
+// skipped with the compiler's reason, in the output's `skipped`), solid2, p2, p3 and
+// vanillajs, and
 // `--throttle=4` measures under the table benchmark's CPU throttling instead. Run it from `nix develop .#browser`, after `node build.mjs` has
 // fetched the stylesheet and installed both Solids.
 //
@@ -258,6 +261,26 @@ function buildAll() {
         writeFileSync(stamp, beniId);
       }
     }
+    // `browser-direct` (docs/design/browser-direct.md §12.2): the same
+    // source, built for the other platform. A program its slices cannot
+    // build yet is skipped with the compiler's reason, never faked.
+    const directBuilds = [["dev", []], ["rel", ["--release"]]].filter(([suffix]) => wants(suffix === "dev" ? "beni-direct" : "beni-direct-release"));
+    for (const [suffix, flags] of directBuilds) {
+      const outDir = `${dir}/beni-direct-${suffix}`;
+      const stamp = join(root, outDir, ".built-by");
+      const id = `${beniId} ${createHash("sha256").update(m.beni(p)).digest("hex")}`;
+      if (!rebuild && existsSync(stamp) && readFileSync(stamp, "utf8") === id) continue;
+      rmSync(join(root, outDir), { recursive: true, force: true });
+      const r = spawnSync(beniExe, ["build", "--platform=browser-direct", ...flags, "--no-cache", "--diagnostics=json", `--out=${outDir}`, `${dir}/src/Main.beni`], { cwd: root, encoding: "utf8" });
+      mkdirSync(join(root, outDir), { recursive: true });
+      if (r.status !== 0) {
+        // The first diagnostic, on one line: what the slice does not compile yet.
+        const text = (r.stderr || r.stdout || "").trim();
+        const first = text.startsWith("[") ? JSON.parse(text)[0] : null;
+        writeFileSync(join(root, outDir, ".skipped"), first === null ? text : `${first.code}: ${first.message.replace(/\s+/g, " ")}`);
+      }
+      writeFileSync(stamp, id);
+    }
     for (const v of variants) {
       const outDir = `${dir}/beni-${v.name}-dev`;
       rmSync(join(root, outDir), { recursive: true, force: true });
@@ -298,6 +321,8 @@ const subjectsOf = (sweep, dir) => {
         ]
       : []),
     ...variants.map((v) => ({ name: `beni-${v.name}`, kind: "beni", dir: `scaling/${dir.slice(12)}/beni-${v.name}-dev` })),
+    { name: "beni-direct", kind: "beni", dir: `scaling/${dir.slice(12)}/beni-direct-dev` },
+    { name: "beni-direct-release", kind: "beni", dir: `scaling/${dir.slice(12)}/beni-direct-rel` },
     { name: "solid2", kind: "solid", src: `/${dir}/solid2.js` },
     { name: "solid1", kind: "solid", src: `/${dir}/solid1.js`, module: false },
     { name: "p2", kind: "script", src: `/${dir}/p2.js` },
@@ -305,11 +330,37 @@ const subjectsOf = (sweep, dir) => {
     { name: "vanillajs", kind: "script", src: `/${dir}/vanilla.js` },
   ];
   return list
-    .filter((s) => wants(s.name))
+    .filter((s) => wants(s.name) && skippedReason(s) === null)
     .map((s) => ({ ...s, subject: s.name, name: `${key}.${s.name}` }));
 };
 
+// Why a subject's page was not built (`.skipped`, written by `buildAll`),
+// or null when it was.
+const skippedReason = (s) => {
+  if (s.dir === undefined) return null;
+  const file = join(root, "out", s.dir, ".skipped");
+  return existsSync(file) ? readFileSync(file, "utf8") : null;
+};
+
+// Every subject of a chosen program that was not built, and why: printed,
+// and kept in the result, so a skipped page is never mistaken for a
+// measured one.
+const skippedPages = [];
+const noteSkipped = () => {
+  for (const [dir, { sweep }] of programs) {
+    const key = dir.replace(/^out\/scaling\//, "").replace("/", ".");
+    for (const name of ["beni-direct", "beni-direct-release"]) {
+      if (!wants(name)) continue;
+      const reason = skippedReason({ dir: `scaling/${dir.slice(12)}/${name === "beni-direct" ? "beni-direct-dev" : "beni-direct-rel"}` });
+      if (reason === null) continue;
+      skippedPages.push({ sweep: sweep.id, page: key, subject: name, reason });
+      console.log(`skipped ${key} ${name}: ${reason}`);
+    }
+  }
+};
+
 if (!flag("no-build")) buildAll();
+noteSkipped();
 if (flag("build-only")) process.exit(0);
 
 // ---- Measuring ----------------------------------------------------------------
@@ -379,6 +430,7 @@ const result = {
   batches: [],
   samples: [],
   failures: [],
+  skipped: skippedPages,
 };
 const out = join(root, arg("out", `results/${result.started.slice(0, 10)}-scaling-${mode}${untraced ? "-untraced" : ""}.json`));
 const save = () => {
