@@ -1118,7 +1118,10 @@ const Emitter = struct {
         // chain declares a `program` for it to run.
         const runs = e.markupRuntimeIsProgramRuntime() and (!e.moduleIsRuntime() or e.options.platform.program != null);
         if (runs) try expected.append(e.scratch, .{ .name = "run", .arity = 1 });
-        if (e.graph().markup.vocabulary) |vocabulary| {
+        // A lowering with no run-time value of the markup type refuses
+        // every use of a primitive (§9.4.6, version 1.6), so its runtime
+        // implements none.
+        if (e.graph().markup.vocabulary) |vocabulary| if (lowering.no_markup_values == null) {
             const b = e.bir(vocabulary);
             const file = e.graph().moduleFile(vocabulary);
             const dispatch = e.dispatchOf(vocabulary);
@@ -1161,7 +1164,7 @@ const Emitter = struct {
                     } },
                 });
             }
-        }
+        };
         // The runtime module supplies what it declares; the file, the rest.
         try e.takeSupplied(&expected, lowering.name);
 

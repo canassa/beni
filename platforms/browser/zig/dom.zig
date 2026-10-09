@@ -107,6 +107,23 @@ fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr
     return g.block(&.{r.node}, r.site.inst, null);
 }
 
+/// The template of markup that writes nothing once it is cloned — no hole,
+/// no event, no attribute but a constant one the template holds — as
+/// `Rt.template` is handed it: its HTML and its flags.
+pub const Static = struct { html: []const u8, flags: u8 };
+
+/// `nodes`' template when they write nothing (`Static`), or null when they
+/// do. `browser-direct`'s `direct` lowering writes a static site as this
+/// text (browser-direct.md §5.1), so a page on either platform is parsed
+/// from the same characters. The caller has seen to it that `nodes` hold
+/// no event, which would contribute start data.
+pub fn staticTemplate(cx: *m.Context, tree: *const m.Tree, nodes: []const m.Node.Index, site: u32) m.Error!?Static {
+    var g: Gen = .{ .cx = cx, .tree = tree };
+    const b = try g.plan(nodes, site);
+    if (b.ops.items.len != 0 or b.operands.items.len != 0) return null;
+    return .{ .html = b.html.items, .flags = b.flags };
+}
+
 // ---- The plan of one template -------------------------------------------
 
 /// One node of a template, in the order the template's HTML writes it.
