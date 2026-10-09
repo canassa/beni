@@ -131,6 +131,33 @@ platform is expected to be core's `List` (research 60 §4.6: ~1.2 kB before the 
 rule; design §13 estimates ~400 B after). What to do about core's `List` is decided from that
 measurement, under M2's rule 10 caveat.
 
+### Track U — fewer unknown messages (deferred)
+
+**U1. Reduce the messages that fall back to `patchAll`** (the owner, 2026-10-09: "yes, but on a
+later stage; we start with patch all"). Until then, a message whose write set is unbounded
+(Conduit's `ChangedUrl`) runs `patchAll`, as `browser-direct.md` §4.1 specifies. The later
+work:
+- **Three tiers per message:** known at compile time (exact writes); known cheaply when the
+  message runs (a run-time switch, still precise); only the new value says (a comparison of the
+  smallest replaced part, never the whole page).
+- **Six extensions to `write-sets.md`:**
+  - split a handler on the constructor of a closed-type value `update` computes and branches
+    on (routing: one precise handler per route);
+  - run-time positions as any pure expression of the payload and model, and `Dict`/`Set` key
+    steps;
+  - "replaced at this path" as a write kind, with a compiled patch of that subtree only;
+  - function values, by defunctionalisation (the whole program's closures are known);
+  - summary rows for every `foreign`, static-dispatch evidence specialised before the
+    analysis, and widening for recursion over the model;
+  - caps sized against real apps.
+- **A byte rule:** precision is chosen per message against bytes. The precise handler is
+  emitted only when it pays for itself, otherwise the fallback stays.
+- **The measure:** the residual share of `*` and replaced-subtree messages per app (Conduit,
+  TodoMVC, the corpus), before and after, with bytes.
+
+Specified first, as one amendment to `write-sets.md` and `browser-direct.md`, with the same
+adversarial review loop. Not before S6 (Conduit) has measured `patchAll`'s real cost.
+
 ## 4. Validation that gates the analysis work
 
 **V1. A realistic application before R4 and R5 are specified** (research 61 §7). **Done**:
@@ -196,6 +223,10 @@ one browser batch at a time (a lock file, as on 2026-10-08).
   speed and bytes; "my size/speed rule was about the minimizer step, not for adding runtime;
   adding runtime is a balancing act." The design is `docs/design/browser-direct.md`
   (2026-10-09); this plan's §7 is its build order.
+
+*Taken by the owner, 2026-10-09:*
+- **Track U deferred:** reducing unknown messages (the tier model and six analysis extensions)
+  is planned but starts later; the direct platform begins with `patchAll` as specified.
 
 *Still the owner's:*
 - Anything M2 or B1 finds against `List`'s representation. Report it to the owner; do not act on it.
