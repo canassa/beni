@@ -155,16 +155,17 @@ work:
     knowledge at the call, so its content slot reads every page's view and 69 of 90 keys
     conflict with it. Either inline the frame per branch (each arm gets its own content slot,
     under the size gate), or carry the branch's tag facts across the argument, a tag read
-    through a function call. **Before S6, with the routing split.**
+    through a function call. Recommended before S6, with the routing split (timing to be
+    confirmed by the owner).
 - **A byte rule:** precision is chosen per message against bytes. The precise handler is
   emitted only when it pays for itself, otherwise the fallback stays.
 - **The measure:** the residual share of `*` and replaced-subtree messages per app (Conduit,
   TodoMVC, the corpus), before and after, with bytes.
 
 Specified first, as one amendment to `write-sets.md` and `browser-direct.md`, with the same
-adversarial review loop. Not before S6 (Conduit) has measured `patchAll`'s real cost. *Amended 2026-10-09:* the routing
-split and the page frame are wanted **before** S6, so the S0 gate's dynamic and pair-growth
-fires are re-measured there; the rest of U1 waits as planned.
+adversarial review loop. Not before S6 (Conduit) has measured `patchAll`'s real cost. *Amended 2026-10-09:* the manager **recommends** doing the routing
+split and the page frame before S6, so the S0 gate's dynamic and pair-growth fires are
+re-measured there; the owner has not yet confirmed the timing. The rest of U1 waits as planned.
 
 ## 4. Validation that gates the analysis work
 
