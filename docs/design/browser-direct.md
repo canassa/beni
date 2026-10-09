@@ -1840,3 +1840,24 @@ build fuzz`**. It is an explicit, named opt-out: the list `value_fuzz_in_sweep` 
 `tests/blackbox/corpus_test.zig`, each page with its reason (today `Holes`, `MessageKeys` and
 `VerifyQuiet`), and the gate's fuzz report for such a page begins `value fuzz: in \`zig build fuzz\`
 (budget)`. No budget is raised and no `.budget` file is added.
+
+### *Amended 2026-10-09 (PR #36's review): the verify mode reads the page*
+
+**§8.3's verify mode compares the document, not only the slots.** After every dispatch — and the
+mount is one, `run`'s, so a page no event reaches is checked once mounted — each text hole and
+attribute the check covers is read back from the page and compared with the string its write
+would leave there: a text node's `data` with `` `${v}` ``, an attribute's `getAttribute(name)`
+with `` `${v}` `` (`safeUrl(v)` for a URL, `""` or `null` for a `Bool`, the payload or `null` for
+a `Maybe String`). A write that stored the right slot and left the wrong page is caught, and so
+is a baked value the HTML parser read differently from the text the compiler meant: each baked
+text hole and attribute is read the same way, its node walked to in a development build only (a
+release build walks nothing more). An attribute written as a property, raw markup, a class or
+style list or a `stateful` value is not read back. The review's case was a form feed in a baked
+attribute: unquoted, `data-ff=a<FF>b` is the value `a` and an attribute `b`, which the verify mode
+now stops at the mount (`browser/direct/BakedQuoting`, in happy-dom and in Chrome, before the fix
+to `write-sets.md` §9.1's quoting rule below).
+
+With the page read back, three more pages go over the budget with the value fuzz on a fresh run:
+`BakedQuoting` (4 315 million instructions), `BakedValues` (4 339) and `UnitHoles` (4 331). By
+the owner's rule above they join `value_fuzz_in_sweep`: events in the gates, values in `zig build
+fuzz`, which passes on every `browser/direct/` page.

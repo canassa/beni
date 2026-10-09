@@ -1,0 +1,84 @@
+-- A baked attribute value is quoted wherever HTML's unquoted-attribute-
+-- value state would not read it whole (browser-direct.md §5.1, write-sets.md
+-- §9.1 as amended 2026-10-09): one attribute to each character that state
+-- treats specially, so each alone must make the value quoted. Form feed
+-- first: a bare `data-ff=a<FF>b` is `a` and an attribute `b`, which the
+-- template once held (PR #36's review). The development verify mode reads
+-- every one back from the page after the mount, and the page fuzzer sends
+-- values on both platforms.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+type alias Model =
+    n : Int
+    ff : String
+    tabbed : String
+    lf : String
+    cr : String
+    sp : String
+    gt : String
+    eq : String
+    bt : String
+    sq : String
+    dq : String
+    lt : String
+    slash : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="inc" onClick={Inc}>{model.n}</button>
+        <p
+            id="ws"
+            data-ff={model.ff}
+            data-tab={model.tabbed}
+            data-lf={model.lf}
+            data-cr={model.cr}
+            data-sp={model.sp}
+            data-gt={model.gt}
+            data-eq={model.eq}
+            data-bt={model.bt}
+            data-sq={model.sq}
+            data-dq={model.dq}
+            data-lt={model.lt}
+            data-slash={model.slash}
+        >
+            ws
+        </p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            { n = 0
+            , ff = "a\u{000C}b"
+            , tabbed = "a\tb"
+            , lf = "a\nb"
+            , cr = "a\rb"
+            , sp = "a b"
+            , gt = "a>b"
+            , eq = "a=b"
+            , bt = "a`b"
+            , sq = "a'b"
+            , dq = "a\"b"
+            , lt = "a<b"
+            , slash = "a/"
+            }
+        , update = update
+        , view = view
+        }

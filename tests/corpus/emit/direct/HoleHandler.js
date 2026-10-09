@@ -7,51 +7,59 @@ const HoleHandler$main = Tea$sandbox(($root$1, $t$2) => {
   $t$2.innerHTML = "<main><h1>Holes</h1><p> </p><button>tick</button><p> ";
   const $r$5 = $t$2.content;
   const $w$6 = $r$5.firstChild;
-  const $w$7 = $w$6.firstChild.nextSibling;
+  const $w$7 = $w$6.firstChild;
   const $w$8 = $w$7.firstChild;
   const $w$9 = $w$7.nextSibling;
-  const $w$10 = $w$9.nextSibling;
-  const $w$11 = $w$10.firstChild;
-  let $s$12 = Direct$unset;
-  let $s$13 = Direct$unset;
-  const $g$14 = () => {
-    const $t$15 = String$fromInt($model$4.tick);
-    if ($t$15 !== $s$13) {
-      $w$11.data = $t$15;
-      $s$13 = $t$15;
+  const $w$10 = $w$9.firstChild;
+  const $w$11 = $w$9.nextSibling;
+  const $w$12 = $w$11.nextSibling;
+  const $w$13 = $w$12.firstChild;
+  let $s$14 = Direct$unset;
+  let $s$15 = Direct$unset;
+  const $g$16 = () => {
+    const $t$17 = String$fromInt($model$4.tick);
+    if ($t$17 !== $s$15) {
+      $w$13.data = $t$17;
+      $s$15 = $t$17;
     }
   };
-  const $hany$17 = ($p$16) => {
+  const $hany$19 = ($p$18) => {
     $model$4 = { ...$model$4, tick: $model$4.tick + 1 };
-    $g$14();
+    $g$16();
   };
   {
-    const $l$19 = ($e$18) => {
-      $hany$17("Tick");
+    const $l$21 = ($e$20) => {
+      $hany$19("Tick");
     };
-    $w$9.addEventListener("click", ($e$20) => {
-      Direct$send($l$19, $e$20);
+    $w$11.addEventListener("click", ($e$22) => {
+      Direct$send($l$21, $e$22);
     });
   }
   {
-    const $t$21 = String$fromInt($model$4.fixed);
-    $w$8.data = $t$21;
-    $s$12 = $t$21;
+    const $t$23 = String$fromInt($model$4.fixed);
+    $w$10.data = $t$23;
+    $s$14 = $t$23;
   }
-  $g$14();
+  $g$16();
   $root$1.append($r$5);
   Direct$verify(() => {
-    const $t$22 = $model$4.title;
-    const $t$23 = String$fromInt($model$4.fixed);
-    const $t$24 = String$fromInt($model$4.tick);
-    if (!Direct$same($t$23, $s$12)) {
-      Direct$wrong("the text hole at HoleHandler.beni:31:12", $s$12, $t$23);
+    const $t$24 = $model$4.title;
+    const $t$25 = String$fromInt($model$4.fixed);
+    const $t$26 = String$fromInt($model$4.tick);
+    if (!Direct$same($t$25, $s$14)) {
+      Direct$wrong("the text hole at HoleHandler.beni:31:12", $s$14, $t$25);
     }
-    if (!Direct$same($t$24, $s$13)) {
-      Direct$wrong("the text hole at HoleHandler.beni:33:12", $s$13, $t$24);
+    if ($w$10.data !== `${$t$25}`) {
+      Direct$wrong("the text hole at HoleHandler.beni:31:12 in the document", $w$10.data, `${$t$25}`);
     }
-    if (`${$t$22}` !== "Holes") {
-      Direct$wrong("the text HoleHandler.beni:30:13 baked into the page", "Holes", `${$t$22}`);
+    if (!Direct$same($t$26, $s$15)) {
+      Direct$wrong("the text hole at HoleHandler.beni:33:12", $s$15, $t$26);
+    }
+    if ($w$13.data !== `${$t$26}`) {
+      Direct$wrong("the text hole at HoleHandler.beni:33:12 in the document", $w$13.data, `${$t$26}`);
+    }
+    if ($w$8.data !== `${$t$24}`) {
+      Direct$wrong("the text HoleHandler.beni:30:13 baked into the page", $w$8.data, `${$t$24}`);
     }
   });
 });
