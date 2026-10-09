@@ -486,6 +486,8 @@ const Emitter = struct {
     /// What a program lowering reads of the write-set pass
     /// (`Lower.Direct`), when the build's lowering compiles programs whole.
     direct: ?Lower.Direct = null,
+    /// `--fuzz --release`: the message types JavaScript sees (`fuzzSeeds`).
+    fuzz_seeds: []const Fields.Seed = &.{},
     /// The fields' short spellings, assigned after the optimiser.
     field_table: ?Fields.Table = null,
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
@@ -1959,18 +1961,62 @@ const Emitter = struct {
         return @fromBackingInt(@intCast(0));
     }
 
-    /// `--fuzz` (`browser-direct.md` §8.3): every constructor of the
-    /// application's own modules is reached, so no `case` arm is dropped
-    /// for a constructor nothing builds (`backend.md` §9) — a fuzzer sends
-    /// messages the program itself never makes, and both platforms must
-    /// run their arms.
+    /// `--fuzz --release`: each program's message type, written as the
+    /// annotation of the `update` it names (`Fields.Seed`), for the boundary
+    /// to keep; false when a program's `update` has none — a lambda — and
+    /// the build must then keep every name.
+    fn fuzzSeeds(e: *Emitter) !bool {
+        const n = e.graph().count();
+        const a = e.scratch;
+        const birs = try a.alloc(*const Bir, n);
+        const names = try a.alloc([]const u8, n);
+        const packages = try a.alloc(SourceStore.Package, n);
+        const targets = try a.alloc(bool, n);
+        for (0..n) |i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            birs[i] = e.bir(m);
+            names[i] = e.session.store.moduleName(e.graph().moduleFile(m));
+            packages[i] = e.graph().modulePackage(m);
+            targets[i] = false;
+        }
+        const w = try Writes.init(.{
+            .gpa = e.gpa,
+            .graph = e.graph(),
+            .birs = birs,
+            .provenance = e.session.resolution.provenance,
+            .dispatch = e.session.checked.dispatch,
+            .interner = &e.session.interner,
+            .module_names = names,
+            .packages = packages,
+            .targets = targets,
+        });
+        defer w.deinit();
+        var seeds: std.ArrayList(Fields.Seed) = .empty;
+        for (try w.runCalls()) |call| {
+            const prog = call.program;
+            if (prog.update_decl == Writes.none) return false;
+            const b = e.bir(@fromBackingInt(@intCast(prog.update_module)));
+            const annotation = b.decls[prog.update_decl].annotation.unwrap() orelse return false;
+            if (b.instTag(annotation) != .type_fn) return false;
+            const params = b.extraSlice(b.subRange(@fromBackingInt(@intCast(b.instData(annotation).lhs))), Bir.Inst.Index);
+            if (params.len == 0) return false;
+            try seeds.append(a, .{ .module = @fromBackingInt(@intCast(prog.update_module)), .inst = params[0] });
+        }
+        e.fuzz_seeds = seeds.items;
+        return true;
+    }
+
+    /// `--fuzz` (`browser-direct.md` §8.3, the contract's item 1): every
+    /// constructor of every module is reached, so no `case` arm is dropped
+    /// for a constructor nothing builds (`backend.md` §9): a fuzzer sends
+    /// messages the program itself never makes, of its message type and of
+    /// every type the payloads name, and both platforms must run the arms.
     fn withFuzzRoots(e: *Emitter, roots: []const Reach.Node) ![]const Reach.Node {
         if (!e.options.fuzz) return roots;
         var out: std.ArrayList(Reach.Node) = .empty;
         try out.appendSlice(e.scratch, roots);
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
-            if (e.graph().modulePackage(m) != .app) continue;
             for (0..e.bir(m).ctors.len) |c| try out.append(e.scratch, .{ .module = m, .kind = .ctor, .index = @intCast(c) });
         }
         return out.items;
@@ -2226,6 +2272,12 @@ const Emitter = struct {
     fn closeBoundary(e: *Emitter) !void {
         e.boundary = null;
         if (!e.options.release or e.options.library or e.reachesDebug()) return;
+        // `--fuzz`: every program's message type, and what its payloads
+        // name, is a type JavaScript sees (`browser-direct.md` §8.3, the
+        // contract's item 2) — a message a fuzzer builds in the development
+        // representation is one this build reads. A program whose message
+        // type has no written annotation keeps every name.
+        if (e.options.fuzz and !try e.fuzzSeeds()) return;
         const count = e.graph().count();
         const birs = try e.scratch.alloc(*const Bir, count);
         const tables = try e.scratch.alloc(*const Dispatch, count);
@@ -2242,6 +2294,7 @@ const Emitter = struct {
             .live = &e.live,
             .types = &e.session.checked.types,
             .interner = &e.session.interner,
+            .seeds = e.fuzz_seeds,
         });
     }
 
@@ -3269,6 +3322,7 @@ const Emitter = struct {
             .types = &e.session.checked.types,
             .interner = &e.session.interner,
             .gone = gone,
+            .seeds = e.fuzz_seeds,
         }) orelse return;
         boundary.pinned = refined.pinned;
     }

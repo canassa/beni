@@ -85,6 +85,9 @@ pub const lowering: m.Lowering = .{
         // changed, put back when the render ends (§15.3, *Controlled
         // inputs*).
         .{ .name = "edited", .arity = 1 },
+        // `--fuzz` only: the page fuzzer's guarded send, installed where a
+        // root is evaluated (`Rt.fuzzInstall`).
+        .{ .name = "fuzzInstall", .arity = 1 },
     },
     .module = module,
     .root = root,
@@ -103,8 +106,11 @@ fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {
 fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr {
     const r = tree.root(index);
     var g: Gen = .{ .cx = cx, .tree = tree };
-    if (cx.grouped(index)) return g.groupedBlock(r, index);
-    return g.block(&.{r.node}, r.site.inst, null);
+    const block_ = if (cx.grouped(index)) try g.groupedBlock(r, index) else try g.block(&.{r.node}, r.site.inst, null);
+    // `--fuzz` (browser-direct.md §8.3): the page fuzzer's guarded send,
+    // made sure of wherever markup is evaluated; no other build has it.
+    if (cx.build.fuzz) return g.rt("fuzzInstall", &.{block_});
+    return block_;
 }
 
 /// The template of markup that writes nothing once it is cloned — no hole,

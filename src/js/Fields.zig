@@ -67,6 +67,9 @@ pub const Boundary = struct {
     }
 };
 
+/// A type written at `inst` of module `module`.
+pub const Seed = struct { module: Graph.Index, inst: Bir.Inst.Index };
+
 pub const Input = struct {
     arena: Allocator,
     graph: *const Graph,
@@ -81,6 +84,9 @@ pub const Input = struct {
     /// casts JavaScript no longer sees (`backend.md` §9, *Field names are
     /// decided after specialisation*). Empty before specialisation.
     gone: []const std.DynamicBitSetUnmanaged = &.{},
+    /// Written types JavaScript sees besides the build's own: under
+    /// `--fuzz`, each program's message type (`browser-direct.md` §8.3).
+    seeds: []const Seed = &.{},
 
     fn alive(in: Input, m: Graph.Index, decl: usize) bool {
         if (m.int() >= in.gone.len) return true;
@@ -118,6 +124,7 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
             }
         }
     }
+    for (in.seeds) |s| try walk.typeAt(s.module, in.birs[s.module.int()], s.inst);
     // The bodies of what was reached, until nothing new is.
     while (walk.queue.pop()) |id| {
         const e = in.types.entries[id.int()];

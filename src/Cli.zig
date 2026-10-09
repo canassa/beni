@@ -297,12 +297,12 @@ pub const Build = struct {
     /// asserts — and no user has a reason to reach for it.
     schema_library: bool = false,
     /// `--fuzz` — **hidden**, for `--allow-debug`'s reason: a test-only
-    /// build for differential fuzzing (`browser-direct.md` §8.3, as
-    /// amended for S1). Under a lowering that compiles programs whole, each
-    /// mounted program's node holds, as `$$root`, a function that applies
-    /// a message value to it — what `browser-tea`'s runtime always does —
-    /// so a harness can send the same messages to both platforms. A build
-    /// for any other lowering is unchanged.
+    /// build for differential fuzzing (`browser-direct.md` §8.3's contract),
+    /// on every platform and with `--release`: every constructor is kept
+    /// built, a program's message type keeps its development
+    /// representation, and under a lowering that compiles programs whole
+    /// each mount's dispatcher is reachable as
+    /// `globalThis.__beniFuzz.send(program, msg)`.
     fuzz: bool = false,
     /// `--watch` (`frontend.md` §10.3): build, then rebuild on every change
     /// to the inputs until SIGINT.
