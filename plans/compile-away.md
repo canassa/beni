@@ -149,14 +149,22 @@ work:
   - function values, by defunctionalisation (the whole program's closures are known);
   - summary rows for every `foreign`, static-dispatch evidence specialised before the
     analysis, and widening for recursion over the model;
-  - caps sized against real apps.
+  - caps sized against real apps;
+  - *(added 2026-10-09, from the S0 gate after tag reads)* the **page frame**: a helper that
+    takes a page's content as an argument (Conduit's `viewPage`/`Page.frame`) loses the branch
+    knowledge at the call, so its content slot reads every page's view and 69 of 90 keys
+    conflict with it. Either inline the frame per branch (each arm gets its own content slot,
+    under the size gate), or carry the branch's tag facts across the argument, a tag read
+    through a function call. **Before S6, with the routing split.**
 - **A byte rule:** precision is chosen per message against bytes. The precise handler is
   emitted only when it pays for itself, otherwise the fallback stays.
 - **The measure:** the residual share of `*` and replaced-subtree messages per app (Conduit,
   TodoMVC, the corpus), before and after, with bytes.
 
 Specified first, as one amendment to `write-sets.md` and `browser-direct.md`, with the same
-adversarial review loop. Not before S6 (Conduit) has measured `patchAll`'s real cost.
+adversarial review loop. Not before S6 (Conduit) has measured `patchAll`'s real cost. *Amended 2026-10-09:* the routing
+split and the page frame are wanted **before** S6, so the S0 gate's dynamic and pair-growth
+fires are re-measured there; the rest of U1 waits as planned.
 
 ## 4. Validation that gates the analysis work
 
