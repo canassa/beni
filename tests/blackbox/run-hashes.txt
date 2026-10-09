@@ -127,5 +127,7 @@ page_fuzz_test.test.a missed attribute write is caught at the message that chang
 page_fuzz_test.test.a missed title write is caught though the body is the same #0 94f1dfe8f0ef9ed1039530a3e50b4fe27ea8118eba3f1cb782d41aae38cc13e5
 page_fuzz_test.test.a missed write of a controlled input's value is caught #0 2125597a2c076b44ef69cd3347063133006ffbe27f0628fdcfac4236181164f2
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 1898675dae0f97ae255b47415d4ca9b2ed0debdb73b91c3d6514d827c13871b7
+page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 056d58949e658c6859f5be3c7e43d7e60df137a6cb0a7c0b5046f2e6ced634ec
+page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 cbb1ff9c4a5e3e5b6532fb346f01e83742fa4da26af4fdae4d3a22e6420b2646
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 92cb8a3eddf98ac0507062e587709f6f51bf315c5a258b8f33b7f7a27912817f
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb

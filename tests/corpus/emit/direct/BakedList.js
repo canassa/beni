@@ -25,6 +25,7 @@ const BakedList$main = Tea$sandbox(($root$1, $t$2) => {
     const $w$26 = $w$25.firstChild;
     const $r$27 = { e: $e$22, it: $it$19, l: $L$20, w2: $w$24, w3: $w$25, w4: $w$26 };
     $e$22.$r = $r$27;
+    $e$22.$v = $L$20;
     $w$25.$click = $l$18;
     return $r$27;
   };
@@ -32,6 +33,7 @@ const BakedList$main = Tea$sandbox(($root$1, $t$2) => {
     const $e$32 = $T$7.cloneNode(true);
     const $w$33 = $e$32.firstChild;
     const $r$34 = { e: $e$32, it: $it$29, w1: $w$33, s0: Direct$unset };
+    $e$32.$v = $L$30;
     {
       const $it$35 = $r$34.it;
       const $t$36 = String$fromInt($it$35);

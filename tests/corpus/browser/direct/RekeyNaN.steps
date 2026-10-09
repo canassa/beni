@@ -1,0 +1,7 @@
+# Mark both rows' nodes.
+input ul>li:nth-child(1)>input "kept"
+input ul>li:nth-child(2)>input "gone"
+# Key NaN written with key NaN: the same row, its text kept.
+click #relabel
+# Key 2 written with key 3: another row, its text gone.
+click #rekey

@@ -1,0 +1,54 @@
+-- A row whose key may change is made again only where its key did
+-- (browser-direct.md §6, as amended for S2: rekey), and keys are compared as
+-- the keyed reconcile's key map compares them — `NaN` equal to `NaN`. A
+-- `Float` key of `NaN` written again with the same key keeps its row: the
+-- text typed into its input stays. A key that changes makes the row again.
+-- (A compound key cannot reach this: a tuple or record key is refused,
+-- `check/bad/markup/KeyNotPrimitive`.)
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Relabel
+    | Rekey
+
+
+type alias Row =
+    k : Float
+    label : String
+
+
+nan : Float
+nan = 0.0 / 0.0
+
+
+update : Msg, List Row → List Row
+update msg rows =
+    case msg of
+        Relabel →
+            List.set rows 0 { k = nan, label = "same key" }
+
+        Rekey →
+            List.set rows 1 { k = 3.0, label = "new key" }
+
+
+view : List Row → Html Msg
+view rows =
+    <main>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <button id="rekey" onClick={Rekey}>rekey</button>
+        <ul>
+            <For each={rows} keyed={.k}>{λrow → <li><input />{row.label}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = [ { k = nan, label = "nan" }, { k = 2.0, label = "two" } ]
+        , update = update
+        , view = view
+        }

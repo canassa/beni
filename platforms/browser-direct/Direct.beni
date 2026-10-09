@@ -619,7 +619,7 @@ rekey list xs j =
         key = Js.get list "k"
         if Js.same it old then
             Js.null
-        else if Js.same (Js.apply key [ it ]) (Js.apply key [ old ]) then
+        else if sameKey (Js.apply key [ it ]) (Js.apply key [ old ]) then
             Js.set r "it" it
             r
         else
@@ -629,6 +629,13 @@ rekey list xs j =
             Js.null
     else
         Js.null
+
+
+-- Two keys are one when a key map would hold them as one (SameValueZero):
+-- `===`, and `NaN` equal to `NaN`. A key is a primitive (`key_not_primitive`
+-- refuses any other), so this is the reconcile's own comparison.
+sameKey : V, V → Bool
+sameKey a b = Js.same a b || (not (Js.same a a) && not (Js.same b b))
 
 
 --| `(L, xs, f)`: every row, its item set to the list's, handed to `f`: the
@@ -804,9 +811,9 @@ verify check =
 
 --| `(a, b)`: whether a value computed again is the one a slot holds — by
 --| structure, never by identity (§8.3, as amended): a scalar by `===`, `NaN`
---| equal to itself; a list by its length and its elements, and past 1 000
---| elements by its length and its first and last 100; a record, a tuple or
---| a constructor field by field; a function not at all.
+--| equal to itself; a list by its length and every element; a record, a
+--| tuple or a constructor field by field; a function not at all, since a
+--| closure made again is a new object and two are equal only by identity.
 pub same : V, V → Bool
 same a b =
     if
@@ -848,20 +855,19 @@ sameElements xs ys =
     m : Int
     m = Js.to (Js.get ys "length")
 
-    if n ≠ m then
-        False
-    else if n > 1000 then
-        sameRange xs ys 0 100 && sameRange xs ys (n - 100) n
-    else
-        sameRange xs ys 0 n
+    n == m && sameRange xs ys 0 n
 
 
+-- Elements `i` to `end - 1`, one after another: a loop, however long the
+-- list (a tail call, `backend.md` §8).
 sameRange : V, V, Int, Int → Bool
 sameRange xs ys i end =
     if i ≥ end then
         True
+    else if not (same (Js.at xs i) (Js.at ys i)) then
+        False
     else
-        same (Js.at xs i) (Js.at ys i) && sameRange xs ys (i + 1) end
+        sameRange xs ys (i + 1) end
 
 
 sameFields : V, V, V, Int, Int → Bool
@@ -871,11 +877,18 @@ sameFields keys a b i n =
     else
         k : String
         k = Js.to (Js.at keys i)
-        Js.to (Js.call (Js.global "Object") "hasOwn" [ b, Js.from k ])
-            && same
-                (Js.call (Js.global "Reflect") "get" [ a, Js.from k ])
-                (Js.call (Js.global "Reflect") "get" [ b, Js.from k ])
-            && sameFields keys a b (i + 1) n
+
+        if
+            not (Js.to (Js.call (Js.global "Object") "hasOwn" [ b, Js.from k ]))
+                || not
+                    (same
+                        (Js.call (Js.global "Reflect") "get" [ a, Js.from k ])
+                        (Js.call (Js.global "Reflect") "get" [ b, Js.from k ])
+                    )
+        then
+            False
+        else
+            sameFields keys a b (i + 1) n
 
 
 --| `(what, shown, model)`: the verify mode found the page showing what the
@@ -923,6 +936,29 @@ verifyList list xs check what structural =
         wrong (Js.from "${whatText}'s number of rows") (Js.from n) (Js.from m)
     else
         verifyRows list items insts check whatText (Js.to structural) 0 n
+        -- Every row this list made that the page still holds is one of its
+        -- rows (a development build marks each, `$v`): a row left behind,
+        -- before the first, after the last or in a list with none, is a
+        -- missed removal.
+        held = heldRows list (Js.get (parentOf list) "firstChild") 0
+
+        if held ≠ n then
+            wrong
+                (Js.from "the count of rows of ${whatText} in the page")
+                (Js.from held)
+                (Js.from n)
+
+
+-- How many of the nodes from `node` on are rows `list` made.
+heldRows : V, V, Int → Int
+heldRows list node k =
+    if Js.isNull node then
+        k
+    else
+        heldRows
+            list
+            (Js.get node "nextSibling")
+            (if Js.same (Js.get node "$v") list then k + 1 else k)
 
 
 verifyRows : V, V, V, V, String, Bool, Int, Int → ⊤

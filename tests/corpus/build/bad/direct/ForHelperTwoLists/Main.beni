@@ -1,0 +1,42 @@
+-- K3 (browser-direct.md §6, as amended for S2: a constant list baked into
+-- the page) is decided per `For`, and a `For` written once and used on two
+-- lists — one constant, one written — would be one site with two answers.
+-- Slice S2 cannot meet that site: a component — a function returning
+-- markup that the `view` calls — is markup as a value, refused at the
+-- function and at each hole that shows it, naming S4, so every `For` S2
+-- compiles has one `each`. The fixture keeps the shape the slice that
+-- compiles components must decide: `rows` on the constant `fixed`,
+-- bakeable, and on `items`, which `Add` writes.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    fixed : List Int
+    items : List Int
+
+
+rows : List Int → Html Msg
+rows xs = <ul><For each={xs} keyed={λk → k}>{λk → <li>{String.fromInt k}</li>}</For></ul>
+
+
+update : Msg, Model → Model
+update Add m = { m | items = List.push m.items (List.length m.items + 10) }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button onClick={Add}>add</button>
+        {rows m.fixed}
+        {rows m.items}
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { fixed = [ 1, 2 ], items = [] }, update = update, view = view }

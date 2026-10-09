@@ -1,3 +1,0 @@
-# Mark the third row's node (key 2, rank 2), then remove the second row.
-input ul>li:nth-child(3)>input "marked"
-click #remove

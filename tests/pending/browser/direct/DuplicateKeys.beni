@@ -1,0 +1,109 @@
+-- CK-221: a keyed `For` whose key repeats matches rows by rank, under every script.
+-- Rows that share a key are matched by their rank among the rows with that
+-- key (language.md §11.9), and `browser-tea`'s keyed reconcile does; slice
+-- S2's exact scripts on `browser-direct` move, add and remove the node at
+-- the edit's index instead (browser-direct.md §6, as amended for S2). The
+-- inputs are not controlled, so typed text marks a node; where a key
+-- repeats, the marked node shows another row's item on one platform and
+-- its own on the other — a user-visible wrong answer, an S3 blocker. One
+-- list per script, each with a key that repeats and a marked node:
+-- `removeAt`, `insert`, `prepend` (the list's own `[ x, …xs ]`), `swap`
+-- and a rekey (`List.set` with another key). The expected transcript is
+-- `browser-tea`'s, the oracle (browser-direct.md §12.3).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Remove
+    | Insert
+    | Prepend
+    | Swap
+    | Rekey
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    removed : List Row
+    inserted : List Row
+    prepended : List Row
+    swapped : List Row
+    rekeyed : List Row
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Remove →
+            { model | removed = List.removeAt model.removed 1 }
+
+        Insert →
+            { model | inserted = List.insertAt model.inserted 1 { id = 2, label = "new" } }
+
+        Prepend →
+            { model | prepended = [ { id = 2, label = "new" }, …model.prepended ] }
+
+        Swap →
+            { model | swapped = List.swap model.swapped 0 2 }
+
+        Rekey →
+            { model | rekeyed = List.set model.rekeyed 0 { id = 3, label = "three" } }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="remove" onClick={Remove}>remove</button>
+        <button id="insert" onClick={Insert}>insert</button>
+        <button id="prepend" onClick={Prepend}>prepend</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="rekey" onClick={Rekey}>rekey</button>
+        <ul id="removed">
+            <For each={model.removed} keyed={.id}>{λrow → <li><input />{row.label}</li>}</For>
+        </ul>
+        <ul id="inserted">
+            <For each={model.inserted} keyed={.id}>{λrow → <li><input />{row.label}</li>}</For>
+        </ul>
+        <ul id="prepended">
+            <For each={model.prepended} keyed={.id}>{λrow → <li><input />{row.label}</li>}</For>
+        </ul>
+        <ul id="swapped">
+            <For each={model.swapped} keyed={.id}>{λrow → <li><input />{row.label}</li>}</For>
+        </ul>
+        <ul id="rekeyed">
+            <For each={model.rekeyed} keyed={.id}>{λrow → <li><input />{row.label}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            { removed =
+                [ { id = 1, label = "one" }
+                , { id = 2, label = "two a" }
+                , { id = 2, label = "two b" }
+                , { id = 2, label = "two c" }
+                ]
+            , inserted =
+                [ { id = 1, label = "one" }
+                , { id = 2, label = "two a" }
+                , { id = 2, label = "two b" }
+                ]
+            , prepended = [ { id = 2, label = "two a" }, { id = 2, label = "two b" } ]
+            , swapped =
+                [ { id = 2, label = "two a" }
+                , { id = 1, label = "one" }
+                , { id = 2, label = "two b" }
+                ]
+            , rekeyed = [ { id = 2, label = "two a" }, { id = 2, label = "two b" } ]
+            }
+        , update = update
+        , view = view
+        }

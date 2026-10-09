@@ -1,0 +1,61 @@
+-- A list's delegated listener collects every handler on the event's path
+-- into one buffer before it runs any (browser-direct.md §4.2, as amended
+-- for S2), so a nested dispatch of the same event on the same list while
+-- the buffer runs would cut it short. In S2 nothing a handler runs can make
+-- one: the handler runs inside `send`, which queues any message sent while
+-- one runs (§4.3), and the writes after it — text, attributes, rows put,
+-- moved and removed — fire none of the events `html` delegates (`click`,
+-- `dblclick`, `input`, `change`, `keydown`, `keyup`, `mousedown`, `mouseup`,
+-- `submit`; a default action, such as an implicit submission, runs after
+-- the dispatch). The nearest a write comes is removing a focused row, whose
+-- input Chrome blurs as it goes: here a click on a row's button removes
+-- that row, its input focused, and both the button's handler and the row's
+-- own run, in order. (Row k stands at index k - 1, which the button sends:
+-- one removal is all the steps make.)
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Remove Int
+    | Clicked Int
+
+
+type alias Model =
+    rows : List Int
+    log : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Remove j →
+            { model
+                | rows = List.removeAt model.rows j
+                , log = "${model.log} remove ${String.fromInt j}"
+            }
+
+        Clicked k →
+            { model | log = "${model.log} row ${String.fromInt k}" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="log">{model.log}</p>
+        <ul>
+            <For each={model.rows} keyed={λk → k}>
+                {λk →
+                    <li onClick={Clicked k}>
+                        <input id="in${String.fromInt k}" />
+                        <button id="x${String.fromInt k}" onClick={Remove (k - 1)}>x</button>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { rows = [ 1, 2, 3 ], log = "" }, update = update, view = view }

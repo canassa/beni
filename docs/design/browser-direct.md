@@ -1997,3 +1997,71 @@ bar came from P3's 0.98 on another day. **The owner moved it the same way**: unt
 must stay within 1.15× vanilla and no slower than P3; S7 (in-place updates of a list nobody
 else holds, §7.4) owns ≤ 1.0×, and S7's kill criterion includes the swap from here on. The
 fixed cost per message is to be profiled (record spread against list copy) before S7 is designed.
+
+### *Amended 2026-10-10 (PR #41's review of S2)*
+
+- **A rekey compares keys as a key map does** (§6.2's `set κ`): `===`, and `NaN` equal to `NaN`
+  (SameValueZero), the comparison `browser-tea`'s keyed reconcile makes. `===` alone remade the
+  row of a `Float` key that is `NaN` on every write to it, losing its focus and the text of its
+  inputs. A compound key cannot reach this: a key is a type whose `==` is identity
+  (`key_not_primitive`, `checker-v2.md` §25.4), so the comparison is never structural. Pinned by
+  `browser/direct/RekeyNaN`.
+- **Duplicate keys are an S3 blocker** (CK-221). The open defect of the as-built note above is a
+  wrong answer the user sees — a row's node, with its focus and the text of its inputs, on
+  another row's item — so it blocks S3's acceptance and is not a note. It is red in
+  `tests/pending/browser/direct/DuplicateKeys`, one list per script (`removeAt`, `insert`,
+  `prepend`, `swap`, a rekey), its expected transcript `browser-tea`'s; no golden in the gates
+  pins `browser-direct`'s wrong output. `browser/direct/KeyedInPlace`, which appended a second
+  key 2 as `browser/dom/KeyedInPlace` does, appends a key no row has; the repeated key is
+  CK-221's fixture's.
+- **The verify mode compares every element** of a list it compares structurally — a derived
+  list's row item that is itself a list, a slot holding a list. The cap of the 2026-10-09 text
+  (§8.3: past 1 000 elements, the first and last 100) is withdrawn: a development-only cost, and
+  the cap let a stale element between them pass. A row's own item was always compared row by
+  row; it is a value inside a row that the cap reached. The comparison is a loop, so its length
+  costs no stack. A function is still not compared: a closure made again is a new object, and
+  two closures are equal only by identity.
+- **The verify mode finds a row left behind.** A development build marks each row's root with
+  its list (`$v`, written by `make`; a release build marks nothing), and after the rows are
+  checked the verify mode counts the nodes of the list's parent so marked: they must be exactly
+  its rows. A row a script failed to remove — before the first row, after the last, or in a list
+  with none — is found; the order checks alone could not see one before a single row.
+- Both are proved on broken builds (`tests/blackbox/page_fuzz_test.zig`, *The verify mode, on a
+  broken build*): a positional pass that skips one row, whose item is a list of 1 500 that
+  differs at element 750, and a `removeAt` that leaves the row's node. Each stops the page at the
+  step that breaks it, naming the row or the count; with the cap restored, or the count taken
+  out, the same broken builds run to the end in silence (research 67 §9).
+- **The value fuzz is a case of its own.** A `browser/direct/` page is two cases of the corpus:
+  the page case builds the four pages and runs them, and the *value-fuzz* case builds the two
+  `--fuzz` builds, dumps the message types and fuzzes them, messages as values and bursts
+  included, with its record in `<page>.fuzz-run-hash`. Each is budgeted alone, so **every page's
+  value fuzz runs in the gates** and `value_fuzz_in_sweep`, with the owner's opt-out it carried,
+  is withdrawn: one test per branch, not an exemption (CLAUDE.md, *Building*). The heaviest case
+  is 3.8 billion instructions of the 4.3 (research 67 §9). `browser/direct/ListValues` is the
+  smallest page that reaches every shape script with an index a payload (`insert`, `removeAt`,
+  `swap`, `prepend`, `append`, `set`), its keys always fresh.
+- **What a build costs** (research 67 §9): a page's seven compiler processes do not check
+  `Direct` again — a build installs the checked core and platforms from the binary in about 1
+  ms of `check` — and spend their instructions loading what is embedded (about 165 million a
+  process), emitting the runtime module twice (emit's two passes), and, for `browser-tea`'s
+  release build, specialising. The message types dump is the one process that checks everything
+  from source, about 850 million instructions: `dump` runs without `informational`, which is a
+  term of every module's key, so no embedded entry matches. With the bit set the same dump is 165
+  million (measured, then reverted: `dump` stays silent about informational warnings on
+  purpose). That is the wall — a defect of the dump's keys, not of the page — and its fix (the
+  bit out of the keys of modules it cannot change) is queued, not taken here.
+- **No nested dispatch of a delegated event in S2.** A list's buffer is one per listener; a
+  dispatch of the same event on the same list while `fire` runs would reset it. Nothing in S2 can
+  make one: a body runs inside `send`, which queues any message sent while one runs (§4.3), and
+  the writes after it fire none of the events `html` delegates; a default action runs after the
+  dispatch. Pinned by `browser/direct/RemoveFocusedRow`. **S5 must keep it so**: an effect that
+  dispatches an event synchronously (`click()`, `requestSubmit()`) inside a running `fire` gives
+  each event a buffer of its own.
+- **A blur a row handler's write fires runs before the next handler of the same event** (Q1's
+  corner, found in Chrome): a click on a row's button that removes the row, its input focused,
+  runs the button's message, then the blur's, then the row's — `browser-tea` runs the blur's
+  last, at its render. happy-dom fires no blur on a removal, so the gates cannot see it;
+  `test-browser` can. It changes what a program observes, so it is the owner's, with Q1.
+- **K3 and a `For` used on two lists** cannot meet in S2: a component that holds a `For` is markup
+  as a value, refused naming S4 (`build/bad/direct/ForHelperTwoLists`), so each `For` S2
+  compiles has one `each`. The slice that compiles components decides baking per use.

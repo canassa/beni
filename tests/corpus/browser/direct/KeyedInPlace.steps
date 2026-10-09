@@ -7,10 +7,10 @@ click #mark
 # Row 2's class changes; its node stays.
 click #toggle
 click #toggle
-# A second key 2 renders twice; removed, the rest stay where they were.
-click #duplicate
+# A row appended renders; removed, the rest stay where they were.
+click #append
 click #relabel
-click #dedupe
+click #remove
 click #mark
 # Moved rows take their nodes with them.
 click #swap

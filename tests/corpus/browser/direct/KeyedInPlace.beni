@@ -4,13 +4,15 @@
 -- node is where. A new label and a new mark patch rows in place, keeping
 -- their nodes — the mark through a visit of every row, since each row reads
 -- it; a row whose `done` changes keeps its node and changes its class; a
--- duplicate key appended renders twice, and removed again leaves the rest
--- in place; a swap moves nodes with their rows. Emptied, a list that is all
--- its parent holds leaves the parent empty, and one between two other
--- children leaves them where they were. The original's `if` in a row is a
--- branch (slice S4), its `List.map` the identity walk and its rotation the
--- reconciler (slice S3): here they are a class, `List.update` and
--- `List.swap`.
+-- row appended renders, and removed again leaves the rest in place; a swap
+-- moves nodes with their rows. Emptied, a list that is all its parent holds
+-- leaves the parent empty, and one between two other children leaves them
+-- where they were. The original's `if` in a row is a branch (slice S4),
+-- its `List.map` the identity walk and its rotation the reconciler (slice
+-- S3): here they are a class, `List.update` and `List.swap`. The original
+-- appends a second key 2; a key that repeats is matched by rank, which S2's
+-- scripts do not do — CK-221, red in `tests/pending/browser/direct/`, S3's
+-- — so the row appended here takes a key no row has.
 import Browser
 import Html exposing (Html)
 import Tea
@@ -20,8 +22,8 @@ type Msg
     = Relabel
     | Mark
     | Toggle
-    | Duplicate
-    | Dedupe
+    | Append
+    | Remove
     | Swap
     | Clear
 
@@ -45,6 +47,11 @@ rows =
     ]
 
 
+-- A key no row has.
+fresh : List Row → Int
+fresh xs = Maybe.withDefault (List.maximum (List.map xs .id)) 0 + 1
+
+
 update : Msg, Model → Model
 update msg model =
     case msg of
@@ -57,10 +64,13 @@ update msg model =
         Toggle →
             { model | rows = List.update model.rows 1 λrow → { row | done = not row.done } }
 
-        Duplicate →
-            { model | rows = List.push model.rows { id = 2, label = "again", done = False } }
+        Append →
+            { model
+                | rows =
+                    List.push model.rows { id = fresh model.rows, label = "again", done = False }
+            }
 
-        Dedupe →
+        Remove →
             { model | rows = List.removeAt model.rows 3 }
 
         Swap →
@@ -76,8 +86,8 @@ view model =
         <button id="relabel" onClick={Relabel}>relabel</button>
         <button id="mark" onClick={Mark}>mark</button>
         <button id="toggle" onClick={Toggle}>toggle</button>
-        <button id="duplicate" onClick={Duplicate}>duplicate</button>
-        <button id="dedupe" onClick={Dedupe}>dedupe</button>
+        <button id="append" onClick={Append}>append</button>
+        <button id="remove" onClick={Remove}>remove</button>
         <button id="swap" onClick={Swap}>swap</button>
         <button id="clear" onClick={Clear}>clear</button>
         <ul id="alone">

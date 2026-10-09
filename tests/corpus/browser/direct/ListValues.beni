@@ -1,0 +1,63 @@
+-- The smallest page whose messages reach every shape script a keyed `For`
+-- has (browser-direct.md §6.2, as amended for S2) — `insert`, `removeAt`,
+-- `swap`, `prepend`, `append` and an indexed edit — each with its index a
+-- payload, so the gates' value fuzz drives them with random indices, out of
+-- range ones included, and with bursts that take the list past 32 rows (a
+-- trie). Kept small so its value fuzz fits the gates' budget: the list
+-- coverage the gates' fuzz keeps.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Insert Int
+    | Remove Int
+    | Swap Int Int
+    | Prepend
+    | Append
+    | Edit Int
+
+
+-- Every key is new: a repeated key is S3's (`tests/pending`).
+fresh : List Int → Int
+fresh xs = Maybe.withDefault (List.maximum xs) 0 + 1
+
+
+update : Msg, List Int → List Int
+update msg xs =
+    case msg of
+        Insert k →
+            List.insertAt xs k (fresh xs)
+
+        Remove k →
+            List.removeAt xs k
+
+        Swap i j →
+            List.swap xs i j
+
+        Prepend →
+            [ fresh xs, …xs ]
+
+        Append →
+            List.push xs (fresh xs)
+
+        Edit k →
+            List.set xs k (fresh xs)
+
+
+view : List Int → Html Msg
+view xs =
+    <main>
+        <button id="insert" onClick={Insert 1}>insert</button>
+        <button id="remove" onClick={Remove 1}>remove</button>
+        <button id="swap" onClick={Swap 0 2}>swap</button>
+        <button id="prepend" onClick={Prepend}>prepend</button>
+        <button id="append" onClick={Append}>append</button>
+        <button id="edit" onClick={Edit 0}>edit</button>
+        <ul><For each={xs} keyed={λn → n}>{λn → <li>{String.fromInt n}</li>}</For></ul>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = [ 1, 2, 3 ], update = update, view = view }

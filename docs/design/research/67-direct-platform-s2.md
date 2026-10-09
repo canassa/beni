@@ -244,3 +244,84 @@ counts (4.5–5.7 billion). So are three S1 pages, `DefectInHandler`, `DefectInL
   then `node scaling-sizes.mjs`
 - `zig build fuzz -Dcorpus=browser/direct/`
 - each batch from `env -u LD_LIBRARY_PATH nix develop .#browser`, under the bench lock
+
+## 9. The review (PR #41), 2026-10-10
+
+What the adversarial review of S2 asked, and what came of each (`browser-direct.md`,
+*Amended 2026-10-10 (PR #41's review of S2)*).
+
+- **`rekey` compared keys with `===`.** A compound key cannot reach it — a tuple or record key is
+  `key_not_primitive` (`check/bad/markup/KeyNotPrimitive`) — but a `Float` key that is `NaN` did:
+  every write to its row remade it. `browser/direct/RekeyNaN` was red first (the text typed into
+  the row was gone after a write with the same key) and is green with SameValueZero, which costs
+  the release `ListScripts` page 32 bytes before compression.
+- **Duplicate keys** left the gates: `browser/direct/DuplicateKeys` and its two goldens, the
+  direct one pinning the wrong output, are gone, and `tests/pending/browser/direct/DuplicateKeys`
+  (CK-221) is red for `GoldenMismatch` with `browser-tea`'s transcript as the expected one. Its
+  five lists — `removeAt`, `insert`, `prepend`, `swap`, a rekey, each with key 2 repeated and a
+  marked node — all differ: 28 lines of the transcript, every one an `<input .value>` on another
+  row. `KeyedInPlace` appends a fresh key now, and the sweep passes on it.
+- **The verify mode** compares every element, as a loop, and counts the rows its list marked in
+  the parent. Section 7's claim was half wrong: the per-row comparison was never capped (a row's
+  item is compared row by row); the cap reached a list inside a row or a slot. The proof, on a
+  page whose three derived rows are lists of 1 500 (`tests/blackbox/page_fuzz_test.zig`):
+
+  | broken build | verify mode now | with the old check |
+  |---|---|---|
+  | positional pass skips row 1 (its item differs at element 750) | stops at `click #bump`: *row 1 of the `For`* | cap restored: runs to the end, exit 0 |
+  | `removeAt` leaves the row's node (one row remains) | stops at `click #drop`: *the count of rows … in the page shows 2, but the model gives 1* | count taken out: exit 0 |
+
+  Each control is the same broken build with one line of the runtime changed back.
+- **The value fuzz** is a case of its own, so every page fuzzes values in the gates and the
+  sweep list is gone. Every `browser/direct/` case with Node running every page (no run hash),
+  in millions of instructions, page case / value-fuzz case:
+
+  | page | page | values | page | page | values |
+  |---|---|---|---|---|---|
+  | BakedList | 3 166 | 2 955 | ListValues | 3 352 | 2 994 |
+  | BakedQuoting | 2 591 | 2 681 | MessageKeys | 2 676 | 2 747 |
+  | BakedValues | 2 609 | 2 735 | NestedFor | 3 359 | 2 953 |
+  | DefectAtMount | 2 498 | 2 542 | NoOpEdits | 3 518 | 2 937 |
+  | DefectInHandler | 2 586 | 2 645 | RekeyNaN | 3 075 | 2 827 |
+  | DefectInListener | 2 580 | 2 672 | RemoveFocusedRow | 2 968 | 2 837 |
+  | DefectInMount | 2 566 | 2 577 | RowBlur | 3 095 | 3 047 |
+  | DetachedRowEvent | 2 949 | 2 763 | RowItemOnly | 3 367 | 2 908 |
+  | ForAtEnds | 3 339 | 3 242 | RowReadsList | 3 114 | 2 850 |
+  | ForForms | 3 796 | 2 985 | StopInRow | 3 139 | 2 891 |
+  | Hello | 2 480 | 2 619 | UnitHoles | 2 628 | 2 688 |
+  | Holes | 2 826 | 2 814 | VerifyQuiet | 3 086 | 2 978 |
+  | Keyed | 3 347 | 3 007 | KeyedInPlace | 3 493 | 2 956 |
+
+  The pages with a `.tea-expected` have no value-fuzz pair: `EventReadsModel` 2 775,
+  `GroupedReads` 3 141, `InitThrows` 2 476, `LocalMountedTwice` 2 496, `OpaqueUpdate` 2 808,
+  `RowMountOrder` 3 557, `SubmitFromWrite` 2 796, `TrustedTurn` 2 754. The largest case is 3.8
+  billion of the 4.3.
+- **Where a page's instructions go**, process by process, for `ListValues` (millions):
+
+  | process | instructions | what it spends them on |
+  |---|---|---|
+  | `check` of a one-line page, `browser-direct` | 166 | loading the embedded core and platforms, resolving; `check` itself 1 ms |
+  | `build`, `browser-direct`, development | 435 | the above, then `emit` (40 ms: `Direct` and `List` emitted in each of emit's two passes) |
+  | `build`, `browser-direct`, release | 520 | the same and the release optimiser |
+  | `build`, `browser-tea`, development | 537 | |
+  | `build`, `browser-tea`, release | 862 | `specialise` (53 ms) |
+  | `build --fuzz`, each platform | 436, 538 | |
+  | `dump --stage=writes --msg-types` | 850 | checks core and the platforms from source (`check` 140 ms) |
+
+  No build checks `Direct` again: §7's "each build checks the runtime module" was wrong. Builds
+  did grow with S2 — a `browser-direct` development build of `Hello` went from 320 to 363 million —
+  because `Direct` is emitted, and larger, not checked. The wall is the dump: it runs without
+  `informational`, a term of every module's key, so none of the embedded checked modules
+  matches. Set for the measurement and reverted, the bit takes the dump to 165 million. Its fix
+  is queued (`plans/handover-2026-10-02.md` item 13).
+- **The sweep** on the final tree: `zig build fuzz -Dcorpus=browser/direct/`, seeds 1–50 of 60
+  steps on each of the 26 value-fuzz cases, bursts (33–40 repeats, one task each) drawn at 1 in 8
+  per message and per click: green, 97 s. A value-fuzz case in the sweep may take ten times the
+  gates' timeout, the allowance it had as one entry of the page case's driver.
+- **Re-entrancy**: S2 cannot dispatch a delegated event inside a running `fire` (`browser/direct/
+  RemoveFocusedRow`). In Chrome, removing a focused input fires `blur` synchronously; its message
+  is queued and runs at the end of the handler whose write fired it — before the event's next
+  handler on `browser-direct`, after all of them on `browser-tea`: `" remove 1 blur 2 row 2"`
+  against `" remove 1 row 2 blur 2"`. happy-dom fires no blur on a removal, so the gates cannot
+  see it. Q1's corner, the owner's; the fixture leaves the blur out so `test-browser` agrees.
+- **K3 on a `For` used twice** is a component, refused in S2 (`build/bad/direct/ForHelperTwoLists`).
