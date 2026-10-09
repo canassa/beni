@@ -1555,3 +1555,32 @@ key names. A message that maps to a `*` key is a `patchAll` dispatch.
 `triePrepend`, `triePushed`, `triePush`, `trieSet`, `triePop` and what they call — ship, and their
 bytes, for the table app as written, the table app with its building loop's prepend taken out
 (what S3's building-loop rule would leave), and a program whose only list write is `List.set`.
+
+### *Amended 2026-10-09 (slice S0, as built; research 65):* the platform, the hook and the floor
+
+The platform half of S0 is built; the stats gate is separate work. What building it settled:
+
+- **The program hook is `boundary.md` §9.4.6's version 1.6**, the part of §11.1 a static `view`
+  needs: `Lowering.programs`, `Lowering.program`, the `Program` shapes, `cx.programInit`,
+  `cx.programReport`, `cx.notImplemented`, `Lowering.no_markup_values` and
+  `Lowering.placements`. §11.1's other calls arrive with the slices that consume them. A
+  constructor's call is compiled as the constructor applied to the mount, so `Tea.sandbox`'s
+  sibling makes the `{ a, n }` §12.1 names; the record is never evaluated as a value, and a `view`
+  or `update` only a record names is not emitted.
+- **The runtime module is `Direct`, not `Rt`** (§12.1): a module's name is unique across the
+  platform chain (`boundary.md` §9.1), and `browser`'s `Rt` is in `browser-direct`'s. Everything
+  this document says of "`Rt`" is said of `Direct`.
+- **The mount is `(root, t)`**: `run` hands each program's mount its node and a `template`
+  element, inside the guard, after refusing a program value mounted twice and before any program
+  renders; the mount evaluates `init`, writes `t.innerHTML` and appends `t.content` (§5.1). The
+  static template's text is `dom`'s own, so both platforms parse the same characters.
+- **`init`'s evaluation is a specified difference between the platforms.** On this platform it is
+  in the mount, so a throw there is a defect (§8.2); on `browser-tea` it is where `main` is
+  evaluated, while the module loads. `browser/direct/InitThrows` pins both with a
+  `.tea-expected`, the corpus's one exception to §12.3's single golden.
+- **`Browser.program` and `Browser.hosted` are refused at build time** (`not_implemented`), since
+  this platform's runtime does not run them (Q6).
+- **The floor is 399 B, and today's is 446, not 1 234** (§3, §13): kill criterion 2 passes — under
+  500 B, and the empty page imports nothing of `Direct` but `run` — and the 300 B target is missed
+  by the refusal messages (70 B) and the guard. A static page of 1 000 elements mounts at 1.12×
+  vanilla from a real click, `browser-tea` at 1.41×.

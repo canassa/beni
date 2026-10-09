@@ -449,9 +449,16 @@ function measureFloor(options, beni, work) {
 /// an `element` that asks for no work may.
 const pageImports = "import Browser\nimport Html exposing (Html)\n";
 const teaImports = `${pageImports}import Tea\n`;
+const helloBody = '<main><h1 class="title">Hello</h1><p>A static page.</p></main>';
 const pages = [
   { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = {}, update = λ_ m → m, view = view }" },
   { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }" },
+  // `browser-direct` (docs/design/browser-direct.md §12.2, §13's kill
+  // criterion 2): the same source as `browser-tea`'s, and a static page on
+  // both, whose `view` is one string the direct page writes once.
+  { name: "browser-direct", platform: "browser-direct", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }" },
+  { name: "browser-tea hello", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }", body: helloBody },
+  { name: "browser-direct hello", platform: "browser-direct", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }", body: helloBody },
   {
     name: "browser-tea element",
     platform: "browser-tea",
@@ -463,7 +470,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Http\nimport Sub\nimport Time\n`,
     main:
-      "Tea.element { init = ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.keyed () Cmd.Restart (λsend → send (Http.get { url = \"/x\", expect = Http.expectString })) ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → Ok \"tick\") }",
+      "Tea.element { init = ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.keyed ⊤ Cmd.Restart (λsend → send (Http.get { url = \"/x\", expect = Http.expectString })) ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → Ok \"tick\") }",
     view: "view : {} → Html (Result Http.Error String)",
   },
   {
@@ -471,7 +478,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Http\nimport Sub\n`,
     main:
-      "Tea.element { init = ( Nothing, Cmd.task (λ() → Http.get { url = \"/x\", expect = Http.expectString }) (λr → r) ), update = λr _ → ( Just r, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }",
+      "Tea.element { init = ( Nothing, Cmd.task (λ⊤ → Http.get { url = \"/x\", expect = Http.expectString }) (λr → r) ), update = λr _ → ( Just r, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }",
     view: "view : Maybe (Result Http.Error String) → Html (Result Http.Error String)",
   },
   {
@@ -494,7 +501,7 @@ const pages = [
     name: "browser-tea url",
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation\nimport Url exposing (Url)\n`,
-    main: "Tea.sandbox { init = Browser.Navigation.currentUrl (), update = λ_ m → m, view = view }",
+    main: "Tea.sandbox { init = Browser.Navigation.currentUrl ⊤, update = λ_ m → m, view = view }",
     view: "view : Maybe Url → Html {}",
   },
   {
@@ -502,7 +509,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation as Navigation\nimport Cmd\nimport Sub\nimport Url exposing (Url)\n`,
     main:
-      "Tea.element { init = ( \"\", Cmd.none ), update = λm _ → ( m, Cmd.task (λ() → Navigation.pushUrl (Navigation.key ()) m) (λ_ → \"\") ), view = view, subscriptions = λ_ → Navigation.onUrlChange Url.toString }",
+      "Tea.element { init = ( \"\", Cmd.none ), update = λm _ → ( m, Cmd.task (λ⊤ → Navigation.pushUrl (Navigation.key ⊤) m) (λ_ → \"\") ), view = view, subscriptions = λ_ → Navigation.onUrlChange Url.toString }",
     view: "view : String → Html String",
   },
   {
@@ -523,6 +530,31 @@ const pages = [
   },
 ];
 
+/// What a development build imports of its runtime module — the file the
+/// entry imports `run` from — sorted: the entry's `run` and every name
+/// another module imports from it (browser-direct.md §13, kill criterion 2:
+/// the empty page imports nothing of `Rt` but `send`, `run` and `unset`).
+function runtimeImports(outDir) {
+  const entry = readFileSync(join(outDir, "_main.mjs"), "utf8");
+  const found = entry.match(/import \{ \w+?\$run as run \} from "\.\/([^"]+)"/);
+  if (found === null) return [];
+  const runtime = found[1];
+  const names = new Set(["run"]);
+  for (const rel of filesUnder(outDir, ".mjs")) {
+    if (rel === runtime || rel === "_main.mjs") continue;
+    const text = readFileSync(join(outDir, rel), "utf8");
+    for (const m of text.matchAll(/import \{([^}]*)\} from "([^"]+)"/g)) {
+      const target = join(dirname(rel), m[2]).split(sep).join("/");
+      if (target !== runtime) continue;
+      for (const item of m[1].split(",")) {
+        const name = item.trim().split(" as ")[0];
+        if (name !== "") names.add(name.slice(name.indexOf("$") + 1));
+      }
+    }
+  }
+  return [...names].sort();
+}
+
 function measurePage(options, beni, work, page) {
   const platform = page.platform;
   const projectDir = join(work, `__page_${page.name.replace(/[^\w]/g, "_")}`);
@@ -530,7 +562,7 @@ function measurePage(options, beni, work, page) {
   const viewType = page.view ?? "view : {} → Html {}";
   writeFileSync(
     join(projectDir, "Page.beni"),
-    `${page.imports}\n\n${viewType}\nview _ =\n    <></>\n\n\nmain : Browser.Program\nmain =\n    ${page.main}\n`,
+    `${page.imports}\n\n${viewType}\nview _ =\n    ${page.body ?? "<></>"}\n\n\nmain : Browser.Program\nmain =\n    ${page.main}\n`,
   );
   const run = buildProject(beni, work, projectDir, ["Page.beni"], false, false, platform);
   if (run.status !== 0) {
@@ -548,6 +580,7 @@ function measurePage(options, beni, work, page) {
     platform,
     name: page.name,
     reaches_task: reachesTask,
+    runtime_imports: runtimeImports(join(projectDir, "out")),
     entry: "Page",
     files: measured.files,
     raw_bytes: measured.raw_bytes,
@@ -565,16 +598,16 @@ function measurePage(options, beni, work, page) {
 /// `every` pages above are the browser's two smallest uses. Each is one
 /// whole program, so the line is its whole tree, dev and release.
 const fiberPrograms = [
-  { name: "node sleep", source: "import Io\nimport Node exposing (Program)\n\n\nmain : Program\nmain = Io.run λ() →\n    _ = Io.sleep 10\n    Node.print \"later\"\n" },
+  { name: "node sleep", source: "import Io\nimport Node exposing (Program)\n\n\nmain : Program\nmain = Io.run λ⊤ →\n    _ = Io.sleep 10\n    Node.print \"later\"\n" },
   {
     name: "node bracket",
     source:
-      "import Io\nimport Node exposing (Program)\nimport Task\n\n\nmain : Program\nmain = Io.run λ() →\n    n = Task.scope λs →\n        f = Task.spawnIn s λ() →\n            Task.bracket (λ() → 1) (λ_ _ → Io.sleep 1) λr →\n                _ = Io.sleep 1\n                r + 1\n        Task.join f\n    Node.print (String.fromInt n)\n",
+      "import Io\nimport Node exposing (Program)\nimport Task\n\n\nmain : Program\nmain = Io.run λ⊤ →\n    n = Task.scope λs →\n        f = Task.spawnIn s λ⊤ →\n            Task.bracket (λ⊤ → 1) (λ_ _ → Io.sleep 1) λr →\n                _ = Io.sleep 1\n                r + 1\n        Task.join f\n    Node.print (String.fromInt n)\n",
   },
   {
     name: "node combinators",
     source:
-      "import Duration\nimport Io\nimport Node exposing (Program)\nimport Task\n\n\nmain : Program\nmain = Io.run λ() →\n    ( a, b ) = Task.par (λ() → after 2 1) λ() → after 1 2\n    c = Task.race (λ() → after 3 3) λ() → after 1 4\n    d = Maybe.withDefault (Task.timeout (Duration.millis 5) λ() → after 1 5) 0\n    Node.print (String.fromInt (a + b + c + d))\n\n\nafter : Int, Int → Int\nafter ms n =\n    _ = Io.sleep ms\n    n\n",
+      "import Duration\nimport Io\nimport Node exposing (Program)\nimport Task\n\n\nmain : Program\nmain = Io.run λ⊤ →\n    ( a, b ) = Task.par (λ⊤ → after 2 1) λ⊤ → after 1 2\n    c = Task.race (λ⊤ → after 3 3) λ⊤ → after 1 4\n    d = Maybe.withDefault (Task.timeout (Duration.millis 5) λ⊤ → after 1 5) 0\n    Node.print (String.fromInt (a + b + c + d))\n\n\nafter : Int, Int → Int\nafter ms n =\n    _ = Io.sleep ms\n    n\n",
   },
   { name: "ApiAndRoutes", platform: "browser-tea", file: "tests/corpus/browser/tea/ApiAndRoutes.beni" },
   { name: "TodoMVC", platform: "browser-tea", file: "tests/corpus/browser/tea/TodoMVC.beni" },
