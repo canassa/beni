@@ -503,3 +503,42 @@ wrong what shown model =
                 "browser-direct verify: ${whatText} shows ${shownText}, but the model gives ${modelText}. The compiler missed a write: this is a defect of beni, not of the program; please report it."
             ]
         )
+
+
+-- ---- `--fuzz` (§8.3, the contract's item 3) -----------------------------
+
+-- Each mounted program's dispatcher, in mount order.
+fuzzed : V
+fuzzed = Js.array []
+
+
+--| `(dispatch)`: a `--fuzz` build's mount registers its dispatcher, first
+--| thing, so the programs are numbered in mount order; the first also sets
+--| `globalThis.__beniFuzz`, whose `send(program, msg)` dispatches a message
+--| value to the program'th mount, through the guard, its writes done when
+--| it returns. An index with no program throws. A build without `--fuzz`
+--| never calls it.
+pub fuzzMount : V → ⊤
+fuzzMount dispatch =
+    _ = Js.call fuzzed "push" [ dispatch ]
+    if Js.isUndefined (Js.get (Js.global "globalThis") "__beniFuzz") then
+        Js.set
+            (Js.global "globalThis")
+            "__beniFuzz"
+            (Js.object
+                [ ( "send"
+                  , Js.from λprogram msg →
+                      n : Int
+                      n = Js.to (Js.get fuzzed "length")
+                      i : Int
+                      i = Js.to program
+                      if not (Js.typeIs program "number") || i < 0 || i ≥ n then
+                          Js.throw
+                              (Js.construct (Js.global "Error")
+                                  [ Js.from "__beniFuzz.send: no program has this index" ]
+                              )
+                      else
+                          send (Js.at fuzzed i) msg
+                  )
+                ]
+            )

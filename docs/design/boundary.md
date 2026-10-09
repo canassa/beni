@@ -1878,9 +1878,10 @@ before any module is lowered, over every call of a program constructor in an app
   skip, `browser-direct.md` §8.3). Always true where the build has no such table (`--release`).
 - **`Build.fuzz`**: the hidden `--fuzz` flag (`browser-direct.md` §8.3, as amended for S1).
 
-A program built under `--fuzz` also keeps every `case` arm on a constructor of the application's
-own modules, built or not (`backend.md` §9's dead arms), since a fuzzer sends messages the program
-never makes. `direct` targets 1.7.
+A program built under `--fuzz` also keeps every `case` arm on any constructor, built or not
+(`backend.md` §9's dead arms), since a fuzzer sends messages the program never makes, and under
+`--release` its message types keep their development representation (`browser-direct.md` §8.3's
+contract). `direct` targets 1.7.
 
 #### 9.4.7 Diagnostics
 

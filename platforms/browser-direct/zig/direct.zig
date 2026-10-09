@@ -65,6 +65,9 @@ pub const lowering: m.Lowering = .{
         .{ .name = "verify", .arity = 1 },
         .{ .name = "same", .arity = 2 },
         .{ .name = "wrong", .arity = 3 },
+        // `--fuzz`: a mount's dispatcher, reachable as
+        // `globalThis.__beniFuzz.send(program, msg)` (§8.3).
+        .{ .name = "fuzzMount", .arity = 1 },
     },
     .module = module,
     .root = root,
@@ -180,7 +183,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
         \\other than `<svg>` or `<math>` yet: it arrives with slice S4
         \\(`docs/design/browser-direct.md` §14).
     ++ " " ++ until_then);
-    if (b.ops.items.len == 0 and !anyBaked(cx, tree, r.node)) return staticMount(cx, tree, r.node, b.html.items, b.flags);
+    if (b.ops.items.len == 0 and !cx.build.fuzz and !anyBaked(cx, tree, r.node)) return staticMount(cx, tree, r.node, b.html.items, b.flags);
     var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .b = &b, .index = index, .node = r.node };
     return page.mount();
 }
@@ -330,6 +333,17 @@ const Page = struct {
         const t = try cx.fresh("$t");
         pg.body = try js.block();
 
+        // `--fuzz` (§8.3, the contract's item 3): this program's
+        // dispatcher registered first, so the programs are numbered in
+        // mount order and a message value reaches this one.
+        if (cx.build.fuzz) {
+            pg.dispatch = try cx.fresh("$dispatch");
+            const msg = try cx.fresh("$msg");
+            const blk = try js.block();
+            try js.expression(blk, try js.call(try pg.ident(pg.dispatch.?), &.{try pg.ident(msg)}));
+            try js.expression(pg.body, try pg.rt("fuzzMount", &.{try js.arrow(&.{msg}, blk)}));
+        }
+
         // The model, which every handler replaces (§4.1).
         const init = try cx.programInit(pg.body);
         pg.model = try cx.fresh("$model");
@@ -386,7 +400,7 @@ const Page = struct {
             .event => |x| try pg.listener(listeners, x, @intCast(k), handlers),
             else => {},
         };
-        if (cx.build.fuzz and pg.dispatch == null) pg.dispatch = try cx.fresh("$dispatch");
+
         if (pg.dispatch) |d| {
             const msg = try cx.fresh("$msg");
             const blk = try js.block();
@@ -409,14 +423,6 @@ const Page = struct {
         try js.expression(pg.body, try js.call(try js.member(try pg.ident(at), "append"), &.{try pg.ident(pg.frag)}));
 
         if (!cx.build.release) try pg.writeVerify();
-        // `--fuzz` (§8.3): the mount node applies a message value, as
-        // `browser-tea`'s does.
-        if (cx.build.fuzz) {
-            const msg = try cx.fresh("$msg");
-            const blk = try js.block();
-            try js.expression(blk, try pg.rt("send", &.{ try pg.ident(pg.dispatch.?), try pg.ident(msg) }));
-            try js.assign(pg.body, try js.member(try pg.ident(at), "$$root"), try js.arrow(&.{msg}, blk));
-        }
         return js.arrow(&.{ at, t }, pg.body);
     }
 

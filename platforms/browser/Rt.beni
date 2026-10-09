@@ -2252,3 +2252,34 @@ listen el name flags =
                     turn (Js.to (Js.get event "isTrusted")) λ⊤ → fire el event key payload flags
             ]
         )
+
+
+-- ---- `--fuzz` (browser-direct.md §8.3) ----------------------------------
+
+--| `(x)`: `x`, having made sure the page has `globalThis.__beniFuzzSend`,
+--| the page fuzzer's way to send a message value to a mount node: through
+--| the same guard an event's handler is called inside (`fire`), so a throw
+--| in `update` stops the page as one from a click does, never a bare
+--| `$$root` call. Only a `--fuzz` build's markup calls it, where a root is
+--| evaluated; every other build ships none of it.
+pub fuzzInstall : V → V
+fuzzInstall x =
+    if Js.isUndefined (Js.get (Js.global "globalThis") "__beniFuzzSend") then
+        Js.set (Js.global "globalThis") "__beniFuzzSend" (Js.from λnode msg → fuzzSend node msg)
+    x
+
+
+-- A message value sent to the program mounted at `node`, as an untrusted
+-- event's handler sends one: guarded, rendered as such a send renders.
+fuzzSend : V, V → ⊤
+fuzzSend node msg = turn False λ⊤ →
+    if Js.read dead then
+        ⊤
+    else
+        ok = Js.ref False
+        Js.finally
+            (λ⊤ →
+                _ = Js.call node "$$root" [ msg ]
+                Js.write ok True
+            )
+            λ⊤ → if Js.read ok then ⊤ else stop ⊤
