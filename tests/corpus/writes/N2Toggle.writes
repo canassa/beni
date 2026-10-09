@@ -8,3 +8,13 @@ program N2Toggle.main : Tea.sandbox
   hole N2Toggle.beni:44:23                        dynamic    reads ρ.todos[*].completed
   hole N2Toggle.beni:44:66                        static     reads ρ.todos[*].title
   holes 3: static 1, literal 0, static-key 0, dynamic 2
+  site N2Toggle.beni:42:5                         unique
+  site N2Toggle.beni:44:19                        instanced
+  sites 2: unique 1, shared 0, instanced 1, value 0
+  markup_value_roots 0 (0% of 2 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 2 over 1 keys and 3 groups (2.00 per key); every key calls 2 of 3 groups (66%)
+  list N2Toggle.beni:43:10                        scripts
+  reconciler 0 of 1 lists
+  patchAll <none>

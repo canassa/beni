@@ -7,3 +7,11 @@ program FosterParent.main : Tea.sandbox
   hole FosterParent.beni:32:17                    static     reads ρ.name
   hole FosterParent.beni:33:21                    literal    reads ρ.name
   holes 2: static 1, literal 1, static-key 0, dynamic 0
+  site FosterParent.beni:30:5                     unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 0 over 1 keys and 1 groups (0.00 per key); every key calls 0 of 1 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

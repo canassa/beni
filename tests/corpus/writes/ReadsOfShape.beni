@@ -1,0 +1,82 @@
+-- writes: what a list's shape, or an element's index, was decided by is
+-- read too (write-sets.md §3.6, amended 2026-10-09). Each hole below
+-- shows a list or an element chosen by a field one key writes alone, so
+-- each must be `dynamic` and read that field: a `filter` whose predicate
+-- reads `model.done` (TodoMVC's `visible model.filter _`), a `take` of
+-- `model.limit` elements, a `sortBy` on `model.by`, the row at
+-- `model.sel`, and the row after it. Before the amendment all five read the
+-- list alone and were `static`: `SetDone`, `SetLimit`, `SetBy` and
+-- `Select` would have left the page showing another model's rows.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    done : Bool
+
+
+type alias Model =
+    rows : List Row
+    done : Bool
+    limit : Int
+    by : Bool
+    sel : Int
+
+
+type Msg
+    = SetDone Bool
+    | SetLimit Int
+    | SetBy Bool
+    | Select Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        SetDone d →
+            { model | done = d }
+
+        SetLimit n →
+            { model | limit = n }
+
+        SetBy b →
+            { model | by = b }
+
+        Select i →
+            { model | sel = i }
+
+
+ids : List Row → String
+ids rows = String.join (List.map rows λr → String.fromInt r.id) ","
+
+
+idAt : Maybe Row → String
+idAt row =
+    case row of
+        Just r →
+            String.fromInt r.id
+
+        Nothing →
+            ""
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{ids (List.filter model.rows λr → r.done == model.done)}</p>
+        <p>{ids (List.take model.rows model.limit)}</p>
+        <p>{ids (List.sortBy model.rows λr → if model.by then r.id else 0 - r.id)}</p>
+        <p>{idAt (List.get model.rows model.sel)}</p>
+        <p>{idAt (List.get model.rows (model.sel + 1))}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { rows = [], done = False, limit = 3, by = True, sel = 0 }
+        , update = update
+        , view = view
+        }

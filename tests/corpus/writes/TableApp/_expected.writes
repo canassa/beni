@@ -24,3 +24,14 @@ program Main.main : Tea.sandbox
   hole Main.beni:231:50                           static-key reads ρ.rows[*].id
   hole Main.beni:232:77                           dynamic    reads ρ.rows[*].label
   holes 12: static 8, literal 0, static-key 1, dynamic 3
+  site Main.beni:201:5                            unique
+  site Main.beni:210:5                            unique
+  site Main.beni:230:25                           instanced
+  sites 3: unique 2, shared 0, instanced 1, value 0
+  markup_value_roots 0 (0% of 3 sites)
+  carriers no
+  constructors 8: under * 0 (0%)
+  pairs 27 over 8 keys and 4 groups (3.38 per key); every key calls 0 of 4 groups (0%)
+  list Main.beni:228:18                           reconciler Run ⟨replaced⟩; RunLots ⟨replaced⟩
+  reconciler 1 of 1 lists
+  patchAll <none>

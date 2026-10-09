@@ -1680,3 +1680,29 @@ measurement asks for it.
 `view (cap W)`, the holes it lists read ρ and are dynamic, but holes the walk never reached are
 not listed at all. A consumer must treat `view (cap W)` as "the hole list is unavailable" and
 keep that program on today's whole-view path. It must never patch only the holes the list names.
+
+### *Amended 2026-10-09 (S0, the direct platform's stats gate):* three reads the pass dropped
+
+Building `browser-direct.md`'s S0 stats found three places where a view hole's anchored reads
+(§3.6) left out a model path the hole's value depends on, so that a key writing only that path
+did not conflict with the hole: the hole read as `static`, and a consumer would have left the
+page showing another model's value. Each is fixed, and `writes/ReadsOfShape` pins all of them
+(every one of its holes was `static` before):
+
+1. **A list's shape reads what decided it.** `List.filter`'s predicate, `filterMap`'s callback,
+   `sortBy`'s and `sortWith`'s functions, and the counts of `take`, `drop` and `slice` decide
+   which elements the result keeps and in what order, so the result reads what they read.
+   TodoMVC's `<For each={List.filter model.todos (visible model.filter _)}>` read `ρ.todos`
+   alone, and `SetFilter` did not conflict with it; it now reads `ρ.filter` and
+   `ρ.todos[*].completed` too. A non-`kept` list term carries those reads as one `Fresh`
+   element; `diff` never looks at an element of a list whose edit is not `kept` (§3.4: the
+   write is `value p ⟨tag⟩`), so no write set moves.
+2. **An element read through a model index reads the index.** `List.get model.rows model.sel`
+   reads `ρ.rows[model.sel]`, and that path's index is itself a read of `ρ.sel`, which the
+   anchor now adds (§3.6): `Select` conflicts with the hole.
+3. **An element read through a computed index reads what the index read.** `List.get
+   model.rows (model.sel + 1)` is `ρ.rows[?]` (§2.3, as amended by the review), and is now
+   `Fresh` of `ρ.rows[?]` and of the index's reads.
+
+None of the three changes a write set; on the corpus only TodoMVC's holes move (they gain
+`ρ.filter` and `ρ.todos[*].completed`). Research 64 has the context.

@@ -10,3 +10,11 @@ program KeyTree.main : Tea.sandbox
   hole KeyTree.beni:70:13                         dynamic    reads ρ.form.title
   hole KeyTree.beni:71:12                         dynamic    reads ρ.form.body
   holes 2: static 0, literal 0, static-key 0, dynamic 2
+  site KeyTree.beni:69:5                          unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 4: under * 0 (0%)
+  pairs 4 over 4 keys and 2 groups (1.00 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

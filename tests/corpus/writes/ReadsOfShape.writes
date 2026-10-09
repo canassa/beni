@@ -1,0 +1,23 @@
+program ReadsOfShape.main : Tea.sandbox
+  model ReadsOfShape.Model
+  init
+    literal ρ
+  key SetDone                                     exact      node ρ; value ρ.done
+  key SetLimit                                    exact      node ρ; value ρ.limit
+  key SetBy                                       exact      node ρ; value ρ.by
+  key Select                                      exact      node ρ; value ρ.sel
+  keys 4: bounded 4 (100%), exact 4, indexed 0, structural 0, * 0; capped 0
+  hole ReadsOfShape.beni:68:12                    dynamic    reads ρ.done; ρ.rows; ρ.rows[*].done
+  hole ReadsOfShape.beni:69:12                    dynamic    reads ρ.limit; ρ.rows
+  hole ReadsOfShape.beni:70:12                    dynamic    reads ρ.by; ρ.rows; ρ.rows[*].id
+  hole ReadsOfShape.beni:71:12                    dynamic    reads ρ.rows[model.sel]; ρ.rows[model.sel].id; ρ.sel
+  hole ReadsOfShape.beni:72:12                    dynamic    reads ρ.rows[?]; ρ.sel
+  holes 5: static 0, literal 0, static-key 0, dynamic 5
+  site ReadsOfShape.beni:67:5                     unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 4: under * 0 (0%)
+  pairs 5 over 4 keys and 5 groups (1.25 per key); every key calls 0 of 5 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

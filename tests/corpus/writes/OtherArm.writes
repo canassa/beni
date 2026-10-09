@@ -7,3 +7,11 @@ program OtherArm.main : Tea.sandbox
   keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
   hole OtherArm.beni:54:12                        literal    reads ρ.tags
   holes 1: static 0, literal 1, static-key 0, dynamic 0
+  site OtherArm.beni:53:5                         unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 0 over 2 keys and 1 groups (0.00 per key); every key calls 0 of 1 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

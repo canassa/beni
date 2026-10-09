@@ -10,3 +10,13 @@ program SameVariant.main : Tea.sandbox
   hole SameVariant.beni:88:9                      dynamic    reads ρ.status; ρ.status.Loaded#0.body
   hole SameVariant.beni:90:20                     dynamic    reads ρ.status.Loaded#0.body
   holes 2: static 0, literal 0, static-key 0, dynamic 2
+  site SameVariant.beni:87:5                      unique
+  site SameVariant.beni:90:17                     unique
+  site SameVariant.beni:93:17                     unique
+  sites 3: unique 3, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 3 sites)
+  carriers no
+  constructors 4: under * 0 (0%)
+  pairs 3 over 4 keys and 2 groups (0.75 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

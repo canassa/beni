@@ -12,3 +12,11 @@ program BaseRules.main : Tea.sandbox
   hole BaseRules.beni:59:12                       dynamic    reads ρ.inner.b
   hole BaseRules.beni:60:12                       dynamic    reads ρ.count
   holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site BaseRules.beni:57:5                        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 5: under * 0 (0%)
+  pairs 3 over 5 keys and 3 groups (0.60 per key); every key calls 0 of 3 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

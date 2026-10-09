@@ -9,3 +9,11 @@ program CapI.main : Tea.sandbox
   summary CapI.grow (cap I)
   hole CapI.beni:57:17                            dynamic    reads ρ.count
   holes 1: static 0, literal 0, static-key 0, dynamic 1
+  site CapI.beni:57:14                            unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 2: under * 2 (100%)
+  pairs 0 over 0 keys and 1 groups (0.00 per key); every key calls 0 of 1 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll Grow; Deepen

@@ -1,0 +1,25 @@
+program StatsPairs.main : Tea.sandbox
+  model StatsPairs.Model
+  init
+    literal ρ
+  key Inc                                         exact      node ρ; value ρ.count
+  key Rename                                      exact      node ρ; value ρ.count; value ρ.name
+  key Clear                                       exact      node ρ; value ρ.count
+  keys 3: bounded 3 (100%), exact 3, indexed 0, structural 0, * 0; capped 0
+  hole StatsPairs.beni:41:17                      dynamic    reads ρ.count
+  hole StatsPairs.beni:42:12                      dynamic    reads ρ.name
+  hole StatsPairs.beni:43:12                      dynamic    reads ρ.count
+  hole StatsPairs.beni:44:9                       dynamic    reads ρ.count
+  hole StatsPairs.beni:44:38                      dynamic    reads ρ.count
+  hole StatsPairs.beni:44:64                      literal    reads ∅
+  holes 6: static 0, literal 1, static-key 0, dynamic 5
+  site StatsPairs.beni:40:5                       unique
+  site StatsPairs.beni:44:35                      unique
+  site StatsPairs.beni:44:61                      unique
+  sites 3: unique 3, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 3 sites)
+  carriers no
+  constructors 3: under * 0 (0%)
+  pairs 7 over 3 keys and 3 groups (2.33 per key); every key calls 2 of 3 groups (66%)
+  reconciler 0 of 0 lists
+  patchAll <none>

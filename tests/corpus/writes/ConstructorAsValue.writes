@@ -8,3 +8,12 @@ program ConstructorAsValue.main : Tea.sandbox
   hole ConstructorAsValue.beni:56:16              literal    reads ρ.Page#0.label
   hole ConstructorAsValue.beni:59:16              dynamic    reads ρ.Pair#0
   holes 2: static 0, literal 1, static-key 0, dynamic 1
+  site ConstructorAsValue.beni:56:13              unique
+  site ConstructorAsValue.beni:59:13              unique
+  sites 2: unique 2, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 2 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 1 over 2 keys and 2 groups (0.50 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

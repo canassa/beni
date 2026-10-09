@@ -1461,3 +1461,97 @@ The owner took every recommendation of §15:
   the base for a library-style architecture while both exist; S8 decides.
 
 §15's questions are settled, and S0 may start.
+
+### *Amended 2026-10-09 (S0, the stats gate):* the dump lines of §11, exactly
+
+§11 names the lines and not their format or their counting rules; this fixes both, before they
+are built. They follow a program's `holes` line in `beni dump --stage=writes`, in this order, one
+fact per line, sorted by text or position and never by an id (`write-sets.md` §7):
+
+```
+  site Main.beni:200:5                            unique
+  site Page.beni:30:5                             shared     8 calls
+  site Main.beni:229:17                           instanced
+  site Tree.beni:12:5                             value      recursive
+  sites 4: unique 1, shared 1, instanced 1, value 1
+  markup_value_roots 1 (25% of 4 sites)
+  carriers yes: commands; Html.map Main.beni:94:62; msg whole
+  constructors 74: under * 1 (1%)
+  pairs 120 over 90 keys and 40 groups (1.33 per key); every key calls 3 of 40 groups (7%)
+  list Main.beni:228:18                           reconciler Run ⟨replaced⟩; RunLots ⟨replaced⟩
+  list Main.beni:240:18                           scripts
+  reconciler 1 of 2 lists
+  patchAll ChangedUrl
+```
+
+- **`site`**, one per markup root of the program's own modules that the view walk reaches (a
+  `markup` expression; its position is its first token), with its class by §5.2, read off the
+  walk, which inlines every call of the program's functions (`write-sets.md` §3.6): **`value`**
+  when some visit is inside an element of a list — a list literal's element, or a `List`
+  function's callback (`map`, `foldl`, …) — printed `list`, or when the function or `let`
+  function holding the root re-enters itself on the walk, printed `recursive`; otherwise
+  **`instanced`** when some visit is inside a `For` row; otherwise **`shared`** when the walk
+  visits it more than once and one of its holes reads the model, with the count printed (`N
+  calls`); otherwise **`unique`**. `shared` is the count *before* §5.2's size gate, which S3
+  builds: the gate may inline a shared site into unique copies, never the other way, so the
+  line is an upper bound on shared sites and changes no other class. Markup stored in the model
+  is not a site the walk can see and is not counted (no program in the gate's set stores
+  markup). `sites` counts the classes.
+- **`markup_value_roots`**: the number of `value` sites, and their share of `sites`.
+- **`carriers`** (§11 item 3): `no`, or `yes:` with every reason — `commands` for a
+  `Tea.element`, `document` or `application` (commands and subscriptions send values);
+  `Html.map <position>` for each `Html.map` whose function is not a constructor, a constructor
+  under a placeholder, or a choice between those (§9.1); `msg whole` when a key's walk passes
+  the message, or a sub-message the key tree splits, to a function the analysis does not
+  summarise or to `Debug.log`, or places it in the model — the message itself, inside what the
+  arm builds; a value merely computed from it is not looked into, since a closure's
+  environment names `msg` whether or not the closure reads it; `unrecognised` for a program the
+  pass does not recognise.
+- **`constructors`** — the static share of kill criterion 1. A key's **message constructor** is
+  the last constructor along it that a module of the program's own package declares: a split of
+  a `Result`, a `Maybe` or a platform type below it (`· Ok`, `ClickedLink · Internal`) is a
+  payload split and adds none. A default child `_` stands for every constructor of its type its
+  siblings do not name. A leaf key with no constructor of the program's package stands for every
+  constructor of the message type (`(any)`). The line counts the program's message constructors
+  so identified and those **under `*`** — a constructor any of whose leaf keys is `*`. An
+  unrecognised program is one constructor under `*`. *Coarse on one side, stated:* a
+  sub-message the key tree does not split (a constructor whose payload is a message `update`
+  hands to an unsummarised function) counts as one constructor, not as the constructors beneath
+  it; the report lists every `*` key's payload type so that case is visible.
+- **`pairs`** — the (key, group) pairs of §5.2 and §3. A **group** is the set of a site's holes
+  with one anchored read set (§5.3), counted over holes whose read set is not empty (an empty one
+  runs at mount and is called by no key). A bounded key κ **calls** group G when some read of G
+  conflicts with `writes(κ)` (`write-sets.md` §2.5). The pairs are summed over the **bounded**
+  keys only: a `*` key calls `patchAll`, one function per program (§4.1), not a group each, and
+  is the `patchAll` line's. `per key` is pairs ÷ bounded keys; **every key calls** counts the
+  groups that every bounded key calls — the root-level read §5.2 names.
+- **`list`**, one per `For` the walk reaches, with its `each` hole's position: **`reconciler`**
+  and the keys that reach §6.3's reconciler, each with why, or **`scripts`** when none does.
+  When the `each` is exactly a model path `p` (every visit), a bounded key reaches it by a write
+  that may coincide with `p` itself (`write-sets.md` §2.1) whose tag is `permute` or
+  `replaced`, or that is a `value` write with no tag (printed `⟨value⟩`), or by a `value` write
+  at a proper may-prefix of `p` (printed with that path) — the list is another list; every other
+  tag, and an element write below `p`, is a script. When the `each` is not exactly a model path
+  (a derived list, §6.2's last paragraph), a bounded key reaches the reconciler when it
+  conflicts with any of the hole's reads (printed `derived`). Every `*` key reaches it (printed
+  `*`). A `For` with `keyed={False}` prints **`positional`** in place of `reconciler`: the
+  positional pass, not the keyed reconciler. A `value` write at a prefix may in fact switch the
+  branch arm holding the list, which remounts and does not reconcile; the analysis cannot tell
+  the two apart, so the line is an upper bound. `reconciler N of M lists` counts the keyed lists
+  some key reconciles.
+- **`patchAll`**: the `*` keys, joined by `; `, or `<none>`; `*` for an unrecognised program.
+
+An unrecognised program (`write-sets.md` §1.1) prints the same lines, with its one `*` key.
+
+**Kill criterion 1's dynamic count is the harness's** (§13): `bench/writesets/stats.mjs` builds
+Conduit for `browser-tea` in development, adds to the copy of the emitted `Main.mjs` it runs — not
+to the compiler, the platform or the fixture — one statement at the head of `Main.update` that
+logs the message, runs `tests/browser/driver.mjs` on each of the three `browser/tea/Conduit*`
+scripts, and maps each logged message to its leaf key by its constructor tags against the dump's
+key names. A message that maps to a `*` key is a `patchAll` dispatch.
+
+**The trie's write half** (§7.2, kill criterion 1's last item) is measured by the same script, on
+`--release` bundles: whether the core functions only `List`'s writers name — `fromPlain`,
+`triePrepend`, `triePushed`, `triePush`, `trieSet`, `triePop` and what they call — ship, and their
+bytes, for the table app as written, the table app with its building loop's prepend taken out
+(what S3's building-loop rule would leave), and a program whose only list write is `List.set`.

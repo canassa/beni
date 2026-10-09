@@ -177,7 +177,188 @@ pub fn write(w: *std.Io.Writer, gpa: Allocator, a: *Writes, run: Writes.Run, pos
         try w.print("  holes {d}: static {d}, literal {d}, static-key {d}, dynamic {d}\n", .{
             prog.holes.len, hcounts[0], hcounts[1], hcounts[2], hcounts[3],
         });
+        try writeStats(w, gpa, a, prog, positions, &line);
     }
+}
+
+/// The S0 stats gate's lines (browser-direct.md §11, amended 2026-10-09):
+/// sites, value roots, carriers, constructors under `*`, (key, group)
+/// pairs, the lists that reach the reconciler, and `patchAll`.
+fn writeStats(w: *std.Io.Writer, gpa: Allocator, a: *Writes, prog: *const Writes.Program, positions: Positions, line: *std.Io.Writer.Allocating) Error!void {
+    // Sites, by module name and position.
+    const sites = try gpa.alloc(usize, prog.sites.len);
+    defer gpa.free(sites);
+    for (sites, 0..) |*o, i| o.* = i;
+    const SiteSort = struct {
+        a: *Writes,
+        sites: []const Writes.Site,
+        positions: Positions,
+        fn less(s: @This(), x: usize, y: usize) bool {
+            return posLess(s.a, s.positions, s.sites[x].module, s.sites[x].token, s.sites[y].module, s.sites[y].token);
+        }
+    };
+    std.mem.sort(usize, sites, SiteSort{ .a = a, .sites = prog.sites, .positions = positions }, SiteSort.less);
+    var scounts = [_]u32{ 0, 0, 0, 0 };
+    for (sites) |i| {
+        const s = prog.sites[i];
+        line.clearRetainingCapacity();
+        try writePos(&line.writer, a, positions, s.module, s.token);
+        const name = line.written();
+        try w.print("  site {s}", .{name});
+        try pad(w, 7 + width(name));
+        scounts[@backingInt(s.class)] += 1;
+        switch (s.class) {
+            .unique => try w.writeAll("unique"),
+            .instanced => try w.writeAll("instanced"),
+            .shared => try w.print("shared     {d} calls", .{s.calls}),
+            .value => try w.writeAll(if (s.why == .list) "value      list" else "value      recursive"),
+        }
+        try w.writeByte('\n');
+    }
+    const n_sites: u32 = @intCast(prog.sites.len);
+    try w.print("  sites {d}: unique {d}, shared {d}, instanced {d}, value {d}\n", .{ n_sites, scounts[0], scounts[1], scounts[2], scounts[3] });
+    try w.print("  markup_value_roots {d} ({d}% of {d} sites)\n", .{ scounts[3], if (n_sites == 0) 0 else scounts[3] * 100 / n_sites, n_sites });
+
+    // Carriers.
+    const c = prog.carriers;
+    if (prog.recognised and !c.commands and c.maps.len == 0 and !c.msg_whole) {
+        try w.writeAll("  carriers no\n");
+    } else {
+        try w.writeAll("  carriers yes:");
+        var first = true;
+        if (!prog.recognised) {
+            try w.writeAll(" unrecognised");
+            first = false;
+        }
+        if (c.commands) {
+            try w.writeAll(if (first) " commands" else "; commands");
+            first = false;
+        }
+        const maps = try gpa.dupe(Writes.MapSite, c.maps);
+        defer gpa.free(maps);
+        std.mem.sort(Writes.MapSite, maps, MapSort{ .a = a, .positions = positions }, MapSort.less);
+        for (maps) |m| {
+            try w.writeAll(if (first) " Html.map" else "; Html.map");
+            first = false;
+            if (m.module != Writes.none) {
+                try w.writeByte(' ');
+                try writePos(w, a, positions, m.module, m.token);
+            }
+        }
+        if (c.msg_whole) try w.writeAll(if (first) " msg whole" else "; msg whole");
+        try w.writeByte('\n');
+    }
+
+    // Constructors under `*`.
+    const ctors = try a.constructorShare(gpa, prog);
+    try w.print("  constructors {d}: under * {d} ({d}%)\n", .{ ctors.total, ctors.star, if (ctors.total == 0) 0 else ctors.star * 100 / ctors.total });
+
+    // (key, group) pairs.
+    const p = try a.pairCount(gpa, prog);
+    try w.print("  pairs {d} over {d} keys and {d} groups (", .{ p.pairs, p.keys, p.groups });
+    try writeRatio(w, p.pairs, p.keys);
+    try w.print(" per key); every key calls {d} of {d} groups ({d}%)\n", .{ p.every, p.groups, if (p.groups == 0) 0 else p.every * 100 / p.groups });
+
+    // Lists: each `For`, by position.
+    var lists: std.ArrayList(usize) = .empty;
+    defer lists.deinit(gpa);
+    for (prog.holes, 0..) |h, i| if (h.form == .for_keyed or h.form == .for_positional) try lists.append(gpa, i);
+    const HoleSort = struct {
+        a: *Writes,
+        holes: []const Writes.Hole,
+        positions: Positions,
+        fn less(s: @This(), x: usize, y: usize) bool {
+            return posLess(s.a, s.positions, s.holes[x].module, s.holes[x].token, s.holes[y].module, s.holes[y].token);
+        }
+    };
+    std.mem.sort(usize, lists.items, HoleSort{ .a = a, .holes = prog.holes, .positions = positions }, HoleSort.less);
+    var reconciled: u32 = 0;
+    var keyed: u32 = 0;
+    for (lists.items) |i| {
+        const h = &prog.holes[i];
+        line.clearRetainingCapacity();
+        try writePos(&line.writer, a, positions, h.module, h.token);
+        const name = line.written();
+        try w.print("  list {s}", .{name});
+        try pad(w, 7 + width(name));
+        if (h.form == .for_keyed) keyed += 1;
+        if (!prog.recognised) {
+            if (h.form == .for_keyed) reconciled += 1;
+            try w.writeAll(if (h.form == .for_keyed) "reconciler * *\n" else "positional * *\n");
+            continue;
+        }
+        const reach = try a.reconcilerKeys(gpa, prog, h);
+        defer gpa.free(reach);
+        if (reach.len == 0) {
+            try w.writeAll("scripts\n");
+            continue;
+        }
+        if (h.form == .for_keyed) reconciled += 1;
+        try w.writeAll(if (h.form == .for_keyed) "reconciler " else "positional ");
+        for (reach, 0..) |r, j| {
+            if (j > 0) try w.writeAll("; ");
+            try writeKeyName(w, a, prog.keys[r.key]);
+            switch (r.why) {
+                .tag => |e| try a.writeEdit(w, .{ .path = Writes.none, .kind = .value, .edit = e }),
+                .value => try w.writeAll(" ⟨value⟩"),
+                .prefix => |q| {
+                    try w.writeAll(" value ");
+                    try a.writePath(w, q);
+                },
+                .derived => try w.writeAll(" derived"),
+                .star => try w.writeAll(" *"),
+            }
+        }
+        try w.writeByte('\n');
+    }
+    try w.print("  reconciler {d} of {d} lists\n", .{ reconciled, keyed });
+
+    // patchAll: the `*` keys.
+    try w.writeAll("  patchAll");
+    if (!prog.recognised) {
+        try w.writeAll(" *\n");
+        return;
+    }
+    var any = false;
+    for (prog.keys) |k| {
+        if (a.keyClass(k.writes) != .star) continue;
+        try w.writeAll(if (any) "; " else " ");
+        any = true;
+        try writeKeyName(w, a, k);
+    }
+    if (!any) try w.writeAll(" <none>");
+    try w.writeByte('\n');
+}
+
+const MapSort = struct {
+    a: *Writes,
+    positions: Positions,
+    fn less(s: @This(), x: Writes.MapSite, y: Writes.MapSite) bool {
+        if (x.module == Writes.none or y.module == Writes.none) return x.module != Writes.none and y.module == Writes.none;
+        return posLess(s.a, s.positions, x.module, x.token, y.module, y.token);
+    }
+};
+
+fn posLess(a: *Writes, positions: Positions, mx: u32, tx: u32, my: u32, ty: u32) bool {
+    const o = std.mem.order(u8, a.moduleName(mx), a.moduleName(my));
+    if (o != .eq) return o == .lt;
+    const px = positions.get(positions.ctx, mx, tx);
+    const py = positions.get(positions.ctx, my, ty);
+    if (px.line != py.line) return px.line < py.line;
+    return px.col < py.col;
+}
+
+fn writePos(w: *std.Io.Writer, a: *Writes, positions: Positions, module: u32, token: u32) std.Io.Writer.Error!void {
+    const pos = positions.get(positions.ctx, module, token);
+    try modulePath(w, a.moduleName(module));
+    try w.print(":{d}:{d}", .{ pos.line, pos.col });
+}
+
+/// `n ÷ d` to two decimals, without floating point.
+fn writeRatio(w: *std.Io.Writer, n: u32, d: u32) std.Io.Writer.Error!void {
+    if (d == 0) return w.writeAll("0.00");
+    const hundredths = (@as(u64, n) * 100 + d / 2) / d;
+    try w.print("{d}.{d:0>2}", .{ hundredths / 100, hundredths % 100 });
 }
 
 fn pathLess(a: *Writes, x: u32, y: u32) bool {

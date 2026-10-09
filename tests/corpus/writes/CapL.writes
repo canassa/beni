@@ -246,3 +246,11 @@ program CapL.main : Tea.sandbox
   keys 241: bounded 241 (100%), exact 241, indexed 0, structural 0, * 0; capped 3
   hole CapL.beni:171:17                           dynamic    reads ρ.hits
   holes 1: static 0, literal 0, static-key 0, dynamic 1
+  site CapL.beni:171:14                           unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 255: under * 0 (0%)
+  pairs 227 over 241 keys and 1 groups (0.94 per key); every key calls 0 of 1 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>
