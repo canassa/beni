@@ -48,7 +48,8 @@
 //     `globalThis.__beniFuzz.send(program, msg)` (`browser-direct`).
 //
 // Now and then a message, or a click, is a **burst**: sent 33 to 40 times
-// in one action, so a list a program pushes to or prepends to grows past
+// in one action, each its own task, so a list a program pushes to or
+// prepends to grows past
 // the trie's threshold (32), which single actions in a short sequence do
 // not reach (browser-direct.md §8.3, as amended for S2). Whether an action
 // is a burst comes from a second stream of the seed, so the sequence of
@@ -156,7 +157,7 @@ function fuzzMounts() {
 // synchronously: a throw it lets out is reported to the page's `error`
 // listeners by the DOM, exactly as one out of a click's listener is, and
 // the step that sent it throws as a click step that throws does.
-function fuzzSend({ program, value, count }) {
+function fuzzSend({ program, value }) {
   let send;
   const direct = globalThis.__beniFuzz;
   if (direct !== undefined) {
@@ -167,12 +168,9 @@ function fuzzSend({ program, value, count }) {
     if (globalThis.__beniFuzzSend === undefined) return "the page has no guarded send: build it with --fuzz";
     send = () => globalThis.__beniFuzzSend(mount, value);
   }
-  // A burst is that many sends, each its own event, as a burst of clicks.
-  for (let n = 0; n < (count ?? 1); n++) {
-    const carrier = document.createElement("span");
-    carrier.addEventListener("beni-fuzz-send", send);
-    carrier.dispatchEvent(new Event("beni-fuzz-send"));
-  }
+  const carrier = document.createElement("span");
+  carrier.addEventListener("beni-fuzz-send", send);
+  carrier.dispatchEvent(new Event("beni-fuzz-send"));
   return null;
 }
 
@@ -540,7 +538,7 @@ function actions(rng, types, answers, bursts) {
         // (browser-direct.md §8.3, as amended for S2).
         const count = bursts.next() < 1 / 8 ? 33 + bursts.int(8) : 1;
         const times = count === 1 ? "" : ` ×${count}`;
-        return { line: `message ${prefix}${show(types[program][0], types[program][1], [], v)}${times}`, message: { program, value: v, count } };
+        return { line: `message ${prefix}${show(types[program][0], types[program][1], [], v)}${times}`, message: { program, value: v }, repeat: count };
       }
     }
     if (offer.pending.length !== 0 && takes(0.15)) {
@@ -593,7 +591,7 @@ function actions(rng, types, answers, bursts) {
     // a list a click pushes to becomes a trie.
     if (kind > 0.9) {
       const count = 33 + bursts.int(8);
-      return { line: `click ${t.selector} ${count}`, s: { command: "click", selector: t.selector, count } };
+      return { line: `click ${t.selector} ×${count}`, s: { command: "click", selector: t.selector }, repeat: count };
     }
     return { line: `click ${t.selector}`, s: { command: "click", selector: t.selector } };
   };
@@ -817,12 +815,18 @@ export async function fuzz(spec, host) {
         const action = draw === null ? given[i] : draw(await p.run(inPage(fuzzOffer)));
         taken.push(action);
         let fault = null;
-        if (action.message !== undefined) {
-          fault = await p.run(inPage(fuzzSend), action.message);
-        } else {
-          const why = await p.run(host.step, action.s);
-          if (why !== null && typeof why === "object") await p.click(why.x, why.y);
-          else fault = why;
+        // A burst is the action again and again, each its own task, as a
+        // user's clicks are: a platform that renders at the end of a task
+        // and one that writes as it goes then show the same page between
+        // them (browser-direct.md §4.3, Q2).
+        for (let n = 0; n < (action.repeat ?? 1) && fault === null; n++) {
+          if (action.message !== undefined) {
+            fault = await p.run(inPage(fuzzSend), action.message);
+          } else {
+            const why = await p.run(host.step, action.s);
+            if (why !== null && typeof why === "object") await p.click(why.x, why.y);
+            else fault = why;
+          }
         }
         shown.push(await look(fault));
       }

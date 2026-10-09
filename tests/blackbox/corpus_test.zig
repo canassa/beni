@@ -2231,7 +2231,11 @@ const Case = struct {
         // One path: a project's directory, whose modules import each other,
         // or the one file.
         try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) tea_arg else platform_arg });
-        try dump.append(c.arena, if (c.fixture.project) "." else sources[0]);
+        // A project with a platform of its own names its modules: `.`
+        // would take the platform's files for the project's.
+        if (c.fixture.project and hasPlatformDir(try c.fixturePath())) {
+            try dump.appendSlice(c.arena, sources);
+        } else try dump.append(c.arena, if (c.fixture.project) "." else sources[0]);
         const dumped = try c.inProject(dump.items);
         if (dumped.exit_code != 0) {
             detail("{s} [fuzz]: the message types dump failed\n{s}\n", .{ c.fixture.name, dumped.stderr });
@@ -2273,6 +2277,7 @@ const Case = struct {
         .{ .name = "NoOpEdits.beni", .why = "5 239 million instructions with the value fuzz" },
         .{ .name = "RowBlur.beni", .why = "4 858 million instructions with the value fuzz" },
         .{ .name = "RowItemOnly.beni", .why = "5 164 million instructions with the value fuzz" },
+        .{ .name = "RowReadsList.beni", .why = "5 647 million instructions with the value fuzz" },
         .{ .name = "StopInRow", .why = "over the budget with the value fuzz" },
     };
 
