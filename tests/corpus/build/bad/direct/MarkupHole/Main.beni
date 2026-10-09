@@ -1,0 +1,13 @@
+-- A hole that shows markup — here a `Maybe Html` — is markup as a value,
+-- which `browser-direct` compiles from slice S4 (docs/design/browser-direct.md
+-- §5.2, §14): `not_implemented` at the hole in S1.
+import Html exposing (Html)
+import Tea
+
+
+view : Bool → Html {}
+view on = <main>{if on then Just (<b>on</b>) else Nothing}</main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = True, update = λ_ m → m, view = view }

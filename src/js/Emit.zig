@@ -100,6 +100,7 @@ const OutputRecord = @import("OutputRecord.zig");
 const prelude = @import("../bir/prelude.zig");
 const beni_markup = @import("beni_markup");
 const Interface = @import("../resolve/Interface.zig");
+const Writes = @import("../writes/Writes.zig");
 
 const Emit = @This();
 
@@ -261,6 +262,11 @@ pub const Options = struct {
     /// the library interpreter, and no worker is written — the forced
     /// library path of `schema.md` §10, which changes no answer.
     schema_library: bool = false,
+    /// `--fuzz`, the hidden test-only flag (`src/Cli.zig`;
+    /// `browser-direct.md` §8.3): a program lowering makes each mounted
+    /// program's messages reachable as values from outside the page
+    /// (`beni_markup.Build.fuzz`). Nothing else changes.
+    fuzz: bool = false,
     /// §11: a `.mjs.map` beside every module this build emits, and the
     /// `//# sourceMappingURL=` line that names it. On by default in a
     /// development build; `Cli` never sets it with `release`, which has no
@@ -338,7 +344,7 @@ pub fn run(
     var pool: Emitter.Workers = try .init(gpa, session.io, e.workerCount());
     defer pool.deinit();
     e.pool = &pool;
-    e.extra_roots = try e.coarseRuntimeRoots();
+    e.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
     // Which of `core/List`'s core-private values this build's core
     // declares: every module that would import one it lacks says so.
     if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.core_private = Lower.corePrivateDeclared(e.bir(list));
@@ -477,6 +483,9 @@ const Emitter = struct {
     /// (§4, *`Debug.toString` reads the argument's type*): set before
     /// lowering when some module has a debug row, null otherwise.
     debug_context: ?DebugShape.Context = null,
+    /// What a program lowering reads of the write-set pass
+    /// (`Lower.Direct`), when the build's lowering compiles programs whole.
+    direct: ?Lower.Direct = null,
     /// The fields' short spellings, assigned after the optimiser.
     field_table: ?Fields.Table = null,
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
@@ -1950,6 +1959,257 @@ const Emitter = struct {
         return @fromBackingInt(@intCast(0));
     }
 
+    /// `--fuzz` (`browser-direct.md` §8.3): every constructor of the
+    /// application's own modules is reached, so no `case` arm is dropped
+    /// for a constructor nothing builds (`backend.md` §9) — a fuzzer sends
+    /// messages the program itself never makes, and both platforms must
+    /// run their arms.
+    fn withFuzzRoots(e: *Emitter, roots: []const Reach.Node) ![]const Reach.Node {
+        if (!e.options.fuzz) return roots;
+        var out: std.ArrayList(Reach.Node) = .empty;
+        try out.appendSlice(e.scratch, roots);
+        for (0..e.graph().count()) |i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            if (e.graph().modulePackage(m) != .app) continue;
+            for (0..e.bir(m).ctors.len) |c| try out.append(e.scratch, .{ .module = m, .kind = .ctor, .index = @intCast(c) });
+        }
+        return out.items;
+    }
+
+    // ---- The write-set pass, for a program lowering (version 1.7) ---------
+
+    /// `Lower.Direct`: every program constructor's call the write-set pass
+    /// finds (`Writes.runCalls`), with its keys, their steps, its holes by
+    /// read set and which key's writes conflict with which read set
+    /// (`write-sets.md` §2.5); and, in a development build, which
+    /// declarations reach `Debug` (`browser-direct.md` §8.3). Serial, in
+    /// module and instruction order: nothing here depends on `--jobs`.
+    fn buildDirect(e: *Emitter) !void {
+        const n = e.graph().count();
+        const a = e.scratch;
+        const birs = try a.alloc(*const Bir, n);
+        const names = try a.alloc([]const u8, n);
+        const packages = try a.alloc(SourceStore.Package, n);
+        const targets = try a.alloc(bool, n);
+        for (0..n) |i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            const f = e.graph().moduleFile(m);
+            birs[i] = e.bir(m);
+            names[i] = e.session.store.moduleName(f);
+            packages[i] = e.graph().modulePackage(m);
+            targets[i] = false;
+        }
+        const w = try Writes.init(.{
+            .gpa = e.gpa,
+            .graph = e.graph(),
+            .birs = birs,
+            .provenance = e.session.resolution.provenance,
+            .dispatch = e.session.checked.dispatch,
+            .interner = &e.session.interner,
+            .module_names = names,
+            .packages = packages,
+            .targets = targets,
+        });
+        defer w.deinit();
+        const calls = try w.runCalls();
+        const programs = try a.alloc(Lower.Direct.Program, calls.len);
+        var text: std.Io.Writer.Allocating = .init(a);
+        for (calls, programs) |call, *out| {
+            const prog = &call.program;
+            out.* = .{ .module = call.module, .inst = call.inst, .keys = &.{}, .steps = &.{}, .holes = &.{}, .groups = 0, .calls = &.{} };
+            // The keys: the pass's leaves, or the one `*` key of a program
+            // it does not recognise (`write-sets.md` §1.1).
+            const star_writes = [_]Writes.Write{.{ .path = Writes.rho_path, .kind = .value }};
+            const key_writes = try a.alloc([]const Writes.Write, if (prog.recognised) prog.keys.len else 1);
+            const keys = try a.alloc(beni_markup.Program.Key, key_writes.len);
+            const steps = try a.alloc([]const Lower.Direct.Step, key_writes.len);
+            if (!prog.recognised) {
+                key_writes[0] = &star_writes;
+                keys[0] = .{ .name = "*", .params = 1, .star = true };
+                steps[0] = &.{};
+            } else for (prog.keys, keys, steps, key_writes) |k, *key, *key_steps, *kw| {
+                kw.* = k.writes;
+                text.clearRetainingCapacity();
+                @import("../dump/writes.zig").writeKeyName(&text.writer, w, k) catch return error.OutOfMemory;
+                const one = k.steps.len == 1 and k.steps[0].ctor != Writes.none;
+                key.* = .{
+                    .name = try a.dupe(u8, text.written()),
+                    .params = if (one) w.ctorArity(k.steps[0].ctor) else 1,
+                    .star = w.keyClass(k.writes) == .star,
+                };
+                const list = try a.alloc(Lower.Direct.Step, k.steps.len);
+                for (k.steps, list) |s, *step| {
+                    const named = s.ctor != Writes.none;
+                    step.* = .{
+                        .ctor = e.directCtor(w, if (named) s.ctor else s.type_ctor),
+                        .named = named,
+                        .access = try e.directAccess(w, s.path),
+                    };
+                }
+                key_steps.* = list;
+            }
+            out.keys = keys;
+            out.steps = steps;
+            // The holes, by read set: equal sets are one group.
+            var groups: std.ArrayList([]const u32) = .empty;
+            const holes = try a.alloc(Lower.Direct.Hole, prog.holes.len);
+            const rho = [_]u32{Writes.rho_path};
+            for (prog.holes, holes) |h, *o| {
+                const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
+                const group: u32 = for (groups.items, 0..) |g, gi| {
+                    if (std.mem.eql(u32, g, reads)) break @intCast(gi);
+                } else blk: {
+                    try groups.append(a, reads);
+                    break :blk @intCast(groups.items.len - 1);
+                };
+                const file = e.graph().moduleFile(@fromBackingInt(@intCast(h.module)));
+                const at = e.tokenPosition(file, h.token);
+                o.* = .{
+                    .module = h.module,
+                    .token = h.token,
+                    .group = group,
+                    .bake = if (h.bake) try a.dupe(u8, h.bake_text) else "",
+                    .where = try std.fmt.allocPrint(a, "{s}:{d}:{d}", .{ std.fs.path.basename(e.session.store.path(file)), at.line, at.col }),
+                };
+            }
+            std.mem.sort(Lower.Direct.Hole, holes, {}, struct {
+                fn less(_: void, x: Lower.Direct.Hole, y: Lower.Direct.Hole) bool {
+                    return x.module < y.module or (x.module == y.module and x.token < y.token);
+                }
+            }.less);
+            out.holes = holes;
+            out.groups = @intCast(groups.items.len);
+            const conflicts = try a.alloc(bool, groups.items.len * keys.len);
+            for (groups.items, 0..) |g, gi| for (key_writes, 0..) |kw, ki| {
+                conflicts[gi * keys.len + ki] = for (g) |r| {
+                    if (w.conflicts(r, kw)) break true;
+                } else false;
+            };
+            out.calls = conflicts;
+        }
+        e.direct = .{ .programs = programs };
+        if (!e.options.release) try e.debugReach();
+    }
+
+    /// A constructor id of the write-set pass, as `Lower.Direct.Ctor`.
+    fn directCtor(e: *Emitter, w: *const Writes, c: u32) Lower.Direct.Ctor {
+        const place = w.ctorPlace(c);
+        var iface: u32 = Lower.Direct.Ctor.none;
+        if (place.module < e.session.resolution.provenance.len) {
+            for (e.session.resolution.provenance[place.module].ctor_index, 0..) |index, i| {
+                if (index == place.index) {
+                    iface = @intCast(i);
+                    break;
+                }
+            }
+        }
+        return .{ .module = place.module, .index = place.index, .iface = iface };
+    }
+
+    /// The constructor steps from the message's root to message path `p`:
+    /// what a dispatcher reads to reach the value a key's step tests.
+    fn directAccess(e: *Emitter, w: *const Writes, p: u32) ![]const Lower.Direct.Access {
+        var chain: std.ArrayList(u32) = .empty;
+        var q = p;
+        while (q != Writes.none and w.pathParent(q) != Writes.none) : (q = w.pathParent(q)) try chain.append(e.scratch, q);
+        std.mem.reverse(u32, chain.items);
+        var out: std.ArrayList(Lower.Direct.Access) = .empty;
+        for (chain.items) |s| switch (w.pathKind(s)) {
+            .ctor => try out.append(e.scratch, .{ .ctor = e.directCtor(w, w.pathA(s)), .field = w.pathB(s) }),
+            // A message reached through a tuple or a record: a dispatcher
+            // cannot follow it, so it tests nothing below (its keys then
+            // need the decision only a later step can make).
+            else => return &.{},
+        };
+        return out.items;
+    }
+
+    /// `Lower.Direct.debug_decls` and `debug_values`: the declarations from
+    /// which a call of `core/Debug` is reachable, over the same edges
+    /// reachability walks (`check/Edges.zig`), by a breadth-first walk of
+    /// the reversed graph from `Debug`'s own declarations.
+    fn debugReach(e: *Emitter) !void {
+        const n = e.graph().count();
+        const a = e.scratch;
+        const decls = try a.alloc([]bool, n);
+        var base = try a.alloc(u32, n + 1);
+        var total: u32 = 0;
+        for (0..n) |i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            decls[i] = try a.alloc(bool, e.bir(m).decls.len);
+            @memset(decls[i], false);
+            base[i] = total;
+            total += @intCast(e.bir(m).decls.len);
+        }
+        base[n] = total;
+        // The reversed edges, as (to, from) pairs over dense ids.
+        var pairs: std.ArrayList([2]u32) = .empty;
+        var stream: std.ArrayList(Edges.Edge) = .empty;
+        for (0..n) |i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            const b = e.bir(m);
+            if (i >= e.session.checked.dispatch.len) continue;
+            for (b.decls, 0..) |d, di| {
+                if (!d.kind.isValue()) continue;
+                stream.clearRetainingCapacity();
+                try Edges.declEdges(&stream, a, b, e.dispatchOf(m), @intCast(di));
+                for (stream.items) |edge| {
+                    const to: ?u32 = switch (edge) {
+                        .top => |t| if (t < b.decls.len) base[i] + t else null,
+                        .ext => |x| blk: {
+                            if (x.module.int() >= e.session.resolution.provenance.len) break :blk null;
+                            const decl = e.session.resolution.provenance[x.module.int()].valueDecl(x.value) orelse break :blk null;
+                            break :blk base[x.module.int()] + decl.int();
+                        },
+                        else => null,
+                    };
+                    if (to) |t| try pairs.append(a, .{ t, base[i] + @as(u32, @intCast(di)) });
+                }
+            }
+        }
+        std.mem.sort([2]u32, pairs.items, {}, struct {
+            fn less(_: void, x: [2]u32, y: [2]u32) bool {
+                return x[0] < y[0] or (x[0] == y[0] and x[1] < y[1]);
+            }
+        }.less);
+        const reached = try a.alloc(bool, total);
+        @memset(reached, false);
+        var queue: std.ArrayList(u32) = .empty;
+        if (e.graph().lookup(.core, InternPool.WellKnown.Debug.symbol())) |debug| {
+            for (base[debug.int()]..base[debug.int() + 1]) |id| {
+                reached[id] = true;
+                try queue.append(a, @intCast(id));
+            }
+        }
+        var head: usize = 0;
+        while (head < queue.items.len) : (head += 1) {
+            const to = queue.items[head];
+            // The pairs whose target is `to`, by binary search.
+            var lo: usize = 0;
+            var hi: usize = pairs.items.len;
+            while (lo < hi) {
+                const mid = (lo + hi) / 2;
+                if (pairs.items[mid][0] < to) lo = mid + 1 else hi = mid;
+            }
+            while (lo < pairs.items.len and pairs.items[lo][0] == to) : (lo += 1) {
+                const from = pairs.items[lo][1];
+                if (reached[from]) continue;
+                reached[from] = true;
+                try queue.append(a, from);
+            }
+        }
+        const values = try a.alloc([]bool, n);
+        for (0..n) |i| {
+            for (decls[i], 0..) |*x, di| x.* = reached[base[i] + di];
+            const provenance = if (i < e.session.resolution.provenance.len) &e.session.resolution.provenance[i] else null;
+            const count = if (provenance) |p| p.value_decl.len else 0;
+            values[i] = try a.alloc(bool, count);
+            for (values[i], 0..) |*x, vi| x.* = if (provenance.?.valueDecl(vi)) |d| decls[i][d.int()] else false;
+        }
+        e.direct.?.debug_decls = decls;
+        e.direct.?.debug_values = values;
+    }
+
     // ---- backend.md §9: reachability elimination --------------------------
 
     /// Walk §9's declaration graph and keep the answer. **Always on, for
@@ -2331,6 +2591,10 @@ const Emitter = struct {
             (if (v.int() < e.session.resolution.interfaces.len) &e.session.resolution.interfaces[v.int()] else null)
         else
             null;
+        // The write-set pass, for a lowering that compiles programs whole
+        // (`boundary.md` §9.4.6, version 1.7): run once, before any module
+        // is lowered, and read-only while they lower in parallel.
+        if (lowering) |lw| if (lw.program != null) try e.buildDirect();
 
         // §11: where the output tree is, absolutely, for the source URLs.
         const maps: ?MapRoot = if (e.options.source_maps and !e.options.release) try e.mapRoot() else null;
@@ -2372,7 +2636,7 @@ const Emitter = struct {
                     .lowering = lowering.?,
                     .vocabulary = vocabulary.?,
                     .runtime = if (markup_output) |o| try relativeSpecifier(e.scratch, paths[i], o) else "",
-                    .build = .{ .release = e.options.release, .library = e.options.library },
+                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz },
                     .module = e.runtime_module,
                     .supplied = e.supplied,
                 };
@@ -2415,7 +2679,7 @@ const Emitter = struct {
             }
             if (refined or e.runtime_module == null or !lowered_clean) break;
             refined = true;
-            const precise = try e.preciseRuntimeRoots(entry);
+            const precise = try e.withFuzzRoots(try e.preciseRuntimeRoots(entry));
             if (sameNodes(precise, e.extra_roots)) break;
             e.extra_roots = precise;
             for (slots) |*slot| slot.deinit(e.gpa);
@@ -2606,6 +2870,7 @@ const Emitter = struct {
                 .live = &e.live,
                 .derived_runtime = slot.derived_runtime,
                 .markup = slot.markup,
+                .direct = if (e.direct) |*d| d else null,
                 .inline_once = e.options.release,
                 .unit_results = e.options.release,
                 .development = !e.options.release,

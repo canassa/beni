@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.5: what the compiler hands a platform's markup lowering, and everything
+//! 1.7: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -24,8 +24,12 @@ const std = @import("std");
 /// 1.4 `Tree.constant`, 1.5 a root's inputs and reads, `Lowering.groups`
 /// and the calls that evaluate a grouped root's values, 1.6 the program
 /// hook (`Lowering.program`, `Program`, the calls that read one),
-/// `Lowering.placements` and `Lowering.no_markup_values`.
-pub const version: Version = .{ .major = 1, .minor = 6 };
+/// `Lowering.placements` and `Lowering.no_markup_values`, 1.7 the calls
+/// a program lowering compiles messages and holes with (`programKeys`,
+/// `programHole`, `programCalls`, `programUpdate`, `programArm`,
+/// `programViewEnter`, `programMessage`, `programDispatch`), `reachesDebug`
+/// and `Build.fuzz`.
+pub const version: Version = .{ .major = 1, .minor = 7 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -158,6 +162,54 @@ pub const Program = struct {
     pub const Part = enum(u8) { call, init, update, view, _ };
     /// What `Context.programReport` reports.
     pub const Code = enum(u8) { not_implemented, view_not_compiled, _ };
+
+    /// 1.7: one leaf message key of the program (`write-sets.md` §4.4),
+    /// what `Context.programKeys` lists.
+    pub const Key = struct {
+        /// The key as `beni dump --stage=writes` names it, for a handler's
+        /// name (`Inc`, `GotPage · Typed`, `(any)`, `*`).
+        name: []const u8,
+        /// The handler's parameter count: the fields of the constructor,
+        /// for a key that is one named constructor; one, the message
+        /// itself, for any other.
+        params: u32,
+        /// The key's write set is `value ρ` (class `*`): its handler
+        /// re-runs every group of the page (`browser-direct.md` §4.1,
+        /// `patchAll`).
+        star: bool,
+    };
+
+    /// 1.7: what `Context.programHole` says of one hole of the program's
+    /// `view`: a text hole (`node`) or an attribute (`item`, its index in
+    /// `Tree.items`).
+    pub const HoleRef = union(enum) { node: Node.Index, item: u32 };
+
+    pub const HoleFacts = struct {
+        /// The hole's anchored read set (`write-sets.md` §3.6), as a
+        /// number: two holes of one program have one number exactly when
+        /// they read the same model paths. What a group is (§5.3).
+        group: u32,
+        /// No key's write set conflicts with the read set (§2.5): the hole
+        /// shows the same value for the page's life (§9.1, R3).
+        static: bool,
+        /// `static`, and §9.1 bakes it: the text the template holds in the
+        /// hole's place, verbatim (plain: nothing to escape). Null
+        /// otherwise.
+        bake: ?[]const u8,
+        /// Where the hole is written, `Main.beni:12:9`, for a message that
+        /// names it; empty when the pass did not see it.
+        where: []const u8 = "",
+    };
+
+    /// 1.7: what a view event's handler value makes when its event fires
+    /// (`Context.programMessage`).
+    pub const Message = union(enum) {
+        /// The message is key `key`'s constructor applied: call that key's
+        /// handler with `args`.
+        key: struct { key: u32, args: []const Expr },
+        /// A message value, which only a dispatcher can route.
+        value: Expr,
+    };
 };
 
 pub const Error = error{ OutOfMemory, Reported };
@@ -620,6 +672,10 @@ pub const Build = struct {
     release: bool,
     /// `--library`: no entry file, so no program start (§9.4.5).
     library: bool,
+    /// 1.7: `--fuzz`, a hidden test-only flag (`browser-direct.md` §8.3):
+    /// a program lowering makes each mounted program's messages reachable
+    /// as values from outside the page, for differential fuzzing.
+    fuzz: bool = false,
 };
 
 /// Everything a lowering may do, and there is nothing else.
@@ -777,6 +833,85 @@ pub const Context = struct {
     pub fn programReport(cx: *Context, part: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
         return cx.vtable.program_report(cx.impl, part, code, message);
     }
+
+    /// 1.7, inside `Lowering.program` only: the program's leaf message
+    /// keys (`write-sets.md` §4.4), in the order `beni dump --stage=writes`
+    /// prints them — a key's named children before its default one. A
+    /// program the write-set pass does not recognise (§1.1) has one key,
+    /// `*`. Every message the program can receive is under exactly one.
+    pub fn programKeys(cx: *Context) []const Program.Key {
+        return cx.vtable.program_keys(cx.impl);
+    }
+
+    /// 1.7, inside `Lowering.program` only: what the write-set pass says of
+    /// one hole of the program's `view` root.
+    pub fn programHole(cx: *Context, hole: Program.HoleRef) Program.HoleFacts {
+        return cx.vtable.program_hole(cx.impl, hole);
+    }
+
+    /// 1.7, inside `Lowering.program` only: whether key `key`'s write set
+    /// conflicts with read set `group` (`write-sets.md` §2.5, with tag
+    /// reads): whether that key's handler must call the group.
+    pub fn programCalls(cx: *Context, key: u32, group: u32) bool {
+        return cx.vtable.program_calls(cx.impl, key, group);
+    }
+
+    /// 1.7, inside `Lowering.program` only: the program's `update` as a
+    /// function value, evaluated into `block`, when some key's arm calls it
+    /// rather than being written in place (an `update` of another module,
+    /// or computed); null when every arm is written in place. At most once
+    /// per program.
+    pub fn programUpdate(cx: *Context, block: Block) Error!?Expr {
+        return cx.vtable.program_update(cx.impl, block);
+    }
+
+    /// 1.7, inside `Lowering.program` only: key `key`'s arm of `update`
+    /// (`browser-direct.md` §4.1, step 1), its statements into `block`,
+    /// with the message's payload read from `params` (`Program.Key.params`
+    /// of them) and the old model from `model`; returns the new model.
+    /// `update` is `programUpdate`'s result.
+    pub fn programArm(cx: *Context, key: u32, block: Block, params: []const Name, model: Expr, update: ?Expr) Error!Expr {
+        return cx.vtable.program_arm(cx.impl, key, block, params, model, update);
+    }
+
+    /// 1.7, inside `Lowering.program` only: from here until
+    /// `programViewLeave`, the `view` root's inputs are what `view` makes
+    /// of `model` — its parameter bound to it, into `block` — so that
+    /// `rootValues` and `programMessage` evaluate the root's values against
+    /// that model. A new function's scope, as `bindInputs` is.
+    pub fn programViewEnter(cx: *Context, block: Block, model: Expr) Error!void {
+        return cx.vtable.program_view_enter(cx.impl, block, model);
+    }
+
+    pub fn programViewLeave(cx: *Context) void {
+        cx.vtable.program_view_leave(cx.impl);
+    }
+
+    /// 1.7, inside `programViewEnter`: an event's handler value `value`,
+    /// with the event's `payload` for a payload-form handler, as what it
+    /// sends — the key and its handler's arguments when the value is a
+    /// constructor (applied) whose key is a handler's, read at the event
+    /// (`browser-direct.md` §4.2, Q1), or else the message value.
+    pub fn programMessage(cx: *Context, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message {
+        return cx.vtable.program_message(cx.impl, block, handler, payload);
+    }
+
+    /// 1.7, inside `Lowering.program` only: the dispatcher's body
+    /// (`browser-direct.md` §4.4) into `block` — the message `msg`'s tags
+    /// read along the key tree, and `handlers[k]` called with key `k`'s
+    /// payload read from it. A message under no key is impossible
+    /// (`write-sets.md` §4.4), so the last key is the fallback.
+    pub fn programDispatch(cx: *Context, block: Block, msg: Expr, handlers: []const Name) Error!void {
+        return cx.vtable.program_dispatch(cx.impl, block, msg, handlers);
+    }
+
+    /// 1.7: whether evaluating value `v` may call `Debug` — directly or
+    /// through any function it calls, transitively. A value the
+    /// development verify mode would print again by evaluating it twice
+    /// (`browser-direct.md` §8.3).
+    pub fn reachesDebug(cx: *Context, v: Value.Index) bool {
+        return cx.vtable.reaches_debug(cx.impl, v);
+    }
 };
 
 /// `JsIr` restricted to what a template needs. Assignment is a statement,
@@ -932,6 +1067,16 @@ pub const VTable = struct {
     not_implemented: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
     program_init: *const fn (impl: *anyopaque, block: Block) Error!Expr,
     program_report: *const fn (impl: *anyopaque, at: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
+    program_keys: *const fn (impl: *anyopaque) []const Program.Key,
+    program_hole: *const fn (impl: *anyopaque, hole: Program.HoleRef) Program.HoleFacts,
+    program_calls: *const fn (impl: *anyopaque, key: u32, group: u32) bool,
+    program_update: *const fn (impl: *anyopaque, block: Block) Error!?Expr,
+    program_arm: *const fn (impl: *anyopaque, key: u32, block: Block, params: []const Name, model: Expr, update: ?Expr) Error!Expr,
+    program_view_enter: *const fn (impl: *anyopaque, block: Block, model: Expr) Error!void,
+    program_view_leave: *const fn (impl: *anyopaque) void,
+    program_message: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
+    program_dispatch: *const fn (impl: *anyopaque, block: Block, msg: Expr, handlers: []const Name) Error!void,
+    reaches_debug: *const fn (impl: *anyopaque, v: Value.Index) bool,
 
     literal: *const fn (impl: *anyopaque, which: Literal, text: []const u8) Error!Expr,
     template: *const fn (impl: *anyopaque, parts: []const TemplatePart) Error!Expr,

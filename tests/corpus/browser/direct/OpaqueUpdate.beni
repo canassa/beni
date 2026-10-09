@@ -1,0 +1,45 @@
+-- An `update` the write-set pass cannot key — here wrapped by a helper —
+-- is one key, `*`, never a refusal (browser-direct.md §4.1, §11.1; rule 7):
+-- every message is a value handed to the `update` function, evaluated once
+-- at mount, and then `patchAll` calls every group, each still guarded by
+-- its compare. The page is right, and only slower, by today's amount.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Typed String
+
+
+type alias Model =
+    n : Int
+    text : String
+
+
+withLogging : (Msg, Model → Model) → (Msg, Model → Model)
+withLogging f = λmsg model → f msg model
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Typed s →
+            { model | text = s }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="inc" onClick={Inc}>inc</button>
+        <input id="in" onInput={Typed} />
+        <p id="n">{Debug.log "n" model.n}</p>
+        <p id="text">{model.text}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { n = 0, text = "" }, update = withLogging update, view = view }

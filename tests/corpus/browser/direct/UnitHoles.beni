@@ -1,0 +1,44 @@
+-- Every slot starts at the runtime's `unset`, never `undefined`
+-- (browser-direct.md §5.3), because `⊤` is `undefined` under `--release`
+-- (backend.md §4): a hole first written with a value made of a `⊤` is
+-- written at mount like any other. In slice S1 no hole holds a `⊤` itself —
+-- a text or attribute hole is a `String`, a number, a `Char` or a `Bool`;
+-- the `⊤` hole and the `Maybe ⊤` scrutinee are slice S4's — so the page
+-- reads a `Maybe ⊤` from its model three ways, and is built for both
+-- platforms in development and release.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Toggle
+
+
+type alias Model =
+    u : Maybe ⊤
+
+
+update : Msg, Model → Model
+update _ model = { model | u = if model.u == Nothing then Just ⊤ else Nothing }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <p id="case">
+            {case model.u of
+                Just _ →
+                    "just"
+
+                Nothing →
+                    "nothing"
+            }
+        </p>
+        <p id="eq">{model.u == Just ⊤}</p>
+        <p id="title" title={Maybe.withDefault (Maybe.map model.u λ⊤ → "unit") "none"}>title</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { u = Just ⊤ }, update = update, view = view }

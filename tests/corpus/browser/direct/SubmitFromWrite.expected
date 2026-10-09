@@ -1,0 +1,30 @@
+-- load
+<body>
+  <form id="form">
+    <button id="go" type="submit">
+      "go "
+      "0"
+    </button>
+    <p id="submitted">""</p>
+  </form>
+</body>
+-- click #go
+<body>
+  <form id="form">
+    <button id="go" type="submit">
+      "go "
+      "1"
+    </button>
+    <p id="submitted">"1"</p>
+  </form>
+</body>
+-- click #go
+<body>
+  <form id="form">
+    <button id="go" type="submit">
+      "go "
+      "2"
+    </button>
+    <p id="submitted">"1,2"</p>
+  </form>
+</body>

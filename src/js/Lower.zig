@@ -211,6 +211,9 @@ pub const Input = struct {
     derived_runtime: []const u8 = "./_core/_derived.mjs",
     /// The build's markup lowering (`boundary.md` §9.4), when it has one.
     markup: ?Markup = null,
+    /// What a program lowering reads of the write-set pass (version 1.7),
+    /// when the build's lowering compiles programs whole.
+    direct: ?*const Direct = null,
     /// `--release`: a function of this module called from one place is
     /// written at that place (`backend.md` §9, *A function called once is
     /// written where it is called*).
@@ -285,6 +288,69 @@ pub const Markup = struct {
     /// A runtime export the module supplies: its name, its declaration in
     /// the module, and its row among the module's interface values.
     pub const Supplied = struct { name: []const u8, decl: u32, value: u32 };
+};
+
+/// What a program lowering (`Lowering.program`, `boundary.md` §9.4.6,
+/// version 1.7) reads of the write-set pass (`write-sets.md`), per call of
+/// a program constructor: built once per build, before any module is
+/// lowered, from `Writes.runCalls`, and read-only while modules lower in
+/// parallel. Every program is in it, recognised or not.
+pub const Direct = struct {
+    /// Sorted by module, then call instruction.
+    programs: []const Program = &.{},
+    /// Per module, per declaration: whether evaluating it may call
+    /// `Debug`, directly or through what it calls (`browser-direct.md`
+    /// §8.3's skip). Empty in a build that has no verify mode.
+    debug_decls: []const []const bool = &.{},
+    /// Per module, per interface value: the same, for a value of another
+    /// module.
+    debug_values: []const []const bool = &.{},
+
+    pub const Program = struct {
+        module: u32,
+        inst: u32,
+        keys: []const beni_markup.Program.Key,
+        /// Per key, its steps from the message's root.
+        steps: []const []const Step,
+        /// Sorted by module, then token.
+        holes: []const Hole,
+        /// The number of distinct read sets.
+        groups: u32,
+        /// `groups × keys`: whether key `k`'s write set conflicts with
+        /// read set `g`, at `g * keys.len + k`.
+        calls: []const bool,
+    };
+
+    /// One step of a key: a constructor at a path of the message, or the
+    /// default child, which stands for the constructors its named
+    /// siblings do not (`write-sets.md` §4.4).
+    pub const Step = struct {
+        ctor: Ctor,
+        named: bool,
+        /// From the message's root to the path this step splits: each a
+        /// constructor and the field taken.
+        access: []const Access,
+    };
+
+    pub const Access = struct { ctor: Ctor, field: u32 };
+
+    /// A constructor, by its module, its index among that module's
+    /// `Bir.ctors`, and its row in that module's interface (`none` when
+    /// the module does not export it).
+    pub const Ctor = struct {
+        module: u32,
+        index: u32,
+        iface: u32,
+
+        pub const none: u32 = std.math.maxInt(u32);
+    };
+
+    pub const Hole = struct { module: u32, token: u32, group: u32, bake: []const u8, where: []const u8 = "" };
+
+    pub fn programAt(d: *const Direct, module: u32, inst: u32) ?*const Program {
+        for (d.programs) |*p| if (p.module == module and p.inst == inst) return p;
+        return null;
+    }
 };
 
 /// Lower one checked module. `scratch` is the caller's arena — every
@@ -706,6 +772,9 @@ pub const Lowerer = struct {
     consumed: []const bool = &.{},
     /// The program call whose hook is running (`cx.programInit`).
     program_now: ?*ProgramCall = null,
+    /// Inside `cx.programViewEnter` (version 1.7): the `view` root whose
+    /// inputs are bound, and the declaration context to return to.
+    program_view: ?struct { root: beni_markup.Root.Index, saved: DeclCtx } = null,
     /// Which body of the declaration being lowered this is
     /// (transparent-effects-proposal.md §16.2): the direct one, where a
     /// `poly` answer is no, or the suspendable one, `<name>$s`, where it is
@@ -10674,7 +10743,7 @@ pub const Lowerer = struct {
                     // A refused one is reported here and still found, so its
                     // record's `view` is not emitted and refused again as a
                     // markup value.
-                    var pc = l.programCallOf(@fromBackingInt(@intCast(at)), ci);
+                    var pc = l.programCallOf(@fromBackingInt(@intCast(at)), ci, @intCast(di));
                     if (lowering.programs[ci].refused) |message| {
                         try l.report(.not_implemented, @fromBackingInt(@intCast(at)), "{s}", .{message});
                         pc.refused = true;
@@ -10720,18 +10789,53 @@ pub const Lowerer = struct {
 
     /// The call at `inst` of constructor `ci`, with its record's fields
     /// when its argument is a record literal.
-    fn programCallOf(l: *Lowerer, inst: Inst.Index, ci: u32) ProgramCall {
-        var pc: ProgramCall = .{ .inst = inst.int(), .constructor = ci };
+    fn programCallOf(l: *Lowerer, inst: Inst.Index, ci: u32, decl: u32) ProgramCall {
+        var pc: ProgramCall = .{ .inst = inst.int(), .constructor = ci, .decl = decl, .record_decl = decl };
+        if (l.in.direct) |d| pc.direct = d.programAt(l.in.module.int(), inst.int());
         const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
-        if (args.len != 1 or l.bir.instTag(args[0]) != .record) return pc;
+        if (args.len != 1) return pc;
+        var record = args[0];
+        // A top-level value of this module whose body is the record literal
+        // (version 1.7, `write-sets.md` §1.1's second shape).
+        if (l.in.direct != null and l.bir.instTag(record) == .top) {
+            const target = l.bir.instData(record).lhs;
+            if (target >= l.bir.decls.len) return pc;
+            const d = l.bir.decls[target];
+            if (d.kind != .value or d.params != 0) return pc;
+            record = d.body.unwrap() orelse return pc;
+            pc.record_decl = target;
+        }
+        if (l.bir.instTag(record) != .record) return pc;
         pc.record = true;
-        for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[0])), Bir.Field)) |field| {
+        for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(record)), Bir.Field)) |field| {
             const field_name = l.text(l.bir.symbol(field.name));
             if (std.mem.eql(u8, field_name, "init")) pc.init = field.value;
             if (std.mem.eql(u8, field_name, "update")) pc.update = field.value;
             if (std.mem.eql(u8, field_name, "view")) pc.view = field.value;
         }
+        pc.update_inline = l.in.direct != null and l.updateInlinable(pc.update);
         return pc;
+    }
+
+    /// Whether a program's `update` is a function whose body each key's arm
+    /// can be written from in place (version 1.7): a top-level function of
+    /// this module of two parameters that takes no evidence, or a lambda of
+    /// two written in the record.
+    fn updateInlinable(l: *Lowerer, field: ?Inst.Index) bool {
+        const f = field orelse return false;
+        const d = l.bir.instData(f);
+        switch (l.bir.instTag(f)) {
+            .lambda => return l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index).len == 2,
+            .top => {
+                if (d.lhs >= l.bir.decls.len) return false;
+                const decl = l.bir.decls[d.lhs];
+                if (decl.kind != .value or decl.params != 2 or decl.body.unwrap() == null) return false;
+                if (Convention.ofDecl(l.in.dispatch, l.bir, d.lhs).evidence != 0) return false;
+                if (l.in.dispatch.effectDecl(d.lhs).twin) return false;
+                return l.paramsOf(d.lhs).len == 2;
+            },
+            else => return false,
+        }
     }
 
     /// The `view` and `update` declarations the hook consumes: a function
@@ -10748,9 +10852,23 @@ pub const Lowerer = struct {
         var field_refs = try std.DynamicBitSetUnmanaged.initEmpty(l.scratch, tags.len);
         var any = false;
         for (l.program_calls) |pc| {
+            // A top-level record only program calls name is the hook's too
+            // (version 1.7): it is never evaluated.
+            if (pc.record and pc.record_decl != pc.decl) {
+                const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(data[pc.inst].rhs))), Inst.Index);
+                const d = decls[pc.record_decl];
+                const is_entry = if (l.in.entry_decl) |entry| entry == pc.record_decl else false;
+                if (args.len == 1 and !d.is_pub and !is_entry) {
+                    candidate[pc.record_decl] = true;
+                    field_refs.set(args[0].int());
+                    any = true;
+                }
+            }
             for ([_]?Inst.Index{ pc.view, pc.update }) |field| {
                 const f = field orelse continue;
                 if (tags[f.int()] != .top) continue;
+                // An `update` the arms call is emitted (version 1.7).
+                if (l.in.direct != null and field == pc.update and !pc.update_inline) continue;
                 const index = data[f.int()].lhs;
                 if (index >= decls.len) continue;
                 const d = decls[index];
@@ -10774,6 +10892,15 @@ pub const Lowerer = struct {
             while (at < d.inst_end.int()) : (at += 1) {
                 if (tags[at] != .top or field_refs.isSet(at)) continue;
                 if (data[at].lhs < decls.len) candidate[data[at].lhs] = false;
+            }
+        }
+        // A top-level record that is written after all writes the `view`
+        // and `update` it names.
+        for (l.program_calls) |pc| {
+            if (!pc.record or pc.record_decl == pc.decl or candidate[pc.record_decl]) continue;
+            for ([_]?Inst.Index{ pc.view, pc.update }) |field| {
+                const f = field orelse continue;
+                if (tags[f.int()] == .top and data[f.int()].lhs < decls.len) candidate[data[f.int()].lhs] = false;
             }
         }
         l.consumed = candidate;
@@ -10949,6 +11076,8 @@ pub const Lowerer = struct {
         defer l.case_depth = depth;
         const outer = l.enterFunction(false);
         defer l.leaveFunction(outer);
+        const saved = try l.enterDecl(pc.record_decl);
+        defer l.leaveDecl(saved);
         const value = try l.expr(&stmts, init);
         // Bound to a name, which `--release` keeps though nothing reads it
         // when `init` may have an effect — a throw that stops the page, a
@@ -10973,6 +11102,595 @@ pub const Lowerer = struct {
             .view_not_compiled => .view_not_compiled,
             else => .not_implemented,
         }, region, "{s}", .{message});
+    }
+
+    // ---- The program hook, version 1.7 (browser-direct.md §4, §5) ---------
+    //
+    // A program lowering compiles each message key's arm of `update` and
+    // each hole of `view` where the program is called. Their instructions
+    // are another declaration's — `update`'s, `view`'s, a top-level
+    // record's — so each is lowered inside that declaration's context
+    // (`enterDecl`): its locals, named past every local named so far.
+
+    /// A declaration's lowering context, saved while another's is entered.
+    const DeclCtx = struct {
+        locals: []const Bir.Local,
+        local_names: []JsIr.NameIndex,
+        decl_index: ?u32,
+        tag_base: u32,
+    };
+
+    /// Enter declaration `decl`'s context: the one being lowered gets a copy
+    /// of its local names, so what is bound inside is undone on leaving.
+    fn enterDecl(l: *Lowerer, decl: u32) Allocator.Error!DeclCtx {
+        const saved: DeclCtx = .{ .locals = l.locals, .local_names = l.local_names, .decl_index = l.decl_index, .tag_base = l.local_tag_base };
+        if (l.decl_index == decl or decl >= l.bir.decls.len) {
+            l.local_names = try l.scratch.dupe(JsIr.NameIndex, l.local_names);
+            return saved;
+        }
+        l.locals = l.bir.declLocals(l.bir.decls[decl]);
+        l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
+        @memset(l.local_names, .none);
+        l.decl_index = decl;
+        l.local_tag_base = l.local_tag_next;
+        l.local_tag_next += @intCast(l.locals.len);
+        return saved;
+    }
+
+    fn leaveDecl(l: *Lowerer, saved: DeclCtx) void {
+        l.locals = saved.locals;
+        l.local_names = saved.local_names;
+        l.decl_index = saved.decl_index;
+        l.local_tag_base = saved.tag_base;
+    }
+
+    /// A function a program record names: its declaration (the record's,
+    /// for a lambda), its parameter patterns and its body.
+    const FieldFunction = struct { decl: u32, params: []const Inst.Index, body: Inst.Index };
+
+    fn fieldFunction(l: *Lowerer, pc: *const ProgramCall, field: ?Inst.Index) ?FieldFunction {
+        const f = field orelse return null;
+        const d = l.bir.instData(f);
+        switch (l.bir.instTag(f)) {
+            .lambda => return .{
+                .decl = pc.record_decl,
+                .params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index),
+                .body = @fromBackingInt(@intCast(d.rhs)),
+            },
+            .top => {
+                if (d.lhs >= l.bir.decls.len) return null;
+                if (l.bir.decls[d.lhs].body.unwrap() == null) return null;
+                return .{ .decl = d.lhs, .params = l.paramsOf(d.lhs), .body = l.bodyOf(d.lhs) };
+            },
+            else => return null,
+        }
+    }
+
+    /// The program's keys: the write-set pass's, or the one `*` key of a
+    /// program it has nothing of.
+    fn directKeys(l: *Lowerer) []const beni_markup.Program.Key {
+        const pc = l.program_now orelse return &.{};
+        if (pc.direct) |d| return d.keys;
+        return &star_key;
+    }
+
+    const star_key = [_]beni_markup.Program.Key{.{ .name = "*", .params = 1, .star = true }};
+
+    fn directSteps(l: *Lowerer, key: u32) []const Direct.Step {
+        const pc = l.program_now orelse return &.{};
+        const d = pc.direct orelse return &.{};
+        return if (key < d.steps.len) d.steps[key] else &.{};
+    }
+
+    /// `cx.programHole`.
+    fn directHole(l: *Lowerer, ref: beni_markup.Program.HoleRef) beni_markup.Program.HoleFacts {
+        const unknown: beni_markup.Program.HoleFacts = .{ .group = std.math.maxInt(u32), .static = false, .bake = null };
+        const pc = l.program_now orelse return unknown;
+        const d = pc.direct orelse return unknown;
+        const st = l.mk orelse return unknown;
+        const token = switch (ref) {
+            .node => |n| st.built.node_tokens[@backingInt(n)],
+            .item => |i| if (i < st.built.item_tokens.len) st.built.item_tokens[i] else return unknown,
+        };
+        const module = l.in.module.int();
+        var lo: usize = 0;
+        var hi: usize = d.holes.len;
+        while (lo < hi) {
+            const mid = (lo + hi) / 2;
+            const h = d.holes[mid];
+            if (h.module < module or (h.module == module and h.token < token)) lo = mid + 1 else hi = mid;
+        }
+        if (lo >= d.holes.len or d.holes[lo].module != module or d.holes[lo].token != token) return unknown;
+        const h = d.holes[lo];
+        var static = true;
+        for (0..d.keys.len) |k| {
+            if (d.calls[h.group * d.keys.len + k]) static = false;
+        }
+        return .{ .group = h.group, .static = static, .bake = if (static and h.bake.len != 0) h.bake else null, .where = h.where };
+    }
+
+    /// `cx.programCalls`: a hole the pass does not know is called by every
+    /// key.
+    fn directCalls(l: *Lowerer, key: u32, group: u32) bool {
+        const pc = l.program_now orelse return true;
+        const d = pc.direct orelse return true;
+        if (group >= d.groups or key >= d.keys.len) return true;
+        return d.calls[group * d.keys.len + key];
+    }
+
+    /// A constructor of the write-set pass, as this module writes it.
+    fn directCtor(l: *Lowerer, c: Direct.Ctor) ?struct { CtorRep, Symbol } {
+        if (c.module == l.in.module.int()) {
+            if (c.index >= l.bir.ctors.len) return null;
+            return .{ l.ctorRepLocal(c.index), l.bir.symbol(l.bir.ctors[c.index].name) };
+        }
+        if (c.iface == Direct.Ctor.none or c.module >= l.in.interfaces.len) return null;
+        const module: Graph.Index = @fromBackingInt(@intCast(c.module));
+        const iface = &l.in.interfaces[c.module];
+        if (c.iface >= iface.ctors.len) return null;
+        return .{ l.ctorRepExternal(module, c.iface), iface.symbols[@backingInt(iface.ctors[c.iface].name)] };
+    }
+
+    /// Field `i` of a value of constructor `rep`.
+    fn ctorField(l: *Lowerer, subject: Node.Index, rep: CtorRep, i: u32, p: u32) !Node.Index {
+        switch (rep) {
+            .record => |r| {
+                const names = try l.recordNames(r);
+                if (i < names.len) return l.fieldMember(subject, names[i], p);
+            },
+            .unboxed => return subject,
+            else => {},
+        }
+        return l.member(subject, try l.slotName(i), p);
+    }
+
+    /// Whether `subject` is constructor `rep`'s value, or null when every
+    /// value of its type is.
+    fn ctorIs(l: *Lowerer, subject: Node.Index, rep: CtorRep, tag: Symbol, p: u32) !?Node.Index {
+        return switch (rep) {
+            .boolean => |value| if (value) subject else try l.unary(.not, subject, p),
+            .unboxed, .record => null,
+            .bare_tag => try l.binary(.strict_eq, subject, try l.tagLiteral(rep, tag, p), p),
+            .tagged => try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.tagLiteral(rep, tag, p), p),
+        };
+    }
+
+    /// Whether constructor reference `ref` (a pattern's or an
+    /// expression's) is the pass's constructor `c`.
+    fn sameCtor(l: *Lowerer, ref: Inst.Index, c: Direct.Ctor) bool {
+        const d = l.bir.instData(ref);
+        return switch (l.bir.instTag(ref)) {
+            .ctor => c.module == l.in.module.int() and c.index == d.lhs,
+            .ext_ctor => c.module == d.lhs and c.iface == d.rhs,
+            else => false,
+        };
+    }
+
+    /// The key whose single step is constructor `ref`, when a handler
+    /// takes its fields; or the key a value of it is under whose handler
+    /// takes the message whole; null when only a dispatcher can tell.
+    const KeyOfCtor = struct { key: u32, fields: bool };
+
+    fn keyOfCtor(l: *Lowerer, ref: Inst.Index) ?KeyOfCtor {
+        const keys = l.directKeys();
+        var default: ?u32 = null;
+        for (keys, 0..) |key, k| {
+            const steps = l.directSteps(@intCast(k));
+            if (steps.len == 0) return .{ .key = @intCast(k), .fields = false };
+            if (!steps[0].named) {
+                if (steps.len == 1) default = @intCast(k);
+                continue;
+            }
+            if (!l.sameCtor(ref, steps[0].ctor)) continue;
+            if (steps.len != 1 or key.star) return null;
+            return .{ .key = @intCast(k), .fields = true };
+        }
+        if (default) |k| return .{ .key = k, .fields = false };
+        return null;
+    }
+
+    /// The message key `key`'s handler was given, as a value: its one
+    /// constructor applied to the parameters, or the one parameter.
+    fn keyMessage(l: *Lowerer, key: u32, params: []const Node.Index, p: u32) !Node.Index {
+        const steps = l.directSteps(key);
+        if (steps.len == 1 and steps[0].named) {
+            if (l.directCtor(steps[0].ctor)) |rt| return l.ctorValue(rt[0], rt[1], params, p);
+        }
+        return if (params.len != 0) params[0] else l.nullNode(p);
+    }
+
+    /// `cx.programUpdate`.
+    fn directUpdate(l: *Lowerer, block: beni_markup.Block) Allocator.Error!?Node.Index {
+        const pc = l.program_now orelse return null;
+        if (pc.update_inline) return null;
+        const st = l.mk.?;
+        const p = st.pos;
+        const f = pc.update orelse {
+            try l.report(.internal, @fromBackingInt(@intCast(pc.inst)), "A markup lowering asked for the `update` of a program record that has none.", .{});
+            return null;
+        };
+        var stmts: StmtList = .empty;
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const saved = try l.enterDecl(pc.record_decl);
+        defer l.leaveDecl(saved);
+        const value = try l.expr(&stmts, f);
+        const bound = try l.fresh(try l.interner.getOrPut(l.gpa, "update"));
+        try l.constDecl(&stmts, bound, value, p);
+        if (l.mayHaveEffect(f)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return try l.ident(bound, p);
+    }
+
+    /// `cx.programArm`: key `key`'s arm, `update`'s body written in place
+    /// with its parameters bound — and, for a key of one constructor whose
+    /// `update` is a `case` on the message, only that constructor's branch
+    /// (`browser-direct.md` §4.1, step 1) — or a call of `update`.
+    fn directArm(l: *Lowerer, key: u32, block: beni_markup.Block, params: []const JsIr.NameIndex, model: Node.Index, update: ?Node.Index) Allocator.Error!Node.Index {
+        const st = l.mk.?;
+        const p = st.pos;
+        const pc = l.program_now orelse return l.nullNode(p);
+        var stmts: StmtList = .empty;
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const param_nodes = try l.scratch.alloc(Node.Index, params.len);
+        for (param_nodes, params) |*n, name_| n.* = try l.ident(name_, p);
+        const result = blk: {
+            const function = (if (pc.update_inline) l.fieldFunction(pc, pc.update) else null) orelse {
+                const callee = update orelse {
+                    try l.report(.internal, @fromBackingInt(@intCast(pc.inst)), "A markup lowering wrote an arm of `update` without `update`.", .{});
+                    break :blk try l.nullNode(p);
+                };
+                break :blk try l.call(callee, &.{ try l.keyMessage(key, param_nodes, p), model }, p);
+            };
+            const saved = try l.enterDecl(function.decl);
+            defer l.leaveDecl(saved);
+            try l.bindParam(&stmts, function.params[1], model);
+            if (try l.specialisedArm(&stmts, key, function, params, param_nodes)) |value| break :blk value;
+            try l.bindParam(&stmts, function.params[0], try l.keyMessage(key, param_nodes, p));
+            break :blk try l.expr(&stmts, function.body);
+        };
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return result;
+    }
+
+    /// Bind a parameter pattern to a value: a variable reads a name the
+    /// value already is under that name, and anything else is bound.
+    fn bindParam(l: *Lowerer, out: *StmtList, pattern: Inst.Index, value: Node.Index) Allocator.Error!void {
+        if (l.bir.instTag(pattern) == .pat_var and l.b.tagOf(value) == .ident) {
+            const local = l.bir.instData(pattern).lhs;
+            if (local < l.local_names.len) {
+                l.local_names[local] = @fromBackingInt(@intCast(l.b.dataOf(value).lhs));
+                return;
+            }
+        }
+        if (l.bir.instTag(pattern) == .pat_var) {
+            const local = l.bir.instData(pattern).lhs;
+            try l.constDecl(out, try l.localName(local), value, l.pos(pattern));
+            return;
+        }
+        try l.bindings(out, pattern, value);
+    }
+
+    /// The branch of `update`'s `case msg of` that key `key`'s first step
+    /// selects, written with its pattern's variables read from the
+    /// parameters — the constructor's fields for a key of one named
+    /// constructor, the fields of the message the handler takes for a
+    /// deeper key (whose own `case` on the inner message then decides) — or
+    /// the wildcard branch for a key's default step; null, with nothing
+    /// written, when `update` is not that shape or the branch's pattern
+    /// tests more than the constructor.
+    fn specialisedArm(l: *Lowerer, out: *StmtList, key: u32, function: FieldFunction, params: []const JsIr.NameIndex, param_nodes: []const Node.Index) Allocator.Error!?Node.Index {
+        const steps = l.directSteps(key);
+        if (steps.len == 0) return null;
+        const first = steps[0];
+        const msg_pattern = function.params[0];
+        if (l.bir.instTag(msg_pattern) != .pat_var) return null;
+        const msg_local = l.bir.instData(msg_pattern).lhs;
+        if (l.bir.instTag(function.body) != .case) return null;
+        const cd = l.bir.instData(function.body);
+        const scrutinee: Inst.Index = @fromBackingInt(@intCast(cd.lhs));
+        if (l.bir.instTag(scrutinee) != .local or l.bir.instData(scrutinee).lhs != msg_local) return null;
+        const p = l.pos(function.body);
+        // The fields a named constructor's branch binds.
+        const one = steps.len == 1 and first.named;
+        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(cd.rhs))), Inst.Index)) |branch| {
+            if (l.bir.instTag(branch) != .branch) return null;
+            const bd = l.bir.instData(branch);
+            const pattern: Inst.Index = @fromBackingInt(@intCast(bd.lhs));
+            const body: Inst.Index = @fromBackingInt(@intCast(bd.rhs));
+            switch (l.bir.instTag(pattern)) {
+                .pat_ctor => {
+                    // A default step stands for the constructors no branch
+                    // names: a named branch is never its.
+                    if (!first.named) continue;
+                    const pd = l.bir.instData(pattern);
+                    if (!l.sameCtor(@fromBackingInt(@intCast(pd.lhs)), first.ctor)) continue;
+                    const subs = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(pd.rhs))), Inst.Index);
+                    if (one and subs.len != params.len) return null;
+                    for (subs) |sub| switch (l.bir.instTag(sub)) {
+                        .pat_var, .pat_wild, .pat_unit => {},
+                        else => return null,
+                    };
+                    const rep = if (one) null else (l.directCtor(first.ctor) orelse return null)[0];
+                    // The message itself, where the branch reads it whole.
+                    if (l.subtreeReadsLocal(body, msg_local)) try l.bindParam(out, msg_pattern, try l.keyMessage(key, param_nodes, p));
+                    for (subs, 0..) |sub, i| {
+                        if (l.bir.instTag(sub) != .pat_var) continue;
+                        const value = if (rep) |r| try l.ctorField(param_nodes[0], r, @intCast(i), p) else param_nodes[i];
+                        try l.bindParam(out, sub, value);
+                    }
+                    return try l.expr(out, body);
+                },
+                .pat_wild => {
+                    if (l.subtreeReadsLocal(body, msg_local)) try l.bindParam(out, msg_pattern, try l.keyMessage(key, param_nodes, p));
+                    return try l.expr(out, body);
+                },
+                .pat_var => {
+                    try l.bindParam(out, msg_pattern, try l.keyMessage(key, param_nodes, p));
+                    try l.bindParam(out, pattern, try l.ident(try l.localName(msg_local), p));
+                    return try l.expr(out, body);
+                },
+                else => return null,
+            }
+        }
+        return null;
+    }
+
+    /// The instructions an instruction's value is made of, for the walks
+    /// below; patterns and types are not among them.
+    fn instChildren(l: *Lowerer, inst: Inst.Index, out: *std.ArrayList(Inst.Index)) Allocator.Error!void {
+        const d = l.bir.instData(inst);
+        const one = struct {
+            fn of(x: u32) Inst.Index {
+                return @fromBackingInt(@intCast(x));
+            }
+        }.of;
+        switch (l.bir.instTag(inst)) {
+            .call => {
+                try out.append(l.scratch, one(d.lhs));
+                try out.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index));
+            },
+            .method_call => {
+                try out.append(l.scratch, one(d.lhs));
+                const mc = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
+                try out.appendSlice(l.scratch, l.bir.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index));
+            },
+            .type_dispatch => {
+                const t = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
+                try out.appendSlice(l.scratch, l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index));
+            },
+            .let => {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                    const dd = l.bir.instData(def);
+                    switch (l.bir.instTag(def)) {
+                        .let_def, .let_pattern, .let_stmt => try out.append(l.scratch, one(dd.rhs)),
+                        else => {},
+                    }
+                }
+                try out.append(l.scratch, one(d.rhs));
+            },
+            .case => {
+                try out.append(l.scratch, one(d.lhs));
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) == .branch) try out.append(l.scratch, one(l.bir.instData(branch).rhs));
+                }
+            },
+            .@"try", .field_access, .tuple_index => try out.append(l.scratch, one(d.lhs)),
+            .tuple, .list, .interp => try out.appendSlice(l.scratch, l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)),
+            .record => for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| try out.append(l.scratch, f.value),
+            .record_update => {
+                try out.append(l.scratch, one(d.lhs));
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| try out.append(l.scratch, f.value);
+            },
+            .lambda => try out.append(l.scratch, one(d.rhs)),
+            else => {},
+        }
+    }
+
+    /// Whether `inst`'s value reads local `local`, in any function it
+    /// makes too.
+    fn subtreeReadsLocal(l: *Lowerer, inst: Inst.Index, local: u32) bool {
+        var stack: std.ArrayList(Inst.Index) = .empty;
+        stack.append(l.scratch, inst) catch return true;
+        while (stack.pop()) |at| {
+            if (l.bir.instTag(at) == .local and l.bir.instData(at).lhs == local) return true;
+            l.instChildren(at, &stack) catch return true;
+        }
+        return false;
+    }
+
+    /// `cx.reachesDebug`: whether evaluating value `v` may call `Debug`,
+    /// directly or through anything it calls (`Direct.debug_decls`).
+    fn directReachesDebug(l: *Lowerer, v: beni_markup.Value.Index) bool {
+        const st = l.mk orelse return true;
+        const d = l.in.direct orelse return true;
+        if (d.debug_decls.len == 0) return true;
+        const at = @backingInt(v);
+        const start: Inst.Index = switch (st.built.values[at]) {
+            .inst => |i| i,
+            .let_value => |lv| lv.inst,
+            .callee => |i| i,
+            .call => |c| blk: {
+                for (0..c.args.len) |k| if (l.directReachesDebug(c.args.at(@intCast(k)))) return true;
+                break :blk switch (st.built.values[c.callee]) {
+                    .callee => |i| i,
+                    else => return true,
+                };
+            },
+            else => return false,
+        };
+        var stack: std.ArrayList(Inst.Index) = .empty;
+        stack.append(l.scratch, start) catch return true;
+        const module = l.in.module.int();
+        while (stack.pop()) |inst| {
+            const data = l.bir.instData(inst);
+            switch (l.bir.instTag(inst)) {
+                .top => if (module < d.debug_decls.len and data.lhs < d.debug_decls[module].len and d.debug_decls[module][data.lhs]) return true,
+                .ext_value => if (data.lhs < d.debug_values.len and data.rhs < d.debug_values[data.lhs].len and d.debug_values[data.lhs][data.rhs]) return true,
+                .method_call, .type_dispatch => if (l.in.dispatch.siteOf(inst)) |site| if (site.callee.unwrap()) |callee| switch (l.in.dispatch.term(callee)) {
+                    .top => |u| if (module < d.debug_decls.len and @backingInt(u.decl) < d.debug_decls[module].len and d.debug_decls[module][@backingInt(u.decl)]) return true,
+                    .primitive => {},
+                    else => return true,
+                },
+                else => {},
+            }
+            l.instChildren(inst, &stack) catch return true;
+        }
+        return false;
+    }
+
+    /// `cx.programViewEnter`: `view`'s parameter bound to `model`, in
+    /// `view`'s context, and its root's inputs read under the names that
+    /// binding gave them.
+    fn directViewEnter(l: *Lowerer, block: beni_markup.Block, model: Node.Index) Allocator.Error!void {
+        const st = l.mk.?;
+        const pc = l.program_now orelse return;
+        const view, const root_index = l.programShape(pc.view);
+        const function = l.fieldFunction(pc, pc.view) orelse return;
+        if (view != .markup or function.params.len != 1) return;
+        const index = root_index orelse return;
+        const saved = try l.enterDecl(function.decl);
+        var stmts: StmtList = .empty;
+        try l.bindParam(&stmts, function.params[0], model);
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        const root = st.built.tree.root(index);
+        const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
+        for (names, 0..) |*n, k| {
+            const local = st.built.values[root.inputs.start + k].capture;
+            n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+        }
+        try l.markupBindInputs(index, names);
+        l.program_view = .{ .root = index, .saved = saved };
+    }
+
+    fn directViewLeave(l: *Lowerer) void {
+        const v = l.program_view orelse return;
+        l.markupUnbindInputs(v.root);
+        l.leaveDecl(v.saved);
+        l.program_view = null;
+    }
+
+    /// `cx.programMessage`: inside `programViewEnter`, what an event's
+    /// handler value sends when it fires, read then (Q1).
+    fn directMessage(l: *Lowerer, block: beni_markup.Block, v: beni_markup.Value.Index, payload: ?Node.Index) Allocator.Error!beni_markup.Program.Message {
+        const st = l.mk.?;
+        var stmts: StmtList = .empty;
+        const message = try l.directMessageInto(&stmts, v, payload);
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return message;
+    }
+
+    fn directMessageInto(l: *Lowerer, stmts: *StmtList, v: beni_markup.Value.Index, payload: ?Node.Index) Allocator.Error!beni_markup.Program.Message {
+        const st = l.mk.?;
+        const p = st.pos;
+        const inst: ?Inst.Index = switch (st.built.values[@backingInt(v)]) {
+            .inst => |i| i,
+            else => null,
+        };
+        const i = inst orelse return l.directMessageValue(stmts, inst, payload);
+        switch (l.bir.instTag(i)) {
+            // A constructor: of no fields as a message, of one given the
+            // payload.
+            .ctor, .ext_ctor => if (l.keyOfCtor(i)) |found| {
+                const arity = l.ctorArity(i);
+                if (payload) |pl| {
+                    if (arity == 1) return .{ .key = .{ .key = found.key, .args = try l.messageArgs(found, i, &.{pl}, p) } };
+                } else if (arity == 0) {
+                    return .{ .key = .{ .key = found.key, .args = try l.messageArgs(found, i, &.{}, p) } };
+                }
+            },
+            // A constructor applied, as a message: its arguments evaluated
+            // in order, each bound unless it is a name or a literal.
+            .call => if (payload == null) {
+                const d = l.bir.instData(i);
+                const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+                switch (l.bir.instTag(callee)) {
+                    .ctor, .ext_ctor => if (l.keyOfCtor(callee)) |found| if (args.len == l.ctorArity(callee)) {
+                        const values = try l.scratch.alloc(Node.Index, args.len);
+                        for (args, values) |arg, *value| {
+                            value.* = try l.expr(stmts, arg);
+                            if (l.isAtom(value.*)) continue;
+                            const n = try l.fresh(l.well.temp);
+                            try l.constDecl(stmts, n, value.*, l.pos(arg));
+                            value.* = try l.ident(n, p);
+                        }
+                        return .{ .key = .{ .key = found.key, .args = try l.messageArgs(found, callee, values, p) } };
+                    },
+                    else => {},
+                }
+            },
+            else => {},
+        }
+        return l.directMessageValue(stmts, inst, payload);
+    }
+
+    /// The arguments a key's handler takes for constructor `ref` applied to
+    /// `fields`: the fields, or the message they make.
+    fn messageArgs(l: *Lowerer, found: KeyOfCtor, ref: Inst.Index, fields: []const Node.Index, p: u32) Allocator.Error![]const beni_markup.Expr {
+        const out = try l.scratch.alloc(beni_markup.Expr, if (found.fields) fields.len else 1);
+        if (found.fields) {
+            for (out, fields) |*o, f| o.* = @fromBackingInt(@intCast(f.int()));
+            return out;
+        }
+        const rt = l.ctorRepOf(ref) orelse return &.{};
+        out[0] = @fromBackingInt(@intCast((try l.ctorValue(rt[0], rt[1], fields, p)).int()));
+        return out;
+    }
+
+    /// The message an event's handler value makes, as a value.
+    fn directMessageValue(l: *Lowerer, stmts: *StmtList, inst: ?Inst.Index, payload: ?Node.Index) Allocator.Error!beni_markup.Program.Message {
+        const p = l.mk.?.pos;
+        const i = inst orelse return .{ .value = @fromBackingInt(@intCast((try l.nullNode(p)).int())) };
+        var value = try l.expr(stmts, i);
+        if (payload) |pl| value = try l.call(value, &.{pl}, p);
+        return .{ .value = @fromBackingInt(@intCast(value.int())) };
+    }
+
+    /// `cx.programDispatch`: each key's test along its steps, in the order
+    /// of the keys, and its handler called with what it takes — the fields
+    /// of a key of one named constructor, the message otherwise; the last
+    /// key is tested by nothing.
+    fn directDispatch(l: *Lowerer, block: beni_markup.Block, msg: Node.Index, handlers: []const JsIr.NameIndex) Allocator.Error!void {
+        const st = l.mk.?;
+        const p = st.pos;
+        var stmts: StmtList = .empty;
+        const keys = l.directKeys();
+        for (keys, 0..) |key, k| {
+            if (k >= handlers.len) break;
+            const steps = l.directSteps(@intCast(k));
+            var condition: ?Node.Index = null;
+            if (k + 1 < keys.len) for (steps) |step| {
+                if (!step.named) continue;
+                var subject = msg;
+                for (step.access) |a| {
+                    const rt = l.directCtor(a.ctor) orelse continue;
+                    subject = try l.ctorField(subject, rt[0], a.field, p);
+                }
+                const rt = l.directCtor(step.ctor) orelse continue;
+                const t = try l.ctorIs(subject, rt[0], rt[1], p) orelse continue;
+                condition = if (condition) |c| try l.binary(.logical_and, c, t, p) else t;
+            };
+            const args = try l.scratch.alloc(Node.Index, key.params);
+            const fields: ?struct { CtorRep, Symbol } = if (steps.len == 1 and steps[0].named) l.directCtor(steps[0].ctor) else null;
+            for (args, 0..) |*a, i| a.* = if (fields) |rt| try l.ctorField(msg, rt[0], @intCast(i), p) else msg;
+            const call_ = try l.call(try l.ident(handlers[k], p), args, p);
+            const stmt = try l.add(.expr_stmt, p, call_.int(), Node.Data.unused);
+            if (condition) |c| {
+                try l.ifStatement(&stmts, c, &.{ stmt, try l.add(.return_stmt, p, @backingInt(Node.OptionalIndex.none), Node.Data.unused) }, p);
+            } else {
+                try stmts.append(l.scratch, stmt);
+                break;
+            }
+        }
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
     }
 
     /// A markup root that is a value — outside the `view` a program is
@@ -11558,6 +12276,16 @@ const ProgramCall = struct {
     inst: u32,
     /// Its index in the lowering's `programs`.
     constructor: u32,
+    /// The declaration the call is in, and the one whose instructions the
+    /// record's fields are: the same, or a top-level value whose body is
+    /// the record (version 1.7).
+    decl: u32 = 0,
+    record_decl: u32 = 0,
+    /// What the write-set pass found of the program (version 1.7).
+    direct: ?*const Direct.Program = null,
+    /// `update` is a function of this module, or a lambda in the record,
+    /// whose body each key's arm writes in place (version 1.7).
+    update_inline: bool = false,
     /// The argument is a record literal written at the call.
     record: bool = false,
     /// The record's fields, when it is one.
@@ -11821,6 +12549,47 @@ const markup_vtable: beni_markup.VTable = struct {
         return error.Reported;
     }
 
+    fn programKeys(impl: *anyopaque) []const M.Program.Key {
+        return lowerer(impl).directKeys();
+    }
+
+    fn programHole(impl: *anyopaque, hole: M.Program.HoleRef) M.Program.HoleFacts {
+        return lowerer(impl).directHole(hole);
+    }
+
+    fn programCalls(impl: *anyopaque, key: u32, group: u32) bool {
+        return lowerer(impl).directCalls(key, group);
+    }
+
+    fn programUpdate(impl: *anyopaque, into: M.Block) E!?M.Expr {
+        const n = try lowerer(impl).directUpdate(into) orelse return null;
+        return expr(n);
+    }
+
+    fn programArm(impl: *anyopaque, key: u32, into: M.Block, params: []const M.Name, model: M.Expr, update: ?M.Expr) E!M.Expr {
+        return expr(try lowerer(impl).directArm(key, into, @ptrCast(params), node(model), if (update) |u| node(u) else null));
+    }
+
+    fn programViewEnter(impl: *anyopaque, into: M.Block, model: M.Expr) E!void {
+        return lowerer(impl).directViewEnter(into, node(model));
+    }
+
+    fn programViewLeave(impl: *anyopaque) void {
+        lowerer(impl).directViewLeave();
+    }
+
+    fn programMessage(impl: *anyopaque, into: M.Block, v: M.Value.Index, payload: ?M.Expr) E!M.Program.Message {
+        return lowerer(impl).directMessage(into, v, if (payload) |pl| node(pl) else null);
+    }
+
+    fn programDispatch(impl: *anyopaque, into: M.Block, msg: M.Expr, handlers: []const M.Name) E!void {
+        return lowerer(impl).directDispatch(into, node(msg), @ptrCast(handlers));
+    }
+
+    fn reachesDebug(impl: *anyopaque, v: M.Value.Index) bool {
+        return lowerer(impl).directReachesDebug(v);
+    }
+
     fn literal(impl: *anyopaque, which: M.Literal, bytes: []const u8) E!M.Expr {
         const l = lowerer(impl);
         const p = pos(l);
@@ -11977,6 +12746,16 @@ const markup_vtable: beni_markup.VTable = struct {
         .not_implemented = notImplemented,
         .program_init = programInit,
         .program_report = programReport,
+        .program_keys = programKeys,
+        .program_hole = programHole,
+        .program_calls = programCalls,
+        .program_update = programUpdate,
+        .program_arm = programArm,
+        .program_view_enter = programViewEnter,
+        .program_view_leave = programViewLeave,
+        .program_message = programMessage,
+        .program_dispatch = programDispatch,
+        .reaches_debug = reachesDebug,
         .literal = literal,
         .template = template,
         .name = name,

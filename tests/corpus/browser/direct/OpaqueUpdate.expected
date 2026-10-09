@@ -1,0 +1,30 @@
+-- load
+console.log: n: 0
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <input id="in" .value="">
+    <p id="n">"0"</p>
+    <p id="text">""</p>
+  </main>
+</body>
+-- click #inc
+console.log: n: 1
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <input id="in" .value="">
+    <p id="n">"1"</p>
+    <p id="text">""</p>
+  </main>
+</body>
+-- input #in "typed"
+console.log: n: 1
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <input id="in" .value="typed">
+    <p id="n">"1"</p>
+    <p id="text">"typed"</p>
+  </main>
+</body>

@@ -1,0 +1,5 @@
+-- throws load
+(threw: Error: TODO: mount threw)
+<body></body>
+-- click body
+(the DOM did not change)

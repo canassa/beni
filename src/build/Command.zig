@@ -124,6 +124,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .release = build.release,
         .allow_debug = build.allow_debug,
         .schema_library = build.schema_library,
+        .fuzz = build.fuzz,
         .source_maps = build.source_maps,
     }) catch |err| switch (err) {
         error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),

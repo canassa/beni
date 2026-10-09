@@ -1,0 +1,63 @@
+-- One handler per message key (browser-direct.md §4.1, write-sets.md
+-- §4.4): a payload a payload-form handler takes (`onInput={Typed}`), the
+-- handler called with it directly; a nested key (`Nested · A`,
+-- `Nested · B`) whose handler takes the message and runs only the `Nested`
+-- arm; a handler value that is a lambda, which makes a message value only
+-- the dispatcher can route (§4.4); and a class attribute and a text hole of
+-- one read set, one group.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Typed String
+    | Clicked
+    | Nested Sub
+
+
+type Sub
+    = A
+    | B Int
+
+
+type alias Model =
+    text : String
+    clicks : Int
+    sub : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Typed s →
+            { model | text = s }
+
+        Clicked →
+            { model | clicks = model.clicks + 1 }
+
+        Nested sub →
+            case sub of
+                A →
+                    { model | sub = model.sub + 1 }
+
+                B n →
+                    { model | sub = n }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <input id="in" onInput={Typed} />
+        <p id="text">{model.text}</p>
+        <p id="clicks" class={if model.clicks > 1 then "many" else "few"}>
+            {String.fromInt model.clicks}
+        </p>
+        <button id="click" onClick={λ_ → Clicked}>click</button>
+        <button id="a" onClick={Nested A}>a</button>
+        <button id="b" onClick={Nested (B 7)}>b</button>
+        <p id="sub">{String.fromInt model.sub}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { text = "", clicks = 0, sub = 0 }, update = update, view = view }

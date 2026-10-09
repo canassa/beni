@@ -1,0 +1,27 @@
+-- A throw while a program mounts — here a hole's value, computed for the
+-- first time — is a defect like any other (browser-direct.md §8.2): the
+-- mount runs inside the dispatch guard, so the page stops before the page
+-- is appended, the development build's crash screen carries the error, and
+-- a click applies no message.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+label : Int → String
+label n = if n == 0 then Debug.todo "mount threw" else String.fromInt n
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="inc" onClick={Inc}>inc</button>
+        <p>{label n}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = 0, update = λInc n → n + 1, view = view }

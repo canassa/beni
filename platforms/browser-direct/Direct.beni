@@ -68,6 +68,12 @@ send f x =
             (λ⊤ →
                 _ = Js.apply f [ x ]
                 drain ⊤
+                -- The development verify mode (§8.3): every mounted
+                -- program's page checked against its model, once the
+                -- dispatch's messages have all applied. A release build
+                -- has no code for it.
+                if Js.development ⊤ then
+                    Js.each verifiers λcheck → Js.to (Js.apply check [])
                 Js.write ok True
             )
             λ⊤ →
@@ -215,3 +221,285 @@ mountOne m =
     Js.set root "$$root" (Js.from True)
     _ = Js.apply (Js.get m "a") [ root, Js.call document "createElement" [ Js.from "template" ] ]
     ⊤
+
+
+-- ---- What the page's writes call (§5.1, §5.3) ---------------------------
+--
+-- A hole's or an attribute's write is `backend.md` §15.3's, the same as
+-- `browser`'s `Rt` makes it, so both platforms show one page: these are
+-- that module's functions, written again here because a runtime module is
+-- one platform's (`boundary.md` §9.2).
+
+--| `(parent, marker, value)`: a text hole's node, made at mount before the
+--| marker (or last, for none).
+pub insertText : V, V, V → V
+insertText parent marker value =
+    Js.call parent "insertBefore"
+        [ Js.call (Js.global "document") "createTextNode" [ value ], marker ]
+
+
+--| `(el, name, value)`: the attribute, or none when `value` is null.
+pub attr : V, V, V → ⊤
+attr el name value =
+    if Js.isNull value then
+        Js.to (Js.call el "removeAttribute" [ name ])
+    else
+        Js.to (Js.call el "setAttribute" [ name, value ])
+
+
+--| `(el, namespace, name, value)`: an attribute of a namespace
+--| (`xlink:href`).
+pub attrNS : V, V, V, V → ⊤
+attrNS el namespace name value =
+    if Js.isNull value then
+        Js.to
+            (Js.call el "removeAttributeNS"
+                [ namespace
+                , Js.call name "slice"
+                    [ Js.from (Js.to (Js.call name "indexOf" [ Js.from ":" ]) + 1) ]
+                ]
+            )
+    else
+        Js.to (Js.call el "setAttributeNS" [ namespace, name, value ])
+
+
+--| Elm's rule: a URL whose scheme is `javascript:`, or `data:text/html`,
+--| with any whitespace or control character where a browser ignores one,
+--| runs script, so it is written as nothing. A test of one pattern, which
+--| throws nothing: nothing to catch.
+pub safeUrl : V → V
+safeUrl url =
+    if Js.to (Js.call scriptUrl "test" [ url ]) then
+        Js.from ""
+    else
+        url
+
+
+-- The pattern `safeUrl` refuses, made once.
+scriptUrl : V
+scriptUrl =
+    Js.regExp
+        "^[\\s\\x00-\\x20]*(j\\s*a\\s*v\\s*a\\s*s\\s*c\\s*r\\s*i\\s*p\\s*t\\s*:|d\\s*a\\s*t\\s*a\\s*:\\s*t\\s*e\\s*x\\s*t\\s*/\\s*h\\s*t\\s*m\\s*l\\s*[,;])"
+        "i"
+
+
+--| `(el, markup)`: the `raw` escape hatch, markup text written unescaped.
+pub rawHtml : V, V → ⊤
+rawHtml el markup = Js.set el "innerHTML" markup
+
+
+--| `(el, list, previous)`: the element has exactly the classes the list
+--| names; what only the previous list (`unset` at the mount) held is
+--| removed.
+pub classes : V, V, V → ⊤
+classes el list previous =
+    next = classSet list
+
+    old =
+        if Js.isNull previous || Js.same previous unset then
+            Js.null
+        else
+            classSet previous
+
+    if Js.isNull old then
+        ⊤
+    else
+        Js.each old λname →
+            if Js.to (Js.call next "has" [ name ]) then
+                ⊤
+            else
+                Js.to (Js.call (Js.get el "classList") "remove" [ name ])
+    Js.each next λname →
+        if Js.isNull old || not (Js.to (Js.call old "has" [ name ])) then
+            Js.to (Js.call (Js.get el "classList") "add" [ name ])
+
+
+-- The names whose flag is `True`, a name holding whitespace being several.
+classSet : V → V
+classSet list =
+    names = Js.construct (Js.global "Set") []
+
+    Js.each (elements list) λentry →
+        if Js.to (Js.get entry "b") then
+            Js.each (Js.call (Js.get entry "a") "split" [ spaces ]) λname →
+                if Js.same name (Js.from "") then
+                    ⊤
+                else
+                    Js.to (Js.call names "add" [ name ])
+    names
+
+
+-- HTML's whitespace, which separates class names.
+spaces : V
+spaces = Js.construct (Js.global "RegExp") [ Js.from "[\t\n\u{000C}\r ]+" ]
+
+
+--| `(el, list, previous)`: each property set to its last value in the
+--| list, an empty value removing it; a property only the previous list
+--| (`unset` at the mount) set is removed.
+pub styles : V, V, V → ⊤
+styles el list previous =
+    next = styleMap list
+
+    old =
+        if Js.isNull previous || Js.same previous unset then
+            Js.null
+        else
+            styleMap previous
+
+    style = Js.get el "style"
+
+    if Js.isNull old then
+        ⊤
+    else
+        Js.each (Js.call old "keys" []) λname →
+            if Js.to (Js.call next "has" [ name ]) then
+                ⊤
+            else
+                Js.to (Js.call style "removeProperty" [ name ])
+    Js.each next λentry →
+        if Js.isNull old || not (Js.same (Js.call old "get" [ Js.at entry 0 ]) (Js.at entry 1)) then
+            Js.to (Js.call style "setProperty" [ Js.at entry 0, Js.at entry 1 ])
+
+
+-- Each property's last value.
+styleMap : V → V
+styleMap list =
+    values = Js.construct (Js.global "Map") []
+
+    Js.each (elements list) λentry →
+        Js.to (Js.call values "set" [ Js.get entry "a", Js.get entry "b" ])
+    values
+
+
+-- A list's elements, by backend.md §4's protocol: the array itself, or a
+-- view's or a trie's plain copy. Read, never written.
+elements : V → V
+elements list =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ list ]) then
+        list
+    else
+        Js.call list "$plain" []
+
+
+--| The payload of an event whose handler takes the event itself.
+pub identity : V → V
+identity event = event
+
+
+-- ---- The development verify mode (§8.3) ---------------------------------
+
+-- Each mounted program's check, in mount order.
+verifiers : V
+verifiers = Js.array []
+
+
+--| `(check)`: a development build's mount registers its program's check,
+--| which `send` runs at the end of every dispatch. A release build never
+--| calls it.
+pub verify : V → ⊤
+verify check =
+    _ = Js.call verifiers "push" [ check ]
+    ⊤
+
+
+--| `(a, b)`: whether a value computed again is the one a slot holds — by
+--| structure, never by identity (§8.3, as amended): a scalar by `===`, `NaN`
+--| equal to itself; a list by its length and its elements, and past 1 000
+--| elements by its length and its first and last 100; a record, a tuple or
+--| a constructor field by field; a function not at all.
+pub same : V, V → Bool
+same a b =
+    if
+        Js.same a b
+            || (Js.typeIs a "number"
+                   && Js.typeIs b "number"
+                   && not (Js.same a a)
+                   && not (Js.same b b)
+               )
+    then
+        True
+    else if Js.typeIs a "function" && Js.typeIs b "function" then
+        True
+    else if
+        not (Js.typeIs a "object") || not (Js.typeIs b "object") || Js.isNull a || Js.isNull b
+    then
+        False
+    else if isList a || isList b then
+        isList a && isList b && sameElements (elements a) (elements b)
+    else
+        keys = Js.call (Js.global "Object") "keys" [ a ]
+        n : Int
+        n = Js.to (Js.get keys "length")
+        other : Int
+        other = Js.to (Js.get (Js.call (Js.global "Object") "keys" [ b ]) "length")
+        n == other && sameFields keys a b 0 n
+
+
+-- A list by `backend.md` §4's protocol: an array, or a view or a trie.
+isList : V → Bool
+isList v =
+    Js.to (Js.call (Js.global "Array") "isArray" [ v ]) || Js.typeIs (Js.get v "$plain") "function"
+
+
+sameElements : V, V → Bool
+sameElements xs ys =
+    n : Int
+    n = Js.to (Js.get xs "length")
+    m : Int
+    m = Js.to (Js.get ys "length")
+
+    if n ≠ m then
+        False
+    else if n > 1000 then
+        sameRange xs ys 0 100 && sameRange xs ys (n - 100) n
+    else
+        sameRange xs ys 0 n
+
+
+sameRange : V, V, Int, Int → Bool
+sameRange xs ys i end =
+    if i ≥ end then
+        True
+    else
+        same (Js.at xs i) (Js.at ys i) && sameRange xs ys (i + 1) end
+
+
+sameFields : V, V, V, Int, Int → Bool
+sameFields keys a b i n =
+    if i ≥ n then
+        True
+    else
+        k : String
+        k = Js.to (Js.at keys i)
+        Js.to (Js.call (Js.global "Object") "hasOwn" [ b, Js.from k ])
+            && same
+                (Js.call (Js.global "Reflect") "get" [ a, Js.from k ])
+                (Js.call (Js.global "Reflect") "get" [ b, Js.from k ])
+            && sameFields keys a b (i + 1) n
+
+
+--| `(what, shown, model)`: the verify mode found the page showing what the
+--| model does not hold — a missed write, a defect of the compiler. Thrown,
+--| so the page stops as for any defect (§8.2).
+pub wrong : V, V, V → ⊤
+wrong what shown model =
+    describe =
+        λv →
+            if Js.same v unset then
+                Js.from "nothing (never written)"
+            else
+                Js.apply (Js.global "String") [ v ]
+
+    shownText : String
+    shownText = Js.to (describe shown)
+    modelText : String
+    modelText = Js.to (describe model)
+    whatText : String
+    whatText = Js.to what
+    Js.throw
+        (Js.construct (Js.global "Error")
+            [ Js.from
+                "browser-direct verify: ${whatText} shows ${shownText}, but the model gives ${modelText}. The compiler missed a write: this is a defect of beni, not of the program; please report it."
+            ]
+        )

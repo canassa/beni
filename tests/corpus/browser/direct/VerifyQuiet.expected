@@ -1,0 +1,54 @@
+-- load
+console.log: n: 0
+console.log: deeper: 1
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <button id="other">"other"</button>
+    <p id="log">"0"</p>
+    <p id="deep">"1"</p>
+    <p id="list" class="c0">"1"</p>
+    <p id="other-n">"0"</p>
+    <p id="dice">"true"</p>
+  </main>
+</body>
+-- click #inc
+console.log: n: 1
+console.log: deeper: 2
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <button id="other">"other"</button>
+    <p id="log">"1"</p>
+    <p id="deep">"2"</p>
+    <p id="list" class="c0 c1">"2"</p>
+    <p id="other-n">"0"</p>
+    <p id="dice">"true"</p>
+  </main>
+</body>
+-- click #other
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <button id="other">"other"</button>
+    <p id="log">"1"</p>
+    <p id="deep">"2"</p>
+    <p id="list" class="c0 c1">"2"</p>
+    <p id="other-n">"1"</p>
+    <p id="dice">"true"</p>
+  </main>
+</body>
+-- click #inc
+console.log: n: 2
+console.log: deeper: 3
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <button id="other">"other"</button>
+    <p id="log">"2"</p>
+    <p id="deep">"3"</p>
+    <p id="list" class="c0 c1 c2">"3"</p>
+    <p id="other-n">"1"</p>
+    <p id="dice">"true"</p>
+  </main>
+</body>

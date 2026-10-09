@@ -1,0 +1,77 @@
+-- Every hole and attribute write slice S1 compiles (browser-direct.md §5.1,
+-- §5.3; backend.md §15.3's table), built for both platforms: text holes of
+-- every scalar type, alone in their element (a text node of the template)
+-- and beside other text (made at mount before a marker); a `Bool`
+-- attribute written and removed (`attr`); a namespaced one on a custom
+-- element (`attrNS`, which `browser-direct`
+-- imports so the page upgrades it); a URL whose `javascript:` scheme is
+-- written as nothing (`safeUrl`); a class list and a style list written by
+-- the runtime, and class and style entries split in place; a text hole no
+-- message writes, baked into the template; and one nothing can bake (a
+-- number), written once at mount.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Flip
+    | More
+
+
+type alias Model =
+    on : Bool
+    count : Int
+    label : String
+    fixed : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip →
+            { model | on = not model.on }
+
+        More →
+            { model | count = model.count + 1 }
+
+
+classesOf : Bool → List (String × Bool)
+classesOf on = [ ( "a", on ), ( "b", True ) ]
+
+
+stylesOf : Bool → List (String × String)
+stylesOf on = [ ( "color", if on then "red" else "blue" ) ]
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <h1>{model.label}</h1>
+        <p id="fixed">{String.fromInt model.fixed}</p>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="more" onClick={More}>more</button>
+        <p>count {String.fromInt model.count} and {if model.on then "on" else "off"}!</p>
+        <p id="scalars">{model.count}</p>
+        <p id="char">{if model.on then 'y' else 'n'}</p>
+        <p id="bool">{model.on}</p>
+        <input id="field" disabled={model.on} />
+        <a id="link" href={if model.on then "javascript:alert(1)" else "/ok"}>link</a>
+        <my-icon "xlink:href"={if model.on then "#a" else "#b"} />
+        <div id="lists" class={classesOf model.on} style={stylesOf model.on}>lists</div>
+        <div
+            id="split"
+            class={[ ( "on", model.on ), ( "big", model.count > 1 ) ]}
+            style={[ ( "width", "${String.fromInt model.count}px" ) ]}
+        >
+            split
+        </div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = { on = False, count = 0, label = "Holes", fixed = 7 }
+        , update = update
+        , view = view
+        }

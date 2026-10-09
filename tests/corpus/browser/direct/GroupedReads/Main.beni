@@ -1,0 +1,123 @@
+-- `browser/dom/GroupedReads`, re-stated for slice S1 (browser-direct.md
+-- §5.3, §4.1): each key's handler calls only the groups its write set
+-- conflicts with, and `Debug.log` on each value shows which ran. A group
+-- runs when a key that may change what it reads arrives, and writes only
+-- when its value differs. What each reads:
+--
+--   - "a": `model.a`; "a+b": two fields; "case": `model.pick`, through a
+--     `case`, which reads the tag `model.pick` holds and the field it binds.
+--   - "x": `model.nested.x`, read inside `nestedX`, a function of this
+--     module: an edit to `nested.y` does not run it.
+--   - "total": `Total.sum model`, a function of another module given the
+--     whole model, so every key that writes the model runs it.
+--   - "dice": `Random.value`, which may have an effect, runs on every
+--     message whatever it reads.
+--
+-- `Noop` returns the model it was given: its key writes nothing, and only
+-- the every-message group runs. `Set (Debug.log "message" model.a)` is read
+-- when the click happens (Q1): `browser-direct` logs "message" at the
+-- click, `browser-tea` when the view is rendered (`GroupedReads.tea-expected`).
+import Html exposing (Html)
+import Random
+import Tea
+import Total
+
+
+type Msg
+    = IncA
+    | IncB
+    | IncX
+    | IncY
+    | Pick
+    | Set Int
+    | Noop
+
+
+type alias Nested =
+    x : Int
+    y : Int
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+    nested : Nested
+    pick : Maybe Int
+    set : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        IncA →
+            { model | a = model.a + 1 }
+
+        IncB →
+            { model | b = model.b + 1 }
+
+        IncX →
+            { model | nested = { x = model.nested.x + 1, y = model.nested.y } }
+
+        IncY →
+            { model | nested = { x = model.nested.x, y = model.nested.y + 1 } }
+
+        Pick →
+            { model | pick = Just 7 }
+
+        Set n →
+            { model | set = n }
+
+        Noop →
+            model
+
+
+nestedX : Model → Int
+nestedX m = m.nested.x * 10
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="a" onClick={IncA}>a</button>
+        <button id="b" onClick={IncB}>b</button>
+        <button id="x" onClick={IncX}>x</button>
+        <button id="y" onClick={IncY}>y</button>
+        <button id="pick" onClick={Pick}>pick</button>
+        <button id="set" onClick={Set (Debug.log "message" model.a)}>set</button>
+        <button id="noop" onClick={Noop}>noop</button>
+        <p>{Debug.log "a" model.a}</p>
+        <p>{Debug.log "a+b" (model.a + model.b)}</p>
+        <p>
+            {Debug.log
+                "case"
+                (case model.pick of
+                    Just n →
+                        n
+
+                    Nothing →
+                        0
+                )
+            }
+        </p>
+        <p>{Debug.log "x" (nestedX model)}</p>
+        <p>{Debug.log "total" (Total.sum model)}</p>
+        <p>{model.set}</p>
+        <p class="dice">{Random.value (Random.int 1 1000000)}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            { a = 0
+            , b = 1
+            , c = 2
+            , nested = { x = 0, y = 0 }
+            , pick = Nothing
+            , set = 0
+            }
+        , update = update
+        , view = view
+        }

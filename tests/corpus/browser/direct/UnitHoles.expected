@@ -1,0 +1,27 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p id="case">"just"</p>
+    <p id="eq">"true"</p>
+    <p id="title" title="unit">"title"</p>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p id="case">"nothing"</p>
+    <p id="eq">"false"</p>
+    <p id="title" title="none">"title"</p>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p id="case">"just"</p>
+    <p id="eq">"true"</p>
+    <p id="title" title="unit">"title"</p>
+  </main>
+</body>

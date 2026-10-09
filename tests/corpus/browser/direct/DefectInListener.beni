@@ -1,0 +1,34 @@
+-- A throw while a listener turns its event's payload into a message is a
+-- defect (browser-direct.md §4.2, §8.2): the listener body — the payload's
+-- extractor, then the handler's function applied to it — runs inside the
+-- dispatch guard, so the page stops, the development build's crash screen
+-- carries the error, and no later event applies a message.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Typed String
+
+
+update : Msg, String → String
+update msg _ =
+    case msg of
+        Typed s →
+            s
+
+
+typed : String → Msg
+typed s = if s == "boom" then Debug.todo "payload threw" else Typed s
+
+
+view : String → Html Msg
+view text =
+    <main>
+        <p id="text">{text}</p>
+        <input id="in" onInput={typed} />
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = "", update = update, view = view }
