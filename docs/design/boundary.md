@@ -1831,6 +1831,57 @@ hands a node and a `template` element (`browser-direct`'s `run`): the mount writ
 element's `innerHTML` and appends its `content` to the node. Both objects are the runtime's grants;
 the lowering names no host global. `direct` targets 1.6 (`browser-direct.md`, *As built, S0*).
 
+**Version 1.7** (*amended 2026-10-09*, additive and gated on nothing; `browser-direct.md` §4, §5,
+§8.3, slice S1): the calls a program lowering compiles a program's messages and holes with. A
+lowering that calls none of them is handed what 1.6 hands it. They are valid inside
+`Lowering.program` only, and read what the write-set pass (`write-sets.md`) found of the program
+being compiled: in a build whose lowering names a program hook, the compiler runs the pass once,
+before any module is lowered, over every call of a program constructor in an application module
+(not only `main`'s), and the lowerings read its result while they run in parallel.
+
+- **`cx.programKeys() []const Program.Key`**: the program's leaf message keys (`write-sets.md`
+  §4.4) in the dump's order — a key's named children before its default one. Each has its `name`
+  (the dump's, for a handler's name), `params` — the handler's parameters: the constructor's
+  fields for a key that is one named constructor, one (the message itself) for any other — and
+  `star`, a key whose write set is `value ρ`. A program the pass does not recognise has one key,
+  `*`.
+- **`cx.programHole(ref) Program.HoleFacts`**, for a text hole (`.node`) or an attribute
+  (`.item`, its index in `Tree.items`) of the `view` root: `group`, its anchored read set as a
+  number (equal sets, equal numbers); `static`, no key's write set conflicts with it (§2.5, with
+  tag reads); `bake`, for a static hole `write-sets.md` §9.1 bakes, the text the template holds
+  verbatim; `where`, its source position. A hole the pass did not see has a group no number
+  equals, called by every key.
+- **`cx.programCalls(key, group) bool`**: whether `key`'s write set conflicts with read set
+  `group`.
+- **`cx.programUpdate(block) ?Expr`**: `update` as a function value, evaluated once into `block`,
+  when an arm calls it — an `update` of another module, or computed (`withLogging update`) — and
+  null when every arm is written in place, in which case `update` is not emitted.
+- **`cx.programArm(key, block, params, model, update) Expr`**: key `key`'s arm, its statements
+  into `block`, the payload read from `params` and the old model from `model`; returns the new
+  model. Where `update` is a function of the calling module or a lambda in the record, its body is
+  written in place: when it is a `case` on its message parameter, only the branch the key's first
+  step selects, with that constructor's fields bound to the parameters (or read from the one
+  parameter, for a deeper key whose own `case` then decides); otherwise the whole body with the
+  message bound. Otherwise it is `update(message, model)`.
+- **`cx.programViewEnter(block, model)` / `cx.programViewLeave()`**: `view`'s parameter bound to
+  `model`, so that `cx.rootValues` evaluates the root's values against it — the root's inputs
+  bound as `cx.bindInputs` binds them, in the context of `view`'s own declaration.
+- **`cx.programMessage(block, value, payload) Program.Message`**: inside `programViewEnter`, what
+  an event's handler value sends — `.key` with a handler's arguments when the value is a
+  constructor (applied, or given the payload) whose key a handler has, read when the event fires;
+  `.value`, a message value, otherwise.
+- **`cx.programDispatch(block, msg, handlers)`**: the dispatcher's body — each key's constructor
+  tests along its steps, in key order, and `handlers[k]` called with what it takes; the last key
+  untested.
+- **`cx.reachesDebug(value) bool`**: whether evaluating a value may call `Debug`, directly or
+  through any function it calls, transitively over every module (the development verify mode's
+  skip, `browser-direct.md` §8.3). Always true where the build has no such table (`--release`).
+- **`Build.fuzz`**: the hidden `--fuzz` flag (`browser-direct.md` §8.3, as amended for S1).
+
+A program built under `--fuzz` also keeps every `case` arm on a constructor of the application's
+own modules, built or not (`backend.md` §9's dead arms), since a fuzzer sends messages the program
+never makes. `direct` targets 1.7.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

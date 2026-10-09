@@ -1737,3 +1737,69 @@ not compared is listed, never what is**.
   without the fuzz whenever its pages must run, over the 4.3 billion budget; the gates pass only
   because its pages' run hashes are recorded, and `test-run-hashes` records without a budget.
   Its two builds alone are 3.4 billion.
+### *Amended 2026-10-09 (slice S1, as built; research 66):* holes, handlers and the two oracles
+
+S1 is built (`boundary.md` §9.4.6, version 1.7; `platforms/browser-direct/zig/direct.zig`). What
+building it settled, each a resolution of a place this document left open or could not keep:
+
+- **A program's state is the mount's own scope, not module-level variables** (§5.2, §8.2). The
+  model, the node handles, the slots, the groups and the handlers are `let`s and `const`s of the
+  mount function `run` calls, so a slot read is a context-slot load as a module variable's is, and
+  every mount of a program a function builds has its own state with no mount record. The cost
+  §8.2 gave the mount record is therefore paid by no program, and nothing else changes.
+- **A handler's parameters** (§4.1): the constructor's fields for a key that is one named
+  constructor; the message itself for any other key — a nested key (`Nested · A`), a default key
+  (`_`), a key of a message never split (`(any)`), the `*` key. **The arm** is `update`'s body
+  written in place: where `update` is a `case` on its message parameter, only the branch the key's
+  first step selects, its pattern's variables read from the parameters (the fields of the message
+  parameter, for a deeper key, whose inner `case` then decides); otherwise the whole body with the
+  message bound. An `update` of another module, or one computed (`withLogging update`), is
+  evaluated once at mount and called. The specialiser that removes the inner `case` of a nested
+  key is §4.1's `--release` work and is not built.
+- **Groups are functions, always** (§5.3's "inlined on single use" is not built): the mount calls
+  every group once, so no group has a single caller. A group no key calls is written in place at
+  mount, with no slot and no compare; a development build keeps its value in a slot for the
+  verify mode only. A constant attribute that needs code and is merged into a group that runs
+  again (an element's attributes stay in source order, `dom`'s rule) is guarded by a slot of its
+  own and written once (`emit/direct/ConstantWriteOnce`).
+- **The dispatcher is a chain of tests in key order**, not §4.4's decision tree: a key's named
+  steps are tested and the last key is not. It is emitted only when a listener's handler value is
+  not a constructor of a handler's key (a lambda, a computed message), or under `--fuzz`.
+- **What the template bakes is `write-sets.md` §9.1's literal hole**, plain-checked again by the
+  pass; dom's flag 1 (a custom element, `is`, a lazy `img`/`iframe`) is no longer refused: such a
+  template is imported through the template element's own document (`t.ownerDocument.importNode`,
+  as `Rt.template` imports it). Flag 2 stays refused (S4); no vocabulary that ships reaches it.
+- **Q1's observable difference in S1 is bubbling**, not a removed input: a click a button handles
+  bubbles to its section, whose message, read at the event, carries the model the button's
+  message made (`browser/direct/EventReadsModel`). The removed-focused-input shape needs branches
+  and moves to S4. `browser/direct/SubmitFromWrite` pins the submit whose `preventDefault` runs in
+  the DOM listener; `DefectInListener` throws in the handler's function applied to the event's
+  payload, since no vocabulary that ships has an extractor that can throw.
+- **The verify mode** (§8.3) is registered by each development mount with `Direct.verify` and
+  run by `send` after the dispatch's queue drains; a difference throws `Direct.wrong`, naming the
+  hole and its position — a defect, so the page stops. It checks every hole with a slot, static
+  ones included, and every baked hole against its text; it skips every-message values and values
+  that reach `Debug` through the whole program's call graph (`cx.reachesDebug`). A deliberately
+  broken handler (one key's groups not called) is caught at the first message (research 66 §2).
+  **Its cost in development is not "today's cost"**: it computes every hole of the page, static
+  ones included, where today's page compares only what may change — 0.6 ms a message at 10 000
+  holes, against 0.1 for `browser-tea` (research 66 §3). It is a development-only cost and no
+  criterion judges it; a page that needs a faster development build could check static holes
+  once at mount.
+- **`--fuzz`, the differential fuzzer's interface** (§8.3 item 2), hidden and test-only:
+  - `beni dump --stage=writes --messages --platform=<p> <file>` prints, per program its `main`
+    reaches, one line of JSON: `{"program", "message": <type>, "types": {…}}`. A type is
+    `{"type":"Module.Name","args":[…]}`, `{"record":{…}}`, `{"tuple":[…]}`, `{"unit":true}`,
+    `{"function":true}`, `{"param":i}` or `{"unknown":true}`; each custom type it reaches lists its
+    constructors and their argument types, and how a development build represents its values:
+    `"bool"`, `"bare"` (the constructor's name, a string) or `"tagged"` (`{ $: name, a, b, … }`,
+    the slots padded with `null` to `"fields"`). Records are plain objects, tuples `{ a, b, … }`,
+    lists arrays, `Int` and `Float` numbers, `String` and `Char` strings (`backend.md` §4).
+    `beni dump --stage=writes` itself lists the keys.
+  - `beni build --platform=browser-direct --fuzz …` gives each mounted program's node (the body,
+    or `mountAt`'s element) a `$$root(message)` that sends the message value through the dispatch
+    guard and the dispatcher, synchronously. `browser-tea`'s node always has a `$$root` that
+    applies a message; it renders in a microtask, so a harness awaits one before reading the page.
+    Under `--fuzz`, on both platforms, no `case` arm on a constructor of the application's own
+    modules is dropped for being built nowhere (`backend.md` §9), so every constructor's arm runs.
+    Nothing else changes; a build for another lowering is unchanged.
