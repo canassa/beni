@@ -191,12 +191,13 @@ const document =
     \\
 ;
 
-/// Write `source`, build it twice for `browser-tea` in development, into
+/// Write `source`, build it twice for `browser-tea` in development with
+/// `--fuzz` (messages go as values only between `--fuzz` builds), into
 /// `a/` and `b/`, and dump its message types into `types.jsonl`.
 fn setUp(w: *World, source: []const u8) !void {
     try w.write("Main.beni", source);
     for ([_][]const u8{ "--out=a", "--out=b" }) |out| {
-        const built = try w.runWith(&.{ "build", "--platform=browser-tea", out, "Main.beni" }, .{ .raw_diagnostics = true });
+        const built = try w.runWith(&.{ "build", "--platform=browser-tea", "--fuzz", out, "Main.beni" }, .{ .raw_diagnostics = true });
         if (built.exit_code != 0 or built.stderr.len != 0) {
             std.debug.print("beni build {s} exited {d}\n{s}\n", .{ out, built.exit_code, built.stderr });
             return error.BuildFailed;

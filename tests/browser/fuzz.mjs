@@ -140,16 +140,28 @@ function fuzzMounts() {
 }
 
 // Send message `value` to program `program` (mount order): the direct
-// platform's fuzz dispatcher, or the mount's `$$root`. Null, or why not.
+// platform's fuzz dispatcher, or — on `browser-tea` — the mount's
+// `$$root` called through the runtime's guard (`Rt.fuzzInstall`), so a
+// throw in `update` stops the page as one from a click does. Null, or why
+// not.
+// The send runs as an event listener of a node of its own, dispatched
+// synchronously: a throw it lets out is reported to the page's `error`
+// listeners by the DOM, exactly as one out of a click's listener is, and
+// the step that sent it throws as a click step that throws does.
 function fuzzSend({ program, value }) {
+  let send;
   const direct = globalThis.__beniFuzz;
   if (direct !== undefined) {
-    direct.send(program, value);
-    return null;
+    send = () => direct.send(program, value);
+  } else {
+    const mount = globalThis.__beniFuzzMounts[program];
+    if (mount === undefined) return `the page mounted no program ${program}`;
+    if (globalThis.__beniFuzzSend === undefined) return "the page has no guarded send: build it with --fuzz";
+    send = () => globalThis.__beniFuzzSend(mount, value);
   }
-  const mount = globalThis.__beniFuzzMounts[program];
-  if (mount === undefined) return `the page mounted no program ${program}`;
-  mount.$$root(value);
+  const carrier = document.createElement("span");
+  carrier.addEventListener("beni-fuzz-send", send);
+  carrier.dispatchEvent(new Event("beni-fuzz-send"));
   return null;
 }
 
