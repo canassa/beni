@@ -1580,6 +1580,19 @@ The platform half of S0 is built; the stats gate is separate work. What building
   `.tea-expected`, the corpus's one exception to §12.3's single golden.
 - **`Browser.program` and `Browser.hosted` are refused at build time** (`not_implemented`), since
   this platform's runtime does not run them (Q6).
+- **`init` runs at mount** (§11.1 as built; `boundary.md` §9.4.6, version 1.6): the hook evaluates
+  it inside the mount, never where the program value is built, so its effects happen at mount.
+- **Where §8.2's `error` listener is installed** (*amending §8.2*): not at `run`, but by the guard
+  when the page stops, in a development build only — `stop` sets `dead` first, then draws the
+  crash screen, which installs a `once` listener on `window` that appends the host's report of the
+  throw. The host reports the throw after the guard's `finally`, so the listener is in place for
+  it; a page that never stops installs nothing. This is `browser`'s order too, so the two
+  platforms' crash screens are the same.
+- **`dom`'s flag 1 is refused until S1** (`not_implemented`): a custom element, an `is`, and an
+  `<img>` or `<iframe>` with `loading`, which `browser` imports rather than clones so that the
+  page upgrades or loads them. The direct mount adopts them by `append`; until a Chrome page shows
+  that does the same, the platform does not compile them. Flag 2 (an SVG or MathML root that is
+  not `<svg>`/`<math>`) is refused as well, and no vocabulary that ships can reach it today.
 - **The floor is 399 B, and today's is 446, not 1 234** (§3, §13): kill criterion 2 passes — under
   500 B, and the empty page imports nothing of `Direct` but `run` — and the 300 B target is missed
   by the refusal messages (70 B) and the guard. A static page of 1 000 elements mounts at 1.12×

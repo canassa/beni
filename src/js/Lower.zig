@@ -10934,6 +10934,15 @@ pub const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         pc.init_used = true;
+        // The lowering places `init` in a function that cannot wait. The
+        // checker already refuses it where `main` would evaluate it
+        // (`must_not_suspend`), so this guards what that misses: an `init`
+        // that may suspend is refused, never lowered into a mount that would
+        // return a suspension in place of the model.
+        if (l.reaches(init, .suspension)) {
+            try l.report(.not_implemented, init, "This program's `init` may suspend, and the markup lowering `{s}` evaluates `init` where nothing can wait for it. Compute it with no waiting, and do the waiting in a command once programs with effects compile on this platform.", .{st.lowering.name});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
         var stmts: StmtList = .empty;
         const depth = l.case_depth;
         l.case_depth = 0;
@@ -11047,6 +11056,11 @@ pub const Lowerer = struct {
             });
             return;
         }
+        // Only `MarkupTree.empty` has no root: `build` returns null for a
+        // module with none, so every tree before version 1.6 reaches
+        // `module` as it did. The empty one is a module that writes no
+        // markup and calls a program constructor, which has nothing to
+        // hoist (§9.4.6, 1.6).
         if (built.tree.roots.len == 0) return;
         mk.lowering.module(&st.cx, &st.built.tree) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,

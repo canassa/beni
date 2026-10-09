@@ -1,0 +1,5 @@
+-- throws load
+(threw: Error: the page's body already holds a program)
+<body>
+  <p>"twice"</p>
+</body>

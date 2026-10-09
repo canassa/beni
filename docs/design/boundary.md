@@ -1798,7 +1798,12 @@ consume them, each as a minor version of its own.
   name that `--release` keeps when `init` may have an effect (`backend.md` §9's rule for any such
   binding), and that name. At most once per program. So `init` is evaluated where the lowering
   places it — for `browser-direct`, inside the mount, which runs inside the dispatch guard — and
-  nowhere else.
+  nowhere else. **`init` therefore runs when the program mounts, not when its program value is
+  built**: a `Debug.log` in it prints at mount, and a throw in it is a defect of the mount, where
+  a platform that builds the record as a value (`browser-tea`) evaluates it where `main` is
+  evaluated. An `init` that may suspend is refused (`not_implemented`), since a mount cannot
+  wait; the checker's `must_not_suspend` at `main` already refuses every such program written
+  today.
 - **`cx.programReport(part, code, message)`** reports `not_implemented` or `view_not_compiled` at
   the call, its `init`, its `update` or its `view`; **`cx.notImplemented(node, message)`** reports
   `not_implemented` at a markup node. Both are the lowering's way to refuse a program it does not

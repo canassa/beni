@@ -1,0 +1,29 @@
+-- An `init` that may suspend, in a program built by a function: the
+-- `direct` lowering evaluates `init` inside a mount that cannot wait
+-- (docs/design/browser-direct.md §8.2), so such a program must be refused,
+-- never miscompiled into a mount that returns a suspension in place of a
+-- model. It is: the checker's `must_not_suspend` at `main`, which builds
+-- the program, before any lowering runs. (The lowering refuses an `init`
+-- that may suspend too, a backstop no program reaches past the checker.)
+import Browser
+import Html exposing (Html)
+import Tea
+import Time
+
+
+view : Int → Html {}
+view _ = <p>slow</p>
+
+
+slow : Int → Int
+slow n =
+    Time.sleep (Time.millis 1)
+    n
+
+
+counter : Int → Tea.Program
+counter n = Tea.sandbox { init = slow n, update = λ_ m → m, view = view }
+
+
+main : Tea.Program
+main = Browser.programs [ counter 0, counter 5 ]
