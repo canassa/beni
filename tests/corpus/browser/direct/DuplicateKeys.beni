@@ -1,0 +1,51 @@
+-- AN OPEN DEFECT, pinned (research 67 §5): rows that share a key are matched
+-- by their rank among the rows with that key (language.md §11.9), and
+-- slice S2's exact scripts are not. Three rows have key 2; text typed into
+-- the third row's input marks its node. Removing the second row (index 1):
+-- by rank, the key-2 rows' nodes keep their ranks, so the LAST key-2 node
+-- goes and the marked node shows the item after it — what `browser-tea`
+-- shows (`.tea-expected`). `browser-direct`'s `removeAt` removes the node at
+-- index 1, so the marked node keeps its own item (`.expected`). The fix is
+-- slice S3's: a keyed script whose key is not unique hands the edit to
+-- §6.3's reconciler; until then the two transcripts differ here, and only
+-- where a key repeats.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Remove
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+update : Msg, List Row → List Row
+update Remove rows = List.removeAt rows 1
+
+
+view : List Row → Html Msg
+view rows =
+    <main>
+        <button id="remove" onClick={Remove}>remove</button>
+        <ul>
+            <For each={rows} keyed={.id}>{λrow → <li><input />{row.label}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            [ { id = 1, label = "one" }
+            , { id = 2, label = "two a" }
+            , { id = 2, label = "two b" }
+            , { id = 2, label = "two c" }
+            ]
+        , update = update
+        , view = view
+        }

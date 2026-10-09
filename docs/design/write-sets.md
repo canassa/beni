@@ -1954,5 +1954,9 @@ must know which it has, so a hole's anchored read now says it.
   list's own edit (its rows made again) and not a row visit's business. A read not bound is
   conflict-checked against every write as §2.5 says, and visits every row.
 
-Fixture: `writes/RowOwnItem` (a row reading its item and the whole list), whose dump prints the
-bound prefix of each read.
+*As built:* the bound prefix is kept as a depth — how many enclosing rows a read came through the
+item root of (`Hole.bound`, beside `Hole.reads`) — and the dump does not print it, so no `writes/`
+golden moved. Fixture: `browser/direct/RowReadsList` (a row showing its label and every label of
+the list; a label written at one index is shown by every row, which the development verify mode
+reported at the first click when every `[*]` was taken for the row's own).
+
