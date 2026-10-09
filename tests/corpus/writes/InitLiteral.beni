@@ -1,10 +1,10 @@
 -- writes: what `init` makes literal (`write-sets.md` §3.5) and which holes
 -- may be baked (§9.1, B5, N4). `init` is a `Tea.element` pair whose model
 -- is a record of literals, so `literal ρ`. No message writes `title` or
--- `note`: the `title` hole is exactly a model path whose `init` is a plain
+-- `note`: the `title` hole is exactly a model path whose `init` is a
 -- string, alone under an `h1`, so `literal`; `note`'s string holds `&`,
--- which the serialiser would escape, so it is only `static`; the count is
--- an `Int` — `static`, never baked (O8).
+-- which the template escapes, so it is `literal` too; and so is the count,
+-- an `Int` (§9.1 as amended: O8 widened, the owner, 2026-10-09).
 import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)

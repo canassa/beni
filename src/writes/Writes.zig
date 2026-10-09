@@ -354,9 +354,11 @@ pub const Hole = struct {
     kind: HoleKind,
     /// Anchored model reads, sorted, deduplicated.
     reads: []const u32,
-    /// Bake-eligible (§9.1): every visit's expression is exactly the model
-    /// path `literal_path`, or a plain string literal; and the hole stands
-    /// alone under an allowlisted parent.
+    /// Bake-eligible (§9.1, as amended: O8 widened): every visit's
+    /// expression is exactly the model path `literal_path`, whose `init`
+    /// value is a string or an exact `Int` (`bake_text`), or a string
+    /// literal; and the hole is an attribute, or stands alone under an
+    /// allowlisted parent.
     bake: bool,
     /// The model path every visit read, or `none` (a string literal), when
     /// `bake`.
@@ -2140,6 +2142,18 @@ fn evalCall(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
         if (a.dispatchOf(f.m)) |dt| if (dt.isListAppend(inst) or dt.isListAppend(callee)) {
             if (args.len == 2) return a.applyRow(.append, f.m, inst, args, g);
         };
+        // `-42` is `Basics.negate 42`: a negative integer literal, kept a
+        // literal so `init` can give it (§3.5, §9.1 as amended).
+        if (args.len == 1 and a.in.packages[t.m] == .core and a.termTag(args[0]) == .lit and a.termWord(args[0], 1) == lit_int and
+            std.mem.eql(u8, a.in.module_names[t.m], "Basics") and std.mem.eql(u8, a.declName(t.m, t.d), "negate"))
+        {
+            const u = @as(u64, a.termWord(args[0], 2)) | (@as(u64, a.termWord(args[0], 3)) << 32);
+            const n: i64 = @bitCast(u);
+            if (n != std.math.minInt(i64)) {
+                const neg: u64 = @bitCast(-n);
+                return a.mkLit(lit_int, @truncate(neg), @truncate(neg >> 32));
+            }
+        }
         return a.callTop(t.m, t.d, args, f.m, inst, g);
     }
     if (a.ctorTarget(f.m, callee)) |c| return a.mkCon(c, args);
@@ -3530,7 +3544,7 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
     // Bake eligibility, per visit.
     const b = a.bir(f.m);
     var lp: u32 = none - 1;
-    if (kind == .child and a.isPathExpr(f.m, inst) and a.termTag(t) == .same and a.rootOf(a.termWord(t, 1)) == rho_path) {
+    if ((kind == .child or kind == .attribute) and a.isPathExpr(f.m, inst) and a.termTag(t) == .same and a.rootOf(a.termWord(t, 1)) == rho_path) {
         lp = a.termWord(t, 1);
     } else if (kind == .child and b.instTag(inst) == .string) {
         lp = HoleAcc.string_literal;
@@ -4181,25 +4195,6 @@ fn initAt(a: *Writes, t0: u32, p: u32) Error!?u32 {
     return t;
 }
 
-/// A string `init` gives verbatim (§9.1, N4): non-empty, nothing the HTML
-/// serialiser would escape or the parser alter.
-fn plainString(s: []const u8) bool {
-    if (s.len == 0 or s[0] == '\n') return false;
-    for (s) |c| switch (c) {
-        '&', '<', '>', '"', '\'' => return false,
-        else => if (c < 0x20 or c == 0x7f) return false,
-    };
-    return true;
-}
-
-fn isPlainStringLit(a: *Writes, t: u32) bool {
-    if (a.termTag(t) != .lit or a.termWord(t, 1) != lit_string) return false;
-    var buf: [4096]u8 = undefined;
-    const id = a.termWord(t, 2);
-    if (a.bytes_t.word(id, 0) > buf.len) return false;
-    return plainString(a.bytesOf(id, &buf));
-}
-
 fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
     const out = try a.arena().alloc(Hole, a.holes.items.len);
     for (a.holes.items, out) |*h, *o| {
@@ -4213,42 +4208,67 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
         }
         h.reads.shrinkRetainingCapacity(n);
         std.mem.sort(u32, h.reads.items, {}, std.sort.asc(u32));
-        var bake = h.literal_ok and h.alone and h.kind == .child and h.literal_path != HoleAcc.unvisited;
-        if (bake and h.literal_path != HoleAcc.string_literal) {
-            bake = false;
-            if (init_model != none) if (try a.initAt(init_model, h.literal_path)) |v| {
-                bake = a.isPlainStringLit(v);
+        // Bake-eligible (§9.1 as amended — O8 widened, the owner,
+        // 2026-10-09): a text hole alone under an allowlisted parent, or an
+        // attribute, every visit's expression the same model path whose
+        // `init` value the template can hold exactly — a string, an `Int`
+        // in the exact range — or, for a text hole, a string literal.
+        const shape = h.literal_ok and h.literal_path != HoleAcc.unvisited and
+            ((h.kind == .child and h.alone) or (h.kind == .attribute and h.literal_path != HoleAcc.string_literal));
+        var bake_text: ?[]const u8 = null;
+        if (shape) {
+            if (h.literal_path == HoleAcc.string_literal) {
+                if (h.reads.items.len == 0) bake_text = try a.bakeText(h.lit_term, h.kind);
+            } else if (init_model != none) if (try a.initAt(init_model, h.literal_path)) |v| {
+                bake_text = try a.bakeText(v, h.kind);
             };
         }
-        if (bake and h.literal_path == HoleAcc.string_literal) bake = h.reads.items.len == 0;
-        var bake_text: []const u8 = "";
-        if (bake) bake_text = try a.bakeText(if (h.literal_path == HoleAcc.string_literal) h.lit_term else (try a.initAt(init_model, h.literal_path)) orelse none);
         o.* = .{
             .module = h.module,
             .token = h.token,
             .kind = h.kind,
             .reads = try a.arena().dupe(u32, h.reads.items),
-            .bake = bake,
+            .bake = bake_text != null,
             .literal_path = h.literal_path,
             .key_paths = if (h.in_row) try a.arena().dupe(u32, h.key_paths.items) else &.{},
             .site = h.site,
             .form = h.form,
             .each_path = if (h.each_path == HoleAcc.unvisited) none else h.each_path,
-            .bake_text = bake_text,
+            .bake_text = bake_text orelse "",
         };
     }
     return out;
 }
 
-/// The bytes of a string literal term, in the arena; empty for anything
-/// else (a literal hole whose bytes the pass did not keep is then mounted
-/// from its expression).
-fn bakeText(a: *Writes, t: u32) Allocator.Error![]const u8 {
-    if (t == none or a.termTag(t) != .lit or a.termWord(t, 1) != lit_string) return "";
-    const id = a.termWord(t, 2);
-    const buf = try a.arena().alloc(u8, a.bytes_t.word(id, 0));
-    const text = a.bytesOf(id, buf);
-    return if (plainString(text)) text else "";
+/// The text a template holds for literal term `t` shown by a hole of kind
+/// `kind`, or null when it cannot hold it exactly (§9.1 as amended, O8
+/// widened). A string is any string but one holding NUL, which the HTML
+/// parser replaces; the lowering escapes the rest (`&`, `<`, a carriage
+/// return; in an attribute `"` too). An empty string is an attribute's
+/// value, but no text: a text hole's node exists empty, and a template
+/// holding nothing has no node there. An `Int` is printed in decimal when
+/// its magnitude is at most 2⁵³: every such integer is a double exactly,
+/// and JavaScript prints such a double as exactly these digits, so the page
+/// shows what the mount's `String(n)` would. A `Float` is never baked.
+fn bakeText(a: *Writes, t: u32, kind: HoleKind) Allocator.Error!?[]const u8 {
+    if (t == none or a.termTag(t) != .lit) return null;
+    switch (a.termWord(t, 1)) {
+        lit_string => {
+            const id = a.termWord(t, 2);
+            const buf = try a.arena().alloc(u8, a.bytes_t.word(id, 0));
+            const text = a.bytesOf(id, buf);
+            if (std.mem.indexOfScalar(u8, text, 0) != null) return null;
+            if (text.len == 0 and kind != .attribute) return null;
+            return text;
+        },
+        lit_int => {
+            const u = @as(u64, a.termWord(t, 2)) | (@as(u64, a.termWord(t, 3)) << 32);
+            const n: i64 = @bitCast(u);
+            if (@abs(n) > (1 << 53)) return null;
+            return try std.fmt.allocPrint(a.arena(), "{d}", .{n});
+        },
+        else => return null,
+    }
 }
 
 fn wholeReadAbove(a: *const Writes, reads: []const u32, p: u32) bool {

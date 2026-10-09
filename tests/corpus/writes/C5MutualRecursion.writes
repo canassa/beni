@@ -4,8 +4,8 @@ program C5MutualRecursion.main : Tea.sandbox
     literal ρ
   key (any)                                       exact      node ρ; value ρ.a; value ρ.b
   keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
-  hole C5MutualRecursion.beni:44:17               static     reads ρ.c
-  holes 1: static 1, literal 0, static-key 0, dynamic 0
+  hole C5MutualRecursion.beni:44:17               literal    reads ρ.c
+  holes 1: static 0, literal 1, static-key 0, dynamic 0
   site C5MutualRecursion.beni:44:14               unique
   sites 1: unique 1, shared 0, instanced 0, value 0
   markup_value_roots 0 (0% of 1 sites)

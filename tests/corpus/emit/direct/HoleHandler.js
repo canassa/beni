@@ -50,8 +50,8 @@ const HoleHandler$main = Tea$sandbox(($root$1, $t$2) => {
     if (!Direct$same($t$24, $s$13)) {
       Direct$wrong("the text hole at HoleHandler.beni:33:12", $s$13, $t$24);
     }
-    if (!Direct$same($t$22, "Holes")) {
-      Direct$wrong("the text HoleHandler.beni:30:13 baked into the page", "Holes", $t$22);
+    if (`${$t$22}` !== "Holes") {
+      Direct$wrong("the text HoleHandler.beni:30:13 baked into the page", "Holes", `${$t$22}`);
     }
   });
 });

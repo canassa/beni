@@ -1,0 +1,42 @@
+-- load
+<body>
+  <main>
+    <button id="inc">"0"</button>
+    <p id="count">"7"</p>
+    <p id="below">"-42"</p>
+    <p id="huge">"9007199254740992"</p>
+    <p id="ratio">"1.5"</p>
+    <p id="special" title="a<b & \"c\" 'd' >">"a<b & \"c\" 'd' >"</p>
+    <p id="empty" title="">""</p>
+    <span id="tab" tabindex="3">"tab"</span>
+    <a id="link" href="">"link"</a>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="inc">"1"</button>
+    <p id="count">"7"</p>
+    <p id="below">"-42"</p>
+    <p id="huge">"9007199254740992"</p>
+    <p id="ratio">"1.5"</p>
+    <p id="special" title="a<b & \"c\" 'd' >">"a<b & \"c\" 'd' >"</p>
+    <p id="empty" title="">""</p>
+    <span id="tab" tabindex="3">"tab"</span>
+    <a id="link" href="">"link"</a>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="inc">"2"</button>
+    <p id="count">"7"</p>
+    <p id="below">"-42"</p>
+    <p id="huge">"9007199254740992"</p>
+    <p id="ratio">"1.5"</p>
+    <p id="special" title="a<b & \"c\" 'd' >">"a<b & \"c\" 'd' >"</p>
+    <p id="empty" title="">""</p>
+    <span id="tab" tabindex="3">"tab"</span>
+    <a id="link" href="">"link"</a>
+  </main>
+</body>

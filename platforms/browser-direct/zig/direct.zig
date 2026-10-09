@@ -173,7 +173,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
         \\this one's cannot (a `?`, or a function that takes evidence); that arrives with a
         \\later slice (`docs/design/browser-direct.md` §14).
     ++ " " ++ until_then);
-    var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .bake = bakeOf };
+    var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .bake = bakeOf, .bake_item = bakeItemOf };
     var b = try g.plan(&.{r.node}, r.site.inst);
     // A root element in the SVG or MathML namespace that is not that
     // namespace's own root is parsed inside a wrapper the mount would take
@@ -183,29 +183,21 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
         \\other than `<svg>` or `<math>` yet: it arrives with slice S4
         \\(`docs/design/browser-direct.md` §14).
     ++ " " ++ until_then);
-    if (b.ops.items.len == 0 and !cx.build.fuzz and !anyBaked(cx, tree, r.node)) return staticMount(cx, tree, r.node, b.html.items, b.flags);
+    if (b.ops.items.len == 0 and !cx.build.fuzz and b.baked_holes.items.len == 0 and b.baked_items.items.len == 0) return staticMount(cx, tree, r.node, b.html.items, b.flags);
     var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .b = &b, .index = index, .node = r.node };
     return page.mount();
 }
 
-/// The text a hole is baked as (§5.1): a text hole the program never
-/// writes whose value is a plain string `init` gives.
+/// The text a hole is baked as (§5.1, as amended: O8 widened): a text hole
+/// of a `String` or an `Int` the program never writes, whose value `init`
+/// gives as text the template holds exactly.
 fn bakeOf(cx: *m.Context, n: m.Node.Index) ?[]const u8 {
     return cx.programHole(.{ .node = n }).bake;
 }
 
-fn anyBaked(cx: *m.Context, tree: *const m.Tree, n: m.Node.Index) bool {
-    switch (tree.kind(n)) {
-        .element => for (tree.childrenOf(tree.element(n).children)) |c| {
-            if (anyBaked(cx, tree, c)) return true;
-        },
-        .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| {
-            if (anyBaked(cx, tree, c)) return true;
-        },
-        .hole => return tree.hole(n).kind == .text_string and bakeOf(cx, n) != null,
-        else => {},
-    }
-    return false;
+/// The same for an attribute, by its index in `Tree.items`.
+fn bakeItemOf(cx: *m.Context, item: u32) ?[]const u8 {
+    return cx.programHole(.{ .item = item }).bake;
 }
 
 /// A `view` that writes nothing after it is parsed — no hole, no event, no
@@ -768,13 +760,26 @@ const Page = struct {
             try values.append(pg.a(), v);
             try checked.append(pg.a(), @intCast(k));
         }
-        var baked: std.ArrayList(m.Node.Index) = .empty;
-        try pg.bakedHoles(pg.node, &baked);
-        for (baked.items) |n| {
-            const v = pg.tree.hole(n).value;
-            if (!cx.reachesDebug(v)) try values.append(pg.a(), v);
+        // What the template holds verbatim: each baked text hole and
+        // attribute, its value computed again and compared, as text, with
+        // the text `init` gave it (the URL check aside, which acts on the
+        // text and not the model).
+        var baked: std.ArrayList(Baked) = .empty;
+        for (pg.b.baked_holes.items) |n| {
+            const facts = cx.programHole(.{ .node = n });
+            try baked.append(pg.a(), .{ .value = pg.tree.hole(n).value, .text = facts.bake.?, .what = try std.fmt.allocPrint(pg.a(), "the text {s} baked into the page", .{if (facts.where.len != 0) facts.where else "hole"}) });
         }
-        if (checked.items.len == 0 and baked.items.len == 0) {
+        for (pg.b.baked_items.items) |i| {
+            const facts = cx.programHole(.{ .item = i });
+            const it = pg.tree.items[i];
+            try baked.append(pg.a(), .{ .value = it.value.dynamic.?, .text = facts.bake.?, .what = try std.fmt.allocPrint(pg.a(), "the attribute `{s}` at {s} baked into the page", .{ pg.tree.string(it.name), if (facts.where.len != 0) facts.where else "?" }) });
+        }
+        var kept: std.ArrayList(Baked) = .empty;
+        for (baked.items) |x| if (!cx.reachesDebug(x.value)) {
+            try kept.append(pg.a(), x);
+            try values.append(pg.a(), x.value);
+        };
+        if (checked.items.len == 0 and kept.items.len == 0) {
             cx.programViewLeave();
             return;
         }
@@ -786,29 +791,17 @@ const Page = struct {
             try js.expression(then, try pg.rt("wrong", &.{ try js.string(try pg.describe(op, k)), try pg.ident(pg.slots[k].?), try pg.leafOf(op, pg.valueOf(op).?) }));
             try js.@"if"(blk, try js.unary(.not, try pg.rt("same", &.{ leaf, try pg.ident(pg.slots[k].?) })), then, null);
         }
-        for (baked.items) |n| {
-            const v = pg.tree.hole(n).value;
-            if (cx.reachesDebug(v)) continue;
-            const facts = cx.programHole(.{ .node = n });
-            const text = try js.string(facts.bake.?);
+        for (kept.items) |x| {
+            const shown = try js.template(&.{ .{ .text = "" }, .{ .expr = try cx.value(x.value) } });
             const then = try js.block();
-            const what = try std.fmt.allocPrint(pg.a(), "the text {s} baked into the page", .{if (facts.where.len != 0) facts.where else "hole"});
-            try js.expression(then, try pg.rt("wrong", &.{ try js.string(what), text, try cx.value(v) }));
-            try js.@"if"(blk, try js.unary(.not, try pg.rt("same", &.{ try cx.value(v), try js.string(facts.bake.?) })), then, null);
+            try js.expression(then, try pg.rt("wrong", &.{ try js.string(x.what), try js.string(x.text), try js.template(&.{ .{ .text = "" }, .{ .expr = try cx.value(x.value) } }) }));
+            try js.@"if"(blk, try js.binary(.strict_ne, shown, try js.string(x.text)), then, null);
         }
         cx.programViewLeave();
         try js.expression(pg.body, try pg.rt("verify", &.{try js.arrow(&.{}, blk)}));
     }
 
-    fn bakedHoles(pg: *Page, n: m.Node.Index, out: *std.ArrayList(m.Node.Index)) m.Error!void {
-        const tree = pg.tree;
-        switch (tree.kind(n)) {
-            .element => for (tree.childrenOf(tree.element(n).children)) |c| try pg.bakedHoles(c, out),
-            .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| try pg.bakedHoles(c, out),
-            .hole => if (tree.hole(n).kind == .text_string and bakeOf(pg.cx, n) != null) try out.append(pg.a(), n),
-            else => {},
-        }
-    }
+    const Baked = struct { value: m.Value.Index, text: []const u8, what: []const u8 };
 
     /// The hole an op writes, for the verify mode's message.
     fn describe(pg: *Page, op: dom.Op, k: u32) m.Error![]const u8 {

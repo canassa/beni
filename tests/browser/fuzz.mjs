@@ -851,6 +851,7 @@ export async function fuzz(spec, host) {
 
   const plural = (k, what) => `${k} ${what}${k === 1 ? "" : "s"}`;
   const lines = [];
+  if (typeof spec.note === "string") lines.push(spec.note);
   types.forEach((type, program) => {
     const name = types.length > 1 ? `program ${program}` : "the program";
     if (type === null) {

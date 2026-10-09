@@ -284,6 +284,9 @@ pub const Fuzz = struct {
     /// does not replay itself never passes into a record. Not part of the
     /// record's digest: it changes no verdict of a page that replays.
     replay: bool = false,
+    /// A line the report begins with: why this pair's fuzz is what it is
+    /// (a `browser/direct/` pair whose value fuzz runs in the sweep only).
+    note: ?[]const u8 = null,
     /// The seeds, `1,2,…`, and the steps of each sequence.
     seeds: []const u8 = gate_seeds,
     steps: u32 = gate_steps,
@@ -314,6 +317,8 @@ pub fn fuzzSpec(arena: Allocator, f: Fuzz) ![]const u8 {
     try w.writeAll(",\"script\":");
     if (f.script) |s| try w.print("{f}", .{std.json.fmt(s, .{})}) else try w.writeAll("null");
     try w.print(",\"ignore\":{f},\"crash\":\"{t}\",\"replay\":{}", .{ std.json.fmt(f.ignore, .{}), f.crash, f.replay });
+    try w.writeAll(",\"note\":");
+    if (f.note) |n| try w.print("{f}", .{std.json.fmt(n, .{})}) else try w.writeAll("null");
     try w.print(",\"seeds\":[{s}],\"steps\":{d},\"shrink\":true}}\n", .{ f.seeds, f.steps });
     return out.written();
 }

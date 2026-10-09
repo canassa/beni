@@ -345,7 +345,7 @@ pub const Direct = struct {
         pub const none: u32 = std.math.maxInt(u32);
     };
 
-    pub const Hole = struct { module: u32, token: u32, group: u32, bake: []const u8, where: []const u8 = "" };
+    pub const Hole = struct { module: u32, token: u32, group: u32, bake: ?[]const u8, where: []const u8 = "" };
 
     pub fn programAt(d: *const Direct, module: u32, inst: u32) ?*const Program {
         for (d.programs) |*p| if (p.module == module and p.inst == inst) return p;
@@ -11206,7 +11206,7 @@ pub const Lowerer = struct {
         for (0..d.keys.len) |k| {
             if (d.calls[h.group * d.keys.len + k]) static = false;
         }
-        return .{ .group = h.group, .static = static, .bake = if (static and h.bake.len != 0) h.bake else null, .where = h.where };
+        return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where };
     }
 
     /// `cx.programCalls`: a hole the pass does not know is called by every

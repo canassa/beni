@@ -1,0 +1,69 @@
+-- What the template holds verbatim (write-sets.md §9.1 and
+-- browser-direct.md §5.1, as amended: O8 widened, the owner, 2026-10-09):
+-- every value below is a model path no key writes, and the page shows what
+-- the mount would have written. Baked: an `Int` text hole, negative too;
+-- strings holding `<`, `&` and both quotes, as text and in an attribute,
+-- escaped; an `Int` attribute; an empty attribute value; a URL whose
+-- `javascript:` scheme is baked as nothing. Written at mount instead: an
+-- `Int` past 2⁵³, a `Float`, an empty text. Built for both platforms, with
+-- the verify mode and the page fuzzer on; `emit/direct/BakedValues` pins
+-- which is which.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+type alias Model =
+    n : Int
+    count : Int
+    below : Int
+    huge : Int
+    ratio : Float
+    special : String
+    empty : String
+    tab : Int
+    link : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="inc" onClick={Inc}>{model.n}</button>
+        <p id="count">{model.count}</p>
+        <p id="below">{model.below}</p>
+        <p id="huge">{model.huge}</p>
+        <p id="ratio">{model.ratio}</p>
+        <p id="special" title={model.special}>{model.special}</p>
+        <p id="empty" title={model.empty}>{model.empty}</p>
+        <span id="tab" tabindex={model.tab}>tab</span>
+        <a id="link" href={model.link}>link</a>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            { n = 0
+            , count = 7
+            , below = -42
+            , huge = 9007199254740993
+            , ratio = 1.5
+            , special = "a<b & \"c\" 'd' >"
+            , empty = ""
+            , tab = 3
+            , link = "javascript:alert(1)"
+            }
+        , update = update
+        , view = view
+        }
