@@ -533,6 +533,78 @@ test "a markup program builds byte-identical at every --jobs, and runs" {
     try testing.expect(w.exists("one/_platform/markup.foreign.mjs"));
 }
 
+test "a --fuzz build of a browser-direct page applies a message value through its mount node" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `browser-direct.md` §8.3, as amended for S1: the hidden test-only
+    // `--fuzz` gives each mounted program's node a `$$root` that sends a
+    // message value through the dispatcher, as `browser-tea`'s runtime
+    // always does, and keeps the arm of a constructor nothing builds. A
+    // build without it ships neither.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Inc
+        \\    | Unbuilt Int
+        \\
+        \\
+        \\update : Msg, Int → Int
+        \\update msg n =
+        \\    case msg of
+        \\        Inc →
+        \\            n + 1
+        \\
+        \\        Unbuilt k →
+        \\            k
+        \\
+        \\
+        \\view : Int → Html Msg
+        \\view n = <button onClick={Inc}>{String.fromInt n}</button>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = 0, update = update, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const fuzz = try w.runWith(&.{ "build", "--platform=browser-direct", "--fuzz", "--out=fuzz", "Main.beni" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "build", "--platform=browser-direct", "--out=plain", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(fuzz);
+    try expectBuilt(plain);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const fuzzed = try w.read("fuzz/Main.mjs");
+    const shipped = try w.read("plain/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, fuzzed, ".$$root = ($msg") != null);
+    try testing.expect(std.mem.indexOf(u8, fuzzed, "$dispatch") != null);
+    try testing.expect(std.mem.indexOf(u8, fuzzed, "$model$4 = $p$") != null);
+    try testing.expect(std.mem.indexOf(u8, shipped, "$$root") == null);
+    try testing.expect(std.mem.indexOf(u8, shipped, "$dispatch") == null);
+
+    // The message type a fuzzer generates values from (`--messages`).
+    const types = try w.runWith(&.{ "dump", "--stage=writes", "--messages", "--platform=browser-direct", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), types.exit_code);
+    try testing.expectEqualStrings(
+        \\{"program":"Main.main","message":{"type":"Main.Msg","args":[]},"types":{"Main.Msg":{"rep":"tagged","fields":1,"ctors":[{"name":"Inc","args":[]},{"name":"Unbuilt","args":[{"type":"Basics.Int","args":[]}]}]}}}
+        \\
+    , types.stdout);
+}
+
 test "a view formatted renders the page the view rendered" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

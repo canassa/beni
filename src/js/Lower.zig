@@ -11274,7 +11274,7 @@ pub const Lowerer = struct {
     fn keyOfCtor(l: *Lowerer, ref: Inst.Index) ?KeyOfCtor {
         const keys = l.directKeys();
         var default: ?u32 = null;
-        for (keys, 0..) |key, k| {
+        for (keys, 0..) |_, k| {
             const steps = l.directSteps(@intCast(k));
             if (steps.len == 0) return .{ .key = @intCast(k), .fields = false };
             if (!steps[0].named) {
@@ -11282,7 +11282,7 @@ pub const Lowerer = struct {
                 continue;
             }
             if (!l.sameCtor(ref, steps[0].ctor)) continue;
-            if (steps.len != 1 or key.star) return null;
+            if (steps.len != 1) return null;
             return .{ .key = @intCast(k), .fields = true };
         }
         if (default) |k| return .{ .key = k, .fields = false };
