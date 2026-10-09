@@ -181,6 +181,22 @@ test (`scaling.mjs` stamps each page with the beni that built it) — on both pl
 subjects and pages design §12.2 lists, a slice's batch under fifteen minutes and the full batch
 opt-in.
 
+*Amended 2026-10-09 (the owner): every slice runs every benchmark, not only its own.* At the end
+of each slice, run every sweep of `bench/ui/scaling.mjs`, the table benchmark, and, from the
+slices that can build them, TodoMVC and Conduit:
+- holes;
+- rows, with the 30 000-row edit and swap;
+- live rows;
+- width, including 1 024;
+- depth, including 128;
+- derived, helper rows and helper tree;
+- bursts and the stream.
+
+The subjects are `beni-direct`, today's beni, P3, vanilla and Solid 1. A page the direct
+platform can't build yet is listed as skipped, with its diagnostic and the slice that adds it,
+never left out silently. The slice's research report carries the full table, and says which
+points its kill criterion judges and which are informational.
+
 **V3. Adversarial agents try to break the page** (the owner, 2026-10-08). **Survives, on the
 direct platform**, after S4 and again after S6, and after every later slice that specialises
 rendering: agents write beni programs designed to make a page show something its model does not
