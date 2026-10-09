@@ -1925,3 +1925,34 @@ rather than a property of quoting. Quoting constants too would change the templa
 attribute gets on `browser`, whose output stays byte-identical, and quoting only baked values
 would put two rules in one template, so the standard's set stays the rule. Fixture:
 `browser/direct/BakedQuoting`, one attribute to each character.
+
+### *Amended 2026-10-09 (the direct platform's S2):* which `[*]` is a row's own
+
+§3.6 anchors a read of a `For` row's item to the list's `[*]`: a row's `{row.label}` reads
+`ρ.rows[*].label`. So does a read the row makes of the whole list — `List.map model.rows .label`
+inside the row, whose callback's root εⱼ is anchored to the same `[*]` (§3.7). The two mean
+different things to an edit script (`browser-direct.md` §6.2): a write at `ρ.rows[k].label`
+changes the first only in row `k`, the second in every row. A consumer that visits only row `k`
+must know which it has, so a hole's anchored read now says it.
+
+- **The row's item is a root of its own.** The view walk binds a `For` row's item to a fresh
+  root ε_row whose base is `p[*]` (`p` the list's path, or its dependencies for a derived
+  list), as a callback's element root is, instead of to `Same(p[*])`. Anchoring is unchanged
+  (§3.6: ε_row rebases to `p[*]`), so every read set, every class, every dump line and every
+  write set stays as it was; `writes/` goldens do not move.
+- **A read's bound prefix.** Anchoring a hole's read also gives the longest prefix of the
+  anchored path that came through enclosing rows' item roots: through ε_row, the whole base
+  `p[*]` is bound, and so is whatever the base's own anchoring bound; through a callback's
+  εⱼ, its base's bound prefix and nothing of the `[*]` εⱼ adds; through ρ, nothing. A hole
+  whose path is read both ways keeps the shorter prefix. A row of list `p` may be visited alone
+  for a write at `p[κ]…` exactly for its reads whose bound prefix reaches `p[*]`; every other
+  read is the whole list's, and a write it conflicts with visits every row.
+- **Soundness.** A read bound through `p[*]` is computed from the row's item and from paths
+  outside the list; the row's item at position `j` is `L'[j]`, so a write whose path at the
+  list's step is `[κ]` changes it only where `κ = j` — at row `κ` — and a write that does not
+  pass through `p` cannot change it unless it is a `value` write at or above `p`, which is the
+  list's own edit (its rows made again) and not a row visit's business. A read not bound is
+  conflict-checked against every write as §2.5 says, and visits every row.
+
+Fixture: `writes/RowOwnItem` (a row reading its item and the whole list), whose dump prints the
+bound prefix of each read.
