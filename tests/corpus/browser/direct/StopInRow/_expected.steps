@@ -1,0 +1,10 @@
+# Inside the stopper: the button, then the stopper; the row and main are not
+# reached.
+click #button1
+# The stopper itself: only it.
+click #stop2
+# The row outside the stopper: the row, then main.
+click #row1
+# The link: its default prevented as the walk passes it, then the row and
+# main.
+click #link2

@@ -1,0 +1,82 @@
+-- `browser/dom/Keyed` rebuilt with the edits slice S2 compiles
+-- (browser-direct.md §6, as amended for S2): a keyed and a positional `For`
+-- over one list. The inputs are not controlled, so the text a step types
+-- into one is held by the node alone and shows which node is where. By key,
+-- a row keeps its nodes wherever its key moves: a swap moves the typed text
+-- with its row and leaves the focused input focused, and a new label patches
+-- the row's text in place. By position, row `k` keeps its nodes whatever
+-- item is there, so the typed text stays where it was and shows beside
+-- another item. Items that share a key are all rendered. The original's
+-- rotation and reversal reach §6.3's reconciler and its relabel `List.map`'s
+-- identity walk, which slice S3 adds: here they are `List.swap` and
+-- `List.update`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Swap
+    | SwapEnds
+    | Relabel
+    | Duplicate
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    tags : List String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Swap →
+            { model | rows = List.swap model.rows 0 1 }
+
+        SwapEnds →
+            { model | rows = List.swap model.rows 0 2 }
+
+        Relabel →
+            { model | rows = List.update model.rows 1 λrow → { row | label = "two" } }
+
+        Duplicate →
+            { model | tags = [ "a", …model.tags ] }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="ends" onClick={SwapEnds}>ends</button>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <button id="duplicate" onClick={Duplicate}>duplicate</button>
+        <ul id="keyed">
+            <For each={model.rows} keyed={.id}>
+                {λrow → <li><input id={"k${String.fromInt row.id}"} />{row.label}</li>}
+            </For>
+        </ul>
+        <ul id="position">
+            <For each={model.rows} keyed={False}>{λrow → <li><input />{row.label}</li>}</For>
+        </ul>
+        <ul id="tags">
+            <For each={model.tags} keyed={λtag → tag}>{λtag → <li>{tag}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            { rows =
+                [ { id = 1, label = "one" }, { id = 2, label = "2" }, { id = 3, label = "three" } ]
+            , tags = [ "a", "b", "a" ]
+            }
+        , update = update
+        , view = view
+        }

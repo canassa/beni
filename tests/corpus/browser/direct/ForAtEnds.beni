@@ -1,0 +1,74 @@
+-- `browser/dom/ForAtEnds` rebuilt for slice S2 (browser-direct.md §6, as
+-- amended for S2): a list's place is its parent and the node after it — an
+-- end marker, or none when its rows come last — so rows made, moved and
+-- removed stay between the right neighbours whichever end of its parent the
+-- list is at. Four lists of one model: `leading` begins its parent,
+-- `trailing` ends it, `only` is all of it (emptied, the parent is emptied
+-- whole), and `middle` sits between two items; at the view's top level a
+-- fifth has no parent of its own but the mount node. Each is grown at the
+-- end and at the front, emptied, and grown again. The original's subject,
+-- a component and a branch around a `For`, is slice S3's and S4's.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Grow
+    | Front
+    | Empty
+
+
+type alias Model =
+    items : List String
+    next : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Grow →
+            { model
+                | items = List.push model.items "row ${String.fromInt model.next}"
+                , next = model.next + 1
+            }
+
+        Front →
+            { model
+                | items = [ "front ${String.fromInt model.next}", …model.items ]
+                , next = model.next + 1
+            }
+
+        Empty →
+            { model | items = [] }
+
+
+view : Model → Html Msg
+view model =
+    <>
+        <button id="grow" onClick={Grow}>grow</button>
+        <button id="front" onClick={Front}>front</button>
+        <button id="empty" onClick={Empty}>empty</button>
+        <ul id="leading">
+            <For each={model.items}>{λs → <li>{s}</li>}</For>
+            <li>leading's last</li>
+        </ul>
+        <ul id="trailing">
+            <li>trailing's first</li>
+            <For each={model.items} keyed={False}>{λs → <li>{s}</li>}</For>
+        </ul>
+        <ul id="only">
+            <For each={model.items}>{λs → <li>{s}</li>}</For>
+        </ul>
+        <ul id="middle">
+            <li>before</li>
+            <For each={model.items} keyed={False}>{λs → <li>{s}</li>}</For>
+            <li>after</li>
+        </ul>
+        <For each={model.items}>{λs → <p>{s}</p>}</For>
+        <p>the end</p>
+    </>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { items = [ "a", "b" ], next = 0 }, update = update, view = view }

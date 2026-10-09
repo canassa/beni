@@ -1,0 +1,107 @@
+-- Each edit script's shape (browser-direct.md §6.2, as amended for S2): a
+-- handler is its key's indices, evaluated before the arm, its arm, then one
+-- runtime call per script under its tag's guard — `append`, `prepend`,
+-- `clear`, `insert`, `removeAt`, `swap` — or, for an element write, the
+-- row at its index (`Direct.row`) and the one row group the write reaches;
+-- `set` the row whole, made again where its key changed (`Direct.rekey`);
+-- a read of the model in every row, a visit of every row
+-- (`Direct.each`); and on a positional list, a reversal, the positional
+-- pass. No reconciler is reached: every key is exact or indexed.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Edit Int String
+    | Set Int
+    | Swap Int Int
+    | Append
+    | Prepend
+    | Clear
+    | Insert Int
+    | Remove Int
+    | Mark
+    | Reverse
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    plain : List String
+    mark : String
+    next : Int
+
+
+fresh : Model, String → Row
+fresh model label = { id = model.next, label = label }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Edit k s →
+            { model | rows = List.update model.rows k λr → { r | label = s } }
+
+        Set k →
+            { model | rows = List.set model.rows k (fresh model "set"), next = model.next + 1 }
+
+        Swap i j →
+            { model | rows = List.swap model.rows i j }
+
+        Append →
+            { model | rows = List.push model.rows (fresh model "end"), next = model.next + 1 }
+
+        Prepend →
+            { model | rows = [ fresh model "front", …model.rows ], next = model.next + 1 }
+
+        Clear →
+            { model | rows = [] }
+
+        Insert k →
+            { model | rows = List.insertAt model.rows k (fresh model "in"), next = model.next + 1 }
+
+        Remove k →
+            { model | rows = List.removeAt model.rows k }
+
+        Mark →
+            { model | mark = "${model.mark}*" }
+
+        Reverse →
+            { model | plain = List.reverse model.plain }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Edit 1 "edited"}>edit</button>
+        <button onClick={Set 0}>set</button>
+        <button onClick={Swap 0 2}>swap</button>
+        <button onClick={Append}>append</button>
+        <button onClick={Prepend}>prepend</button>
+        <button onClick={Clear}>clear</button>
+        <button onClick={Insert 1}>insert</button>
+        <button onClick={Remove 1}>remove</button>
+        <button onClick={Mark}>mark</button>
+        <button onClick={Reverse}>reverse</button>
+        <ul>
+            <For each={model.rows} keyed={.id}>
+                {λr → <li onClick={Remove r.id}>{r.label}{model.mark}</li>}
+            </For>
+        </ul>
+        <ol>
+            <For each={model.plain} keyed={False}>{λs → <li>{s}</li>}</For>
+        </ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = { rows = [], plain = [ "a", "b" ], mark = "", next = 0 }
+        , update = update
+        , view = view
+        }

@@ -319,7 +319,37 @@ pub const Direct = struct {
         /// `groups × keys`: whether key `k`'s write set conflicts with
         /// read set `g`, at `g * keys.len + k`.
         calls: []const bool,
+        /// Version 1.8: each `For` of the view, sorted by module, then its
+        /// token.
+        lists: []const List = &.{},
+        /// Version 1.8: the index symbols the lists' edits name, by
+        /// `Program.Index`.
+        indices: []const IndexRecipe = &.{},
     };
+
+    /// One `For` (`browser-direct.md` §6): whether its `each` is exact, K3's
+    /// row count, and per key what the key does to its rows.
+    pub const List = struct {
+        module: u32,
+        token: u32,
+        exact: bool,
+        baked: ?u32,
+        /// Per key.
+        edits: []const []const beni_markup.Program.Edit,
+    };
+
+    /// How a handler evaluates an index symbol (`browser-direct.md` §6.2,
+    /// as amended for S2): an integer, a path of the handler's message
+    /// below field `field` of the key's constructor, or a path of the old
+    /// model — each step a field or a tuple component — or nothing it can.
+    pub const IndexRecipe = union(enum) {
+        literal: i64,
+        message: struct { field: u32, steps: []const IndexStep },
+        model: []const IndexStep,
+        unknown,
+    };
+
+    pub const IndexStep = union(enum) { field: u32, tuple: u32 };
 
     /// One step of a key: a constructor at a path of the message, or the
     /// default child, which stands for the constructors its named
@@ -345,7 +375,15 @@ pub const Direct = struct {
         pub const none: u32 = std.math.maxInt(u32);
     };
 
-    pub const Hole = struct { module: u32, token: u32, group: u32, bake: ?[]const u8, where: []const u8 = "" };
+    pub const Hole = struct {
+        module: u32,
+        token: u32,
+        group: u32,
+        bake: ?[]const u8,
+        where: []const u8 = "",
+        /// K3: per row of the list it is in, the text baked in its place.
+        rows: []const ?[]const u8 = &.{},
+    };
 
     pub fn programAt(d: *const Direct, module: u32, inst: u32) ?*const Program {
         for (d.programs) |*p| if (p.module == module and p.inst == inst) return p;
@@ -11218,6 +11256,76 @@ pub const Lowerer = struct {
         return d.calls[group * d.keys.len + key];
     }
 
+    /// `cx.programList` and `cx.programEdits`: the `For` at markup node `n`,
+    /// by its token, or null when the pass did not see it.
+    fn directList(l: *Lowerer, n: beni_markup.Node.Index) ?*const Direct.List {
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        const st = l.mk orelse return null;
+        const token = st.built.node_tokens[@backingInt(n)];
+        const module = l.in.module.int();
+        for (d.lists) |*list| if (list.module == module and list.token == token) return list;
+        return null;
+    }
+
+    /// `cx.programRowBake`: K3's text for row `row` in a hole's place.
+    fn directRowBake(l: *Lowerer, ref: beni_markup.Program.HoleRef, row: u32) ?[]const u8 {
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        const st = l.mk orelse return null;
+        const token = switch (ref) {
+            .node => |n| st.built.node_tokens[@backingInt(n)],
+            .item => |i| if (i < st.built.item_tokens.len) st.built.item_tokens[i] else return null,
+        };
+        const module = l.in.module.int();
+        for (d.holes) |h| if (h.module == module and h.token == token) {
+            return if (row < h.rows.len) h.rows[row] else null;
+        };
+        return null;
+    }
+
+    /// `cx.programIndex`: an index symbol of key `key`'s edits, read from
+    /// the handler's parameters or the model it has not replaced yet.
+    fn directIndex(l: *Lowerer, key: u32, block: beni_markup.Block, params: []const JsIr.NameIndex, model: Node.Index, index: beni_markup.Program.Index) Allocator.Error!?Node.Index {
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        const st = l.mk.?;
+        const p = st.pos;
+        const at = @backingInt(index);
+        if (index == .every or index == .unknown or at >= d.indices.len) return null;
+        var subject: Node.Index = undefined;
+        var steps: []const Direct.IndexStep = undefined;
+        switch (d.indices[at]) {
+            .literal => |v| {
+                var buf: [24]u8 = undefined;
+                const spelled = std.fmt.bufPrint(&buf, "{d}", .{v}) catch return null;
+                if (v < 0) return try l.unary(.neg, try l.numberNode(spelled[1..], p), p);
+                return try l.numberNode(spelled, p);
+            },
+            .unknown => return null,
+            .message => |m| {
+                // The key's handler takes the constructor's fields.
+                const keys = l.directKeys();
+                if (key >= keys.len or m.field >= params.len) return null;
+                const s = l.directSteps(key);
+                if (!(s.len == 1 and s[0].named and keys[key].params == params.len)) return null;
+                subject = try l.ident(params[m.field], p);
+                steps = m.steps;
+            },
+            .model => |m| {
+                subject = model;
+                steps = m;
+            },
+        }
+        for (steps) |s| subject = switch (s) {
+            .field => |f| try l.fieldMember(subject, @fromBackingInt(f), p),
+            .tuple => |i| try l.member(subject, try l.slotName(i), p),
+        };
+        // A path read: nothing to evaluate first, so `block` stays as it is.
+        _ = block;
+        return subject;
+    }
+
     /// A constructor of the write-set pass, as this module writes it.
     fn directCtor(l: *Lowerer, c: Direct.Ctor) ?struct { CtorRep, Symbol } {
         if (c.module == l.in.module.int()) {
@@ -12158,6 +12266,63 @@ pub const Lowerer = struct {
         return try l.markupValue(body.values.at(body.values.len - 1));
     }
 
+    /// `cx.rowValuesOf` (version 1.8): the row's parameters bound to `item`
+    /// and `position`, its `let`s evaluated, and the values of its root
+    /// named in `values` only, in the root's order — the captured locals
+    /// read where the lowering places the block.
+    fn markupRowValuesOf(
+        l: *Lowerer,
+        block: beni_markup.Block,
+        row_index: beni_markup.Row.Index,
+        item: beni_markup.Name,
+        position: ?beni_markup.Name,
+        values: []const beni_markup.Value.Index,
+    ) Allocator.Error!void {
+        const st = l.mk.?;
+        const row = st.built.tree.row(row_index);
+        const source = st.built.rows[@backingInt(row_index)];
+        var stmts: StmtList = .empty;
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const p = st.pos;
+        const lambda = l.bir.instData(source.function);
+        const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(lambda.lhs))), Inst.Index);
+        for (params, 0..) |param, k| {
+            const bound: JsIr.NameIndex = if (k == 0)
+                @fromBackingInt(@intCast(@backingInt(item)))
+            else if (position) |n| @fromBackingInt(@intCast(@backingInt(n))) else try l.fresh(l.well.param);
+            switch (l.bir.instTag(param)) {
+                .pat_var => {
+                    const local = l.bir.instData(param).lhs;
+                    if (local < l.local_names.len) l.local_names[local] = bound;
+                },
+                .pat_wild => {},
+                else => try l.bindings(&stmts, param, try l.ident(bound, p)),
+            }
+        }
+        for (l.bir.extraSlice(source.lets, Inst.Index)) |let| {
+            try l.letBindings(&stmts, l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(let).lhs))));
+        }
+        const body = st.built.tree.root(row.body);
+        var own: std.ArrayList(u32) = .empty;
+        for (values) |v| {
+            const at = @backingInt(v);
+            if (at >= body.values.start and at < body.values.start + body.values.len) try own.append(l.scratch, at);
+        }
+        std.mem.sort(u32, own.items, {}, std.sort.asc(u32));
+        var last: ?u32 = null;
+        for (own.items) |at| {
+            if (last == at) continue;
+            last = at;
+            switch (st.built.values[at]) {
+                .inst => |inst| try l.markupBind(&stmts, at, inst),
+                else => {},
+            }
+        }
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+    }
+
     /// `cx.componentCall`: the props record, built as a record literal is —
     /// keys sorted by name text — or as a record update over the spread,
     /// then the call, with its evidence.
@@ -12590,6 +12755,29 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directReachesDebug(v);
     }
 
+    fn programList(impl: *anyopaque, n: M.Node.Index) M.Program.ListFacts {
+        const list = lowerer(impl).directList(n) orelse return .{ .exact = false };
+        return .{ .exact = list.exact, .baked = list.baked };
+    }
+
+    fn programEdits(impl: *anyopaque, key: u32, n: M.Node.Index) []const M.Program.Edit {
+        const list = lowerer(impl).directList(n) orelse return &.{};
+        return if (key < list.edits.len) list.edits[key] else &.{};
+    }
+
+    fn programIndex(impl: *anyopaque, key: u32, into: M.Block, params: []const M.Name, model: M.Expr, which: M.Program.Index) E!?M.Expr {
+        const n = try lowerer(impl).directIndex(key, into, @ptrCast(params), node(model), which) orelse return null;
+        return expr(n);
+    }
+
+    fn rowValuesOf(impl: *anyopaque, into: M.Block, row: M.Row.Index, item: M.Name, position: ?M.Name, values: []const M.Value.Index) E!void {
+        return lowerer(impl).markupRowValuesOf(into, row, item, position, values);
+    }
+
+    fn programRowBake(impl: *anyopaque, hole: M.Program.HoleRef, row: u32) ?[]const u8 {
+        return lowerer(impl).directRowBake(hole, row);
+    }
+
     fn literal(impl: *anyopaque, which: M.Literal, bytes: []const u8) E!M.Expr {
         const l = lowerer(impl);
         const p = pos(l);
@@ -12756,6 +12944,11 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_message = programMessage,
         .program_dispatch = programDispatch,
         .reaches_debug = reachesDebug,
+        .program_list = programList,
+        .program_edits = programEdits,
+        .program_index = programIndex,
+        .row_values_of = rowValuesOf,
+        .program_row_bake = programRowBake,
         .literal = literal,
         .template = template,
         .name = name,

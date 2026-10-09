@@ -1,0 +1,13 @@
+# An inner row's button: the inner handler, the inner list's parent's,
+# then nothing of the outer row's cell.
+click ul>li:nth-child(1)>ol>li:nth-child(2)>button
+# The outer row's own cell.
+click #cell2
+# Edits inside one group's row.
+click #add
+click #rename
+click #retitle
+# Groups trade places with their kids; the inner buttons still send their
+# own rows' messages.
+click #swap
+click ul>li:nth-child(1)>ol>li:nth-child(1)>button

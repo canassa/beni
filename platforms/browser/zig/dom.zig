@@ -259,6 +259,9 @@ pub const Body = struct {
     /// development build walks to, for its verify mode to read.
     baked_holes: std.ArrayList(Baked(m.Node.Index)) = .empty,
     baked_items: std.ArrayList(Baked(u32)) = .empty,
+    /// The `For`s whose rows `Gen.bake_list` wrote into the template, each
+    /// with its first row's template node.
+    baked_lists: std.ArrayList(Baked(m.Node.Index)) = .empty,
     /// A `--library` build's delegated event names, which `m` registers.
     delegated: std.ArrayList([]const u8) = .empty,
     /// The root site, for the names of the kinds it makes.
@@ -287,7 +290,7 @@ pub const Body = struct {
         return @intCast(b.operands.items.len - 1);
     }
 
-    fn mark(b: *Body, t: u32) void {
+    pub fn mark(b: *Body, t: u32) void {
         var at: ?u32 = t;
         while (at) |i| {
             if (b.tnodes.items[i].needed) return;
@@ -401,10 +404,22 @@ pub const Gen = struct {
     /// listeners are on its nodes — and a hole `bake` gives text for is that
     /// text in the template, with no op.
     direct: bool = false,
-    bake: ?*const fn (cx: *m.Context, n: m.Node.Index) ?[]const u8 = null,
+    bake: ?*const fn (g: *const Gen, n: m.Node.Index) ?[]const u8 = null,
     /// The same for an attribute, by its index in `Tree.items`: its value,
     /// written into the template as a constant's is.
-    bake_item: ?*const fn (cx: *m.Context, item: u32) ?[]const u8 = null,
+    bake_item: ?*const fn (g: *const Gen, item: u32) ?[]const u8 = null,
+    /// `browser-direct`'s K3 (browser-direct.md §6, as amended for S2): the
+    /// rows of a `For` written into the template — their HTML and how many
+    /// elements it is — in the `For`'s place, or null for a `For` made at
+    /// mount.
+    bake_list: ?*const fn (g: *Gen, n: m.Node.Index) m.Error!?BakedRows = null,
+    /// The row a baked `For`'s rows are planned for: what `bake` reads.
+    row: ?u32 = null,
+    /// Every element's end tag written, as no implied end tag is relied on:
+    /// a template that holds rows written one after another (K3).
+    close_all: bool = false,
+
+    pub const BakedRows = struct { html: []const u8, count: u32 };
 
     fn a(g: *Gen) Allocator {
         return g.cx.arena;
@@ -1268,7 +1283,20 @@ pub const Gen = struct {
                 .hole, .component, .for_, .show => {
                     // A hole the program never writes, whose text `init`
                     // gives: that text, as the template's own (§5.1).
-                    if (g.bake) |bake| if (g.tree.kind(n) == .hole) if (bake(g.cx, n)) |text| {
+                    // A `For` whose rows are written into the template: its
+                    // rows' elements are the template's own (K3).
+                    if (g.bake_list) |bake_list| if (g.tree.kind(n) == .for_) if (try bake_list(g, n)) |rows| {
+                        in_text = false;
+                        const first: u32 = @intCast(b.tnodes.items.len);
+                        for (0..rows.count) |_| {
+                            _ = try b.tnode(g.a(), parent, index, .element);
+                            index += 1;
+                        }
+                        try b.write(g.a(), rows.html);
+                        try b.baked_lists.append(g.a(), .{ .what = n, .t = first });
+                        continue;
+                    };
+                    if (g.bake) |bake| if (g.tree.kind(n) == .hole) if (bake(g, n)) |text| {
                         try escapeText(g.a(), &b.html, text);
                         // Alone under its parent (§5.1): the text node is
                         // its own.
@@ -1389,7 +1417,7 @@ pub const Gen = struct {
         if (!std.mem.eql(u8, name, "noscript")) {
             try g.childNodes(b, t, kids, scope.enter(name), child_close, parser.content(name));
         }
-        if (shouldClose(name, close)) {
+        if (g.close_all or shouldClose(name, close)) {
             try b.write(g.a(), "</");
             try b.write(g.a(), name);
             try b.write(g.a(), ">");
@@ -1398,7 +1426,7 @@ pub const Gen = struct {
 
     /// `child_close_context` (`dom/attrs.rs:537-560`).
     fn childClose(g: *Gen, name: []const u8, close: Close) !?[]const []const u8 {
-        if (!shouldClose(name, close)) return close.to_be_closed;
+        if (!g.close_all and !shouldClose(name, close)) return close.to_be_closed;
         var list: std.ArrayList([]const u8) = .empty;
         try list.appendSlice(g.a(), close.to_be_closed orelse &always_close);
         if (!among(name, list.items)) try list.append(g.a(), name);
@@ -1480,7 +1508,7 @@ pub const Gen = struct {
                 // A value the program never writes, which `init` gives as
                 // text the template can hold: baked as a constant is, the
                 // URL check included (browser-direct.md §5.1).
-                if (g.bake_item) |bake| if (bakeable(it, facts, name)) if (bake(g.cx, index)) |text| {
+                if (g.bake_item) |bake| if (bakeable(it, facts, name)) if (bake(g, index)) |text| {
                     const script: ?bool = if (it.url) scriptUrl(text) else false;
                     if (script) |s| {
                         try bakeAttribute(g.a(), &b.html, name, if (s) "" else text);

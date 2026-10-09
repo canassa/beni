@@ -1,0 +1,94 @@
+-- A list's three forms in a page (backend.md §4, *Lists are arrays*;
+-- §15.5's owed `ForForms`), rebuilt for slice S2 (browser-direct.md §6, as
+-- amended for S2): a keyed and a positional `For` over a list that starts
+-- plain, becomes a trie when a push takes it past 32 and gains a head when
+-- rows are put at its front, and a positional `For` over a view of it — the
+-- `rest` of a pattern, which the model holds. On the trie a swap, an edit,
+-- a removal and a selection: each script reads its rows by index (§6.2: an
+-- indexed script never flattens the list), and the page shows the same
+-- rows on both platforms.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Push
+    | Front
+    | Swap
+    | Edit
+    | Remove
+    | Select Int
+    | Tail
+
+
+type alias Model =
+    rows : List Int
+    tail : List Int
+    selected : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Push →
+            { model | rows = List.push model.rows (List.length model.rows) }
+
+        Front →
+            { model | rows = [ 100 + List.length model.rows, …model.rows ] }
+
+        Swap →
+            { model | rows = List.swap model.rows 1 33 }
+
+        Edit →
+            { model | rows = List.update model.rows 2 λn → n + 1000 }
+
+        Remove →
+            { model | rows = List.removeAt model.rows 3 }
+
+        Select n →
+            { model | selected = n }
+
+        Tail →
+            { model
+                | tail =
+                    case model.rows of
+                        [ _, …rest ] →
+                            rest
+
+                        [] →
+                            []
+            }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="push" onClick={Push}>push</button>
+        <button id="front" onClick={Front}>front</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="edit" onClick={Edit}>edit</button>
+        <button id="remove" onClick={Remove}>remove</button>
+        <button id="tail" onClick={Tail}>tail</button>
+        <ol id="keyed">
+            <For each={model.rows} keyed={λn → n}>
+                {λn →
+                    <li class={if n == model.selected then "on" else ""} onClick={Select n}>
+                        {String.fromInt n}
+                    </li>
+                }
+            </For>
+        </ol>
+        <ol id="position">
+            <For each={model.rows} keyed={False}>{λn → <li>{String.fromInt n}</li>}</For>
+        </ol>
+        <ol id="tail-rows">
+            <For each={model.tail} keyed={False}>{λn → <li>{String.fromInt n}</li>}</For>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { rows = [ 0, 1 ], tail = [], selected = -1 }, update = update, view = view }

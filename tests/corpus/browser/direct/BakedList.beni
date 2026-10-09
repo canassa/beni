@@ -1,0 +1,68 @@
+-- K3 (plans/compile-away.md, Track K; browser-direct.md §6, as amended for
+-- S2): a `For` over a list no message changes, whose `init` is a list
+-- literal and whose every row hole is a field of its item that bakes, has
+-- its rows written into the page's HTML, not made at mount — the menu here,
+-- an `Int` and a string with markup characters in text and in attributes
+-- among them. Its rows keep their handlers: a click on one sends its item's
+-- message, read at the event. The list a message changes — the log — is
+-- made at mount and edited as any other. Both platforms show one page;
+-- `emit/direct/BakedList` pins that the menu is template text.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Open Int
+
+
+type alias Item =
+    id : Int
+    label : String
+    href : String
+
+
+type alias Model =
+    menu : List Item
+    opened : List Int
+
+
+update : Msg, Model → Model
+update (Open id) model = { model | opened = List.push model.opened id }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <ul id="menu">
+            <For each={model.menu} keyed={.id}>
+                {λitem →
+                    <li>
+                        <b>{item.id}</b>
+                        <a href={item.href} title={item.label} onClick={Open item.id}>
+                            {item.label}
+                        </a>
+                    </li>
+                }
+            </For>
+        </ul>
+        <ol id="opened">
+            <For each={model.opened} keyed={False}>{λid → <li>{String.fromInt id}</li>}</For>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            { menu =
+                [ { id = 1, label = "Home", href = "#home" }
+                , { id = 22, label = "Q&A <faq>", href = "#faq" }
+                , { id = -3, label = "\"Quoted\"", href = "javascript:alert(1)" }
+                ]
+            , opened = []
+            }
+        , update = update
+        , view = view
+        }

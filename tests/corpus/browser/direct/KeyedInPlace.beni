@@ -1,0 +1,101 @@
+-- `browser/dom/KeyedInPlace` rebuilt with the edits slice S2 compiles
+-- (browser-direct.md §6, as amended for S2): rows patched where they stand,
+-- nothing moved. The inputs are not controlled, so typed text shows which
+-- node is where. A new label and a new mark patch rows in place, keeping
+-- their nodes — the mark through a visit of every row, since each row reads
+-- it; a row whose `done` changes keeps its node and changes its class; a
+-- duplicate key appended renders twice, and removed again leaves the rest
+-- in place; a swap moves nodes with their rows. Emptied, a list that is all
+-- its parent holds leaves the parent empty, and one between two other
+-- children leaves them where they were. The original's `if` in a row is a
+-- branch (slice S4), its `List.map` the identity walk and its rotation the
+-- reconciler (slice S3): here they are a class, `List.update` and
+-- `List.swap`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Relabel
+    | Mark
+    | Toggle
+    | Duplicate
+    | Dedupe
+    | Swap
+    | Clear
+
+
+type alias Row =
+    id : Int
+    label : String
+    done : Bool
+
+
+type alias Model =
+    rows : List Row
+    mark : Int
+
+
+rows : List Row
+rows =
+    [ { id = 1, label = "one", done = False }
+    , { id = 2, label = "two", done = False }
+    , { id = 3, label = "three", done = False }
+    ]
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Relabel →
+            { model | rows = List.update model.rows 1 λrow → { row | label = "${row.label}!" } }
+
+        Mark →
+            { model | mark = model.mark + 1 }
+
+        Toggle →
+            { model | rows = List.update model.rows 1 λrow → { row | done = not row.done } }
+
+        Duplicate →
+            { model | rows = List.push model.rows { id = 2, label = "again", done = False } }
+
+        Dedupe →
+            { model | rows = List.removeAt model.rows 3 }
+
+        Swap →
+            { model | rows = List.swap model.rows 0 2 }
+
+        Clear →
+            { model | rows = [] }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <button id="mark" onClick={Mark}>mark</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <button id="duplicate" onClick={Duplicate}>duplicate</button>
+        <button id="dedupe" onClick={Dedupe}>dedupe</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <ul id="alone">
+            <For each={model.rows} keyed={.id}>
+                {λrow →
+                    <li class={if row.done then "done" else ""}>
+                        <input />{row.label} {String.fromInt model.mark}
+                    </li>
+                }
+            </For>
+        </ul>
+        <ol id="framed">
+            <li>first</li>
+            <For each={model.rows} keyed={.id}>{λrow → <li>{row.label}</li>}</For>
+            <li>last</li>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { rows = rows, mark = 0 }, update = update, view = view }

@@ -1,0 +1,52 @@
+-- An event that does not bubble in a row (browser-direct.md §4.2): `focus`
+-- and `blur` cannot be delegated, so each row's input gets a listener of
+-- its own when the row is made, and its message carries that row's item.
+-- A row made by a later message has its listeners too.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Focused Int
+    | Blurred Int
+    | Add
+
+
+type alias Model =
+    rows : List Int
+    log : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Focused n →
+            { model | log = "${model.log} focus ${String.fromInt n}" }
+
+        Blurred n →
+            { model | log = "${model.log} blur ${String.fromInt n}" }
+
+        Add →
+            { model | rows = List.push model.rows (List.length model.rows + 1) }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p id="log">{model.log}</p>
+        <ul>
+            <For each={model.rows} keyed={λn → n}>
+                {λn →
+                    <li>
+                        <input id="in${String.fromInt n}" onFocus={Focused n} onBlur={Blurred n} />
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { rows = [ 1, 2 ], log = "" }, update = update, view = view }

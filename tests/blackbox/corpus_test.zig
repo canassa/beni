@@ -1871,9 +1871,13 @@ const Case = struct {
     }
 
     fn hasPlatformDir(dir_path: []const u8) bool {
+        return hasDir(dir_path, "platform");
+    }
+
+    fn hasDir(dir_path: []const u8, name: []const u8) bool {
         var dir = Io.Dir.cwd().openDir(testing.io, dir_path, .{}) catch return false;
         defer dir.close(testing.io);
-        const stat = dir.statFile(testing.io, "platform", .{}) catch return false;
+        const stat = dir.statFile(testing.io, name, .{}) catch return false;
         return stat.kind == .directory;
     }
 
@@ -1938,6 +1942,11 @@ const Case = struct {
             try browser.writePlatform(c.arena, c.w, h);
             break :blk "--platform=" ++ browser.platform_dir;
         };
+        // A `browser/direct/` project's `browser-tea` builds: on its
+        // `platform-tea/` when it has one — the same vocabulary layered on
+        // `browser-tea`, as `platform/` layers it on `browser-direct` — so a
+        // page needing a vocabulary of its own is built both ways.
+        const tea_arg = if (platform and hasDir(try c.fixturePath(), "platform-tea")) "--platform=platform-tea" else "--platform=browser-tea";
         const sources = try c.writeSources();
 
         // The steps, copied into the project under the name the driver
@@ -1974,7 +1983,7 @@ const Case = struct {
             if (tea and !c.fixture.differential) continue;
             const release = pass == .release or pass == .tea_release;
             var args: std.ArrayList([]const u8) = .empty;
-            try args.appendSlice(c.arena, &.{ "build", if (tea) "--platform=browser-tea" else platform_arg });
+            try args.appendSlice(c.arena, &.{ "build", if (tea) tea_arg else platform_arg });
             if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
             try args.appendSlice(c.arena, sources);
@@ -1993,7 +2002,7 @@ const Case = struct {
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
         // process, after the pages.
-        const fuzz_plan: ?FuzzPlan = if (try c.fuzzPair(pages, script, sources, platform_arg)) |pair| try c.fuzzPlan(pair, h, record) else null;
+        const fuzz_plan: ?FuzzPlan = if (try c.fuzzPair(pages, script, sources, platform_arg, tea_arg)) |pair| try c.fuzzPlan(pair, h, record) else null;
         var entries: std.ArrayList(browser.Entry) = .empty;
         for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .fiber = p.pass == .dev_fiber });
         if (fuzz_plan) |f| if (!f.skip) try entries.append(c.arena, .{ .path = FuzzPlan.spec, .fuzz = true });
@@ -2173,7 +2182,7 @@ const Case = struct {
     /// So when the compiler has the flag, the pair is two more builds made
     /// with it, and the message types are dumped; until then it is the
     /// fixture's own builds, and the fuzz is view and host events.
-    fn fuzzPair(c: Case, pages: [5]?PagePlan, script: Script, sources: []const []const u8, platform_arg: []const u8) !?browser.Fuzz {
+    fn fuzzPair(c: Case, pages: [5]?PagePlan, script: Script, sources: []const []const u8, platform_arg: []const u8, tea_arg: []const u8) !?browser.Fuzz {
         var pair: browser.Fuzz = undefined;
         // What each side is built with, when the pair is `--fuzz` builds.
         var sides: [2][]const []const u8 = undefined;
@@ -2183,7 +2192,7 @@ const Case = struct {
             // 2026-10-09, S0); a `Debug.log` in a view prints when its
             // group runs, which differs between them (§8.4).
             pair = .{ .a = pageOut(.tea_dev), .b = pageOut(.dev), .label_a = "browser-tea", .label_b = "browser-direct", .crash = .same, .ignore = &.{"^console\\.log: "} };
-            sides = .{ &.{"--platform=browser-tea"}, &.{platform_arg} };
+            sides = .{ &.{tea_arg}, &.{platform_arg} };
         } else {
             const platform = c.fixture.platform orelse return null;
             if (!std.mem.eql(u8, platform, "browser-tea") or pages[0] == null or pages[1] == null) return null;
@@ -2221,7 +2230,7 @@ const Case = struct {
         var dump: std.ArrayList([]const u8) = .empty;
         // One path: a project's directory, whose modules import each other,
         // or the one file.
-        try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) "--platform=browser-tea" else platform_arg });
+        try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) tea_arg else platform_arg });
         try dump.append(c.arena, if (c.fixture.project) "." else sources[0]);
         const dumped = try c.inProject(dump.items);
         if (dumped.exit_code != 0) {
@@ -2247,6 +2256,19 @@ const Case = struct {
         .{ .name = "BakedQuoting.beni", .why = "4 315 million instructions with the value fuzz" },
         .{ .name = "BakedValues.beni", .why = "4 339 million instructions with the value fuzz" },
         .{ .name = "UnitHoles.beni", .why = "4 331 million instructions with the value fuzz" },
+        // Slice S2's pages (browser-direct.md §6, as amended for S2): a list's
+        // page and its four builds, with the value fuzz's two more and a dump.
+        .{ .name = "BakedList.beni", .why = "5 119 million instructions with the value fuzz" },
+        .{ .name = "DetachedRowEvent.beni", .why = "4 508 million instructions with the value fuzz" },
+        .{ .name = "ForAtEnds.beni", .why = "5 185 million instructions with the value fuzz" },
+        .{ .name = "ForForms.beni", .why = "5 686 million instructions with the value fuzz" },
+        .{ .name = "Keyed.beni", .why = "5 104 million instructions with the value fuzz" },
+        .{ .name = "KeyedInPlace.beni", .why = "over the budget with the value fuzz" },
+        .{ .name = "NestedFor.beni", .why = "5 087 million instructions with the value fuzz" },
+        .{ .name = "NoOpEdits.beni", .why = "5 239 million instructions with the value fuzz" },
+        .{ .name = "RowBlur.beni", .why = "4 858 million instructions with the value fuzz" },
+        .{ .name = "RowItemOnly.beni", .why = "5 164 million instructions with the value fuzz" },
+        .{ .name = "StopInRow", .why = "over the budget with the value fuzz" },
     };
 
     var fuzz_flag_mutex: Io.Mutex = .init;

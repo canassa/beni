@@ -1,0 +1,101 @@
+-- A `For` in a `For` row (browser-direct.md §4.2, §6, as amended for S2).
+-- Events: a click on an inner row's button runs the inner row's handler,
+-- then the outer row's, each once — the outer list's walk drops what it
+-- met below the inner row, whose own listener has run it; a click on the
+-- outer row's own cell runs the outer handler alone. Edits: a kid added to
+-- one group appends to that row's inner list only; a kid renamed patches
+-- one inner row; a group renamed patches the inner rows that show the
+-- group's title, in that group only; a swap of groups moves each with its
+-- inner rows.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Hit String
+    | AddKid Int
+    | RenameKid Int Int
+    | Retitle Int
+    | Swap
+
+
+type alias Group =
+    id : Int
+    title : String
+    kids : List String
+
+
+type alias Model =
+    groups : List Group
+    log : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Hit what →
+            { model | log = "${model.log} ${what}" }
+
+        AddKid i →
+            { model
+                | groups = List.update model.groups i λg → { g | kids = List.push g.kids "new" }
+            }
+
+        RenameKid i j →
+            { model
+                | groups =
+                    List.update model.groups i λg → { g | kids = List.update g.kids j λk → "${k}!" }
+            }
+
+        Retitle i →
+            { model | groups = List.update model.groups i λg → { g | title = "${g.title}*" } }
+
+        Swap →
+            { model | groups = List.swap model.groups 0 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={AddKid 0}>add</button>
+        <button id="rename" onClick={RenameKid 1 0}>rename</button>
+        <button id="retitle" onClick={Retitle 1}>retitle</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <p id="log">{model.log}</p>
+        <ul>
+            <For each={model.groups} keyed={.id}>
+                {λg →
+                    <li>
+                        <b id="cell${String.fromInt g.id}" onClick={Hit "outer ${g.title}"}>
+                            {g.title}
+                        </b>
+                        <ol onClick={Hit "list ${g.title}"}>
+                            <For each={g.kids} keyed={False}>
+                                {λk →
+                                    <li>
+                                        <button onClick={Hit "inner ${k}"}>{k}</button> of {g.title}
+                                    </li>
+                                }
+                            </For>
+                        </ol>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            { groups =
+                [ { id = 1, title = "first", kids = [ "a", "b" ] }
+                , { id = 2, title = "second", kids = [ "c" ] }
+                ]
+            , log = ""
+            }
+        , update = update
+        , view = view
+        }

@@ -376,6 +376,29 @@ pub const Hole = struct {
     /// plain string `init` gives `literal_path`, or the literal itself
     /// (`browser-direct.md` §5.1, write-sets.md §9.1).
     bake_text: []const u8 = "",
+    /// Per read, how many enclosing `For` rows it is bound through
+    /// (write-sets.md, amended 2026-10-09 for S2: *which `[*]` is a row's
+    /// own*): 0 for a read of the model, `d` for a read of the item of the
+    /// row `d` levels deep, or of what that item holds.
+    bound: []const u8 = &.{},
+    /// The `each` hole of the innermost `For` whose row holds this hole —
+    /// for an `each` hole, the `For` its own `For` is in — as an index into
+    /// `Program.holes`, or `none` at the view's top level.
+    list: u32 = none,
+    /// For a hole of a `For` row whose expression is exactly a path of the
+    /// row's item: that path, anchored (`ρ.rows[*].label`); `none`
+    /// otherwise. What K3 bakes a row's text from.
+    row_path: u32 = none,
+    /// For an `each` hole K3 bakes (browser-direct.md §6, as amended for
+    /// S2): `init`'s rows, each a term; empty otherwise.
+    init_rows: []const u32 = &.{},
+    /// For the `each` hole of a `For` keyed by a function: the anchored
+    /// path of the row's item its key is exactly (`ρ.rows[*].id`), or
+    /// `none` — a key computed otherwise, or the item itself.
+    key_path: u32 = none,
+    /// A text hole standing alone under an allowlisted parent (§9.1's
+    /// rule), on every visit.
+    alone: bool = false,
 };
 
 pub const Program = struct {
@@ -445,6 +468,11 @@ const Ctx = struct {
     /// View mode: how many `For` rows, and list elements, the walk is in.
     in_row: u32 = 0,
     in_list: u32 = 0,
+    /// View mode: the `each` hole (an index into `holes`) of the innermost
+    /// `For` row being walked, or `none`.
+    each: u32 = none,
+    /// View mode: the innermost `For` row's item root, or `none`.
+    row_item: u32 = none,
 };
 
 const SiteAcc = struct {
@@ -475,6 +503,18 @@ const HoleAcc = struct {
     each_path: u32 = unvisited,
     /// The string literal's term, when the hole's expression is one.
     lit_term: u32 = none,
+    /// Per read (`reads`), its bound depth (`Hole.bound`), the least over
+    /// every visit.
+    bound: std.ArrayList(u8) = .empty,
+    /// `unvisited`, the innermost enclosing `each` hole, or `none` — and
+    /// `none` too once two visits disagree.
+    list: u32 = unvisited,
+    /// `unvisited`, the anchored item path every visit's expression is
+    /// exactly (`Hole.row_path`), or `none`.
+    row_path: u32 = unvisited,
+    /// An `each` hole's: `unvisited`, its row's key path (`Hole.key_path`),
+    /// or `none`.
+    key_path: u32 = unvisited,
 
     const unvisited: u32 = none - 2;
     const string_literal: u32 = none;
@@ -510,6 +550,9 @@ top_values: []u32 = &.{},
 /// Per ε/ι root id: the model path (or deps) it anchors to (§3.6).
 root_base: std.ArrayList(u32) = .empty,
 root_base_is_deps: std.ArrayList(bool) = .empty,
+/// Per root id: for a `For` row's item root, how many rows deep it is
+/// (1 for a row of the view's own `For`); 0 for any other root.
+root_row: std.ArrayList(u8) = .empty,
 next_root: u32 = 0,
 
 ctx: Ctx = .{ .mode = .closed },
@@ -614,6 +657,7 @@ pub fn deinit(a: *Writes) void {
     a.summary_stack.deinit(gpa);
     a.root_base.deinit(gpa);
     a.root_base_is_deps.deinit(gpa);
+    a.root_row.deinit(gpa);
     a.active.deinit(gpa);
     a.split_ctors.deinit(gpa);
     a.diff_memo.deinit(gpa);
@@ -622,6 +666,7 @@ pub fn deinit(a: *Writes) void {
     for (a.holes.items) |*h| {
         h.reads.deinit(gpa);
         h.key_paths.deinit(gpa);
+        h.bound.deinit(gpa);
     }
     a.holes.deinit(gpa);
     a.hole_index.deinit(gpa);
@@ -824,11 +869,12 @@ fn mintRoot(a: *Writes, kind: PathKind, base: u32, base_is_deps: bool) Allocator
     a.next_root += 1;
     try a.root_base.append(a.gpa, base);
     try a.root_base_is_deps.append(a.gpa, base_is_deps);
+    try a.root_row.append(a.gpa, 0);
     return a.mkPath(none, kind, id, 0);
 }
 
 /// The steps of `p` from its root, outermost first, into `out`.
-fn steps(a: *const Writes, p: u32, out: *[k_limit + 1]u32) []u32 {
+pub fn steps(a: *const Writes, p: u32, out: *[k_limit + 1]u32) []u32 {
     var n: usize = 0;
     var q = p;
     while (a.pathParent(q) != none) : (q = a.pathParent(q)) {
@@ -857,7 +903,7 @@ pub fn symKind(a: *const Writes, s: u32) SymKind {
     return @fromBackingInt(a.syms.word(s, 0));
 }
 
-fn symWord(a: *const Writes, s: u32, k: usize) u32 {
+pub fn symWord(a: *const Writes, s: u32, k: usize) u32 {
     return a.syms.word(s, k);
 }
 
@@ -3452,20 +3498,50 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
             const row = b.extraData(@fromBackingInt(fm.row), Bir.MarkupRow);
             const fun = try a.eval(f, row.function, g);
             const is_for = b.markupKind(node) == .@"for";
-            const item = if (is_for) blk: {
-                if (a.listBase(list)) |p| break :blk try a.mkSameStep(p, .star, 0, 0);
-                break :blk try a.mkFresh(try a.deps(list));
-            } else try a.proj(list, .ctor, a.ctor_just, 0);
-            // A keyed row's key path (§8.1's static-key).
+            // A `For` row's item is a root of its own, anchored to the
+            // list's `[*]` as a callback's element root is, so a read through
+            // it is known to be the row's own (write-sets.md, amended
+            // 2026-10-09 for S2): a write at `p[κ]` changes it in row `κ`
+            // only. A `Show`'s value is the `Just`'s payload, as before.
+            const depth: u8 = @intCast(@min(a.ctx.in_row + 1, std.math.maxInt(u8)));
+            const item_root: u32 = if (is_for) blk: {
+                const r = if (a.listBase(list)) |p|
+                    try a.mintRoot(.eps, (try a.extend(p, .star, 0, 0)) orelse p, false)
+                else
+                    try a.mintRoot(.eps, try a.deps(list), true);
+                a.root_row.items[a.pathA(r)] = depth;
+                break :blk r;
+            } else none;
+            const item = if (is_for) try a.mkSame(item_root) else try a.proj(list, .ctor, a.ctor_just, 0);
+            // A keyed row's key path (§8.1's static-key), anchored.
             var key_path: u32 = none;
             if (is_for) if (fm.keyed.unwrap()) |k| if (fm.mode == .key_function) {
                 const kf = try a.eval(f, k, g);
                 const kv = try a.apply(kf, &.{item}, g);
-                if (a.termTag(kv) == .same) key_path = a.termWord(kv, 1);
+                if (a.termTag(kv) == .same) {
+                    var anchored: std.ArrayList(u32) = .empty;
+                    defer anchored.deinit(a.gpa);
+                    try a.anchorPath(a.termWord(kv, 1), &anchored, 0);
+                    if (anchored.items.len == 1) key_path = anchored.items[0];
+                }
             };
             const saved = a.ctx.row_key;
             a.ctx.row_key = key_path;
             defer a.ctx.row_key = saved;
+            const saved_each = a.ctx.each;
+            const saved_item = a.ctx.row_item;
+            if (is_for) {
+                a.ctx.each = if (fm.list.unwrap() != null) (a.hole_index.get(.{ .module = f.m, .token = fm.token }) orelse none) else none;
+                a.ctx.row_item = item_root;
+                if (a.ctx.each != none and a.ctx.mode == .view) {
+                    const eh = &a.holes.items[a.ctx.each];
+                    if (eh.key_path == HoleAcc.unvisited) eh.key_path = key_path else if (eh.key_path != key_path) eh.key_path = none;
+                }
+            }
+            defer {
+                a.ctx.each = saved_each;
+                a.ctx.row_item = saved_item;
+            }
             const arity = if (a.termTag(fun) == .fun) a.funArity(fun) else 1;
             const index = try a.mkFresh(try a.deps(list));
             const args = [_]u32{ item, index };
@@ -3517,6 +3593,57 @@ fn anchorPath(a: *Writes, p: u32, out: *std.ArrayList(u32), depth: u32) Error!vo
     }
 }
 
+/// `anchors`, with each anchored read's bound depth (write-sets.md, amended
+/// 2026-10-09 for S2): how many enclosing `For` rows the read came through
+/// the item root of. Through a row's item root, the read is that row's —
+/// and its enclosing rows', since the item's base is anchored through them;
+/// through a callback's element root, only what the callback's list was
+/// bound through; through ρ, nothing.
+fn anchorsBound(a: *Writes, t: u32, out: *std.ArrayList(u32), bounds: *std.ArrayList(u8)) Error!void {
+    const d = try a.deps(t);
+    for (0..a.deps_t.len(d)) |i| try a.anchorPathBound(a.deps_t.word(d, i), out, bounds, 0, 0);
+}
+
+fn anchorPathBound(a: *Writes, p: u32, out: *std.ArrayList(u32), bounds: *std.ArrayList(u8), bound: u8, depth: u32) Error!void {
+    const root = a.rootOf(p);
+    switch (a.pathKind(root)) {
+        .rho => {
+            try addBound(a, out, bounds, p, bound);
+            if (depth > 16) return;
+            var buf: [k_limit + 1]u32 = undefined;
+            for (a.steps(p, &buf)) |s| {
+                if (a.pathKind(s) != .index or a.symKind(a.pathA(s)) != .expr) continue;
+                // The index's own reads are the model's, bound to no row.
+                const dd = try a.deps(a.symWord(a.pathA(s), 3));
+                for (0..a.deps_t.len(dd)) |i| try a.anchorPathBound(a.deps_t.word(dd, i), out, bounds, 0, depth + 1);
+            }
+        },
+        .eps, .iota => {
+            if (depth > 16) return a.anchorPathBound(rho_path, out, bounds, 0, depth);
+            const id = a.pathA(root);
+            const base = a.root_base.items[id];
+            const b = @max(bound, a.root_row.items[id]);
+            if (a.root_base_is_deps.items[id]) {
+                for (0..a.deps_t.len(base)) |i| try a.anchorPathBound(a.deps_t.word(base, i), out, bounds, b, depth + 1);
+                return;
+            }
+            if (a.pathKind(root) == .iota) return a.anchorPathBound(base, out, bounds, b, depth + 1);
+            try a.anchorPathBound(try a.rebase(p, base), out, bounds, b, depth + 1);
+        },
+        else => {},
+    }
+}
+
+/// Add read `p` bound `b` deep, or lower the bound an earlier one had.
+fn addBound(a: *Writes, out: *std.ArrayList(u32), bounds: *std.ArrayList(u8), p: u32, b: u8) Allocator.Error!void {
+    if (std.mem.indexOfScalar(u32, out.items, p)) |i| {
+        bounds.items[i] = @min(bounds.items[i], b);
+        return;
+    }
+    try out.append(a.gpa, p);
+    try bounds.append(a.gpa, b);
+}
+
 /// Whether the hole's expression is exactly a model path (§9.1:
 /// `tree.pathOf`, a local read through field and tuple accesses).
 fn isPathExpr(a: *Writes, m: u32, inst: Inst.Index) bool {
@@ -3539,8 +3666,30 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
     const h = &a.holes.items[gop.value_ptr.*];
     var reads: std.ArrayList(u32) = .empty;
     defer reads.deinit(a.gpa);
-    try a.anchors(t, &reads);
-    for (reads.items) |r| if (std.mem.indexOfScalar(u32, h.reads.items, r) == null) try h.reads.append(a.gpa, r);
+    var bounds: std.ArrayList(u8) = .empty;
+    defer bounds.deinit(a.gpa);
+    try a.anchorsBound(t, &reads, &bounds);
+    for (reads.items, bounds.items) |r, bd| {
+        if (std.mem.indexOfScalar(u32, h.reads.items, r)) |i| {
+            h.bound.items[i] = @min(h.bound.items[i], bd);
+        } else {
+            try h.reads.append(a.gpa, r);
+            try h.bound.append(a.gpa, bd);
+        }
+    }
+    // The innermost `For` whose row holds it (an `each` hole is recorded
+    // before its own row is walked, so this is the `For` around its own).
+    const each = a.ctx.each;
+    if (h.list == HoleAcc.unvisited) h.list = each else if (h.list != each) h.list = none;
+    // Exactly a path of the innermost row's item (K3's per-row text).
+    var rp: u32 = none;
+    if ((kind == .child or kind == .attribute) and a.ctx.row_item != none and a.isPathExpr(f.m, inst) and a.termTag(t) == .same and a.rootOf(a.termWord(t, 1)) == a.ctx.row_item) {
+        var anchored: std.ArrayList(u32) = .empty;
+        defer anchored.deinit(a.gpa);
+        try a.anchorPath(a.termWord(t, 1), &anchored, 0);
+        if (anchored.items.len == 1) rp = anchored.items[0];
+    }
+    if (h.row_path == HoleAcc.unvisited) h.row_path = rp else if (h.row_path != rp) h.row_path = none;
     // Bake eligibility, per visit.
     const b = a.bir(f.m);
     var lp: u32 = none - 1;
@@ -3660,7 +3809,7 @@ fn stepMayCoincide(a: *const Writes, x: u32, y: u32) bool {
 }
 
 /// `p ⊑̃ q`: `p` may be a prefix of `q`.
-fn mayPrefix(a: *const Writes, p: u32, q: u32) bool {
+pub fn mayPrefix(a: *const Writes, p: u32, q: u32) bool {
     const lp = a.pathLen(p);
     const lq = a.pathLen(q);
     if (lp > lq) return false;
@@ -3918,6 +4067,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     for (a.holes.items) |*h| {
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
+        h.bound.deinit(a.gpa);
     }
     a.holes.clearRetainingCapacity();
     a.hole_index.clearRetainingCapacity();
@@ -4024,9 +4174,12 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     // never a partial read set (§6.1).
     if (prog.view_capped) for (prog.holes) |*h| {
         h.reads = try a.arena().dupe(u32, &.{rho_path});
+        h.bound = try a.arena().dupe(u8, &.{0});
         h.bake = false;
         h.key_paths = &.{};
         h.each_path = none;
+        h.row_path = none;
+        h.init_rows = &.{};
     };
     prog.sites = try a.finishSites(prog.holes);
     prog.carriers = .{
@@ -4201,13 +4354,30 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
         // A tag read under a whole read of its path or a prefix of it adds
         // nothing: the whole read conflicts with every write the tag read does.
         var n: usize = 0;
-        for (h.reads.items) |r| {
+        for (h.reads.items, h.bound.items) |r, bd| {
             if (a.isTagRead(r) and a.wholeReadAbove(h.reads.items, a.pathParent(r))) continue;
             h.reads.items[n] = r;
+            h.bound.items[n] = bd;
             n += 1;
         }
         h.reads.shrinkRetainingCapacity(n);
-        std.mem.sort(u32, h.reads.items, {}, std.sort.asc(u32));
+        h.bound.shrinkRetainingCapacity(n);
+        // Sorted, each read keeping its bound depth.
+        const order = try a.arena().alloc(u32, n);
+        for (order, 0..) |*slot, i| slot.* = @intCast(i);
+        std.mem.sort(u32, order, h.reads.items, struct {
+            fn less(reads: []const u32, x: u32, y: u32) bool {
+                return reads[x] < reads[y];
+            }
+        }.less);
+        const sorted_reads = try a.arena().alloc(u32, n);
+        const sorted_bound = try a.arena().alloc(u8, n);
+        for (order, sorted_reads, sorted_bound) |i, *r, *bd| {
+            r.* = h.reads.items[i];
+            bd.* = h.bound.items[i];
+        }
+        @memcpy(h.reads.items, sorted_reads);
+        @memcpy(h.bound.items, sorted_bound);
         // Bake-eligible (§9.1 as amended — O8 widened, the owner,
         // 2026-10-09): a text hole alone under an allowlisted parent, or an
         // attribute, every visit's expression the same model path whose
@@ -4235,9 +4405,49 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
             .form = h.form,
             .each_path = if (h.each_path == HoleAcc.unvisited) none else h.each_path,
             .bake_text = bake_text orelse "",
+            .bound = try a.arena().dupe(u8, h.bound.items),
+            .list = if (h.list == HoleAcc.unvisited) none else h.list,
+            .row_path = if (h.row_path == HoleAcc.unvisited) none else h.row_path,
+            .init_rows = if (h.kind == .each and h.each_path != HoleAcc.unvisited and h.each_path != none and init_model != none) try a.initRows(init_model, h.each_path) else &.{},
+            .key_path = if (h.key_path == HoleAcc.unvisited) none else h.key_path,
+            .alone = h.alone,
         };
     }
     return out;
+}
+
+/// `init`'s rows of the list at model path `p`, when `init` writes it as a
+/// list literal (K3, browser-direct.md §6 as amended for S2); empty
+/// otherwise.
+fn initRows(a: *Writes, init_model: u32, p: u32) Error![]const u32 {
+    if (a.rootOf(p) != rho_path) return &.{};
+    const t = (try a.initAt(init_model, p)) orelse return &.{};
+    if (a.termTag(t) != .lst_lit) return &.{};
+    const rows = try a.arena().alloc(u32, a.termLen(t) - 1);
+    for (rows, 0..) |*r, i| r.* = a.termWord(t, @intCast(1 + i));
+    return rows;
+}
+
+/// The text the template holds for a row of a list K3 bakes: `init`'s row
+/// `row` at the item path `row_path` (`ρ.rows[*].label`) a hole shows, by
+/// §9.1's rule, or null.
+pub fn rowBake(a: *Writes, row: u32, row_path: u32, kind: HoleKind) Error!?[]const u8 {
+    var buf: [k_limit + 1]u32 = undefined;
+    const all = a.steps(row_path, &buf);
+    // The steps below the list's `[*]`: the last star of the path.
+    var from: usize = all.len;
+    while (from > 0) : (from -= 1) if (a.pathKind(all[from - 1]) == .star) break;
+    if (from == 0) return null;
+    var t = row;
+    for (all[from..]) |s| {
+        switch (a.pathKind(s)) {
+            .field, .tuple, .ctor => {},
+            else => return null,
+        }
+        t = try a.proj(t, a.pathKind(s), a.pathA(s), a.pathB(s));
+        if (a.termTag(t) == .fresh) return null;
+    }
+    return a.bakeText(t, kind);
 }
 
 /// The text a template holds for literal term `t` shown by a hole of kind

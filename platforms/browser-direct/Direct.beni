@@ -387,6 +387,400 @@ pub identity : V → V
 identity event = event
 
 
+-- ---- Lists (§6, as amended for S2) --------------------------------------
+--
+-- A `For`'s descriptor is `{ p, n, r, m, o, k, u }`: its parent element
+-- (null for a list at the view's top level, whose parent is its end
+-- marker's), its end marker (null when its rows come last), its row
+-- instances in list order, `make` — `(item, list, position) → instance` —
+-- whether its rows are the parent's only children, its key function (null
+-- for a positional list) and the instance of the row it is in. An instance
+-- is `{ e, it, … }`: its row's one element and the item it shows, and what
+-- the lowering keeps. Every loop over rows is here, since the code the
+-- lowering writes has none (`boundary.md` §9.4.3); each function ships only
+-- where a page reaches it.
+
+-- The list's parent node.
+parentOf : V → V
+parentOf list =
+    p = Js.get list "p"
+    if Js.isNull p then Js.get (Js.get list "n") "parentNode" else p
+
+
+-- A list's length, by `backend.md` §4's protocol.
+count : V → Int
+count xs = Js.to (Js.get xs "length")
+
+
+-- Element `j` of a list, `0 ≤ j < length`: a plain list's directly, any
+-- other's through `List.get`, which reads a trie's leaf without flattening
+-- the trie (§6.2: an indexed script never flattens the list).
+at : V, Int → V
+at xs j =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
+        Js.at xs j
+    else
+        list : List V
+        list = Js.to xs
+
+        case List.get list j of
+            Just v →
+                v
+
+            Nothing →
+                Js.undefined
+
+
+-- Row `item` made at position `j`.
+make : V, V, Int → V
+make list item j = Js.call list "m" [ item, list, Js.from j ]
+
+
+-- Put `node` before `before`, or last for null.
+put : V, V, V → ⊤
+put list node before =
+    _ = Js.call (parentOf list) "insertBefore" [ node, before ]
+    ⊤
+
+
+--| `(L, xs)`: every row made, in order, in one fragment put at the list's
+--| place (§6.1).
+pub mount : V, V → ⊤
+mount list xs =
+    items = elements xs
+    fragment = Js.call (Js.global "document") "createDocumentFragment" []
+    makeInto list items (Js.get list "r") fragment 0 (count items)
+    put list fragment (Js.get list "n")
+
+
+-- Rows `j` to `n - 1` of the plain `items`, made into `fragment`.
+makeInto : V, V, V, V, Int, Int → ⊤
+makeInto list items insts fragment j n =
+    if j < n then
+        r = make list (Js.at items j) j
+        _ = Js.call fragment "appendChild" [ Js.get r "e" ]
+        _ = Js.call insts "push" [ r ]
+        makeInto list items insts fragment (j + 1) n
+
+
+--| `(L, first, xs)`: the rows the template holds (K3), from its first row
+--| on, one per item: each one's instance made over its element, which
+--| `make` is handed instead of a clone.
+pub adopt : V, V, V → ⊤
+adopt list first xs =
+    items = elements xs
+    adoptFrom list items (Js.get list "r") first 0 (count items)
+
+
+adoptFrom : V, V, V, V, Int, Int → ⊤
+adoptFrom list items insts el j n =
+    if j < n then
+        r = Js.call list "m" [ Js.at items j, list, Js.from j, el ]
+        _ = Js.call insts "push" [ r ]
+        adoptFrom list items insts (Js.get el "nextSibling") (j + 1) n
+
+
+--| `(L, xs)`: `append` (§6.2): the rows past the last, made and put after
+--| it, when the list grew.
+pub append : V, V → ⊤
+append list xs =
+    insts = Js.get list "r"
+    n = count insts
+    m = count xs
+    if m > n then
+        fragment = Js.call (Js.global "document") "createDocumentFragment" []
+        appendInto list xs insts fragment n m
+        put list fragment (Js.get list "n")
+
+
+appendInto : V, V, V, V, Int, Int → ⊤
+appendInto list xs insts fragment j m =
+    if j < m then
+        r = make list (at xs j) j
+        _ = Js.call fragment "appendChild" [ Js.get r "e" ]
+        _ = Js.call insts "push" [ r ]
+        appendInto list xs insts fragment (j + 1) m
+
+
+--| `(L, xs)`: `prepend` (§6.2): the new first rows, made and put before the
+--| old first, when the list grew.
+pub prepend : V, V → ⊤
+prepend list xs =
+    insts = Js.get list "r"
+    n = count insts
+    m = count xs
+    if m > n then
+        fresh = Js.array []
+        fragment = Js.call (Js.global "document") "createDocumentFragment" []
+        appendInto list xs fresh fragment 0 (m - n)
+        put list fragment (if n == 0 then Js.get list "n" else Js.get (Js.at insts 0) "e")
+        Js.set list "r" (Js.call fresh "concat" [ insts ])
+
+
+--| `(L)`: `clear` (§6.2): every row removed — the parent emptied when the
+--| rows are all it holds.
+pub clear : V → ⊤
+clear list =
+    insts = Js.get list "r"
+    if count insts > 0 then
+        if Js.to (Js.get list "o") then
+            Js.set (Js.get list "p") "textContent" (Js.from "")
+        else
+            Js.each insts λr → Js.to (Js.call (Js.get r "e") "remove" [])
+        Js.set list "r" (Js.array [])
+
+
+--| `(L, xs, j)`: `insert j` (§6.2): one row made and put at `j`, when the
+--| list grew by one and `j` is a place in it.
+pub insert : V, V, Int → ⊤
+insert list xs j =
+    insts = Js.get list "r"
+    n = count insts
+    if count xs == n + 1 && j ≥ 0 && j ≤ n then
+        r = make list (at xs j) j
+        put list (Js.get r "e") (if j == n then Js.get list "n" else Js.get (Js.at insts j) "e")
+        _ = Js.call insts "splice" [ Js.from j, Js.from 0, r ]
+        ⊤
+
+
+--| `(L, xs, j)`: `removeAt j` (§6.2): row `j` removed, when the list shrank
+--| by one and `j` was a row.
+pub removeAt : V, V, Int → ⊤
+removeAt list xs j =
+    insts = Js.get list "r"
+    n = count insts
+    if count xs == n - 1 && j ≥ 0 && j < n then
+        _ = Js.call (Js.get (Js.at insts j) "e") "remove" []
+        _ = Js.call insts "splice" [ Js.from j, Js.from 1 ]
+        ⊤
+
+
+--| `(L, xs, i, j)`: `swap i j` (§6.2): rows `i` and `j` trade places — two
+--| `insertBefore`s, as vanilla's swap — when both are rows, they differ and
+--| the items moved (so a list already in its new order is left alone).
+pub swap : V, V, Int, Int → ⊤
+swap list xs i j =
+    insts = Js.get list "r"
+    n = count insts
+    if
+        i ≥ 0
+            && j ≥ 0
+            && i < n
+            && j < n
+            && i ≠ j
+            && not (Js.same (at xs i) (Js.get (Js.at insts i) "it"))
+    then
+        lo = if i < j then i else j
+        hi = if i < j then j else i
+        a = Js.at insts lo
+        b = Js.at insts hi
+        ea = Js.get a "e"
+        eb = Js.get b "e"
+        after = Js.get eb "nextSibling"
+        put list eb ea
+        put list ea after
+        Js.setAt insts lo b
+        Js.setAt insts hi a
+
+
+--| `(L, xs, j)`: row `j`, its item set to the list's `j`th, when it is a
+--| row and its item changed (§6.2's guard for `[κ]` and `set κ`); null
+--| otherwise.
+pub row : V, V, Int → V
+row list xs j =
+    insts = Js.get list "r"
+    if j ≥ 0 && j < count insts && j < count xs then
+        r = Js.at insts j
+        it = at xs j
+        if Js.same it (Js.get r "it") then
+            Js.null
+        else
+            Js.set r "it" it
+            r
+    else
+        Js.null
+
+
+--| `(L, xs, j)`: `row`, for a keyed list whose key may have changed: a row
+--| whose key changed is another row, made in its place (null then), as the
+--| reconciler would match it.
+pub rekey : V, V, Int → V
+rekey list xs j =
+    insts = Js.get list "r"
+    if j ≥ 0 && j < count insts && j < count xs then
+        r = Js.at insts j
+        it = at xs j
+        old = Js.get r "it"
+        key = Js.get list "k"
+        if Js.same it old then
+            Js.null
+        else if Js.same (Js.apply key [ it ]) (Js.apply key [ old ]) then
+            Js.set r "it" it
+            r
+        else
+            fresh = make list it j
+            _ = Js.call (parentOf list) "replaceChild" [ Js.get fresh "e", Js.get r "e" ]
+            Js.setAt insts j fresh
+            Js.null
+    else
+        Js.null
+
+
+--| `(L, xs, f)`: every row, its item set to the list's, handed to `f`: the
+--| visit of every row a read not bound to its row needs.
+pub each : V, V, V → ⊤
+each list xs f =
+    items = elements xs
+    insts = Js.get list "r"
+    eachFrom items insts f 0 (count insts)
+
+
+eachFrom : V, V, V, Int, Int → ⊤
+eachFrom items insts f j n =
+    if j < n then
+        r = Js.at insts j
+        Js.set r "it" (Js.at items j)
+        _ = Js.apply f [ r ]
+        eachFrom items insts f (j + 1) n
+
+
+--| `(L, xs, f)`: the positional pass (§6.2): each row whose item changed,
+--| its item set, handed to `f`; then the rows past the last made, or the
+--| rows past the list's length removed.
+pub positional : V, V, V → ⊤
+positional list xs f =
+    items = elements xs
+    insts = Js.get list "r"
+    n = count insts
+    m = count items
+    patchFrom items insts f 0 (if m < n then m else n)
+    if m > n then
+        fragment = Js.call (Js.global "document") "createDocumentFragment" []
+        makeInto list items insts fragment n m
+        put list fragment (Js.get list "n")
+    else if m < n then
+        if m == 0 then
+            clear list
+        else
+            removeFrom insts m n
+            _ = Js.call insts "splice" [ Js.from m ]
+            ⊤
+
+
+patchFrom : V, V, V, Int, Int → ⊤
+patchFrom items insts f j n =
+    if j < n then
+        r = Js.at insts j
+        it = Js.at items j
+        if not (Js.same it (Js.get r "it")) then
+            Js.set r "it" it
+            _ = Js.apply f [ r ]
+            ⊤
+        patchFrom items insts f (j + 1) n
+
+
+removeFrom : V, Int, Int → ⊤
+removeFrom insts j n =
+    if j < n then
+        _ = Js.call (Js.get (Js.at insts j) "e") "remove" []
+        removeFrom insts (j + 1) n
+
+
+-- ---- Events in rows (§4.2) ----------------------------------------------
+--
+-- A handler node of a row holds its listener body as `$<event>`, a function
+-- of the event and the row's instance whose `f` says its declaration's
+-- `preventDefault` (1) and `stopPropagation` (2); a row's element holds its
+-- instance as `$r`, whose `l` is its list.
+
+--| `(L, el, name, prop)`: the list's one listener for a bubbling event, on
+--| its parent `el`. It walks from the event's target up to a row of this
+--| list, collecting the bodies of the nodes it passes, innermost first, and
+--| runs them there; what it collected below another list's row (whose own
+--| listener has run it) or another program's mount node is dropped. A node
+--| whose `disabled` is true is passed over, as `browser`'s walk passes it.
+pub delegate : V, V, V, V → ⊤
+delegate list el name prop =
+    key : String
+    key = Js.to prop
+    buffer = Js.array []
+
+    Js.to
+        (Js.call el "addEventListener"
+            [ name
+            , Js.from λevent →
+                Js.set buffer "length" (Js.from 0)
+                walk list key event (Js.get event "currentTarget") (Js.get event "target") buffer
+            ]
+        )
+
+
+walk : V, String, V, V, V, V → ⊤
+walk list key event top node buffer =
+    if Js.isNullish node || Js.same node top then
+        ⊤
+    else
+        if not (Js.isUndefined (Js.get node "$$root")) then
+            Js.set buffer "length" (Js.from 0)
+
+        r = Js.get node "$r"
+
+        if not (Js.isUndefined r) && not (Js.same (Js.get r "l") list) then
+            Js.set buffer "length" (Js.from 0)
+            walk list key event top (Js.get node "parentNode") buffer
+        else
+            h = Js.get node key
+
+            if not (Js.isUndefined h) && not (Js.to (Js.get node "disabled")) then
+                _ = Js.call buffer "push" [ h ]
+                ⊤
+
+            if Js.isUndefined r then
+                walk list key event top (Js.get node "parentNode") buffer
+            else
+                fire buffer r event 0
+
+
+-- Run the collected bodies, innermost first: each one's `preventDefault`
+-- as it passes, its message sent, and after a `stopPropagation` the event
+-- stopped and nothing above run.
+fire : V, V, V, Int → ⊤
+fire buffer r event i =
+    if i < count buffer then
+        h = Js.at buffer i
+        flags : Int
+        flags = Js.to (Js.get h "f")
+
+        if Js.bitAnd flags 1 ≠ 0 then
+            Js.to (Js.call event "preventDefault" [])
+        send (Js.from λev → Js.to (Js.apply h [ ev, r ])) event
+        if Js.bitAnd flags 2 ≠ 0 then
+            Js.to (Js.call event "stopPropagation" [])
+        else
+            fire buffer r event (i + 1)
+
+
+--| `(el, name, h, r)`: a row node's own listener, for an event that does
+--| not bubble (§4.2): body `h` run with the row's instance `r`, its flags
+--| applied in the listener.
+pub listen : V, V, V, V → ⊤
+listen el name h r =
+    flags : Int
+    flags = Js.to (Js.get h "f")
+
+    Js.to
+        (Js.call el "addEventListener"
+            [ name
+            , Js.from λevent →
+                if Js.bitAnd flags 1 ≠ 0 then
+                    Js.to (Js.call event "preventDefault" [])
+                if Js.bitAnd flags 2 ≠ 0 then
+                    Js.to (Js.call event "stopPropagation" [])
+                send (Js.from λev → Js.to (Js.apply h [ ev, r ])) event
+            ]
+        )
+
+
 -- ---- The development verify mode (§8.3) ---------------------------------
 
 -- Each mounted program's check, in mount order.
@@ -503,6 +897,59 @@ wrong what shown model =
                 "browser-direct verify: ${whatText} shows ${shownText}, but the model gives ${modelText}. The compiler missed a write: this is a defect of beni, not of the program; please report it."
             ]
         )
+
+
+--| `(L, xs, check, what, structural)`: the verify mode's check of a list
+--| (§8.3, as amended for S2): as many rows as items; each row showing its
+--| item — the very object for a list that is a model path, an equal one
+--| (`same`) for a derived list, whose items are made again; the rows one
+--| after another in the page, in order, ending at the list's end marker;
+--| and each row's own check.
+pub verifyList : V, V, V, V, V → ⊤
+verifyList list xs check what structural =
+    items = elements xs
+    insts = Js.get list "r"
+    n = count insts
+    m = count items
+    whatText : String
+    whatText = Js.to what
+
+    if n ≠ m then
+        wrong (Js.from "${whatText}'s number of rows") (Js.from n) (Js.from m)
+    else
+        verifyRows list items insts check whatText (Js.to structural) 0 n
+
+
+verifyRows : V, V, V, V, String, Bool, Int, Int → ⊤
+verifyRows list items insts check what structural j n =
+    if j < n then
+        r = Js.at insts j
+        it = Js.at items j
+
+        if not (if structural then same it (Js.get r "it") else Js.same it (Js.get r "it")) then
+            wrong (Js.from "row ${String.fromInt j} of ${what}") (Js.get r "it") it
+        -- The rows in order in the page: each after the one before it,
+        -- the last before the end marker.
+        el = Js.get r "e"
+
+        if not (Js.same (Js.get el "parentNode") (parentOf list)) then
+            wrong
+                (Js.from "the parent of row ${String.fromInt j} of ${what}")
+                (Js.get el "parentNode")
+                (parentOf list)
+        if j > 0 && not (Js.same (Js.get (Js.get (Js.at insts (j - 1)) "e") "nextSibling") el) then
+            wrong
+                (Js.from "the place of row ${String.fromInt j} of ${what}")
+                (Js.get el "previousSibling")
+                (Js.get (Js.at insts (j - 1)) "e")
+        if
+            j == n - 1
+                && not (Js.isNull (Js.get list "n"))
+                && not (Js.same (Js.get el "nextSibling") (Js.get list "n"))
+        then
+            wrong (Js.from "the end of ${what}") (Js.get el "nextSibling") (Js.get list "n")
+        _ = Js.apply check [ r ]
+        verifyRows list items insts check what structural (j + 1) n
 
 
 -- ---- `--fuzz` (§8.3, the contract's item 3) -----------------------------

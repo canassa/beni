@@ -1,0 +1,48 @@
+-- A row's event reaching a row the same dispatch detached is delivered,
+-- with the item the row showed (browser-direct.md §4.2, Q1): a click on a
+-- row's button removes that row, and the walk then runs the row's own
+-- handler, whose message reads the removed row's item — as Elm and
+-- `browser-tea` deliver it.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = RemoveFirst
+    | Clicked Int
+
+
+type alias Model =
+    rows : List Int
+    log : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        RemoveFirst →
+            { model | rows = List.removeAt model.rows 0, log = "${model.log} removed" }
+
+        Clicked n →
+            { model | log = "${model.log} clicked ${String.fromInt n}" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="log">{model.log}</p>
+        <ul>
+            <For each={model.rows} keyed={λn → n}>
+                {λn →
+                    <li onClick={Clicked n}>
+                        <button onClick={RemoveFirst}>{String.fromInt n}</button>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { rows = [ 10, 20, 30 ], log = "" }, update = update, view = view }

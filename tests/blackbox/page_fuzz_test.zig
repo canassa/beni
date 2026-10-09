@@ -399,11 +399,11 @@ test "a build that misses one hole's write is caught, at the message that shows 
     try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "broken", .types = "types.jsonl" }, 1,
         \\the program: 8 constructors sent
         \\seed 1: 15 steps agree (4 view events, 8 messages, 3 host steps)
-        \\development and broken differ: seed 2, step 11 of 15, message Set { count = -3, flag = False }
+        \\development and broken differ: seed 2, step 11 of 15, message Set { count = -3, flag = False } ×39
         \\shrunk from 11 steps to 1:
-        \\  message Set { count = -3, flag = False }
+        \\  message Set { count = -3, flag = False } ×39
         \\(a `message` line is a value sent to the program; the others are `.steps` lines)
-        \\after message Set { count = -3, flag = False }, the body differs:
+        \\after message Set { count = -3, flag = False } ×39, the body differs:
         \\--- development ---
         \\    <p id="n">"-3"</p>
         \\--- broken ---
