@@ -577,8 +577,13 @@ swap list xs i j =
         ea = Js.get a "e"
         eb = Js.get b "e"
         after = Js.get eb "nextSibling"
-        put list eb ea
-        put list ea after
+        -- Two rows side by side trade places by one move, the first's,
+        -- so the second keeps its focus — what a keyed reconcile moves.
+        if hi == lo + 1 then
+            put list ea after
+        else
+            put list eb ea
+            put list ea after
         Js.setAt insts lo b
         Js.setAt insts hi a
 

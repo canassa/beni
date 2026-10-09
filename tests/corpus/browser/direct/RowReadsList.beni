@@ -1,0 +1,44 @@
+-- A row's own item, and the whole list it is in (write-sets.md, amended
+-- 2026-10-09 for S2: *which `[*]` is a row's own*). Each row shows its
+-- label and every label of the list; both read `ρ.rows[*].label`. A label
+-- written at one index changes the first in that row only and the second
+-- in every row, so the message visits row 0 for its own label and every
+-- row for the list's — on `browser-direct`, a read through the row's item
+-- is bound to it, one through `List.map` over the model is not.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Relabel
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+update : Msg, List Row → List Row
+update Relabel rows = List.update rows 0 λr → { r | label = "${r.label}!" }
+
+
+view : List Row → Html Msg
+view rows =
+    <main>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <ul>
+            <For each={rows} keyed={.id}>
+                {λrow → <li><b>{row.label}</b><i>{String.join (List.map rows .label) ","}</i></li>}
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ]
+        , update = update
+        , view = view
+        }

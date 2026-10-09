@@ -1,0 +1,68 @@
+-- load
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <ul>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+  </main>
+</body>
+-- input ul>li:nth-child(3)>input "marked"
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <ul>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #remove
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <ul>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+  </main>
+</body>

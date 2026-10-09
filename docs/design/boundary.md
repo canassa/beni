@@ -1900,10 +1900,10 @@ only, as 1.7's calls are.
   key may change there (`rekey`). The read a row group is called for is `write-sets.md`'s
   *bound* read (its 2026-10-09 amendment for S2): at one index for a read of the row's own
   item, on every row otherwise.
-- **`cx.programIndex(key, block, params, index) ?Expr`**: an index symbol of key `key`'s edits,
-  evaluated into `block` from the handler's `params` and the model the handler has not yet
-  replaced; null when the handler cannot evaluate it (`?`, every row, or a path through a
-  constructor the key does not fix). A lowering calls it before `programArm`.
+- **`cx.programIndex(key, block, params, model, index) ?Expr`**: an index symbol of key `key`'s
+  edits, as an expression of the handler's `params` and the old model `model` — a path read,
+  so nothing goes into `block`; null when the handler cannot evaluate it (`?`, every row, or a
+  path through a constructor the key does not fix). A lowering evaluates it before `programArm`.
 - **`cx.rowValuesOf(block, row, item, index, values)`**: `rowValues` for the named values only,
   as `rootValues` is for a root: the row's item and position bound, its `let`s evaluated, and
   only `values` (each a value of the row's root) after them, in the root's order. An empty
