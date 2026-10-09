@@ -123,6 +123,33 @@ keep identity compares and in-place writes apart) and the owner's W27 amendment 
 compares, which per-key handlers remove (S1); past 1 020 fields the spread is V8's dictionary
 cliff until in-place (S7).
 
+### Track K — bake everything that never changes (the owner, 2026-10-09)
+
+A value the program can never change belongs in the page's HTML, as vanilla writes it, not in
+code that writes it at mount. S1's byte fire showed what the narrow rule costs: the 10 000-value
+holes page is 36 kB where vanilla is 195 B. **K1 is decided and goes into S1 before it merges**;
+K2–K5 are planned, each specified first (`write-sets.md` §9.1 and `browser-direct.md` §5.1,
+amended), with a red-first fixture per kind of value, fuzz and verify on each. Each is measured
+by how much it shrinks real apps (TodoMVC, Conduit, the table app), not only the holes page.
+
+- **K1 (now, in S1):** integers; attribute values; strings with special characters, empty
+  strings included where the node structure allows, with correct HTML text and attribute escaping.
+- **K2 (next): values computed from constants.** `String.fromInt model.count`,
+  `model.name ++ "!"`, an `if` on a field that never changes, a top-level constant through a
+  helper, and an `init` value that isn't a literal (`defaultCount 3`). The compiler evaluates
+  them at compile time, reusing the release optimiser's constant folding, under an exactness
+  rule: the baked text is what the browser would print. Likely the largest win on real apps.
+- **K3 (with S2): lists of constant data.** A `For` over a list no message changes (navigation,
+  tabs, menus) renders its rows into the HTML instead of building them at mount.
+- **K4 (later): floats.** They are baked only with an implementation of JavaScript's exact
+  number-to-string algorithm (ECMA-262 `Number::toString`), tested against Node on every edge
+  case (`-0`, `NaN`, infinities, exponents, shortest round-trip).
+- **K5 (later): booleans and `Maybe`s.** Boolean attributes from a field that never changes,
+  and text from a `Maybe` that is always `Just`.
+
+What stays as code, by design: text where the HTML parser would move or drop it (directly in
+`table`, `tr`, `select` and so on); vanilla cannot put text there either.
+
 ### Track B — bytes outside the renderer
 
 **B1.** **Survives.** Re-measure the table app part by part (research 59 §4's method) on both
@@ -250,6 +277,9 @@ one browser batch at a time (a lock file, as on 2026-10-08).
   (2026-10-09); this plan's §7 is its build order.
 
 *Taken by the owner, 2026-10-09:*
+- **Baking widened (K1) before S1 merges:** integers, attribute values and escaped strings are baked
+  into the HTML. **Track K added** for the rest (values computed from constants, constant lists,
+  floats, booleans and `Maybe`s).
 - **The direct platform's questions Q1–Q6 (`browser-direct.md` §15) taken as recommended**: payload
   read at the event; direct writes, no batching; `flush` a no-op and `Dom.rendered` at the end of
   the dispatch; W27 amended for in-place update before S7; non-suspending subscriptions off fibers
