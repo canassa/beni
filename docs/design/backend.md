@@ -3488,6 +3488,94 @@ shared tails, which §4's *Identity* withdraws (`plans/list-arrays.md` records t
 `emit/TailModConsLoop`, `emit/release/TailModConsLoop` and `emit/SuspendShapes` are re-recorded to
 the shape above.
 
+### Accumulators build a plain array
+
+*Added 2026-10-10, specified and built with `browser-direct.md` §7.2 (slice S3); every platform.*
+An Elm-style loop that carries its result in an **accumulator** parameter — `go (n - 1) [ x, …acc ]`,
+returning `acc` at the exit — conses once per step, so past 32 elements every step is a trie
+operation and the program ships the trie's write half (§4, *The claimable head*) to build a list it
+then only reads. The table app's `buildFrom` is that loop. **Such a loop builds into one owned plain
+array instead**, and `List.cons` is not called.
+
+**When it applies.** To a function §8 lowers to a loop — a declaration or a `let` function with a
+tail self-call, **not a suspendable body**, and not a building loop of *Tail calls modulo cons*
+(one function is never both) — and to the first parameter slot *i* (an accumulator) of which all
+of this holds, each a syntactic test over `Bir`:
+
+1. **Every tail self-call** passes argument *i* either the parameter itself, or the parameter with
+   heads **prepended**, `[ h1, …, hk, …acc ]` (the `List.cons` chain whose innermost tail is the
+   parameter, `language.md` §6.8), or with heads **appended**, `[ …acc, h1, …, hk ]` or `acc ++ [
+   h1, …, hk ]` (a `List.append` of the parameter and a list literal), and **one kind in one
+   function**; and at least one call takes a step. Any other argument — `[]`, another list, a
+   `filter` of it — and the slot is not an accumulator.
+2. **The parameter is read nowhere else** but as an **exit's value**: the whole value of a tail
+   position that is not a self-call, or a direct element of a tuple or record literal that is
+   (`( rows, seed )`). The test counts every read of the parameter's local in the function's
+   instructions — a `case` on it, an argument of any other call, a capture by a lambda or a `let`
+   function, `List.length acc` — against the reads 1 and 2 account for, and any other leaves the
+   loop as §8 writes it.
+
+**What it emits.** The slot is not carried: the parameter keeps the **entry value** under its own
+name for the whole call, and nothing assigns it. Before the loop, `const $acc = [];` — a builder
+in §4's sense (invariant 5). A step pushes its heads, `$acc.push(…)`, after the arguments written
+before them and before the jump's assignments; a prepending step pushes them last first, so that
+the array holds the steps' heads in reverse of the list's order. An exit's read of the
+parameter is the join:
+
+- prepended: `List$close($acc.reverse(), acc)` — the pushed heads reversed in place, then the
+  entry list's elements (`close`, core-private, the exit of *Tail calls modulo cons*); the entry
+  list itself when nothing was pushed;
+- appended: `List$append(acc, $acc)` — the entry list's elements then the pushes; the entry list
+  itself when nothing was pushed, and `$acc` itself when the entry list is empty.
+
+```js
+// buildFrom id first seed rows = if id < first then ( rows, seed ) else
+//     buildFrom (id - 1) first n [ { id = id, label = label }, …rows ]
+const Main$buildFrom = (id$1, first$2, seed$3, rows$4) => {
+  const $acc = [];
+  while (!(id$1 < first$2)) {
+    …
+    $acc.push({ id: id$1, label: label$8 });
+    id$1 = id$1 - 1;
+    seed$3 = n$7;
+  }
+  return { a: List$close($acc.reverse(), rows$4), b: seed$3 };
+};
+```
+
+**Evaluation order** is the cons loop's: the arguments, heads included, are evaluated in written
+order (*orderedExprs*); a value written before the heads is bound to a `const` before the push
+when it or a head may have an effect (`Debug.log`), and so are a prepending step's heads, which
+are pushed in reverse. Where nothing can observe the order, nothing is bound.
+
+**Identity** (§4, *Identity*): a loop that takes no step returns the very list it was given, as
+the cons loop did; a loop that took one returns a fresh plain array (or, for an appended
+accumulator whose entry list is not empty, `List.append`'s result). An element is the very value
+the head evaluated to.
+
+**Why it is sound.** `$acc` is fresh, reachable only from a local of this call until the exit hands
+it over, and never written after: §4's invariants 1 and 5, as for `$root`. The parameter is never
+read between steps (condition 2), so the list the cons loop would hold there is never observed;
+the one the exit observes is equal, element for element, to the cons loop's: the pushed heads
+reversed are the prepended heads in list order, newest step first, followed by the entry list. A
+head that throws leaves garbage nobody held.
+
+**What is not a building loop of this kind**: a loop that reads its accumulator (`if List.length
+acc ≥ n`, a `case acc of`), passes it anywhere but its own slot, prepends and appends in one
+function, resets it (`go … []`), or is suspendable; and every function that builds by *Tail calls
+modulo cons*, whose destination is already a plain array.
+
+**Reachability** (§9): a declaration that conses onto a local and calls itself or a `let` function
+keeps `close` — a superset of the loops rewritten, as *isBuildingStep* is for building loops, so a
+development build of a program with such a loop that is not rewritten ships `close` unused.
+`List.cons` is still reached by the call written in `Bir`; a release build's scope-hoisting drops
+it where nothing else calls it.
+
+**Fixtures**: `run/AccumulatorLoop` (100 000 prepends, `Debug.log` order across two heads and an
+argument, the entry list itself when no step is taken, a non-empty entry list on both sides, a
+tuple exit, a `let` function, and a loop that reads its accumulator, left alone);
+`emit/AccumulatorLoop` and `emit/release/AccumulatorLoop` (the shape, and the control).
+
 ### A cons step in the bracket spelling
 
 *Added 2026-10-01, the owner's list syntax* (`language.md` §6.8, *The list syntax*). With `::` gone
