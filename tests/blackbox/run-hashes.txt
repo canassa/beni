@@ -121,4 +121,7 @@ iface_test.test.a build whose evidence crosses modules is byte-identical through
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 a7e1ca4a7e6729c16f3facb662d2e03678d172b401b51b4042fe36396d3557ed
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 a4ad7f8eb938a9e4cb9adf0942b359fbce02e96be833c2729ee67d1042c89621
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 b43380771fa17b12628e137856bb7af843ae48b915698a71900b70e6eb2229a6
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 a00d470651c20b4921eff46f0e86e2768f8d48f9e21a6e0d64434ad53491da9e
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 46e17ecf3a30abc1bd2251b57339632c44a46efc2fd29df1cc5815b76b072b99
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 95f479ad5cf7ae99812383e03ead31b4346f1f2b8529fc3649a8ad5687ca35e3
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb

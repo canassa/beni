@@ -261,6 +261,41 @@ pub fn checkProgram(w: *World, script: []const u8, expected: world.Expected) !?w
     return if (ok) null else got;
 }
 
+/// A scenario's run whose digest the caller makes (`page_fuzz_test.zig`'s
+/// fuzz runs, whose inputs are two output trees and the harness's files):
+/// `digest` must cover everything the verdict depends on, the expectation
+/// included. Checked against the index as `checkProgram`'s runs are: null
+/// when the index lists it, else `run(context)`, whose result says whether
+/// the run did what was expected. Recording, the run always happens.
+pub fn checkDigested(w: *World, digest: []const u8, context: anytype, comptime run: fn (@TypeOf(context)) anyerror!bool) !?bool {
+    const arena = w.arena.allocator();
+    const recording = recordingMode();
+    const id = try nextRunId(arena);
+    if (!recording) {
+        if (try indexLists(w.io, id, digest)) {
+            report(w.io, .skipped, null);
+            return null;
+        }
+        report(w.io, .stale, null);
+    }
+    const ok = try run(context);
+    if (recording) {
+        const entry = try std.fmt.allocPrint(arena, "{s} {s}", .{ id, if (ok) digest else "-" });
+        report(w.io, if (ok) .recorded else .refused, entry);
+    }
+    return ok;
+}
+
+/// The hex SHA-256 of `parts`, each length-prefixed: a digest for
+/// `checkDigested`.
+pub fn digestOf(arena: Allocator, parts: []const []const u8) ![]const u8 {
+    var h = Sha256.init(.{});
+    feed(&h, "beni digested-run 1");
+    for (parts) |p| feed(&h, p);
+    const hex = std.fmt.bytesToHex(h.finalResult(), .lower);
+    return arena.dupe(u8, &hex);
+}
+
 /// Whether `got` is what `expected` says, every field of it.
 fn matches(got: world.Result, expected: world.Expected) bool {
     if (got.term != .exited or got.exit_code != expected.exit_code) return false;

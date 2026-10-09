@@ -738,6 +738,11 @@ const Config = struct {
     /// `BENI_BROWSER=chrome`: the Chrome every `browser/` page runs in
     /// (`browser.findChrome`), or null for happy-dom.
     chrome: ?[]const u8,
+    /// `BENI_FUZZ_SEEDS` (`1,2,…`) and `BENI_FUZZ_STEPS`: a longer page
+    /// fuzz than the gates' (`browser.gate_seeds`, `browser.gate_steps`),
+    /// for `zig build fuzz`; such a run is never skipped for a record.
+    fuzz_seeds: ?[]const u8 = null,
+    fuzz_steps: ?u32 = null,
 
     const RunHashes = enum {
         /// Unset: a build whose digest is recorded is not run under Node.
@@ -817,7 +822,16 @@ const Config = struct {
                 return error.ChromeNotFound;
             };
         } else null;
+        const fuzz_steps: ?u32 = if (envOr(arena, "BENI_FUZZ_STEPS")) |text|
+            std.fmt.parseUnsigned(u32, text, 10) catch {
+                std.debug.print("BENI_FUZZ_STEPS must be a number of steps, not `{s}`\n", .{text});
+                return error.BadFuzzSteps;
+            }
+        else
+            null;
         var cfg: Config = .{
+            .fuzz_seeds = envOr(arena, "BENI_FUZZ_SEEDS"),
+            .fuzz_steps = fuzz_steps,
             .chrome = chrome,
             .run_hashes = run_hashes,
             .report_dir = envOr(arena, "BENI_RUN_HASH_REPORT"),
@@ -1940,7 +1954,8 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [5]?[]const u8 = @splat(null);
+        // A line per page, and the sixth the page fuzzer's (`fuzzPages`).
+        var verified: [6]?[]const u8 = @splat(null);
         var first_error: ?anyerror = null;
         // Both builds first, then every page that must run in one Node
         // process (`browser.driveAll`), then each page's verdict.
@@ -1975,8 +1990,13 @@ const Case = struct {
             };
         }
         if (pages[0]) |dev| pages[2] = try c.fiberPlan(dev, h, script, record);
+        // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
+        // replayed against each other on random sequences, in the same Node
+        // process, after the pages.
+        const fuzz_plan: ?FuzzPlan = if (c.fuzzPair(pages)) |pair| try c.fuzzPlan(pair, h, record) else null;
         var entries: std.ArrayList(browser.Entry) = .empty;
         for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .fiber = p.pass == .dev_fiber });
+        if (fuzz_plan) |f| if (!f.skip) try entries.append(c.arena, .{ .path = FuzzPlan.spec, .fuzz = true });
         var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
         if (entries.items.len != 0) {
             shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms) catch |err| {
@@ -1985,7 +2005,7 @@ const Case = struct {
             };
         }
         var next: usize = 0;
-        for (pages, &verified) |plan, *line| {
+        for (pages, verified[0..5]) |plan, *line| {
             const p = plan orelse continue;
             if (p.checked) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
             if (p.skip) continue;
@@ -1999,6 +2019,15 @@ const Case = struct {
             };
         }
         if (release_error) |err| return err;
+        if (fuzz_plan) |f| {
+            if (f.checked) RunCounts.add(if (f.skip) &run_counts.skipped else &run_counts.stale);
+            verified[5] = if (f.skip) f.line else c.fuzzVerdict(f, shown.run, shown.pages[next]) catch |err| blk: {
+                if (!recording) return err;
+                RunCounts.add(&run_counts.refused);
+                if (first_error == null) first_error = err;
+                break :blk null;
+            };
+        }
         if (recording) {
             for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
             try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
@@ -2128,6 +2157,71 @@ const Case = struct {
             }
         }
         return plan;
+    }
+
+    /// The two builds the page fuzzer replays against each other
+    /// (browser-direct.md §8.3), or null: a `browser/direct/` page's
+    /// `browser-tea` and `browser-direct` development builds, unless the
+    /// fixture says the two differ (a `.tea-expected`); a `browser/tea/`
+    /// page's development and release builds, which must behave alike
+    /// (backend.md §9). Messages go as values only where both builds take
+    /// them; neither pair does yet — the direct platform's dispatcher is
+    /// its `--fuzz` flag's, and a release build's values are not the
+    /// development representation — so these are view and host events.
+    fn fuzzPair(c: Case, pages: [5]?PagePlan) ?browser.Fuzz {
+        if (c.fixture.differential) {
+            if (pages[0] == null or pages[3] == null or c.goldenExists("tea-expected")) return null;
+            return .{ .a = pageOut(.tea_dev), .b = pageOut(.dev), .label_a = "browser-tea", .label_b = "browser-direct" };
+        }
+        const platform = c.fixture.platform orelse return null;
+        if (!std.mem.eql(u8, platform, "browser-tea") or pages[0] == null or pages[1] == null) return null;
+        return .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
+    }
+
+    /// A fixture's page fuzz: what it compares, its record line, and
+    /// whether the record lists it (then it does not run).
+    const FuzzPlan = struct {
+        pair: browser.Fuzz,
+        line: []const u8,
+        skip: bool,
+        /// Its record was looked for (counted `skipped` or `stale`).
+        checked: bool,
+
+        /// The spec's file in the project (`browser.writeFuzzSpec`).
+        const spec = "_fuzz.json";
+    };
+
+    /// The fuzz of `gate`, at the gates' length unless `BENI_FUZZ_SEEDS`
+    /// or `BENI_FUZZ_STEPS` asks for a longer one, which no record covers.
+    fn fuzzPlan(c: Case, gate: browser.Fuzz, h: browser.Harness, record: []const u8) !FuzzPlan {
+        var pair = gate;
+        if (c.cfg.fuzz_seeds) |s| pair.seeds = s;
+        if (c.cfg.fuzz_steps) |n| pair.steps = n;
+        const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
+        const checking = c.cfg.run_hashes == .check and c.cfg.mode == .strict and c.cfg.chrome == null and !sweep;
+        try browser.writeFuzzSpec(c.arena, c.w, pair, FuzzPlan.spec);
+        const line = try browser.fuzzLine(c.arena, c.w, h, pair);
+        return .{ .pair = pair, .line = line, .skip = checking and run_hash.listed(record, line), .checked = checking };
+    }
+
+    /// The fuzz's report (`report`, null when the driver's `run` stopped
+    /// before it): the record line of a run that agreed; a difference
+    /// fails the case with the fuzzer's report — the seed, the step, the
+    /// sequence and where the two DOMs differ.
+    fn fuzzVerdict(c: Case, plan: FuzzPlan, driver: world.Result, report: ?world.Result) ![]const u8 {
+        const r = report orelse {
+            detail("{s}: the page fuzzer did not finish\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, driver.stdout, driver.stderr });
+            because("[fuzz] the driver stopped", .{});
+            return error.FuzzDidNotFinish;
+        };
+        if (r.exit_code != 0) {
+            detail("{s}: the page fuzzer ({s} against {s}) ended with {d}\n{s}{s}", .{
+                c.fixture.name, plan.pair.label_a, plan.pair.label_b, r.exit_code, r.stdout, r.stderr,
+            });
+            because("[fuzz] {s} and {s} differ", .{ plan.pair.label_a, plan.pair.label_b });
+            return error.FuzzDifference;
+        }
+        return plan.line;
     }
 
     /// One build's page, as `browser.driveAll` ran it (`page`, null when

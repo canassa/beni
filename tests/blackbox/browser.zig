@@ -55,6 +55,11 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 /// The driver, relative to the repository root.
 pub const driver_path = "tests/browser/driver.mjs";
 
+/// The page fuzzer (browser-direct.md §8.3), relative to the repository
+/// root: two builds of one program, random sequences, the pages compared
+/// after every step (`fuzz`).
+pub const fuzz_path = "tests/browser/fuzz.mjs";
+
 /// The vendored DOM, its name and version, and the SHA-256 of its bytes,
 /// which `tests/browser/vendor.sh` prints when it writes the file.
 pub const dom_path = "tests/browser/happy-dom.mjs";
@@ -87,6 +92,7 @@ pub const Harness = struct {
     /// fixture to copy into `platform_dir`.
     platform: []const run_hash.Page.Input,
     driver_bytes: []const u8,
+    fuzz_bytes: []const u8,
 };
 
 var harness_mutex: Io.Mutex = .init;
@@ -117,6 +123,7 @@ pub fn harness(io: Io) !Harness {
         .dom = try Io.Dir.cwd().realPathFileAlloc(io, dom_path, gpa),
         .platform = try readPlatform(io, gpa),
         .driver_bytes = try Io.Dir.cwd().readFileAlloc(io, driver_path, gpa, .limited(world.max_stream_bytes)),
+        .fuzz_bytes = try Io.Dir.cwd().readFileAlloc(io, fuzz_path, gpa, .limited(world.max_stream_bytes)),
     };
     return harness_value.?;
 }
@@ -186,8 +193,10 @@ pub const Pages = struct {
 
 /// One page `driveAll` runs: the entry file, and whether the page asks the
 /// build's test hook to run every listener subscription in a fiber (the
-/// driver's `--fiber-page`; `boundary.md` §9.8.5).
-pub const Entry = struct { path: []const u8, fiber: bool = false };
+/// driver's `--fiber-page`; `boundary.md` §9.8.5) — or, `fuzz` set, a run
+/// of the page fuzzer whose spec is the file at `path` (the driver's
+/// `--fuzz`; `writeFuzzSpec`).
+pub const Entry = struct { path: []const u8, fiber: bool = false, fuzz: bool = false };
 
 /// The test hook's name in a development build of `browser-tea`
 /// (`Hosted.fibered`): a build that does not contain it has no listener
@@ -223,7 +232,7 @@ pub fn driveAll(
             else => return err,
         };
         try argv.append(arena, try std.fmt.allocPrint(arena, "--{s}={s}@{s}", .{
-            if (entry.fiber) "fiber-page" else "page", entry.path, report.*,
+            if (entry.fuzz) "fuzz" else if (entry.fiber) "fiber-page" else "page", entry.path, report.*,
         }));
     }
     const run = try world.spawnAndCapture(arena, w.gpa, w.io, argv.items, .{ .dir = w.tmp.dir }, timeout_ms * @as(i64, @intCast(entries.len)));
@@ -246,6 +255,78 @@ pub fn driveAll(
         };
     }
     return .{ .run = run, .pages = pages };
+}
+
+/// One run of the page fuzzer (`tests/browser/fuzz.mjs`,
+/// browser-direct.md §8.3): two builds of a program, output directories of
+/// `w`'s project, replayed against each other on random sequences.
+pub const Fuzz = struct {
+    a: []const u8,
+    b: []const u8,
+    /// How the report names each build.
+    label_a: []const u8,
+    label_b: []const u8,
+    /// The `beni dump --stage=writes --msg-types` output, a file of the
+    /// project, when both builds take messages as values: development
+    /// builds of `browser-tea`, or `--fuzz` builds.
+    types: ?[]const u8 = null,
+    /// The seeds, `1,2,…`, and the steps of each sequence.
+    seeds: []const u8 = gate_seeds,
+    steps: u32 = gate_steps,
+};
+
+/// What the gates run: two fixed seeds of fifteen steps each, so a run's
+/// verdict is a function of its inputs and its record can stand for it.
+/// `zig build fuzz` runs longer ones (`BENI_FUZZ_SEEDS`, `BENI_FUZZ_STEPS`).
+pub const gate_seeds = "1,2";
+pub const gate_steps = 15;
+
+/// The spec `fuzz.mjs` reads, for `f`: JSON, every path relative to the
+/// project.
+pub fn fuzzSpec(arena: Allocator, f: Fuzz) ![]const u8 {
+    for (f.seeds) |ch| if (!std.ascii.isDigit(ch) and ch != ',') return error.BadFuzzSeeds;
+    var out: std.Io.Writer.Allocating = .init(arena);
+    try out.writer.print("{{\"a\":{f},\"b\":{f},\"labelA\":{f},\"labelB\":{f},\"types\":", .{
+        std.json.fmt(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{f.a}), .{}),
+        std.json.fmt(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{f.b}), .{}),
+        std.json.fmt(f.label_a, .{}),
+        std.json.fmt(f.label_b, .{}),
+    });
+    if (f.types) |t| try out.writer.print("{f},\"values\":true", .{std.json.fmt(t, .{})}) else try out.writer.writeAll("null,\"values\":false");
+    try out.writer.print(",\"seeds\":[{s}],\"steps\":{d},\"shrink\":true}}\n", .{ f.seeds, f.steps });
+    return out.written();
+}
+
+/// Write `f`'s spec into `w`'s project as `name`, for a `driveAll` entry
+/// (`.{ .path = name, .fuzz = true }`).
+pub fn writeFuzzSpec(arena: Allocator, w: *World, f: Fuzz, name: []const u8) !void {
+    try w.write(name, try fuzzSpec(arena, f));
+}
+
+/// `f` alone, in a Node process of its own: what its report says.
+pub fn fuzz(w: *World, h: Harness, chrome: ?[]const u8, f: Fuzz, timeout_ms: i64) !world.Result {
+    const arena = w.arena.allocator();
+    try writeFuzzSpec(arena, w, f, "_fuzz.json");
+    const r = try driveAll(w, h, chrome, &.{.{ .path = "_fuzz.json", .fuzz = true }}, null, timeout_ms);
+    if (r.pages[0]) |report| return report;
+    std.debug.print("the page fuzzer's driver stopped before its report\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ r.run.stdout, r.run.stderr });
+    return error.FuzzReportMissing;
+}
+
+/// The record line of a fuzz run that agreed (`run_hash.lineWith`, pass
+/// `fuzz`): it covers build `a`'s output tree as a page's line covers its
+/// build, and as inputs the DOM, the driver, the fuzzer, build `b`'s tree,
+/// the message types and the spec.
+pub fn fuzzLine(arena: Allocator, w: *World, h: Harness, f: Fuzz) ![]const u8 {
+    const b_line = try run_hash.lineWith(arena, w, f.b, "tree", "", "", null);
+    const types: []const u8 = if (f.types) |t| try w.read(t) else "";
+    return run_hash.lineWith(arena, w, f.a, "fuzz", "spec", try fuzzSpec(arena, f), .{ .dom = dom_id, .inputs = try arena.dupe(run_hash.Page.Input, &.{
+        .{ .name = "dom sha-256", .bytes = dom_sha256 },
+        .{ .name = "driver", .bytes = h.driver_bytes },
+        .{ .name = "fuzz", .bytes = h.fuzz_bytes },
+        .{ .name = "b", .bytes = b_line[std.mem.lastIndexOfScalar(u8, b_line, ' ').? + 1 ..] },
+        .{ .name = "types", .bytes = types },
+    }) });
 }
 
 /// The Chrome `test-browser` runs pages in: `BENI_CHROME` when it is set

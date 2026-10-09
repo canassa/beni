@@ -28,6 +28,12 @@
 // development build again as a `--fiber-page` when that build carries the
 // hook: Node starts, and compiles the DOM, once for all of them.
 //
+// A `--fuzz=<spec.json>@<report.json>` is a run of the page fuzzer
+// (`fuzz.mjs`, docs/design/browser-direct.md §8.3) in the same process:
+// two builds the spec names, replayed against each other on random
+// sequences of steps, in pages this driver makes. Its report is the
+// fuzzer's verdict, in the same three fields.
+//
 // The steps file has one step per line; `#` starts a comment line:
 //
 //   click <selector> [ctrl|shift|alt|meta]… [button:<n>]
@@ -763,7 +769,7 @@ function serialise() {
 const usage = (why) => {
   process.stderr.write(
     `driver: ${why}\nusage: node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) <entry.mjs> [<steps>]\n` +
-      `       node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) [--steps=<steps>] (--page | --fiber-page)=<entry.mjs>@<report.json>…\n`,
+      `       node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) [--steps=<steps>] (--page | --fiber-page | --fuzz)=<entry.mjs | spec.json>@<report.json>…\n`,
   );
   process.exit(2);
 };
@@ -780,9 +786,9 @@ const positional = [];
 const pages = [];
 for (const arg of process.argv.slice(2)) {
   const m = arg.match(/^--(dom|chrome|steps)=(.+)$/);
-  const p = arg.match(/^--(page|fiber-page)=(.+)@(.+)$/);
+  const p = arg.match(/^--(page|fiber-page|fuzz)=(.+)@(.+)$/);
   if (m) options[m[1]] = m[2];
-  else if (p) pages.push({ entry: p[2], report: p[3], fiber: p[1] === "fiber-page" });
+  else if (p) pages.push({ entry: p[2], report: p[3], fiber: p[1] === "fiber-page", fuzz: p[1] === "fuzz" });
   else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
   else positional.push(arg);
 }
@@ -1241,6 +1247,27 @@ if (pages[0].report === null) {
   await written(process.stderr, r.stderr);
   process.exit(r.code);
 } else {
-  for (const p of pages) writeFileSync(p.report, JSON.stringify(await runPage(p.entry, p.fiber)));
+  for (const p of pages) writeFileSync(p.report, JSON.stringify(p.fuzz ? await runFuzz(p.entry) : await runPage(p.entry, p.fiber)));
   process.exit(0);
+}
+
+// The page fuzzer on the spec at `specPath` (`fuzz.mjs`), its pages made
+// here as `runPage` makes one, the program not yet loaded.
+async function runFuzz(specPath) {
+  const { fuzz } = await import("./fuzz.mjs");
+  const open = async (entry) => {
+    entryFile = resolve(entry);
+    fromFile = false;
+    pageUrl = "http://127.0.0.1:8000/_page.html";
+    entryUrl = pathToFileURL(entryFile).href;
+    if (options.dom !== undefined) {
+      const page = await happyDomPage(options.dom);
+      // A function of the fuzzer's own is `{name, own}` (`fuzz.mjs`'s
+      // `inPage`): happy-dom's page calls `own`, Chrome's reads `name`.
+      return { run: (fn, arg) => page.run(fn.own ?? fn, arg), click: async () => {}, close: page.close, url: entryUrl };
+    }
+    const page = await chromePage(options.chrome);
+    return { run: page.run, click: page.click, close: page.close, url: entryUrl };
+  };
+  return fuzz(JSON.parse(readFileSync(specPath, "utf8")), { open, load, step, settle, drain, serialise });
 }
