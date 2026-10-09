@@ -1960,3 +1960,30 @@ golden moved. Fixture: `browser/direct/RowReadsList` (a row showing its label an
 the list; a label written at one index is shown by every row, which the development verify mode
 reported at the first click when every `[*]` was taken for the row's own).
 
+### *Amended 2026-10-10 (the direct platform's S3):* a hole's facts per call
+
+The view walk (§3.6) walks a helper's markup once per call, with the call's arguments, and records
+its holes by their position — so a hole of a helper called twice holds the union of what both
+calls read, which is what the dump prints and what every count of §8 and of the stats gate is
+made of. A consumer that writes the helper's markup in place at each call (`browser-direct.md`'s
+S3 amendment) has one copy of the hole per call, and each copy reads only what its own call reads.
+So the pass now also records every hole **per call path**: the chain of markup holes and component
+nodes whose evaluation reached it, outermost first — empty for a hole of `view`'s own markup, one
+entry for a helper's hole called from it, two for a helper's helper — with the same facts per path
+that a hole has: its anchored reads and their bound depths, its innermost `For` (a hole of the
+same path), its row path, its key paths, an `each` hole's path and K3's rows.
+
+- **Nothing printed moves.** The facts by position are what they were, and the dump, the gate and
+  the stats gate read only them; the facts per path are the consumer's.
+- **Baking per path.** §9.1's literal rule is read per visit: a path whose one visit shows a
+  literal — a string literal, as before, or now any literal term the walk computed, an argument
+  `"Create 1,000 rows"` or `1` given to the helper's parameter — bakes that literal by §9.1's text
+  rule (a text hole alone under an allowlisted parent, or an attribute; a string with no NUL, an
+  `Int` within 2⁵³), as the facts by position bake an `init` literal.
+- **Soundness.** Each path's facts are those of a subset of the visits: the union over every path
+  is the facts by position, so a read a path's copy makes is in its path's reads, and a conflict
+  the facts by position find for one copy is found by that copy's path. A consumer that writes the
+  call in place evaluates exactly that call's arguments in that copy, so the copy's value is what
+  its path's visit computed. A path is never shared by two calls: each entry is a node of one
+  module's markup, and the walk enters each call once per visit of its node.
+

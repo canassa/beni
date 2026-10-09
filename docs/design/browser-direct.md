@@ -2065,3 +2065,195 @@ fixed cost per message is to be profiled (record spread against list copy) befor
 - **K3 and a `For` used on two lists** cannot meet in S2: a component that holds a `For` is markup
   as a value, refused naming S4 (`build/bad/direct/ForHelperTwoLists`), so each `For` S2
   compiles has one `each`. The slice that compiles components decides baking per use.
+
+### *Amended 2026-10-10 (the owner): a blur a handler's write fires is delivered where the browser fires it*
+
+Q1's corner of the S2 review (above) is decided. When a row handler's write removes a focused
+element, Chrome fires `blur` synchronously, inside the write. On `browser-direct` that blur's
+message is queued by the guard (§4.3) and applied when the running listener body returns: after
+the event's first handler and **before the event's next handler** — the order the DOM produced,
+as a vanilla page's own listeners see it. `browser-tea` applies it last, at its render. **This is
+the intended behaviour, and a documented difference between the two platforms**, not a defect of
+either: a click on a row's button that removes the row, its input focused, sends the button's
+message, then the blur's, then the row's on `browser-direct` (`" remove 1 blur 2 row 2"`), and
+the button's, the row's, then the blur's on `browser-tea` (`" remove 1 row 2 blur 2"`).
+happy-dom fires no blur on a removal, so the gates see neither order; `zig build test-browser`
+sees both. `browser/direct/BlurBetweenHandlers` pins it with a golden per platform for Chrome
+(`tests/corpus/README.md`, *Which DOM*): its `.chrome-expected` is `browser-direct`'s order, its
+`.tea-chrome-expected` `browser-tea`'s, and its `.expected` the happy-dom page both platforms
+show. The page fuzzer runs in happy-dom and never meets the case.
+
+### *Amended 2026-10-10 (slice S3, as specified):* the table app, and the TodoMVC shape
+
+§6, §9 and §14 name S3's pieces; this fixes what they leave open, before a line of it is
+written, as S2's amendment did. The interface is `boundary.md` §9.4.6's version 1.9; the
+per-call facts it reads are `write-sets.md`'s amendment *a hole's facts per call*; the
+building-loop rule is `backend.md` §8's amendment *An accumulator loop builds a plain array*.
+
+**What S3 compiles.** Every keyed `For` S2 refused for its tag: `permute`, `replaced`, an
+untagged `value` write at or above the list, a derived `each`, `kept [*]` (the identity walk),
+`removeSome` (the merge), an index the handler cannot evaluate, and a keyed `For` in a row some
+key patches whole; a keyed row that reads its position (`λrow i →`); the selector (§6.4); a markup
+helper of the program's own module called in an `html` hole (`{button "run" "Create 1,000 rows"
+Run}`), and a component of its own module with no children written between its tags; `Html.map`
+whose child is one of those or markup written in place; and these inside rows and inside each
+other. **What it still refuses**, each naming its slice: a row or a hole that is not markup
+written in place or such a call — an `if`, a `case`, a `let`, a `Show` (S4, §5.4–§5.5); a
+recursive helper, a `List Html` hole, markup stored, passed or returned as a value, a component
+with children written between its tags, and **markup of another module** (S4, §5.2's value path:
+a program's module cannot write another module's function in place, because the backend lowers
+each module from its own code and a module's private names are not another's; another module's
+markup is a value on this platform, and its messages reach the program through the dispatcher,
+§4.4); controlled attributes (S4, §8.1); `Tea.element` and its kin (S5).
+
+**The list's state, extended.** A descriptor is `{ p, n, r, m, o, k, u, w, x, d, z, i }`, every
+field on every list, so the runtime's functions see one shape: S2's seven; `w`, the **whole-row
+patch** `(r) => …` — every live row group, and each inner list reconciled (keyed) or patched by
+position — where some script or the reconciler may patch a row whole, and null otherwise; `x` and
+`d`, the **key map** (a `Map` from key to row) and the number of rows past the first of their key,
+on a keyed list that keeps one, and null otherwise; `z`, the selector's last probe, or `unset`;
+and `i`, whether the rows read their position. **A keyed list keeps the key map** when some key of
+the program reaches a selector visit on it, or a script that depends on its keys being distinct
+(*Rank*, below); otherwise it keeps none, and nothing is paid for one at mount. Every runtime
+function that makes or removes a row keeps the map: a row made registers its key (`d` counts one
+more when the key is there already); a removal while `d` is 0 deletes its key; the reconciler
+rebuilds both from the rows it leaves; a clear empties both. **The map is exact whenever `d` is
+0** — one entry per row, the row with that key — and nothing reads it as exact otherwise.
+
+**Rank (CK-221).** Rows that share a key are matched by their rank among the rows with that key
+(`language.md` §11.9), as `browser-tea`'s keyed reconcile, the oracle, matches them. An edit
+script edits the row at the index the write set names, which is that only where no key the edit
+touches repeats. So each keyed script asks the key map, in O(1), whether it may run, and otherwise
+hands the edit to the reconciler, which is rank-correct for any list: `removeAt` and `swap` run
+when `d` is 0; `insert` and `prepend` when `d` is 0 and no new item's key is in the map; a row
+whose key changed (**rekey**) when `d` is 0 and its new key is not in the map; the merge when `d`
+is 0; the identity walk when no row's key changed. `append`, `clear`, and an element write that
+keeps the row's key are rank-safe and always run. The table app's `SwapRows`, an `indexedMap` with
+index guards (`write-sets.md` §10.4), is two element writes whose rows take keys the list holds:
+each is a rekey the map turns away, and the reconciler makes the two moves of its crossed ends.
+Pinned by `browser/direct/DuplicateKeys` (CK-221, moved out of `tests/pending/` with
+`browser-tea`'s transcript as its one golden) and `KeyedMoves`.
+
+**The reconciler** (§6.3), `Direct.reconcile(L, xs)`: one function, shipped only by a page whose
+lists reach it. It matches the new items to the rows by key and rank, makes the new items' rows,
+patches the kept rows whose item changed with the list's `w`, moves the rows into the new order,
+and removes the rest:
+
+- **Matching** changes nothing on the page, so it may start again. The rows at the start whose
+  item is the very one, or whose key is the new item's key, are kept in place: a rank-correct
+  prefix whatever repeats. When the old keys are distinct the same is done from the end, and
+  what is left between is looked up in a map of the old rows left; a key met twice there — a new
+  key repeated, or one a row at the end took — starts the matching again without the end, every
+  key chained by rank (`browser-tea`'s full pass).
+- **Making and patching** follow `browser-tea`'s order: where the old keys were distinct, the kept
+  rows at the start patched, then the new rows made, then the kept rows from the first change on
+  patched; otherwise in position order. So a `Debug.log` in a row prints what it prints there
+  wherever the two match rows alike.
+- **Moving** is `browser-tea`'s `reconcile` (udomdiff over rows, its crossed ends, its parked
+  rows), ported to rows of one element, so the same rows move and a focus stays or goes as it does
+  there. A list made from none puts each row in; a replacement that keeps no row of a list whose
+  rows are all their parent holds empties the parent with `textContent = ""` first.
+- Then the key map, where the list keeps one, is rebuilt, and rows that read their position are
+  given it (below).
+
+It is reached by a keyed list's `permute`, `replaced` or untagged `value` write, a `value` write
+at a prefix of the list, a derived `each` (§6.2's last paragraph: TodoMVC's filtered `For`), an
+index the handler cannot evaluate, a keyed list in a row patched whole (the new item's list), and
+the rank fallbacks above. A positional list keeps S2's positional pass for all of these.
+
+**The identity walk** (§6.2's `kept [*]`), `Direct.walk(L, xs, f)`: for each row whose item is not
+the very one the list now holds, the item is set and `f` — the row groups the element writes
+conflict with — called on the row; a length that changed, or a key that changed where the edit
+says one may, hands the list to the reconciler. An element write at `[*]` is an edit of its own
+(`Program.Edit.rows`'s `changed`), never merged with a visit of every row for a read not bound to
+the row, which visits every row whatever its item. **The merge** (`removeSome`), `Direct.merge(L,
+xs)`: the rows and the new items walked together by identity, each row whose item is not the next
+new item removed; a new item no row shows (a composition the tag's promise did not see) hands
+the list to the reconciler.
+
+**The selector** (§6.4). A visit of every row is a **selector visit** when every read that makes
+the key's edit call its groups is the path of the row's selector input (`Row.selector`,
+`language.md` §11.9): `Direct.select(L, probe, f)`. It runs after the list's scripts (§4.1 step
+3's (c), then (d)); it reads the old probe from `z` and writes the new one; when the two are the
+same value it does nothing, and otherwise calls `f` on the rows keyed by the old probe and then on
+those keyed by the new one — from the map when `d` is 0, by a walk of the rows otherwise — so a
+probe no row has, `Nothing`, or the row the same arm removed is skipped, and a row the arm made,
+made with the new selection, is visited harmlessly. A key whose visit of every row is not a
+selector visit writes `z` after it; `z` is set when the list is made. Pinned by
+`browser/direct/Selector` and `SelectAndRemove`.
+
+**A keyed row that reads its position** keeps it in its instance (`i`); after an edit that shifts
+rows — `insert`, `removeAt`, `prepend`, `swap`, the merge, the reconciler — each row whose
+position changed is given it and patched whole with `w`, as `browser-tea` patches such a row.
+Pinned by `browser/direct/PositionRows`.
+
+**Helpers and components, written in place** (§5.2, §9.2). A hole whose value is a call of a
+function of the program's own module whose body — after its `let`s — is markup written in place,
+a component of such a function with no children written between its tags, and an `Html.map`'s
+child are planned **into the enclosing template at the call**: the helper's markup is the
+caller's markup there, and its holes the caller's holes, under a **context** — the chain of calls
+from the view's root, and the rows between them — that every op of the plan carries. Code that
+evaluates a value of the helper's markup enters its context: `view`'s parameter bound to the
+model, each enclosing row's item bound, and each call's arguments evaluated in its caller's
+context and bound to the helper's parameters (a component's props as a record, or each field of
+its record pattern). A `let` of the helper's body that its markup reads is evaluated with the
+values that read it; any other (`_ = Debug.log …`) runs where the call's markup is made — the
+mount, a row's `make` — and nowhere else (§8.4: a `Debug` in a view prints when its code runs).
+**The facts are per call**: the write-set pass records each hole once per call path
+(`write-sets.md`, *a hole's facts per call*), so `card "fixed" 7`'s holes are static where `card
+"counted" model.count`'s are `Count`'s group, and a hole whose value at that call is a literal
+argument — `button "run" "Create 1,000 rows" Run`'s `{label}` and `id={id}` — is baked into the
+template by §5.1's rule, so the table app's six buttons are template text with a listener each. A
+message written through a call (`onClick={msg}`, `msg` bound to `Run`) is read through to the
+argument: `Run`'s handler is called and no message is made. A helper that calls itself, directly
+or through others, is on the value path (S4) and refused.
+
+**The size gate, and shared sites** (§5.2). A helper with n call sites is written in place at
+each when `n × I ≤ O + 24 n`, or when no call site's copy has an op left after baking (constants
+only: template text). `I` and `O` are **estimated from the plan, in bytes**, because the lowering
+decides before anything is printed (amending §5.2's "the emitted JavaScript's minified byte
+counts"): `I` is the helper's template text plus 12 per node walked, 18 per write with its
+compare, and 34 per listener; `O` is `I` plus 64, for the shared form's `make`, its group
+functions' parameters and its instance literal. S3 reports the estimate against the printed bytes
+on its fixtures. A helper the gate does not write in place is a **shared site**: its template
+parsed once; `make(c)`, which clones it, walks to its nodes and builds an instance `{ e, c,
+…nodes, …slots }`, `c` being the call's arguments as a function of the model; and its groups,
+each a function of the instance and the call's arguments. Each call site holds its instance; a
+handler calls each shared group the key's writes reach at that call site, under that call's
+facts, with the arguments that call site computes; and its listeners are the nodes' own
+(`Direct.listen`), whose bodies read the arguments through `c`. A shared site's markup is one
+element, a helper of several nodes is written in place at every call whatever the gate says, and
+a helper called inside a row is part of the row's template. Pinned by `emit/direct/Helpers` (the
+table app's buttons as text, a helper written in place, one shared) and
+`browser/direct/HelperSkip`, `NullaryHelperSkip` and `SharedSite`.
+
+**`Html.map`, composed at compile time** (§9.1). Under `Html.map child f`, a handler value `h` of
+the child sends `f h`. When `f` is a constructor, or a constructor applied to arguments through a
+placeholder (`Sel row.id _`), the key of `f h` is decided at compile time from the constructors
+along it and its handler called directly: with the constructor's fields when the key is that one
+constructor, and otherwise — a nested key, `Left · Increment` — with the composed message, which is
+then made, as a nested key's handler has taken it since S1. Nested maps compose innermost first.
+When `f` is anything else, the listener makes the child's message, applies `f` and hands the
+result to the program's dispatcher (§4.4): the program has a carrier, and a dispatcher. Pinned by
+`browser/direct/Counters` (`tea/Counters` with its component moved into the page's module; the
+original's other-module component is S4's value path) and `MapLambda`.
+
+**The fixtures S2 moved here** are rebuilt as their `browser/dom/` originals: `Keyed` (`rotate`,
+`List.reverse`), `KeyedInPlace` (`List.map`), `RowItemOnly` (`List.map`), `RowMountOrder`
+(`List.take`) — each keeping its S2 page where that page tested a script; and from `browser/dom/`
+`KeyedEnds`, `KeyedMoves`, `KeyedReplace`, `Selector`, `HelperSkip` and `NullaryHelperSkip`, each
+without what is S4's, named in its comment; `tea/Counters` as above. `tea/LatestTagger` needs
+`Tea.element` and a subscription, which are S5's, and moves there (§14 lists it under S3, which
+its subject cannot meet). New: `SelectAndRemove`, `FilteredFor` (TodoMVC's shape: a `For` over
+`List.filter` of the model's todos, with a toggle, a filter switch, an add and a removal, measured
+at 100 and 1 000 todos in S3's batch), `DuplicateKeys`, `PositionRows`, `SharedSite`, `MapLambda`
+and `BlurBetweenHandlers`.
+
+**The oracles.** The verify mode checks, besides S2's checks of every list: a list's key map,
+where the list keeps one and `d` is 0 — one entry per row, each mapping that row's key to it; and
+a selector's `z` against the probe computed again. A reconciled list needs nothing new: S2's
+checks already compare its rows with the new items, in order, in the page. The value fuzzer
+generates, for a list payload whose elements are records with an `Int` or a `String` field, lists
+drawn from what the page shows as well as fresh ones — the shown values in another order (a
+permutation), a subsequence (a filter), a value repeated (duplicate keys) — and each
+`browser/direct/` page keeps its value-fuzz case within the budget alone, as S2 set up.
