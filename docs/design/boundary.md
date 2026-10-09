@@ -1914,6 +1914,39 @@ only, as 1.7's calls are.
 
 `direct` targets 1.8.
 
+**Version 1.9** (*amended 2026-10-10*, additive and gated on nothing; `browser-direct.md`'s S3
+amendment): what a program lowering writes helpers, components and `Html.map` in place with, and
+two more facts of an edit. Valid inside `Lowering.program` only.
+
+- **`Program.Edit.rows`** gains `changed`, a visit of every row whose item changed only (an
+  element write at `[*]` of reads bound to the row: the identity walk), never merged with a visit
+  of every row; and `selector`, a visit of every row that every read making it is the row's
+  selector input's path (`Row.selector`), so the rows keyed by the old and the new probe are all
+  it needs.
+- **`cx.programCallee(node) ?Program.Callee`**, for an `html` hole or a component node of markup
+  the program writes: whether the lowering may write what it calls in place, and what. A
+  `Callee` is the markup root written in place — the body of a function of the calling module,
+  after its `let`s, or the markup an `Html.map` is applied to — reached through `maps` `Html.map`s
+  (outermost first), whether every map's function is a constructor's shape (`composed`), and why
+  not where it may not (`refusal`: a function that calls itself on the current path, a component
+  with children written between its tags, markup of another module, or any other value). Null:
+  the node is not a call.
+- **`cx.programInlineArgs(block, node) []const Expr`**: the call's arguments (a component's
+  props as one record), evaluated into `block` in the current context — `programViewEnter`'s, a
+  row's, or an enclosing call's.
+- **`cx.programInlineEnter(block, node, args, made)` / `cx.programInlineLeave()`**: from here to
+  the matching leave, the callee's markup root's values are evaluated with its parameters bound to
+  `args` (null: the facts below only, nothing bound), in the callee's declaration; with `made`, its
+  body's `let`s that its markup does not read are evaluated into `block` first — where the call's
+  markup is made. While entered, `programHole`, `programList`, `programEdits` and
+  `programRowBake` answer for that call's copy of the callee's holes (`write-sets.md`, *a hole's
+  facts per call*), and `programMessage` reads a handler value through to the argument a
+  parameter is bound to, and composes it under the call's maps — `.key` when the composed
+  message's key is decided at compile time, with the fields of a one-constructor key or the
+  composed message for a nested one.
+
+`direct` targets 1.9.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
