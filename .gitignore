@@ -22,3 +22,9 @@
 # bench/compare's generated projects and fetched dependencies
 # (docs/design/compare-bench.md §8.2, §12): generated code is never committed.
 /bench/compare/work/
+
+# references/ownership/'s local reading copies: open-access PDFs and text
+# snapshots of pages that may vanish. Only the catalogue (README.md) is
+# committed; every copy can be fetched again from the link it names.
+/references/ownership/pdf/
+/references/ownership/text/
