@@ -1861,3 +1861,82 @@ With the page read back, three more pages go over the budget with the value fuzz
 `BakedQuoting` (4 315 million instructions), `BakedValues` (4 339) and `UnitHoles` (4 331). By
 the owner's rule above they join `value_fuzz_in_sweep`: events in the gates, values in `zig build
 fuzz`, which passes on every `browser/direct/` page.
+
+### *Amended 2026-10-09 (slice S2, as specified):* rows, before they are built
+
+§6 and §14 name S2's pieces; this fixes what §6 leaves open and the one place §14 and §6 disagree,
+before a line of it is written. The interface is `boundary.md` §9.4.6's version 1.8; the read
+the scripts rest on is `write-sets.md`'s amendment *which `[*]` is a row's own*.
+
+- **What S2 compiles.** A `For` keyed by a field (`keyed={.id}`), by a key function, or by the
+  item itself (no `keyed`), and a positional one (`keyed={False}`), whose `each` is exactly a
+  path of the model or of an enclosing row's item (§6.2, last paragraph) — so a `For` in a
+  `For` row is compiled — and whose row is markup with one element at its root. Its scripts
+  are §6.2's for `set κ`, `kept [κ]` with sub-writes (`List.update`), `swap κ₁ κ₂`, `append`,
+  `prepend`, `clear`, `insert κ` and `removeAt κ`, each under §6.2's guard. A positional
+  `For` takes the same scripts over positions where a position keeps its node (`set κ`,
+  `kept [κ]`, `append`, `clear`, and `swap` as two indexed patches) and **the positional
+  pass** for every other tag and for a derived `each`, which §6.2 makes the positional form of
+  `replaced`: patch the first `min(n, m)` rows whose item changed, then append or remove the rest.
+- **What S2 refuses, naming the slice that adds it.** On a keyed `For`, a key whose joined tag is
+  `replaced`, `permute` or `value` (§6.3's reconciler), `kept [*]` (§6.2's identity walk) or
+  `removeSome` (the merge), an index the handler cannot evaluate (below), and a derived `each`:
+  S3, whose list §14 gives all four. §14 also lists `browser/dom/Keyed`, `KeyedInPlace`,
+  `RowItemOnly` and `RowMountOrder` under S2, and each of them reaches one of these (a
+  `rotate`, a `List.reverse`, a `List.map`, a `List.take`); that is §14 disagreeing with its own
+  S3 entry, and S3's entry wins: S2 rebuilds each of them on `browser-direct` with the edits S2
+  compiles (`List.swap` for the rotation, `List.update` for the relabel, `List.removeAt` for the
+  dedupe), keeps the original pages on `browser`, and names in each fixture what moved to S3. A
+  row that reads its position (`λrow i →`) in a keyed `For`: S3, since an insert or a remove
+  then marks every row after it (§6.2). A row that is not one element — several nodes, text, an
+  `if`, a `case` or a `let` around its markup: S4 (§5.4, §5.5). `ForAtEnds`, whose subject is a
+  component and a branch around a `For`, is rebuilt the same way with the `For` at each end of
+  its parent; the component and branch half is S3's and S4's.
+- **The index symbols a handler evaluates** (§6.2, *handler-evaluable*): an integer literal; a
+  path of the message along the key's own constructor steps, then fields and tuple components;
+  a path of the old model through fields and tuple components. Each is evaluated **before the
+  arm**, into a constant, where `model` is still the old model — which is §4.1's step 0 without
+  `const old`. A path through a constructor the key does not fix (`ρ.page.Home#0.sel`) could
+  name a field of another variant and is treated as `?`: coarser, never a `TypeError`.
+- **The list's state.** A **descriptor** per `For` per mount, or per row instance for a `For` in
+  a row: `{ p, n, r, m, … }` — the parent element (none for a list at the view's top level,
+  whose parent is its end marker's), the end marker (none when the rows are the parent's last
+  children), the instance array, `make`, and, where they are needed, whether the rows are the
+  parent's only children (`clear` empties it with `textContent = ""`, §6.2), the key function
+  (below) and the enclosing row's instance. An instance is `{ e, it, …nodes, …slots, …lists }`.
+  **Every loop is the runtime's**: §9.4.3's builder has none, so mounting the rows, `append`,
+  `prepend`, `clear`, `insert`, `removeAt`, `swap`, the positional pass, a visit of every row
+  and the verify mode's walk are `Direct` functions taking the descriptor, each shipped only
+  when reached. The indexed script's guard (`0 ≤ κ < n` and the item changed) is one too, since
+  the builder has no `<` either.
+- **Row groups, and the two visits.** A row group is called on the rows a key's writes can
+  change, and the bound reads decide which: an **element visit** at `κ` calls, on row `κ`, the
+  row groups whose reads bound to the row conflict with the element writes at `κ` (`List.update
+  rows k f`: the label's group, not the key's); an **all-rows visit** calls, on every row, the
+  row groups with a read not bound to the row that conflicts with any write of the key
+  (`model.mark` read in a row, `Mark` writing it) — O(n), the case §6.4's selector narrows to two
+  rows at S3. Both are §4.1 step 3's (d) for a row site. A keyed list whose element write may
+  change the key path makes the row again where the key changed (**rekey**: the old row
+  removed, a new one made in its place), as the reconciler would; otherwise the key's holes are
+  written once, at `make` (§6.1). A row group no key calls is written at `make` only.
+- **Events in a row** follow §4.2: one listener per list instance and delegated event name, on
+  the list's parent (for a list at the view's top level, the mount node), its walk the runtime's
+  (`Direct.delegate`), buffering and discarding at another list's row root and at another
+  program's mount root; a node whose `disabled` is true is passed over, as `browser`'s walk
+  passes it. A non-bubbling event gets a direct listener at `make`. What marks a row and a
+  handler node — expandos, a key-map or index lookup, a `WeakMap` — is chosen by §6.1's
+  measurement, written below when made.
+- **The verify mode** (§8.3) checks every list after every dispatch: its length against its
+  instances', `get(xs, i) === insts[i].it` for each row, each row's holes as a unique site's,
+  and each row's lists, recursively.
+- **K3** (`plans/compile-away.md`, Track K). A `For` whose `each` is a model path no key's
+  write set conflicts with, whose `init` value is a list literal, and whose every row hole is
+  static and bakes per row by `write-sets.md` §9.1 (the item's field at `init`, an exact `Int`
+  or a string), with no attribute that needs code, has its rows written into the template:
+  each row's text, as `make` would leave it, in list order. Nothing makes them at mount; a row
+  with a handler is **adopted** — its instance made over the node the template made, its
+  handler nodes marked — and so is every row of a development build, for the verify mode. A
+  list that some key writes, or whose rows are not all literal, is made at mount as before.
+- **The fuzzer** (§8.3) sends, besides single messages, **bursts**: one generated message sent
+  up to forty times in one action, so a page's own `push` and prepend take a list past the
+  trie's thresholds (32), which single messages in thirty steps do not reach.

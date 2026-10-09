@@ -1883,6 +1883,37 @@ A program built under `--fuzz` also keeps every `case` arm on any constructor, b
 `--release` its message types keep their development representation (`browser-direct.md` §8.3's
 contract). `direct` targets 1.7.
 
+**Version 1.8** (*amended 2026-10-09*, additive and gated on nothing; `browser-direct.md` §6,
+slice S2): what a program lowering compiles a `For`'s rows with. Valid inside `Lowering.program`
+only, as 1.7's calls are.
+
+- **`cx.programList(node) Program.ListFacts`**, for a `For` node of the program's `view`:
+  `exact`, its `each` is exactly a path of the model or of an enclosing row's item
+  (`browser-direct.md` §6.2); `baked`, the number of rows K3 writes into the template (§6's S2
+  amendment), or null.
+- **`cx.programEdits(key, node) []const Program.Edit`**: what key `key`'s write set does to that
+  `For`'s rows, as edits, each under the enclosing `For`s' rows it is in (`outer`, outermost
+  first: one `Program.Index` per enclosing `For`). An edit is a **shape** — the list's edit tag
+  (`set`, `append`, `prepend`, `clear`, `insert`, `remove_at`, `swap`, `all` for `kept [*]`,
+  `remove_some`, `permute`, `replaced`) and its index symbols — or **rows**: the row groups
+  (`HoleFacts.group` numbers) to call on the rows at one index, or on every row, and whether the
+  key may change there (`rekey`). The read a row group is called for is `write-sets.md`'s
+  *bound* read (its 2026-10-09 amendment for S2): at one index for a read of the row's own
+  item, on every row otherwise.
+- **`cx.programIndex(key, block, params, index) ?Expr`**: an index symbol of key `key`'s edits,
+  evaluated into `block` from the handler's `params` and the model the handler has not yet
+  replaced; null when the handler cannot evaluate it (`?`, every row, or a path through a
+  constructor the key does not fix). A lowering calls it before `programArm`.
+- **`cx.rowValuesOf(block, row, item, index, values)`**: `rowValues` for the named values only,
+  as `rootValues` is for a root: the row's item and position bound, its `let`s evaluated, and
+  only `values` (each a value of the row's root) after them, in the root's order. An empty
+  `values` binds the item and evaluates the `let`s, so a nested row's values that read an
+  enclosing row's item read it under the name given.
+- **`cx.programRowBake(hole, row) ?[]const u8`**: for a hole of a `For` row that K3 bakes, the
+  text the template holds for row `row`, verbatim (escaping is the lowering's), or null.
+
+`direct` targets 1.8.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
