@@ -583,6 +583,15 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.platform = "browser-direct";
             fixture.differential = true;
         }
+        // Each page's value fuzz, a case of its own (`Fixture.values`). A
+        // pending page is red for its transcript, one `RED` line, so it
+        // has no second case.
+        const end = fixtures.items.len;
+        if (cfg.mode == .strict) for (start..end) |i| {
+            var values = fixtures.items[i];
+            values.values = true;
+            try fixtures.append(arena, values);
+        };
     }
     // `emit/release/split/`: release applications built for `browser`,
     // whose markup runtime is a beni module and a hand-written file together
@@ -673,14 +682,14 @@ const Walker = struct {
             switch (wk.cfg.mode) {
                 .strict => {
                     const passed = if (case.run()) |_| true else |err| failed: {
-                        std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
+                        std.debug.print("FAIL {s}/{s}{s}: {t}\n", .{ fixture.dir, fixture.name, fixture.suffix(), err });
                         _ = wk.failures.fetchAdd(1, .monotonic);
                         break :failed false;
                     };
                     const spent = meter.read() -% spent_start;
                     _ = world.timing.cases_spent.fetchAdd(spent, .monotonic);
                     const own = case.ownBudget() catch |err| {
-                        std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
+                        std.debug.print("FAIL {s}/{s}{s}: {t}\n", .{ fixture.dir, fixture.name, fixture.suffix(), err });
                         _ = wk.failures.fetchAdd(1, .monotonic);
                         continue;
                     };
@@ -688,8 +697,8 @@ const Walker = struct {
                     if (passed and world.timing.budget_unit != .none and spent > budget) {
                         const got = world.timing.describe(spent);
                         const limit = world.timing.describe(budget);
-                        std.debug.print("FAIL: {d} {s}, over the budget of {d} (the case's own and its children's): {s}/{s}\n", .{
-                            got.value, got.unit, limit.value, fixture.dir, fixture.name,
+                        std.debug.print("FAIL: {d} {s}, over the budget of {d} (the case's own and its children's): {s}/{s}{s}\n", .{
+                            got.value, got.unit, limit.value, fixture.dir, fixture.name, fixture.suffix(),
                         });
                         _ = wk.failures.fetchAdd(1, .monotonic);
                     }
@@ -1108,6 +1117,18 @@ const Fixture = struct {
     /// §12.3). A difference the design specifies is the fixture's
     /// `.tea-expected`, which the `browser-tea` builds read instead.
     differential: bool = false,
+    /// A `browser/direct/` page's second case: its page fuzz alone, with
+    /// messages as values (`browser-direct.md` §8.3, amended for S2). The
+    /// two `--fuzz` builds, the message types dump and the fuzz are a case
+    /// of their own, budgeted on their own, so that no page's value fuzz
+    /// waits for the sweep; the first case builds and runs the pages.
+    values: bool = false,
+
+    /// What a report names the case by after its path: which of a page's
+    /// two cases failed.
+    fn suffix(fixture: Fixture) []const u8 {
+        return if (fixture.values) " [value fuzz]" else "";
+    }
 
     /// Whether `text` is in the fixture's repo-relative path, the path
     /// `BENI_CORPUS_ONLY` and `BENI_BLESS_ONLY` are matched against.
@@ -1960,6 +1981,8 @@ const Case = struct {
         if (steps) |bytes| try c.w.write(steps_name, bytes);
         const script: Script = .{ .name = if (steps != null) steps_name else null, .bytes = steps orelse "" };
 
+        if (c.fixture.values) return c.valueFuzz(h, script, sources, platform_arg, tea_arg);
+
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
@@ -2170,24 +2193,26 @@ const Case = struct {
 
     /// The two builds the page fuzzer replays against each other
     /// (browser-direct.md §8.3), or null: a `browser/direct/` page's
-    /// `browser-tea` and `browser-direct` development builds, unless the
-    /// fixture says the two differ (a `.tea-expected`); a `browser/tea/`
-    /// page's development and release builds, which must behave alike
-    /// (backend.md §9).
+    /// `browser-tea` and `browser-direct` builds, in the page's value-fuzz
+    /// case (`Fixture.values`) and unless the fixture says the two differ
+    /// (a `.tea-expected`); a `browser/tea/` page's development and release
+    /// builds, which must behave alike (backend.md §9).
     ///
     /// Messages go as values only between two `--fuzz` builds
     /// (browser-direct.md §8.3, amended 2026-10-09): such a build keeps
     /// every constructor of the message type and takes the development
     /// representation, in release too, and a direct one has a dispatcher.
     /// So when the compiler has the flag, the pair is two more builds made
-    /// with it, and the message types are dumped; until then it is the
-    /// fixture's own builds, and the fuzz is view and host events.
+    /// with it, and the message types are dumped; until then it is two
+    /// development builds, and the fuzz is view and host events.
     fn fuzzPair(c: Case, pages: [5]?PagePlan, script: Script, sources: []const []const u8, platform_arg: []const u8, tea_arg: []const u8) !?browser.Fuzz {
         var pair: browser.Fuzz = undefined;
-        // What each side is built with, when the pair is `--fuzz` builds.
+        // What each side is built with.
         var sides: [2][]const []const u8 = undefined;
         if (c.fixture.differential) {
-            if (pages[0] == null or pages[3] == null or c.goldenExists("tea-expected")) return null;
+            // The page case builds and runs the pages; the fuzz is the
+            // value-fuzz case's, budgeted on its own.
+            if (!c.fixture.values or c.goldenExists("tea-expected")) return null;
             // The two platforms' crash screens are the same (amended
             // 2026-10-09, S0); a `Debug.log` in a view prints when its
             // group runs, which differs between them (§8.4).
@@ -2207,26 +2232,27 @@ const Case = struct {
         // `browser/tea/` pair only in `zig build fuzz`'s sweep.
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
         if (!c.fixture.differential and !sweep) return pair;
-        // A `browser/direct/` page whose value fuzz would take it over the
-        // budget fuzzes events in the gates, and values in the sweep
-        // (browser-direct.md §8.3, the owner's decision of 2026-10-09).
-        if (!sweep) for (value_fuzz_in_sweep) |entry| if (std.mem.eql(u8, entry.name, c.fixture.name)) {
-            pair.note = "value fuzz: in `zig build fuzz` (budget)";
-            return pair;
-        };
-        if (!try fuzzFlag(c)) return pair;
+        const flag = try fuzzFlag(c);
+        // Without the flag a `browser/tea/` pair is the page case's own two
+        // builds; a value-fuzz case built no pages, so it builds its pair.
+        if (!flag and !c.fixture.differential) return pair;
         for (sides, [_][]const u8{ "fuzz-a", "fuzz-b" }) |side, out| {
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{"build"});
             try args.appendSlice(c.arena, side);
-            try args.appendSlice(c.arena, &.{ "--fuzz", try std.fmt.allocPrint(c.arena, "--out={s}", .{out}) });
+            if (flag) try args.append(c.arena, "--fuzz");
+            try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{out}));
             try args.appendSlice(c.arena, sources);
             const built = try c.inProject(args.items);
             if (built.exit_code != 0) {
-                detail("{s} [fuzz]: the --fuzz build failed\n{s}\n", .{ c.fixture.name, built.stderr });
+                detail("{s} [fuzz]: the fuzz build failed\n{s}\n", .{ c.fixture.name, built.stderr });
+                because("[fuzz] build exit {d}: {s}", .{ built.exit_code, summarize(c.arena, built.stderr) });
                 return error.BuildFailed;
             }
         }
+        pair.a = "fuzz-a";
+        pair.b = "fuzz-b";
+        if (!flag) return pair;
         var dump: std.ArrayList([]const u8) = .empty;
         // One path: a project's directory, whose modules import each other,
         // or the one file.
@@ -2242,44 +2268,40 @@ const Case = struct {
             return error.MsgTypesDumpFailed;
         }
         try c.w.write("_types.jsonl", dumped.stdout);
-        pair.a = "fuzz-a";
-        pair.b = "fuzz-b";
         pair.types = "_types.jsonl";
         return pair;
     }
 
-    /// The `browser/direct/` pages whose value fuzz runs only in `zig build
-    /// fuzz`, each with why: their two `--fuzz` builds and the dump would
-    /// take them over the instruction budget (browser-direct.md §8.3, the
-    /// owner's decision of 2026-10-09). The gates fuzz their events, and
-    /// the report says where their values went. No budget is raised.
-    const value_fuzz_in_sweep = [_]struct { name: []const u8, why: []const u8 }{
-        .{ .name = "Holes.beni", .why = "4 597 million instructions with the value fuzz" },
-        .{ .name = "MessageKeys.beni", .why = "4 382 million instructions with the value fuzz" },
-        .{ .name = "VerifyQuiet.beni", .why = "5 007 million instructions with the value fuzz" },
-        .{ .name = "BakedQuoting.beni", .why = "4 315 million instructions with the value fuzz" },
-        .{ .name = "BakedValues.beni", .why = "4 339 million instructions with the value fuzz" },
-        .{ .name = "UnitHoles.beni", .why = "4 331 million instructions with the value fuzz" },
-        // Slice S2's pages (browser-direct.md §6, as amended for S2): a list's
-        // page and its four builds, with the value fuzz's two more and a dump.
-        // S1's pages pushed over by S2: each of a page's seven builds checks
-        // the runtime module `Direct`, which S2's list functions grew.
-        .{ .name = "DefectInHandler.beni", .why = "4 395 million instructions with the value fuzz, since S2" },
-        .{ .name = "DefectInListener.beni", .why = "4 411 million instructions with the value fuzz, since S2" },
-        .{ .name = "DefectInMount.beni", .why = "4 307 million instructions with the value fuzz, since S2" },
-        .{ .name = "BakedList.beni", .why = "5 119 million instructions with the value fuzz" },
-        .{ .name = "DetachedRowEvent.beni", .why = "4 508 million instructions with the value fuzz" },
-        .{ .name = "ForAtEnds.beni", .why = "5 185 million instructions with the value fuzz" },
-        .{ .name = "ForForms.beni", .why = "5 686 million instructions with the value fuzz" },
-        .{ .name = "Keyed.beni", .why = "5 104 million instructions with the value fuzz" },
-        .{ .name = "KeyedInPlace.beni", .why = "over the budget with the value fuzz" },
-        .{ .name = "NestedFor.beni", .why = "5 087 million instructions with the value fuzz" },
-        .{ .name = "NoOpEdits.beni", .why = "5 239 million instructions with the value fuzz" },
-        .{ .name = "RowBlur.beni", .why = "4 858 million instructions with the value fuzz" },
-        .{ .name = "RowItemOnly.beni", .why = "5 164 million instructions with the value fuzz" },
-        .{ .name = "RowReadsList.beni", .why = "5 647 million instructions with the value fuzz" },
-        .{ .name = "StopInRow", .why = "over the budget with the value fuzz" },
-    };
+    /// A `browser/direct/` page's value-fuzz case (`Fixture.values`): the
+    /// pair `fuzzPair` builds, fuzzed in one Node process, its record in
+    /// the page's `.fuzz-run-hash` — a file of its own, since the page case
+    /// writes `.run-hash` beside this one, in parallel.
+    fn valueFuzz(c: Case, h: browser.Harness, script: Script, sources: []const []const u8, platform_arg: []const u8, tea_arg: []const u8) !void {
+        const record_path = try c.goldenPath("fuzz-" ++ run_hash.ext);
+        const recording = c.cfg.run_hashes == .record;
+        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
+        const pair = try c.fuzzPair(@splat(null), script, sources, platform_arg, tea_arg) orelse {
+            if (recording) try run_hash.write(testing.io, record_path, null);
+            return;
+        };
+        const plan = try c.fuzzPlan(pair, h, record);
+        if (plan.checked) RunCounts.add(if (plan.skip) &run_counts.skipped else &run_counts.stale);
+        // The sweep's fifty seeds of sixty steps are a hundred times the
+        // gates' one of thirty: the time a run may take grows with them.
+        const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
+        const timeout_ms = if (sweep) c.cfg.timeout_ms * 10 else c.cfg.timeout_ms;
+        const line = if (plan.skip) plan.line else blk: {
+            const shown = browser.driveAll(c.w, h, chrome_endpoint, &.{.{ .path = FuzzPlan.spec, .fuzz = true }}, script.name, timeout_ms) catch |err| {
+                detail("{s}: cannot run the page fuzzer ({t}); is node on PATH?\n", .{ c.fixture.name, err });
+                return err;
+            };
+            break :blk try c.fuzzVerdict(plan, shown.run, if (shown.pages.len != 0) shown.pages[0] else null);
+        };
+        if (recording) {
+            RunCounts.add(&run_counts.recorded);
+            try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &.{line}));
+        }
+    }
 
     var fuzz_flag_mutex: Io.Mutex = .init;
     var fuzz_flag: ?bool = null;

@@ -1,0 +1,56 @@
+-- load
+<body>
+  <main>
+    <p id="log">""</p>
+    <ul>
+      <li>
+        <input id="in1" .value="">
+        <button id="x1">"x"</button>
+      </li>
+      <li>
+        <input id="in2" .value="">
+        <button id="x2">"x"</button>
+      </li>
+      <li>
+        <input id="in3" .value="">
+        <button id="x3">"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- focus #in2
+<body>
+  <main>
+    <p id="log">""</p>
+    <ul>
+      <li>
+        <input id="in1" .value="">
+        <button id="x1">"x"</button>
+      </li>
+      <li>
+        <input id="in2" .value="" :focus>
+        <button id="x2">"x"</button>
+      </li>
+      <li>
+        <input id="in3" .value="">
+        <button id="x3">"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #x2
+<body>
+  <main>
+    <p id="log">" remove 1 row 2"</p>
+    <ul>
+      <li>
+        <input id="in1" .value="">
+        <button id="x1">"x"</button>
+      </li>
+      <li>
+        <input id="in3" .value="">
+        <button id="x3">"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>

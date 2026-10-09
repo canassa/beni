@@ -58,6 +58,7 @@ const ListScripts$main = Tea$sandbox(($root$1, $t$2) => {
     const $e$57 = $T$22.cloneNode(true);
     const $w$58 = $e$57.firstChild;
     const $r$59 = { e: $e$57, it: $it$54, w1: $w$58, s0: Direct$unset };
+    $e$57.$v = $L$55;
     $g$45($r$59);
     return $r$59;
   };
@@ -69,6 +70,7 @@ const ListScripts$main = Tea$sandbox(($root$1, $t$2) => {
     const $x$68 = Direct$insertText($e$64, $w$66, "");
     const $r$69 = { e: $e$64, it: $it$61, l: $L$62, x1: $x$67, x2: $x$68, s1: Direct$unset, s2: Direct$unset };
     $e$64.$r = $r$69;
+    $e$64.$v = $L$62;
     $e$64.$click = $l$53;
     $g$37($r$69);
     $g$41($r$69);

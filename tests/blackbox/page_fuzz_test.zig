@@ -551,3 +551,140 @@ test "a missed title write is caught though the body is the same" {
         \\
     );
 }
+
+// ---- The verify mode, on a broken build ------------------------------------
+//
+// A `browser-direct` development build checks its page against its model
+// after every dispatch (browser-direct.md §8.3). A check that never fails
+// proves nothing either, so each check here meets a build broken where it
+// looks, and must stop the page at the dispatch that breaks it. The DOM may
+// show the break too; what is asserted is that the verify mode names it.
+
+/// A derived list whose rows are themselves long lists, and a model list of
+/// two rows: what the two broken builds below break.
+const lists =
+    \\import Browser
+    \\import Html exposing (Html)
+    \\import Tea
+    \\
+    \\
+    \\type Msg
+    \\    = Bump
+    \\    | Drop
+    \\
+    \\
+    \\type alias Model =
+    \\    n : Int
+    \\    rows : List Int
+    \\
+    \\
+    \\update : Msg, Model → Model
+    \\update msg m =
+    \\    case msg of
+    \\        Bump →
+    \\            { m | n = m.n + 1 }
+    \\
+    \\        Drop →
+    \\            { m | rows = List.removeAt m.rows 0 }
+    \\
+    \\
+    \\view : Model → Html Msg
+    \\view m =
+    \\    <main>
+    \\        <button id="bump" onClick={Bump}>bump</button>
+    \\        <button id="drop" onClick={Drop}>drop</button>
+    \\        <ol>
+    \\            <For each={List.map (List.range 0 2) λk → List.map (List.range 0 1499) λi → if i == 750 then m.n + k else 0} keyed={False}>
+    \\                {λrow → <li>{String.fromInt (List.sum row)}</li>}
+    \\            </For>
+    \\        </ol>
+    \\        <ul><For each={m.rows} keyed={λk → k}>{λk → <li>{String.fromInt k}</li>}</For></ul>
+    \\    </main>
+    \\
+    \\
+    \\main : Browser.Program
+    \\main = Tea.sandbox { init = { n = 0, rows = [ 1, 2 ] }, update = update, view = view }
+    \\
+;
+
+/// Build `lists` for `browser-direct` in development into `out/`, and
+/// replace `needle`, which must occur once in its runtime module, with
+/// `broken`.
+fn buildBroken(w: *World, needle: []const u8, broken: []const u8) !void {
+    try w.write("Main.beni", lists);
+    const built = try w.runWith(&.{ "build", "--platform=browser-direct", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (built.exit_code != 0 or built.stderr.len != 0) {
+        std.debug.print("beni build exited {d}\n{s}\n", .{ built.exit_code, built.stderr });
+        return error.BuildFailed;
+    }
+    const arena = w.arena.allocator();
+    const path = "out/_platform/Direct.mjs";
+    const js = try w.read(path);
+    const at = std.mem.indexOf(u8, js, needle) orelse {
+        std.debug.print("{s} holds no `{s}`: the runtime code this test breaks moved\n", .{ path, needle });
+        return error.NothingToBreak;
+    };
+    if (std.mem.indexOfPos(u8, js, at + 1, needle) != null) return error.NeedleNotUnique;
+    try w.write(path, try std.mem.concat(arena, u8, &.{ js[0..at], broken, js[at + needle.len ..] }));
+}
+
+/// Drive `out/` with `steps`: the page must throw the verify mode's error
+/// at the step `step`, naming `what`. Skipped when the index lists this
+/// exact run (`run_hash.checkDigested`).
+fn expectVerify(w: *World, steps: []const u8, step: []const u8, what: []const u8) !void {
+    const arena = w.arena.allocator();
+    try w.write("s.steps", steps);
+    const h = try browser.harness(testing.io);
+    const line = try run_hash.lineWith(arena, w, "out", "verify", step, what, try browser.page(arena, h, steps));
+    const Run = struct {
+        w: *World,
+        h: browser.Harness,
+        step: []const u8,
+        what: []const u8,
+        fn go(r: @This()) anyerror!bool {
+            const got = try browser.drive(r.w, r.h, null, "out/_main.mjs", "s.steps", world.default_timeout_ms);
+            const a = r.w.arena.allocator();
+            const thrown = try std.fmt.allocPrint(a, "{s}: the page threw an uncaught exception:\nError: browser-direct verify: {s} shows", .{ r.step, r.what });
+            if (got.exit_code != 0 and std.mem.indexOf(u8, got.stderr, thrown) != null) return true;
+            std.debug.print("the verify mode did not stop the page at `{s}` naming `{s}`\n--- stdout ---\n{s}--- stderr ---\n{s}--- code {d} ---\n", .{ r.step, r.what, got.stdout, got.stderr, got.exit_code });
+            return false;
+        }
+    };
+    if (try run_hash.checkDigested(w, try run_hash.digestOf(arena, &.{line}), Run{ .w = w, .h = h, .step = step, .what = what }, Run.go)) |ok| {
+        if (!ok) return error.VerifyMissed;
+    }
+}
+
+test "verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // The positional pass skips the middle row: its item and its text stay
+    // stale, and its hole's own check, computed from the stale item, agrees.
+    // Only the row's item compared with the list's, every element of it —
+    // they differ at element 750 of 1 500 — finds it.
+    try buildBroken(&w, "if (!(it$7 === r$6.it)) {", "if (!(it$7 === r$6.it) && j$4 !== 1) {");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectVerify(&w, "click #bump\n", "click #bump", "row 1 of the `For` at Main.beni:32:14");
+}
+
+test "verify: a removed row left in the page is caught though one row remains" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // `removeAt` takes the row from its list and leaves its node: one row
+    // remains, in place and after the stray, so the rows' order checks pass.
+    try buildBroken(&w, "insts$4[j$3].e.remove();", "/* the row stays */");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectVerify(&w, "click #drop\n", "click #drop", "the count of rows of the `For` at Main.beni:36:14 in the page");
+}

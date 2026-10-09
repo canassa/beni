@@ -4,8 +4,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -46,8 +46,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -88,8 +88,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -130,8 +130,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -172,8 +172,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -214,8 +214,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -256,8 +256,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -292,14 +292,14 @@
     </ol>
   </main>
 </body>
--- click #duplicate
+-- click #append
 <body>
   <main>
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -348,8 +348,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -392,14 +392,14 @@
     </ol>
   </main>
 </body>
--- click #dedupe
+-- click #remove
 <body>
   <main>
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -440,8 +440,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -482,8 +482,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone">
@@ -524,8 +524,8 @@
     <button id="relabel">"relabel"</button>
     <button id="mark">"mark"</button>
     <button id="toggle">"toggle"</button>
-    <button id="duplicate">"duplicate"</button>
-    <button id="dedupe">"dedupe"</button>
+    <button id="append">"append"</button>
+    <button id="remove">"remove"</button>
     <button id="swap">"swap"</button>
     <button id="clear">"clear"</button>
     <ul id="alone"></ul>

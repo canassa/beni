@@ -87,3 +87,8 @@
 # `unkeyed_for`'s hint. Written and checked on fc4b31e.
 # All six fixed and promoted the same day (into tests/corpus/, and
 # ordering_test.zig for the swapped let).
+# CK-221 (2026-10-10), from the review of browser-direct's slice S2: a keyed
+# `For` whose key repeats matches rows by rank on browser-tea and by index
+# under S2's exact scripts on browser-direct. Written and checked on S2's
+# branch; S3's reconciler owns the fix (browser-direct.md, S3 blocker).
+tests/pending/browser/direct/DuplicateKeys.beni GoldenMismatch

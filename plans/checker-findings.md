@@ -5440,6 +5440,29 @@ written with a red fixture on `fc4b31e` before its fix.*
   `id`, else the first primitive-`eq` field of a record item by name text, else a key function.
   Promoted into `tests/corpus/`; `check/good/markup/UnkeyedFor.beni`'s golden did not move.
 
+*CK-221 was added on 2026-10-10 from the review of `browser-direct`'s slice S2 (PR #41). It is
+outside the checker (K14), catalogued here because this file and `tests/pending/` are where an
+open finding with a red fixture lives.*
+
+### CK-221 — A keyed `For` whose key repeats is matched by index, not by rank, on `browser-direct`
+
+- **Severity** unsound-runtime. **Area** `browser-direct`'s exact edit scripts
+  (`browser-direct.md` §6, as amended for S2: `removeAt`, `insert`, `prepend`, `swap`, rekey),
+  which move, add or remove the node at the edit's index. **Class** K14. **Sources** the
+  sweep's fuzz on `browser/direct/KeyedInPlace` (S2, research 67 §5), and the review of S2.
+- **Program** a keyed `For` with two rows of one key, text typed into one row's uncontrolled
+  input, then an edit at an index among them.
+- **Observed** the marked node keeps its own item: S2 matched the row by index.
+- **Expected** rows sharing a key are matched by their rank among the rows with that key
+  (`language.md` §11.9), as `browser-tea`'s reconcile does: the marked node shows the item now
+  at its rank. The DOM node is what holds typed text, scroll position and focus, so the
+  difference is a wrong answer the user sees.
+- **Fixture** `tests/pending/browser/direct/DuplicateKeys.beni`, one list per script, its
+  expected transcript `browser-tea`'s; red `GoldenMismatch`.
+- **Slice** `browser-direct` S3 (a keyed script whose key is not unique hands the edit to the
+  reconciler of §6.3). **An S3 blocker.**
+- **Status** open.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -5658,14 +5681,15 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-218 | diagnostic-quality | K13 | promoted: `check/bad/markup/ComponentChildrenNotMarkup/` | the fixes to markup's type-checking (fixed) |
 | CK-219 | diagnostic-quality | K13 | promoted: `check/bad/markup/MarkupTooDeepToCheck.beni` | the fixes to markup's type-checking (fixed) |
 | CK-220 | diagnostic-quality | K13 | promoted: `check/good/markup/UnkeyedForHint.beni` | the fixes to markup's type-checking (fixed) |
+| CK-221 | unsound-runtime | K14 | `tests/pending/browser/direct/DuplicateKeys.beni` | browser-direct S3 (open) |
 
 Totals:
-- 208 entries (CK-215 to CK-220 added 2026-09-29 from the review of markup's type-checking; CK-210 to CK-214 added 2026-09-29 from the last review of the checker; CK-202 to CK-209 added 2026-09-29 from the final review of the checker; CK-201 added 2026-09-28 by R15-fix-J, found closing CK-146; CK-200 added 2026-09-28 from a user's report; CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 35 (CK-215 from the review of markup's type-checking; CK-190 and CK-193 from R15-fix-H; CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
+- 209 entries (CK-221 added 2026-10-10 from the review of browser-direct S2; CK-215 to CK-220 added 2026-09-29 from the review of markup's type-checking; CK-210 to CK-214 added 2026-09-29 from the last review of the checker; CK-202 to CK-209 added 2026-09-29 from the final review of the checker; CK-201 added 2026-09-28 by R15-fix-J, found closing CK-146; CK-200 added 2026-09-28 from a user's report; CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 36 (CK-221 from the review of browser-direct S2; CK-215 from the review of markup's type-checking; CK-190 and CK-193 from R15-fix-H; CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 23 (CK-194 from R15-fix-I; CK-169 from R15-fix-C; CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
 - valid-program-rejected: 33 (CK-217 from the review of markup's type-checking; CK-175 from R15-fix-G; CK-172 to CK-174 from R15-fix-C; CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
 - nondeterminism: 6 (CK-202 from the final review; CK-196 from R15-fix-I; CK-179 from R15-fix-G; CK-132 among them, v1 only).
 - performance: 31 (CK-211 from the last review; CK-203 from the final review; CK-198 and CK-199 from the test budget; CK-171 from R15-fix-C; CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
 - diagnostic-quality: 52 (CK-218 to CK-220 from the review of markup's type-checking; CK-210, CK-213 and CK-214 from the last review; CK-204 to CK-209 from the final review; CK-201 from R15-fix-J; CK-200 from a user's report; CK-195 and CK-197 from R15-fix-I; CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
 - latent: 29 (CK-216 from the review of markup's type-checking; CK-212 from the last review; CK-191 and CK-192 from R15-fix-H; CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
-- Outside the checker (K14): 30 (CK-212 and CK-213; CK-206 and CK-209; CK-200; CK-190 to CK-193 from R15-fix-H; CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).
+- Outside the checker (K14): 31 (CK-221; CK-212 and CK-213; CK-206 and CK-209; CK-200; CK-190 to CK-193 from R15-fix-H; CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

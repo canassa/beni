@@ -361,6 +361,11 @@ step, the sequence shrunk, and what differs; a
 sequence of view events is printed as a `.steps` script, the red-first
 fixture of the defect. A fuzz that agreed is the `fuzz` line of the
 fixture's run hash. `zig build fuzz` runs fifty seeds of sixty steps.
+A `browser/direct/` page's fuzz is a case of its own, `<page> [value
+fuzz]`, budgeted apart from the page's: it builds the two `--fuzz` builds,
+dumps the message types and fuzzes them, messages as values included, and
+records its line in `<name>.fuzz-run-hash` (`_expected.fuzz-run-hash` in a
+project).
 
 **`emit/release/split/`** — release applications, whose golden is
 `_main.mjs` whole — are built with `--platform=browser`, the `dom` lowering

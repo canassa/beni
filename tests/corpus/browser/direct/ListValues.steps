@@ -1,0 +1,7 @@
+# Each script once, by its button.
+click #insert
+click #remove
+click #swap
+click #prepend
+click #append
+click #edit

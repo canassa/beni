@@ -1451,6 +1451,10 @@ const Page = struct {
         const ri: Path = .{ .base = r };
         // The row's root is marked for its list's walk (§4.2).
         if (marked) try js.assign(blk, try js.member(try pg.ident(e), "$r"), try pg.ident(r));
+        // In a development build, the row's root is marked with its list,
+        // so the verify mode finds a row left behind (§8.3, as amended for
+        // S2's review).
+        if (!cx.build.release) try js.assign(blk, try js.member(try pg.ident(e), "$v"), try pg.ident(desc));
         // Each handler node: its body for the list's walk, or a listener
         // of its own for an event that does not bubble.
         for (s.ops(), 0..) |op, k| switch (op.what) {
