@@ -13,18 +13,18 @@ reason. All figures are **[measured]** by the commands in §8. The design as bui
 
 ## 0. The answer in five sentences
 
-1. **Kill criterion 3 fires, on bytes.** Its speed halves pass: the hole handler is one compare
-   and one write (`emit/direct/HoleHandler`), and holes 10 000 runs at **1.08× vanilla**
-   untraced (release build: 0.070 ms against 0.065). The page's growth fails: the release bundle
-   is **662 B at 10 holes and 36 102 B at 10 000**, while vanilla's (whose growth is its HTML)
-   stays at 195 B and P3's at 442 B.
-2. **The cause is the bake rule, not the handler path.** A hole no key writes is either baked
-   into the template — only a model path whose `init` is a plain string, standing alone
-   (`write-sets.md` §9.1, B5, O8) — or written once at mount by code: a walk and a write, about
-   3.5 B brotli a hole. The sweep's page is one third `{model.name}` (baked) and two thirds
-   `{model.count}` and `class={model.cls}`. Those are an `Int` text hole and an attribute, which
-   the rule leaves to mount code. Widening the rule is O8, the owner's call. §3 has the numbers;
-   nothing was tuned to pass.
+1. **Kill criterion 3 holds, after the owner widened O8** (§3.1). It first fired on bytes: the
+   release bundle was 662 B at 10 holes and 36 102 B at 10 000. With integers, escaped strings
+   and attribute values baked into the template, it is **575 B at 10, 609 at 1 000 and 615 at
+   10 000**: 40 B of growth over a thousandfold N, between vanilla's 27 (168 → 195) and P3's 48
+   (394 → 442). The handler is one compare and one write, and holes 10 000 untraced runs at
+   **1.09× vanilla** (0.375 ms against 0.343; P3 1.13×).
+2. **The cause was the bake rule, not the handler path.** A hole no key writes was baked only
+   when it was a model path whose `init` is a plain string, standing alone. Every other one was
+   written once at mount, a walk and a write of about 3.5 B brotli each. The sweep's page is two
+   thirds `{model.count}` and `class={model.cls}`, an `Int` text hole and an attribute, so the
+   bundle grew with N. The owner widened O8 (`write-sets.md` §9.1's 2026-10-09 amendment); the
+   first measurement is kept in §3, and nothing else was tuned.
 3. **The release build is at or under 1.1× vanilla wherever S1 builds.** That covers holes,
    width up to 256, bursts and the stream. The exception is width 1 024 at 5.1×, which is V8's
    dictionary-mode spread that §13 leaves to S7. The development build pays for its verify mode
@@ -87,8 +87,13 @@ reason. All figures are **[measured]** by the commands in §8. The design as bui
   build's and `browser-tea`'s, so no value is evaluated twice that should not be.
 - **The differential fuzz.** The gates fuzz every `browser/direct/` pair without a
   `.tea-expected`, `browser-tea` against `browser-direct`, by `--fuzz` builds that take message
-  values: `Hello`, `Holes`, `MessageKeys`, `UnitHoles`, `VerifyQuiet`, `DefectAtMount`,
-  `DefectInHandler`, `DefectInListener`, `DefectInMount`. Each is one seed of thirty steps,
+  values: `Hello`, `UnitHoles`, `BakedValues`, `DefectAtMount`, `DefectInHandler`,
+  `DefectInListener`, `DefectInMount`. `Holes`, `MessageKeys` and `VerifyQuiet` would go over
+  the instruction budget with the value fuzz, so by the owner's decision of 2026-10-09 they fuzz
+  events in the gates and values in `zig build fuzz`. They are named in the walker's
+  `value_fuzz_in_sweep` with their reason, and their reports begin "value fuzz: in `zig build
+  fuzz` (budget)". With their run hashes removed and Node running, all three passed under the
+  budget. Each is one seed of thirty steps,
   recorded by `zig build test-run-hashes`; every pair agreed. By hand, value messages, including
   a constructor no code builds (`Rename`, `Unbuilt`) and a nested one (`Nested (B 9)`), give
   identical pages on all four `--fuzz` builds: direct and tea, development and release.
@@ -101,7 +106,7 @@ reason. All figures are **[measured]** by the commands in §8. The design as bui
 |---|---|---|---|
 | the hole handler | one compare and one write | `$hany` = the arm, then `$g$14()`: `const $t = String$fromInt($model.tick); if ($t !== $s) { $w.data = $t; $s = $t; }` (`emit/direct/HoleHandler.js`) | **holds** |
 | holes 10 000, untraced, release | ≤ 1.15× vanilla | **0.070 / 0.065 ms = 1.08×** (pages 0.070 and 0.075; vanilla 0.070 and 0.065). The in-page clock reads in 5 µs steps, so the ratio is ±0.08 | **holds** |
-| the page's growth with N | no more than its HTML | release bundle, minified then brotli 11: **662 B at 10, 5 215 at 1 000, 36 102 at 10 000**. Vanilla 168 → 195; P3 394 → 442 | **fires** |
+| the page's growth with N | no more than its HTML | release bundle, minified then brotli 11: **662 B at 10, 5 215 at 1 000, 36 102 at 10 000**. Vanilla 168 → 195; P3 394 → 442 | **fired** (superseded by §3.1) |
 
 **What grows.** The sweep's page repeats `<p>{model.name}</p><p>{model.count}</p><p
 class={model.cls}>x</p>`, and no key writes any of the three. `name`'s holes are baked: plain
@@ -116,6 +121,57 @@ mount that writes static holes from a table, one loop over all of them, which is
 
 **Which points the criterion judges.** Only holes 10 000 untraced (speed), the hole handler's
 shape, and the holes page's bytes. Every other figure below is informational at this slice.
+
+### 3.1 After O8 widened (the owner, 2026-10-09)
+
+The owner widened O8 rather than accept the finding (`write-sets.md` §9.1 and
+`browser-direct.md` §5.1, both amended 2026-10-09). These are now baked into the template: an
+`Int` of magnitude at most 2⁵³, printed in decimal, which is exactly the text JavaScript prints
+for it; any string but one holding NUL, escaped as the template's own text is; and a string or
+`Int` attribute value, the empty string included. A `Float`, an empty text hole and an `Int`
+past 2⁵³ stay mount code. `browser/direct/BakedValues` and `emit/direct/BakedValues` pin every
+case, fuzzed and verified on both platforms. Re-measured the same day
+(`results/2026-10-09-s1-baked-*.json`):
+
+| part | bar | measured | verdict |
+|---|---|---|---|
+| the hole handler | one compare and one write | unchanged | **holds** |
+| holes 10 000, untraced, release | ≤ 1.15× vanilla | **0.375 / 0.343 ms = 1.09×** (P3 1.13×, Solid 1 1.62×) | **holds** |
+| the page's growth with N | no more than its HTML | **575 B at 10, 609 at 1 000, 615 at 10 000** (brotli 11). Vanilla 168 → 195 (+27); P3 394 → 442 (+48); beni-direct +40 | **holds** |
+
+Holes, release bundle, minified then brotli 11 / gzip -9, bytes:
+
+| point | beni `--release` | beni-direct `--release` | Solid 1 | vanilla | P3 |
+|--:|--:|--:|--:|--:|--:|
+| 10 | 1248 / 1419 | 575 / 682 | 2948 / 3276 | 168 / 253 | 394 / 482 |
+| 30 | 1487 / 1741 | 592 / 700 | 3142 / 3542 | 180 / 269 | 415 / 498 |
+| 100 | 2136 / 2819 | 608 / 724 | 3754 / 4516 | 192 / 290 | 431 / 523 |
+| 300 | 3532 / 5629 | 609 / 744 | 5184 / 7222 | 194 / 310 | 430 / 545 |
+| 1000 | 8348 / 15673 | 609 / 813 | 9105 / 16713 | 194 / 363 | 433 / 610 |
+| 3000 | 20445 / 42653 | 609 / 959 | 20066 / 40409 | 195 / 512 | 437 / 768 |
+| 10000 | 62296 / 128268 | 615 / 1409 | 55497 / 109799 | 195 / 946 | 442 / 1206 |
+
+Width, the other sweep whose holes were not baked before (`scaling-sizes.mjs`):
+
+| point | beni `--release` | beni-direct `--release` | Solid 1 | vanilla |
+|--:|--:|--:|--:|--:|
+| 4 | 1137 / 1284 | 569 / 675 | 4037 / 4454 | 208 / 305 |
+| 16 | 1479 / 1750 | 642 / 763 | 4192 / 4639 | 255 / 365 |
+| 64 | 2480 / 3612 | 829 / 1072 | 4595 / 5366 | 362 / 562 |
+
+The ~400 B beni-direct carries over vanilla at every point is a constant: the runtime's attribute
+and text writes, `send`, and the program's frame. It does not grow with N. Holes, untraced, median
+script ms (× vanilla):
+
+| point | beni-release | beni-direct | beni-direct-release | P3 | Solid 1 | vanilla |
+|--:|--:|--:|--:|--:|--:|--:|
+| 10 | 0.085 (1.42) | 0.075 (1.25) | 0.070 (1.17) | 0.067 (1.12) | 0.095 (1.58) | 0.060 |
+| 1000 | 0.455 (1.29) | 0.563 (1.60) | 0.343 (0.97) | 0.365 (1.04) | 0.510 (1.45) | 0.352 |
+| 10000 | 0.530 (1.55) | 2.340 (6.83) | 0.375 (1.09) | 0.387 (1.13) | 0.555 (1.62) | 0.343 |
+
+This batch's absolute times are about five times §3's for every subject alike, vanilla included.
+The ratios are what is compared. The development build's verify mode now checks the baked holes
+too, as text; `beni-direct` at 10 000 is 6.8×, a development-only cost (§5).
 
 ## 4. Every benchmark (the owner's addition)
 
@@ -429,10 +485,9 @@ value, S3; its rows are a `For`, S2).
 
 ## 5. Walls and findings
 
-- **Kill criterion 3 fires on bytes** (§3). This is the decision §13 says stops the design at
-  S1: "the page grows with N by more than the HTML — the handler path is not direct". The
-  handler path is direct. The growth is the narrowed bake rule, which leaves an `Int` hole or an
-  attribute that never changes to mount code. That is reported, not restated.
+- **Kill criterion 3 fired on bytes** (§3), and was reported as found. The handler path is
+  direct; the growth came from the narrow bake rule. The owner widened O8, and the criterion
+  holds (§3.1).
 - **The development verify mode is not "today's cost"** (§4.1). It is 0.6 ms a message at
   10 000 holes against 0.1. A development-only cost, and no criterion judges it.
 - **Batches over fifteen minutes.** The traced width-burst-stream batch took 23 minutes,
@@ -441,8 +496,8 @@ value, S3; its rows are a `For`, S2).
   with two more builds and a dump each, and 55 pages went over budget. The manager decided the
   split in `browser-direct.md`'s amendment. Three `browser/direct/` pages are over the budget
   with the value fuzz: `Holes` 4 597, `MessageKeys` 4 382 and `VerifyQuiet` 5 007 million
-  instructions. They pass the gates on recorded run hashes, as `ApiAndRoutes` does; not
-  trimmed.
+  instructions. By the owner's decision they fuzz events in the gates and values in `zig build
+  fuzz` (§2, `browser-direct.md` §8.3's amendment). No budget was raised and nothing was trimmed.
 - **`zig build fuzz -Dcorpus=tea/HttpDefect` now builds** with its own `platform/`, but its
   development build does not replay itself (seed 1, step 4): a fuzzer determinism finding on
   that page, sweep-only.
