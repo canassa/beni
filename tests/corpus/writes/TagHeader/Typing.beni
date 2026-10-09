@@ -1,0 +1,28 @@
+--! `writes/TagHeader/`'s editor: typing rebuilds the `Editor` page with its
+--! own constructor, `node ρ`, which keeps the tag the header reads. The
+--! header is `static`; the title is `dynamic`.
+
+import Browser
+import Html exposing (Html)
+import Shared
+import Tea
+
+
+type Msg
+    = Typed String
+
+
+update : Msg, Shared.Model → Shared.Model
+update msg model =
+    case msg of
+        Typed text →
+            case model of
+                Shared.Editor ed →
+                    Shared.Editor { ed | title = text }
+
+                _ →
+                    model
+
+
+main : Browser.Program
+main = Tea.sandbox { init = Shared.start, update = update, view = Shared.view }

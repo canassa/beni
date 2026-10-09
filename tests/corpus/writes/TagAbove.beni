@@ -1,0 +1,77 @@
+-- writes: a `value` write two levels above a tag read reaches it
+-- (`write-sets.md`, amended 2026-10-09: tag reads). `Reset` replaces
+-- `ρ.outer` with a value the pass cannot relate to the old one
+-- (`value ρ.outer`), so the constructor at `ρ.outer.mid.inner` may change and
+-- the hole reading `tag ρ.outer.mid.inner` is `dynamic`. `Bump` rebuilds
+-- `ρ.side` with its own constructor (`node`), so the hole reading
+-- `tag ρ.side` is `static`; it read ρ.side whole, and was `dynamic`, before
+-- tag reads.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Phase
+    = Idle
+    | Running Int
+
+
+type alias Mid =
+    inner : Phase
+
+
+type alias Outer =
+    mid : Mid
+    note : String
+
+
+type alias Model =
+    outer : Outer
+    side : Phase
+
+
+type Msg
+    = Reset
+    | Bump
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Reset →
+            { model | outer = List.foldl [] model.outer λ_ acc → acc }
+
+        Bump →
+            case model.side of
+                Running n →
+                    { model | side = Running (n + 1) }
+
+                Idle →
+                    model
+
+
+phaseName : Phase → String
+phaseName phase =
+    case phase of
+        Idle →
+            "idle"
+
+        Running _ →
+            "running"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{phaseName model.outer.mid.inner}</p>
+        <p>{phaseName model.side}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = { outer = { mid = { inner = Idle }, note = "" }, side = Idle }
+        , update = update
+        , view = view
+        }

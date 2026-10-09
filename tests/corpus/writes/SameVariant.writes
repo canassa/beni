@@ -7,7 +7,7 @@ program SameVariant.main : Tea.sandbox
   key Settle                                      exact      node ρ; node ρ.phase; value ρ.phase.Saved#0
   key Fail                                        exact      node ρ; value ρ.status
   keys 4: bounded 4 (100%), exact 4, indexed 0, structural 0, * 0; capped 0
-  hole SameVariant.beni:88:9                      dynamic    reads ρ.status; ρ.status.Loaded#0.body
+  hole SameVariant.beni:88:9                      dynamic    reads tag ρ.status; ρ.status.Loaded#0.body
   hole SameVariant.beni:90:20                     dynamic    reads ρ.status.Loaded#0.body
   holes 2: static 0, literal 0, static-key 0, dynamic 2
   site SameVariant.beni:87:5                      unique
@@ -17,6 +17,6 @@ program SameVariant.main : Tea.sandbox
   markup_value_roots 0 (0% of 3 sites)
   carriers no
   constructors 4: under * 0 (0%)
-  pairs 3 over 4 keys and 2 groups (0.75 per key); every key calls 0 of 2 groups (0%)
+  pairs 2 over 4 keys and 2 groups (0.50 per key); every key calls 0 of 2 groups (0%)
   reconciler 0 of 0 lists
   patchAll <none>

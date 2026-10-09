@@ -5,7 +5,7 @@ program N2Toggle.main : Tea.sandbox
   key (any)                                       structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
   keys 1: bounded 1 (100%), exact 0, indexed 0, structural 1, * 0; capped 0
   hole N2Toggle.beni:43:10                        dynamic    reads ρ.todos
-  hole N2Toggle.beni:44:23                        dynamic    reads ρ.todos[*].completed
+  hole N2Toggle.beni:44:23                        dynamic    reads tag ρ.todos[*].completed
   hole N2Toggle.beni:44:66                        static     reads ρ.todos[*].title
   holes 3: static 1, literal 0, static-key 0, dynamic 2
   site N2Toggle.beni:42:5                         unique

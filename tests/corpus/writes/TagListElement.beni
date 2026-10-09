@@ -1,0 +1,71 @@
+-- writes: a list element's tag (`write-sets.md`, amended 2026-10-09: tag
+-- reads). A row of a `For` over `ρ.items` reads `tag ρ.items[*]`. `Finish`
+-- sets one element to another constructor, `value ρ.items[i]`, which may be
+-- any row (`[i]` may coincide with `[*]`), so that row hole is `dynamic`.
+-- `Rename` maps `ρ.notes` with each element rebuilt by its own constructor:
+-- `node ρ.notes[*]` keeps every tag, and the row hole reading
+-- `tag ρ.notes[*]` is `static`; it read the element whole, and was
+-- `dynamic`, before tag reads.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Item
+    = Todo String
+    | Done String
+
+
+type alias Model =
+    items : List Item
+    notes : List Item
+
+
+type Msg
+    = Finish Int
+    | Rename String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Finish i →
+            { model | items = List.set model.items i (Done "") }
+
+        Rename text →
+            { model
+                | notes =
+                    List.map model.notes λitem →
+                        case item of
+                            Todo _ →
+                                Todo text
+
+                            Done _ →
+                                item
+            }
+
+
+state : Item → String
+state item =
+    case item of
+        Todo _ →
+            "todo"
+
+        Done _ →
+            "done"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <ul>
+            <For each={model.items} keyed={False}>{λitem → <li>{state item}</li>}</For>
+        </ul>
+        <ul>
+            <For each={model.notes} keyed={False}>{λnote → <li>{state note}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { items = [], notes = [] }, update = update, view = view }

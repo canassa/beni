@@ -1,0 +1,129 @@
+-- writes: a tag read and the k-limit (`write-sets.md` §2.2, amended
+-- 2026-10-09: tag reads). A `case` on the union at depth 8, the limit, reads
+-- `tag ρ.l1.l2.l3.l4.l5.l6.l7.top`: the tag goes no deeper, so it is kept.
+-- A `case` on the union at depth 9 is past the cut, where the path is not
+-- represented: it reads its 8-step prefix WHOLE, never a tag. `Poke` writes a
+-- field at depth 9, which is `value` at the same prefix (§2.2), so that hole
+-- is `dynamic`; the depth-8 hole, whose union nothing writes, is `static`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Phase
+    = Idle
+    | Running Int
+
+
+type alias Deep =
+    phase : Phase
+    count : Int
+
+
+type alias L7 =
+    top : Phase
+    deep : Deep
+
+
+type alias L6 =
+    l7 : L7
+
+
+type alias L5 =
+    l6 : L6
+
+
+type alias L4 =
+    l5 : L5
+
+
+type alias L3 =
+    l4 : L4
+
+
+type alias L2 =
+    l3 : L3
+
+
+type alias L1 =
+    l2 : L2
+
+
+type alias Model =
+    l1 : L1
+
+
+type Msg
+    = Poke
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Poke →
+            v1 = model.l1
+            v2 = v1.l2
+            v3 = v2.l3
+            v4 = v3.l4
+            v5 = v4.l5
+            v6 = v5.l6
+            v7 = v6.l7
+            v8 = v7.deep
+            { model
+                | l1 =
+                    { v1
+                        | l2 =
+                            { v2
+                                | l3 =
+                                    { v3
+                                        | l4 =
+                                            { v4
+                                                | l5 =
+                                                    { v5
+                                                        | l6 =
+                                                            { v6
+                                                                | l7 =
+                                                                    { v7
+                                                                        | deep = { v8 | count = 1 }
+                                                                    }
+                                                            }
+                                                    }
+                                            }
+                                    }
+                            }
+                    }
+            }
+
+
+phaseName : Phase → String
+phaseName phase =
+    case phase of
+        Idle →
+            "idle"
+
+        Running _ →
+            "running"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{phaseName model.l1.l2.l3.l4.l5.l6.l7.top}</p>
+        <p>{phaseName model.l1.l2.l3.l4.l5.l6.l7.deep.phase}</p>
+    </main>
+
+
+start : Model
+start =
+    { l1 =
+        { l2 =
+            { l3 =
+                { l4 = { l5 = { l6 = { l7 = { top = Idle, deep = { phase = Idle, count = 0 } } } } }
+                }
+            }
+        }
+    }
+
+
+main : Browser.Program
+main = Tea.sandbox { init = start, update = update, view = view }

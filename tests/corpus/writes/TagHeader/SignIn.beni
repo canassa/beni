@@ -1,0 +1,37 @@
+--! `writes/TagHeader/` with sign-in: `SignedIn` keeps the page and replaces
+--! its session (`value ρ.Editor#0.session`), which the header reads whole,
+--! so it is `dynamic` though `tag ρ` is untouched.
+
+import Browser
+import Html exposing (Html)
+import Shared
+import Tea
+
+
+type Msg
+    = Typed String
+    | SignedIn String
+
+
+update : Msg, Shared.Model → Shared.Model
+update msg model =
+    case msg of
+        Typed text →
+            case model of
+                Shared.Editor ed →
+                    Shared.Editor { ed | title = text }
+
+                _ →
+                    model
+
+        SignedIn name →
+            case model of
+                Shared.Editor ed →
+                    Shared.Editor { ed | session = Shared.LoggedIn name }
+
+                Shared.Home h →
+                    Shared.Home { h | session = Shared.LoggedIn name }
+
+
+main : Browser.Program
+main = Tea.sandbox { init = Shared.start, update = update, view = Shared.view }

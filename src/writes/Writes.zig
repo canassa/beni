@@ -183,6 +183,11 @@ pub const PathKind = enum(u32) {
     index,
     /// `[*]`.
     star,
+    /// A **tag read** (write-sets.md, amended 2026-10-09: tag reads): not a
+    /// step into the value but the read of which constructor the parent path
+    /// holds. Only reads carry it — a `case`'s scrutiny, a tag fact's path —
+    /// and it is exempt from the k-limit, since it goes no deeper.
+    tag,
 };
 
 pub const rho_path: u32 = 0;
@@ -234,7 +239,9 @@ pub const Tag = enum(u32) {
     fresh,
     /// `[tag, kind, module, x, inst, env*]` (`FunKind`).
     fun,
-    /// `[tag, scrutinee, keyed, (gamma, term)*]`.
+    /// `[tag, scrutinee, keyed, reads, (gamma, term)*]`: `reads` is what
+    /// deciding the choice read (a deps id: a `case`'s pattern reads), or
+    /// `none` for the scrutinee's dependencies.
     alt,
     /// `[tag, fn, args*]`: a call through a function-valued parameter.
     app,
@@ -765,11 +772,22 @@ pub fn rootOf(a: *const Writes, p: u32) u32 {
 
 /// `p` extended by one step, or null past k (§2.2).
 fn extend(a: *Writes, p: u32, kind: PathKind, x: u32, y: u32) Allocator.Error!?u32 {
-    if (a.pathLen(p) >= k_limit) {
+    if (kind != .tag and a.pathLen(p) >= k_limit) {
         if (a.ctx.mode == .key) a.ctx.caps.k = true;
         return null;
     }
     return try a.mkPath(p, kind, x, y);
+}
+
+/// The tag read at `p` (write-sets.md, amended 2026-10-09: tag reads).
+fn tagRead(a: *Writes, p: u32) Allocator.Error!u32 {
+    if (a.isTagRead(p)) return p;
+    return a.mkPath(p, .tag, 0, 0);
+}
+
+/// Whether `p` is a tag read: the read of which constructor its parent holds.
+pub fn isTagRead(a: *const Writes, p: u32) bool {
+    return a.pathParent(p) != none and a.pathKind(p) == .tag;
 }
 
 fn hasStarOrUnknown(a: *const Writes, p: u32) bool {
@@ -1267,7 +1285,8 @@ const AltItem = struct { gamma: u32, term: u32 };
 /// An `Alt`. A plain one wider than A is `Fresh` of everything it reads
 /// (§3.1); a keyed one is bounded by its type. Keyed `Alt`s do not count
 /// toward the depth (write-sets.md, amended 2026-10-08 by research 63).
-fn mkAlt(a: *Writes, scrut: u32, keyed: bool, items_in: []const AltItem) Error!u32 {
+fn mkAlt(a: *Writes, scrut: u32, keyed: bool, reads_in: u32, items_in: []const AltItem) Error!u32 {
+    var reads = reads_in;
     // Normal form: a plain alternative that is itself a plain `Alt` on the
     // same choice (or on none) is its alternatives, under both sets of
     // facts; ⊥ (`Alt([])`) joins as nothing; equal alternatives are one.
@@ -1282,6 +1301,8 @@ fn mkAlt(a: *Writes, scrut: u32, keyed: bool, items_in: []const AltItem) Error!u
             continue;
         }
         if (a.termTag(t) == .alt and a.termWord(t, 2) == 0 and (a.termWord(t, 1) == none or a.termWord(t, 1) == scrut)) {
+            const inner_reads = a.termWord(t, 3);
+            if (inner_reads != reads) reads = try a.depsUnion(try a.altReadsOf(scrut, reads), try a.altReadsOf(a.termWord(t, 1), inner_reads));
             for (0..a.altLen(t)) |i| {
                 const inner = a.altItem(t, @intCast(i));
                 const g = (try a.gammaJoin(it.gamma, inner.gamma)) orelse continue;
@@ -1292,10 +1313,10 @@ fn mkAlt(a: *Writes, scrut: u32, keyed: bool, items_in: []const AltItem) Error!u
         try appendAlt(a, &flat, it);
     }
     const items = flat.items;
-    if (scrut == none and items.len == 1 and items[0].gamma == 0) return items[0].term;
+    if (scrut == none and (reads == none or reads == 0) and items.len == 1 and items[0].gamma == 0) return items[0].term;
     if (!keyed and items.len > cap_alt) {
         a.ctx.caps.a = true;
-        var d: u32 = if (scrut == none) 0 else try a.deps(scrut);
+        var d: u32 = try a.altReadsOf(scrut, reads);
         for (items) |it| {
             d = try a.depsUnion(d, try a.deps(it.term));
             d = try a.depsUnion(d, try a.gammaDeps(it.gamma));
@@ -1303,7 +1324,7 @@ fn mkAlt(a: *Writes, scrut: u32, keyed: bool, items_in: []const AltItem) Error!u
         return a.mkFresh(d);
     }
     const mark = a.scratch.items.len;
-    try a.scratch.appendSlice(a.gpa, &.{ @backingInt(Tag.alt), scrut, @intFromBool(keyed) });
+    try a.scratch.appendSlice(a.gpa, &.{ @backingInt(Tag.alt), scrut, @intFromBool(keyed), reads });
     var depth: u32 = 0;
     for (items) |it| {
         try a.scratch.appendSlice(a.gpa, &.{ it.gamma, it.term });
@@ -1318,15 +1339,22 @@ fn appendAlt(a: *Writes, list: *std.ArrayList(AltItem), it: AltItem) Allocator.E
 }
 
 fn altLen(a: *const Writes, t: u32) u32 {
-    return (a.termLen(t) - 3) / 2;
+    return (a.termLen(t) - 4) / 2;
 }
 
 fn altItem(a: *const Writes, t: u32, i: u32) AltItem {
-    return .{ .gamma = a.termWord(t, 3 + 2 * i), .term = a.termWord(t, 4 + 2 * i) };
+    return .{ .gamma = a.termWord(t, 4 + 2 * i), .term = a.termWord(t, 5 + 2 * i) };
+}
+
+/// What deciding an `Alt`'s choice read: its own `reads`, or, when it has
+/// none, its scrutinee's dependencies (§3.6, A6).
+fn altReadsOf(a: *Writes, scrut: u32, reads: u32) Allocator.Error!u32 {
+    if (reads != none) return reads;
+    return if (scrut == none) 0 else a.deps(scrut);
 }
 
 fn bottom(a: *Writes) Error!u32 {
-    return a.mkAlt(none, false, &.{});
+    return a.mkAlt(none, false, none, &.{});
 }
 
 // ---- deps (§3.6, *Dependencies*) -------------------------------------------
@@ -1336,7 +1364,8 @@ fn gammaDeps(a: *Writes, g: u32) Allocator.Error!u32 {
     defer a.scratch.shrinkRetainingCapacity(mark);
     for (0..a.gammaLen(g)) |i| {
         const f = a.gammaFact(g, i);
-        if (f.kind == .pos or f.kind == .neg) try a.scratch.append(a.gpa, f.key);
+        // A tag fact's path is read for its tag only (amended 2026-10-09).
+        if (f.kind == .pos or f.kind == .neg) try a.scratch.append(a.gpa, try a.tagRead(f.key));
     }
     return a.mkDeps(a.scratch.items[mark..]);
 }
@@ -1378,8 +1407,7 @@ fn deps(a: *Writes, t: u32) Allocator.Error!u32 {
             }
         },
         .alt => {
-            const s = a.termWord(t, 1);
-            if (s != none) d = try a.deps(s);
+            d = try a.altReadsOf(a.termWord(t, 1), a.termWord(t, 3));
             for (0..a.altLen(t)) |i| {
                 const it = a.altItem(t, @intCast(i));
                 d = try a.depsUnion(d, try a.gammaDeps(it.gamma));
@@ -1498,7 +1526,7 @@ fn cutNode(a: *Writes, t: u32, level: u32) Error!u32 {
                 it.* = a.altItem(t, @intCast(i));
                 it.term = try a.cut(it.term, next);
             }
-            return a.mkAlt(a.termWord(t, 1), keyed, items);
+            return a.mkAlt(a.termWord(t, 1), keyed, a.termWord(t, 3), items);
         },
         else => return t,
     }
@@ -1545,7 +1573,7 @@ fn proj(a: *Writes, t: u32, kind: PathKind, x: u32, y: u32) Error!u32 {
                 const it = a.altItem(t, @intCast(i));
                 try items.append(a.gpa, .{ .gamma = it.gamma, .term = try a.proj(it.term, kind, x, y) });
             }
-            return a.mkAlt(a.termWord(t, 1), a.termWord(t, 2) == 1, items.items);
+            return a.mkAlt(a.termWord(t, 1), a.termWord(t, 2) == 1, a.termWord(t, 3), items.items);
         },
         else => {},
     }
@@ -1738,6 +1766,47 @@ fn negationOf(a: *Writes, m: u32, pat: Inst.Index, v: u32) Error!?Fact {
     }
 }
 
+/// What matching `pat` against `v` reads (write-sets.md, amended 2026-10-09:
+/// tag reads): a constructor pattern on a path reads the tag there and
+/// nothing more, its sub-patterns read below it; a literal or list pattern
+/// reads the value it tests; a value that is not a path (`Fresh`, an `Alt`,
+/// one the k-limit cut) is read whole. A known constructor reads nothing.
+fn patReads(a: *Writes, f: *Frame, pat: Inst.Index, v: u32, out: *u32) Error!void {
+    const b = a.bir(f.m);
+    const data = b.instData(pat);
+    switch (b.instTag(pat)) {
+        .pat_wild, .pat_var, .pat_unit, .pat_record => {},
+        .pat_as => try a.patReads(f, @fromBackingInt(data.lhs), v, out),
+        .pat_ctor => {
+            const c = a.ctorTarget(f.m, @fromBackingInt(data.lhs)) orelse {
+                out.* = try a.depsUnion(out.*, try a.deps(v));
+                return;
+            };
+            switch (a.termTag(v)) {
+                .same => if (a.siblings(c).count > 1) {
+                    out.* = try a.depsUnion(out.*, try a.depsOfPath(try a.tagRead(a.termWord(v, 1))));
+                },
+                .con => if (a.termWord(v, 1) != c) return,
+                else => {
+                    out.* = try a.depsUnion(out.*, try a.deps(v));
+                    return;
+                },
+            }
+            const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index);
+            for (args, 0..) |arg, j| try a.patReads(f, arg, try a.proj(v, .ctor, c, @intCast(j)), out);
+        },
+        .pat_tuple => {
+            if (a.termTag(v) != .same and a.termTag(v) != .tup) {
+                out.* = try a.depsUnion(out.*, try a.deps(v));
+                return;
+            }
+            const items = b.extraSlice(Bir.inlineRange(data), Inst.Index);
+            for (items, 0..) |item, j| try a.patReads(f, item, try a.proj(v, .tuple, @intCast(j), 0), out);
+        },
+        else => out.* = try a.depsUnion(out.*, try a.deps(v)),
+    }
+}
+
 fn parseInt(text: []const u8) ?i64 {
     var t = text;
     var neg = false;
@@ -1898,7 +1967,7 @@ fn recordUpdate(a: *Writes, base: u32, pairs: [][2]u32) Error!u32 {
                 const copy = try a.arena().dupe([2]u32, pairs);
                 try items.append(a.gpa, .{ .gamma = it.gamma, .term = try a.recordUpdate(it.term, copy) });
             }
-            return a.mkAlt(a.termWord(base, 1), a.termWord(base, 2) == 1, items.items);
+            return a.mkAlt(a.termWord(base, 1), a.termWord(base, 2) == 1, a.termWord(base, 3), items.items);
         },
         else => return a.mkRec(none, 2 + try a.deps(base), pairs),
     }
@@ -1921,7 +1990,7 @@ fn caseOn(a: *Writes, f: *Frame, s: u32, branches: []const Inst.Index, g: u32) E
         }
         // Plain: a keyed `Alt` is a `case` on a path (§3.1); this one is a join
         // over another `Alt`'s alternatives, which counts against A and depth.
-        return a.mkAlt(s, false, items.items);
+        return a.mkAlt(s, false, none, items.items);
     }
     var items: std.ArrayList(AltItem) = .empty;
     defer items.deinit(a.gpa);
@@ -1955,7 +2024,12 @@ fn caseOn(a: *Writes, f: *Frame, s: u32, branches: []const Inst.Index, g: u32) E
         if (try a.negationOf(f.m, pat, s)) |neg| try negs.append(a.gpa, neg);
     }
     if (a.termTag(s) != .same) keyed = false;
-    return a.mkAlt(s, keyed, items.items);
+    // What choosing the arm read: the tag at each path a constructor
+    // pattern tests, the whole value where a pattern tests more (amended
+    // 2026-10-09: tag reads).
+    var reads: u32 = 0;
+    for (branches) |br| try a.patReads(f, @fromBackingInt(b.instData(br).lhs), s, &reads);
+    return a.mkAlt(s, keyed, reads, items.items);
 }
 
 fn boolPattern(a: *Writes, m: u32, pat: Inst.Index) ?bool {
@@ -2200,7 +2274,7 @@ fn apply(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
                 const g2 = (try a.gammaJoin(g, it.gamma)) orelse continue;
                 try items.append(a.gpa, .{ .gamma = it.gamma, .term = try a.apply(it.term, args, g2) });
             }
-            return a.mkAlt(a.termWord(fun, 1), a.termWord(fun, 2) == 1, items.items);
+            return a.mkAlt(a.termWord(fun, 1), a.termWord(fun, 2) == 1, a.termWord(fun, 3), items.items);
         },
         .same => {
             const r = a.rootOf(a.termWord(fun, 1));
@@ -2256,7 +2330,7 @@ fn applyClosure(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
 
 fn joinTry(a: *Writes, f: *Frame, r: u32) Error!u32 {
     if (f.try_deps == 0) return r;
-    return a.mkAlt(none, false, &.{ .{ .gamma = 0, .term = r }, .{ .gamma = 0, .term = try a.mkFresh(f.try_deps) } });
+    return a.mkAlt(none, false, none, &.{ .{ .gamma = 0, .term = r }, .{ .gamma = 0, .term = try a.mkFresh(f.try_deps) } });
 }
 
 fn directKey(m: u32, d: u32) u64 {
@@ -2465,6 +2539,10 @@ fn substDeps(a: *Writes, sub: *const Subst, d: u32) Error!u32 {
     for (0..n) |i| {
         const p = a.deps_t.word(d, i);
         if (a.substRoot(sub, a.rootOf(p)) != null) {
+            if (a.isTagRead(p)) {
+                out = try a.depsUnion(out, try a.tagDeps(try a.substPath(sub, a.pathParent(p))));
+                continue;
+            }
             out = try a.depsUnion(out, try a.deps(try a.substPath(sub, p)));
         } else {
             out = try a.depsUnion(out, try a.depsOfPath(p));
@@ -2476,6 +2554,16 @@ fn substDeps(a: *Writes, sub: *const Subst, d: u32) Error!u32 {
 /// Γ under the substitution: facts on the callee's roots move to the
 /// argument's path, are decided by a known shape (an alternative whose fact
 /// is false is dropped: null), or are dropped (§4.2).
+/// What reading the tag of a value reads: the tag at its path, nothing for
+/// a value whose constructor is known, everything it depends on otherwise.
+fn tagDeps(a: *Writes, v: u32) Allocator.Error!u32 {
+    return switch (a.termTag(v)) {
+        .same => a.depsOfPath(try a.tagRead(a.termWord(v, 1))),
+        .con, .lit => 0,
+        else => a.deps(v),
+    };
+}
+
 fn substGamma(a: *Writes, sub: *const Subst, g: u32) Error!?u32 {
     if (g == 0) return 0;
     var facts: std.ArrayList(Fact) = .empty;
@@ -2588,6 +2676,8 @@ fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
         .alt => {
             const scrut = a.termWord(t, 1);
             const s2 = if (scrut == none) none else try a.subst(sub, scrut);
+            const reads = a.termWord(t, 3);
+            const reads2 = if (reads == none) none else try a.substDeps(sub, reads);
             var items: std.ArrayList(AltItem) = .empty;
             defer items.deinit(a.gpa);
             const n = a.altLen(t);
@@ -2601,7 +2691,7 @@ fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
                 const sub2: Subst = .{ .id = sub.id, .fn_id = sub.fn_id, .args = sub.args, .g = joined };
                 try items.append(a.gpa, .{ .gamma = g2, .term = try a.subst(&sub2, it.term) });
             }
-            return a.mkAlt(s2, a.termWord(t, 2) == 1, items.items);
+            return a.mkAlt(s2, a.termWord(t, 2) == 1, reads2, items.items);
         },
     }
 }
@@ -2787,7 +2877,7 @@ fn maybeOf(a: *Writes, v: u32) Error!u32 {
     if (a.ctor_just == none or a.ctor_nothing == none) return a.mkFresh(try a.deps(v));
     const just = try a.mkCon(a.ctor_just, &.{v});
     const nothing = try a.mkCon(a.ctor_nothing, &.{});
-    return a.mkAlt(none, false, &.{ .{ .gamma = 0, .term = just }, .{ .gamma = 0, .term = nothing } });
+    return a.mkAlt(none, false, none, &.{ .{ .gamma = 0, .term = just }, .{ .gamma = 0, .term = nothing } });
 }
 
 fn keepsOrDrops(a: *Writes, r: u32, eps: u32) bool {
@@ -3536,6 +3626,14 @@ fn mayPrefix(a: *const Writes, p: u32, q: u32) bool {
 }
 
 pub fn conflicts(a: *const Writes, r: u32, ws: []const Write) bool {
+    // A tag read at `p` conflicts with a `value` write at `p` or at a
+    // prefix of it, and with nothing else: a `node` write keeps the tag, and
+    // a write below `p` is under a `node` at `p` (amended 2026-10-09).
+    if (a.isTagRead(r)) {
+        const p = a.pathParent(r);
+        for (ws) |w| if (w.kind == .value and a.mayPrefix(w.path, p)) return true;
+        return false;
+    }
     for (ws) |w| {
         switch (w.kind) {
             .value => if (a.mayPrefix(w.path, r) or a.mayPrefix(r, w.path)) return true,
@@ -4010,6 +4108,15 @@ fn isPlainStringLit(a: *Writes, t: u32) bool {
 fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
     const out = try a.arena().alloc(Hole, a.holes.items.len);
     for (a.holes.items, out) |*h, *o| {
+        // A tag read under a whole read of its path or a prefix of it adds
+        // nothing: the whole read conflicts with every write the tag read does.
+        var n: usize = 0;
+        for (h.reads.items) |r| {
+            if (a.isTagRead(r) and a.wholeReadAbove(h.reads.items, a.pathParent(r))) continue;
+            h.reads.items[n] = r;
+            n += 1;
+        }
+        h.reads.shrinkRetainingCapacity(n);
         std.mem.sort(u32, h.reads.items, {}, std.sort.asc(u32));
         var bake = h.literal_ok and h.alone and h.kind == .child and h.literal_path != HoleAcc.unvisited;
         if (bake and h.literal_path != HoleAcc.string_literal) {
@@ -4033,6 +4140,19 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
         };
     }
     return out;
+}
+
+fn wholeReadAbove(a: *const Writes, reads: []const u32, p: u32) bool {
+    for (reads) |r| {
+        if (a.isTagRead(r)) continue;
+        var q = p;
+        while (true) {
+            if (q == r) return true;
+            q = a.pathParent(q);
+            if (q == none) break;
+        }
+    }
+    return false;
 }
 
 /// Each site's class (browser-direct.md §5.2, and its S0 amendment), in the
@@ -4289,7 +4409,12 @@ fn stepOrder(a: *const Writes, x: u32, y: u32) std.math.Order {
     if (x == y) return .eq;
     const kx = a.pathKind(x);
     const ky = a.pathKind(y);
-    if (kx != ky) return std.math.order(@backingInt(kx), @backingInt(ky));
+    if (kx != ky) {
+        // A tag read sorts right after its path.
+        if (kx == .tag) return .lt;
+        if (ky == .tag) return .gt;
+        return std.math.order(@backingInt(kx), @backingInt(ky));
+    }
     switch (kx) {
         .field => return std.mem.order(u8, a.in.interner.slice(@fromBackingInt(a.pathA(x))), a.in.interner.slice(@fromBackingInt(a.pathA(y)))),
         .tuple => return std.math.order(a.pathA(x), a.pathA(y)),
@@ -4315,6 +4440,10 @@ fn stepOrder(a: *const Writes, x: u32, y: u32) std.math.Order {
 }
 
 pub fn writePath(a: *const Writes, w: *std.Io.Writer, p: u32) std.Io.Writer.Error!void {
+    if (a.isTagRead(p)) {
+        try w.writeAll("tag ");
+        return a.writePath(w, a.pathParent(p));
+    }
     var buf: [k_limit + 1]u32 = undefined;
     const root = a.rootOf(p);
     switch (a.pathKind(root)) {

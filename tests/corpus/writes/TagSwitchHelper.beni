@@ -1,0 +1,93 @@
+-- writes: a page switch hidden in a helper must still reach a tag read
+-- (`write-sets.md`, amended 2026-10-09: tag reads). `settle` rebuilds `Ready`
+-- in one arm — the same constructor, `node` — and switches `Waiting` to
+-- `Ready` in the other, so the join is `value ρ.page` and the hole that
+-- reads only which constructor the page has is `dynamic`. `Bump` rebuilds
+-- the panel with its own constructor (`node ρ.panel`), so the hole that
+-- reads only the panel's tag is `static`: before tag reads it read the
+-- panel whole and was `dynamic`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Page
+    = Waiting
+    | Ready Int
+
+
+type Panel
+    = Open Int
+    | Closed
+
+
+type alias Model =
+    page : Page
+    panel : Panel
+
+
+type Msg
+    = Settle
+    | Bump
+
+
+settle : Page → Page
+settle page =
+    case page of
+        Ready n →
+            Ready (n + 1)
+
+        Waiting →
+            Ready 0
+
+
+bump : Panel → Panel
+bump panel =
+    case panel of
+        Open n →
+            Open (n + 1)
+
+        Closed →
+            panel
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Settle →
+            { model | page = settle model.page }
+
+        Bump →
+            { model | panel = bump model.panel }
+
+
+pageName : Page → String
+pageName page =
+    case page of
+        Waiting →
+            "waiting"
+
+        Ready _ →
+            "ready"
+
+
+panelName : Panel → String
+panelName panel =
+    case panel of
+        Open _ →
+            "open"
+
+        Closed →
+            "closed"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{pageName model.page}</p>
+        <p>{panelName model.panel}</p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { page = Waiting, panel = Closed }, update = update, view = view }

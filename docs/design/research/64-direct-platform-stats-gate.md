@@ -219,3 +219,47 @@ two `Html.map` shapes that are not carriers), `writes/StatsConstructors` (sub-me
 and default-child counting, one `*`), `writes/StatsPairs` (groups by site and read set, the
 every-key share), and `writes/ReadsOfShape` (§7). Every existing `writes/` golden gained the S0
 lines and changed in no other line but TodoMVC's holes (§7).
+
+---
+
+## Addendum, 2026-10-09: tag reads, and the pairs re-measured
+
+The owner approved the refinement §4 pointed at: a `case` reads **which constructor** its
+scrutinee has, not everything under it. It is specified as `write-sets.md`'s dated amendment
+*tag reads* and built in `src/writes/Writes.zig`. A `case` on a path now anchors `tag p`
+where a constructor pattern tests the tag at `p`, and a whole-value read only where a literal
+or list pattern tests more. A tag read conflicts with a `value` write at `p` or at a prefix of it,
+and never with a `node` write. Nothing else changed: no write set, no threshold, no program. The
+gate was re-run with the same command (§8) and nothing else.
+
+| | before | after |
+|---|--:|--:|
+| Conduit's pairs over its 90 bounded keys | 829 | **650** |
+| pairs per key | 9.21 | **7.22** |
+| share of the 106 groups a key calls | 8.7 % | 6.8 % |
+| median program's pairs per key, and the bar (2×) | 0.00–0.33, bar 0.67 | unchanged |
+| log-log slope of pairs on keys | 1.64 | 1.62 |
+| Conduit · home / profile / article (pairs) | 134 / 173 / 277 | 132 / 171 / 276 |
+
+**The pairs sub-criterion still fires.** Conduit is at 7.22 pairs per key against a bar of 0.67,
+eleven times over. The bar is not met by any reading of the median, and the slope is still above
+linear. The other five sub-criteria are untouched by a read rule and read as in §0: bounded holds,
+static fires, dynamic fires (14.5 %), value roots hold, trie fires.
+
+**Why 179 pairs and not §4's 249.** §4 attributed three groups to "the frame's header". Two of
+them are: `{header maybeViewer active}` (Page.beni:31) and the `case maybeViewer of` block inside
+it (Page.beni:45). Each was called by 88 keys and is now called by **3**: the keys that replace a
+page's session (`GotLoginMsg · CompletedLogin · Ok`, `GotRegisterMsg · CompletedRegister · Ok`,
+`GotSettingsMsg · CompletedSave · Ok`). That is the shape `writes/TagHeader/` pins: typing leaves the
+header alone, while sign-in and navigation reach it. Navigation is `ChangedUrl`, a `*` key that
+runs `patchAll` and so is not counted in pairs. The third group is **not** the header. It is
+`{page.content}` (Page.beni:32), the frame's slot for the page's own markup, whose reads are
+every page's view. It went from 73 keys to 69 and remains the largest group, because almost every
+page key changes something its page shows. The rest of the difference is five pairs on four holes of
+the article, home and profile pages. §4's "6.44 without them" assumed all 249 pairs dropped; 7.22 is the
+figure. Either is over the bar.
+
+**What it cost.** No hole in any golden changed class (`static`, `literal`, `static-key`,
+`dynamic`), on the corpus or in Conduit. The refinement moves only which keys mark a group. It
+does not change which holes are static here, because none of these programs had a hole that read
+only a tag nobody switches. Emitted JavaScript is unchanged: the pass runs only for the dump.

@@ -1,0 +1,18 @@
+program TagAbove.main : Tea.sandbox
+  model TagAbove.Model
+  init
+    literal ρ
+  key Reset                                       exact      node ρ; value ρ.outer
+  key Bump                                        exact      node ρ; node ρ.side; value ρ.side.Running#0
+  keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
+  hole TagAbove.beni:66:12                        dynamic    reads tag ρ.outer.mid.inner
+  hole TagAbove.beni:67:12                        static     reads tag ρ.side
+  holes 2: static 1, literal 0, static-key 0, dynamic 1
+  site TagAbove.beni:65:5                         unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 1 over 2 keys and 2 groups (0.50 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

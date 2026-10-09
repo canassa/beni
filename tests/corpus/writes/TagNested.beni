@@ -1,0 +1,71 @@
+-- writes: a `case` on a nested variant reads the tag at every path it
+-- tests (`write-sets.md`, amended 2026-10-09: tag reads). `Wait` keeps
+-- `Loaded` at ρ.status (`node`) and changes the constructor below it
+-- (`value ρ.status.Loaded#0`): the hole whose patterns look inside `Loaded`
+-- reads `tag ρ.status.Loaded#0` and is `dynamic`; the hole that tests only
+-- `Loaded` against `Empty` reads `tag ρ.status` alone and is `static` — it
+-- read ρ.status whole, and was `dynamic`, before tag reads.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Inner
+    = Ready Int
+    | Waiting
+
+
+type Status
+    = Loaded Inner
+    | Empty
+
+
+type alias Model =
+    status : Status
+
+
+type Msg
+    = Wait
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Wait →
+            case model.status of
+                Loaded _ →
+                    { model | status = Loaded Waiting }
+
+                Empty →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>
+            {case model.status of
+                Loaded (Ready _) →
+                    "ready"
+
+                Loaded Waiting →
+                    "waiting"
+
+                Empty →
+                    "empty"
+            }
+        </p>
+        <p>
+            {case model.status of
+                Loaded _ →
+                    "loaded"
+
+                Empty →
+                    "empty"
+            }
+        </p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { status = Empty }, update = update, view = view }

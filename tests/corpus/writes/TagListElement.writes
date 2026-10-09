@@ -1,0 +1,24 @@
+program TagListElement.main : Tea.sandbox
+  model TagListElement.Model
+  init
+    literal ρ
+  key Finish                                      indexed    node ρ; node ρ.items ⟨kept⟩; value ρ.items[i]
+  key Rename                                      structural node ρ; node ρ.notes ⟨kept⟩; node ρ.notes[*]; value ρ.notes[*].Todo#0
+  keys 2: bounded 2 (100%), exact 0, indexed 1, structural 1, * 0; capped 0
+  hole TagListElement.beni:62:14                  dynamic    reads ρ.items
+  hole TagListElement.beni:62:64                  dynamic    reads tag ρ.items[*]
+  hole TagListElement.beni:65:14                  dynamic    reads ρ.notes
+  hole TagListElement.beni:65:64                  static     reads tag ρ.notes[*]
+  holes 4: static 1, literal 0, static-key 0, dynamic 3
+  site TagListElement.beni:60:5                   unique
+  site TagListElement.beni:62:60                  instanced
+  site TagListElement.beni:65:60                  instanced
+  sites 3: unique 1, shared 0, instanced 2, value 0
+  markup_value_roots 0 (0% of 3 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 3 over 2 keys and 4 groups (1.50 per key); every key calls 0 of 4 groups (0%)
+  list TagListElement.beni:62:14                  scripts
+  list TagListElement.beni:65:14                  scripts
+  reconciler 0 of 0 lists
+  patchAll <none>

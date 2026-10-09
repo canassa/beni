@@ -18,7 +18,7 @@ program StatsSites.main : Tea.sandbox
   hole StatsSites.beni:64:57                      static     reads ρ.tags[*]
   hole StatsSites.beni:65:12                      static     reads ρ.tags; ρ.tags[*]
   hole StatsSites.beni:65:41                      static     reads ρ.tags[*]
-  hole StatsSites.beni:66:13                      static     reads ρ.tree; ρ.tree.Node#0; ρ.tree.Node#1; ρ.tree.Node#1[*]
+  hole StatsSites.beni:66:13                      static     reads ρ.tree.Node#0; ρ.tree.Node#1; ρ.tree.Node#1[*]
   holes 14: static 9, literal 1, static-key 0, dynamic 4
   site StatsSites.beni:39:11                      shared     2 calls
   site StatsSites.beni:43:11                      unique
