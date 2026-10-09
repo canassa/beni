@@ -54,7 +54,8 @@
 // The pages are compared after the load and after every step: the body as
 // the driver prints it; the properties it does not print (an option's
 // `selected`, `disabled`, `hidden`, `indeterminate`, `open`, `readOnly`,
-// a text control's selection); `document.title`; `location.href`; both
+// a text control's selection); `document.title`; `location.href` less its origin (Chrome serves the
+// two builds from two ports); both
 // storages; every line the driver logged (requests, prevented defaults,
 // links followed, `console.*`), less the lines `ignore` names; and every
 // error the step threw. A step that throws on both pages ends the sequence
@@ -244,7 +245,7 @@ function fuzzState() {
       return `unreadable (${error?.name})`;
     }
   };
-  return { title: document.title, href: location.href, storage: `local ${read("localStorage")} session ${read("sessionStorage")}`, props: props.join("\n") };
+  return { title: document.title, href: location.href.startsWith(location.origin) ? location.href.slice(location.origin.length) : location.href, storage: `local ${read("localStorage")} session ${read("sessionStorage")}`, props: props.join("\n") };
 }
 
 // ---------------------------------------------------------------------------
