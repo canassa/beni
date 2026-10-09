@@ -1,0 +1,52 @@
+-- writes: the derived `==` on a type of several constructors reads the
+-- whole value, never a tag (`write-sets.md`, amended 2026-10-09: tag reads,
+-- item 1: tag reads come from patterns only). `model.page == Ready 0`
+-- compares the payload too, so the hole reads `ρ.page` whole; `Tick`
+-- rebuilds `Ready` with another payload (`node ρ.page`, `value
+-- ρ.page.Ready#0`), which a tag read would let through, and the hole is
+-- `dynamic`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Page
+    = Waiting
+    | Ready Int
+
+
+type alias Model =
+    page : Page
+
+
+type Msg
+    = Tick
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Tick →
+            case model.page of
+                Ready n →
+                    { model | page = Ready (n + 1) }
+
+                Waiting →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>
+            {if model.page == Ready 0 then
+                "start"
+             else
+                "later"
+            }
+        </p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { page = Waiting }, update = update, view = view }

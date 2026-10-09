@@ -1,0 +1,18 @@
+program TagThroughParameter.main : Tea.sandbox
+  model TagThroughParameter.Model
+  init
+    literal ρ
+  key Stop                                        exact      node ρ; node ρ.left; value ρ.left.Just#0
+  key Tick                                        exact      node ρ; node ρ.right; node ρ.right.Just#0; value ρ.right.Just#0.Running#0
+  keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
+  hole TagThroughParameter.beni:67:12             dynamic    reads tag ρ.left; tag ρ.left.Just#0
+  hole TagThroughParameter.beni:68:12             static     reads tag ρ.right; tag ρ.right.Just#0
+  holes 2: static 1, literal 0, static-key 0, dynamic 1
+  site TagThroughParameter.beni:66:5              unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 1 over 2 keys and 2 groups (0.50 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

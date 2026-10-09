@@ -1855,3 +1855,16 @@ no hole changes class; reads gain `tag` where only a tag decided (A6's two fixtu
 `SameVariant`, `ReadsOfShape`, `N2Toggle`, TodoMVC, `Pages`, Conduit), `StatsSites` loses a read
 of a type of one constructor, `Pages` loses a tag read a whole read covers, and Conduit's and
 `SameVariant`'s `pairs` fall. Research 64's addendum has the gate's numbers.
+
+*Added after the soundness review of the same day.* Item 3's load-bearing step is checked in the
+pass under runtime safety: `diff` descends through a constructor step only where it has written
+`node p` under `Γ ⊢ tag(p) = C`, and the prefix closure never adds a `node` directly above a
+constructor step. Either check fails a build that compiles the pass with safety on, so every
+corpus program the gates dump is checked. Four more fixtures pin paths the argument relies on.
+`writes/TagThroughParameter` covers `Maybe.map`'s summary, a `tag π₁` instantiated and a lambda
+matching on its argument; it failed first. `writes/TagTuple` covers a tuple scrutinee with a
+literal component and with a known constructor; it failed first. `writes/TagLastElement`
+covers `[ …init, last ]`'s `tag ρ.items[?]` against `List.set` at a computed index. The list
+pattern's whole read covers the tag read, and the hole was `dynamic` before and after; only the
+printed reads changed. `writes/TagEquality` checks that a derived `==` reads the whole value; it
+is a regression guard and passed before.

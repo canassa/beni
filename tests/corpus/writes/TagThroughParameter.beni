@@ -1,0 +1,73 @@
+-- writes: a tag read through a summary and a function-valued parameter
+-- (`write-sets.md`, amended 2026-10-09: tag reads, item 1). `Maybe.map` is
+-- summarised: its `case` on its first parameter reads `tag π₁`, and its call
+-- of its second parameter is an application node the lambda below reduces.
+-- Instantiated with `model.left`, the summary reads `tag ρ.left`, and the
+-- lambda, which matches on what it is handed, reads `tag ρ.left.Just#0`.
+-- `Stop` turns `Running` into `Idle` under `Just` (`value ρ.left.Just#0`):
+-- the left hole is `dynamic`. `Tick` rebuilds `Running` under `Just` on the
+-- right (`node` at both): the right hole is `static`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Phase
+    = Idle
+    | Running Int
+
+
+type alias Model =
+    left : Maybe Phase
+    right : Maybe Phase
+
+
+type Msg
+    = Stop
+    | Tick
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Stop →
+            case model.left of
+                Just (Running _) →
+                    { model | left = Just Idle }
+
+                _ →
+                    model
+
+        Tick →
+            case model.right of
+                Just (Running n) →
+                    { model | right = Just (Running (n + 1)) }
+
+                _ →
+                    model
+
+
+name : Maybe Phase → String
+name phase =
+    Maybe.withDefault
+        (Maybe.map phase λp →
+            case p of
+                Idle →
+                    "idle"
+
+                Running _ →
+                    "running"
+        )
+        "none"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{name model.left}</p>
+        <p>{name model.right}</p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { left = Nothing, right = Nothing }, update = update, view = view }
