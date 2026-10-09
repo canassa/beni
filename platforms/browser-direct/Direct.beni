@@ -1,0 +1,212 @@
+--! The `browser-direct` platform's runtime module, `Direct` (docs/design/browser-direct.md
+--! §4.3, §5.3, §8.2, §9.3): the dispatch guard every entry into program
+--! code goes through, the sentinel every slot starts at, and `run`, which
+--! mounts the page's programs inside the guard. Written in beni over core's
+--! `Js`, as `browser`'s `Rt` is, and this platform's runtime module
+--! (`boundary.md` §9.2, *A runtime module*): a page ships only what it
+--! reaches, so the empty mounted page writes `run` and what `run` calls
+--! and nothing else of it (§13, kill criterion 2).
+--!
+--! Slice S0 (§14) holds what a static page needs. `end()` — the edited
+--! set's reconcile and the after-render point (§8.1, §10.2) — the keyed
+--! reconciler (§6.3) and the fibers' teardown (`Task.shutdown`) arrive with
+--! the slices that reach them.
+
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- ---- The sentinel (§5.3) ------------------------------------------------
+
+--| What every slot holds before its first write, and again after its arm
+--| is torn down: an object no value is `===` to. Not `undefined`, which a
+--| `⊤` is under `--release`.
+pub unset : V
+unset = Js.object []
+
+
+-- ---- The dispatch guard (§4.3) ------------------------------------------
+
+-- A throw escaped program code: nothing of any program runs again (§8.2).
+dead : Js.Ref Bool
+dead = Js.ref False
+
+
+-- A dispatch is running: a send made now waits for it.
+running : Js.Ref Bool
+running = Js.ref False
+
+
+-- The sends made while a dispatch ran, as function, argument pairs in the
+-- order they were made; null until the first.
+queue : Js.Ref V
+queue = Js.ref Js.null
+
+
+--| `(f, x)`: one entry into program code — a listener body with its
+--| event, `dispatch` with a message, `run`'s mount with the page's
+--| programs. A send made while another runs is queued and applied, in
+--| order, before that dispatch ends, never re-entrantly (`boundary.md`
+--| §9.8.4); once the page has stopped it does nothing. There is no
+--| `catch`: a throw passes through to the host, and stops the page.
+pub send : V, V → ⊤
+send f x =
+    if Js.read dead then
+        ⊤
+    else if Js.read running then
+        if Js.isNull (Js.read queue) then
+            Js.write queue (Js.array [])
+        _ = Js.call (Js.read queue) "push" [ f, x ]
+        ⊤
+    else
+        Js.write running True
+        ok = Js.ref False
+        Js.finally
+            (λ⊤ →
+                _ = Js.apply f [ x ]
+                drain ⊤
+                Js.write ok True
+            )
+            λ⊤ →
+                Js.write running False
+                if Js.read ok then ⊤ else stop ⊤
+
+
+-- Apply every queued send, in the order they were made; one applied may
+-- send more, which apply after them, in this dispatch.
+drain : ⊤ → ⊤
+drain ⊤ =
+    if Js.isNull (Js.read queue) then
+        ⊤
+    else
+        q = Js.read queue
+        Js.write queue Js.null
+        applyFrom q 0
+        drain ⊤
+
+
+applyFrom : V, Int → ⊤
+applyFrom q i =
+    if i < Js.to (Js.get q "length") then
+        _ = Js.apply (Js.at q i) [ Js.at q (i + 1) ]
+        applyFrom q (i + 2)
+
+
+-- ---- A defect stops the page (§8.2) -------------------------------------
+
+-- A throw ended a dispatch: the page stops, and a development build shows
+-- the crash screen. A release build has no code for one; the host reports
+-- the throw.
+stop : ⊤ → ⊤
+stop ⊤ =
+    if Js.development ⊤ then
+        crashScreen ⊤
+    Js.write dead True
+
+
+-- An overlay above the page, which it leaves in place to inspect, the same
+-- as `browser`'s: the error's text arrives with the host's report of the
+-- throw, which reaches the window after the guard's `finally`.
+crashScreen : ⊤ → ⊤
+crashScreen ⊤ =
+    document = Js.global "document"
+    screen = Js.call document "createElement" [ Js.from "div" ]
+
+    _ =
+        Js.call screen "setAttribute"
+            [ Js.from "style"
+            , Js.from
+                "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap"
+            ]
+
+    Js.set
+        screen
+        "textContent"
+        (Js.from
+            "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n"
+        )
+
+    _ = Js.call (Js.get document "body") "appendChild" [ screen ]
+
+    report =
+        λevent →
+            error = Js.get event "error"
+            message : String
+            message =
+                Js.to
+                    (Js.apply (Js.global "String")
+                        [ if Js.isNullish error then Js.get event "message" else error ]
+                    )
+
+            shown : String
+            shown = Js.to (Js.get screen "textContent")
+            Js.set screen "textContent" (Js.from (shown ++ message))
+
+    Js.to
+        (Js.call (Js.global "window") "addEventListener"
+            [ Js.from "error", Js.from report, Js.from { once = True } ]
+        )
+
+
+-- ---- Mounting (§8.2, §9.3) ----------------------------------------------
+
+--| `(program)`: every mount the page's `main` holds, in order, inside one
+--| dispatch, so a throw while mounting — a missing element, a program's
+--| `init` — stops the page as any defect does.
+pub run : V → ⊤
+run program = send (Js.from mountAll) program
+
+
+-- One program value mounted twice would share one state: refused before
+-- any program renders (§8.2). Then each mount, in order.
+mountAll : V → ⊤
+mountAll program =
+    Js.each program λm →
+        a = Js.get m "a"
+
+        if not (Js.isUndefined (Js.get a "$mounted")) then
+            Js.throw
+                (Js.construct (Js.global "Error")
+                    [ Js.from
+                        "a program is mounted twice: build each mount's program with a function"
+                    ]
+                )
+        Js.set a "$mounted" (Js.from True)
+    Js.each program λm → mountOne m
+
+
+-- A mount's element — `document.body` unless it names one — handed with a
+-- `template` element of its own to the mount the lowering compiled. A
+-- mount node that is missing, or that holds a program already, is a fault
+-- of the page, thrown before that program renders anything.
+mountOne : V → ⊤
+mountOne m =
+    document = Js.global "document"
+
+    root =
+        if Js.isNull (Js.get m "n") then
+            Js.get document "body"
+        else
+            Js.call document "getElementById" [ Js.get m "n" ]
+
+    if Js.isNull root || not (Js.isUndefined (Js.get root "$$root")) then
+        id : String
+        id = Js.to (Js.get m "n")
+        Js.throw
+            (Js.construct (Js.global "Error")
+                [ Js.from
+                    (if Js.isNull root then
+                        "no element has the id \"${id}\" to mount a program at"
+                     else if Js.isNull (Js.get m "n") then
+                        "the page's body already holds a program"
+                     else
+                        "the element \"${id}\" already holds a program"
+                    )
+                ]
+            )
+    Js.set root "$$root" (Js.from True)
+    _ = Js.apply (Js.get m "a") [ root, Js.call document "createElement" [ Js.from "template" ] ]
+    ⊤

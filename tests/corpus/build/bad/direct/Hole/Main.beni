@@ -1,0 +1,14 @@
+-- `browser-direct`'s slice S0 compiles a `view` of static markup only
+-- (docs/design/browser-direct.md §14): a hole is `not_implemented` at the
+-- hole, naming slice S1 that adds it, never a page that silently shows
+-- nothing.
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html {}
+view n = <p>{String.fromInt n}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = 0, update = λ_ m → m, view = view }

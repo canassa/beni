@@ -1,0 +1,19 @@
+-- Markup as a value — a function returning markup that is not the `view`
+-- a program is called with — has no run-time representation on
+-- `browser-direct` until slice S4's value path (docs/design/browser-
+-- direct.md §5.2): it is `not_implemented` at the markup, and so is a use
+-- of the markup primitive `Html.text`.
+import Html exposing (Html)
+import Tea
+
+
+badge : String → Html {}
+badge label = <b>{label}</b>
+
+
+plain : String → Html {}
+plain label = Html.text label
+
+
+main : Tea.Program
+main = Tea.sandbox { init = [ badge "a", plain "b" ], update = λ_ m → m, view = λ_ → <p>static</p> }

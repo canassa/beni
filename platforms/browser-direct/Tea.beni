@@ -1,0 +1,78 @@
+--! The Elm Architecture on the `browser-direct` platform
+--! (docs/design/browser-direct.md §12.1): the API of `browser-tea`'s `Tea`,
+--! so one source builds on both. Here a program is compiled, not run: each
+--! constructor is a `foreign` the platform's `direct` lowering recognises
+--! where it is called (`boundary.md` §9.4.6, version 1.6), and the call is
+--! compiled as the constructor applied to the program's mount — the record
+--! is never evaluated as a value.
+--!
+--! Slice S0 (§14) compiles `sandbox` with a `view` of static markup. The
+--! lowering refuses everything else at build time, naming the slice that
+--! adds it.
+
+import Browser exposing (UrlRequest)
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Url exposing (Url)
+
+
+--| What `main` is: `Browser.Program` under this platform's name, so a
+--| program need not import `Browser` to write `main : Tea.Program`.
+--| `Browser.mountAt` and `Browser.programs` place several on one page.
+pub type alias Program =
+    Browser.Program
+
+
+--| A page with a model and no effects: `init` is the first model, and
+--| each message a handler sends goes through `update`, which the page
+--| writes as it runs.
+pub foreign pure sandbox :
+      { init : model, update : sync (msg, model → model), view : sync (model → Html msg) }
+    → Program
+
+
+--| A page with a model and effects: `init` is the first model and the
+--| work it asks for; each message goes through `update`, which returns the
+--| next model and the work that message asks for; and `subscriptions`
+--| says, from the model, what should keep running.
+pub foreign pure element :
+      { init : model × Cmd msg
+      , update : sync (msg, model → model × Cmd msg)
+      , view : sync (model → Html msg)
+      , subscriptions : sync (model → Sub msg)
+      }
+    → Program
+
+
+--| What the `view` of a `document` or an `application` makes: the page's
+--| title and its body.
+pub type alias Document msg =
+    title : String
+    body : Html msg
+
+
+--| An `element` that owns the page's title: its `view` makes a `Document`.
+pub foreign pure document :
+      { init : model × Cmd msg
+      , update : sync (msg, model → model × Cmd msg)
+      , view : sync (model → Document msg)
+      , subscriptions : sync (model → Sub msg)
+      }
+    → Program
+
+
+--| A `document` that owns the page's address: `init` is handed the address
+--| the page was opened at and the page's navigation key, a click on a link
+--| the page should handle is sent through `onUrlRequest`, and every change
+--| of the address through `onUrlChange`.
+pub foreign pure application :
+      { init : sync (Url, Navigation.Key → model × Cmd msg)
+      , update : sync (msg, model → model × Cmd msg)
+      , view : sync (model → Document msg)
+      , subscriptions : sync (model → Sub msg)
+      , onUrlRequest : sync (UrlRequest → msg)
+      , onUrlChange : sync (Url → msg)
+      }
+    → Program

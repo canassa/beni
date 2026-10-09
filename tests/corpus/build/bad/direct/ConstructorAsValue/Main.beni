@@ -1,0 +1,15 @@
+-- `view_not_compiled` (docs/design/browser-direct.md §11.1): a program
+-- constructor used as a value, not called with its record, makes programs
+-- whose `view`s are known only at run time, so `browser-direct` refuses the
+-- use itself.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ = <p>one of many</p>
+
+
+main : Tea.Program
+main = Browser.programs (List.map [ { init = {}, update = λ_ m → m, view = view } ] Tea.sandbox)

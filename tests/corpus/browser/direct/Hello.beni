@@ -1,0 +1,21 @@
+-- A static page, built for `browser-direct` and for `browser-tea` from the
+-- one source, shows the same page (docs/design/browser-direct.md §12.3):
+-- the direct page writes its whole markup once at mount, the TEA page
+-- renders its `view` — the same elements, attributes and decoded text,
+-- and a void element. Nothing on it changes, so a click on it
+-- changes nothing on either.
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ =
+    <main id="hello">
+        <h1 class="title">Hello</h1>
+        <p>A static page, &amp; nothing to change.</p>
+        <hr />
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = {}, update = λ_ m → m, view = view }
