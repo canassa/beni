@@ -121,11 +121,11 @@ iface_test.test.a build whose evidence crosses modules is byte-identical through
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 a7e1ca4a7e6729c16f3facb662d2e03678d172b401b51b4042fe36396d3557ed
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 a4ad7f8eb938a9e4cb9adf0942b359fbce02e96be833c2729ee67d1042c89621
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 b43380771fa17b12628e137856bb7af843ae48b915698a71900b70e6eb2229a6
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 ba6ca26b8f4c2b8d17fb00c1c0e1af9e9593ee35e670e6325f3663957156f424
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 b8689c79f92519b42c6e9d6355170f8b68105a2f219a2ca831bbd0b56f25a656
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 cacb3778e7459068c2b32f58b58741c3864babb3a3a287b5d24e6318053d8da9
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 4af8578009c8e3e077f0fc1afa41cbd0fce56e9620bdd053a27d7f6fc61c9608
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 cbe541364462b4ba813fa27be0b132c216368cac7eb7f0cc21e22d028e4af300
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 2a4107ee1dac937a96722e6d77c84d29b2e854dd41ce749420736653da55a8da
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 5bb1fc905ffad61b9b61fc3495b8f5a1a02efe51fdf0bbee4baf888f364a2d18
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 babe8d10289c43c261bc18d33c9568fc288f6ad2c8864da2b0da945f6e3ab131
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 2342c003a65409a6b53fd520679880a2b162b673d017e989821a3fb6318d06c0
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 995625fbd9896537e698a2dce01b2c89a564541bf12230886cd50e8fecc09f47
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 bd3799f790a651e6c98614467b72fe78b7c5306aad8ecb7ce63fbfd882474f89
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 c0019c75bc8fc8179dea74cc72c53f6d1963f0a41aed25fb51300e662c1a50f5
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 7ede022613152026afb08d17a2dc03382df56d2eceba9b31ba7621c234884f22
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 3ae5bb2ecf10b71300f05d5b59d9d72ff1c3c4453053da21aa1d594702736486
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
