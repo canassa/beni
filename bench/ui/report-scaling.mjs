@@ -16,7 +16,7 @@ const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}
 const columns = arg("column", "script@4,script@1,total@4").split(",").map((c) => c.split("@")).map(([c, t]) => [c, Number(t ?? 4)]);
 const data = JSON.parse(readFileSync(file, "utf8"));
 const fmt = (x) => (Number.isNaN(x) ? "—" : x < 1 ? x.toFixed(3) : x < 10 ? x.toFixed(2) : x.toFixed(1));
-const order = ["beni", "beni-release", "beni-helper", "beni-helper-release", "solid2", "solid1", "p2", "p3", "vanillajs"];
+const order = ["beni", "beni-release", "beni-helper", "beni-helper-release", "beni-direct", "beni-direct-release", "solid2", "solid1", "p2", "p3", "vanillajs"];
 
 console.log(`${data.chrome}, Node ${data.node}, ${data.beni} at ${data.commit.slice(0, 10)}${data.dirty ? " (dirty tree)" : ""}`);
 console.log(`${data.cpu}, taskset ${data.taskset ?? "none"}, ${data.mode} mode: ${data.settings.pages} pages × ${data.settings.samples} samples per point at each of ${(data.settings.throttles ?? [data.throttle]).map((t) => `${t}x`).join(" and ")}, ${data.started} → ${data.finished ?? "?"}`);
