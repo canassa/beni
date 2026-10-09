@@ -207,6 +207,40 @@ pub const Built = struct {
     }
 };
 
+/// The tree of a module with no markup root, which the program hook is
+/// handed where a module calls a program constructor and writes no markup
+/// of its own (`boundary.md` §9.4.6, version 1.6).
+pub const empty: Built = .{
+    .tree = .{
+        .roots = &.{},
+        .rows = &.{},
+        .nodes = &.{},
+        .elements = &.{},
+        .fragments = &.{},
+        .texts = &.{},
+        .holes = &.{},
+        .components = &.{},
+        .fors = &.{},
+        .shows = &.{},
+        .items = &.{},
+        .entries = &.{},
+        .props = &.{},
+        .children = &.{},
+        .strings = .{ .bytes = &.{}, .spans = &.{} },
+        .vocabulary = .{ .elements = &.{}, .attributes = &.{}, .events = &.{} },
+        .requires = m.gated,
+    },
+    .root_insts = &.{},
+    .node_tokens = &.{},
+    .values = &.{},
+    .rows = &.{},
+    .components = &.{},
+    .extractors = &.{},
+    .root_decls = &.{},
+    .groupable = &.{},
+    .moved_lets = &.{},
+};
+
 /// Build the tree of every markup root in `input.live`'s declarations.
 /// Null when there is none. Everything is allocated in `arena`.
 pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {

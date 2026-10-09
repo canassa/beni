@@ -22,8 +22,10 @@ const std = @import("std");
 /// is `boundary.md` §9.4 as written on 2026-09-29; 1.1 adds `Hole.call`,
 /// 1.2 `Tree.item_only` and `Context.rowValuesApart`, 1.3 `Row.selector`,
 /// 1.4 `Tree.constant`, 1.5 a root's inputs and reads, `Lowering.groups`
-/// and the calls that evaluate a grouped root's values.
-pub const version: Version = .{ .major = 1, .minor = 5 };
+/// and the calls that evaluate a grouped root's values, 1.6 the program
+/// hook (`Lowering.program`, `Program`, the calls that read one),
+/// `Lowering.placements` and `Lowering.no_markup_values`.
+pub const version: Version = .{ .major = 1, .minor = 6 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -62,6 +64,100 @@ pub const Lowering = struct {
     /// 1.5: the lowering evaluates a grouped root's values itself
     /// (`Context.grouped`), so the compiler does not evaluate them where the root stands.
     groups: bool = false,
+    /// 1.6: the program constructors this lowering compiles whole, by
+    /// module and value name in the platform chain (`Tea.sandbox`), each a
+    /// `foreign` of its platform. Every call of one is handed to `program`;
+    /// any other use of one is `view_not_compiled`; a use of one the
+    /// lowering refuses (`Named.refused`) is `not_implemented`. Empty:
+    /// none, and `program` is never called.
+    programs: []const Named = &.{},
+    /// 1.6: the program hook (`browser-direct.md` §11.1). Runs where a call
+    /// of one of `programs` stands, instead of the call's argument, and
+    /// returns the program's mount: the call is compiled as the
+    /// constructor applied to it, so the constructor's JavaScript makes
+    /// the platform's `Program` of the mount. The record is not evaluated;
+    /// what the lowering asks of it is (`Context.programInit`).
+    program: ?*const fn (cx: *Context, tree: *const Tree, p: *const Program) Error!Expr = null,
+    /// 1.6: the values that place programs on a page, which a lowering
+    /// lists when one program value mounted twice would share one state:
+    /// the compiler refuses a top-level program value named twice among
+    /// what `main`'s placements place (`program_mounted_twice`). Empty:
+    /// none is refused.
+    placements: []const Placement = &.{},
+    /// 1.6: set when the lowering has no run-time value of the markup type:
+    /// a markup root that is not a program's `view` (`Program.view_root`)
+    /// and every use of a markup primitive is `not_implemented`, with this
+    /// text as the message, and the markup runtime is not held to the
+    /// primitives (§9.4.5). Null: markup is a value, as before.
+    no_markup_values: ?[]const u8 = null,
+};
+
+/// 1.6: a value of a module of the platform chain, by the module's name and
+/// its own.
+pub const Named = struct {
+    module: []const u8,
+    name: []const u8,
+    /// Set: the lowering refuses the value — every use of it is
+    /// `not_implemented`, with this text as the message, and the hook never
+    /// sees it. How a lowering turns away another architecture's program
+    /// constructor that its runtime cannot run (`Browser.hosted` under one
+    /// that compiles The Elm Architecture itself).
+    refused: ?[]const u8 = null,
+};
+
+/// 1.6: a value that places programs, and which of its arguments are them.
+pub const Placement = struct {
+    module: []const u8,
+    name: []const u8,
+    places: Places,
+
+    pub const Places = enum(u8) {
+        /// Its one argument, a list: each element a program (`programs`).
+        list,
+        /// Its first argument (`mountAt`).
+        first,
+        _,
+    };
+};
+
+/// 1.6: one call of a program constructor, as the compiler found it
+/// (`write-sets.md` §1.1's shape). What the record holds is read through
+/// the context (`programInit`); the shapes say what the compiler could
+/// reach.
+pub const Program = struct {
+    /// Which of `Lowering.programs` is called.
+    constructor: u32,
+    /// The argument is a record literal written at the call, whose fields
+    /// the shapes below describe. False: it is anything else — a local, a
+    /// value a call computes, a top-level record — and every shape is
+    /// `computed`.
+    record: bool,
+    /// What `view` is.
+    view: Shape,
+    /// `view == .markup`: the root of this module's tree that is the
+    /// function's body.
+    view_root: ?Root.Index,
+    /// What `update` is: `markup` and `function` alike are functions this
+    /// module declares or the record writes; `other_module` or `computed`.
+    update: Shape,
+
+    pub const Shape = enum(u8) {
+        /// A top-level function of this module or a lambda written in the
+        /// record, whose body is markup written in place.
+        markup,
+        /// A top-level function or a lambda whose body is anything else.
+        function,
+        /// A function of another module.
+        other_module,
+        /// Anything else: a value a call computes, a local.
+        computed,
+        _,
+    };
+
+    /// Where `Context.programReport` points.
+    pub const Part = enum(u8) { call, init, update, view, _ };
+    /// What `Context.programReport` reports.
+    pub const Code = enum(u8) { not_implemented, view_not_compiled, _ };
 };
 
 pub const Error = error{ OutOfMemory, Reported };
@@ -660,6 +756,27 @@ pub const Context = struct {
     pub fn report(cx: *Context, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
         return cx.vtable.report(cx.impl, node, message);
     }
+
+    /// 1.6: report `not_implemented` at the node — markup this lowering
+    /// does not compile yet; the lowering then returns the error.
+    pub fn notImplemented(cx: *Context, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
+        return cx.vtable.not_implemented(cx.impl, node, message);
+    }
+
+    /// 1.6, inside `Lowering.program` only: emit the evaluation of the
+    /// program's `init` into `block`, bound to a name that `--release` keeps
+    /// when `init` may have an effect, and return that name. At most once
+    /// per program: `init` is evaluated where the lowering places the
+    /// block, and nowhere else.
+    pub fn programInit(cx: *Context, block: Block) Error!Expr {
+        return cx.vtable.program_init(cx.impl, block);
+    }
+
+    /// 1.6, inside `Lowering.program` only: report `code` at a part of the
+    /// program's call; the lowering then returns the error.
+    pub fn programReport(cx: *Context, part: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
+        return cx.vtable.program_report(cx.impl, part, code, message);
+    }
 };
 
 /// `JsIr` restricted to what a template needs. Assignment is a statement,
@@ -812,6 +929,9 @@ pub const VTable = struct {
     is_just: *const fn (impl: *anyopaque, e: Expr) Error!Expr,
     start: *const fn (impl: *anyopaque, key: []const u8, value: []const u8) Error!void,
     report: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
+    not_implemented: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
+    program_init: *const fn (impl: *anyopaque, block: Block) Error!Expr,
+    program_report: *const fn (impl: *anyopaque, at: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
 
     literal: *const fn (impl: *anyopaque, which: Literal, text: []const u8) Error!Expr,
     template: *const fn (impl: *anyopaque, parts: []const TemplatePart) Error!Expr,

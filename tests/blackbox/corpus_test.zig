@@ -203,8 +203,8 @@ const Kind = enum {
             .check_good, .check_bad, .check_args, .check_depth, .dispatch, .writes => .check,
             .build_bad, .build_bad_release, .emit => .build,
             .run => switch (pass) {
-                .dev, .dev_library, .dev_fiber => .run_dev,
-                .release, .release_library => .run_release,
+                .dev, .dev_library, .dev_fiber, .tea_dev => .run_dev,
+                .release, .release_library, .tea_release => .run_release,
             },
             .browser => .browser,
         };
@@ -216,8 +216,10 @@ const Kind = enum {
 /// A fixture that declares a `schema` gets two more: each build again with
 /// `--schema-library`, every schema root forced through the library
 /// interpreter, against the same golden (`schema.md` §10's differential
-/// corpus).
-const RunPass = enum { dev, release, dev_library, release_library, dev_fiber };
+/// corpus). A `browser/direct/` page gets two more as well: both builds
+/// again for `browser-tea`, against the same golden (`browser-direct.md`
+/// §12.3, the two platforms each other's oracle).
+const RunPass = enum { dev, release, dev_library, release_library, dev_fiber, tea_dev, tea_release };
 
 test "corpus: parse/good" {
     try walk(.parse_good);
@@ -544,6 +546,43 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         const start = fixtures.items.len;
         try collect(arena, tea_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-tea";
+    }
+    // `direct/`: built for `browser-direct`, whose `direct` lowering
+    // compiles a program whole (`browser-direct.md` §12.3) — `emit/direct/`
+    // and `emit/release/direct/` application builds for its shapes,
+    // `build/bad/direct/` projects for what it refuses,
+    // `browser/direct/` pages built for both platforms against one golden.
+    if (kind == .emit) {
+        const direct_dir = try std.fs.path.join(arena, &.{ kind_dir, "direct" });
+        const start = fixtures.items.len;
+        try collect(arena, direct_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser-direct";
+            fixture.app = true;
+        }
+        const release_direct = try std.fs.path.join(arena, &.{ kind_dir, "release", "direct" });
+        const release_start = fixtures.items.len;
+        try collect(arena, release_direct, false, false, &fixtures, true);
+        for (fixtures.items[release_start..]) |*fixture| {
+            fixture.platform = "browser-direct";
+            fixture.app = true;
+            fixture.release = true;
+        }
+    }
+    if (kind == .build_bad) {
+        const direct_dir = try std.fs.path.join(arena, &.{ kind_dir, "direct" });
+        const start = fixtures.items.len;
+        try collect(arena, direct_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-direct";
+    }
+    if (kind == .browser) {
+        const direct_dir = try std.fs.path.join(arena, &.{ kind_dir, "direct" });
+        const start = fixtures.items.len;
+        try collect(arena, direct_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser-direct";
+            fixture.differential = true;
+        }
     }
     // `emit/release/split/`: release applications built for `browser`,
     // whose markup runtime is a beni module and a hand-written file together
@@ -1050,6 +1089,11 @@ const Fixture = struct {
     /// `browser-tea` under `browser/tea/`, the same lowering beneath The Elm
     /// Architecture.
     platform: ?[]const u8 = null,
+    /// Under `browser/direct/`: built for `browser-direct` and again for
+    /// `browser-tea`, both pages against one golden (`browser-direct.md`
+    /// §12.3). A difference the design specifies is the fixture's
+    /// `.tea-expected`, which the `browser-tea` builds read instead.
+    differential: bool = false,
 
     /// Whether `text` is in the fixture's repo-relative path, the path
     /// `BENI_CORPUS_ONLY` and `BENI_BLESS_ONLY` are matched against.
@@ -1073,7 +1117,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "direct")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1528,7 +1572,12 @@ const Case = struct {
         try args.appendSlice(c.arena, &.{
             "build",
             "--diagnostics=json",
-            if (has_platform) "--platform=platform" else "--platform=node",
+            if (has_platform)
+                "--platform=platform"
+            else if (c.fixture.platform) |name|
+                try std.fmt.allocPrint(c.arena, "--platform={s}", .{name})
+            else
+                "--platform=node",
             "--out=out",
         });
         if (c.kind.isRelease()) try args.append(c.arena, "--release");
@@ -1891,26 +1940,33 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [3]?[]const u8 = .{ null, null, null };
+        var verified: [5]?[]const u8 = @splat(null);
         var first_error: ?anyerror = null;
         // Both builds first, then every page that must run in one Node
         // process (`browser.driveAll`), then each page's verdict.
         // A failure is reported in the order a page at a time would meet
         // it: a release build that fails waits for the development page.
         // The third page is the development build again with its listener
-        // subscriptions in fibers (`fiberPlan`), when it has any.
-        var pages: [3]?PagePlan = .{ null, null, null };
+        // subscriptions in fibers (`fiberPlan`), when it has any; a
+        // `browser/direct/` page has two more, both builds for
+        // `browser-tea` (`Fixture.differential`).
+        var pages: [5]?PagePlan = @splat(null);
         var release_error: ?anyerror = null;
-        for ([_]RunPass{ .dev, .release }, pages[0..2]) |pass, *plan| {
+        const passes = [_]RunPass{ .dev, .release, .tea_dev, .tea_release };
+        const slots = [_]usize{ 0, 1, 3, 4 };
+        for (passes, slots) |pass, slot| {
+            const tea = pass == .tea_dev or pass == .tea_release;
+            if (tea and !c.fixture.differential) continue;
+            const release = pass == .release or pass == .tea_release;
             var args: std.ArrayList([]const u8) = .empty;
-            try args.appendSlice(c.arena, &.{ "build", platform_arg });
-            if (pass == .release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
-            try args.append(c.arena, if (pass == .release) "--out=release" else "--out=out");
+            try args.appendSlice(c.arena, &.{ "build", if (tea) "--platform=browser-tea" else platform_arg });
+            if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
+            try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
             try args.appendSlice(c.arena, sources);
-            plan.* = c.pagePlan(pass, args.items, h, script, record) catch |err| blk: {
+            pages[slot] = c.pagePlan(pass, args.items, h, script, record) catch |err| blk: {
                 if (!recording) {
                     if (pass == .dev) return err;
-                    release_error = err;
+                    if (release_error == null) release_error = err;
                     break :blk null;
                 }
                 RunCounts.add(&run_counts.refused);
@@ -1954,6 +2010,18 @@ const Case = struct {
     /// when it has none, and its bytes (empty then).
     const Script = struct { name: ?[]const u8, bytes: []const u8 };
 
+    /// Where a page's build is written: one directory per build, since the
+    /// driver's one Node process answers a second import of a file from
+    /// the first.
+    fn pageOut(pass: RunPass) []const u8 {
+        return switch (pass) {
+            .release => "release",
+            .tea_dev => "out-tea",
+            .tea_release => "release-tea",
+            else => "out",
+        };
+    }
+
     /// One build of a `browser/` fixture, ready for its page: what the
     /// page is checked against, and whether it need not run at all.
     const PagePlan = struct {
@@ -1986,18 +2054,23 @@ const Case = struct {
             return error.GoodFixtureHasDiagnostics;
         }
         const chrome = c.cfg.chrome != null;
+        const tea = pass == .tea_dev or pass == .tea_release;
         const golden = if (chrome and c.goldenExists("chrome-expected"))
             "chrome-expected"
-        else if (pass == .release and c.goldenExists("release-expected"))
+        else if (tea and c.goldenExists("tea-expected"))
+            "tea-expected"
+        else if ((pass == .release or pass == .tea_release) and c.goldenExists("release-expected"))
             "release-expected"
         else
             "expected";
         // `expected` is the development build's golden: a release build
         // that disagrees with it is the finding, so only a build's own
-        // golden is blessed by it.
-        const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or
+        // golden is blessed by it. A `browser-tea` build of a
+        // `browser/direct/` page is the other platform's: it blesses none,
+        // since a difference between the two is the finding.
+        const bless = c.bless and !tea and (std.mem.eql(u8, golden, "chrome-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
-        const out = if (pass == .release) "release" else "out";
+        const out = pageOut(pass);
         return c.checkedPlan(.{
             .pass = pass,
             .golden = golden,

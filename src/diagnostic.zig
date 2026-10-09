@@ -393,6 +393,15 @@ pub const Code = enum {
     never_spelling_removed,
     if_without_else_not_unit,
     unit_discarded,
+    /// Appended on 2026-10-09 with the program hook (`boundary.md` §9.4.6,
+    /// version 1.6; `browser-direct.md` §8.2, §11.1): a program whose
+    /// `view` the build's lowering cannot reach as markup — a function
+    /// chosen at run time, a program constructor used as a value — on a
+    /// platform with no run-time renderer to hand it to; and one top-level
+    /// program value placed twice on a page whose programs keep their
+    /// state per program value. Both `build`'s.
+    view_not_compiled,
+    program_mounted_twice,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -566,6 +575,8 @@ pub fn title(code: Code) []const u8 {
         .never_spelling_removed => "REMOVED NEVER SPELLING",
         .if_without_else_not_unit => "MISSING ELSE",
         .unit_discarded => "UNIT DISCARDED",
+        .view_not_compiled => "VIEW NOT COMPILED",
+        .program_mounted_twice => "PROGRAM MOUNTED TWICE",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

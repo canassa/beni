@@ -333,6 +333,21 @@ own. The differential oracle against dom-expressions' fixtures is a
 separate, DOM-free comparison of template strings and walks:
 `tests/oracle/`, run by `tests/blackbox/oracle_test.zig`.
 
+**The `direct` lowering's fixtures** (`docs/design/browser-direct.md` §12.3)
+are under `direct/` of three kinds, built with `--platform=browser-direct`:
+`emit/direct/` and `emit/release/direct/` are application builds (rooted
+at `main`, not `--library`), the first goldening the module, the second
+the release file whole; `build/bad/direct/` projects need no `platform/`
+of their own; and every `browser/direct/` page is built **for both
+platforms** from its one source — `browser-direct` and `browser-tea`, dev
+and release, four pages — against one golden, since the two platforms are
+each other's oracle. A difference the design specifies (one is §8.2's
+`init`, evaluated inside the mount on `browser-direct` and where `main` is
+evaluated on `browser-tea`) is a `<name>.tea-expected`, which the
+`browser-tea` builds read instead and never bless, with its reason in the
+fixture's comment. Their run hash lines are `dev`, `release`, `tea_dev`
+and `tea_release`.
+
 **`emit/release/split/`** — release applications, whose golden is
 `_main.mjs` whole — are built with `--platform=browser`, the `dom` lowering
 over a markup runtime that is the beni module `Rt` and a hand-written file

@@ -334,6 +334,7 @@ pub fn lower(
     try l.findUnobserved();
     try l.findRefs();
     try l.findInlines();
+    try l.findPrograms();
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -694,6 +695,17 @@ pub const Lowerer = struct {
     apply_symbol: Symbol.Optional = .none,
     /// This module's markup, while a lowering compiles it.
     mk: ?*MarkupState = null,
+    /// The calls of the build's lowering's program constructors in this
+    /// module's surviving declarations, by call instruction, ascending
+    /// (`findPrograms`; `boundary.md` §9.4.6, version 1.6).
+    program_calls: []ProgramCall = &.{},
+    /// Per declaration, whether the program hook consumed it: a `view` or
+    /// `update` a program record names and nothing else does, which is not
+    /// emitted — the hook compiles what it needs of it where the program
+    /// is called. Empty: none is.
+    consumed: []const bool = &.{},
+    /// The program call whose hook is running (`cx.programInit`).
+    program_now: ?*ProgramCall = null,
     /// Which body of the declaration being lowered this is
     /// (transparent-effects-proposal.md §16.2): the direct one, where a
     /// `poly` answer is no, or the suspendable one, `<name>$s`, where it is
@@ -1607,6 +1619,10 @@ pub const Lowerer = struct {
             .annotation_only => return,
         }
         if (d.body == .none) return;
+        // A `view` or `update` only a program record names: the program
+        // hook compiled what it needs of it where the program is called
+        // (`boundary.md` §9.4.6, version 1.6).
+        if (index < l.consumed.len and l.consumed[index]) return;
         // Its direct body, then — a declaration with two (transparent-
         // effects-proposal.md §16.2) — its suspendable one, each when it
         // survived elimination.
@@ -4579,7 +4595,10 @@ pub const Lowerer = struct {
             // A markup primitive is the markup runtime's export of its name
             // (`boundary.md` §9.3), in its own module as in any other.
             .top => if (d.lhs < l.bir.decls.len and l.bir.decls[d.lhs].kind == .vocab_markup)
-                try l.ident(try l.primitiveName(l.module_name, l.bir.symbol(l.bir.decls[d.lhs].name)), p)
+                (if (try l.refuseMarkupValue(inst))
+                    try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused)
+                else
+                    try l.ident(try l.primitiveName(l.module_name, l.bir.symbol(l.bir.decls[d.lhs].name)), p))
             else
                 try l.ident(try l.topNameChoosing(d.lhs, l.in.dispatch.effectAt(inst).body), p),
             .ext_value => blk: {
@@ -4587,6 +4606,7 @@ pub const Lowerer = struct {
                 if (module.int() < l.in.interfaces.len) {
                     const iface = &l.in.interfaces[module.int()];
                     if (d.rhs < iface.values.len and iface.values[d.rhs].is_markup_primitive) {
+                        if (try l.refuseMarkupValue(inst)) break :blk try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                         const base = iface.symbols[@backingInt(iface.values[d.rhs].name)];
                         break :blk try l.ident(try l.primitiveName(l.in.graph.moduleName(module), base), p);
                     }
@@ -7344,6 +7364,11 @@ pub const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+
+        // A program constructor's call is the program hook's (`boundary.md`
+        // §9.4.6, version 1.6): the constructor applied to the mount the
+        // lowering compiles, and the record never evaluated.
+        if (l.programCallAt(inst)) |pc| return l.programCall(out, inst, pc, callee_inst);
 
         // A re-cons of a list a loop holds as an offset (§7's re-consing
         // rule, §8's *Scalar views*): the offset it was matched at, or the
@@ -10564,6 +10589,393 @@ pub const Lowerer = struct {
         }
     }
 
+    // ---- The program hook (boundary.md §9.4.6, version 1.6) ---------------
+    //
+    // A lowering that compiles a whole program (`browser-direct.md` §11.1)
+    // names its program constructors; every call of one in a surviving
+    // declaration is found before anything is lowered, so that the `view`
+    // and `update` only a program record names are known not to be emitted
+    // (`consumed`), and at the call the lowering is handed the program in
+    // place of the record, which is never evaluated.
+
+    /// A platform value an instruction names: its module's name and its
+    /// own, and whether it is a `foreign`.
+    const PlatformValue = struct { module: []const u8, name: []const u8, foreign: bool };
+
+    fn platformValue(l: *Lowerer, inst: Inst.Index) ?PlatformValue {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .ext_value => {
+                const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                if (module.int() >= l.in.interfaces.len) return null;
+                if (l.in.graph.modulePackage(module) != .platform) return null;
+                const iface = &l.in.interfaces[module.int()];
+                if (d.rhs >= iface.values.len) return null;
+                const v = iface.values[d.rhs];
+                return .{
+                    .module = l.text(l.in.graph.moduleName(module)),
+                    .name = l.text(iface.symbols[@backingInt(v.name)]),
+                    .foreign = v.is_foreign,
+                };
+            },
+            .top => {
+                if (l.in.graph.modulePackage(l.in.module) != .platform) return null;
+                if (d.lhs >= l.bir.decls.len) return null;
+                const decl = l.bir.decls[d.lhs];
+                return .{ .module = l.text(l.module_name), .name = l.text(l.bir.symbol(decl.name)), .foreign = decl.kind == .foreign_value };
+            },
+            else => return null,
+        }
+    }
+
+    /// The index in the lowering's `programs` of the value `inst` names.
+    fn programConstructorOf(l: *Lowerer, inst: Inst.Index) ?u32 {
+        const mk = l.in.markup orelse return null;
+        if (mk.lowering.programs.len == 0) return null;
+        const v = l.platformValue(inst) orelse return null;
+        for (mk.lowering.programs, 0..) |p, i| {
+            if (std.mem.eql(u8, p.module, v.module) and std.mem.eql(u8, p.name, v.name)) return @intCast(i);
+        }
+        return null;
+    }
+
+    /// The lowering's placement `inst` names.
+    fn placementOf(l: *Lowerer, inst: Inst.Index) ?beni_markup.Placement {
+        const mk = l.in.markup orelse return null;
+        if (mk.lowering.placements.len == 0) return null;
+        const v = l.platformValue(inst) orelse return null;
+        for (mk.lowering.placements) |p| {
+            if (std.mem.eql(u8, p.module, v.module) and std.mem.eql(u8, p.name, v.name)) return p;
+        }
+        return null;
+    }
+
+    /// Every call of a program constructor in a surviving declaration,
+    /// every other use of one refused, the declarations the hook consumes,
+    /// and `main`'s placements checked for a program placed twice.
+    fn findPrograms(l: *Lowerer) !void {
+        const mk = l.in.markup orelse return;
+        const lowering = mk.lowering;
+        if (lowering.programs.len == 0 and lowering.placements.len == 0) return;
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        if (lowering.programs.len != 0) {
+            const callee = try l.scratch.alloc(bool, tags.len);
+            @memset(callee, false);
+            var calls: std.ArrayList(ProgramCall) = .empty;
+            for (l.bir.decls, 0..) |d, di| {
+                if (!d.kind.isValue() or !l.liveDecl(@intCast(di))) continue;
+                var at = d.inst_start.int();
+                while (at < d.inst_end.int()) : (at += 1) {
+                    if (tags[at] != .call) continue;
+                    const f: Inst.Index = @fromBackingInt(@intCast(data[at].lhs));
+                    const ci = l.programConstructorOf(f) orelse continue;
+                    callee[f.int()] = true;
+                    // A refused one is reported here and still found, so its
+                    // record's `view` is not emitted and refused again as a
+                    // markup value.
+                    var pc = l.programCallOf(@fromBackingInt(@intCast(at)), ci);
+                    if (lowering.programs[ci].refused) |message| {
+                        try l.report(.not_implemented, @fromBackingInt(@intCast(at)), "{s}", .{message});
+                        pc.refused = true;
+                    }
+                    try calls.append(l.scratch, pc);
+                }
+            }
+            // A constructor used as anything but the callee of a call: the
+            // program it makes is known only at run time, and so is its
+            // `view`, which this lowering cannot render (§11.1).
+            for (l.bir.decls, 0..) |d, di| {
+                if (!d.kind.isValue() or !l.liveDecl(@intCast(di))) continue;
+                var at = d.inst_start.int();
+                while (at < d.inst_end.int()) : (at += 1) {
+                    if (callee[at] or (tags[at] != .ext_value and tags[at] != .top)) continue;
+                    const ci = l.programConstructorOf(@fromBackingInt(@intCast(at))) orelse continue;
+                    const named = lowering.programs[ci];
+                    if (named.refused) |message| {
+                        try l.report(.not_implemented, @fromBackingInt(@intCast(at)), "{s}", .{message});
+                        continue;
+                    }
+                    try l.report(.view_not_compiled, @fromBackingInt(@intCast(at)),
+                        \\`{s}.{s}` is used here as a value rather than called with its record, so the
+                        \\program it makes, and that program's `view`, are known only when the page runs.
+                        \\
+                        \\The markup lowering `{s}` compiles each program where its constructor is called
+                        \\(`docs/design/browser-direct.md` §11.1), and has no renderer to hand a `view` it
+                        \\did not compile. Call `{s}.{s}` with the program's record here, or build for
+                        \\`--platform=browser-tea`, which renders any `view`.
+                    , .{ named.module, named.name, lowering.name, named.module, named.name });
+                }
+            }
+            std.mem.sort(ProgramCall, calls.items, {}, struct {
+                fn less(_: void, a: ProgramCall, b: ProgramCall) bool {
+                    return a.inst < b.inst;
+                }
+            }.less);
+            l.program_calls = calls.items;
+            try l.findConsumed();
+        }
+        if (lowering.placements.len != 0) try l.findPlacedTwice();
+    }
+
+    /// The call at `inst` of constructor `ci`, with its record's fields
+    /// when its argument is a record literal.
+    fn programCallOf(l: *Lowerer, inst: Inst.Index, ci: u32) ProgramCall {
+        var pc: ProgramCall = .{ .inst = inst.int(), .constructor = ci };
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
+        if (args.len != 1 or l.bir.instTag(args[0]) != .record) return pc;
+        pc.record = true;
+        for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[0])), Bir.Field)) |field| {
+            const field_name = l.text(l.bir.symbol(field.name));
+            if (std.mem.eql(u8, field_name, "init")) pc.init = field.value;
+            if (std.mem.eql(u8, field_name, "update")) pc.update = field.value;
+            if (std.mem.eql(u8, field_name, "view")) pc.view = field.value;
+        }
+        return pc;
+    }
+
+    /// The `view` and `update` declarations the hook consumes: a function
+    /// of this module that a program record names, that no other module can
+    /// name (not `pub`, not the entry, no method), and that nothing else in
+    /// a surviving declaration of this module names.
+    fn findConsumed(l: *Lowerer) !void {
+        if (l.program_calls.len == 0) return;
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        const decls = l.bir.decls;
+        const candidate = try l.scratch.alloc(bool, decls.len);
+        @memset(candidate, false);
+        var field_refs = try std.DynamicBitSetUnmanaged.initEmpty(l.scratch, tags.len);
+        var any = false;
+        for (l.program_calls) |pc| {
+            for ([_]?Inst.Index{ pc.view, pc.update }) |field| {
+                const f = field orelse continue;
+                if (tags[f.int()] != .top) continue;
+                const index = data[f.int()].lhs;
+                if (index >= decls.len) continue;
+                const d = decls[index];
+                if (d.kind != .value or d.params == 0 or d.is_pub) continue;
+                if (l.in.entry_decl) |entry| if (entry == index) continue;
+                candidate[index] = true;
+                field_refs.set(f.int());
+                any = true;
+            }
+        }
+        if (!any) return;
+        for (l.in.dispatch.terms) |t| switch (t) {
+            .top => |u| if (@backingInt(u.decl) < decls.len) {
+                candidate[@backingInt(u.decl)] = false;
+            },
+            else => {},
+        };
+        for (decls, 0..) |d, di| {
+            if (!l.liveDecl(@intCast(di))) continue;
+            var at = d.inst_start.int();
+            while (at < d.inst_end.int()) : (at += 1) {
+                if (tags[at] != .top or field_refs.isSet(at)) continue;
+                if (data[at].lhs < decls.len) candidate[data[at].lhs] = false;
+            }
+        }
+        l.consumed = candidate;
+    }
+
+    /// One top-level program value a placement places, by module and
+    /// declaration or interface row.
+    const Placed = struct { module: u32, value: u32 };
+
+    /// `program_mounted_twice` (`browser-direct.md` §8.2): a top-level
+    /// program value named twice among what `main`'s placements place —
+    /// through `programs` lists, `mountAt`s and the top-level values of this
+    /// module that hold them — would be one state mounted twice.
+    fn findPlacedTwice(l: *Lowerer) !void {
+        const entry = l.in.entry_decl orelse return;
+        const body = l.bir.decls[entry].body.unwrap() orelse return;
+        var seen: std.ArrayList(Placed) = .empty;
+        try l.placedIn(body, &seen, 0);
+    }
+
+    fn placedIn(l: *Lowerer, inst: Inst.Index, seen: *std.ArrayList(Placed), depth: u32) !void {
+        if (depth > 64) return;
+        switch (l.bir.instTag(inst)) {
+            .call => {
+                const d = l.bir.instData(inst);
+                const placement = l.placementOf(@fromBackingInt(@intCast(d.lhs))) orelse return;
+                const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+                switch (placement.places) {
+                    .list => if (args.len == 1 and l.bir.instTag(args[0]) == .list) {
+                        for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[0])), Inst.Index)) |item| try l.placedIn(item, seen, depth + 1);
+                    },
+                    .first => if (args.len != 0) try l.placedIn(args[0], seen, depth + 1),
+                    else => {},
+                }
+            },
+            .top, .ext_value => {
+                const d = l.bir.instData(inst);
+                const key: Placed = if (l.bir.instTag(inst) == .top)
+                    .{ .module = l.in.module.int(), .value = d.lhs }
+                else
+                    .{ .module = d.lhs, .value = d.rhs };
+                for (seen.items) |s| if (s.module == key.module and s.value == key.value) {
+                    const shown = if (l.bir.instTag(inst) == .top)
+                        try std.fmt.allocPrint(l.scratch, "{s}.{s}", .{ l.text(l.module_name), l.text(l.bir.symbol(l.bir.decls[d.lhs].name)) })
+                    else blk: {
+                        const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                        const iface = &l.in.interfaces[module.int()];
+                        break :blk try std.fmt.allocPrint(l.scratch, "{s}.{s}", .{ l.text(l.in.graph.moduleName(module)), l.text(iface.symbols[@backingInt(iface.values[d.rhs].name)]) });
+                    };
+                    return l.report(.program_mounted_twice, inst,
+                        \\The program `{s}` is placed on this page a second time here.
+                        \\
+                        \\Under the markup lowering `{s}`, a program value keeps one state — its model,
+                        \\its nodes — for as long as the page runs, so two mounts of one value would
+                        \\share it and each would show the other's writes (`docs/design/browser-direct.md`
+                        \\§8.2). Build the program with a function, so that each mount is a value of its
+                        \\own: `counter start = Tea.sandbox {{ init = start, … }}`, then
+                        \\`Browser.programs [ counter 0, counter 5 ]`.
+                    , .{ shown, l.in.markup.?.lowering.name });
+                };
+                try seen.append(l.scratch, key);
+                // A top-level value of this module that holds placements:
+                // what it places is placed here.
+                if (l.bir.instTag(inst) == .top and d.lhs < l.bir.decls.len) {
+                    const decl = l.bir.decls[d.lhs];
+                    if (decl.kind == .value and decl.params == 0) if (decl.body.unwrap()) |body| try l.placedIn(body, seen, depth + 1);
+                }
+            },
+            else => {},
+        }
+    }
+
+    /// The program call at instruction `inst`, if there is one.
+    fn programCallAt(l: *Lowerer, inst: Inst.Index) ?*ProgramCall {
+        const calls = l.program_calls;
+        var lo: usize = 0;
+        var hi: usize = calls.len;
+        while (lo < hi) {
+            const mid = (lo + hi) / 2;
+            if (calls[mid].inst < inst.int()) lo = mid + 1 else hi = mid;
+        }
+        if (lo < calls.len and calls[lo].inst == inst.int()) return &calls[lo];
+        return null;
+    }
+
+    /// What a program record's field is, for the hook (`Program.Shape`),
+    /// and the markup root that is its body when it is markup.
+    fn programShape(l: *Lowerer, field: ?Inst.Index) struct { beni_markup.Program.Shape, ?beni_markup.Root.Index } {
+        const f = field orelse return .{ .computed, null };
+        const d = l.bir.instData(f);
+        const body: Inst.Index = switch (l.bir.instTag(f)) {
+            .lambda => @fromBackingInt(@intCast(d.rhs)),
+            .top => blk: {
+                if (d.lhs >= l.bir.decls.len) return .{ .computed, null };
+                const decl = l.bir.decls[d.lhs];
+                if (decl.kind != .value or decl.params == 0) return .{ .computed, null };
+                break :blk decl.body.unwrap() orelse return .{ .computed, null };
+            },
+            .ext_value => {
+                const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                if (module.int() >= l.in.interfaces.len) return .{ .computed, null };
+                const use = Convention.ofImport(l.in.interfaces, module, d.rhs);
+                return .{ if (use.arity != 0) .other_module else .computed, null };
+            },
+            else => return .{ .computed, null },
+        };
+        if (l.bir.instTag(body) != .markup) return .{ .function, null };
+        const st = l.mk orelse return .{ .function, null };
+        const root = st.built.rootAt(body.int()) orelse return .{ .function, null };
+        return .{ .markup, root };
+    }
+
+    /// A call of a program constructor: the constructor applied to the
+    /// mount the lowering's hook returns.
+    fn programCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, pc: *ProgramCall, callee_inst: Inst.Index) !Node.Index {
+        const p = l.pos(inst);
+        if (pc.refused) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        const callee = try l.expr(out, callee_inst);
+        const st = l.mk orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        const hook = st.lowering.program orelse {
+            try l.report(.internal, inst, "The markup lowering `{s}` names program constructors and has no program hook.", .{st.lowering.name});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        };
+        const view, const view_root = l.programShape(pc.view);
+        const update, _ = l.programShape(pc.update);
+        const program: beni_markup.Program = .{
+            .constructor = pc.constructor,
+            .record = pc.record,
+            .view = if (pc.record) view else .computed,
+            .view_root = if (pc.record) view_root else null,
+            .update = if (pc.record) update else .computed,
+        };
+        // Each lowering of the call evaluates `init` once: a declaration
+        // lowered twice (§16.2's two bodies) writes the call twice.
+        pc.init_used = false;
+        const saved_now = l.program_now;
+        l.program_now = pc;
+        defer l.program_now = saved_now;
+        const saved_pos = st.pos;
+        st.pos = p;
+        defer st.pos = saved_pos;
+        const mount = hook(&st.cx, &st.built.tree, &program) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Reported => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+        };
+        return l.call(callee, &.{@fromBackingInt(@intCast(@backingInt(mount)))}, p);
+    }
+
+    /// `cx.programInit`: the program's `init`, evaluated into `block`, as
+    /// a function the lowering makes evaluates it.
+    fn programInit(l: *Lowerer, block: beni_markup.Block) Allocator.Error!Node.Index {
+        const st = l.mk.?;
+        const p = st.pos;
+        const pc = l.program_now orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        const init = pc.init orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        if (pc.init_used) {
+            try l.report(.internal, init, "A markup lowering asked for a program's `init` twice.", .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        pc.init_used = true;
+        var stmts: StmtList = .empty;
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const value = try l.expr(&stmts, init);
+        // Bound to a name, which `--release` keeps though nothing reads it
+        // when `init` may have an effect — a throw that stops the page, a
+        // `Debug.log` — as it keeps any such binding (`backend.md` §9).
+        const bound = try l.fresh(try l.interner.getOrPut(l.gpa, "init"));
+        try l.constDecl(&stmts, bound, value, p);
+        if (l.mayHaveEffect(init)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return l.ident(bound, p);
+    }
+
+    /// `cx.programReport`: `code` at a part of the program's pc.
+    fn programReport(l: *Lowerer, part: beni_markup.Program.Part, code: beni_markup.Program.Code, message: []const u8) Allocator.Error!void {
+        const pc = l.program_now orelse return;
+        const region: Inst.Index = switch (part) {
+            .init => pc.init,
+            .update => pc.update,
+            .view => pc.view,
+            else => null,
+        } orelse @fromBackingInt(@intCast(pc.inst));
+        try l.report(switch (code) {
+            .view_not_compiled => .view_not_compiled,
+            else => .not_implemented,
+        }, region, "{s}", .{message});
+    }
+
+    /// A markup root that is a value — outside the `view` a program is
+    /// called with — or a markup primitive, under a lowering that has no
+    /// run-time value of the markup type (§9.4.6, version 1.6).
+    fn refuseMarkupValue(l: *Lowerer, inst: Inst.Index) !bool {
+        const mk = l.in.markup orelse return false;
+        const message = mk.lowering.no_markup_values orelse return false;
+        try l.report(.not_implemented, inst, "{s}", .{message});
+        return true;
+    }
+
     // ---- Markup (backend.md §15.1; boundary.md §9.4) ----------------------
     //
     // The compiler's part around the build's markup lowering: the tree is
@@ -10592,7 +11004,12 @@ pub const Lowerer = struct {
             .interfaces = l.in.interfaces,
             .comparison = .{ .ctx = l, .classify = classifyComparison },
             .debug_module = if (l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol())) |d| d.int() else null,
-        }) orelse return;
+        }) orelse blk: {
+            // A module with no markup of its own may still call a program
+            // constructor: the hook runs with an empty tree (§9.4.6, 1.6).
+            if (l.program_calls.len == 0) return;
+            break :blk MarkupTree.empty;
+        };
         const st = try l.scratch.create(MarkupState);
         st.* = .{
             .built = built,
@@ -10630,6 +11047,7 @@ pub const Lowerer = struct {
             });
             return;
         }
+        if (built.tree.roots.len == 0) return;
         mk.lowering.module(&st.cx, &st.built.tree) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Reported => {},
@@ -10642,6 +11060,7 @@ pub const Lowerer = struct {
         const p = l.pos(inst);
         const st = l.mk orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const index = st.built.rootAt(inst.int()) orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        if (try l.refuseMarkupValue(inst)) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const root = st.built.tree.root(index);
         // A grouped root's values are the lowering's to evaluate, inside
         // its own functions (`boundary.md` §9.4.6, 1.5).
@@ -11101,17 +11520,41 @@ pub const Lowerer = struct {
     }
 
     fn reportRestructured(l: *Lowerer, node: beni_markup.Node.Index, message: []const u8) Allocator.Error!void {
+        return l.reportAtNode(.markup_restructured, node, message);
+    }
+
+    fn reportAtNode(l: *Lowerer, code: diagnostic.Code, node: beni_markup.Node.Index, message: []const u8) Allocator.Error!void {
         const st = l.mk.?;
         const owned = try l.gpa.dupe(u8, message);
         errdefer l.gpa.free(owned);
         try l.diagnostics.append(l.gpa, .{
-            .code = .markup_restructured,
+            .code = code,
             .module = l.in.module,
             .region = l.region,
             .token = st.built.node_tokens[@backingInt(node)],
             .message = owned,
         });
     }
+};
+
+/// One call of a program constructor of the build's lowering
+/// (`Lowerer.findPrograms`; `boundary.md` §9.4.6, version 1.6).
+const ProgramCall = struct {
+    /// The call instruction.
+    inst: u32,
+    /// Its index in the lowering's `programs`.
+    constructor: u32,
+    /// The argument is a record literal written at the call.
+    record: bool = false,
+    /// The record's fields, when it is one.
+    init: ?Inst.Index = null,
+    update: ?Inst.Index = null,
+    view: ?Inst.Index = null,
+    /// The lowering refuses the constructor (`Named.refused`), reported
+    /// already: the call is lowered as nothing.
+    refused: bool = false,
+    /// `cx.programInit` has evaluated `init`.
+    init_used: bool = false,
 };
 
 /// What the compiler keeps while it lowers one module's markup.
@@ -11349,6 +11792,21 @@ const markup_vtable: beni_markup.VTable = struct {
         return error.Reported;
     }
 
+    fn notImplemented(impl: *anyopaque, n: M.Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
+        const l = lowerer(impl);
+        try l.reportAtNode(.not_implemented, n, message);
+        return error.Reported;
+    }
+
+    fn programInit(impl: *anyopaque, into: M.Block) E!M.Expr {
+        return expr(try lowerer(impl).programInit(into));
+    }
+
+    fn programReport(impl: *anyopaque, at_: M.Program.Part, code: M.Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
+        try lowerer(impl).programReport(at_, code, message);
+        return error.Reported;
+    }
+
     fn literal(impl: *anyopaque, which: M.Literal, bytes: []const u8) E!M.Expr {
         const l = lowerer(impl);
         const p = pos(l);
@@ -11502,6 +11960,9 @@ const markup_vtable: beni_markup.VTable = struct {
         .is_just = isJust,
         .start = start,
         .report = report,
+        .not_implemented = notImplemented,
+        .program_init = programInit,
+        .program_report = programReport,
         .literal = literal,
         .template = template,
         .name = name,
