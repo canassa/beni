@@ -1,16 +1,17 @@
 //! The page fuzzer (`tests/browser/fuzz.mjs`, docs/design/browser-direct.md
 //! §8.3, amended 2026-10-09) proved on a program of its own: the message
 //! types it reads from the checker (`beni dump --stage=writes
-//! --msg-types`), two clean builds that agree, and a build with one hole's
-//! write broken, which it must catch — a fuzzer that never fails proves
+//! --msg-types`), two clean builds that agree, and builds with one write
+//! broken, each of which it must catch — a fuzzer that never fails proves
 //! nothing. The corpus walker runs the same fuzzer on every `browser/tea/`
 //! and `browser/direct/` page (`corpus_test.zig`, `fuzzPair`).
 //!
-//! The broken build is a copy of a development build with the write of
-//! the count's hole guarded by `count >= 0`: a missed write, the stale page
-//! the fuzzer exists to find. No view event of the program makes the count
-//! negative, so only a message drawn from the message type reaches it — a
-//! payload no button of the page sends.
+//! A broken build is a copy of a development build with one write
+//! skipped, the stale page the fuzzer exists to find: a text hole's when
+//! the count is negative — which no view event of `program` makes, so
+//! only a message drawn from the message type reaches it — and, in
+//! `document`, every write after the first of an attribute hole, a
+//! controlled input's `.value`, a keyed list, and the page's title.
 //!
 //! Each fuzz run is recorded in `tests/blackbox/run-hashes.txt` like a
 //! scenario's program run (`run_hash.checkDigested`): Node runs only when
@@ -116,10 +117,84 @@ const program_types =
     \\
 ;
 
-/// Write `program`, build it twice for `browser-tea` in development, into
+/// A document program whose every message writes one other kind of
+/// thing: a controlled input's value, the title, an attribute, a keyed
+/// list. Every constructor is built by a button or a row.
+const document =
+    \\import Cmd exposing (Cmd)
+    \\import Html exposing (Html)
+    \\import Sub
+    \\import Tea
+    \\
+    \\
+    \\type Msg
+    \\    = Typed String
+    \\    | Retitle String
+    \\    | Mark Bool
+    \\    | Push Int
+    \\    | Remove Int
+    \\
+    \\
+    \\type alias Model =
+    \\    marked : Bool
+    \\    rows : List Int
+    \\    text : String
+    \\    title : String
+    \\
+    \\
+    \\update : Msg, Model → Model × Cmd Msg
+    \\update msg m =
+    \\    case msg of
+    \\        Typed s →
+    \\            ( { m | text = s }, Cmd.none )
+    \\
+    \\        Retitle s →
+    \\            ( { m | title = s }, Cmd.none )
+    \\
+    \\        Mark b →
+    \\            ( { m | marked = b }, Cmd.none )
+    \\
+    \\        Push k →
+    \\            ( { m | rows = [ …m.rows, k ] }, Cmd.none )
+    \\
+    \\        Remove k →
+    \\            ( { m | rows = List.filter m.rows λr → r ≠ k }, Cmd.none )
+    \\
+    \\
+    \\view : Model → Tea.Document Msg
+    \\view m =
+    \\    { title = m.title
+    \\    , body =
+    \\        <main>
+    \\            <input id="text" value={m.text} onInput={Typed} />
+    \\            <p id="mark" class={if m.marked then "on" else "off"}>mark</p>
+    \\            <ul>
+    \\                <For each={m.rows} keyed={String.fromInt}>
+    \\                    {λr → <li onClick={Remove r}>{r}</li>}
+    \\                </For>
+    \\            </ul>
+    \\            <button onClick={Retitle "x"}>retitle</button>
+    \\            <button onClick={Mark True}>mark</button>
+    \\            <button onClick={Push 1}>push</button>
+    \\        </main>
+    \\    }
+    \\
+    \\
+    \\main : Tea.Program
+    \\main =
+    \\    Tea.document
+    \\        { init = ( { marked = False, rows = [ 1, 2, 3 ], text = "", title = "start" }, Cmd.none )
+    \\        , update = update
+    \\        , view = view
+    \\        , subscriptions = λ_ → Sub.none
+    \\        }
+    \\
+;
+
+/// Write `source`, build it twice for `browser-tea` in development, into
 /// `a/` and `b/`, and dump its message types into `types.jsonl`.
-fn setUp(w: *World) !void {
-    try w.write("Main.beni", program);
+fn setUp(w: *World, source: []const u8) !void {
+    try w.write("Main.beni", source);
     for ([_][]const u8{ "--out=a", "--out=b" }) |out| {
         const built = try w.runWith(&.{ "build", "--platform=browser-tea", out, "Main.beni" }, .{ .raw_diagnostics = true });
         if (built.exit_code != 0 or built.stderr.len != 0) {
@@ -148,10 +223,39 @@ fn breakCountHole(w: *World) !void {
     try w.write("b/Main.mjs", try std.mem.concat(arena, u8, &.{ js[0..start], guarded, js[end..] }));
 }
 
+/// Break `b/`'s file `path`: the statement on the first line holding
+/// `needle` runs once, at mount, and never again — every later write it
+/// would make is missed.
+fn breakAfterMount(w: *World, path: []const u8, needle: []const u8) !void {
+    const arena = w.arena.allocator();
+    const js = try w.read(path);
+    const at = std.mem.indexOf(u8, js, needle) orelse {
+        std.debug.print("{s} holds no `{s}`: the emitted write this test breaks moved\n", .{ path, needle });
+        return error.NoWriteToBreak;
+    };
+    const start = (std.mem.lastIndexOfScalar(u8, js[0..at], '\n') orelse 0) + 1;
+    const end = std.mem.indexOfScalarPos(u8, js, at, '\n') orelse js.len;
+    const line = js[start..end];
+    const statement = std.mem.trimStart(u8, line, " ");
+    try w.write(path, try std.mem.concat(arena, u8, &.{
+        "let broken$ = false;\n",
+        js[0..start],
+        line[0 .. line.len - statement.len],
+        "if (!broken$) { broken$ = true; ",
+        statement,
+        " }",
+        js[end..],
+    }));
+}
+
 /// The fuzz of `f`, expected to end with `code` and print `stdout`, unless
 /// the index lists this exact run (`run_hash.checkDigested`).
-fn expectFuzz(w: *World, f: browser.Fuzz, code: u8, stdout: []const u8) !void {
+fn expectFuzz(w: *World, given: browser.Fuzz, code: u8, stdout: []const u8) !void {
     const arena = w.arena.allocator();
+    // Two seeds of fifteen steps, whatever the gates' corpus fuzz runs.
+    var f = given;
+    f.seeds = "1,2";
+    f.steps = 15;
     const h = try browser.harness(testing.io);
     const line = try browser.fuzzLine(arena, w, h, f);
     const digest = try run_hash.digestOf(arena, &.{ line, &.{code}, stdout });
@@ -170,7 +274,10 @@ fn expectFuzz(w: *World, f: browser.Fuzz, code: u8, stdout: []const u8) !void {
             return false;
         }
     };
-    if (try run_hash.checkDigested(w, digest, Run{ .w = w, .h = h, .f = f, .code = code, .stdout = stdout }, Run.go)) |ok| {
+    // A verdict that may be recorded proves the page replays itself.
+    var replayed = f;
+    replayed.replay = true;
+    if (try run_hash.checkDigested(w, digest, Run{ .w = w, .h = h, .f = replayed, .code = code, .stdout = stdout }, Run.go)) |ok| {
         if (!ok) return error.FuzzMismatch;
     }
 }
@@ -258,14 +365,17 @@ test "two development builds of one program agree on every seed, messages and ev
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try setUp(&w);
+    try setUp(&w, program);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY OUTPUT                 │
     // └─────────────────────────────────────────┘
+    // Every constructor can be made, and the first eight messages of a
+    // sequence send each in turn.
     try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "again", .types = "types.jsonl" }, 0,
-        \\seed 1: 15 steps agree (7 view events, 4 messages, 4 host steps)
-        \\seed 2: 15 steps agree (9 view events, 5 messages, 1 host step)
+        \\the program: 8 constructors sent
+        \\seed 1: 15 steps agree (4 view events, 8 messages, 3 host steps)
+        \\seed 2: 15 steps agree (9 view events, 6 messages, 0 host steps)
         \\
     );
 }
@@ -276,7 +386,7 @@ test "a build that misses one hole's write is caught, at the message that shows 
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try setUp(&w);
+    try setUp(&w, program);
     try breakCountHole(&w);
 
     // ┌─────────────────────────────────────────┐
@@ -286,14 +396,15 @@ test "a build that misses one hole's write is caught, at the message that shows 
     // message that shows the stale count; the element where the pages
     // differ.
     try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "broken", .types = "types.jsonl" }, 1,
-        \\seed 1: 15 steps agree (7 view events, 4 messages, 4 host steps)
-        \\development and broken differ: seed 2, step 4 of 15, message Add -100
-        \\shrunk from 4 steps to 1:
-        \\  message Add -100
+        \\the program: 8 constructors sent
+        \\seed 1: 15 steps agree (4 view events, 8 messages, 3 host steps)
+        \\development and broken differ: seed 2, step 11 of 15, message Set { count = -3, flag = False }
+        \\shrunk from 11 steps to 1:
+        \\  message Set { count = -3, flag = False }
         \\(a `message` line is a value sent to the program; the others are `.steps` lines)
-        \\after message Add -100:
+        \\after message Set { count = -3, flag = False }, the body differs:
         \\--- development ---
-        \\    <p id="n">"-100"</p>
+        \\    <p id="n">"-3"</p>
         \\--- broken ---
         \\    <p id="n">"0"</p>
         \\
@@ -306,7 +417,7 @@ test "view events alone never reach the broken hole: no button makes the count n
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try setUp(&w);
+    try setUp(&w, program);
     try breakCountHole(&w);
 
     // ┌─────────────────────────────────────────┐
@@ -317,6 +428,125 @@ test "view events alone never reach the broken hole: no button makes the count n
     try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "broken" }, 0,
         \\seed 1: 15 steps agree (13 view events, 0 messages, 2 host steps)
         \\seed 2: 15 steps agree (13 view events, 0 messages, 2 host steps)
+        \\
+    );
+}
+
+test "a missed attribute write is caught at the message that changes the attribute" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try setUp(&w, document);
+    try breakAfterMount(&w, "b/Main.mjs", "setAttribute(\"class\"");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "broken", .types = "types.jsonl" }, 1,
+        \\the program: 5 constructors sent
+        \\development and broken differ: seed 1, step 6 of 15, message Mark True
+        \\shrunk from 6 steps to 1:
+        \\  message Mark True
+        \\(a `message` line is a value sent to the program; the others are `.steps` lines)
+        \\after message Mark True, the body differs:
+        \\--- development ---
+        \\    <p id="mark" class="on">"mark"</p>
+        \\--- broken ---
+        \\    <p id="mark" class="off">"mark"</p>
+        \\
+    );
+}
+
+test "a missed write of a controlled input's value is caught" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try setUp(&w, document);
+    try breakAfterMount(&w, "b/Main.mjs", "Rt$control(");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    // `.value` is the control's live value, not its attribute.
+    try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "broken", .types = "types.jsonl" }, 1,
+        \\the program: 5 constructors sent
+        \\development and broken differ: seed 1, step 4 of 15, message Typed "1"
+        \\shrunk from 4 steps to 1:
+        \\  message Typed "1"
+        \\(a `message` line is a value sent to the program; the others are `.steps` lines)
+        \\after message Typed "1", the body differs:
+        \\--- development ---
+        \\    <input id="text" .value="1">
+        \\--- broken ---
+        \\    <input id="text" .value="">
+        \\
+    );
+}
+
+test "a keyed list that misses a change is caught, its element the list" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try setUp(&w, document);
+    try breakAfterMount(&w, "b/Main.mjs", "Rt$forKeyed(");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "broken", .types = "types.jsonl" }, 1,
+        \\the program: 5 constructors sent
+        \\development and broken differ: seed 1, step 7 of 15, message Push 1
+        \\shrunk from 7 steps to 1:
+        \\  message Push 1
+        \\(a `message` line is a value sent to the program; the others are `.steps` lines)
+        \\after message Push 1, the body differs:
+        \\--- development ---
+        \\    <ul>
+        \\      <li>"1"</li>
+        \\      <li>"2"</li>
+        \\      <li>"3"</li>
+        \\      <li>"1"</li>
+        \\    </ul>
+        \\--- broken ---
+        \\    <ul>
+        \\      <li>"1"</li>
+        \\      <li>"2"</li>
+        \\      <li>"3"</li>
+        \\    </ul>
+        \\
+    );
+}
+
+test "a missed title write is caught though the body is the same" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try setUp(&w, document);
+    // The title is written by the platform (`Hosted.title`), not the program.
+    try breakAfterMount(&w, "b/_platform/_browser/Hosted.mjs", ".title = ");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "broken", .types = "types.jsonl" }, 1,
+        \\the program: 5 constructors sent
+        \\development and broken differ: seed 1, step 5 of 15, message Retitle "ab"
+        \\shrunk from 5 steps to 1:
+        \\  message Retitle "ab"
+        \\(a `message` line is a value sent to the program; the others are `.steps` lines)
+        \\after message Retitle "ab", document.title differs:
+        \\--- development ---
+        \\ab
+        \\--- broken ---
+        \\start
         \\
     );
 }

@@ -555,7 +555,7 @@ pub fn build(b: *std.Build) void {
 
     // The page fuzzer's long sweep (docs/design/browser-direct.md §8.3):
     // every fuzzed `browser/` fixture with fifty seeds of sixty steps, where
-    // the gates run two of fifteen. Part of `fuzz`: no record covers a sweep
+    // the gates run one of thirty. Part of `fuzz`: no record covers a sweep
     // and no budget holds it. Takes `-Dcorpus`.
     fuzz_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .fuzz_seeds = fuzz_sweep_seeds, .fuzz_steps = "60", .budget = false }).step);
 

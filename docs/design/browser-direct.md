@@ -1601,16 +1601,20 @@ The platform half of S0 is built; the stats gate is separate work. What building
 ### *Amended 2026-10-09 (§8.3's differential fuzzing, as built):* the page fuzzer and the `--fuzz` contract
 
 §8.3 item 2 names the fuzzer, its messages and the gates' seeds, not its interfaces. This fixes
-them; the part S1's `--fuzz` flag must meet is marked **contract**.
+them; the part S1's `--fuzz` flag must meet is marked **contract**. Revised the same day after
+the first review listed the ways it could report two builds equal when they differ: **what is
+not compared is listed, never what is**.
 
 - **Where it runs.** `tests/browser/fuzz.mjs` is a module of the page driver: `node driver.mjs
   --dom=… --fuzz=<spec.json>@<report.json>` runs it in the driver's process, after any `--page`
   of the same run, so a fixture pays for Node and the DOM once. Every page it makes is the
   driver's (`happyDomPage`, or `chromePage` under `zig build test-browser`), driven by the
-  driver's `step` and printed by its `serialise`. The spec names two builds' entry files (`a`
-  and `b`), how the report calls them, the message types file (or null), whether both builds
-  take messages as values, the seeds and the steps. Its report is a page report: `code` 0 when
-  every seed agreed, 1 on a difference, 2 for a fault of the fuzzer itself.
+  driver's `step` and printed by its `serialise`. The spec names two builds' entry files, how
+  the report calls them, the message types file, whether both builds take messages as values,
+  the fixture's `.steps`, the log lines the builds may differ on, whether their crash screens
+  are the same, whether to replay, the seeds and the steps. Its report is a page report: `code`
+  0 when every seed agreed, 1 on a difference, 2 for a fault of the fuzzer, a mount count that
+  disagrees with the dump, or a page that does not replay itself.
 - **Where the messages come from: `beni dump --stage=writes --msg-types`**, hidden and test-only
   as `--writes-work` is. It prints one JSON line per program, in `--stage=writes`' order (the
   order `Browser.programs` mounts them): `{"program","index","kind","msg"}`, where `msg` is the
@@ -1623,69 +1627,113 @@ them; the part S1's `--fuzz` flag must meet is marked **contract**.
   the key tree.
 - **The messages.** A value is generated from the descriptor in the **development
   representation** (backend.md §4): numbers, strings, `true`/`false`, `null` for `⊤`, records by
-  field name, tuples as `{a, b, …}`, lists as arrays of up to three elements, an all-nullary
-  type's constructor as its bare tag, any other as `{$, a, b, …}` padded with `null` to the
-  type's widest constructor. The constructor of the message type is chosen first, uniformly,
-  then its payload; below three containers the generator prefers constructors with fewer fields,
-  so a recursive type ends. A constructor whose payload holds a function, a `foreign type`, a
-  `Dict`, a `Set` or an unknown type is not sent.
+  field name, tuples as `{a, b, …}`, lists as arrays, an all-nullary type's constructor as its
+  bare tag, any other as `{$, a, b, …}` padded with `null` to the type's widest constructor.
+  - **Every constructor first.** The first messages of a sequence sweep every constructor of
+    every program that can be made, in order, half the actions while the sweep lasts; then three
+    in ten, the constructor drawn at random.
+  - **The page's own values.** A third of the ints and strings are taken from what the page
+    shows — its text and its `id`, `value`, `href` and `data-*` attributes — so a keyed message
+    names a row that exists; the rest from a fixed pool (empty, spaces, an astral character,
+    markup, `-0` among the floats).
+  - **Lists** are up to three elements, and one in twelve near the top is 33 to 48: past the
+    trie's first leaf (*Lists are arrays*).
+  - **Not sent**, and said so: a constructor every choice of whose payload holds a function, a
+    `foreign type`, a `Dict`, a `Set` or an unknown type. The report's first line per program is
+    `the program: N constructors sent; not sent: Tag (a foreign type), …`.
+  - A message goes to a program by its place among the mounts; a page that mounted another
+    number of programs than the dump lists is a fault (code 2), not a run without messages.
 - **The other actions** are driver steps drawn from the page as it stands: `click`, `dblclick`,
-  `input` of a random text, `key`, `focus` and `blur` on a random element (a `>` chain of
-  `:nth-child` selectors from the body); `event` on the window or the document; `advance` of
-  the virtual clock; `respond` to or `fail` a pending request; `hash`. A sequence with no
-  message is therefore a `.steps` script, and the report prints it as one.
-- **The comparison**, after the load and after every step: the DOM as `serialise` prints it
-  (every element, attribute, text, comment, a control's live value and the focus, as a
-  fixture's transcript), every request the page made, and whether the step threw. A step that
-  throws on both pages ends the sequence (each build's crash screen is its own, §8.2); one that
-  throws on one page is a difference.
+  `input` of a random text or one the page shows, `key`, `focus` and `blur` on a random element
+  (a `>` chain of `:nth-child` selectors from the body); `event` on the window or the document;
+  `advance` of the virtual clock; `respond` to or `fail` a pending request — half the answers
+  being the fixture's own script's `respond` lines, status, body and headers, so a decoder sees
+  what it expects; `hash`. A sequence with no message is therefore a `.steps` script, and the
+  report prints it as one.
+- **The comparison**, after the load and after every step, of everything a step may change:
+  - the body as `serialise` prints it (every element, attribute, text, comment, a control's
+    live value and the focus, as a fixture's transcript);
+  - what it does not print: an option's `selected`, `disabled`, `hidden`, `indeterminate`,
+    `open` and `readOnly` as properties, and a text control's selection range;
+  - `document.title`, `location.href`, and both storages (a storage the page made unreadable,
+    by what reading it threw);
+  - every line the driver logged — requests, `console.*`, prevented defaults, links followed —
+    less the patterns the spec's `ignore` names, which is a denylist: empty for a development
+    and release pair, `^console\.log: ` for `browser-tea` against `browser-direct` (a
+    `Debug.log` in a view prints when its group runs, §8.4);
+  - every error the step threw, by its text.
+- **When a step throws.** "Both threw" is not agreement: the errors' texts, the log and the
+  title, address and storages must agree too, and the body as well when the spec says the two
+  builds' crash screens are the same (`browser-tea` against `browser-direct`, by S0's amendment;
+  not a development build against a release one, whose screen is its own). The pages then settle
+  up to five more turns, so what the stopping pages still do — a release a task later — is
+  compared whole, wherever it falls between two turns. The sequence ends there, and the line
+  says so: `seed 1: both threw at the load, so 0 of 30 steps ran (…): Error: …`, never "30
+  steps agree".
 - **The report** names the seed, the step and its action, the sequence shrunk to fewer actions
-  that still differ (dropping halving chunks, at most 40 tries, each two pages), and the
-  smallest element of each DOM holding every differing line.
-- **Seeds.** A seed is a mulberry32 stream; the whole sequence is a function of the seed and of
-  the page it is drawn from, and the second build replays the first's actions, so a seed names
-  its sequence on every machine.
+  that still differ **in the same part** (dropping halving chunks, at most 40 tries, each two
+  pages, and saying so when the budget ran out), what differs, and for the body the smallest
+  element of each holding every differing line.
+- **Seeds and replay.** A seed is a mulberry32 stream; the second build replays the first's
+  actions. Every page has `Math.random` (an LCG from 1), `new Date()`, `Date.now` and
+  `performance.now` pinned to the driver's virtual clock and fixed sequence, besides the
+  prelude's `crypto.getRandomValues`. Wherever a verdict may be recorded — `zig build
+  test-run-hashes`, the scenarios of `page_fuzz_test.zig` — and in a sweep, the first seed is
+  also played twice on the first build, and the two must agree, so a page that does not replay
+  itself never passes into a record.
 - **Which pairs the gates fuzz** (the corpus walker, `fuzzPair`): a `browser/direct/` page's
   `browser-tea` and `browser-direct` development builds, unless the fixture has a
-  `.tea-expected` (the two are specified to differ); a `browser/tea/` page's development and
-  release builds, which backend.md §9 says behave alike. **Two seeds of fifteen steps**, a line
-  `fuzz <node> <dom> <sha-256>` in the fixture's `.run-hash` covering both output trees, the
-  driver, the fuzzer, the message types and the spec, so a verified fuzz is not run again.
-  Measured on TodoMVC: about 25 ms of CPU per seed's two page loads and 1.2 ms per step on both
-  pages, half a billion instructions per fixture that runs. `zig build fuzz` runs fifty seeds
-  of sixty steps (`BENI_FUZZ_SEEDS`, `BENI_FUZZ_STEPS`), with no record and no budget.
-- **Today neither pair sends messages as values**: a release build's values are not the
-  development representation, and `browser-direct` has no dispatcher until `--fuzz` lands. So
-  until then the gates fuzz view and host events; `page_fuzz_test.zig` proves the value path on
-  two `browser-tea` development builds, and shows it is needed — a build whose count hole skips
-  negative values is caught by the message `Add -100`, shrunk to that one message, while the
-  same seeds with view events alone never reach the hole. A release-only break in `browser`'s
-  runtime (a `hidden` attribute never removed) was caught on TodoMVC as a two-step `.steps`
-  script, and removed.
-- **Contract — S1's `--fuzz` flag.** A hidden, test-only flag of `beni build`, development
-  builds only (`--release --fuzz` is refused), on both platforms:
+  `.tea-expected`; a `browser/tea/` page's development and release builds, which backend.md §9
+  says behave alike. **One seed of thirty steps**, a line `fuzz <node> <dom> <sha-256>` in the
+  fixture's `.run-hash` covering both output trees, the driver, the fuzzer, the message types,
+  the fixture's script and the spec. One seed and not two of fifteen, because a page and its
+  module graph cost more than fifteen steps: `browser/tea/ApiAndRoutes`'s two builds take 3.4
+  of its 4.3 billion instructions, and the fuzz with two pages brings it to 4.14. `zig build
+  fuzz` runs fifty seeds of sixty steps (`BENI_FUZZ_SEEDS`, `BENI_FUZZ_STEPS`), with no record
+  and no budget. Each page loads a copy of its build at a path made of the build's content and
+  the page's number (`zig-out/browser-fuzz-pages/`, pruned after an hour), so the driver's
+  compile cache, keyed by path, keeps one entry per module of a page and not one per run.
+- **Messages as values in the gates: through `--fuzz` builds, for both pairs.** The generator
+  does not learn the release representation (integer tags, short field names): those are the
+  release optimiser's choices, which the fuzz would then share. Instead a `--fuzz` build takes
+  the development representation in release too (contract, below), and when the compiler has
+  the flag, `fuzzPair` builds the pair's two sides again with it, dumps the message types and
+  sends values; until then the pair is the fixture's own builds and its fuzz is view and host
+  events. The walker asks the compiler once per process whether `build --fuzz` is known.
+- **Contract — S1's `--fuzz` flag.** A hidden, test-only flag of `beni build`, on both
+  platforms, **in development and in release** (`--release --fuzz` is accepted; amending the
+  first version of this list, which refused it):
   1. **It roots every constructor of every program's message type**, and transitively of every
      type its payloads name, as a `--library` build roots every constructor (backend.md §9, *A
      `case` arm on a constructor nothing builds*). Without it a message whose constructor no
-     code builds reaches an arm lowered as `undefined`, or none, and the two platforms need not
-     agree — the fuzzer would report the elimination, not a missed write. The fuzz builds both
-     sides with the flag, so the pair is its own two builds, not the fixture's.
-  2. **On `browser-direct` it emits the dispatcher** `globalThis.__beniFuzz = { send(program,
+     code builds reaches an arm lowered as `undefined`, or none, and the two builds need not
+     agree — the fuzzer would report the elimination, not a missed write.
+  2. **Under `--release`, every program's message type, and every type its payloads name, is a
+     type JavaScript sees** (boundary.md §4, *What JavaScript may read of a beni value*): its
+     tags stay strings and its records' fields their names (§9, *Item 4, taken up*), so a value
+     the fuzzer makes in the development representation is one the release build reads. The
+     rest of the program keeps item 4's representation.
+  3. **On `browser-direct` it emits the dispatcher** `globalThis.__beniFuzz = { send(program,
      msg) }`, set before the first program mounts: `program` is the index of the program in
      mount order, `msg` a value of its message type in the development representation. `send`
      dispatches `msg` as a carrier's message is dispatched (§4.4): through the guard, to the
      handler of its key or to `patchAll`, its writes done when `send` returns. An index with no
      program throws.
-  3. On `browser-tea` nothing more is needed: the fuzzer sends a value to a development
-     build's mount node through its `$$root`, recording the mounts in order before the program
-     loads.
-  When the flag lands, `fuzzPair`'s `browser/direct/` pair is built with it, gets the message
-  types from the dump, and sends values.
-- **Known limits.** `browser/dom/` pages and the root `browser/` pages are not fuzzed (their
-  platforms have no second build to compare with; a development-against-release pair would
-  serve, as for `browser/tea/`). A message is sent to a program of several only when the dump
-  and the mounts agree on the count. Coverage of a random walk is what the seeds give: a write
-  reached only by a deep sequence is the long sweep's, not the gates'.
+  4. On `browser-tea` nothing more is needed: the fuzzer sends a value to a mount node's
+     `$$root`, recording the mounts in order before the program loads.
+- **The proof** (`page_fuzz_test.zig`): two clean development builds agree; a build that
+  misses a text hole's write only for negative counts is caught at `Set { count = -3, … }`,
+  shrunk to that one message, while the same seeds with view events alone never reach it; and
+  builds that miss every write after the first of an attribute (`class`), a controlled input's
+  `.value`, a keyed list's rows and the document's title are each caught at the message that
+  shows it, each report pinned whole. A release-only break in `browser`'s runtime (a `hidden`
+  attribute never removed) was caught on TodoMVC as a two-step `.steps` script, and removed.
+- **Known limits.** `browser/dom/` pages and the root `browser/` pages are not fuzzed (a
+  development-against-release pair would serve, as for `browser/tea/`). Not compared: scroll
+  positions, listeners an element holds (a stale handler shows only when an action lands on it),
+  `<html>`'s and `<head>`'s attributes other than the title. Coverage of a random walk is what
+  the seeds give: a write reached only by a deep sequence is the sweep's, not the gates'.
 - **A finding, not the fuzzer's:** `browser/tea/ApiAndRoutes` costs 4.52 billion instructions
   without the fuzz whenever its pages must run, over the 4.3 billion budget; the gates pass only
   because its pages' run hashes are recorded, and `test-run-hashes` records without a budget.
+  Its two builds alone are 3.4 billion.

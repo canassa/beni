@@ -352,10 +352,12 @@ and `tea_release`.
 2026-10-09 amendment, `tests/browser/fuzz.mjs`) runs on every
 `browser/direct/` page without a `.tea-expected` — its `browser-tea` build
 against its `browser-direct` build — and on every `browser/tea/` page, its
-development build against its release build: two seeds of fifteen random
-steps, the two pages compared after each, in the driver's process after the
-fixture's pages. A difference fails the case with the seed, the step, the
-sequence shrunk, and the smallest element where the pages differ; a
+development build against its release build: one seed of thirty random
+steps, the two pages compared after each — the body, the properties it
+does not print, the title, the address, the storages, every logged line
+but those the pair may differ on, the errors — in the driver's process
+after the fixture's pages. A difference fails the case with the seed, the
+step, the sequence shrunk, and what differs; a
 sequence of view events is printed as a `.steps` script, the red-first
 fixture of the defect. A fuzz that agreed is the `fuzz` line of the
 fixture's run hash. `zig build fuzz` runs fifty seeds of sixty steps.
