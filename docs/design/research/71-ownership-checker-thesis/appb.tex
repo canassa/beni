@@ -1,0 +1,37 @@
+\phantomsection\bheading{section}{Appendix B. Four programs through the rules}{section}{Appendix B. Four programs through the rules}
+
+\textbf{B.1 TodoMVC \code{Toggle}, under change 1.}
+
+\begin{Verbatim}
+Toggle id → changed model (List.map model.todos λt → if t.id == id then { t | completed = not t.completed } else t)
+changed model todos = { model | todos = todos }
+\end{Verbatim}
+
+Entry: \code{model} consumed (P1), \code{model.todos} not escaped by any arm (P5: no command captures it; \code{encode} in the routing build reads it before the command is made). \code{map} under change 1 is a writer: demand on $(\mathit{model},\allowbreak{}.\mathit{todos})$'s cell; holders: $(\mathit{model},\allowbreak{}.\mathit{todos})$ only; the lambda's captures: \code{id}, a scalar (crosses); $\mathit{calls}\ \mathsf{many}$, $\mathit{once}\ \mathsf{no}$ (it consumes nothing); after the \code{map}, \code{model} is passed to \code{changed}, whose summary reads no path meeting $.\mathit{todos}$ (its record update replaces that field) — so the holder $(\mathit{model},\allowbreak{}.\mathit{todos})$ is dead at the demand. Accepted: \code{a[i] = f(a[i])}. Under the rule as asked, \code{map} is not a demand and nothing happens.
+
+\textbf{B.2 The table app's \code{SwapRows}.}
+
+\begin{Verbatim}
+SwapRows → { model | rows = List.swap model.rows 1 998 }
+\end{Verbatim}
+
+\code{swap} is a writer. Holders of $(\mathit{model},\allowbreak{}.\mathit{rows})$: itself; the instance array holds items (P3, identity only); no arm captures \code{rows} (P5). Accepted: two assignments on the plain array; the edit script's tag guard compares items (§6.2 there), never list identity (A4). This is the row where S2's kill criterion fired on the trie (research 67: “the model's \code{List.swap} on a trie, not the script”); in place it is two array writes.
+
+\textbf{B.3 A histogram by \code{foldl} (research 42 §6.4).}
+
+\begin{Verbatim}
+hist = List.foldl samples (List.repeat 0 1000) (λs acc → List.update acc (bucket s) (λn → n + 1))
+\end{Verbatim}
+
+\code{repeat} is $\mathsf{fresh}$. \code{foldl}'s class for its callback: $\mathit{supply}(\mathsf{borrowed},\allowbreak{}\mathsf{owned}),\allowbreak{}\mathit{need}\ \mathsf{owned},\allowbreak{}\mathit{calls}\ \mathsf{many},\allowbreak{}\mathit{escapes}\ \mathsf{no}$. The lambda: \code{List.\allowbreak{}update acc …} is a demand on its parameter \code{acc} ($\mathit{use}=\mathsf{consumed}$), its result $\mathit{res}=\{\pi _{2}\}$; $\mathit{once}=\mathsf{no}$ (it consumes a \emph{parameter}, not a capture). The edge $\mathit{need}(\mathsf{consumed})\Longrightarrow \mathit{supply}(\mathsf{owned})$ holds. Accepted; the accumulator is written in place on every step, which research 42 measured at 0.14–0.47× the trie.
+
+\textbf{B.4 Lean's \code{groupBy} in beni.}
+
+\begin{Verbatim}
+groupBy xs key =
+    List.foldl xs Dict.empty λx d →
+        group = Maybe.withDefault (Dict.get d (key x)) []
+        Dict.insert d (key x) (List.push group x)
+\end{Verbatim}
+
+\code{Dict.get d k}'s summary: $\mathit{res}=\{\pi _{1}\ \mathit{contents}\}$ — \code{group} holds a cell that $d$ also holds (through the tree). The demand \code{List.\allowbreak{}push group x}: holders of the cell: \code{group} (the operand) and $(d,\allowbreak{}\mathit{contents})$; $d$ is live after (passed to \code{Dict.insert}). \textbf{Rejected, real sharing}, with the message: “$d$ still holds the list, and is read by \code{Dict.insert} on the next line … To add to the group in place, update it where it is: \code{Dict.\allowbreak{}update d (key x) (λg → Just (List.\allowbreak{}push (Maybe.\allowbreak{}withDefault g []) x))}” (\code{Dict.\allowbreak{}update : Dict k v, k, (Maybe v → Maybe v) → Dict k v}, \code{core/Dict.beni}). With \code{Dict.update} — whose callback's $\mathit{supply}=\mathsf{owned}$ is an asserted row of core's, since its body \code{insert d k (alter (get d k))} holds the old value at a key the path domain cannot name (§2.9) — accepted, \textbf{provided $d$'s values are exclusive}: here they are, from \code{Dict.empty} on, because every value stored is either \code{[ x ]} pushed onto a fresh \code{[]} or the pushed result of a destructive read, and no \code{Dict.get} ever leaves a live alias. This is the program whose silent quadratic cost motivated Huisinga's thesis (2023 §2.1); here it is a message with the fix on it, and the fixed form is checked rather than counted at run time.

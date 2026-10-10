@@ -28,3 +28,7 @@
 # committed; every copy can be fetched again from the link it names.
 /references/ownership/pdf/
 /references/ownership/text/
+
+# The compiled thesis (research 71); main.tex is the source.
+/docs/design/research/71-ownership-checker-thesis/*.pdf
+/references/ownership/*.pdf
