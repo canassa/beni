@@ -731,6 +731,10 @@ function drain() {
 // element is marked `:focus`. An element in the SVG or MathML namespace is
 // written `svg:` or `math:` before its name. An element whose only child is
 // text is written on one line, and an empty void element has no end tag.
+// With `--no-comments` a comment is left out: a renderer's own marker,
+// which no beni program can make or read, so two platforms' pages may hold
+// them in different places (browser-direct.md §12.3, as amended for S3).
+let comments = true;
 function serialise() {
   const quote = (s) => JSON.stringify(s);
   const prefixes = { "http://www.w3.org/2000/svg": "svg:", "http://www.w3.org/1998/Math/MathML": "math:" };
@@ -739,7 +743,7 @@ function serialise() {
   const walk = (node, depth) => {
     const pad = "  ".repeat(depth);
     if (node.nodeType === 3) return void lines.push(pad + quote(node.data));
-    if (node.nodeType === 8) return void lines.push(`${pad}<!--${node.data}-->`);
+    if (node.nodeType === 8) return void (comments && lines.push(`${pad}<!--${node.data}-->`));
     if (node.nodeType !== 1) return void lines.push(`${pad}<?node type ${node.nodeType}?>`);
     const name = (prefixes[node.namespaceURI] ?? "") + node.localName;
     let open = `<${name}`;
@@ -750,7 +754,7 @@ function serialise() {
     }
     if (node === document.activeElement && node !== document.body) open += " :focus";
     open += ">";
-    const children = [...(node.localName === "template" ? node.content.childNodes : node.childNodes)];
+    const children = [...(node.localName === "template" ? node.content.childNodes : node.childNodes)].filter((c) => comments || c.nodeType !== 8);
     const close = `</${name}>`;
     if (children.length === 0) return void lines.push(pad + open + (voids.includes(name) ? "" : close));
     if (children.length === 1 && children[0].nodeType === 3) return void lines.push(pad + open + quote(children[0].data) + close);
@@ -788,6 +792,7 @@ for (const arg of process.argv.slice(2)) {
   const m = arg.match(/^--(dom|chrome|steps)=(.+)$/);
   const p = arg.match(/^--(page|fiber-page|fuzz)=(.+)@(.+)$/);
   if (m) options[m[1]] = m[2];
+  else if (arg === "--no-comments") comments = false;
   else if (p) pages.push({ entry: p[2], report: p[3], fiber: p[1] === "fiber-page", fuzz: p[1] === "fuzz" });
   else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
   else positional.push(arg);
@@ -1106,7 +1111,7 @@ async function chromePage(endpoint) {
   });
   await send("Page.navigate", { url: pageUrl }, sessionId);
   await loaded;
-  const helpers = `const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions};`;
+  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions};`;
   return {
     run: async (fn, arg) => {
       const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;

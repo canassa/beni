@@ -375,8 +375,8 @@ test "two development builds of one program agree on every seed, messages and ev
     // sequence send each in turn.
     try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "again", .types = "types.jsonl" }, 0,
         \\the program: 8 constructors sent
-        \\seed 1: 15 steps agree (4 view events, 8 messages, 3 host steps)
-        \\seed 2: 15 steps agree (9 view events, 6 messages, 0 host steps)
+        \\seed 1: 15 steps agree (5 view events, 7 messages, 3 host steps)
+        \\seed 2: 15 steps agree (7 view events, 7 messages, 1 host step)
         \\
     );
 }
@@ -398,7 +398,7 @@ test "a build that misses one hole's write is caught, at the message that shows 
     // differ.
     try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "broken", .types = "types.jsonl" }, 1,
         \\the program: 8 constructors sent
-        \\seed 1: 15 steps agree (4 view events, 8 messages, 3 host steps)
+        \\seed 1: 15 steps agree (5 view events, 7 messages, 3 host steps)
         \\development and broken differ: seed 2, step 11 of 15, message Set { count = -3, flag = False } ×39
         \\shrunk from 11 steps to 1:
         \\  message Set { count = -3, flag = False } ×39
@@ -611,7 +611,12 @@ const lists =
 /// replace `needle`, which must occur once in its runtime module, with
 /// `broken`.
 fn buildBroken(w: *World, needle: []const u8, broken: []const u8) !void {
-    try w.write("Main.beni", lists);
+    return buildBrokenFrom(w, lists, needle, broken);
+}
+
+/// `buildBroken` of another program.
+fn buildBrokenFrom(w: *World, source: []const u8, needle: []const u8, broken: []const u8) !void {
+    try w.write("Main.beni", source);
     const built = try w.runWith(&.{ "build", "--platform=browser-direct", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     if (built.exit_code != 0 or built.stderr.len != 0) {
         std.debug.print("beni build exited {d}\n{s}\n", .{ built.exit_code, built.stderr });
@@ -681,10 +686,85 @@ test "verify: a removed row left in the page is caught though one row remains" {
     defer w.deinit();
     // `removeAt` takes the row from its list and leaves its node: one row
     // remains, in place and after the stray, so the rows' order checks pass.
-    try buildBroken(&w, "insts$4[j$3].e.remove();", "/* the row stays */");
+    try buildBroken(&w, "r$6.e.remove();\n      insts$4.splice(j$3, 1);", "/* the row stays */ insts$4.splice(j$3, 1);");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY OUTPUT                 │
     // └─────────────────────────────────────────┘
     try expectVerify(&w, "click #drop\n", "click #drop", "the count of rows of the `For` at Main.beni:36:14 in the page");
+}
+
+test "verify: a key map left holding a removed row's key is caught" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // A row leaves its list and its node goes, but its key stays in the
+    // list's key map (browser-direct.md, S3's amendment, *The oracles*):
+    // the page and the rows agree, and only the map's size shows it.
+    try buildBroken(&w, "x$3.delete(Direct$keyOf(list$1, r$2));", "/* the key stays */");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectVerify(&w, "click #drop\n", "click #drop", "the key map of the `For` at Main.beni:36:14's size");
+}
+
+/// A keyed list whose rows read a selection: a selector (`Direct.select`).
+const selector =
+    \\import Browser
+    \\import Html exposing (Html)
+    \\import Tea
+    \\
+    \\
+    \\type Msg
+    \\    = Select Int
+    \\
+    \\
+    \\type alias Model =
+    \\    selected : Int
+    \\    rows : List Int
+    \\
+    \\
+    \\update : Msg, Model → Model
+    \\update msg m =
+    \\    case msg of
+    \\        Select k →
+    \\            { m | selected = k }
+    \\
+    \\
+    \\view : Model → Html Msg
+    \\view m =
+    \\    <main>
+    \\        <button id="pick" onClick={Select 2}>pick</button>
+    \\        <ul>
+    \\            <For each={m.rows} keyed={λk → k}>
+    \\                {λk → <li class={if m.selected == k then "danger" else ""}>{String.fromInt k}</li>}
+    \\            </For>
+    \\        </ul>
+    \\    </main>
+    \\
+    \\
+    \\main : Browser.Program
+    \\main = Tea.sandbox { init = { selected = 0, rows = [ 1, 2, 3 ] }, update = update, view = view }
+    \\
+;
+
+test "verify: a selector left holding its old probe is caught though every row is right" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // The selector patches the rows the old and the new probe name but
+    // keeps the old probe: every row shows the right class, and the next
+    // selection would patch the wrong row. Only the probe computed again
+    // and compared with the list's `z` shows it.
+    try buildBrokenFrom(&w, selector, "list$1.z = probe$2;", "/* the probe stays */");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectVerify(&w, "click #pick\n", "click #pick", "the selector of the `For` at Main.beni:27:14");
 }

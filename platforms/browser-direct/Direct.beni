@@ -387,18 +387,30 @@ pub identity : V → V
 identity event = event
 
 
--- ---- Lists (§6, as amended for S2) --------------------------------------
+-- ---- Lists (§6, as amended for S2 and S3) -------------------------------
 --
--- A `For`'s descriptor is `{ p, n, r, m, o, k, u }`: its parent element
--- (null for a list at the view's top level, whose parent is its end
--- marker's), its end marker (null when its rows come last), its row
+-- A `For`'s descriptor is `{ p, n, r, m, o, k, u, w, x, d, z, i }`: its
+-- parent element (null for a list at the view's top level, whose parent is
+-- its end marker's), its end marker (null when its rows come last), its row
 -- instances in list order, `make` — `(item, list, position) → instance` —
 -- whether its rows are the parent's only children, its key function (null
--- for a positional list) and the instance of the row it is in. An instance
--- is `{ e, it, … }`: its row's one element and the item it shows, and what
--- the lowering keeps. Every loop over rows is here, since the code the
+-- for a positional list), the instance of the row it is in; then (S3) the
+-- whole-row patch `(r) → ⊤` (null where nothing patches a row whole), the
+-- key map and the count of rows past the first of their key (both null on a
+-- list that keeps no map), the selector's last probe, and whether its rows
+-- read their position. An instance is `{ e, it, … }`: its row's one element
+-- and the item it shows, and what the lowering keeps (`i`, its position, on
+-- a row that reads it). Every loop over rows is here, since the code the
 -- lowering writes has none (`boundary.md` §9.4.3); each function ships only
 -- where a page reaches it.
+--
+-- **The key map** (S3) is exact whenever `d` is 0: one entry per row, the
+-- row with that key. A row made registers its key (`d` counts one more
+-- when it is there already); a removal while `d` is 0 deletes it; the
+-- reconcile rebuilds both; a clear empties both. A script whose rows a
+-- repeated key would match by rank (language.md §11.9) runs only while
+-- `d` is 0 and its new keys are not in the map, and otherwise hands the
+-- list to `reconcile`, which is rank-correct for any list.
 
 -- The list's parent node.
 parentOf : V → V
@@ -431,9 +443,12 @@ at xs j =
                 Js.undefined
 
 
--- Row `item` made at position `j`.
+-- Row `item` made at position `j`, its key registered.
 make : V, V, Int → V
-make list item j = Js.call list "m" [ item, list, Js.from j ]
+make list item j =
+    r = Js.call list "m" [ item, list, Js.from j ]
+    enter list r
+    r
 
 
 -- Put `node` before `before`, or last for null.
@@ -441,6 +456,96 @@ put : V, V, V → ⊤
 put list node before =
     _ = Js.call (parentOf list) "insertBefore" [ node, before ]
     ⊤
+
+
+-- A row's key, and an item's.
+keyOf : V, V → V
+keyOf list r = itemKey list (Js.get r "it")
+
+
+itemKey : V, V → V
+itemKey list it = Js.apply (Js.get list "k") [ it ]
+
+
+-- Two keys are one when a key map would hold them as one (SameValueZero):
+-- `===`, and `NaN` equal to `NaN`. A key is a primitive (`key_not_primitive`
+-- refuses any other), so this is the reconcile's own comparison.
+sameKey : V, V → Bool
+sameKey a b = Js.same a b || (not (Js.same a a) && not (Js.same b b))
+
+
+--| `()`: a new key map, for a list that keeps one (`x`).
+pub keyMap : ⊤ → V
+keyMap ⊤ = Js.construct (Js.global "Map") []
+
+
+-- Row `r` made: its key in the list's map, when the list keeps one.
+enter : V, V → ⊤
+enter list r =
+    x = Js.get list "x"
+
+    if Js.isNull x then
+        ⊤
+    else
+        key = keyOf list r
+
+        if Js.to (Js.call x "has" [ key ]) then
+            d : Int
+            d = Js.to (Js.get list "d")
+            Js.set list "d" (Js.from (d + 1))
+        else
+            _ = Js.call x "set" [ key, r ]
+            ⊤
+
+
+-- Row `r` removed: its key out of the map, while the map is exact.
+leave : V, V → ⊤
+leave list r =
+    x = Js.get list "x"
+    if not (Js.isNull x) && distinct list then
+        _ = Js.call x "delete" [ keyOf list r ]
+        ⊤
+
+
+-- The list's keys are each one row's: the map says so, or there is none.
+distinct : V → Bool
+distinct list = Js.isNull (Js.get list "x") || Js.to (Js.get list "d") == 0
+
+
+-- Whether a key is a row's already, by the map (false with no map).
+hasKey : V, V → Bool
+hasKey list key =
+    x = Js.get list "x"
+    not (Js.isNull x) && Js.to (Js.call x "has" [ key ])
+
+
+-- The map made again from the rows (the reconcile's end).
+rekeyAll : V → ⊤
+rekeyAll list =
+    x = Js.get list "x"
+    if not (Js.isNull x) then
+        _ = Js.call x "clear" []
+        Js.set list "d" (Js.from 0)
+        Js.each (Js.get list "r") λr → enter list r
+
+
+-- Each row from `j` on that reads its position and is not where it was:
+-- given its position and patched whole (§6.2, as amended for S3).
+renumber : V, Int → ⊤
+renumber list j =
+    if Js.to (Js.get list "i") then
+        renumberFrom list (Js.get list "r") j
+
+
+renumberFrom : V, V, Int → ⊤
+renumberFrom list insts j =
+    if j < count insts then
+        r = Js.at insts j
+        if Js.to (Js.get r "i") ≠ j then
+            Js.set r "i" (Js.from j)
+            _ = Js.apply (Js.get list "w") [ r ]
+            ⊤
+        renumberFrom list insts (j + 1)
 
 
 --| `(L, xs)`: every row made, in order, in one fragment put at the list's
@@ -476,12 +581,14 @@ adoptFrom : V, V, V, V, Int, Int → ⊤
 adoptFrom list items insts el j n =
     if j < n then
         r = Js.call list "m" [ Js.at items j, list, Js.from j, el ]
+        enter list r
         _ = Js.call insts "push" [ r ]
         adoptFrom list items insts (Js.get el "nextSibling") (j + 1) n
 
 
 --| `(L, xs)`: `append` (§6.2): the rows past the last, made and put after
---| it, when the list grew.
+--| it, when the list grew. Rank-safe: an item after every row takes the
+--| last rank of its key.
 pub append : V, V → ⊤
 append list xs =
     insts = Js.get list "r"
@@ -503,18 +610,34 @@ appendInto list xs insts fragment j m =
 
 
 --| `(L, xs)`: `prepend` (§6.2): the new first rows, made and put before the
---| old first, when the list grew.
+--| old first, when the list grew — or the reconcile, when a new row's key
+--| is a row's already (its rank would take that row).
 pub prepend : V, V → ⊤
 prepend list xs =
     insts = Js.get list "r"
     n = count insts
     m = count xs
     if m > n then
-        fresh = Js.array []
-        fragment = Js.call (Js.global "document") "createDocumentFragment" []
-        appendInto list xs fresh fragment 0 (m - n)
-        put list fragment (if n == 0 then Js.get list "n" else Js.get (Js.at insts 0) "e")
-        Js.set list "r" (Js.call fresh "concat" [ insts ])
+        if not (distinct list) || anyHeld list xs 0 (m - n) then
+            reconcile list xs
+        else
+            fresh = Js.array []
+            fragment = Js.call (Js.global "document") "createDocumentFragment" []
+            appendInto list xs fresh fragment 0 (m - n)
+            put list fragment (if n == 0 then Js.get list "n" else Js.get (Js.at insts 0) "e")
+            Js.set list "r" (Js.call fresh "concat" [ insts ])
+            renumber list (m - n)
+
+
+-- Whether an item from `j` to `end - 1` has a key a row has.
+anyHeld : V, V, Int, Int → Bool
+anyHeld list xs j end =
+    if j ≥ end then
+        False
+    else if hasKey list (itemKey list (at xs j)) then
+        True
+    else
+        anyHeld list xs (j + 1) end
 
 
 --| `(L)`: `clear` (§6.2): every row removed — the parent emptied when the
@@ -528,36 +651,50 @@ clear list =
         else
             Js.each insts λr → Js.to (Js.call (Js.get r "e") "remove" [])
         Js.set list "r" (Js.array [])
+        x = Js.get list "x"
+        if not (Js.isNull x) then
+            _ = Js.call x "clear" []
+            Js.set list "d" (Js.from 0)
 
 
 --| `(L, xs, j)`: `insert j` (§6.2): one row made and put at `j`, when the
---| list grew by one and `j` is a place in it.
+--| list grew by one and `j` is a place in it — or the reconcile, when its
+--| key is a row's already.
 pub insert : V, V, Int → ⊤
 insert list xs j =
     insts = Js.get list "r"
     n = count insts
     if count xs == n + 1 && j ≥ 0 && j ≤ n then
-        r = make list (at xs j) j
-        put list (Js.get r "e") (if j == n then Js.get list "n" else Js.get (Js.at insts j) "e")
-        _ = Js.call insts "splice" [ Js.from j, Js.from 0, r ]
-        ⊤
+        if not (distinct list) || hasKey list (itemKey list (at xs j)) then
+            reconcile list xs
+        else
+            r = make list (at xs j) j
+            put list (Js.get r "e") (if j == n then Js.get list "n" else Js.get (Js.at insts j) "e")
+            _ = Js.call insts "splice" [ Js.from j, Js.from 0, r ]
+            renumber list (j + 1)
 
 
 --| `(L, xs, j)`: `removeAt j` (§6.2): row `j` removed, when the list shrank
---| by one and `j` was a row.
+--| by one and `j` was a row — or the reconcile, where a key repeats.
 pub removeAt : V, V, Int → ⊤
 removeAt list xs j =
     insts = Js.get list "r"
     n = count insts
     if count xs == n - 1 && j ≥ 0 && j < n then
-        _ = Js.call (Js.get (Js.at insts j) "e") "remove" []
-        _ = Js.call insts "splice" [ Js.from j, Js.from 1 ]
-        ⊤
+        if not (distinct list) then
+            reconcile list xs
+        else
+            r = Js.at insts j
+            leave list r
+            _ = Js.call (Js.get r "e") "remove" []
+            _ = Js.call insts "splice" [ Js.from j, Js.from 1 ]
+            renumber list j
 
 
 --| `(L, xs, i, j)`: `swap i j` (§6.2): rows `i` and `j` trade places — two
 --| `insertBefore`s, as vanilla's swap — when both are rows, they differ and
---| the items moved (so a list already in its new order is left alone).
+--| the items moved (so a list already in its new order is left alone); the
+--| reconcile where a key repeats.
 pub swap : V, V, Int, Int → ⊤
 swap list xs i j =
     insts = Js.get list "r"
@@ -570,22 +707,37 @@ swap list xs i j =
             && i ≠ j
             && not (Js.same (at xs i) (Js.get (Js.at insts i) "it"))
     then
-        lo = if i < j then i else j
-        hi = if i < j then j else i
-        a = Js.at insts lo
-        b = Js.at insts hi
-        ea = Js.get a "e"
-        eb = Js.get b "e"
-        after = Js.get eb "nextSibling"
-        -- Two rows side by side trade places by one move, the first's,
-        -- so the second keeps its focus — what a keyed reconcile moves.
-        if hi == lo + 1 then
-            put list ea after
+        if not (distinct list) then
+            reconcile list xs
         else
-            put list eb ea
-            put list ea after
-        Js.setAt insts lo b
-        Js.setAt insts hi a
+            lo = if i < j then i else j
+            hi = if i < j then j else i
+            a = Js.at insts lo
+            b = Js.at insts hi
+            ea = Js.get a "e"
+            eb = Js.get b "e"
+            after = Js.get eb "nextSibling"
+            -- Two rows side by side trade places by one move, the first's,
+            -- so the second keeps its focus — what a keyed reconcile moves.
+            if hi == lo + 1 then
+                put list ea after
+            else
+                put list eb ea
+                put list ea after
+            Js.setAt insts lo b
+            Js.setAt insts hi a
+            if Js.to (Js.get list "i") then
+                renumberAt list b lo
+                renumberAt list a hi
+
+
+-- Row `r` at position `j`: given it and patched whole, if it reads it.
+renumberAt : V, V, Int → ⊤
+renumberAt list r j =
+    if Js.to (Js.get r "i") ≠ j then
+        Js.set r "i" (Js.from j)
+        _ = Js.apply (Js.get list "w") [ r ]
+        ⊤
 
 
 --| `(L, xs, j)`: row `j`, its item set to the list's `j`th, when it is a
@@ -608,7 +760,8 @@ row list xs j =
 
 --| `(L, xs, j)`: `row`, for a keyed list whose key may have changed: a row
 --| whose key changed is another row, made in its place (null then), as the
---| reconciler would match it.
+--| reconciler would match it — or the reconcile, when its new key is a
+--| row's already or a key repeats (S3's rank, CK-221).
 pub rekey : V, V, Int → V
 rekey list xs j =
     insts = Js.get list "r"
@@ -616,26 +769,22 @@ rekey list xs j =
         r = Js.at insts j
         it = at xs j
         old = Js.get r "it"
-        key = Js.get list "k"
         if Js.same it old then
             Js.null
-        else if sameKey (Js.apply key [ it ]) (Js.apply key [ old ]) then
+        else if sameKey (itemKey list it) (itemKey list old) then
             Js.set r "it" it
             r
+        else if not (distinct list) || hasKey list (itemKey list it) then
+            reconcile list xs
+            Js.null
         else
+            leave list r
             fresh = make list it j
             _ = Js.call (parentOf list) "replaceChild" [ Js.get fresh "e", Js.get r "e" ]
             Js.setAt insts j fresh
             Js.null
     else
         Js.null
-
-
--- Two keys are one when a key map would hold them as one (SameValueZero):
--- `===`, and `NaN` equal to `NaN`. A key is a primitive (`key_not_primitive`
--- refuses any other), so this is the reconcile's own comparison.
-sameKey : V, V → Bool
-sameKey a b = Js.same a b || (not (Js.same a a) && not (Js.same b b))
 
 
 --| `(L, xs, f)`: every row, its item set to the list's, handed to `f`: the
@@ -654,6 +803,119 @@ eachFrom items insts f j n =
         Js.set r "it" (Js.at items j)
         _ = Js.apply f [ r ]
         eachFrom items insts f (j + 1) n
+
+
+--| `(L, xs, f, rekey)`: the identity walk (§6.2's `kept [*]`): each row
+--| whose item is not the very one the list holds, its item set and handed
+--| to `f`; a length that changed, or — where `mayRekey` says a key may — a
+--| row whose key changed, hands the list to the reconcile.
+pub walkItems : V, V, V, V → ⊤
+walkItems list xs f mayRekey =
+    items = elements xs
+    insts = Js.get list "r"
+    n = count insts
+
+    if count items ≠ n then
+        reconcile list xs
+    else
+        walkFrom list xs items insts f (Js.to mayRekey) 0 n
+
+
+walkFrom : V, V, V, V, V, Bool, Int, Int → ⊤
+walkFrom list xs items insts f keys j n =
+    if j < n then
+        r = Js.at insts j
+        it = Js.at items j
+        if Js.same it (Js.get r "it") then
+            walkFrom list xs items insts f keys (j + 1) n
+        else if keys && not (sameKey (itemKey list it) (keyOf list r)) then
+            reconcile list xs
+        else
+            Js.set r "it" it
+            _ = Js.apply f [ r ]
+            walkFrom list xs items insts f keys (j + 1) n
+
+
+--| `(L, xs)`: the merge (§6.2's `removeSome`): the rows and the new items
+--| walked together by identity, each row whose item is not the next new
+--| item removed; a new item no row shows, or a key that repeats, hands
+--| the list to the reconcile.
+pub merge : V, V → ⊤
+merge list xs =
+    items = elements xs
+    insts = Js.get list "r"
+    n = count insts
+    m = count items
+
+    if m == n then
+        ⊤
+    else if m == 0 then
+        clear list
+    else if not (distinct list) || mergeFrom items insts 0 0 n m < m then
+        reconcile list xs
+    else
+        next = Js.array []
+        first = mergeInto list items insts next 0 0 n n
+        Js.set list "r" next
+        renumber list first
+
+
+-- How many new items, in order, are rows' items from row `i` on.
+mergeFrom : V, V, Int, Int, Int, Int → Int
+mergeFrom items insts i j n m =
+    if i ≥ n || j ≥ m then
+        j
+    else if Js.same (Js.get (Js.at insts i) "it") (Js.at items j) then
+        mergeFrom items insts (i + 1) (j + 1) n m
+    else
+        mergeFrom items insts (i + 1) j n m
+
+
+-- The rows kept into `next`, the others removed; the first removed row's
+-- position, or `first` when none was.
+mergeInto : V, V, V, V, Int, Int, Int, Int → Int
+mergeInto list items insts next i j n first =
+    if i ≥ n then
+        first
+    else
+        r = Js.at insts i
+        if j < count items && Js.same (Js.get r "it") (Js.at items j) then
+            _ = Js.call next "push" [ r ]
+            mergeInto list items insts next (i + 1) (j + 1) n first
+        else
+            leave list r
+            _ = Js.call (Js.get r "e") "remove" []
+            mergeInto list items insts next (i + 1) j n (if first < j then first else j)
+
+
+--| `(L, probe, f)`: the selector visit (§6.4, as amended for S3): when the
+--| probe is not the one last seen, `f` on the rows keyed by the old probe,
+--| then on those keyed by the new one — from the map when every key is one
+--| row's, by a walk of the rows otherwise. A probe no row has is passed.
+pub select : V, V, V → ⊤
+select list probe f =
+    old = Js.get list "z"
+
+    if not (Js.same old probe) then
+        Js.set list "z" probe
+        x = Js.get list "x"
+
+        if distinct list && not (Js.isNull x) then
+            a = Js.call x "get" [ old ]
+
+            if not (Js.isUndefined a) then
+                _ = Js.apply f [ a ]
+                ⊤
+            b = Js.call x "get" [ probe ]
+
+            if not (Js.isUndefined b) && not (Js.same a b) then
+                _ = Js.apply f [ b ]
+                ⊤
+        else
+            Js.each (Js.get list "r") λr →
+                if sameKey (keyOf list r) old then Js.to (Js.apply f [ r ])
+            Js.each (Js.get list "r") λr →
+                if sameKey (keyOf list r) probe then Js.to (Js.apply f [ r ])
 
 
 --| `(L, xs, f)`: the positional pass (§6.2): each row whose item changed,
@@ -696,6 +958,412 @@ removeFrom insts j n =
     if j < n then
         _ = Js.call (Js.get (Js.at insts j) "e") "remove" []
         removeFrom insts (j + 1) n
+
+
+-- ---- The reconciler (§6.3, as amended for S3) ---------------------------
+--
+-- One pass, rank-correct for any list: the new items matched to the rows by
+-- key and rank (language.md §11.9) with no effect on the page — the rows at
+-- the start whose item or key is where it was; when the old keys are
+-- distinct, the same from the end and the middle looked up in a map of
+-- the old rows left, a key met twice starting the matching again with
+-- every key chained by rank — then the new rows made and the kept rows
+-- whose item changed patched with `w`, in `browser-tea`'s order; then
+-- `browser-tea`'s move of rows into the new order (udomdiff over rows), so
+-- the same rows move; then the key map rebuilt.
+
+--| `(L, xs)`: the keyed reconcile.
+pub reconcile : V, V → ⊤
+reconcile list xs =
+    items = elements xs
+    old = Js.get list "r"
+    m = count old
+    n = count items
+
+    if m == 0 then
+        if n > 0 then
+            -- Each row straight into the page, as Solid's `appendNodes`
+            -- puts them and `browser-tea` does.
+            next = Js.array []
+            before = Js.get list "n"
+            fillRows list items next before 0 n
+            Js.set list "r" next
+    else if n == 0 then
+        clear list
+    else
+        reconcileRows list items old m n
+
+
+fillRows : V, V, V, V, Int, Int → ⊤
+fillRows list items next before j n =
+    if j < n then
+        r = make list (Js.at items j) j
+        _ = Js.call next "push" [ r ]
+        put list (Js.get r "e") before
+        fillRows list items next before (j + 1) n
+
+
+reconcileRows : V, V, V, Int, Int → ⊤
+reconcileRows list items old m n =
+    p = startRows list items old 0 (if m < n then m else n)
+
+    if p == m && p == n then
+        patchRange list items old 0 n
+    else
+        next = Js.construct (Js.global "Array") [ Js.from n ]
+        copyRows next old 0 p
+        fast = matchDistinct list items old next p m n
+
+        if not fast then
+            matchRanked list items old next p m n
+        -- The kept rows at the start patched, then — where the old keys
+        -- were distinct — every new row made and the kept rows from the
+        -- start's end patched, as `browser-tea`'s trimmed pass; otherwise
+        -- each row in its position's order, as its full pass.
+        patchRange list items next 0 p
+
+        made =
+            if fast then
+                k = makeNew list items next p n 0
+                patchRange list items next p n
+                k
+            else
+                rankPass list items next p n 0
+
+        parent = parentOf list
+
+        if made == n && Js.to (Js.get list "o") then
+            -- No row kept, and the rows are all the parent holds: a
+            -- replacement empties it at once, then the new rows go in.
+            Js.set parent "textContent" (Js.from "")
+            Js.each next λr → put list (Js.get r "e") Js.null
+        else
+            after = Js.get (Js.get (Js.at old (m - 1)) "e") "nextSibling"
+            moveRows parent old next n after 0 m 0 n Js.null
+        Js.set list "r" next
+        rekeyAll list
+
+
+-- The rows from `j` whose item is the very one, or whose key is the new
+-- item's: kept in place, and a rank-correct prefix whatever repeats.
+startRows : V, V, V, Int, Int → Int
+startRows list items old j end =
+    if j < end then
+        r = Js.at old j
+        it = Js.at items j
+        if Js.same (Js.get r "it") it || sameKey (keyOf list r) (itemKey list it) then
+            startRows list items old (j + 1) end
+        else
+            j
+    else
+        j
+
+
+copyRows : V, V, Int, Int → ⊤
+copyRows next old j end =
+    if j < end then
+        Js.setAt next j (Js.at old j)
+        copyRows next old (j + 1) end
+
+
+-- Where the old keys from `p` are distinct: the rows at the end matched,
+-- then the middle looked up in a map of the old rows left. False — with
+-- `next` to be matched again — when an old key repeats, or a key is met
+-- twice in the middle.
+matchDistinct : V, V, V, V, Int, Int, Int → Bool
+matchDistinct list items old next p m n =
+    left = Js.construct (Js.global "Map") []
+
+    if not (indexRows list old left p m) then
+        False
+    else
+        f = endRows list items old next left p m n
+        lookUp list items old next left p f
+
+
+-- Each old row's position by its key, from `j`; false at a key met twice.
+indexRows : V, V, V, Int, Int → Bool
+indexRows list old left j m =
+    if j ≥ m then
+        True
+    else
+        key = keyOf list (Js.at old j)
+        if Js.to (Js.call left "has" [ key ]) then
+            False
+        else
+            _ = Js.call left "set" [ key, Js.from j ]
+            indexRows list old left (j + 1) m
+
+
+-- The rows at the end whose item or key is where it was, matched and
+-- marked taken in `left` (-1); the new items' end of the middle.
+endRows : V, V, V, V, V, Int, Int, Int → Int
+endRows list items old next left p ea fb =
+    if ea > p && fb > p then
+        r = Js.at old (ea - 1)
+        it = Js.at items (fb - 1)
+        key = keyOf list r
+        if Js.same (Js.get r "it") it || sameKey key (itemKey list it) then
+            Js.setAt next (fb - 1) r
+            _ = Js.call left "set" [ key, Js.from (0 - 1) ]
+            endRows list items old next left p (ea - 1) (fb - 1)
+        else
+            fb
+    else
+        fb
+
+
+-- The middle's items from `b` found by key, a new key marked made (-2);
+-- false at a key met twice.
+lookUp : V, V, V, V, V, Int, Int → Bool
+lookUp list items old next left b f =
+    if b ≥ f then
+        True
+    else
+        key = itemKey list (Js.at items b)
+        v = Js.call left "get" [ key ]
+        if Js.isUndefined v then
+            Js.setAt next b Js.undefined
+            _ = Js.call left "set" [ key, Js.from (0 - 2) ]
+            lookUp list items old next left (b + 1) f
+        else
+            index : Int
+            index = Js.to v
+            if index < 0 then
+                False
+            else
+                Js.setAt next b (Js.at old index)
+                _ = Js.call left "set" [ key, Js.from (0 - 1) ]
+                lookUp list items old next left (b + 1) f
+
+
+-- Every item from `p` matched by key and rank: the `k`th item of a key
+-- takes the `k`th row left with it (language.md §11.9).
+matchRanked : V, V, V, V, Int, Int, Int → ⊤
+matchRanked list items old next p m n =
+    chains = Js.construct (Js.global "Map") []
+    chainRows list old chains (m - 1) p
+    rankRows list items old next chains p n
+
+
+-- Each key's rows from `j` down to `p`, so a chain's last is its first row.
+chainRows : V, V, V, Int, Int → ⊤
+chainRows list old chains j p =
+    if j ≥ p then
+        key = keyOf list (Js.at old j)
+        chain = Js.call chains "get" [ key ]
+        if Js.isUndefined chain then
+            _ = Js.call chains "set" [ key, Js.array [ Js.from j ] ]
+            ⊤
+        else
+            _ = Js.call chain "push" [ Js.from j ]
+            ⊤
+        chainRows list old chains (j - 1) p
+
+
+rankRows : V, V, V, V, V, Int, Int → ⊤
+rankRows list items old next chains b n =
+    if b < n then
+        chain = Js.call chains "get" [ itemKey list (Js.at items b) ]
+        if Js.isUndefined chain || count chain == 0 then
+            Js.setAt next b Js.undefined
+        else
+            j : Int
+            j = Js.to (Js.call chain "pop" [])
+            Js.setAt next b (Js.at old j)
+        rankRows list items old next chains (b + 1) n
+
+
+-- A kept row shows item `it` at position `j`: its item and position set,
+-- and it patched whole with `w`, when either changed.
+patchRow : V, V, V, Int → ⊤
+patchRow list r it j =
+    moved = Js.to (Js.get list "i") && Js.to (Js.get r "i") ≠ j
+    if not (Js.same (Js.get r "it") it) || moved then
+        Js.set r "it" it
+        if moved then
+            Js.set r "i" (Js.from j)
+        _ = Js.apply (Js.get list "w") [ r ]
+        ⊤
+
+
+patchRange : V, V, V, Int, Int → ⊤
+patchRange list items rows j end =
+    if j < end then
+        r = Js.at rows j
+        if not (Js.isUndefined r) then
+            patchRow list r (Js.at items j) j
+        patchRange list items rows (j + 1) end
+
+
+-- The new rows from `j` made, in order; how many.
+makeNew : V, V, V, Int, Int, Int → Int
+makeNew list items next j end made =
+    if j < end then
+        if Js.isUndefined (Js.at next j) then
+            Js.setAt next j (make list (Js.at items j) j)
+            makeNew list items next (j + 1) end (made + 1)
+        else
+            makeNew list items next (j + 1) end made
+    else
+        made
+
+
+-- Each row from `j` made or patched, in order; how many were made.
+rankPass : V, V, V, Int, Int, Int → Int
+rankPass list items next j end made =
+    if j < end then
+        r = Js.at next j
+        if Js.isUndefined r then
+            Js.setAt next j (make list (Js.at items j) j)
+            rankPass list items next (j + 1) end (made + 1)
+        else
+            patchRow list r (Js.at items j) j
+            rankPass list items next (j + 1) end made
+    else
+        made
+
+
+-- The rows `a` were become the rows `b`, moving as few as it can:
+-- `browser-tea`'s `reconcile` (udomdiff over instances), each row one
+-- element. Only `a[aStart, aEnd)` and `b[bStart, bEnd)` differ; the rows
+-- after the ranges begin at `after` (the node after the list when there
+-- are none); `b`'s rows end at `bLength`. `indices`, each row of `b`'s
+-- range by its index, is made the first time a row is looked up.
+moveRows : V, V, V, Int, V, Int, Int, Int, Int, V → ⊤
+moveRows parent a b bLength after aStart aEnd bStart bEnd indices =
+    if not (aStart < aEnd || bStart < bEnd) then
+        ⊤
+    else if Js.same (Js.at a aStart) (Js.at b bStart) then
+        moveRows parent a b bLength after (aStart + 1) aEnd (bStart + 1) bEnd indices
+    else
+        ( aTo, bTo ) = sameEnds a b aStart aEnd bStart bEnd
+        if aTo == aStart then
+            node =
+                if bTo < bLength then
+                    if bStart ≠ 0 then
+                        Js.get (rowAt b (bStart - 1)) "nextSibling"
+                    else
+                        rowAt b bTo
+                else
+                    after
+
+            putRange parent b bStart bTo node
+            moveRows parent a b bLength after aStart aTo bTo bTo indices
+        else if bTo == bStart then
+            dropRange a indices aStart aTo
+            moveRows parent a b bLength after aTo aTo bStart bTo indices
+        else if
+            Js.same (Js.at a aStart) (Js.at b (bTo - 1))
+                && Js.same (Js.at b bStart) (Js.at a (aTo - 1))
+        then
+            node = Js.get (rowAt a (aTo - 1)) "nextSibling"
+            putNode parent (rowAt b bStart) (Js.get (rowAt a aStart) "nextSibling")
+            putNode parent (rowAt b (bTo - 1)) node
+            Js.setAt a (aTo - 1) (Js.at b (bTo - 1))
+            moveRows parent a b bLength after (aStart + 1) (aTo - 1) (bStart + 1) (bTo - 1) indices
+        else
+            positions =
+                if Js.isNull indices then
+                    Js.construct (Js.global "Map") []
+                else
+                    indices
+
+            if Js.isNull indices then
+                indexRange positions b bStart bTo
+
+            found = Js.call positions "get" [ Js.at a aStart ]
+            if Js.isUndefined found then
+                removeRow (Js.at a aStart)
+                moveRows parent a b bLength after (aStart + 1) aTo bStart bTo positions
+            else
+                index : Int
+                index = Js.to found
+                if bStart < index && index < bTo then
+                    sequence = sameRun positions a aTo bTo index (aStart + 1) 1
+                    if sequence > index - bStart then
+                        putRange parent b bStart index (rowAt a aStart)
+                        moveRows parent a b bLength after aStart aTo index bTo positions
+                    else
+                        old = Js.at a aStart
+                        putNode parent (rowAt b bStart) (Js.get old "e")
+                        removeRow old
+                        moveRows
+                            parent
+                            a
+                            b
+                            bLength
+                            after
+                            (aStart + 1)
+                            aTo
+                            (bStart + 1)
+                            bTo
+                            positions
+                else
+                    moveRows parent a b bLength after (aStart + 1) aTo bStart bTo positions
+
+
+-- Row `j`'s element.
+rowAt : V, Int → V
+rowAt rows j = Js.get (Js.at rows j) "e"
+
+
+putNode : V, V, V → ⊤
+putNode parent node before =
+    _ = Js.call parent "insertBefore" [ node, before ]
+    ⊤
+
+
+removeRow : V → ⊤
+removeRow r =
+    _ = Js.call (Js.get r "e") "remove" []
+    ⊤
+
+
+-- The rows the two ranges end with that are the same, taken off.
+sameEnds : V, V, Int, Int, Int, Int → Int × Int
+sameEnds a b aStart aEnd bStart bEnd =
+    if aEnd > aStart && bEnd > bStart && Js.same (Js.at a (aEnd - 1)) (Js.at b (bEnd - 1)) then
+        sameEnds a b aStart (aEnd - 1) bStart (bEnd - 1)
+    else
+        ( aEnd, bEnd )
+
+
+-- `b[from, to)` put before `node`, in order.
+putRange : V, V, Int, Int, V → ⊤
+putRange parent b from to node =
+    if from < to then
+        putNode parent (rowAt b from) node
+        putRange parent b (from + 1) to node
+
+
+-- `a[from, to)` taken out of the page, but for the rows `b` holds.
+dropRange : V, V, Int, Int → ⊤
+dropRange a indices from to =
+    if from < to then
+        if Js.isNull indices || not (Js.to (Js.call indices "has" [ Js.at a from ])) then
+            removeRow (Js.at a from)
+        dropRange a indices (from + 1) to
+
+
+indexRange : V, V, Int, Int → ⊤
+indexRange positions b from to =
+    if from < to then
+        _ = Js.call positions "set" [ Js.at b from, Js.from from ]
+        indexRange positions b (from + 1) to
+
+
+-- How many rows of `a` from `aStart - 1` stand in `b` in the same order.
+sameRun : V, V, Int, Int, Int, Int, Int → Int
+sameRun positions a aEnd bEnd index i sequence =
+    if
+        i < aEnd
+            && i < bEnd
+            && Js.same (Js.call positions "get" [ Js.at a i ]) (Js.from (index + sequence))
+    then
+        sameRun positions a aEnd bEnd index (i + 1) (sequence + 1)
+    else
+        sequence
 
 
 -- ---- Events in rows (§4.2) ----------------------------------------------
@@ -947,6 +1615,22 @@ verifyList list xs check what structural =
                 (Js.from "the count of rows of ${whatText} in the page")
                 (Js.from held)
                 (Js.from n)
+        -- The key map, while it says every key is one row's (S3): one entry
+        -- per row, each the row with that key.
+        x = Js.get list "x"
+
+        if not (Js.isNull x) && distinct list then
+            size : Int
+            size = Js.to (Js.get x "size")
+
+            if size ≠ n then
+                wrong (Js.from "the key map of ${whatText}'s size") (Js.from size) (Js.from n)
+            Js.each insts λr →
+                if not (Js.same (Js.call x "get" [ keyOf list r ]) r) then
+                    wrong
+                        (Js.from "the key map of ${whatText} at a row's key")
+                        (Js.call x "get" [ keyOf list r ])
+                        (Js.get r "it")
 
 
 -- How many of the nodes from `node` on are rows `list` made.

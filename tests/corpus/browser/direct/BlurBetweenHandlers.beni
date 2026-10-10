@@ -1,0 +1,62 @@
+-- A blur a handler's write fires is delivered where the browser fires it
+-- (browser-direct.md, *Amended 2026-10-10 (the owner)*): a click on a row's
+-- button removes that row with its input focused, and the row's own click
+-- handler runs after the button's. Chrome blurs the input as the row goes.
+-- On `browser-direct` the button's handler writes the page before the row's
+-- handler runs, so the blur's message is sent then: `remove`, `blur`,
+-- `row` (`.chrome-expected`). On `browser-tea` the page is written once
+-- the event's handlers have all run, so the blur comes last: `remove`,
+-- `row`, `blur` (`.tea-chrome-expected`). happy-dom fires no blur on a
+-- removal, and both platforms show `.expected`. A documented platform
+-- difference, the owner's decision of 2026-10-10.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Remove Int
+    | Clicked Int
+    | Blurred Int
+
+
+type alias Model =
+    rows : List Int
+    log : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Remove j →
+            { model
+                | rows = List.removeAt model.rows j
+                , log = "${model.log} remove ${String.fromInt j}"
+            }
+
+        Blurred k →
+            { model | log = "${model.log} blur ${String.fromInt k}" }
+
+        Clicked k →
+            { model | log = "${model.log} row ${String.fromInt k}" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="log">{model.log}</p>
+        <ul>
+            <For each={model.rows} keyed={λk → k}>
+                {λk →
+                    <li onClick={Clicked k}>
+                        <input id="in${String.fromInt k}" onBlur={Blurred k} />
+                        <button id="x${String.fromInt k}" onClick={Remove (k - 1)}>x</button>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { rows = [ 1, 2, 3 ], log = "" }, update = update, view = view }

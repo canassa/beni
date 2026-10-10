@@ -207,6 +207,9 @@ pub const fiber_hook = "__beniFiberSubscriptions";
 /// a fresh page (the driver's `--page`): Node starts and compiles the DOM
 /// once for all of them, and each page's exit code, stdout and stderr are
 /// what `drive` of it alone would give. Each page may take `timeout_ms`.
+/// `comments` false: the transcripts and the fuzzer's comparisons leave
+/// comments out (the driver's `--no-comments`; browser-direct.md §12.3, as
+/// amended for S3).
 pub fn driveAll(
     w: *World,
     h: Harness,
@@ -214,6 +217,7 @@ pub fn driveAll(
     entries: []const Entry,
     steps: ?[]const u8,
     timeout_ms: i64,
+    comments: bool,
 ) !Pages {
     const arena = w.arena.allocator();
     const node = w.node_exe orelse return error.NodeNotOnPath;
@@ -224,6 +228,7 @@ pub fn driveAll(
     else
         try std.fmt.allocPrint(arena, "--dom={s}", .{h.dom}));
     if (steps) |s| try argv.append(arena, try std.fmt.allocPrint(arena, "--steps={s}", .{s}));
+    if (!comments) try argv.append(arena, "--no-comments");
     const reports = try arena.alloc([]const u8, entries.len);
     for (entries, reports, 0..) |entry, *report, i| {
         report.* = try std.fmt.allocPrint(arena, "_page{d}.json", .{i});
@@ -333,7 +338,7 @@ pub fn writeFuzzSpec(arena: Allocator, w: *World, f: Fuzz, name: []const u8) !vo
 pub fn fuzz(w: *World, h: Harness, chrome: ?[]const u8, f: Fuzz, timeout_ms: i64) !world.Result {
     const arena = w.arena.allocator();
     try writeFuzzSpec(arena, w, f, "_fuzz.json");
-    const r = try driveAll(w, h, chrome, &.{.{ .path = "_fuzz.json", .fuzz = true }}, null, timeout_ms);
+    const r = try driveAll(w, h, chrome, &.{.{ .path = "_fuzz.json", .fuzz = true }}, null, timeout_ms, true);
     if (r.pages[0]) |report| return report;
     std.debug.print("the page fuzzer's driver stopped before its report\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ r.run.stdout, r.run.stderr });
     return error.FuzzReportMissing;

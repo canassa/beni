@@ -345,7 +345,13 @@ each other's oracle. A difference the design specifies (one is §8.2's
 `init`, evaluated inside the mount on `browser-direct` and where `main` is
 evaluated on `browser-tea`) is a `<name>.tea-expected` (and `.tea-release-expected` when the release build differs), which the
 `browser-tea` builds read instead and never bless, with its reason in the
-fixture's comment. Their run hash lines are `dev`, `release`, `tea_dev`
+fixture's comment. A difference the design specifies that only Chrome reaches (a blur
+fired by a handler's write, delivered at the write on `browser-direct` and
+last on `browser-tea`) is a `<name>.tea-chrome-expected` beside the
+`.chrome-expected`, which `test-browser` compares for the `browser-tea`
+builds. A `browser/direct/` transcript leaves out comment nodes
+(`--no-comments`): where a platform keeps its place markers is not what
+the program shows, and the two platforms put them differently. Their run hash lines are `dev`, `release`, `tea_dev`
 and `tea_release`.
 
 **The page fuzzer** (`docs/design/browser-direct.md` §8.3 and its

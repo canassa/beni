@@ -399,6 +399,11 @@ pub const Hole = struct {
     /// A text hole standing alone under an allowlisted parent (§9.1's
     /// rule), on every visit.
     alone: bool = false,
+    /// `Program.vholes` only (write-sets.md, *a hole's facts per call*):
+    /// the call path the visits came through — each the markup hole or
+    /// component node whose evaluation reached it, as `module << 32 |
+    /// token`, outermost first.
+    path: []const u64 = &.{},
 };
 
 pub const Program = struct {
@@ -417,6 +422,10 @@ pub const Program = struct {
     keys: []const Key,
     summaries: []const Capped,
     holes: []Hole,
+    /// The same holes once per call path (write-sets.md, *a hole's facts
+    /// per call*): the consumer's, which no dump prints. `Hole.list` here
+    /// indexes `vholes`.
+    vholes: []Hole = &.{},
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
     /// The markup roots the view walk reached, in the order it met them
@@ -473,6 +482,11 @@ const Ctx = struct {
     each: u32 = none,
     /// View mode: the innermost `For` row's item root, or `none`.
     row_item: u32 = none,
+    /// View mode: the call path the walk is on (an index into
+    /// `call_paths`; 0, the empty path, in `view`'s own markup), and the
+    /// innermost `For`'s `each` hole among the holes per path.
+    call_path: u32 = 0,
+    veach: u32 = none,
 };
 
 const SiteAcc = struct {
@@ -515,6 +529,8 @@ const HoleAcc = struct {
     /// An `each` hole's: `unvisited`, its row's key path (`Hole.key_path`),
     /// or `none`.
     key_path: u32 = unvisited,
+    /// A hole per path's call path (`call_paths`).
+    path: u32 = 0,
 
     const unvisited: u32 = none - 2;
     const string_literal: u32 = none;
@@ -565,6 +581,12 @@ cut_memo: std.HashMapUnmanaged(SubstKey, u32, std.hash_map.AutoContext(SubstKey)
 next_inst_id: u32 = 0,
 holes: std.ArrayList(HoleAcc) = .empty,
 hole_index: std.HashMapUnmanaged(HoleKey, u32, std.hash_map.AutoContext(HoleKey), std.hash_map.default_max_load_percentage) = .empty,
+/// The holes per call path (write-sets.md, *a hole's facts per call*),
+/// and the call paths: each one's entries, and its extensions by one entry.
+vholes: std.ArrayList(HoleAcc) = .empty,
+vhole_index: std.HashMapUnmanaged(VHoleKey, u32, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
+call_paths: std.ArrayList([]const u64) = .empty,
+call_path_next: std.HashMapUnmanaged(PathStep, u32, std.hash_map.AutoContext(PathStep), std.hash_map.default_max_load_percentage) = .empty,
 /// The S0 stats (browser-direct.md §11): the markup roots the view walk
 /// visits and the one it is in, the functions it is in (`active` keys) and
 /// those that re-entered themselves.
@@ -593,6 +615,8 @@ model_type: ?TyRef = null,
 const DiffKey = struct { term: u32, path: u32, gamma: u32 };
 const SubstKey = struct { inst: u32, term: u32 };
 const HoleKey = struct { module: u32, token: u32 };
+const VHoleKey = struct { module: u32, token: u32, path: u32 };
+const PathStep = struct { from: u32, entry: u64 };
 
 fn arena(a: *Writes) Allocator {
     return a.arena_state.allocator();
@@ -670,6 +694,16 @@ pub fn deinit(a: *Writes) void {
     }
     a.holes.deinit(gpa);
     a.hole_index.deinit(gpa);
+    for (a.vholes.items) |*h| {
+        h.reads.deinit(gpa);
+        h.key_paths.deinit(gpa);
+        h.bound.deinit(gpa);
+    }
+    a.vholes.deinit(gpa);
+    a.vhole_index.deinit(gpa);
+    for (a.call_paths.items) |p| gpa.free(p);
+    a.call_paths.deinit(gpa);
+    a.call_path_next.deinit(gpa);
     for (a.sites.items) |*st| st.holders.deinit(gpa);
     a.sites.deinit(gpa);
     a.site_index.deinit(gpa);
@@ -3452,7 +3486,15 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
         .text => {},
         .hole => {
             const h = b.extraData(node, Bir.MarkupHole);
-            const t = try a.eval(f, h.value, g);
+            // What the hole's value calls is walked on the call path this
+            // hole extends (write-sets.md, *a hole's facts per call*).
+            const outer = a.ctx.call_path;
+            if (a.ctx.mode == .view) a.ctx.call_path = try a.extendPath(outer, f.m, h.token);
+            const t = a.eval(f, h.value, g) catch |err| {
+                a.ctx.call_path = outer;
+                return err;
+            };
+            a.ctx.call_path = outer;
             d.* = try a.depsUnion(d.*, try a.deps(t));
             var alone = false;
             if (parent) |par| {
@@ -3480,7 +3522,15 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
             var cd: u32 = 0;
             for (b.extraSlice(.{ .start = c.children_start, .end = c.children_end }, Bir.ExtraIndex)) |ch| try a.walkMarkup(f, ch, g, &cd, null);
             const props = if (c.spread.unwrap()) |s| try a.recordUpdate(try a.eval(f, s, g), pairs.items) else try a.mkRec(none, 2 + cd, pairs.items);
-            const r = try a.apply(callee, &.{props}, g);
+            // The component's markup is walked on the call path this node
+            // extends (write-sets.md, *a hole's facts per call*).
+            const outer = a.ctx.call_path;
+            if (a.ctx.mode == .view) a.ctx.call_path = try a.extendPath(outer, f.m, c.token);
+            const r = a.apply(callee, &.{props}, g) catch |err| {
+                a.ctx.call_path = outer;
+                return err;
+            };
+            a.ctx.call_path = outer;
             d.* = try a.depsUnion(d.*, try a.deps(r));
         },
         .@"for", .show => {
@@ -3529,17 +3579,24 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
             a.ctx.row_key = key_path;
             defer a.ctx.row_key = saved;
             const saved_each = a.ctx.each;
+            const saved_veach = a.ctx.veach;
             const saved_item = a.ctx.row_item;
             if (is_for) {
                 a.ctx.each = if (fm.list.unwrap() != null) (a.hole_index.get(.{ .module = f.m, .token = fm.token }) orelse none) else none;
+                a.ctx.veach = if (fm.list.unwrap() != null) (a.vhole_index.get(.{ .module = f.m, .token = fm.token, .path = a.ctx.call_path }) orelse none) else none;
                 a.ctx.row_item = item_root;
                 if (a.ctx.each != none and a.ctx.mode == .view) {
                     const eh = &a.holes.items[a.ctx.each];
                     if (eh.key_path == HoleAcc.unvisited) eh.key_path = key_path else if (eh.key_path != key_path) eh.key_path = none;
                 }
+                if (a.ctx.veach != none and a.ctx.mode == .view) {
+                    const eh = &a.vholes.items[a.ctx.veach];
+                    if (eh.key_path == HoleAcc.unvisited) eh.key_path = key_path else if (eh.key_path != key_path) eh.key_path = none;
+                }
             }
             defer {
                 a.ctx.each = saved_each;
+                a.ctx.veach = saved_veach;
                 a.ctx.row_item = saved_item;
             }
             const arity = if (a.termTag(fun) == .fun) a.funArity(fun) else 1;
@@ -3663,7 +3720,22 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
         gop.value_ptr.* = @intCast(a.holes.items.len);
         try a.holes.append(a.gpa, .{ .module = f.m, .token = token, .kind = kind, .alone = alone, .site = a.cur_site });
     }
-    const h = &a.holes.items[gop.value_ptr.*];
+    try a.accumulate(&a.holes.items[gop.value_ptr.*], f, kind, inst, t, a.ctx.each, false);
+    // Once per call path too (write-sets.md, *a hole's facts per call*).
+    const vgop = try a.vhole_index.getOrPut(a.gpa, .{ .module = f.m, .token = token, .path = a.ctx.call_path });
+    if (!vgop.found_existing) {
+        vgop.value_ptr.* = @intCast(a.vholes.items.len);
+        try a.vholes.append(a.gpa, .{ .module = f.m, .token = token, .kind = kind, .alone = alone, .site = a.cur_site, .path = a.ctx.call_path });
+    }
+    try a.accumulate(&a.vholes.items[vgop.value_ptr.*], f, kind, inst, t, a.ctx.veach, true);
+}
+
+/// One visit's facts into a hole's: its reads and their bound depths, its
+/// list, its row path, bake eligibility, its key paths. `each` is the
+/// innermost `For`'s `each` hole in the hole's own list; `per_path`, a hole
+/// per call path, which bakes any literal the visit computed (write-sets.md,
+/// *a hole's facts per call*).
+fn accumulate(a: *Writes, h: *HoleAcc, f: *Frame, kind: HoleKind, inst: Inst.Index, t: u32, each: u32, per_path: bool) Error!void {
     var reads: std.ArrayList(u32) = .empty;
     defer reads.deinit(a.gpa);
     var bounds: std.ArrayList(u8) = .empty;
@@ -3679,7 +3751,6 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
     }
     // The innermost `For` whose row holds it (an `each` hole is recorded
     // before its own row is walked, so this is the `For` around its own).
-    const each = a.ctx.each;
     if (h.list == HoleAcc.unvisited) h.list = each else if (h.list != each) h.list = none;
     // Exactly a path of the innermost row's item (K3's per-row text).
     var rp: u32 = none;
@@ -3698,21 +3769,39 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
     } else if (kind == .child and b.instTag(inst) == .string) {
         lp = HoleAcc.string_literal;
         h.lit_term = t;
+    } else if (per_path and (kind == .child or kind == .attribute) and a.isPathExpr(f.m, inst) and a.termTag(t) == .lit) {
+        // A literal argument a helper's parameter is bound to, read as a
+        // path, on the one visit a path has.
+        lp = HoleAcc.string_literal;
+        h.lit_term = t;
     }
     if (lp == none - 1) h.literal_ok = false;
     if (h.literal_path == HoleAcc.unvisited) h.literal_path = lp else if (h.literal_path != lp) h.literal_ok = false;
     if (a.ctx.row_key == none) h.in_row = false else if (std.mem.indexOfScalar(u32, h.key_paths.items, a.ctx.row_key) == null) try h.key_paths.append(a.gpa, a.ctx.row_key);
 }
 
+/// Call path `from` with one more entry, the node at `token` of module `m`
+/// (write-sets.md, *a hole's facts per call*), interned.
+fn extendPath(a: *Writes, from: u32, m: u32, token: u32) Allocator.Error!u32 {
+    if (a.call_paths.items.len == 0) try a.call_paths.append(a.gpa, try a.gpa.dupe(u64, &.{}));
+    const entry = (@as(u64, m) << 32) | token;
+    const gop = try a.call_path_next.getOrPut(a.gpa, .{ .from = from, .entry = entry });
+    if (gop.found_existing) return gop.value_ptr.*;
+    const base = a.call_paths.items[from];
+    const full = try a.gpa.alloc(u64, base.len + 1);
+    @memcpy(full[0..base.len], base);
+    full[base.len] = entry;
+    gop.value_ptr.* = @intCast(a.call_paths.items.len);
+    try a.call_paths.append(a.gpa, full);
+    return gop.value_ptr.*;
+}
+
 /// An `each` hole's form, and the one model path its value is on every
 /// visit (browser-direct.md §6.2: the scripts apply to a `For` whose `each`
-/// is exactly a model path).
+/// is exactly a model path) — in the holes and the holes per call path.
 fn noteEach(a: *Writes, f: *Frame, token: u32, form: Form, t: u32) Error!void {
     if (a.ctx.mode != .view) return;
     if (a.in.packages[f.m] != .app) return;
-    const i = a.hole_index.get(.{ .module = f.m, .token = token }) orelse return;
-    const h = &a.holes.items[i];
-    h.form = form;
     var p: u32 = none;
     if (a.termTag(t) == .same) {
         var reads: std.ArrayList(u32) = .empty;
@@ -3720,7 +3809,16 @@ fn noteEach(a: *Writes, f: *Frame, token: u32, form: Form, t: u32) Error!void {
         try a.anchors(t, &reads);
         if (reads.items.len == 1) p = reads.items[0];
     }
-    if (h.each_path == HoleAcc.unvisited) h.each_path = p else if (h.each_path != p) h.each_path = none;
+    if (a.hole_index.get(.{ .module = f.m, .token = token })) |i| {
+        const h = &a.holes.items[i];
+        h.form = form;
+        if (h.each_path == HoleAcc.unvisited) h.each_path = p else if (h.each_path != p) h.each_path = none;
+    }
+    if (a.vhole_index.get(.{ .module = f.m, .token = token, .path = a.ctx.call_path })) |i| {
+        const h = &a.vholes.items[i];
+        h.form = form;
+        if (h.each_path == HoleAcc.unvisited) h.each_path = p else if (h.each_path != p) h.each_path = none;
+    }
 }
 
 /// Whether `t` is a function §9.1 composes at compile time: a constructor,
@@ -4071,6 +4169,13 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     }
     a.holes.clearRetainingCapacity();
     a.hole_index.clearRetainingCapacity();
+    for (a.vholes.items) |*h| {
+        h.reads.deinit(a.gpa);
+        h.key_paths.deinit(a.gpa);
+        h.bound.deinit(a.gpa);
+    }
+    a.vholes.clearRetainingCapacity();
+    a.vhole_index.clearRetainingCapacity();
     for (a.sites.items) |*st| st.holders.deinit(a.gpa);
     a.sites.clearRetainingCapacity();
     a.site_index.clearRetainingCapacity();
@@ -4169,10 +4274,11 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         };
     };
     a.ctx = .{ .mode = .closed };
-    prog.holes = try a.finishHoles(init_model);
+    prog.holes = try a.finishHoles(a.holes.items, init_model, false);
+    prog.vholes = try a.finishHoles(a.vholes.items, init_model, true);
     // A view cut short says so, and every hole it met reads ρ: the top,
     // never a partial read set (§6.1).
-    if (prog.view_capped) for (prog.holes) |*h| {
+    if (prog.view_capped) for ([_][]Hole{ prog.holes, prog.vholes }) |list| for (list) |*h| {
         h.reads = try a.arena().dupe(u32, &.{rho_path});
         h.bound = try a.arena().dupe(u8, &.{0});
         h.bake = false;
@@ -4348,9 +4454,9 @@ fn initAt(a: *Writes, t0: u32, p: u32) Error!?u32 {
     return t;
 }
 
-fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
-    const out = try a.arena().alloc(Hole, a.holes.items.len);
-    for (a.holes.items, out) |*h, *o| {
+fn finishHoles(a: *Writes, list: []HoleAcc, init_model: u32, per_path: bool) Error![]Hole {
+    const out = try a.arena().alloc(Hole, list.len);
+    for (list, out) |*h, *o| {
         // A tag read under a whole read of its path or a prefix of it adds
         // nothing: the whole read conflicts with every write the tag read does.
         var n: usize = 0;
@@ -4383,8 +4489,10 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
         // attribute, every visit's expression the same model path whose
         // `init` value the template can hold exactly — a string, an `Int`
         // in the exact range — or, for a text hole, a string literal.
+        // Per call path, an attribute's literal too: an argument given to a
+        // helper's parameter (write-sets.md, *a hole's facts per call*).
         const shape = h.literal_ok and h.literal_path != HoleAcc.unvisited and
-            ((h.kind == .child and h.alone) or (h.kind == .attribute and h.literal_path != HoleAcc.string_literal));
+            ((h.kind == .child and h.alone) or (h.kind == .attribute and (per_path or h.literal_path != HoleAcc.string_literal)));
         var bake_text: ?[]const u8 = null;
         if (shape) {
             if (h.literal_path == HoleAcc.string_literal) {
@@ -4411,6 +4519,7 @@ fn finishHoles(a: *Writes, init_model: u32) Error![]Hole {
             .init_rows = if (h.kind == .each and h.each_path != HoleAcc.unvisited and h.each_path != none and init_model != none) try a.initRows(init_model, h.each_path) else &.{},
             .key_path = if (h.key_path == HoleAcc.unvisited) none else h.key_path,
             .alone = h.alone,
+            .path = if (per_path and h.path < a.call_paths.items.len) try a.arena().dupe(u64, a.call_paths.items[h.path]) else &.{},
         };
     }
     return out;

@@ -1,0 +1,86 @@
+-- A keyed `For` whose row reads its position (`λrow i →`; browser-direct.md
+-- §6.2, as amended for S3): every edit that shifts rows gives each row that
+-- moved its new position and patches it, as `browser-tea` patches a row
+-- whose position changed — an insert, a removal, a prepend, a swap, a
+-- filter (the merge) and a reversal (the reconciler). The inputs are not
+-- controlled, so typed text shows that a row keeps its node while its
+-- position changes.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Insert
+    | RemoveSecond
+    | Prepend
+    | Swap
+    | DropEven
+    | Reverse
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    next : Int
+
+
+fresh : Model, String → Row
+fresh model label = { id = model.next, label = "${label} ${String.fromInt model.next}" }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Insert →
+            { model | rows = List.insertAt model.rows 1 (fresh model "in"), next = model.next + 1 }
+
+        RemoveSecond →
+            { model | rows = List.removeAt model.rows 1 }
+
+        Prepend →
+            { model | rows = [ fresh model "front", …model.rows ], next = model.next + 1 }
+
+        Swap →
+            { model | rows = List.swap model.rows 0 2 }
+
+        DropEven →
+            { model | rows = List.filter model.rows λr → Int.mod r.id 2 ≠ 0 }
+
+        Reverse →
+            { model | rows = List.reverse model.rows }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="insert" onClick={Insert}>insert</button>
+        <button id="remove" onClick={RemoveSecond}>remove second</button>
+        <button id="prepend" onClick={Prepend}>prepend</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="dropeven" onClick={DropEven}>drop even</button>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <ol>
+            <For each={model.rows} keyed={.id}>
+                {λrow i →
+                    <li title={String.fromInt i}><input />{row.label} at {String.fromInt i}</li>
+                }
+            </For>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ]
+            , next = 4
+            }
+        , update = update
+        , view = view
+        }

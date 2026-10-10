@@ -1,0 +1,119 @@
+-- load
+console.log: mark: "1"
+console.log: after label: "a"
+console.log: mark: "2"
+console.log: after label: "b"
+console.log: before label: "a"
+console.log: mark: "1"
+console.log: before label: "b"
+console.log: mark: "2"
+console.log: mark: "1"
+console.log: toggled label: "a"
+console.log: mark: "2"
+console.log: toggled label: "b"
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="mark">"mark"</button>
+    <button id="rename">"rename"</button>
+    <ul id="after">
+      <li class="1">"a"</li>
+      <li class="2">"b"</li>
+    </ul>
+    <ul id="before">
+      <li title="a" class="1"></li>
+      <li title="b" class="2"></li>
+    </ul>
+    <ul id="toggled">
+      <li title="1">"a"</li>
+      <li title="2">"b"</li>
+    </ul>
+  </main>
+</body>
+-- click #add
+console.log: mark: "3"
+console.log: after label: "c"
+console.log: before label: "c"
+console.log: mark: "3"
+console.log: mark: "3"
+console.log: toggled label: "c"
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="mark">"mark"</button>
+    <button id="rename">"rename"</button>
+    <ul id="after">
+      <li class="1">"a"</li>
+      <li class="2">"b"</li>
+      <li class="3">"c"</li>
+    </ul>
+    <ul id="before">
+      <li title="a" class="1"></li>
+      <li title="b" class="2"></li>
+      <li title="c" class="3"></li>
+    </ul>
+    <ul id="toggled">
+      <li title="1">"a"</li>
+      <li title="2">"b"</li>
+      <li title="3">"c"</li>
+    </ul>
+  </main>
+</body>
+-- click #mark
+console.log: mark: "*1"
+console.log: mark: "*2"
+console.log: mark: "*3"
+console.log: mark: "*1"
+console.log: mark: "*2"
+console.log: mark: "*3"
+console.log: mark: "*1"
+console.log: mark: "*2"
+console.log: mark: "*3"
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="mark">"mark"</button>
+    <button id="rename">"rename"</button>
+    <ul id="after">
+      <li class="*1">"a"</li>
+      <li class="*2">"b"</li>
+      <li class="*3">"c"</li>
+    </ul>
+    <ul id="before">
+      <li title="a" class="*1"></li>
+      <li title="b" class="*2"></li>
+      <li title="c" class="*3"></li>
+    </ul>
+    <ul id="toggled">
+      <li title="*1" class="on">"a"</li>
+      <li title="*2" class="on">"b"</li>
+      <li title="*3" class="on">"c"</li>
+    </ul>
+  </main>
+</body>
+-- click #rename
+console.log: after label: "A"
+console.log: before label: "A"
+console.log: toggled label: "A"
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="mark">"mark"</button>
+    <button id="rename">"rename"</button>
+    <ul id="after">
+      <li class="*1">"A"</li>
+      <li class="*2">"b"</li>
+      <li class="*3">"c"</li>
+    </ul>
+    <ul id="before">
+      <li title="A" class="*1"></li>
+      <li title="b" class="*2"></li>
+      <li title="c" class="*3"></li>
+    </ul>
+    <ul id="toggled">
+      <li title="*1" class="on">"A"</li>
+      <li title="*2" class="on">"b"</li>
+      <li title="*3" class="on">"c"</li>
+    </ul>
+  </main>
+</body>

@@ -14,21 +14,18 @@
         "one"
         " "
         "0"
-        <!---->
       </li>
       <li class="">
         <input .value="">
         "two"
         " "
         "0"
-        <!---->
       </li>
       <li class="">
         <input .value="">
         "three"
         " "
         "0"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -56,21 +53,18 @@
         "one"
         " "
         "0"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two"
         " "
         "0"
-        <!---->
       </li>
       <li class="">
         <input .value="">
         "three"
         " "
         "0"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -98,21 +92,18 @@
         "one"
         " "
         "0"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two"
         " "
         "0"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "0"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -140,21 +131,18 @@
         "one"
         " "
         "0"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two!"
         " "
         "0"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "0"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -182,21 +170,18 @@
         "one"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two!"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "1"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -224,21 +209,18 @@
         "one"
         " "
         "1"
-        <!---->
       </li>
       <li class="done">
         <input .value="two's">
         "two!"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "1"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -266,21 +248,18 @@
         "one"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two!"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "1"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -308,28 +287,24 @@
         "one"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two!"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="">
         "again"
         " "
         "1"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -358,28 +333,24 @@
         "one"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two!!"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="">
         "again"
         " "
         "1"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -408,21 +379,18 @@
         "one"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two!!"
         " "
         "1"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "1"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -450,21 +418,18 @@
         "one"
         " "
         "2"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two!!"
         " "
         "2"
-        <!---->
       </li>
       <li class="">
         <input .value="three's">
         "three"
         " "
         "2"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
@@ -492,21 +457,18 @@
         "three"
         " "
         "2"
-        <!---->
       </li>
       <li class="">
         <input .value="two's">
         "two!!"
         " "
         "2"
-        <!---->
       </li>
       <li class="">
         <input .value="">
         "one"
         " "
         "2"
-        <!---->
       </li>
     </ul>
     <ol id="framed">
