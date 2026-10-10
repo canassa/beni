@@ -8,7 +8,9 @@ warning, gets an escape hatch, or is dropped. A limit that bounds a real blow-up
 by an annotation is the model of a restriction done right. Every rule in this design is to be tested
 against that principle.
 
-This rule buys a guarantee about \emph{cost}: \emph{an edit the program writes is performed in place},
+This rule buys a guarantee about \emph{cost}, on the direct platform, where lists are written in place
+(rule~7; on every other target it buys only that the same source means the same thing there,
+\S\ref{sec:disc-targets}): \emph{an edit the program writes is performed in place},
 with no hidden copy and no slower path chosen behind the program's back---\code{set}, \code{update},
 \code{swap} and \code{pop} in $O(1)$; \code{push}, \code{cons} and every element a construction adds at
 either end of its base in amortised $O(1)$; the elements a construction copies from a read operand in
@@ -34,7 +36,8 @@ persistent stack whose old versions are read (\S\ref{sec:hard-undo}), and two li
 \item A command, fiber, subscription or stored closure that captured a list which a later message edits
 in place (\S\ref{sec:hard-fibers}).
 \item A construction whose base is a top-level list, \code{[ x, …defaults ]}, or a model list in
-\code{view}, a derived value or \code{subscriptions}.
+\code{view}, a derived value or \code{subscriptions}; and any in-place edit of a model that \code{init}
+took from a top-level \code{initialModel}.
 \item A closure that edits a captured list in place and is passed to \code{map}, \code{filter},
 \code{sortBy} or any other $\mathit{many}$ position, called twice, or handed to the runtime
 (\S\ref{sec:hard-closures}).
@@ -44,15 +47,22 @@ followed by an extension, or an edit of an element of a list of lists whose cont
 \item An in-place edit of a list from JavaScript, a \code{Ref}, a value the runtime retains, or a
 \code{foreign} without a summary (\S\ref{sec:hard-foreign}, \S\ref{sec:hard-ref}).
 \item A splice or rotation written with \code{take} and \code{drop}, whose identity promises make the
-operands possibly one list (\S\ref{sec:idioms-rejected}); and an undo history of a list, which needs a
-second copy (\S\ref{sec:hard-undo}).
+operands possibly one list (\S\ref{sec:idioms-rejected}); a filtered copy kept at another model path
+beside its source, for the same reason; and an undo history of a list, which needs a second copy
+(\S\ref{sec:hard-undo}).
+\item A fold whose callback returns, on some branch, a list it does not own---a top-level list, a capture,
+an element it did not consume---as the next accumulator (\S\ref{sec:inf-classes}).
 \item A writer or construction whose base is also another operand, such as \code{[ …xs, …xs ]}, which
 fails \Disjoint.
 \item Anything the checker's joins, path cut or caps cannot follow (\S\ref{sec:hard-branches}): limits.
 \end{enumerate}
-The fix is one call, \code{List.copy}, in every case, and the message writes it; where the edit need not
-be in place, a reading form---\code{[ x ] ++ ys}, \code{List.concat}, \code{List.map}---is the other fix,
-and for commands, computing the value before the command is made. As Henriksen puts it for Futhark, ``an
+In most cases the fix is one call, \code{List.copy}, and the message writes it; where the edit need not
+be in place, a reading form---\code{[ x ] ++ ys}, \code{List.concat}, \code{List.map}---is the other fix.
+Two kinds need something else. For a command that captured a list, the fix is to compute the value the
+command needs before it is made; a copy would work too, but only if it is made before the edit, outside the
+command. For a closure that edits a capture and is called many times, the fix is a copy \emph{inside} the
+callback, or a fold if the intent was to accumulate; and a top-level model is fixed by making it a
+function. As Henriksen puts it for Futhark, ``an
 alias-related type error can always be fixed by copying'' \citep{henriksen2022uniqueness}. What the fix
 costs is a copy where the program meant to share. For the first case that is the program's intended
 semantics made explicit; for the last it is a copy the programmer pays for the checker's blindness.
@@ -115,6 +125,7 @@ the mitigation; they are not a guarantee, and the evaluation plan measures somet
 this reason (\S\ref{sec:eval-people}).
 
 \section{What it costs on the other targets}
+\label{sec:disc-targets}
 
 In-place lists are a feature of the direct platform only (rule~7), but the rule is checked on every
 target. A program built for the template runtime, or for Node, is rejected wherever a program built for
@@ -131,8 +142,10 @@ persistent and one in place, with one set of rows.
 Chapter~\ref{sec:idioms} re-assesses TodoMVC and Conduit (\S\ref{sec:disc-apps}). In short: both now edit
 lists in place, in \code{update}; TodoMVC is not accepted as written, and needs \code{init} as a function
 and, where it persists, one binding moved before a command; Conduit is accepted as written, by our hand
-trace, once a closure holds only the fields of the model it reads. Neither needs anything of the direct
-platform's renderer beyond what it already does. What they gain there is small---in-place appends on short
+trace, once a closure holds only the fields of the model it reads and an opaque component is seen as its
+slots. Neither needs the element-script changes of \Obl{P7}(f) and (g), since their list elements are
+records; both need the changes every page needs, \Obl{P2}'s scalar locals and (a)'s rule for structure
+holes where they apply. What they gain there is small---in-place appends on short
 lists, and the smaller list runtime. They test whether the rule is livable, not whether it is fast.
 
 \section{The run-time alternative}

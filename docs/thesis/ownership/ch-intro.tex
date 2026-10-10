@@ -136,7 +136,8 @@ Aspinall, Hofmann and Kone\v{c}n\'y report finds the best typing for their first
 \paragraph{Idioms.} Accumulators in a loop, folds, recursive builders, lists built by \code{map} and
 \code{filter} and then extended, pipelines, and \code{update} arms that add to a model list are all
 accepted by this analysis without help: per-path liveness, the rebinding of a tail call, the
-library's statement that a fold hands its callback the accumulator owned, and the runtime's handing
+library's statement that a fold hands its callback the accumulator owned whenever the callback returns
+what it owns, and the runtime's handing
 over of the model do the work (Chapter~\ref{sec:idioms}). What remains rejected is real sharing
 (a version kept and then edited, a list captured by a command and then extended) and a short list of
 limits; for the commonest of them we propose library choices---commands that take values rather than
@@ -166,10 +167,15 @@ command is shared for the rest of the program. A body edit that changes a public
 re-checks its importers. And the error fires in the code people write most, so its
 messages carry much of the design (Chapter~\ref{sec:errors}).
 
-\paragraph{The proposal.} Build the checker as a \emph{report-mode pass first}, together with a
+\paragraph{The proposal.} Four adversarial readings of earlier forms of this design each found holes, the
+later ones all where two features interact. So the next step is not another reading but a prototype: build
+the checker as a
+\emph{report-mode pass first}, together with a
 differential run that executes every accepted program under both semantics with a trap on any read
-of an out-of-date array; run both over the core library, the compiler's test programs, the two
-applications and a corpus of programs written outside the project; classify every rejection by idiom
+of an out-of-date array; run both over the compiler's test programs, the applications and randomly
+generated programs that combine the features whose interactions broke earlier forms, until they stop
+finding holes; then over the core library and
+a corpus of programs written outside the project; classify every rejection by idiom
 and as real sharing or a limit of the checker; and decide against criteria fixed before the run, whose
 main one is the rate of the error on idiomatic code (\S\ref{sec:evaluation}).
 
@@ -197,7 +203,7 @@ recursive groups, including groups of local functions; and publication in module
 \item A soundness argument (Chapter~\ref{sec:soundness}): under twelve stated assumptions about the
 runtime, the core library and the platforms, an accepted program produces the same observable trace
 under value semantics and under in-place semantics. We give the theorem, the lemmas and proof
-sketches, the trusted surface, the places we consider weakest, and forty-five programs that test the
+sketches, the trusted surface and an audit of it, the places we consider weakest, and fifty-eight programs that test the
 rules, each traced through them.
 \item An entry protocol for every function a TEA (Elm Architecture) runtime calls, a renderer obligation
 that states precisely what a back end that writes lists in place must re-render, and how compile-time
@@ -206,7 +212,8 @@ write sets provide it, and a treatment of the hard cases (Chapter~\ref{sec:hard}
 tells \emph{real sharing} from \emph{a limit of the checker} by a derivation tag carried on every fact.
 \item An account of the cost (Chapter~\ref{sec:discussion}), the language and library changes the
 rule needs (Chapter~\ref{sec:disc-options}), and an evaluation plan (Chapter~\ref{sec:evaluation})
-whose first experiment tests soundness, whose main metric is the error rate on idiomatic code, and
+whose first step is a prototype checker under a differential soundness test over generated programs, whose
+main metric is the error rate on idiomatic code, and
 whose decision criteria are stated in advance. \emph{No results of that evaluation exist yet}; we
 report none.
 \end{itemize}
@@ -263,6 +270,16 @@ unseen keep it, or writes it; for each result path, where its cells come from; f
 parameter, how often it is called and what is passed to it (\S\ref{sec:model-summary}).
 \item[Shared.] A cell held by a top-level value. It is never dead, so it is never edited in place; a
 program edits a copy, or a list a constructor function returns (\S\ref{sec:model-check}).
+\item[Owned, borrowed.] What a function passes to a callback is \emph{owned} when it is unique at the
+call of the callback, so that the callback may edit it, and \emph{borrowed} otherwise. A callback's result
+is owned only if it is a cell made during the call or something the callback was itself given owned
+(\S\ref{sec:model-summary}).
+\item[Exclusive.] A container---a list, the levels of a recursive value, a dictionary---is exclusive when no
+cell is reachable from two of its positions, the paths within one position hold distinct cells, and
+nothing outside it holds them; an edit inside an element needs it (\S\ref{sec:model-excl}).
+\item[Slot, representative.] An importer sees inside an opaque type only its numbered \emph{slots}, one
+per list or function path of its definition; a path that stands for every level of a recursive type is a
+\emph{representative} (\S\ref{sec:model-cells}).
 \item[Hand-over.] A UI runtime hands the model over when, after calling \code{update}, it keeps no
 reference through which it could read a list of the old model (\S\ref{sec:hard-tea}).
 \item[Direct platform, template runtime, derived value, write set.] beni's current browser renderer is

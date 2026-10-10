@@ -16,7 +16,46 @@ rejection, and decide on the numbers---here, against criteria written down befor
 Wrenn and Krishnamurthi's view of errors as classifiers \citep[\S2]{wrenn2017classifiers}, the experiment
 measures the precision of the classifier the checker would be.
 
-\section{First: a differential run that traps stale reads}
+\section{The next phase: a prototype checker and a differential soundness test}
+\label{sec:eval-next}
+
+This is the last form of the design to be argued on paper. Four rounds of adversarial reading each found
+accepted programs whose in-place run would differ from their value run---nine such holes in the last two
+rounds alone---and every one was at an \emph{interaction}: a fold's asserted row and a top-level value; an
+opaque type and a caller's \Disjoint; a recursive type's folding and liveness; a send and an arm that
+edits a payload without storing it; the release representation and the renderer's identity guards. Each
+rule was right on its own, and each repair was local. A fifth reading would likely find more of the same
+kind, more slowly, because the combinations grow faster than a reader can trace them. The next phase
+therefore replaces reading with testing.
+\begin{enumerate}
+\item \emph{A prototype checker in report mode} (\S\ref{sec:eval-report}): the analysis of
+Chapters~\ref{sec:model}--\ref{sec:hard} as a pass that prints its verdicts and changes no emitted byte,
+with the trusted surface enumerated row by row as it is needed.
+\item \emph{A differential soundness test.} Every program the prototype accepts is run under both
+semantics: the value semantics, and the in-place backend with the stale-read sanitiser
+(\S\ref{sec:eval-sanitiser}), whose every list carries a version and every reference the version it was
+obtained at, so that any read of a stale list traps with its origin and the write that made it stale. The
+traces must agree and nothing may trap.
+\item \emph{Three sources of programs.} The compiler's test corpus, including the programs that run in a
+page; the applications (TodoMVC, Conduit, the table benchmark); and \emph{randomly generated programs}
+that combine the features whose interactions broke earlier forms of the rules. A generator draws a small
+well-typed program from a grammar of list idioms---folds and maps with callbacks of every class,
+top-level values, closures that capture and are stored, spreads and \code{++} chains, records, tuples and
+constructors, dictionaries, opaque types declared in a second module, recursive types, commands that
+capture and send, \code{update} arms that store and edit---and crosses them systematically: folds with
+top-level values and captures, captures with spreads, containers with callbacks that return what they did
+not make, opaque and recursive types with every demand, and every program built twice, in a development
+and a release build. Each generated program the prototype accepts goes through the differential test; each
+it rejects is kept as a measure of precision. A program that traps is shrunk to a minimal one, added to
+Table~\ref{tab:counterexamples}, and the rule it exposes is repaired before anything else proceeds.
+\end{enumerate}
+Generated programs test what the corpus cannot: the corpus contains only the combinations someone wrote,
+and the holes so far were in combinations no one had. They do not prove anything either. What they buy is
+a search that is cheap to run often and grows with the rules, where a reading is expensive and stops at
+the reader. The decision criteria below are applied only after this phase finds no trap over a budget of
+generated programs fixed in advance.
+
+\section{The differential run that traps stale reads}
 \label{sec:eval-sanitiser}
 
 The first experiment runs every program the checker accepts under both semantics. We build, in a test
@@ -24,19 +63,29 @@ mode only:
 \begin{itemize}
 \item \emph{an in-place backend}: the list runtime of Table~\ref{tab:backend}, with every accepted demand
 written in place---constructions included---and every once closure's call counted. It is what the direct
-platform ships; the test mode links it into programs for every target, Node and the template runtime
-included, as an instrument, since the theorem is about the rules and not about one platform;
+platform ships; the test mode also links it into programs built for Node, which has no renderer, since the
+theorem is about the rules and not about one platform. It is \emph{not} linked into the template runtime:
+that runtime skips work by identity everywhere and is outside $S_u$ by rule~7, so an in-place run there
+would differ from the value run on accepted programs---TodoMVC's \code{hidden} attribute among them---and
+make the first decision fire on programs that are correct;
 \item \emph{a stale-read sanitiser}: the instrumented semantics of \S\ref{sec:soundness-instrumented}
 made executable. Every array carries a version counter, incremented by each in-place write; every
 reference to an array that the emitted code creates---a local, a field, an element, a closure's
 environment, a pending operand, a runtime structure---is wrapped with the version at which it was
 obtained, and every dereference, identity comparison or call through a stale wrapper \emph{traps},
 printing the reference's origin and the write that made it stale. A second call of a once closure traps
-the same way.
+the same way;
+\item \emph{a shadow mode}, for the template runtime and every other target that keeps persistent lists:
+the persistent runtime, unchanged, with each accepted demand marking the array it consumed as
+\emph{superseded}, and every later read of a superseded array by program code trapping. A superseded array
+is one the in-place run would have overwritten, so a read of it is exactly a stale use, found without
+writing anything in place. The runtime's own identity holds are exempt, since on these targets they are
+sound.
 \end{itemize}
-Every accepted program of every corpus below is then run three times: under value semantics, under the
-in-place backend, and under the in-place backend with the sanitiser. The first two runs must print the
-same trace, and the third must not trap. beni's compiler already records, per test program, a hash of
+Every accepted program of every corpus below is then run three times on Node and on the direct
+platform---under value semantics, under the in-place backend, and under the in-place backend with the
+sanitiser---and once more under the shadow mode on the template runtime. The first two runs must print the
+same trace, and neither the sanitiser nor the shadow mode may trap. beni's compiler already records, per test program, a hash of
 its emitted output and its expected result, and skips re-running programs whose hash matches; the
 differential run reuses that machinery, so it costs one extra run per changed program.
 
@@ -121,7 +170,9 @@ accepted & unique at the site \\
 rejected, exact & real sharing, by holder kind: a later local read, a held operand, a closure, a command
 or fiber, a container, a payload, a kept version \\
 rejected, approximate & by limit tag (Table~\ref{tab:tags}) \\
-rejected, position & the position rule's choice of base: a top-level list, a model list in \code{view} \\
+rejected, position & the position rule's choice of base: a top-level list, a top-level model, a model list in \code{view} \\
+top-level models & position rejections caused by an \code{init} that returns a top-level \code{initialModel}, on a line of their own \\
+kept copies & rejections caused by an identity promise across the entry: a filtered or mapped copy kept beside its source \\
 \emph{idiomatic error rate} & on the external corpus, rejected demands over \emph{all} its demands, pooled and
 per application; broken down by idiom I1--I7 and ``other'', and by kind (exact, approximate, position); the
 main metric \\
@@ -181,7 +232,8 @@ decided. Every demand site of the external corpus counts: the corpus is idiomati
 classifier removes a site from it.
 \begin{enumerate}
 \item \emph{Soundness.} If the differential run traps on any accepted program, or the two traces differ,
-the rule is not adopted until the cause is found and a test pins it. No rate of traps is acceptable.
+on any corpus or on any generated program of \S\ref{sec:eval-next}, the rule is not adopted until the cause
+is found, the rule is repaired, and a test pins it. No rate of traps is acceptable.
 \item \emph{Adoption.} The rule is adopted only if (a) fewer than one in fifty demand sites of the external
 corpus is rejected, rejections caused by the position rule included; (b) no idiom I1--I7 has a rejection
 rate above one in fifty on its own, so that no common idiom carries the errors the others do not;
@@ -199,12 +251,17 @@ make run included.
 \item \emph{Which extensions to build,} on the frequency of each approximate tag: a path-sensitive join
 only if the join tag is above a twentieth of rejections, a discipline for mutable cells only if the
 \code{Ref} tag is, summaries split by message constructor only if the view-event tag is, a relational entry
-only if the entry-merge tag is, a special case for a one-element \code{map} only if the
+only if the entry-merge and kept-copy tags together are, dropping the identity promises (O2) only if the
+kept-copy and splice tags together are and a relational entry would not remove them, the split of a
+recursive value by a pattern only if the fold tag is, a special case for a one-element \code{map} only if the
 $\mathit{calls} = \mathit{many}$ tag is, and value-taking command constructors if the command tag is above a
 twentieth of rejections.
 \end{enumerate}
 The thresholds are our judgement, not derived; they are written down so that the decision cannot be
-fitted to the outcome. The error rate on the other targets, where the rule buys nothing but portability,
+fitted to the outcome. Rejections caused by a top-level model count in criterion 2(a) like every other
+position rejection, and are reported on their own line beside it: the port of an Elm program makes
+\code{init} a function and leaves \code{initialModel} as it was written, so that the criterion is neither
+met nor failed by the porting rule. The error rate on the other targets, where the rule buys nothing but portability,
 is reported beside these and does not enter them. Whether to add the in-place forms of proposal O1 is
 decided separately, on how often the external corpus's \code{map}, \code{filter} and sorts are applied to a
 list that is unique and dead at the call.
@@ -214,7 +271,8 @@ list that is unique and dead at the call.
 
 For the experiments to be run, an implementation must provide, in this order: the enumerated trusted
 surface of \S\ref{sec:soundness-trusted}, one asserted row and one pinned test program at a time; the
-in-place backend and the sanitiser of \S\ref{sec:eval-sanitiser}, in a test mode; the dump format above,
+in-place backend, the sanitiser and the shadow mode of \S\ref{sec:eval-sanitiser}, in a test mode; the
+program generator of \S\ref{sec:eval-next}, with its shrinker; the dump format above,
 with the idiom classifier; the direct platform's entry protocol as an asserted row on its program
 constructors; the derivation tags of \S\ref{sec:errors-tags}; one test program per
 transfer rule of Table~\ref{tab:transfer}, per summary rule of \S\ref{sec:inf-summarise} and per row of

@@ -190,16 +190,17 @@ scope. Every fix in this chapter was checked against that rule.
 `List.set` changes `rows` in place, but the checker cannot tell whether anything
 else still holds it.
 
-14|     rows = Js.to raw
-               ^^^^^^^^^ `rows` came from JavaScript here, which may keep it
+14|     rows = Task.join loader
+               ^^^^^^^^^^^^^^^^ `rows` is the result of the fiber `loader`
 17|     List.set rows i v
         ^^^^^^^^^^^^^^^^^ changed in place here
 
 This is a limit of the checker, not proof of sharing: nothing in this module
-reads the old `rows` after line 17, but the checker cannot see what JavaScript
-does with the array it gave you. To be safe, copy it once where it arrives:
+reads the old `rows` after line 17, but a fiber's result is handed to every
+fiber that joins it, and the checker cannot see who else does. To be safe,
+copy it once where it arrives:
 
-14|     rows = List.copy (Js.to raw)
+14|     rows = List.copy (Task.join loader)
 \end{Verbatim}
 
 \section{The fixed shape}
@@ -263,6 +264,7 @@ a handler or message in markup that holds the list & ``a handler on the page hol
 a view event elsewhere in the program carrying a model list (\Obl{P6}) & ``a message sent from the page may carry this list'' \\
 a result that may be its input by an identity promise (\code{filter}, \code{take}, \code{reverse} \ldots) & ``\code{List.take xs i} may be \code{xs} itself when \code{i} is at least its length'' \\
 two positions of one list merged as $[\ast]$ & ``the checker does not tell the elements of \code{rows} apart'' \\
+the levels of a recursive value merged by folding & ``the checker does not tell the levels of \code{tree} apart'' \\
 two model paths merged by the entry's fixpoint & ``some message may leave \code{todos} and an element of \code{history} the same list'' \\
 a closure or command that passes a record whole to code that reads every path & ``the command keeps all of \code{model}, because it passes it on whole'' \\
 \bottomrule
@@ -277,10 +279,9 @@ parameter path. Every step that lets two run-time cells share one abstract cell 
 its tag: the merge of a list's positions under $[\ast]$, the fold of a recursive type, the join of the
 entry's fixpoint, the two outcomes of an identity promise, and a whole use of a record. A rejection whose
 derivation uses only exact tags is then \emph{real sharing}: there is a path through the program text on
-which the old version is read after the edit. An earlier statement of this rule called a rejection real
-whenever no limit of the checker's \emph{inputs} was involved, and so counted as sharing the failures that
-come from the abstraction's own merges, which read no old version; the four tags at the end of
-Table~\ref{tab:tags} are the correction. A rejection caused by the position rule's choice of base---a
+which the old version is read after the edit. It is not enough that no limit of the checker's
+\emph{inputs} was involved: a failure that comes from the abstraction's own merges reads no old version on
+any path of the text, which is why the last six tags of Table~\ref{tab:tags} are approximate. A rejection caused by the position rule's choice of base---a
 top-level list, or a model list in \code{view}, written first---is reported apart from both: it is a
 consequence of the language's rule, whether or not anything else reads the list. One that uses an
 approximate tag is \emph{possible sharing}, and the message names the limit. This makes Crichton's

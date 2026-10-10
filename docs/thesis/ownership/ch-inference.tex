@@ -108,8 +108,10 @@ of an enclosing scope that a lambda returns is $\env.q$, never fresh. The remain
 paths (a call inside a tail-call loop, a pass to a $\mathit{many}$ position, or a pass to an escaping
 position is $\mathit{many}$); $\mathit{supply}(k)$ from the abstract value of the $k$th argument at each
 call, its provenance being read off by the rule above and its ownership bit owned iff the argument's
-cells pass \Dead, \Unescaped\ and \Disjoint\ at that call; $\mathit{need}$ from whether the result's cells
-reach a store that promises $\excl$.
+cells pass \Dead, \Unescaped\ and \Disjoint\ at that call. Where the argument holds what an earlier call
+of a function-typed parameter $h$ returned, its cells are $h$'s result translated, and the bit is owned
+only under the atom ``$h$ returns owned'' (\S\ref{sec:model-summary}); the bit is then a guarded value,
+not a constant. $\mathit{need}$ comes from whether the result's cells reach a store that promises $\excl$.
 \end{itemize}
 The four bits of $\mathit{use}$ are independent; the normal shape of a writer that returns its operand
 is $\{\mathsf{R}, \mathsf{A}, \mathsf{W}\}$. The bits refine Aspinall, Hofmann and Kone\v{c}n\'y's three
@@ -188,15 +190,15 @@ $\mathit{res}(q')$, $q' \in Q$ & down-closed subsets of the provenances $\mathit
 $\mathit{xres}(q')$ & $\mathsf{yes} \sqsubset \mathsf{no}$ (a \emph{must} fact, reversed) & 1 per path \\
 $\mathit{xreq}(i, q)$ & $\mathsf{no} \sqsubset \mathsf{yes}$ & 1 per path \\
 $\mathit{calls}(j)$ & $0 \sqsubset {\le}1 \sqsubset \mathit{many}$ & 2 per $j$ \\
-$\mathit{supply}(j, k)$ & provenance sets as for $\mathit{res}$; $\mathrm{owned} \sqsubset \mathrm{borrowed}$ (reversed) & $|\mathit{Pv}| + 1$ per parameter of $g_j$ \\
+$\mathit{supply}(j, k)$ & provenance sets as for $\mathit{res}$; $\mathrm{owned} \sqsubset \mathrm{borrowed}$ and $\mathrm{exclusive} \sqsubset \mathrm{not}$ (reversed) & $|\mathit{Pv}| + 2$ per parameter of $g_j$ \\
 $\mathit{need}(j)$ & nothing $\sqsubset$ fresh and exclusive & 1 per $j$ \\
 once-ness of a result path & not once $\sqsubset$ may be once & 1 per function-typed result path \\
 \bottomrule
 \end{tabularx}
 \end{center}
-The order on a provenance set needs care. An earlier statement of it closed each set \emph{upwards}
-under $\fresh_k \sqsubset \esc_k$ and $p \sqsubset \top$, which taken literally puts $\top$ into every
-non-empty set and makes every result fail \Known. What is meant is the lower (Hoare) order: $S
+The order on a provenance set needs care. Closing each set \emph{upwards} under $\fresh_k \sqsubset
+\esc_k$ and $p \sqsubset \top$ would put $\top$ into every non-empty set and make every result fail
+\Known. The order is the lower (Hoare) order: $S
 \sqsubseteq T$ when every element of $S$ is below some element of $T$. Its quotient is the lattice of
 \emph{down-closed} subsets of $\mathit{Pv}$ ordered by inclusion, and we store each set by its maximal
 elements: $\{\esc_k\}$ stands for $\{\fresh_k, \esc_k\}$, and a set holding $\top$ is the whole of
@@ -205,7 +207,8 @@ provenance at each step, so a path's height is $|\mathit{Pv}|$, the figure in th
 rules make of a set reads its maximal elements, and every test is \emph{antitone}: it can only turn
 from true to false as the set grows. \Known\ asks that $\top$ not be maximal; ``fresh'' (for
 $\excl$, for $\mathit{need}$, for ``keeps shape'') asks that every maximal element be some
-$\fresh_k$; \Unescaped\ asks that none be $\esc_k$ or $\shared$. With this order the read-off rule is
+$\fresh_k$; \Unescaped\ asks that none be $\esc_k$ or $\shared$; ``returns owned'' asks that each be
+some $\fresh_k$ or an owned parameter path. With this order the read-off rule is
 monotone: when more of a body's cells escape, a $\fresh_k$ becomes $\esc_k$, whose down-closure contains
 it. The same order applies to $\mathit{supply}$'s provenance sets. The base lattice $L_0$ is the product of these, ordered
 pointwise, and its height $h_0$ is the sum of the last column.
@@ -281,7 +284,9 @@ the lambda's $\mathit{res} = \{\pi_1\}$ names the lambda's own parameter, and \c
 foldl : List a [borrowed; [*] aliased; consumed+aliased and requires excl if g consumes 1],
         b [consumed+aliased if g consumes 2; aliased otherwise],
         (a, b → b) [calls many; supply 1 owned π₁[*] if g consumes 1; supply 1 borrowed π₁[*] otherwise;
-                    supply 2 owned π₂ ∪ g.res; supply 2 excl if π₂ excl and g.xres]
+                    supply 1 excl if π₁ excl;
+                    supply 2 owned π₂ ∪ g.res if g returns owned; supply 2 borrowed π₂ ∪ g.res otherwise;
+                    supply 2 excl if π₂ excl and g.xres]
           → b [= π₂, g.res; excl if π₂ excl and g.xres]
 \end{Verbatim}
 (the first line's consumption and the owned element are the single-pass rule of
@@ -289,11 +294,29 @@ foldl : List a [borrowed; [*] aliased; consumed+aliased and requires excl if g c
 a caller that edits the result while still using \code{rows} is rejected. The same translation through
 $\env$ makes a callback that returns a captured list, \code{List.map ys (λ\_ → xs)}, produce a result
 whose elements are \code{xs}'s cell rather than fresh ones, so \code{map}'s result is not exclusive.
+
+The accumulator's supply is guarded because on every call after the first it is the callback's previous
+result, and that result is owned only if the callback made it, or returned something it was itself
+supplied owned. ``$g$ returns owned'' reads $g$'s $\mathit{res}$ with $\pi_2$ counted as owned, since it is
+the guard being established, and $\pi_1$ counted as owned only when the element is supplied owned. So
+\begin{Verbatim}
+List.foldl xs [] (λx acc → if x < 0 then defaults else [ …acc, x ])       -- defaults top-level
+List.foldl rows [] (λrow acc → if List.isEmpty acc then row else [ …acc, 0 ])
+\end{Verbatim}
+are rejected: the first callback may return $\shared$, the second its element, which \code{foldl}
+supplies borrowed because the callback does not consume it. In both, the next iteration would extend in
+place a list something else still holds---a top-level constant, an element of \code{rows}---and the
+message names the branch that returns it and offers \code{List.copy} there (T46). A callback that returns a
+capture is rejected the same way. The guard costs nothing on the idioms: an accumulator callback returns
+its accumulator, extended or not, or a list it built.
+
 The last guard carries exclusivity round the loop: the accumulator handed to the callback is exclusive
 at the first call when the initial value is, and at every later call when the callback's own result is
 ($g.\mathit{xres}$). Without it a fold could supply an owned accumulator but never an exclusive one,
 and an edit inside it---a group of a dictionary, App.~\ref{app:groupby}---would fail from the second
-iteration on.
+iteration on. The entry protocol of a TEA program (\S\ref{sec:hard-tea}) is the same loop, with
+\code{update} as the callback and the model as the accumulator, and its fixpoint makes the same check on
+the cells \code{update} returns.
 
 The classes live on solved types, so a function value that reaches $f$ through a record field or a
 parameter of a parameter is handled by the same instantiation: the class is where the function type
@@ -344,10 +367,16 @@ effect class is. Inside the generic body the class's variables are what the body
 over; at the use they are bound.
 \end{itemize}
 
-Generic code therefore loses nothing by being generic. What it cannot do is write a value of type
-\code{a} in place: there is no demand of type \code{a → a}. A generic container function such as
-\code{Dict.update d k (λv → [ …v, x ])} is the container's business (\S\ref{sec:hard-containers}),
-and its callback's $\mathit{supply}$ is a class against which the caller's lambda is checked.
+Generic code therefore loses nothing by being generic. A generic body writes a value of type \code{a} in
+place only through a method: no writer or construction applies to a type variable, but
+\code{bump x = x.push 1} with \code{where a.push : a, Int → a} writes \code{x} when \code{a} is
+\code{List Int} and the evidence is \code{List.push}. Its summary is then guarded on the method's class,
+$\mathsf{W} \in \mathit{use}(\pi_1)$ \code{if a.push consumes 1}, and so are the side conditions the body
+leaves to its callers; all are decided where the evidence is bound, at the caller that instantiates
+\code{a}. A rejection there points at the caller's argument and, as its kept-place or edit, at the
+generic body's line that calls the method (T55). A generic container function such as
+\code{Dict.update d k (λv → [ …v, x ])} is the container's business (\S\ref{sec:hard-containers}), and
+its callback's $\mathit{supply}$ is a class against which the caller's lambda is checked.
 
 Parametricity supplies result aliasing for free---a function of type \code{a → a} can only return its
 argument or something a callback gave it, which is Futhark's observation about \code{id} and the pipe
@@ -370,7 +399,8 @@ holders of a cell at a demand.
 of (type, step) edges reachable in the definitions of the types involved, not exponential in the cut:
 a tree \code{type Tree = Node String (List Tree)} contributes one list path and one element path. For a
 non-recursive type, $w$ is bounded by its fields to depth $k$; a model record with three list fields
-has $w = 3$. Opaque and foreign types add one path each, or two for a dictionary.
+has $w = 3$. An opaque type adds its published slots, two for a dictionary; a foreign type adds one
+path.
 \item \emph{Forward and backward walks.} $O(n \cdot w)$ each per round; a self tail call adds an inner
 fixpoint of at most $c$ rounds, so a declaration with a loop costs $O(c \cdot n \cdot w)$.
 \item \emph{The check.} $O(D \cdot H)$, which is quadratic in the size of one declaration in the worst
@@ -380,9 +410,11 @@ honest statement is that the check is quadratic in the size of the largest decla
 \item \emph{Recursion.} A group runs at most as many rounds as its lattice's height
 (\S\ref{sec:inf-lattice}); in practice one or two rounds.
 \end{itemize}
-Interfaces grow by a few words per scheme site. Nothing is whole-program: summaries are read from
-interfaces exactly as effect summaries are, and the entry protocol of a TEA program
-(\S\ref{sec:hard-tea}) is evaluated at the call of the platform's program constructor, from summaries.
+Interfaces grow by a few words per scheme site, by an opaque type's slot count, and by one bit per
+tracked path of a message type for each value of a command type (\S\ref{sec:hard-tea}, \Obl{P6}).
+Nothing is whole-program: summaries are read from interfaces exactly as effect summaries are, and the
+entry protocol of a TEA program (\S\ref{sec:hard-tea}) is evaluated at the call of the platform's
+program constructor, from summaries.
 
 The compiler's design target for checking is above 250\,000 lines per second per core, and the effect
 inference, which has the same shape with a narrower per-site record, fits within a 10\,\% increase in
@@ -412,7 +444,8 @@ includes the entry protocol of a TEA program: it is evaluated at the call of the
 constructor, from the summaries of \code{init}, \code{update} and the other functions the program
 record names, and those summaries carry exactly the facts the entry needs---numbered fresh cells for
 aliasing between result paths, $\esc_k$ and $\mathsf{E}$ for anything a command or subscription keeps,
-and $\shared$ for a top-level list. If \code{init}'s body changes from building two lists to placing
+$\shared$ for a top-level list, and, under each command and subscription value, the message paths whose
+payloads every send supplies owned. If \code{init}'s body changes from building two lists to placing
 one list at two fields, its $\mathit{res}$ changes from $\{\fresh_1\}, \{\fresh_2\}$ to
 $\{\fresh_1\}, \{\fresh_1\}$, the interface hash changes, and the module that starts the program is
 re-checked. The cache key therefore does not change: the summary block is a function of the module's

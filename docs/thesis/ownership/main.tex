@@ -53,6 +53,11 @@
 
 \fvset{fontsize=\small,breaklines=true,xleftmargin=1.5em,numbersep=6pt}
 
+% Wider section numbers in the table of contents, for 12.10.
+\makeatletter
+\renewcommand*\l@section{\@dottedtocline{1}{1.5em}{2.7em}}
+\makeatother
+
 \begin{document}
 
 \hypersetup{pageanchor=false}

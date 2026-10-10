@@ -18,13 +18,21 @@ into it:
 \item a record field $.f$, a tuple index $.i$, a constructor argument $C\#i$;
 \item a list position $[\ast]$, which stands for every element;
 \item the \emph{environment} step $\env$, from a function value to everything its closure captured;
-\item an \emph{opaque} step $\langle T\rangle$, from a value of a type $T$ whose constructors the
-analysing module cannot see, to every cell inside it; for a type with distinguished parts the step is
-split, as $\langle\mathit{Dict}\rangle.k$ and $\langle\mathit{Dict}\rangle.v$ for a dictionary's keys and
-values (\S\ref{sec:hard-containers}).
+\item an \emph{opaque} step $\langle T\rangle.s$, from a value of a type $T$ whose constructors the
+analysing module cannot see, to the cells at one of its \emph{slots} $s$. The declaring module numbers
+the tracked paths inside $T$'s definition, after folding (below), and publishes how many there are and
+which of them are containers; it publishes neither their names nor their types. A dictionary has two
+slots, written $\langle\mathit{Dict}\rangle.k$ and $\langle\mathit{Dict}\rangle.v$ for its keys and its
+values (\S\ref{sec:hard-containers}); a type with no tracked path inside has none, and crosses.
 \end{itemize}
 Paths are those of the write-set analysis (\S\ref{sec:bg-browser}) extended by the last two steps.
-They are bounded in two ways. A path that re-enters a type already on it is \emph{folded}: the steps
+Slots exist so that a summary published over an opaque type keeps the distinctions its own module's
+summaries draw: a function that writes one list field of an opaque record and leaves another to its
+callers' \Disjoint\ publishes a write at one slot, and an importer checks that slot against the others
+as it would check two fields (T48). Merging an opaque value into one path would leave no other path to
+check against.
+
+Paths are bounded in two ways. A path that re-enters a type already on it is \emph{folded}: the steps
 since the first visit are dropped, so every list held anywhere in a tree of type
 \code{type Tree = Node String (List Tree)} is reached by one path, and the number of paths under a type
 is at most the number of (type, step) edges in the graph of its definition. Paths of a non-recursive
@@ -32,9 +40,28 @@ type are additionally cut at $k$ steps ($k = 8$ in our design), a value deeper t
 approximated by $\top$ below. A path is \emph{tracked} when the checker's solved type at its end is
 \code{List a}, a function type, or a type that does not cross (below); only tracked paths carry cells.
 
-Folding a recursive type loses the distinction between levels in the same way that $[\ast]$ loses the
-distinction between positions, and the exclusive-contents flag of \S\ref{sec:model-excl} recovers it
-for the same edits.
+\paragraph{Folding, and what makes it sound.} Folding a recursive type puts every level of a value at one
+path, as $[\ast]$ puts every position of a list at one path. We call such a path a \emph{representative},
+and the levels it stands for its \emph{unfoldings}. A representative is a container in the sense of
+\S\ref{sec:model-excl}, whose positions are its unfoldings, and two rules keep it sound. First, \emph{a
+demand on a cell at or under a representative records} $\mathit{xreq}$ \emph{on it}: no cell may be
+reachable at two unfoldings, exactly as a demand on an element records $\mathit{xreq}$ on its list. The
+root's own list in \code{type Tree = Node \{ items : List Int, kids : List Tree \}} is at the
+representative $.\mathit{items}$, so an edit of it requires the tree to be exclusive, and a tree that put
+one list at two levels is rejected at the call (T49). Second, \emph{liveness reads prefix order on folded
+paths} (\S\ref{sec:model-liveness}): a later use of \code{t.kids} is not a use of the cell at
+\code{t.items}. That is sound only because of the first rule, under which the cells another unfolding
+holds at the same folded path are other cells. Where one body takes a sub-tree out of a tree by a pattern
+and edits it while keeping an enclosing level, the two levels share a folded path and an abstract cell;
+the split of \S\ref{sec:model-excl} separates them, as it separates the head of a list from its rest.
+
+\paragraph{The release representation.} The backend's types are the checker's types with one exception
+that matters here: under the release optimiser, a type with one constructor of one field is represented
+by its field, so \code{Column (List Card)} is, at run time, the array of its cards. A path through such a
+constructor step and the path of its field then denote the same object. The cell analysis is unaffected,
+since its cells are arrays and closures and a constructor is never one; but every fact about
+\emph{identity}---which value is the same object as another, which is new---must be read modulo that
+identification, in every build, and the renderer obligation is (\S\ref{sec:hard-tea}, \Obl{P7}; A10).
 
 \paragraph{Mode crossing.} A value whose type can contain no cell---\code{Int}, \code{String}, a record
 of them, \code{Order}---is never tracked. It \emph{crosses} the ownership axis in the sense of Peters
@@ -50,18 +77,15 @@ constructors. A function type never crosses, since its closure may hold a cell. 
 not cross: a value of type \code{a} may be a list, and it is tracked as a whole, at the single path
 $\varepsilon$.
 
-\emph{What the analysing module cannot see does not cross.} An imported opaque type, whose
-constructors its module hides, and a \code{foreign type}, which has no definition at all---beni's
-markup type \code{Html msg}, the runtime's command and fiber types---are tracked under the opaque step,
-and their values carry the cells their constructors' summaries put there. A foreign type crosses only
-when its declaration says so, a privileged promise of the same kind as an effect rung; a constructor of a
-foreign type's values (a markup site, a command constructor) has an asserted row saying what it keeps
-(\S\ref{sec:hard-foreign}). The default costs little precision: a value of an opaque type into which
-nothing holding a cell was put carries empty cell sets, because the declaring module's published
-summaries say exactly what each of its functions puts under $\langle T\rangle$. What it costs is width,
-the analysis tracking paths that will turn out empty. Publishing each type's crossing bit in its
-interface, so that importers can drop such paths, is an open proposal
-(\S\ref{sec:disc-options}). Peters et al.\ report that without crossing, adoption of modes in a large
+\emph{What the analysing module cannot see does not cross unless its module says so.} An imported
+opaque type is tracked at the slots its module publishes, and crosses when it has none. A
+\code{foreign type}, which has no definition at all---beni's markup type \code{Html msg}, the runtime's
+command and fiber types---is tracked under one opaque step, and its values carry the cells their
+constructors' summaries put there. A foreign type crosses only when its declaration says so, a privileged
+promise of the same kind as an effect rung; a constructor of a foreign type's values (a markup site, a
+command constructor) has an asserted row saying what it keeps (\S\ref{sec:hard-foreign}). Publishing the
+slots costs interface content, and churn when a type's definition gains or loses a list
+(Change~9, \S\ref{sec:disc-options}). Peters et al.\ report that without crossing, adoption of modes in a large
 codebase ``would have been infeasible'' \citep[\S1]{peters2026mode}; here crossing costs nothing in
 precision for visible types, and most values in a beni program are scalars and records of scalars.
 
@@ -92,7 +116,7 @@ the template runtime's last values: grouped values, \code{let}s, helper and comp
 the runtime's hold on a platform-called function's arguments and results & \code{update msg model} & as the platform's entry protocol says (\S\ref{sec:hard-tea}) \\
 the direct platform's per-row instance item & \code{insts[i].it} & identity only; never the ground for ``unchanged'' on a path written in place (\Obl{P7}); a listener body reads the current item, re-obtained after each dispatch (\Obl{P3}) \\
 a derived-value slot of the direct platform & a derived value & content; a list-valued slot is recomputed before it is read (\Obl{P4}), and its readers never skip by its identity (\Obl{P7}) \\
-a group slot of the direct platform & \code{g3 = x} & a leaf value: a scalar, which crosses \\
+a group slot of the direct platform & \code{g3 = x} & for a scalar hole a leaf value, which crosses; for a hole that shows a structure (a list, a markup value) the structure, as an identity holder, never the ground for ``unchanged'' when it may hold a cell written in place (\Obl{P7}(a)) \\
 \bottomrule
 \end{tabularx}
 \caption{The places that can hold a cell.}
@@ -237,7 +261,7 @@ lambda with captures $z_1 \cdots z_m$ & $\env.z_j.q \mapsto A(z_j)@q$ for each p
 call \code{f a₁ ⋯ aₙ} of a top-level $f$ & by the summary $S_f$, translated (\S\ref{sec:model-summary}) & a use of every argument at the paths the summary reads; a \emph{demand} where a parameter path is written \\
 call \code{g a₁ ⋯ aₙ} through a value & by $g$'s ownership class, with $\env$ translated through $A(g)@\env$ (\S\ref{sec:inf-classes}); if $g$ may be once, its class says so and $A(g)@\varepsilon$ holds its cell, and the call is also a demand on that cell; a function value that is not once has no cell at $\varepsilon$ & as above \\
 \code{foreign} or \code{Js} operation with no asserted summary & $\varepsilon \mapsto \{\top\}$, prefix-closed & every cell of every argument is read and added to $\mathit{Esc}$ (\S\ref{sec:hard-foreign}) \\
-top-level value $v$ & every tracked path $\mapsto \{\shared(v)\}$ & a holder for the program's life (\S\ref{sec:model-check}) \\
+top-level value $v$ & the abstract value of $v$'s definition, with every cell it names renamed $\shared(v)$; a path at which the definition holds no cell stays $\emptyset$ & a holder for the program's life (\S\ref{sec:model-check}); \code{Dict.empty}, \code{Dict Leaf}, holds no cell \\
 \bottomrule
 \end{tabularx}
 \caption{Transfer rules of the cell analysis.}
@@ -442,25 +466,48 @@ keeps its result exclusive only when its operand was exclusive and the stored va
 exclusively. Formally, every fact of a summary and every side condition may be a \emph{guarded} value:
 a join $\bigsqcup_g (\gamma_g \Rightarrow v_g)$ in which each guard $\gamma_g$ is a conjunction of
 \emph{atoms}. An atom is either one fact of one function-typed parameter's class
-(``$\mathsf{W} \in \mathit{use}_h(1)$'', ``$h$ may be once'') or one fact of the \emph{state of an
-argument} at the call (``$\pi_i.q$ is exclusive'', ``$\pi_i.q$ is stored exclusively'', ``$\pi_i.q$ and
-$\pi_j.q'$ are disjoint''). Guards are resolved at every call, where the caller knows its classes and its
-arguments; no guard survives into the facts of a caller that does not itself take the guarded value as
-a parameter. These are rank-1 constraints, the same shape the effect summaries already have. Their
-lattice and its height are given in \S\ref{sec:inf-lattice}.
+(``$\mathsf{W} \in \mathit{use}_h(1)$'', ``$h$ may be once'', ``$h$ keeps shape'', ``$h$ returns owned'')
+or one fact of the \emph{state of an argument} at the call (``$\pi_i.q$ is exclusive'', ``$\pi_i.q$ is
+stored exclusively'', ``$\pi_i.q$ and $\pi_j.q'$ are disjoint''). Guards are resolved at every call, where
+the caller knows its classes and its arguments; no guard survives into the facts of a caller that does
+not itself take the guarded value as a parameter. These are rank-1 constraints, the same shape the
+effect summaries already have. Their lattice and its height are given in \S\ref{sec:inf-lattice}.
+
+\paragraph{A callback's result is owned only when the rules show it.} One atom carries a rule that every
+row must respect. A function $f$ that hands a callback $h$'s result back to $h$---a fold's accumulator, a
+loop that feeds a step its previous answer---or that stores it where it promises a fresh or exclusive
+result, may treat that result as owned only under the atom \emph{$h$ returns owned}: at every tracked path
+of $h$'s result, every maximal provenance in $\mathit{res}_h$ is some $\fresh_k$, or a parameter path
+$\pi_k.q$ of $h$ that $f$ supplies owned and $h$ does not escape; and no provenance occurs at two
+distinct paths. A result that names a capture ($\env$), $\shared$, $\esc_k$, $\top$, or a parameter
+supplied borrowed is not owned, and neither is a result that puts one cell at two paths. The atom is
+decided where $h$ is known, at the call of $f$. It is what inference would conclude from $f$'s body, by
+the read-off rule of \S\ref{sec:inf-summarise}; an asserted row that drops it claims more than the body
+shows. T46 is the program that shows what goes wrong without it: a fold callback that returns a top-level
+list on one branch, which the next iteration then extends in place. Every row of the trusted surface was
+checked for the same pattern (\S\ref{sec:soundness-trusted}).
+
+\paragraph{An owned supply carries exclusivity where the callback needs it.} A callback may itself need a
+parameter's contents exclusive ($\mathit{xreq}_h(k)$), because it edits inside them. So the second edge
+of every owned supply is: $\mathit{xreq}_h(k) \Rightarrow \mathit{supply}_f(k)$ is exclusive. A container
+function that hands out an owned element of an exclusive container supplies it exclusive, by condition~2
+of \S\ref{sec:model-excl}, which is recursive; a fold supplies its accumulator exclusive when the initial
+value is and $h$'s result is ($\mathit{xres}_h$).
 
 \paragraph{The bracket notation.} We write summaries on a type, in a notation of this thesis only:
 \begin{center}\small
 \begin{tabular}{@{}r@{\;}c@{\;}l@{}}
 \textit{row} & ::= & \textit{param}, $\cdots$, \textit{param} \code{→} \textit{result}\\
 \textit{param} & ::= & \textit{type} \code{[} \textit{fact} \code{;} $\cdots$ \code{]}\\
-\textit{fact} & ::= & \textit{use} $\mid$ \code{calls} $n$ $\mid$ \code{supply} $k$ \textit{own} \textit{prov} $\mid$ \code{need fresh excl} $\mid$ \code{requires excl} $\mid$ \textit{fact} \code{if} \textit{guard}\\
+\textit{fact} & ::= & \textit{use} $\mid$ \code{calls} $n$ $\mid$ \code{supply} $k$ \textit{own} \textit{prov} $\mid$ \code{supply} $k$ \code{excl} $\mid$ \code{need fresh excl}\\
+ & $\mid$ & \code{requires excl} $\mid$ \textit{fact} \code{if} \textit{guard}\\
 \textit{use} & ::= & \code{unused} $\mid$ \code{borrowed} $\mid$ \code{aliased} $\mid$ \code{escaped} $\mid$ \code{consumed} $\mid$ \textit{use}\code{+}\textit{use}\\
 \textit{result} & ::= & \textit{type} \code{[=} \textit{prov}, $\cdots$ \code{]} $\mid$ \textit{type} \code{[=} \textit{prov}, $\cdots$ \code{; excl} [\code{if} \textit{guard}]\code{]}\\
 \textit{prov} & ::= & \code{π}$_i$\textit{path} $\mid$ \code{fresh}$_k$ $\mid$ \code{esc}$_k$ $\mid$ \code{◇}\textit{path} $\mid$ \code{shared} $\mid$ \code{⊤} $\mid$ $g$\code{.res}\\
 \textit{own} & ::= & \code{owned} $\mid$ \code{borrowed}\\
 \textit{guard} & ::= & \textit{atom} $\mid$ \textit{guard} \code{and} \textit{guard}\\
-\textit{atom} & ::= & $g$ \textit{class fact} $\mid$ \textit{type fact} $\mid$ \code{π}$_i$\textit{path} \code{excl} $\mid$ \code{π}$_i$\textit{path} \code{stored exclusively} $\mid$ \code{π}$_i$\textit{path} \code{⊥} \code{π}$_j$\textit{path}
+\textit{atom} & ::= & $g$ \textit{class fact} $\mid$ $g$ \code{returns owned} $\mid$ \textit{type fact}\\
+ & $\mid$ & \code{π}$_i$\textit{path} \code{excl} $\mid$ \code{π}$_i$\textit{path} \code{stored exclusively} $\mid$ \code{π}$_i$\textit{path} \code{⊥} \code{π}$_j$\textit{path}
 \end{tabular}
 \end{center}
 A parameter with no bracket is $\unused$ or crosses; a result with no bracket is crossing; \code{fresh}
@@ -543,7 +590,8 @@ error. The same applies to every function in core or a platform whose body goes 
 set      : List a [consumed+aliased], Int, a [aliased]
              → List a [= π₁; [*] = π₁[*], π₃; excl if π₁ excl and π₃ stored exclusively]
 update   : List a [consumed+aliased; requires excl if g consumes], Int,
-           (a → a) [calls ≤1; supply 1 owned π₁[*] if π₁ excl; supply 1 borrowed π₁[*] otherwise]
+           (a → a) [calls ≤1; supply 1 owned π₁[*] if π₁ excl; supply 1 borrowed π₁[*] otherwise;
+                    supply 1 excl if π₁ excl]
              → List a [= π₁; [*] = π₁[*], g.res; excl if π₁ excl and g keeps shape]
 push     : List a [consumed+aliased], a [aliased]
              → List a [= π₁; [*] = π₁[*], π₂; excl if π₁ excl and π₂ stored exclusively]
@@ -581,14 +629,20 @@ the caller nothing:
 \begin{Verbatim}
 map : List a [borrowed; [*] aliased if g aliases 1;
               consumed+aliased and requires excl if g consumes 1],
-      (a → b) [calls many; supply 1 owned π₁[*] if g consumes 1; supply 1 borrowed π₁[*] otherwise]
+      (a → b) [calls many; supply 1 owned π₁[*] if g consumes 1; supply 1 borrowed π₁[*] otherwise;
+               supply 1 excl if π₁ excl]
         → List b [= fresh, π₁ if a and b may share a value; [*] = g.res;
                   excl if g.res fresh, or if π₁ excl and g keeps shape]
 \end{Verbatim}
 \code{indexedMap} and \code{filterMap} have the same row, and \code{foldl} and \code{foldr} supply their
-\emph{element} the same way (their accumulator rows are in \S\ref{sec:inf-classes}). These rows are
-asserted, because the library writes the loops over \code{at}, whose row only reads; they join the
-trusted surface (\S\ref{sec:soundness-trusted}). Everything else in the list library is ordinary beni over
+\emph{element} the same way (their accumulator rows are in \S\ref{sec:inf-classes}). \code{initialize}
+has the result half of it, \code{[*] = g.res; excl if g.res fresh}; its callback receives an index, which
+crosses. These rows are asserted, because the library writes the loops over \code{at} and the array
+builder, and the read-off rule cannot tell one call's fresh result from the next---every call's result is
+one abstract cell---so it could not conclude that a list of a callback's fresh results is exclusive. They
+join the trusted surface (\S\ref{sec:soundness-trusted}). ``$g.\mathit{res}$ fresh'' asks that every
+maximal provenance of the callback's result be some $\fresh_k$, made during that call, with distinct
+numbers at distinct paths. Everything else in the list library is ordinary beni over
 \code{at}, the array builder and a few internal primitives with asserted rows, and its summary is
 inferred. Putting the demand on library primitives follows a Clean recipe: library functions such as
 \code{newArray} return an array whose attribute is a variable rather than ``unique'', because ``if we are
@@ -602,16 +656,21 @@ their result would equal it: \code{filter} that keeps every element, \code{map} 
 one non-empty list, \code{reverse} and the sorts below two elements (\S\ref{sec:bg-lists}). The template
 runtime relies on these promises to skip work, and we keep them. Each such function's $\mathit{res}$
 therefore names both outcomes, $\{\fresh, \pi_1\}$, so that \code{[ …List.filter xs p, y ]} consumes
-\code{xs} as well as the filter's result: \code{xs} must be dead there. In the idioms of
-Chapter~\ref{sec:idioms} it is---a model list filtered in an \code{update} arm, a local list piped through
-a filter---and where it is not, the message offers \code{List.copy}. The promise is named only where it
-can fire: \code{map} can return its input only when every result is its element, which is impossible when
+\code{xs} as well as the filter's result: \code{xs} must be dead there. In most of the idioms of
+Chapter~\ref{sec:idioms} it is---a model list filtered in an \code{update} arm and stored back at its own
+path, a local list piped through a filter---and where it is not, the message offers \code{List.copy}. One
+common form is not: a filtered copy stored at \emph{another} model path while the source stays in the
+model, \code{\{ model | visible = List.filter model.all p \}}. The two paths may then hold one cell at every
+later entry, and an in-place edit of either is rejected (T52, Table~\ref{tab:rejected}). That is real
+sharing whenever the filter kept every element, and the price of the promise otherwise. The promise is
+named only where it can fire: \code{map} can return its input only when every result is its element, which is impossible when
 the callback's result type and the element type cannot share a value at run time, as for
 \code{List.map model.items viewItem}, whose items are records and whose results are markup. Its
 $\mathit{res}$ is then $\{\fresh\}$, and \code{List.map model.items viewItem ++ [ addButton ]} in a
 \code{view} consumes only the new list. (``May share a value'' is decided on the run-time
-representation: a type of one constructor with one field is represented by its field under the release
-optimiser, so a \code{map} from such a type to its field's type keeps $\pi_1$.) Dropping the promises, so
+representation, \S\ref{sec:model-cells}: a type of one constructor with one field is represented by its
+field under the release optimiser, so a \code{map} from such a type to its field's type keeps $\pi_1$.)
+Dropping the promises, so
 that these functions always return a fresh array, is an open proposal whose cost falls on the template
 runtime (\S\ref{sec:disc-options}).
 
@@ -636,7 +695,11 @@ rewrites into an offset into the base array read the base, and are summarised as
 $\live(h, p)$ holds for a holder $h = (x, q)$ at point $p$ when there is a use of $x$ at or after $p$,
 on some path, that reads $q$ or a prefix of it. The uses, in evaluation order, are:
 \begin{itemize}
-\item a read of $x.q'$ with $q' \sqsubseteq q$ or $q \sqsubseteq q'$ (prefix order);
+\item a read of $x.q'$ with $q' \sqsubseteq q$ or $q \sqsubseteq q'$, in prefix order on folded paths and
+slots. A path is not taken to reach another round a fold's cycle: \code{t.kids} is not a prefix of
+\code{t.items}, although the kids' lists are at $.\mathit{items}$ too. This is sound because a demand at a
+representative requires its unfoldings to hold distinct cells (\S\ref{sec:model-cells}), so what
+\code{t.kids} reaches at $.\mathit{items}$ is not the cell the demand writes;
 \item $x$ passed to a call whose summary's $\mathit{use}$ at a path that meets $q$ is not $\unused$; a
 parameter with no summary reads everything;
 \item $x$ used as an item of a list construction: as a non-base spread it is read, as an element it is
@@ -700,8 +763,10 @@ cell fail it.
 When the operand is itself a parameter path $\pi_j.q'$ of the enclosing function, that function's
 $\mathit{use}(j, q')$ gains \textsf{W}, and \Unescaped, \Dead\ and \Disjoint\ for $\pi_j.q'$ are
 discharged at \emph{its} callers in turn---including \Disjoint\ against the caller's other paths of
-the same argument, which is how the function may treat its parameter paths as distinct cells. When the
-operand is $\env.q$, the enclosing lambda is once (\S\ref{sec:model-functions}), and the conditions are
+the same argument, which is how the function may treat its parameter paths as distinct cells. Published
+over an opaque type, the same obligation is between two slots of the argument, and an importer discharges
+it as it would between two fields; where the paths fold into one slot or one representative, it is the
+container's $\mathit{xreq}$ (\S\ref{sec:model-excl}). When the operand is $\env.q$, the enclosing lambda is once (\S\ref{sec:model-functions}), and the conditions are
 discharged at its creation. A failure of \Known\ is reported as a \emph{limit} of the checker; a failure
 of \Unescaped\ as a limit or as sharing, according to the tag of the escape (Table~\ref{tab:tags}); a
 failure of \Dead\ or \Disjoint\ as sharing, with the holder named (Chapter~\ref{sec:errors}).
@@ -724,6 +789,17 @@ form \code{[ x ] ++ defaults}, is accepted. This is the treatment of global valu
 Futhark: a global is shared, and code that wants to own its contents copies them or calls a function
 that makes them.
 
+What is shared is the cells the definition makes, and nothing else. \code{Dict.empty} is
+\code{Dict Leaf}, which holds no cell, so a model that starts from it and fills it with
+\code{Dict.update} owns every list it puts there (T51). The commonest shape that meets the rule is Elm's
+\code{initialModel}: a top-level record that \code{init} returns, \code{init ⊤ = ( initialModel,
+Cmd.none )}. Its lists are top-level cells, and the program's first in-place edit of any of them is
+rejected (T53). The fix is to make it a function, \code{initialModel ⊤ = ⋯} and \code{init ⊤ = (
+initialModel ⊤, Cmd.none )}, which the message writes; but it is not a fix the port of an Elm program
+makes by itself, and the evaluation counts it on its own line (\S\ref{sec:eval-counts}). Evaluating a
+top-level value that holds a list afresh at each use would remove the rejection by changing the cost model
+of constants; the language's rule that top-level lists are shared excludes it, and we do not propose it.
+
 \section{Deep uniqueness: exclusive contents}
 \label{sec:model-excl}
 
@@ -744,8 +820,11 @@ the third being ``for lists of which both the spine and the elements are unique'
 default; that is, we expect components of a unique value also to be unique''
 \citep[\S2.1]{lorenzen2024oxidizing}.
 
-We add a flag $\excl$ to abstract container paths: $(x, q[\ast])$ for a list, and a folded recursive
-path such as a dictionary's contents. A container path is \emph{exclusive} at a point when:
+We add a flag $\excl$ to abstract container paths. There are three kinds: $(x, q[\ast])$ for a list, whose
+positions are its elements; a representative of a recursive type (\S\ref{sec:model-cells}), whose
+positions are its unfoldings, the levels of a tree or the nodes of a dictionary; and an opaque slot that
+is one of these inside its module, which an importer sees only as ``a container''. A container path is
+\emph{exclusive} at a point when:
 \begin{enumerate}
 \item \emph{across positions}: no cell is reachable from two distinct positions of the container;
 \item \emph{within a position}: within each element, every two distinct tracked paths hold distinct
@@ -788,14 +867,18 @@ list that lives on clears it;
 \item \emph{split} by a pattern \code{[ x, …rest ]} on an exclusive container whose scrutinee is dead
 after the match: \code{x}'s cells and the cells under \code{rest}'s $[\ast]$ are then known to be
 disjoint, and \code{rest} stays exclusive. Without the split, \code{x} and \code{rest} are aliases at
-$[\ast]$, because they come from one abstract position;
+$[\ast]$, because they come from one abstract position. A constructor pattern that takes a value out of
+a representative position of an exclusive recursive value splits the same way: the sub-tree's cells at a
+folded path are known disjoint from those of every enclosing level the same match binds, at the same
+folded path;
 \item \emph{cleared} by a non-destructive read whose result is live while the container is (a dictionary
 lookup whose dictionary is used afterwards, \code{List.get}, the \code{x} of a pattern while the
 scrutinee lives), and by any join with a path that is not exclusive.
 \end{itemize}
-A function that needs a parameter's contents exclusive---because it hands an element to a writer, or
-splits and edits the head---records $\mathit{xreq}(i, q) = \mathsf{yes}$, and every caller checks the
-flag at the call, as it checks uniqueness. So
+A function that needs a parameter's contents exclusive---because it hands an element to a writer, splits
+and edits the head, or edits a cell at a representative---records $\mathit{xreq}(i, q) = \mathsf{yes}$,
+and every caller checks the flag at the call, as it checks uniqueness; a callback's $\mathit{xreq}$ is
+checked against what its caller supplies (\S\ref{sec:model-summary}). So
 \begin{Verbatim}
 bumpHead : List (List Int) → List (List Int)
 bumpHead rows = case rows of
