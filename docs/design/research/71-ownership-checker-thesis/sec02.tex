@@ -1,0 +1,203 @@
+\phantomsection\bheading{section}{2.\quad The model}{section}{\protect\numberline{2.}The model}
+
+\phantomsection\bheading{subsection}{2.1\quad Values, cells and paths}{subsection}{\protect\numberline{2.1}Values, cells and paths}
+
+A beni value at run time is a JavaScript value. The ones that matter here are the arrays that back lists. A \textbf{cell} $c$ is one such array. A list value is a cell, or a \emph{view} of one — a header \code{\{ b, o, length \}} over a base array $b$ (\code{backend.md} §4, \emph{The representation}). A view is a holder of its base; writing “through” a view writes the base (§5.11).
+
+Every other value either contains lists or does not. A \textbf{path} is a chain of steps from a value into it — a record field $.f$, a tuple index $.i$, a constructor argument $C\#i$, a list position $[\ast ]$ — exactly \code{write-sets.md} §2.1's path language, with the same cut at k steps (§2.2 there; k = 8). A path is \textbf{list-typed} when the checker's solved type at its end is \code{List a}. Only list-typed paths are tracked.
+
+\textbf{Mode crossing.} A value whose type contains no \code{List} anywhere — \code{Int}, \code{String}, a record of them, \code{Order} — can hold no cell and is never tracked: it “crosses” the ownership axis in Peters et al.'s sense, where a type crosses an axis “when all of its values have no interaction with that axis” (2026 §2.3, p. 6) and a kind is computed per type constructor with the element's kind passed through for \code{list} ($\mathit{list}.0=\bot ,\allowbreak{}\mathit{list}.1=\top$, §4.2, p. 18). The OxCaml documentation states the corollary the checker relies on: “a type crosses uniqueness if it doesn't contain memory location subject to overwriting”. For beni the kind is computed from the solved type: $\mathit{crosses}(\tau )$ holds when $\tau$ is a primitive, a record, tuple or nominal type all of whose list-typed paths are empty — i.e. no \code{List} is reachable through its fields, through aliases, through constructor payloads (\code{payload\_\allowbreak{}params}, \code{checker-v2.md} §14.2). A \textbf{type variable} does not cross: a value of type $a$ may be a list, and is tracked as a whole (one path, $\varepsilon$). This is what makes Mode Crossing's claim — adoption “would have been infeasible” without it (§1, p. 3) — true here at no cost: most values in a beni program are scalars and records of scalars.
+
+\phantomsection\bheading{subsection}{2.2\quad Holders, and the two kinds}{subsection}{\protect\numberline{2.2}Holders, and the two kinds}
+
+A \textbf{holder} of a cell $c$ at a program point is a pair $(\mathit{place},\allowbreak{}\mathit{path})$ through which $c$ can be reached, where a place is one of:
+
+{\small\setlength{\emergencystretch}{3em}
+\begin{longtable}{>{\raggedright\arraybackslash}p{\dimexpr0.280\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr0.300\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr0.420\linewidth-2\tabcolsep\relax}}
+\toprule
+\textbf{Place} & \textbf{Example} & \textbf{Kind} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Place} & \textbf{Example} & \textbf{Kind} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+a local or parameter & \code{xs}, \code{model.rows} as $(\mathit{model},\allowbreak{}.\mathit{rows})$ & content \\[0.35em]
+a field of a record/tuple/constructor held by a place & $(m,\allowbreak{}.\mathit{form}.\mathit{tags})$ & content \\[0.35em]
+an element of a list held by a place & $(\mathit{rows},\allowbreak{}[\ast ].\mathit{tags})$ & content \\[0.35em]
+a captured variable of a closure value held by a place & $(f,\allowbreak{}\mathit{cap}\ \mathit{xs})$ & content, live while the closure is \\[0.35em]
+the environment of a suspended fiber, a \code{Cmd}/\code{Sub} thunk, a \code{Ref}, a \code{Queue} & \code{Cmd.\allowbreak{}perform (λ… → … xs …)} & content, \textbf{escaped}: live until the analysis can prove otherwise, which it cannot \\[0.35em]
+a JavaScript sibling or \code{Js.from}'s result & \code{Js.from xs} & content, escaped (pinned) \\[0.35em]
+a \textbf{top-level value}, with or without a \code{where} clause & \code{empty = []} & content, escaped: it is read by every later use, for the program's life \\[0.35em]
+a value the runtime \textbf{retains and hands out again} — a fiber's outcome (\code{Task.join}, every joiner gets the same value), \code{Task.bracket}'s resource (kept for the release), a \code{Queue}'s or \code{Deferred}'s contents & \code{Task.join fib} & content, $\top$ on every path of the result: the runtime is a holder the checker cannot see \\[0.35em]
+the module-level \code{model} between dispatches, and a \textbf{view-event payload} read from it or from a row's item & \code{onClick=\{Keep model.\allowbreak{}rows\}} & content: the listener body reads the model or the item when the event fires (\code{browser-direct} §4.2); P5–P6 in §5.9 \\[0.35em]
+the runtime's instance item \code{it}, a rendered row & \code{insts[i].it} & identity, by \code{browser-direct} §6.1–§6.2 \\[0.35em]
+a derived-value or hole slot & \code{g3} & leaf values only (\code{browser-direct} §5.3); a list-valued slot is content, recomputed by the write set before it is read (§5.9) \\[0.35em]
+\bottomrule
+\end{longtable}}
+
+The operand of an update is itself a holder; the check asks about all the others.
+
+\phantomsection\bheading{subsection}{2.3\quad Unique at a site}{subsection}{\protect\numberline{2.3}Unique at a site}
+
+Let $u$ be an update site — a call of a demand with operand expression $e$ — and let the write happen after every argument of the call has been evaluated (\code{language.md} §6: “the callee, then the arguments left to right”, and the call runs last). Let $C(e)$ be the cells $e$ may evaluate to.
+
+\begin{quote}
+\textbf{Definition (unique at u).} Cell $c\in C(e)$ is unique at $u$ when every holder $h$ of $c$ — the operand's own binding included — is \textbf{dead at u}: no execution continuing from $u$ reads through $h$. A read through $h$ is a dereference of the cell's elements or length, directly or by passing $h$'s value to anything that may read it. The operand's occurrence itself is not a later read: it was evaluated before $u$, and the demand's result is the new owner of the cell.
+\end{quote}
+
+\begin{quote}
+\textbf{The rule.} $u$ is accepted iff every $c\in C(e)$ is unique at $u$, $\top \notin C(e)$ (the checker knows which cells), and no $c$ is \textbf{escaped} (held by something whose future reads it cannot see).
+\end{quote}
+
+Three things follow. First, \emph{reads before writes are never sharing}: \code{List.\allowbreak{}set xs i (List.\allowbreak{}get xs j + 1)} reads \code{xs} while evaluating the third argument, before the call; at $u$ the binding \code{xs} is the operand and, if nothing reads \code{xs} after, it is accepted — Wadler's “only update operations are sequentialised but lookups can occur in parallel” (1991 §3, p. 8), Rust's two-phase borrow where “during the reservation phase before a mutable borrow is activated, it acts exactly like a shared borrow” and the only new check is at activation (RFC 2025, “Proposed change”). Second, a \emph{later} read is sharing: \code{let ys = List.\allowbreak{}set xs 0 1 in List.\allowbreak{}get xs 0} is rejected, and the message names line 1's binding, the \code{set}, and the \code{get} (§6). Third, \emph{a dead alias is harmless}: \code{let saved = xs in List.\allowbreak{}set xs 0 1} with \code{saved} never read is accepted — Boyland's rule that aliases need only “all be dead, that is, assigned before being used again, if ever” (2001 §3.2, p. 13).
+
+This is not Clean's uniqueness. Clean's \code{*} is a structural property — one reference exists — checked by counting occurrences (Barendsen \& Smetsers 1996 Def. 8.14, p. 29: a variable is marked $\otimes$ “if x either occurs more than once or x is a letrec-variable”), refined by the compiler's observing-reference rule only for guards and strict lets (Clean report §9.4, p. 96). Liveness-based uniqueness is strictly more permissive and needs no \code{let!}.
+
+\phantomsection\bheading{subsection}{2.4\quad Abstract values: which cells a value may hold}{subsection}{\protect\numberline{2.4}Abstract values: which cells a value may hold}
+
+For every expression the analysis computes an \textbf{abstract value} $A(e)$: a finite map from list-typed paths under the value to sets of cells,
+
+\begin{equation*}
+A(e) : \mathit{Path} \rightharpoonup \wp(\mathit{Cell})
+\end{equation*}
+\begin{equation*}
+\begin{array}{@{}r@{\;}c@{\;}l@{\qquad}l@{}}
+\mathit{Cell} & ::= & \mathit{site}(\iota) & \text{a list made at instruction } \iota \text{ (a literal, a fresh result)}\\
+ & \mid & \pi_i.q & \text{the cell at path } q \text{ of parameter } i\text{, on entry}\\
+ & \mid & \top & \text{a cell the analysis cannot name}
+\end{array}
+\end{equation*}
+
+$A(e)@q$ is the set at path $q$. \textbf{$\emptyset$ means provably no cell} — a path of a crossing type, or a fresh container known to be empty; it never means “unknown”. \textbf{$\top$ is prefix-closed}: a value whose path $q$ is $\top$ has $\top$ at every path under $q$, so a decoder's \code{List (List Int)} whose outer cell is fresh but whose inner cells the row does not describe has $[\ast ]\mapsto \{\top \}$, and an unsummarised call's result is $\top$ everywhere. A demand on a $\top$ path fails K1. This is \code{write-sets.md} §3.1's domain with identity (\code{Same(p)}) replaced by cell sets, and it is \textbf{directional}: a binding \code{let y = x} makes $A(y)=A(x)$, a copy of the sets, never a merged class. The difference is the whole precision argument: Emre et al. found that under a unification-based model “having only four necessarily unsafe raw pointers is enough to poison 85 \% of the total raw pointers”, and that going to a subset-based analysis moved the share of well-contained pointers from 6.7 \% to 88.9 \% on tmux (2023 §5 p. 94:10, Table 2 p. 94:14). HM unification is the wrong solver for this fact, and the effect bits already live beside the unifier rather than in it (\code{transparent-effects-proposal.\allowbreak{}md} §14.2: “nothing is added to \code{TypeStore} or to \code{unify}”); ownership does the same.
+
+\phantomsection\bheading{subsection}{2.5\quad The transfer rules}{subsection}{\protect\numberline{2.5}The transfer rules}
+
+Written for the core forms, in evaluation order, with $\Sigma$ the environment of locals. Each rule says what the result may hold and what new holders exist. ($\cup$ on abstract values is pointwise union of cell sets; $\mathit{shift}(A,\allowbreak{}s)$ prefixes every path with step $s$; $\mathit{proj}(A,\allowbreak{}s)$ keeps the paths under $s$.)
+
+{\small\setlength{\emergencystretch}{3em}
+\begin{longtable}{>{\raggedright\arraybackslash}p{\dimexpr0.250\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr0.350\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr0.400\linewidth-2\tabcolsep\relax}}
+\toprule
+\textbf{Expression} & \textbf{$A(e)$} & \textbf{Holders created / notes} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Expression} & \textbf{$A(e)$} & \textbf{Holders created / notes} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+variable $x$ & $\Sigma (x)$ & none new; a \emph{use} for liveness (§2.7) \\[0.35em]
+literal $[x_{1},\allowbreak{}\ldots ,\allowbreak{}x_{n}]$ & $\varepsilon \mapsto \{\mathit{site}(\iota )\} \cup \mathit{shift}(A(x_{i}),\allowbreak{}[\ast ])$ & a fresh cell; the elements' cells are reachable through $[\ast ]$ \\[0.35em]
+record \code{\{ f = x, … \}}, tuple, constructor $C\ \bar{x}$ & $\bigcup \mathit{shift}(A(x),\allowbreak{}.f)$ etc. & the structure holds what its parts hold \\[0.35em]
+record update \code{\{ r | f = y \}} & $A(r)$ with the $.f$ paths replaced by $A(y)@\ldots$ & \code{language.md} §11.12: the other fields are the very values; so the old record and the new share every cell under every other field \\[0.35em]
+field/tuple access \code{r.f} & $\mathit{proj}(A(r),\allowbreak{}.f)$ & an alias of the field's cell, not a copy \\[0.35em]
+\code{case x of p → e} & per arm, pattern variables bound to $\mathit{proj}(A(x),\allowbreak{}\mathit{step})$; a list pattern's \code{rest} is bound to \textbf{the same cells as $x$} (a view of the base, §5.11) and \code{[ …init, last ]}'s \code{init} to a fresh cell (the as-built slice, \code{backend.md} §7) & arms are analysed separately; the result is the union; liveness is per path (§2.7) \\[0.35em]
+$\mathbf{let}\ x=e_{1}\ \mathbf{in}\ e_{2}$ & $\Sigma [x\mapsto A(e_{1})]$ & $x$ is a holder of everything in $A(e_{1})$ \\[0.35em]
+lambda $\lambda \ \bar{y}\to e$ & a function value with summary $S_{\lambda}$ (§2.6) & the closure is a holder of each captured $z$ at $(\lambda ,\allowbreak{}\mathit{cap}\ z)$ \\[0.35em]
+call of a top-level $f\ \bar{x}$ with summary $S_{f}$ & see §2.6 & the call is a use of every argument; a \textbf{demand} when some parameter is $\mathsf{consumed}$ \\[0.35em]
+call through a value $g\ \bar{x}$ & by $g$'s class (§3.6) & as above \\[0.35em]
+\code{foreign} / \code{Js.*} with no summary & $\varepsilon \mapsto \{\top \}$ (prefix-closed) and every argument's cells \textbf{escaped} & §5.7 \\[0.35em]
+a top-level value $v$ & $\Sigma (v)$, every cell \textbf{escaped} & a holder for the program's life (§2.8) \\[0.35em]
+\bottomrule
+\end{longtable}}
+
+\phantomsection\bheading{subsection}{2.6\quad The summary: the annotation the compiler infers}{subsection}{\protect\numberline{2.6}The summary: the annotation the compiler infers}
+
+For a function $f$ with parameters $\pi _{1}\ldots \pi _{n}$ and result $\rho$:
+
+\begin{equation*}
+\begin{array}{@{}r@{\;}l@{}}
+S_f = \langle & \mathit{use} : (i, q) \mapsto \mathsf{borrowed} \mid \mathsf{shared} \mid \mathsf{consumed}\\
+ & \qquad\text{for each list-typed parameter path } \pi_i.q\\[2pt]
+ , & \mathit{res} : q \mapsto \wp(\{\pi_i.q'\} \cup \{\mathsf{fresh}\})\\
+ & \qquad\text{for each list-typed result path } \rho.q\\[2pt]
+ , & \mathit{fun} : j \mapsto \langle \mathit{calls} \in \{0, \le 1, \mathsf{many}\},\ \mathit{escapes} \in \{\mathsf{no}, \mathsf{yes}\},\ \mathit{supply},\ \mathit{need} \rangle\\
+ & \qquad\text{for each function-typed parameter } \pi_j\\[2pt]
+ , & \mathit{reason} : (i, q) \mapsto \text{a derivation tag (§6.4)}\\
+ & \qquad\text{why each non-borrowed use was inferred}\ \rangle
+\end{array}
+\end{equation*}
+
+\begin{itemize}
+\item \textbf{$\mathsf{borrowed}$}: during the call $f$ may read $\pi _{i}.q$'s cell; it does not write it, store it, return it, or capture it in anything that outlives the call. After the call the caller still owns the cell. This is Aspinall–Hofmann's aspect 3, “read and not shared” (2008 §1, p. 4), and FP²'s \code{\^{}} parameter, which “cannot be used in a destructive match, passed as an owned parameter, or returned as a result” (2023 §1.3, p. 4).
+\item \textbf{$\mathsf{shared}$}: $f$ may make the cell reachable from its result (then $\mathit{res}$ says where) or from something that outlives the call — a stored closure, a \code{Ref}, a fiber, JavaScript. Aspect 2, “read and shared with the result”, plus escape.
+\item \textbf{$\mathsf{consumed}$}: $f$ may write the cell in place (directly, or by passing it to a consumed position). The caller must prove the cell unique at the call. A consumed parameter's cell may also appear in $\mathit{res}$ (every \code{core/List} writer returns its operand) — ownership is transferred, not lost.
+\item \textbf{$\mathit{res}$} is the reachability-type idea of a dependent result: the function type records “which argument its result aliases” by naming the parameter in the result's qualifier ($f(x:T^{\blacklozenge})\to T^{x}$, Wei et al. 2024 §2.2.3, ms.tex:1285). Here it is per path.
+\item \textbf{$\mathit{fun}$} records, for a function-typed parameter $g$, how many times $f$ may call it (\code{0}, $\le 1$, $\mathsf{many}$: a call inside a loop, a recursion or a \code{List.map}-shaped callee is $\mathsf{many}$), whether it escapes (is stored, returned or captured by something stored), what $f$ \textbf{supplies} at each of $g$'s parameters (an owned cell, or a borrowed one) and what $f$ \textbf{needs} of $g$'s result (whether it stores it, or treats it as fresh). The closure passed at a call is checked against this (§3.6). The $\le 1$/$\mathsf{many}$ distinction is OxCaml's $\mathit{once}$/$\mathsf{many}$: a closure that consumes a capture “can be invoked at most once” (Lorenzen et al. 2024 §2.2, p. 5; docs, \emph{Uniqueness intro}), and Futhark's reason for refusing a free-variable consume: “we have no idea how often f will be applied” (2022 post, ll. 223–234).
+\end{itemize}
+
+A \textbf{lambda's summary} $S_{\lambda}$ has the same shape over its own parameters, plus $\mathit{cap}:(z,\allowbreak{}q)\mapsto \mathsf{borrowed}\mid \mathsf{shared}\mid \mathsf{consumed}$ for each captured variable \textbf{per path} — a lambda that reads only \code{model.page} captures $(\mathit{model},\allowbreak{}.\mathit{page})$ and holds nothing of \code{model.todos}, which is what keeps the ordinary \code{( \{ model | todos = … \}, Cmd.\allowbreak{}perform (λsend → Http.\allowbreak{}get (url model.\allowbreak{}page) …) )} from sharing every list of the model — and $\mathit{once}\in \{\mathsf{yes},\allowbreak{}\mathsf{no}\}$: $\mathsf{yes}$ iff some capture is consumed. \textbf{A $\mathit{once}$ closure is an affine value}: its binding is dead after one use on every path, a second use (a second call, a second pass to any position, a store) is an error, and the K-rules for its consumed captures are discharged at the lambda's \emph{creation} against the closure's own liveness — so \code{g = λx → List.\allowbreak{}push acc x; r1 = Result.\allowbreak{}andThen a g; r2 = Result.\allowbreak{}andThen b g} is rejected at the second $g$, not accepted twice.
+
+\textbf{Summaries may be conditional on a function parameter's class.} \code{foldl}'s accumulator is $\mathsf{consumed}$ only when its callback consumes its own accumulator parameter ($\mathit{use}(\mathit{acc})=\mathsf{consumed}\ \mathit{iff}\ g.\mathit{need}(2)=\mathsf{consumed}$); a body whose K-check depends on whether a closure handed to a parameter escapes (\code{f xs h = g = λ\_\allowbreak{} → List.\allowbreak{}length xs; \_\allowbreak{} = h g; List.\allowbreak{}push xs 1}) is accepted \textbf{iff $h.\mathit{fun}(1).\mathit{escapes}=\mathsf{no}$}, and that condition travels in $f$'s summary and is checked at each caller when the class is bound (§3.6). The grammar above is read with every $\mathit{use}$, $\mathit{res}$ and K-condition allowed to be an expression over the function-typed parameters' class variables — rank-1 constraints, the shape the effect summaries already have (\code{transparent-effects-proposal.\allowbreak{}md} §14.4: “the other classes of the same scheme that reach it”).
+
+\textbf{The demand set is declared, not inferred.} \code{core/List}'s writers are beni bodies over \code{Js} since 2026-10-02 (\code{backend.md} §4, \emph{The runtime: \code{core/List.js}}, as amended): \code{set xs i v} is \code{Js.\allowbreak{}pure λ⊤ → … Js.\allowbreak{}call (Js.\allowbreak{}from b) "slice" …}, and by §2.5's rule a \code{Js} argument is escaped and a \code{Js} result is $\top$, so inference would make every writer “escapes \code{xs}, result $\top$”. The writers therefore carry an \textbf{asserted summary}, a promise the body's \code{Js} cannot show, exactly as a \code{foreign} carries its rung and its \code{sync} marks and the owner's \code{Ref.update} carries \code{sync} in a beni signature (\code{boundary.md} §4, amended 2026-10-02): \textbf{core and the platforms may assert a summary; every other package may only narrow one} (§10 change 5). The rung is trusted the same way; a false assertion is a correctness bug in privileged code, not a user error. The asserted rows, in the bracket notation of this document:
+
+\begin{Verbatim}
+pub set      : List a [consumed], Int, a → List a [= π₁]
+pub update   : List a [consumed], Int, (a → a) [calls ≤1, supply owned if π₁ excl, need owned] → List a [= π₁]
+pub push     : List a [consumed], a → List a [= π₁]
+pub pop      : List a [consumed] → List a [= π₁]
+pub swap     : List a [consumed], Int, Int → List a [= π₁]
+pub insertAt : List a [consumed], Int, a → List a [= π₁]
+pub removeAt : List a [consumed], Int → List a [= π₁]
+pub cons     : a, List a [consumed] → List a [= π₂]
+pub append   : List a [consumed], List a [borrowed] → List a [= π₁, fresh]   -- never π₂: §10 change 2
+pub foreign pure length : List a [borrowed] → Int
+pub copy     : List a [borrowed] → List a [fresh]                            -- new, §5.10
+    at       : List a [borrowed], Int → a [= π₁[*]]                          -- core-private
+\end{Verbatim}
+
+(The bracket notation is this document's; §10 proposes the surface spelling.) Everything else in \code{core/List} is beni and is inferred from its body: \code{map}, \code{filter}, \code{foldl} are loops over \code{at} and a builder, so \code{map : List a [borrowed], (a → b) [calls many, supply borrowed, escapes no] → List b [fresh]} comes out of the rules without an assertion. The whole user-facing demand is the \textbf{nine writers} above (\code{update} is \code{set} with a callback), which is the Clean recipe — “the demand lives only on the update primitives' types” (de Vries 2007 §6, p. 10: library functions are given polymorphic result attributes so that “we will always be able to share arrays”) — with the demand on exactly the functions whose in-place form the owner wants.
+
+\textbf{A summary must describe the emitted code, not only the source.} \code{backend.md} §8's tail-call- modulo-cons rewrite compiles \code{appendTo xs ys = case xs of [] → ys; [ x, …rest ] → [ x, …appendTo rest ys ]} to a builder loop whose exit \textbf{copies} \code{ys} (\code{List\$close}), where the source's \code{cons} steps would consume the result holding \code{ys}. The checker reads the function as the backend emits it — a building function's exit value is $\mathsf{borrowed}$, its result $\mathsf{fresh}$ — because the rewrite is mandatory and part of the language's cost contract (\code{language.md} §6.8). The same holds for scalar views: a loop slot the backend turns into an offset is a read of the base.
+
+\phantomsection\bheading{subsection}{2.7\quad Liveness, per path}{subsection}{\protect\numberline{2.7}Liveness, per path}
+
+$\mathit{live}(h,\allowbreak{}p)$ for a holder $h=(x,\allowbreak{}q)$ at point $p$: there is a use of $x$ at or after $p$ on some path that reads $q$ or a prefix of it. Uses, in evaluation order, are:
+
+\begin{itemize}
+\item a read of $x.q'$ with $q'\sqsubseteq q$ or $q\sqsubseteq q'$;
+\item $x$ passed to a call whose summary reads the parameter at $q$ ($\mathsf{borrowed}$, $\mathsf{shared}$ or $\mathsf{consumed}$ at a path that meets $q$); a parameter whose summary is $\top$-shaped (no summary) reads everything;
+\item $x$ returned, stored in a structure that is live, or captured by a closure that is live (a captured variable is live exactly while the closure value is live, and \emph{forever} when the closure escapes);
+\item $x$ used whole by anything the analysis does not see into (\code{Debug.toString}, a \code{Js} intrinsic) — a read of every path. \code{==} and \code{<} are method calls resolved by the dispatch table (\code{checker-v2.md} §13): a \emph{derived} \code{eq}/\code{compare} and \code{List.eq}/\code{List.compare} are read-only by construction, but a type's \textbf{own} \code{pub eq} is ordinary beni and is summarised like any function — one that consumes is a demand.
+\end{itemize}
+
+A \code{case} makes liveness path-sensitive in the ordinary way: a holder live only in the arm not taken is dead in the other (§5.6). A self tail call (\code{backend.md} §8) rebinds parameters: the old values are dead after the jump unless an argument still to be evaluated reads them, which the emitter's own ordering rule already guarantees (\code{backend.md} §8, \emph{In place, when nothing captures}).
+
+Liveness is computed per (variable, k-path) so that \code{m.name} read after \code{List.\allowbreak{}push m.\allowbreak{}rows x} is not a use of \code{m.rows}: field-sensitive deadness is what lets a record be threaded through helpers that each touch one field. Rust lacks this across calls — Matsakis' “view types” problem (research 68 §7.1) — and research 42's O8 (“capture the projection”) measured its absence as a copy of every row per \code{Append}.
+
+\phantomsection\bheading{subsection}{2.8\quad The check, stated as a rule}{subsection}{\protect\numberline{2.8}The check, stated as a rule}
+
+At a call $f\ \bar{a}$ whose summary has $\mathit{use}(i,\allowbreak{}q)=\mathsf{consumed}$:
+
+\begin{align*}
+&\text{for each } c \in A(a_i)@q:\\
+&\qquad c \neq \top,\ \text{and } A(a_i)@q \text{ is not } \emptyset\text{-by-ignorance} \tag*{(K1: the cell is known)}\\
+&\qquad c \text{ is not escaped} \tag*{(K2: nothing unseen holds it)}\\
+&\qquad \text{for each holder } h \text{ of } c:\ \neg\,\mathit{live}(h, \text{after the call}) \tag*{(K3: nothing reads it later)}\\
+&\qquad \text{for each other argument path } (a_j, q'),\ j \neq i \text{ or } q' \neq q,\\
+&\qquad \text{and for each capture of each function-valued argument:}\ c \notin A(a_j)@q' \tag*{(K4: nothing reads it during)}
+\end{align*}
+
+K3 reads “after the call”: every argument has been evaluated, so a read inside an argument is before the write; and the operand's own binding is a holder like any other, so \code{let ys = List.\allowbreak{}set xs 0 1 in List.\allowbreak{}get xs 0} fails K3 on \code{xs}. \textbf{K4 is the separation rule}: the write happens \emph{inside} the callee, before the callee's own later reads, and the callee reads its other parameters and calls its callbacks while the write is already visible. \code{List.\allowbreak{}foldl xs xs (λx acc → List.\allowbreak{}insertAt acc 0 x)} — the same list as the walked input and the consumed accumulator — would read the growing array through \code{xs} while writing it through \code{acc}; \code{g xs (λ\_\allowbreak{} → List.\allowbreak{}length xs)} with \code{g xs k = k (List.\allowbreak{}push xs 1)} would read the pushed cell through the capture. K4 is Rust's “one \code{\&mut} or any number of \code{\&}, never both, at one call” (NLL RFC, \emph{Borrow checker phase 2}), Futhark's “the argument passed for a consumed parameter does not alias any other argument” (thesis Fig. 34, p. 87), and Aspinall–Hofmann–Konečný's comma-as-tensor (“they must be implemented without sharing, unless the access is guaranteed to be read-only”, 2008 §3, p. 13). It is checked on abstract cells, so two arguments that \emph{may} be one cell fail it.
+
+When $a_{i}$ is itself a parameter path $\pi _{j}.q'$ of the enclosing function, the enclosing function's $\mathit{use}(j,\allowbreak{}q')$ becomes $\mathsf{consumed}$, and K2–K4 are discharged at \emph{its} callers in turn. A failure of K1 or K2 is reported as a \textbf{limit}; a failure of K3 or K4 as \textbf{sharing}, with the holder named (§6).
+
+\textbf{Two holders that live for the whole program.} A top-level value (\code{empty = []}, a \code{where}- constrained constant memoised per evidence, \code{language.md} §6) is a holder that is never dead: its cells are \textbf{escaped} from the start, so \code{[ x, …defaults ]} onto a top-level list is a rejection with the \code{List.copy} fix. And the page's \code{model} variable on \code{browser-direct} is a holder between dispatches (§5.9). Neither is a local, which is why §2.2's table lists them.
+
+\phantomsection\bheading{subsection}{2.9\quad Deep uniqueness: exclusive contents}{subsection}{\protect\numberline{2.9}Deep uniqueness: exclusive contents}
+
+A list's elements, a dictionary's values and a record's fields can hold cells, and two positions of one container can hold the \emph{same} cell: \code{[ r, r ]}, \code{List.repeat r 3}, \code{Dict.\allowbreak{}insert (Dict.\allowbreak{}insert d k v) k' v}. An edit inside an element — \code{\{ r | tags = List.\allowbreak{}push r.\allowbreak{}tags t \}} on the element at position 0 — would then be seen at position 1. The cell-set domain cannot tell positions apart: every element of a \code{rows} built in a loop comes from one allocation site, so $A(\mathit{rows})@[\ast ].\mathit{tags}$ is one abstract cell for all of them, and K3 finds the holder $(\mathit{rows},\allowbreak{}[\ast ].\mathit{tags})$ live (the other elements are read later) whenever the container outlives the edit. That is the right answer when positions may share and a false error when they cannot, and it is the case Clean handles with \emph{deep} uniqueness — \code{*[*a]}, a unique list of unique elements, where \code{head :: *[*a] -> *a} may hand an element out unique because the list's construction guaranteed that no element was shared when it went in (Clean report §9.2, p. 93; Barendsen \& Smetsers 1996 §7, p. 15, the three admissible \code{Cons} attributions). OxCaml states the same: “Uniqueness is considered a deep property by default; that is, we expect components of a unique value also to be unique” (Lorenzen et al. 2024 §2.1, p. 4).
+
+The rule here: a container path — $(x,\allowbreak{}q[\ast ])$ for a list, $(x,\allowbreak{}q.\mathit{contents})$ for a \code{Dict} — is \textbf{exclusive} when every cell stored under it was unique at the store and stored nowhere else, and no read since has produced a holder of a contained cell that is still live. The flag $\mathit{excl}$ on an abstract container path is:
+
+\begin{itemize}
+\item \textbf{set} by a construction whose every stored cell is unique at the store: a literal of distinct fresh cells, or a $\mathsf{fresh}$ result whose elements are declared fresh (\code{map}'s result when the callback's result is fresh; a decoder's output, by its row);
+\item \textbf{kept} by a \emph{destructive read}: a container function that consumes the container, hands one element to a callback and stores the callback's result back at that position, reading no other element in between (\code{List.update}'s body is \code{set xs i (func (at xs i))}, and \code{set} writes slot $i$). The element is unique inside the callback because, the container being consumed at the call (K3) and no argument or capture of the callback holding it (K4), the slot is the element's only other holder and nothing reads the slot before it is overwritten. \code{Dict.update}'s body (\code{insert d k (alter (get d k))}) is the same shape at a \emph{key}, which the path domain cannot name ($\mathit{contents}[\ast ]$): its callback's $\mathit{supply}=\mathsf{owned}$ is therefore an asserted row of core's, with the body-level reason written beside it, not an inferred one;
+\item \textbf{cleared} by a store of a cell that is not unique at the store (\code{[ r, r ]}'s second $r$, \code{List.repeat}, an element taken from another live container), and by a non-destructive read whose result is live while the container is (\code{Dict.get d k} with $d$ used after; \code{List.get}; a pattern's $x$ of \code{[ x, …rest ]} while \code{xs} lives).
+\end{itemize}
+
+With the flag, \code{List.\allowbreak{}update rows i (λr → \{ r | tags = List.\allowbreak{}push r.\allowbreak{}tags t \})} is accepted when \code{rows} is unique and exclusive, and rejected with the limit tag “the elements of \code{rows} may share” when they came from somewhere the checker cannot see. Without the flag the whole class of nested edits would be a limit. The flag travels in the summary beside $\mathit{res}$ (a result path may be $\mathsf{fresh},\allowbreak{}\mathit{excl}$) and in the interface, and its soundness is Lemma 1b (§4.3). Elements of a crossing type (§2.1) need none of this.

@@ -1,0 +1,69 @@
+\phantomsection\bheading{section}{9.\quad What to measure before deciding}{section}{\protect\numberline{9.}What to measure before deciding}
+
+The literature has no false-error rate for an inferred uniqueness checker in a functional language (research 69 §3, “what is missing”); beni can produce one in a week. The experiment is the report mode the write-set pass had (\code{write-sets.md} §8): build the analysis, run it as a dump over real programs, classify every rejection, decide on numbers. Wrenn and Krishnamurthi's frame: a checker's errors are a classifier, so measure its precision (2017 §2).
+
+\phantomsection\bheading{subsection}{9.1\quad The dump}{subsection}{\protect\numberline{9.1}The dump}
+
+\code{beni dump --stage=owners} prints, per module:
+
+\begin{Verbatim}
+summary <Decl>
+  param <i>.<path> <borrowed|shared|consumed> [reason <tag>]
+  result <path> {<param paths>|fresh}
+  fun <j> calls <0|1|many> escapes <no|yes>
+demand <Decl>:<inst> <primitive> operand <cells>
+  unique                                              -- accepted
+  shared <holder> kept-at <inst> used-at <inst> exact  -- real sharing
+  shared <holder> … approx <limit-tag>                 -- possible sharing (a limit)
+  unknown <limit-tag>                                  -- K1/K2 failure
+copy <Decl>:<inst> of-unique                           -- a copy of a list that was already unique
+prepend <Decl>:<inst> <in-building-loop|loose>
+cap <which> fired at <Decl>
+\end{Verbatim}
+
+The dump is corpus-tested like the writes dump (\code{tests/\allowbreak{}corpus/\allowbreak{}owners/}, one golden per fixture), deterministic (§7.9), and produced by \code{check}, not \code{build}: nothing reads it, no emitted byte moves, no run hash changes — the write-set pass's exact arrangement (\code{write-sets.md} \emph{as built}, 2026-10-09).
+
+\phantomsection\bheading{subsection}{9.2\quad The demand set, as a flag}{subsection}{\protect\numberline{9.2}The demand set, as a flag}
+
+The dump takes a hidden \code{--owners-demand=writers|rebuilds} so that the same run reports both the rule as asked (the eight writers) and the widened rule (§10 change 1: plus \code{map}, \code{indexedMap}, \code{filter}, \code{filterMap}, \code{reverse}, \code{sort}, \code{sortBy}, \code{sortWith}, \code{take}, \code{slice}). Every count below is reported for both.
+
+\phantomsection\bheading{subsection}{9.3\quad The corpora and the counts}{subsection}{\protect\numberline{9.3}The corpora and the counts}
+
+Run over \code{core/}, every \code{tests/corpus/} fixture (\code{run/}, \code{browser/}, \code{writes/}), \code{bench/todomvc} (the four builds), \code{examples/conduit}, \code{bench/\allowbreak{}ui/\allowbreak{}apps/\allowbreak{}beni} (the table app and the sweeps), with the \code{browser-direct} platform's P1–P6 assumed for TEA programs (the entry summary of \code{model} from the write-set escape facts). Report, per corpus and in total:
+
+{\small\setlength{\emergencystretch}{3em}
+\begin{longtable}{>{\raggedright\arraybackslash}p{\dimexpr0.220\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr0.780\linewidth-2\tabcolsep\relax}}
+\toprule
+\textbf{Count} & \textbf{Meaning} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Count} & \textbf{Meaning} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+demands & update sites (per demand set) \\[0.35em]
+accepted & unique at the site \\[0.35em]
+rejected-exact & real sharing, by holder kind: local later read / closure / command or fiber / container / payload / view \\[0.35em]
+rejected-approx & by limit tag: \code{foreign}/\code{Js} / \code{Ref} / k-cut / join / pessimistic summary / $\mathit{calls}\ \mathsf{many}$ / elements may share (§2.9) \\[0.35em]
+exclusive containers & container paths that carry $\mathit{excl}$ at a destructive read, against those that do not, and what cleared it \\[0.35em]
+copies-of-unique & \code{List.copy} calls the checker would have allowed without \\[0.35em]
+prepends-loose & \code{[ x, …xs ]} sites outside a building loop (the O(n) ones) \\[0.35em]
+summaries changed per edit class & research 19 §4's four edit classes applied to \code{core/}: how many interfaces move \\[0.35em]
+check time & \code{--self-profile}'s \code{owners} event beside \code{check}, cold, ReleaseFast, on the bench corpus and Conduit \\[0.35em]
+widest $w$ & the largest number of tracked paths in any declaration \\[0.35em]
+\bottomrule
+\end{longtable}}
+
+\phantomsection\bheading{subsection}{9.4\quad Hand classification}{subsection}{\protect\numberline{9.4}Hand classification}
+
+Every \code{rejected-exact} is read by a person and classified: \textbf{intended sharing} (the program keeps the version on purpose: an undo, a snapshot), \textbf{accidental sharing} (the program would have been wrong-but-fast had the write been in place: this is the bug class the rule exists to catch), or \textbf{avoidable} (a reordering or a fold would make it unique). Every \code{rejected-approx} is classified by whether a known extension (a \code{Ref} discipline, a wider k, a path-sensitive join, a summary on a platform \code{foreign}) would accept it. The table is the one Sisal's report made by hand (Cann, Feo, DeBoni 1990 Table I: 293 copy sites, 264 removed, 25 real sharing, 4 undecidable) and research 69 §1.1 reread.
+
+\phantomsection\bheading{subsection}{9.5\quad Performance and size, after the fact}{subsection}{\protect\numberline{9.5}Performance and size, after the fact}
+
+If the decision is yes, the second experiment is research 42's harness with the trie removed: \code{bench/arrays} scenarios under plain arrays written in place (R2-plain's numbers without R2's counts), \code{bench/size.mjs}'s page lines, \code{browser-direct}'s S2/S3 sweeps. The expected shape is research 42 §6.4's builds (2–7× faster), §6.3's steady ticks (0.43–0.69×), §6.1's TEA rows (hidden by the walk), and §6.5's history (gone: the program must copy). This is measured, not assumed.
+
+\phantomsection\bheading{subsection}{9.6\quad What a brief for the implementer must contain}{subsection}{\protect\numberline{9.6}What a brief for the implementer must contain}
+
+The dump format above; the demand flag; the P1–P6 entry assumption as a per-program fact read from the write-set pass; the derivation tags; a fixture per rule of §2.5 and §3.4 (red first); the determinism scenario; the \code{--self-profile} event; and the hand-classification sheet with its three columns. No emitted byte changes. The pass is specified in \code{docs/design/} before it is built (rule 1); this document is research, not that specification.
