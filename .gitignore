@@ -28,6 +28,8 @@
 # committed; every copy can be fetched again from the link it names.
 /references/ownership/pdf/
 /references/ownership/text/
+/references/ownership/latex/
+/references/ownership/converted/
 
 # The compiled ownership thesis; docs/thesis/ownership/main.tex is the source.
 /docs/thesis/ownership/*.pdf
