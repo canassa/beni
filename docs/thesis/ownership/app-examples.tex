@@ -1,7 +1,7 @@
-\section{Four Programs Through the Rules}
+\chapter{Four Programs Through the Rules}
 \label{app:examples}
 
-\subsection{TodoMVC's toggle, under the widened demand set}
+\section{TodoMVC's toggle, under the widened demand set}
 
 \begin{Verbatim}
 Toggle id → changed model (List.map model.todos λt → if t.id == id then { t | completed = not t.completed } else t)
@@ -17,7 +17,7 @@ $.\mathit{todos}$, because its record update replaces that field; so the holder 
 Accepted: \code{a[i] = f(a[i])}. Under the nine-writer demand set, \code{map} is not a demand and nothing
 changes.
 
-\subsection{A table application's row swap}
+\section{A table application's row swap}
 
 \begin{Verbatim}
 SwapRows → { model | rows = List.swap model.rows 1 998 }
@@ -31,7 +31,7 @@ work was the same two \code{insertBefore} calls, and the remaining gap was the i
 \code{List.swap}---two \code{set}s, each a trie path copy at that size---and the spread of the model
 record. In place, the swap is two array writes.
 
-\subsection{A histogram by fold}
+\section{A histogram by fold}
 
 \begin{Verbatim}
 hist = List.foldl samples (List.repeat 0 1000) (λs acc → List.update acc (bucket s) (λn → n + 1))
@@ -44,7 +44,7 @@ The edge ``the lambda needs an owned accumulator, so \code{foldl} must supply on
 accumulator is written in place at every step, which is the building pattern our prototype study measured
 at 0.14--0.47 times the persistent representation's time.
 
-\subsection{Grouping into a dictionary}
+\section{Grouping into a dictionary}
 \label{app:groupby}
 
 \begin{Verbatim}
@@ -62,7 +62,7 @@ group where it is:
 \begin{Verbatim}
 Dict.update d (key x) (λg → Just (List.push (Maybe.withDefault g []) x))
 \end{Verbatim}
-\code{Dict.update}'s callback is supplied an owned value by an asserted row of the core library, since its
+Here \code{Dict.update : Dict k v, k, (Maybe v → Maybe v) → Dict k v}. Its callback is supplied an owned value by an asserted row of the core library, since its
 body holds the old value at a key the path domain cannot name. The rewritten program is accepted
 \emph{provided \code{d}'s values are exclusive}, and here they are, from \code{Dict.empty} on: every value
 stored is either \code{[ x ]} pushed onto a fresh \code{[]} or the pushed result of a destructive read, and

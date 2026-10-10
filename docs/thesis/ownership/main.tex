@@ -1,0 +1,101 @@
+% Edit in Place or Not at All: inferred ownership for mutable lists in a pure language
+% compiled to JavaScript.
+% Build: nix shell nixpkgs#tectonic -c tectonic -X compile main.tex
+\documentclass[11pt,a4paper,oneside]{report}
+
+\usepackage{fontspec}
+\setmainfont{lmroman10}[Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic,SmallCapsFont=lmromancaps10-regular,Ligatures=TeX]
+% beni source uses Unicode notation (→ λ ▷ … ≠ ⊤ ×); DejaVu Sans Mono covers it.
+\setmonofont{DejaVu Sans Mono}[Scale=MatchLowercase]
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{booktabs,array,longtable,tabularx}
+\usepackage{xcolor}
+\usepackage{fvextra}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{titlesec}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\emergencystretch}{3em}
+\setlist{itemsep=0.2em,topsep=0.3em,parsep=0.15em}
+\titleformat{\chapter}[display]{\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{12pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{30pt}
+
+\DeclareRobustCommand{\code}[1]{\texttt{\hyphenchar\font=-1 #1}}
+\newcommand{\rulename}[1]{\textsc{#1}}
+\newcommand{\Known}{\rulename{Known}}
+\newcommand{\Unescaped}{\rulename{Unescaped}}
+\newcommand{\Dead}{\rulename{Dead}}
+\newcommand{\Disjoint}{\rulename{Disjoint}}
+\newcommand{\cell}{\mathit{cell}}
+\newcommand{\fresh}{\mathsf{fresh}}
+\newcommand{\borrowed}{\mathsf{borrowed}}
+\newcommand{\shared}{\mathsf{shared}}
+\newcommand{\consumed}{\mathsf{consumed}}
+\newcommand{\live}{\mathit{live}}
+\newcommand{\site}{\mathit{site}}
+\newcommand{\excl}{\mathsf{excl}}
+\newcommand{\Obl}[1]{\textsc{#1}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{assumption}{Assumption}
+
+\fvset{fontsize=\small,breaklines=true,xleftmargin=1.5em,numbersep=6pt}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE\bfseries Edit in Place or Not at All\par}
+\vspace{0.8cm}
+{\Large Inferred Ownership for Mutable Lists\\[0.2em] in a Pure Language Compiled to JavaScript\par}
+\vspace{2.5cm}
+{\large Cesar Canassa\par}
+\vspace{0.6cm}
+{\large 10 October 2026\par}
+\vfill
+{\small A thesis on the design of an inferred ownership checker for beni, a strict, pure,\\
+Elm-like language for the browser: the model, the inference algorithm, a soundness\\
+argument, the hard cases, the error messages, and a proposed evaluation.\par}
+\vspace*{1cm}
+\end{titlepage}
+\hypersetup{pageanchor=true}
+\pagenumbering{roman}
+
+\chapter*{Abstract}
+\input{abstract}
+
+\tableofcontents
+
+\cleardoublepage
+\pagenumbering{arabic}
+\input{ch-intro}
+\input{ch-background}
+\input{ch-model}
+\input{ch-inference}
+\input{ch-soundness}
+\input{ch-hard}
+\input{ch-errors}
+\input{ch-compiler}
+\input{ch-costs}
+\input{ch-changes}
+\input{ch-evaluation}
+\input{ch-related}
+\input{ch-conclusion}
+
+\appendix
+\input{app-examples}
+\input{app-priorart}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

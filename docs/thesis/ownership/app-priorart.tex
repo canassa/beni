@@ -1,0 +1,209 @@
+\chapter{The Prior Art: What Is Taken and What Is Declined}
+\label{app:priorart}
+
+Chapter~\ref{sec:related} compares the design with related work. This appendix records, line of
+work by line of work, exactly what the design takes from each, what it declines, and why.
+
+\section{Clean}
+
+\emph{Sources:} Barendsen and Smetsers \citep{barendsen1993conventional,barendsen1995inference,barendsen1996uniqueness},
+Smetsers et al.\ \citep{smetsers1994guaranteeing}, de Vries et al.\
+\citep{devries2007redefined,devries2008simplified}, and the Clean language report
+\citep{plasmeijer2011clean}.
+
+\emph{Taken.} The demand lives in library types: \code{newArray} returns an array whose uniqueness
+attribute is a variable rather than ``unique'' \citep[\S6]{devries2008simplified}, so user code carries
+nothing. The propagation rule for containers---``if a unique object is stored in a data structure, the
+data structure itself becomes unique as well'' \citep[\S9.2]{plasmeijer2011clean}---appears here as the
+holder relation through paths. Evaluation-order-aware marking, Smetsers et al.'s ``preliminaries'' and
+``alternates'' \citep[\S4]{smetsers1994guaranteeing} and the report's observing references
+\citep[\S9.4]{plasmeijer2011clean}, is what liveness at the site generalises (\S\ref{sec:model-unique}).
+Deep uniqueness is the source of the exclusive-contents flag (\S\ref{sec:model-excl}).
+
+\emph{Declined.} Attributes on types solved by unification with a subtyping restriction on arrows
+\citep[Def.~7.6]{barendsen1996uniqueness}, which is why Clean has no principal uniqueness type and must
+force recursive groups non-unique \citep[\S7]{devries2008simplified}; and the rank-2 escape that de
+Vries et al.\ use to type a function such as \code{if isEmpty arr then shrink arr else grow arr}
+\citep[\S6]{devries2008simplified}, which an annotation-free checker cannot use and liveness makes
+unnecessary. Two of Clean's known false errors, a \code{foldr} over a unique structure and a marking
+function whose lookup precedes its update \citep[\S6]{barendsen1995inference}, are accepted here:
+\code{foldr}'s callback captures its structure as borrowed, and the lookup precedes the update.
+
+\section{Usage aspects}
+
+\emph{Sources:} Aspinall and Hofmann \citep{aspinall2002another}; Aspinall, Hofmann and
+Kone\v{c}n\'y \citep{aspinall2008usage}; Kone\v{c}n\'y \citep{konecny2003layered}.
+
+\emph{Taken.} The three aspects \citep[\S1]{aspinall2008usage} as $\mathit{use}$; the \textsc{Let}
+rule's per-variable condition that a variable may be read with aspect 2 or 3 in the binding and
+destroyed in the body \citep[Fig.~8]{aspinall2008usage}---the reads-before-writes rule in its earliest
+typed form; the best-typing claim and its optimistic search \citep[\S6.2]{aspinall2008usage}; the
+separation theorem's clause that heap occupied by arguments with aspect 2 or 3 is not modified
+\citep[Thm.~5.4]{aspinall2008usage}, as clauses 1 and 2 of Lemma~\ref{lem:summary}; and the
+two-semantics soundness theorem \citep[Thm.~5.8]{aspinall2008usage} as the shape of
+Theorem~\ref{thm:main}.
+
+\emph{Declined.} The system is first-order, monomorphic and affine, with explicit resources for
+allocation; higher-order functions are deferred there to the standard types-and-effects technique,
+which the ownership classes of \S\ref{sec:inf-classes} are.
+
+\section{Linearity, alias burying and the past}
+
+\emph{Sources:} Wadler \citep{wadler1990linear,wadler1991use}; Boyland \citep{boyland2001alias};
+Marshall, Vollmer and Orchard \citep{marshall2022entente}.
+
+\emph{Taken.} The hyperstrict ordering of \code{let!} as the reason strictness matters
+\citep{wadler1990linear}; ``only update operations are sequentialised but lookups can occur in
+parallel'' \citep[\S3]{wadler1991use} as the design goal; alias burying's requirement that all aliases
+be dead \citep[\S3.2]{boyland2001alias} as the definition of unique at a site; and uniqueness as a
+statement about the past \citep{marshall2022entente}, which is why a borrowed value \emph{can} return to
+uniqueness after the borrow ends, and why \code{List.copy} is the only way back once a list is shared.
+
+\emph{Declined.} Boyland's annotations on fields and interfaces, which are inferred here; Marshall et
+al.'s call-by-name calculus.
+
+\section{Destructive-update analysis}
+
+\emph{Sources:} Wand and Clinger \citep{wand2001set}; the Sisal compiler \citep{cann1990sisal}.
+
+\emph{Taken.} Liveness-defined destructive update---an update is destructive when the array ``can't be
+bound to a live location'' after its arguments have been evaluated---and inclusion constraints with a
+least solution, which ``can be solved in polynomial time'' \citep{wand2001set}; Sisal's tabulation of
+copy sites as the model for the hand classification of \S\ref{sec:eval-hand}.
+
+\emph{Declined.} Wand and Clinger's first-order restriction to arrays of scalars, and both systems'
+fallback to a copy.
+
+\section{Reference counting with reuse}
+
+\emph{Sources:} Lean~4 \citep{ullrich2019beans,demoura2021lean4}, Perceus \citep{reinking2021perceus},
+frame-limited reuse \citep{lorenzen2022frame}, FP\textsuperscript{2} \citep{lorenzen2023fp2},
+Lorenzen et al.\ on functional in-place algorithms \citep{lorenzen2024bst}, and Brandon et al.\
+\citep{brandon2026borrows}.
+
+\emph{Taken.} The direction of inference, from ``all borrowed'' towards a fixed point
+\citep[\S5.2]{ullrich2019beans}, and Brandon et al.'s least fixpoint justified by Knaster--Tarski
+\citep[\S4.4]{brandon2026borrows}; the one correctness rule every paper shares, that a parameter that
+reaches a write must be owned; Brandon et al.'s refinement that treats variable occurrences in the
+argument position of a tail call as escaping, which beni's loop rebinding handles directly; and
+FP\textsuperscript{2}'s diagnosis of static uniqueness typing as ``code duplication, where a single
+function can have multiple different implementations'' \citep[\S1.4.1]{lorenzen2023fp2}, answered here
+by summaries that are facts about flows, not types, so one \code{reverse} serves both kinds of caller
+and the \emph{caller} is what is checked.
+
+\emph{Declined.} Run-time reference counts and the silent copy at a shared call---``the fip annotation
+in Koka only guarantees that no (de)allocation occurs if the parameters are unique at runtime''
+\citep[\S3.1]{lorenzen2024bst}; borrowing as a discipline on reference-count tokens that lets a borrowed
+value be returned with an increment \citep{ullrich2019beans}. Lorenzen and Leijen's objection that
+inferred borrowing can extend a value's lifetime and so cost space \citep{lorenzen2022frame} does not
+apply, because there is no count to keep a borrowed value alive past its last read. Brandon et al.'s
+fallback, inserting ``a handful of reference count operations'' where a program cannot be typed, is
+this design's error.
+
+\section{OxCaml}
+
+\emph{Sources:} Lorenzen et al.\ \citep{lorenzen2024oxidizing}, Peters et al.\
+\citep{peters2026mode}, and the OxCaml documentation \citep{oxcaml2025uniqueness}.
+
+\emph{Taken.} The lock rule for closures \citep[\S3.3]{lorenzen2024oxidizing} as the $\mathit{once}$
+rule of \S\ref{sec:hard-closures}; polarised inequality constraints solved by what is essentially a
+transitive closure as the shape of the edges of \S\ref{sec:inf-classes}; mode crossing
+\citep{peters2026mode} as $\mathit{crosses}(\tau)$; the measured count of 27\,382 locality annotations in
+interfaces, where ``the implementations can generally infer'' \citep[\S7]{lorenzen2024oxidizing}, as the
+warning about interface churn; and the remark that the complications of currying go away in a language
+without it \citep[\S6.4]{lorenzen2024oxidizing} as evidence that beni's decision removes the hard case.
+
+\emph{Declined.} Modes as types with no polymorphism over them, which led to functions duplicated per
+mode \citep[\S6.6]{lorenzen2024oxidizing}---summaries here are per flow, not per mode; and per-module
+inference with modes written in interfaces---summaries here are inferred \emph{and} published.
+
+\section{Reachability types and capture tracking}
+
+\emph{Sources:} Bao et al.\ \citep{bao2021reachability}, Wei et al.\ \citep{wei2024polymorphic}, Jia et
+al.\ \citep{jia2026escape}, O'Connor et al.\ \citep{oconnor2026separation}, System Capybara
+\citep{xu2026capybara}, and Deng et al.\ \citep{deng2025capture}.
+
+\emph{Taken.} A function type that names which argument its result reaches \citep[\S2.2]{wei2024polymorphic}
+as $\mathit{res}$; the warning that polymorphism over tracked and untracked values is unsound without a
+freshness marker---here $\fresh$ is a distinct kind of cell, never a type variable; Capybara's rule that
+consuming a value kills its aliases as the content of the dead-alias lemma, and its rule that a component
+of a shared structure cannot be consumed directly as the containers rule of \S\ref{sec:hard-containers};
+Deng et al.'s use and kill effects on closures \citep[Fig.~1]{deng2025capture} as the $\mathit{cap}$ facts,
+inferred rather than declared; and O'Connor et al.'s statement of the guarantee.
+
+\emph{Declined.} Qualifier annotations on function arguments and explicit instantiation, which
+bidirectional inference for reachability types still requires \citep{jia2026escape}; and an opaque joint
+qualifier for the elements of a list, replaced here by per-path cells.
+
+\section{Rust}
+
+\emph{Sources:} non-lexical lifetimes \citep{rfc2094}, two-phase borrows \citep{rfc2025}, Polonius
+\citep{stjerna2020polonius}, Oxide \citep{weiss2019oxide}, Pearce's lightweight formalism
+\citep{pearce2021lightweight}, Ho et al.'s symbolic semantics \citep{ho2024sound}, and Emre et al.\
+\citep{emre2023aliasing}.
+
+\emph{Taken.} Liveness as the precision lever, and the minimal-lifetime principle \citep{rfc2094};
+two-phase borrows as the formal statement of reads before writes \citep{rfc2025}; the three-point error
+with the blame on the action \citep{rfc2094}; Polonius as transitive closures over directional facts
+\citep{stjerna2020polonius}; Pearce's and Ho et al.'s treatment of joins at merge points as the model for
+\S\ref{sec:hard-branches}; and Emre et al.'s measurement as the argument against unification
+\citep{emre2023aliasing}.
+
+\emph{Declined.} Lifetimes in signatures, and references into structures; beni has none, which is why
+the third problem case of non-lexical lifetimes does not arise.
+
+\section{Futhark}
+
+\emph{Sources:} Henriksen et al.\ \citep{henriksen2017futhark,henriksen2017thesis} and the Futhark
+blog and documentation \citep{henriksen2021anatomy,henriksen2022uniqueness,henriksen2026aliasing,henriksen2026rewrite,futhark2026errorindex}.
+
+\emph{Taken.} The consumption judgement $(\mathcal{O}_2 \cup \mathcal{C}_2) \cap \mathcal{C}_1 = \emptyset$
+\citep{henriksen2017futhark} as the one-line statement of the rule; the union of alias sets for a
+conditional, kept for cells, with per-path liveness added; the refusal of a consumption of a free
+variable inside a lambda \citep[\S3.3]{henriksen2017futhark} as the $\mathit{once}$ rule; the separate
+pass after type checking \citep{henriksen2026rewrite}; the error index's shape---message, minimal program,
+reason, a copy as the fix, and a note when the copy ``subverts the purpose''
+\citep{futhark2026errorindex}; the lesson on naming intermediate results \citep{henriksen2021anatomy};
+and the free-theorem idea for the identity function and the pipe \citep{henriksen2026aliasing}.
+
+\emph{Declined.} Uniqueness annotations on parameters and results; an intraprocedural analysis with no
+summaries, for which ``we are forced to be conservative'' \citep[\S3.2]{henriksen2017futhark}; and the
+2026 verdict that language designers should not do it \citep{henriksen2026aliasing}, which was about a
+type system reasoning about aliasing---and this design is not a type system.
+
+\section{Usage analysis, affine closures and escape analysis}
+
+\emph{Sources:} Turner et al.\ \citep{turner1995once}, Wansbrough and Peyton Jones
+\citep{wansbrough1999once,wansbrough2002thesis}, Affe \citep{radanne2020kindly}, and Blanchet
+\citep{blanchet1998escape}.
+
+\emph{Taken.} The poisoning problem---one call of a function poisoning the usage of all others
+\citep{wansbrough1999once}---as the reason summaries must be polymorphic over function arguments;
+polarity-based simplification of constraint sets \citep{wansbrough2002thesis} as the way to keep summary
+blocks small; the measured warning that generalising local binders loses precision; Affe's rule under
+which a closure that captures a shared borrow stays unrestricted \citep[\S3.3]{radanne2020kindly} as the
+shape of $\mathit{cap} = \borrowed$; and Blanchet's case split for closures, applied versus escaped
+\citep{blanchet1998escape}, as $\mathit{escapes}$.
+
+\emph{Declined.} Usage on every type, which counts a read-only capture as a use; Affe's lexical regions
+and explicit borrows.
+
+\section{Error design}
+
+\emph{Sources:} Czaplicki \citep{czaplicki2015errors}, Wrenn and Krishnamurthi \citep{wrenn2017classifiers},
+Marceau et al.\ \citep{marceau2011mind}, the rustc development guide \citep{rustc2026diagnostics},
+Crichton et al.\ \citep{crichton2020usability,crichton2023grounded,crichton2024profiling}, Hylo
+\citep{hylo2024bindings}, and Swift \citep{swift2025explicitcopies,swift2026diagnosticssil}.
+
+\emph{Taken} in full in Chapter~\ref{sec:errors}. The one dissent recorded is Marceau et al.'s advice
+that error messages for novices should not propose solutions, against which Hylo, Futhark, Rust and
+Swift all ship fixes; this design ships the fix and the verdict line (\S\ref{sec:errors-shape}).
+
+\section{The prototype study}
+
+The static variant of the prototype study (\S\ref{sec:bg-measure}) is this checker's backend half: it
+wrote in place where last use and per-function interface summaries proved a value unique, with
+parameters consumed uniquely and the aliasing of results recorded in interfaces and flowing forward to
+callers. Two of its findings shaped the design: that the TEA model needs a runtime that hands the model
+over, and that a copy at a call where uniqueness cannot be proved is catastrophic in a loop. They are why
+the rule is an error at the site and not a copy.

@@ -29,9 +29,6 @@
 /references/ownership/pdf/
 /references/ownership/text/
 
-# The compiled thesis (research 71); main.tex is the source.
-/docs/design/research/71-ownership-checker-thesis/*.pdf
-/references/ownership/*.pdf
-
-# The compiled ownership-inference paper; main.tex is the source.
-/docs/papers/ownership-inference/*.pdf
+# The compiled ownership thesis; docs/thesis/ownership/main.tex is the source.
+/docs/thesis/ownership/*.pdf
+/references/ownership/ownership-thesis.pdf

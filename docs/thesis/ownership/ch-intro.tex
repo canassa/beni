@@ -1,0 +1,209 @@
+\chapter{Introduction}
+\label{sec:intro}
+
+A pure functional language promises that a value, once made, never changes. Compiled to a
+machine with mutable memory, the promise has a price: an update of a large structure must either
+copy it or use a persistent representation that shares the unchanged parts. The price is
+avoidable when nobody can tell the difference---when no part of the program will ever look at the
+old version again. The long line of work on linear and uniqueness types
+\citep{wadler1990linear,wadler1991use,smetsers1994guaranteeing,barendsen1996uniqueness,devries2008simplified},
+on destructive-update analysis \citep{wand2001set,cann1990sisal,aspinall2008usage}, and more
+recently on reference counting with reuse \citep{ullrich2019beans,reinking2021perceus,lorenzen2023fp2}
+and on modes in OCaml \citep{lorenzen2024oxidizing} all ask, in one form or another, when an
+in-place write is unobservable.
+
+This thesis asks the question for one language and one data type, with an unusually strict
+answer in mind. beni is a strict, pure, Elm-like language that compiles to JavaScript and is aimed
+at the browser. Its single sequence type, \code{List}, is backed by JavaScript arrays. We want
+every \code{List} to be a \emph{plain} JavaScript array that is written \emph{in place} by every
+update the program performs, and we want the compiler to guarantee that this is safe. Concretely:
+
+\begin{quote}
+\emph{Editing a list while anything else still holds the old version is a compile error.}
+Ownership is inferred, user code carries no annotations, and an accepted program writes in place,
+always---in development and release builds alike---with no reference count, no run-time test and
+no silent fallback to a copy.
+\end{quote}
+
+Two things make this goal different from most prior work. First, the result is an \emph{error},
+not an optimisation. Run-time schemes such as Perceus \citep{reinking2021perceus}, Lean~4's
+borrow inference \citep{ullrich2019beans} and Roc's in-place mutation of uniquely referenced
+values \citep{teeuwissen2023roc}
+update in place when a reference count says the value is unique and copy otherwise; the program is
+always accepted, and its cost depends on facts the programmer cannot see. Static schemes that
+\emph{optimise}---Sisal's copy elimination \citep{cann1990sisal}, Wand and Clinger's set
+constraints \citep{wand2001set}---also fall back to a copy. We want the opposite contract: a
+program that would need a hidden copy is rejected, with a message that names the holder of the old
+version and offers the explicit copy. Second, the language has no references, no lifetimes and no
+ownership vocabulary in its surface syntax, so everything must be inferred; the type-based
+uniqueness systems of Clean \citep{barendsen1996uniqueness,plasmeijer2011clean} and Futhark
+\citep{henriksen2017futhark} express uniqueness as attributes in types; in Futhark the programmer writes
+them on every function that consumes an argument.
+
+\paragraph{Why it matters in a JavaScript target.}
+A persistent sequence in JavaScript is not free. beni's current representation (\S\ref{sec:bg-lists})
+is an array that switches to a 32-way radix trie when shared writes grow large; it costs runtime
+code that every program that edits a list must ship, a representation test on every read site that
+can meet a trie, and a conversion whenever a value crosses into JavaScript. In a prototype study
+(\S\ref{sec:bg-measure}) in which we applied by hand the transformations a static uniqueness pass
+would make to compiled beni code, building an array in a fold by in-place writes ran at 0.14--0.47
+times the time of the persistent representation, the steady-state ticks of a million-cell grid at
+0.44--0.48 times, and the runtime support for lists shrank from 1\,514 to 706 bytes after compression
+once the trie was gone. The same study found the obstacle: a UI runtime that keeps the lists it
+rendered makes every list in the model shared, so no static rule could write them in place until
+the runtime hands the model over.
+
+\paragraph{Why beni can infer it.}
+Three properties of the language do most of the work.
+(1)~\emph{Strict, left-to-right evaluation in source order.} The order in which a read and a write
+happen is the order in which they are written, so ``before the update'' is a syntactic notion, as
+in Futhark \citep{henriksen2022uniqueness} and in Smetsers et al.'s classification of argument
+positions into ``preliminaries'' and ``alternates'' \citep[\S4]{smetsers1994guaranteeing}.
+(2)~\emph{No automatic currying.} Every call in beni is saturated; partial application is written
+as an explicit lambda. The case every uniqueness system has found hardest---a partial application
+that silently captures a unique argument
+\citep{plasmeijer2011clean,barendsen1996uniqueness,devries2008simplified,lorenzen2024oxidizing}---does
+not arise. OxCaml's designers note that the complications of currying for uniqueness ``go away if we
+imagine a change to the language forbidding currying'' \citep[\S6.4]{lorenzen2024oxidizing}; beni
+is such a language. A closure is a lambda written in the source, and its captures are visible to
+the checker.
+(3)~\emph{An existing inference of per-function facts.} beni's type checker already infers two
+effect bits for every function type, solves them as a directed constraint graph after each module,
+and publishes them, hashed, in the module interface. Ownership facts can ride in the same places: a
+few more facts per function-type site, the same inclusion edges, the same interface block, the same
+rule for when importers must be re-checked.
+
+\section{The thesis on one page}
+\label{sec:intro-onepage}
+
+\paragraph{The property.} An update is accepted when its operand's array is \emph{unique at the
+site}: every other holder of that array is dead at that point. A holder is dead when no later read
+goes through it. A read that comes \emph{before} the update is therefore never sharing, however many
+there are; a read that comes \emph{after}, through any path the checker can see, is. This is Boyland's
+alias burying, under which aliases may exist provided they ``all be dead''
+\citep[\S3.2]{boyland2001alias}, and Rust's liveness-based borrows \citep{rfc2094}, applied to a
+language with no references. It is exactly what a plain array needs: the write is invisible if and
+only if nobody reads the old version afterwards.
+
+\paragraph{The analysis.} Per function, one forward pass over the body in evaluation order computes,
+for each variable and record path, the set of arrays it may hold. The flow is directional, in the
+style of Andersen's points-to analysis, never unification: Emre et al.\ measured unification
+poisoning 85\,\% of a program's pointers from four unsafe ones \citep[\S5]{emre2023aliasing}. A
+backward liveness pass per (variable, path) follows, and then, at each update, the check. Calls use
+the callee's summary. A recursive group starts from the most optimistic summaries---everything
+borrowed, every result fresh---and weakens to a fixpoint, the search that Aspinall, Hofmann and
+Kone\v{c}n\'y report finds the best typing for first-order programs \citep[\S6.2]{aspinall2008usage}
+and the direction that Lean's borrow inference \citep[\S5.2]{ullrich2019beans} and Brandon et al.\
+\citep[\S4.4]{brandon2026borrows} take. The cost is linear in the body per round, with a round count
+bounded by the height of a finite lattice.
+
+\paragraph{What it needs from the rest of the system.} The core library's update primitives declare
+their summaries, as its foreign declarations already declare their effects. The runtime that calls
+the program's \code{update} function must \emph{hand the model over}: keep no content holder of any
+list in the old model after the update runs. beni's current browser runtime keeps every rendered
+list, so under this rule every edit of a rendered list in \code{update} would be an error on that
+platform; an experimental platform, designed so that identity comparisons and in-place writes never
+meet, can host it under six obligations stated in \S\ref{sec:hard-tea}. Values a program hands to a
+command, a fiber, a mutable cell or JavaScript are shared from then on.
+
+\paragraph{What it costs.} Every program that keeps an old version and then edits it---an undo
+history, a ``before and after'' comparison, a test that holds its input, a command that captured the
+list---is rejected until it writes \code{List.copy}. Persistent sharing becomes an explicit $O(n)$
+copy; the trie goes; prepending in a loop is $O(n)$ per step again except where the compiler's
+building-loop rewrite applies. Closures that consume a capture may be called at most once, so
+\code{List.map xs (λx → List.push acc x)} is an error and a fold is the way. A body edit that changes a
+public function's summary re-checks its importers. And the two real applications we examined call
+\emph{none} of the primitive writers except list concatenation: they edit lists with \code{List.map},
+\code{List.filter} and \code{++}, so under the rule as stated almost nothing in them changes unless
+the same-shape rebuilds join the set of in-place operations (\S\ref{sec:disc-options}).
+
+\paragraph{The proposal.} Build the checker as a \emph{report-mode pass first}, run it over the
+core library, the compiler's test corpus and two applications, classify every rejection as real
+sharing or a limit of the checker, and decide on the error against those numbers
+(\S\ref{sec:evaluation}). We believe the soundness argument has the right shape; the rule's value
+depends on two things no desk analysis can settle: the rejection rate on code people actually write,
+and whether the same-shape rebuilds belong among the in-place operations.
+
+\section{Contributions}
+
+This thesis is a design proposal under evaluation. Its contributions are:
+\begin{itemize}
+\item A precise statement of the property to check: \emph{uniqueness at the update site, decided by
+liveness} (\S\ref{sec:model-unique}). It is strictly more permissive than Clean's occurrence-based
+uniqueness: reads before a write are never sharing, and a dead alias is harmless, in the spirit of
+Boyland's alias burying \citep{boyland2001alias} and Rust's two-phase borrows \citep{rfc2025}.
+\item An inference algorithm (Chapter~\ref{sec:inference}): a directional, flow-sensitive,
+field-sensitive cell analysis, a per-path liveness pass, four side conditions at each update
+(\Known, \Unescaped, \Dead, \Disjoint), function summaries polymorphic over the ownership
+behaviour of function-typed parameters, an optimistic fixpoint for recursive groups, and
+publication of summaries in module interfaces. It is linear in the size of a function body per
+round, with a round count bounded by the height of a finite lattice.
+\item A soundness argument (Chapter~\ref{sec:soundness}): under ten stated assumptions about the
+runtime, the core library and the platforms, an accepted program produces the same observable
+trace under value semantics and under in-place semantics. We give the theorem, the key lemmas and
+proof sketches; the sketch has not been independently reviewed, and we list the places we
+consider weakest, together with the counterexamples an adversarial reading found in an earlier
+draft.
+\item A treatment of sixteen hard cases (Chapter~\ref{sec:hard}), including closures called many
+times, nested containers (with an \emph{exclusive-contents} flag for the case where two slots of a
+container may hold the same value), fibers and commands, the foreign-function boundary, and a
+hand-over protocol between a TEA (Elm Architecture) runtime and the program's \code{update}
+function.
+\item An error-message design (Chapter~\ref{sec:errors}) that names three program points, writes the
+fix, and tells \emph{real sharing} from \emph{a limit of the checker} by a derivation tag carried
+on every fact, together with a stability rule for the accepted set across compiler releases.
+\item An honest account of the trade-off (Chapter~\ref{sec:discussion})---the rule rejects correct
+programs to guarantee performance---ten candidate changes to the language and library, each with
+what it buys and what it costs (Chapter~\ref{sec:disc-options}), and an evaluation plan
+(Chapter~\ref{sec:evaluation}) that measures the rejection rate on real code in a report-only mode
+before the rule is adopted. \emph{No results of that evaluation exist yet}; we report none.
+\end{itemize}
+
+\section{How to read this thesis}
+
+Chapter~\ref{sec:background} introduces beni, its runtime and its compiler at the depth the
+argument needs, and states the question precisely. Chapter~\ref{sec:model} is the model,
+Chapter~\ref{sec:inference} the inference, Chapter~\ref{sec:soundness} the soundness argument,
+Chapter~\ref{sec:hard} the hard cases, Chapter~\ref{sec:errors} the error messages, and
+Chapter~\ref{sec:compiler} the integration with the rest of the compiler.
+Chapter~\ref{sec:discussion} states what the rule costs, Chapter~\ref{sec:disc-options} the
+language changes it invites, Chapter~\ref{sec:evaluation} the experiment to run before deciding,
+Chapter~\ref{sec:related} related work, and Chapter~\ref{sec:conclusion} the conclusions,
+recommendations and open questions. Appendix~\ref{app:examples} works four programs through the
+rules; Appendix~\ref{app:priorart} records, line of work by line of work, what the design takes from
+the prior art and what it declines.
+
+\section{Terms}
+\label{sec:intro-terms}
+
+The following terms are used throughout; others are defined where they first appear.
+
+\begin{description}[leftmargin=1.2em,font=\normalfont\bfseries]
+\item[Cell.] One JavaScript array that backs a \code{List} value. Two \code{List} values that are
+the same cell are \code{===}; editing a cell in place changes what every reference to it sees.
+\item[Holder.] Anything from which a cell can be reached and read later: a variable binding, a
+field of a record, an element of another list, a closure's captured variable, a fiber's saved
+locals, a command's thunk, the runtime's own state, a JavaScript file, a mutable cell.
+\item[Content holder, identity holder.] A content holder may read the cell's elements; an identity
+holder only ever asks \code{a === b} of it. Only content holders can observe an in-place edit;
+identity holders are a separate hazard (\S\ref{sec:bg-question}).
+\item[Dead.] A holder is dead at a point when no execution continuing from that point reads through
+it. A dead holder may exist; it just never looks.
+\item[Unique at a site.] A cell is unique at an update site when every holder of it is dead once the
+update's arguments have been evaluated---the operand's own binding included. This is the property
+the checker proves (\S\ref{sec:model-unique}). It is weaker than Clean's ``exactly one reference
+exists'', and it is what lets reads stand before writes.
+\item[Demand.] A function whose summary says it writes a parameter in place: \code{List.set},
+\code{List.push} and their kin in the core library. Nothing in user code is a demand; user code only
+inherits demands by calling them.
+\item[Summary.] What the checker infers per function and publishes in its interface: for each
+parameter, whether the function consumes it, shares it or only borrows it; for the result, which
+parameters it may alias; for each function-typed parameter, how often it is called and whether it
+escapes (\S\ref{sec:model-summary}).
+\item[False error.] A rejection of a program that would in fact have run correctly in place. Because
+the checker is sound and incomplete, every imprecision is a false error, never a wrong answer;
+Chapter~\ref{sec:errors} says how the message tells the two apart.
+\item[Value semantics, update semantics.] The meaning beni has today (every update builds a new list;
+the old one is untouched) and the meaning the checker licenses (an accepted update writes the cell).
+The soundness claim is that the two cannot be told apart (Chapter~\ref{sec:soundness}).
+\end{description}
