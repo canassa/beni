@@ -1,0 +1,105 @@
+\chapter{What the Rule Costs}
+\label{sec:discussion}
+
+beni's design follows a principle: \emph{guarantees, not restrictions}. The language keeps Elm's
+guarantees---no run-time exception, no silent wrong answer, exhaustive matches, managed effects---but a
+rule that does not buy such a guarantee does not belong in the language as an error: it becomes a
+warning, gets an escape hatch, or is dropped. A limit that bounds a real blow-up and can be lifted
+by an annotation is the model of a restriction done right. Every rule in this design is to be tested
+against that principle.
+
+This rule buys a \emph{performance} guarantee---every list write is $O(1)$, or the $O(n)$ a
+hand-written program also pays; there is no hidden copy, no trie, no reference count, and a smaller
+runtime---at the price of rejecting programs that are \emph{correct} under value semantics. The design
+choice made here is that the error is wanted. This chapter states its price without softening it.
+
+\section{Programs that are rejected}
+\label{sec:disc-rejected}
+
+Every one of the following is a correct beni program today.
+\begin{enumerate}
+\item Keeping an old version: an undo history, a snapshot for a diff, a ``previous'' field in the model,
+a test that holds its input and compares it with the output (\S\ref{sec:hard-undo}).
+\item A command, fiber, subscription or stored closure that captured a list which a later message edits
+(\S\ref{sec:hard-fibers})---including the beginner's \code{Cmd.perform (λsend → send (Saved model.todos))}.
+\item A closure that edits a captured list and is passed to \code{map}, \code{filter}, \code{sortBy} or any
+other $\mathit{many}$ position (\S\ref{sec:hard-closures}).
+\item A list read out of a container that is still live: a dictionary lookup followed by a push, or a
+push on an element of a list of lists while the outer list lives (\S\ref{sec:hard-containers}).
+\item A list from JavaScript, a \code{Ref}, a \code{Queue}, or a \code{foreign} without a summary
+(\S\ref{sec:hard-foreign}, \S\ref{sec:hard-ref}): a \emph{limit}, not sharing, and the message says so.
+\item Anything the checker's joins or path cut cannot follow (\S\ref{sec:hard-branches}; a model nested
+more than $k$ steps deep): limits.
+\end{enumerate}
+The fix is one call, \code{List.copy}, in every case, and the message writes it; as Henriksen puts it
+for Futhark, ``an alias-related type error can always be fixed by copying''
+\citep{henriksen2022uniqueness}. What the fix costs is a copy where the program meant to share. For the
+first case that is the program's intended semantics made explicit; for the last two it is a copy the
+programmer pays for the checker's blindness.
+
+\section{What it costs the representation}
+
+The trie's reason to exist is gone, and so is its persistence: a program that wants versions pays
+$O(n)$ per version, explicitly. Prepending onto a long unique list is \code{unshift}, $O(n)$, so an
+Elm-style prepend accumulator is quadratic again, unless the backend's rewrite of building loops
+(\S\ref{sec:bg-lists}) catches it; that rewrite catches a tail-recursive accumulator but not a
+\code{foldr} lambda. The evaluation measures how much code prepends outside the rewrite
+(\S\ref{sec:evaluation}), and change~8 of Chapter~\ref{sec:disc-options} is the remedy if it is much.
+
+\section{What it costs the API}
+
+A public function's summary is part of its contract. Editing a body can break a caller in another
+module with an ownership error that the caller's author did not write---the usual objection to
+inferring signatures, that changing the body of a function would change its signature. The interface
+firewall makes this visible, not painless.
+
+\section{What it costs learners}
+
+The error will fire first in \code{update}. Crichton and Krishnamurthi found the chapter on ownership
+to be ``a significant drop-off point'' for readers of the Rust book \citep[\S3.1]{crichton2024profiling},
+and learners who can say why a program was rejected fix it less than half the time
+\citep{crichton2023grounded}. The message design of Chapter~\ref{sec:errors} is the mitigation; it is
+not a guarantee.
+
+\section{What two real applications say}
+\label{sec:disc-apps}
+
+We examined two applications written in beni: a TodoMVC implementation (in four builds) and an
+implementation of Conduit, the RealWorld example application. By our count neither calls \code{set},
+\code{push}, \code{update}, \code{swap}, \code{pop}, \code{insertAt} or \code{removeAt}; they edit lists
+with \code{List.map}, \code{List.filter} and \code{++}. Under the nine-writer demand set, their only
+demands are their list concatenations. TodoMVC has one per build, \code{model.todos ++ [ new ]}, where
+the record built just before it holds the old array at \code{.todos} until a helper replaces that
+field: accepted. Conduit has sixteen. Seven have a model field on the left
+(\code{\{ model | errors = model.errors ++ Api.errorMessages error \}}) and are accepted by the same
+argument; the other nine have a list literal, or a list built earlier in the same function, on the
+left. The core library has seven calls of \code{List.push}, every one an accumulator in a fold or a
+loop: in combining and partitioning results, in listing a dictionary's keys, values and pairs, and in
+a retry schedule. The compiler's browser test corpus has about fifty demand sites, written to exercise
+the direct platform's edit scripts.
+
+So the rule as stated changes nothing in these two applications. The in-place writes they would
+benefit from are their \code{List.map model.todos (λt → …)} and \code{List.filter} calls, which are not
+demands unless the demand set is widened (\S\ref{sec:disc-options}, change~1). If it is, TodoMVC's toggle
+becomes \code{a[i] = f(a[i])} over a unique \code{todos} (Appendix~\ref{app:examples}), and its delete
+compacts in place. But the same widened rule also rejects \code{List.map} over a list the program
+keeps, and TodoMVC's view does keep one: its filtered list,
+\code{<For each=\{List.filter model.todos (visible model.filter \_)\}>}, is a derived value recomputed
+while the page holds the model (\S\ref{sec:hard-tea}). The widening therefore cannot be one
+\code{filter}: the rebuild in \code{update} writes in place, the same spelling in a derived value must
+build fresh, and that is either a static split by position or two functions.
+
+\section{Escape hatches}
+\label{sec:disc-hatches}
+
+\code{List.copy}, always. A persistent-vector library written in beni for programs that want versions,
+not a representation of \code{List}. And a \emph{warning mode}---a flag such as
+\code{--ownership=warn}---that keeps the persistent representation and copies where the checker would
+reject, printing the same message as a warning. That is the principle's ``make it a warning'' route, and
+it is the form every language with a run-time fallback ships in some way: Lean offers
+\code{dbgTraceIfShared}, which prints a message ``if the argument's reference count is greater than
+one'' \citep{lean2025rc}, and Koka's \code{fip} check reports where a function is not fully in place
+\citep{lorenzen2023fp2}. But it gives up the one thing the rule is for: an accepted program's cost
+would again depend on whether its author read a warning. We do not propose it as the end state; we
+propose measuring first (Chapter~\ref{sec:evaluation}) and deciding between error and warning on the
+numbers.

@@ -1,0 +1,192 @@
+\chapter{Candidate Changes to the Language and Library}
+\label{sec:disc-options}
+
+beni's specification can change where the checker needs it. Each change below says why it is
+proposed, what precision it buys, what it costs developers, and how it weighs against the principle of
+Chapter~\ref{sec:discussion}, that a restriction must buy a guarantee. None is required for soundness
+except where stated; each is a trade.
+
+\section*{Change 1: widen the demand set to the same-shape rebuilds}
+\addcontentsline{toc}{section}{Change 1: widen the demand set to the same-shape rebuilds}
+
+Make \code{map}, \code{indexedMap}, \code{filter}, \code{filterMap}, \code{reverse}, \code{sort},
+\code{sortBy}, \code{sortWith}, \code{take} and \code{slice} consuming writers: \code{map} becomes
+\code{a[i] = f(a[i])}, \code{filter} compacts in place, \code{sort} is \code{a.sort(cmp)} (stable in every
+current engine), \code{take n} is \code{a.length = n}.
+
+\emph{Reason.} Real programs edit lists this way, not with \code{set} and \code{push}
+(\S\ref{sec:disc-apps}): without the change the rule changes nothing in TodoMVC or Conduit, and nested
+edits through \code{map} are rejected (\S\ref{sec:hard-containers}).
+
+\emph{Buys.} In-place toggling, deletion and clearing of completed items in TodoMVC; unique elements
+inside \code{map}'s and \code{update}'s callbacks where the contents are exclusive
+(\S\ref{sec:model-excl}); and the trie's last reason to exist gone.
+
+\emph{Costs.} \code{List.map xs f} where \code{xs} is read later becomes an error. The identity promise
+that \code{map} returns its input itself when every result is \code{===} must go for \code{map}: it would
+be true by construction, since the array is the input, but the renderer's obligation A4 widens, because
+a list rendered from a mapped list keeps its identity after an edit, so the renderer must compare items,
+which the direct platform already does.
+
+\emph{The wall.} The same \code{List.filter model.todos …} appears in \code{view}, where the direct
+platform compiles it into a derived value recomputed while the page holds the model, and where the
+development verification step re-evaluates it (\S\ref{sec:hard-tea}); there it cannot be a demand. So
+the change is either \emph{two functions}---a fresh \code{List.map} and an in-place one, the code
+duplication FP\textsuperscript{2} identifies as the cost of static uniqueness typing, ``where a single
+function can have multiple different implementations'' \citep[\S1.4.1]{lorenzen2023fp2}---or \emph{one
+spelling whose meaning is decided by position}: a demand in an \code{update} arm, a fresh build in
+\code{view} or a derived value. The second is a static rule the programmer can read, though not ``one
+\code{map}''. Neither is a silent fallback; the second is the smaller surface.
+
+\emph{Against the principle.} It rejects more correct programs (every read after a \code{map} in
+\code{update}) to buy a cost guarantee on the most common list operations. We would adopt it only with
+the evaluation's numbers for the widened set in hand, since this is where most false errors would come
+from, and only in the by-position form.
+
+\section*{Change 2: drop the identity promises that alias}
+\addcontentsline{toc}{section}{Change 2: drop the identity promises that alias}
+
+beni's library currently promises that \code{filter}, \code{map}, \code{slice}, \code{take},
+\code{xs ++ []}, \code{[] ++ ys} and a \code{concat} with one non-empty list return an input itself in
+some cases (\S\ref{sec:bg-lists}). Under the rule a result that \emph{may} be the input names it in
+$\mathit{res}$, so the input must be unique at any later write of the result.
+
+\emph{Reason.} Otherwise \code{xs ▷ List.filter p ▷ List.push y} demands \code{xs} unique although
+\code{filter} usually returns a fresh array; and \code{[] ++ ys} returning \code{ys} would hand out
+\code{ys}'s cell from a consumed \code{append}, whose second argument is only borrowed.
+
+\emph{Buys.} Fresh results everywhere, so pipelines never demand their source.
+
+\emph{Costs.} The renderer's skip on \code{===} for a \code{filter} that kept everything is lost: one
+$O(n)$ comparison of items instead of one pointer test. The test that pins list identity changes its
+expected output.
+
+\emph{Against the principle.} No restriction either way; a representation choice. We propose
+dropping the promises for \code{filter}, \code{map}, \code{slice}, \code{take}, \code{[] ++ ys} and
+\code{concat}'s ``the one non-empty list itself''---they become always fresh, or in place under
+change~1---and keeping them for out-of-range \code{set}, \code{swap} and \code{removeAt}, which are no-ops
+on the unique array. The library's specification is itself inconsistent about \code{filter}'s identity
+today, in one place promising the input itself when every element is kept and in another a new list;
+it must be settled before \code{filter}'s $\mathit{res}$ can be declared.
+
+\section*{Change 3: add \code{List.copy}}
+\addcontentsline{toc}{section}{Change 3: add List.copy}
+
+\code{List.copy : List a → List a}: new, shallow, fresh.
+
+\emph{Reason.} It is the explicit escape hatch and the mechanical fix that every message writes.
+
+\emph{Costs.} None. A copy of a list the checker can see is already unique could earn a warning,
+never an error.
+
+\emph{Against the principle.} An escape hatch is what the principle asks for.
+
+\section*{Change 4: \code{++} on lists consumes its left operand}
+\addcontentsline{toc}{section}{Change 4: ++ on lists consumes its left operand}
+
+\code{xs ++ ys} on lists lowers to \code{List.append}, which under the rule pushes each element of
+\code{ys} onto \code{xs}: \code{xs} consumed, \code{ys} borrowed.
+
+\emph{Reason.} Consistency with \code{[ …xs, …ys ]}.
+
+\emph{Costs.} \code{xs ++ ys} with \code{xs} read later becomes an error. The generic \code{++} on other
+appendable types stays a copy. TodoMVC's \code{model.todos ++ [ new ]} becomes a push.
+
+\emph{Against the principle.} The same shape as change~1, smaller. Proposed together with change~1.
+
+\section*{Change 5: ownership words on \code{foreign} declarations, and optionally on public annotations}
+\addcontentsline{toc}{section}{Change 5: ownership words on foreign declarations and public annotations}
+
+A \code{foreign} parameter may say \code{consumed}, \code{borrowed} or \code{shared}; a result
+\code{fresh} or ``is parameter $i$''. A public beni declaration \emph{may} say the same in its
+annotation, and when it does, the inferred summary must be at most what is written: an annotation can
+only claim \emph{more} ownership of an argument than the body takes, never less. A stated borrowed
+where the body consumes is an error at the declaration, while a stated consumed where the body borrows
+is accepted and freezes the interface at consumed.
+
+\emph{Reason.} A \code{foreign} has no body, and platform contracts need the words (A2, A6). The core
+library's list writers are beni over \code{Js}, whose bodies cannot show what they promise
+(\S\ref{sec:model-demands}), so \emph{the core library and the platforms may assert a summary that the
+body does not prove}---trusted, like the effect rung---while every other package may only
+\emph{narrow} an inferred one. For public beni code the annotation answers interface churn: it makes
+the summary a declared contract, so a body edit cannot change it, and annotated declarations were the
+ones whose interfaces never changed in our churn measurements (\S\ref{sec:bg-modules}). At Jane Street,
+OxCaml interface files carried 27\,382 locality annotations, because ``the implementations can
+generally infer locality, whereas interfaces must write it down explicitly''
+\citep[\S7]{lorenzen2024oxidizing}. The vocabulary must also reach a function type inside a platform's
+record: the field through which a TEA platform receives the program's \code{update}, already marked
+\code{sync} there, is where \Obl{P1}'s ``the model is supplied owned'' is written.
+
+\emph{Buys.} Stable interfaces for library authors who want them, and the pessimistic default for
+platform \code{foreign}s that say nothing.
+
+\emph{Costs.} A vocabulary users may write but never must. Inference is complete without it, so
+application code carries no annotations.
+
+\emph{Against the principle.} An opt-in, not a restriction. Required for \code{foreign} (it is needed for
+soundness at the boundary anyway); optional for public declarations.
+
+\section*{Change 6: closures that consume a capture are \code{once}}
+\addcontentsline{toc}{section}{Change 6: closures that consume a capture are once}
+
+This is already a consequence of the rules (\S\ref{sec:hard-closures}), listed because it is visible in
+the language: \code{List.map xs (λx → List.push acc x)} is an error whose fix is a fold.
+
+\emph{Buys.} Soundness: two calls would write one array.
+
+\emph{Costs.} A shape some people write; the message gives the fold.
+
+\emph{Against the principle.} It buys a correctness guarantee---no observable write---so it stays an
+error.
+
+\section*{Change 7: a persistent vector as a library}
+\addcontentsline{toc}{section}{Change 7: a persistent vector as a library}
+
+A core module---a persistent vector---holding the current trie, written in beni with no in-place
+writes, for programs that keep versions.
+
+\emph{Reason.} The trie's users---undo, time travel, shared tails---lose their $O(\log n)$ versions
+when \code{List} stops being persistent.
+
+\emph{Costs.} A second sequence type in the library, where the language deliberately has one; as a
+library module it has the status of a dictionary, not of \code{List}.
+
+\emph{Against the principle.} A capability filled inside the library rather than an instruction to
+work around its absence.
+
+\section*{Change 8: headroom for prepend, or none}
+\addcontentsline{toc}{section}{Change 8: headroom for prepend, or none}
+
+\code{[ x, …xs ]} on a unique plain array is \code{unshift}, $O(n)$. A unique view with headroom
+($o > 0$) could take an $O(1)$ prepend by writing $b[o - 1]$, and \code{cons} on a plain array could
+allocate headroom on its first conversion.
+
+\emph{Reason.} Elm-style prepend accumulators that the building-loop rewrite does not catch.
+
+\emph{Buys.} Linear prepend loops without the rewrite.
+
+\emph{Costs.} A fourth list form, or a growth policy in the list runtime; to be measured, not assumed.
+
+\emph{Against the principle.} A cost, not a guarantee; to be decided on the evaluation's count of
+prepends outside building loops.
+
+\section*{Change 9: sending consumes its message}
+\addcontentsline{toc}{section}{Change 9: sending consumes its message}
+
+A fiber that sends a list and reads it afterwards is an error at the sender (\Obl{P6}).
+
+\emph{Buys.} Unique payloads at the arm.
+
+\emph{Costs.} \code{send (Got rows)} followed by a use of \code{rows} must become
+\code{send (Got (List.copy rows))}.
+
+\emph{Against the principle.} The alternative is every payload shared at every arm; this is the cheaper
+default.
+
+\section*{Change 10: write the dependence on evaluation order down}
+\addcontentsline{toc}{section}{Change 10: write the dependence on evaluation order down}
+
+The rule depends on the language's evaluation order being the order the emitted code runs in. It
+already is, and A5 keeps it so; the language definition should say that in-place writes are calls for
+the purpose of ordering, and narrow its statement that call-free evaluations commute to reads that do
+not cross a demand on the cell they read.

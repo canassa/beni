@@ -2,11 +2,11 @@ Pure functional languages that compile to JavaScript must choose how to represen
 sequences. A persistent structure makes every update cheap and every version safe to keep, but it
 costs runtime code, indirection on every read, and a representation that JavaScript cannot consume
 directly. A plain JavaScript array written in place is what a hand-written program uses, but it is
-correct only when no one can observe the old version. We propose an \emph{inferred ownership
-checker} for beni, a strict, pure, Elm-like language for the browser, under which editing a list
-while anything else still holds the old version is a \emph{compile-time error}, with no ownership
-annotations in user code. Every accepted update then writes its array in place, in development and
-release builds alike, with no reference counts and no silent copy.
+correct only when no one can observe the old version. This thesis designs an \emph{inferred
+ownership checker} for beni, a strict, pure, Elm-like language for the browser, under which editing
+a list while anything else still holds the old version is a \emph{compile-time error}, with no
+ownership annotations in user code. Every accepted update then writes its array in place, in
+development and release builds alike, with no reference counts and no silent copy.
 
 The property checked is uniqueness \emph{at the update site}, decided by liveness: every other
 holder of the array must be dead once the update's arguments have been evaluated. Reads that
@@ -17,14 +17,17 @@ type checker already infers per-function effect facts and publishes them in modu
 analysis is a directional, flow-sensitive, field-sensitive abstraction of which arrays each value
 may hold, a per-path liveness pass, and four side conditions at each update. Function summaries,
 polymorphic over the ownership behaviour of function-typed parameters, are solved for recursive
-groups by an optimistic fixpoint and published in interfaces.
+groups by an optimistic fixpoint and published in interfaces. An \emph{exclusive-contents} flag
+extends the rule to edits inside the elements of a container.
 
 We present the model, the inference algorithm and its complexity, a sketch of a soundness argument
 (the value semantics and the in-place semantics produce the same observable trace) under ten
-explicitly stated assumptions, a treatment of the hard cases---closures, pipelines, generic code,
-nested containers, recursion, effects and fibers, the foreign-function boundary, and the hand-over
-of the model between a UI runtime and its update function---and an error-message design that
-separates real sharing from the checker's own limits. The design rejects some correct programs in
-exchange for a performance guarantee; we state that cost plainly and propose a report-mode
-experiment to measure the rejection rate on real code before the rule is adopted. No results of
-that experiment exist yet, and the proof sketch has not been independently reviewed.
+explicitly stated assumptions, a treatment of sixteen hard cases---closures, pipelines, generic
+code, nested containers, recursion, effects and fibers, the foreign-function boundary, and the
+hand-over of the model between a UI runtime and its update function among them---an
+error-message design that separates real sharing from the checker's own limits, the changes to
+the language and its library that the rule invites, and four programs worked through the rules.
+The design rejects some correct programs in exchange for a performance guarantee; we state that
+cost plainly and propose a report-mode experiment to measure the rejection rate on real code
+before the rule is adopted. No results of that experiment exist yet, and the proof sketch has not
+been independently reviewed.

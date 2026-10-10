@@ -1,14 +1,14 @@
-\section{Soundness}
+\chapter{Soundness}
 \label{sec:soundness}
 
-This section states the guarantee and sketches an argument for it. The argument has the shape of
+This chapter states the guarantee and sketches an argument for it. The argument has the shape of
 standard proofs for in-place update \citep{aspinall2008usage,bernardy2018linear}, and its lemmas are
 the usual ones for a flow analysis; but it is a sketch over an informal semantics of a real
 language, it has not been mechanised or independently reviewed, and it rests on ten assumptions about
 code the checker does not see (\S\ref{sec:soundness-assumptions}). We present it as the argument we
 believe, together with the places where we think it is weakest.
 
-\subsection{The claim}
+\section{The claim}
 
 \begin{theorem}[The two semantics coincide]
 \label{thm:main}
@@ -29,7 +29,7 @@ in-place mutation is observationally equivalent to the pure semantics''
 \citep[Thm.~3.9]{bernardy2018linear}. We state it over traces rather than final values because beni's
 observations are effects at the JavaScript boundary.
 
-\subsection{Instrumented semantics: versions and stale references}
+\section{Instrumented semantics: versions and stale references}
 
 We add ghost state to $S_u$. Every cell $c$ carries a \emph{version} $\mathit{ver}(c) \in \mathbb{N}$,
 incremented by each in-place write. Every reference to $c$, wherever it is held---a local, a field, an
@@ -60,7 +60,7 @@ current references, so it agrees.
 The theorem therefore reduces to: \emph{in an accepted program, no stale reference is ever
 dereferenced}.
 
-\subsection{Lemmas}
+\section{Lemmas}
 
 \begin{lemma}[Flow facts over-approximate the heap]
 \label{lem:flow}
@@ -71,7 +71,7 @@ a path, there is a holder $(x, q)$ with $c \in A(x)@q$, or $\top \in A(x)@q$, or
 By induction over the transfer rules of Table~\ref{tab:transfer}: each rule's result contains every
 cell the construct can produce from its parts, and a call's result is bounded by the callee's
 $\mathit{res}$ (Lemma~\ref{lem:summary}). The path cut yields $\top$, and every construct without a
-summary yields $\top$ and escape.
+summary yields $\top$ and escape. This is the standard over-approximation lemma of a flow analysis, and it has the same shape as the write-set analysis's own statement that each of its rules over-approximates.
 \end{proof}
 
 \begin{lemma}[Exclusive contents]
@@ -151,55 +151,70 @@ returns is dead, hence never dereferenced, and the returned reference is current
 steps of the execution gives the hypothesis of Lemma~\ref{lem:stale}.
 \end{proof}
 
-\subsection{Assumptions}
+\section{Assumptions}
 \label{sec:soundness-assumptions}
 
 The theorem is conditional on the following assumptions about code the checker does not analyse. A
 false assumption produces a wrong answer, not a false error, which is why we list them here rather
-than among the costs of \S\ref{sec:discussion}. Most are contracts that exist in some form in beni
-today; A3 is new, and A2, A5 and A6 widen existing contracts.
+than among the costs of Chapter~\ref{sec:discussion}. Most are contracts that exist in some form in
+beni today; A3 is new, and A2, A5 and A6 widen existing contracts. After each we say where it is
+kept, or must be.
 
 \begin{description}[leftmargin=2.2em,style=sameline,font=\normalfont\bfseries]
 \item[A1] \emph{Only licensed writes.} The list runtime writes an array only inside a primitive
 declared consumed. No other JavaScript---emitted code, sibling files, platform runtimes---writes a list
 it did not just create and still exclusively hold. The array builder used by the backend stays linear.
+\emph{Kept by} the list runtime's existing invariant that it writes only arrays it has just made,
+restated: with the trie gone, the exceptions for claimed head and tail slots disappear.
 \item[A2] \emph{Foreign summaries are true.} A borrowed parameter is not kept past the call; a fresh
-result is an array nothing else holds; a consumed parameter is written only in the declared way. The
-existing promise that a sibling ``never keeps a list it was given'' that it will later write becomes:
-a sibling never keeps a list unless its declaration says shared (\S\ref{sec:hard-foreign}).
+result is an array nothing else holds; a consumed parameter is written only in the declared way.
+\emph{Kept by} the boundary contract (\S\ref{sec:bg-boundary}), widened: the existing promise that a
+sibling never writes a list it was given and never keeps one it will later write becomes: a sibling
+never keeps a list unless its declaration says shared (\S\ref{sec:hard-foreign}).
 \item[A3] \emph{The runtime hands the model over.} The platform's entry into \code{update} declares
 the model consumed and keeps no content holder of any list of the old model after the arm runs;
 anything it needs from the old model it reads before the arm, into locals the checker sees, or as
-scalars (\S\ref{sec:hard-tea}).
+scalars. \emph{Kept by} the direct platform's design, made precise as the six obligations of
+\S\ref{sec:hard-tea}, which must be written into that platform's specification.
 \item[A4] \emph{Identity holders never conclude ``unchanged'' from identity on a written list.} A
 renderer that compares a list by \code{===} to skip work must not do so for a list that may have been
 written in place; per-row comparisons must be on the row items, and conditional updates must be
-guarded by their own conditions, never by a list's identity.
+guarded by their own conditions, never by a list's identity. \emph{Kept by} the direct platform's
+rule that it never decides ``unchanged'' from the identity of an object on an in-place-written path,
+and by its edit scripts, each guarded by its own tag.
 \item[A5] \emph{Evaluation order is as specified, and a demand is a barrier to the optimiser.} No call
 is moved across another or duplicated, every impure call is kept, and no read of a cell---its length,
 an element, an offset into a view, a single-use binding folded into its use---is moved across a demand
 on that cell. beni's release optimiser today folds a single-use pure binding into its use across other
-pure bindings, on the ground that evaluations that make no call cannot be observed in either order:
+pure bindings, on the ground that evaluations that make no call cannot be observed in either order
+(\S\ref{sec:bg-release}):
 \code{n = List.length xs; ys = List.push xs 1; h ys n} would become
 \code{h(push(xs, 1), xs.length)}. That ground holds only while every list is immutable; the demand
-summaries must become an input to the optimiser, as the impure bit already is. \emph{This is a change
-to the language definition and the optimiser, not a property of them today.}
+summaries must become an input to the optimiser, as the impure bit already is, and the language
+definition's statement that call-free evaluations commute must be narrowed to reads that do not cross
+a demand on the cell they read. \emph{This is a change to the language definition and the optimiser,
+not a property of them today.}
 \item[A6] \emph{Escapes are total, in both directions.} Every way a value can outlive a frame---a
 command or subscription thunk, a spawned fiber, a \code{Ref}, a \code{Queue}, \code{Js.from}, a sibling
 parameter not declared borrowed, a stored closure---is a summary that marks the value escaped; and every
 value the runtime retains and may hand out again---a fiber's outcome at \code{Task.join}, a bracketed
 resource at its release, the results of taking from a queue or awaiting a deferred value---is $\top$ on
-every path.
+every path. \emph{Kept by} the foreign declarations and asserted summaries of the core \code{Task}
+module and of the platforms.
 \item[A7] \emph{Continuations are one-shot}, and a cancelled fiber never resumes the rest of its body.
+\emph{Kept by} the fiber runtime's existing contract (\S\ref{sec:bg-effects}).
 \item[A8] \emph{Asserted core summaries are true}, each pinned by a test program that runs the
-emitted JavaScript.
+emitted JavaScript, the discipline the write-set analysis already follows for the facts it assumes of
+the core library.
 \item[A9] \emph{A defect reads nothing of the program's heap} after it fires, except through escaped
-holders. (A development crash screen that printed the model would read a half-updated record.)
+holders. (A development crash screen that printed the model would read a half-updated record.) To be
+checked for the development crash screen.
 \item[A10] \emph{The checker's solved types are the backend's types}: a path is list-typed in the
-analysis if and only if the emitted value at that path is an array.
+analysis if and only if the emitted value at that path is an array. Mode crossing is computed from the
+same types.
 \end{description}
 
-\subsection{What the sketch does not cover}
+\section{What the sketch does not cover}
 \label{sec:soundness-gaps}
 
 \begin{itemize}
@@ -221,7 +236,7 @@ whole-program entry fixpoint of \S\ref{sec:hard-tea} stands in for the caller, a
 would direct a reviewer first, together with A3 and A4.
 \end{itemize}
 
-\subsection{Counterexamples to an earlier draft}
+\section{Counterexamples to an earlier draft}
 \label{sec:soundness-counterexamples}
 
 An adversarial reading of an earlier version of these rules found programs that the rules accepted

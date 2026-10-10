@@ -1,17 +1,17 @@
-\section{Error Reporting}
+\chapter{Error Reporting}
 \label{sec:errors}
 
 A rule that rejects correct programs lives or dies by its messages. beni inherits Elm's standard for
-them, and this section designs the ownership error to that standard.
+them, and this chapter designs the ownership error to that standard.
 
-\subsection{What a message must do}
+\section{What a message must do}
 \label{sec:errors-principles}
 
 A message names \emph{three places}, states \emph{a consequence}, writes \emph{a fix}, and gives
 \emph{a verdict} on whether the rejection is real sharing or a limit of the checker. The three places
 are Rust's: the borrow, the invalidating action, and the later use, with the blame on the action---``the
 error, conceptually, is to perform an invalidating action in between two uses of the reference''
-\citep{rfc2094}. Futhark's error index offers a copy as the fix for its consumption errors, and notes
+\citep{rfc2094}. Futhark names the two sites, and its error index offers a copy as the fix on every one of its consumption errors, and notes
 when a copy ``subverts the purpose of using in-place updates in the first place''
 \citep{futhark2026errorindex}; its authors also learned that unnamed intermediate results must be
 described in terms the user can read, as in ``Consuming result of applying "iota" (at 2:23-28)''
@@ -27,7 +27,7 @@ problematic'' \citep[\S7.2]{marceau2011mind}; that is why the message blames non
 alone.
 
 Crichton, Gray and Krishnamurthi's study of Rust learners shapes the verdict line. Participants ``could
-usually predict why the borrow checker would reject a program'', but ``could only fix the program in
+usually predict why the borrow checker would reject a program'' (64--78\,\% of the time), but ``could only fix the program in
 46\,\% of cases \ldots\ and could only create a counterexample in 31\,\% of cases''; asked about one
 rejected program that was in fact safe, only 3 of 15 participants identified that it was
 \citep[\S2.4]{crichton2023grounded}. As Crichton put it earlier, a sound and incomplete analysis's
@@ -35,7 +35,7 @@ errors ``may arise from either ownership-unsound behavior or limitations of the 
 Understanding this distinction is essential for fixing ownership errors''
 \citep{crichton2020usability}. Every message therefore says which it is, and how the compiler knows.
 
-\subsection{Examples}
+\section{Examples}
 \label{sec:errors-examples}
 
 \paragraph{A later read (real sharing).}
@@ -134,17 +134,41 @@ does with the array it gave you. To be safe, copy it once where it arrives:
 14|     rows = List.copy (Js.to raw)
 \end{Verbatim}
 
-\subsection{The fixed shape}
+\section{The fixed shape}
+\label{sec:errors-shape}
 
-Every message has the same skeleton: a title; one sentence naming the primitive, the list and why that
-is a problem here; the kept place, the edit and the later use, in source order, labelled ``keeps'' or
-``holds'', ``changed in place here'', and ``read'' or ``called here, after the change''; one or two
-sentences on what the program would see if the change happened in place; the fix as a replacement line,
-with an alternative that avoids the copy where one exists; and the verdict line. The suggested copy is
-mechanically applicable in rustc's sense \citep{rustc2026diagnostics}: the compiler can insert
-\code{List.copy} at the kept place by itself.
+Every message has the same skeleton:
+\begin{Verbatim}
+<TITLE> ------------------------------------------------------------ <file>
 
-\subsection{Telling a limit from real sharing}
+<one sentence: what primitive, what list, why that is a problem here>
+
+<the kept place, in source order, with a label beginning "… keeps"/"… holds">
+<the edit, with the label "changed in place here">
+<the later use, with the label "… read/called here, after the change">
+
+<one or two sentences: what the program would see if the change happened in place>
+
+<the fix, machine-applicable, as a replacement line, "To … , copy it: …">
+<an alternative fix that avoids the copy, when there is one>
+
+<the verdict line: "This is sharing the checker can see: …" or "This is a limit
+ of the checker, not proof of sharing: …", naming the limit>
+\end{Verbatim}
+That is: a title; one sentence naming the primitive, the list and why that is a problem here; the kept
+place, the edit and the later use, in source order, labelled ``keeps'' or ``holds'', ``changed in place
+here'', and ``read'' or ``called here, after the change''; one or two sentences on what the program would
+see if the change happened in place; the fix as a replacement line, with an alternative that avoids the
+copy where one exists; and the verdict line. The suggested copy is mechanically applicable in rustc's
+sense \citep{rustc2026diagnostics}: the compiler can insert \code{List.copy} at the kept place by itself.
+The message does not say ``did you mean'', and it does not call the program ``illegal''.
+
+The design ships the fix and the verdict line, against one recorded dissent: Marceau, Fisler and
+Krishnamurthi's advice, from their study of novices, that error messages should not propose
+solutions \citep{marceau2011mind}. Hylo, Futhark, Rust and Swift all ship fixes, and an ownership
+error's fix is mechanical in a way that a type error's is not, which is why we follow them.
+
+\section{Telling a limit from real sharing}
 \label{sec:errors-tags}
 
 Every fact the checker derives carries a \emph{derivation tag}: \emph{exact} when it comes from
@@ -179,7 +203,7 @@ a rejection with no derivation at all is an internal compiler error, never a use
 of Swift's move-checker diagnostics that report ``a compiler bug'' when a use cannot be verified
 \citep{swift2026diagnosticssil}.
 
-\subsection{Stability}
+\section{Stability}
 \label{sec:errors-stability}
 
 \begin{quote}

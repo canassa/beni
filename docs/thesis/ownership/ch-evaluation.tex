@@ -1,0 +1,129 @@
+\chapter{Evaluation Plan}
+\label{sec:evaluation}
+
+The design's soundness can be argued at a desk; its value cannot. Whether the rule is worth adopting
+depends on how often it rejects code that people actually write, how many of those rejections are real
+sharing rather than limits of the checker, and whether the widened demand set is acceptable. We know of
+no published false-error rate for an inferred uniqueness checker in a functional language. This chapter
+describes the experiment we propose to run before deciding. \emph{It has not been run, and we report no
+results.}
+
+The experiment follows the path by which beni's write-set analysis was introduced
+(\S\ref{sec:bg-browser}): build the analysis, run it as a report over real programs, classify every
+rejection, and decide on the numbers. Following Wrenn and Krishnamurthi's view of errors as classifiers
+\citep[\S2]{wrenn2017classifiers}, the experiment measures the precision of the classifier the checker
+would be.
+
+\section{Report mode}
+\label{sec:eval-report}
+
+The analysis is built first as a pass that only reports. It runs during checking, prints a dump---for
+instance under \code{beni dump --stage=ownership}---and changes no emitted byte, so no test program's
+output or recorded hash moves; nothing reads the dump but people and tests. The dump prints, per module:
+\begin{Verbatim}
+summary <Decl>
+  param <i>.<path> <borrowed|shared|consumed> [reason <tag>]
+  result <path> {<param paths>|fresh}
+  fun <j> calls <0|1|many> escapes <no|yes>
+demand <Decl>:<inst> <primitive> operand <cells>
+  unique                                              -- accepted
+  shared <holder> kept-at <inst> used-at <inst> exact  -- real sharing
+  shared <holder> … approx <limit-tag>                 -- possible sharing (a limit)
+  unknown <limit-tag>                                  -- Known or Unescaped failed
+copy <Decl>:<inst> of-unique                           -- a copy of a list already unique
+prepend <Decl>:<inst> <in-building-loop|loose>
+cap <which> fired at <Decl>
+\end{Verbatim}
+The dump is deterministic (\S\ref{sec:inf-modular}), is compared byte for byte by the determinism test,
+and is itself tested against expected output for a set of small programs, one per transfer rule and per
+side condition, each written to fail before the rule exists.
+
+\section{Two demand sets}
+\label{sec:eval-demands}
+
+A hidden flag selects the demand set, so that one run reports both the rule as stated (the nine writers
+of \S\ref{sec:model-demands}) and the widened rule (change~1 of Chapter~\ref{sec:disc-options}: plus
+\code{map}, \code{indexedMap}, \code{filter}, \code{filterMap}, \code{reverse}, \code{sort}, \code{sortBy},
+\code{sortWith}, \code{take} and \code{slice}). Every count is reported for both.
+
+\section{Corpora and counts}
+\label{sec:eval-counts}
+
+The corpora are beni's core library; the compiler's test corpus (programs that run under Node,
+programs that run in a page, and the write-set analysis's own tests); the four TodoMVC builds; the
+Conduit application; and a table-rendering benchmark application with its parameter sweeps. TEA programs
+are analysed under the hand-over obligations of \S\ref{sec:hard-tea}, with the entry summary of the
+model computed by the entry fixpoint. For each corpus and in total we report:
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}X@{}}
+\toprule
+Count & Meaning \\
+\midrule
+demands & update sites, per demand set \\
+accepted & unique at the site \\
+rejected, exact & real sharing, by holder kind: a later local read, a closure, a command or fiber, a
+container, a payload, the view \\
+rejected, approximate & by limit tag: \code{foreign}/\code{Js}, \code{Ref}, path cut, join, pessimistic
+summary, $\mathit{calls} = \mathit{many}$, elements may share \\
+exclusive containers & container paths that carry $\excl$ at a destructive read, against those that do
+not, and what cleared the flag \\
+copies of unique lists & \code{List.copy} calls the checker would not have needed \\
+loose prepends & \code{[ x, …xs ]} sites outside a building loop (the $O(n)$ ones) \\
+summaries changed per edit & under the fixed set of edit classes already used to measure interface
+churn, applied to every public declaration of the core library, how many interfaces change \\
+check time & the pass's time beside checking, cold, optimised build, on a benchmark corpus and on
+Conduit, from the compiler's self-profiling events \\
+entry fixpoint time & the whole-program entry computation's time, beside the write-set analysis's \\
+widest $w$ & the largest number of tracked paths in any declaration \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Hand classification}
+\label{sec:eval-hand}
+
+Every exact rejection is read by a person and classified as \emph{intended sharing} (the program keeps
+a version on purpose: an undo, a snapshot), \emph{accidental sharing} (the program would have been wrong
+had the write been in place---the bug class the rule exists to catch), or \emph{avoidable} (a reordering
+or a fold would make the operand unique). Every approximate rejection is classified by whether a known
+extension---a discipline for mutable cells, a deeper path cut, a path-sensitive join, a summary on a
+platform \code{foreign}---would accept it. The model is the hand analysis in Cann, Feo and DeBoni's report
+on the Sisal compiler, which tabulates copy operations in five application programs before and after
+optimisation---293 before, none unconditional and 29 conditional after---and explains the remaining
+conditional copies in its prose by row sharing \citep{cann1990sisal}.
+
+\section{Decision criteria}
+\label{sec:eval-decisions}
+
+The numbers inform three decisions, in this order. First, the \emph{demand set}: under the rule as
+stated the two applications are untouched (\S\ref{sec:disc-apps}), and under the widened rule every list
+edit in them is a demand, so the rejection rate under the widened set decides whether widening is
+acceptable. Second, \emph{error or warning}, on the split between exact and approximate rejections: the
+soundness argument holds for both, and the choice is about the cost model and the principle of
+Chapter~\ref{sec:discussion}. Third, which precision extensions to build, on the frequency of each
+approximate tag---a path-sensitive join only if the join tag is frequent, a discipline for mutable
+cells only if the \code{Ref} tag is, a special case for a one-element \code{map} only if the
+$\mathit{calls} = \mathit{many}$ tag is.
+
+\section{What an implementation must provide}
+\label{sec:eval-brief}
+
+For the experiment to be run, an implementation of the report mode must provide: the dump format
+above; the demand-set flag; the hand-over entry assumption as a per-program fact, with the program's
+shape read from the write-set analysis; the derivation tags of \S\ref{sec:errors-tags}; one test program
+per transfer rule of Table~\ref{tab:transfer} and per summary rule of \S\ref{sec:inf-summarise}, written
+to fail before the rule exists; the determinism test's comparison of the dump; a profiling event for
+the pass; and the hand-classification sheet with its three columns. No emitted byte changes. The pass
+is to be specified as a normative part of the compiler's design before it is built; this thesis is the
+argument for that specification, not the specification itself.
+
+\section{Performance, afterwards}
+\label{sec:eval-perf}
+
+If the rule is adopted, a second experiment repeats the prototype study's benchmarks
+(\S\ref{sec:bg-measure}) with the trie removed and lists written in place---the static variant's
+numbers, without its fallback---together with page-size measurements and the direct platform's table
+benchmarks and their sweeps. The prototype study gives the expected shape: large gains when building in
+a fold and on steady grid ticks, gains hidden by the render walk on TEA table messages, and nothing for
+histories, which must copy. That expectation is to be measured, not assumed.
