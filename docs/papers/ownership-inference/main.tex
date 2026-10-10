@@ -1,0 +1,77 @@
+% Inferred ownership for in-place list updates in a pure language compiled to JavaScript.
+% Build: nix shell nixpkgs#tectonic -c tectonic -X compile main.tex
+\documentclass[10pt,a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{lmroman10}[Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic,SmallCapsFont=lmromancaps10-regular,Ligatures=TeX]
+% beni source uses Unicode notation (→ λ ▷ … ≠ ⊤ ×); DejaVu Sans Mono covers it.
+\setmonofont{DejaVu Sans Mono}[Scale=MatchLowercase]
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{booktabs,array,longtable,tabularx}
+\usepackage{xcolor}
+\usepackage{fvextra}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\emergencystretch}{3em}
+\setlist{itemsep=0.2em,topsep=0.3em,parsep=0.15em}
+
+\DeclareRobustCommand{\code}[1]{\texttt{\hyphenchar\font=-1 #1}}
+\newcommand{\rulename}[1]{\textsc{#1}}
+\newcommand{\Known}{\rulename{Known}}
+\newcommand{\Unescaped}{\rulename{Unescaped}}
+\newcommand{\Dead}{\rulename{Dead}}
+\newcommand{\Disjoint}{\rulename{Disjoint}}
+\newcommand{\cell}{\mathit{cell}}
+\newcommand{\fresh}{\mathsf{fresh}}
+\newcommand{\borrowed}{\mathsf{borrowed}}
+\newcommand{\shared}{\mathsf{shared}}
+\newcommand{\consumed}{\mathsf{consumed}}
+\newcommand{\live}{\mathit{live}}
+\newcommand{\site}{\mathit{site}}
+\newcommand{\excl}{\mathsf{excl}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{assumption}{Assumption}
+
+\fvset{fontsize=\small,breaklines=true,xleftmargin=1.5em,numbersep=6pt}
+
+\title{Edit in Place or Not at All:\\[0.3em]
+\large Inferred Ownership for Mutable Lists in a Pure Language Compiled to JavaScript}
+\author{The beni project}
+\date{10 October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\input{abstract}
+\end{abstract}
+
+\input{sec-intro}
+\input{sec-background}
+\input{sec-model}
+\input{sec-inference}
+\input{sec-soundness}
+\input{sec-hard}
+\input{sec-errors}
+\input{sec-compiler}
+\input{sec-discussion}
+\input{sec-evaluation}
+\input{sec-related}
+\input{sec-conclusion}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\appendix
+\input{app-examples}
+
+\end{document}

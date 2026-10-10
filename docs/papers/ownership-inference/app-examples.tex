@@ -1,0 +1,71 @@
+\section{Four Programs Through the Rules}
+\label{app:examples}
+
+\subsection{TodoMVC's toggle, under the widened demand set}
+
+\begin{Verbatim}
+Toggle id → changed model (List.map model.todos λt → if t.id == id then { t | completed = not t.completed } else t)
+changed model todos = { model | todos = todos }
+\end{Verbatim}
+At entry the model is consumed (hand-over), and \code{model.todos} is not escaped by any arm (entry
+fixpoint: no command captures it; the build that persists to storage encodes the list before the command
+is made). With \code{map} a writer, the call is a demand on the cell at $(\mathit{model}, .\mathit{todos})$,
+whose only holder is $(\mathit{model}, .\mathit{todos})$. The lambda captures \code{id}, a scalar that
+crosses; it consumes nothing, so it is not $\mathit{once}$ and may be called many times. After the
+\code{map}, \code{model} is passed to \code{changed}, whose summary reads no path that meets
+$.\mathit{todos}$, because its record update replaces that field; so the holder is dead at the demand.
+Accepted: \code{a[i] = f(a[i])}. Under the nine-writer demand set, \code{map} is not a demand and nothing
+changes.
+
+\subsection{A table application's row swap}
+
+\begin{Verbatim}
+SwapRows → { model | rows = List.swap model.rows 1 998 }
+\end{Verbatim}
+\code{swap} is a writer. The holders of $(\mathit{model}, .\mathit{rows})$'s cell are that path itself and
+the runtime's instance array, which holds items for identity comparison only; no arm captures \code{rows}.
+Accepted: two assignments on the plain array. The platform's edit script compares row items, never the
+list's identity (A4). In our measurements of the direct platform, swapping two rows of a 30\,000-row
+table took 0.127\,ms against 0.113\,ms for a hand-written vanilla JavaScript page (1.12 times); the DOM
+work was the same two \code{insertBefore} calls, and the remaining gap was the immutable model's work: the persistent
+\code{List.swap}---two \code{set}s, each a trie path copy at that size---and the spread of the model
+record. In place, the swap is two array writes.
+
+\subsection{A histogram by fold}
+
+\begin{Verbatim}
+hist = List.foldl samples (List.repeat 0 1000) (λs acc → List.update acc (bucket s) (λn → n + 1))
+\end{Verbatim}
+\code{repeat}'s result is fresh. \code{foldl}'s class for its callback supplies a borrowed element and an
+owned accumulator, needs an owned result, calls it many times, and does not let it escape. In the lambda,
+\code{List.update acc …} is a demand on the parameter \code{acc} ($\mathit{use} = \consumed$), and the
+result is $\{\pi_2\}$. The lambda consumes a \emph{parameter}, not a capture, so it is not $\mathit{once}$.
+The edge ``the lambda needs an owned accumulator, so \code{foldl} must supply one'' holds. Accepted: the
+accumulator is written in place at every step, which is the building pattern our prototype study measured
+at 0.14--0.47 times the persistent representation's time.
+
+\subsection{Grouping into a dictionary}
+\label{app:groupby}
+
+\begin{Verbatim}
+groupBy xs key =
+    List.foldl xs Dict.empty λx d →
+        group = Maybe.withDefault (Dict.get d (key x)) []
+        Dict.insert d (key x) (List.push group x)
+\end{Verbatim}
+\code{Dict.get}'s summary says its result aliases a value inside its dictionary, so \code{group} holds a
+cell that \code{d} also holds through the tree. At the demand \code{List.push group x}, the holders of the
+cell are \code{group} (the operand) and $(d, \mathit{contents})$, and \code{d} is live afterwards, because
+it is passed to \code{Dict.insert}. The program is \emph{rejected as real sharing}, with a message that says
+\code{d} still holds the list and is read by \code{Dict.insert} on the next line, and offers to update the
+group where it is:
+\begin{Verbatim}
+Dict.update d (key x) (λg → Just (List.push (Maybe.withDefault g []) x))
+\end{Verbatim}
+\code{Dict.update}'s callback is supplied an owned value by an asserted row of the core library, since its
+body holds the old value at a key the path domain cannot name. The rewritten program is accepted
+\emph{provided \code{d}'s values are exclusive}, and here they are, from \code{Dict.empty} on: every value
+stored is either \code{[ x ]} pushed onto a fresh \code{[]} or the pushed result of a destructive read, and
+no lookup leaves a live alias. This is the program whose silently quadratic behaviour under reference
+counting motivated Huisinga's analysis for Lean \citep{huisinga2023lean}; here it is a message with the fix
+on it, and the fixed form is checked statically rather than counted at run time.

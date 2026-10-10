@@ -1,0 +1,200 @@
+\section{Error Reporting}
+\label{sec:errors}
+
+A rule that rejects correct programs lives or dies by its messages. beni inherits Elm's standard for
+them, and this section designs the ownership error to that standard.
+
+\subsection{What a message must do}
+\label{sec:errors-principles}
+
+A message names \emph{three places}, states \emph{a consequence}, writes \emph{a fix}, and gives
+\emph{a verdict} on whether the rejection is real sharing or a limit of the checker. The three places
+are Rust's: the borrow, the invalidating action, and the later use, with the blame on the action---``the
+error, conceptually, is to perform an invalidating action in between two uses of the reference''
+\citep{rfc2094}. Futhark's error index offers a copy as the fix for its consumption errors, and notes
+when a copy ``subverts the purpose of using in-place updates in the first place''
+\citep{futhark2026errorindex}; its authors also learned that unnamed intermediate results must be
+described in terms the user can read, as in ``Consuming result of applying "iota" (at 2:23-28)''
+\citep{henriksen2021anatomy}. Hylo's compiler ``will offer to insert these copies for you''
+\citep{hylo2024bindings}. Czaplicki's rules for Elm apply unchanged: the error shows the code exactly as
+the programmer wrote it, and every message has a useful hint \citep{czaplicki2015errors}. Wrenn and
+Krishnamurthi's view of an error message as a classifier of code into ``look here'' and ``don't look
+there'' \citep[\S2]{wrenn2017classifiers}, with a term relevant when an edit there could resolve the
+error, fixes the highlight set: the kept place, the edit, the later use, nothing else. Marceau, Fisler
+and Krishnamurthi warn that highlighting one side of an inconsistency has ``an over-focusing effect''
+and that ``expected \ldots\ found'' wording ``suggests that the definition is fine and the use
+problematic'' \citep[\S7.2]{marceau2011mind}; that is why the message blames none of the three places
+alone.
+
+Crichton, Gray and Krishnamurthi's study of Rust learners shapes the verdict line. Participants ``could
+usually predict why the borrow checker would reject a program'', but ``could only fix the program in
+46\,\% of cases \ldots\ and could only create a counterexample in 31\,\% of cases''; asked about one
+rejected program that was in fact safe, only 3 of 15 participants identified that it was
+\citep[\S2.4]{crichton2023grounded}. As Crichton put it earlier, a sound and incomplete analysis's
+errors ``may arise from either ownership-unsound behavior or limitations of the analyzer.
+Understanding this distinction is essential for fixing ownership errors''
+\citep{crichton2020usability}. Every message therefore says which it is, and how the compiler knows.
+
+\subsection{Examples}
+\label{sec:errors-examples}
+
+\paragraph{A later read (real sharing).}
+\begin{Verbatim}
+-- EDIT OF A LIST STILL IN USE ----------------------------------- src/Main.beni
+
+`List.push` changes a list in place, but this one is still needed afterwards.
+
+12|     saved = model.todos
+                ^^^^^^^^^^^ `saved` keeps the list here
+15|     next = List.push model.todos todo
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
+19|     List.length saved
+                    ^^^^^ and `saved` is read here, after the change
+
+If the change happened in place, `saved` would already contain `todo` when it
+is read on line 19: `List.length saved` would be one more than before.
+
+To keep `saved` as it was, copy it:
+
+    saved = List.copy model.todos
+
+Or, if `saved` only needs the list before the change, use it before line 15.
+
+This is sharing the checker can see: the list is read on line 19 on every path
+through this function.
+\end{Verbatim}
+
+\paragraph{A closure that keeps the list (real sharing).}
+\begin{Verbatim}
+`List.set` changes a list in place, but a function still holds it.
+
+ 8|     show = λi → String.fromInt (List.length rows)
+                                                ^^^^ `show` holds `rows` here
+11|     rows2 = List.set rows 0 r
+                ^^^^^^^^^^^^^^^^^ the list is changed in place here
+14|     { model | label = show 3 }
+                          ^^^^ `show` is called here, after the change
+
+`show` would see the changed list. If that is intended, call `show` with a
+copy: `show = λi → String.fromInt (List.length (List.copy rows))` — or compute
+what `show` needs before line 11.
+\end{Verbatim}
+
+\paragraph{A command that captured the list (real sharing, across messages).}
+\begin{Verbatim}
+`List.push` changes `model.todos` in place, but a command started by another
+message may still be reading it.
+
+-- in the arm for `Save`:
+41|     Cmd.perform (λsend → send (Saved (encode model.todos)))
+                                                 ^^^^^^^^^^^ the command keeps `model.todos`
+-- in the arm for `Add`:
+27|     { model | todos = List.push model.todos todo }
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^ changed in place here
+
+A command runs after `update` returns and may run after later messages, so the
+list it keeps is the same one `Add` changes. To give the command its own copy:
+
+41|     Cmd.perform (λsend → send (Saved (encode (List.copy model.todos))))
+
+Or encode before the command is made:
+
+40|     text = encode model.todos
+41|     Cmd.perform (λsend → send (Saved text))
+\end{Verbatim}
+
+\paragraph{A closure that consumes a capture, called many times (real sharing).}
+\begin{Verbatim}
+This function changes `acc` in place, but `List.map` may call it once per element.
+
+ 7|     List.map xs (λx → List.push acc x)
+                     ^^^^^^^^^^^^^^^^^^^^ changes `acc` in place
+        ^^^^^^^^ `List.map` calls it for every element of `xs`
+
+Each call would change the same list, so the result of the first call would
+change under the second. To build a list by adding to `acc`, fold:
+
+ 7|     List.foldl xs acc (λx acc → List.push acc x)
+\end{Verbatim}
+
+\paragraph{A limit of the checker.}
+\begin{Verbatim}
+`List.set` changes `rows` in place, but the checker cannot tell whether anything
+else still holds it.
+
+14|     rows = Js.to raw
+               ^^^^^^^^^ `rows` came from JavaScript here, which may keep it
+17|     List.set rows i v
+        ^^^^^^^^^^^^^^^^^ changed in place here
+
+This is a limit of the checker, not proof of sharing: nothing in this module
+reads the old `rows` after line 17, but the checker cannot see what JavaScript
+does with the array it gave you. To be safe, copy it once where it arrives:
+
+14|     rows = List.copy (Js.to raw)
+\end{Verbatim}
+
+\subsection{The fixed shape}
+
+Every message has the same skeleton: a title; one sentence naming the primitive, the list and why that
+is a problem here; the kept place, the edit and the later use, in source order, labelled ``keeps'' or
+``holds'', ``changed in place here'', and ``read'' or ``called here, after the change''; one or two
+sentences on what the program would see if the change happened in place; the fix as a replacement line,
+with an alternative that avoids the copy where one exists; and the verdict line. The suggested copy is
+mechanically applicable in rustc's sense \citep{rustc2026diagnostics}: the compiler can insert
+\code{List.copy} at the kept place by itself.
+
+\subsection{Telling a limit from real sharing}
+\label{sec:errors-tags}
+
+Every fact the checker derives carries a \emph{derivation tag}: \emph{exact} when it comes from
+something the source shows---a variable occurrence, a field access, a call whose summary was inferred
+from a beni body, a capture in a lambda written here---or \emph{approximate} when it comes from one of
+the checker's own limits, listed in Table~\ref{tab:tags}.
+
+\begin{table}[t]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.42\linewidth}X@{}}
+\toprule
+Limit & Text of the tag \\
+\midrule
+a \code{foreign} or \code{Js} operation declared shared, or with no summary & ``came from / was given to JavaScript, which may keep it'' \\
+a cell made $\top$ by the path cut or a width cap & ``the value is nested deeper than the checker follows (8 steps)'' \\
+a path-insensitive join & ``the list may be either \code{a} or \code{b} here; the checker treats it as both'' \\
+a read from a \code{Ref} or \code{Queue} & ``was taken from a \code{Ref}, whose other readers the checker cannot see'' \\
+a pessimistic summary on an unannotated platform \code{foreign} & ``\code{M.f} declares nothing about what it keeps'' \\
+$\mathit{calls} = \mathit{many}$ for a closure the program calls once in fact & ``\code{List.map} may call it more than once'' \\
+a container whose contents are not exclusive & ``the elements of \code{rows} may share'' \\
+\bottomrule
+\end{tabularx}
+\caption{Approximate derivation tags and their wording.}
+\label{tab:tags}
+\end{table}
+
+A rejection whose derivation uses only exact tags is \emph{real sharing}: there is a path through the
+program text on which the old version is read after the edit. One that uses an approximate tag is
+\emph{possible sharing}, and the message names the limit. This makes Crichton's distinction mechanical,
+and it is also what the evaluation counts (\S\ref{sec:evaluation}). The tags give a third thing for free:
+a rejection with no derivation at all is an internal compiler error, never a user error---the analogue
+of Swift's move-checker diagnostics that report ``a compiler bug'' when a use cannot be verified
+\citep{swift2026diagnosticssil}.
+
+\subsection{Stability}
+\label{sec:errors-stability}
+
+\begin{quote}
+A program the checker of release $n$ accepts is accepted by every release $m > n$.
+\end{quote}
+
+The accepted set is defined by the rules of \S\ref{sec:model}--\S\ref{sec:inference}, never by what an
+optimiser removes. In a 2025 discussion of an explicit-copies mode for Swift, McCall argued that such
+guarantees ``would have to be real guarantees, and the compiler would be responsible for doing them even
+in debug builds'', and Farvardin that the checking ``needs to happen earlier in the optimization
+pipeline, just to guarantee stability across different versions of the compiler''
+\citep{swift2025explicitcopies}. Precision improvements are additive---a finer path language, a
+container function that gains an exact summary, a closure position that gains $\mathit{calls} \le
+1$---and each only removes approximate tags. The one legitimate exception is a \emph{soundness fix}: a
+rule found unsound may reject previously accepted programs, and must do so with a diagnostic that says
+so and, where a mechanical rewrite exists, a migration in the formatter. The rule set is versioned in
+the interface format, so a cached interface produced under an older rule set is a cache miss, never a
+silent mix.
