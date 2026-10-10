@@ -4,21 +4,25 @@
 This chapter states the guarantee and sketches an argument for it. The argument has the shape of
 standard proofs for in-place update \citep{aspinall2008usage,bernardy2018linear}, and its lemmas are
 the usual ones for a flow analysis; but it is a sketch over an informal semantics of a real
-language, it has not been mechanised or independently reviewed, and it rests on ten assumptions about
-code the checker does not see (\S\ref{sec:soundness-assumptions}). We present it as the argument we
-believe, together with the places where we think it is weakest.
+language, it has not been mechanised, and it rests on twelve assumptions about code the checker does
+not see (\S\ref{sec:soundness-assumptions}). An earlier version of these rules had holes that programs
+of a dozen lines exposed (\S\ref{sec:soundness-counterexamples}); we present the argument we now
+believe, the trusted surface it depends on, and the places where we think it is weakest. The
+evaluation's first experiment (\S\ref{sec:eval-sanitiser}) is designed to find what the sketch misses.
 
 \section{The claim}
 
 \begin{theorem}[The two semantics coincide]
 \label{thm:main}
-Let $P$ be a program every module of which the checker accepts: every demand satisfies \Known,
-\Unescaped, \Dead\ and \Disjoint\ against the published summaries of its callees, and every recursive
-group's summaries are validated. Suppose assumptions A1--A10 hold of the runtime, the core library and
-the platforms. Then for every sequence of host events, the value semantics $S_v$ and the update
-semantics $S_u$ produce the same \emph{trace}: the same sequence of observations, where an
-observation is a byte written to an output stream, a DOM write, a call into a \code{foreign} sibling
-or a \code{Js} operation with its arguments marshalled by value, and the program's exit.
+Let $P$ be a program every module of which the checker accepts: every demand, every creation and every
+call of a once closure satisfies \Known, \Unescaped, \Dead\ and \Disjoint\ against the published
+summaries of its callees; every recursive group's summaries are validated; every type's \code{eq} and
+\code{compare} only read; and the entry protocol of the platform that runs $P$ is satisfied. Suppose
+assumptions A1--A12 hold of the runtime, the core library and the platforms. Then for every sequence of
+host events, the value semantics $S_v$ and the update semantics $S_u$ produce the same \emph{trace}:
+the same sequence of observations, where an observation is a byte written to an output stream, a DOM
+write, a call into a \code{foreign} sibling or a \code{Js} operation with its arguments marshalled by
+value, and the program's exit.
 \end{theorem}
 
 $S_v$ is beni as it is today, and $S_u$ is what the backend would emit under the rule
@@ -27,128 +31,183 @@ theorem, in which in-place evaluation is both correct and complete with respect 
 evaluation \citep[Thm.~5.8]{aspinall2008usage}, and Linear Haskell's theorem that ``the semantics with
 in-place mutation is observationally equivalent to the pure semantics''
 \citep[Thm.~3.9]{bernardy2018linear}. We state it over traces rather than final values because beni's
-observations are effects at the JavaScript boundary.
+observations are effects at the JavaScript boundary, and because a TEA program need not terminate.
 
 \section{Instrumented semantics: versions and stale references}
+\label{sec:soundness-instrumented}
 
 We add ghost state to $S_u$. Every cell $c$ carries a \emph{version} $\mathit{ver}(c) \in \mathbb{N}$,
-incremented by each in-place write. Every reference to $c$, wherever it is held---a local, a field, an
-element, a closure environment, a fiber, a runtime slot, a JavaScript variable---carries the version
-at which it was created or last obtained from a current reference: reading a field of a current record
-yields a current reference, and a binding \code{y = x} copies $x$'s stamp. A reference is \emph{stale}
-when its stamp is below $\mathit{ver}(c)$.
+incremented by each in-place write; for a once closure, its call is the write. Every reference to $c$,
+wherever it is held---a local, a temporary of the normal form holding an evaluated argument, a field of a
+structure under construction, an element, a closure environment, a fiber, a runtime structure, a
+JavaScript variable---carries the version at which it was created or last obtained from a current
+reference: reading a field of a current record yields a current reference, and a binding \code{y = x}
+copies $x$'s stamp. A reference is \emph{stale} when its stamp is below $\mathit{ver}(c)$. A
+\emph{use} of a reference is a dereference of its elements or length, a call of it, or a comparison of
+it by identity.
 
 The correspondence to $S_v$ is a function on references: the reference $(c, k)$ of $S_u$ corresponds to
 the array $c_k$ of $S_v$, the $k$th array in the chain $c_0 \to c_1 \to \cdots$ that $S_v$'s updates
 built. Contents agree for current references by construction: the write that raised $\mathit{ver}(c)$
 from $k$ to $k+1$ in $S_u$ is the copy that made $c_{k+1}$ from $c_k$ in $S_v$, with the same element
-written at the same index. The contents of a \emph{stale} reference $(c, k)$, $k < \mathit{ver}(c)$,
-disagree with $c_k$; that is the only place the two heaps differ.
+written at the same index. Identity also agrees between current references: two current references are
+\code{===} in $S_u$ iff they correspond to the same array in $S_v$, since both have the latest version.
+A stale reference $(c, k)$, $k < \mathit{ver}(c)$, disagrees with $c_k$ in contents, and in identity
+with the current reference to $c$; those are the only places the two configurations differ.
 
-\begin{lemma}[No stale read]
+\begin{lemma}[No stale use]
 \label{lem:stale}
-If no step of $S_u$ dereferences a stale reference, the two traces are equal.
+If no step of $S_u$ uses a stale reference, the two traces are equal.
 \end{lemma}
 \begin{proof}[Proof sketch]
-By bisimulation, relating configurations that have the same expression with every reference mapped
-by $(c, k) \mapsto c_k$. Every step preserves the relation: every step reads only current references,
-whose contents agree, and the only step that writes---an accepted update---produces on both sides a
-reference whose contents agree ($c_{k+1}$ and $(c, k+1)$). An observation marshals by value from
-current references, so it agrees.
+By a bisimulation relating configurations that have the same control state with every reference mapped
+by $(c, k) \mapsto c_k$. Every step preserves the relation: it uses only current references, whose
+contents and mutual identity agree, and the only step that writes---an accepted update, or the call of
+a once closure---produces on both sides a reference whose contents agree ($c_{k+1}$ and $(c, k+1)$). An
+observation marshals by value from current references, so it agrees. Identity tests in privileged code
+on references the checker does not track are the subject of A4 and A11.
 \end{proof}
 
-The theorem therefore reduces to: \emph{in an accepted program, no stale reference is ever
-dereferenced}.
+The theorem therefore reduces to: \emph{in an accepted program, no stale reference is ever used}.
 
 \section{Lemmas}
 
+The lemmas below are stated per point of an execution, and argued by induction on the \emph{length of
+the execution prefix}, not on the depth of a call tree: a TEA program dispatches without end, a
+recursion may not return, and a callback re-enters frames that are still open. The invariant is over
+the whole live configuration---the stack of open frames, every closure, every pending argument and
+every runtime structure.
+
 \begin{lemma}[Flow facts over-approximate the heap]
 \label{lem:flow}
-At every program point of a declaration, for every cell $c$ reachable from the frame's locals through
-a path, there is a holder $(x, q)$ with $c \in A(x)@q$, or $\top \in A(x)@q$, or $c$ is marked escaped.
+At every point of an execution, for every open frame, and for every cell $c$ reachable from that
+frame's locals and temporaries through a path---including paths through closure environments ($\env$)
+and opaque values ($\langle T\rangle$)---there is a holder $(x, q)$ of the frame with $c$ named by
+$A(x)@q$ (as a site, as the parameter path it entered by, or as $\top$), or $c$ is escaped.
 \end{lemma}
 \begin{proof}[Proof sketch]
-By induction over the transfer rules of Table~\ref{tab:transfer}: each rule's result contains every
-cell the construct can produce from its parts, and a call's result is bounded by the callee's
-$\mathit{res}$ (Lemma~\ref{lem:summary}). The path cut yields $\top$, and every construct without a
-summary yields $\top$ and escape. This is the standard over-approximation lemma of a flow analysis, and it has the same shape as the write-set analysis's own statement that each of its rules over-approximates.
+By induction on the prefix, over the transfer rules of Table~\ref{tab:transfer}: each rule's result
+contains every cell the construct can produce from its parts, a closure's $\env$ contains every cell
+it captured, and a call's result is bounded by the callee's $\mathit{res}$ (Lemma~\ref{lem:summary}),
+translated through $\mathit{supply}$ for a function-valued argument. The cut and the width cap yield
+$\top$, and every construct without a summary yields $\top$ and escape. Folding a recursive type maps
+every path of a value onto a path that exists in the abstract domain. This is the standard
+over-approximation lemma of a flow analysis.
 \end{proof}
 
 \begin{lemma}[Exclusive contents]
 \label{lem:excl}
-If a container path carries $\excl$ at a point, then every concrete cell reachable through it is stored
-at exactly one position of that container and has no holder other than the container's path.
+If a container path carries $\excl$ at a point, then every concrete cell reachable through it is
+reachable through exactly one position of the container and one path within that position, and has no
+live holder other than the container's path.
 \end{lemma}
 \begin{proof}[Proof sketch]
-By induction over the rules of \S\ref{sec:model-excl}. Setting the flag requires each stored cell to be
-unique at the store (Lemma~\ref{lem:dead}, reading the store as a demand that does not write). A
-destructive read overwrites the one position before any other read, so the element it hands out has
-the callback as its only holder. Every other store or read clears the flag.
+By induction on the prefix over the rules of \S\ref{sec:model-excl}. Setting the flag requires each
+stored value to be unique at the store and every two stored tracked paths to be disjoint, which is
+\Disjoint\ applied within and across stored elements (Lemma~\ref{lem:dead}, reading the store as a
+demand that does not write). A destructive read overwrites the one position before any other read, and
+by the induction hypothesis the element it hands out has disjoint paths and no other holder. A split
+pattern on a dead scrutinee hands out one position and keeps the others. Every other store or read
+clears the flag.
 \end{proof}
 
-\begin{lemma}[Liveness over-approximates future reads]
+\begin{lemma}[Liveness over-approximates future uses]
 \label{lem:live}
-If $\live(h, p)$ is false, then no execution continuing from $p$ dereferences the cell held by $h$
-through $h$.
+If $\live(h, p)$ is false, then no execution continuing from $p$ uses the cell held by $h$ through $h$.
 \end{lemma}
 \begin{proof}[Proof sketch]
-The uses of \S\ref{sec:model-liveness} cover every construct that can read a value or hand it to
-something that can: a direct read; a call, by the callee's summary and Lemma~\ref{lem:summary}; a
-return; a store; a capture, by the closure's summary and the $\mathit{calls}$ and $\mathit{escapes}$
-facts of the function it is passed to; and the catch-all for anything unseen. Backward propagation in
-instruction order is evaluation order, so ``after $p$'' is well defined.
+The uses of \S\ref{sec:model-liveness} cover every construct that can use a value or hand it to
+something that can: a direct read; a call, by the callee's summary and Lemma~\ref{lem:summary},
+$\unused$ paths excepted; a return; a store; a capture, by the closure's $\env$ and the liveness of the
+closure and of everything that holds it; a call of a function value; and the catch-all for anything
+unseen. Instructions are in evaluation order and every operand is used at its consuming instruction,
+so ``after $p$'' is well defined and includes a value held across $p$ and consumed later.
+\end{proof}
+
+\begin{lemma}[Once closures]
+\label{lem:once}
+A closure the checker did not mark once never writes a cell through its environment. A closure it
+marked once is called at most once in any execution, and the cells it may write are reachable, after
+its creation, only through it.
+\end{lemma}
+\begin{proof}[Proof sketch]
+A closure whose body writes a captured cell, calls a captured once value or passes one to a consuming
+position is marked once by \S\ref{sec:model-functions}; any other closure writes no captured cell, by
+Lemma~\ref{lem:summary} applied to its body. A once closure is an abstract cell whose calls are demands;
+by Lemma~\ref{lem:dead} applied to that cell, the first call finds every other holder of the closure
+dead, so no second call happens. Its creation is a demand on the captured cells it may write, so at
+creation every other holder of them is dead.
 \end{proof}
 
 \begin{lemma}[Summary soundness]
 \label{lem:summary}
 For every call $f\,\bar a$ evaluated in $S_u$, with argument cells $C_1, \ldots, C_n$:
 \begin{enumerate}
-\item $f$ writes a cell of $C_i$ only if $\mathit{use}(i, q) = \consumed$ for the path at which it sits;
-\item if $\mathit{use}(i, q) = \borrowed$, then after the call no cell of $C_i@q$ is reachable from the
-result, from any place that outlives the call, or from any closure that can still be called;
-\item the result's cells at $q'$ are within $\mathit{res}(q')$ instantiated with the arguments, where
-$\fresh$ denotes a cell that no holder other than the result holds;
-\item $\mathit{calls}$ bounds the number of calls $f$ makes to argument $j$ in any execution,
-$\mathit{escapes} = \mathit{no}$ means that no reference to it outlives the call, and $\mathit{supply}$
-and $\mathit{need}$ bound what $f$ passes to it and keeps from it.
+\item $f$ writes a cell of $C_i@q$ only if $\mathsf{W} \in \mathit{use}(i, q)$;
+\item if $\mathsf{E} \notin \mathit{use}(i, q)$, then after the call no cell of $C_i@q$ is reachable
+from any place that outlives the call other than the result, at the paths $\mathit{res}$ names, and
+from closures reachable from the result;
+\item the result's cells at $q'$ are within $\mathit{res}(q')$ instantiated with the arguments and,
+for a function-valued argument, translated through $\mathit{supply}$; distinct numbered fresh cells are
+distinct, and a fresh cell has no holder other than the result;
+\item $\mathit{calls}$ bounds the number of calls $f$ makes to argument $j$, and $\mathit{supply}$ bounds
+what $f$ passes to it; if $\mathit{xres}(q')$, the result's container at $q'$ is exclusive; if
+$\mathit{xreq}(i, q)$ is not set, $f$ relies on no exclusivity of $C_i@q$.
 \end{enumerate}
 \end{lemma}
 \begin{proof}[Proof sketch]
-By induction on the depth of the call tree of the execution. For a non-recursive $f$, the summary was
-read off its body under Lemmas~\ref{lem:flow} and~\ref{lem:live} using its callees' summaries, which
-hold by the induction hypothesis. For a recursive group, the validated fixpoint is a consistent
-assignment: each body checks against the final summaries, so the induction hypothesis for the
-recursive calls is exactly the summary, and the body's own analysis yields the summary again. The
-optimistic start does not weaken the argument, because only the validated assignment is used; the
-search merely finds the best one. For a \code{foreign} or an asserted summary, the summary is declared
-and the implementation is trusted (A2, A8).
+By induction on the length of the execution prefix, with the call's clauses established when the call
+returns and assumed for every call that returned earlier in the prefix. For a non-recursive $f$, the
+summary was read off its body under Lemmas~\ref{lem:flow} and~\ref{lem:live} using its callees'
+summaries, which hold by the induction hypothesis for every callee call that has returned. For a
+recursive group, the validated fixpoint is a consistent assignment: each body checks against the final
+summaries, so the hypothesis for the recursive calls is exactly the summary, and the body's own analysis
+yields the summary again. The optimistic start does not weaken the argument, because only the validated
+assignment is used. For a \code{foreign} or an asserted summary, the summary is declared and the
+implementation is trusted (A2, A8). A call that never returns needs only clauses~1 and~4, which hold of
+every prefix.
 \end{proof}
 
 \begin{lemma}[Dead aliases]
 \label{lem:dead}
-At an accepted demand $u$ on operand cell $c$, every reference to $c$ other than the one the demand
-returns is dead: it is never dereferenced afterwards, by the caller, or by the callee during the call.
+At an accepted demand $u$ on cell $c$, every reference to $c$ other than the one the demand consumes is
+dead: it is never used afterwards, by the caller, by any frame below it, by any closure, pending
+argument or structure, or by the callee during the call.
 \end{lemma}
 \begin{proof}[Proof sketch]
 By \Known\ the cell is known. By \Unescaped\ it is not escaped, so (Lemma~\ref{lem:flow}) every
-reference to it is accounted for by a holder $(x, q)$ of the current frame, or of a caller's frame
-through the chain of parameters. By \Dead\ each local holder is dead after the call
-(Lemma~\ref{lem:live}). By \Disjoint\ no other argument and no capture of a function-valued argument
-holds $c$, so nothing the callee reads during the call---its other parameters, its callbacks'
-environments---reaches $c$; the callee's own locals that hold $c$ are aliases of its consumed
-parameter and are checked by the callee's own side conditions with the parameter as operand. Each
-parameter-path holder was checked at the caller's call site, where the same conditions applied to the
-caller's holders (Lemma~\ref{lem:summary}, clause 1, transfers the obligation). Holders in closure
-environments are covered because a closure is itself a holder whose liveness bounds its captures'
-(Lemma~\ref{lem:live}); a closure that may consume a capture is $\mathit{once}$, an affine value used
-at most once and only where $\mathit{calls} \le 1$, and its consumed captures are checked at its
-creation against its own liveness.
+reference to it is accounted for by a holder of the current frame---a local, a temporary, a structure
+under construction, a path through a closure's $\env$---or of a caller's frame through the chain of
+parameters. By \Dead\ each local holder is dead after the call (Lemma~\ref{lem:live}). By \Disjoint\
+no other argument path---including another path of the same argument---and no cell under $\env$ of a
+function-valued argument holds $c$, so nothing the callee reads during the call reaches $c$; the
+callee's own locals that hold $c$ are aliases of its written parameter and are checked by the callee's
+own side conditions with the parameter as operand. Each parameter-path holder was checked at the
+caller's call site, where the same conditions applied to the caller's holders, by clause~1 of
+Lemma~\ref{lem:summary}; when the caller is a container function supplying an owned element, the
+conditions are supplied by Lemma~\ref{lem:excl}; when the caller is the platform, by
+Lemma~\ref{lem:entry}. Closures are covered by Lemma~\ref{lem:once}.
+\end{proof}
+
+\begin{lemma}[Entry]
+\label{lem:entry}
+On a platform that keeps its entry protocol (A3), every dispatch calls \code{update} with a model whose
+written paths satisfy \Unescaped, \Dead\ and \Disjoint, as a caller would have to establish.
+\end{lemma}
+\begin{proof}[Proof sketch]
+The protocol models the platform's loop---the model is \code{init}'s result, then each dispatch's
+result---as a recursive caller of \code{update} with an asserted summary (\S\ref{sec:hard-tea}). Its
+abstract model is the least fixpoint of \code{init}'s and \code{update}'s summaries, so every
+aliasing between model paths and every escape that \code{init}, any arm, any command or subscription
+can create appears in it (Lemma~\ref{lem:summary}, clause~3, with numbered fresh cells), and the check
+at the program's start rejects a written path that aliases another or is escaped. A3 says the runtime
+holds nothing else.
 \end{proof}
 
 \begin{proof}[Proof sketch of Theorem~\ref{thm:main}]
-By Lemma~\ref{lem:dead}, after the write at $u$ every reference to $c$ other than the one the demand
-returns is dead, hence never dereferenced, and the returned reference is current. Induction over the
-steps of the execution gives the hypothesis of Lemma~\ref{lem:stale}.
+By induction on the prefix. At each accepted demand, Lemma~\ref{lem:dead} says every reference to the
+written cell other than the one consumed is dead, hence never used again, and the returned reference is
+current. So no step uses a stale reference, which is the hypothesis of Lemma~\ref{lem:stale}.
 \end{proof}
 
 \section{Assumptions}
@@ -156,72 +215,128 @@ steps of the execution gives the hypothesis of Lemma~\ref{lem:stale}.
 
 The theorem is conditional on the following assumptions about code the checker does not analyse. A
 false assumption produces a wrong answer, not a false error, which is why we list them here rather
-than among the costs of Chapter~\ref{sec:discussion}. Most are contracts that exist in some form in
-beni today; A3 is new, and A2, A5 and A6 widen existing contracts. After each we say where it is
-kept, or must be.
+than among the costs of Chapter~\ref{sec:discussion}. After each we say where it is kept, or must be.
 
 \begin{description}[leftmargin=2.2em,style=sameline,font=\normalfont\bfseries]
-\item[A1] \emph{Only licensed writes.} The list runtime writes an array only inside a primitive
-declared consumed. No other JavaScript---emitted code, sibling files, platform runtimes---writes a list
-it did not just create and still exclusively hold. The array builder used by the backend stays linear.
-\emph{Kept by} the list runtime's existing invariant that it writes only arrays it has just made,
-restated: with the trie gone, the exceptions for claimed head and tail slots disappear.
-\item[A2] \emph{Foreign summaries are true.} A borrowed parameter is not kept past the call; a fresh
-result is an array nothing else holds; a consumed parameter is written only in the declared way.
-\emph{Kept by} the boundary contract (\S\ref{sec:bg-boundary}), widened: the existing promise that a
-sibling never writes a list it was given and never keeps one it will later write becomes: a sibling
-never keeps a list unless its declaration says shared (\S\ref{sec:hard-foreign}).
-\item[A3] \emph{The runtime hands the model over.} The platform's entry into \code{update} declares
-the model consumed and keeps no content holder of any list of the old model after the arm runs;
-anything it needs from the old model it reads before the arm, into locals the checker sees, or as
-scalars. \emph{Kept by} the direct platform's design, made precise as the six obligations of
-\S\ref{sec:hard-tea}, which must be written into that platform's specification.
+\item[A1] \emph{Only licensed writes, and no stale cache.} The list runtime writes an array only inside
+a primitive whose row says written. No other JavaScript---emitted code, sibling files, platform
+runtimes---writes a list it did not just create and still exclusively hold. The array builder stays
+linear. Every cached derived form of a cell---a view's cached plain copy, a stored length---lives in a
+header that a licensed write consumes and replaces: a write through a view returns a new header and
+never leaves a live header whose cached fields describe the old version. \emph{Kept by} the list
+runtime's existing invariant that it writes only arrays it has just made, restated; with the trie gone,
+the exceptions for claimed head and tail slots disappear.
+\item[A2] \emph{Foreign summaries are true.} A read parameter is not kept past the call; a fresh result
+is an array nothing else holds; a written parameter is written only in the declared way. \emph{Kept by}
+the boundary contract (\S\ref{sec:bg-boundary}), widened: the existing promise that a sibling never
+writes a list it was given and never keeps one it will later write becomes: a sibling never keeps a
+list unless its row says escaped (\S\ref{sec:hard-foreign}).
+\item[A3] \emph{The platform keeps its entry protocol.} For every function the runtime calls on the
+program's behalf, the runtime passes and keeps exactly what the protocol of \S\ref{sec:hard-tea} says:
+after an \code{update}, it holds no content reference to any list of the old model; it reads the model
+for \code{view}, derived values and listener bodies without keeping a content reference beyond what the
+protocol declares as escaped; and it runs command thunks and keeps subscription results as declared.
+\emph{Kept by} the platform's design, made precise as obligations \Obl{P1}--\Obl{P7}, which must be
+written into its specification.
 \item[A4] \emph{Identity holders never conclude ``unchanged'' from identity on a written list.} A
 renderer that compares a list by \code{===} to skip work must not do so for a list that may have been
-written in place; per-row comparisons must be on the row items, and conditional updates must be
-guarded by their own conditions, never by a list's identity. \emph{Kept by} the direct platform's
-rule that it never decides ``unchanged'' from the identity of an object on an in-place-written path,
-and by its edit scripts, each guarded by its own tag.
+written in place; per-row comparisons must be on the row items, a row's content must be re-patched when
+its path is in the write set even if its item is the same object, and conditional updates must be
+guarded by their own conditions, never by a list's identity. \emph{Kept by} the direct platform's rule
+that it never decides ``unchanged'' from the identity of an object on an in-place-written path, and by
+its edit scripts, each guarded by its own tag.
 \item[A5] \emph{Evaluation order is as specified, and a demand is a barrier to the optimiser.} No call
 is moved across another or duplicated, every impure call is kept, and no read of a cell---its length,
-an element, an offset into a view, a single-use binding folded into its use---is moved across a demand
-on that cell. beni's release optimiser today folds a single-use pure binding into its use across other
-pure bindings, on the ground that evaluations that make no call cannot be observed in either order
-(\S\ref{sec:bg-release}):
-\code{n = List.length xs; ys = List.push xs 1; h ys n} would become
-\code{h(push(xs, 1), xs.length)}. That ground holds only while every list is immutable; the demand
-summaries must become an input to the optimiser, as the impure bit already is, and the language
-definition's statement that call-free evaluations commute must be narrowed to reads that do not cross
-a demand on the cell they read. \emph{This is a change to the language definition and the optimiser,
-not a property of them today.}
-\item[A6] \emph{Escapes are total, in both directions.} Every way a value can outlive a frame---a
-command or subscription thunk, a spawned fiber, a \code{Ref}, a \code{Queue}, \code{Js.from}, a sibling
-parameter not declared borrowed, a stored closure---is a summary that marks the value escaped; and every
+an element, an offset into a view---is moved across a demand on that cell, whether by single-use
+folding or by the freedom to order call-free evaluations. Today the optimiser folds a read of a beni
+value into a statement whose earlier operands make calls, and a list's length and element reads are
+such reads after lowering (\S\ref{sec:bg-release}): \code{n = List.length xs; h (List.push xs 1) n}
+may become \code{h(push(xs, 1), xs.length)}. The demand summaries must become an input to the optimiser,
+as the impure bit already is, and the language definition's statement that call-free evaluations may be
+ordered freely must exclude a read of a cell across a demand on it. \emph{This is a change to the
+language definition and the optimiser, not a property of them today.}
+\item[A6] \emph{Escapes are total, in both directions.} Every way a value can outlive a frame---a command
+or subscription thunk, a spawned fiber, a \code{Ref}, \code{Js.from}, a sibling parameter not declared
+read-only, a stored closure, a runtime structure---is a row that puts $\mathsf{E}$ on it; and every
 value the runtime retains and may hand out again---a fiber's outcome at \code{Task.join}, a bracketed
-resource at its release, the results of taking from a queue or awaiting a deferred value---is $\top$ on
-every path. \emph{Kept by} the foreign declarations and asserted summaries of the core \code{Task}
-module and of the platforms.
+resource at its release, a deferred value's contents---is $\top$ on every path. \emph{Kept by} the
+asserted rows of the core \code{Task} module and of the platforms.
 \item[A7] \emph{Continuations are one-shot}, and a cancelled fiber never resumes the rest of its body.
 \emph{Kept by} the fiber runtime's existing contract (\S\ref{sec:bg-effects}).
-\item[A8] \emph{Asserted core summaries are true}, each pinned by a test program that runs the
-emitted JavaScript, the discipline the write-set analysis already follows for the facts it assumes of
-the core library.
+\item[A8] \emph{Asserted summaries are true}, each pinned by a test program that runs the emitted
+JavaScript under the differential run of \S\ref{sec:eval-sanitiser}. This covers the whole trusted
+surface of \S\ref{sec:soundness-trusted}, not only the writers.
 \item[A9] \emph{A defect reads nothing of the program's heap} after it fires, except through escaped
 holders. (A development crash screen that printed the model would read a half-updated record.) To be
 checked for the development crash screen.
-\item[A10] \emph{The checker's solved types are the backend's types}: a path is list-typed in the
-analysis if and only if the emitted value at that path is an array. Mode crossing is computed from the
-same types.
+\item[A10] \emph{The checker's types are the backend's types}: a path is tracked in the analysis if and
+only if the emitted value at that path may be an array or a closure, and the crossing bit published for
+a type is computed in its declaring module from its full definition.
+\item[A11] \emph{Identity tests in privileged code are covered.} Every \code{===} that core or a
+platform performs on a list either is on two current references, or its outcome cannot reach a trace
+observation, or both outcomes are covered by the function's summary---so that the result named in
+$\mathit{res}$ is right whichever branch is taken. \emph{Kept by} dropping the identity promises that
+alias (\S\ref{sec:model-demands}) and by A4 for renderers; the remaining tests are listed with the
+trusted surface.
+\item[A12] \emph{Sync commands are drained before the next dispatch}, if the platform claims it
+(\Obl{P7}): a command whose body cannot suspend runs to completion before the next message is passed to
+\code{update}. A platform that does not claim it gets the pessimistic row, under which a command's
+captures are escaped. \emph{Kept by} the platform's command queue; today's TEA runtime queues such
+commands to run soon after \code{update} returns and does not claim it.
 \end{description}
+
+\section{The trusted surface}
+\label{sec:soundness-trusted}
+
+An earlier statement of this design said that ``only the nine writers carry the demand''. That is true of
+demands, and it understates what is trusted. Inference sees through beni code, but much of the core
+library is beni over the \code{Js} interface or calls \code{foreign} primitives, and by the transfer
+rules every such call reads and escapes its arguments and returns $\top$. Without an asserted row,
+every list passed to \code{List.map}, \code{String.join} or \code{Debug.log} would be escaped for the
+rest of the program. The trusted surface is therefore every function in the core library or a platform
+whose body goes through \code{Js} or a \code{foreign} and handles a cell. Counted from the sources as
+they stand:
+\begin{itemize}
+\item \emph{the list module} (51 public functions, 7 \code{foreign} primitives, 54 uses of the \code{Js}
+interface): the nine writers and \code{copy}; the internal primitives the library's loops are written
+over (the element read, the base array and offset of a list, the builder and its fill and hand-over, the
+building loop's exit, the length); the identity primitives \code{map} uses to return its input, which
+Change~2 removes; and every public function whose body uses \code{Js} directly rather than those
+primitives;
+\item \emph{strings} (46 public functions, 43 uses of \code{Js}): every function that takes or returns a
+list, such as joining and splitting, which must say that it reads its list or returns a fresh one;
+\item \emph{debugging} (5 public functions over \code{Js}): \code{Debug.log} returns its second argument
+and only reads it; \code{Debug.toString} only reads;
+\item \emph{tasks, mutable cells and deferred values} (56, 6 and 6 public functions): \code{spawn},
+\code{join}, \code{scope}, \code{bracket}, \code{Ref.get}, \code{Ref.set}, \code{Ref.update} and their
+kin, whose rows carry the escapes of A6;
+\item \emph{schemas} (65 public functions, 7 \code{foreign}): a parser's output is fresh, and exclusive
+by declaration, or not; a printer only reads---unless it hands a list's array to the host as it is, in
+which case it escapes it;
+\item \emph{the dictionary and set modules} are beni over constructors with no \code{Js}; their summaries
+are inferred over folded paths, and only \code{Dict.update}'s owned supply to its callback is asserted
+(\S\ref{sec:hard-containers});
+\item \emph{each platform}: its \code{foreign} siblings, its runtime's entry protocol
+(\Obl{P1}--\Obl{P7}), its commands and subscriptions, \code{send}, and its markup lowering, whose rows
+say what the runtime keeps of a rendered view;
+\item \emph{the runtime contracts}: A1, A3, A4, A7, A9, A11 and A12.
+\end{itemize}
+We have not yet enumerated the rows one by one; doing so, with a test program per row under A8, is the
+first deliverable of the report mode (\S\ref{sec:eval-brief}). We expect between several dozen and a
+hundred and fifty asserted rows, the upper figure being every public function of the modules above that
+handles a list. The surface is the same kind as the effect rungs the compiler already trusts---a false
+row is a bug in privileged code---but it is several times larger than the writers, and it is where an
+implementation is most likely to be wrong.
 
 \section{What the sketch does not cover}
 \label{sec:soundness-gaps}
 
 \begin{itemize}
+\item \emph{Monotonicity}, case by case (\S\ref{sec:inf-lattice}); it is asserted, not written out.
 \item \emph{Path-insensitive joins.} $A(e)$ for a \code{case} is the union of the arms, so a cell held
 only on the arm not taken is counted as a holder on the other. This is conservative: more rejections,
 never fewer.
-\item \emph{The cut and $\top$.} Both lead to rejection by \Known, never to acceptance.
+\item \emph{The cut, folding and $\top$.} All lead to rejection by \Known\ or \Dead, never to acceptance.
 \item \emph{Concurrency.} Fibers interleave only at suspension points. A cell reachable from two
 fibers is escaped, because it was captured by a spawned thunk (A6), so no demand on it is accepted.
 Within one fiber the sequential argument holds across a suspension, because the continuation holds
@@ -229,44 +344,85 @@ exactly the locals liveness already counted, and it runs once (A7).
 \item \emph{Defects.} A defect stops the program; its cleanup closures are stored, and therefore
 escaped holders. A9 covers what a crash screen may print.
 \item \emph{An identity shortcut in list equality} (answering \code{True} at once for
-\code{xs == xs}). Such a test can differ between the semantics only when a stale reference meets a
-current one, which is a stale dereference and is excluded.
-\item \emph{The entry state of \code{update}} is not covered by any caller's side conditions. The
-whole-program entry fixpoint of \S\ref{sec:hard-tea} stands in for the caller, and it is where we
-would direct a reviewer first, together with A3 and A4.
+\code{xs == xs}) compares two references. If both are current, the semantics agree; if one is stale,
+the comparison is a stale use, which Lemma~\ref{lem:dead} excludes.
+\item \emph{The trusted surface}, whose rows are not yet enumerated (\S\ref{sec:soundness-trusted}).
+\item \emph{The entry protocol}, which is only as good as the platform's keeping of A3 and A12.
 \end{itemize}
 
-\section{Counterexamples to an earlier draft}
+\section{Programs that test the rules}
 \label{sec:soundness-counterexamples}
 
-An adversarial reading of an earlier version of these rules found programs that the rules accepted
-although the in-place write was observable, a gap at the entry of \code{update}, and a group of
-gaps in the library's contracts. Table~\ref{tab:counterexamples} lists them. Each is now answered by
-a rule, and each program is intended to become a test case. What held under the same reading: reads before writes,
-dead aliases, per-arm liveness, record-update field replacement, the pessimistic default for
-undeclared \code{foreign}s, tail-call argument order, views as holders of their base, the fiber escape
-argument, and Lemma~\ref{lem:excl} at the abstract level. We regard this as evidence that the rule set
-is checkable, not that it is sound; the report-mode experiment (\S\ref{sec:evaluation}) is the next
-test.
+Table~\ref{tab:counterexamples} lists programs that an earlier version of these rules accepted
+although the in-place write was observable, with the rule that now rejects or repairs each. The first
+group was found while the rules were first written; the second, numbered F1--F12, against the rules
+as an earlier edition of this thesis stated them. Each program is to become a test case of the report mode, run
+under the differential run of \S\ref{sec:eval-sanitiser}. That the revised rules reject them is
+evidence that the rule set is checkable, not that it is sound.
 
-\begin{table}[t]
-\centering\small
-\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.33\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.2\linewidth}@{}}
+{\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.25\linewidth}>{\raggedright\arraybackslash}p{0.42\linewidth}>{\raggedright\arraybackslash}p{0.25\linewidth}@{}}
+\caption{Programs an earlier version of the rules wrongly accepted, and what now rejects or repairs each.}
+\label{tab:counterexamples}\\
 \toprule
-Gap & Program & Answered by \\
+Gap & Program & Now \\
 \midrule
-aliasing between a call's own arguments, or between a consumed argument and a callback's capture &
+\endfirsthead
+\toprule
+Gap & Program & Now \\
+\midrule
+\endhead
+aliasing between a call's own arguments, or with a callback's capture &
 \code{List.foldl xs xs (λx acc → List.insertAt acc 0 x)}; \code{g xs (λ\_ → List.length xs)} with
-\code{g xs k = k (List.push xs 1)} & \Disjoint; Lemma~\ref{lem:dead} \\
-the optimiser folding a read across a write & \code{n = List.length xs; ys = List.push xs 1; h ys n} & A5 \\
-a top-level value as a holder & \code{empty = []}, then \code{(addOne empty, addOne empty)} & top-level cells escaped \\
-an event payload that is a model list or a row's list & \code{onClick=\{Keep model.rows\}}, then \code{List.push rows 0} in the arm & payload rule, \S\ref{sec:hard-tea} \\
-\code{init} or an earlier arm placing one cell at two model paths & \code{xs = …; \{ a = xs, b = xs \}}, then \code{List.push model.a 1} & entry fixpoint, \S\ref{sec:hard-tea} \\
-a $\mathit{once}$ closure passed twice to ${\le}1$ positions & \code{g = λx → List.push acc x}, used by two \code{Result.andThen} calls & $\mathit{once}$ is affine \\
-$\emptyset$ read as ``unknown''; $\top$ not prefix-closed; parametricity across \code{Fiber a} & \code{Task.join fib} twice, then \code{set} on one result & \S\ref{sec:model-abstract}, \S\ref{sec:inf-generic}, A6 \\
-library contracts: writers written over \code{Js}; \code{append} returning its second argument when the first is empty; derived values; \code{==} through a user \code{eq}; per-path captures; a building function's exit value; two conflicting identity promises for \code{filter} & --- & \S\ref{sec:model-summary}--\S\ref{sec:model-liveness}, \S\ref{sec:disc-options} \\
+\code{g xs k = k (List.push xs 1)} & rejected: \Disjoint \\
+the optimiser folding a read across a write & \code{n = List.length xs; h (List.push xs 1) n} & safe: A5 \\
+a top-level value as a holder & \code{empty = []}, then \code{(addOne empty, addOne empty)} & rejected: top-level cells escaped \\
+an event payload that is a model list & \code{onClick=\{Keep model.rows\}}, then \code{List.push rows 0} in the arm & rejected: \Obl{P6} \\
+a once closure passed twice to ${\le}1$ positions & \code{g = λx → List.push acc x}, used by two \code{Result.andThen} calls & rejected: once closures are cells \\
+$\emptyset$ read as ``unknown''; $\top$ not prefix-closed; parametricity across \code{Fiber a} & \code{Task.join fib} twice, then \code{set} on one result & rejected: \S\ref{sec:model-abstract}, A6 \\
+\midrule
+F1: a returned closure's captures &
+\code{mk xs = λ⊤ → List.length xs}; \code{g = mk xs; ys = List.push xs 4; g ⊤}. Trace: $\mathit{res}(\env) =
+\{\pi_1\}$, so $A(g)@\env = A(\mathit{xs})$; at the push, $(g, \env)$ is live (called after) &
+rejected: \Dead\ on $(g, \env)$ \\
+F2: once lost by returning, capturing, storing &
+A: \code{p = mkPusher [ 0 ]; a = p 1; b = p 2}. B: \code{h = λy → g y} with \code{g} once, then
+\code{List.map [ 1, 2 ] h}. C: \code{r = \{ k = λx → List.push acc x \}; r.k 1; r.k 2}. Trace: A's result
+names a fresh closure cell, \code{p 1} is a demand on it and \code{p} is used again; B's \code{h} calls a
+captured once value, so \code{h} is once and \code{map} calls it many times; C's \code{r.k 1} is a demand
+on the cell at $(r, .k)$, used again by \code{r.k 2} &
+rejected: \Dead\ (A, C); the once edge, $\mathit{calls} = \mathit{many}$ (B) \\
+F3: a user \code{eq} that writes, reached through \code{==} &
+\code{eq (Bag a) (Bag b) = List.length (List.push a 0) == List.length b + 1}; \code{[ b ] == [ b ]} &
+rejected at the declaration of \code{eq} \\
+F4: one element holding one cell at two paths &
+\code{rows = [ \{ a = xs, b = xs \} ]}; \code{List.update rows 0 (λr → \{ r | a = List.push r.a 2 \})}.
+Trace: the literal's element fails \Disjoint\ between $.a$ and $.b$, so $\excl$ is not set, so
+\code{update} supplies a borrowed element, which the lambda writes &
+rejected: the supply edge \\
+F4 (related): elements of a live list moved into another & \code{zs = xs ++ ys}, then
+\code{List.update zs i (λr → List.push r 9)}, then a read of \code{ys} & rejected: \code{++} stores
+\code{ys}'s elements while \code{ys} lives, so $\excl$ is not set \\
+F5: a building loop's exit returned its argument & \code{zs = appendTo [] ys; zs2 = List.push zs 3};
+\code{ys} read & safe: the exit copies; $\mathit{res}$ is fresh \\
+F6: \code{view} spreading model lists & \code{shown = [ …model.pinned, …model.recent ]} in \code{view} &
+safe: spreads build fresh; \code{view} reads the model (Table~\ref{tab:entry}) \\
+F7: \code{init} as a top-level value & \code{Add t → \{ model | todos = List.push model.todos t \}};
+\code{Reset → init} & rejected while \code{init} is a value (its cells are escaped); accepted and correct
+with \code{init} a function (Change~12) \\
+F8: a callback returning its argument & \code{pick rows = List.foldl rows [] (λr acc → r)};
+\code{List.push (pick rows) 9}; \code{rows} read. Trace: $\mathit{supply}(1) = \{\pi_1.[\ast]\}$ translates the
+lambda's $\{\pi_1\}$ & rejected: \Dead\ on \code{rows} \\
+F9: a stale cached entry state & \code{init} edited from two lists to one list at two fields, in
+another module & re-checked: the aliasing is in \code{init}'s published $\mathit{res}$ \\
+F10: a value held across the write & \code{compare xs (List.push xs 1)}; \code{( xs, List.push xs 1 )};
+\code{\{ old = model.todos, new = List.push model.todos t \}} & rejected: \Dead; the occurrence is a use at
+the consuming instruction \\
+F11: a view's cached plain copy & \code{\$plain()} on \code{rest}, then \code{List.set rest 0 9}, then
+\code{\$plain()} & safe: the write returns a new header (A1) \\
+F12: an opaque type that holds a list & \code{Stack.push s 1} with \code{s} read later, \code{Stack}
+opaque & rejected: crossing is published by the declaring module; the summary names $\langle
+\mathit{Stack}\rangle$ \\
 \bottomrule
-\end{tabularx}
-\caption{Programs an earlier draft of the rules wrongly accepted, and the rule that now rejects each.}
-\label{tab:counterexamples}
-\end{table}
+\end{longtable}
+}

@@ -646,7 +646,8 @@
   title   = {A Grounded Conceptual Model for Ownership Types in {Rust}},
   journal = {Proceedings of the ACM on Programming Languages},
   volume  = {7},
-  number  = {OOPSLA},
+  number  = {OOPSLA2},
+  pages   = {265:1--265:29},
   year    = {2023},
   doi     = {10.1145/3622841}
 }
@@ -664,6 +665,8 @@
 @misc{rustc2026diagnostics,
   author       = {{Rust compiler team}},
   title        = {Rust Compiler Development Guide: Errors and Lints},
+  howpublished = {\url{https://rustc-dev-guide.rust-lang.org/diagnostics.html}},
+  note         = {Accessed 2026-10-09},
   year         = {2026},
   url          = {https://rustc-dev-guide.rust-lang.org/diagnostics.html}
 }
@@ -678,14 +681,15 @@
   doi       = {10.1007/BFb0026821}
 }
 
-@inproceedings{konecny2003layered,
+@inproceedings{konecny2003typing,
   author    = {Michal Kone{\v{c}}n{\'y}},
-  title     = {Functional In-Place Update with Layered Datatype Sharing},
-  booktitle = {Typed Lambda Calculi and Applications (TLCA 2003)},
+  title     = {Typing with Conditions and Guarantees for Functional In-Place Update},
+  booktitle = {Types for Proofs and Programs, International Workshop (TYPES 2002), Selected Papers},
   series    = {Lecture Notes in Computer Science},
-  volume    = {2701},
-  year      = {2003},
-  doi       = {10.1007/3-540-44904-3_14}
+  volume    = {2646},
+  pages     = {182--199},
+  publisher = {Springer},
+  year      = {2003}
 }
 
 @article{ho2024sound,
@@ -696,4 +700,150 @@
   number  = {ICFP},
   year    = {2024},
   doi     = {10.1145/3674640}
+}
+
+@misc{matsakis2018alias,
+  author       = {Niko Matsakis},
+  title        = {An Alias-Based Formulation of the Borrow Checker},
+  howpublished = {Baby Steps blog, 27 April 2018, \url{https://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker/}},
+  year         = {2018}
+}
+
+@inproceedings{bloss1989update,
+  author    = {Adrienne Bloss},
+  title     = {Update Analysis and the Efficient Implementation of Functional Aggregates},
+  booktitle = {Proceedings of the Fourth International Conference on Functional Programming Languages and Computer Architecture (FPCA '89)},
+  publisher = {ACM},
+  year      = {1989},
+  doi       = {10.1145/99370.99373}
+}
+
+@inproceedings{hudak1987semantic,
+  author    = {Paul Hudak},
+  title     = {A Semantic Model of Reference Counting and Its Abstraction (Detailed Summary)},
+  booktitle = {Proceedings of the 1986 ACM Conference on LISP and Functional Programming (LFP '86)},
+  publisher = {ACM},
+  year      = {1986},
+  doi       = {10.1145/319838.319876},
+  note      = {Extended version in S. Abramsky and C. Hankin (eds.), Abstract Interpretation of Declarative Languages, 1987}
+}
+
+@inproceedings{guzman1990single,
+  author    = {Juan C. Guzm{\'a}n and Paul Hudak},
+  title     = {Single-Threaded Polymorphic Lambda Calculus},
+  booktitle = {Proceedings of the Fifth Annual IEEE Symposium on Logic in Computer Science (LICS '90)},
+  publisher = {IEEE Computer Society},
+  year      = {1990},
+  doi       = {10.1109/LICS.1990.113759}
+}
+
+@inproceedings{baker1990unify,
+  author    = {Henry G. Baker},
+  title     = {Unify and Conquer (Garbage, Updating, Aliasing, \ldots) in Functional Languages},
+  booktitle = {Proceedings of the 1990 ACM Conference on LISP and Functional Programming (LFP '90)},
+  publisher = {ACM},
+  year      = {1990},
+  doi       = {10.1145/91556.91652}
+}
+
+@inproceedings{odersky1992observers,
+  author    = {Martin Odersky},
+  title     = {Observers for Linear Types},
+  booktitle = {ESOP '92: 4th European Symposium on Programming},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {582},
+  publisher = {Springer},
+  year      = {1992},
+  doi       = {10.1007/3-540-55253-7_23}
+}
+
+@inproceedings{odersky1991destructive,
+  author    = {Martin Odersky},
+  title     = {How to Make Destructive Updates Less Destructive},
+  booktitle = {Proceedings of the 18th ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages (POPL '91)},
+  publisher = {ACM},
+  year      = {1991},
+  doi       = {10.1145/99583.99590}
+}
+
+@inproceedings{park1992escape,
+  author    = {Young Gil Park and Benjamin Goldberg},
+  title     = {Escape Analysis on Lists},
+  booktitle = {Proceedings of the ACM SIGPLAN 1992 Conference on Programming Language Design and Implementation (PLDI '92)},
+  publisher = {ACM},
+  year      = {1992},
+  doi       = {10.1145/143095.143125}
+}
+
+@inproceedings{jones1989compile,
+  author    = {Simon B. Jones and Daniel Le M{\'e}tayer},
+  title     = {Compile-Time Garbage Collection by Sharing Analysis},
+  booktitle = {Proceedings of the Fourth International Conference on Functional Programming Languages and Computer Architecture (FPCA '89)},
+  publisher = {ACM},
+  year      = {1989},
+  doi       = {10.1145/99370.99375}
+}
+
+@phdthesis{mazur2004thesis,
+  author = {Nancy Mazur},
+  title  = {Compile-Time Garbage Collection for the Declarative Language {Mercury}},
+  school = {Katholieke Universiteit Leuven, Department of Computer Science},
+  year   = {2004},
+  month  = may,
+  url    = {https://mercurylang.org/documentation/papers/CW2004_03_mazur.pdf}
+}
+
+@inproceedings{mazur2001practical,
+  author    = {Nancy Mazur and Peter Ross and Gerda Janssens and Maurice Bruynooghe},
+  title     = {Practical Aspects for a Working Compile Time Garbage Collection System for {Mercury}},
+  booktitle = {Logic Programming, 17th International Conference, ICLP 2001},
+  editor    = {Philippe Codognet},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {2237},
+  publisher = {Springer},
+  year      = {2001},
+  doi       = {10.1007/3-540-45635-X_15}
+}
+
+@misc{austral,
+  author       = {Fernando Borretti},
+  title        = {The {Austral} Language Specification},
+  year         = {2022},
+  howpublished = {\url{https://austral-lang.org/spec/spec.html}},
+  note         = {Accessed 2026-10-09}
+}
+
+@misc{vale,
+  author       = {Evan Ovadia},
+  title        = {Vale's Memory Safety Strategy: Generational References and Regions},
+  year         = {2023},
+  howpublished = {\url{https://verdagon.dev/blog/generational-references}},
+  note         = {Accessed 2026-10-09}
+}
+
+@inproceedings{pony,
+  author    = {Sylvan Clebsch and Sophia Drossopoulou and Sebastian Blessing and Andy McNeil},
+  title     = {Deny Capabilities for Safe, Fast Actors},
+  booktitle = {Proceedings of the 5th International Workshop on Programming Based on Actors, Agents, and Decentralized Control (AGERE! 2015)},
+  publisher = {ACM},
+  year      = {2015},
+  doi       = {10.1145/2824815.2824816}
+}
+
+@article{granule,
+  author  = {Dominic Orchard and Vilem-Benjamin Liepelt and Harley {Eades III}},
+  title   = {Quantitative Program Reasoning with Graded Modal Types},
+  journal = {Proceedings of the ACM on Programming Languages},
+  volume  = {3},
+  number  = {ICFP},
+  pages   = {110:1--110:30},
+  year    = {2019},
+  doi     = {10.1145/3341714}
+}
+
+@misc{beni2026,
+  author       = {Cesar Canassa},
+  title        = {beni: A Compiler for an {Elm}-like Language that Emits {JavaScript}},
+  howpublished = {Source code, \url{https://github.com/canassa/beni}},
+  year         = {2026}
 }

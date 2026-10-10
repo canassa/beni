@@ -4,44 +4,55 @@
 Each case below is stated, run through the rules, and marked \emph{solved}, \emph{solved with a
 cost}, or \emph{open}.
 
-\section{Closures that read a captured list, and closures called many times}
+\section{Closures}
 \label{sec:hard-closures}
 
+\paragraph{A closure that reads a captured list, called many times.}
 \begin{Verbatim}
 total = List.foldl xs 0 (λx acc → acc + List.length ys)    -- reads ys, called n times
 zs = List.set ys 0 7                                       -- then edits ys
 \end{Verbatim}
-The lambda's summary is $\mathit{cap}\ \mathit{ys} = \borrowed$ (it only reads) and
-$\mathit{once} = \mathit{no}$. \code{foldl}'s class for its callback is $\mathit{calls} =
-\mathit{many}$, $\mathit{escapes} = \mathit{no}$, and the edge check passes, since a closure that is
-not $\mathit{once}$ may be called many times. The closure holds \code{ys} while it is live, which is
-during the \code{foldl} call only, so at \code{List.set ys 0 7} the holder is dead. \emph{Solved.}
+The lambda holds \code{ys} under $\env$ and only reads it, so it is not once. \code{foldl} calls it many
+times and does not keep it, and the edge check passes. The closure holds \code{ys} while it is live,
+which is during the \code{foldl} call only, so at \code{List.set ys 0 7} the holder is dead.
+\emph{Solved.}
 
-The reason it is solved is that beni's lambdas are in front of the checker. This case is open in
-every type-based system, because there the capture counts as a use of the capture's \emph{type}: in
-Wansbrough and Peyton Jones's usage analysis, ``all free variables of an abstraction have at least the
-usage of the abstraction itself'' \citep[\S6.1]{wansbrough1999once}, and effect- and capture-based
-systems close the case only with declarations---Deng et al.'s use and kill effects
-\citep{deng2025capture}, Capybara's capture modes \citep{xu2026capybara}, and Affe's explicit shared
-borrow \code{\&x} \citep[\S3.3]{radanne2020kindly}.
+The reason it is solved is that beni's lambdas are in front of the checker. In type-based usage
+analyses the capture counts as a use of the capture's \emph{type}: in Wansbrough and Peyton Jones's
+usage analysis, ``all free variables of an abstraction have at least the usage of the abstraction
+itself'' \citep[\S6.1]{wansbrough1999once}. Effect- and capture-based systems close the case with
+declarations on the API side---Deng et al.'s use and kill effects \citep{deng2025capture}, and
+Capybara's markers on mutating and consuming methods \citep[\S6.1]{xu2026capybara}, although Capybara
+infers read-only permissions from capture sets---and Affe with an explicit shared borrow \code{\&x}
+\citep[\S3.3]{radanne2020kindly}.
 
+\paragraph{A closure that consumes a capture, called many times.}
 \begin{Verbatim}
 ys2 = List.map xs (λx → List.push acc x)                    -- consumes a capture, called n times
 \end{Verbatim}
-Here $\mathit{cap}\ \mathit{acc} = \consumed$ and $\mathit{once} = \mathit{yes}$, while \code{map}'s
-class says $\mathit{calls} = \mathit{many}$. The edge $\mathit{once} \Rightarrow \mathit{calls} \le 1$
-fails, and the program is \emph{rejected}, correctly: the first call writes \code{acc} and returns it,
-the second writes the same array, and the first element of the result would change under the second
-call. The message names the lambda, the capture and \code{map}'s call count, and offers a fold
-(\S\ref{sec:errors-examples}). This is OxCaml's lock rule for closures, under which a closure that
-consumes a captured value must be \code{once} \citep[\S3.3]{lorenzen2024oxidizing}, and Futhark's
-refusal to let the function of a \code{map} consume an array bound outside it, since ``that would
-imply the array is consumed once for every iteration'' \citep[\S3.3]{henriksen2017futhark}. A closure
-that consumes a capture and \emph{is} called at most once---\code{Task.scope (λscope → … List.push acc
-x …)}, \code{Result.andThen r (λx → List.push acc x)}---passes, because those callees' classes say
-$\mathit{calls} \le 1$. \emph{Solved}, with a cost: a $\mathit{once}$ closure passed to a
-$\mathit{many}$ position is an error even when the program would in fact call it once for reasons the
-checker cannot see, for example a \code{List.map} over a one-element list.
+The lambda writes its captured \code{acc}, so it is once: a cell, whose every call is a demand. \code{map}
+calls it many times; the edge ``a once lambda requires $\mathit{calls} \le 1$'' fails, and the program is
+\emph{rejected}, correctly: the first call writes \code{acc} and returns it, the second writes the same
+array, and the first element of the result would change under the second call. The message names the
+lambda, the capture and \code{map}'s call count, and offers a fold (\S\ref{sec:errors-examples}). This
+is OxCaml's lock rule for closures, under which a closure that consumes a captured value must be
+\code{once} \citep[\S3.3]{lorenzen2024oxidizing}, and Futhark's refusal to let the function of a
+\code{map} consume an array bound outside it, since ``that would imply the array is consumed once for
+every iteration'' \citep[\S3.3]{henriksen2017futhark}. A once closure that \emph{is} called at most
+once---\code{Task.scope (λscope → ⋯ List.push acc x ⋯)}, \code{Result.andThen r (λx → List.push acc x)}---passes.
+\emph{Solved}, with a cost: a once closure passed to a $\mathit{many}$ position is an error even when the
+program would in fact call it once for reasons the checker cannot see, for example a \code{List.map} over
+a one-element list.
+
+\paragraph{A closure that leaves its binding.} An earlier version of these rules attached capture and
+once-ness to the binding that named a lambda, and lost both when the closure was returned, stored or
+captured by another closure: a function returning \code{λ⊤ → List.length xs} made its caller's
+\code{xs} look unheld, and a function returning \code{λx → List.push acc x} could be called twice through
+its result. With environments at $\env$ and once closures as cells (\S\ref{sec:model-functions}), both
+facts travel with the value and appear in summaries; the programs are F1 and F2 of
+Table~\ref{tab:counterexamples}, now rejected. A closure \emph{stored} in a structure holds its
+captures exactly as long as the structure is live, so a record of handlers built from a list of columns
+keeps that list from being edited in place while the record is used, and no longer. \emph{Solved.}
 
 \section{Pipelines, identity and composition}
 \label{sec:hard-pipelines}
@@ -50,29 +61,30 @@ The pipe is syntax: \code{xs ▷ List.filter p ▷ List.set 0 v} \emph{is}
 \code{List.set (List.filter xs p) 0 v}, because pipes are rewritten before anything runs, and a
 placeholder or a \code{←} bind is a written lambda, so there is no plumbing function in which to lose
 precision. \code{identity x = x} is inferred with $\mathit{res} = \{\pi_1\}$; a user-written
-\code{apply f x = f x} with $\mathit{res}$ equal to its callback's result class; a composition
-\code{λx → g (f x)} likewise. Futhark's alias analysis is lossy exactly here and its authors proposed
-parametricity as the fix \citep{henriksen2026aliasing}; we analyse the body and let the class carry the
-result's provenance, so identity, application and the pipe keep exact aliasing with no free theorem
-needed. \emph{Solved.}
+\code{apply f x = f x} with $\mathit{res}$ equal to its callback's result translated through its supply,
+here $\{\pi_2\}$ wherever the callback returns its argument; a composition \code{λx → g (f x)} likewise.
+Futhark's alias analysis is lossy exactly here and its author is exploring parametricity as the fix
+\citep{henriksen2026aliasing}; we analyse the body and let the class carry the result's provenance, so
+identity, application and the pipe keep exact aliasing with no free theorem needed. \emph{Solved.}
 
-The residual cost lies in the identity promises of beni's current list library
+The residual cost lay in the identity promises of beni's current list library
 (\S\ref{sec:bg-lists}): \code{filter} that keeps every element returns its input itself, as does
-\code{map} when every result is \code{===} its element, and \code{slice} of everything. Under the rule
-such a function has $\mathit{res} = \{\fresh, \pi_1\}$---the result \emph{may} be the input---so
-\code{List.set (List.filter xs p) 0 v} demands \code{xs} unique too. In a pipeline \code{xs} is usually
-dead afterwards and this costs nothing; where it is not, the rejection names the promise. We propose
-dropping the promises that alias (\S\ref{sec:disc-options}, change~2).
+\code{map} when every result is \code{===} its element. Under the rule such a function has
+$\mathit{res} = \{\fresh, \pi_1\}$---the result \emph{may} be the input---so
+\code{List.set (List.filter xs p) 0 v} would demand \code{xs} unique too. We propose dropping the
+promises that alias (\S\ref{sec:model-demands}; \S\ref{sec:disc-options}, Change~2), after which a
+pipeline never demands its source.
 
 \section{Generic code}
 \label{sec:hard-generic}
 
-\code{where k.compare : k, k → Order} and \code{a.eq} are synchronous and read-only by contract:
-$\borrowed$. A user method's summary is a class on the constraint's method type, bound at each call
-site from the dispatch table's term (\S\ref{sec:inf-generic}). Inside the generic body, a call
-\code{x.m a} is a call through a function-typed value whose class is the constraint's, and the body's
-own summary is expressed over it. A generic body cannot write a value of type \code{a} in place,
-because there is no demand of type \code{a → a}, which is the right answer. \emph{Solved.}
+A type's \code{eq} and \code{compare} only read, by the rule of \S\ref{sec:inf-generic}, so
+\code{where k.compare : k, k → Order} and \code{a.eq} need no class. A user method's summary is a class
+on the constraint's method type, bound at each call site from the dispatch table's term. Inside the
+generic body, a call \code{x.m a} is a call through a function-typed value whose class is the
+constraint's, and the body's own summary is expressed over it. A generic body cannot write a value of
+type \code{a} in place, because there is no demand of type \code{a → a}, which is the right answer.
+\emph{Solved}, at the cost of one rule on \code{eq} and \code{compare}.
 
 \section{Lists in containers}
 \label{sec:hard-containers}
@@ -81,46 +93,50 @@ because there is no demand of type \code{a → a}, which is the right answer. \e
 and the holders of that cell are $(m, .\mathit{rows})$ itself and whatever else holds \code{m} or its
 \code{rows}. A record update shares every \emph{other} field's value between the old and the new
 record, but not \code{rows}, which the push's result replaces. After the update \code{m} is dead unless
-read later, and a later \code{m.name} reads a path that does not meet $.\mathit{rows}$, so it is not a
-use of the cell. \emph{Solved}: a model threaded through helpers that each touch one field is
-accepted, because $\mathit{use}$ and $\live$ are per path---which is what the TEA shape needs
-(\S\ref{sec:hard-tea}) and what the prototype study found necessary.
+used later, and a later \code{m.name} reads a path that does not meet $.\mathit{rows}$, so it is not a
+use of the cell. A helper that receives the model and replaces \code{rows} is $\unused$ at
+$\pi_1.\mathit{rows}$, so passing the old model to it after the push is not a use either.
+\emph{Solved}: a model threaded through helpers that each touch one field is accepted, because
+$\mathit{use}$ and $\live$ are per path.
 
 \paragraph{A tuple, a constructor.} The same, through $.i$ and $C\#i$.
 
 \paragraph{A list of lists.} In \code{List.update rows i (λr → \{ r | tags = List.push r.tags t \})} the
 lambda's parameter \code{r} is an element of \code{rows}. Two slots of \code{rows} may hold the same
-record (\code{[ r, r ]}), in which case a push through slot $i$ would be seen at the other slot, and the
-cell-set domain cannot tell slots apart (\S\ref{sec:model-excl}). The derivation therefore needs two
-things: \code{List.update} must be a consuming writer that overwrites slot $i$ with the callback's
-result---a destructive read, so the slot's old holder is dead during the callback---and \code{rows} must
-be unique and exclusive. Then \code{r} is unique inside the callback, \code{r.tags}'s only holder is
-\code{r}, and the push is in place: accepted. If \code{rows} is unique but not exclusive---its elements
-came from a \code{foreign} that declares nothing, or from \code{List.repeat}---the program is rejected
-as a limit, ``the elements of \code{rows} may share'', with the fix \code{List.copy r.tags}. With
-\code{map} in place of \code{update} under the nine-writer demand set, \code{map} is not a writer and
-supplies a borrowed element: the old \code{rows} holds every element until \code{map} has built its
-result, so the push is rejected as real sharing. If \code{map} joined the demand set
-(\S\ref{sec:disc-options}, change~1), it would become a destructive read per position, and the
-exclusive case would be accepted. This one example contains Lean's motivating \code{groupBy}, Clean's
-propagation rule and the two-slots-one-record hazard. \emph{Solved with a cost}: a nested edit needs
-exclusivity, which the program's own construction of the container must establish, and which the
+record (\code{[ r, r ]}), or one record may hold one list at two fields; in either case a push through
+one path would be seen at the other, and the cell-set domain cannot tell slots apart
+(\S\ref{sec:model-excl}). The derivation therefore needs two things: \code{List.update} must be a
+consuming writer that overwrites slot $i$ with the callback's result---a destructive read, so the slot's
+old holder is dead during the callback---and \code{rows} must be unique and exclusive, in the deep sense
+of \S\ref{sec:model-excl}. Then \code{r} is unique inside the callback, its paths are distinct cells,
+\code{r.tags}'s only holder is \code{r}, and the push is in place: accepted. If \code{rows} is unique but
+not exclusive---its elements came from a \code{foreign} that declares nothing, from \code{List.repeat},
+or from a literal that placed one list at two fields---the program is rejected: as a limit, ``the
+elements of \code{rows} may share'', when the checker cannot see the construction, and as sharing when
+it can; the fix is \code{List.copy r.tags}. With \code{map} in place of \code{update}, \code{map} supplies
+a borrowed element---the old \code{rows} holds every element until \code{map} has built its result---so
+the push is rejected as real sharing. This one example contains Lean's motivating \code{groupBy},
+Clean's propagation rule and the two-slots-one-record hazard. \emph{Solved with a cost}: a nested edit
+needs exclusivity, which the program's own construction of the container must establish, and which the
 evaluation counts.
 
-\paragraph{A dictionary.} beni's \code{Dict k v} is a balanced tree of constructors written in beni.
-A lookup \code{Dict.get d k} is a non-destructive read: its result aliases a value inside \code{d}
+\paragraph{A dictionary.} beni's \code{Dict k v} is a balanced tree of constructors written in beni with
+no \code{Js}, and it is exported opaquely. Its paths fold (\S\ref{sec:model-cells}): every value of the
+tree is reached by one folded path, which importers see as the opaque step $\langle\mathit{Dict}\rangle$
+and which we write $.\mathit{contents}$. Its summaries are therefore inferred, not asserted. A lookup
+\code{Dict.get d k} is a non-destructive read: its result aliases a value inside \code{d}
 ($\mathit{res} = \{\pi_1.\mathit{contents}\}$), and \code{d}'s values stop being exclusive while that
-result is live. \code{Dict.insert d k v} stores \code{v} ($\mathit{use}(v) = \shared$), rebuilds a path
-and shares the rest with \code{d} ($\pi_1 \in \mathit{res}$); it keeps $\excl$ only if \code{v} was
-unique at the store. \code{Dict.update d k f}, written as a path-copying walk that takes the node's
-value, calls \code{f} and rebuilds the node with the result, is a destructive read, whose callback's
-argument is unique when \code{d} is consumed at the call and its values are exclusive. Huisinga's
-motivating example for Lean \citep[\S2.1]{huisinga2023lean}, in which a group is looked up, pushed to
-and re-inserted, is \emph{rejected} as real sharing with the holder named---the dictionary is live
-across the push, because it is passed to \code{insert} afterwards---and the message offers
-\code{Dict.update}, which is accepted when the values are exclusive (Appendix~\ref{app:groupby}). Lean
-accepts the lookup form and copies silently at run time, because the dictionary still holds the group;
-the program is quadratic \citep[\S2.4]{huisinga2023lean}. \emph{Solved with the same cost.}
+result is live. \code{Dict.insert d k v} stores \code{v} at $.\mathit{contents}$ of its result, rebuilds a
+path and shares the rest with \code{d}; it keeps $\excl$ only if \code{v} was stored exclusively.
+\code{Dict.update d k f}, a path-copying walk that takes the node's value, calls \code{f} and rebuilds the
+node with the result, is a destructive read at a key, which the folded path cannot name, so its
+callback's owned supply is the one asserted row of the module. Huisinga's motivating example for Lean
+\citep[\S2.1]{huisinga2023lean}, in which a group is looked up, pushed to and re-inserted, is
+\emph{rejected} as real sharing with the holder named---the dictionary is live across the push,
+because it is passed to \code{insert} afterwards---and the message offers \code{Dict.update}, which is
+accepted when the values are exclusive (Appendix~\ref{app:groupby}). Lean accepts the lookup form and
+copies silently at run time, because the dictionary still holds the group; the program is quadratic
+\citep[\S2.4]{huisinga2023lean}. \emph{Solved with the same cost.} A set is the same.
 
 \section{Recursion and folds}
 \label{sec:hard-recursion}
@@ -130,16 +146,15 @@ go xs acc = case xs of
     [] → acc
     [ x, …rest ] → go rest (List.push acc (f x))
 \end{Verbatim}
-\code{go}'s group is one declaration. The optimistic start assumes \code{acc} borrowed and the result
-fresh. In round 1 the tail call passes \code{List.push acc …}, a demand on \code{acc}'s cell, whose only
+\code{go}'s group is one declaration. The optimistic start assumes \code{acc} $\unused$ and the result
+empty. In round 1 the tail call passes \code{List.push acc ⋯}, a demand on \code{acc}'s cell, whose only
 holder in the frame is \code{acc} itself; after the jump \code{acc} is rebound, so it is dead. Hence
-$\mathit{use}(\mathit{acc}) = \consumed$, and $\mathit{res} = \{\pi_2\}$ (the \code{[]} arm returns
-\code{acc}) united with the recursive call's result, $\{\fresh\}$ under the round's assumption. Round 2,
-with $\mathit{res} = \{\pi_2, \fresh\}$, gives the same; validation passes. \code{List.foldl} in the core
-library has this shape, with its callback's class carrying the accumulator's ownership ($\mathit{supply}$
-owned, $\mathit{need}$ owned), so \code{List.foldl xs [] (λx acc → List.push acc x)} is accepted and runs
-as the in-place builds of our prototype study did. Mutual recursion is the same fixpoint over the group.
-\emph{Solved.}
+$\mathit{use}(\mathit{acc}) = \{\mathsf{R}, \mathsf{A}, \mathsf{W}\}$, and $\mathit{res} = \{\pi_2\}$ (the
+\code{[]} arm returns \code{acc}) united with the recursive call's result. Round 2 gives the same;
+validation passes. \code{List.foldl} in the core library has this shape, with its callback's class
+carrying the accumulator's ownership (\S\ref{sec:inf-classes}), so
+\code{List.foldl xs [] (λx acc → List.push acc x)} is accepted and runs as the in-place builds of our
+prototype study did. Mutual recursion is the same fixpoint over the group. \emph{Solved.}
 
 \section{Branches that keep the old value}
 \label{sec:hard-branches}
@@ -147,18 +162,19 @@ as the in-place builds of our prototype study did. Mutual recursion is the same 
 \begin{Verbatim}
 case List.get xs i of
     Just v  → v
-    Nothing → List.set xs i d ▷ List.get …
+    Nothing → List.set xs i d ▷ List.get ⋯
 \end{Verbatim}
 \code{v} is an element, not the array, and the \code{set} writes a slot; per-arm liveness makes
 \code{xs} dead after the \code{set} on the \code{Nothing} arm, where it is the operand. Accepted. The
-shape that Rust's borrow checker long rejected (the third ``problem case'' of non-lexical lifetimes
-\citep{rfc2094}) does not arise, because beni has no references into a list: \code{get} returns the
-element, not a pointer to the slot.
+shape that Rust's borrow checker has long rejected and still rejects on its stable release---the third
+``problem case'' of non-lexical lifetimes \citep{rfc2094}, deferred from that work to Polonius
+\citep{matsakis2018alias}---does not arise, because beni has no references into a list: \code{get}
+returns the element, not a pointer to the slot.
 
 In \code{ys = if c then List.set xs 0 1 else xs}, $A(\mathit{ys})$ is \code{xs}'s cell on both arms---in
 the \code{then} arm as the demand's result, in the \code{else} arm as an alias. The demand in the
 \code{then} arm asks whether \code{xs} is live after it \emph{on that arm}, and it is not: the
-\code{else} arm's read of \code{xs} is not on the \code{then} path. Accepted, and \code{ys} owns the cell
+\code{else} arm's use of \code{xs} is not on the \code{then} path. Accepted, and \code{ys} owns the cell
 on both arms. Futhark's rule that the aliases of a conditional are the union of both branches
 \citep[Fig.~5]{henriksen2017futhark} is kept for cells, but liveness is per path, so a value ``used''
 only in the arm not taken causes no false error. \emph{Solved.}
@@ -171,123 +187,171 @@ false error. A known imprecision; the evaluation counts how often it occurs.
 \label{sec:hard-foreign}
 
 A \code{foreign} has no body; its declaration carries a summary as it already carries an effect rung
-and its \code{sync} marks. \emph{The default is pessimistic}: a parameter that says nothing is shared,
-because beni's existing contract lets a sibling keep a list it was given in order to read it later,
-as some platform code does, and a result that says nothing is $\top$. A sibling that only reads its
-argument during the call says borrowed; one that returns a fresh plain array that nothing else holds
-(already the rule for arrays a sibling returns) says fresh; \code{Debug.log}'s result says that it is
-its second argument. A platform author who writes nothing therefore loses precision and never
-soundness. \code{Js.from x} marks \code{x} escaped forever; a \code{Js.call} that passes a list is a call
-with no summary and escapes it. The existing build-time checks on siblings are unchanged; the new
-promise is tested as the effect rung is, by review and by a test program that pins each row (A8). The
-residual risk is a sibling that lies---a bug in privileged code of the same class as a wrong effect
-rung. \emph{Solved, by contract} (A2).
+and its \code{sync} marks. \emph{The default is pessimistic}: a parameter that says nothing is read and
+escaped, because beni's existing contract lets a sibling keep a list it was given in order to read it
+later, as some platform code does, and a result that says nothing is $\top$. A sibling that only reads
+its argument during the call says borrowed; one that returns a fresh plain array that nothing else
+holds (already the rule for arrays a sibling returns) says fresh; \code{Debug.log}, which is beni over
+\code{Js}, has an asserted row saying that it reads its second argument and returns it. A platform
+author who writes nothing therefore loses precision and never soundness. \code{Js.from x} marks
+\code{x} escaped forever; a \code{Js.call} that passes a list is a call with no summary, which reads and
+escapes it. The existing build-time checks on siblings are unchanged; the new promise is tested as the
+effect rung is, by review and by a test program that pins each row (A8). The residual risk is a sibling
+that lies---a bug in privileged code of the same class as a wrong effect rung. \emph{Solved, by
+contract} (A2), with the trusted surface of \S\ref{sec:soundness-trusted}.
 
 \section{Fibers and commands that capture values}
 \label{sec:hard-fibers}
 
-\code{Cmd.perform (λsend → send (Saved model.todos))} captures \code{model.todos} in a thunk that the
-runtime stores and runs later. \code{Cmd.perform}'s argument has $\mathit{escapes} = \mathit{yes}$, so
-every capture of the lambda is escaped at the capture, and \code{model.todos}'s cell is shared from
-then on, in this arm \emph{and in every later dispatch that receives the same cell in its model}
+\code{Cmd.perform (λsend → ⋯ model.todos ⋯)} captures \code{model.todos} in a thunk that the runtime
+stores and runs later. \code{Cmd.perform}'s row puts $\mathsf{E}$ on its argument's $\env$, so every
+capture of the lambda is escaped at the capture, and \code{model.todos}'s cell is escaped from then on,
+in this arm \emph{and in every later dispatch that receives the same cell in its model}
 (\S\ref{sec:hard-tea}). Spawning a fiber (in the current scope or a named one), the thunks of a
-parallel combinator, \code{Ref.set} and \code{Queue.offer} are the same. A thunk the callee calls
-synchronously and does not keep---the body of a structured-concurrency scope, the acquire step of a
-bracket---has $\mathit{calls} \le 1$, $\mathit{escapes} = \mathit{no}$, and captures nothing
-permanently; a bracket's \emph{release} is stored on the fiber's finaliser list and escapes. These facts
-are declarations on the core \code{Task} module's foreign values and are inferred for its beni
-wrappers. \emph{Solved by escape}, with the cost that a list handed to any command or fiber is shared
-until the end of the program, because the analysis cannot see when the fiber reads it. The message
-names the capture (\S\ref{sec:errors-examples}).
+parallel combinator and \code{Ref.set} are the same. A thunk the callee calls synchronously and does
+not keep---the body of a structured-concurrency scope, the acquire step of a bracket---is called at most
+once and kept by nothing; a bracket's \emph{release} is stored on the fiber's finaliser list and
+escapes. These facts are asserted rows of the core \code{Task} module and inferred for its beni
+wrappers.
 
-\section{The TEA update: a hand-over protocol}
+A command whose thunk cannot suspend is a special case worth stating. Its body runs to completion in
+one go; whether it can still observe a later in-place write depends only on whether the runtime runs it
+before the next dispatch. Today's TEA runtime queues it to run soon after \code{update} returns, without
+promising that it runs before the next message, so its captures are escaped. A platform that promises
+to drain such commands before the next dispatch (\Obl{P7}) may declare their captures held only until
+then, and the entry protocol of \S\ref{sec:hard-tea} uses that: a sync command that encodes and stores
+the todo list it captured no longer makes the list uneditable. The checker knows which thunks cannot
+suspend from the effect bits it already infers. \emph{Solved by escape}, with the cost that a list
+handed to a command that may wait, or to a fiber, is shared until the end of the program, because the
+analysis cannot see when the fiber reads it; the message names the capture and says that this is
+\emph{possible} sharing (\S\ref{sec:errors-examples}).
+
+\section{The TEA runtime: an entry protocol}
 \label{sec:hard-tea}
 
-beni's current template runtime cannot host the rule. It keeps the rows it rendered and the last
-value of every hole (\S\ref{sec:bg-browser}), so every rendered list is a content holder the program
-cannot see, and a \code{List.push model.rows x} in \code{update} would be an error on every message.
-Our prototype study measured the same thing from the other side: with the runtime as written, no
-scheme wrote the table in place. The direct platform removes these holds by design: there is no
-\code{view} at run time and no retained render, slots hold leaf values, instance arrays hold row items
-and compare them by identity, edit scripts are guarded by their own tags and never by list identity,
-and the old model is dead after the arm. What remains is to state the contract the checker reads, as
-six obligations on the platform's lowering and runtime.
+A TEA platform calls the program's functions---\code{init}, \code{update}, \code{view}, subscriptions,
+the bodies of commands, and, on the direct platform, derived values and listener bodies---on a model the
+runtime holds between calls. None of these calls has a caller in the program to discharge \Unescaped,
+\Dead\ and \Disjoint\ for the model, so the platform must say, for each one, what it passes owned, what
+it passes only to read, and what it keeps of the result. An earlier version of these rules stated such a
+protocol for \code{update} alone. It must cover every entry, or a \code{view} that writes a model list
+in place is accepted and writes it at every render.
 
+\paragraph{The protocol.} Table~\ref{tab:entry} gives the protocol we propose, for both of beni's
+browser platforms. It is an asserted row on the platform's program constructor (\code{Tea.element} and
+its kin), whose record parameter's fields carry the classes in the table, and it models the runtime's
+loop---the model is \code{init}'s result, then each dispatch's result---as a recursive caller of
+\code{update}. The checker evaluates that row \emph{at the one call that starts the program}, from the
+published summaries of the functions in the record, as it evaluates any call: it computes the abstract
+model at entry as the least fixpoint of \code{init}'s result and \code{update}'s result over it, with
+numbered fresh cells for aliasing and $\mathsf{E}$ for escapes, and then checks every path that
+\code{update} writes as a caller would check an argument. Nothing in this is whole-program: it reads
+interfaces.
+
+\begin{table}[t]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.22\linewidth}>{\raggedright\arraybackslash}p{0.3\linewidth}X@{}}
+\toprule
+Function & Receives & What the runtime keeps of the result \\
+\midrule
+\code{init ⊤} & nothing & the model, handed to the first \code{update}; commands, as below \\
+\code{update msg model} & \code{model} owned (\Obl{P1}); \code{msg} owned unless a view event built it from the model (\Obl{P6}) & the new model, handed to the next \code{update} (\Obl{P1}); commands, as below \\
+\code{view model} & \code{model} to read only & template runtime: the rendered view, including every list it shows and every handler closure, \emph{escaped}; direct platform: nothing, since \code{view} is compiled away \\
+a derived value (direct) & the model, to read only & its slot; a list-valued slot is recomputed before it is read (\Obl{P4}) \\
+a listener body (direct) & the current model and row item, to read only (\Obl{P3}) & the message it builds \\
+\code{subscriptions model} & \code{model} to read only & the subscriptions and the functions in them, \emph{escaped} \\
+a command thunk & its captures & thunks that may wait: \emph{escaped}; thunks that cannot suspend: held until the next dispatch if the platform claims \Obl{P7}, else escaped \\
+\bottomrule
+\end{tabularx}
+\caption{The entry protocol of a TEA platform.}
+\label{tab:entry}
+\end{table}
+
+\paragraph{The obligations.} The table rests on seven obligations on the platform's lowering and
+runtime.
 \begin{description}[leftmargin=1.2em,font=\normalfont\itshape]
-\item[\Obl{P1}, hand-over.] The handler calls the arm with the model \emph{consumed}: after the arm,
-the runtime holds no content reference to any list reachable from the old model. The module-level
-model variable is reassigned by the arm.
-\item[\Obl{P2}, reads before the arm are the handler's.] Anything the handler needs from the old
-model---the indices it uses to locate rows, a derived value's old input---is read \emph{before} the
-arm, into locals. A list read this way is an ordinary holder of the handler, analysed by the same
-rules; a handler that read the old list and compared it after the arm would commit a sharing error,
-which the lowering must not generate. The current lowering's edit scripts read scalars and the
-\emph{new} list.
-\item[\Obl{P3}, item reads.] Row items in instance arrays are read only by the lowering's own code,
-and only as the lowering says: compared by \code{===} (A4), with a row's DOM writes reading the
-\emph{new} item. The one program-visible read through an instance is a \emph{listener body}, which
-reads its handler's arguments when the event fires, not when the row was rendered:
-\code{onClick=\{Select model.id\}} reads \code{model.id} at the click, and a row's handler reads the
-row's instance through the row's root node. A listener body is therefore program code the checker
-analyses; it reads the model and the item \emph{before} the arm (it computes the payload), and what
-it hands the arm is \Obl{P6}'s concern.
-\item[\Obl{P4}, slots are leaves or recomputed.] A derived value's slot that holds a list is
-recomputed by every message whose write set conflicts with its reads before any DOM write reads it,
-and the old slot value is never dereferenced after the arm. The write-set analysis's soundness already
-covers this once ``changed'' is read as ``possibly changed in content'' rather than ``not \code{===}''
-(\S\ref{sec:compiler-writesets}).
-\item[\Obl{P5}, the entry state is a whole-program fixpoint of the checker's own.] \code{update} has
-no caller to discharge \Unescaped, \Dead\ and \Disjoint\ for its model parameter, so the checker
-computes the model's abstract value at entry itself: the join, over \code{init}'s result and every
-arm's result, of the cell sets at every model path, iterated over the arms to a fixpoint (one round
-per cell the arms can place; in practice two). Two facts come out of it. \emph{Aliasing between
-paths}: \code{init} of the form \code{xs = List.range 1 3; \{ a = xs, b = xs \}} places one cell at $.a$
-and $.b$, so a push on \code{model.a} fails \Disjoint\ against $(\mathit{model}, .b)$. The write-set
-analysis cannot see this---it records two list paths with no alias fact between them---and the checker
-must. \emph{Escapes across dispatches}: a cell that any arm captures in a command, a subscription, a
-stored closure, a \code{Debug} or \code{Js} call, a send, or an event payload (\Obl{P6}) is escaped at
-every entry, because the runtime may hand the same cell back in the next model. The write-set
-analysis does not analyse commands, so it cannot supply this set either; the checker owns the
-computation. The entry summary is then $\mathit{use}(\mathit{model}, p) = \shared$ for every escaped or
-aliased path, and $\consumed$ otherwise. This is the one whole-program computation in the design.
-\item[\Obl{P6}, payloads.] A message's payload list is unique at the arm \emph{only if nothing else
-holds it when the arm runs}. There are two kinds of sender. A program sender---a fiber calling
-\code{send (Got rows)}---gives it up: sending is asserted to consume the message, so a sender that reads
-\code{rows} afterwards is rejected at the sender, and the arm may edit \code{rows} in place. A
-\emph{view event} whose handler expression is a model path or a row item
-(\code{onClick=\{Keep model.rows\}}, \code{onClick=\{Tag row.tags\}}) hands the arm a cell the model
-still holds; such a payload path is shared at the arm (it is one of \Obl{P5}'s escapes), and the
-message offers to copy it in the arm or to send an identifier instead of the list.
+\item[\Obl{P1}, hand-over.] The runtime calls \code{update} with the model \emph{owned}: after the call,
+it holds no content reference to any list reachable from the old model, and the module-level model
+variable is reassigned to the result.
+\item[\Obl{P2}, reads before the arm are the handler's.] Anything the runtime needs from the old
+model---the indices it uses to locate rows, a derived value's old input---is read \emph{before} the arm,
+into locals or as scalars. A handler that read the old list and compared it after the arm would commit a
+sharing error, which the lowering must not generate.
+\item[\Obl{P3}, reads by listeners and items.] Row items in instance arrays are compared only by
+\code{===} (A4). A listener body runs when its event fires, as program code, on the model and row item
+that are current \emph{at that moment}: after every dispatch the runtime re-obtains each instance's item
+from the new model for every row whose path is in the write set, so that no listener uses a reference
+obtained before an in-place write. Rows outside the write set hold items whose cells were not written.
+When a row's item is itself a list, its row is re-patched when its path is in the write set even though
+its identity is unchanged (A4).
+\item[\Obl{P4}, slots are recomputed.] A derived value's slot that holds a list is recomputed by every
+message whose write set conflicts with its reads, before any DOM write reads it, and the old slot value
+is never dereferenced after the arm. A derived value only reads the model, so a derived value that
+writes a model list in place is an error at its definition.
+\item[\Obl{P5}, the entry is checked as a call.] The abstract model at entry is the fixpoint described
+above. \emph{Aliasing between paths}: an \code{init} that places one cell at two paths, \code{xs = ⋯;
+\{ a = xs, b = xs \}}, publishes $\mathit{res}(.a) = \mathit{res}(.b) = \{\fresh_1\}$, so a push on
+\code{model.a} fails \Disjoint\ against \code{model.b} at the program's start. \emph{Escapes across
+dispatches}: a cell that \code{update}'s summary marks $\mathsf{E}$---captured by a command, a
+subscription, a stored closure, a \code{Js} call or a send---is escaped at every later entry, because the
+runtime may hand the same cell back in the next model.
+\item[\Obl{P6}, payloads.] A message's payload list is unique at the arm only if nothing else holds it
+when the arm runs. A program sender---a fiber calling \code{send (Got rows)}---gives it up: sending
+consumes the message (\S\ref{sec:disc-options}, Change~9), so a sender that uses \code{rows} afterwards
+is rejected at the sender. A \emph{view event} whose message is built from a model path or a row item
+(\code{onClick=\{Keep model.rows\}}) hands the arm a cell the model still holds; such a payload path is
+aliased with the model at the arm, and the message offers to copy it in the arm or to send an
+identifier instead of the list.
+\item[\Obl{P7}, sync commands are drained.] Optional: a platform may promise that a command whose thunk
+cannot suspend runs to completion before the next message reaches \code{update} (A12). Without the
+promise, such commands' captures are escaped like any other command's.
 \end{description}
 
-Under these obligations, the derivation for a table application's row swap and row update, and for
-\code{List.update model.rows 1 …} and \code{List.push model.rows …} in the compiler's page tests that
-edit keyed lists in place, is: the model is consumed at entry (\Obl{P1}); \code{model.rows} is not
-escaped by any arm, since nothing captures it (\Obl{P5}); the operand's only holder is
-$(\mathit{model}, .\mathit{rows})$; the model is dead after the arm. The update is accepted, and the
-write is \code{a[i] = v} on a plain array, derived from the general rule rather than from a
-model-specific one. \emph{Solved, conditional on the platform keeping the six obligations}; \Obl{P2}
-and \Obl{P5} are the ones the platform's specification does not yet state, and \Obl{P5} is real work.
+\paragraph{The two platforms.} beni's current template runtime keeps the rows it rendered and the last
+value of every hole (\S\ref{sec:bg-browser}); its row says that \code{view}'s result is escaped, so every
+list \code{view} shows is escaped from the first render, and an in-place edit of it in \code{update} is
+an error on every message. That is the platform both applications we examined run on
+(\S\ref{sec:disc-apps}); on it, the rule hosts in-place edits only of model lists that are never
+rendered. A refinement---escaping only the model paths that \code{view}'s summary passes to markup---would
+recover some of those, and is not designed here. The direct platform removes these holds by design: it
+has no \code{view} at run time and no retained render, slots hold leaf values or recomputed lists,
+instance arrays hold row items compared by identity, edit scripts are guarded by their own tags and
+never by list identity, and the old model is dead after the arm. Under \Obl{P1}--\Obl{P6} the
+derivation for a table application's row swap and row update, and for the in-place \code{List.update}
+and \code{List.push} of the compiler's test programs for that platform, is: the model is owned at entry;
+\code{model.rows} is not escaped by any arm and is not aliased by another path; the operand's only
+holder is $(\mathit{model}, .\mathit{rows})$; the model is dead after the arm. The update is accepted,
+and the write is \code{a[i] = v} on a plain array, derived from the general rule rather than a
+model-specific one. \emph{Solved, conditional on the platform keeping the protocol}; \Obl{P2},
+\Obl{P3}'s re-obtaining of items, and \Obl{P7} are not yet in the direct platform's specification.
 
-\paragraph{Derived values are reads, never demands.} The direct platform compiles a \code{let} in
-\code{view} into a derived value, recomputed by handlers while the page holds the model, for the whole
-dispatch and beyond; a TodoMVC
-\code{<For each=\{List.filter model.todos (visible model.filter \_)\}>} is one. The development-mode
-verification step re-evaluates every derived value after each dispatch and expects no change
-(\S\ref{sec:bg-browser}). No expression that a derived value or that check evaluates may therefore be a
-demand: the rebuilds there must be the forms that build fresh. Under the nine-writer demand set this is
-automatic, since \code{filter} and \code{map} are not demands; if the demand set is widened it must be
-stated, and it is the reason the widening cannot be a single function (\S\ref{sec:disc-options},
-change~1).
+\paragraph{\code{init} is a function.} In beni's TEA platforms today \code{init} is a value, and
+applications declare it at top level. A top-level value is a holder for the program's life
+(\S\ref{sec:model-check}), so every cell \code{init} makes is escaped, and the first in-place edit of a
+list that started in \code{init} is rejected. That is the sound reading, and the alternative---letting
+the protocol ignore the top-level hold---is unsound: a program whose \code{Reset} message returns
+\code{init} would get back the array that earlier messages had written. We therefore propose that
+\code{init} become a function, \code{init : ⊤ → Model × Cmd Msg}, as Elm's own \code{init} is a function
+of its flags (\S\ref{sec:disc-options}, Change~12). The runtime calls it once; a \code{Reset} arm calls
+it again and gets fresh cells. A program that keeps \code{init} as a value loses nothing in
+correctness; its lists that start in \code{init} cannot be edited in place.
+
+\paragraph{\code{view}, derived values and spreads.} \code{view} receives the model to read. Under the
+earlier version of these rules a spread or \code{++} was a demand, so
+\code{shown = [ …model.pinned, …model.recent ]} in a \code{view} wrote \code{model.pinned} in place at
+every render, or, if \code{view} was declared read-only, was an error. With spreads building new arrays
+(\S\ref{sec:model-demands}) it is neither: it reads two model lists and builds a third. A \code{view},
+a derived value or a subscription that calls a named writer on a model list is an error at its
+definition, and the message says that the runtime calls it again and again on the same model.
 
 \section{The explicit copy}
 \label{sec:hard-copy}
 
-\code{List.copy : List a [borrowed] → List a [fresh]} is a shallow copy, \code{a.slice()}, or for a view
-\code{\$plain().slice()}. The elements are the same values; records are immutable and need no copying; a
-list nested inside an element is still shared, and editing it is still an error whose message names the
-inner holder, with the fix \code{List.map xs List.copy} or a copy at the inner edit. A copy has a new
-identity, so a list keyed by reference in the view sees new rows, which is right for a list whose
+\code{List.copy : List a [borrowed] → List a [= fresh]} is a shallow copy, \code{a.slice()}, or for a view
+\code{b.slice(o)}. The elements are the same values; records are immutable and need no copying; a
+list nested inside an element is still shared, and editing it in place is still an error whose message
+names the inner holder, with the fix \code{List.map xs List.copy} or a copy at the inner edit. A copy has a
+new identity, so a list keyed by reference in the view sees new rows, which is right for a list whose
 contents the program is about to change behind the original's back. Copying a list that is already
 unique is legal and wasteful; the evaluation counts such copies to decide whether a warning is
 wanted---a warning, never an error. \emph{Solved.}
@@ -295,13 +359,18 @@ wanted---a warning, never an error. \emph{Solved.}
 \section{Views}
 \label{sec:hard-views}
 
-\code{[ x, …rest ]} binds \code{rest} to a view $(b, o)$ of \code{xs}'s base array. A view is a holder of
-the base, and a write through a view writes the base: \code{List.set rest i v} is \code{b[o + i] = v}.
-The demand on \code{rest} therefore asks that every holder of the base---\code{xs} included---be dead. In
-the common walk (\code{go rest …} with \code{xs} not read again) it is; where \code{xs} is read afterwards,
-the rejection is correct, because the elements \emph{are} shared. A view is always a suffix of its base,
-so \code{push} on a view is a push on the base and a new header, in $O(1)$, and \code{pop} likewise. The
-scalar-view rewrite removes most views from loops anyway (\S\ref{sec:bg-lists}). \emph{Solved.}
+\code{[ x, …rest ]} binds \code{rest} to a view $(b, o)$ of \code{xs}'s base array; \code{List.drop} and
+\code{List.tail} return views too. A view is a holder of the base, and a write through a view writes the
+base: \code{List.set rest i v} is \code{b[o + i] = v}. The demand on \code{rest} therefore asks that
+every holder of the base---\code{xs} included---be dead. In the common walk (\code{go rest ⋯} with
+\code{xs} not used again) it is; where \code{xs} is used afterwards, the rejection is correct, because
+the elements \emph{are} shared. A view is always a suffix of its base, so \code{push} on a view is a
+push on the base. A view header also caches a plain copy of its elements and stores its length; a write
+through a view therefore never mutates the header it was given, but returns a new header with no cached
+copy and the right length, and the old header, being the consumed operand, is dead (A1). A reader that
+took the cached copy earlier holds a separate array, a snapshot of the old version, which is what value
+semantics gives it. The scalar-view rewrite removes most views from loops anyway (\S\ref{sec:bg-lists}).
+\emph{Solved.}
 
 \section{Mutable cells}
 \label{sec:hard-ref}
@@ -313,14 +382,14 @@ rejected as a limit, with a message saying that the checker cannot see the cell'
 linear-cell discipline---the cell is the only holder, and \code{update}'s callback consumes its
 argument---would need a proof that no \code{Ref.get} result is live across the update, a
 whole-program fact about an unbounded set of readers. The fix is a copy in the callback, or a
-persistent structure in the cell. \code{Queue} is the same. \emph{Open, as a precision limit}; the
-evaluation measures how often it fires.
+persistent structure in the cell. A queue, if one is added to the core library, is the same.
+\emph{Open, as a precision limit}; the evaluation measures how often it fires.
 
 \section{Messages as values}
 \label{sec:hard-messages}
 
 A message stored in the model, logged whole, or mapped by \code{Html.map} with a function that is not a
-constructor is a value; its payload lists are shared wherever the message is. A payload passed as
+constructor is a value; its payload lists are held wherever the message is. A payload passed as
 handler parameters---the common case---is covered by \Obl{P6}. \emph{Solved.}
 
 \section{Versions: undo histories, diffs, snapshots}
@@ -328,26 +397,30 @@ handler parameters---the common case---is covered by \Obl{P6}. \emph{Solved.}
 
 In \code{\{ model | history = [ model.todos, …model.history ], todos = List.push model.todos t \}} the
 record update evaluates its fields in written order, so \code{history} holds the old array when the
-push runs---a live holder. The program is \emph{rejected}, correctly: the undo entry would change with
-the push. The message says so and offers \code{List.copy model.todos} in the history, $O(n)$ per edit,
-the price of a version. A persistent vector written in beni as a library module---the current trie,
-with no in-place writes---would give $O(\log n)$ versions to programs that want them; it would be a
-library, not the representation of \code{List}. \emph{Solved}, with the cost stated.
+push runs---a live holder, used when the record is built after the push. The program is
+\emph{rejected}, correctly: the undo entry would change with the push. The message says so and offers
+\code{List.copy model.todos} in the history, $O(n)$ per edit, the price of a version---or the
+non-writing \code{model.todos ++ [ t ]} in place of the push, which builds the new version and keeps the
+old. A persistent vector written in beni as a library module---the current trie, with no in-place
+writes---would give $O(\log n)$ versions to programs that want them; it would be a library, not the
+representation of \code{List}. \emph{Solved}, with the cost stated.
 
 \section{Debugging aids}
 \label{sec:hard-debug}
 
 \code{Debug.log tag x} reads \code{x} at the call and returns it; \code{Debug.toString} reads at the call.
-Neither is a holder afterwards. A development crash screen must print only the exception and the
-stack (A9); one that printed the model would read a half-updated record, and the two semantics would
-differ \emph{after} the program has stopped---a difference in a debugging aid, not in the program, but
-one to state. \emph{Solved}, with A9 recorded.
+Neither is a holder afterwards; both are asserted rows (\S\ref{sec:soundness-trusted}). A development
+crash screen must print only the exception and the stack (A9); one that printed the model would read a
+half-updated record, and the two semantics would differ \emph{after} the program has stopped---a
+difference in a debugging aid, not in the program, but one to state. \emph{Solved}, with A9 recorded.
 
-\section{Inlining and specialisation}
+\section{Inlining}
 \label{sec:hard-optimiser}
 
-Inlining substitutes a body at a call, which preserves evaluation order and holders. The verdict was
-computed on the unspecialised source and is not recomputed. Whole-program specialisation may copy a
-callee per call site, and a copy may be more unique than the general summary; the rule ignores this,
-so the accepted set is the source's, never the optimiser's. \emph{Solved by construction}, at the cost
-that a program the specialiser could have proved safe is still rejected.
+The release optimiser inlines a private function called from one site into that site, and folds a
+single-use binding into its use (\S\ref{sec:bg-release}); it does not specialise functions per call
+site. Inlining substitutes a body at a call, which preserves evaluation order and holders: the
+inlined body's demands are the same demands at the same points, with the parameters bound to the
+argument temporaries. The verdict was computed on the source and is not recomputed, so the accepted set
+is the source's, never the optimiser's; a program the inliner could have proved safe is still rejected.
+The fold is the subject of A5. \emph{Solved by construction.}
