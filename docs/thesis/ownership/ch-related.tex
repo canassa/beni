@@ -14,8 +14,7 @@ restricts what can be done with a value in the future, uniqueness guarantees wha
 in the past \citep{marshall2022entente}. Our property is a uniqueness property at one program point,
 and our ``read before the write'' plays the part of \code{let!} with no construct, because strict
 evaluation order fixes where the reads happen. Guzm\'an and Hudak's single-threaded polymorphic
-lambda calculus infers single-threadedness for polymorphic code, and is the earliest typed precedent we
-know of for ordering reads before writes \citep{guzman1990single}. Odersky gave a static criterion that
+lambda calculus is a type system for single-threadedness in polymorphic code \citep{guzman1990single}. Odersky gave a static criterion that
 checks that the side effect of a destructive update stays invisible \citep{odersky1991destructive}, and
 then \emph{observers} for linear types, which let a linear value be read by short-lived observers without
 the read counting as a use \citep{odersky1992observers}---the type-system form of ``reads before writes are
@@ -53,7 +52,8 @@ guarantees in-place updates statically and reports a violation as an error
 requires that what the first consumes be neither observed nor consumed by the second,
 $(\mathcal{O}_2 \cup \mathcal{C}_2) \cap \mathcal{C}_1 = \emptyset$
 \citep[Fig.~5, \textsc{Occurence-Seq}]{henriksen2017futhark}, which is the one-line form of our \Dead\
-condition under syntactic order. Futhark differs from our design in requiring uniqueness annotations
+condition under syntactic order. Futhark's update syntax consumes the array it updates, as our constructions consume their base.
+Futhark differs from our design in requiring uniqueness annotations
 (\code{*}) on consuming parameters and unique results, and in an intraprocedural alias analysis, for which
 ``we are forced to be conservative'' \citep[\S3.2]{henriksen2017futhark}. In a 2026 design note written
 while reworking Futhark's alias checking, Henriksen advises other designers against the feature and
@@ -73,7 +73,7 @@ after its arguments are evaluated, and the constraints ``can be solved in polyno
 \citep{wand2001set}. Their analysis is a first-order optimisation that falls back to a copy. Earlier,
 Bloss's update analysis decided statically which updates to a functional aggregate can be done in place,
 for a lazy language \citep{bloss1989update}; Hudak's abstract reference counting approximated at compile
-time how many references each value has \citep{hudak1987semantic}; Jones and Le M\'etayer found, by a
+time how many references each value has \citep{hudak1986semantic}; Jones and Le M\'etayer found, by a
 sharing analysis of first-order functional programs, cells that become garbage and can be reused in place
 \citep{jones1989compile}; and Baker observed that Hindley--Milner unification already computes a coarse,
 symmetric approximation of sharing, usable for update-in-place decisions \citep{baker1990unify}. We know

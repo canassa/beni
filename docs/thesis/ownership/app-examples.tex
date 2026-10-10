@@ -1,50 +1,44 @@
 \chapter{Programs Through the Rules}
 \label{app:examples}
 
-\section{TodoMVC's toggle}
+\section{TodoMVC's new todo}
 \label{app:todomvc}
 
-The application's own code is:
+The application's own code, abridged:
 \begin{Verbatim}
 init : Model × Cmd Msg
-init = ⋯                                   -- a top-level value
+init = ⋯                                   -- a value today; a function under the rules
+KeyDown event → ⋯
+    changed { model | draft = "", nextId = model.nextId + 1 }
+            (model.todos ++ [ { id = model.nextId, title = title, completed = False } ])
 Toggle id → changed model (List.map model.todos λt → if t.id == id then { t | completed = not t.completed } else t)
 changed model todos = ( { model | todos = todos }, save todos )
 save todos = Cmd.do λ⊤ → saved (Storage.set Local key (encode todos))
 \end{Verbatim}
 
-\paragraph{As written, on its own platform.} \code{List.map} builds a new list and is not a demand, and
-nothing else in the arm writes in place. There is nothing to check: the program is accepted, on the
-template runtime it runs on, and nothing in it is written in place. The template runtime's row escapes
-every list \code{view} shows, and \code{init}'s cells are escaped as a top-level value's, but neither
-matters when there is no demand.
+\paragraph{The demand.} \code{model.todos ++ [ ⋯ ]} consumes \code{model.todos}, its left operand, and reads
+the literal. Evaluation order puts the first argument of \code{changed}---a record that still holds the old
+\code{todos}---before the construction, so that record is a pending holder at the demand. It is not a use:
+\code{changed}'s summary is $\unused$ at $\pi_1.\mathit{todos}$, because its record update replaces that
+field, and $\mathit{res}(.1.\mathit{todos}) = \{\pi_2\}$. The arm's other holders of the cell are
+$(\mathit{model}, .\mathit{todos})$, which is dead after the arm. Locally the demand passes.
 
-\paragraph{Rewritten with an in-place form, on the template runtime.} Replace \code{List.map} by an
-in-place form (Change~1), \code{List.updateEach model.todos (λt → ⋯)}. The demand is on the cell at
-$(\mathit{model}, .\mathit{todos})$. \code{view} renders \code{model.todos}, and the template runtime keeps
-what it rendered, so the cell is escaped from the first render: \Unescaped\ fails, and the message says
-that the page still shows the list. \emph{Rejected.}
+\paragraph{The entry.} At the program constructor, the entry fixpoint asks what \code{model.todos} may hold
+at any dispatch. \code{init}, once it is a function, decodes the stored list or starts from \code{[]}: fresh.
+But every arm that changes the list calls \code{save}, whose command captures the arm's new list; the
+capture puts that cell in $\mathit{Esc}$, so \code{update}'s $\mathit{res}(.1.\mathit{todos})$ contains
+$\esc_k$ for the arms that build with \code{map} and \code{filter}, and $\mathit{use}(\pi_2.\mathit{todos})$
+contains $\mathsf{E}$ for the arm that appends. At every later entry the path is escaped, and the append
+fails \Unescaped: \emph{rejected}, as possible sharing, on every platform. With \code{save} encoding before
+the command, \code{todos} is only read, nothing escapes, and the entry finds the path fresh at every entry.
 
-\paragraph{Rewritten with an in-place form, on the direct platform.} Now the runtime keeps no rendered
-list (\Obl{P1}--\Obl{P4}). Three further facts decide it.
-\begin{itemize}
-\item \code{init} must be a function (Change~12). As a value, its cells are escaped, and \Unescaped\
-fails at the first toggle. As a function, its result is fresh at every call.
-\item \code{save}'s thunk captures \code{todos}, the list the arm returns in the model, and the runtime
-keeps the command. \code{Cmd.do}'s thunk here cannot suspend (\code{Storage.set} is synchronous), so on a
-platform that drains such commands before the next message (\Obl{P7}) the capture is held only until then,
-and \code{model.todos} is not escaped at the next entry. Without \Obl{P7} it is escaped, and the next
-toggle is rejected as possible sharing; the fix the message offers is to encode before the command is
-made, \code{text = encode todos}, so that the thunk captures a string.
-\item \code{changed}'s summary is $\unused$ at $\pi_1.\mathit{todos}$, because its record update replaces
-that field, and $\mathit{res}(.\mathit{todos}) = \{\pi_2\}$. Passing the old \code{model} to it after the
-in-place edit is therefore not a use of the edited cell. (An earlier version's lattice had no $\unused$,
-and this step failed.)
-\end{itemize}
-With all three, the entry protocol finds \code{model.todos} owned, unaliased and unescaped at every entry;
-the operand's only holder is $(\mathit{model}, .\mathit{todos})$; the lambda captures \code{id}, a scalar
-that crosses, and consumes nothing, so it is not once and may be called many times. \emph{Accepted}:
-\code{a[i] = f(a[i])}.
+\paragraph{The renderer.} \code{view} renders \code{List.filter model.todos (visible model.filter \_)},
+which by the identity promise may be \code{model.todos} itself. On the template runtime as it stands, that
+\code{<For>} skips its walk when it receives the same list, so the entry row treats the path as escaped and
+the append is \emph{rejected}. Under \Obl{P7}, the lowering learns from \code{update}'s summary that
+\code{model.todos} is written in place, compiles that \code{<For>} without the skip, and the append is
+\emph{accepted}: on the base array it is \code{a.push(v)}. On the direct platform it is accepted by
+construction of the platform.
 
 \section{A table application's row swap}
 
@@ -74,6 +68,18 @@ inner callback needs no exclusivity. \emph{Accepted}: the accumulator is written
 which is the building pattern our prototype study measured at 0.14--0.47 times the persistent
 representation's time.
 
+\section{Prepend, then reverse}
+
+\begin{Verbatim}
+evens xs = List.reverse (List.foldl xs [] λx acc → if Int.mod x 2 == 0 then [ x, …acc ] else acc)
+\end{Verbatim}
+Elm's accumulator idiom, carried over. The callback's construction consumes its second parameter; on the
+other arm it returns it unchanged, so its result is $\{\pi_2\}$ on both arms and its $\mathit{use}(2)$
+contains $\mathsf{W}$. \code{foldl} supplies the accumulator owned. Each prepend writes the slot in front of
+the accumulator's first element and returns a new header; when the room in front is used up, the base is
+moved to a larger array with room proportional to its length. \code{List.reverse} builds a new list, or
+returns its input when it is shorter than two. \emph{Accepted}, linear, in place.
+
 \section{Grouping into a dictionary}
 \label{app:groupby}
 
@@ -81,22 +87,26 @@ representation's time.
 groupBy xs key =
     List.foldl xs Dict.empty λx d →
         group = Maybe.withDefault (Dict.get d (key x)) []
-        Dict.insert d (key x) (List.push group x)
+        Dict.insert d (key x) [ …group, x ]
 \end{Verbatim}
 \code{Dict.get}'s inferred summary says its result aliases a value inside its dictionary, at the folded
-path $.\mathit{contents}$, so \code{group} holds a cell that \code{d} also holds. At the demand
-\code{List.push group x}, the holders of the cell are \code{group} (the operand) and
-$(d, .\mathit{contents})$, and \code{d} is live afterwards, because it is passed to \code{Dict.insert}. The
-program is \emph{rejected as real sharing}, with a message that says \code{d} still holds the list and is
-read by \code{Dict.insert} on the next line, and offers to update the group where it is:
+path $\langle\mathit{Dict}\rangle.v$, so \code{group} holds a cell that \code{d} also holds. At the
+construction \code{[ …group, x ]}, the holders of the cell are \code{group} (the base) and
+$(d, \langle\mathit{Dict}\rangle.v)$, and \code{d} is live afterwards, because it is passed to
+\code{Dict.insert}. The program is \emph{rejected as real sharing}, with a message that says \code{d} still
+holds the list and is read by \code{Dict.insert} on the same line, and offers to update the group where it
+is:
 \begin{Verbatim}
-Dict.update d (key x) (λg → Just (List.push (Maybe.withDefault g []) x))
+Dict.update d (key x) (λg → Just [ …Maybe.withDefault g [], x ])
 \end{Verbatim}
-Here \code{Dict.update : Dict k v, k, (Maybe v → Maybe v) → Dict k v}. Its callback is supplied an owned
-value by the one asserted row of the dictionary module, since its body holds the old value at a key the
-path domain cannot name. The rewritten program is accepted \emph{provided \code{d}'s values are
-exclusive}, and here they are, from \code{Dict.empty} on: every value stored is either \code{[ x ]} pushed
-onto a fresh \code{[]} or the pushed result of a destructive read, each a distinct cell with no other
-holder, and no lookup leaves a live alias. This is the program whose silently quadratic behaviour under
-reference counting motivated Huisinga's analysis for Lean \citep{huisinga2023lean}; here it is a message
-with the fix on it, and the fixed form is checked statically rather than counted at run time.
+Here \code{Dict.update : Dict k v, k, (Maybe v → Maybe v) → Dict k v} looks the value up, calls the
+callback, and inserts the result. Its callback is supplied an owned value by the one asserted row of the
+dictionary module, whose argument is that the insert that follows reads neither the old value nor a key
+that aliases it, provided the contents are exclusive---keys included. The rewritten program is accepted
+\emph{provided \code{d}'s contents are exclusive}, and here they are, from \code{Dict.empty} on: every
+value stored is either \code{[ x ]}, built by pushing onto a fresh \code{[]}, or the result of a
+construction on an owned value, each a distinct cell with no other holder; the keys are of whatever type
+\code{key} returns, and when that type crosses, as a string or an integer does, they hold no cell at all.
+No lookup leaves a live alias. This is the program whose silently quadratic behaviour under reference
+counting motivated Huisinga's analysis for Lean \citep{huisinga2023lean}; here it is a message with the fix
+on it, and the fixed form is checked statically rather than counted at run time.

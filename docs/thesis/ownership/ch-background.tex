@@ -94,10 +94,14 @@ fiber never resumes the rest of its body.
 \code{update}: it returns commands, which are thunks the runtime stores and runs later
 (\code{Cmd.perform (λsend → ⋯)} runs a function that may send messages back, and \code{Cmd.do} runs a
 function for what it does). A command that may wait runs in a fiber, concurrently with later
-messages; one that never waits is queued to run soon after \code{update} returns, and nothing in
-the runtime's contract today orders it before the next message. Subscriptions are computed from the
-model once per render and diffed by the runtime: a subscription whose key stayed keeps its fiber and
-takes the new functions that turn its events into messages.
+messages; one that never waits runs without a fiber, queued where its fiber would have started. The
+dispatch order is part of the platform's contract: a message is dispatched when \code{send} is called,
+and \code{update} runs at once on the current model; a send made while a dispatch is running is queued
+and applied when that dispatch ends. So a command body that sends a message causes an \code{update}
+before the next body of the same batch runs, and nothing orders a command's body before the messages
+that follow it. Subscriptions are computed from the model once per render, in a step the runtime calls
+\code{settle}, and diffed: a subscription whose key stayed keeps its fiber and takes the new functions
+that turn its events into messages.
 
 \paragraph{Defects.} A failure that the program cannot handle---a bug in the program or the host---is
 a \emph{defect}. It stops the program: a development build shows a crash screen, and a release build
@@ -180,8 +184,20 @@ shorter than two, \code{drop xs 0}, and \code{drop} and \code{tail}, which retur
 \code{set}, \code{swap} and \code{removeAt}, \code{swap xs i i}, a \code{set} that writes an element
 \code{===} to the one already there, and \code{pop} of the empty list return their input unchanged;
 and a prepend whose element is \code{===} to the one in a claimed head slot returns the base array
-itself. The renderer uses some of these promises to skip work by a pointer test. Under the rule every
-one of them must either appear in the function's summary or be dropped (\S\ref{sec:model-demands}).
+itself. The language specification makes a subset of these a promise---an operation returns its input
+itself when its result would equal it---because the renderer uses them to skip work by a pointer test
+(\S\ref{sec:bg-browser}). Under the rule every promise that is kept must appear in the function's
+summary (\S\ref{sec:model-demands}).
+
+\paragraph{Construction costs.} The specification states the cost of each list form. A literal is
+$O(n)$; a pattern \code{[ x, …rest ]} is $O(1)$, \code{rest} being a view; and, through the trie's
+claimable head and tail, \code{[ x, …xs ]}, \code{[ …xs, x ]} and \code{acc ++ [ x ]} are amortised
+$O(1)$ when \code{xs} is the list the previous prepend or push returned. The specification draws the
+consequence in so many words: no way of building a list by prepending is quadratic, and Elm's
+accumulator-then-reverse, a fold that prepends, a persistent stack and a TEA list that gains rows at the
+top are all linear. A test program guards the decision: it builds 100\,000 elements four ways and
+churns a front stack that keeps every 10\,000th version, and it exceeds the test budget on a core
+whose prepend copies.
 
 \paragraph{Building loops.} The backend compiles a function that builds its result in tail position
 modulo a list constructor---a function whose recursive call appears inside \code{[ x, …recursive call ]}---into a loop
@@ -247,9 +263,13 @@ such as \code{<For each=\{⋯\}>} for lists. An event handler attribute such as
 
 \paragraph{The template runtime.} beni's current browser back end compiles each markup site into a
 cloned template and patches dynamic holes with a reference check per hole, in the style of
-SolidJS's compiler. It keeps the last value of every hole, and it keeps each list it rendered so that
-it can skip the next walk when the list is identical. Every rendered list is therefore held by the
-runtime, invisibly to the program.
+SolidJS's compiler. It keeps the last value of every hole. For a list rendered by \code{<For>} it keeps
+the list itself, but only to ask on the next render whether the new list is the same object, and skips
+the walk when it is and the row's other inputs are unchanged; the rows, each with the item it showed,
+live in the runtime's own arrays, and a row whose item is the same object as last time is not run
+again. With respect to a rendered list, the runtime is thus an \emph{identity} holder, and with respect
+to a handler closure a \emph{content} holder: it calls the closure later. Both holds are invisible to
+the program.
 
 \paragraph{The direct platform.} A second, experimental back end---which we call the \emph{direct}
 platform---compiles away \code{view} at run time altogether. It compiles each message handler into a
@@ -336,20 +356,21 @@ The rule is: \emph{editing a list while anything else still holds the old versio
 error.} Unpacked:
 
 \begin{itemize}
-\item \emph{Editing in place} means a call of one of the core library's named list writers:
-\code{set}, \code{update}, \code{push}, \code{pop}, \code{swap}, \code{insertAt}, \code{removeAt},
-\code{cons} and \code{append}. List syntax---a literal, a spread such as \code{[ x, …xs ]}, and
-\code{++} on lists---builds a new array and is not an edit (\S\ref{sec:model-demands}).
-Chapter~\ref{sec:disc-options} asks whether in-place forms of \code{map}, \code{filter},
-\code{reverse}, \code{sort} and \code{take} should join the writers.
+\item \emph{Editing in place} means a call of one of the core library's named list writers
+(\code{set}, \code{update}, \code{push}, \code{pop}, \code{swap}, \code{insertAt}, \code{removeAt},
+\code{cons} and \code{append}), or a list construction, which writes its base: the first spread of a
+literal, or the left operand of \code{++} on lists (\S\ref{sec:model-demands}). A literal with no spread
+builds a new array, and a pattern only reads. Chapter~\ref{sec:disc-options} asks whether in-place
+forms of \code{map}, \code{filter}, \code{reverse}, \code{sort} and \code{take} should join the writers.
 \item \emph{Anything else} is any holder of the array, of any of the kinds listed in
 \S\ref{sec:model-holders}, including the operand's own binding if it is read again after the edit.
 \item \emph{Still holds} means the holder is live: some execution continuing from the edit reads
 through it.
 \item \emph{The old version} is the very array, not an equal list.
 \item \emph{A compile error} means neither a copy nor a warning: an accepted in-place edit writes in
-place, always, in development and release alike. The one escape hatch is a new library function,
-\code{List.copy}, which makes intentional sharing explicit.
+place, always, in development and release alike, and the compiler never switches silently to a copy
+or to a slower algorithm. The one escape hatch is a new library function, \code{List.copy}, which makes
+intentional sharing explicit; every $O(n)$ copy a program pays for is visible in its source.
 \end{itemize}
 
 So the rule is \emph{uniqueness at the update site, decided by liveness}.
@@ -389,3 +410,30 @@ update is in place. There is no cost model and no ``copy if small''.
 \item It does not replace the write-set analysis; it meets it at the direct platform's entry
 protocol (\S\ref{sec:hard-tea}, \S\ref{sec:compiler-writesets}).
 \end{itemize}
+
+\section{The language the checker is designed for}
+\label{sec:bg-language}
+
+The checker is designed for beni with the following rules added. They are part of the language under
+study from here on; Chapter~\ref{sec:disc-options} gives each one's reasons and costs.
+\begin{enumerate}
+\item \emph{List construction consumes its base.} The base of a literal is the operand of its first
+spread, and of \code{xs ++ ys} on lists its left operand; it is written in place at either end, and the
+other operands are only read (\S\ref{sec:model-demands}).
+\item \emph{No silent fallback.} The compiler never copies a list, and never switches to a slower
+algorithm, to make an edit safe. An $O(n)$ copy is written as \code{List.copy}, a new library function.
+\item \emph{A type's \code{eq} and \code{compare} only read their arguments}; one that may write, keep or
+return a cell of an argument is an error at its declaration (\S\ref{sec:inf-generic}).
+\item \emph{A TEA program's \code{init} is a function}---of \code{⊤} or of the program's flags---that the
+platform calls once per mounted program, and a \code{Reset} arm may call again. \emph{A top-level value
+holding a list is shared}: it is never edited in place (\S\ref{sec:model-check}).
+\item \emph{Privileged code declares ownership}: a \code{foreign} declaration states what it does with
+each list it receives and returns, as it already states its effects, and the core library and platforms
+may assert summaries that their bodies cannot show (\S\ref{sec:model-demands}).
+\item \emph{An edit is a barrier to the optimiser}: no read of a list is moved across an edit that may
+write it (\S\ref{sec:compiler-release}).
+\end{enumerate}
+Everything else the thesis proposes---dropping identity promises, in-place forms of \code{map} and
+\code{filter}, publishing more facts in interfaces---is presented as an open proposal, with its costs.
+Where a rule above or a consequence of it changes a decision the language specification records, the
+text says so where it arises.

@@ -1,0 +1,292 @@
+\chapter{Idiomatic Code Through the Rules}
+\label{sec:idioms}
+
+This chapter answers the question the thesis is organised around: \emph{how should the language and
+the checker be designed so that idiomatic code almost never hits the ownership error?} It enumerates
+the idioms that must always be accepted, shows for each the analysis precision that accepts it and the
+language or library choice that makes it provable, lists what is still rejected, and re-assesses the
+two applications we examined.
+
+\section{The question, and what counts as idiomatic}
+\label{sec:idioms-question}
+
+An \emph{idiom} here is a way of writing a list operation that beni's language and library make the most
+natural one and that an Elm programmer would write unprompted. Elm's own idioms carry over almost
+verbatim: \code{x :: acc} is written \code{[ x, …acc ]}, and the formatter's migration does the rewrite.
+Because list construction consumes its base (\S\ref{sec:model-demands}), nearly every idiom that builds
+a list from another is a demand, and the checker meets demands everywhere. A text search over beni's
+core library, its platforms, the compiler's test programs and the example applications---approximate,
+with the method in Appendix~\ref{app:method}, and not the output of the analysis---finds about 112 list
+expressions that prepend with a spread, 30 that append with one, 88 of the form \code{e ++ [ ⋯ ]}, 16
+fold callbacks of the form \code{λx acc → [ x, …acc ]}, and 56 \code{update} arms, in 37 files, that
+extend a model list with a spread or \code{++}. The core library's own \code{List.push} calls, eight of
+them, are all accumulators.
+
+The design target follows. For the idioms below, the checker should produce \emph{no} error at all;
+what it rejects should be a short, named list of forms, each either real sharing that the program would
+otherwise get wrong or a stated limit, each with a one-line fix in its message; and the frequency of the
+error on idiomatic code is the main number the evaluation measures (\S\ref{sec:eval-decisions}).
+
+\section{The idioms that must be accepted}
+\label{sec:idioms-list}
+
+\paragraph{I1. An accumulator in a loop.} From the core library and a test program:
+\begin{Verbatim}
+combineHelp rest (List.push values value)              -- Result.combine's helper
+prependAll (n - 1) [ size - n + 1, …acc ]               -- prepend, then reverse
+growPlus (n - 1) (acc ++ [ size - n + 1 ])
+\end{Verbatim}
+\emph{What accepts it.} The accumulator is a parameter; the construction consumes it; the tail call
+rebinds it, so its old value is dead after the jump (\S\ref{sec:model-liveness}). The function's summary
+says $\mathit{use}(\mathit{acc}) = \{\mathsf{R}, \mathsf{A}, \mathsf{W}\}$ and $\mathit{res} = \{\pi_2\}$
+after one round of the group fixpoint, and the caller passes \code{[]}, a fresh array
+(\S\ref{sec:hard-recursion}). \emph{What makes it provable.} Construction consumes its base, so the
+idiom needs no writer's name; strict evaluation and the tail-call rebinding fix when the old value dies.
+
+\paragraph{I2. A fold.} From the core library:
+\begin{Verbatim}
+keys dict = foldl dict [] λkey _ keyList → List.push keyList key
+foldr d [] (λkey _ names → [ key, …names ])             -- the documented example of Dict.foldr
+values fibers = List.foldr fibers (Just []) λf acc →
+    case acc of
+        Just rest → ⋯ Just [ v, …rest ] ⋯
+\end{Verbatim}
+\emph{What accepts it.} The callback writes its own accumulator parameter, so the edge of
+\S\ref{sec:inf-classes} requires the fold to supply that parameter owned, and the fold's row says it
+does: the accumulator is the fold's own parameter on the first call and the callback's previous result
+afterwards, neither held by anything else. In the third example the accumulator is wrapped in
+\code{Just}; field-sensitive paths through constructors give the callback $\mathit{use}(\pi_2.\mathit{Just}\#0) \ni \mathsf{W}$,
+and the supply is owned at every path. \emph{What makes it provable.} The folds' rows (asserted or
+inferred) supply the accumulator owned; saturated calls put every callback in front of the checker as a
+lambda; there is no point-free plumbing through which its class could be lost.
+
+\paragraph{I3. A recursive builder.} From the compiler's test programs:
+\begin{Verbatim}
+mapRec xs f = case xs of
+    [] → []
+    [ x, …rest ] → [ f x, …mapRec rest f ]
+\end{Verbatim}
+\emph{What accepts it.} The base is the recursive call's result, whose provenance is $\fresh$ (the base
+case's \code{[]}) after the group fixpoint; the pattern only reads, and \code{xs} is dead after the match.
+A builder whose base case returns a parameter, such as an \code{appendTo} that returns its second
+argument, consumes that parameter, and its callers must not use it afterwards (\S\ref{sec:model-demands}).
+\emph{What makes it provable.} Patterns only read and bind views; the backend's building loop keeps the
+source's meaning.
+
+\paragraph{I4. A list built by \code{map} or \code{filter}, then extended; a pipeline.}
+\begin{Verbatim}
+visible = model.todos ▷ List.filter isOpen ▷ List.map label
+[ …List.filter xs p, y ]
+\end{Verbatim}
+\emph{What accepts it.} \code{map} and \code{filter} are not demands; their results are $\{\fresh,
+\pi_1\}$, the $\pi_1$ because of the identity promises the language keeps (\S\ref{sec:model-demands}). A
+construction on such a result consumes the source too, so the source must be dead there; in an
+\code{update} arm and in a local pipeline it is. \emph{What makes it provable.} The pipe is rewritten to
+a call before anything runs, so there is no plumbing function in which to lose precision
+(\S\ref{sec:hard-pipelines}); the identity promises cost precision only where the source is used again.
+
+\paragraph{I5. An \code{update} that extends or edits a model list.} From the compiler's test programs
+and the two applications:
+\begin{Verbatim}
+{ model | seen = [ …model.seen, k ] }
+( { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
+changed { model | draft = "", nextId = model.nextId + 1 } (model.todos ++ [ new ])
+Undo → case model.history of
+    [ previous, …rest ] →
+        { model | notes = previous, history = rest, future = [ model.notes, …model.future ] }
+\end{Verbatim}
+\emph{What accepts it.} The entry protocol (\S\ref{sec:hard-tea}) hands \code{update} the model owned
+(\Obl{P1}) and computes, from the summaries of \code{init} and \code{update}, which cells the model's
+paths may hold at entry; a path is editable when they are fresh, unaliased with other paths, and neither
+escaped nor shared. Inside the arm, the record update replaces \code{seen} and shares the other fields, so
+per-path liveness finds no later use of the old \code{model.seen}. In the third example the first
+argument, a record still holding the old \code{todos}, is pending while the second argument consumes it;
+it is not a use, because \code{changed} never reads its first argument's \code{.todos}
+($\mathit{use} = \unused$), so the pending holder is dead. In the undo arm, \code{history} becomes a view
+of the old history and \code{future} is consumed; the old model is dead. \emph{What makes it provable.}
+Four choices, three of them outside the checker: \code{init} is a function called per mount, and a
+top-level list is shared, so the model starts with cells nothing else holds; the runtime hands the model
+over; a renderer does not skip work by the identity of a list the program edits in place (\Obl{P7}); and
+the program persists and reports through commands that capture values rather than lists (below).
+
+\paragraph{I6. An edit inside a container.}
+\begin{Verbatim}
+Dict.update d (key x) (λm → Just [ x, …Maybe.withDefault m [] ])     -- grouping
+List.update rows i (λr → { r | tags = [ …r.tags, t ] })
+\end{Verbatim}
+\emph{What accepts it.} The container's contents are exclusive (\S\ref{sec:model-excl}), because they were
+built by stores of fresh, distinct values, and the container function supplies the element owned. For a
+dictionary the owned supply is asserted, and requires its keys and values to be disjoint as well
+(\S\ref{sec:hard-containers}). \emph{What makes it provable.} The library offers the in-place
+\code{update} at a key or an index, which is also Elm's idiom for grouping; a lookup followed by an
+insert is real sharing (\S\ref{sec:idioms-rejected}).
+
+\paragraph{I7. Several accumulators in a tuple or record.} From the core library and an idiomatic fold:
+\begin{Verbatim}
+partitionHelp rest errors (List.push values value)                     -- Result.partition
+List.foldl xs ( [], [] ) λx ( yes, no ) →
+    if p x then ( [ …yes, x ], no ) else ( yes, [ …no, x ] )
+\end{Verbatim}
+\emph{What accepts it.} Paths through tuples and records keep the accumulators apart; the callback's
+summary writes $\pi_2.1$ and $\pi_2.2$ separately; the fold supplies each owned. \emph{What makes it
+provable.} Field-sensitive paths and per-path supply; nothing in the idiom names a writer.
+
+\section{The precision each idiom needs}
+\label{sec:idioms-precision}
+
+Table~\ref{tab:idioms} sums up which part of the analysis each idiom rests on. Every entry is a part of
+the design of Chapters~\ref{sec:model} and~\ref{sec:inference}; none is an extension still to be
+designed. The table also shows what an implementation must get right first: per-path liveness, callback
+classes with owned supply, and the entry protocol carry almost every idiom.
+
+\begin{table}[t]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.42\linewidth}>{\raggedright\arraybackslash}p{0.2\linewidth}X@{}}
+\toprule
+Part of the analysis & Idioms & Where \\
+\midrule
+per-path liveness over the evaluation-order normal form & I1, I5, I7 & \S\ref{sec:model-liveness} \\
+the rebinding of a self tail call & I1 & \S\ref{sec:model-liveness} \\
+the group fixpoint from optimistic summaries & I1, I3 & \S\ref{sec:inf-recursion} \\
+callback classes: owned supply, provenance & I2, I6, I7 & \S\ref{sec:inf-classes} \\
+paths through constructors, tuples and records & I2, I5, I7 & \S\ref{sec:model-cells} \\
+$\unused$ parameter paths; pending operands & I5 & \S\ref{sec:model-summary}, \S\ref{sec:model-unique} \\
+results naming both outcomes of an identity promise & I4 & \S\ref{sec:model-demands} \\
+the entry protocol and its fixpoint over $\fresh$, $\esc$, $\shared$ & I5 & \S\ref{sec:hard-tea} \\
+exclusive contents; a dictionary's split step & I6 & \S\ref{sec:model-excl} \\
+\bottomrule
+\end{tabularx}
+\caption{The parts of the analysis that accept each idiom.}
+\label{tab:idioms}
+\end{table}
+
+The language and library choices that make the idioms provable are, in order of reach:
+\begin{enumerate}
+\item \emph{Construction consumes its base, by position.} Every idiom above runs in place without a new
+name, and the programmer chooses which operand is reused by where it is written.
+\item \emph{Strict left-to-right evaluation and saturated calls.} They make ``before'' a fact of the text
+and every closure a lambda in front of the checker.
+\item \emph{Patterns only read.} Walking a list never consumes it.
+\item \emph{The folds and container updates supply their callback owned}, by their rows.
+\item \emph{\code{init} is a function, and top-level lists are shared.} A model starts with cells no one
+else holds, and a constant is never edited behind its readers.
+\item \emph{The runtime hands the model over, and a renderer does not skip work by the identity of a list
+the program edits} (\Obl{P1}, \Obl{P7}).
+\item \emph{Commands and messages carry values.} A command that persists or reports a list should
+capture the value it needs---the encoded text, the count---rather than a closure over the list, as Elm's
+own \code{Http.jsonBody} encodes when the command is made; and a view event should carry an identifier
+rather than a model list. Both are library and teaching choices, not analysis.
+\item \emph{\code{eq} and \code{compare} only read}, so sorting and dictionaries never write behind the
+program's back.
+\end{enumerate}
+
+\section{What is still rejected}
+\label{sec:idioms-rejected}
+
+Table~\ref{tab:rejected} lists every form we know that the rules reject in code written the way the
+language invites, with the reason, the fix the message gives, and the choice that would make the form
+rarer. Rows marked \emph{real} are real sharing: under in-place semantics the program would print
+something different. Rows marked \emph{limit} are the checker's or the platform's blindness. The
+evaluation counts each row separately.
+
+{\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.24\linewidth}>{\raggedright\arraybackslash}p{0.29\linewidth}>{\raggedright\arraybackslash}p{0.12\linewidth}>{\raggedright\arraybackslash}p{0.26\linewidth}@{}}
+\caption{Forms the rules reject in idiomatic-looking code.}
+\label{tab:rejected}\\
+\toprule
+Form & Example & Kind & Fix; what makes it rarer \\
+\midrule
+\endfirsthead
+\toprule
+Form & Example & Kind & Fix; what makes it rarer \\
+\midrule
+\endhead
+a version kept and then extended & a persistent stack whose old versions are read; \code{a = base ++ [ 1 ]; b = base ++ [ 2 ]} & real & \code{List.copy} at the kept version, $O(n)$ and written; a persistent-vector library for programs that keep many versions \\
+the base read again in the same expression & \code{\{ model | items = [ …model.items, x ], count = List.length model.items \}}; \code{[ …xs, …xs ]} & real & compute the read first; \code{List.copy} \\
+a list captured by a command, then extended & TodoMVC's \code{save todos = Cmd.do λ⊤ → ⋯ (encode todos)} & real, possibly & compute before the command; command constructors that take values \\
+a top-level list as a base & \code{[ x, …defaults ]}; \code{init ⊤ = \{ todos = seed \}} & real & build in a function; \code{List.copy}; the reading form \code{[ x ] ++ defaults} \\
+a model list as a base in \code{view}, a derived value or \code{subscriptions} & \code{[ …model.pinned, …model.recent ]} in \code{view} & real & \code{List.concat [ model.pinned, model.recent ]}, which builds \\
+a once closure passed to a $\mathit{many}$ position & \code{List.map xs (λx → [ …acc, x ])} & real & a fold \\
+a lookup, an edit and a re-insert & \code{Dict.get}, then \code{[ …group, x ]}, then \code{Dict.insert} & real & \code{Dict.update} \\
+a nested edit in a container not known exclusive & elements from \code{List.repeat}, an undeclared decoder, JavaScript & limit or real & \code{List.copy} of the inner list; decoders declare exclusive output \\
+a list from a \code{Ref} or from JavaScript & \code{Ref.update r (λxs → [ …xs, x ])} & limit & copy where it arrives \\
+a list a view event carries & \code{onClick=\{Keep model.rows\}} anywhere in \code{view} & limit & send an identifier \\
+a rendered list on a renderer that skips by identity & any of I5 on the template runtime without \Obl{P7} & limit (platform) & the platform adopts \Obl{P7} \\
+\bottomrule
+\end{longtable}
+}
+
+Three rows deserve comment. The first reverses part of a decision the language specification records:
+that no way of building a list by prepending is quadratic, a persistent stack included
+(\S\ref{sec:bg-lists}). Every accumulator, fold, recursive builder and TEA list keeps linear prepending
+under the rules, in place. A persistent stack whose old versions are read later does not: it is rejected
+until each kept version is copied, which costs $O(n)$ per kept version, written in the source. The test
+program that guards the decision builds four accumulators, which are accepted in place, and churns a front
+stack that keeps every 10\,000th version, which is rejected at its prepend: a kept version may share the array, and a prepend after a pop
+would overwrite a slot that the kept version still shows. With \code{List.copy} at the version it keeps it is accepted, with ten copies
+of at most 100\,000 elements. The trade is the one the rule exists to make: a version costs what it
+costs, visibly.
+
+The third row, commands, is the largest source of error in the two applications, and the cheapest to
+remove: the fix is one binding before the command. The last row is not about programs at all; it is the
+renderer, and it decides whether TEA idioms are accepted on beni's current browser platform
+(\S\ref{sec:hard-tea}).
+
+\section{The two applications, re-assessed}
+\label{sec:disc-apps}
+
+We examined two applications written in beni: TodoMVC, in five programs---the full one among the
+compiler's test programs, and four variants used to measure output size---and Conduit, the RealWorld
+example application. Both run on beni's TEA platform over the template runtime. What follows is our
+reading of their sources, traced through the rules by hand; it is not the output of an analysis, which
+does not exist yet.
+
+\paragraph{TodoMVC.} Each program has one construction that is a demand: the Enter arm's
+\code{changed \{ model | draft = "", ⋯ \} (model.todos ++ [ new ])}, which appends in place. Its other arms
+build with \code{List.map} and \code{List.filter}, which are not demands. Four facts decide the outcome.
+\begin{itemize}
+\item \code{init} is a value today; under the rules it becomes \code{init ⊤ = ⋯}, a mechanical change. It
+decodes the stored list or starts from \code{[]}, so the model's \code{todos} is fresh at the first entry.
+\item In the Enter arm the pending first argument still holds the old \code{todos}, but \code{changed}'s
+summary is $\unused$ at $\pi_1.\mathit{todos}$, so the append is not seen through it.
+\item The full program and two of the variants persist with
+\code{save todos = Cmd.do λ⊤ → saved (Storage.set Local key (encode todos))}, called by every arm that
+changes the list. The command's body captures the arm's new list, so \code{update}'s summary says the
+model's \code{todos} may be $\esc_k$, and at every later entry the path is escaped: the append is rejected
+as possible sharing, on every platform. Under value semantics the command encodes the list as the arm left it; in place, a
+command that ran after a later append would encode the appended list, so the rejection is right. The
+fix is one binding before the command:
+\begin{Verbatim}
+save todos =
+    text = encode todos
+    Cmd.do λ⊤ → saved (Storage.set Local key text)
+\end{Verbatim}
+after which the command captures a string.
+\item The page renders \code{<For each=\{List.filter model.todos (visible model.filter \_)\}>}. By the
+identity promise, that list may be \code{model.todos} itself, and the template runtime skips the walk when
+it receives the same list as last time. An in-place append keeps the list's identity, so the new row would
+not be drawn. On the template runtime as it is, the append is therefore rejected; with \Obl{P7} it is
+accepted, and that \code{<For>} walks its rows on every render.
+\end{itemize}
+So, as written, no TodoMVC program is accepted. With \code{init} a function and, where it persists, the
+one-line change to \code{save}, all five are accepted on the direct platform and, if the template runtime
+adopts \Obl{P7}, on their own platform. What they gain is an append that writes one slot instead of
+copying the list, which at the sizes TodoMVC handles is invisible, and the smaller list runtime.
+
+\paragraph{Conduit.} Its \code{init} is already a function of the URL and the navigation key. It has
+thirteen \code{++} on lists. Six have a left operand built in the same function---a literal such as
+\code{[ "api" ] ++ paths}, or a local list in a view helper---and consume only that. Seven are
+\code{model.errors ++ Api.errorMessages error} in the arms of three page modules: in-place appends onto
+the page's error list, which each page's \code{init} creates as \code{[]}, which no command captures, by
+our reading, and which the page renders with a positional \code{<For>}. The derivation needs paths through
+the constructor that holds the current page in the top-level model and through the placeholder lambdas
+that wrap a page's model back into it; both are ordinary paths and classes. On the direct platform, by
+our reading, all seven appends are accepted. On the template runtime they are rejected unless it adopts
+\Obl{P7}, for the same reason as TodoMVC's.
+
+\paragraph{What the applications say.} Under construction-as-consumption the applications do edit their
+lists in place, in the idiom I5, and the rule's outcome for them turns on two things that are not in the
+checker: a one-line persistence change in one of them, and the template runtime's identity skip in both.
+The second is a platform decision with a cost per render (\S\ref{sec:hard-tea}); the evaluation measures
+that cost against the reference renderer before it is adopted. The applications are small and their
+lists short; they test whether the rule is livable, not whether it is fast.

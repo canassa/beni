@@ -1,0 +1,49 @@
+\chapter{The Rules' History and the Programs That Shaped Them}
+\label{app:history}
+
+The rules of Chapters~\ref{sec:model}--\ref{sec:hard} reached their present form in four steps, each
+prompted by short programs that the previous form accepted although their in-place run differed from
+their value-semantics run, or that it rejected although they were idiomatic. We record the steps here,
+once, so that the body of the thesis can state the design it defends. The programs are those of
+Table~\ref{tab:counterexamples}.
+
+\paragraph{First form.} The rules as first written had the four side conditions, per-path liveness and
+summaries with three facts per parameter. Programs T1--T6 were found while writing them: aliasing between
+a call's own arguments (\Disjoint\ was added), the optimiser folding a read across a write (A5), a
+top-level value as a holder, an event payload that is a model list, a once closure passed twice, and an
+unknown result read as ``no cell''.
+
+\paragraph{Second form.} An adversarial reading of the first form found programs T7--T19. Closures lost
+their captures and their once-ness when they were returned, stored or captured, because both were
+attached to the binding that named the lambda; environments at $\env$ and once closures as cells replaced
+that. \code{supply} carried no provenance, so a callback that returned its argument looked fresh (T15).
+A user \code{eq} could write behind \code{==} (T9). Exclusive contents ignored aliasing inside one element
+(T10). A building loop returned its argument while its summary said fresh (T12). The entry protocol
+covered \code{update} alone, read bodies no interface carried (T16), and ignored the hold of a value
+\code{init} (T14). Pending operands were not holders (T17), a view cached a stale copy (T18), and opaque
+types were assumed to cross (T19). In that form, list syntax was made to build new arrays, so that
+spreading a list still in use was not an error; a warning marked accumulators that copied.
+
+\paragraph{Third form.} A second adversarial reading found programs T20--T32. Summaries could not say
+that a result's cell had escaped inside the callee, came from a top-level value, or was unknown, so a list
+captured by a command and then returned looked fresh to the entry protocol (T20--T22). A closure that
+returned what it held gave results that looked fresh (T23--T26). A once closure that escaped to the
+runtime was never checked again (T27). Foreign types were assumed to cross, hiding markup handlers'
+captures (T28). An optional platform promise that commands which cannot suspend run before the next
+message was found to contradict the platform's dispatch order, under which a command body's send is
+dispatched at once (T29); it was dropped, and commands' captures are escaped. The entry protocol's place
+was ambiguous for a program mounted twice (T30). Local functions used before their line were outside the
+model (T31). Keys and values of a dictionary shared one opaque step (T32). The same reading found that
+making list syntax build reversed the language's linear-prepend decision and turned accumulators
+quadratic, that dropping the identity promises reversed the decision the renderer relies on, and that a
+consuming \code{send} rejected programs with no in-place edit.
+
+\paragraph{Present form.} The present form answers the third reading and turns the design around a
+different question. List construction consumes a base chosen by position (Change~1), so accumulators,
+folds and \code{update} arms run in place, and the warning on copying accumulators goes with the copying.
+The identity promises are kept, and their aliases appear in summaries. \code{send} writes what
+\code{update} writes (T34). \code{init} is a function and top-level lists are shared (Change~4). The
+renderer obligation \Obl{P7} takes the label the dropped command promise had. The idioms of
+Chapter~\ref{sec:idioms}, and the frequency of the error on them, became the measure the design is held
+to; T33, a persistent stack whose versions are kept, records the one part of the linear-prepend decision
+that construction-as-consumption cannot keep without an explicit copy.

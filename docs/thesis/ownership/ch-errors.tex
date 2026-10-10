@@ -41,16 +41,22 @@ Understanding this distinction is essential for fixing ownership errors''
 \section{Examples}
 \label{sec:errors-examples}
 
+Because construction consumes its base, the message must name the operand that was reused as well as
+the operation, in words that do not assume the reader knows the rule. Every message about a
+construction therefore says which operand the construction reuses and why that one: ``\code{[ …acc, x ]}
+adds \code{x} to the end of \code{acc} itself''.
+
 \paragraph{A later read (real sharing).}
 \begin{Verbatim}
--- EDIT OF A LIST STILL IN USE ----------------------------------- src/Main.beni
+-- LIST CHANGED WHILE STILL IN USE --------------------------------- src/Main.beni
 
-`List.push` changes a list in place, but this one is still needed afterwards.
+`[ …model.todos, todo ]` adds `todo` to the end of `model.todos` itself, but the
+old list is still needed afterwards.
 
 12|     saved = model.todos
                 ^^^^^^^^^^^ `saved` keeps the list here
-15|     next = List.push model.todos todo
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
+15|     next = [ …model.todos, todo ]
+               ^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
 19|     List.length saved
                     ^^^^^ and `saved` is read here, after the change
 
@@ -67,6 +73,24 @@ This is sharing the checker can see: the list is read on line 19 on every path
 through this function.
 \end{Verbatim}
 
+\paragraph{One list extended twice (real sharing).}
+\begin{Verbatim}
+`base ++ [ 1 ]` adds to the end of `base` itself, so `base` cannot be used
+again afterwards.
+
+ 4|     a = base ++ [ 1 ]
+            ^^^^^^^^^^^^^ `base` is changed in place here
+ 5|     b = base ++ [ 2 ]
+            ^^^^ and used again here
+
+`a` and `b` would be the same list, ending in 1 and then in 2. To build two
+lists from one, copy it for the first:
+
+ 4|     a = List.copy base ++ [ 1 ]
+
+This is sharing the checker can see.
+\end{Verbatim}
+
 \paragraph{A closure that keeps the list (real sharing).}
 \begin{Verbatim}
 `List.set` changes a list in place, but a function still holds it.
@@ -78,54 +102,68 @@ through this function.
 14|     { model | label = show 3 }
                           ^^^^ `show` is called here, after the change
 
-`show` would see the changed list. If that is intended, call `show` with a
-copy: `show = λi → String.fromInt (List.length (List.copy rows))` — or compute
-what `show` needs before line 11.
+`show` would see the changed list. Compute what `show` needs before line 11,
+or give it its own copy:
+
+ 8|     show = λi → String.fromInt (List.length (List.copy rows))
 \end{Verbatim}
 
 \paragraph{A command that captured the list (possible sharing, across messages).}
 \begin{Verbatim}
-`List.push` changes `model.todos` in place, but a command started by another
-message may still be reading it.
+`model.todos ++ [ todo ]` adds to the end of `model.todos` itself, but a
+command started by an earlier message may still be reading it.
 
--- in the arm for `Save`:
-41|     Cmd.perform (λsend → send (Saved (encode model.todos)))
-                                                 ^^^^^^^^^^^ the command keeps `model.todos`
+-- in `save`, called by every arm that changes the list:
+41|     Cmd.do λ⊤ → saved (Storage.set Local key (encode todos))
+                                                         ^^^^^ the command keeps the list
 -- in the arm for `Add`:
-27|     { model | todos = List.push model.todos todo }
-                          ^^^^^^^^^^^^^^^^^^^^^^^^^^ changed in place here
+27|     changed model (model.todos ++ [ todo ])
+                       ^^^^^^^^^^^^^^^^^^^^^^^ changed in place here
 
 A command runs after `update` returns and may run after later messages, so the
-list it keeps is the same one `Add` changes. To give the command its own copy:
+list it keeps may be the one `Add` changes. Encode the list before the command
+is made, so that the command keeps the text instead:
 
-41|     Cmd.perform (λsend → send (Saved (encode (List.copy model.todos))))
+40|     text = encode todos
+41|     Cmd.do λ⊤ → saved (Storage.set Local key text)
 
-Or encode before the command is made:
-
-40|     text = encode model.todos
-41|     Cmd.perform (λsend → send (Saved text))
-
-This may be sharing: whether the command reads the list after `Add` changes
-it depends on when the runtime runs the command, which this program does not
-decide.
+This may be sharing: whether the command reads the list after `Add` changes it
+depends on when the command runs, which this program does not decide.
 \end{Verbatim}
-The verdict is \emph{possible} sharing rather than real sharing because whether the command's read
-comes after the edit depends on the runtime's scheduling, which the checker cannot see; a platform that
-drains commands that cannot suspend before the next message (\Obl{P7}) removes the rejection for such
-commands altogether.
+The verdict is \emph{possible} sharing rather than real sharing because whether the command's read comes
+after the edit depends on the runtime's scheduling, which the checker cannot see. The suggested rewrite
+is the one the design prefers to any refinement of the analysis (\S\ref{sec:hard-fibers}).
+
+\paragraph{A top-level list (shared by the language's rule).}
+\begin{Verbatim}
+`[ …model.todos, t ]` adds to the end of `model.todos` itself, but at the start
+of the program `model.todos` is `seed`, a top-level value.
+
+ 3|     seed = [ "milk" ]
+ 6|     init ⊤ = { todos = seed }
+                           ^^^^ the model starts with the top-level list here
+21|     Add t → { model | todos = [ …model.todos, t ] }
+                                  ^^^^^^^^^^^^^^^^^^^^ changed in place here
+
+A top-level value is shared by every part of the program and never changes.
+Build the list in `init`, or copy it there:
+
+ 6|     init ⊤ = { todos = List.copy seed }
+\end{Verbatim}
 
 \paragraph{A closure that consumes a capture, called many times (real sharing).}
 \begin{Verbatim}
-This function changes `acc` in place, but `List.map` may call it once per element.
+This function adds to the end of `acc` itself, but `List.map` may call it once
+per element.
 
- 7|     List.map xs (λx → List.push acc x)
-                     ^^^^^^^^^^^^^^^^^^^^ changes `acc` in place
+ 7|     List.map xs (λx → [ …acc, x ])
+                     ^^^^^^^^^^^^^^^^^^ changes `acc` in place
         ^^^^^^^^ `List.map` calls it for every element of `xs`
 
 Each call would change the same list, so the result of the first call would
 change under the second. To build a list by adding to `acc`, fold:
 
- 7|     List.foldl xs acc (λx acc → List.push acc x)
+ 7|     List.foldl xs acc (λx acc → [ …acc, x ])
 \end{Verbatim}
 
 \paragraph{A limit of the checker.}
@@ -202,6 +240,9 @@ $\mathit{calls} = \mathit{many}$ for a closure the program calls once in fact & 
 a container whose contents are not exclusive & ``the elements of \code{rows} may share'' \\
 a capture by a command or fiber that may run after later messages & ``a command started by another message may still be reading it'' \\
 a value returned by the runtime that it also keeps (\code{Task.join}, a deferred value) & ``other parts of the program receive the same list'' \\
+a renderer that skips a list by its identity, on a platform without \Obl{P7} & ``the page compares this list with the one it showed last, by identity'' \\
+a handler or message in markup that holds the list & ``a handler on the page holds this list and may run at any later event'' \\
+a view event elsewhere in the program carrying a model list (\Obl{P6}) & ``a message sent from the page may carry this list'' \\
 \bottomrule
 \end{tabularx}
 \caption{Approximate derivation tags and their wording.}
@@ -209,7 +250,9 @@ a value returned by the runtime that it also keeps (\code{Task.join}, a deferred
 \end{table}
 
 A rejection whose derivation uses only exact tags is \emph{real sharing}: there is a path through the
-program text on which the old version is read after the edit. One that uses an approximate tag is
+program text on which the old version is read after the edit. A top-level list is reported apart from
+both: it is shared by the language's rule, whether or not anything else reads it. One that uses an
+approximate tag is
 \emph{possible sharing}, and the message names the limit. This makes Crichton's distinction mechanical,
 and it is also what the evaluation counts (\S\ref{sec:evaluation}). The tags give a third thing for free:
 a rejection with no derivation at all is an internal compiler error, never a user error---the analogue
@@ -230,7 +273,10 @@ in debug builds'', and Farvardin that the checking ``needs to happen earlier in 
 pipeline, just to guarantee stability across different versions of the compiler''
 \citep{swift2025explicitcopies}. Precision improvements are additive---a finer path language, a
 container function that gains an exact summary, a closure position that gains $\mathit{calls} \le
-1$---and each only removes approximate tags. The one legitimate exception is a \emph{soundness fix}: a
+1$---and each only removes approximate tags. The rule binds the core library as well as the checker:
+the core library ships inside the compiler, so an edit to a core function that made its published summary
+more pessimistic would reject programs that were accepted, and a core summary may therefore only become
+more permissive. The one legitimate exception is a \emph{soundness fix}: a
 rule found unsound may reject previously accepted programs, and must do so with a diagnostic that says
 so and, where a mechanical rewrite exists, a migration in the formatter. The rule set is versioned in
 the interface format, so a cached interface produced under an older rule set is a cache miss, never a

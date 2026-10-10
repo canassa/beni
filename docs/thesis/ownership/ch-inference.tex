@@ -10,13 +10,14 @@ beni's backend sees no types. For each module it makes four passes:
 
 \begin{enumerate}
 \item \emph{Local flow} (\S\ref{sec:inf-flow}): one forward walk of each declaration's body in
-evaluation order, computing $A(e)$ for every tracked expression. Calls use the callees' summaries;
-a callee in the same strongly connected component uses the current round's summary.
+evaluation order, computing $A(e)$ for every tracked expression and the set $\mathit{Esc}$ of escaped
+cells. Calls use the callees' summaries; a callee in the same strongly connected component, or a local
+function of the same block, uses the current round's summary.
 \item \emph{Liveness} (\S\ref{sec:inf-liveness}): one backward walk per declaration, computing
 $\live(h, p)$ for the holders the forward walk named.
 \item \emph{Check and summarise} (\S\ref{sec:inf-summarise}): the four side conditions at every
-demand, at every call of a once closure and at every creation of one, and the declaration's summary
-read off the two walks.
+demand---writer calls, constructions, calls and creations of once closures---and the declaration's
+summary read off the two walks.
 \item \emph{The group fixpoint} (\S\ref{sec:inf-recursion}): passes 1--3 repeated for a recursive
 group until no summary changes, followed by a validation round.
 \end{enumerate}
@@ -31,19 +32,21 @@ write-set analysis, it produces diagnostics.
 
 beni's intermediate representation is already a sequence of instructions in evaluation order, with
 \code{let}-style binding and \code{case} branching; the walk reads it as the normal form of
-\S\ref{sec:model-unique}, in which every argument and every field of a structure under construction
-is a variable, used at the instruction that consumes it. The forward walk keeps $\Sigma$ and applies
-the transfer rules of Table~\ref{tab:transfer}; a \code{case} forks $\Sigma$ per arm and joins the
-results by union. The only loop inside a body is a self tail call, which the walk treats as a
-recursive call of the same declaration: the parameters' cells on re-entry are the union of the entry
-cells and the jump's arguments, an inner fixpoint over the body that converges in at most as many
-rounds as there are distinct abstract cells in the body.
+\S\ref{sec:model-unique}, in which every argument, every item of a list literal and every field of a
+structure under construction is a variable, used at the instruction that consumes it. The forward walk
+keeps $\Sigma$ and $\mathit{Esc}$ and applies the transfer rules of Table~\ref{tab:transfer}; a
+\code{case} forks $\Sigma$ per arm and joins the results by union. Two kinds of loop occur inside a body.
+A self tail call is treated as a recursive call of the same declaration: the parameters' cells on
+re-entry are the union of the entry cells and the jump's arguments, an inner fixpoint that converges in
+at most as many rounds as there are distinct abstract cells in the body. A block's local functions are a
+group (\S\ref{sec:model-functions}), solved by the fixpoint of \S\ref{sec:inf-recursion} at the block's
+entry, before the walk continues.
 
 Directionality and flow sensitivity both matter, as one example shows:
 \begin{Verbatim}
 xs = [ 1, 2, 3 ]          -- A(xs) = {site₁}
 ys = xs                   -- A(ys) = {site₁}: a copy of the set, not a merged class
-zs = List.set ys 0 9      -- demand on site₁; holders xs and ys; is xs dead after?
+zs = [ …ys, 9 ]           -- demand on site₁; holders xs and ys; is xs dead after?
 List.length zs            -- yes: xs is never used again. Accepted.
 \end{Verbatim}
 A unification-based model would put \code{xs}, \code{ys} and \code{zs} in one class, and any later use
@@ -62,43 +65,51 @@ and the uses of \S\ref{sec:model-liveness}. Branches join by union: a holder liv
 live before the \code{case}. A captured path is live \emph{wherever the closure value is live}---at
 every call, store, return or pass of the closure, or of any structure that holds it, which the walk
 sees as ordinary uses of the holder's paths through $\env$---and \emph{from its creation onward,
-forever}, when the closure escapes (is passed to a position whose $\mathit{use}$ contains
-$\mathsf{E}$ at $\env$, or is stored in an escaped place). So
+forever}, when the closure escapes. A local function's captures are live at every call of it. So
 \begin{Verbatim}
 g = λ_ → List.length xs
-ys = List.push xs 1
+ys = [ …xs, 1 ]
 { m | f = g }
 \end{Verbatim}
-is rejected: \code{g} is used after the push, and it holds \code{xs}. The cost is linear.
+is rejected: \code{g} is used after the construction, and it holds \code{xs}. The cost is linear.
 
 \section{Checking, and reading off the summary}
 \label{sec:inf-summarise}
 
-At each demand, each call of a once closure and each creation of one, the four side conditions are
-applied. Then, for each tracked parameter path $\pi_i.q$:
+At each demand the four side conditions are applied. Then, for each tracked parameter path
+$\pi_i.q$:
 \begin{itemize}
 \item $\mathsf{W} \in \mathit{use}(i, q)$ if some demand's operand may hold $\pi_i.q$ (the local holders
 were discharged by \Dead; the caller discharges the rest);
 \item $\mathsf{A} \in \mathit{use}(i, q)$ if $\pi_i.q \in A(\mathit{result})@q'$ for some $q'$;
-\item $\mathsf{E} \in \mathit{use}(i, q)$ if $\pi_i.q$ was stored in an escaped place, passed to a
-position whose $\mathit{use}$ contains $\mathsf{E}$, captured by an escaping closure, or passed to a
-\code{Js} operation or a \code{foreign} with no asserted summary;
+\item $\mathsf{E} \in \mathit{use}(i, q)$ if $\pi_i.q \in \mathit{Esc}$ at the end of the body;
 \item $\mathsf{R} \in \mathit{use}(i, q)$ if some instruction dereferences a holder of $\pi_i.q$, or
 passes it to a position whose $\mathit{use}$ contains $\mathsf{R}$;
-\item $\mathit{use}(i, q) = \unused$ if none of these holds;
-\item $\mathit{res}(q') = \{\pi_i.q \mid \pi_i.q \in A(\mathit{result})@q'\} \cup \{\fresh_k \mid
-\site(\iota_k) \in A(\mathit{result})@q'\}$, numbering the sites in instruction order, so that two
-result paths that may hold one new cell name the same $\fresh_k$;
+\item $\mathit{use}(i, q) = \unused$ if none of these holds.
+\end{itemize}
+For each tracked result path $q'$, $\mathit{res}(q')$ is the set of provenances of the cells in
+$A(\mathit{result})@q'$, read off by the following rule:
+\begin{itemize}
+\item a parameter cell $\pi_i.q$ is $\pi_i.q$;
+\item a site $\site(\iota)$ made in \emph{this} body is $\fresh_k$ if it is not in $\mathit{Esc}$, and
+$\esc_k$ if it is, numbering the sites in instruction order so that two result paths that may hold one
+new cell name the same $k$;
+\item an environment cell $\env.q$---only in a lambda's or a local function's own class---is $\env.q$;
+\item a $\shared(v)$ cell is $\shared$, and $\top$ is $\top$.
+\end{itemize}
+A site is never $\fresh_k$ unless it was made by an instruction of the body being summarised, so a cell
+of an enclosing scope that a lambda returns is $\env.q$, never fresh. The remaining facts are:
+\begin{itemize}
 \item $\mathit{xres}(q')$ and $\mathit{xreq}(i, q)$ from the flag of \S\ref{sec:model-excl};
 \item $\mathit{fun}(j)$ from the calls of $\pi_j$ the walk met: $\mathit{calls}$ by counting along
-paths (a call inside a tail-call loop, or a pass to a $\mathit{many}$ position, is $\mathit{many}$);
-$\mathit{supply}(k)$ from the abstract value of the $k$th argument at each call, its provenance being the
-parameter paths and fresh sites in it and its ownership bit owned iff the argument's cells pass \Dead,
-\Unescaped\ and \Disjoint\ at that call; $\mathit{need}$ from whether the result's cells reach a store
-that promises $\excl$.
+paths (a call inside a tail-call loop, a pass to a $\mathit{many}$ position, or a pass to an escaping
+position is $\mathit{many}$); $\mathit{supply}(k)$ from the abstract value of the $k$th argument at each
+call, its provenance being read off by the rule above and its ownership bit owned iff the argument's
+cells pass \Dead, \Unescaped\ and \Disjoint\ at that call; $\mathit{need}$ from whether the result's cells
+reach a store that promises $\excl$.
 \end{itemize}
-The four bits are independent; the normal shape of a writer that returns its operand is
-$\{\mathsf{R}, \mathsf{A}, \mathsf{W}\}$. The bits refine Aspinall, Hofmann and Kone\v{c}n\'y's three
+The four bits of $\mathit{use}$ are independent; the normal shape of a writer that returns its operand
+is $\{\mathsf{R}, \mathsf{A}, \mathsf{W}\}$. The bits refine Aspinall, Hofmann and Kone\v{c}n\'y's three
 usage aspects, in which variables ``may only be accessed once with aspect 1'', ``can be used many times
 with aspect 2'', and ``can be freely used with aspect 3'' \citep[\S1]{aspinall2008usage}, with ``used
 once'' replaced by ``unique at the site'', and with a bottom element, $\unused$, that their system has
@@ -107,17 +118,17 @@ no need for.
 \section{Recursion: an optimistic fixpoint}
 \label{sec:inf-recursion}
 
-A strongly connected component of the call graph is solved together. (beni's module graph is
-acyclic, so recursion never crosses a module boundary.) Every member starts from the most
-optimistic summary, the bottom of the lattice of \S\ref{sec:inf-lattice}: every parameter path
-$\unused$, every result path empty, every container exclusive and no exclusivity required, every
-function-typed parameter called at most once, supplied owned cells and needing nothing. The bodies are
-analysed under these assumptions, the resulting summaries are joined with the assumptions, and the
-process repeats until nothing changes. Every transfer is monotone---a more pessimistic callee summary
-creates more holders, aliases and escapes in the caller, never fewer---and the lattice is finite, so
-the iteration terminates (\S\ref{sec:inf-lattice} gives the height). Because no group can fail to
-converge, a cap on rounds, if an implementation wanted one, would yield the top summary and a limit
-report, never a wrong answer.
+A strongly connected component of the call graph is solved together, and so is a block's group of local
+functions. (beni's module graph is acyclic, so recursion never crosses a module boundary.) Every member
+starts from the most optimistic summary, the bottom of the lattice of \S\ref{sec:inf-lattice}: every
+parameter path $\unused$, every result path empty, every container exclusive and no exclusivity
+required, every function-typed parameter called at most once, supplied owned cells and needing nothing,
+and no function value once. The bodies are analysed under these assumptions, the resulting summaries
+are joined with the assumptions, and the process repeats until nothing changes. Every transfer is
+monotone---a more pessimistic callee summary creates more holders, aliases and escapes in the caller,
+never fewer---and the lattice is finite, so the iteration terminates (\S\ref{sec:inf-lattice} gives the
+height). Because no group can fail to converge, a cap on rounds, if an implementation wanted one, would
+yield the top summary and a limit report, never a wrong answer.
 
 \emph{The group is then validated}: each body is checked once more against the final summaries, and
 every side condition must pass. A summary assignment that survives validation is a consistent typing
@@ -151,48 +162,61 @@ is declared untypable---``we do not try any specific instances but consider the 
 untypable'' \citep[\S8]{barendsen1996uniqueness}---and the type of every binding in a recursive binding
 group is non-unique \citep[\S7]{devries2008simplified}, a constraint on the recursively bound names
 themselves rather than on their parameters. Our unknowns are facts about flows rather than attributes
-on types; a recursive function's own name is a reference to a declaration that captures nothing, so it
-holds no cell, and a recursive call is analysed through the group's summary like any other call.
+on types. A top-level recursive function's own name is a reference to a declaration that captures
+nothing, so it holds no cell, and a recursive call is analysed through the group's summary like any
+other call. A local function's own name holds the group's environments, so a local function that is
+once and may call itself is rejected (\S\ref{sec:model-functions}); this is the one place where our
+rule meets de Vries et al.'s.
 
 \section{The lattice}
 \label{sec:inf-lattice}
 
 Termination and the existence of a least solution need the whole order, with every fact oriented so
-that ``up'' is ``more pessimistic''. For one declaration with parameter paths $P$, result paths $Q$
-and function-typed parameters $J$, the facts and their orders are:
+that ``up'' is ``more pessimistic''. For one declaration with parameter paths $P$, result paths $Q$,
+environment paths $V$ (for a lambda or local function) and function-typed parameters $J$, the facts and
+their orders are:
 \begin{center}\small
-\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.3\linewidth}>{\raggedright\arraybackslash}p{0.3\linewidth}X@{}}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.3\linewidth}>{\raggedright\arraybackslash}p{0.34\linewidth}X@{}}
 \toprule
 Fact & Values, bottom first & Height \\
 \midrule
 $\mathit{use}(i, q)$, $\pi_i.q \in P$ & subsets of $\{\mathsf{R}, \mathsf{A}, \mathsf{E}, \mathsf{W}\}$, by inclusion & 4 per path \\
-$\mathit{res}(q')$, $q' \in Q$ & subsets of $P \cup \{\fresh_1, \ldots, \fresh_{|Q|}\}$, by inclusion & $|P| + |Q|$ per path \\
+$\mathit{res}(q')$, $q' \in Q$ & subsets of $P \cup V \cup \{\fresh_k, \esc_k\}_{k \le |Q|} \cup \{\shared, \top\}$, ordered by inclusion after closing upwards under $\fresh_k \sqsubset \esc_k$ and $p \sqsubset \top$ & $|P| + |V| + 2|Q| + 2$ per path \\
 $\mathit{xres}(q')$ & $\mathsf{yes} \sqsubset \mathsf{no}$ (a \emph{must} fact, reversed) & 1 per path \\
 $\mathit{xreq}(i, q)$ & $\mathsf{no} \sqsubset \mathsf{yes}$ & 1 per path \\
 $\mathit{calls}(j)$ & $0 \sqsubset {\le}1 \sqsubset \mathit{many}$ & 2 per $j$ \\
-$\mathit{supply}(j, k)$ & provenance sets by inclusion; $\mathrm{owned} \sqsubset \mathrm{borrowed}$ (reversed) & $|P| + 2$ per parameter of $g_j$ \\
+$\mathit{supply}(j, k)$ & provenance sets as for $\mathit{res}$; $\mathrm{owned} \sqsubset \mathrm{borrowed}$ (reversed) & $|P| + 2|Q| + 3$ per parameter of $g_j$ \\
 $\mathit{need}(j)$ & nothing $\sqsubset$ fresh and exclusive & 1 per $j$ \\
 once-ness of a result path & not once $\sqsubset$ may be once & 1 per function-typed result path \\
 \bottomrule
 \end{tabularx}
 \end{center}
-The base lattice $L_0$ is the product of these, ordered pointwise, and its height $h_0$ is the sum of
-the last column. A \emph{conditional} summary maps each valuation of its guard atoms to a point of
-$L_0$, monotonically: a more pessimistic class for a function-typed parameter never yields a more
-optimistic summary. With $a$ atoms---facts of the function-typed parameters' classes that the body's
-facts depend on---the normal form is a join of at most $2^a$ guarded values, one per conjunction of
-atoms, and its lattice has height at most $2^a \cdot h_0$. We cap $a$ (at eight, say): a body whose
-facts would depend on more atoms is summarised by its unconditional, most pessimistic value for the
-excess atoms, with a limit tag---the same shape as the cap on inferred constraints that beni already
-has. The group's lattice is the product over its members, whose height is the sum of theirs.
+The order on $\mathit{res}$ makes the read-off rule monotone: when more of a body's cells escape, a
+$\fresh_k$ becomes $\esc_k$, which is above it. The base lattice $L_0$ is the product of these, ordered
+pointwise, and its height $h_0$ is the sum of the last column.
+
+A \emph{conditional} summary maps each valuation of its guard atoms to a point of $L_0$, monotonically:
+a more pessimistic class for a function-typed parameter, or a weaker state of an argument (not
+exclusive, not stored exclusively, possibly overlapping another), never yields a more optimistic
+summary. The atoms are finitely many: one per fact of a function-typed parameter's class, and one per
+argument-state fact over $P$, the latter at most $2|P| + |P|^2$. With $a$ atoms that the body's facts
+actually depend on, the normal form is a join of at most $2^a$ guarded values and its lattice has height
+at most $2^a \cdot h_0$. We cap $a$ (at eight, say): a body whose facts would depend on more atoms is
+summarised by its unconditional, most pessimistic value for the excess atoms, with a limit tag---the
+same shape as the cap on inferred constraints that beni already has. The cap bounds what a
+\emph{published} summary carries; it never fires on an instantiation, because at a call every atom is
+decided by the caller's classes and arguments. In particular the entry check of a TEA program
+(\S\ref{sec:hard-tea}), which instantiates the platform's row with the program's own functions, carries
+no guards, however many model paths \code{update} writes. The group's lattice is the product over its
+members, whose height is the sum of theirs.
 
 Every transfer of Table~\ref{tab:transfer} and every summary rule of \S\ref{sec:inf-summarise} is
-monotone in this order: each is a union, a projection, a membership test on a set that only grows, or a
-must fact that only falls. We have checked this case by case but have not written the case analysis
-out; it is the first item of a mechanised proof. Given monotonicity, Knaster--Tarski gives a least
-fixpoint, Kleene iteration from bottom reaches it in at most the group's height in rounds, and the
-optimistic start finds it. In practice one or two rounds suffice, because summaries move only when a
-recursive call carries a new fact around the cycle.
+monotone in this order: each is a union, a projection, a membership test on a set that only grows, a
+must fact that only falls, or the move from $\fresh_k$ to $\esc_k$. We have checked this case by case but
+have not written the case analysis out; it is the first item of a mechanised proof. Given monotonicity,
+Knaster--Tarski gives a least fixpoint, Kleene iteration from bottom reaches it in at most the group's
+height in rounds, and the optimistic start finds it. In practice one or two rounds suffice, because
+summaries move only when a recursive call carries a new fact around the cycle.
 
 \section{Function values: ownership classes}
 \label{sec:inf-classes}
@@ -209,8 +233,8 @@ fresh class at the use, related to the scheme's classes by inclusion edges. That
 \begin{itemize}
 \item every function type in a scheme---a parameter, a result, a field, an element, a captured
 value---carries an \emph{ownership class}: the $\mathit{use}$, $\mathit{res}$ and $\mathit{xres}$ facts
-of the function type's own parameters and result, whether its values may be once, and what they may
-hold under $\env$;
+of the function type's own parameters and result, with $\mathit{res}$ able to name the closure's own
+environment ($\env.q$); whether its values may be once; and what they may hold under $\env$;
 \item $f$'s summary is expressed over its function-typed parameters' classes, as the guarded values of
 \S\ref{sec:inf-lattice};
 \item at a call \code{f ⋯ λ ⋯}, the lambda's actual summary is related to the instantiated class by
@@ -218,33 +242,35 @@ hold under $\env$;
 \begin{itemize}
 \item the lambda may write its $k$th parameter only where $f$ supplies an owned cell:
 $\mathsf{W} \in \mathit{use}_\lambda(k) \Rightarrow \mathit{supply}_f(k) = \mathrm{owned}$;
-\item a once lambda requires $\mathit{calls} \le 1$;
+\item a once lambda requires $\mathit{calls} \le 1$, and no $\mathsf{E}$ on the parameter's
+$\varepsilon$;
 \item the lambda's result is translated into $f$'s vocabulary by substituting, for each parameter
-$\pi_k$ of the lambda named in $\mathit{res}_\lambda$, the provenance $\mathit{supply}_f(k)$, and the
-translation flows into $f$'s $\mathit{res}$ wherever $f$ returns or stores $g$'s result;
+$\pi_k$ of the lambda named in $\mathit{res}_\lambda$, the provenance $\mathit{supply}_f(k)$, and for each
+$\env.q$ the cells of the lambda's own environment at the call site; the translation flows into $f$'s
+$\mathit{res}$ wherever $f$ returns or stores $g$'s result;
 \item the lambda's captured cells under $\env$ are the cells of the function-valued argument, so they
-take part in \Disjoint\ at the call, and they become escaped if $f$'s class puts $\mathsf{E}$ on that
+take part in \Disjoint\ at the call, and they escape if $f$'s class puts $\mathsf{E}$ on that
 argument's $\env$;
 \end{itemize}
 \item a violated edge is an error at the call, naming the lambda and the parameter. As with effects,
 this is subtyping, not just unification.
 \end{itemize}
 
-The translation through $\mathit{supply}$ is what an earlier version of these rules lacked. There,
-$\mathit{supply}$ said only ``owned'' or ``borrowed'', so in
+The translation through $\mathit{supply}$ is what relates a callback's result to its caller's
+arguments. In
 \begin{Verbatim}
 pick rows = List.foldl rows [] (λr acc → r)
 \end{Verbatim}
-the lambda's $\mathit{res} = \{\pi_1\}$ named the lambda's own parameter, which nothing at the call of
-\code{foldl} could relate to \code{rows}. With provenance, \code{foldl}'s summary
+the lambda's $\mathit{res} = \{\pi_1\}$ names the lambda's own parameter, and \code{foldl}'s summary
 \begin{Verbatim}
 foldl : List a [borrowed; [*] aliased], b [consumed+aliased if g consumes 2; aliased otherwise],
         (a, b → b) [calls many; supply 1 borrowed π₁[*]; supply 2 owned π₂ ∪ g.res]
           → b [= π₂, g.res]
 \end{Verbatim}
-instantiates the lambda's $\{\pi_1\}$ to $\{\pi_1.[\ast]\}$, so \code{pick}'s result aliases the
-elements of its argument, and a caller that edits the result while still using \code{rows} is
-rejected.
+instantiates it to $\{\pi_1.[\ast]\}$, so \code{pick}'s result aliases the elements of its argument, and
+a caller that edits the result while still using \code{rows} is rejected. The same translation through
+$\env$ makes a callback that returns a captured list, \code{List.map ys (λ\_ → xs)}, produce a result
+whose elements are \code{xs}'s cell rather than fresh ones, so \code{map}'s result is not exclusive.
 
 The classes live on solved types, so a function value that reaches $f$ through a record field or a
 parameter of a parameter is handled by the same instantiation: the class is where the function type
@@ -258,7 +284,7 @@ may therefore be called many times while the capture is consumed later. That fac
 lambda (its $\env$ cells read, not written) and is decided where the lambda is written; it composes.
 In \code{List.map xs (λx → f x ys)} the lambda reads \code{ys}, \code{map}'s $\mathit{calls} =
 \mathit{many}$ is fine for a closure that is not once, and the closure does not escape, so \code{ys}
-is live only during the \code{map} call and a later \code{List.set ys ⋯} is accepted. Deng et al.\ draw a
+is live only during the \code{map} call and a later \code{[ …ys, y ]} is accepted. Deng et al.\ draw a
 related distinction with \emph{use} and \emph{kill} effects on closure types: a closure that accesses
 a resource, by reading or writing it, carries a use effect on it, and one that frees it a use and a kill
 \citep[Fig.~1, \S2.2]{deng2025capture}. Their use effect corresponds to our ``not consumed'', not to
@@ -276,21 +302,18 @@ lambda is in front of the checker.
 A method call \code{x.m a} inside a function with a \code{where} clause calls evidence the caller
 supplies. There are two cases.
 \begin{itemize}
-\item \emph{The well-known methods \code{eq} and \code{compare} only read.} An earlier version of these
-rules said so ``by contract'' while also saying that a user \code{eq} is summarised like any function;
-the two contradicted each other, and a user \code{eq} that pushed onto its argument, reached through
-\code{==} on a list of that type, wrote the same cell twice behind the program's back. We close the
-case with a language rule: \emph{a type's \code{eq} and \code{compare} must have $\mathit{use} \subseteq
-\{\mathsf{R}\}$ on every parameter path}, and one that may write, keep or return a cell of its arguments
-is an error at its declaration. Derived \code{eq} and \code{compare} satisfy it by construction, and
-the library's list equality and comparison, which call the element's evidence, then only read. The rule
-costs a programmer nothing they could not write: an \code{eq} that wants to sort a copy calls
-\code{List.sort}, which builds a new list, or \code{List.copy} before an in-place writer. It buys a
-guarantee---\code{==} and \code{<} never change a value---on which every generic container's summary
-then rests (\S\ref{sec:disc-options}, Change~11 weighs it). The alternative, summarising \code{eq} like
-any method and making every \code{where a.eq} function's summary conditional on its evidence, is sound
-too; it costs every generic function a guard on its evidence class and makes \code{List.eq}'s asserted
-row conditional, for a capability we know no use for.
+\item \emph{The well-known methods \code{eq} and \code{compare} only read.} This is a language rule:
+\emph{a type's \code{eq} and \code{compare} must have $\mathit{use} \subseteq \{\mathsf{R}\}$ on every
+parameter path}, and one that may write, keep or return a cell of its arguments is an error at its
+declaration. Without the rule, a user \code{eq} that pushed onto its argument, reached through
+\code{==} on a list of that type---whose equality calls the element's evidence, often with one cell as
+both arguments---would write the same cell twice behind every caller's back. Derived \code{eq} and
+\code{compare} satisfy the rule by construction, and the library's list equality and comparison, which
+call the element's evidence, then only read. The rule costs a programmer nothing they could not write:
+an \code{eq} that wants to sort compares sorted copies, \code{List.sort a == List.sort b}. A
+\code{Debug.log} inside an \code{eq} stays legal, since it reads its argument and returns a value that
+is not one of \code{eq}'s arguments' cells. The rule buys a guarantee---\code{==} and \code{<} never
+change a value---on which every generic container's summary then rests.
 \item \emph{Any other method}, such as \code{a.update : a, Int → a}, has a summary that is a class on
 the constraint's method type, instantiated at each call site from the term the dispatch table
 resolves---a top-level function, a derived method, or evidence received as a parameter---exactly as its
@@ -300,7 +323,7 @@ over; at the use they are bound.
 
 Generic code therefore loses nothing by being generic. What it cannot do is write a value of type
 \code{a} in place: there is no demand of type \code{a → a}. A generic container function such as
-\code{Dict.update d k (λv → List.push v x)} is the container's business (\S\ref{sec:hard-containers}),
+\code{Dict.update d k (λv → [ …v, x ])} is the container's business (\S\ref{sec:hard-containers}),
 and its callback's $\mathit{supply}$ is a class against which the caller's lambda is checked.
 
 Parametricity supplies result aliasing for free---a function of type \code{a → a} can only return its
@@ -310,7 +333,8 @@ The checker obtains the same fact from the body (\code{identity x = x} analyses 
 \{\pi_1\}$), and from the type for a \code{foreign} over a type variable, such as \code{Debug.log},
 \emph{only when no opaque runtime type with a tracked parameter stands between argument and result}.
 \code{Task.join : Fiber a → a} returns a value the runtime retains and hands to every joiner, so its
-result is $\top$, not ``fresh from nowhere''.
+result is $\top$, not ``fresh from nowhere'', and a function that returns it, \code{result f = Task.join f},
+has $\mathit{res} = \{\top\}$ in turn.
 
 \section{Complexity}
 \label{sec:inf-complexity}
@@ -323,60 +347,55 @@ holders of a cell at a demand.
 of (type, step) edges reachable in the definitions of the types involved, not exponential in the cut:
 a tree \code{type Tree = Node String (List Tree)} contributes one list path and one element path. For a
 non-recursive type, $w$ is bounded by its fields to depth $k$; a model record with three list fields
-has $w = 3$.
+has $w = 3$. Opaque and foreign types add one path each, or two for a dictionary.
 \item \emph{Forward and backward walks.} $O(n \cdot w)$ each per round; a self tail call adds an inner
 fixpoint of at most $c$ rounds, so a declaration with a loop costs $O(c \cdot n \cdot w)$.
 \item \emph{The check.} $O(D \cdot H)$, which is quadratic in the size of one declaration in the worst
-case, when a cell has many alias bindings and many demands. In a TEA application the largest
-declaration is usually \code{update}, which may be most of a module, so the honest statement is that
-the check is quadratic in the size of the largest declaration.
+case. Construction makes demands frequent: every spread and every \code{++} on lists is one. In a TEA
+application the largest declaration is usually \code{update}, which may be most of a module, so the
+honest statement is that the check is quadratic in the size of the largest declaration.
 \item \emph{Recursion.} A group runs at most as many rounds as its lattice's height
-(\S\ref{sec:inf-lattice}), which grows with the product of result paths and parameter paths through
-$\mathit{res}$, and with $2^a$ for $a$ guard atoms; in practice one or two rounds.
+(\S\ref{sec:inf-lattice}); in practice one or two rounds.
 \end{itemize}
-Interfaces grow by a few words per scheme site, plus the crossing bit per type. Nothing is
-whole-program: summaries are read from interfaces exactly as effect summaries are, and the entry
-protocol of a TEA program (\S\ref{sec:hard-tea}) is evaluated at the one call that starts the program,
-from summaries.
+Interfaces grow by a few words per scheme site. Nothing is whole-program: summaries are read from
+interfaces exactly as effect summaries are, and the entry protocol of a TEA program
+(\S\ref{sec:hard-tea}) is evaluated at the call of the platform's program constructor, from summaries.
 
 The compiler's design target for checking is above 250\,000 lines per second per core, and the effect
 inference, which has the same shape with a narrower per-site record, fits within a 10\,\% increase in
 check time. We expect the ownership pass to fit similarly, but have not measured it: the unknowns are
-$w$ on wide model records, $H$ inside a large \code{update}, and the number of guard atoms, and the
-evaluation (Chapter~\ref{sec:evaluation}) measures all three. If a cap is needed on $w$, a type with
-more than a fixed number of tracked paths (say 64) is tracked as a whole and yields $\top$---a limit
-report and never a wrong answer. A cap of 64 is not expected to fire on recursive types once they are
-folded; it would fire on very wide records.
+$w$ on wide model records, $D$ and $H$ inside a large \code{update}, and the number of guard atoms, and
+the evaluation (Chapter~\ref{sec:evaluation}) measures all of them. If a cap is needed on $w$, a type
+with more than a fixed number of tracked paths (say 64) is tracked as a whole and yields $\top$---a limit
+report and never a wrong answer.
 
 \section{Modularity and determinism}
 \label{sec:inf-modular}
 
 The summary of every public declaration is published in the module interface as a block beside the
 effect facts: per scheme site, found by the same encoding of a site as a root and a path that the effect
-block uses, the facts of \S\ref{sec:model-summary}, and per function-type site its class. The block
-also carries the crossing bit of every type the module declares. The block is \emph{hashed with the
-interface}. A body edit that changes a summary therefore changes the hash, and importers are
-re-checked---the only correct behaviour, since their side conditions change. The price is interface
-churn: with inferred summaries, editing a function's body can change its signature, which is the usual
-argument for requiring signatures to be written. In our measurement of beni's inferred \code{where}
-clauses, one class of body edit changed the interfaces of 50 of 90 unannotated public declarations of
-the core library and of none of the annotated ones (\S\ref{sec:bg-modules}); we expect summaries to
-behave similarly, and the evaluation measures it. An optional annotation can freeze a summary
-(\S\ref{sec:disc-options}, Change~5).
+block uses, the facts of \S\ref{sec:model-summary}, and per function-type site its class. The block is
+\emph{hashed with the interface}. A body edit that changes a summary therefore changes the hash, and
+importers are re-checked---the only correct behaviour, since their side conditions change. The price is
+interface churn: with inferred summaries, editing a function's body can change its signature, which is
+the usual argument for requiring signatures to be written. In our measurement of beni's inferred
+\code{where} clauses, one class of body edit changed the interfaces of 50 of 90 unannotated public
+declarations of the core library and of none of the annotated ones (\S\ref{sec:bg-modules}); we expect
+summaries to behave similarly, and the evaluation measures it. An optional annotation can freeze a
+summary (\S\ref{sec:disc-options}).
 
 \emph{Everything the analysis reads about another module is in that module's interface.} This
-includes the entry protocol of a TEA program: it is evaluated at the call that starts the program, from
-the summaries of \code{init} and \code{update} and the other functions the program record names, and
-those summaries carry exactly the facts the entry needs---numbered fresh cells for aliasing between
-result paths, and $\mathsf{E}$ for anything a command or subscription keeps
-(\S\ref{sec:hard-tea}). If \code{init}'s body changes from building two lists to placing one list at
-two fields, its $\mathit{res}$ changes from $\{\fresh_1\}, \{\fresh_2\}$ to $\{\fresh_1\}, \{\fresh_1\}$,
-the interface hash changes, and the module that starts the program is re-checked. An earlier version
-of these rules computed the entry state from bodies the interface did not carry, and a cached
-acceptance could then outlive such an edit. The cache key therefore does not change: the summary block
-is a function of the module's source and its imports' interfaces, which the key already covers. The
-incrementality tests gain this case---an aliasing edit in \code{init} in one module, the program
-started in another---and the determinism test the ownership dump.
+includes the entry protocol of a TEA program: it is evaluated at the call of the platform's program
+constructor, from the summaries of \code{init}, \code{update} and the other functions the program
+record names, and those summaries carry exactly the facts the entry needs---numbered fresh cells for
+aliasing between result paths, $\esc_k$ and $\mathsf{E}$ for anything a command or subscription keeps,
+and $\shared$ for a top-level list. If \code{init}'s body changes from building two lists to placing
+one list at two fields, its $\mathit{res}$ changes from $\{\fresh_1\}, \{\fresh_2\}$ to
+$\{\fresh_1\}, \{\fresh_1\}$, the interface hash changes, and the module that starts the program is
+re-checked. The cache key therefore does not change: the summary block is a function of the module's
+source and its imports' interfaces, which the key already covers. The incrementality tests gain this
+case---an aliasing edit in \code{init} in one module, the program started in another---and the
+determinism test the ownership dump.
 
 beni requires that its output not depend on thread timing (\S\ref{sec:bg-modules}). Every order the
 pass uses is the checker's: components in source order, instructions in order, fields and paths by
