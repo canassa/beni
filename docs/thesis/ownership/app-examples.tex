@@ -32,13 +32,19 @@ contains $\mathsf{E}$ for the arm that appends. At every later entry the path is
 fails \Unescaped: \emph{rejected}, as possible sharing, on every platform. With \code{save} encoding before
 the command, \code{todos} is only read, nothing escapes, and the entry finds the path fresh at every entry.
 
-\paragraph{The renderer.} \code{view} renders \code{List.filter model.todos (visible model.filter \_)},
-which by the identity promise may be \code{model.todos} itself. On the template runtime as it stands, that
-\code{<For>} skips its walk when it receives the same list, so the entry row treats the path as escaped and
-the append is \emph{rejected}. Under \Obl{P7}, the lowering learns from \code{update}'s summary that
-\code{model.todos} is written in place, compiles that \code{<For>} without the skip, and the append is
-\emph{accepted}: on the base array it is \code{a.push(v)}. On the direct platform it is accepted by
-construction of the platform.
+\paragraph{The renderer.} Compiled for the template runtime, the program keeps persistent lists, the
+append copies as it does today, and every identity skip of that runtime stays sound. Compiled for the
+direct platform, the append is \code{a.push(v)} on the base array, and the page must still show it.
+\code{update}'s summary has $\mathsf{W}$ at $\pi_2.\mathit{todos}$, so \code{todos} is in $\mathit{IP}$, and the
+Enter key's write set names \code{todos} with the tag \emph{append}. Everything in \code{view} that reads
+\code{todos}---the derived values \code{left} and the filtered list, the groups of the two \code{hidden}
+attributes, the count and the toggle-all box---conflicts with that write set and runs; each group writes a
+string or a boolean on difference. The \code{<For>} over \code{List.filter model.todos (visible model.filter
+\_)}, which by the identity promise may be \code{model.todos} itself, runs because it conflicts, and reaches
+its rows through the reconciler, which matches them by key. A todo is a record holding no list, so
+\code{todos[*]} is not in $\mathit{IP}$ and the reconciler's test of whether a kept row's item changed stays
+an identity test. \emph{Accepted}, and the page is right: nothing here needs more of the direct platform
+than its design already does.
 
 \section{A table application's row swap}
 
@@ -49,7 +55,9 @@ On the direct platform, with \code{init} a function. \code{swap} is a writer. Th
 $(\mathit{model}, .\mathit{rows})$'s cell are that path itself and the runtime's instance array, which holds
 items for identity comparison only (A4); no arm captures \code{rows} in a command, and no path of the model
 aliases it, so the entry protocol finds it owned. The model is dead after the arm. \emph{Accepted}: two
-assignments on the plain array. The platform's edit script compares row items, never the list's identity.
+assignments on the plain array. The platform's swap script is guarded by its range and by the identity
+of the moved element, never by the list's; the rows are records, so \code{rows[*]} is not in $\mathit{IP}$
+and that element guard stays (\Obl{P7}(f)). A grid whose rows are lists would drop it.
 In the persistent representation the same message performs two \code{set}s, each a path copy through the
 trie at that size, and a spread of the model record; in place, the swap is two array writes.
 
@@ -103,10 +111,30 @@ Here \code{Dict.update : Dict k v, k, (Maybe v → Maybe v) → Dict k v} looks 
 callback, and inserts the result. Its callback is supplied an owned value by the one asserted row of the
 dictionary module, whose argument is that the insert that follows reads neither the old value nor a key
 that aliases it, provided the contents are exclusive---keys included. The rewritten program is accepted
-\emph{provided \code{d}'s contents are exclusive}, and here they are, from \code{Dict.empty} on: every
-value stored is either \code{[ x ]}, built by pushing onto a fresh \code{[]}, or the result of a
-construction on an owned value, each a distinct cell with no other holder; the keys are of whatever type
-\code{key} returns, and when that type crosses, as a string or an integer does, they hold no cell at all.
-No lookup leaves a live alias. This is the program whose silently quadratic behaviour under reference
-counting motivated Huisinga's analysis for Lean \citep{huisinga2023lean}; here it is a message with the fix
-on it, and the fixed form is checked statically rather than counted at run time.
+\emph{provided \code{d}'s contents are exclusive at every call}, and the derivation must show that through
+the rows, not by looking at the concrete cells, since the folded path $\langle\mathit{Dict}\rangle.v$ names
+one abstract cell for every group.
+\begin{enumerate}
+\item \emph{The first call.} \code{foldl}'s accumulator is \code{Dict.empty}, a value with no cell: exclusive.
+\code{foldl}'s row supplies it owned and, since $\pi_2$ is exclusive, exclusive (\S\ref{sec:inf-classes}).
+\item \emph{The callback keeps shape.} Its parameter is \code{m : Maybe (List a)}, supplied owned.
+\code{Maybe.withDefault g []} returns $\pi_1.\mathit{Just}\#0$ or a fresh \code{[]}; the construction
+\code{[ …⋯, x ]} consumes that and returns its cell; \code{Just} wraps it. So the result holds, at
+$\mathit{Just}\#0$, the element's own cell at the same path or a fresh one, and its elements are \code{x}s, of
+whatever type \code{xs} holds---stored exclusively if they hold lists, nothing if they cross. The callback
+keeps shape.
+\item \emph{\code{Dict.update} keeps the flag.} Its asserted row keeps $\excl$ when the dictionary was
+exclusive and the callback keeps shape (\S\ref{sec:hard-containers}), so the callback of the fold returns an
+exclusive dictionary: its $\mathit{xres}$ holds.
+\item \emph{The later calls.} \code{foldl} supplies the callback's previous result, exclusive by its
+$\mathit{xres}$, so the guard \code{supply 2 excl if π₂ excl and g.xres} holds at every call, and the owned
+supply of step 2 holds again.
+\end{enumerate}
+The keys are of whatever type \code{key} returns; when that type crosses, as a string or an integer does,
+they hold no cell at all. No lookup leaves a live alias. In an earlier form of the rules only the supply was
+asserted and the fold carried no exclusivity, so the derivation failed from the second iteration; the
+concrete argument that ``each value is a distinct cell with no other holder'' was true, but the abstract cell
+could not express it, which is why the flag exists and why it must be carried. This is the program whose
+silently quadratic behaviour under reference counting motivated Huisinga's analysis for Lean
+\citep{huisinga2023lean}; here it is a message with the fix on it, and the fixed form is checked statically
+rather than counted at run time (T44).

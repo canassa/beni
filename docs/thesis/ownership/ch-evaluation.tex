@@ -23,7 +23,9 @@ The first experiment runs every program the checker accepts under both semantics
 mode only:
 \begin{itemize}
 \item \emph{an in-place backend}: the list runtime of Table~\ref{tab:backend}, with every accepted demand
-written in place---constructions included---and every once closure's call counted;
+written in place---constructions included---and every once closure's call counted. It is what the direct
+platform ships; the test mode links it into programs for every target, Node and the template runtime
+included, as an instrument, since the theorem is about the rules and not about one platform;
 \item \emph{a stale-read sanitiser}: the instrumented semantics of \S\ref{sec:soundness-instrumented}
 made executable. Every array carries a version counter, incremented by each in-place write; every
 reference to an array that the emitted code creates---a local, a field, an element, a closure's
@@ -56,23 +58,25 @@ summary <Decl>
   param <i>.<path> <unused|R|RA|RE|RW|⋯> [reason <tag>]
   result <path> {<param paths>|fresh<k>|esc<k>|env<path>|shared|top} [excl]
   fun <j> calls <0|1|many> supply <k> <owned|borrowed> {<provenance>}
-demand <Decl>:<inst> <writer|construction> operand <cells> idiom <I1..I7|other>
+demand <Decl>:<inst> <writer|construction> operand <cells> idiom <I1..I7|other> [position]
   unique                                               -- accepted
   shared <holder> kept-at <inst> used-at <inst> exact  -- real sharing
   shared <holder> ⋯ approx <limit-tag>                 -- possible sharing (a limit)
   unknown <limit-tag>                                  -- Known or Unescaped failed
 once <Decl>:<inst> created | called-twice-at <inst> | passed-to-many <callee> | escapes
 copy <Decl>:<inst> of-unique                           -- a copy of a list already unique
-entry <program> row <template|template+P7|direct> path <path>
+entry <program> path <path>
   <owned|aliased-with <path>|escaped by <arm>|shared|unknown>
 cap <which> fired at <Decl>
 \end{Verbatim}
 The idiom of a demand is assigned by a syntactic classifier written before the run---a construction or
 writer whose operand is a parameter rebound by a tail call is I1, one in a callback passed to a fold is I2,
 and so on, following \S\ref{sec:idioms-list}---and a person checks the classifier's output on a sample. The
-entry check is reported under three rows: the template runtime as it is, the template runtime with
-\Obl{P7}, and the direct platform. The rows are declarations, so the report mode can evaluate a program
-under a row whose runtime does not yet exist. The dump is deterministic (\S\ref{sec:inf-modular}), is
+classifier only \emph{labels}: it does not decide which demands count as idiomatic (\S\ref{sec:eval-counts}).
+A rejection caused by the position rule's choice of base is marked \code{position}. The entry check is
+reported under the direct platform's row, the only one the checker uses; the row is a declaration, so the
+report mode can evaluate a program under it although the direct platform's in-place slice does not yet
+exist. The dump is deterministic (\S\ref{sec:inf-modular}), is
 compared byte for byte by the determinism test, and is itself tested against expected output for a set of
 small programs, one per transfer rule and per side condition.
 
@@ -94,15 +98,17 @@ counted;
 mechanical in part---beni's formatter migrates syntax, turning \code{x :: acc} into \code{[ x, …acc ]}---and
 by hand in part, since beni has no automatic currying and \code{init} becomes a function; we count the
 porting effort, and port without regard to the rule, writing each list operation the way an Elm
-programmer wrote it.
+programmer wrote it, and building each for the direct platform.
 \end{enumerate}
-The external corpus is the one the decision rests on, because it was not written with the rule in mind,
-and because Elm's own idioms, carried over, are exactly the idioms of Chapter~\ref{sec:idioms}.
+The external corpus is the one the decision rests on, because it was not written with the rule in mind.
+Its demands are idiomatic by definition: they are what Elm programmers wrote, carried over. The idioms
+I1--I7 of Chapter~\ref{sec:idioms} were drawn from forms we knew to pass, so they are a way of breaking the
+result down, not the definition of the population it is measured on.
 
 \section{Counts}
 \label{sec:eval-counts}
 
-For each corpus, each entry row and in total we report:
+For each corpus, each target and in total we report:
 
 \begin{center}\small
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}X@{}}
@@ -115,9 +121,10 @@ accepted & unique at the site \\
 rejected, exact & real sharing, by holder kind: a later local read, a held operand, a closure, a command
 or fiber, a container, a payload, a kept version \\
 rejected, approximate & by limit tag (Table~\ref{tab:tags}) \\
-rejected, shared & a top-level list as a base \\
-\emph{idiomatic error rate} & rejected idiomatic demands over all idiomatic demands, per idiom and pooled;
-the main metric \\
+rejected, position & the position rule's choice of base: a top-level list, a model list in \code{view} \\
+\emph{idiomatic error rate} & on the external corpus, rejected demands over \emph{all} its demands, pooled and
+per application; broken down by idiom I1--I7 and ``other'', and by kind (exact, approximate, position); the
+main metric \\
 once-closure rejections & by kind: called twice, passed to a $\mathit{many}$ position, escaping \\
 exclusive containers & container paths that carry $\excl$ at a destructive read, against those that do
 not, and what cleared the flag \\
@@ -166,33 +173,41 @@ an exact rejection from an approximate one from the verdict line.
 \label{sec:eval-decisions}
 
 The numbers inform four decisions, in this order, against criteria we state now so that an outcome can
-refute the proposal. The decision rests on the external corpus under the entry row of the template
-runtime with \Obl{P7}, the design this thesis proposes for the platform those programs use; the other two
-rows are reported as context. Rates are computed pooled over all applications, and must also hold for the
-median application; the decision needs at least 500 idiomatic demand sites from at least ten applications,
-and if the corpus yields fewer, it is enlarged by the same selection rule before anything is decided.
+refute the proposal. The decision rests on the external corpus, built for the direct platform and checked
+against its entry row, the only one the checker uses. Rates are computed pooled over all applications, and
+must also hold for the median application; the decision needs at least 500 demand sites from at least ten
+applications, and if the corpus yields fewer, it is enlarged by the same selection rule before anything is
+decided. Every demand site of the external corpus counts: the corpus is idiomatic by definition, and no
+classifier removes a site from it.
 \begin{enumerate}
 \item \emph{Soundness.} If the differential run traps on any accepted program, or the two traces differ,
 the rule is not adopted until the cause is found and a test pins it. No rate of traps is acceptable.
-\item \emph{Adoption.} The rule is adopted only if (a) fewer than one in fifty idiomatic demand sites is
-rejected; (b) fewer than one in ten of all demand sites is rejected; (c) fewer than half of the rejections
-are approximate; and (d) in the study of \S\ref{sec:eval-people}, most rejections are fixed within a few
-minutes. Otherwise the in-place representation is not adopted yet: today's persistent \code{List} stays,
-the most frequent tags and idioms are addressed---by the checker, the library or the platforms---and the
-experiment is run again. There is no shipped form in which the compiler copies where it would reject.
-\item \emph{The renderer.} \Obl{P7} is adopted on the template runtime only if, on the existing benchmark
-harness for the renderer, every operation keeps the ordering it has today against the reference renderer,
-quoted as per-operation medians, with rows that walk because of \Obl{P7} included.
+\item \emph{Adoption.} The rule is adopted only if (a) fewer than one in fifty demand sites of the external
+corpus is rejected, rejections caused by the position rule included; (b) no idiom I1--I7 has a rejection
+rate above one in fifty on its own, so that no common idiom carries the errors the others do not;
+(c) fewer than half of the rejections are approximate, under the tags of Table~\ref{tab:tags}, which count the
+abstraction's own merges as approximate; and (d) in the study of \S\ref{sec:eval-people}, most rejections
+are fixed within a few minutes. Otherwise the in-place representation is not adopted yet: today's
+persistent \code{List} stays on every target, the most frequent tags and idioms are addressed---by the
+checker, the library or the platforms---and the experiment is run again. There is no shipped form in which
+the compiler copies where it would reject.
+\item \emph{The renderer.} The direct platform writes lists in place only if, with \Obl{P7} met, its pages
+keep the targets its design sets---against hand-written JavaScript and against the reference renderer,
+quoted as per-operation medians---on its table page, on TodoMVC, and on a page whose list elements are lists
+edited in place (a grid, and a board of columns edited by \code{map}), with the rows that \Obl{P7}(f) and (g)
+make run included.
 \item \emph{Which extensions to build,} on the frequency of each approximate tag: a path-sensitive join
 only if the join tag is above a twentieth of rejections, a discipline for mutable cells only if the
-\code{Ref} tag is, summaries split by message constructor only if the view-event tag is, a special case for
-a one-element \code{map} only if the $\mathit{calls} = \mathit{many}$ tag is, and value-taking command
-constructors if the command tag is above a twentieth of rejections on the template-runtime row.
+\code{Ref} tag is, summaries split by message constructor only if the view-event tag is, a relational entry
+only if the entry-merge tag is, a special case for a one-element \code{map} only if the
+$\mathit{calls} = \mathit{many}$ tag is, and value-taking command constructors if the command tag is above a
+twentieth of rejections.
 \end{enumerate}
 The thresholds are our judgement, not derived; they are written down so that the decision cannot be
-fitted to the outcome. Whether to add the in-place forms of proposal O1 is decided separately, on how often
-the external corpus's \code{map}, \code{filter} and sorts are applied to a list that is unique and dead at
-the call.
+fitted to the outcome. The error rate on the other targets, where the rule buys nothing but portability,
+is reported beside these and does not enter them. Whether to add the in-place forms of proposal O1 is
+decided separately, on how often the external corpus's \code{map}, \code{filter} and sorts are applied to a
+list that is unique and dead at the call.
 
 \section{What an implementation must provide}
 \label{sec:eval-brief}
@@ -200,8 +215,8 @@ the call.
 For the experiments to be run, an implementation must provide, in this order: the enumerated trusted
 surface of \S\ref{sec:soundness-trusted}, one asserted row and one pinned test program at a time; the
 in-place backend and the sanitiser of \S\ref{sec:eval-sanitiser}, in a test mode; the dump format above,
-with the idiom classifier; the entry protocol of each platform as an asserted row on the function its
-runtime calls, under the three rows; the derivation tags of \S\ref{sec:errors-tags}; one test program per
+with the idiom classifier; the direct platform's entry protocol as an asserted row on its program
+constructors; the derivation tags of \S\ref{sec:errors-tags}; one test program per
 transfer rule of Table~\ref{tab:transfer}, per summary rule of \S\ref{sec:inf-summarise} and per row of
 Table~\ref{tab:counterexamples}, each written to fail before the rule exists; the determinism test's
 comparison of the dump; a profiling event for the pass; and the hand-classification sheet. No emitted byte
@@ -215,6 +230,7 @@ If the rule is adopted, a second experiment repeats the prototype study's benchm
 (\S\ref{sec:bg-measure}) with the trie removed and lists written in place---the static variant's
 numbers, without its fallback---together with page-size measurements, the direct platform's table
 benchmarks and their sweeps, the cost of prepending with room in front under the policies of proposal O3,
-and the per-render cost of \Obl{P7} on the template runtime. The prototype study gives the expected shape:
+and the cost of \Obl{P7} on the direct platform, on a page whose list elements are lists edited in place,
+which none of its current benchmark pages exercises. The prototype study gives the expected shape:
 large gains when building in a fold and on steady grid ticks, gains hidden by the render walk on TEA table
 messages, and nothing for histories, which must copy. That expectation is to be measured, not assumed.

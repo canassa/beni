@@ -162,8 +162,9 @@ with eight, twice each, and compares every output byte.
 \code{List} is beni's only sequence type; the language deliberately has no separate array type. A
 list value is one of three JavaScript forms: a plain array; a \emph{view}, an object
 \code{\{ b, o, length \}} giving an offset into a base array (used for the \code{rest} of a pattern, in
-$O(1)$); or a 32-way radix trie with claimable head and tail buffers. A view is always a suffix of its
-base. Every write is persistent: \code{List.set} copies a plain array of up to 256 elements and
+$O(1)$, and for the \code{init} of \code{[ …init, last ]}); or a 32-way radix trie with claimable head and
+tail buffers. A view is a contiguous slice of its base: a pattern's \code{rest} is a suffix of it and its
+\code{init} a prefix. Every write is persistent: \code{List.set} copies a plain array of up to 256 elements and
 path-copies a trie above that; \code{List.push} copies short arrays (under 32 elements) and claims
 the trie's tail otherwise; \code{List.pop} copies short arrays and makes a new header otherwise;
 \code{insertAt} and \code{removeAt} copy; prepending through \code{[ x, …xs ]} claims a free head slot,
@@ -263,44 +264,76 @@ such as \code{<For each=\{⋯\}>} for lists. An event handler attribute such as
 
 \paragraph{The template runtime.} beni's current browser back end compiles each markup site into a
 cloned template and patches dynamic holes with a reference check per hole, in the style of
-SolidJS's compiler. It keeps the last value of every hole. For a list rendered by \code{<For>} it keeps
-the list itself, but only to ask on the next render whether the new list is the same object, and skips
-the walk when it is and the row's other inputs are unchanged; the rows, each with the item it showed,
-live in the runtime's own arrays, and a row whose item is the same object as last time is not run
-again. With respect to a rendered list, the runtime is thus an \emph{identity} holder, and with respect
-to a handler closure a \emph{content} holder: it calls the closure later. Both holds are invisible to
-the program.
+SolidJS's compiler. It keeps the last value of every hole and calls handler closures later, so with
+respect to a handler it is a \emph{content} holder. It also decides, in many places, that work is
+unnecessary because a value is the same object as last time, and the language specification makes
+these skips part of what a render may do:
+\begin{itemize}
+\item \emph{grouped values}: a value of a markup root is evaluated again only when one of the model
+paths it reads is not \code{===} to what it was at its last evaluation;
+\item \emph{\code{let}s read only by markup}: such a \code{let} is one of those values, so
+\code{shown = top model.items} is computed again only when \code{model.items} is another object;
+\item \emph{helper calls and components}: a call whose arguments are all \code{===} to last time is
+not made again;
+\item \emph{rows}: a row of a \code{<For>} is skipped when its item, its position (if read) and its
+\emph{inputs}---the fields of enclosing locals it reads, such as \code{model.selected}---are all
+\code{===} to last time, and a \code{<For>} whose list is the same object is not walked;
+\item \emph{\code{Show} bodies}: skipped when the key, the value and the inputs are \code{===};
+\item \emph{views}: two views over the same base array at the same offset count as the same list.
+\end{itemize}
+With respect to every value these tests read, the runtime is an \emph{identity} holder. All of this
+is sound today because no list changes once it is made. The language under study keeps every one of
+these skips on the template runtime, and writes no list in place there (\S\ref{sec:bg-language},
+rule~7).
 
 \paragraph{The direct platform.} A second, experimental back end---which we call the \emph{direct}
-platform---compiles away \code{view} at run time altogether. It compiles each message handler into a
-JavaScript function that runs the corresponding \code{update} arm and then writes the DOM directly. It
-keeps a module-level variable holding the current model, which the arm reassigns. Its run-time state
-is deliberately small:
+platform---compiles away \code{view} at run time altogether. Each \emph{message key} (a constructor of
+the message type, or a path of constructors through nested messages) becomes one JavaScript function, a
+\emph{handler}, that runs the corresponding \code{update} arm and then writes the DOM directly. It keeps
+a module-level variable holding the current model, which the arm reassigns. What a handler re-renders
+is decided at compile time from its key's write set (below), and its run-time state is deliberately
+small:
 \begin{itemize}
-\item \emph{slots} hold the leaf values that the page shows, and the values of \emph{derived values}:
-a \code{let} in \code{view} compiles into a derived value that handlers recompute when its inputs
-may have changed; a derived value's slot may hold a list, possibly a list of the model itself;
-\item per-row \emph{instance arrays} hold, for each rendered row, its DOM nodes and its \emph{item}
-(the list element the row shows), used only to compare items by identity when deciding which rows
-moved;
-\item \emph{edit scripts} update the rows of a list after a message; each script is guarded by a tag
-computed from the message and the program's own conditions, never by the identity of the list;
+\item \emph{groups}: the holes of a site that read the same model paths form a group; a handler calls
+exactly the groups whose read paths \emph{conflict} with its key's write set---one path is a prefix of
+the other---and each group compares the \emph{leaf} value it computes (a string, a number, a boolean)
+with the one it last wrote, and writes on difference; a hole that shows a structure is written whenever
+its key writes it;
+\item \emph{derived values}: a \code{let} in \code{view} that only markup reads becomes a module-level
+slot, recomputed by every handler whose write set conflicts with the \code{let}'s read paths; a slot may
+hold a list, possibly a list of the model itself;
+\item \emph{branches and \code{Show}}: re-evaluated by every handler whose write set conflicts with the
+condition's reads; the arm that stays runs its conflicting groups, and another arm is mounted;
+\item per-row \emph{instance arrays} hold, for each rendered row, its DOM nodes and its \emph{item} (the
+list element the row shows);
+\item \emph{edit scripts}: each list write in a key's write set carries an \emph{edit tag}---append,
+prepend, an indexed edit, a swap, an edit of every element (the \code{map} idiom), a removal of some
+elements, a replacement---and the handler runs the script for that tag. A script is guarded by its
+tag's own condition, never by the identity of the list. Three of them do compare \emph{elements} by
+identity: an indexed edit or a swap runs only if the new element is not \code{===} the row's item; the
+\code{map} idiom walks the rows and patches those whose item is not \code{===} the new element; and a
+list whose change no tag describes goes through one keyed reconciler, which matches rows by key and
+patches a kept row only when its item is not \code{===} the new one;
 \item \emph{listener bodies} compute a message's payload when the event fires, reading the handler's
 arguments---\code{model.id}, a row's item---at the event rather than capturing them earlier.
 \end{itemize}
-In a development build, after each message, a verification step re-evaluates every derived value
-and expects nothing to change unless the compiler is wrong. The direct platform holds no rendered
-view; its instance arrays hold row items for identity comparison, and the lists it holds are those
-of the model and of derived slots. That design choice is what makes the hand-over protocol of
-\S\ref{sec:hard-tea} possible.
+In a development build, after each message, a verification step re-evaluates every derived value and
+expects nothing to change unless the compiler is wrong, and a differential fuzzer drives one program
+on both browser back ends and compares the pages. The direct platform holds no rendered view; its
+instance arrays hold row items, and the lists it holds are those of the model and of derived slots.
+That design choice is what makes the hand-over protocol of \S\ref{sec:hard-tea} possible. Its lists
+are today's persistent ones; its own design plans in-place updates later, for model paths it can prove
+unshared, and never for an element a row shows.
 
 \paragraph{Write sets.} The direct platform is guided by a whole-program \emph{write-set analysis}.
-For each message it computes the \emph{write set} of the corresponding \code{update} arm: the paths
+For each message key it computes the \emph{write set} of the corresponding \code{update} arm: the paths
 of the model that the arm may change, in a path language of record fields, tuple indices,
-constructor arguments and list positions, cut at a fixed depth. A handler then runs only the DOM
-updates and derived-value recomputations whose reads meet the write set. The analysis interprets the
-arms abstractly, tracking for each model path whether its value is still the \emph{same} value
-(identity) or may have been replaced, and it summarises callees bottom-up by Kleene iteration. Its
+constructor arguments and list positions, cut at a fixed depth, each list write carrying its edit tag.
+A handler then runs only the DOM updates and derived-value recomputations whose reads conflict with the
+write set. The analysis interprets the arms abstractly, tracking for each model path whether its value
+is still the \emph{same} value (identity) or may have been replaced, and it summarises callees
+bottom-up by Kleene iteration; it interprets every list writer and every list construction through a
+table of the core library's functions, as a write of the path it edits, with that function's tag. Its
 notion of ``changed'' is ``not the same value, not \code{===}''. It does not analyse commands (their
 thunks run later and are not interpreted). Its domain records that the value at one path was moved
 to another during an arm, but it has no fact for two model paths that already hold the same value
@@ -359,7 +392,7 @@ error.} Unpacked:
 \item \emph{Editing in place} means a call of one of the core library's named list writers
 (\code{set}, \code{update}, \code{push}, \code{pop}, \code{swap}, \code{insertAt}, \code{removeAt},
 \code{cons} and \code{append}), or a list construction, which writes its base: the first spread of a
-literal, or the left operand of \code{++} on lists (\S\ref{sec:model-demands}). A literal with no spread
+literal, or the leftmost operand of a chain of \code{++} on lists (\S\ref{sec:model-demands}). A literal with no spread
 builds a new array, and a pattern only reads. Chapter~\ref{sec:disc-options} asks whether in-place
 forms of \code{map}, \code{filter}, \code{reverse}, \code{sort} and \code{take} should join the writers.
 \item \emph{Anything else} is any holder of the array, of any of the kinds listed in
@@ -386,8 +419,10 @@ change identity, so an identity holder never sees a different object; what it ma
 ``unchanged'' from ``same object'', which is wrong after an in-place write. beni programs cannot
 compare references, so this hazard belongs to the renderer, and we discharge it by an assumption on
 the platforms (A4 in \S\ref{sec:soundness-assumptions}). The direct platform was designed with the
-corresponding rule: it never decides that something is unchanged from the identity of an object on a
-path that may be written in place.
+corresponding rule---it never decides that something is unchanged from the identity of an object on a
+path that may be written in place---and keeps it today by never writing in place an element that a row
+shows. The in-place lists of this thesis go further than that, and \S\ref{sec:hard-tea} states what the
+direct platform must add (\Obl{P7}).
 
 \paragraph{Two semantics.} The precise form of the guarantee is the one O'Connor, Linares
 Ar\'evalo and Rizkallah give for uniqueness types: they work ``by statically ruling out every
@@ -418,8 +453,9 @@ The checker is designed for beni with the following rules added. They are part o
 study from here on; Chapter~\ref{sec:disc-options} gives each one's reasons and costs.
 \begin{enumerate}
 \item \emph{List construction consumes its base.} The base of a literal is the operand of its first
-spread, and of \code{xs ++ ys} on lists its left operand; it is written in place at either end, and the
-other operands are only read (\S\ref{sec:model-demands}).
+spread; a chain of \code{++} on lists is one construction, \code{a ++ b ++ c} meaning
+\code{[ …a, …b, …c ]}, whose base is its leftmost operand. The base is written in place at either end,
+and the other operands are only read (\S\ref{sec:model-demands}).
 \item \emph{No silent fallback.} The compiler never copies a list, and never switches to a slower
 algorithm, to make an edit safe. An $O(n)$ copy is written as \code{List.copy}, a new library function.
 \item \emph{A type's \code{eq} and \code{compare} only read their arguments}; one that may write, keep or
@@ -432,7 +468,23 @@ each list it receives and returns, as it already states its effects, and the cor
 may assert summaries that their bodies cannot show (\S\ref{sec:model-demands}).
 \item \emph{An edit is a barrier to the optimiser}: no read of a list is moved across an edit that may
 write it (\S\ref{sec:compiler-release}).
+\item \emph{In-place lists are a feature of the direct platform only.} The direct platform is the one
+back end that compiles the view away and generates one handler per message from compile-time write
+sets; it writes every accepted edit in place, and its handlers decide what to re-render from those
+write sets, never from object identity, wherever a list may have been edited in place
+(\S\ref{sec:hard-tea}, \Obl{P7}). The template runtime keeps today's persistent lists and every
+identity-based skip it has; so does every other target. The ownership rule itself is a rule of the
+language, checked on every build whatever the target, so that one source has one verdict and one
+meaning on both browser back ends, which are compiled from the same source and used as each other's
+test oracle. On a target that keeps persistent lists an accepted program means what it meant before,
+and the rule changes nothing but which programs are accepted.
 \end{enumerate}
+Rule~7 is the author's decision of 10 October 2026. It withdraws the earlier plan of this thesis to make
+the template runtime stop skipping work by identity for the lists a program edits; Chapter~\ref{sec:hard}
+and Appendix~\ref{app:history} say what that changed. The reading that the rule is checked on every
+target, and not only for the direct platform, is ours: a program that compiled for one browser back end
+and was rejected for the other would break the use of the two as each other's oracle.
+
 Everything else the thesis proposes---dropping identity promises, in-place forms of \code{map} and
 \code{filter}, publishing more facts in interfaces---is presented as an open proposal, with its costs.
 Where a rule above or a consequence of it changes a decision the language specification records, the

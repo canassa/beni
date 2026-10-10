@@ -67,9 +67,11 @@ Mutually recursive local functions are solved by the group fixpoint. \emph{Solve
 
 \paragraph{A once closure the runtime calls.} A closure handed to code the checker does not see---a
 markup handler, a callback a sibling keeps, a field of the model that the runtime passes to markup at
-every render---may be called any number of times. A value that may be once is therefore not allowed to
-reach an escaping position, and every asserted row with a function-typed parameter states its call
-count, $\mathit{many}$ by default (T27). A handler that edits a list it captured is rejected with the
+every render---may be called any number of times. A value that may be once is therefore allowed to reach an escaping
+position only where that position is called at most once, a handler in markup is called
+$\mathit{many}$ times, and every asserted row with a function-typed parameter states its call count,
+$\mathit{many}$ by default (T27). The body of a spawned fiber or of a command runs once, and may
+consume what it captured. A handler that edits a list it captured is rejected with the
 message ``this function changes a list it captured, and the page may call it more than once''; the fix is
 to keep the list in the model and edit it in \code{update}. \emph{Solved.}
 
@@ -88,7 +90,8 @@ identity, application and the pipe keep exact aliasing with no free theorem need
 
 The residual cost lies in the identity promises the language keeps (\S\ref{sec:bg-lists}): \code{filter}
 that keeps every element returns its input itself, as does \code{map} when every result is \code{===} its
-element. Such a function has $\mathit{res} = \{\fresh, \pi_1\}$, so
+element---which it can be only when the callback's result type can hold the element at run time. Such a
+function has $\mathit{res} = \{\fresh, \pi_1\}$, so
 \code{List.set (List.filter xs p) 0 v} and \code{[ …List.filter xs p, y ]} demand \code{xs} unique too.
 In an \code{update} arm, where \code{xs} is a model path the arm replaces, or in a pipeline over a local
 list, \code{xs} is dead there and nothing is lost; a program that edits the filtered list and still reads
@@ -134,9 +137,14 @@ of \S\ref{sec:model-excl}. Then \code{r} is unique inside the callback, its path
 unique but not exclusive---its elements came from a \code{foreign} that declares nothing, from
 \code{List.repeat}, or from a literal that placed one list at two fields---the program is rejected: as a
 limit, ``the elements of \code{rows} may share'', when the checker cannot see the construction, and as
-sharing when it can; the fix is \code{List.copy r.tags}. With \code{map} in place of \code{update},
-\code{map} supplies a borrowed element---the old \code{rows} holds every element until \code{map} has
-built its result---so the construction is rejected as real sharing. This one example contains Lean's
+sharing when it can; the fix is \code{List.copy r.tags}. With \code{map} in place of \code{update}---Elm's
+idiom for editing an element by its id, since Elm's list has no \code{update}---the single-pass row of
+\S\ref{sec:model-demands} applies: \code{map} reads each element once and never again, so when \code{rows}
+is unique, exclusive and dead after the call it supplies each element owned, and
+\code{List.map rows λc → if c.id == id then \{ c | tags = [ …c.tags, t ] \} else c} is accepted, the
+one edited card's list written in place and \code{rows} consumed. (An earlier form of these rules
+supplied \code{map}'s element borrowed and called this real sharing; it is not, since nothing reads
+element $i$ after the callback has run.) This one example contains Lean's
 motivating \code{groupBy}, Clean's propagation rule and the two-slots-one-record hazard. \emph{Solved
 with a cost}: a nested edit needs exclusivity, which the program's own construction of the container
 must establish, and which the evaluation counts.
@@ -152,13 +160,25 @@ rebuilds a path and shares the rest with \code{d}; it keeps $\excl$ only if both
 disjoint from each other and from the rest. \code{Dict.update d k f} is written as a lookup followed by an
 insert or a removal: it gets the value at \code{k}, calls \code{f} on it, and inserts the result at
 \code{k} or removes the key. By the inferred rules the lookup clears $\excl$ while \code{d} is live---and
-\code{d} is live, because the insert reads it---so the callback would be supplied a borrowed value. The
-owned supply is therefore the one asserted row of the module, with its argument written beside it: the
-insert or removal that follows the callback rebuilds the path to \code{k}, comparing keys with
+\code{d} is live, because the insert reads it---so the callback would be supplied a borrowed value, and
+for the same reason the result would not be known exclusive. The module's one asserted row therefore
+states both, together:
+\begin{Verbatim}
+update : Dict k v [consumed+aliased; requires excl if g consumes 1], k,
+         (Maybe v → Maybe v) [calls ≤1; supply 1 owned π₁⟨Dict⟩.v if π₁ excl;
+                              supply 1 borrowed π₁⟨Dict⟩.v otherwise]
+           → Dict k v [= π₁, fresh; ⟨Dict⟩.v = π₁⟨Dict⟩.v, g.res Just#0;
+                       excl if π₁ excl and g keeps shape]
+\end{Verbatim}
+with its argument written beside it: the insert or removal that follows the callback rebuilds the path to \code{k}, comparing keys with
 \code{compare}, and reads neither the old value nor any key that aliases it, provided \code{d}'s contents
 are exclusive in the sense that includes keys---every key disjoint from every value. Keys of a crossing
 type, as nearly all are, satisfy that condition trivially. A dictionary into which one list was inserted
-as both key and value is not exclusive, and its \code{update} supplies a borrowed value (T32).
+as both key and value is not exclusive, and its \code{update} supplies a borrowed value (T32). The flag
+the row keeps is what lets a fold call it again: \code{foldl} carries its accumulator's exclusivity from
+one call to the next (\S\ref{sec:inf-classes}), so a grouping fold is accepted at every iteration and not
+only at the first (T44, Appendix~\ref{app:groupby}). An earlier form of the rules asserted only the
+supply, and the flag was lost after one call.
 
 Huisinga's motivating example for Lean \citep[\S2.1]{huisinga2023lean}, in which a group is looked up,
 extended and re-inserted, is \emph{rejected} as real sharing with the holder named---the dictionary is
@@ -230,14 +250,20 @@ passes a list is a call with no summary, which reads and escapes it.
 \emph{Foreign types} are the other half of the boundary. A \code{foreign type}---the markup type
 \code{Html msg}, the runtime's types for jobs, outlets and fibers---has no definition, so it does not
 cross unless its declaration says so, and its values carry the cells their constructors put under the
-opaque step. Every constructor of such values has an asserted row: a markup site, for instance, stores
-its handler closures and the messages it will send, and its row escapes their captures at the site,
-because the runtime may call a handler at any later event. So in
+opaque step. Every constructor of such values has an asserted row. A markup site stores its handler
+closures and the messages it will send under the markup value's opaque step, and its row says that each
+handler is called $\mathit{many}$ times. The captures are then held for as long as the markup value is
+live in the program, as a closure stored in a record holds its captures; what the platform keeps of the
+markup that \code{view} returns is said by the platform's entry row (\S\ref{sec:hard-tea}). So in
 \begin{Verbatim}
 field = <input onInput={λs → Typed (String.join "," xs)} />
 ys = List.push xs "b"
 \end{Verbatim}
-\code{xs} is escaped by the markup site, and the push is rejected (T28). The existing build-time checks
+\code{field} holds \code{xs}, it is used after the push, and the push is rejected by \Dead\ (T28). An
+earlier form of the rules escaped every capture at the markup site. That was right for the template
+runtime, which keeps a handler from one render to the next and calls it at any later event; it is
+needlessly coarse now that only the direct platform writes lists in place, and that platform's
+listener bodies keep nothing from one dispatch to the next (\Obl{P3}). The existing build-time checks
 on siblings are unchanged; the new promises are tested as the effect rung is, by review and by a test
 program that pins each row (A8). The residual risk is a sibling that lies---a bug in privileged code of
 the same class as a wrong effect rung. \emph{Solved, by contract} (A2, A6), with the trusted surface of
@@ -247,8 +273,10 @@ the same class as a wrong effect rung. \emph{Solved, by contract} (A2, A6), with
 \label{sec:hard-fibers}
 
 \code{Cmd.perform (λsend → ⋯ todos ⋯)} captures \code{todos} in a body that the runtime stores and runs
-later. \code{Cmd.perform}'s row puts $\mathsf{E}$ on its argument's $\env$, so every capture of the
-lambda is escaped at the capture: a parameter path gains $\mathsf{E}$ in the enclosing function's
+later. \code{Cmd.perform}'s row puts $\mathsf{E}$ on its argument's $\env$, so every captured path is
+escaped at the capture---every path of a captured variable that the body uses, and only those
+(\S\ref{sec:model-functions}). A command that reads \code{model.session} escapes the session, not the
+model's lists: a parameter path gains $\mathsf{E}$ in the enclosing function's
 summary, and a list the arm built is named $\esc_k$ in its result. Either way the entry protocol carries
 the escape into every later dispatch that may receive the same cell in its model (\S\ref{sec:hard-tea}).
 Spawning a fiber, the bodies of a parallel combinator and \code{Ref.set} are the same. A body the callee
@@ -293,21 +321,24 @@ discharge \Unescaped, \Dead\ and \Disjoint\ for the model, so the platform must 
 passes owned, what it passes only to read, and what it keeps of the result. It must cover every entry, or
 a \code{view} that builds on a model list in place is accepted and writes it at every render.
 
-\paragraph{The protocol.} Table~\ref{tab:entry} gives the protocol we propose, for both of beni's
-browser platforms. It is an asserted row on the function the runtime actually calls, whose record
-parameter's fields carry the classes in the table. On the platform over the template runtime, TEA is
-written in beni over a lower-level host interface that the runtime calls, and the row sits on that
-interface; the TEA layer's own beni code is analysed like any other code, its uses of \code{Js} through
-their asserted rows. On the direct platform, the program constructors are declarations the lowering
-recognises, and the row sits on them. The row models the runtime's loop---the model is \code{init}'s
-result, then each dispatch's result---as a recursive caller of \code{update}. The checker evaluates it
-\emph{at the call of the program constructor}, from the published summaries of the functions in the
-record, as it evaluates any call: it computes the abstract model at entry as the least fixpoint of
-\code{init}'s result and \code{update}'s result over it, with numbered fresh cells for aliasing, $\esc_k$
-and $\mathsf{E}$ for escapes, and $\shared$ and $\top$ carried, and then checks every path that
-\code{update} writes as a caller would check an argument. Because the program's functions are known at
-that call, every guard of the row is decided there and none is left over. Nothing in this is
-whole-program: it reads interfaces.
+\paragraph{Which platform.} By rule~7 of \S\ref{sec:bg-language}, only the direct platform writes lists
+in place. The template runtime keeps persistent lists, so its holds---the handlers it keeps from one
+render to the next, and every identity skip of \S\ref{sec:bg-browser}---can never meet an in-place write,
+and it needs none of the obligations below. The checker nevertheless evaluates every program against
+one entry row, the direct platform's, whatever the target, so that a source has one verdict on both
+browser back ends; on the template runtime that verdict changes nothing a program does.
+
+\paragraph{The protocol.} Table~\ref{tab:entry} gives the protocol. It is an asserted row on the
+function the runtime actually calls---on the direct platform, the program constructors, which its
+lowering recognises---whose record parameter's fields carry the classes in the table. The row models the
+runtime's loop---the model is \code{init}'s result, then each dispatch's result---as a recursive caller of
+\code{update}. The checker evaluates it \emph{at the call of the program constructor}, from the published
+summaries of the functions in the record, as it evaluates any call: it computes the abstract model at
+entry as the least fixpoint of \code{init}'s result and \code{update}'s result over it---cells, with
+numbered fresh cells for aliasing, $\esc_k$ and $\mathsf{E}$ for escapes, $\shared$ and $\top$ carried, and
+the exclusive-contents flag, from $\mathit{xres}$---and then checks every path that \code{update} writes as a
+caller would check an argument. Because the program's functions are known at that call, every guard of
+the row is decided there and none is left over. Nothing in this is whole-program: it reads interfaces.
 
 A program value may be mounted several times on one page. The protocol is per mount, and it needs nothing
 more than the constructor's call: \code{init} is a function the runtime calls once per mount, so each
@@ -323,18 +354,18 @@ Function & Receives & What the runtime keeps of the result \\
 \midrule
 \code{init ⊤} or \code{init flags} & nothing; called once per mount & the model, handed to the first \code{update}; commands, as below \\
 \code{update msg model} & \code{model} owned (\Obl{P1}); \code{msg}'s payload as \Obl{P6} says & the new model, handed to the next \code{update} (\Obl{P1}); commands, as below \\
-\code{view model} & \code{model} to read only & template runtime: handlers and their messages, \emph{escaped}; lists passed to \code{<For>} and row items, \emph{identity-held}, which \Obl{P7} makes harmless on written paths; direct platform: nothing, since \code{view} is compiled away \\
-\code{subscriptions model}, in \code{settle} & \code{model} to read only; called once per render & the subscriptions and the functions in them, \emph{escaped} \\
-a derived value (direct) & the model, to read only & its slot; a list-valued slot is recomputed before it is read (\Obl{P4}) \\
-a listener body (direct) & the current model and row item, to read only (\Obl{P3}) & the message it builds \\
-a command body & its captures & \emph{escaped}, whether or not the body can suspend \\
+\code{view model} & \code{model} to read only; compiled away, its markup read site by site & nothing past the dispatch that next conflicts with what it read: a handler is evaluated at its event, and markup that is a value is evaluated again, handlers included, before any later listener (\Obl{P3}) \\
+\code{subscriptions model}, in \code{settle} & \code{model} to read only; called by every handler whose write set conflicts with its reads & the subscriptions and the functions in them, \emph{escaped} \\
+a derived value & the model, to read only & its slot; a list-valued slot is recomputed before it is read (\Obl{P4}) \\
+a listener body & the current model, row item and derived slots, to read only (\Obl{P3}) & the message it builds \\
+a command body & its captured paths & \emph{escaped}, whether or not the body can suspend \\
 \bottomrule
 \end{tabularx}
-\caption{The entry protocol of a TEA platform.}
+\caption{The entry protocol of the direct platform, against which every program is checked.}
 \label{tab:entry}
 \end{table}
 
-\paragraph{The obligations.} The table rests on seven obligations on the platform's lowering and
+\paragraph{The obligations.} The table rests on seven obligations on the direct platform's lowering and
 runtime.
 \begin{description}[leftmargin=1.2em,font=\normalfont\itshape]
 \item[\Obl{P1}, hand-over.] The runtime calls \code{update} with the model \emph{owned}: after the call,
@@ -344,70 +375,214 @@ replaced by the result.
 model---the indices it uses to locate rows, a derived value's old input---is read \emph{before} the arm,
 into locals or as scalars. A handler that read the old list and compared it after the arm would commit a
 sharing error, which the lowering must not generate.
-\item[\Obl{P3}, reads by listeners and items.] Row items in instance arrays are compared only by
-\code{===} (A4). A listener body runs when its event fires, as program code, on the model and row item
-that are current \emph{at that moment}: after every dispatch the runtime re-obtains each instance's item
-from the new model for every row whose path is in the write set, so that no listener uses a reference
-obtained before an in-place write. Rows outside the write set hold items whose cells were not written.
+\item[\Obl{P3}, nothing made by an earlier evaluation of the view is used after a conflicting dispatch.]
+A listener body runs when its event fires, as program code, on the model, row item and derived slots
+that are current \emph{at that moment}: it evaluates its handler expression then, and holds no value
+computed before. After every dispatch the runtime re-obtains each instance's item from the new model for
+every row whose path is in the write set, so that no listener uses a reference obtained before an
+in-place write; rows outside the write set hold items whose cells were not written. Markup that is a
+value rather than a compiled site---a \code{List (Html msg)} hole, a recursive helper---keeps its handler
+closures between dispatches, so its read paths must include the paths its handlers' bodies read, and
+every handler whose write set conflicts with them evaluates it again, installing new closures, before
+the dispatch ends and so before any later listener runs. So a handler made by an earlier evaluation of
+\code{view} is never called after a dispatch that may have written what it reads. The first two
+sentences describe the direct platform as designed; the third is an addition, about its fallback for
+markup values.
 \item[\Obl{P4}, slots are recomputed.] A derived value's slot that holds a list is recomputed by every
 message whose write set conflicts with its reads, before any DOM write reads it, and the old slot value
 is never dereferenced after the arm. A derived value only reads the model, so a derived value that
 writes a model list in place---by a writer or as a construction's base---is an error at its definition.
 \item[\Obl{P5}, the entry is checked as a call.] The abstract model at entry is the fixpoint described
-above. \emph{Aliasing between paths}: an \code{init} that places one cell at two paths, \code{xs = ⋯;
-\{ a = xs, b = xs \}}, publishes $\mathit{res}(.a) = \mathit{res}(.b) = \{\fresh_1\}$, so an edit of
-\code{model.a} fails \Disjoint\ against \code{model.b}. \emph{Escapes across dispatches}: a cell that
-\code{update}'s summary marks $\mathsf{E}$ on a model path, or names $\esc_k$ in its result---captured by a
-command, a subscription, a stored closure, a \code{Js} call---is escaped at every later entry, because the
-runtime may hand the same cell back in the next model. \emph{Shared and unknown cells}: an \code{init} or
-an arm that returns a top-level list puts $\shared$ in the model, and one that returns a value the runtime
-retains puts $\top$; an edit of either is rejected.
+above, and it includes the escapes made by \emph{every} function the platform calls: \code{init}, every
+arm of \code{update}, every command body, every subscription, and \code{view} through its row in
+Table~\ref{tab:entry}. \emph{Aliasing between paths}: an \code{init} that places one cell at two paths,
+\code{xs = ⋯; \{ a = xs, b = xs \}}, publishes $\mathit{res}(.a) = \mathit{res}(.b) = \{\fresh_1\}$, so an
+edit of \code{model.a} fails \Disjoint\ against \code{model.b}. \emph{Escapes across dispatches}: a cell
+that \code{update}'s summary marks $\mathsf{E}$ on a model path, or names $\esc_k$ in its result---captured
+by a command, a subscription, a stored closure, a \code{Js} call---is escaped at every later entry,
+because the runtime may hand the same cell back in the next model. \code{view}'s handlers make no escape,
+by \Obl{P3}: a handler made by one evaluation of \code{view} is not called after a dispatch that conflicts
+with what it read, and a handler's message reads the model at its event. \emph{Shared and unknown cells}:
+an \code{init} or an arm that returns a top-level list puts $\shared$ in the model, and one that returns a
+value the runtime retains puts $\top$; an edit of either is rejected. \emph{Exclusive contents}: the entry
+carries $\mathit{xres}$ through the fixpoint, so a path is exclusive at entry when \code{init}'s result is
+exclusive there and every arm keeps it so.
 \item[\Obl{P6}, payloads.] A message's payload list is unique at the arm only if nothing else holds it
-when the arm runs. \emph{Program senders}: \code{send} writes what \code{update} writes. At the entry
-fixpoint the class of the program's \code{Send} is bound to \code{update}'s own use of its message
-parameter: a \code{send} whose payload path some arm edits in place is a demand at the send, and the
-payload must be unique and dead there; any other \code{send} only aliases its payload, so a sender that
-keeps using a list nobody edits is accepted (T34). A list decoded in a fiber, sent, stored in the model
-and later extended in place is accepted, since the sender gives it up. \emph{View events}: a message built
-from a model path or a row item, \code{onClick=\{Keep model.rows\}}, hands the arm a cell the model may
-still hold; such a payload path is aliased with the model at every arm, because the check reads
-\code{update}'s summary, which is not split by the message's constructor. That is coarse---one such
-handler makes every in-place edit of \code{model.rows} fail \Disjoint, in arms that never see
-\code{Keep}---and we accept it with a limit tag; a summary split by the constructor of \code{update}'s
-message is a possible extension, decided by how often the tag fires. The message offers to send an
-identifier instead of the list.
-\item[\Obl{P7}, identity skips only on unwritten lists.] A renderer may skip work because a list, or a row
-item that holds a list, is the same object as last time only on a path that no arm of \code{update} edits
-in place. The lowering learns those paths at the program constructor's call, from \code{update}'s summary,
-and compiles every markup site that may show such a list without the skip: its rows are walked, each
-compared by its own item. A list the view derives from a model path through a function with an identity
-promise, such as \code{List.filter model.todos p}, counts as that path.
+when the arm runs. \emph{Program senders}: a \code{send} is a demand on its payload at every path the
+payload may \emph{carry into} a model path that some arm writes in place. The entry fixpoint names each
+send site's payload as a provenance of its own and follows it through \code{update}'s results, round the
+loop: a payload stored at \code{model.rows} by one arm and extended in place by another arm, one dispatch
+later, reaches a written path, and its send is a demand there, so the payload must be unique and dead at
+the send. A send whose payload reaches no path written in place only aliases it, and a sender that keeps
+using such a list is accepted (T34). So \code{Cmd.task}'s body, \code{send (tag (work ⊤))}, whose payload is
+a temporary dead at the send, is accepted whatever \code{update} does with it, and a list decoded in a
+fiber, sent, stored and later extended in place is accepted when the fiber does not use it after the send,
+and rejected when it does (T38). \emph{View events}: a message built from a model path or a row item,
+\code{onClick=\{Keep model.rows\}}, hands the arm a cell the model may still hold; such a payload path is
+aliased with the model at every arm, because the check reads \code{update}'s summary, which is not split by
+the message's constructor. That is coarse---one such handler makes every in-place edit of
+\code{model.rows} fail \Disjoint, in arms that never see \code{Keep}---and we accept it with a limit tag; a
+summary split by the constructor of \code{update}'s message is a possible extension, decided by how often
+the tag fires. The message offers to send an identifier instead of the list.
+\item[\Obl{P7}, write sets, not identity, decide what to re-render.] Stated below.
 \end{description}
 
-\paragraph{The two platforms.} beni's current template runtime keeps the last value of every hole,
-calls handler closures later, and skips a \code{<For>} whose list is the same object as last time
-(\S\ref{sec:bg-browser}). Handlers and their messages are escaped by the markup sites' rows. The
-\code{<For>} skip violates A4 for any list edited in place: after \code{[ …model.items, x ]} the list is
-the same object, and the new row would not be drawn. On that runtime as it stands, the entry row must
-therefore treat every list the view passes to markup as escaped, and every in-place edit of a rendered
-list is an error---which, under construction-as-consumption, is every \code{update} arm of idiom I5 on a
-rendered list (\S\ref{sec:idioms-list}). With \Obl{P7} the skip is compiled away for exactly the lists
-the program edits, and those edits are accepted. The cost is that such a \code{<For>} walks its rows on
-every render, comparing each row's item, where it compared one pointer; whether that is acceptable
-against the reference renderer is a measurement, not a design argument, and it is the largest open
-platform question this thesis leaves (\S\ref{sec:disc-open}).
+\paragraph{\Obl{P7} precisely.} For a program, let $\mathit{IP}$ be the model paths, list positions
+included, at which \code{update}'s published summary has $\mathsf{W}$: $p \in \mathit{IP}$ when
+$\mathsf{W} \in \mathit{use}(\pi_2.p)$. These are the only paths whose cells any dispatch writes in place,
+since an arm writes in place only cells the model held at entry or cells it made itself, and a cell it
+made itself is a new object at its path. For a message key $\kappa$ with write set
+$\mathit{writes}(\kappa)$, let $\mathit{IP}_\kappa$ be the paths of $\mathit{IP}$ that conflict with
+$\mathit{writes}(\kappa)$: the paths whose lists a dispatch of $\kappa$ may have changed while keeping
+their identity. A value \emph{may hold an $\mathit{IP}_\kappa$ cell} when its abstract value, by the
+ownership analysis of the code that computes it, names the model's cell at a path in $\mathit{IP}_\kappa$:
+\code{model.todos}; \code{List.filter model.todos p}, whose result may be its input; a user helper that
+returns its argument on some branch; a row's item when the list's element path is in
+$\mathit{IP}_\kappa$. The obligation is:
+\begin{quote}
+\emph{In the handler of $\kappa$, no test \code{a === b}, and no comparison of two views by base and
+offset, concludes ``unchanged, skip'' about a value that may hold an $\mathit{IP}_\kappa$ cell. Whatever
+reads such a value runs because the key's write set conflicts with its read paths.}
+\end{quote}
+Concretely, over every piece of the direct platform's output:
+\begin{enumerate}[label=(\alph*)]
+\item \emph{Groups.} A group runs exactly when its read paths conflict with $\mathit{writes}(\kappa)$, and
+then compares only the leaf value it computes, a scalar that holds no cell; a hole that shows a structure
+is written whenever its key writes it. \emph{Already so.}
+\item \emph{Derived values and \code{let}s.} A derived value is recomputed when its read paths conflict;
+when it may hold an $\mathit{IP}_\kappa$ cell, every reader of it that conflicts runs after the
+recomputation, and no reader is skipped because the new value is \code{===} the slot. \emph{Already so}
+in the design, which has no such skip; the obligation forbids adding one for these values.
+\item \emph{Helpers and components.} Their markup is inlined or emitted as a shared site whose groups run
+by conflict of their read paths, anchored through the arguments. No call is skipped because its
+arguments are \code{===} to last time when an argument may hold an $\mathit{IP}_\kappa$ cell.
+\emph{Already so}; to be kept.
+\item \emph{Branches and \code{Show}.} The condition is evaluated again when its reads conflict, the arm
+that stays runs its conflicting groups, and a \code{Show}'s value---a list, say---is never the ground for
+skipping its body. A keyed \code{Show}'s key is of a key type, a scalar. \emph{Already so.}
+\item \emph{Row inputs.} A row group that reads an enclosing path, such as \code{model.picked}, runs on
+every row when that path conflicts; a selector's two-row visit compares keys, which are scalars.
+\emph{Already so.}
+\item \emph{Indexed edits and swaps.} For a list whose element path is in $\mathit{IP}_\kappa$, the
+script of an indexed edit or a swap is guarded by its range test (and, for a swap, \code{κ₁ !== κ₂})
+only, and runs the row groups that the sub-writes conflict with \emph{unconditionally} on the rows it
+names, re-reading their items; the guard \code{get(xs, κ) !== insts[κ].it} stays only for element paths
+outside $\mathit{IP}$. \emph{To be added.}
+\item \emph{The \code{map} idiom, the merge and the reconciler.} For a list whose element path is in
+$\mathit{IP}_\kappa$, the identity walk patches every row---runs its conflicting groups and re-reads its
+item---instead of the rows whose item is not \code{===} the new element; the merge and the reconciler
+still \emph{match} rows by key or by item identity, which an in-place write does not disturb, but patch
+every kept row instead of the kept rows whose item changed. \emph{To be added.}
+\item \emph{Length guards.} Append, prepend, insert, remove and clear are guarded by comparing the new
+list's length with the instance array's, which reads the current list. \emph{Already so.}
+\end{enumerate}
 
-The direct platform removes these holds by design: it has no \code{view} at run time and no retained
-render, slots hold leaf values or recomputed lists, instance arrays hold row items compared by identity,
-edit scripts are guarded by their own tags and never by list identity, and the old model is dead after
-the arm. Under \Obl{P1}--\Obl{P7} the derivation for a table application's row swap and row update, and
-for the in-place edits of the compiler's test programs for that platform, is: the model is owned at
-entry; \code{model.rows} is not escaped by any arm and is not aliased by another path; the operand's only
-holder is $(\mathit{model}, .\mathit{rows})$; the model is dead after the arm. The edit is accepted, and
-the write is \code{a[i] = v} on a plain array, derived from the general rule rather than a model-specific
-one. \emph{Solved, conditional on the platform keeping the protocol}; \Obl{P2}, \Obl{P3}'s re-obtaining
-of items and \Obl{P7} are not yet in the direct platform's specification, and \Obl{P7} is not in the
-template runtime's.
+\paragraph{How write sets provide it.} Everything above is decided when the handler is compiled:
+$\mathit{IP}$ comes from \code{update}'s summary at the program constructor's call, $\mathit{writes}(\kappa)$
+from the write-set analysis, and whether a value may hold an $\mathit{IP}_\kappa$ cell from the ownership
+analysis of \code{view}'s code; the handler contains either the guarded script or the unguarded one, and
+nothing is tested at run time that the identity-based design did not test. The argument that this
+suffices has two halves. First, a value that may hold no $\mathit{IP}_\kappa$ cell is a value whose
+identity changes whenever its content does during a dispatch of $\kappa$: records, tuples and
+constructors are never written in place and are rebuilt by every arm that changes them, and a list cell
+outside $\mathit{IP}_\kappa$ is not written in place by this dispatch, so an identity test on it is as
+sound as it is today. Second, a value that may hold one is read only by code that runs because the write
+set conflicts with its read paths, and that code reads the current contents. This needs one fact of
+the write-set analysis that its own statement does not give, since its notion of ``changed'' is identity:
+that \emph{every path an accepted demand of an arm writes in place is named by that arm's write set}.
+It interprets every writer and every construction as a write of the path it edits, with its tag,
+whatever object the result is (\S\ref{sec:bg-browser}), so it does; we state it as assumption A12 and as
+part of the change to the write-set analysis's contract (\S\ref{sec:compiler-writesets}). The direct
+platform's verification mode, which re-evaluates every derived value after each message in a development
+build, and its differential fuzzing against the template runtime, are the instruments that would catch
+a miss.
+
+\paragraph{Three programs.} \emph{TodoMVC's count and \code{hidden}.} Its Enter arm appends with
+\code{model.todos ++ [ new ]}, so $\mathit{IP} \ni \mathit{todos}$, and the key's write set holds
+\code{todos} with the tag \emph{append}. The derived value
+\code{left = List.length (List.filter model.todos λt → not t.completed)} reads \code{todos}, conflicts,
+and is recomputed (a); the groups of \code{hidden=\{List.isEmpty model.todos\}}, of
+\code{<strong>\{String.fromInt left\}</strong>} and of \code{hidden=\{left == List.length model.todos\}}
+read \code{todos} or \code{left}, conflict, run, compute a boolean or a string, and write it on
+difference (a). The \code{<For>} over \code{List.filter model.todos (visible model.filter \_)} reads a
+derived value that may be \code{model.todos} itself, an $\mathit{IP}_\kappa$ cell; it runs because it
+conflicts (b), and reaches the rows through the reconciler, which the direct platform uses for a derived
+list; a todo is a record that holds no list, so \code{todos[*]} is not in $\mathit{IP}$ and the
+reconciler's patch test stays as it is. The new row appears, the section and the footer show, and the
+count reads 1 (T35). Nothing in TodoMVC needs (f) or (g). \emph{A row input.}
+\code{Pick id → \{ model | picked = [ id, …model.picked ] \}} with rows whose class reads
+\code{List.member r.id model.picked}: the class group reads \code{picked}, conflicts with
+\code{Pick}'s write set, and runs on every row (e) (T36). \emph{A grid.}
+\code{Reveal r c → \{ model | grid = List.update model.grid r (λrow → List.set row c Shown) \}}, with
+rows built by \code{List.initialize 9 (λ\_ → List.repeat Hidden 9)}: \code{update} writes \code{grid} and
+\code{grid[*]} in place, so both are in $\mathit{IP}$, and the key's write set tags \code{grid} with an
+indexed edit at \code{[r]} whose sub-write is an indexed edit at \code{[c]}. The outer script is guarded
+by \code{0 ≤ r < insts.length} only and runs row \code{r}'s groups (f); that row's inner \code{<For>} runs
+its own indexed script at \code{[c]}, whose element, a constructor, is outside $\mathit{IP}$, so its
+identity guard stays and finds \code{Shown !== Hidden}; the cell is drawn (T37). Under the old guard the
+outer script would have found \code{get(grid, r) === insts[r].it}---the same array, written in
+place---and skipped the row.
+
+\paragraph{What it costs, and what exists.} Table~\ref{tab:p7cost} sets out each piece. Pages whose list
+elements are records---TodoMVC, Conduit, the table benchmark---contain no element path in
+$\mathit{IP}$ and pay nothing: (a)--(e) and (h) are the platform as designed. A page with a list of lists
+that its program edits in place---a grid, a board of columns, a spreadsheet---pays in two places. In bytes:
+an unguarded indexed script, an unguarded swap, and an all-rows variant of the identity walk and of the
+reconciler's patch step, for each such \code{<For>} site, which by the platform's own estimates for its
+scripts is some 40--80 bytes each before compression (an estimate, to be measured). In time: an indexed
+edit always runs its row's conflicting groups, a leaf comparison per hole, even when the callback changed
+nothing; and the \code{map} idiom and the reconciler run every row's conflicting groups, $O(n \cdot h)$ leaf
+comparisons for $n$ rows of $h$ holes, where the identity walk did $n$ pointer comparisons and patched only
+the rows that changed. For a by-id \code{map} edit of one column of a board that is a few dozen
+comparisons; for a 1\,000-row grid of which one row changed, a thousand row visits. The direct platform's
+benchmark harness measures its table page, TodoMVC and Conduit, none of which exercises this; a page with
+a list of lists edited in place must be added to it before the obligation is adopted (\S\ref{sec:eval-perf}).
+The extended read paths of \Obl{P3} for markup values make those values be evaluated again more often,
+by an amount the same harness measures.
+
+\begin{table}[t]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.3\linewidth}>{\raggedright\arraybackslash}p{0.17\linewidth}X@{}}
+\toprule
+Piece & Status & Cost under \Obl{P7} \\
+\midrule
+groups by conflict, leaf comparisons (a) & designed & none \\
+derived values by conflict, no identity skip (b) & designed & none; forbids a future skip on \code{===} for values holding $\mathit{IP}$ cells \\
+helpers, components, branches, \code{Show}, row inputs (c)--(e) & designed & none \\
+length guards (h) & designed & none \\
+listener bodies at the event (\Obl{P3}) & designed & none \\
+markup values' read paths include their handlers' reads (\Obl{P3}) & to be added & more re-evaluation of markup values; measured \\
+indexed edit and swap with element in $\mathit{IP}$ (f) & to be added & bytes per such site; the row's groups on every indexed edit \\
+\code{map} idiom, merge, reconciler with element in $\mathit{IP}$ (g) & to be added & bytes per such site; $O(n \cdot h)$ group visits per such edit \\
+verification mode and differential fuzzing & built & development builds and tests only \\
+\bottomrule
+\end{tabularx}
+\caption{\Obl{P7} on the direct platform: what its design already gives, and what must be added.}
+\label{tab:p7cost}
+\end{table}
+
+\paragraph{The obligation a future slice must meet.} The direct platform's design plans in-place updates
+as its last step, for model paths it proves unshared, and never for an element that a row shows; that
+restriction is what lets it keep its element guards. The in-place lists of this thesis write elements of
+rendered lists in place whenever the checker accepts the edit, so the slice that adopts them must meet
+\Obl{P1}--\Obl{P7} as stated here, (f), (g) and \Obl{P3}'s markup values included, and pin each with a test
+program that runs in a page: the three programs above, a by-id \code{map} edit of a board of columns, and a
+swap of two rows of a grid. Until it does, the direct platform keeps persistent lists too, and the checker's
+verdicts change no program's meaning anywhere. For a table application's row swap and row update, whose
+rows are records, the derivation is short: the model is owned at entry; \code{model.rows} is escaped by no
+arm and aliased by no other path; the operand's only holder is $(\mathit{model}, .\mathit{rows})$; the
+model is dead after the arm; and the swap is two assignments on the plain array, its script still guarded
+by element identity, since \code{rows[*]} is not in $\mathit{IP}$. \emph{Solved, conditional on the direct
+platform meeting the protocol}: \Obl{P2}, \Obl{P3}'s re-obtaining of items and its rule for markup values,
+and \Obl{P7}(f) and (g) are not yet in its specification.
+
+\paragraph{What was withdrawn.} The previous form of this thesis asked the template runtime to compile
+every markup site that shows a list the program edits in place without its \code{<For>} skip, and called
+that \Obl{P7}. It was too narrow---the template runtime skips by identity in grouped values, \code{let}s,
+helper calls, components, \code{Show} bodies, row inputs and views, not only in a \code{<For>}---and the
+direct platform, said to keep the obligation by design, did not keep it for elements edited in place. Rule~7
+replaces it: the template runtime keeps every skip and writes nothing in place, and the obligation, restated
+over every identity test, falls on the direct platform alone.
 
 \paragraph{\code{init} is a function.} In beni's TEA platforms today \code{init} is a value, usually
 declared at top level or written inline in the program record. Under the rules \code{init} is a function
@@ -422,9 +597,12 @@ message offers to build it in \code{init} or to copy it there.
 construction whose base is a model list, \code{[ …model.pinned, …model.recent ]}, would write
 \code{model.pinned} at every render, so it is an error at the definition, and the message offers
 \code{List.concat [ model.pinned, model.recent ]}, which builds, or a construction whose base is a new
-list (T13). A text search found no construction with a model list as its base outside \code{update} arms
-in the compiler's test programs and the example applications; in markup, lists are usually rendered
-rather than concatenated.
+list (T13). A construction on a list \code{view} builds from the model, such as
+\code{List.map model.items viewItem ++ [ addButton ]}, consumes only the new list, since \code{map}'s result
+cannot be its input when the element and the result types cannot share a value (\S\ref{sec:model-demands}).
+A text search found no construction with a model list as its base outside \code{update} arms in the
+compiler's test programs and the example applications; in markup, lists are usually rendered rather than
+concatenated.
 
 \section{The explicit copy}
 \label{sec:hard-copy}
@@ -441,19 +619,27 @@ wanted---a warning, never an error. \emph{Solved.}
 \section{Views}
 \label{sec:hard-views}
 
-\code{[ x, …rest ]} in a pattern binds \code{rest} to a view $(b, o)$ of \code{xs}'s base array;
-\code{List.drop} and \code{List.tail} return views too. A view is a holder of the base, and a write
-through a view writes the base: \code{List.set rest i v} is \code{b[o + i] = v}, and a construction with
-\code{rest} as its base prepends into $b[o - 1]$ or pushes at the base's end. The demand on \code{rest}
-therefore asks that every holder of the base---\code{xs} included---be dead. In the common walk
-(\code{go rest ⋯} with \code{xs} not used again) it is; where \code{xs} is used afterwards, the rejection
-is correct, because the elements \emph{are} shared. A view is always a suffix of its base, so a push on a
-view is a push on the base. A view header also caches a plain copy of its elements and stores its length;
-a write through a view therefore never mutates the header it was given, but returns a new header with no
-cached copy and the right length, and the old header, being the consumed operand, is dead (A1). A reader
-that took the cached copy earlier holds a separate array, a snapshot of the old version, which is what
-value semantics gives it. The scalar-view rewrite removes most views from loops anyway
-(\S\ref{sec:bg-lists}). \emph{Solved.}
+\code{[ x, …rest ]} in a pattern binds \code{rest} to a view $(b, o, n)$ of \code{xs}'s base array, a
+suffix; \code{[ …init, last ]} binds \code{init} to a view that is a prefix; \code{List.drop} and
+\code{List.tail} return views too. A view is a contiguous slice of its base, a holder of the base, and a
+write through a view writes the base: \code{List.set rest i v} is \code{b[o + i] = v}; a construction with
+a view as its base prepends into $b[o - 1]$ when $o > 0$, and pushes by writing $b[o + n]$---which for a
+prefix view overwrites the slot after the view's last element, and for a suffix view is the base's own
+end. The demand on the view therefore asks that every holder of the base---\code{xs} included, and every
+other view of it---be dead, and that is what makes the overwrite safe: the slot after a prefix view holds
+an element that only the dead base reached through that slot (\code{last}, in the pattern above, is held
+as a value, not as a slot). In the common walk (\code{go rest ⋯} with \code{xs} not used again) the base is
+dead; where \code{xs} is used afterwards, the rejection is correct, because the elements \emph{are}
+shared. Re-building what a pattern matched in the same shape, \code{[ …init, last ]} right after matching
+\code{[ …init, last ]}, is an alias of the scrutinee and writes nothing, as for \code{[ h, …t ]}. A view
+header also caches a plain copy of its elements and stores its length; a write through a view therefore
+never mutates the header it was given, but returns a new header with no cached copy and the right length,
+over the same array---so the result is the base's \emph{cell} but need not be \code{===} the operand---and
+the old header, being the consumed operand, is dead (A1). A reader that took the cached copy earlier holds
+a separate array, a snapshot of the old version, which is what value semantics gives it. Whether today's
+lowering of \code{[ …init, last ]} makes a view or copies \code{init} does not change the rule: a copy is a
+fresh cell, and the demand on it asks nothing of \code{xs}. The scalar-view rewrite removes most views from
+loops anyway (\S\ref{sec:bg-lists}). \emph{Solved.}
 
 \section{Mutable cells}
 \label{sec:hard-ref}
@@ -483,13 +669,33 @@ record update evaluates its fields in written order, so \code{history} stores th
 before the second field extends it---a live holder, part of the record that is built after the
 construction. The program is \emph{rejected}, correctly: the undo entry would change with the edit. The
 message says so and offers \code{List.copy model.todos} in the history, $O(n)$ per edit, the price of a
-version, written where the version is kept. An undo history
-whose versions are persistent structures, such as a dictionary of notes, keeps them in $O(\log n)$ and is
-accepted, and so is the history list itself when the program pops it with a pattern and pushes onto it
-with a construction, because each old version of the \emph{history} is dead after its arm. A persistent
-vector written in beni as a library module---the current trie, with no in-place writes---would give
-$O(\log n)$ versions of a sequence to programs that want them; it would be a library, not the
-representation of \code{List}. \emph{Solved}, with the cost stated.
+version, written where the version is kept. An undo history whose versions are persistent structures,
+such as a dictionary of notes, keeps them in $O(\log n)$ and is accepted, and so is the history list
+itself when the program pops it with a pattern and pushes onto it with a construction, because each old
+version of the \emph{history} is dead after its arm.
+
+\emph{An undo of a list needs a second copy.} With the fix the message offers, and the \code{Undo} arm
+that restores a version,
+\begin{Verbatim}
+Add t → { model | history = [ List.copy model.todos, …model.history ], todos = [ …model.todos, t ] }
+Undo → case model.history of
+    [ previous, …rest ] → { model | todos = previous, history = rest }
+    [] → model
+\end{Verbatim}
+is still rejected. \code{Undo}'s summary says $\mathit{res}(.\mathit{todos}) \ni \pi_2.\mathit{history}[\ast]$,
+\code{Add}'s says $\mathit{res}(.\mathit{history}[\ast]) \ni \fresh_c$, the copy; the entry fixpoint therefore
+lets both \code{model.todos} and \code{model.history[*]} hold $\fresh_c$, and \code{Add}'s write of
+\code{model.todos} fails \Disjoint\ against \code{model.history[*]}. At run time the two are disjoint after
+the pop---\code{rest} no longer reaches the slot \code{previous} came from---but the split of
+\S\ref{sec:model-excl}, which knows this inside the arm, does not survive the entry fixpoint, which is not
+relational: it records which cells each path may hold, not which paths may hold the same cell at once. The
+cost, which the message states, is a second copy, in \code{Undo}: \code{todos = List.copy previous}. A
+relational entry---one that remembers that a path filled from the head of a container it then dropped
+shares nothing with that container's remaining positions---would remove it; it is left open
+(\S\ref{sec:disc-open}), and the evaluation counts its tag (T41). A persistent vector written in beni as a
+library module---the current trie, with no in-place writes---would give $O(\log n)$ versions of a sequence
+to programs that want them; it would be a library, not the representation of \code{List}. \emph{Solved},
+with the cost stated.
 
 \section{Debugging aids}
 \label{sec:hard-debug}

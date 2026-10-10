@@ -4,9 +4,9 @@
 This chapter states the guarantee and sketches an argument for it. The argument has the shape of
 standard proofs for in-place update \citep{aspinall2008usage,bernardy2018linear}, and its lemmas are
 the usual ones for a flow analysis; but it is a sketch over an informal semantics of a real
-language, it has not been mechanised, and it rests on eleven assumptions about code the checker does
+language, it has not been mechanised, and it rests on twelve assumptions about code the checker does
 not see (\S\ref{sec:soundness-assumptions}). Short programs are the sharpest test of such rules;
-\S\ref{sec:soundness-counterexamples} traces thirty-four of them. The evaluation's first experiment
+\S\ref{sec:soundness-counterexamples} traces forty-five of them. The evaluation's first experiment
 (\S\ref{sec:eval-sanitiser}) is designed to find what the sketch misses.
 
 \section{The claim}
@@ -16,8 +16,8 @@ not see (\S\ref{sec:soundness-assumptions}). Short programs are the sharpest tes
 Let $P$ be a program every module of which the checker accepts: every demand satisfies \Known,
 \Unescaped, \Dead\ and \Disjoint\ against the published summaries of its callees; every recursive group
 and every group of local functions is validated; no value that may be once reaches an escaping
-position; every type's \code{eq} and \code{compare} only read; and the entry protocol of the platform
-that runs $P$ is satisfied. Suppose assumptions A1--A11 hold of the runtime, the core library and the
+position that may call it more than once; every type's \code{eq} and \code{compare} only read; and the entry protocol of the platform
+that runs $P$ is satisfied. Suppose assumptions A1--A12 hold of the runtime, the core library and the
 platforms. Then for every sequence of host events, the value semantics $S_v$ and the update semantics
 $S_u$ produce the same \emph{trace}: the same sequence of observations, where an observation is a byte
 written to an output stream, a DOM write, a call into a \code{foreign} sibling or a \code{Js} operation
@@ -25,7 +25,11 @@ with its arguments marshalled by value, and the program's exit.
 \end{theorem}
 
 $S_v$ is beni as it is today, and $S_u$ is what the backend would emit under the rule
-(\S\ref{sec:compiler-backend}): writers and constructions write their operand's array. The statement
+(\S\ref{sec:compiler-backend}): writers and constructions write their operand's array. By rule~7 of
+\S\ref{sec:bg-language}, $S_u$ is the semantics of the direct platform, and of the test mode in which the
+evaluation runs every other program in place (\S\ref{sec:eval-sanitiser}); on a target that keeps
+persistent lists, such as the template runtime, $S_u$ \emph{is} $S_v$ and the theorem holds trivially.
+The entry protocol in the hypothesis is therefore the direct platform's. The statement
 mirrors Aspinall, Hofmann and Kone\v{c}n\'y's soundness theorem, in which in-place evaluation is both
 correct and complete with respect to a safe functional evaluation \citep[Thm.~5.8]{aspinall2008usage},
 and Linear Haskell's theorem that ``the semantics with in-place mutation is observationally equivalent
@@ -81,8 +85,9 @@ every runtime structure.
 \begin{lemma}[Flow facts over-approximate the heap]
 \label{lem:flow}
 At every point of an execution, for every open frame, and for every cell $c$ reachable from that
-frame's locals and temporaries through a path---including paths through closure environments ($\env$)
-and opaque values ($\langle T\rangle$)---there is a holder $(x, q)$ of the frame such that $c$ is named
+frame's locals and temporaries through a path that some continuation may use---including paths through
+closure environments ($\env$), at the captured paths the closure's body uses, and opaque values
+($\langle T\rangle$)---there is a holder $(x, q)$ of the frame such that $c$ is named
 by a provenance in $A(x)@q$: a site of this frame, the parameter path or environment path it entered by,
 $\shared(v)$ for a top-level value $v$, or $\top$; or $c$ is in the frame's $\mathit{Esc}$.
 \end{lemma}
@@ -96,7 +101,11 @@ $\fresh_k$ to a new site of the call, $\esc_k$ to a new site added to $\mathit{E
 $\top$ to themselves. The cut and the width cap yield $\top$, and every construct without a summary
 yields $\top$ and escape. Folding a recursive type maps every path of a value onto a path that exists in
 the abstract domain, and an opaque or foreign type that the module cannot see is tracked under its
-opaque step, so no cell is hidden behind a type assumed to cross.
+opaque step, so no cell is hidden behind a type assumed to cross. A closure's run-time environment may
+reach more than its abstract $\env$ names---a JavaScript closure keeps the whole \code{model} when its
+body reads only \code{model.session}---but a path its body never uses is never followed by any
+continuation, so the cells reachable only through it are never used through it, which is all
+Lemma~\ref{lem:stale} needs.
 \end{proof}
 
 \begin{lemma}[Exclusive contents]
@@ -111,8 +120,13 @@ stored value to be unique at the store and every two stored tracked paths to be 
 \Disjoint\ applied within and across stored elements (Lemma~\ref{lem:dead}, reading the store as a
 demand that does not write), a dictionary's key and value counting as two paths of one position. A
 destructive read overwrites the one position before any other read, and by the induction hypothesis the
-element it hands out has disjoint paths and no other holder; for a dictionary, the asserted row is the
-promise that its \code{update} reads no key that could alias the value it hands out. A split pattern on
+element it hands out has disjoint paths and no other holder; the flag survives only when the callback
+keeps shape, so every path of what is stored back holds a cell made during the call, held by nothing
+else, or the element's own cell at the same path, which by the hypothesis was reachable only through this
+position and that path---so conditions 1--3 hold again. A single-pass function is a destructive read of
+each position in turn, storing each result at a position of a new array, and the same argument applies
+position by position. For a dictionary, the asserted row is the promise that its \code{update} reads no
+key that could alias the value it hands out, and keeps the flag on the same condition. A split pattern on
 a dead scrutinee hands out one position and keeps the others. Every other store or read clears the flag.
 \end{proof}
 
@@ -144,9 +158,10 @@ any other closure writes no captured cell, by Lemma~\ref{lem:summary} applied to
 closure is an abstract cell whose calls are demands. \emph{Calls in checked code}: by
 Lemma~\ref{lem:dead} applied to that cell, the first call finds every other holder of the closure dead,
 so no second call happens; a local function's cell exists from its block's entry, and a once local
-function does not call itself. \emph{Calls in trusted code}: a once value never reaches an escaping
-position, so no runtime structure, sibling or markup keeps it; a once value passed to a trusted callee is
-checked against that callee's asserted $\mathit{calls}$, which defaults to $\mathit{many}$, and A2 and A8
+function does not call itself. \emph{Calls in trusted code}: a once value reaches an escaping position---at
+any path of the value that may hold its cell---only where that position's asserted $\mathit{calls}$ is
+${\le}1$, such as the body of a spawned fiber or of a command, so no runtime structure, sibling or markup
+that may call it again keeps it; a once value passed to a trusted callee is checked against that callee's asserted $\mathit{calls}$, which defaults to $\mathit{many}$, and A2 and A8
 say the callee calls it no more often than its row states. Its creation is a demand on the captured cells
 it may write, so at creation every other holder of them is dead.
 \end{proof}
@@ -213,8 +228,10 @@ is the platform, by Lemma~\ref{lem:entry}.
 
 \begin{lemma}[Entry]
 \label{lem:entry}
-On a platform that keeps its entry protocol (A3, A4), every dispatch calls \code{update} with a model
-whose written paths satisfy \Unescaped, \Dead\ and \Disjoint, as a caller would have to establish.
+On the direct platform, if it keeps its entry protocol (A3, A4, A12), every dispatch calls \code{update}
+with a model whose written paths satisfy \Unescaped, \Dead\ and \Disjoint, and are exclusive where an arm
+requires it, as a caller would have to establish; and every message payload an arm writes in place is
+unique when the arm runs.
 \end{lemma}
 \begin{proof}[Proof sketch]
 The protocol models the platform's loop---the model is \code{init}'s result, then each dispatch's
@@ -223,12 +240,22 @@ at the program constructor's call with the program's own functions. Its abstract
 fixpoint of \code{init}'s and \code{update}'s summaries. By clauses~2 and~3 of Lemma~\ref{lem:summary}
 every escape that \code{init}, any arm, any command body or any subscription creates appears in it:
 an escape of a cell the call received as $\mathsf{E}$ on a parameter path, an escape of a cell the call
-made as $\esc_k$, a top-level list as $\shared$, and a value the runtime retains as $\top$. Aliasing
-between model paths appears through numbered fresh cells. The check at the constructor's call rejects a
-written path that may alias another, or whose cells may be escaped, shared or unknown. \code{init} is a
-function the platform calls once per mount, so the first model of every mount has the cells its
-summary describes. A3 says the runtime holds nothing else as a content holder, and A4 that no identity
-holder concludes ``unchanged'' on a written path.
+made as $\esc_k$, a top-level list as $\shared$, and a value the runtime retains as $\top$. \code{view}
+creates none: by \Obl{P3} no value one evaluation of it made---a handler, a message, a markup value---is
+used after a dispatch that conflicts with what it read, and a listener body reads the model current at
+its event; so a cell of the model that \code{view} read is not used through anything \code{view} made
+once a later arm may have written it. Aliasing between model paths appears through numbered fresh cells,
+and exclusivity through $\mathit{xres}$, carried round the fixpoint by clause~4. The check at the
+constructor's call rejects a written path that may alias another, or whose cells may be escaped, shared
+or unknown, or that an arm needs exclusive and the fixpoint does not find so. A payload reaches the arm
+from a view event, which \Obl{P6} treats as aliased with the model, or from a \code{send}; the entry
+fixpoint follows each send site's payload through \code{update}'s results to every model path it may
+reach, and a send whose payload may reach a path written in place was checked as a demand at the send,
+so the payload is unique when the arm that writes it runs, however many dispatches later. \code{init} is
+a function the platform calls once per mount, so the first model of every mount has the cells its
+summary describes. A3 says the runtime holds nothing else as a content holder; A4, with A12, that no
+identity test of the renderer concludes ``unchanged'' about a value that may hold a cell written in place
+by the current dispatch.
 \end{proof}
 
 \begin{proof}[Proof sketch of Theorem~\ref{thm:main}]
@@ -260,21 +287,23 @@ parameter is called no more often than the row's $\mathit{calls}$, which default
 \emph{Kept by} the boundary contract (\S\ref{sec:bg-boundary}), widened: the existing promise that a
 sibling never writes a list it was given and never keeps one it will later write becomes: a sibling never
 keeps a list unless its row says escaped (\S\ref{sec:hard-foreign}).
-\item[A3] \emph{The platform keeps its entry protocol.} For every function the runtime calls on the
-program's behalf, the runtime passes and keeps exactly what the protocol of \S\ref{sec:hard-tea} says:
+\item[A3] \emph{The platform keeps its entry protocol.} For every function the direct platform calls on
+the program's behalf, it passes and keeps exactly what the protocol of \S\ref{sec:hard-tea} says:
 \code{init} is called once per mount; after an \code{update}, the runtime holds no content reference to
-any list of the old model; it reads the model for \code{view}, \code{settle}, derived values and listener
-bodies without keeping a content reference beyond what the protocol declares as escaped; and it runs
-command bodies and keeps subscription results as declared. \emph{Kept by} the platform's design, made
-precise as obligations \Obl{P1}--\Obl{P7}, which must be written into its specification.
-\item[A4] \emph{Identity holders never conclude ``unchanged'' from identity on a list that may have been
-written in place.} A renderer that compares a list, or a row item holding a list, by \code{===} to skip
-work must not do so on a path that some arm of \code{update} may write in place (\Obl{P7}); conditional
-updates must be guarded by their own conditions, never by a list's identity. \emph{Kept by} the direct
-platform's rule that it never decides ``unchanged'' from the identity of an object on an in-place-written
-path, and by its edit scripts, each guarded by its own tag. \emph{Not kept} by the template runtime as it
-stands, which skips a \code{<For>} whose list is the same object as last time; on it, the entry row treats
-every list the view passes to markup as escaped until the runtime adopts \Obl{P7}.
+any list of the old model; it reads the model for the view's sites, \code{settle}, derived values and
+listener bodies without keeping a content reference beyond what the protocol declares, and uses nothing
+an earlier evaluation of the view made after a dispatch that conflicts with it; and it runs command bodies
+and keeps subscription results as declared. \emph{Kept by} the direct platform's design, made precise as
+obligations \Obl{P1}--\Obl{P7}, which must be written into its specification before it writes any list in
+place. A target that keeps persistent lists, the template runtime among them, needs none of this.
+\item[A4] \emph{No identity test concludes ``unchanged'' about a value that may hold a cell written in
+place.} In the direct platform's handler for a key $\kappa$, no \code{===} test and no comparison of views
+by base and offset concludes ``unchanged, skip'' about a value that may hold a cell at a path of
+$\mathit{IP}_\kappa$; everything that reads such a value runs because the key's write set conflicts with
+its read paths (\Obl{P7}). \emph{Kept by} the direct platform's groups, derived values, branches and row
+inputs as designed, and by the changes \Obl{P7}(f) and (g) make to its element-guarded scripts, which are
+not yet in its specification. On the template runtime, which skips by identity everywhere, it holds
+because no list is written in place there (rule~7).
 \item[A5] \emph{Evaluation order is as specified, and a demand is a barrier to the optimiser.} No call
 is moved across another or duplicated, every impure call is kept, and no read of a cell---its length,
 an element, an offset into a view---is moved across a demand on that cell, whether by single-use
@@ -309,7 +338,19 @@ platform performs on a list either is on two current references, or its outcome 
 observation, or both outcomes are covered by the function's summary---so that the result named in
 $\mathit{res}$ is right whichever branch is taken. \emph{Kept by} the identity promises appearing in
 their functions' $\mathit{res}$ as both outcomes (\S\ref{sec:model-demands}), and by A4 for renderers; the
-remaining tests are listed with the trusted surface.
+remaining tests are listed with the trusted surface. One such test compares a reference that an in-place
+write has made stale: \code{map}'s check that a callback returned its element itself, after a callback
+that was supplied the element owned may have written it. Its outcome only chooses between returning the
+input array and returning the new one, whose contents are then the same, and $\mathit{res}$ names both.
+\item[A12] \emph{The write set names every in-place write.} For every message key, every model path that
+an accepted demand of the key's arm may write in place is named by the key's write set---a path the set
+conflicts with. The write-set analysis states its soundness over identity (``changed'' is ``not
+\code{===}''), which an in-place write does not change, so this is not a consequence of its statement;
+it is a fact about its rules, which interpret every writer and every construction through the core
+library's table as a write of the path it edits, whatever object results. \emph{Kept by} restating the
+write-set contract over contents---``changed'' becomes ``may differ in content from before the
+dispatch''---and checking it (\S\ref{sec:compiler-writesets}); the direct platform's verification mode
+and its differential fuzzing are the run-time checks of it.
 \end{description}
 
 \section{The trusted surface}
@@ -329,8 +370,9 @@ low-level computations as occurrences of \code{Js.pure} outside comments:
 computations): the nine writers and \code{copy}; the primitives that constructions lower to; the
 internal primitives the library's loops are written over (the element read, the base array and offset of
 a list, the builder and its fill and hand-over, the building loop's exit, the length); the identity
-primitives \code{map} uses to return its input; and every public function whose body uses \code{Js}
-directly rather than those primitives;
+primitives \code{map} uses to return its input; the single-pass rows of \code{map}, \code{indexedMap},
+\code{filterMap}, \code{foldl} and \code{foldr}, which supply an element owned when the list is exclusive and
+consumed; and every public function whose body uses \code{Js} directly rather than those primitives;
 \item \emph{strings} (45 public values, 21 \code{Js.pure} computations): every function that takes or
 returns a list, such as joining and splitting, which must say that it reads its list or returns a fresh
 one;
@@ -343,12 +385,12 @@ declarations in the task module): \code{spawn}, \code{join}, \code{scope}, \code
 exclusive by declaration, or not; a printer only reads---unless it hands a list's array to the host as it
 is, in which case it escapes it;
 \item \emph{the dictionary and set modules} are beni over constructors with no \code{Js}; their summaries
-are inferred over folded paths, and only \code{Dict.update}'s owned supply to its callback is asserted
-(\S\ref{sec:hard-containers});
-\item \emph{each platform}: its \code{foreign} siblings and foreign types, its runtime's entry protocol
-(\Obl{P1}--\Obl{P7}), its commands and subscriptions, \code{send}, and its markup lowering, whose rows
+are inferred over folded paths, and only \code{Dict.update}'s row---its owned supply to its callback and the
+exclusivity of its result---is asserted (\S\ref{sec:hard-containers});
+\item \emph{each platform}: its \code{foreign} siblings and foreign types; for the direct platform, its
+entry protocol (\Obl{P1}--\Obl{P7}); its commands and subscriptions, \code{send}, and its markup lowering, whose rows
 say what a markup site keeps;
-\item \emph{the runtime contracts}: A1, A3, A4, A7, A9 and A11.
+\item \emph{the runtime contracts}: A1, A3, A4, A7, A9, A11 and A12.
 \end{itemize}
 We have not yet enumerated the rows one by one; doing so, with a test program per row under A8, is the
 first deliverable of the report mode (\S\ref{sec:eval-brief}). We expect between several dozen and a
@@ -377,8 +419,10 @@ escaped holders. A9 covers what a crash screen may print.
 \code{xs == xs}) compares two references. If both are current, the semantics agree; if one is stale,
 the comparison is a stale use, which Lemma~\ref{lem:dead} excludes.
 \item \emph{The trusted surface}, whose rows are not yet enumerated (\S\ref{sec:soundness-trusted}).
-\item \emph{The entry protocol}, which is only as good as the platform's keeping of A3 and A4. \Obl{P7}
-is kept by the direct platform's design and not by the template runtime today.
+\item \emph{The entry protocol}, which is only as good as the direct platform's keeping of A3, A4 and A12.
+\Obl{P7}(f) and (g) and \Obl{P3}'s rule for markup values are additions to its design, not yet specified,
+and A12 restates the write-set analysis's contract over contents, which its own soundness argument does not
+yet cover.
 \end{itemize}
 
 \section{Programs that test the rules}
@@ -479,10 +523,10 @@ T26 & returning a captured once closure & \code{push1 = λx → List.push acc x;
 \code{f = give ⊤; a = f 1; g = give ⊤; b = g 2}. \code{f} is \code{push1}'s cell through
 $\mathit{res}_{\mathit{give}} = \{\env\}$; \code{give} holds it and is live & rejected: \Dead\ at \code{f 1} \\
 T27 & a once closure the runtime calls & \code{init ⊤ = seen = []; \{ onKey = λs → Typed (List.push seen s), ⋯ \}};
-\code{view} puts \code{model.onKey} in markup & rejected: a once value reaches an escaping position \\
+\code{view} puts \code{model.onKey} in markup, a handler position called $\mathit{many}$ times & rejected: a once value passed to a $\mathit{many}$ position \\
 T28 & a handler's capture inside markup & \code{field = <input onInput=\{λs → Typed (String.join "," xs)\} />;
 ys = List.push xs "b"}; \code{field} rendered after. \code{Html} is a foreign type and does not cross; the
-markup site's row escapes the handler's captures & rejected: \Unescaped \\
+markup value holds the handler's captures under its opaque step, and \code{field} is used after the push & rejected: \Dead \\
 T29 & a batch whose first body sends & \code{Clear → kept = List.filter ⋯; ( \{ model | todos = kept \},
 Cmd.batch [ Cmd.perform λsend → send (Toggle 0), Cmd.do λ⊤ → ⋯ (encode kept) ] )}; \code{Toggle} edits
 \code{model.todos} in place. The second body captures \code{kept} & rejected at \code{Toggle}: \Unescaped \\
@@ -497,7 +541,51 @@ T33 & a persistent stack whose versions are kept & a front stack, pushed by \cod
 by a pattern, keeping every 10\,000th version in a list read at the end. A kept version may share
 \code{s.top}'s array, and it is live & rejected: \Dead; accepted with \code{List.copy} at the kept version \\
 T34 & a send whose payload no arm writes & \code{send (Got rows)}, then \code{List.length rows}; no arm
-edits \code{Got}'s payload in place & accepted: \code{send} only aliases (\Obl{P6}) \\
+edits \code{Got}'s payload in place, and the paths \code{Got} stores it at are written in place by no arm & accepted: \code{send} only aliases (\Obl{P6}) \\
+T35 & a renderer's reads of an appended list & TodoMVC's Enter arm, \code{model.todos ++ [ new ]}, with
+\code{left = List.length (List.filter model.todos ⋯)}, \code{hidden=\{List.isEmpty model.todos\}} and
+\code{hidden=\{left == List.length model.todos\}} in \code{view} & accepted; on the direct platform the
+derived value and the three groups read \code{todos}, which the key's write set names, so they run
+(\Obl{P7}(a), (b)); the template runtime writes nothing in place \\
+T36 & a row input & \code{Pick id → \{ model | picked = [ id, …model.picked ] \}}; each row's class reads
+\code{List.member r.id model.picked} & accepted; the class group reads \code{picked}, conflicts with
+\code{Pick}'s write set and runs on every row (\Obl{P7}(e)) \\
+T37 & an element list edited in place, rendered & \code{Reveal r c → \{ model | grid = List.update
+model.grid r (λrow → List.set row c Shown) \}}, rows from \code{List.initialize 9 (λ\_ → List.repeat Hidden
+9)} & accepted; \code{grid[*]} is in $\mathit{IP}$, so the row's script is guarded by its range only and runs
+the row's groups (\Obl{P7}(f)) \\
+T38 & a send whose payload is stored, then extended, and read by the sender &
+\code{rows = fetchRows ⊤; send (Loaded rows); ⋯ (parks) ⋯; Log.info (String.fromInt (List.length rows))};
+\code{Loaded rows → \{ model | rows = rows \}}, \code{Add r → \{ model | rows = [ …model.rows, r ] \}} &
+rejected at the send: the payload reaches \code{model.rows}, which \code{Add} writes in place, so the send
+consumes it, and \code{rows} is read after it (\Dead) \\
+T39 & a handler from the last render, after a dispatch in the same event &
+\code{<div onClick=\{λ\_ → Report (List.length model.log)\}><button onClick=\{Log "x"\}>⋯}; \code{Log}
+appends to \code{model.log} in place, and the click bubbles to the \code{div} & accepted; on the direct
+platform the \code{div}'s listener body reads \code{model.log} at its event, after \code{Log}'s dispatch,
+under both semantics (\Obl{P3}); the template runtime writes nothing in place \\
+T40 & a record edit inside a model list & \code{Tag i t → \{ model | rows = List.update model.rows i
+(λr → \{ r | tags = [ …r.tags, t ] \}) \}}, with \code{init} building distinct rows & accepted: the callback
+keeps shape, so \code{update}'s $\mathit{xres}$ keeps \code{model.rows} exclusive at every entry \\
+T41 & an undo of a list & \code{Add} pushes \code{List.copy model.todos} onto \code{history} and extends
+\code{todos}; \code{Undo} restores the head of \code{history} as \code{todos} & rejected at \code{Add}:
+\Disjoint, the entry merging \code{todos} with \code{history[*]} (a limit); accepted with
+\code{List.copy previous} in \code{Undo} \\
+T42 & an edit by id through \code{map} & \code{\{ model | cards = List.map model.cards λc → if c.id == id
+then \{ c | tags = [ …c.tags, t ] \} else c \}}; the same with \code{cards} built by \code{List.repeat} &
+accepted: the single-pass row supplies each card owned; rejected for \code{List.repeat}'s cards: not
+exclusive (the supply edge) \\
+T43 & chains of \code{++} & \code{List.foldl rows [] (λr acc → acc ++ r.cells ++ [ sep ])};
+\code{List.foldr xss [] (λxs acc → xs ++ acc)} with \code{xss} read afterwards & first accepted: one
+construction whose base is \code{acc}; second rejected: \code{foldr} consumes \code{xss} to write its
+elements, and \code{xss} is read later (\Dead) \\
+T44 & grouping by a fold & \code{List.foldl xs Dict.empty λx d → Dict.update d (key x) (λg → Just [
+…Maybe.withDefault g [], x ])} & accepted: \code{Dict.update} keeps $\excl$ when its callback keeps shape,
+and \code{foldl} carries it to the next call \\
+T45 & a command that reads one field of the model & \code{Done → ( model, Cmd.do λ⊤ →
+Route.replaceUrl (Session.navKey model.session) Route.Home )}; another arm appends to \code{model.errors};
+and the same with a body that passes \code{model} whole to a function that reads every path & first
+accepted: the body holds \code{model.session} only; second rejected at the append: \Unescaped \\
 \bottomrule
 \end{longtable}
 }

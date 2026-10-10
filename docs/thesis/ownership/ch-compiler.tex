@@ -44,36 +44,49 @@ the second.
 \label{sec:compiler-writesets}
 
 The direct platform's whole-program write-set analysis (\S\ref{sec:bg-browser}) and the ownership
-checker meet only at the entry protocol. There are two reads and one restatement.
+checker meet at the entry protocol and at the renderer's obligation. There are three reads and one
+restatement.
 
 \begin{itemize}
 \item \emph{The checker computes the entry state itself}, from summaries, at the call that starts the
 program (\Obl{P5} in \S\ref{sec:hard-tea}). The write-set analysis does not analyse commands and has no
 fact for two model paths that already alias at an arm's entry, so it cannot supply the entry state;
 the escape and alias computation that the direct platform would need for in-place records is this same
-computation, done once for both. The write-set analysis supplies one thing the protocol needs, the write
-set per message, which \Obl{P3} uses to decide which instance items to re-obtain.
-\item \emph{The write-set consumer reads nothing new}, but one word of its soundness statement changes.
-Its notion of ``changed'' was ``not the same value, not \code{===}''. Under in-place writes a write
-inside \code{model.rows} leaves the list \code{===} to its old self. The write set still \emph{names} the
-written path, because it is read off the arm's text rather than off identity, so a consumer that runs
-the DOM updates the write set names stays correct; what it may no longer do is conclude ``unchanged''
-from \code{===} on a list path, which is A4 and the direct platform's tag guards. The restatement:
-\emph{``changed'' means ``may differ in content from what was there before the dispatch''}. The
-write-set analysis's own requirement that an in-place list write never touch a list the program still
-holds becomes the theorem of Chapter~\ref{sec:soundness}, rather than a requirement on the emitter.
+computation, done once for both. The write-set analysis supplies the write set per message key, which
+\Obl{P3} uses to decide which instance items to re-obtain.
+\item \emph{The renderer combines the two.} \Obl{P7} needs, per key $\kappa$, the paths $\mathit{IP}_\kappa$
+that $\kappa$ may have written in place: the paths at which \code{update}'s ownership summary has
+$\mathsf{W}$ (from the checker), restricted to those that conflict with $\mathit{writes}(\kappa)$ (from
+the write-set analysis); and, per value the view computes, whether it may hold such a cell (from the
+ownership analysis of \code{view}'s code). All three are known when the handler is compiled.
+\item \emph{The write-set consumer reads nothing new}, but its soundness statement changes. Its notion
+of ``changed'' was ``not the same value, not \code{===}''. Under in-place writes a write inside
+\code{model.rows} leaves the list \code{===} to its old self, so its statement no longer says that the
+write set names the path. Its rules still do, because they interpret every writer and every construction
+through the core library's table as a write of the path it edits, whatever object the result is; but that
+is a property of the rules, not of the statement, and the obligation that rests on it, \Obl{P7}, must not
+rest on an accident. The restatement: \emph{``changed'' means ``may differ in content from what was there
+before the dispatch''}, with the same proof obligations rule by rule, and a check, when the ownership pass
+and the write-set pass both run, that every path an accepted demand of an arm writes in place conflicts
+with that arm's write set (A12). What a consumer may no longer do is conclude ``unchanged'' from
+\code{===} on a value that may hold a cell written in place, which is \Obl{P7}. The write-set analysis's
+own requirement that an in-place list write never touch a list the program still holds becomes the theorem
+of Chapter~\ref{sec:soundness}, rather than a requirement on the emitter.
 \item \emph{The write-set interpreter is the right engine for the model's paths, not for the general
 checker.} It is whole-program, per message, and tracks identity; the ownership checker is per
-function, directional over cells, and publishes summaries. They meet at the entry protocol and
-nowhere else.
+function, directional over cells, and publishes summaries. They meet at the entry protocol and the
+renderer, and nowhere else.
 \end{itemize}
 
 \section{The backend}
 \label{sec:compiler-backend}
 
-Every accepted demand is in place, so the backend needs no per-site decision: it emits each writer's
-call as it does today, lowers each construction to the writers on its base as the language already
-specifies, and the core library's writers \emph{are} the in-place operations (Table~\ref{tab:backend}).
+On the direct platform every accepted demand is in place, so the backend needs no per-site decision: it
+emits each writer's call as it does today, lowers each construction to the writers on its base, left to
+right from the base as Change~1 specifies, and the core library's writers \emph{are} the in-place
+operations (Table~\ref{tab:backend}). Every other target keeps today's persistent writers and lowering
+(rule~7 of \S\ref{sec:bg-language}); the two implementations of the writers have the same rows, so a
+program's verdict does not depend on which one it is linked with.
 
 \begin{table}[t]
 \centering\small
@@ -90,7 +103,7 @@ Primitive & Today & Under the rule \\
 an element after a construction's base & claim the tail, or copy & \code{a.push(v)}; amortised $O(1)$ \\
 a literal with no spread & a new array & a new array; $O(n)$ \\
 \code{copy} & --- & \code{a.slice()}, or \code{b.slice(o, o + n)} for a view \\
-write through a view $(b, o)$ & --- & the same on $b$ at offset $o + i$; always a new header, with no cached copy (A1) \\
+write through a view $(b, o, n)$, a prefix or a suffix & --- & the same on $b$ at offset $o + i$; a push writes $b[o + n]$; always a new header, with no cached copy (A1) \\
 a building loop's exit & append the tail, or return it when empty & attach the builder's elements in front of the consumed tail, or return the tail when the builder is empty \\
 \bottomrule
 \end{tabularx}
@@ -98,14 +111,17 @@ a building loop's exit & append the tail, or return it when empty & attach the b
 \label{tab:backend}
 \end{table}
 
-\emph{The trie goes.} Its claims, its radix offsets, its head and tail buffers, the cache of its plain
+\emph{On the direct platform the trie goes.} Its claims, its radix offsets, its head and tail buffers, the cache of its plain
 form and its thresholds all exist to make writes to \emph{shared} lists cheap, and under the rule no
 shared list is ever written. What stays is the plain form; the view form for a pattern's \code{rest}
 (with the scalar-view loop rewrite still removing most views); the array builder used by functions
 that build their result in tail position; and the three-fact protocol for readers (\code{length},
 \code{Array.isArray}, \code{\$plain()}, the last now needed only for views). Our prototype study measured
 the list runtime at 706 bytes compressed without the trie, against 1\,514 with it
-(Appendix~\ref{app:method}). The library's loops written in beni are unchanged.
+(Appendix~\ref{app:method}); a page built for the direct platform ships the smaller one. The template
+runtime and Node keep the trie, so the core library carries both implementations of the writers, and the
+differential run of \S\ref{sec:eval-sanitiser} compares them. The library's loops written in beni are
+unchanged.
 
 Moving a consumed base into a larger array is growth, not a copy in the sense of the rule: no old
 version survives it, because the base had no other live holder, and its cost is amortised over the
@@ -117,8 +133,10 @@ some from birth, and how often a view must be flattened when it is handed to Jav
 to the length.
 
 The backend must still keep the identity promises the language keeps (\S\ref{sec:model-demands}) and the
-linearity of the builder. A construction returns its base's identity, \code{[ …xs ]} and the re-consing
-of a matched list return the list itself, and \code{xs ++ []} returns \code{xs}.
+linearity of the builder. A construction returns its base's \emph{cell}---its header may be new, after a
+prepend or a write through a view, so the result need not be \code{===} the operand---while
+\code{[ …xs ]} and the re-building of a matched list return the list itself, and \code{xs ++ []} returns
+\code{xs}.
 
 \section{The release optimiser}
 \label{sec:compiler-release}
@@ -148,8 +166,10 @@ The language's promise that a record update keeps the other fields as the very s
 (\S\ref{sec:bg-beni}) becomes the only difference: a record written in place keeps its own identity
 too, which the direct platform's rule already forbids the renderer to rely on. The hazard is that the
 renderer compares records by identity everywhere---a reference check per dynamic hole is what makes
-beni's compiled templates fast---so in-place records need a stronger form of A4 than lists do. The
-hand-over obligations of \S\ref{sec:hard-tea} are the obligations in-place records would need too.
+beni's compiled templates fast---so in-place records need a stronger form of A4 than lists do: the
+argument for \Obl{P7} rests on records being rebuilt whenever their content changes, and a record written in
+place would put every holder of it, not only list-valued ones, among the values that may hold a written
+cell. The hand-over obligations of \S\ref{sec:hard-tea} are the obligations in-place records would need too.
 
 \section{Incremental builds}
 \label{sec:compiler-incremental}

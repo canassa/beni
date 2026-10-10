@@ -11,7 +11,7 @@ every copy the program pays for is written in its source.
 Edits are of two kinds. The library's named writers, such as \code{List.set} and \code{List.push},
 consume their operand. So does list construction: in \code{[ x, …acc ]}, \code{[ …acc, x ]} and
 \code{acc ++ ys}, a fixed position rule chooses the operand whose array becomes the result (the
-first spread, or the left side of \code{++}), and that operand is reused in place, at either end; the
+first spread, or the leftmost operand of a chain of \code{++}), and that operand is reused in place, at either end; the
 other operands are only read. An accumulator, a fold, a recursive builder and an \code{update} that
 adds a row therefore run in place, as hand-written JavaScript would, and the error arises only when
 the consumed operand is used again.
@@ -29,12 +29,16 @@ groups are solved by an optimistic fixpoint over a finite lattice; an exclusive-
 the rule to edits inside a container's elements; and an entry protocol covers every function a UI
 runtime calls.
 
-We present the model, the inference algorithm, a sketch of a soundness argument under eleven stated
+We present the model, the inference algorithm, a sketch of a soundness argument under twelve stated
 assumptions, the trusted surface, the hard cases, an error design that separates real sharing from the
-checker's limits, the language changes the rule needs, and traces of thirty-four programs that test
-the rules. Two applications re-examined under construction-as-consumption contain in-place edits in
-their \code{update}s; traced by hand, they are accepted only once \code{init} is a function and after a
-one-line change to how one of them persists its list, and, on beni's current template renderer, only if the renderer stops skipping work by the
-identity of a list the program edits in place. We propose a report-mode experiment whose main metric
-is the frequency of the error on idiomatic code. No results of it exist yet, and the proof is a sketch
-that has not been mechanised.
+checker's limits, the language changes the rule needs, and traces of forty-five programs that test the
+rules. In-place lists are confined to one of beni's two browser back ends, the direct platform, which
+compiles the view away and generates one handler per message from compile-time write sets; we state
+precisely what it must re-render when a list keeps its identity across an edit---everything a message's
+write set may reach, never what an identity test calls unchanged---and what that costs. beni's current
+template renderer keeps persistent lists and every identity-based skip it has, and the rule, checked for
+every target, changes nothing a program means there. Two applications re-examined under
+construction-as-consumption contain in-place edits in their \code{update}s; traced by hand, one is accepted
+as written and the other once \code{init} is a function and after a one-line change to how it persists its
+list. We propose a report-mode experiment whose main metric is the frequency of the error on idiomatic
+code. No results of it exist yet, and the proof is a sketch that has not been mechanised.

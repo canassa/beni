@@ -14,7 +14,8 @@ with no hidden copy and no slower path chosen behind the program's back---\code{
 either end of its base in amortised $O(1)$; the elements a construction copies from a read operand in
 time proportional to them, as JavaScript's spread copies them; \code{insertAt} and \code{removeAt} in the
 $O(n)$ element move a hand-written program also pays. Every $O(n)$ copy a program pays for is a
-\code{List.copy} in its source. There is no trie and no reference count, and the runtime is smaller. The
+\code{List.copy} in its source. On the direct platform, where lists are written in place, there is no trie
+and no reference count, and the runtime is smaller. The
 price is that programs that are \emph{correct} under value semantics are rejected. The design choice made
 here is that the error is wanted. This chapter states its price without softening it.
 
@@ -42,8 +43,9 @@ followed by an extension, or an edit of an element of a list of lists whose cont
 (\S\ref{sec:hard-containers}).
 \item An in-place edit of a list from JavaScript, a \code{Ref}, a value the runtime retains, or a
 \code{foreign} without a summary (\S\ref{sec:hard-foreign}, \S\ref{sec:hard-ref}).
-\item An in-place edit of a rendered list on a platform whose renderer skips work by a list's identity:
-on beni's current template runtime, until it adopts \Obl{P7} (\S\ref{sec:hard-tea}).
+\item A splice or rotation written with \code{take} and \code{drop}, whose identity promises make the
+operands possibly one list (\S\ref{sec:idioms-rejected}); and an undo history of a list, which needs a
+second copy (\S\ref{sec:hard-undo}).
 \item A writer or construction whose base is also another operand, such as \code{[ …xs, …xs ]}, which
 fails \Disjoint.
 \item Anything the checker's joins, path cut or caps cannot follow (\S\ref{sec:hard-branches}): limits.
@@ -75,12 +77,14 @@ know, and a reader of Elm code will not expect a spread to have an effect on its
 \emph{Versions cost a copy.} Today a prepend onto an older version copies at most 31 elements, so a
 persistent stack that keeps versions is linear; under the rules each kept version that is later extended
 needs an explicit $O(n)$ copy. This reverses the part of the language's linear-prepend decision that
-covers kept versions (\S\ref{sec:idioms-rejected}). It also withdraws one identity promise, that
-\code{[] ++ ys} is \code{ys} itself (\S\ref{sec:model-demands}).
+covers kept versions (\S\ref{sec:idioms-rejected}). It also withdraws one identity promise, that an
+append whose left operand is empty at run time is its right operand itself, and it replaces the
+specification's right-to-left lowering of list literals and \code{++} chains with one from the base
+(\S\ref{sec:model-demands}).
 
 \section{What it costs the representation}
 
-The trie's reason to exist is gone, and so is its persistence: a program that wants versions pays
+On the direct platform the trie's reason to exist is gone, and so is its persistence: a program that wants versions pays
 $O(n)$ per version, explicitly. Prepending in amortised $O(1)$ needs free space in front of a list, so
 lists built by prepending are views, as a pattern's \code{rest} already is, and a view handed to
 JavaScript must be flattened; the space in front costs memory. The policy is open
@@ -110,12 +114,25 @@ The message design of Chapter~\ref{sec:errors} and the library choices of Chapte
 the mitigation; they are not a guarantee, and the evaluation plan measures something about people for
 this reason (\S\ref{sec:eval-people}).
 
+\section{What it costs on the other targets}
+
+In-place lists are a feature of the direct platform only (rule~7), but the rule is checked on every
+target. A program built for the template runtime, or for Node, is rejected wherever a program built for
+the direct platform would be, and gains nothing from it: its lists stay persistent, its edits copy as
+they do today, and its runtime keeps the trie. What the rule buys there is only that the same source is
+accepted for the direct platform with the same meaning. We think that is the right trade, because the two
+browser back ends are compiled from one source and each is the other's test oracle; but it is a cost, paid
+by every program on a target that does not use the verdict, and the evaluation reports the error rate per
+target so that it can be weighed. The core library also carries two implementations of its writers, one
+persistent and one in place, with one set of rows.
+
 \section{What two real applications say}
 
 Chapter~\ref{sec:idioms} re-assesses TodoMVC and Conduit (\S\ref{sec:disc-apps}). In short: both now edit
-lists in place, in \code{update}; neither is accepted exactly as written; TodoMVC needs \code{init} as a
-function and, where it persists, one binding moved before a command; and on their own platform both
-depend on the template runtime adopting \Obl{P7}. What they gain is small---in-place appends on short
+lists in place, in \code{update}; TodoMVC is not accepted as written, and needs \code{init} as a function
+and, where it persists, one binding moved before a command; Conduit is accepted as written, by our hand
+trace, once a closure holds only the fields of the model it reads. Neither needs anything of the direct
+platform's renderer beyond what it already does. What they gain there is small---in-place appends on short
 lists, and the smaller list runtime. They test whether the rule is livable, not whether it is fast.
 
 \section{The run-time alternative}
