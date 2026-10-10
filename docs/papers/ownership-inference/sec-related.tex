@@ -1,0 +1,141 @@
+\section{Related Work}
+\label{sec:related}
+
+The question of when a pure program may update in place is as old as functional arrays. We organise the
+comparison by the two choices that define our design: the property is \emph{uniqueness at the site,
+decided by liveness}, and a failure is \emph{a compile-time error, not a fallback}.
+
+\paragraph{Linearity and uniqueness.} Wadler showed that a linearly used array can be updated in place,
+and introduced \code{let!} to read a linear value for a while without consuming it
+\citep{wadler1990linear}; a year later he observed that linearity alone does not imply a single
+reference, and stated the goal that ``only update operations are sequentialised but lookups can occur in
+parallel'' \citep{wadler1991use}. Marshall, Vollmer and Orchard make the distinction precise: linearity
+restricts what can be done with a value in the future, uniqueness guarantees what has been done with it
+in the past \citep{marshall2022entente}. Our property is a uniqueness property at one program point,
+and our ``read before the write'' plays the part of \code{let!} with no construct, because strict
+evaluation order makes the reads' position syntactic. Boyland's alias burying lets a unique variable be
+read without being destroyed provided that every alias is dead before the unique variable is used again,
+checked by a liveness-style analysis rather than by types \citep{boyland2001alias}; it is the closest
+ancestor of our definition. Linear Haskell attaches linearity to function arrows and proves that its
+mutable-array API is observationally equivalent to a pure semantics \citep{bernardy2018linear}; the user
+writes the linear arrows and the array API's continuation style.
+
+\paragraph{Clean.} Clean's uniqueness typing puts the attribute \code{*} on types, with a subtyping
+relation between unique and non-unique types, propagation through containers, and an occurrence-based
+marking of variables refined by observer references for guards and strict \code{let}s
+\citep{smetsers1994guaranteeing,barendsen1993conventional,barendsen1996uniqueness,plasmeijer2011clean}.
+Barendsen and Smetsers show that the system has no principal uniqueness types and treat an expression
+whose typing would need a choice among instances as untypable \citep[\S8]{barendsen1996uniqueness}; de
+Vries et al.\ reformulate the system to fit standard inference, and still require every binding in a
+recursive group to be non-unique \citep{devries2007redefined,devries2008simplified}. They call partial
+application ``probably the most subtle aspect of uniqueness typing'' \citep[\S4.2]{devries2008simplified}.
+We take from Clean the placement of the demand on library primitives and the notion of deep uniqueness;
+we differ in three ways. Our facts are flows, not attributes on types, so there is no principal-type
+problem and recursive groups get their best summaries by a fixpoint. Our uniqueness is decided by
+liveness rather than by occurrence counts, so reads before a write and dead aliases are free. And beni has
+no partial application to make subtle.
+
+\paragraph{Futhark.} Futhark is the closest production design in intent: a pure array language that
+guarantees in-place updates statically and reports a violation as an error
+\citep{henriksen2017futhark,henriksen2017thesis}. Its consumption rule for sequenced expressions
+requires that what the first consumes be neither observed nor consumed by the second,
+$(\mathcal{O}_2 \cup \mathcal{C}_2) \cap \mathcal{C}_1 = \emptyset$
+\citep[Fig.~5, \textsc{Occurence-Seq}]{henriksen2017futhark}, which is the one-line form of our \Dead\
+condition under syntactic order. Futhark differs from our design in requiring uniqueness annotations
+(\code{*}) on consuming parameters and unique results, and in an intraprocedural alias analysis, for which
+``we are forced to be conservative'' \citep[\S3.2]{henriksen2017futhark}. Henriksen's 2026 retrospective
+argues that other language designers should avoid making a type system reason about aliasing, and
+recommends reference counting with copy-when-shared for most languages \citep{henriksen2026aliasing}; the
+same year they moved alias checking out of the type checker into a pass over fully typed programs
+\citep{henriksen2026rewrite}. Our design is such a pass, with interprocedural summaries, and is not part of
+the type system.
+
+\paragraph{Usage aspects and destructive-update analysis.} Aspinall, Hofmann and Kone\v{c}n\'y's usage
+aspects---destroyed, shared with the result, read only---are our $\mathit{use}$ lattice, and their
+soundness theorem for in-place evaluation against a safe semantics is the shape of
+Theorem~\ref{thm:main} \citep{aspinall2002another,aspinall2008usage}. Their system is first-order,
+monomorphic, and uses explicit resources for allocation; higher-order functions are deferred to a types
+and effects extension, which our ownership classes are. Wand and Clinger optimise destructive array updates
+with set constraints: an update is made destructive when the array ``can't be bound to a live location''
+after its arguments are evaluated, and the constraints ``can be solved in polynomial time''
+\citep{wand2001set}. Their analysis is a first-order optimisation that falls back to a copy. Sisal's
+compiler removed copies by analysis and reference counts \citep{cann1990sisal}, as does SAC
+\citep{grelck2006sac,grelck2004implicit}; both are optimisations with a run-time fallback. Mercury's unique
+modes let a programmer declare when a value has one reference and when it will have no more
+\citep{mercury2026unique}.
+
+\paragraph{Reference counting with reuse: Lean, Koka, Roc and Morphic.} Lean~4 updates arrays in place
+when their reference count is one, and infers which parameters may be borrowed (passed without a count
+increment) by a fixpoint that starts from ``all borrowed'' \citep{ullrich2019beans,demoura2021lean4}.
+Perceus gives Koka precise reference counting with reuse \citep{reinking2021perceus}, refined by
+frame-limited reuse \citep{lorenzen2022frame}. FP\textsuperscript{2} adds a static check, \code{fip}, that
+a function is fully in place \citep{lorenzen2023fp2}; but ``the fip annotation in Koka only guarantees that
+no (de)allocation occurs if the parameters are unique at runtime'' \citep[\S3.1]{lorenzen2024bst}, so the
+guarantee is conditional on a fact checked only by the count. Roc's compiler uses exact reference counts
+to mutate in place \citep{teeuwissen2023roc}. Brandon et al.'s Morphic infers borrows with lifetimes with no
+annotations and, when a program cannot be typed, ``inserts a handful of reference count operations so that
+it can be typed'' \citep{brandon2026borrows}. All of these accept every program and move the cost into
+run-time counts or copies. Huisinga's static uniqueness analysis for Lean is the closest to an
+error-producing design in this family; it treats higher-order functions as always shared, which he calls a
+considerable limitation \citep[\S4.1]{huisinga2023lean}. In a garbage-collected JavaScript target, decrements
+buy little: our prototype study found that a sticky ``shared'' bit with no decrements made the same in-place
+decisions as a full count in every scenario, and that neither could help a UI runtime that retains what it rendered.
+
+\paragraph{OxCaml modes.} OxCaml adds modes---locality, uniqueness, linearity and more---to OCaml, with
+\code{once} closures for those that consume a unique capture, a lock rule for closures, and inference within
+implementations \citep{lorenzen2024oxidizing,oxcaml2025uniqueness}. Mode crossing exempts types whose values
+cannot interact with an axis, without which adoption ``would have been infeasible'' in a large codebase
+\citep[\S1]{peters2026mode}; our crossing rule is the same idea computed from beni's solved types. Two
+differences matter. Modes are written in interfaces, while our summaries are inferred and published. And
+OxCaml's authors note that the complications of currying for uniqueness ``go away if we imagine a change to
+the language forbidding currying'' \citep[\S6.4]{lorenzen2024oxidizing}---which is beni.
+
+\paragraph{Rust.} Rust's borrow checker is the most widely used ownership system, and two of its refinements
+are ours in another setting. Non-lexical lifetimes base borrows on liveness \citep{rfc2094}, and two-phase
+borrows let a mutable borrow act as a shared one until it is activated \citep{rfc2025}; Polonius recasts
+the analysis as Datalog over directional facts \citep{stjerna2020polonius}. Formal models of the borrow
+checker exist at several levels \citep{weiss2019oxide,pearce2021lightweight}. Rust has references into
+structures, lifetimes in signatures and explicit annotations; beni has none of these, so the problem cases
+that motivate much of Rust's machinery (a reference to a slot held across a conditional) do not arise, and
+the remaining fact---who may still read a list---can be inferred. Emre et al.'s measurement of
+unification-based versus subset-based alias analysis in the translation of C to Rust is the reason our
+analysis is directional \citep{emre2023aliasing}. Crichton's studies of how programmers understand ownership
+errors shaped our messages \citep{crichton2020usability,crichton2023grounded,crichton2024profiling}.
+
+\paragraph{Swift and Hylo.} Swift's value types are copy-on-write, testing uniqueness at run time; its
+ownership manifesto notes that ``reference counting and uniqueness testing do impose some overhead'' and
+that performance ``can still be complex to analyze and predict'' \citep{mccall2017manifesto}. Later
+proposals added explicit \code{borrowing} and \code{consuming} parameter modifiers and a \code{consume}
+operator \citep{swift2022se0377,swift2022se0366}, and a 2025 discussion of an explicit-copies mode set out
+the stability requirement we adopt \citep{swift2025explicitcopies}. Mutable value semantics, in which a law of exclusivity makes it safe to sidestep conceptual copies, has been
+studied as an implementation strategy \citep{racordon2022mvs}, and Hylo is a language built on it; in Hylo ``copies are explicit by
+default'', and the compiler offers to insert them \citep{hylo2024bindings}. Our error and its \code{List.copy}
+fix have the same spirit in a pure language with no parameter conventions.
+
+\paragraph{Reachability types and capture tracking.} Reachability types track, in a function's type, which
+arguments its result may reach, with a freshness marker for new values
+\citep{bao2021reachability,wei2024polymorphic}; recent work adds bidirectional inference given annotations
+on function arguments \citep{jia2026escape}, flow-sensitive use and kill effects for ownership transfer through
+closures \citep{deng2025capture}, and separation checking that rejects only interfering uses
+\citep{xu2026capybara}. O'Connor et al.\ state the guarantee of uniqueness as separation
+\citep{oconnor2026separation}. Our $\mathit{res}$ component is a reachability qualifier on results, our
+$\mathit{cap}$ facts are the use and kill effects of a closure, and $\fresh$ plays the freshness marker's part.
+We infer these facts where those systems declare them, which is possible because beni's lambdas are visible
+and its functions first-order in their arrows.
+
+\paragraph{Usage and escape analysis.} Usage analyses for lazy languages infer how often a value is used
+\citep{turner1995once,wansbrough1999once,wansbrough2002thesis}; Wansbrough and Peyton Jones's ``poisoning
+problem''---one call of a function poisoning the usage of all others---is why our summaries are polymorphic
+over function-typed parameters. Blanchet's escape analysis distinguishes closures that are applied from
+closures that escape \citep{blanchet1998escape}, which is our $\mathit{escapes}$ bit. Radanne et al.'s Affe
+captures borrows in closures with kinds \citep{radanne2020kindly}.
+
+\paragraph{Ownership inference in object-oriented languages.} Clarke et al.'s survey observes that
+ownership-type inference approaches ``infer any solution that satisfies the constraints, but cannot give a
+best solution'' \citep[\S5]{clarke2013survey}. Our constraints are monotone inclusions over a finite lattice
+with a least solution, which the optimistic start finds.
+
+\paragraph{Transient and copy-on-write structures.} Clojure's transients let code build a persistent
+structure through a mutable view in $O(1)$ conversion each way, with operations that ``are not designed to be
+bashed in-place'' and must thread their return values \citep{hickey2009transients}---a run-time discipline for
+the building pattern our checker proves statically.

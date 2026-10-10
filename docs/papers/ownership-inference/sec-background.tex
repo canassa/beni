@@ -1,0 +1,172 @@
+\section{Background}
+\label{sec:background}
+
+\subsection{beni in brief}
+\label{sec:bg-beni}
+
+beni is a statically typed, strict, pure functional language in the family of Elm. Its compiler,
+written in Zig, emits modern JavaScript as ES modules, and its primary platform is the browser. It
+keeps Elm's guarantees---no run-time exceptions in ordinary code, exhaustive pattern matching,
+managed effects---and departs from Elm in a few deliberate places. Those that matter here are the
+following.
+
+\paragraph{Syntax.} beni uses Unicode notation: \code{→} for arrows, \code{λ} for lambdas,
+\code{▷} for the forward pipe, \code{…} for a spread, \code{⊤} for the unit type and value, and
+\code{×} for tuple types. A function body is a block of bindings followed by its result. Lists are
+written, built and matched with brackets and spreads: \code{[ x, …rest ]} matches a non-empty
+list, \code{[ …xs, …ys ]} concatenates. Records are immutable and updated by \code{\{ r | f = v \}}.
+A small \code{update} function in the style of a TodoMVC implementation looks like this:
+\begin{Verbatim}
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Typed text →
+            { model | draft = text }
+        Add title →
+            { model | todos = model.todos ++ [ { id = model.nextId, title = title, completed = False } ]
+                    , nextId = model.nextId + 1 }
+\end{Verbatim}
+
+\paragraph{No automatic currying.} Function types are $n$-ary---\code{Msg, Model → Model} takes two
+arguments---and every call is saturated. Partial application is written with a placeholder,
+\code{f a \_}, which is sugar for the lambda \code{λp → f a p}; the pipe \code{x ▷ f a} is rewritten
+to \code{f x a} before anything runs. There are no point-free composition operators. Every closure
+in a beni program is therefore a lambda the programmer wrote (or a placeholder that desugars to
+one), and the compiler can see what it captures.
+
+\paragraph{Evaluation order.} beni is strict and evaluates left to right in source order: in an
+application, the callee and then the arguments, left to right, and then the call; record literals
+field by field in written order; a record update evaluates the record and then the updated fields;
+block bindings in the order written; a self tail call evaluates all its new arguments before any
+parameter is rebound. The order is part of the language definition and is observable today through
+\code{Debug.log}; the compiler's release optimiser is constrained not to change it.
+
+\paragraph{Inferred effects.} beni has no effect syntax. Its type checker infers, for every function
+type, two bits---whether a call may perform an effect, and whether it may suspend the current
+fiber---and solves them as a directed graph of inclusion edges (``this class is at least as
+effectful as that one'') after each module is type-checked. The solved bits are published in the
+module's interface and hashed with it. A function that takes a callback is summarised
+\emph{polymorphically} in the callback's bits, so that \code{List.map} serves a pure and a
+suspending callback with one definition. Concurrency is cooperative: fibers interleave only at
+suspension points, and continuations are one-shot.
+
+\paragraph{Static dispatch.} A type's methods are the public values of the module that declares
+it; \code{x.m a} calls one, and a top-level annotation may carry a constraint such as
+\code{where a.compare : a, a → Order}. The operators \code{==} and \code{<} call the receiver type's
+\code{eq} and \code{compare}, derived structurally when the type declares none. Evidence for a
+constraint is passed as a hidden argument.
+
+\paragraph{The boundary.} Only privileged platform packages and the embedded core library may
+declare a \code{foreign} value, which binds to an export of a sibling JavaScript file. Every
+\code{foreign} already declares its effect rung (pure, impure or suspending), and the compiler
+checks the sibling's export shape and arity.
+
+\paragraph{The Elm Architecture.} A browser program is written in The Elm Architecture (TEA): a
+\code{Model} type holding the application state, an \code{init} value, an
+\code{update : Msg, Model → Model} function (or, with commands, one returning
+\code{Model × Cmd Msg}) and a \code{view} from model to markup. A runtime owned by the platform
+calls \code{update} for each message, replaces the current model with the result, and brings the
+page up to date. \code{update} is where nearly all list edits in an application happen, and it is
+where the runtime and the program both hold the model. Commands are thunks the runtime stores and
+runs later; subscriptions are re-evaluated after each update.
+
+beni has two browser back ends that matter here. The current one compiles each markup site into a
+cloned template and patches dynamic holes with a reference check per hole, in the style of
+SolidJS's compiler; it keeps each list it rendered so that it can skip the next walk when the list
+is identical. A second, experimental back end---which we call the \emph{direct} platform---compiles
+each message handler into a JavaScript function that runs the corresponding \code{update} arm and
+writes the DOM directly, guided by a whole-program \emph{write-set analysis} that computes, for each
+message, which paths of the model the arm may write. It keeps no rendered view: slots hold leaf
+values, and per-row instance arrays hold the row items only to compare them by identity. That
+design choice is what makes the hand-over protocol of \S\ref{sec:hard-tea} possible.
+
+\subsection{How lists are represented today}
+\label{sec:bg-lists}
+
+\code{List} is beni's only sequence type. A list value is one of three JavaScript forms: a plain
+array; a \emph{view}, an object \code{\{ b, o, length \}} giving an offset into a base array (used for
+the \code{rest} of a pattern, in $O(1)$); or a 32-way radix trie with claimable head and tail
+buffers. Every write is persistent: \code{List.set} copies a plain array of up to 256 elements and
+path-copies a trie above that; \code{List.push} copies short arrays and claims the trie's tail
+otherwise; prepending through \code{[ x, …xs ]} claims a free head slot. Readers outside the
+library use three facts---\code{length}, \code{Array.isArray} and a \code{\$plain()} method that
+materialises a plain array---so that the trie is invisible to them.
+
+This design gives every program persistence at a cost that is modest per operation but paid
+everywhere: the trie's code ships with every program that edits a list, every generic read path
+can meet a non-plain form, and a list handed to JavaScript must first be flattened. A hand-written
+JavaScript program would simply write \code{a[i] = v}.
+
+\subsection{What in-place writes buy: a prototype study}
+\label{sec:bg-measure}
+
+Before designing a checker we measured what in-place writes would buy, in a prototype study that
+transformed beni's own compiled output by hand, exactly as a compiler pass would, and ran six array
+scenarios in Node~24 (five rounds; Chrome as a spot check). The baseline was a persistent
+\emph{adaptive} array (plain copies up to 256 elements, a trie above). One of the variants, a purely
+static one, wrote in place wherever last use and per-function interface summaries proved a value
+unique; it is the run-time half of the checker this paper proposes. Its results relative to the
+baseline:
+
+\begin{itemize}
+\item \emph{Building in a fold} (collecting by \code{push}, a histogram over 1\,000 or 100\,000
+buckets, a coin-change table): 0.14--0.47 times the baseline's time, the largest gain in the study,
+because every write is to an accumulator nobody else holds.
+\item \emph{A grid game}, steady-state ticks of 1 or 100 cells on a board of one million cells:
+0.44--0.48 times; the first tick, which must copy a board that the harness kept, was slower
+(1.52 times), because a whole copy costs more than converting to a trie.
+\item \emph{A TEA table} of 10\,000 rows: with the runtime keeping the rendered rows, as beni's
+current runtime does, no counting or static scheme could write the rows in place---every write
+found the rows shared. With a runtime that hands the model over, the writes landed in place, and
+bought little that was visible (0.84--0.95 times on update and swap messages), because one in-place
+element write saves about a microsecond next to a 40--60\,\textmu s render walk.
+\item \emph{An undo history} that keeps every version gains nothing, correctly: nothing is unique.
+\item \emph{Size}: the list runtime with the trie compressed to 1\,514 bytes (brotli); without it,
+706 bytes.
+\end{itemize}
+
+The same study found that a static scheme that \emph{copies} where it cannot prove uniqueness is
+harmless at a message boundary and catastrophic inside a loop: applied to a callback inside a fold,
+it copied on every iteration and ran 8.2 times slower than the baseline. That observation is one
+reason we propose an error rather than an optimisation: a silent copy makes the cost model depend
+on facts the programmer cannot see, and in the worst case turns a linear loop quadratic.
+
+\subsection{The question, stated precisely}
+\label{sec:bg-question}
+
+\emph{Editing} means a call of one of the core library's list-update primitives: \code{set},
+\code{update}, \code{push}, \code{pop}, \code{swap}, \code{insertAt}, \code{removeAt}, and the two
+the syntax lowers to, \code{cons} (\code{[ x, …xs ]}) and \code{append} (\code{[ …xs, …ys ]}, and
+\code{++} on lists). \emph{Anything else} is any holder of the array, of any of the kinds listed in
+\S\ref{sec:model-holders}, including the operand's own binding if it is read again after the edit.
+\emph{Still holds} means the holder is live: some execution continuing from the edit reads through
+it. \emph{The old version} is the very array, not an equal list. \emph{A compile error} means
+neither a copy nor a warning. The one escape hatch is a new library function, \code{List.copy},
+which makes intentional sharing explicit.
+
+\paragraph{What ``observe'' means.} An in-place write is observable when some computation reads
+the array's elements after the write through a reference it obtained before. Three kinds of reader
+exist in beni: program code (\code{List.get}, a pattern, a fold, \code{==}, \code{Debug.toString}, a
+markup hole that shows the list); the runtime (a renderer that keeps the last list it rendered); and
+JavaScript (a sibling file that kept the array). Each of these is a \emph{content} holder. An
+\emph{identity} holder keeps a reference only to ask \code{===} later. An in-place write does not
+change identity, so an identity holder never sees a different object; what it may do is conclude
+``unchanged'' from ``same object'', which is wrong after an in-place write. beni programs cannot
+compare references, so this hazard belongs to the renderer, and we discharge it by an assumption on
+the platforms (A4 in \S\ref{sec:soundness-assumptions}).
+
+\paragraph{Two semantics.} The precise form of the guarantee is the one O'Connor, Linares
+Ar\'evalo and Rizkallah give for uniqueness types: they work ``by statically ruling out every
+program where the difference between the immutable and the mutable interpretations can be
+observed'' \citep{oconnor2026separation}. Aspinall, Hofmann and Kone\v{c}n\'y prove such a theorem
+for a first-order language \citep[Thm.~5.8]{aspinall2008usage}, and Linear Haskell proves one for
+its mutable arrays \citep{bernardy2018linear}. We define the \emph{value semantics} $S_v$---every
+update builds a new array, as beni does today---and the \emph{update semantics} $S_u$---every
+accepted update writes its operand's array---and claim that, for an accepted program, they produce
+the same observations: the same output, the same DOM writes, the same calls into JavaScript with the
+same arguments marshalled by value (\S\ref{sec:soundness}).
+
+\paragraph{Scope.} Records, tuples and constructors are not written in place by this checker,
+although the machinery extends to them (\S\ref{sec:compiler-records}). The checker does not decide
+whether an in-place update is \emph{worthwhile}: every accepted update is in place, and there is no
+cost model.

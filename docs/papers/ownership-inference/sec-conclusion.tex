@@ -1,0 +1,23 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have proposed a checker that makes editing a list while anything else still holds the old version a
+compile error in beni, a pure language compiled to JavaScript, so that every list can be a plain array
+written in place with no run-time ownership information and no annotations in user code. The property is
+uniqueness at the update site, decided by liveness; the inference is a directional, field-sensitive cell
+analysis with per-path liveness and four side conditions, whose function summaries are polymorphic over
+the ownership classes of function-typed parameters and are solved for recursive groups by an optimistic,
+validated fixpoint. The design depends on three properties of the language---strict evaluation in source
+order, saturated calls with no automatic currying, and an existing inference of per-function facts
+published in interfaces---and on ten assumptions about the runtime, the library and the platforms, the
+most demanding of which is that a UI runtime hand the model over to \code{update} and keep nothing of the
+old one.
+
+We believe the soundness argument has the right shape and the right assumptions, and we have tried to say
+where it is weakest: the entry state of \code{update}, the platform obligations, and the exclusive-contents
+flag on which nested edits rely. What we cannot know from the design alone is whether the rule is worth
+its cost. It rejects correct programs---every program that keeps an old version, every list captured by a
+command that a later message edits---in exchange for a guarantee about performance, and its benefit to the
+two applications we examined depends on widening the set of operations that write in place, which would
+reject more. The next step is the report-mode experiment of \S\ref{sec:evaluation}: build the analysis,
+run it over real programs, classify every rejection by hand, and decide on the numbers.

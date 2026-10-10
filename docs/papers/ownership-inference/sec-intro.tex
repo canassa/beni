@@ -1,0 +1,107 @@
+\section{Introduction}
+\label{sec:intro}
+
+A pure functional language promises that a value, once made, never changes. Compiled to a
+machine with mutable memory, the promise has a price: an update of a large structure must either
+copy it or use a persistent representation that shares the unchanged parts. The price is
+avoidable when nobody can tell the difference---when no part of the program will ever look at the
+old version again. The long line of work on linear and uniqueness types
+\citep{wadler1990linear,wadler1991use,smetsers1994guaranteeing,barendsen1996uniqueness,devries2008simplified},
+on destructive-update analysis \citep{wand2001set,cann1990sisal,aspinall2008usage}, and more
+recently on reference counting with reuse \citep{ullrich2019beans,reinking2021perceus,lorenzen2023fp2}
+and on modes in OCaml \citep{lorenzen2024oxidizing} all ask, in one form or another, when an
+in-place write is unobservable.
+
+This paper asks the question for one language and one data type, with an unusually strict
+answer in mind. beni is a strict, pure, Elm-like language that compiles to JavaScript and is aimed
+at the browser. Its single sequence type, \code{List}, is backed by JavaScript arrays. We want
+every \code{List} to be a \emph{plain} JavaScript array that is written \emph{in place} by every
+update the program performs, and we want the compiler to guarantee that this is safe. Concretely:
+
+\begin{quote}
+\emph{Editing a list while anything else still holds the old version is a compile error.}
+Ownership is inferred, user code carries no annotations, and an accepted program writes in place,
+always---in development and release builds alike---with no reference count, no run-time test and
+no silent fallback to a copy.
+\end{quote}
+
+Two things make this goal different from most prior work. First, the result is an \emph{error},
+not an optimisation. Run-time schemes such as Perceus \citep{reinking2021perceus}, Lean~4's
+borrow inference \citep{ullrich2019beans} and Roc's in-place mutation of uniquely referenced
+values \citep{teeuwissen2023roc}
+update in place when a reference count says the value is unique and copy otherwise; the program is
+always accepted, and its cost depends on facts the programmer cannot see. Static schemes that
+\emph{optimise}---Sisal's copy elimination \citep{cann1990sisal}, Wand and Clinger's set
+constraints \citep{wand2001set}---also fall back to a copy. We want the opposite contract: a
+program that would need a hidden copy is rejected, with a message that names the holder of the old
+version and offers the explicit copy. Second, the language has no references, no lifetimes and no
+ownership vocabulary in its surface syntax, so everything must be inferred; the type-based
+uniqueness systems of Clean \citep{barendsen1996uniqueness,plasmeijer2011clean} and Futhark
+\citep{henriksen2017futhark} express uniqueness as attributes in types; in Futhark the programmer writes
+them on every function that consumes an argument.
+
+\paragraph{Why it matters in a JavaScript target.}
+A persistent sequence in JavaScript is not free. beni's current representation (\S\ref{sec:bg-lists})
+is an array that switches to a 32-way radix trie when shared writes grow large; it costs runtime
+code that every program that edits a list must ship, a representation test on every read site that
+can meet a trie, and a conversion whenever a value crosses into JavaScript. In a prototype study
+(\S\ref{sec:bg-measure}) in which we applied by hand the transformations a static uniqueness pass
+would make to compiled beni code, building an array in a fold by in-place writes ran at 0.14--0.47
+times the time of the persistent representation, the steady-state ticks of a million-cell grid at
+0.44--0.48 times, and the runtime support for lists shrank from 1\,514 to 706 bytes after compression
+once the trie was gone. The same study found the obstacle: a UI runtime that keeps the lists it
+rendered makes every list in the model shared, so no static rule could write them in place until
+the runtime hands the model over.
+
+\paragraph{Why beni can infer it.}
+Three properties of the language do most of the work.
+(1)~\emph{Strict, left-to-right evaluation in source order.} The order in which a read and a write
+happen is the order in which they are written, so ``before the update'' is a syntactic notion, as
+in Futhark and in Smetsers et al.'s classification of argument positions
+\citep{smetsers1994guaranteeing}.
+(2)~\emph{No automatic currying.} Every call in beni is saturated; partial application is written
+as an explicit lambda. The case every uniqueness system has found hardest---a partial application
+that silently captures a unique argument
+\citep{barendsen1996uniqueness,devries2008simplified,lorenzen2024oxidizing}---does not arise: a
+closure is a lambda written in the source, and its captures are visible to the checker.
+(3)~\emph{An existing inference of per-function facts.} beni's type checker already infers two
+effect bits for every function type, solves them as a directed constraint graph after each module,
+and publishes them in the module interface. Ownership facts can ride in the same places.
+
+\paragraph{Contributions.}
+This paper is a design proposal under evaluation. Its contributions are:
+\begin{itemize}
+\item A precise statement of the property to check: \emph{uniqueness at the update site, decided by
+liveness} (\S\ref{sec:model-unique}). It is strictly more permissive than Clean's occurrence-based
+uniqueness: reads before a write are never sharing, and a dead alias is harmless, in the spirit of
+Boyland's alias burying \citep{boyland2001alias} and Rust's two-phase borrows \citep{rfc2025}.
+\item An inference algorithm (\S\ref{sec:inference}): a directional, flow-sensitive,
+field-sensitive cell analysis, a per-path liveness pass, four side conditions at each update
+(\Known, \Unescaped, \Dead, \Disjoint), function summaries polymorphic over the ownership
+behaviour of function-typed parameters, an optimistic fixpoint for recursive groups, and
+publication of summaries in module interfaces. It is linear in the size of a function body per
+round, with a round count bounded by the height of a finite lattice.
+\item A soundness argument (\S\ref{sec:soundness}): under ten stated assumptions about the
+runtime, the core library and the platforms, an accepted program produces the same observable
+trace under value semantics and under in-place semantics. We give the theorem, the key lemmas and
+proof sketches; the sketch has not been independently reviewed, and we list the places we
+consider weakest.
+\item A treatment of the hard cases (\S\ref{sec:hard}), including closures called many times,
+nested containers (with an \emph{exclusive-contents} flag for the case where two slots of a
+container may hold the same value), fibers and commands, the foreign-function boundary, and a
+hand-over protocol between a TEA (Elm Architecture) runtime and the program's \code{update}
+function.
+\item An error-message design (\S\ref{sec:errors}) that names three program points, writes the
+fix, and tells \emph{real sharing} from \emph{a limit of the checker} by a derivation tag carried
+on every fact, together with a stability rule for the accepted set across compiler releases.
+\item An honest account of the trade-off (\S\ref{sec:discussion})---the rule rejects correct
+programs to guarantee performance---and an evaluation plan (\S\ref{sec:evaluation}) that measures
+the rejection rate on real code in a report-only mode before the rule is adopted. \emph{No results
+of that evaluation exist yet}; we report none.
+\end{itemize}
+
+Section~\ref{sec:background} introduces beni and the representation question.
+Sections~\ref{sec:model}--\ref{sec:errors} present the design. Section~\ref{sec:compiler}
+describes its integration with the rest of the compiler, \S\ref{sec:discussion} its costs and
+limits, \S\ref{sec:evaluation} the evaluation plan, and \S\ref{sec:related} related work.
+Appendix~\ref{app:examples} works four programs through the rules.

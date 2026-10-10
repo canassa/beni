@@ -1,0 +1,176 @@
+\section{Discussion: What the Rule Costs}
+\label{sec:discussion}
+
+beni's design follows a principle that a restriction belongs in the language only if it buys a
+guarantee. This rule buys a \emph{performance} guarantee---every list write is $O(1)$, or the $O(n)$ a
+hand-written program also pays; there is no hidden copy, no trie, no reference count, and a smaller
+runtime---at the price of rejecting programs that are \emph{correct} under value semantics. This section
+states that price without softening it.
+
+\subsection{Programs that are rejected}
+
+Every one of the following is a correct beni program today.
+\begin{enumerate}
+\item Keeping an old version: an undo history, a snapshot for a diff, a ``previous'' field in the model,
+a test that holds its input and compares it with the output (\S\ref{sec:hard-undo}).
+\item A command, fiber, subscription or stored closure that captured a list which a later message edits
+(\S\ref{sec:hard-fibers})---including the beginner's \code{Cmd.perform (λsend → send (Saved model.todos))}.
+\item A closure that edits a captured list and is passed to \code{map}, \code{filter}, \code{sortBy} or any
+other $\mathit{many}$ position (\S\ref{sec:hard-closures}).
+\item A list read out of a container that is still live: a dictionary lookup followed by a push, or a
+push on an element of a list of lists while the outer list lives (\S\ref{sec:hard-containers}).
+\item A list from JavaScript, a \code{Ref}, a \code{Queue}, or a \code{foreign} without a summary
+(\S\ref{sec:hard-foreign}, \S\ref{sec:hard-ref}): a \emph{limit}, not sharing, and the message says so.
+\item Anything the checker's joins or path cut cannot follow (\S\ref{sec:hard-branches}): limits.
+\end{enumerate}
+The fix is one call, \code{List.copy}, in every case; as Henriksen puts it for Futhark, ``an
+alias-related type error can always be fixed by copying'' \citep{henriksen2022uniqueness}. What the fix
+costs is a copy where the program meant to share. For the first case that is the program's intended
+semantics made explicit; for the last two it is a copy the programmer pays for the checker's blindness.
+
+\paragraph{The representation.} The trie's reason to exist is gone, and so is its persistence: a
+program that wants versions pays $O(n)$ per version, explicitly. Prepending onto a long unique list is
+\code{unshift}, $O(n)$, so an Elm-style prepend accumulator is quadratic again, unless the backend's
+rewrite of building loops catches it; that rewrite catches a tail-recursive accumulator but not a
+\code{foldr} lambda.
+
+\paragraph{The API.} A public function's summary is part of its contract. Editing a body can break a
+caller in another module with an ownership error that the caller's author did not write. The interface
+firewall makes this visible, not painless.
+
+\paragraph{Learners.} The error will fire first in \code{update}. Crichton and Krishnamurthi found the
+chapter on ownership to be ``a significant drop-off point'' for readers of the Rust book
+\citep[\S3.1]{crichton2024profiling}, and learners who can say why a program was rejected fix it less
+than half the time \citep{crichton2023grounded}. The message design of \S\ref{sec:errors} is the
+mitigation; it is not a guarantee.
+
+\paragraph{What two real applications say.} We examined two applications written in beni: a TodoMVC
+implementation (in four builds) and an implementation of Conduit, the RealWorld example application. By
+our count neither calls \code{set}, \code{push}, \code{update}, \code{swap}, \code{pop}, \code{insertAt} or
+\code{removeAt}; they edit lists with \code{List.map}, \code{List.filter} and \code{++}. Under the
+nine-writer demand set, their only demands are their list concatenations. TodoMVC has one per build,
+\code{model.todos ++ [ new ]}, where the record built just before it holds the old array at \code{.todos}
+until a helper replaces that field: accepted. Conduit has sixteen. Seven have a model field on the left
+(\code{\{ model | errors = model.errors ++ Api.errorMessages error \}}) and are accepted by the same
+argument; the other nine have a list literal, or a list built earlier in the same function, on the left.
+The core library has seven calls of \code{List.push}, every one an accumulator in a fold or a loop.
+
+So the rule as stated changes nothing in these two applications. The in-place writes they would
+benefit from are their \code{List.map model.todos (λt → …)} and \code{List.filter} calls, which are not
+demands unless the demand set is widened (\S\ref{sec:disc-options}). If it is, TodoMVC's toggle becomes
+\code{a[i] = f(a[i])} over a unique \code{todos}, and its delete compacts in place. But the same widened
+rule also rejects \code{List.map} over a list the program keeps, and TodoMVC's view does keep one: its
+filtered list is a derived value recomputed while the page holds the model (\S\ref{sec:hard-tea}).
+
+\paragraph{Escape hatches.} \code{List.copy}, always. A persistent-vector library written in beni for
+programs that want versions. And a \emph{warning mode} that keeps the persistent representation and
+copies where the checker would reject, printing the same message as a warning. That is the form every
+language with a run-time fallback ships in some way---Lean offers \code{dbgTraceIfShared}, which prints
+a message ``if the argument's reference count is greater than one'' \citep{lean2025rc}---and it gives
+up the one thing the rule is for: an accepted program's cost would again depend on whether its author
+read a warning. We do not propose it as the end state; we propose measuring first
+(\S\ref{sec:evaluation}) and deciding between error and warning on the numbers.
+
+\subsection{Design options}
+\label{sec:disc-options}
+
+The language specification can change where the checker needs it. Each option below says what it buys
+and what it costs; none is required for soundness.
+
+\paragraph{Widen the demand set to same-shape rebuilds.} Make \code{map}, \code{indexedMap},
+\code{filter}, \code{filterMap}, \code{reverse}, \code{sort}, \code{sortBy}, \code{sortWith}, \code{take}
+and \code{slice} consuming writers: \code{map} becomes \code{a[i] = f(a[i])}, \code{filter} compacts in
+place, \code{sort} is \code{a.sort(cmp)} (stable in every current engine), \code{take n} is
+\code{a.length = n}. This is where real programs edit lists, and it would make nested edits through
+\code{map} acceptable when contents are exclusive. It also rejects every read-after-\code{map} in
+\code{update}, and it meets a wall: the same \code{List.filter model.todos …} appears in \code{view},
+where it is a derived value that must build fresh. The option is therefore either two functions (an
+in-place and a fresh \code{map}---the code duplication FP\textsuperscript{2} identifies as the cost of
+static uniqueness typing, ``where a single function can have multiple different implementations''
+\citep[\S1.4.1]{lorenzen2023fp2}) or one spelling whose meaning is decided by position: a demand in an
+\code{update} arm, a fresh build in \code{view} or a derived value. We would adopt it only with the
+evaluation's numbers in hand, since this is where most false errors would come from, and only in the
+by-position form.
+
+\paragraph{Drop the identity promises that alias.} beni's library currently promises that
+\code{filter}, \code{map}, \code{slice}, \code{take}, \code{xs ++ []}, \code{[] ++ ys} and a \code{concat}
+with one non-empty list return an input itself in some cases. Under the rule a result that may be the
+input names it in $\mathit{res}$, so \code{xs ▷ List.filter p ▷ List.push y} demands \code{xs} unique
+although \code{filter} usually returns a fresh array; and \code{[] ++ ys} returning \code{ys} would hand
+out \code{ys}'s cell from a consumed \code{append}. Dropping these promises makes those results always
+fresh (or in place, under the previous option). The renderer loses one pointer test for a
+\code{filter} that kept everything. The promises for out-of-range \code{set}, \code{swap} and
+\code{removeAt} stay: they are no-ops on the unique array. (The library's specification is itself
+inconsistent about \code{filter}'s identity today, and must be settled before its $\mathit{res}$ can be
+declared.)
+
+\paragraph{\code{List.copy}.} New, shallow, fresh: the explicit escape hatch and the mechanical fix. A
+copy of a list the checker can see is unique could be a warning, never an error.
+
+\paragraph{\code{++} on lists consumes its left operand.} \code{xs ++ ys} pushes each element of
+\code{ys} onto \code{xs}, consistently with \code{[ …xs, …ys ]}; \code{xs ++ ys} with \code{xs} read later
+becomes an error. A smaller version of the first option.
+
+\paragraph{Ownership words on \code{foreign} declarations, optionally on public annotations.} A
+\code{foreign} parameter may say consumed, borrowed or shared; a result fresh or ``is parameter $i$''.
+This is required for soundness at the boundary (A2, A6). Core and the platforms may assert a summary
+their bodies cannot show; every other package may only \emph{narrow} an inferred one. A public beni
+declaration may optionally state its summary, which must then be at most what the body takes: a stated
+borrowed where the body consumes is an error at the declaration, while a stated consumed where the body
+borrows is accepted and freezes the interface at consumed. This answers interface churn for library
+authors who want stable signatures---at Jane Street, OxCaml interface files carried 27\,382 locality
+annotations, because ``the implementations can generally infer locality, whereas interfaces must write
+it down explicitly''
+\citep[\S7]{lorenzen2024oxidizing}---without asking anything of application code. The vocabulary must
+also reach a function type inside a platform's record, where the hand-over obligation is written.
+
+\paragraph{Closures that consume a capture are \code{once}.} Already a consequence of the rules, listed
+because it is visible in the language: \code{List.map xs (λx → List.push acc x)} is an error whose fix is
+a fold. It stays an error, because two calls would write one array.
+
+\paragraph{A persistent vector as a library.} The current trie, written in beni with no in-place
+writes, as a library module for programs that keep versions---the status of a dictionary, not of
+\code{List}.
+
+\paragraph{Headroom for prepend.} \code{[ x, …xs ]} on a unique plain array is \code{unshift}. A view
+with headroom ($o > 0$) could prepend in $O(1)$ by writing $b[o - 1]$, at the cost of a growth policy in
+the list runtime. To be decided on the evaluation's count of prepends outside building loops.
+
+\paragraph{Sending consumes its message.} A fiber that sends a list and reads it afterwards is an error
+at the sender, so payloads are unique at the arm; the alternative is every payload shared at every arm.
+
+\paragraph{Writing the dependence down.} The rule depends on the language's evaluation order being the
+order the emitted code runs in. It already is, and A5 keeps it so; the language definition should say
+that in-place writes are calls for the purpose of ordering.
+
+\subsection{Limitations and open questions}
+\label{sec:disc-open}
+
+\begin{enumerate}
+\item \emph{The rejection rate on real code}, exact and approximate, for both demand sets. Nothing in the
+literature we know of stands in for it; \S\ref{sec:evaluation} proposes how to measure it.
+\item \emph{Mutable cells} (\S\ref{sec:hard-ref}): a sound discipline for in-place edits of a cell's
+contents needs a whole-program argument about readers; it is left as a limit with a copy as the fix.
+\item \emph{Path-sensitive cell sets} (\S\ref{sec:hard-branches}): worth their cost only if the join tag is
+frequent.
+\item \emph{Path-insensitive use}: \code{f xs flag = if flag then List.length xs else List.length
+(List.push xs 1)} is summarised as consuming \code{xs}, so \code{n = f xs True; List.length xs} is a false
+error. A summary conditional on a \emph{value}, rather than on a class, is outside the summary grammar.
+\item \emph{Interface churn} under inferred summaries, and the warm rebuild budget, since a body edit
+that changes a summary is a signature edit.
+\item \emph{Exclusive contents in practice}: how often the containers that real programs edit through
+their elements are built exclusively, and which construction most often clears the flag. If decoded
+data is not declared element-fresh, every nested edit of loaded data is a limit.
+\item \emph{The two-slots-one-record hazard} is the one place the design relies on a flag that the
+program's construction must establish rather than on liveness alone. We would direct a reviewer to try
+to break Lemma~\ref{lem:excl} with containers built through constrained generic code and through
+\code{foreign} siblings.
+\item \emph{The entry fixpoint's cost}: one whole-program pass over \code{init} and the arms per build,
+the only non-modular computation in the design.
+\item \emph{A \textit{once} closure called once in fact} but passed to a $\mathit{many}$ position stays
+an error.
+\item \emph{The development crash screen} must print no program value (A9).
+\item \emph{Primary sources we could not check}: the best-typing result that Aspinall et al.\ attribute
+to Kone\v{c}n\'y, and a formal statement of the ``two semantics coincide'' theorem for Cogent, should be
+checked against the originals before the design is specified.
+\end{enumerate}
