@@ -1,7 +1,7 @@
 \chapter{The Rules' History and the Programs That Shaped Them}
 \label{app:history}
 
-The rules of Chapters~\ref{sec:model}--\ref{sec:hard} reached their present form in five steps, each
+The rules of Chapters~\ref{sec:model}--\ref{sec:hard} reached their present form in six steps, each
 prompted by short programs that the previous form accepted although their in-place run differed from
 their value-semantics run, or that it rejected although they were idiomatic. We record the steps here,
 once, so that the body of the thesis can state the design it defends. The programs are those of
@@ -48,7 +48,7 @@ Chapter~\ref{sec:idioms}, and the frequency of the error on them, became the mea
 to; T33, a persistent stack whose versions are kept, records the one part of the linear-prepend decision
 that construction-as-consumption cannot keep without an explicit copy.
 
-\paragraph{Present form.} A third adversarial reading of the fourth form found no accepted program that
+\paragraph{Fifth form.} A third adversarial reading of the fourth form found no accepted program that
 observes a write through the checker's own rules, but four holes at the boundary with the platforms and
 three idioms the thesis said must pass that its rules rejected; programs T35--T45 record them. The
 renderer obligation \Obl{P7}, as the fourth form stated it, covered only the template runtime's
@@ -70,3 +70,27 @@ folds' guard repair that, and the same argument gave \code{map} a single-pass ro
 right-nested lowering, now flattened (T43); that an undo of a list needs a second copy (T41); that the order
 on provenance sets had been mis-stated; and that the evaluation's main metric counted only forms already
 known to pass, and called rejections ``real'' that read no old version.
+The same form stopped escaping every capture at a markup site, which had been right only while the
+template runtime was also to write lists in place.
+
+\paragraph{Present form.} A fourth adversarial reading of the fifth form found five accepted programs that
+observe a write through the checker's own rules, in parts the fifth form called settled, and programs
+T46--T58 record them and the false errors found with them. The folds' asserted rows supplied the
+accumulator owned whatever the callback returned (T46); the atom ``returns owned'' now guards it, and an
+audit of every asserted row with a function-typed parameter found the same error in the rows of
+\code{initialize}, \code{Dict.update}, the schema parsers and \code{Cmd.task}, and a missing edge for a
+callback that needs its owned argument exclusive (T56, T57). An opaque type was one path to its importers,
+so the \Disjoint\ a function left to its callers between two lists inside it was never checked (T48); opaque
+types now publish slots. Folding a recursive type put two levels at one path, and nothing required them to
+hold different cells (T49); a demand at a representative now requires it. The send rule missed a payload
+an arm edits without storing it, and its per-site tracking had no place in summaries (T50); a send is now a
+supply to \code{update}, with one bit per message path. The release representation of one-field types
+made an element written in place keep its identity behind an erased constructor, which the renderer's
+element guards did not account for (T47); $\mathit{IP}$ is now closed under it. The same reading found false
+errors on \code{Dict.empty} (T51), on a filtered copy kept in the model (T52) and on a top-level
+\code{initialModel} (T53); a structure hole that keeps its identity under an append (T54); a handler that
+reads an old list after the arm (T58); a generic body that writes through a \code{where} method (T55); and
+that the fact the renderer needs of the write-set analysis, which the fifth form assumed separately, follows
+from that analysis's own soundness statement (Lemma~\ref{lem:writes}). That every hole of the last two
+readings was an interaction of features each handled correctly alone is why the next step is a prototype
+and a differential test over generated programs rather than a fifth reading (\S\ref{sec:eval-next}).

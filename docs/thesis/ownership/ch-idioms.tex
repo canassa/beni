@@ -55,9 +55,11 @@ values fibers = List.foldr fibers (Just []) λf acc →
         Just rest → ⋯ Just [ v, …rest ] ⋯
 \end{Verbatim}
 \emph{What accepts it.} The callback writes its own accumulator parameter, so the edge of
-\S\ref{sec:inf-classes} requires the fold to supply that parameter owned, and the fold's row says it
-does: the accumulator is the fold's own parameter on the first call and the callback's previous result
-afterwards, neither held by anything else. In the third example the accumulator is wrapped in
+\S\ref{sec:inf-classes} requires the fold to supply that parameter owned. The accumulator is the fold's
+own parameter on the first call, checked unique at the fold's call, and the callback's previous result
+afterwards, which the fold supplies owned when the callback \emph{returns owned}: here it returns its
+accumulator, extended or not, or a list it built. A callback that returned a top-level list, a capture or
+an element it does not consume on some branch would not, and is rejected (T46). In the third example the accumulator is wrapped in
 \code{Just}; field-sensitive paths through constructors give the callback $\mathit{use}(\pi_2.\mathit{Just}\#0) \ni \mathsf{W}$,
 and the supply is owned at every path. \emph{What makes it provable.} The folds' rows (asserted or
 inferred) supply the accumulator owned; saturated calls put every callback in front of the checker as a
@@ -90,7 +92,9 @@ when its callback's result can be its element at run time; in the third example 
 and the results markup, so the result is $\{\fresh\}$ and the construction in \code{view} consumes only
 the new list. \emph{What makes it provable.} The pipe is rewritten to a call before anything runs, so
 there is no plumbing function in which to lose precision (\S\ref{sec:hard-pipelines}); the identity
-promises are named only where they can fire, and cost precision only where the source is used again.
+promises are named only where they can fire, and cost precision only where the source is used again or
+kept: a filtered list stored at another model path beside its source is the one common form that pays
+(T52, Table~\ref{tab:rejected}).
 
 \paragraph{I5. An \code{update} that extends or edits a model list.} From the compiler's test programs
 and the two applications:
@@ -111,11 +115,13 @@ per-path liveness finds no later use of the old \code{model.seen}. In the third 
 argument, a record still holding the old \code{todos}, is pending while the second argument consumes it;
 it is not a use, because \code{changed} never reads its first argument's \code{.todos}
 ($\mathit{use} = \unused$), so the pending holder is dead. In the fourth, from the example application,
-the comments came from a command's result, sent by \code{Cmd.task}'s body as a temporary that is dead at
-the send, so the send hands the arm a list nothing else holds (\Obl{P6}). In the undo arm,
+the comments came from a command's result, a decoder's fresh list sent by \code{Cmd.task}'s body as a
+temporary that is dead at the send, so the send supplies it owned and hands the arm a list nothing else
+holds (\Obl{P6}). In the undo arm,
 \code{history} becomes a view of the old history and \code{future} is consumed; the old model is dead.
 \emph{What makes it provable.} Five choices, four of them outside the checker: \code{init} is a function
-called per mount, and a top-level list is shared, so the model starts with cells nothing else holds; the
+called per mount, and a top-level list is shared, so a model that \code{init} builds starts with cells
+nothing else holds (one it takes from a top-level \code{initialModel} does not, T53); the
 runtime hands the model over; the platform that writes lists in place re-renders by write sets, never by
 the identity of a list the program may have edited (\Obl{P7}); a closure holds only the paths of the model
 it reads, so a command that reads \code{model.session} leaves the model's lists editable; and the program
@@ -126,6 +132,8 @@ persists and reports through commands that capture values rather than lists (bel
 Dict.update d (key x) (λm → Just [ x, …Maybe.withDefault m [] ])     -- grouping, in a fold
 List.update rows i (λr → { r | tags = [ …r.tags, t ] })
 List.map model.cards λc → if c.id == id then { c | tags = [ …c.tags, t ] } else c
+AddTag k t → { model | tags = Dict.update model.tags k (λm → Just [ t, …Maybe.withDefault m [] ]) }
+addItem id s (Node n) = if n.id == id then Node { n | items = [ …n.items, s ] } else ⋯   -- a tree
 \end{Verbatim}
 \emph{What accepts it.} The container's contents are exclusive (\S\ref{sec:model-excl}), because they were
 built by stores of fresh, distinct values, and the container function supplies the element owned:
@@ -134,8 +142,11 @@ dictionary's \code{update} by its asserted row, which requires its keys and valu
 (\S\ref{sec:hard-containers}). Each callback \emph{keeps shape}---it returns the element, or a record
 update of it that edits one of the element's own lists in place---so the result is exclusive again: an
 \code{update} arm can make the edit at every dispatch, and a fold can make it at every iteration, since
-\code{foldl} carries its accumulator's exclusivity from one call to the next. \emph{What makes it
-provable.} The library offers the in-place \code{update} at a key or an index, which is also Elm's idiom
+\code{foldl} carries its accumulator's exclusivity from one call to the next. A model's dictionary
+started from \code{Dict.empty} owns its lists, because \code{Dict.empty} holds no cell (T51). A tree
+edited by a recursive function by id is exclusive across its levels when it was built from fresh lists,
+which is what an edit at a fold's representative requires (\S\ref{sec:hard-containers}, T49).
+\emph{What makes it provable.} The library offers the in-place \code{update} at a key or an index, which is also Elm's idiom
 for grouping; Elm's idiom for editing an element by its id, a \code{map} with an \code{if} on the id, is
 accepted by the single-pass row; a lookup followed by an insert is real sharing
 (\S\ref{sec:idioms-rejected}).
@@ -168,12 +179,14 @@ per-path liveness over the evaluation-order normal form & I1, I5, I7 & \S\ref{se
 the rebinding of a self tail call & I1 & \S\ref{sec:model-liveness} \\
 a chain of \code{++} as one construction & I1 & \S\ref{sec:model-demands} \\
 the group fixpoint from optimistic summaries & I1, I3 & \S\ref{sec:inf-recursion} \\
-callback classes: owned supply, provenance & I2, I6, I7 & \S\ref{sec:inf-classes} \\
-paths through constructors, tuples and records & I2, I5, I7 & \S\ref{sec:model-cells} \\
+callback classes: owned supply, provenance, ``returns owned'' & I2, I6, I7 & \S\ref{sec:inf-classes}, \S\ref{sec:model-summary} \\
+paths through constructors, tuples and records; opaque slots & I2, I5, I7 & \S\ref{sec:model-cells} \\
+folding with $\mathit{xreq}$ at a representative & I6 (trees, dictionaries) & \S\ref{sec:model-cells} \\
+top-level values that hold no cell are not shared & I5, I6 & \S\ref{sec:model-check} \\
 $\unused$ parameter paths; pending operands & I5 & \S\ref{sec:model-summary}, \S\ref{sec:model-unique} \\
 results naming an identity promise only where it can fire & I4 & \S\ref{sec:model-demands} \\
 captures per path & I5 & \S\ref{sec:model-functions} \\
-the entry protocol and its fixpoint over $\fresh$, $\esc$, $\shared$ and $\excl$; sends followed to the paths they reach & I5, I6 & \S\ref{sec:hard-tea} \\
+the entry protocol and its fixpoint over $\fresh$, $\esc$, $\shared$ and $\excl$; sends as owned or borrowed supplies to \code{update} & I5, I6 & \S\ref{sec:hard-tea} \\
 exclusive contents; callbacks that keep shape; single-pass rows; the folds' exclusive accumulator & I6 & \S\ref{sec:model-excl}, \S\ref{sec:inf-classes} \\
 \bottomrule
 \end{tabularx}
@@ -232,18 +245,29 @@ a version kept and then extended & a persistent stack whose old versions are rea
 the base read again in the same expression & \code{\{ model | items = [ …model.items, x ], count = List.length model.items \}}; \code{[ …xs, …xs ]}; \code{samples ++ samples} & real & compute the read first; \code{List.copy} \\
 a list captured by a command, then extended & TodoMVC's \code{save todos = Cmd.do λ⊤ → ⋯ (encode todos)} & real, possibly & compute before the command; command constructors that take values \\
 a top-level list as a base & \code{[ x, …defaults ]}; \code{init ⊤ = \{ todos = seed \}}; \code{k ++ both ++ [ ⋯ ]} with \code{k} top-level & position & build in a function; \code{List.copy}; the reading form \code{[ x ] ++ defaults} \\
+a top-level model & \code{initialModel = \{ todos = [] \}}; \code{init ⊤ = ( initialModel, Cmd.none )}; then any in-place edit & position & \code{initialModel ⊤ = ⋯}; counted on its own line in the evaluation \\
+a filtered or mapped copy kept beside its source & \code{\{ model | visible = List.filter model.all p \}}, then \code{[ …model.all, x ]} & limit (identity promise across the entry); real when the filter kept everything & \code{List.copy} where the copy is stored; a relational entry; dropping the promises (O2) \\
+a fold callback that returns a list it does not own & \code{λx acc → if x < 0 then defaults else [ …acc, x ]}; a branch returning an element or a capture & real & \code{List.copy} on that branch \\
 a model list as a base in \code{view}, a derived value or \code{subscriptions} & \code{[ …model.pinned, …model.recent ]} in \code{view} & position & \code{List.concat [ model.pinned, model.recent ]}, which builds \\
 a list prepended onto an accumulator, the list still read & \code{List.foldr xss [] (λxs acc → xs ++ acc)}, \code{xss} read later & real & \code{List.foldl xss [] (λxs acc → acc ++ xs)}; \code{List.concat} \\
 a splice or a rotation by \code{take} and \code{drop} & \code{List.take xs i ++ List.drop xs (i + 1)}; \code{List.take rows k ++ [ r, …List.drop rows k ]}; \code{List.drop xs k ++ List.take xs k}; \code{[ …xs, …List.reverse xs ]} & limit (identity promise) & \code{List.removeAt}, \code{List.insertAt}; for a rotation or a mirror, \code{List.copy} of the operand read \\
 a once closure passed to a $\mathit{many}$ position & \code{List.map xs (λx → [ …acc, x ])} & real & \code{[ …List.copy acc, x ]} in the callback; a fold if the intent is to accumulate \\
 a lookup, an edit and a re-insert & \code{Dict.get}, then \code{[ …group, x ]}, then \code{Dict.insert} & real & \code{Dict.update} \\
-a nested edit in a container not known exclusive & elements from \code{List.repeat}, an undeclared decoder, JavaScript & limit or real & \code{List.copy} of the inner list; decoders declare exclusive output \\
+a nested edit in a container not known exclusive & elements from \code{List.repeat}, an undeclared decoder, JavaScript; a schema whose mapping reuses a parsed list; a tree with one list at two levels & limit or real & \code{List.copy} of the inner list; decoders declare exclusive output \\
+an edit two levels down a tree, written with patterns in one body, where the split does not apply & a sub-tree's list edited while its scrutinee stays live & limit (levels merged by the fold) & write the edit as a recursive function over the node \\
 an undo history of a list & \code{Add} keeps \code{List.copy model.todos}; \code{Undo} restores it & limit (merged at entry) & a second \code{List.copy}, in \code{Undo}; a relational entry \\
 a list from a \code{Ref} or from JavaScript & \code{Ref.update r (λxs → [ …xs, x ])} & limit & copy where it arrives \\
 a list a view event carries & \code{onClick=\{Keep model.rows\}} anywhere in \code{view} & limit & send an identifier \\
 \bottomrule
 \end{longtable}
 }
+
+The top-level model row is probably the commonest of all in ported Elm code, where
+\code{init \_ = ( initialModel, Cmd.none )} is a familiar shape: making \code{init} a function, which the
+port does, does not help when it returns a top-level record. We count it apart from the other position
+rejections, so that the decision of \S\ref{sec:eval-decisions} is neither met nor failed by a porting
+rule. The filtered-copy row is common in search and list interfaces, and is the second customer, after
+the undo history, for a relational entry (\S\ref{sec:disc-open}).
 
 Four rows deserve comment. The first reverses part of a decision the language specification records:
 that no way of building a list by prepending is quadratic, a persistent stack included
@@ -317,27 +341,36 @@ one-line change to \code{save}, all five are accepted; compiled for the direct p
 one slot instead of copying the list, which at the sizes TodoMVC handles is invisible, and the page ships
 the smaller list runtime.
 
-\paragraph{Conduit.} Its \code{init} is already a function of the URL and the navigation key. It has
-thirteen \code{++} on lists and one construction with a spread. Six of the \code{++} have a left operand
-built in the same function---a literal such as \code{[ "api" ] ++ paths}, or a local list in a view
-helper---and consume only that. Seven are \code{model.errors ++ Api.errorMessages error} in the arms of three
-page modules: in-place appends onto the page's error list, which each page's \code{init} creates as
-\code{[]} and renders with a positional \code{<For>}. The spread is the article page's
+\paragraph{Conduit.} Its \code{init} is already a function of the URL and the navigation key. By our count
+it has fourteen list constructions written with \code{++}, sixteen \code{++} operators in all, and one
+construction with a spread. Seven of the constructions have a left operand built in the same
+function---a literal such as \code{[ "api" ] ++ paths} (four), or a local list in a view helper or a
+validation function, two of them chains of two operators (three)---and consume only that. Seven are
+\code{model.errors ++ Api.errorMessages error}: five in the article page, one in the profile page, and one
+in the article feed, \code{Feed}, which is not a page but an opaque component nested in the home page's
+model. Each is an in-place append onto an error list that the page's or the feed's \code{init} creates as
+\code{[]} and that a helper renders with a positional \code{<For>}. The spread is the article page's
 \code{[ comment, …comments ]}, a prepend onto the comment list held in the model at
-\code{Loaded ( \_, comments )}. Three facts decide them.
+\code{Loaded ( \_, comments )}. Four facts decide them.
 \begin{itemize}
 \item \emph{Commands read single fields.} The article page's
 \code{CompletedDeleteArticle (Ok ⊤) → ( model, Cmd.do λ⊤ → Route.replaceUrl (Session.navKey model.session) Route.Home )},
 and the like in the editor and settings pages, use \code{model.session} and nothing else of the model; the
 top-level module's \code{Cmd.do λ⊤ → Route.pushUrl (Session.navKey (toSession model)) ⋯} passes
 \code{model} to a function whose summary reads only each page's session. With captures per path these
-commands escape the session and no list (T45). (An earlier form of the rules captured the whole
-\code{model}, which escaped every list of the page and rejected all seven appends.)
+commands escape the session and no list (T45).
 \item \emph{The comments arrive by a send.} They are loaded by \code{Cmd.task (λ⊤ → Comment.list ⋯)
 CompletedLoadComments}, whose body is \code{send (tag (work ⊤))}: the payload is the decoder's fresh
-result, a temporary dead at the send. The comment list reaches a path the posting arm writes in place, so
-the send is a demand on it (\Obl{P6}), and it passes. The decoder must declare its output fresh, which
-the schema library's parsers do.
+result, a temporary dead at the send, so the send supplies it owned. The comment list reaches a path the
+posting arm writes in place, which an owned payload may (\Obl{P6}). The decoder must return owned; Conduit
+decodes with \code{schema} declarations, whose compiled parsers build each record from its own fields and
+each list fresh.
+\item \emph{The feed is opaque.} The home page holds \code{Feed.Model}, an opaque record with two list
+fields, and the feed's own \code{update} appends to its \code{errors}. Importers see the two fields as two
+slots (\S\ref{sec:model-cells}), so the append's \Disjoint\ against \code{articles} is checked in the home
+page as for two fields of its own. The home page receives each feed as a command's payload, built inside
+the command's body by the feed's \code{init} from \code{[]} and a decoded list and sent at once, so it is
+supplied owned and its slots hold different cells at every entry (T48).
 \item \emph{Rendering.} The errors are shown by a helper with a positional \code{<For>} and an
 \code{if List.isEmpty errors}; the comments by a keyed \code{<For>} of records. On the direct platform the
 appends and the prepend are append and prepend scripts guarded by length, and the helper's branch is
@@ -346,9 +379,9 @@ evaluated again because its read conflicts (\Obl{P7}(d), (h)).
 By our reading, Conduit is accepted as written: all seven appends and the prepend, with nothing changed.
 
 \paragraph{What the applications say.} Under construction-as-consumption the applications do edit their
-lists in place, in the idiom I5. The outcome for them turned, in earlier forms of the rules, on two
-things outside the checker---a one-line persistence change in one of them, and the template runtime's
-identity skips in both---and on one imprecision inside it, whole-variable capture, which rejected Conduit
-outright. Now it turns on the persistence change alone, and on the direct platform keeping \Obl{P7}, which
-neither application exercises beyond what that platform already does. The applications are small and their
-lists short; they test whether the rule is livable, not whether it is fast.
+lists in place, in the idiom I5. The outcome for them turns on a one-line persistence change in one of
+them, on two precisions inside the checker---captures per path, and opaque types seen as slots---and on
+the direct platform keeping \Obl{P1}--\Obl{P7}. Neither application needs \Obl{P7}(f) or (g), since their
+list elements are records; both need what every page needs, \Obl{P2}'s scalar locals and (a)'s rule for
+structure holes where they apply. The applications are small and their lists short; they test whether
+the rule is livable, not whether it is fast.

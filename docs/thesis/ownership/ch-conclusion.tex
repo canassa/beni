@@ -37,21 +37,27 @@ the write is free and a dead alias is harmless. Every production system that acc
 has some form of it: Sisal's ordering edges, Clean's observing references, Futhark's syntactic order,
 Rust's two-phase borrows, Mazur's forward use. It is incomparable with Clean's occurrence-based
 uniqueness, not stronger.
-\item \emph{The first-order and closure core holds up.} Three adversarial readings found no accepted
-program that observes a write through the checker's own rules; every hole they found was at the boundary
-with a platform, in what a renderer or an entry protocol was said to guarantee.
-\item \emph{That boundary is where the argument is weakest.} The renderer obligation \Obl{P7} is now
-stated over every identity test the direct platform makes, and rests on a restated fact of the write-set
-analysis (A12); two of its parts, the element guards (f) and (g), and \Obl{P3}'s rule for markup values,
-are additions to that platform's design. Lemmas~\ref{lem:once} and~\ref{lem:entry} are the parts of the
-argument we would scrutinise first; the forty-five programs of Table~\ref{tab:counterexamples} are decided as
-they should be.
+\item \emph{The core is not yet shown to hold.} Each adversarial reading of an earlier form found accepted
+programs that observe a write, and the last found them in parts we had called settled: the folds' asserted
+rows, the path abstraction's treatment of opaque and recursive types, and the send rule. Each was an
+interaction of two features, and each had a local repair, which this form makes; none required changing
+the design. We do not claim the repaired rules are sound. We claim that their holes, if any remain, are of
+that kind, and that the differential test of \S\ref{sec:eval-next} is the way to find them.
+\item \emph{The boundary with the platform is precisely stated.} The renderer obligation \Obl{P7} is
+stated over every identity test the direct platform makes, over entry cells and modulo the release
+representation, and the fact it needs of the write-set analysis is now a lemma
+(Lemma~\ref{lem:writes}) derived from that analysis's own soundness statement rather than an assumption.
+Several of its parts---\Obl{P2}'s scalar locals, (a) for structure holes, (f), (g), \Obl{P3}'s rule for
+markup values---are additions to that platform's design. Lemmas~\ref{lem:once} and~\ref{lem:entry} are the
+parts of the argument we would scrutinise first; the fifty-eight programs of
+Table~\ref{tab:counterexamples} are decided as they should be, by hand.
 \item \emph{The idioms are accepted by the rules as stated}, by derivations we have traced by hand, not
 by an implementation. The frequency of the error on real idiomatic code is unknown until the report mode
 runs.
 \item \emph{The trusted surface is large}: by our estimate several dozen to a hundred and fifty asserted
-rows, where an implementation is most likely to be wrong. The differential run with a stale-read
-sanitiser is the instrument for them.
+rows, where an implementation is most likely to be wrong. An audit of every row that takes a callback
+found five that claimed an owned or exclusive result the rules did not establish, and one missing edge.
+The differential run with a stale-read sanitiser is the instrument for the rest.
 \end{itemize}
 
 What we cannot know from the design alone is whether the rule is worth its cost. It rejects correct
@@ -65,21 +71,25 @@ command.
 \label{sec:conc-recommend}
 
 \begin{enumerate}
-\item \emph{Enumerate the trusted surface first}, one asserted row and one pinned test program at a time
-(\S\ref{sec:soundness-trusted}).
-\item \emph{Build the in-place backend and the stale-read sanitiser in a test mode}, and the report mode
-(Chapter~\ref{sec:evaluation}) as a checking-only pass with its dump, its idiom classifier and its test
-programs, on the design of Chapters~\ref{sec:model} and~\ref{sec:inference}, with the direct platform's
-entry protocol as an asserted row (\S\ref{sec:eval-report}). Nothing emitted outside the
-test mode changes.
-\item \emph{Specify the decided changes} (Changes~1--4) and \emph{the required ones} (Changes~5--8) in the
+\item \emph{Stop revising on paper, and build the prototype} (\S\ref{sec:eval-next}): the checker in
+report mode as a checking-only pass with its dump, its idiom classifier and its test programs, on the
+design of Chapters~\ref{sec:model}--\ref{sec:hard}, with the direct platform's entry protocol as an asserted
+row; the trusted surface enumerated one asserted row and one pinned test program at a time
+(\S\ref{sec:soundness-trusted}); the in-place backend, the stale-read sanitiser and the shadow mode in a test
+mode; and a generator of random programs that combine the features whose interactions broke earlier forms
+of the rules. Nothing emitted outside the test mode changes.
+\item \emph{Run the differential soundness test} over the test corpus, the applications and the generated
+programs until it finds no trap over a budget fixed in advance, repairing the rules and pinning a program
+for every trap it finds.
+\item \emph{Specify the decided changes} (Changes~1--4) and \emph{the required ones} (Changes~5--9) in the
 language's specification before building them, stating where they touch recorded decisions: the
 kept-version part of linear prepending, the identity of an append onto an empty list, the lowering of list
 literals and \code{++} chains, and the direct platform's element guards and its plan to keep elements that a
 row shows out of in-place updates.
-\item \emph{Specify \Obl{P1}--\Obl{P7} in the direct platform's design}, with the write-set analysis's
-contract restated over contents (A12), and \emph{measure \Obl{P7}} there, on a page whose list elements are
-lists edited in place, before that platform writes any list in place.
+\item \emph{Specify \Obl{P1}--\Obl{P7} in the direct platform's design}, including the closure of
+$\mathit{IP}$ under the release representation and the joint adoption of its in-place records, and
+\emph{measure \Obl{P7}} there, on a page whose list elements are lists edited in place, before that platform
+writes any list in place.
 \item \emph{Run the experiments} over the five corpora, classify every rejection by idiom and by hand, and
 run the study of \S\ref{sec:eval-people}.
 \item \emph{Decide on the criteria of \S\ref{sec:eval-decisions}}: soundness first, then adoption on the
@@ -95,17 +105,54 @@ it test-first, with the rule set versioned in the interface format.
 \label{sec:disc-open}
 
 \begin{enumerate}
-\item \emph{The error rate on idiomatic code}, exact, approximate and positional, per idiom and per target. Nothing in
-the literature we know of stands in for it.
+\item \emph{Soundness under interaction.} Whether the rules, as repaired, admit an accepted program that
+observes a write. Every hole found so far combined two features; the generated programs of
+\S\ref{sec:eval-next} are the search for the next one.
+\item \emph{The error rate on idiomatic code}, exact, approximate and positional, per idiom and per target.
+Nothing in the literature we know of stands in for it.
+\item \emph{Top-level models.} How often ported Elm programs start from a top-level \code{initialModel},
+which the rules reject at the first in-place edit (T53); it may be the commonest rejection in an external
+corpus, and could decide the adoption criterion by itself.
+\item \emph{Kept copies.} How often a filtered or mapped copy is kept at another model path beside its
+source, which the identity promises make possibly one cell with it at every entry (T52); this weighs on
+keeping the promises (O2) and on a relational entry.
+\item \emph{A relational entry} (\S\ref{sec:hard-undo}): the entry's fixpoint records which cells each path
+may hold, not which paths hold one cell at once. Two forms need it: an undo history of a list, which needs
+a second copy without it, and a kept copy, which needs \code{List.copy} at every store. Whether the split
+of a dead container's head, and the fact that a filter dropped something, can be carried across the entry
+is open.
 \item \emph{The renderer obligation} (\Obl{P7}): what its unguarded element scripts cost on the direct
-platform for lists of lists, and whether the restatement of the write-set analysis over contents (A12) holds
-rule by rule, as we expect from its rules but have not argued.
+platform for lists of lists, now in development builds too where a one-field constructor wraps the list;
+what writing a structure hole on every run of its group costs; and whether the platform's lowering ever
+needs an old \emph{list} after the arm (\Obl{P2}).
+\item \emph{Records in place.} The direct platform plans to assign through records on paths it proves
+owned; this design is compatible with that only if both are adopted together, the records joining
+$\mathit{IP}$. Whether the ownership checker should decide record ownership too, with summaries instead of
+the platform's whole-program condition, is open (\S\ref{sec:compiler-records}).
+\item \emph{Representation choices.} The release representation of one-field types is accounted for (A10);
+any later choice that makes two paths one object must be added before it ships, and nothing yet enforces
+that.
+\item \emph{Opaque slots.} Publishing an opaque type's slot count exposes a little of its shape and makes
+its importers' interfaces change when its lists change (Change~9); how much churn that causes is to be
+measured.
+\item \emph{Recursive types.} A demand at a fold's representative requires its unfoldings exclusive, and
+liveness reads prefix order on folded paths, which that requirement makes sound; the split of a sub-tree
+taken out by a pattern is stated but untested, and how often trees are edited through patterns in one body,
+rather than by recursion, decides whether it matters.
+\item \emph{Sends.} Whether one bit per message path is precise enough: one send that keeps using its
+payload makes every payload sent at that path borrowed, and so blocks in-place edits of whatever that path
+reaches, for every sender of the message. A bit per send site would be finer and would grow interfaces with
+the program.
+\item \emph{Schemas.} A parser's output is owned only if the schema's mapping, injection and conversion
+functions return owned; how often hand-written schemas reuse a parsed list, and whether a schema value's
+functions are always known where it is used, is to be checked.
 \item \emph{The trusted surface}: its exact size, and whether every row can be pinned by a test that the
-sanitiser would catch failing.
+sanitiser would catch failing. The audit of \S\ref{sec:soundness-trusted} covers one pattern, not all.
 \item \emph{The proof}: monotonicity is checked case by case but not written out; nothing is mechanised;
-the once-closure and entry lemmas are the newest parts and the least tested.
+the once-closure, entry and write-set lemmas are the newest parts and the least tested; and the write-set
+lemma rests on that analysis's own soundness argument, which is also a sketch.
 \item \emph{Escapes for the rest of the program} (\S\ref{sec:hard-fibers}): how often a command's capture
-blocks an edit, and whether value-taking command constructors (O6) remove most of it.
+blocks an edit, and whether value-taking command constructors (O5) remove most of it.
 \item \emph{Mutable cells} (\S\ref{sec:hard-ref}): a sound discipline for in-place edits of a cell's
 contents needs a whole-program argument about readers; it is left as a limit with a copy as the fix.
 \item \emph{Path-sensitive cell sets} (\S\ref{sec:hard-branches}): worth their cost only if the join tag is
@@ -121,15 +168,10 @@ is high. Henriksen's objection that such facts clutter interfaces applies to pub
 flattened at the boundary.
 \item \emph{Exclusive contents in practice}: how often the containers that real programs edit through
 their elements are built exclusively, and which construction most often clears the flag. If decoded
-data---every list a schema parses---is not declared exclusive, every nested edit of loaded data is a limit.
+data is not exclusive, every nested edit of loaded data is a limit.
 \item \emph{View-event payloads}: whether the coarse rule of \Obl{P6} fires often enough to justify
-summaries split by message constructor (O7).
-\item \emph{The identity promises} (O2): we recommend keeping them; the evaluation's count of rejections
-caused by a source read after its filtered result was edited would show whether that is right.
+summaries split by message constructor (O6).
 \item \emph{A once closure called once in fact} but passed to a $\mathit{many}$ position stays an error.
-\item \emph{A relational entry} (\S\ref{sec:hard-undo}): an undo history of a list needs a second copy because
-the entry's fixpoint records which cells each path may hold, not which paths hold one cell at once; whether
-the split of a dead container's head can be carried across the entry is open.
 \item \emph{Splices and rotations} (\S\ref{sec:idioms-rejected}): written with \code{take} and \code{drop},
 they are rejected because of identity promises that fire only at the edges; how often Elm code writes them
 decides whether a value-conditional summary, or dropping those promises (O2), is worth its cost.
@@ -138,13 +180,13 @@ template runtime or for Node meets for nothing, and whether that cost of one ver
 accepted in practice.
 \item \emph{The development crash screen} must print no program value (A9); this is to be confirmed, or
 made so.
-\item \emph{Record paths} (\S\ref{sec:compiler-records}): the same rules with a stronger A4.
 \item \emph{Primary sources we could not check}: Kone\v{c}n\'y's best-typing proof
 \citep{konecny2003typing}, which we know through Aspinall et al.'s report of it; the papers we cite from
 secondary sources only, marked as such in Chapter~\ref{sec:related}; and a formal statement of the ``two
 semantics coincide'' theorem for Cogent, against which Theorem~\ref{thm:main} could be compared.
 \end{enumerate}
 
-The next step is the differential run and the report mode of Chapter~\ref{sec:evaluation}: build them,
-run them over real programs, classify every rejection by idiom and by hand, and decide on criteria written
-down beforehand.
+The next step is the prototype and its differential soundness test (\S\ref{sec:eval-next}): build them, run
+them over the corpus, the applications and generated programs until they stop finding holes, then over
+real programs to classify every rejection by idiom and by hand, and decide on criteria written down
+beforehand.

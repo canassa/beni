@@ -5,11 +5,11 @@ beni's specification can change where the checker needs it. This chapter gives e
 what it buys, what it costs developers, which decision already recorded in the language's specification
 it touches, and how it weighs against the principle of Chapter~\ref{sec:discussion}, that a restriction
 must buy a guarantee. The changes fall into three groups. Changes 1--4 are \emph{decided}: they define the
-language the checker is designed for (\S\ref{sec:bg-language}). Changes 5--8 are \emph{required} by the
+language the checker is designed for (\S\ref{sec:bg-language}). Changes 5--9 are \emph{required} by the
 design as it stands: without them the soundness argument does not go through, or the idioms of
 Chapter~\ref{sec:idioms} are rejected on the platform that runs them; Change~8's scope, that only the direct
 platform writes lists in place, is decided (rule~7), and the renderer obligation it places on that platform is
-required. Proposals O1--O7 are \emph{open}:
+required. Proposals O1--O6 are \emph{open}:
 each would buy precision, speed or convenience, each has a cost, and none is assumed by the rest of the
 thesis.
 
@@ -101,7 +101,9 @@ and benchmarks that call one, nearly all with \code{init} as a value, and each a
 lambda---or, where \code{init} is a top-level constant, \code{⊤} on its definition. The constructor
 modelled on Elm's \code{Browser.sandbox}, whose \code{init} is a value, diverges from Elm's API; the rule
 forces that divergence. A program that seeds its model from a top-level list is rejected at its first
-in-place edit until it builds or copies the list in \code{init}.
+in-place edit until it builds or copies the list in \code{init}, and so is one whose \code{init} returns a
+top-level \code{initialModel}, the common Elm shape, until \code{initialModel} becomes a function. A
+top-level value that holds no cell, such as \code{Dict.empty}, costs nothing.
 
 \emph{Against the principle.} A platform API change that buys a guarantee: no mount or reset sees another's
 edits.
@@ -144,29 +146,28 @@ small size cost, unmeasured. It is a change to the language's evaluation-order l
 
 \emph{Against the principle.} No restriction on programs; a constraint on the optimiser.
 
-\subsection*{Change 7: a \code{send} consumes what reaches a path written in place}
-\phantomsection\addcontentsline{toc}{subsection}{Change 7: a send consumes what reaches a path written in place}
+\subsection*{Change 7: a \code{send} is a supply to \code{update}}
+\phantomsection\addcontentsline{toc}{subsection}{Change 7: a send is a supply to update}
 
-A program's \code{send} is a demand on its payload at every path the payload may carry into a model path
-that some arm of \code{update} writes in place---directly, or one dispatch or more later, after an arm has
-stored it---and otherwise only aliases it (\Obl{P6}). The entry fixpoint follows each send site's payload
-through \code{update}'s results to the paths it may reach.
+A program's \code{send} is a call of a function value, and it supplies its payload to \code{update} as any
+call supplies an argument to a callback: \emph{owned} when the payload is unique, unescaped and disjoint
+across its paths at the send and dead after it, \emph{borrowed} otherwise. A command or subscription value
+records, per tracked path of its message type, whether every payload it may send there is owned. At the
+program constructor's call, a message path whose payloads may be borrowed must reach no cell written in
+place---neither one \code{update} writes through its message parameter, nor one it stores at a model path
+that an arm writes in place, one dispatch or more later (\Obl{P6}).
 
 \emph{Reason.} Payloads that end up edited in place must be unique when they are edited; payloads that are
 only read need nothing. Consuming every payload would reject programs with no in-place edit at all, which
 buys no guarantee; sharing every payload would make a list decoded in a fiber, sent and stored in the model
-uneditable forever.
+uneditable forever. Stating the rule as a supply puts it in the vocabulary summaries already have, so it is
+modular: whether a payload is owned is decided where the send is written and published as a bit of the
+command value; whether it reaches a cell written in place is decided at the constructor, from interfaces.
 
-\emph{What changed.} The previous statement bound a send to \code{update}'s own use of its message
-parameter. In the flow it was meant to accept, the arm that receives the payload only stores it, and the
-in-place edit comes one dispatch later, through the model; by the stated binding that send only aliased, so
-a sender that read its list after the send---after a later message had extended it in place---was accepted
-(T38). Following the payload to the paths it reaches closes that, and keeps the flow accepted whenever the
-sender gives the list up: \code{Cmd.task}'s body sends a temporary, which is dead at the send.
-
-\emph{Costs.} A send's verdict depends on \code{update}'s summary, so it is checked at the entry fixpoint
-rather than where the send is written; the message must point from the send to the arm that edits the
-model path the payload reaches, and through the arm that stored it there.
+\emph{Costs.} One bit per tracked message path in each command and subscription value's summary; rows for
+\code{Cmd.map}, \code{Cmd.batch}, \code{Cmd.task} and the subscription constructors that carry it. A send's
+verdict is reported at the constructor's call, so the message must point from the send to the arm that
+edits what the payload reaches, and through the arm that stored it there.
 
 \emph{Against the principle.} It rejects exactly the sends whose payload may be edited in place while the
 sender still reads it.
@@ -178,8 +179,11 @@ Only the direct platform writes lists in place; every other target, the template
 today's persistent lists and its identity-based skips (rule~7 of \S\ref{sec:bg-language}). The direct
 platform decides what to re-render from compile-time write sets: in the handler of a message key, no
 identity test concludes ``unchanged'' about a value that may hold a list the key may have written in place,
-and its scripts for indexed edits, swaps, the \code{map} idiom and the reconciler's patch step drop their
-element-identity guard for lists whose elements are written in place (\Obl{P7}, \S\ref{sec:hard-tea}).
+its scripts for indexed edits, swaps, the \code{map} idiom and the reconciler's patch step drop their
+element-identity guard for lists whose elements may be written in place, a hole that shows such a
+structure is written whenever its group runs, and every identity fact is read modulo the release
+representation of one-field types. The handler reads what it needs of the old model into scalar locals
+before the arm (\Obl{P2}, \Obl{P7}, \S\ref{sec:hard-tea}).
 
 \emph{Reason.} An in-place edit keeps a list's identity, so every test that skips work because a value is
 the same object as last time would leave the page showing the old list. The template runtime makes such
@@ -187,12 +191,6 @@ tests in many places---grouped values, \code{let}s read by markup, helper calls,
 bodies, row inputs, \code{<For>}, views---and the language specifies them; the direct platform already
 decides almost everything from write sets. Keeping in-place lists to the platform built that way avoids
 changing the other.
-
-\emph{What it replaces.} The previous form of this change asked the template runtime to compile without
-its \code{<For>} skip every site that shows a list the program edits. That covered one of the template
-runtime's identity tests out of seven, and claimed that the direct platform kept the obligation by design,
-which its element-guarded scripts do not for elements edited in place (T37). This form is the author's
-decision of 10 October 2026.
 
 \emph{Costs.} On the direct platform: for a \code{<For>} over a list whose elements are lists the program
 edits in place, an unguarded indexed script and swap and an all-rows variant of the identity walk and of the
@@ -205,12 +203,34 @@ list writers in the core library.
 \emph{Recorded decisions it touches.} The direct platform's own design plans in-place updates only for model
 paths it proves unshared, and never for an element that a row shows, which is what lets it guard indexed
 scripts by element identity; this change writes such elements in place, and changes those guards. Its
-design also keeps the persistent list representation unchanged; this change gives it the in-place one. On the
+design also keeps the persistent list representation unchanged; this change gives it the in-place one. Its
+planned in-place update of records must be adopted together with this change or not at all, the records
+it assigns through joining $\mathit{IP}$ (\S\ref{sec:compiler-records}). On the
 template runtime the language's promises that a render may skip a group, a \code{let}, a call, a row or a
 \code{Show} body whose read paths are \code{===} to last time, and that two views at one base and offset are
 the same list, are kept as they are. None of the identity promises of the list library is touched.
 
 \emph{Against the principle.} A runtime contract on one platform, not a restriction on programs.
+
+\subsection*{Change 9: interfaces publish an opaque type's slots}
+\phantomsection\addcontentsline{toc}{subsection}{Change 9: interfaces publish an opaque type's slots}
+
+The declaring module of an opaque type numbers the tracked paths inside its definition, after folding,
+and publishes their number and which of them are containers; summaries over the type name its slots,
+$\langle T\rangle.1, \ldots$, never its fields (\S\ref{sec:model-cells}). A type with no slot crosses.
+
+\emph{Reason.} A summary over one merged opaque path cannot carry the \Disjoint\ obligation a function
+leaves to its callers between two lists inside the type, and an importer would accept an edit of one that
+shows through the other (T48). Requiring the whole opaque value exclusive instead is sound, but rejects
+Conduit's article feed, whose \code{articles} may not be exclusive while its \code{errors} are appended to
+(\S\ref{sec:hard-containers}).
+
+\emph{Costs.} Interface content, a few words per opaque type, and churn: a change to the type's
+definition that adds or removes a list changes its importers' interfaces, which an opaque type is meant to
+prevent for its users' code. The users' code does not change; their checked verdicts may.
+
+\emph{Against the principle.} No restriction on programs; it removes a false acceptance and keeps an
+idiom.
 
 \section{Open proposals}
 
@@ -233,17 +253,22 @@ external corpus applies these functions to a list that is unique and dead at the
 
 Functions that build would return a fresh array always, instead of their input when the result would
 equal it. \emph{Buys:} $\mathit{res} = \{\fresh\}$ for \code{filter}, \code{map} and their kin, so an edit of
-the result never demands the source (\S\ref{sec:hard-pipelines}), and the splices of
-Table~\ref{tab:rejected} are accepted. \emph{Costs:} the template runtime skips a \code{<For>} when its list
-is the same object as last time, and these promises are what make an unchanged
-filtered or mapped list the same object; without them, a \code{view} that renders
+the result never demands the source (\S\ref{sec:hard-pipelines}); the splices of Table~\ref{tab:rejected}
+are accepted; and so is a filtered or mapped copy kept at another model path beside its source, which with
+the promises makes the two paths possibly one cell at every entry (T52). \emph{Costs:} the template runtime
+skips a \code{<For>} when its list is the same object as last time, and these promises are what make an
+unchanged filtered or mapped list the same object; without them, a \code{view} that renders
 \code{List.filter model.todos visible} hands the renderer a new array on every render, and every unrelated
 message walks every row, keyed matching included. \emph{Conflicts with} the language's recorded decision that
-these operations return their input itself, on which its rendering strategy rests. We recommend keeping
-the promises: their cost to the checker is precision only where the source is used again, which the
-idioms do not do, and, now that \code{map}'s promise is named only where it can fire, the splices and
-rotations by \code{take} and \code{drop}, which the message answers with \code{List.insertAt} and
-\code{List.removeAt}.
+these operations return their input itself, on which its rendering strategy rests. On balance we recommend
+keeping the promises, narrowly. Their cost to the checker is precision where
+the source is used again, which the local idioms do not do; the splices and rotations by \code{take} and
+\code{drop}, which the message answers with \code{List.insertAt} and \code{List.removeAt}; and the kept
+filtered copy, which is common in search and list interfaces and whose fix is an $O(n)$ \code{List.copy}
+at every store of the copy. A middle course, a promise kept in \code{view} and dropped in \code{update},
+would make one function's result depend on where it is called, which summaries cannot express. The count
+of the kept-copy tag decides it (\S\ref{sec:eval-decisions}); a relational entry would remove the cost
+without touching the promises (\S\ref{sec:disc-open}).
 
 \subsection*{O3: the policy for room in front of a list}
 \phantomsection\addcontentsline{toc}{subsection}{O3: the policy for room in front of a list}
@@ -253,23 +278,15 @@ birth, and when a view is flattened (\S\ref{sec:compiler-backend}). Any policy t
 proportion to the length keeps prepending amortised $O(1)$; the choices trade memory and the frequency of
 views against the cost of the first prepend onto a plain array. To be measured.
 
-\subsection*{O4: interfaces publish whether a type can hold a list}
-\phantomsection\addcontentsline{toc}{subsection}{O4: interfaces publish whether a type can hold a list}
-
-The declaring module of an opaque type computes whether it crosses and publishes the bit, so importers can
-drop its paths. Without it, an opaque type is tracked under its opaque step, which is sound and costs
-width rather than precision (\S\ref{sec:model-cells}). Cost: interface content, and churn when a type's
-definition gains or loses a list.
-
-\subsection*{O5: a persistent vector as a library}
-\phantomsection\addcontentsline{toc}{subsection}{O5: a persistent vector as a library}
+\subsection*{O4: a persistent vector as a library}
+\phantomsection\addcontentsline{toc}{subsection}{O4: a persistent vector as a library}
 
 A core module holding the current trie, written in beni with no in-place writes, for programs that keep
 many versions. Cost: a second sequence type in the library, where the language deliberately has one; as a
 library module it has the status of a dictionary, not of \code{List}.
 
-\subsection*{O6: command constructors that take values}
-\phantomsection\addcontentsline{toc}{subsection}{O6: command constructors that take values}
+\subsection*{O5: command constructors that take values}
+\phantomsection\addcontentsline{toc}{subsection}{O5: command constructors that take values}
 
 Platform commands that persist or send data---storage, HTTP bodies, logging---take the value to send
 (\code{Storage.save key text}) rather than a closure that computes it later, as Elm's HTTP library takes an
@@ -277,8 +294,8 @@ encoded body. \emph{Buys:} the commonest escape in TEA programs disappears from 
 (\S\ref{sec:hard-fibers}). \emph{Costs:} a body that genuinely needs the list later must say so with
 \code{List.copy}; more command constructors in each platform.
 
-\subsection*{O7: summaries split by the message's constructor}
-\phantomsection\addcontentsline{toc}{subsection}{O7: summaries split by the message's constructor}
+\subsection*{O6: summaries split by the message's constructor}
+\phantomsection\addcontentsline{toc}{subsection}{O6: summaries split by the message's constructor}
 
 \code{update}'s summary published per constructor of its message, so the entry check can tell which arm a
 view-event payload reaches (\Obl{P6}). \emph{Buys:} one \code{onClick=\{Keep model.rows\}} no longer

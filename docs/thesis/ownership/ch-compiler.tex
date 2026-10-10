@@ -44,8 +44,8 @@ the second.
 \label{sec:compiler-writesets}
 
 The direct platform's whole-program write-set analysis (\S\ref{sec:bg-browser}) and the ownership
-checker meet at the entry protocol and at the renderer's obligation. There are three reads and one
-restatement.
+checker meet at the entry protocol and at the renderer's obligation. There are three reads, and the
+write-set analysis's contract does not change.
 
 \begin{itemize}
 \item \emph{The checker computes the entry state itself}, from summaries, at the call that starts the
@@ -59,19 +59,20 @@ that $\kappa$ may have written in place: the paths at which \code{update}'s owne
 $\mathsf{W}$ (from the checker), restricted to those that conflict with $\mathit{writes}(\kappa)$ (from
 the write-set analysis); and, per value the view computes, whether it may hold such a cell (from the
 ownership analysis of \code{view}'s code). All three are known when the handler is compiled.
-\item \emph{The write-set consumer reads nothing new}, but its soundness statement changes. Its notion
-of ``changed'' was ``not the same value, not \code{===}''. Under in-place writes a write inside
-\code{model.rows} leaves the list \code{===} to its old self, so its statement no longer says that the
-write set names the path. Its rules still do, because they interpret every writer and every construction
-through the core library's table as a write of the path it edits, whatever object the result is; but that
-is a property of the rules, not of the statement, and the obligation that rests on it, \Obl{P7}, must not
-rest on an accident. The restatement: \emph{``changed'' means ``may differ in content from what was there
-before the dispatch''}, with the same proof obligations rule by rule, and a check, when the ownership pass
-and the write-set pass both run, that every path an accepted demand of an arm writes in place conflicts
-with that arm's write set (A12). What a consumer may no longer do is conclude ``unchanged'' from
-\code{===} on a value that may hold a cell written in place, which is \Obl{P7}. The write-set analysis's
-own requirement that an in-place list write never touch a list the program still holds becomes the theorem
-of Chapter~\ref{sec:soundness}, rather than a requirement on the emitter.
+\item \emph{The write-set consumer reads nothing new, and its statement stays.} Its notion of ``changed''
+is ``not the same value, not \code{===}'', and it is argued for the value semantics, with which it was
+designed. Under in-place writes a write inside \code{model.rows} leaves the list \code{===} to its old
+self, so the statement read directly of the in-place run would not name the path. It does not need to be
+read so: in an accepted program the in-place run and the value run agree on every current reference's
+contents, and in the value run a list whose contents changed is a new object, so the statement, applied to
+the value run, names every path whose contents the in-place run changed (Lemma~\ref{lem:writes}). That is
+all \Obl{P7} needs, and it rests on the analysis's own soundness statement (A12) rather than on a property
+of its rules. A check that every path an accepted demand of an arm writes in place conflicts with that
+arm's write set, when both passes run, is a cheap test of the lemma, not a part of the contract. What a
+consumer may no longer do is conclude ``unchanged'' from \code{===} on a value that may hold a cell written
+in place, which is \Obl{P7}. The write-set analysis's own requirement that an in-place list write never
+touch a list the program still holds becomes the theorem of Chapter~\ref{sec:soundness}, rather than a
+requirement on the emitter.
 \item \emph{The write-set interpreter is the right engine for the model's paths, not for the general
 checker.} It is whole-program, per message, and tracks identity; the ownership checker is per
 function, directional over cells, and publishes summaries. They meet at the entry protocol and the
@@ -133,7 +134,10 @@ some from birth, and how often a view must be flattened when it is handed to Jav
 to the length.
 
 The backend must still keep the identity promises the language keeps (\S\ref{sec:model-demands}) and the
-linearity of the builder. A construction returns its base's \emph{cell}---its header may be new, after a
+linearity of the builder. Its release representation of a type with one constructor of one field, which
+is its field, is the one representation choice the design must account for, and it does so by reading
+every identity fact modulo it (A10, \Obl{P7}); a new choice of the same kind must be added to A10 before it
+ships. A construction returns its base's \emph{cell}---its header may be new, after a
 prepend or a write through a view, so the result need not be \code{===} the operand---while
 \code{[ …xs ]} and the re-building of a matched list return the list itself, and \code{xs ++ []} returns
 \code{xs}.
@@ -164,12 +168,20 @@ Records are outside this thesis's scope, but the machinery applies: a record pat
 demand is the in-place record update the lowering would emit, and its holders are the same places.
 The language's promise that a record update keeps the other fields as the very same values
 (\S\ref{sec:bg-beni}) becomes the only difference: a record written in place keeps its own identity
-too, which the direct platform's rule already forbids the renderer to rely on. The hazard is that the
-renderer compares records by identity everywhere---a reference check per dynamic hole is what makes
-beni's compiled templates fast---so in-place records need a stronger form of A4 than lists do: the
-argument for \Obl{P7} rests on records being rebuilt whenever their content changes, and a record written in
-place would put every holder of it, not only list-valued ones, among the values that may hold a written
-cell. The hand-over obligations of \S\ref{sec:hard-tea} are the obligations in-place records would need too.
+too. The template runtime compares records by identity everywhere---a reference check per dynamic hole is
+what makes beni's compiled templates fast---so it can never write one in place.
+
+The direct platform's own design does plan it, as the same last step that in-place lists would join: on
+model paths that its whole-program analysis proves owned---no reference to any object on the path outside
+the model, never a row's item, never read whole into anything that outlives the dispatch---it assigns
+through the record instead of spreading it, under its own rule that no group decides ``unchanged'' by the
+identity of an object on an in-place-written path. That rule is the stronger form of A4 that in-place
+records need, and \Obl{P7} as stated here includes those records in $\mathit{IP}$, so the two mechanisms are
+compatible. They are not independent: the second half of \Obl{P7}'s argument holds only if every object a
+dispatch may change while keeping its identity is in $\mathit{IP}$, so the two must be adopted together,
+with the records' paths read from the platform's analysis, or the records must wait. Whether the
+ownership checker should eventually decide the records' ownership as well, replacing the platform's
+whole-program condition with summaries, is open (\S\ref{sec:disc-open}).
 
 \section{Incremental builds}
 \label{sec:compiler-incremental}
