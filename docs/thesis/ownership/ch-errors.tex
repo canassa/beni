@@ -93,20 +93,30 @@ This is sharing the checker can see.
 
 \paragraph{A closure that keeps the list (real sharing).}
 \begin{Verbatim}
-`List.set` changes a list in place, but a function still holds it.
+`List.push` changes a list in place, but a function still holds it.
 
  8|     show = λi → String.fromInt (List.length rows)
                                                 ^^^^ `show` holds `rows` here
-11|     rows2 = List.set rows 0 r
-                ^^^^^^^^^^^^^^^^^ the list is changed in place here
+11|     rows2 = List.push rows r
+                ^^^^^^^^^^^^^^^^ the list is changed in place here
 14|     { model | label = show 3 }
                           ^^^^ `show` is called here, after the change
 
-`show` would see the changed list. Compute what `show` needs before line 11,
-or give it its own copy:
+If the change happened in place, `show` would count `r` too: it would show one
+more than `rows` had on line 8. Compute what `show` needs before line 11:
 
- 8|     show = λi → String.fromInt (List.length (List.copy rows))
+ 7|     count = List.length rows
+ 8|     show = λi → String.fromInt count
+
+or give `show` its own copy, made before line 11:
+
+ 7|     kept = List.copy rows
+ 8|     show = λi → String.fromInt (List.length kept)
+
+This is sharing the checker can see.
 \end{Verbatim}
+A copy written \emph{inside} the closure, \code{λi → ⋯ (List.copy rows)}, would not do: it runs when
+\code{show} is called, after the change, and the closure would still hold \code{rows}.
 
 \paragraph{A command that captured the list (possible sharing, across messages).}
 \begin{Verbatim}
@@ -161,10 +171,19 @@ per element.
         ^^^^^^^^ `List.map` calls it for every element of `xs`
 
 Each call would change the same list, so the result of the first call would
-change under the second. To build a list by adding to `acc`, fold:
+change under the second. To give each call its own list that starts as `acc`,
+copy it in the function:
 
- 7|     List.foldl xs acc (λx acc → [ …acc, x ])
+ 7|     List.map xs (λx → [ …List.copy acc, x ])
+
+If you meant to add every element of `xs` to the end of `acc`, that is a fold,
+and its result is one list, not a list of lists:
+
+ 7|     List.foldl xs acc (λx soFar → [ …soFar, x ])
 \end{Verbatim}
+The first fix keeps the program's meaning, at a copy per element; the second is offered only as a
+different program, and its parameter is not named \code{acc}, since beni refuses a name that shadows one in
+scope. Every fix in this chapter was checked against that rule.
 
 \paragraph{A limit of the checker.}
 \begin{Verbatim}
@@ -240,24 +259,35 @@ $\mathit{calls} = \mathit{many}$ for a closure the program calls once in fact & 
 a container whose contents are not exclusive & ``the elements of \code{rows} may share'' \\
 a capture by a command or fiber that may run after later messages & ``a command started by another message may still be reading it'' \\
 a value returned by the runtime that it also keeps (\code{Task.join}, a deferred value) & ``other parts of the program receive the same list'' \\
-a renderer that skips a list by its identity, on a platform without \Obl{P7} & ``the page compares this list with the one it showed last, by identity'' \\
 a handler or message in markup that holds the list & ``a handler on the page holds this list and may run at any later event'' \\
 a view event elsewhere in the program carrying a model list (\Obl{P6}) & ``a message sent from the page may carry this list'' \\
+a result that may be its input by an identity promise (\code{filter}, \code{take}, \code{reverse} \ldots) & ``\code{List.take xs i} may be \code{xs} itself when \code{i} is at least its length'' \\
+two positions of one list merged as $[\ast]$ & ``the checker does not tell the elements of \code{rows} apart'' \\
+two model paths merged by the entry's fixpoint & ``some message may leave \code{todos} and an element of \code{history} the same list'' \\
+a closure or command that passes a record whole to code that reads every path & ``the command keeps all of \code{model}, because it passes it on whole'' \\
 \bottomrule
 \end{tabularx}
 \caption{Approximate derivation tags and their wording.}
 \label{tab:tags}
 \end{table}
 
-A rejection whose derivation uses only exact tags is \emph{real sharing}: there is a path through the
-program text on which the old version is read after the edit. A top-level list is reported apart from
-both: it is shared by the language's rule, whether or not anything else reads it. One that uses an
-approximate tag is
-\emph{possible sharing}, and the message names the limit. This makes Crichton's distinction mechanical,
-and it is also what the evaluation counts (\S\ref{sec:evaluation}). The tags give a third thing for free:
-a rejection with no derivation at all is an internal compiler error, never a user error---the analogue
-of Swift's move-checker diagnostics that report ``a compiler bug'' when a use cannot be verified
-\citep{swift2026diagnosticssil}.
+A tag is \emph{exact} only if the step it marks names one run-time cell for one run-time cell: an
+occurrence of a variable, a field access, a capture, a call through a summary whose provenance is a single
+parameter path. Every step that lets two run-time cells share one abstract cell is approximate, and carries
+its tag: the merge of a list's positions under $[\ast]$, the fold of a recursive type, the join of the
+entry's fixpoint, the two outcomes of an identity promise, and a whole use of a record. A rejection whose
+derivation uses only exact tags is then \emph{real sharing}: there is a path through the program text on
+which the old version is read after the edit. An earlier statement of this rule called a rejection real
+whenever no limit of the checker's \emph{inputs} was involved, and so counted as sharing the failures that
+come from the abstraction's own merges, which read no old version; the four tags at the end of
+Table~\ref{tab:tags} are the correction. A rejection caused by the position rule's choice of base---a
+top-level list, or a model list in \code{view}, written first---is reported apart from both: it is a
+consequence of the language's rule, whether or not anything else reads the list. One that uses an
+approximate tag is \emph{possible sharing}, and the message names the limit. This makes Crichton's
+distinction mechanical, and it is also what the evaluation counts (\S\ref{sec:evaluation}). The tags give
+a third thing for free: a rejection with no derivation at all is an internal compiler error, never a user
+error---the analogue of Swift's move-checker diagnostics that report ``a compiler bug'' when a use cannot
+be verified \citep{swift2026diagnosticssil}.
 
 \section{Stability}
 \label{sec:errors-stability}

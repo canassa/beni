@@ -1,7 +1,7 @@
 \chapter{The Rules' History and the Programs That Shaped Them}
 \label{app:history}
 
-The rules of Chapters~\ref{sec:model}--\ref{sec:hard} reached their present form in four steps, each
+The rules of Chapters~\ref{sec:model}--\ref{sec:hard} reached their present form in five steps, each
 prompted by short programs that the previous form accepted although their in-place run differed from
 their value-semantics run, or that it rejected although they were idiomatic. We record the steps here,
 once, so that the body of the thesis can state the design it defends. The programs are those of
@@ -38,7 +38,7 @@ making list syntax build reversed the language's linear-prepend decision and tur
 quadratic, that dropping the identity promises reversed the decision the renderer relies on, and that a
 consuming \code{send} rejected programs with no in-place edit.
 
-\paragraph{Present form.} The present form answers the third reading and turns the design around a
+\paragraph{Fourth form.} The fourth form answered the third reading and turned the design around a
 different question. List construction consumes a base chosen by position (Change~1), so accumulators,
 folds and \code{update} arms run in place, and the warning on copying accumulators goes with the copying.
 The identity promises are kept, and their aliases appear in summaries. \code{send} writes what
@@ -47,3 +47,26 @@ renderer obligation \Obl{P7} takes the label the dropped command promise had. Th
 Chapter~\ref{sec:idioms}, and the frequency of the error on them, became the measure the design is held
 to; T33, a persistent stack whose versions are kept, records the one part of the linear-prepend decision
 that construction-as-consumption cannot keep without an explicit copy.
+
+\paragraph{Present form.} A third adversarial reading of the fourth form found no accepted program that
+observes a write through the checker's own rules, but four holes at the boundary with the platforms and
+three idioms the thesis said must pass that its rules rejected; programs T35--T45 record them. The
+renderer obligation \Obl{P7}, as the fourth form stated it, covered only the template runtime's
+\code{<For>} skip, though that runtime skips by identity in grouped values, \code{let}s, helper calls,
+components, \code{Show} bodies, row inputs and views (T35, T36); and the direct platform, said to keep it by
+design, guarded its indexed scripts by element identity, which an element edited in place defeats (T37).
+The author then decided that in-place lists are a feature of the direct platform only (rule~7 of
+\S\ref{sec:bg-language}): the template runtime keeps its skips and its persistent lists, and \Obl{P7} was
+restated over every identity test the direct platform makes, with the parts it must add. The send rule bound
+a send to \code{update}'s own use of the payload, which misses a payload stored by one arm and extended by
+another (T38); a send now follows its payload to the paths it reaches. The escapes that \code{view} makes
+were in a table but not in the entry protocol (T39); they are now, and on the direct platform they are none,
+by \Obl{P3}, which was widened to markup values. Closures captured whole variables, which rejected the
+example application's appends because a command read \code{model.session} (T45); captures are now per path.
+The exclusive-contents flag did not survive a record update of an element, and neither \code{Dict.update}
+nor the folds carried it (T40, T44); ``keeps shape'', the asserted exclusivity of \code{Dict.update} and the
+folds' guard repair that, and the same argument gave \code{map} a single-pass row that accepts an edit by id
+(T42). The same reading found that a chain of \code{++} consumed its middle operand under the language's
+right-nested lowering, now flattened (T43); that an undo of a list needs a second copy (T41); that the order
+on provenance sets had been mis-stated; and that the evaluation's main metric counted only forms already
+known to pass, and called rejections ``real'' that read no old version.

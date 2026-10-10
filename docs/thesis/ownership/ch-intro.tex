@@ -31,7 +31,7 @@ its source, as \code{List.copy}.
 \paragraph{What an edit is.} The core library's named writers---\code{List.set}, \code{List.push} and
 their kin---edit their operand. So does \emph{list construction}. In \code{[ x, …acc ]},
 \code{[ …acc, x ]}, \code{[ …acc, …ys ]} and \code{acc ++ ys}, a fixed rule of position chooses the
-operand whose array becomes the result: the first spread, or the left side of \code{++}. That operand
+operand whose array becomes the result: the first spread, or the leftmost operand of a chain of \code{++}. That operand
 is \emph{consumed}: its array is reused in place, at its back by pushing and at its front by
 prepending into free space kept there. The other operands, and the elements, are only read. A literal
 with no spread allocates a new array, and pattern matching---\code{[ x, …rest ]} in a \code{case}---only
@@ -149,16 +149,21 @@ those assertions and a handful of runtime contracts are the trusted surface
 entry protocol (\S\ref{sec:hard-tea}). Two platform facts dominate the outcome. The program's
 \code{init} becomes a function the platform calls once per mounted program, so that a model starts
 with new arrays; a top-level value holding a list is shared, as in Rust, Clean and Futhark, and is
-edited only after a constructor function or an explicit copy. And beni's current template renderer
-skips work by testing a list's identity, which an in-place edit defeats; it must stop doing so for the
-lists the program edits in place, at a per-render cost to be measured.
+edited only after a constructor function or an explicit copy. And a renderer that skips work because a
+value is the same object as last time is defeated by an in-place edit, which keeps the object. beni's
+current template runtime does that in many places, so in-place lists are confined to its other browser
+back end, the \emph{direct platform}, which compiles the view away and generates one handler per message
+from compile-time write sets; there, what is re-rendered must be decided from those write sets, never from
+object identity, wherever a list may have been edited in place. The ownership rule is still checked for
+every target, so that one source has one verdict.
 
 \paragraph{What it costs.} Every program that keeps an old version and then edits it in place---an
 undo history of lists, a ``before and after'' comparison, a persistent stack whose old versions are
 read---is rejected until it writes \code{List.copy}, so persistent sharing becomes an explicit $O(n)$
-copy, and the trie goes. A closure that consumes what it captured may be called at most once. A list
-captured by a command is shared for the rest of the program. A body edit that changes a public
-function's summary re-checks its importers. And the error fires in the code people write most, so its
+copy, and on the direct platform the trie goes. The rejections are paid on every target, the gain only
+on that one. A closure that consumes what it captured may be called at most once. A list captured by a
+command is shared for the rest of the program. A body edit that changes a public function's summary
+re-checks its importers. And the error fires in the code people write most, so its
 messages carry much of the design (Chapter~\ref{sec:errors}).
 
 \paragraph{The proposal.} Build the checker as a \emph{report-mode pass first}, together with a
@@ -189,13 +194,14 @@ evaluation-order normal form; four side conditions at each edit (\Known, \Unesca
 name fresh, parameter, environment, shared, escaped and unknown cells, polymorphic over the ownership
 behaviour of function-typed parameters; an optimistic fixpoint over a stated finite lattice for
 recursive groups, including groups of local functions; and publication in module interfaces.
-\item A soundness argument (Chapter~\ref{sec:soundness}): under eleven stated assumptions about the
+\item A soundness argument (Chapter~\ref{sec:soundness}): under twelve stated assumptions about the
 runtime, the core library and the platforms, an accepted program produces the same observable trace
 under value semantics and under in-place semantics. We give the theorem, the lemmas and proof
-sketches, the trusted surface, the places we consider weakest, and thirty-four programs that test the
+sketches, the trusted surface, the places we consider weakest, and forty-five programs that test the
 rules, each traced through them.
-\item An entry protocol for every function a TEA (Elm Architecture) runtime calls, and a treatment of
-the hard cases (Chapter~\ref{sec:hard}).
+\item An entry protocol for every function a TEA (Elm Architecture) runtime calls, a renderer obligation
+that states precisely what a back end that writes lists in place must re-render, and how compile-time
+write sets provide it, and a treatment of the hard cases (Chapter~\ref{sec:hard}).
 \item An error design (Chapter~\ref{sec:errors}) that names three program points, writes the fix, and
 tells \emph{real sharing} from \emph{a limit of the checker} by a derivation tag carried on every fact.
 \item An account of the cost (Chapter~\ref{sec:discussion}), the language and library changes the
@@ -260,8 +266,8 @@ program edits a copy, or a list a constructor function returns (\S\ref{sec:model
 \item[Hand-over.] A UI runtime hands the model over when, after calling \code{update}, it keeps no
 reference through which it could read a list of the old model (\S\ref{sec:hard-tea}).
 \item[Direct platform, template runtime, derived value, write set.] beni's current browser renderer is
-the \emph{template runtime}; an experimental back end that compiles the view away is the \emph{direct
-platform}; a derived value is what a binding inside \code{view} becomes there; and the write set of a
+the \emph{template runtime}, and it keeps persistent lists; an experimental back end that compiles the view
+away is the \emph{direct platform}, the only back end on which lists are written in place; a derived value is what a binding inside \code{view} becomes there; and the write set of a
 message is the set of model paths its \code{update} branch may change, computed by a separate
 whole-program analysis (\S\ref{sec:bg-browser}).
 \item[Idiom.] A way of writing a list operation that beni's language and library make the most natural

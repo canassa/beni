@@ -7,21 +7,27 @@ an array written in place with no run-time ownership information, no annotations
 silent copy. Edits are the library's named writers and list construction, which consumes a base chosen
 by position; so the question that decides whether the rule is usable is one of design: \emph{how should
 the language and the checker be designed so that idiomatic code almost never hits the ownership error?}
+In-place lists are a feature of one back end, the direct platform, which compiles the view away and
+decides what to re-render from compile-time write sets; the rule itself is a rule of the language, checked
+for every target, so that one source has one verdict and one meaning everywhere.
 
 Our answer has three parts. The \emph{analysis}: uniqueness at the update site, decided by liveness over
 an evaluation-order normal form; a directional, field-sensitive cell analysis whose paths reach into
-closure environments; summaries whose results say whether a cell is new, an argument's, the closure's own,
-a top-level value's, escaped or unknown; callback classes that hand an accumulator owned; an optimistic,
-validated fixpoint over a stated lattice; exclusive contents for nested edits; and an entry protocol for
-every function a UI runtime calls. The \emph{language and library}: construction consumes its base by a
-fixed rule of position; patterns only read; \code{eq} and \code{compare} only read; \code{init} is a
-function and top-level lists are shared; the folds and container updates supply their callbacks owned;
-and \code{List.copy} is the only copy. The \emph{platforms}: the runtime hands the model over, a renderer
-does not skip work by the identity of a list the program edits, and commands carry values rather than
-closures over lists. With these, every idiom we enumerated---accumulators, folds, recursive builders,
-lists built by \code{map} and \code{filter}, pipelines, \code{update} arms that extend a model list, edits
-inside containers, tuple accumulators---is accepted by the rules as written, and what remains rejected is a
-short list of forms, each real sharing or a named limit, each with a one-line fix.
+closure environments, a closure holding only the paths it reads; summaries whose results say whether a
+cell is new, an argument's, the closure's own, a top-level value's, escaped or unknown; callback classes
+that hand an accumulator owned; an optimistic, validated fixpoint over a stated lattice; exclusive contents
+for nested edits, kept by callbacks that keep shape; and an entry protocol for every function a UI runtime
+calls, which follows a message's payload to the model paths it reaches. The \emph{language and library}:
+construction consumes its base by a fixed rule of position, a chain of \code{++} being one construction;
+patterns only read; \code{eq} and \code{compare} only read; \code{init} is a function and top-level lists are
+shared; the folds, \code{map} and the container updates supply their callbacks owned; and \code{List.copy}
+is the only copy. The \emph{platforms}: only the direct platform writes in place; its runtime hands the
+model over, and it re-renders what a message's write set names, never what an identity test calls
+unchanged; and commands carry values rather than closures over lists. With these, every idiom we
+enumerated---accumulators, folds, recursive builders, lists built by \code{map} and \code{filter}, pipelines,
+\code{update} arms that extend a model list, edits inside containers, tuple accumulators---is accepted by
+the rules as written, by derivations traced by hand, and what remains rejected is a short list of forms,
+each real sharing, a consequence of the position rule, or a named limit, each with a one-line fix.
 
 \section{What we are confident of, and what we are not}
 
@@ -31,13 +37,15 @@ the write is free and a dead alias is harmless. Every production system that acc
 has some form of it: Sisal's ordering edges, Clean's observing references, Futhark's syntactic order,
 Rust's two-phase borrows, Mazur's forward use. It is incomparable with Clean's occurrence-based
 uniqueness, not stronger.
-\item \emph{The first-order core holds up.} When every value involved is a list, a record, a tuple or a
-constructor written in the body under analysis, we know of no counterexample to the rules.
-\item \emph{Higher-order code is where the rules have needed the most care}: closures that return what
-they hold, once closures that leave the checked code, local functions used before their line, and
-results whose cells escaped or came from a top-level value. The rules now name each of these, and the
-thirty-four programs of Table~\ref{tab:counterexamples} are decided as they should be; Lemmas~\ref{lem:once}
-and~\ref{lem:entry} are the parts of the argument we would scrutinise first.
+\item \emph{The first-order and closure core holds up.} Three adversarial readings found no accepted
+program that observes a write through the checker's own rules; every hole they found was at the boundary
+with a platform, in what a renderer or an entry protocol was said to guarantee.
+\item \emph{That boundary is where the argument is weakest.} The renderer obligation \Obl{P7} is now
+stated over every identity test the direct platform makes, and rests on a restated fact of the write-set
+analysis (A12); two of its parts, the element guards (f) and (g), and \Obl{P3}'s rule for markup values,
+are additions to that platform's design. Lemmas~\ref{lem:once} and~\ref{lem:entry} are the parts of the
+argument we would scrutinise first; the forty-five programs of Table~\ref{tab:counterexamples} are decided as
+they should be.
 \item \emph{The idioms are accepted by the rules as stated}, by derivations we have traced by hand, not
 by an implementation. The frequency of the error on real idiomatic code is unknown until the report mode
 runs.
@@ -48,10 +56,10 @@ sanitiser is the instrument for them.
 
 What we cannot know from the design alone is whether the rule is worth its cost. It rejects correct
 programs---every program that keeps a version of a list and extends it, every list a command captured and
-a later message edits---and it moves part of its burden onto the platforms. The two applications we
-examined edit their lists in place under construction-as-consumption, but neither is accepted as written:
-one needs a value computed before a command, and on their own platform both need the renderer to stop
-skipping work by a list's identity, at a per-render cost not yet measured.
+a later message edits---on every target, while only the direct platform gains from it, and it moves part
+of its burden onto that platform. Of the two applications we examined, both edit their lists in place under
+construction-as-consumption; one is accepted as written, and the other once a value is computed before a
+command.
 
 \section{Recommendations}
 \label{sec:conc-recommend}
@@ -61,14 +69,17 @@ skipping work by a list's identity, at a per-render cost not yet measured.
 (\S\ref{sec:soundness-trusted}).
 \item \emph{Build the in-place backend and the stale-read sanitiser in a test mode}, and the report mode
 (Chapter~\ref{sec:evaluation}) as a checking-only pass with its dump, its idiom classifier and its test
-programs, on the design of Chapters~\ref{sec:model} and~\ref{sec:inference}, with each platform's entry
-protocol as an asserted row under the three rows of \S\ref{sec:eval-report}. Nothing emitted outside the
+programs, on the design of Chapters~\ref{sec:model} and~\ref{sec:inference}, with the direct platform's
+entry protocol as an asserted row (\S\ref{sec:eval-report}). Nothing emitted outside the
 test mode changes.
 \item \emph{Specify the decided changes} (Changes~1--4) and \emph{the required ones} (Changes~5--8) in the
 language's specification before building them, stating where they touch recorded decisions: the
-kept-version part of linear prepending, and the identity of \code{[] ++ ys}.
-\item \emph{Measure \Obl{P7} on the renderer} against the reference renderer, with the existing harness,
-before deciding it; it decides whether TEA idioms are accepted on beni's current browser platform.
+kept-version part of linear prepending, the identity of an append onto an empty list, the lowering of list
+literals and \code{++} chains, and the direct platform's element guards and its plan to keep elements that a
+row shows out of in-place updates.
+\item \emph{Specify \Obl{P1}--\Obl{P7} in the direct platform's design}, with the write-set analysis's
+contract restated over contents (A12), and \emph{measure \Obl{P7}} there, on a page whose list elements are
+lists edited in place, before that platform writes any list in place.
 \item \emph{Run the experiments} over the five corpora, classify every rejection by idiom and by hand, and
 run the study of \S\ref{sec:eval-people}.
 \item \emph{Decide on the criteria of \S\ref{sec:eval-decisions}}: soundness first, then adoption on the
@@ -84,11 +95,11 @@ it test-first, with the rule set versioned in the interface format.
 \label{sec:disc-open}
 
 \begin{enumerate}
-\item \emph{The error rate on idiomatic code}, exact and approximate, per idiom and per entry row. Nothing in
+\item \emph{The error rate on idiomatic code}, exact, approximate and positional, per idiom and per target. Nothing in
 the literature we know of stands in for it.
-\item \emph{The renderer's identity skip} (\Obl{P7}): whether walking the rows of every list the program
-edits keeps the template runtime's speed against the reference renderer; if it does not, whether the
-rule is a direct-platform feature.
+\item \emph{The renderer obligation} (\Obl{P7}): what its unguarded element scripts cost on the direct
+platform for lists of lists, and whether the restatement of the write-set analysis over contents (A12) holds
+rule by rule, as we expect from its rules but have not argued.
 \item \emph{The trusted surface}: its exact size, and whether every row can be pinned by a test that the
 sanitiser would catch failing.
 \item \emph{The proof}: monotonicity is checked case by case but not written out; nothing is mechanised;
@@ -116,6 +127,15 @@ summaries split by message constructor (O7).
 \item \emph{The identity promises} (O2): we recommend keeping them; the evaluation's count of rejections
 caused by a source read after its filtered result was edited would show whether that is right.
 \item \emph{A once closure called once in fact} but passed to a $\mathit{many}$ position stays an error.
+\item \emph{A relational entry} (\S\ref{sec:hard-undo}): an undo history of a list needs a second copy because
+the entry's fixpoint records which cells each path may hold, not which paths hold one cell at once; whether
+the split of a dead container's head can be carried across the entry is open.
+\item \emph{Splices and rotations} (\S\ref{sec:idioms-rejected}): written with \code{take} and \code{drop},
+they are rejected because of identity promises that fire only at the edges; how often Elm code writes them
+decides whether a value-conditional summary, or dropping those promises (O2), is worth its cost.
+\item \emph{The rule on targets that do not use it}: how many rejections a program built only for the
+template runtime or for Node meets for nothing, and whether that cost of one verdict per source is
+accepted in practice.
 \item \emph{The development crash screen} must print no program value (A9); this is to be confirmed, or
 made so.
 \item \emph{Record paths} (\S\ref{sec:compiler-records}): the same rules with a stronger A4.

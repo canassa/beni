@@ -82,16 +82,17 @@ a local or parameter & \code{xs}; \code{model.rows} as $(\mathit{model}, .\mathi
 a field of a record, tuple or constructor held by a place & $(m, .\mathit{form}.\mathit{tags})$ & content \\
 an element of a list held by a place & $(\mathit{rows}, [\ast].\mathit{tags})$ & content \\
 an argument already evaluated and not yet passed; a structure or literal whose items are partly evaluated & \code{xs} in \code{compare xs (List.push xs 1)} & content, until the instruction that consumes it (\S\ref{sec:model-unique}) \\
-the environment of a closure held by a place, including a local function & $(f, \env)$ & content, live while the closure is \\
+the environment of a closure held by a place, including a local function, at the paths of its captures that its body uses & $(f, \env.\mathit{model}.\mathit{session})$ & content, live while the closure is (\S\ref{sec:model-functions}) \\
 the environment of a suspended fiber, a command or subscription thunk the runtime keeps, a \code{Ref} & \code{Cmd.perform (λsend → ⋯ xs ⋯)} & content, \emph{escaped}: no future read can be ruled out \\
 a JavaScript sibling, or the result of \code{Js.from} & \code{Js.from xs} & content, escaped \\
 a top-level value, with or without a \code{where} clause & \code{seed = [ "milk" ]} & content, \emph{shared}: read by every later use, for the program's life \\
 a value the runtime retains and hands out again: a fiber's outcome, a bracketed resource, a deferred value's contents & \code{Task.join fib} & content; $\top$ on every path of the result \\
-a handler closure or message in rendered markup & \code{onInput=\{λs → ⋯ xs ⋯\}} & content, escaped at the markup site (\S\ref{sec:hard-foreign}) \\
-the template runtime's last list of a \code{<For>}, and its row items & \code{items === last} & identity only; a hazard under A4 (\S\ref{sec:hard-tea}) \\
+a handler closure or message in markup & \code{onInput=\{λs → ⋯ xs ⋯\}} & content, held under the markup value's opaque step while that value is live; what the platform keeps of \code{view}'s result is its entry row's (\S\ref{sec:hard-foreign}, \S\ref{sec:hard-tea}) \\
+the template runtime's last values: grouped values, \code{let}s, helper and component arguments, \code{Show} keys and values, row items and inputs, lists & \code{items === last} & identity only; harmless, since the template runtime writes no list in place (\S\ref{sec:bg-browser}) \\
 the runtime's hold on a platform-called function's arguments and results & \code{update msg model} & as the platform's entry protocol says (\S\ref{sec:hard-tea}) \\
-the direct platform's per-row instance item & \code{insts[i].it} & identity only (A4); a listener body reads the current item, re-obtained after each dispatch (\Obl{P3}) \\
-a derived-value slot & a derived value & content; a list-valued slot is recomputed before it is read (\Obl{P4}) \\
+the direct platform's per-row instance item & \code{insts[i].it} & identity only; never the ground for ``unchanged'' on a path written in place (\Obl{P7}); a listener body reads the current item, re-obtained after each dispatch (\Obl{P3}) \\
+a derived-value slot of the direct platform & a derived value & content; a list-valued slot is recomputed before it is read (\Obl{P4}), and its readers never skip by its identity (\Obl{P7}) \\
+a group slot of the direct platform & \code{g3 = x} & a leaf value: a scalar, which crosses \\
 \bottomrule
 \end{tabularx}
 \caption{The places that can hold a cell.}
@@ -225,16 +226,16 @@ Form & $A(e)$ & Holders created; notes \\
 variable $x$ & $\Sigma(x)$ & none new; a \emph{use} at the consuming instruction \\
 list literal with no spread, elements $x_1 \cdots x_n$ & $\varepsilon \mapsto \{\site(\iota)\} \cup \bigcup_i \mathit{shift}(A(x_i), [\ast])$ & a fresh cell \\
 list literal whose first spread is $b$, other spreads $s_j$, elements $x_i$ & $A(b) \cup \bigcup_i \mathit{shift}(A(x_i), [\ast]) \cup \bigcup_j \mathit{shift}(\mathit{proj}(A(s_j), [\ast]), [\ast])$ & a \emph{demand} on $A(b)@\varepsilon$, the base: the result is the base's cell; the other spreads are read and their elements stored \\
-\code{xs ++ ys} on lists & as \code{[ …xs, …ys ]} & a demand on \code{xs}; \code{ys} read \\
+a chain \code{a ++ b ++ ⋯ ++ z} on lists & as \code{[ …a, …b, ⋯, …z ]} & one construction: a demand on \code{a}; the others read \\
 \code{[ …xs ]}; \code{[ h, …t ]} right after matching \code{[ h, …t ]} against $x$ & $\Sigma(\mathit{xs})$; $\Sigma(x)$ & an alias, not a demand: nothing is written \\
 record, tuple, constructor & $\bigcup_f \mathit{shift}(A(x_f), .f)$ & the structure holds what its parts hold \\
 record update \code{\{ r | f = y \}} & $A(r)$ with the paths under $.f$ replaced by $\mathit{shift}(A(y), .f)$ & the other fields are the very same values \\
 field or tuple access \code{r.f} & $\mathit{proj}(A(r), .f)$ & an alias of the field's cell, not a copy \\
 \code{case x of p → e} & per arm, pattern variables bound to projections of $A(x)$; the \code{rest} of \code{[ x, …rest ]} and the \code{init} of \code{[ …init, last ]} to \emph{the same cells as $x$} (views of the base, \S\ref{sec:hard-views}) & a pattern only reads; arms are analysed separately, results joined by union; liveness is per path \\
 \code{x = e₁} then \code{e₂} & $\Sigma[x \mapsto A(e_1)]$ & $x$ holds everything in $A(e_1)$ \\
-lambda with captures $z_1 \cdots z_m$ & $\env.z_j.q \mapsto A(z_j)@q$; and $\varepsilon \mapsto \{\site(\iota)\}$ if the lambda is \emph{once} (\S\ref{sec:model-functions}) & the closure holds every captured cell under $\env$ \\
+lambda with captures $z_1 \cdots z_m$ & $\env.z_j.q \mapsto A(z_j)@q$ for each path $q$ of $z_j$ that the body \emph{uses} (\S\ref{sec:model-liveness}): a field read uses its own path, a whole use every path; and $\varepsilon \mapsto \{\site(\iota)\}$ if the lambda is \emph{once} (\S\ref{sec:model-functions}) & the closure holds, under $\env$, exactly the captured cells its body may use \\
 call \code{f a₁ ⋯ aₙ} of a top-level $f$ & by the summary $S_f$, translated (\S\ref{sec:model-summary}) & a use of every argument at the paths the summary reads; a \emph{demand} where a parameter path is written \\
-call \code{g a₁ ⋯ aₙ} through a value & by $g$'s ownership class, with $\env$ translated through $A(g)@\env$ (\S\ref{sec:inf-classes}); if $A(g)@\varepsilon$ holds a cell, the call is also a demand on it & as above \\
+call \code{g a₁ ⋯ aₙ} through a value & by $g$'s ownership class, with $\env$ translated through $A(g)@\env$ (\S\ref{sec:inf-classes}); if $g$ may be once, its class says so and $A(g)@\varepsilon$ holds its cell, and the call is also a demand on that cell; a function value that is not once has no cell at $\varepsilon$ & as above \\
 \code{foreign} or \code{Js} operation with no asserted summary & $\varepsilon \mapsto \{\top\}$, prefix-closed & every cell of every argument is read and added to $\mathit{Esc}$ (\S\ref{sec:hard-foreign}) \\
 top-level value $v$ & every tracked path $\mapsto \{\shared(v)\}$ & a holder for the program's life (\S\ref{sec:model-check}) \\
 \bottomrule
@@ -266,6 +267,23 @@ is live. A placeholder such as \code{List.get xs \_} is a lambda that captures \
 treated the same way. A closure stored in a record holds its captures under the field's path, so a
 record of handler functions holds the lists its handlers captured exactly as long as the record is
 live---not for the program's life.
+
+\paragraph{Captures are per path.} A closure holds, under $\env$, only the paths of a captured variable
+that its body \emph{uses}, by the uses of \S\ref{sec:model-liveness}: a field read uses the field's
+path; passing a field to a call uses the paths of it that the callee's summary does not mark
+$\unused$; using the variable whole---storing it, returning it, passing it to a function or a
+\code{Js} operation that reads everything---uses every path. So the command
+\begin{Verbatim}
+CompletedDeleteArticle (Ok ⊤) →
+    ( model, Cmd.do λ⊤ → Route.replaceUrl (Session.navKey model.session) Route.Home )
+\end{Verbatim}
+holds $\env.\mathit{model}.\mathit{session}$ and nothing else, so escaping it escapes the session and not
+the page's lists of errors and comments. At run time the JavaScript closure keeps the whole \code{model}
+object, and through it every list of the model; but no execution of its body reads any path but
+\code{.session}, so its hold on the others is a dead holder in the sense of
+Definition~\ref{def:unique}, forever. This is the analysis the language already makes for a row's inputs,
+which are ``the fields it reads, \code{model.selected}, not \code{model}'', applied to every closure and
+extended across modules through summaries.
 
 \paragraph{Results drawn from the environment.} Inside a lambda's body, a captured variable's cells
 are named $\env.q$, and a lambda that returns a captured list, \code{get = λ⊤ → xs}, has a result
@@ -300,15 +318,19 @@ conditions of \S\ref{sec:model-check} are checked at the creation, with the new 
 holder allowed to remain live. From then on the captured cells are reachable only through the
 closure, and the closure is used at most once.
 
-\paragraph{A once value never escapes.} A demand is checked where it is written, so a once closure
-called by code the checker does not see---the runtime calling a handler at every keystroke, a sibling
-calling a callback it kept---would be called many times unchecked. The rule is therefore that a value
-whose abstract value may hold a cell at $\varepsilon$ may not reach an escaping position: passing it to
-a parameter whose $\mathit{use}$ includes $\mathsf{E}$ at $\varepsilon$, storing it in an escaped place,
-or putting it in markup is an error, worded ``this function changes a list it captured, and it is
-handed to something that may call it more than once''. Every asserted row with a function-typed
-parameter states how often the parameter is called, and the default is $\mathit{many}$
-(\S\ref{sec:model-summary}).
+\paragraph{A once value reaches unseen code only where it is called once.} A demand is checked where
+it is written, so a once closure called by code the checker does not see---the runtime calling a handler
+at every keystroke, a sibling calling a callback it kept---would be called many times unchecked. The rule
+is therefore about \emph{every} path of a value at which it may hold a once closure's cell, not only its
+own path $\varepsilon$: such a value may reach an escaping position---a parameter whose $\mathit{use}$
+includes $\mathsf{E}$ at a path that may hold the cell, or an escaped place---only when that position's
+asserted $\mathit{calls}$ is ${\le}1$. A record holding a once closure at \code{.f} and passed to a
+parameter with $\mathsf{E}$ at \code{.f} is covered, and so is the body of \code{Task.spawn}, which a fiber
+runs once: \code{Task.spawn (λ⊤ → ⋯ [ …acc, x ] ⋯)} is accepted, its creation being a demand on
+\code{acc}. A handler position in markup is called $\mathit{many}$ times. Every asserted row with a
+function-typed parameter states how often the parameter is called, and the default is $\mathit{many}$
+(\S\ref{sec:model-summary}). A violation is worded ``this function changes a list it captured, and it is
+handed to something that may call it more than once'', which is then true.
 
 \paragraph{Local functions.} A function defined by a binding inside a block---a \code{let} function---may
 be named above its own line, may call itself and the block's other local functions, and is emitted as a
@@ -438,11 +460,12 @@ lattice and its height are given in \S\ref{sec:inf-lattice}.
 \textit{prov} & ::= & \code{π}$_i$\textit{path} $\mid$ \code{fresh}$_k$ $\mid$ \code{esc}$_k$ $\mid$ \code{◇}\textit{path} $\mid$ \code{shared} $\mid$ \code{⊤} $\mid$ $g$\code{.res}\\
 \textit{own} & ::= & \code{owned} $\mid$ \code{borrowed}\\
 \textit{guard} & ::= & \textit{atom} $\mid$ \textit{guard} \code{and} \textit{guard}\\
-\textit{atom} & ::= & $g$ \textit{class fact} $\mid$ \code{π}$_i$\textit{path} \code{excl} $\mid$ \code{π}$_i$\textit{path} \code{stored exclusively} $\mid$ \code{π}$_i$\textit{path} \code{⊥} \code{π}$_j$\textit{path}
+\textit{atom} & ::= & $g$ \textit{class fact} $\mid$ \textit{type fact} $\mid$ \code{π}$_i$\textit{path} \code{excl} $\mid$ \code{π}$_i$\textit{path} \code{stored exclusively} $\mid$ \code{π}$_i$\textit{path} \code{⊥} \code{π}$_j$\textit{path}
 \end{tabular}
 \end{center}
 A parameter with no bracket is $\unused$ or crosses; a result with no bracket is crossing; \code{fresh}
-with no number is $\fresh_1$.
+with no number is $\fresh_1$. A \textit{type fact} is a fact of the instantiated types at the call, such as
+``\code{a} and \code{b} may share a value at run time''; like a class fact it is decided at every call.
 
 \section{Demands: writers and construction}
 \label{sec:model-demands}
@@ -451,13 +474,13 @@ with no number is $\fresh_1$.
 \code{pop}, \code{swap}, \code{insertAt}, \code{removeAt}, \code{cons} and \code{append} consume their
 list operand. Their rows are below.
 
-\paragraph{Construction consumes its base.} A list construction with a spread, and \code{++} on lists,
-is a demand on one operand, its \emph{base}, chosen by a fixed rule of position:
+\paragraph{Construction consumes its base.} A list construction with a spread, and a chain of \code{++}
+on lists, is a demand on one operand, its \emph{base}, chosen by a fixed rule of position:
 \begin{itemize}
 \item the base of a literal is the operand of its \emph{first} spread: in \code{[ x, …acc ]},
 \code{[ …acc, x ]}, \code{[ …acc, …ys ]} and \code{[ a, …acc, b, …ys ]} it is \code{acc};
-\item the base of \code{xs ++ ys} on lists is its left operand, \code{xs}; \code{++} associates to the
-right, so \code{a ++ b ++ c} consumes \code{b} for the inner \code{++} and \code{a} for the outer one;
+\item a chain \code{a ++ b ++ ⋯ ++ z} on lists is \emph{one} construction, \code{[ …a, …b, ⋯, …z ]}, so
+its base is its leftmost operand and the others are only read; \code{xs ++ ys} consumes \code{xs};
 \item a literal with no spread, such as \code{[ x, y ]} or \code{[]}, has no base: it allocates a fresh
 array.
 \end{itemize}
@@ -465,25 +488,45 @@ The construction writes the base's array: the items before the base's spread are
 space kept in front of the array (\S\ref{sec:compiler-backend}), and the items after it are pushed. The
 other operands are \emph{only read}: an element is stored, and the elements of a later spread are copied
 in, as JavaScript's own spread would copy them. The result is the base's cell. Two forms write nothing
-and are aliases rather than demands: \code{[ …xs ]}, which is \code{xs} itself, and \code{[ h, …t ]}
-right after a pattern \code{[ h, …t ]} matched a list, which is that list. A \emph{pattern} never
+and are aliases rather than demands: \code{[ …xs ]}, which is \code{xs} itself, and a list re-built right
+after a pattern matched it in the same shape---\code{[ h, …t ]} after \code{[ h, …t ]}, or
+\code{[ …init, last ]} after \code{[ …init, last ]}---which is that list. A \emph{pattern} never
 consumes: \code{[ x, …rest ]} in a \code{case} binds \code{x} to an element and \code{rest} to a view of
-the scrutinee.
+the scrutinee. A construction that adds nothing, \code{xs ++ []}, writes nothing, but it is still a
+demand: \code{xs} is consumed, and using it afterwards is an error, as for any other construction.
+
+\emph{Chains are flattened on purpose.} \code{++} associates to the right, and the language
+specification lowers a literal from the right: \code{[ x, …a, y ]} means
+\code{List.cons x (List.append a [ y ])}, so \code{[ …a, …b, …c ]} would mean
+\code{List.append a (List.append b c)}, and \code{a ++ b ++ c} the same. Read through the writers' rows,
+that lowering would consume \code{b}, the middle operand, which the programmer did not put first; and
+\code{a ++ b ++ c} and \code{[ …a, …b, …c ]}, which the language says are the same list, would consume
+different operands if the chain were not flattened. Under the rule both are one construction with
+\code{a} as its base, lowered left to right: \code{a} is written, \code{b}'s and \code{c}'s elements
+are pushed. The order in which the operands are \emph{evaluated} does not change. This replaces the
+specification's lowering of list literals and of \code{++} chains; Change~1 names it
+(\S\ref{sec:disc-options}).
 
 The rule is positional on purpose. Which operand is reused never depends on what the analysis can
 prove, so the programmer decides it by writing, and the cost of each form is the same in every build:
 \code{[ x, …acc ]} prepends onto \code{acc} in amortised $O(1)$, \code{[ x ] ++ ys} builds a new list from
 \code{[ x ]} and reads \code{ys}, $O(|\mathit{ys}|)$. When the base is used again after the construction,
 the program is rejected and the message offers \code{List.copy} on the base, the reading form, or a
-reordering (Chapter~\ref{sec:errors}).
+reordering (Chapter~\ref{sec:errors}). One shape has no in-place spelling: prepending a whole list onto
+an accumulator, \code{List.foldr xss [] (λxs acc → xs ++ acc)}, whose base is the borrowed element
+\code{xs}. Its in-place forms are the left fold \code{List.foldl xss [] (λxs acc → acc ++ xs)}, which
+appends each list to the accumulator and builds the same result, and \code{List.concat}.
 
-The rule also settles which identity a construction returns: the base's. One consequence touches a
-promise the language specification records, that \code{[] ++ ys} and \code{[ …[], …ys ]} return
-\code{ys} itself. Under the rule the base, the empty array, is the result, and \code{ys}'s elements are
-copied into it; \code{ys} is only read. Keeping that one promise would make the right operand of every
-\code{++} an alias of the result, and is incompatible with the rule that the other operands are only
-read; we state the change here so that it is decided rather than implied. The promise for
-\code{xs ++ []}, whose result is its base unchanged, holds as before.
+The rule also settles which cell a construction returns: the base's. (Its \emph{identity}, the
+\code{===} of the header, may differ: a prepend into a view returns a new header over the same array,
+\S\ref{sec:hard-views}.) One consequence touches a promise the language specification records: that an
+append whose left operand is empty \emph{at run time} returns its right operand itself---\code{[] ++ ys},
+\code{[ …[], …ys ]}, and \code{xs ++ ys} whenever \code{xs} turns out empty, as the library's
+\code{append} is written today. Under the rule the base, the empty array, is the result, and
+\code{ys}'s elements are copied into it; \code{ys} is only read. Keeping the promise would make the right
+operand of every \code{++} a possible alias of the result, and is incompatible with the rule that the
+other operands are only read; we state the change here so that it is decided rather than implied. The
+promise for \code{xs ++ []}, whose result is its base unchanged, holds as before.
 
 \paragraph{Assertions.} The list writers in beni's core library are written in beni over the
 low-level \code{Js} interface (\S\ref{sec:bg-boundary}): \code{set xs i v}, for instance, is a
@@ -501,7 +544,7 @@ set      : List a [consumed+aliased], Int, a [aliased]
              → List a [= π₁; [*] = π₁[*], π₃; excl if π₁ excl and π₃ stored exclusively]
 update   : List a [consumed+aliased; requires excl if g consumes], Int,
            (a → a) [calls ≤1; supply 1 owned π₁[*] if π₁ excl; supply 1 borrowed π₁[*] otherwise]
-             → List a [= π₁; [*] = π₁[*], g.res; excl if π₁ excl and g.res fresh]
+             → List a [= π₁; [*] = π₁[*], g.res; excl if π₁ excl and g keeps shape]
 push     : List a [consumed+aliased], a [aliased]
              → List a [= π₁; [*] = π₁[*], π₂; excl if π₁ excl and π₂ stored exclusively]
 pop      : List a [consumed+aliased] → List a [= π₁; excl if π₁ excl]
@@ -524,30 +567,53 @@ is aliased by the result at $[\ast]$, and ``stored exclusively'' means unique at
 from every cell already in the list, as \S\ref{sec:model-excl} defines. \code{append} and \code{copy}
 never keep the flag, because their results share elements with a list that lives on. An index is an
 \code{Int}, which crosses and so carries no bracket. \code{update} is \code{set} with a callback, and its
-callback is supplied an \emph{owned} element only when the list's contents are exclusive. Everything
-else in the list library is ordinary beni over \code{at}, the array builder and a few internal
-primitives with asserted rows, and its summary is inferred: \code{map}, for instance, comes out as
+callback is supplied an \emph{owned} element only when the list's contents are exclusive; ``$g$ keeps
+shape'' is the class atom of \S\ref{sec:model-excl} under which the flag survives the callback.
+
+\paragraph{Single-pass functions.} \code{map} reads element $i$ once, hands it to its callback, stores the
+result in the array it is building, and never reads element $i$ again. When the caller's list is unique,
+exclusive and dead after the call, the element is therefore unique inside the callback, by the same
+argument as \code{update}'s destructive read, and the callback may edit it in place: editing a card's tags
+by its id, \code{List.map model.cards λc → if c.id == id then \{ c | tags = [ …c.tags, t ] \} else c},
+or padding every row of a grid, \code{List.map grid (λrow → [ …row, Empty ])}. The row says so, with the
+consumption conditional on the callback's class, so that a \code{map} whose callback only reads costs
+the caller nothing:
 \begin{Verbatim}
-map : List a [borrowed; [*] aliased if g aliases 1], (a → b) [calls many; supply 1 borrowed π₁[*]]
-        → List b [= fresh, π₁; [*] = g.res]
+map : List a [borrowed; [*] aliased if g aliases 1;
+              consumed+aliased and requires excl if g consumes 1],
+      (a → b) [calls many; supply 1 owned π₁[*] if g consumes 1; supply 1 borrowed π₁[*] otherwise]
+        → List b [= fresh, π₁ if a and b may share a value; [*] = g.res;
+                  excl if g.res fresh, or if π₁ excl and g keeps shape]
 \end{Verbatim}
-where $\pi_1$ appears in the result because of the identity promise below. Putting the demand on
-library primitives follows a Clean recipe: library functions such as \code{newArray} return an array
-whose attribute is a variable rather than ``unique'', because ``if we are careful never to return a
-unique array from a function, we will always be able to share arrays'' \citep[\S6]{devries2008simplified}.
-User code carries nothing.
+\code{indexedMap} and \code{filterMap} have the same row, and \code{foldl} and \code{foldr} supply their
+\emph{element} the same way (their accumulator rows are in \S\ref{sec:inf-classes}). These rows are
+asserted, because the library writes the loops over \code{at}, whose row only reads; they join the
+trusted surface (\S\ref{sec:soundness-trusted}). Everything else in the list library is ordinary beni over
+\code{at}, the array builder and a few internal primitives with asserted rows, and its summary is
+inferred. Putting the demand on library primitives follows a Clean recipe: library functions such as
+\code{newArray} return an array whose attribute is a variable rather than ``unique'', because ``if we are
+careful never to return a unique array from a function, we will always be able to share arrays''
+\citep[\S6]{devries2008simplified}. User code carries nothing.
 
 \paragraph{A summary describes the emitted code, including every input the library returns.} The
 language specification promises that the library's building functions return their input itself when
 their result would equal it: \code{filter} that keeps every element, \code{map} whose every result is
 \code{===} its element, \code{slice} and \code{take} of everything, \code{xs ++ []}, \code{concat} with
-one non-empty list, \code{reverse} and the sorts below two elements (\S\ref{sec:bg-lists}). The renderer
-relies on these promises to skip work, and we keep them. Each such function's $\mathit{res}$ therefore
-names both outcomes, $\{\fresh, \pi_1\}$, so that \code{[ …List.filter xs p, y ]} consumes \code{xs} as
-well as the filter's result: \code{xs} must be dead there. In the idioms of Chapter~\ref{sec:idioms} it
-is---a model list filtered in an \code{update} arm, a local list piped through a filter---and where it is
-not, the message offers \code{List.copy}. Dropping the promises, so that these functions always return a
-fresh array, is an open proposal whose cost falls on the renderer (\S\ref{sec:disc-options}).
+one non-empty list, \code{reverse} and the sorts below two elements (\S\ref{sec:bg-lists}). The template
+runtime relies on these promises to skip work, and we keep them. Each such function's $\mathit{res}$
+therefore names both outcomes, $\{\fresh, \pi_1\}$, so that \code{[ …List.filter xs p, y ]} consumes
+\code{xs} as well as the filter's result: \code{xs} must be dead there. In the idioms of
+Chapter~\ref{sec:idioms} it is---a model list filtered in an \code{update} arm, a local list piped through
+a filter---and where it is not, the message offers \code{List.copy}. The promise is named only where it
+can fire: \code{map} can return its input only when every result is its element, which is impossible when
+the callback's result type and the element type cannot share a value at run time, as for
+\code{List.map model.items viewItem}, whose items are records and whose results are markup. Its
+$\mathit{res}$ is then $\{\fresh\}$, and \code{List.map model.items viewItem ++ [ addButton ]} in a
+\code{view} consumes only the new list. (``May share a value'' is decided on the run-time
+representation: a type of one constructor with one field is represented by its field under the release
+optimiser, so a \code{map} from such a type to its field's type keeps $\pi_1$.) Dropping the promises, so
+that these functions always return a fresh array, is an open proposal whose cost falls on the template
+runtime (\S\ref{sec:disc-options}).
 
 beni's backend compiles a function that builds its result in tail position modulo a list constructor,
 such as
@@ -695,17 +761,27 @@ and an owned supply from a container must give the callback the same guarantee. 
 pairwise disjoint from every other stored path, checked as \Disjoint\ over all tracked paths of all
 stored elements: a literal of distinct fresh values; a fresh result whose summary says $\excl$
 (\code{map}'s result when its callback's result is $\fresh_k$ at every tracked path---a cell made
-\emph{during} the callback's call, never $\env.q$, $\pi_i.q$ or $\shared$---and distinct across paths;
-a decoder's output, by its declaration);
+\emph{during} the callback's call, never $\env.q$, $\pi_i.q$ or $\shared$---and distinct across paths, or
+when its input was exclusive and consumed and the callback keeps shape; a decoder's output, by its
+declaration);
 \item \emph{kept} by a \emph{destructive read}: a container function that consumes the container,
 hands one element to a callback and stores the callback's result back at that position, reading no
 other element in between. \code{List.update}'s body is \code{set xs i (func (at xs i))}, and
 \code{set} writes slot $i$. The element is unique inside the callback because the container is
 consumed at the call (\Dead), no argument or capture of the callback holds it (\Disjoint), and by
 conditions 1--3 its own paths are disjoint and held only through the slot, which nothing reads before
-it is overwritten. The flag survives if the callback's result is fresh or the element itself. A
-dictionary's \code{update} has the same effect at a \emph{key}, by another route
-(\S\ref{sec:hard-containers}), and its owned supply is an asserted row;
+it is overwritten. The flag survives when the callback \emph{keeps shape}: for every tracked path $q$ of
+its result, the result's cells at $q$ are fresh cells made during the call (distinct numbers at distinct
+paths) or the element's own cell at the \emph{same} path, $\pi_1.q$, and every container path of the result
+is itself exclusive ($\mathit{xres}$). The element itself keeps shape, and so does a record update of it
+that edits one of its own lists in place, \code{λr → \{ r | tags = [ …r.tags, t ] \}}, whose result holds
+$\pi_1.\mathit{tags}$ at $.\mathit{tags}$ and $\pi_1.q$ at every other path $q$: each slot still holds
+cells that only it holds, at the paths where they were. ``Keeps shape'' is one atom of the callback's
+class, read off its $\mathit{res}$ and $\mathit{xres}$. A single-pass function (\code{map} and its kin,
+and the folds' element) is a destructive read of every position in turn, and keeps the flag the same way.
+A dictionary's \code{update} has the same effect at a \emph{key}, by another route
+(\S\ref{sec:hard-containers}); its owned supply \emph{and} the flag it keeps are asserted together in its
+row;
 \item \emph{kept or cleared by every writer and construction} as its row says: a store of a unique value
 disjoint from the rest keeps it, a store of anything else clears it, and copying in the elements of a
 list that lives on clears it;
@@ -733,7 +809,10 @@ unique spine and unique elements, types this program; with the flag, so does the
 
 With the flag, \code{List.update rows i (λr → \{ r | tags = [ …r.tags, t ] \})} is accepted when
 \code{rows} is unique and exclusive, and rejected---``the elements of \code{rows} may share''---when they
-came from somewhere the checker cannot see. Without the flag the whole class of nested edits would be a
-limit. The flag travels in summaries ($\mathit{xres}$, $\mathit{xreq}$, and the argument-state atoms of
-guards) and in interfaces, and its soundness is Lemma~\ref{lem:excl}. Elements of a crossing type need
+came from somewhere the checker cannot see. Because the callback keeps shape, the result is exclusive
+again, so the same arm may make the edit at every dispatch: in a TEA program the entry protocol
+receives \code{update}'s $\mathit{xres}$ for \code{model.rows} as well as its cells (\Obl{P5}), and finds
+the path exclusive at every entry. Without the flag the whole class of nested edits would be a limit.
+The flag travels in summaries ($\mathit{xres}$, $\mathit{xreq}$, and the argument-state atoms of guards)
+and in interfaces, and its soundness is Lemma~\ref{lem:excl}. Elements of a crossing type need
 none of this.

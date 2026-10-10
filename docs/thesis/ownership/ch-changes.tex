@@ -7,7 +7,9 @@ it touches, and how it weighs against the principle of Chapter~\ref{sec:discussi
 must buy a guarantee. The changes fall into three groups. Changes 1--4 are \emph{decided}: they define the
 language the checker is designed for (\S\ref{sec:bg-language}). Changes 5--8 are \emph{required} by the
 design as it stands: without them the soundness argument does not go through, or the idioms of
-Chapter~\ref{sec:idioms} are rejected on the platform that runs them. Proposals O1--O7 are \emph{open}:
+Chapter~\ref{sec:idioms} are rejected on the platform that runs them; Change~8's scope, that only the direct
+platform writes lists in place, is decided (rule~7), and the renderer obligation it places on that platform is
+required. Proposals O1--O7 are \emph{open}:
 each would buy precision, speed or convenience, each has a cost, and none is assumed by the rest of the
 thesis.
 
@@ -17,25 +19,31 @@ thesis.
 \phantomsection\addcontentsline{toc}{subsection}{Change 1: list construction consumes its base}
 
 In \code{[ x, …acc ]}, \code{[ …acc, x ]}, \code{[ …acc, …ys ]} and \code{acc ++ ys}, the first spread, or
-the left operand of \code{++}, is the base: its array is reused in place, at either end, and the other
-operands and the elements are only read. A literal with no spread allocates; a pattern only reads; a
-construction whose base is used again is an error whose message offers \code{List.copy}
-(\S\ref{sec:model-demands}).
+the leftmost operand of a chain of \code{++}, is the base: its array is reused in place, at either end, and
+the other operands and the elements are only read. A chain \code{a ++ b ++ c} is one construction,
+\code{[ …a, …b, …c ]}. A literal with no spread allocates; a pattern only reads; a construction whose base
+is used again is an error whose message offers \code{List.copy} (\S\ref{sec:model-demands}).
 
 \emph{Reason.} Accumulators, folds, recursive builders and \code{update} arms are written with list syntax,
 and with construction consuming they run in place with no new name (Chapter~\ref{sec:idioms}).
 
 \emph{Costs.} The checker meets a demand at every spread and every \code{++} on lists, so its precision
 on idioms carries the design. The programmer learns which operand is reused. A version that is kept and
-later extended needs an explicit copy.
+later extended needs an explicit copy. A list cannot be prepended in place onto an accumulator; the left
+fold that appends instead builds the same list.
 
 \emph{Recorded decisions it touches.} It keeps the language's decision that no way of building a list by
 prepending is quadratic for every accumulator, fold, recursive builder and TEA list, and reverses it for
 a persistent stack whose old versions are read later, which now needs a copy per kept version; the test
 program guarding that decision needs \code{List.copy} at the version it keeps
-(\S\ref{sec:idioms-rejected}). It withdraws the identity promise that \code{[] ++ ys} is \code{ys} itself
-(\S\ref{sec:model-demands}). It agrees with the decision that \code{++} on lists calls the list library's
-append.
+(\S\ref{sec:idioms-rejected}). It withdraws the identity promise that an append whose left operand is empty
+at run time returns its right operand itself, \code{[] ++ ys} among them (\S\ref{sec:model-demands}). It
+\emph{replaces} the specification's lowering of a list literal, which builds from the right
+(\code{[ …a, …b, …c ]} is \code{List.append a (List.append b c)}), with one that builds from the base,
+left to right; the specification's statement that \code{[ …xs, …ys ]} and \code{xs ++ ys} are the same list
+becomes true of what each consumes as well, which right-nesting would have broken for chains of three or
+more. The order in which operands are evaluated does not change. It keeps the decision that \code{++} on
+lists calls the list library's append.
 
 \emph{Against the principle.} It buys the cost guarantee for the idioms people write; its restriction,
 that a base be dead, protects against a silent wrong answer.
@@ -136,43 +144,73 @@ small size cost, unmeasured. It is a change to the language's evaluation-order l
 
 \emph{Against the principle.} No restriction on programs; a constraint on the optimiser.
 
-\subsection*{Change 7: \code{send} writes what \code{update} writes}
-\phantomsection\addcontentsline{toc}{subsection}{Change 7: send writes what update writes}
+\subsection*{Change 7: a \code{send} consumes what reaches a path written in place}
+\phantomsection\addcontentsline{toc}{subsection}{Change 7: a send consumes what reaches a path written in place}
 
-A program's \code{send} consumes a payload path only when some arm of \code{update} edits that path in
-place, and otherwise only aliases it (\Obl{P6}).
+A program's \code{send} is a demand on its payload at every path the payload may carry into a model path
+that some arm of \code{update} writes in place---directly, or one dispatch or more later, after an arm has
+stored it---and otherwise only aliases it (\Obl{P6}). The entry fixpoint follows each send site's payload
+through \code{update}'s results to the paths it may reach.
 
-\emph{Reason.} Payloads that \code{update} edits must be unique at the arm; payloads it only reads need
-nothing. Consuming every payload would reject programs with no in-place edit at all, which buys no
-guarantee; sharing every payload would make a list decoded in a fiber, sent and stored in the model
+\emph{Reason.} Payloads that end up edited in place must be unique when they are edited; payloads that are
+only read need nothing. Consuming every payload would reject programs with no in-place edit at all, which
+buys no guarantee; sharing every payload would make a list decoded in a fiber, sent and stored in the model
 uneditable forever.
+
+\emph{What changed.} The previous statement bound a send to \code{update}'s own use of its message
+parameter. In the flow it was meant to accept, the arm that receives the payload only stores it, and the
+in-place edit comes one dispatch later, through the model; by the stated binding that send only aliased, so
+a sender that read its list after the send---after a later message had extended it in place---was accepted
+(T38). Following the payload to the paths it reaches closes that, and keeps the flow accepted whenever the
+sender gives the list up: \code{Cmd.task}'s body sends a temporary, which is dead at the send.
 
 \emph{Costs.} A send's verdict depends on \code{update}'s summary, so it is checked at the entry fixpoint
 rather than where the send is written; the message must point from the send to the arm that edits the
-payload.
+model path the payload reaches, and through the arm that stored it there.
 
-\emph{Against the principle.} It rejects exactly the sends whose payload an arm edits in place.
+\emph{Against the principle.} It rejects exactly the sends whose payload may be edited in place while the
+sender still reads it.
 
-\subsection*{Change 8: a renderer skips a list by identity only if no arm edits it}
-\phantomsection\addcontentsline{toc}{subsection}{Change 8: a renderer skips a list by identity only if no arm edits it}
+\subsection*{Change 8: in-place lists on the direct platform only, rendered by write sets}
+\phantomsection\addcontentsline{toc}{subsection}{Change 8: in-place lists on the direct platform only, rendered by write sets}
 
-A renderer compiles every markup site that may show a list the program edits in place---learnt from
-\code{update}'s summary at the program constructor---without the skip that compares that list, or a row
-item holding one, with the last by identity; such a site walks its rows (\Obl{P7}).
+Only the direct platform writes lists in place; every other target, the template runtime included, keeps
+today's persistent lists and its identity-based skips (rule~7 of \S\ref{sec:bg-language}). The direct
+platform decides what to re-render from compile-time write sets: in the handler of a message key, no
+identity test concludes ``unchanged'' about a value that may hold a list the key may have written in place,
+and its scripts for indexed edits, swaps, the \code{map} idiom and the reconciler's patch step drop their
+element-identity guard for lists whose elements are written in place (\Obl{P7}, \S\ref{sec:hard-tea}).
 
-\emph{Reason.} An in-place edit keeps a list's identity, so a skip on identity would leave the page showing
-the old list. Without the change, every in-place edit of a rendered list is an error on beni's template
-runtime, which under Change~1 is the idiom I5 on every rendered list.
+\emph{Reason.} An in-place edit keeps a list's identity, so every test that skips work because a value is
+the same object as last time would leave the page showing the old list. The template runtime makes such
+tests in many places---grouped values, \code{let}s read by markup, helper calls, components, \code{Show}
+bodies, row inputs, \code{<For>}, views---and the language specifies them; the direct platform already
+decides almost everything from write sets. Keeping in-place lists to the platform built that way avoids
+changing the other.
 
-\emph{Costs.} Such a site compares each row's item on every render where it compared one pointer. That
-cost falls on exactly the lists the program edits, and whether it is acceptable against the reference
-renderer is to be measured with the existing benchmark harness before the change is adopted
-(\S\ref{sec:eval-perf}). The direct platform already satisfies the obligation by design.
+\emph{What it replaces.} The previous form of this change asked the template runtime to compile without
+its \code{<For>} skip every site that shows a list the program edits. That covered one of the template
+runtime's identity tests out of seven, and claimed that the direct platform kept the obligation by design,
+which its element-guarded scripts do not for elements edited in place (T37). This form is the author's
+decision of 10 October 2026.
 
-\emph{Recorded decisions it touches.} None of the identity promises: the renderer still relies on them for
-every list the program does not edit.
+\emph{Costs.} On the direct platform: for a \code{<For>} over a list whose elements are lists the program
+edits in place, an unguarded indexed script and swap and an all-rows variant of the identity walk and of the
+reconciler's patch, some tens of bytes each, and $O(n \cdot h)$ leaf comparisons where the identity walk
+did $n$ pointer comparisons; nothing for lists of records (Table~\ref{tab:p7cost}). To be measured on a page
+with a list of lists before it is adopted (\S\ref{sec:eval-perf}). On every other target: the rule's
+rejections with none of its gain (\S\ref{sec:discussion}), and a second, persistent implementation of the
+list writers in the core library.
 
-\emph{Against the principle.} A runtime contract, not a restriction on programs.
+\emph{Recorded decisions it touches.} The direct platform's own design plans in-place updates only for model
+paths it proves unshared, and never for an element that a row shows, which is what lets it guard indexed
+scripts by element identity; this change writes such elements in place, and changes those guards. Its
+design also keeps the persistent list representation unchanged; this change gives it the in-place one. On the
+template runtime the language's promises that a render may skip a group, a \code{let}, a call, a row or a
+\code{Show} body whose read paths are \code{===} to last time, and that two views at one base and offset are
+the same list, are kept as they are. None of the identity promises of the list library is touched.
+
+\emph{Against the principle.} A runtime contract on one platform, not a restriction on programs.
 
 \section{Open proposals}
 
@@ -195,14 +233,17 @@ external corpus applies these functions to a list that is unique and dead at the
 
 Functions that build would return a fresh array always, instead of their input when the result would
 equal it. \emph{Buys:} $\mathit{res} = \{\fresh\}$ for \code{filter}, \code{map} and their kin, so an edit of
-the result never demands the source (\S\ref{sec:hard-pipelines}). \emph{Costs:} the renderer skips a
-\code{<For>} when its list is the same object as last time, and these promises are what make an unchanged
+the result never demands the source (\S\ref{sec:hard-pipelines}), and the splices of
+Table~\ref{tab:rejected} are accepted. \emph{Costs:} the template runtime skips a \code{<For>} when its list
+is the same object as last time, and these promises are what make an unchanged
 filtered or mapped list the same object; without them, a \code{view} that renders
 \code{List.filter model.todos visible} hands the renderer a new array on every render, and every unrelated
 message walks every row, keyed matching included. \emph{Conflicts with} the language's recorded decision that
 these operations return their input itself, on which its rendering strategy rests. We recommend keeping
 the promises: their cost to the checker is precision only where the source is used again, which the
-idioms do not do.
+idioms do not do, and, now that \code{map}'s promise is named only where it can fire, the splices and
+rotations by \code{take} and \code{drop}, which the message answers with \code{List.insertAt} and
+\code{List.removeAt}.
 
 \subsection*{O3: the policy for room in front of a list}
 \phantomsection\addcontentsline{toc}{subsection}{O3: the policy for room in front of a list}

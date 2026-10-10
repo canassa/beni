@@ -62,7 +62,8 @@ hash-consed, as the write-set analysis's are, so a chain of conditionals does no
 
 Liveness is a standard backward pass over the same instructions, with one bit per (variable, path)
 and the uses of \S\ref{sec:model-liveness}. Branches join by union: a holder live in either arm is
-live before the \code{case}. A captured path is live \emph{wherever the closure value is live}---at
+live before the \code{case}. A captured path---one of the paths of a captured variable that the closure's body
+uses, \S\ref{sec:model-functions}---is live \emph{wherever the closure value is live}---at
 every call, store, return or pass of the closure, or of any structure that holds it, which the walk
 sees as ordinary uses of the holder's paths through $\env$---and \emph{from its creation onward,
 forever}, when the closure escapes. A local function's captures are live at every call of it. So
@@ -71,7 +72,9 @@ g = λ_ → List.length xs
 ys = [ …xs, 1 ]
 { m | f = g }
 \end{Verbatim}
-is rejected: \code{g} is used after the construction, and it holds \code{xs}. The cost is linear.
+is rejected: \code{g} is used after the construction, and it holds \code{xs}. By contrast, with
+\code{f = λ\_ → model.name}, the record \code{\{ model | rows = [ …model.rows, x ], label = f ⊤ \}} is
+accepted: \code{f} holds \code{model.name}, a string, and not \code{model.rows}. The cost is linear.
 
 \section{Checking, and reading off the summary}
 \label{sec:inf-summarise}
@@ -181,18 +184,30 @@ their orders are:
 Fact & Values, bottom first & Height \\
 \midrule
 $\mathit{use}(i, q)$, $\pi_i.q \in P$ & subsets of $\{\mathsf{R}, \mathsf{A}, \mathsf{E}, \mathsf{W}\}$, by inclusion & 4 per path \\
-$\mathit{res}(q')$, $q' \in Q$ & subsets of $P \cup V \cup \{\fresh_k, \esc_k\}_{k \le |Q|} \cup \{\shared, \top\}$, ordered by inclusion after closing upwards under $\fresh_k \sqsubset \esc_k$ and $p \sqsubset \top$ & $|P| + |V| + 2|Q| + 2$ per path \\
+$\mathit{res}(q')$, $q' \in Q$ & down-closed subsets of the provenances $\mathit{Pv} = P \cup V \cup \{\fresh_k, \esc_k\}_{k \le |Q|} \cup \{\shared, \top\}$, ordered by $\fresh_k \sqsubset \esc_k$ and $p \sqsubset \top$ for every $p$, by inclusion & $|\mathit{Pv}| = |P| + |V| + 2|Q| + 2$ per path \\
 $\mathit{xres}(q')$ & $\mathsf{yes} \sqsubset \mathsf{no}$ (a \emph{must} fact, reversed) & 1 per path \\
 $\mathit{xreq}(i, q)$ & $\mathsf{no} \sqsubset \mathsf{yes}$ & 1 per path \\
 $\mathit{calls}(j)$ & $0 \sqsubset {\le}1 \sqsubset \mathit{many}$ & 2 per $j$ \\
-$\mathit{supply}(j, k)$ & provenance sets as for $\mathit{res}$; $\mathrm{owned} \sqsubset \mathrm{borrowed}$ (reversed) & $|P| + 2|Q| + 3$ per parameter of $g_j$ \\
+$\mathit{supply}(j, k)$ & provenance sets as for $\mathit{res}$; $\mathrm{owned} \sqsubset \mathrm{borrowed}$ (reversed) & $|\mathit{Pv}| + 1$ per parameter of $g_j$ \\
 $\mathit{need}(j)$ & nothing $\sqsubset$ fresh and exclusive & 1 per $j$ \\
 once-ness of a result path & not once $\sqsubset$ may be once & 1 per function-typed result path \\
 \bottomrule
 \end{tabularx}
 \end{center}
-The order on $\mathit{res}$ makes the read-off rule monotone: when more of a body's cells escape, a
-$\fresh_k$ becomes $\esc_k$, which is above it. The base lattice $L_0$ is the product of these, ordered
+The order on a provenance set needs care. An earlier statement of it closed each set \emph{upwards}
+under $\fresh_k \sqsubset \esc_k$ and $p \sqsubset \top$, which taken literally puts $\top$ into every
+non-empty set and makes every result fail \Known. What is meant is the lower (Hoare) order: $S
+\sqsubseteq T$ when every element of $S$ is below some element of $T$. Its quotient is the lattice of
+\emph{down-closed} subsets of $\mathit{Pv}$ ordered by inclusion, and we store each set by its maximal
+elements: $\{\esc_k\}$ stands for $\{\fresh_k, \esc_k\}$, and a set holding $\top$ is the whole of
+$\mathit{Pv}$, ``any cell'', which is what $\top$ means. A chain of down-closed sets adds at least one
+provenance at each step, so a path's height is $|\mathit{Pv}|$, the figure in the table. Every test the
+rules make of a set reads its maximal elements, and every test is \emph{antitone}: it can only turn
+from true to false as the set grows. \Known\ asks that $\top$ not be maximal; ``fresh'' (for
+$\excl$, for $\mathit{need}$, for ``keeps shape'') asks that every maximal element be some
+$\fresh_k$; \Unescaped\ asks that none be $\esc_k$ or $\shared$. With this order the read-off rule is
+monotone: when more of a body's cells escape, a $\fresh_k$ becomes $\esc_k$, whose down-closure contains
+it. The same order applies to $\mathit{supply}$'s provenance sets. The base lattice $L_0$ is the product of these, ordered
 pointwise, and its height $h_0$ is the sum of the last column.
 
 A \emph{conditional} summary maps each valuation of its guard atoms to a point of $L_0$, monotonically:
@@ -263,14 +278,22 @@ pick rows = List.foldl rows [] (λr acc → r)
 \end{Verbatim}
 the lambda's $\mathit{res} = \{\pi_1\}$ names the lambda's own parameter, and \code{foldl}'s summary
 \begin{Verbatim}
-foldl : List a [borrowed; [*] aliased], b [consumed+aliased if g consumes 2; aliased otherwise],
-        (a, b → b) [calls many; supply 1 borrowed π₁[*]; supply 2 owned π₂ ∪ g.res]
-          → b [= π₂, g.res]
+foldl : List a [borrowed; [*] aliased; consumed+aliased and requires excl if g consumes 1],
+        b [consumed+aliased if g consumes 2; aliased otherwise],
+        (a, b → b) [calls many; supply 1 owned π₁[*] if g consumes 1; supply 1 borrowed π₁[*] otherwise;
+                    supply 2 owned π₂ ∪ g.res; supply 2 excl if π₂ excl and g.xres]
+          → b [= π₂, g.res; excl if π₂ excl and g.xres]
 \end{Verbatim}
-instantiates it to $\{\pi_1.[\ast]\}$, so \code{pick}'s result aliases the elements of its argument, and
+(the first line's consumption and the owned element are the single-pass rule of
+\S\ref{sec:model-demands}; \code{foldr} has the same row) instantiates it to $\{\pi_1.[\ast]\}$, so \code{pick}'s result aliases the elements of its argument, and
 a caller that edits the result while still using \code{rows} is rejected. The same translation through
 $\env$ makes a callback that returns a captured list, \code{List.map ys (λ\_ → xs)}, produce a result
 whose elements are \code{xs}'s cell rather than fresh ones, so \code{map}'s result is not exclusive.
+The last guard carries exclusivity round the loop: the accumulator handed to the callback is exclusive
+at the first call when the initial value is, and at every later call when the callback's own result is
+($g.\mathit{xres}$). Without it a fold could supply an owned accumulator but never an exclusive one,
+and an edit inside it---a group of a dictionary, App.~\ref{app:groupby}---would fail from the second
+iteration on.
 
 The classes live on solved types, so a function value that reaches $f$ through a record field or a
 parameter of a parameter is handled by the same instantiation: the class is where the function type
