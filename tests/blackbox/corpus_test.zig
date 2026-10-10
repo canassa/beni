@@ -2031,7 +2031,7 @@ const Case = struct {
         if (fuzz_plan) |f| if (!f.skip) try entries.append(c.arena, .{ .path = FuzzPlan.spec, .fuzz = true });
         var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
         if (entries.items.len != 0) {
-            shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms) catch |err| {
+            shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms, !c.fixture.differential) catch |err| {
                 detail("{s}: cannot run the pages ({t}); is node on PATH?\n", .{ c.fixture.name, err });
                 return err;
             };
@@ -2100,7 +2100,9 @@ const Case = struct {
 
     /// One build of a `browser/` fixture. The golden is `.expected`, or the
     /// build's own `.release-expected`, or under Chrome the fixture's
-    /// `.chrome-expected` when it has one. The page is skipped when
+    /// `.chrome-expected` when it has one (a `browser-tea` build reads its
+    /// `.tea-chrome-expected` first, where the two platforms differ in
+    /// Chrome by design). The page is skipped when
     /// `record` lists this build.
     fn pagePlan(c: Case, pass: RunPass, args: []const []const u8, h: browser.Harness, script: Script, record: []const u8) !PagePlan {
         const pass_name = @tagName(pass);
@@ -2116,7 +2118,9 @@ const Case = struct {
         }
         const chrome = c.cfg.chrome != null;
         const tea = pass == .tea_dev or pass == .tea_release;
-        const golden = if (chrome and c.goldenExists("chrome-expected"))
+        const golden = if (chrome and tea and c.goldenExists("tea-chrome-expected"))
+            "tea-chrome-expected"
+        else if (chrome and c.goldenExists("chrome-expected"))
             "chrome-expected"
         else if (pass == .tea_release and c.goldenExists("tea-release-expected"))
             "tea-release-expected"
@@ -2291,7 +2295,7 @@ const Case = struct {
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
         const timeout_ms = if (sweep) c.cfg.timeout_ms * 10 else c.cfg.timeout_ms;
         const line = if (plan.skip) plan.line else blk: {
-            const shown = browser.driveAll(c.w, h, chrome_endpoint, &.{.{ .path = FuzzPlan.spec, .fuzz = true }}, script.name, timeout_ms) catch |err| {
+            const shown = browser.driveAll(c.w, h, chrome_endpoint, &.{.{ .path = FuzzPlan.spec, .fuzz = true }}, script.name, timeout_ms, !c.fixture.differential) catch |err| {
                 detail("{s}: cannot run the page fuzzer ({t}); is node on PATH?\n", .{ c.fixture.name, err });
                 return err;
             };

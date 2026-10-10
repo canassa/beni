@@ -42,10 +42,10 @@ const BakedList$main = Tea$sandbox(($root$1, $t$2) => {
     }
     return $r$34;
   };
-  const $L$38 = { p: $w$12, n: null, r: [], m: $make$37, o: true, k: null, u: null };
+  const $L$38 = { p: $w$12, n: null, r: [], m: $make$37, o: true, k: null, u: null, w: null, x: null, d: null, z: Direct$unset, i: false };
   const $t$41 = ($p$40) => $p$40.id;
   const $key$42 = $t$41;
-  const $L$39 = { p: $w$10, n: null, r: [], m: $make$28, o: false, k: $key$42, u: null };
+  const $L$39 = { p: $w$10, n: null, r: [], m: $make$28, o: false, k: $key$42, u: null, w: null, x: null, d: null, z: Direct$unset, i: false };
   const $hany$17 = ($p$43) => {
     const id$13 = $p$43.a;
     $model$6 = { ...$model$6, opened: List$push($model$6.opened, id$13) };

@@ -1,0 +1,73 @@
+-- load
+console.log: label: "one"
+console.log: label: "two"
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <ul>
+      <li class="">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #pick1
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <ul>
+      <li class="on">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #pick2
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <ul>
+      <li class="">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="on">
+        <a id="pick2">"two"</a>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #pick1
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <ul>
+      <li class="on">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #relabel
+console.log: label: "two!"
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <ul>
+      <li class="on">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two!"</a>
+      </li>
+    </ul>
+  </main>
+</body>

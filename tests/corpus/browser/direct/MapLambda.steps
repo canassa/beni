@@ -1,0 +1,7 @@
+# Through the dispatcher, then composed at compile time, then nested.
+click #lambda-ping
+click #lambda-pong
+click #tagged-ping
+click #tagged-pong
+click #nested-ping
+click #nested-pong

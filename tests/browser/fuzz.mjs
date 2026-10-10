@@ -333,11 +333,38 @@ function unmakeable(t, defs, env, seen = new Set()) {
 // the page shows) a third of the time.
 function generator(defs, rng, pool) {
   const arity = defs.map((d) => Math.max(0, ...Object.values(d).map((args) => args.length)));
+  // While an element of a list of shown values is made: its key.
+  let forced;
+  // The shown values `shown` (deduplicated, in the page's order) as a
+  // permutation, a subsequence, with one repeated, or as they are.
+  const shownList = (shown) => {
+    const base = [...new Set(shown)].slice(0, 40);
+    switch (rng.int(4)) {
+      case 0: {
+        const out = [...base];
+        for (let i = out.length - 1; i > 0; i--) {
+          const j = rng.int(i + 1);
+          [out[i], out[j]] = [out[j], out[i]];
+        }
+        return out;
+      }
+      case 1:
+        return base.filter(() => rng.next() < 0.6);
+      case 2: {
+        const out = [...base];
+        out.splice(rng.int(out.length + 1), 0, rng.pick(base));
+        return out;
+      }
+      default:
+        return base;
+    }
+  };
   const value = (t, env, depth) => {
     if (typeof t === "number") return env[t] === undefined ? none : value(env[t].t, env[t].env, depth);
     if (typeof t === "string") {
       switch (t) {
         case "i":
+          if (typeof forced === "number") return forced;
           if (pool.ints.length !== 0 && rng.next() < 0.35) return rng.pick(pool.ints);
           return rng.next() < 0.7 ? rng.pick(ints) : rng.int(2001) - 1000;
         case "f":
@@ -375,6 +402,25 @@ function generator(defs, rng, pool) {
         return out;
       }
       case "l": {
+        // A list of the values the page shows (browser-direct.md's S3
+        // amendment, *The oracles*): the ints (or, for a list of strings,
+        // the strings) the page shows in another order, a subsequence of
+        // them, one repeated, or as they are — each element's every `Int`
+        // field that value — so a keyed list's new items meet its rows'
+        // keys: a permutation, a filter, duplicate keys, the same keys.
+        const shown = t[1] === "s" ? pool.strings : pool.ints;
+        if (depth <= 1 && forced === undefined && shown.length !== 0 && rng.next() < 0.35) {
+          const keys = shownList(shown);
+          const out = [];
+          for (const key of keys) {
+            forced = key;
+            const v = t[1] === "s" ? key : value(t[1], env, depth + 1);
+            forced = undefined;
+            if (v === none) return none;
+            out.push(v);
+          }
+          return out;
+        }
         // Now and then past 32 elements: a list that is a trie
         // (backend.md §4, *Lists are arrays*).
         const n = depth > 3 ? 0 : depth <= 1 && rng.next() < 0.08 ? 33 + rng.int(16) : rng.int(4);

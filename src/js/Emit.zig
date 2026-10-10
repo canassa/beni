@@ -457,6 +457,9 @@ const DirectLists = struct {
     indices: std.ArrayList(Lower.Direct.IndexRecipe) = .empty,
     /// The pass's index symbol each of `indices` is.
     index_syms: std.ArrayList(u32) = .empty,
+    /// Version 1.9: per edit of the `editsOf` being built, the reads that
+    /// make a visit of every row (`Lower.Direct.List.causes`).
+    causes: std.ArrayList(std.ArrayList(?[]const Lower.Direct.IndexStep)) = .empty,
 
     const Index = beni_markup.Program.Index;
     const Edit = beni_markup.Program.Edit;
@@ -467,7 +470,7 @@ const DirectLists = struct {
     }
 
     fn build(d: *DirectLists) !void {
-        const holes = d.prog.holes;
+        const holes = d.prog.vholes;
         for (holes, 0..) |h, li| {
             if (h.kind != .each or (h.form != .for_keyed and h.form != .for_positional)) continue;
             // The `For`s around this one, outermost first, then this one.
@@ -475,18 +478,26 @@ const DirectLists = struct {
             var at: u32 = @intCast(li);
             while (at != none and chain.items.len <= 16) : (at = holes[at].list) try chain.insert(d.arena(), 0, at);
             const per_key = try d.arena().alloc([]const Edit, d.keys);
-            for (per_key, 0..) |*edits, k| edits.* = try d.editsOf(chain.items, k);
+            const per_key_causes = try d.arena().alloc([]const []const ?[]const Lower.Direct.IndexStep, d.keys);
+            for (per_key, per_key_causes, 0..) |*edits, *causes, k| {
+                edits.* = try d.editsOf(chain.items, k);
+                const out = try d.arena().alloc([]const ?[]const Lower.Direct.IndexStep, d.causes.items.len);
+                for (out, d.causes.items) |*o, c| o.* = c.items;
+                causes.* = out;
+            }
             try d.out.append(d.arena(), .{
                 .module = h.module,
                 .token = h.token,
+                .path = try d.arena().dupe(u64, h.path),
                 .exact = h.each_path != none,
                 .baked = try d.bake(@intCast(li), chain.items.len),
                 .edits = per_key,
+                .causes = per_key_causes,
             });
         }
         std.mem.sort(Lower.Direct.List, d.out.items, {}, struct {
             fn less(_: void, x: Lower.Direct.List, y: Lower.Direct.List) bool {
-                return x.module < y.module or (x.module == y.module and x.token < y.token);
+                return Lower.Direct.placeLess(x.module, x.token, x.path, y.module, y.token, y.path);
             }
         }.less);
     }
@@ -556,7 +567,7 @@ const DirectLists = struct {
     /// Key `k`'s edits of the last `For` of `chain`.
     fn editsOf(d: *DirectLists, chain: []const u32, k: usize) ![]const Edit {
         const w = d.w;
-        const holes = d.prog.holes;
+        const holes = d.prog.vholes;
         const n = chain.len;
         const li = chain[n - 1];
         const list = holes[li];
@@ -569,6 +580,7 @@ const DirectLists = struct {
             addressed = false;
         };
         const keyed = list.form == .for_keyed;
+        d.causes = .empty;
         // The list's own shape, and its elements' writes.
         if (addressed) for (writes) |wr| {
             var outer: std.ArrayList(Index) = .empty;
@@ -590,7 +602,7 @@ const DirectLists = struct {
             if (!inside) continue;
             if (set_above) {
                 while (outer.items.len < n - 1) try outer.append(d.arena(), .every);
-                try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .replaced } });
+                try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .replaced } }, null);
                 continue;
             }
             const p = list.each_path;
@@ -601,7 +613,7 @@ const DirectLists = struct {
                 try d.addShape(&out, outer.items, wr);
             } else if (lw < lp and w.mayPrefix(wr.path, p)) {
                 if (wr.kind != .value) continue;
-                try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .replaced } });
+                try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .replaced } }, null);
             } else if (try d.through(wr.path, p)) |at| {
                 // An element write: its row's groups whose bound reads it
                 // changes, and the key where it may change.
@@ -617,10 +629,12 @@ const DirectLists = struct {
                     }
                 }
                 const rekey = keyed and (list.key_path == none or w.conflicts(list.key_path, &.{wr}));
-                if (at == .every or at == .unknown) try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .all } });
+                const every = at == .every or at == .unknown;
+                if (every) try d.addEdit(&out, outer.items, .{ .shape = .{ .tag = .all } }, null);
                 // Even with no group to call: the row's item is what its
                 // listener bodies read at the event (Q1), so it is kept current.
-                try d.addEdit(&out, outer.items, .{ .rows = .{ .at = if (at == .unknown) .every else at, .groups = groups.items, .rekey = rekey } });
+                // At every row it is the identity walk's (1.9's `changed`).
+                try d.addEdit(&out, outer.items, .{ .rows = .{ .at = if (every) .every else at, .groups = groups.items, .rekey = rekey, .changed = every } }, null);
             }
         };
         // A derived list, or one under a derived `For`: replaced whenever a
@@ -628,7 +642,7 @@ const DirectLists = struct {
         if (!addressed) for (list.reads, list.bound) |r, b| for (writes) |wr| {
             if (!w.conflicts(r, &.{wr})) continue;
             const outer = try d.outerOf(chain, wr, b) orelse continue;
-            try d.addEdit(&out, outer, .{ .shape = .{ .tag = .replaced } });
+            try d.addEdit(&out, outer, .{ .shape = .{ .tag = .replaced } }, null);
         };
         // Every row, for a row group's read not bound to the row.
         for (holes, 0..) |h, hi| {
@@ -640,7 +654,7 @@ const DirectLists = struct {
                     const outer = try d.outerOf(chain, wr, b) orelse continue;
                     var groups: std.ArrayList(u32) = .empty;
                     try groups.append(d.arena(), d.group_of[hi]);
-                    try d.addEdit(&out, outer, .{ .rows = .{ .at = .every, .groups = groups.items } });
+                    try d.addEdit(&out, outer, .{ .rows = .{ .at = .every, .groups = groups.items } }, r);
                 }
             }
         }
@@ -652,7 +666,7 @@ const DirectLists = struct {
     /// them; null when the write is at or above one of those lists — its
     /// own edit, which makes those rows again.
     fn outerOf(d: *DirectLists, chain: []const u32, wr: Writes.Write, b: u8) !?[]const Index {
-        const holes = d.prog.holes;
+        const holes = d.prog.vholes;
         var outer: std.ArrayList(Index) = .empty;
         for (chain[0 .. chain.len - 1], 0..) |c, j| {
             if (j < b and holes[c].each_path != none) {
@@ -680,26 +694,47 @@ const DirectLists = struct {
         };
         const one: Index = if (wr.s1 != none) try d.index(wr.s1) else .unknown;
         const two: Index = if (wr.s2 != none) try d.index(wr.s2) else .unknown;
-        try d.addEdit(out, outer, .{ .shape = .{ .tag = tag, .a = one, .b = two } });
+        try d.addEdit(out, outer, .{ .shape = .{ .tag = tag, .a = one, .b = two } }, null);
     }
 
-    /// Add an edit, merging rows at the same index under the same rows.
-    fn addEdit(d: *DirectLists, out: *std.ArrayList(Edit), outer: []const Index, what: Edit.What) !void {
-        for (out.items) |*x| {
+    /// Add an edit, merging rows at the same index under the same rows —
+    /// a visit of the rows whose item changed (1.9's `changed`) only with
+    /// another — and recording `cause`, the read path that makes a visit
+    /// of every row, beside it (`causes`).
+    fn addEdit(d: *DirectLists, out: *std.ArrayList(Edit), outer: []const Index, what: Edit.What, cause: ?u32) !void {
+        for (out.items, 0..) |*x, i| {
             if (!std.mem.eql(Index, x.outer, outer)) continue;
             switch (what) {
                 .shape => |s| if (x.what == .shape and std.meta.eql(x.what.shape, s)) return,
-                .rows => |r| if (x.what == .rows and x.what.rows.at == r.at) {
+                .rows => |r| if (x.what == .rows and x.what.rows.at == r.at and x.what.rows.changed == r.changed) {
                     var groups: std.ArrayList(u32) = .empty;
                     try groups.appendSlice(d.arena(), x.what.rows.groups);
                     for (r.groups) |g| try addGroup(d.arena(), &groups, g);
                     x.what.rows.groups = groups.items;
                     x.what.rows.rekey = x.what.rows.rekey or r.rekey;
+                    if (cause) |c| try d.causes.items[i].append(d.arena(), try d.causeSteps(c));
                     return;
                 },
             }
         }
         try out.append(d.arena(), .{ .outer = try d.arena().dupe(Index, outer), .what = what });
+        try d.causes.append(d.arena(), .empty);
+        if (cause) |c| try d.causes.items[d.causes.items.len - 1].append(d.arena(), try d.causeSteps(c));
+    }
+
+    /// A read's model path as steps from ρ — fields and tuple components —
+    /// or null when it is not such a path.
+    fn causeSteps(d: *DirectLists, p: u32) !?[]const Lower.Direct.IndexStep {
+        const w = d.w;
+        if (w.rootOf(p) != Writes.rho_path) return null;
+        var buf: [Writes.k_limit + 1]u32 = undefined;
+        var out: std.ArrayList(Lower.Direct.IndexStep) = .empty;
+        for (w.steps(p, &buf)) |st| switch (w.pathKind(st)) {
+            .field => try out.append(d.arena(), .{ .field = w.pathA(st) }),
+            .tuple => try out.append(d.arena(), .{ .tuple = w.pathA(st) }),
+            else => return null,
+        };
+        return out.items;
     }
 
     fn addGroup(a: Allocator, groups: *std.ArrayList(u32), g: u32) !void {
@@ -715,7 +750,7 @@ const DirectLists = struct {
     /// no key writes either and bakes for every row — their texts set on
     /// the holes — or null.
     fn bake(d: *DirectLists, li: u32, depth: usize) !?u32 {
-        const holes = d.prog.holes;
+        const holes = d.prog.vholes;
         const list = holes[li];
         if (depth != 1 or list.each_path == none or list.init_rows.len == 0) return null;
         if (!d.static(li)) return null;
@@ -2409,11 +2444,11 @@ const Emitter = struct {
             // whole list's are two groups).
             var groups: std.ArrayList([]const u32) = .empty;
             var group_bounds: std.ArrayList([]const u8) = .empty;
-            const holes = try a.alloc(Lower.Direct.Hole, prog.holes.len);
-            const group_of = try a.alloc(u32, prog.holes.len);
+            const holes = try a.alloc(Lower.Direct.Hole, prog.vholes.len);
+            const group_of = try a.alloc(u32, prog.vholes.len);
             const rho = [_]u32{Writes.rho_path};
             const unbound = [_]u8{0};
-            for (prog.holes, holes, group_of) |h, *o, *go| {
+            for (prog.vholes, holes, group_of) |h, *o, *go| {
                 const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
                 const bounds: []const u8 = if (prog.view_capped) &unbound else h.bound;
                 const group: u32 = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
@@ -2432,6 +2467,7 @@ const Emitter = struct {
                     .group = group,
                     .bake = if (h.bake) try a.dupe(u8, h.bake_text) else null,
                     .where = try std.fmt.allocPrint(a, "{s}:{d}:{d}", .{ std.fs.path.basename(e.session.store.path(file)), at.line, at.col }),
+                    .path = try a.dupe(u64, h.path),
                 };
             }
             const conflicts = try a.alloc(bool, groups.items.len * keys.len);
@@ -2445,7 +2481,7 @@ const Emitter = struct {
             try lists.build();
             std.mem.sort(Lower.Direct.Hole, holes, {}, struct {
                 fn less(_: void, x: Lower.Direct.Hole, y: Lower.Direct.Hole) bool {
-                    return x.module < y.module or (x.module == y.module and x.token < y.token);
+                    return Lower.Direct.placeLess(x.module, x.token, x.path, y.module, y.token, y.path);
                 }
             }.less);
             out.holes = holes;
@@ -2986,6 +3022,12 @@ const Emitter = struct {
         // first lowering used of the module reaches less than the coarse
         // roots did (`backend.md` §15.1, *The runtime module*).
         var refined = false;
+        // The first lowering only finds what the program uses of the
+        // runtime module, which neither that module's own lowering nor
+        // core's can tell: they are left to the second, which then always
+        // runs. Lowering them twice was most of what a build of a page
+        // cost beyond its own modules (research 70).
+        var skipped = false;
         while (true) {
             // What each worker needs of the shared arena is made here, first:
             // the arena is the calling thread's alone.
@@ -2999,6 +3041,10 @@ const Emitter = struct {
                 // and nothing imports it, because imports are use-driven and a
                 // use is an edge.
                 if (!e.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
+                if (!refined and e.runtime_module != null and (m == e.runtime_module.? or e.graph().modulePackage(m) == .core)) {
+                    skipped = true;
+                    continue;
+                }
                 const source_path = e.session.store.path(e.graph().moduleFile(m));
                 slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
                 slot.sibling = try e.siblingSpecifier(source_path);
@@ -3054,7 +3100,7 @@ const Emitter = struct {
             if (refined or e.runtime_module == null or !lowered_clean) break;
             refined = true;
             const precise = try e.withFuzzRoots(try e.preciseRuntimeRoots(entry));
-            if (sameNodes(precise, e.extra_roots)) break;
+            if (sameNodes(precise, e.extra_roots) and !skipped) break;
             e.extra_roots = precise;
             for (slots) |*slot| slot.deinit(e.gpa);
             try e.eliminate(entry);

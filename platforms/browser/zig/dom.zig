@@ -166,6 +166,10 @@ pub const Marker = union(enum) {
 pub const Op = struct {
     node: m.Node.Index,
     what: What,
+    /// `browser-direct`'s (browser-direct.md's S3 amendment): the call
+    /// written in place the op's markup belongs to, as `Gen.inline_call`
+    /// numbered it — 0, the markup planned itself. `browser` never sets it.
+    ctx: u32 = 0,
 
     pub const What = union(enum) {
         /// A text hole that is its parent's only child: a text node of the
@@ -418,6 +422,16 @@ pub const Gen = struct {
     /// Every element's end tag written, as no implied end tag is relied on:
     /// a template that holds rows written one after another (K3).
     close_all: bool = false,
+    /// `browser-direct`'s helpers written in place (browser-direct.md's S3
+    /// amendment): for an `html` hole or a component node, the markup to
+    /// plan in its place and the number of the call — or null, and the node
+    /// is planned as a slot. `ctx` is the call the markup being planned is
+    /// in (0: the markup planned itself); `user`, the lowering's state.
+    inline_call: ?*const fn (g: *Gen, n: m.Node.Index) m.Error!?Inline = null,
+    ctx: u32 = 0,
+    user: ?*anyopaque = null,
+
+    pub const Inline = struct { node: m.Node.Index, ctx: u32 };
 
     pub const BakedRows = struct { html: []const u8, count: u32 };
 
@@ -1165,11 +1179,23 @@ pub const Gen = struct {
         return g.tree.attributeFacts(it.attribute).stateful;
     }
 
-    fn flatten(g: *Gen, out: *std.ArrayList(m.Node.Index), nodes: []const m.Node.Index) !void {
+    fn flatten(g: *Gen, out: *std.ArrayList(m.Node.Index), ctxs: *std.ArrayList(u32), nodes: []const m.Node.Index) m.Error!void {
         for (nodes) |n| {
             if (g.tree.kind(n) == .fragment) {
-                try g.flatten(out, g.tree.childrenOf(g.tree.fragment(n).children));
-            } else try out.append(g.a(), n);
+                try g.flatten(out, ctxs, g.tree.childrenOf(g.tree.fragment(n).children));
+                continue;
+            }
+            // A call written in place: its markup's nodes are the
+            // parent's, in the call's context.
+            if (g.inline_call) |inline_call| if (g.tree.kind(n) == .hole or g.tree.kind(n) == .component) if (try inline_call(g, n)) |into| {
+                const outer = g.ctx;
+                g.ctx = into.ctx;
+                defer g.ctx = outer;
+                try g.flatten(out, ctxs, &.{into.node});
+                continue;
+            };
+            try out.append(g.a(), n);
+            try ctxs.append(g.a(), g.ctx);
         }
     }
 
@@ -1239,8 +1265,11 @@ pub const Gen = struct {
         content: parser.Content,
     ) m.Error!void {
         var flat: std.ArrayList(m.Node.Index) = .empty;
-        try g.flatten(&flat, written);
+        var flat_ctxs: std.ArrayList(u32) = .empty;
+        try g.flatten(&flat, &flat_ctxs, written);
         const list = flat.items;
+        const outer_ctx = g.ctx;
+        defer g.ctx = outer_ctx;
         var dynamic: u32 = 0;
         for (list) |n| {
             if (g.isDynamic(n)) dynamic += 1;
@@ -1254,6 +1283,7 @@ pub const Gen = struct {
         var in_text = false;
         for (list, 0..) |n, at| {
             g.cx.at(n);
+            g.ctx = flat_ctxs.items[at];
             switch (g.tree.kind(n)) {
                 .text => {
                     const text = g.tree.string(g.tree.text(n).text);
@@ -1293,7 +1323,7 @@ pub const Gen = struct {
                             index += 1;
                         }
                         try b.write(g.a(), rows.html);
-                        try b.baked_lists.append(g.a(), .{ .what = n, .t = first });
+                        try b.baked_lists.append(g.a(), .{ .what = n, .t = first, .ctx = g.ctx });
                         continue;
                     };
                     if (g.bake) |bake| if (g.tree.kind(n) == .hole) if (bake(g, n)) |text| {
@@ -1304,7 +1334,7 @@ pub const Gen = struct {
                         const t = try b.tnode(g.a(), parent, index, .text);
                         index += 1;
                         in_text = true;
-                        try b.baked_holes.append(g.a(), .{ .what = n, .t = t });
+                        try b.baked_holes.append(g.a(), .{ .what = n, .t = t, .ctx = g.ctx });
                         if (!g.cx.build.release) b.mark(t);
                         continue;
                     };
@@ -1322,7 +1352,7 @@ pub const Gen = struct {
                         const t = try b.tnode(g.a(), parent, index, .text);
                         index += 1;
                         const value = try b.operand(g.a(), .{ .value = g.tree.hole(n).value });
-                        try b.ops.append(g.a(), .{ .node = n, .what = .{ .placeholder = .{ .t = t, .value = value } } });
+                        try b.ops.append(g.a(), .{ .node = n, .what = .{ .placeholder = .{ .t = t, .value = value } }, .ctx = g.ctx });
                         continue;
                     }
                     const op_at: u32 = @intCast(b.ops.items.len);
@@ -1466,7 +1496,7 @@ pub const Gen = struct {
                         .index = index,
                         .handler = handler,
                         .context = !had_event,
-                    } } });
+                    } }, .ctx = g.ctx });
                     had_event = true;
                 },
                 .attribute, .escape => raw = try g.attribute(b, t, it, index) or raw,
@@ -1495,7 +1525,7 @@ pub const Gen = struct {
                 const coded = raw or script == null or (facts != null and facts.?.property != null);
                 if (coded) {
                     const value = try b.operand(g.a(), .{ .constant = c });
-                    try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = true, .index = index } } });
+                    try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = true, .index = index } }, .ctx = g.ctx });
                     return raw;
                 }
                 switch (c.kind) {
@@ -1512,18 +1542,18 @@ pub const Gen = struct {
                     const script: ?bool = if (it.url) scriptUrl(text) else false;
                     if (script) |s| {
                         try bakeAttribute(g.a(), &b.html, name, if (s) "" else text);
-                        try b.baked_items.append(g.a(), .{ .what = index, .t = t });
+                        try b.baked_items.append(g.a(), .{ .what = index, .t = t, .ctx = g.ctx });
                         if (!g.cx.build.release) b.mark(t);
                         return raw;
                     }
                 };
                 const value = try b.operand(g.a(), .{ .value = it.value.dynamic.? });
-                try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false, .index = index } } });
+                try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false, .index = index } }, .ctx = g.ctx });
             },
             .entries => {
                 if (!try g.entriesInPlace(b, t, it, index)) {
                     const value = try b.operand(g.a(), .{ .value = it.value.dynamic.? });
-                    try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false, .index = index } } });
+                    try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = false, .index = index } }, .ctx = g.ctx });
                 }
             },
             else => unreachable,
@@ -1573,7 +1603,7 @@ pub const Gen = struct {
                         .{ .toggle = .{ .t = t, .name = name, .value = value, .index = index } }
                     else
                         .{ .style = .{ .t = t, .name = name, .value = value, .index = index } };
-                    try b.ops.append(g.a(), .{ .node = .none, .what = what });
+                    try b.ops.append(g.a(), .{ .node = .none, .what = what, .ctx = g.ctx });
                 },
             }
         }
@@ -1632,7 +1662,7 @@ pub const Gen = struct {
             },
             else => unreachable,
         };
-        try b.ops.append(a_, .{ .node = n, .what = what });
+        try b.ops.append(a_, .{ .node = n, .what = what, .ctx = g.ctx });
     }
 
     // ---- Writing the functions ------------------------------------------
@@ -2517,7 +2547,7 @@ fn opReads(op: Op, k: u32) bool {
 
 /// A value baked into the template, and its template node.
 pub fn Baked(comptime T: type) type {
-    return struct { what: T, t: u32 };
+    return struct { what: T, t: u32, ctx: u32 = 0 };
 }
 
 /// Whether an attribute's value may be baked into the template: one the

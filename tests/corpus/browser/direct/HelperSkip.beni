@@ -1,0 +1,86 @@
+-- `browser/dom/HelperSkip` on `browser-direct` (S3, §5.2, §9.2): each helper call
+-- is written in place, its holes the caller's, with facts per call — so
+-- `card "fixed" 7`'s holes are written at mount and never again, and
+-- `card "counted" model.count`'s only on `Count`. A helper's other `let`s
+-- (`_ = Debug.log "card called" title`) run where its markup is made, at
+-- mount (§8.4), where `browser-tea` runs them at every call: the documented
+-- difference (`.tea-expected`), in the log lines alone. The original's
+-- `local` function in `view` is a `let` around `view`'s markup, S4's, and
+-- left out.
+--
+-- A call of a top-level function in an `Html` hole is not made again while
+-- every argument is the one the hole was given last render (language.md
+-- §11.6, §11.11; backend.md §15.3–§15.4). `card` logs each call it gets,
+-- before its markup, and `Debug.log` inside each helper's markup shows
+-- what that markup computes. `card "counted" model.count` is called when
+-- the count changes, and inside it `tag "counted"`, whose argument did
+-- not, is not; `card "fixed" 7` is never called again — `Debug` in a
+-- helper's body does not make its call one a render must always make. A
+-- helper given a record built during the render is called when the field
+-- the record is built from changes, and only then: the root computes each
+-- value by the fields it reads (language.md §11.11, made precise
+-- 2026-10-04), so the record is not built again when only the count
+-- changed. A local function is a new function on every render and is
+-- called on every render; its markup computes `local` only when the
+-- number it is given changed. At load `card "fixed"` is called before
+-- `card "counted"`, though written after it: a render evaluates its
+-- values group by group, in the order of each group's first write
+-- (language.md §11.11), and the group of what reads nothing — the
+-- buttons' handlers and `card "fixed" 7` — writes first.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Count
+    | Other
+
+
+type alias Model =
+    count : Int
+    other : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Count →
+            { model | count = model.count + 1 }
+
+        Other →
+            { model | other = model.other + 1 }
+
+
+tag : String → Html Msg
+tag name = <i>{Debug.log "tag" name}</i>
+
+
+card : String, Int → Html Msg
+card title n =
+    _ = Debug.log "card called" title
+    <section>
+        {tag title}
+        <b>{Debug.log title n}</b>
+    </section>
+
+
+boxed : { n : Int } → Html Msg
+boxed r =
+    _ = Debug.log "boxed called" r.n
+    <p>{Debug.log "boxed" r.n}</p>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="count" onClick={Count}>count</button>
+        <button id="other" onClick={Other}>other</button>
+        {card "counted" model.count}
+        {card "fixed" 7}
+        {boxed { n = model.other }}
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = { count = 0, other = 0 }, update = update, view = view }

@@ -56,7 +56,7 @@ const dom = @import("platform_browser").dom;
 
 pub const lowering: m.Lowering = .{
     .name = "direct",
-    .targets = .{ .major = 1, .minor = 8 },
+    .targets = .{ .major = 1, .minor = 9 },
     .runtime = &.{
         // `(f, x)`: the dispatch guard (§4.3), which a listener body, the
         // dispatcher and the mount enter program code through.
@@ -95,6 +95,14 @@ pub const lowering: m.Lowering = .{
         .{ .name = "insert", .arity = 3 },
         .{ .name = "removeAt", .arity = 3 },
         .{ .name = "swap", .arity = 4 },
+        // S3 (§6.3, §6.4, as amended for S3): `(L, xs)`: the keyed reconcile
+        // and the merge; `(L, xs, f, rekey)`: the identity walk; `(L,
+        // probe, f)`: the selector visit; `()`: a list's key map.
+        .{ .name = "reconcile", .arity = 2 },
+        .{ .name = "merge", .arity = 2 },
+        .{ .name = "walkItems", .arity = 4 },
+        .{ .name = "select", .arity = 3 },
+        .{ .name = "keyMap", .arity = 0 },
         // `(L, xs, j)`: row `j` when its item changed — its item updated —
         // or null; `rekey` makes the row again where its key changed.
         .{ .name = "row", .arity = 3 },
@@ -209,17 +217,23 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     }
     const index = p.view_root.?;
     const r = tree.root(index);
-    try supported(cx, tree, r.node);
+    var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .bake = bakeOf, .bake_item = bakeItemOf, .bake_list = bakeListOf, .inline_call = Page.inlineOf };
+    var page: Page = .{ .cx = cx, .tree = tree, .g = &g };
+    g.user = &page;
+    try page.ctxs.append(cx.arena, .{ .parent = 0, .node = .none, .root = index });
+    var stack: std.ArrayList(m.Root.Index) = .empty;
+    try stack.append(cx.arena, index);
+    try page.supported(r.node, &stack);
     if (!cx.grouped(index)) return cx.notImplemented(r.node,
         \\`browser-direct` compiles a `view` whose values can be evaluated outside it, and
         \\this one's cannot (a `?`, or a function that takes evidence); that arrives with a
         \\later slice (`docs/design/browser-direct.md` §14).
     ++ " " ++ until_then);
-    var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .bake = bakeOf, .bake_item = bakeItemOf, .bake_list = bakeListOf };
     // A page that holds rows written one after another relies on no
     // implied end tag (K3).
-    g.close_all = anyBaked(cx, tree, r.node);
+    g.close_all = try page.anyBaked(r.node);
     var b = try g.plan(&.{r.node}, r.site.inst);
+    page.root_calls_hi = @intCast(page.ctxs.items.len);
     // A root element in the SVG or MathML namespace that is not that
     // namespace's own root is parsed inside a wrapper the mount would take
     // off (`dom`'s flag 2); no vocabulary that ships reaches it.
@@ -232,26 +246,31 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     // handler in them, or for the development verify mode (K3).
     var adopt = false;
     for (b.baked_lists.items) |x| {
-        if (!cx.build.release or hasEvent(tree, tree.root(tree.row(tree.for_(x.what).row).body).node)) adopt = true;
+        if (!cx.build.release or page.hasEvent(tree.root(tree.row(tree.for_(x.what).row).body).node)) adopt = true;
     }
     if (b.ops.items.len == 0 and !cx.build.fuzz and b.baked_holes.items.len == 0 and b.baked_items.items.len == 0 and !adopt) return staticMount(cx, tree, r.node, b.html.items, b.flags);
-    var page: Page = .{ .cx = cx, .tree = tree, .g = &g };
     return page.mount(&b, index, r.node);
 }
 
 /// The text a hole is baked as (§5.1, as amended: O8 widened): a text hole
 /// of a `String` or an `Int` the program never writes, whose value `init`
 /// gives as text the template holds exactly — or, for a row of a `For` K3
-/// bakes, that row's text.
+/// bakes, that row's text — at the call path the plan is at (S3).
 fn bakeOf(g: *const dom.Gen, n: m.Node.Index) ?[]const u8 {
-    if (g.row) |row| return g.cx.programRowBake(.{ .node = n }, row);
-    return g.cx.programHole(.{ .node = n }).bake;
+    return bakeRef(g, .{ .node = n });
 }
 
 /// The same for an attribute, by its index in `Tree.items`.
 fn bakeItemOf(g: *const dom.Gen, item: u32) ?[]const u8 {
-    if (g.row) |row| return g.cx.programRowBake(.{ .item = item }, row);
-    return g.cx.programHole(.{ .item = item }).bake;
+    return bakeRef(g, .{ .item = item });
+}
+
+fn bakeRef(g: *const dom.Gen, ref: m.Program.HoleRef) ?[]const u8 {
+    const pg: *Page = @ptrCast(@alignCast(g.user.?));
+    const n = pg.factsEnter(pg.plan_prefix, g.ctx) catch return null;
+    defer pg.factsLeave(n);
+    if (g.row) |row| return g.cx.programRowBake(ref, row);
+    return g.cx.programHole(ref).bake;
 }
 
 /// K3 (`browser-direct.md` §6, as amended for S2): the rows of a `For` the
@@ -260,47 +279,33 @@ fn bakeItemOf(g: *const dom.Gen, item: u32) ?[]const u8 {
 /// (an attribute that needs code, a value that is not baked), and the list
 /// is made at mount.
 fn bakeListOf(g: *dom.Gen, n: m.Node.Index) m.Error!?dom.Gen.BakedRows {
-    const count = g.cx.programList(n).baked orelse return null;
+    const pg: *Page = @ptrCast(@alignCast(g.user.?));
+    const facts = blk: {
+        const k = try pg.factsEnter(pg.plan_prefix, g.ctx);
+        defer pg.factsLeave(k);
+        break :blk g.cx.programList(n);
+    };
+    const count = facts.baked orelse return null;
     if (count == 0) return null;
     const row = g.tree.row(g.tree.for_(n).row);
     if (row.kind != .markup) return null;
     const body = g.tree.root(row.body);
+    // The rows' markup is planned under the list's call path.
+    const saved_prefix = pg.plan_prefix;
+    defer pg.plan_prefix = saved_prefix;
+    pg.plan_prefix = try std.mem.concat(pg.a(), m.Node.Index, &.{ saved_prefix, try pg.ctxNodes(g.ctx) });
     var html: std.ArrayList(u8) = .empty;
     for (0..count) |i| {
         var rg: dom.Gen = g.*;
         rg.row = @intCast(i);
         rg.bake_list = null;
+        rg.ctx = 0;
         const rb = try rg.plan(&.{body.node}, body.site.inst);
         if (rb.top != 1 or rb.flags & 6 != 0) return null;
         for (rb.ops.items) |op| if (op.what != .event) return null;
         try html.appendSlice(g.cx.arena, rb.html.items);
     }
     return .{ .html = html.items, .count = count };
-}
-
-/// Whether the view holds a `For` the pass bakes.
-fn anyBaked(cx: *m.Context, tree: *const m.Tree, n: m.Node.Index) bool {
-    switch (tree.kind(n)) {
-        .element => for (tree.childrenOf(tree.element(n).children)) |c| if (anyBaked(cx, tree, c)) return true,
-        .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| if (anyBaked(cx, tree, c)) return true,
-        .for_ => return cx.programList(n).baked != null,
-        else => {},
-    }
-    return false;
-}
-
-/// Whether markup holds a handler.
-fn hasEvent(tree: *const m.Tree, n: m.Node.Index) bool {
-    switch (tree.kind(n)) {
-        .element => {
-            const e = tree.element(n);
-            for (tree.itemsOf(e.items)) |it| if (it.kind == .event) return true;
-            for (tree.childrenOf(e.children)) |c| if (hasEvent(tree, c)) return true;
-        },
-        .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| if (hasEvent(tree, c)) return true,
-        else => {},
-    }
-    return false;
 }
 
 /// A `view` that writes nothing after it is parsed — no hole, no event, no
@@ -332,41 +337,6 @@ fn content(cx: *m.Context, t: m.Name, flags: u8) m.Error!m.Expr {
     return js.call(try js.member(try js.member(try js.name(t), "ownerDocument"), "importNode"), &.{ c, try js.literal(.true) });
 }
 
-/// Refuse the first thing in the markup that a later slice compiles,
-/// naming that slice.
-fn supported(cx: *m.Context, tree: *const m.Tree, n: m.Node.Index) m.Error!void {
-    switch (tree.kind(n)) {
-        .element => {
-            const e = tree.element(n);
-            for (tree.itemsOf(e.items)) |it| switch (it.kind) {
-                .event => {},
-                .attribute, .escape => if (it.kind == .attribute and it.attribute != .none and tree.attributeFacts(it.attribute).stateful) {
-                    return refuse(cx, n, "a controlled attribute (`value`, `checked`, `selected`)", "S4", "§8.1");
-                },
-                else => return refuse(cx, n, "this attribute", "S4", "§5"),
-            };
-            for (tree.childrenOf(e.children)) |c| try supported(cx, tree, c);
-        },
-        .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| try supported(cx, tree, c),
-        .text => {},
-        .hole => switch (tree.hole(n).kind) {
-            .text_string, .text_number, .text_char, .text_bool => {},
-            else => return refuse(cx, n, "a hole that shows markup (a helper's, `Html.text`, a `Maybe Html` or a `List Html`)", "S4", "§5.2"),
-        },
-        .component => return refuse(cx, n, "a component", "S3", "§9.2"),
-        .for_ => {
-            const f = tree.for_(n);
-            if (f.fallback != null) return refuse(cx, n, "a `For`'s `fallback`, markup shown in its place when the list is empty", "S4", "§5.5");
-            const row = tree.row(f.row);
-            if (row.kind != .markup) return refuse(cx, n, "a `For` row that is not markup written in place — an `if`, a `case`, a `let` or a helper's call around it", "S4", "§5.4, §5.5");
-            if (row.arity == 2 and f.mode != .position) return refuse(cx, n, "a keyed `For` row that reads its position (`λrow i →`), which an insert or a remove changes for every row after it", "S3", "§6.2");
-            try supported(cx, tree, tree.root(row.body).node);
-        },
-        .show => return refuse(cx, n, "a `Show`", "S4", "§5.5"),
-        else => return refuse(cx, n, "this markup", "S4", "§5"),
-    }
-}
-
 fn refuse(cx: *m.Context, n: m.Node.Index, what: []const u8, slice: []const u8, section: []const u8) m.Error!void {
     const message = try std.fmt.allocPrint(cx.arena, "`browser-direct` does not compile {s} yet: it arrives with slice {s} (`docs/design/browser-direct.md` {s}, §14). {s}", .{ what, slice, section, until_then });
     return cx.notImplemented(n, message);
@@ -388,6 +358,39 @@ const Group = struct {
     /// The function a handler calls: `()` for the view's root, `(r)` for a
     /// row's.
     name: ?m.Name = null,
+    /// S3: the call written in place its ops are in (`Page.ctxs`).
+    ctx: u32 = 0,
+};
+
+/// S3 (§5.2, as amended for S3): a helper the size gate keeps shared — its
+/// markup root, a call of it (to enter it by), its site — and its calls.
+const Shared = struct {
+    root: m.Root.Index,
+    node: m.Node.Index,
+    site: *Site,
+    calls: std.ArrayList(*SharedCall) = .empty,
+};
+
+/// One call of a shared helper: the site and op holding it, the call
+/// written in place it is in, its node, and its instance's name.
+const SharedCall = struct {
+    shared: *Shared,
+    site: *Site,
+    op: u32,
+    ctx: u32,
+    node: m.Node.Index,
+    inst: ?m.Name = null,
+};
+
+/// S3 (§5.2, §9.2, as amended for S3): one call written in place — an
+/// `html` hole's helper, a component, an `Html.map`'s markup — under the
+/// call it is in (`parent`; 0, a site's own markup).
+const Ctx = struct {
+    parent: u32,
+    node: m.Node.Index,
+    root: m.Root.Index,
+    /// Made while K3 planned a baked row's text, never a site's.
+    baked: bool = false,
 };
 
 /// Where a site keeps a node, a slot or a list: a name of the mount's scope
@@ -412,6 +415,15 @@ const Site = struct {
     row: ?m.Row.Index = null,
     /// A row site's list.
     list: ?*List = null,
+    /// S3: a shared site's helper (§5.2, as amended for S3).
+    shared: ?*Shared = null,
+    /// S3: the calls written in place the site is in, from the view's root,
+    /// as nodes: the pass's call path at its own markup (`write-sets.md`, *a
+    /// hole's facts per call*).
+    prefix: []const m.Node.Index = &.{},
+    /// S3: the calls written in place its plan made (`Page.ctxs`).
+    calls_lo: u32 = 0,
+    calls_hi: u32 = 0,
     walks: []?Ref = &.{},
     texts: []?Ref = &.{},
     slots: []?Ref = &.{},
@@ -437,9 +449,11 @@ const Site = struct {
 /// One `For`: where its rows go, its row site, what the pass says of it.
 const List = struct {
     node: m.Node.Index,
-    /// The site holding it, and its op there.
+    /// The site holding it, and its op there, and the call written in
+    /// place the op is in (S3).
     site: *Site,
     op: u32,
+    ctx: u32 = 0,
     rows: *Site,
     facts: m.Program.ListFacts,
     mode: m.For.Mode,
@@ -466,6 +480,18 @@ const List = struct {
     /// K3: the template holds its rows, the first at this template node;
     /// they are adopted at mount, never made.
     first_t: ?u32 = null,
+    /// S3: some key patches a row whole, reconciles the list or edits it
+    /// where a key may repeat, so the descriptor holds the whole-row patch
+    /// `w`, this function.
+    patch: bool = false,
+    patch_fn: ?m.Name = null,
+    /// S3: the list keeps the key map (`x`, `d`): some key edits it with
+    /// a script whose rows a repeated key would match by rank, or visits
+    /// its selector.
+    map: bool = false,
+    /// S3: some key's visit of every row is a selector visit: the
+    /// descriptor keeps the last probe (`z`), the row's `Row.selector`.
+    selector: ?m.Selector = null,
 
     fn keyed(l: *const List) bool {
         return l.mode != .position;
@@ -492,6 +518,19 @@ const Plan = struct {
     every_groups: std.ArrayList(u32) = .empty,
     /// The positional pass.
     positional: bool = false,
+    /// S3, a keyed list: the reconcile (§6.3) — a `permute`, a `replaced`,
+    /// an index the handler cannot evaluate, a derived `each`.
+    reconcile: bool = false,
+    /// S3, a keyed list: the merge (`removeSome`).
+    merge: bool = false,
+    /// S3: the identity walk (`kept [*]`), for these groups, a row's key
+    /// changing where `walk_rekey` says it may.
+    walk: bool = false,
+    walk_groups: std.ArrayList(u32) = .empty,
+    walk_rekey: bool = false,
+    /// S3: the selector visit, for these groups.
+    select: bool = false,
+    select_groups: std.ArrayList(u32) = .empty,
 };
 
 const Page = struct {
@@ -517,6 +556,22 @@ const Page = struct {
     /// The handler being written: its key's indices, evaluated before its
     /// arm (§6.2, as amended for S2).
     indices: std.AutoHashMapUnmanaged(m.Program.Index, m.Name) = .empty,
+    /// S3: every call written in place (0 stands for none), the call path
+    /// prefix of the site being planned, and per `enterOp` how many calls
+    /// it entered.
+    ctxs: std.ArrayList(Ctx) = .empty,
+    plan_prefix: []const m.Node.Index = &.{},
+    entered: std.ArrayList(u32) = .empty,
+    root_calls_hi: u32 = 1,
+    /// S3's size gate: each markup root's calls in the view's root site,
+    /// the gate's answers (true: shared), the shared helpers, and what is
+    /// being planned.
+    call_nodes: std.AutoHashMapUnmanaged(m.Root.Index, std.ArrayList(m.Node.Index)) = .empty,
+    gate: std.AutoHashMapUnmanaged(m.Root.Index, bool) = .empty,
+    shareds: std.ArrayList(*Shared) = .empty,
+    in_row: u32 = 0,
+    planning_row: bool = false,
+    planning_shared: bool = false,
 
     fn a(pg: *Page) std.mem.Allocator {
         return pg.cx.arena;
@@ -576,6 +631,502 @@ const Page = struct {
         return .{ .base = p.base, .fields = fields };
     }
 
+    /// Refuse the first thing in the markup that a later slice compiles,
+    /// naming that slice — following each call written in place into its
+    /// markup (S3), `stack` the markup roots on the way.
+    fn supported(pg: *Page, n: m.Node.Index, stack: *std.ArrayList(m.Root.Index)) m.Error!void {
+        const cx = pg.cx;
+        const tree = pg.tree;
+        switch (tree.kind(n)) {
+            .element => {
+                const e = tree.element(n);
+                for (tree.itemsOf(e.items)) |it| switch (it.kind) {
+                    .event => {},
+                    .attribute, .escape => if (it.kind == .attribute and it.attribute != .none and tree.attributeFacts(it.attribute).stateful) {
+                        return refuse(cx, n, "a controlled attribute (`value`, `checked`, `selected`)", "S4", "§8.1");
+                    },
+                    else => return refuse(cx, n, "this attribute", "S4", "§5"),
+                };
+                for (tree.childrenOf(e.children)) |c| try pg.supported(c, stack);
+            },
+            .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| try pg.supported(c, stack),
+            .text => {},
+            .hole => switch (tree.hole(n).kind) {
+                .text_string, .text_number, .text_char, .text_bool => {},
+                .html => try pg.supportedCall(n, stack),
+                else => return refuse(cx, n, "a hole that shows a `Maybe Html` or a `List Html` — markup as a value", "S4", "§5.2"),
+            },
+            .component => try pg.supportedCall(n, stack),
+            .for_ => {
+                const f = tree.for_(n);
+                if (f.fallback != null) return refuse(cx, n, "a `For`'s `fallback`, markup shown in its place when the list is empty", "S4", "§5.5");
+                const row = tree.row(f.row);
+                if (row.kind != .markup) return refuse(cx, n, "a `For` row that is not markup written in place — an `if`, a `case`, a `let` or a helper's call around it", "S4", "§5.4, §5.5");
+                pg.in_row += 1;
+                defer pg.in_row -= 1;
+                try pg.supported(tree.root(row.body).node, stack);
+            },
+            .show => return refuse(cx, n, "a `Show`", "S4", "§5.5"),
+            else => return refuse(cx, n, "this markup", "S4", "§5"),
+        }
+    }
+
+    /// A hole that shows markup, or a component: a call S3 writes in place
+    /// (§5.2, §9.2, as amended for S3), its markup checked in turn, or
+    /// refused naming why.
+    fn supportedCall(pg: *Page, n: m.Node.Index, stack: *std.ArrayList(m.Root.Index)) m.Error!void {
+        const cx = pg.cx;
+        const callee = cx.programCallee(n) orelse
+            return refuse(cx, n, "a hole whose markup is computed here — an `if`, a `case`, `Html.text`, or markup held in a value", "S4", "§5.2, §5.5");
+        const r = callee.root orelse return switch (callee.refusal) {
+            .recursive => refuse(cx, n, "a helper that calls itself, whose markup is a value", "S4", "§5.2"),
+            .children => refuse(cx, n, "a component with children written between its tags (or a spread of its props), whose children are markup as a value", "S4", "§5.2, §9.2"),
+            .other_module => refuse(cx, n, "markup of another module, which this module cannot write in place: it is markup as a value here", "S4", "§5.2, §9.2"),
+            else => refuse(cx, n, "a helper whose body computes its markup — an `if`, a `case` — rather than writing it", "S4", "§5.4, §5.5"),
+        };
+        for (stack.items) |x| if (x == r) return refuse(cx, n, "a helper that calls itself, whose markup is a value", "S4", "§5.2");
+        // The size gate counts a helper's calls in the view's root site.
+        if (pg.in_row == 0) {
+            const gop = try pg.call_nodes.getOrPut(pg.a(), r);
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
+            try gop.value_ptr.append(pg.a(), n);
+        }
+        try stack.append(pg.a(), r);
+        defer _ = stack.pop();
+        try pg.supported(pg.tree.root(r).node, stack);
+    }
+
+    /// Whether markup holds a `For` the pass bakes, through the calls
+    /// written in place in it (K3).
+    fn anyBaked(pg: *Page, n: m.Node.Index) m.Error!bool {
+        const tree = pg.tree;
+        switch (tree.kind(n)) {
+            .element => for (tree.childrenOf(tree.element(n).children)) |c| if (try pg.anyBaked(c)) return true,
+            .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| if (try pg.anyBaked(c)) return true,
+            .for_ => return pg.cx.programList(n).baked != null,
+            .hole, .component => if (pg.cx.programCallee(n)) |callee| if (callee.root) |r| {
+                try pg.cx.programInlineEnter(null, n, null, false);
+                defer pg.cx.programInlineLeave();
+                return pg.anyBaked(tree.root(r).node);
+            },
+            else => {},
+        }
+        return false;
+    }
+
+    /// Whether markup holds a handler, through the calls written in place.
+    fn hasEvent(pg: *Page, n: m.Node.Index) bool {
+        const tree = pg.tree;
+        switch (tree.kind(n)) {
+            .element => {
+                const e = tree.element(n);
+                for (tree.itemsOf(e.items)) |it| if (it.kind == .event) return true;
+                for (tree.childrenOf(e.children)) |c| if (pg.hasEvent(c)) return true;
+            },
+            .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| if (pg.hasEvent(c)) return true,
+            .hole, .component => if (pg.cx.programCallee(n)) |callee| if (callee.root) |r| return pg.hasEvent(tree.root(r).node),
+            else => {},
+        }
+        return false;
+    }
+
+    // ---- Shared sites (§5.2, as amended for S3) ----------------------------
+
+    /// The size gate (§5.2, as amended for S3) for a call of markup root
+    /// `r` at `n`, in the view's root site: written in place unless the
+    /// helper is called from several places there, not with constants only,
+    /// one element, with no list or call of its own, and its copies would be
+    /// larger than one shared site and its call sites. Decided once per
+    /// root.
+    fn sharedGate(pg: *Page, g: *dom.Gen, n: m.Node.Index, r: m.Root.Index) m.Error!bool {
+        if (pg.planning_row or pg.planning_shared) return false;
+        const call = switch (pg.tree.kind(n)) {
+            .hole => pg.tree.hole(n).call != null,
+            .component => true,
+            else => false,
+        };
+        if (!call) return false;
+        if (pg.gate.get(r)) |shared| return shared;
+        const shared = try pg.decideGate(g, r);
+        try pg.gate.put(pg.a(), r, shared);
+        return shared;
+    }
+
+    fn decideGate(pg: *Page, g: *dom.Gen, r: m.Root.Index) m.Error!bool {
+        const call_list = pg.call_nodes.get(r) orelse return false;
+        const count: u32 = @intCast(call_list.items.len);
+        if (count < 2) return false;
+        // Constants only, at every call: each copy is template text.
+        var constants = true;
+        for (call_list.items) |cn| for (try pg.callValuesOf(cn)) |v| {
+            if (!pg.tree.isConstant(v)) constants = false;
+        };
+        if (constants) return false;
+        // The copy as planned with nothing baked: its size, and its shape.
+        var tg: dom.Gen = g.*;
+        tg.inline_call = null;
+        tg.bake = null;
+        tg.bake_item = null;
+        tg.bake_list = null;
+        tg.ctx = 0;
+        const tb = try tg.plan(&.{pg.tree.root(r).node}, pg.tree.root(r).site.inst);
+        if (tb.top != 1 or tb.first == null or tb.first.? != .node or tb.flags & 6 != 0) return false;
+        if (tb.tnodes.items[tb.first.?.node].kind != .element) return false;
+        var walked: u32 = 0;
+        for (tb.tnodes.items) |tn| if (tn.needed) {
+            walked += 1;
+        };
+        var writes: u32 = 0;
+        var events: u32 = 0;
+        for (tb.ops.items) |op| switch (op.what) {
+            .placeholder, .text, .attribute, .toggle, .style => writes += 1,
+            .event => events += 1,
+            else => return false,
+        };
+        const inlined: u64 = tb.html.items.len + 12 * walked + 18 * writes + 34 * events;
+        const outlined: u64 = inlined + 64;
+        return count * inlined > outlined + 24 * count;
+    }
+
+    /// The values a call's arguments are, by its node (`callValues`).
+    fn callValuesOf(pg: *Page, n: m.Node.Index) m.Error![]const m.Value.Index {
+        var out: std.ArrayList(m.Value.Index) = .empty;
+        switch (pg.tree.kind(n)) {
+            .hole => if (pg.tree.hole(n).call) |c| {
+                for (0..c.args.len) |k| try out.append(pg.a(), c.args.at(@intCast(k)));
+            },
+            .component => for (pg.tree.propsOf(pg.tree.component(n).props)) |prop| try out.append(pg.a(), prop.value),
+            else => {},
+        }
+        return out.items;
+    }
+
+    /// Each call of the view's root site the gate kept shared: its shared
+    /// site — one per markup root, planned once with nothing baked — and
+    /// the call.
+    fn planShared(pg: *Page, s: *Site) m.Error!void {
+        for (s.ops(), 0..) |op, k| {
+            switch (op.what) {
+                .helper, .component => {},
+                else => continue,
+            }
+            const callee = pg.cx.programCallee(op.node) orelse continue;
+            const r = callee.root orelse continue;
+            if (!(pg.gate.get(r) orelse false)) continue;
+            const sh = for (pg.shareds.items) |x| {
+                if (x.root == r) break x;
+            } else blk: {
+                const x = try pg.a().create(Shared);
+                const ss = try pg.a().create(Site);
+                const sb = try pg.a().create(dom.Body);
+                const saved = .{ pg.g.ctx, pg.planning_shared };
+                pg.g.ctx = 0;
+                pg.planning_shared = true;
+                const lo: u32 = @intCast(pg.ctxs.items.len);
+                sb.* = try pg.g.plan(&.{pg.tree.root(r).node}, pg.tree.root(r).site.inst);
+                const hi: u32 = @intCast(pg.ctxs.items.len);
+                pg.g.ctx = saved[0];
+                pg.planning_shared = saved[1];
+                ss.* = .{ .b = sb, .node = pg.tree.root(r).node, .index = r, .calls_lo = lo, .calls_hi = hi };
+                x.* = .{ .root = r, .node = op.node, .site = ss };
+                ss.shared = x;
+                ss.lists = try pg.a().alloc(?*List, sb.ops.items.len);
+                @memset(ss.lists, null);
+                try pg.shareds.append(pg.a(), x);
+                break :blk x;
+            };
+            const c = try pg.a().create(SharedCall);
+            c.* = .{ .shared = sh, .site = s, .op = @intCast(k), .ctx = op.ctx, .node = op.node, .inst = try pg.cx.fresh("$I") };
+            try sh.calls.append(pg.a(), c);
+        }
+    }
+
+    /// The shared call at op `k` of site `s`, if it is one.
+    fn sharedCallAt(pg: *Page, s: *const Site, k: u32) ?*SharedCall {
+        for (pg.shareds.items) |sh| for (sh.calls.items) |c| if (c.site == s and c.op == k) return c;
+        return null;
+    }
+
+    /// The pass's call path at a shared call's copy of its markup.
+    fn callPrefix(pg: *Page, c: *const SharedCall) m.Error![]const m.Node.Index {
+        return std.mem.concat(pg.a(), m.Node.Index, &.{ c.site.prefix, try pg.ctxNodes(c.ctx), &.{c.node} });
+    }
+
+    /// Whether key `k` calls shared group `gr` at call `c`: one of its ops'
+    /// read sets, at that call's copy, conflicts with the key's writes.
+    fn sharedCalls(pg: *Page, c: *const SharedCall, gr: *const Group, k: u32) m.Error!bool {
+        if (gr.every) return true;
+        const s = c.shared.site;
+        const prefix = try pg.callPrefix(c);
+        for (gr.ops.items) |oi| {
+            const op = s.ops()[oi];
+            const hole: m.Program.HoleRef = switch (op.what) {
+                .placeholder, .text => .{ .node = op.node },
+                .attribute => |x| if (x.constant) continue else .{ .item = x.index },
+                .toggle => |x| .{ .item = x.index },
+                .style => |x| .{ .item = x.index },
+                else => continue,
+            };
+            const nf = try pg.factsEnter(prefix, op.ctx);
+            const facts = pg.cx.programHole(hole);
+            pg.factsLeave(nf);
+            if (pg.cx.programCalls(k, facts.group)) return true;
+        }
+        return false;
+    }
+
+    /// Whether an op of a shared site is static at every call.
+    fn sharedStatic(pg: *Page, s: *const Site, op: dom.Op, hole: m.Program.HoleRef) m.Error!bool {
+        for (s.shared.?.calls.items) |c| {
+            const nf = try pg.factsEnter(try pg.callPrefix(c), op.ctx);
+            const facts = pg.cx.programHole(hole);
+            pg.factsLeave(nf);
+            if (!facts.static) return false;
+        }
+        return true;
+    }
+
+    /// `make(c, b)` of a shared site: its template cloned, walked, its
+    /// instance `{ e, c, …nodes, …slots }` — `c` the call's arguments as a
+    /// function — its handler nodes listening with the call's bodies `b`,
+    /// and its first writes.
+    fn sharedMake(pg: *Page, sh: *Shared) m.Error!void {
+        const cx = pg.cx;
+        const js = pg.jsb();
+        const s = sh.site;
+        const blk = try js.block();
+        const c = try cx.fresh("$c");
+        const bodies = try cx.fresh("$b");
+        const e = try cx.fresh("$e");
+        const template = try pg.ident(s.template.?);
+        const clone = if (s.b.flags & 1 != 0)
+            try js.call(try js.member(try js.member(try pg.ident(pg.t), "ownerDocument"), "importNode"), &.{ template, try js.literal(.true) })
+        else
+            try js.call(try js.member(template, "cloneNode"), &.{try js.literal(.true)});
+        try js.constant(blk, e, clone);
+        const walked = try pg.writeWalks(s, blk, e);
+        const r = try cx.fresh("$r");
+        var props: std.ArrayList(m.Property) = .empty;
+        try props.append(pg.a(), .{ .key = "e", .value = try pg.ident(e) });
+        try props.append(pg.a(), .{ .key = "c", .value = try pg.ident(c) });
+        for (s.walks, 0..) |w, t| if (w) |field| if (!std.mem.eql(u8, field.field, "e")) {
+            try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.walks[t].?) });
+        };
+        for (s.texts, 0..) |x, k| if (x) |field| try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.texts[k].?) });
+        for (s.slots) |slot| if (slot) |field| try props.append(pg.a(), .{ .key = field.field, .value = try js.name(try cx.runtime("unset")) });
+        try js.constant(blk, r, try js.object(props.items));
+        // Each handler node listens with its call's own body (§4.2).
+        var ei: u32 = 0;
+        for (s.ops()) |op| switch (op.what) {
+            .event => |x| {
+                const facts = pg.tree.eventFacts(x.item.event);
+                const node = try pg.ident(walked.walks[x.t].?);
+                const name = pg.tree.string(facts.dom_name);
+                try js.expression(blk, try pg.rt("listen", &.{ node, try js.string(name), try js.index(try pg.ident(bodies), try pg.num(ei)), try pg.ident(r) }));
+                ei += 1;
+            },
+            else => {},
+        };
+        try pg.mountSite(blk, s, .{ .base = r });
+        try js.@"return"(blk, try pg.ident(r));
+        s.make = try cx.fresh("$make");
+        try js.constant(pg.body, s.make.?, try js.arrow(&.{ c, bodies }, blk));
+    }
+
+    /// A shared call made where its op stands: its arguments as a function
+    /// of the model, its listener bodies — each composed in this call's
+    /// context, so a message reads through its arguments and maps — its
+    /// instance, put at the op's place.
+    fn sharedMount(pg: *Page, blk: m.Block, call: *SharedCall) m.Error!void {
+        const cx = pg.cx;
+        const js = pg.jsb();
+        const s = call.site;
+        const sh = call.shared;
+        // The arguments, computed again whenever the call's groups or
+        // bodies read them.
+        const args_blk = try js.block();
+        try pg.enterOp(args_blk, s, call.ctx, null, null, null, try pg.callValuesOf(call.node), null);
+        const args = try cx.programInlineArgs(args_blk, call.node);
+        pg.leave();
+        try js.@"return"(args_blk, try js.array(args));
+        const argsfn = try cx.fresh("$args");
+        try js.constant(blk, argsfn, try js.arrow(&.{}, args_blk));
+        // One body per handler node of the shared markup.
+        var bodies: std.ArrayList(m.Expr) = .empty;
+        for (sh.site.ops()) |op| switch (op.what) {
+            .event => |x| {
+                const facts = pg.tree.eventFacts(x.item.event);
+                const e = try cx.fresh("$e");
+                const r = try cx.fresh("$r");
+                const bb = try js.block();
+                try pg.sharedBody(bb, call, op, x, e);
+                const body = try cx.fresh("$l");
+                try js.constant(blk, body, try js.arrow(&.{ e, r }, bb));
+                const flags: u32 = @as(u32, @intFromBool(facts.prevent_default)) | (@as(u32, @intFromBool(facts.stop_propagation)) << 1);
+                if (flags != 0) try js.assign(blk, try js.member(try pg.ident(body), "f"), try pg.num(flags));
+                try bodies.append(pg.a(), try pg.ident(body));
+            },
+            else => {},
+        };
+        try js.constant(blk, call.inst.?, try js.call(try pg.ident(sh.site.make.?), &.{ try pg.ident(argsfn), try js.array(bodies.items) }));
+        const op = s.ops()[call.op];
+        const at = placeOf(op).?;
+        const parent: m.Expr = if (at.parent) |p| try pg.ref(s.walks[p].?, null) else try pg.ident(pg.frag);
+        const marker: m.Expr = switch (at.marker) {
+            .node => |t| try pg.ref(s.walks[t].?, null),
+            else => try js.literal(.null),
+        };
+        try js.expression(blk, try js.call(try js.member(parent, "insertBefore"), &.{ try js.member(try pg.ident(call.inst.?), "e"), marker }));
+    }
+
+    /// A shared call's listener body for event op `op`: its payload read and
+    /// its message sent, in the call's context — the caller's, then the
+    /// call entered with its arguments, then the calls inside.
+    fn sharedBody(pg: *Page, blk: m.Block, call: *SharedCall, op: dom.Op, x: @FieldType(dom.Op.What, "event"), e: m.Name) m.Error!void {
+        const cx = pg.cx;
+        const js = pg.jsb();
+        const sh = call.shared;
+        var payload: ?m.Expr = null;
+        if (x.item.form == .payload) {
+            const extract = try cx.extractor(x.index) orelse try js.name(try cx.runtime("identity"));
+            const p = try cx.fresh("$payload");
+            try js.constant(blk, p, try js.call(extract, &.{try pg.ident(e)}));
+            payload = try pg.ident(p);
+        }
+        switch (sh.site.b.operands.items[x.handler]) {
+            .value => |v| {
+                try pg.enterOp(blk, call.site, call.ctx, null, null, null, try pg.callValuesOf(call.node), null);
+                const args = try cx.programInlineArgs(blk, call.node);
+                try cx.programInlineEnter(blk, call.node, args, false);
+                const frames = try pg.framesOf(op.ctx);
+                const first = if (frames.len > 0) try pg.callValues(frames[0]) else &.{};
+                try cx.rootValues(blk, sh.root, try pg.withLets(sh.root, first));
+                const n = try pg.enterFrames(blk, frames, &.{}, null);
+                const message = try cx.programMessage(blk, v, payload);
+                for (0..n + 1) |_| cx.programInlineLeave();
+                pg.leave();
+                switch (message) {
+                    .key => |kc| try js.expression(blk, try js.call(try pg.ident(try pg.handlerName(kc.key)), kc.args)),
+                    .value => |msg| try pg.dispatchValue(blk, msg),
+                }
+            },
+            .constant => |c| try pg.dispatchValue(blk, try pg.g.make(.{ .constant = c })),
+            else => {},
+        }
+    }
+
+    /// Key `k`'s calls of every shared call's groups (§5.2, as amended for
+    /// S3): each group a read set of whose ops, at that call's copy,
+    /// conflicts with the key's writes.
+    fn sharedVisits(pg: *Page, blk: m.Block, k: ?u32) m.Error!void {
+        const js = pg.jsb();
+        for (pg.shareds.items) |sh| for (sh.calls.items) |c| for (sh.site.groups.items) |*gr| {
+            const name = gr.name orelse continue;
+            if (k) |key| if (!try pg.sharedCalls(c, gr, key)) continue;
+            try js.expression(blk, try js.call(try pg.ident(name), &.{try pg.ident(c.inst.?)}));
+        };
+    }
+
+    // ---- Calls written in place (S3: §5.2, §9.2, as amended for S3) --------
+
+    /// The calls from a site's own markup down to `ctx`, outermost first.
+    fn framesOf(pg: *Page, ctx: u32) m.Error![]const u32 {
+        var out: std.ArrayList(u32) = .empty;
+        var at = ctx;
+        while (at != 0) : (at = pg.ctxs.items[at].parent) try out.insert(pg.a(), 0, at);
+        return out.items;
+    }
+
+    /// The nodes of those calls: what the pass's call path adds below a
+    /// site's prefix.
+    fn ctxNodes(pg: *Page, ctx: u32) m.Error![]const m.Node.Index {
+        const frames = try pg.framesOf(ctx);
+        const out = try pg.a().alloc(m.Node.Index, frames.len);
+        for (out, frames) |*o, f| o.* = pg.ctxs.items[f].node;
+        return out;
+    }
+
+    /// From here to `factsLeave`, the pass's facts are those of the copy at
+    /// `prefix` then the calls down to `ctx` (`cx.programInlineEnter` with
+    /// no arguments); how many calls that is.
+    fn factsEnter(pg: *Page, prefix: []const m.Node.Index, ctx: u32) m.Error!u32 {
+        for (prefix) |n| try pg.cx.programInlineEnter(null, n, null, false);
+        const nodes = try pg.ctxNodes(ctx);
+        for (nodes) |n| try pg.cx.programInlineEnter(null, n, null, false);
+        return @intCast(prefix.len + nodes.len);
+    }
+
+    fn factsLeave(pg: *Page, n: u32) void {
+        for (0..n) |_| pg.cx.programInlineLeave();
+    }
+
+    /// Key `k`'s edits of `list`, its call path's.
+    fn edits(pg: *Page, k: u32, list: *const List) m.Error![]const m.Program.Edit {
+        const n = try pg.factsEnter(list.site.prefix, list.ctx);
+        defer pg.factsLeave(n);
+        return pg.cx.programEdits(k, list.node);
+    }
+
+    /// What a `For` at `node` in context `ctx` of site `s` is, its call
+    /// path's.
+    fn listFacts(pg: *Page, s: *const Site, ctx: u32, node: m.Node.Index) m.Error!m.Program.ListFacts {
+        const n = try pg.factsEnter(s.prefix, ctx);
+        defer pg.factsLeave(n);
+        return pg.cx.programList(node);
+    }
+
+    fn holeFacts(pg: *Page, s: *const Site, ctx: u32, hole: m.Program.HoleRef) m.Error!m.Program.HoleFacts {
+        const n = try pg.factsEnter(s.prefix, ctx);
+        defer pg.factsLeave(n);
+        return pg.cx.programHole(hole);
+    }
+
+    /// The values of the enclosing markup a call's arguments are: a hole's
+    /// call's (`Hole.call`), a component's props; none for an `Html.map`,
+    /// whose arguments the compiler evaluates.
+    fn callValues(pg: *Page, f: u32) m.Error![]const m.Value.Index {
+        const n = pg.ctxs.items[f].node;
+        var out: std.ArrayList(m.Value.Index) = .empty;
+        switch (pg.tree.kind(n)) {
+            .hole => if (pg.tree.hole(n).call) |c| {
+                for (0..c.args.len) |k| try out.append(pg.a(), c.args.at(@intCast(k)));
+            },
+            .component => for (pg.tree.propsOf(pg.tree.component(n).props)) |prop| try out.append(pg.a(), prop.value),
+            else => {},
+        }
+        return out.items;
+    }
+
+    /// `values` and the `let`s of markup root `r` (`Root.lets`), which the
+    /// values may read.
+    fn withLets(pg: *Page, r: m.Root.Index, values: []const m.Value.Index) m.Error![]const m.Value.Index {
+        const lets = pg.tree.root(r).lets;
+        if (lets.len == 0) return values;
+        const out = try pg.a().alloc(m.Value.Index, values.len + lets.len);
+        @memcpy(out[0..values.len], values);
+        for (out[values.len..], 0..) |*o, k| o.* = lets.at(@intCast(k));
+        return out;
+    }
+
+    /// The markup root of `ctx` within site `s`: its call's, or the site's.
+    fn rootOf(pg: *Page, s: *const Site, ctx: u32) m.Root.Index {
+        return if (ctx == 0) s.index else pg.ctxs.items[ctx].root;
+    }
+
+    /// `Gen.inline_call` (S3): an `html` hole or a component the compiler
+    /// says may be written in place — and that does not call itself — is
+    /// planned at the call, in a context of its own.
+    fn inlineOf(g: *dom.Gen, n: m.Node.Index) m.Error!?dom.Gen.Inline {
+        const pg: *Page = @ptrCast(@alignCast(g.user.?));
+        const callee = pg.cx.programCallee(n) orelse return null;
+        const r = callee.root orelse return null;
+        var at = g.ctx;
+        while (at != 0) : (at = pg.ctxs.items[at].parent) if (pg.ctxs.items[at].root == r) return null;
+        if (try pg.sharedGate(g, n, r)) return null;
+        try pg.ctxs.append(pg.a(), .{ .parent = g.ctx, .node = n, .root = r, .baked = g.row != null });
+        return .{ .node = pg.tree.root(r).node, .ctx = @intCast(pg.ctxs.items.len - 1) };
+    }
+
     fn mount(pg: *Page, b: *dom.Body, index: m.Root.Index, node: m.Node.Index) m.Error!m.Expr {
         const cx = pg.cx;
         const js = pg.jsb();
@@ -588,13 +1139,23 @@ const Page = struct {
         // Every site planned and every list found, and what S2 does not
         // compile refused, before a line is written.
         const rs = try pg.a().create(Site);
-        rs.* = .{ .b = b, .node = node, .index = index };
+        rs.* = .{ .b = b, .node = node, .index = index, .calls_lo = 1, .calls_hi = pg.root_calls_hi };
         pg.root_site = rs;
         pg.keys = cx.programKeys();
         pg.handler_names = try pg.a().alloc(?m.Name, pg.keys.len);
         @memset(pg.handler_names, null);
         try pg.planLists(rs, 0);
+        // The calls the size gate kept shared, and their sites (§5.2, as
+        // amended for S3).
+        try pg.planShared(rs);
+        for (pg.shareds.items) |sh| sh.site.prefix = try pg.callPrefix(sh.calls.items[0]);
         for (pg.lists.items) |list| try pg.checkList(list);
+        // A row patched whole shows another item, whose lists are other
+        // lists: each patched whole in its turn (outermost first).
+        for (pg.lists.items) |list| if (list.patch) for (list.rows.lists) |maybe| if (maybe) |inner| {
+            inner.patch = true;
+            inner.whole = true;
+        };
 
         // `--fuzz` (§8.3, the contract's item 3): this program's
         // dispatcher registered first, so the programs are numbered in
@@ -621,6 +1182,14 @@ const Page = struct {
             try js.assign(pg.body, try js.member(try pg.ident(pg.t), "innerHTML"), try js.string(s.b.html.items));
             s.template = try cx.fresh("$T");
             try js.constant(pg.body, s.template.?, try js.member(try js.member(try pg.ident(pg.t), "content"), "firstChild"));
+        }
+
+        // Each shared site's template, parsed once.
+        for (pg.shareds.items) |sh| {
+            const ss = sh.site;
+            try js.assign(pg.body, try js.member(try pg.ident(pg.t), "innerHTML"), try js.string(ss.b.html.items));
+            ss.template = try cx.fresh("$T");
+            try js.constant(pg.body, ss.template.?, try js.member(try js.member(try pg.ident(pg.t), "content"), "firstChild"));
         }
 
         // The page, parsed once, and its dynamic nodes reached once (§5.1).
@@ -651,6 +1220,18 @@ const Page = struct {
                 try js.constant(pg.body, gr.name.?, try pg.groupFunction(s, gr));
             };
         }
+        // Each shared site: its fields, its groups, and its `make`.
+        for (pg.shareds.items) |sh| {
+            const ss = sh.site;
+            try pg.rowFields(ss);
+            try pg.makeGroups(ss);
+            try pg.writeSlots(ss);
+            for (ss.groups.items) |*gr| if (!gr.static) {
+                gr.name = try cx.fresh("$g");
+                try js.constant(pg.body, gr.name.?, try pg.groupFunction(ss, gr));
+            };
+            try pg.sharedMake(sh);
+        }
         // Each row site's listener bodies (§4.2), which `make` puts on its
         // nodes, and its `make`; inner lists first, so an outer `make`
         // names its inner lists' (`make` reads nothing else at its
@@ -661,6 +1242,15 @@ const Page = struct {
             li -= 1;
             try pg.makeFunction(pg.lists.items[li]);
         }
+        // Each list's whole-row patch, which its descriptor holds (`w`):
+        // named innermost first, since an outer one matches its inner lists.
+        li = pg.lists.items.len;
+        while (li > 0) {
+            li -= 1;
+            const list = pg.lists.items[li];
+            if (list.patch) list.patch_fn = try cx.fresh("$W");
+        }
+        for (pg.lists.items) |list| if (list.patch_fn) |w| try js.constant(pg.body, w, try pg.wholeFunction(list));
         // The lists of the view's root: their descriptors.
         for (rs.lists) |maybe| if (maybe) |list| {
             const d = try cx.fresh("$L");
@@ -681,6 +1271,7 @@ const Page = struct {
         for (keys) |key| if (key.star) {
             const blk = try js.block();
             for (rs.groups.items) |gr| if (gr.name) |n| try js.expression(blk, try js.call(try pg.ident(n), &.{}));
+            try pg.sharedVisits(blk, null);
             all = try cx.fresh("$patchAll");
             try js.constant(pg.body, all.?, try js.arrow(&.{}, blk));
             break;
@@ -700,9 +1291,12 @@ const Page = struct {
             for (rs.lists) |maybe| if (maybe) |list| try pg.visitList(blk, @intCast(k), list, &.{}, null);
             if (key.star) {
                 try js.expression(blk, try js.call(try pg.ident(all.?), &.{}));
-            } else for (rs.groups.items) |gr| {
-                const name = gr.name orelse continue;
-                if (gr.every or pg.calls(gr, @intCast(k))) try js.expression(blk, try js.call(try pg.ident(name), &.{}));
+            } else {
+                for (rs.groups.items) |gr| {
+                    const name = gr.name orelse continue;
+                    if (gr.every or pg.calls(gr, @intCast(k))) try js.expression(blk, try js.call(try pg.ident(name), &.{}));
+                }
+                try pg.sharedVisits(blk, @intCast(k));
             }
             h.* = try pg.handlerName(@intCast(k));
             try js.constant(pg.body, h.*, try js.arrow(params, blk));
@@ -757,14 +1351,28 @@ const Page = struct {
                 const body = pg.tree.root(row.body);
                 const rb = try pg.a().create(dom.Body);
                 pg.cx.at(op.node);
+                // The row's markup is planned under the list's call path
+                // (S3), its own calls numbered from its site.
+                const prefix = try std.mem.concat(pg.a(), m.Node.Index, &.{ s.prefix, try pg.ctxNodes(op.ctx) });
+                const saved_prefix = pg.plan_prefix;
+                const saved_ctx = pg.g.ctx;
+                pg.plan_prefix = prefix;
+                pg.g.ctx = 0;
+                const saved_row = pg.planning_row;
+                pg.planning_row = true;
+                const calls_lo: u32 = @intCast(pg.ctxs.items.len);
                 rb.* = try pg.g.plan(&.{body.node}, body.site.inst);
+                const calls_hi: u32 = @intCast(pg.ctxs.items.len);
+                pg.planning_row = saved_row;
+                pg.plan_prefix = saved_prefix;
+                pg.g.ctx = saved_ctx;
                 // One element at the row's root: what a script moves and
                 // removes (§6.2).
                 const one = rb.top == 1 and rb.first != null and rb.first.? == .node and rb.tnodes.items[rb.first.?.node].kind == .element and rb.flags & 4 == 0;
                 if (!one) try refuse(pg.cx, op.node, "a `For` row that is not one element — several nodes, text, or a hole at its root", "S4", "§6.1");
                 if (rb.flags & 2 != 0) try refuse(pg.cx, op.node, "a `For` row whose root is an SVG or MathML element other than `<svg>` or `<math>`", "S4", "§14");
                 const rs = try pg.a().create(Site);
-                rs.* = .{ .b = rb, .node = body.node, .index = row.body, .row = f.row };
+                rs.* = .{ .b = rb, .node = body.node, .index = row.body, .row = f.row, .prefix = prefix, .calls_lo = calls_lo, .calls_hi = calls_hi };
                 const list = try pg.a().create(List);
                 const parent_t = x.at.parent;
                 const marker_t: ?u32 = switch (x.at.marker) {
@@ -786,8 +1394,9 @@ const Page = struct {
                     .node = op.node,
                     .site = s,
                     .op = @intCast(k),
+                    .ctx = op.ctx,
                     .rows = rs,
-                    .facts = pg.cx.programList(op.node),
+                    .facts = try pg.listFacts(s, op.ctx, op.node),
                     .mode = f.mode,
                     .each = f.each,
                     .key = f.key,
@@ -796,7 +1405,7 @@ const Page = struct {
                     .parent_t = parent_t,
                     .marker_t = marker_t,
                     .owns = owns,
-                    .where = pg.cx.programHole(.{ .node = op.node }).where,
+                    .where = (try pg.holeFacts(s, op.ctx, .{ .node = op.node })).where,
                 };
                 rs.list = list;
                 s.lists[k] = list;
@@ -825,13 +1434,18 @@ const Page = struct {
             const body = pg.tree.root(row.body);
             // A release build keeps no instance a page does not use: rows
             // with no handler are the template's, and nothing more.
-            if (pg.cx.build.release and !hasEvent(pg.tree, body.node)) continue;
-            const count = pg.cx.programList(x.what).baked.?;
+            if (pg.cx.build.release and !pg.hasEvent(body.node)) continue;
+            const count = (try pg.listFacts(s, x.ctx, x.what)).baked.?;
             var rg: dom.Gen = pg.g.*;
             rg.row = 0;
             rg.bake_list = null;
+            rg.ctx = 0;
+            const prefix = try std.mem.concat(pg.a(), m.Node.Index, &.{ s.prefix, try pg.ctxNodes(x.ctx) });
+            const saved_prefix = pg.plan_prefix;
+            pg.plan_prefix = prefix;
             const rb = try pg.a().create(dom.Body);
             rb.* = try rg.plan(&.{body.node}, body.site.inst);
+            pg.plan_prefix = saved_prefix;
             const tnodes = s.b.tnodes.items;
             const last = x.t + count - 1;
             const parent_t = tnodes[x.t].parent;
@@ -843,14 +1457,15 @@ const Page = struct {
             s.b.mark(x.t);
             if (marker_t) |t| s.b.mark(t);
             const rs = try pg.a().create(Site);
-            rs.* = .{ .b = rb, .node = body.node, .index = row.body, .row = f.row };
+            rs.* = .{ .b = rb, .node = body.node, .index = row.body, .row = f.row, .prefix = prefix };
             const list = try pg.a().create(List);
             list.* = .{
                 .node = x.what,
                 .site = s,
                 .op = std.math.maxInt(u32),
+                .ctx = x.ctx,
                 .rows = rs,
-                .facts = pg.cx.programList(x.what),
+                .facts = try pg.listFacts(s, x.ctx, x.what),
                 .mode = f.mode,
                 .each = f.each,
                 .key = f.key,
@@ -859,7 +1474,7 @@ const Page = struct {
                 .parent_t = parent_t,
                 .marker_t = marker_t,
                 .owns = false,
-                .where = pg.cx.programHole(.{ .node = x.what }).where,
+                .where = (try pg.holeFacts(s, x.ctx, .{ .node = x.what })).where,
                 .first_t = x.t,
             };
             rs.list = list;
@@ -880,19 +1495,21 @@ const Page = struct {
         }
     }
 
-    /// Refuse what a key does to a list that S2 does not compile: on a
-    /// keyed `For`, the reconciler's tags, the identity walk, the merge, an
-    /// index the handler cannot evaluate, and a derived `each` some key
-    /// replaces; and a keyed `For` in a row some key patches whole (§6, as
-    /// amended for S2). Note which lists some key patches whole.
+    /// What the keys do to a list, decided before any code is written
+    /// (§6, as amended for S2 and S3): whether some key patches its rows
+    /// whole — `set`, the positional pass, and on a keyed list every edit
+    /// but `append`, `clear` and an element write that keeps the row's key,
+    /// any of which may come to the reconcile — whether it keeps the key
+    /// map, and whether it has a selector visit.
     fn checkList(pg: *Page, list: *List) m.Error!void {
         const js = pg.jsb();
         const keyed = list.keyed();
         const scratch = try js.block();
+        const selector = pg.tree.row(pg.tree.for_(list.node).row).selector;
         for (pg.keys, 0..) |key, k| {
             const params = try pg.a().alloc(m.Name, key.params);
             for (params) |*x| x.* = try pg.cx.fresh("$p");
-            for (pg.cx.programEdits(@intCast(k), list.node)) |e| switch (e.what) {
+            for (try pg.edits(@intCast(k), list)) |e| switch (e.what) {
                 .shape => |sh| {
                     const needs: []const m.Program.Index = switch (sh.tag) {
                         .set, .insert, .remove_at => &.{sh.a},
@@ -903,35 +1520,41 @@ const Page = struct {
                     for (needs) |ix| {
                         if (ix == .every or ix == .unknown or try pg.cx.programIndex(@intCast(k), scratch, params, try js.literal(.null), ix) == null) evaluable = false;
                     }
-                    const reconciler = switch (sh.tag) {
-                        .all, .remove_some, .permute, .replaced => true,
-                        else => false,
-                    };
-                    if (keyed and (reconciler or !evaluable)) {
-                        const why = switch (sh.tag) {
-                            .all => "maps every row (`List.map`: §6.2's identity walk)",
-                            .remove_some => "drops some rows (`List.filter`, `take`, `drop`: §6.2's merge)",
-                            .permute => "reorders it (`List.sort`, `List.reverse`: §6.3's reconciler)",
-                            .replaced => if (list.facts.exact) "replaces it — another list, or two edits composed (§6.3's reconciler)" else "changes what its derived `each` reads (§6.2: a derived list is matched by §6.3's reconciler)",
-                            else => "edits it at an index the handler cannot compute before the arm (§6.2's index symbols)",
-                        };
-                        const who = if (std.mem.eql(u8, key.name, "(any)")) "the program's `update`" else try pg.print("the message `{s}`", .{key.name});
-                        const message = try pg.print("`browser-direct` does not compile this keyed `For` yet: {s} {s}, which arrives with slice S3 (`docs/design/browser-direct.md` §6.2, §6.3, §14). {s}", .{ who, why, until_then });
-                        return pg.cx.notImplemented(list.node, message);
+                    if (keyed) {
+                        switch (sh.tag) {
+                            .append, .clear, .all => {},
+                            else => list.whole = true,
+                        }
+                        switch (sh.tag) {
+                            .insert, .remove_at, .prepend, .swap, .remove_some, .set => list.map = true,
+                            else => {},
+                        }
+                        continue;
                     }
-                    if (reconciler or !evaluable) list.whole = true;
-                    if (!keyed and (sh.tag == .prepend or sh.tag == .insert or sh.tag == .remove_at)) list.whole = true;
-                    if (sh.tag == .set or (!keyed and sh.tag == .swap)) list.whole = true;
+                    switch (sh.tag) {
+                        .all, .remove_some, .permute, .replaced, .prepend, .insert, .remove_at, .set, .swap => list.whole = true,
+                        else => {},
+                    }
+                    if (!evaluable) list.whole = true;
                 },
-                .rows => {},
+                .rows => |r| if (keyed) {
+                    // The identity walk hands a list whose length or keys
+                    // changed to the reconcile.
+                    if (r.changed) list.whole = true;
+                    if (r.rekey) {
+                        list.whole = true;
+                        list.map = true;
+                    }
+                    if (r.selector and selector != null) {
+                        list.selector = selector;
+                        list.map = true;
+                    }
+                },
             };
         }
-        // A row patched whole shows another item, whose lists are other
-        // lists; a keyed one needs the reconciler.
-        if (list.whole) for (list.rows.lists) |maybe| if (maybe) |inner| if (inner.keyed()) {
-            const message = try pg.print("`browser-direct` does not compile a keyed `For` in the row of a `For` some message patches whole (`List.set`, or the positional pass): the inner list is then another list, which §6.3's reconciler matches, and it arrives with slice S3 (`docs/design/browser-direct.md` §14). {s}", .{until_then});
-            return pg.cx.notImplemented(inner.node, message);
-        };
+        // A row that reads its position is patched whole when it moves.
+        if (keyed and pg.readsPosition(list.rows)) list.whole = true;
+        list.patch = list.whole;
     }
 
     // ---- The view's root, and a row's fields ------------------------------
@@ -1060,22 +1683,31 @@ const Page = struct {
                 .style => |x| .{ .item = x.index },
                 else => null,
             };
-            f.* = if (ref_) |r| pg.cx.programHole(r) else .{ .group = std.math.maxInt(u32), .static = true, .bake = null };
+            f.* = if (ref_) |r| try pg.holeFacts(s, op.ctx, r) else .{ .group = std.math.maxInt(u32), .static = true, .bake = null };
             if (op.what == .event or op.what == .for_) {
                 key.* = event_key;
                 continue;
             }
             const every = if (valueOf(s, op)) |v| pg.tree.everyRender(v) else false;
             if (s.list) |list| if (ref_ != null) {
-                f.static = !pg.rowCalled(list, f.group) and !(list.whole and !f.static);
+                f.static = !(try pg.rowCalled(list, f.group)) and !(list.whole and !f.static);
             };
             if (every) f.static = false;
+            // A shared site's op is its own group, static only where it is
+            // at every call (§5.2, as amended for S3).
+            if (s.shared != null) if (ref_) |r| {
+                f.static = !every and try pg.sharedStatic(s, op, r);
+                key.* = (@as(u64, 1) << 60) | (if (f.static) static_bit else 0) | k;
+                continue;
+            };
+            // A group is one read set in one call written in place (S3).
+            const in_ctx = @as(u64, op.ctx) << 34;
             key.* = if (ref_ == null)
                 constant_bit | k
             else if (f.static)
-                static_bit | f.group
+                static_bit | in_ctx | f.group
             else
-                (@as(u64, f.group) << 1) | @intFromBool(every);
+                in_ctx | (@as(u64, f.group) << 1) | @intFromBool(every);
         }
         // Union by read set.
         const parent = try pg.a().alloc(u32, all.len);
@@ -1120,7 +1752,7 @@ const Page = struct {
             const r = find(parent, @intCast(k));
             if (at_root[r] == std.math.maxInt(u32)) {
                 at_root[r] = @intCast(s.groups.items.len);
-                try s.groups.append(pg.a(), .{ .static = true, .every = false });
+                try s.groups.append(pg.a(), .{ .static = true, .every = false, .ctx = all[k].ctx });
             }
             const gr = &s.groups.items[at_root[r]];
             s.group_of[k] = at_root[r];
@@ -1136,8 +1768,8 @@ const Page = struct {
     }
 
     /// Whether some key's edits of `list` call row group `group`.
-    fn rowCalled(pg: *Page, list: *const List, group: u32) bool {
-        for (0..pg.keys.len) |k| for (pg.cx.programEdits(@intCast(k), list.node)) |e| switch (e.what) {
+    fn rowCalled(pg: *Page, list: *const List, group: u32) m.Error!bool {
+        for (0..pg.keys.len) |k| for (try pg.edits(@intCast(k), list)) |e| switch (e.what) {
             .rows => |r| if (std.mem.indexOfScalar(u32, r.groups, group) != null) return true,
             else => {},
         };
@@ -1156,7 +1788,7 @@ const Page = struct {
             if (op.what == .event or op.what == .for_) continue;
             const gr = s.groups.items[s.group_of[k]];
             if (gr.static and (pg.cx.build.release or valueOf(s, op) == null)) continue;
-            if (s.row != null) {
+            if (s.row != null or s.shared != null) {
                 s.slots[k] = .{ .field = try pg.print("s{d}", .{k}) };
                 continue;
             }
@@ -1172,27 +1804,87 @@ const Page = struct {
     /// model, and for a row each enclosing row's item, outermost first —
     /// `inst` the row's instance, or, in `make`, `item` its item and `up`
     /// the enclosing row's instance — then evaluate `values` of the site's
-    /// root. The caller leaves the view (`programViewLeave`).
+    /// root. The caller leaves (`leave`).
     fn enter(pg: *Page, blk: m.Block, s: *const Site, inst: ?Path, item: ?Path, up: ?Path, values: []const m.Value.Index) m.Error!void {
-        try pg.cx.programViewEnter(blk, try pg.ident(pg.model));
-        if (s.row == null) return pg.cx.rootValues(blk, pg.index, values);
-        const it = item orelse try pg.dot(inst.?, "it");
-        const parent: ?Path = up orelse if (s.list.?.depth > 0) try pg.dot(inst.?, "u") else null;
-        const position: ?Path = if (pg.readsPosition(s)) (if (inst) |i| try pg.dot(i, "i") else null) else null;
-        try pg.bindRow(blk, s, it, parent, position, values);
+        return pg.enterOp(blk, s, 0, inst, item, up, values, null);
     }
 
-    fn bindRow(pg: *Page, blk: m.Block, s: *const Site, item: Path, up: ?Path, position: ?Path, values: []const m.Value.Index) m.Error!void {
+    /// `enter`, then the calls written in place up to `ctx` (S3): each
+    /// call's arguments evaluated where it is and bound to its callee's
+    /// parameters (`cx.programInlineEnter`), and `values` evaluated in the
+    /// innermost — a value of `ctx`'s markup root. `made`: the call whose
+    /// markup is being made, whose body's other `let`s run here. The caller
+    /// leaves (`leave`).
+    fn enterOp(pg: *Page, blk: m.Block, s: *const Site, ctx: u32, inst: ?Path, item: ?Path, up: ?Path, values: []const m.Value.Index, made: ?u32) m.Error!void {
+        const frames = try pg.framesOf(ctx);
+        const first = if (frames.len > 0) try pg.callValues(frames[0]) else values;
+        try pg.cx.programViewEnter(blk, try pg.ident(pg.model));
+        var entered: u32 = 0;
+        if (s.shared) |sh| {
+            // A shared site's call, entered with the arguments its instance
+            // computes (`c`).
+            const js = pg.jsb();
+            const av = try pg.cx.fresh("$a");
+            try js.constant(blk, av, try js.call(try js.member(try pg.path(inst.?), "c"), &.{}));
+            const count: usize = if (pg.tree.kind(sh.node) == .component) 1 else (try pg.callValuesOf(sh.node)).len;
+            const args = try pg.a().alloc(m.Expr, count);
+            for (args, 0..) |*x, k| x.* = try js.index(try pg.ident(av), try pg.num(@intCast(k)));
+            try pg.cx.programInlineEnter(blk, sh.node, args, made != null and made.? == 0);
+            entered += 1;
+            try pg.cx.rootValues(blk, sh.root, try pg.withLets(sh.root, first));
+        } else if (s.row == null) {
+            try pg.cx.rootValues(blk, pg.index, first);
+        } else {
+            const it = item orelse try pg.dot(inst.?, "it");
+            const parent: ?Path = up orelse if (s.list.?.depth > 0) try pg.dot(inst.?, "u") else null;
+            const position: ?Path = if (pg.readsPosition(s)) (if (inst) |i| try pg.dot(i, "i") else null) else null;
+            entered += try pg.bindRow(blk, s, it, parent, position, first);
+        }
+        entered += try pg.enterFrames(blk, frames, values, made);
+        try pg.entered.append(pg.a(), entered);
+    }
+
+    /// Enter each call of `frames`, outermost first, the arguments of the
+    /// next evaluated in each, and `values` in the last.
+    fn enterFrames(pg: *Page, blk: m.Block, frames: []const u32, values: []const m.Value.Index, made: ?u32) m.Error!u32 {
+        for (frames, 0..) |f, i| {
+            const c = pg.ctxs.items[f];
+            const args = try pg.cx.programInlineArgs(blk, c.node);
+            try pg.cx.programInlineEnter(blk, c.node, args, made != null and made.? == f);
+            const need = if (i + 1 < frames.len) try pg.callValues(frames[i + 1]) else values;
+            try pg.cx.rootValues(blk, c.root, try pg.withLets(c.root, need));
+        }
+        return @intCast(frames.len);
+    }
+
+    /// Leave what the last `enterOp` entered.
+    fn leave(pg: *Page) void {
+        const n = pg.entered.pop() orelse 0;
+        for (0..n) |_| pg.cx.programInlineLeave();
+        pg.cx.programViewLeave();
+    }
+
+    /// Row `s`'s item and position bound, and `values` of its root
+    /// evaluated, the enclosing rows' and the calls between them entered
+    /// first; how many calls were entered.
+    fn bindRow(pg: *Page, blk: m.Block, s: *const Site, item: Path, up: ?Path, position: ?Path, values: []const m.Value.Index) m.Error!u32 {
         const js = pg.jsb();
-        const outer = s.list.?.site;
-        if (outer.row != null) try pg.bindRow(
-            blk,
-            outer,
-            try pg.dot(up.?, "it"),
-            if (outer.list.?.depth > 0) try pg.dot(up.?, "u") else null,
-            if (pg.readsPosition(outer)) try pg.dot(up.?, "i") else null,
-            &.{},
-        );
+        const list = s.list.?;
+        const outer = list.site;
+        const frames = try pg.framesOf(list.ctx);
+        const first = if (frames.len > 0) try pg.callValues(frames[0]) else &.{};
+        var entered: u32 = 0;
+        if (outer.row != null) {
+            entered += try pg.bindRow(
+                blk,
+                outer,
+                try pg.dot(up.?, "it"),
+                if (outer.list.?.depth > 0) try pg.dot(up.?, "u") else null,
+                if (pg.readsPosition(outer)) try pg.dot(up.?, "i") else null,
+                first,
+            );
+        } else if (first.len != 0) try pg.cx.rootValues(blk, pg.index, first);
+        entered += try pg.enterFrames(blk, frames, &.{}, null);
         const it = try pg.cx.fresh("$it");
         try js.constant(blk, it, try pg.path(item));
         var pos: ?m.Name = null;
@@ -1201,6 +1893,7 @@ const Page = struct {
             try js.constant(blk, pos.?, try pg.path(p));
         }
         try pg.cx.rowValuesOf(blk, s.row.?, it, pos, values);
+        return entered;
     }
 
     /// Whether a row reads its position (a positional `For`'s `λrow i →`):
@@ -1222,7 +1915,7 @@ const Page = struct {
     fn groupFunction(pg: *Page, s: *Site, gr: *const Group) m.Error!m.Expr {
         const js = pg.jsb();
         const blk = try js.block();
-        if (s.row == null) {
+        if (s.row == null and s.shared == null) {
             try pg.groupBody(blk, s, gr, false, null);
             return js.arrow(&.{}, blk);
         }
@@ -1237,8 +1930,8 @@ const Page = struct {
     fn groupBody(pg: *Page, blk: m.Block, s: *Site, gr: *const Group, once: bool, inst: ?Path) m.Error!void {
         const cx = pg.cx;
         const js = pg.jsb();
-        try pg.enter(blk, s, inst, null, null, try pg.groupValues(s, gr));
-        defer cx.programViewLeave();
+        try pg.enterOp(blk, s, gr.ctx, inst, null, null, try pg.groupValues(s, gr), null);
+        defer pg.leave();
         for (gr.ops.items) |k| {
             const op = s.ops()[k];
             if (op.node != .none) cx.at(op.node);
@@ -1324,10 +2017,10 @@ const Page = struct {
     /// that row's instance; or, in `make`, `item` and `up`) — as a name.
     fn eachValue(pg: *Page, blk: m.Block, list: *const List, inst: ?Path) m.Error!m.Name {
         const js = pg.jsb();
-        try pg.enter(blk, list.site, inst, null, null, &.{list.each});
+        try pg.enterOp(blk, list.site, list.ctx, inst, null, null, &.{list.each}, null);
         const xs = try pg.cx.fresh("$xs");
         try js.constant(blk, xs, try pg.cx.value(list.each));
-        pg.cx.programViewLeave();
+        pg.leave();
         return xs;
     }
 
@@ -1341,7 +2034,23 @@ const Page = struct {
         const js = pg.jsb();
         const done = try pg.a().alloc(bool, s.groups.items.len);
         @memset(done, false);
+        // Each call written in place whose body has `let`s its markup does
+        // not read runs them where its markup is made, before any write
+        // (§8.4; S3), in source order.
+        for (s.calls_lo..s.calls_hi) |f| {
+            if (pg.ctxs.items[f].baked) continue;
+            const callee = pg.cx.programCallee(pg.ctxs.items[f].node) orelse continue;
+            if (!callee.statements) continue;
+            const inner = try js.block();
+            try pg.enterOp(inner, s, @intCast(f), inst, null, null, &.{}, @intCast(f));
+            pg.leave();
+            try js.nested(blk, inner);
+        }
         for (s.ops(), 0..) |op, k| {
+            if (pg.sharedCallAt(s, @intCast(k))) |call| {
+                try pg.sharedMount(blk, call);
+                continue;
+            }
             if (op.what == .for_) {
                 const list = s.lists[k].?;
                 const inner = try js.block();
@@ -1394,16 +2103,31 @@ const Page = struct {
         const key: m.Expr = switch (list.mode) {
             .position => try js.literal(.null),
             .key => blk_: {
-                try pg.enter(blk, list.site, inst, null, null, &.{list.key.?});
+                try pg.enterOp(blk, list.site, list.ctx, inst, null, null, &.{list.key.?}, null);
                 const kn = try pg.cx.fresh("$key");
                 try js.constant(blk, kn, try pg.cx.value(list.key.?));
-                pg.cx.programViewLeave();
+                pg.leave();
                 break :blk_ try pg.ident(kn);
             },
             else => try js.name(try pg.cx.runtime("identity")),
         };
         try props.append(pg.a(), .{ .key = "k", .value = key });
         try props.append(pg.a(), .{ .key = "u", .value = if (inst) |i| try pg.path(i) else try js.literal(.null) });
+        // S3: the whole-row patch, the key map and its count of repeated
+        // keys, the selector's last probe, and whether the rows read their
+        // position — on every list, so the runtime sees one shape.
+        try props.append(pg.a(), .{ .key = "w", .value = if (list.patch_fn) |w| try pg.ident(w) else try js.literal(.null) });
+        try props.append(pg.a(), .{ .key = "x", .value = if (list.map) try pg.rt("keyMap", &.{}) else try js.literal(.null) });
+        try props.append(pg.a(), .{ .key = "d", .value = if (list.map) try js.number("0") else try js.literal(.null) });
+        const z: m.Expr = if (list.selector) |sel| blk_: {
+            try pg.enterOp(blk, list.site, list.ctx, inst, null, null, &.{sel.probe}, null);
+            const zn = try pg.cx.fresh("$z");
+            try js.constant(blk, zn, try pg.cx.value(sel.probe));
+            pg.leave();
+            break :blk_ try pg.ident(zn);
+        } else try js.name(try pg.cx.runtime("unset"));
+        try props.append(pg.a(), .{ .key = "z", .value = z });
+        try props.append(pg.a(), .{ .key = "i", .value = try js.literal(if (pg.readsPosition(list.rows)) .true else .false) });
         return js.object(props.items);
     }
 
@@ -1508,11 +2232,11 @@ const Page = struct {
     fn listener(pg: *Page, into: m.Block, s: *Site, x: @FieldType(dom.Op.What, "event"), k: u32) m.Error!void {
         const cx = pg.cx;
         const js = pg.jsb();
-        _ = k;
+        const ctx = s.ops()[k].ctx;
         const facts = pg.tree.eventFacts(x.item.event);
         const e = try cx.fresh("$e");
         const blk = try js.block();
-        try pg.listenerBody(blk, s, x, e, null);
+        try pg.listenerBody(blk, s, ctx, x, e, null);
         const body = try cx.fresh("$l");
         try js.constant(into, body, try js.arrow(&.{e}, blk));
         const dom_listener = try js.block();
@@ -1529,7 +2253,7 @@ const Page = struct {
     /// What a listener body does: the payload read, the message made — read
     /// at the event — and sent to its key's handler or the dispatcher.
     /// `inst`: a row's instance, whose item the handler value reads.
-    fn listenerBody(pg: *Page, blk: m.Block, s: *Site, x: @FieldType(dom.Op.What, "event"), e: m.Name, inst: ?Path) m.Error!void {
+    fn listenerBody(pg: *Page, blk: m.Block, s: *Site, ctx: u32, x: @FieldType(dom.Op.What, "event"), e: m.Name, inst: ?Path) m.Error!void {
         const cx = pg.cx;
         const js = pg.jsb();
         var payload: ?m.Expr = null;
@@ -1541,9 +2265,9 @@ const Page = struct {
         }
         switch (s.b.operands.items[x.handler]) {
             .value => |v| {
-                try pg.enter(blk, s, inst, null, null, &.{});
+                try pg.enterOp(blk, s, ctx, inst, null, null, &.{}, null);
                 const message = try cx.programMessage(blk, v, payload);
-                cx.programViewLeave();
+                pg.leave();
                 switch (message) {
                     .key => |kc| try js.expression(blk, try js.call(try pg.ident(try pg.handlerName(kc.key)), kc.args)),
                     .value => |msg| try pg.dispatchValue(blk, msg),
@@ -1572,7 +2296,7 @@ const Page = struct {
                 const e = try cx.fresh("$e");
                 const r = try cx.fresh("$r");
                 const blk = try js.block();
-                try pg.listenerBody(blk, s, x, e, .{ .base = r });
+                try pg.listenerBody(blk, s, op.ctx, x, e, .{ .base = r });
                 const body = try cx.fresh("$l");
                 try js.constant(pg.body, body, try js.arrow(&.{ e, r }, blk));
                 const flags: u32 = @as(u32, @intFromBool(facts.prevent_default)) | (@as(u32, @intFromBool(facts.stop_propagation)) << 1);
@@ -1596,7 +2320,7 @@ const Page = struct {
     fn evaluateIndices(pg: *Page, blk: m.Block, k: u32, params: []const m.Name) m.Error!void {
         const js = pg.jsb();
         pg.indices = .empty;
-        for (pg.lists.items) |list| for (pg.cx.programEdits(k, list.node)) |e| {
+        for (pg.lists.items) |list| for (try pg.edits(k, list)) |e| {
             var used: std.ArrayList(m.Program.Index) = .empty;
             try used.appendSlice(pg.a(), e.outer);
             switch (e.what) {
@@ -1634,17 +2358,36 @@ const Page = struct {
     fn plan(pg: *Page, k: u32, list: *const List, modes: []const bool) m.Error!Plan {
         var p: Plan = .{};
         const keyed = list.keyed();
-        for (pg.cx.programEdits(k, list.node)) |e| {
+        for (try pg.edits(k, list)) |e| {
             if (e.outer.len != modes.len or !pg.under(e.outer, modes)) continue;
             switch (e.what) {
-                .shape => |sh| switch (sh.tag) {
-                    .append, .clear => try p.shapes.append(pg.a(), e),
-                    .prepend, .insert, .remove_at => if (keyed and pg.indexOf(sh.a) != null or keyed and sh.tag == .prepend) try p.shapes.append(pg.a(), e) else {
-                        p.positional = true;
+                .shape => |sh| if (keyed) switch (sh.tag) {
+                    // S3: a keyed list's every tag has its script, the
+                    // reconcile where the handler cannot compute an index.
+                    .append, .clear, .prepend => try p.shapes.append(pg.a(), e),
+                    .insert, .remove_at => if (pg.indexOf(sh.a) != null) try p.shapes.append(pg.a(), e) else {
+                        p.reconcile = true;
                     },
                     .swap => if (pg.indexOf(sh.a) == null or pg.indexOf(sh.b) == null) {
+                        p.reconcile = true;
+                    } else try p.shapes.append(pg.a(), e),
+                    .set => if (pg.indexOf(sh.a) == null) {
+                        p.reconcile = true;
+                    } else {
+                        try addIndex(pg.a(), &p.at, sh.a);
+                        p.whole = true;
+                        p.rekey = true;
+                    },
+                    // The identity walk is the element writes' edit
+                    // (`rows`, `changed`).
+                    .all => {},
+                    .remove_some => p.merge = true,
+                    else => p.reconcile = true,
+                } else switch (sh.tag) {
+                    .append, .clear => try p.shapes.append(pg.a(), e),
+                    .swap => if (pg.indexOf(sh.a) == null or pg.indexOf(sh.b) == null) {
                         p.positional = true;
-                    } else if (keyed) try p.shapes.append(pg.a(), e) else {
+                    } else {
                         try addIndex(pg.a(), &p.at, sh.a);
                         try addIndex(pg.a(), &p.at, sh.b);
                         p.whole = true;
@@ -1654,11 +2397,21 @@ const Page = struct {
                     } else {
                         try addIndex(pg.a(), &p.at, sh.a);
                         p.whole = true;
-                        p.rekey = p.rekey or keyed;
                     },
                     else => p.positional = true,
                 },
-                .rows => |r| if (pg.indexOf(r.at) == null) {
+                .rows => |r| if (r.changed) {
+                    // The identity walk: a positional list's rows patched
+                    // whole by the positional pass, as `kept [*]` was in S2.
+                    if (keyed) {
+                        p.walk = true;
+                        p.walk_rekey = p.walk_rekey or r.rekey;
+                        for (r.groups) |g| try addGroup(pg.a(), &p.walk_groups, g);
+                    } else p.positional = true;
+                } else if (r.selector and keyed and list.selector != null) {
+                    p.select = true;
+                    for (r.groups) |g| try addGroup(pg.a(), &p.select_groups, g);
+                } else if (pg.indexOf(r.at) == null) {
                     p.every = true;
                     for (r.groups) |g| try addGroup(pg.a(), &p.every_groups, g);
                 } else {
@@ -1671,7 +2424,7 @@ const Page = struct {
         // The rows the inner lists' edits are in.
         for (pg.lists.items) |inner| {
             if (!pg.inside(inner, list)) continue;
-            for (pg.cx.programEdits(k, inner.node)) |e| {
+            for (try pg.edits(k, inner)) |e| {
                 if (e.outer.len <= modes.len or !pg.under(e.outer, modes)) continue;
                 const ix = e.outer[modes.len];
                 if (pg.indexOf(ix) == null) p.every = true else try addIndex(pg.a(), &p.at, ix);
@@ -1688,12 +2441,13 @@ const Page = struct {
         return false;
     }
 
-    /// Key `k`'s scripts and visits of `list` (§4.1 step 3's (c)), its
-    /// enclosing lists' rows chosen by `modes`, `inst` the row it is in.
+    /// Key `k`'s scripts and visits of `list` (§4.1 step 3's (c), then the
+    /// selector's (d)), its enclosing lists' rows chosen by `modes`, `inst`
+    /// the row it is in.
     fn visitList(pg: *Page, blk: m.Block, k: u32, list: *List, modes: []const bool, inst: ?Path) m.Error!void {
         const js = pg.jsb();
         const p = try pg.plan(k, list, modes);
-        if (p.shapes.items.len == 0 and p.at.items.len == 0 and !p.every and !p.positional) return;
+        if (p.shapes.items.len == 0 and p.at.items.len == 0 and !p.every and !p.positional and !p.reconcile and !p.merge and !p.walk and !p.select) return;
         const inner = try js.block();
         const xs = try pg.eachValue(inner, list, inst);
         for (p.shapes.items) |e| {
@@ -1712,19 +2466,23 @@ const Page = struct {
             try js.expression(inner, call);
         }
         if (p.positional) {
-            try js.expression(inner, try pg.rt("positional", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), try pg.wholeFunction(list) }));
+            try js.expression(inner, try pg.rt("positional", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), try pg.ident(list.patch_fn.?) }));
         }
+        // S3: the merge and the reconcile, each rank-correct (§6.3, as
+        // amended for S3).
+        if (p.merge) try js.expression(inner, try pg.rt("merge", &.{ try pg.ref(list.desc, inst), try pg.ident(xs) }));
+        if (p.reconcile) try js.expression(inner, try pg.rt("reconcile", &.{ try pg.ref(list.desc, inst), try pg.ident(xs) }));
         // One row at each index, its item updated where it changed.
         if (p.at.items.len != 0) {
             const r = try pg.cx.fresh("$r");
             const body = try js.block();
-            try pg.rowVisit(body, k, list, modes, .{ .base = r }, &p, false);
+            try pg.rowBody(body, k, list, modes, .{ .base = r }, p.at_groups.items, p.whole, false);
             const visit: ?m.Name = if (p.at.items.len > 1) try pg.cx.fresh("$v") else null;
             if (visit) |v| try js.constant(inner, v, try js.arrow(&.{r}, body));
             for (p.at.items) |ix| {
                 const one = try js.block();
                 const found = if (visit != null) try pg.cx.fresh("$r") else r;
-                try js.constant(one, found, try pg.rt(if (p.rekey) "rekey" else "row", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), try pg.ident(pg.indexOf(ix).?) }));
+                try js.constant(one, found, try pg.rt(if (p.rekey and list.keyed()) "rekey" else "row", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), try pg.ident(pg.indexOf(ix).?) }));
                 const then = if (visit) |v| blk_: {
                     const b = try js.block();
                     try js.expression(b, try js.call(try pg.ident(v), &.{try pg.ident(found)}));
@@ -1734,22 +2492,55 @@ const Page = struct {
                 try js.nested(inner, one);
             }
         }
+        // The identity walk: the rows whose item changed.
+        if (p.walk) {
+            const r = try pg.cx.fresh("$r");
+            const body = try js.block();
+            try pg.rowBody(body, k, list, modes, .{ .base = r }, p.walk_groups.items, false, true);
+            try js.expression(inner, try pg.rt("walkItems", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), try js.arrow(&.{r}, body), try js.literal(if (p.walk_rekey) .true else .false) }));
+        }
         // Every row, for what reads more than its own item.
         if (p.every) {
             const r = try pg.cx.fresh("$r");
             const body = try js.block();
-            try pg.rowVisit(body, k, list, modes, .{ .base = r }, &p, true);
+            try pg.rowBody(body, k, list, modes, .{ .base = r }, p.every_groups.items, false, true);
             try js.expression(inner, try pg.rt("each", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), try js.arrow(&.{r}, body) }));
+        }
+        // The selector (§6.4, as amended for S3): its visit after the
+        // scripts; a visit of every row writes the new probe too.
+        if (list.selector != null and (p.select or p.every)) {
+            const probe = try pg.probeValue(inner, list, inst);
+            if (p.select) {
+                const r = try pg.cx.fresh("$r");
+                const body = try js.block();
+                try pg.rowBody(body, k, list, modes, .{ .base = r }, p.select_groups.items, false, true);
+                try js.expression(inner, try pg.rt("select", &.{ try pg.ref(list.desc, inst), try pg.ident(probe), try js.arrow(&.{r}, body) }));
+            } else {
+                try js.assign(inner, try js.member(try pg.ref(list.desc, inst), "z"), try pg.ident(probe));
+            }
         }
         try js.nested(blk, inner);
     }
 
-    /// One row's visit: its groups, then its lists' scripts and visits.
-    fn rowVisit(pg: *Page, blk: m.Block, k: u32, list: *List, modes: []const bool, r: Path, p: *const Plan, every: bool) m.Error!void {
+    /// The selector's probe of `list`, evaluated into `blk` where the list
+    /// is (`Row.selector.probe`, a value of the list's enclosing root).
+    fn probeValue(pg: *Page, blk: m.Block, list: *const List, inst: ?Path) m.Error!m.Name {
+        const js = pg.jsb();
+        const probe = list.selector.?.probe;
+        try pg.enterOp(blk, list.site, list.ctx, inst, null, null, &.{probe}, null);
+        const z = try pg.cx.fresh("$z");
+        try js.constant(blk, z, try pg.cx.value(probe));
+        pg.leave();
+        return z;
+    }
+
+    /// One row's visit: the row groups `groups` names — every live one when
+    /// `whole` — then its lists' scripts and visits, or, for a row patched
+    /// whole, its lists matched to the new item's. `every`: the visit is of
+    /// every row (the enclosing mode its inner lists' edits are under).
+    fn rowBody(pg: *Page, blk: m.Block, k: u32, list: *List, modes: []const bool, r: Path, groups: []const u32, whole: bool, every: bool) m.Error!void {
         const js = pg.jsb();
         const s = list.rows;
-        const whole = !every and p.whole;
-        const groups = if (every) p.every_groups.items else p.at_groups.items;
         for (s.groups.items) |gr| {
             const name = gr.name orelse continue;
             const called = whole or gr.every or for (gr.sets.items) |set| {
@@ -1762,25 +2553,28 @@ const Page = struct {
         next[modes.len] = every;
         for (s.lists) |maybe| if (maybe) |inner| {
             if (whole) {
-                // Another item, so another list: the positional pass (a
-                // keyed one here was refused, `checkList`).
                 try pg.replaceList(blk, inner, r);
             } else try pg.visitList(blk, k, inner, next, r);
         };
     }
 
-    /// A list in a row patched whole: its rows matched by the positional
-    /// pass to the item's.
+    /// A list in a row patched whole: the new item's list, its rows
+    /// matched by key (the reconcile) or by position.
     fn replaceList(pg: *Page, blk: m.Block, inner: *List, r: Path) m.Error!void {
         const js = pg.jsb();
         const b = try js.block();
         const xs = try pg.eachValue(b, inner, r);
-        try js.expression(b, try pg.rt("positional", &.{ try pg.ref(inner.desc, r), try pg.ident(xs), try pg.wholeFunction(inner) }));
+        if (inner.keyed()) {
+            try js.expression(b, try pg.rt("reconcile", &.{ try pg.ref(inner.desc, r), try pg.ident(xs) }));
+        } else {
+            try js.expression(b, try pg.rt("positional", &.{ try pg.ref(inner.desc, r), try pg.ident(xs), try pg.ident(inner.patch_fn.?) }));
+        }
         try js.nested(blk, b);
     }
 
     /// `(r) => …`: a row patched whole — every live group, and its lists
-    /// by the positional pass — for the positional pass and `set`.
+    /// matched to its new item's — for the positional pass, `set`, and the
+    /// reconcile's kept rows whose item changed (the descriptor's `w`).
     fn wholeFunction(pg: *Page, list: *List) m.Error!m.Expr {
         const js = pg.jsb();
         const r = try pg.cx.fresh("$r");
@@ -1813,7 +2607,12 @@ const Page = struct {
             try js.constant(pg.body, list.rows.check.?, try js.arrow(&.{r}, blk));
         }
         const blk = try js.block();
-        if (!try pg.verifySite(blk, pg.root_site, null)) return;
+        var any = try pg.verifySite(blk, pg.root_site, null);
+        // Each shared call's copy, checked through its instance.
+        for (pg.shareds.items) |sh| for (sh.calls.items) |c| {
+            if (try pg.verifySite(blk, sh.site, .{ .base = c.inst.? })) any = true;
+        };
+        if (!any) return;
         try js.expression(pg.body, try pg.rt("verify", &.{try js.arrow(&.{}, blk)}));
     }
 
@@ -1821,12 +2620,10 @@ const Page = struct {
     fn verifySite(pg: *Page, blk: m.Block, s: *Site, inst: ?Path) m.Error!bool {
         const cx = pg.cx;
         const js = pg.jsb();
-        var values: std.ArrayList(m.Value.Index) = .empty;
         var checked: std.ArrayList(u32) = .empty;
         for (s.ops(), 0..) |op, k| {
             const v = valueOf(s, op) orelse continue;
             if (s.slots[k] == null or pg.tree.everyRender(v) or cx.reachesDebug(v)) continue;
-            try values.append(pg.a(), v);
             try checked.append(pg.a(), @intCast(k));
         }
         // What the template holds verbatim: each baked text hole and
@@ -1835,48 +2632,58 @@ const Page = struct {
         var baked: std.ArrayList(Baked) = .empty;
         {
             for (s.b.baked_holes.items) |x| {
-                const facts = cx.programHole(.{ .node = x.what });
-                try baked.append(pg.a(), .{ .value = pg.tree.hole(x.what).value, .t = x.t, .item = null, .what = try std.fmt.allocPrint(pg.a(), "the text {s} baked into the page", .{if (facts.where.len != 0) facts.where else "hole"}) });
+                const facts = try pg.holeFacts(s, x.ctx, .{ .node = x.what });
+                try baked.append(pg.a(), .{ .value = pg.tree.hole(x.what).value, .t = x.t, .item = null, .ctx = x.ctx, .what = try std.fmt.allocPrint(pg.a(), "the text {s} baked into the page", .{if (facts.where.len != 0) facts.where else "hole"}) });
             }
             for (s.b.baked_items.items) |x| {
-                const facts = cx.programHole(.{ .item = x.what });
+                const facts = try pg.holeFacts(s, x.ctx, .{ .item = x.what });
                 const it = pg.tree.items[x.what];
-                try baked.append(pg.a(), .{ .value = it.value.dynamic.?, .t = x.t, .item = it, .what = try std.fmt.allocPrint(pg.a(), "the attribute `{s}` at {s} baked into the page", .{ pg.tree.string(it.name), if (facts.where.len != 0) facts.where else "?" }) });
+                try baked.append(pg.a(), .{ .value = it.value.dynamic.?, .t = x.t, .item = it, .ctx = x.ctx, .what = try std.fmt.allocPrint(pg.a(), "the attribute `{s}` at {s} baked into the page", .{ pg.tree.string(it.name), if (facts.where.len != 0) facts.where else "?" }) });
             }
         }
         var kept: std.ArrayList(Baked) = .empty;
-        for (baked.items) |x| if (!cx.reachesDebug(x.value)) {
-            try kept.append(pg.a(), x);
-            try values.append(pg.a(), x.value);
-        };
+        for (baked.items) |x| if (!cx.reachesDebug(x.value)) try kept.append(pg.a(), x);
         var lists = false;
         if (s.baked.items.len != 0) lists = true;
         for (s.lists) |maybe| if (maybe != null) {
             lists = true;
         };
         if (checked.items.len == 0 and kept.items.len == 0 and !lists) return false;
-        try pg.enter(blk, s, inst, null, null, values.items);
-        for (checked.items) |k| {
-            const op = s.ops()[k];
-            const slot = try pg.ref(s.slots[k].?, inst);
-            const leaf = try pg.leafOf(op, valueOf(s, op).?);
-            const then = try js.block();
-            const what = try pg.describe(s, op, k);
-            try js.expression(then, try pg.rt("wrong", &.{ try js.string(what), slot, try pg.leafOf(op, valueOf(s, op).?) }));
-            try js.@"if"(blk, try js.unary(.not, try pg.rt("same", &.{ leaf, try pg.ref(s.slots[k].?, inst) })), then, null);
-            // The page itself, not only the slot: a write that stored the
-            // right value and left the wrong text is a missed write too.
-            const v = valueOf(s, op).?;
-            const at = try std.fmt.allocPrint(pg.a(), "{s} in the document", .{what});
-            switch (op.what) {
-                .placeholder => |x| try pg.checkNode(blk, at, s.walks[x.t].?, inst, null, v),
-                .text => try pg.checkNode(blk, at, s.texts[k].?, inst, null, v),
-                .attribute => |x| try pg.checkNode(blk, at, s.walks[x.t].?, inst, x.item, v),
-                else => {},
+        // Each call written in place's values in its own context (S3).
+        var ctxs: std.ArrayList(u32) = .empty;
+        for (checked.items) |k| if (std.mem.indexOfScalar(u32, ctxs.items, s.ops()[k].ctx) == null) try ctxs.append(pg.a(), s.ops()[k].ctx);
+        for (kept.items) |x| if (std.mem.indexOfScalar(u32, ctxs.items, x.ctx) == null) try ctxs.append(pg.a(), x.ctx);
+        std.mem.sort(u32, ctxs.items, {}, std.sort.asc(u32));
+        for (ctxs.items) |ctx| {
+            var values: std.ArrayList(m.Value.Index) = .empty;
+            for (checked.items) |k| if (s.ops()[k].ctx == ctx) try values.append(pg.a(), valueOf(s, s.ops()[k]).?);
+            for (kept.items) |x| if (x.ctx == ctx) try values.append(pg.a(), x.value);
+            const inner = if (ctx == 0) blk else try js.block();
+            try pg.enterOp(inner, s, ctx, inst, null, null, values.items, null);
+            for (checked.items) |k| {
+                const op = s.ops()[k];
+                if (op.ctx != ctx) continue;
+                const slot = try pg.ref(s.slots[k].?, inst);
+                const leaf = try pg.leafOf(op, valueOf(s, op).?);
+                const then = try js.block();
+                const what = try pg.describe(s, op, k);
+                try js.expression(then, try pg.rt("wrong", &.{ try js.string(what), slot, try pg.leafOf(op, valueOf(s, op).?) }));
+                try js.@"if"(inner, try js.unary(.not, try pg.rt("same", &.{ leaf, try pg.ref(s.slots[k].?, inst) })), then, null);
+                // The page itself, not only the slot: a write that stored the
+                // right value and left the wrong text is a missed write too.
+                const v = valueOf(s, op).?;
+                const at = try std.fmt.allocPrint(pg.a(), "{s} in the document", .{what});
+                switch (op.what) {
+                    .placeholder => |x| try pg.checkNode(inner, at, s.walks[x.t].?, inst, null, v),
+                    .text => try pg.checkNode(inner, at, s.texts[k].?, inst, null, v),
+                    .attribute => |x| try pg.checkNode(inner, at, s.walks[x.t].?, inst, x.item, v),
+                    else => {},
+                }
             }
+            for (kept.items) |x| if (x.ctx == ctx) try pg.checkNode(inner, x.what, s.walks[x.t].?, inst, x.item, x.value);
+            pg.leave();
+            if (ctx != 0) try js.nested(blk, inner);
         }
-        for (kept.items) |x| try pg.checkNode(blk, x.what, s.walks[x.t].?, inst, x.item, x.value);
-        cx.programViewLeave();
         // Each list: its rows against its items, and each row's checks.
         for (s.lists) |maybe| if (maybe) |list| try pg.verifyList(blk, list, inst);
         for (s.baked.items) |list| try pg.verifyList(blk, list, inst);
@@ -1895,10 +2702,19 @@ const Page = struct {
             try js.string(what),
             try js.literal(if (list.facts.exact) .false else .true),
         }));
+        // The selector's last probe against the probe computed again (S3):
+        // a later visit's old probe is this one.
+        if (list.selector != null) {
+            const probe = try pg.probeValue(inner, list, inst);
+            const z = try js.member(try pg.ref(list.desc, inst), "z");
+            const then = try js.block();
+            try js.expression(then, try pg.rt("wrong", &.{ try js.string(try pg.print("the selector of {s}", .{what})), try js.member(try pg.ref(list.desc, inst), "z"), try pg.ident(probe) }));
+            try js.@"if"(inner, try js.unary(.not, try pg.rt("same", &.{ z, try pg.ident(probe) })), then, null);
+        }
         try js.nested(blk, inner);
     }
 
-    const Baked = struct { value: m.Value.Index, t: u32, item: ?m.Item, what: []const u8 };
+    const Baked = struct { value: m.Value.Index, t: u32, item: ?m.Item, ctx: u32 = 0, what: []const u8 };
 
     /// The verify mode's read of the page (§8.3, as amended): a text node's
     /// `data`, or an element's attribute `item`, compared with the string

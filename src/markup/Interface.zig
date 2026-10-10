@@ -31,7 +31,7 @@ const std = @import("std");
 /// and `Build.fuzz`, 1.8 the calls a program lowering compiles a `For`'s rows
 /// with (`programList`, `programEdits`, `programIndex`, `rowValuesOf`,
 /// `programRowBake`).
-pub const version: Version = .{ .major = 1, .minor = 8 };
+pub const version: Version = .{ .major = 1, .minor = 9 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -243,8 +243,45 @@ pub const Program = struct {
             shape: struct { tag: Tag, a: Index = .unknown, b: Index = .unknown },
             /// The rows at `at` (`every`: each row): call the row groups
             /// `groups` (`HoleFacts.group` numbers) on them; `rekey` when
-            /// the row's key may change there.
-            rows: struct { at: Index, groups: []const u32, rekey: bool = false },
+            /// the row's key may change there. 1.9: `changed`, at `every`,
+            /// only the rows whose item changed need it (an element write
+            /// at `[*]` of reads bound to the row: the identity walk), and
+            /// it is never merged with a visit of every row; `selector`, at
+            /// `every`, every read that makes the visit is the row's
+            /// selector input's path (`Row.selector`), so only the rows
+            /// keyed by the old and the new probe need it.
+            rows: struct { at: Index, groups: []const u32, rekey: bool = false, changed: bool = false, selector: bool = false },
+        };
+    };
+
+    /// 1.9: what an `html` hole or a component node calls, which a program
+    /// lowering may write in place (`Context.programCallee`).
+    pub const Callee = struct {
+        /// The markup root written in place — a function of the calling
+        /// module's body after its `let`s, or the markup an `Html.map` is
+        /// applied to — or null, when `refusal` says why not.
+        root: ?Root.Index,
+        /// How many `Html.map`s the call is under.
+        maps: u32 = 0,
+        /// Every map's function is a constructor's shape (§9.1): the
+        /// messages of the markup are composed at compile time.
+        composed: bool = true,
+        /// The callee's body has `let`s its markup does not read, which
+        /// `programInlineEnter` with `made` evaluates.
+        statements: bool = false,
+        refusal: Refusal = .none,
+
+        pub const Refusal = enum(u8) {
+            none,
+            /// A function that calls itself on the current path.
+            recursive,
+            /// A component with children written between its tags.
+            children,
+            /// A function of another module.
+            other_module,
+            /// A function whose body computes its markup, or a value.
+            not_markup,
+            _,
         };
     };
 
@@ -995,6 +1032,39 @@ pub const Context = struct {
     pub fn programRowBake(cx: *Context, hole: Program.HoleRef, row: u32) ?[]const u8 {
         return cx.vtable.program_row_bake(cx.impl, hole, row);
     }
+
+    /// 1.9, inside `Lowering.program` only: what an `html` hole or a
+    /// component node of markup the program writes calls, when the
+    /// lowering may write it in place (`Program.Callee`); null when the
+    /// node is not a call.
+    pub fn programCallee(cx: *Context, node: Node.Index) ?Program.Callee {
+        return cx.vtable.program_callee(cx.impl, node);
+    }
+
+    /// 1.9: the call's arguments (a component's props as one record),
+    /// evaluated into `block` in the current context. A hole's call's
+    /// arguments are values of the enclosing root (`Hole.call.args`) the
+    /// lowering evaluates first; any other call's are evaluated here.
+    pub fn programInlineArgs(cx: *Context, block: Block, node: Node.Index) Error![]const Expr {
+        return cx.vtable.program_inline_args(cx.impl, block, node);
+    }
+
+    /// 1.9: enter the call at `node` (`programCallee`): its markup root's
+    /// values are then evaluated with its parameters bound to `args`, in
+    /// the callee's declaration — or, with `args` null, nothing is bound and
+    /// only the facts below change. With `made`, the callee's `let`s that
+    /// its markup does not read are evaluated into `block` first. While
+    /// entered, `programHole`, `programList`, `programEdits` and
+    /// `programRowBake` answer for this call's copy of the callee's holes,
+    /// and `programMessage` reads a handler value through to the argument
+    /// a parameter is bound to, composed under the call's maps.
+    pub fn programInlineEnter(cx: *Context, block: ?Block, node: Node.Index, args: ?[]const Expr, made: bool) Error!void {
+        return cx.vtable.program_inline_enter(cx.impl, block, node, args, made);
+    }
+
+    pub fn programInlineLeave(cx: *Context) void {
+        cx.vtable.program_inline_leave(cx.impl);
+    }
 };
 
 /// `JsIr` restricted to what a template needs. Assignment is a statement,
@@ -1165,6 +1235,10 @@ pub const VTable = struct {
     program_index: *const fn (impl: *anyopaque, key: u32, block: Block, params: []const Name, model: Expr, index: Program.Index) Error!?Expr,
     row_values_of: *const fn (impl: *anyopaque, block: Block, row: Row.Index, item: Name, index: ?Name, values: []const Value.Index) Error!void,
     program_row_bake: *const fn (impl: *anyopaque, hole: Program.HoleRef, row: u32) ?[]const u8,
+    program_callee: *const fn (impl: *anyopaque, node: Node.Index) ?Program.Callee,
+    program_inline_args: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error![]const Expr,
+    program_inline_enter: *const fn (impl: *anyopaque, block: ?Block, node: Node.Index, args: ?[]const Expr, made: bool) Error!void,
+    program_inline_leave: *const fn (impl: *anyopaque) void,
 
     literal: *const fn (impl: *anyopaque, which: Literal, text: []const u8) Error!Expr,
     template: *const fn (impl: *anyopaque, parts: []const TemplatePart) Error!Expr,
