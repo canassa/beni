@@ -3,36 +3,38 @@ sequences. A persistent structure makes every update cheap and every version saf
 costs runtime code, indirection on every read, and a representation that JavaScript cannot consume
 directly. A plain JavaScript array written in place is what a hand-written program uses, but it is
 correct only when no one can observe the old version. This thesis designs an \emph{inferred
-ownership checker} for beni, a strict, pure, Elm-like language for the browser, under which an
-in-place edit of a list while anything else still holds the old version is a \emph{compile-time
-error}, with no ownership annotations in user code. Every accepted in-place edit then writes its
-array, in development and release builds alike, with no reference counts and no silent copy. List
-literals, spreads and concatenation keep their meaning: they build a new array, as a JavaScript
-array literal does, and in-place edits are spelled with the library's named writers.
+ownership checker} for beni, a strict, pure, Elm-like language for the browser, under which editing a
+list in place while anything else still holds the old version is a \emph{compile-time error}, with no
+ownership annotations in user code and no silent fallback: an accepted edit writes its array, and
+every copy the program pays for is written in its source.
 
-The property checked is uniqueness \emph{at the update site}, decided by liveness: every other
-holder of the array must be dead once the update's arguments have been evaluated. A dereference that
-completes before the write is therefore never sharing, and a dead alias is harmless. Strict
-left-to-right evaluation fixes when each read happens, saturated calls rule out silent captures by
-partial application, and the type checker already infers per-function facts and publishes them in
-module interfaces. The analysis is a directional, flow-sensitive, field-sensitive abstraction of
-which arrays each value may hold---including the environments of closures, so that a closure
-returned, stored or captured carries what it holds and whether it may be called only once---a
-per-path liveness pass, and four side conditions at each update. Function summaries, polymorphic
-over the ownership behaviour of function-typed parameters, are solved for recursive groups by an
-optimistic fixpoint over a finite lattice and published in interfaces. An \emph{exclusive-contents}
-flag, meaning that no two list positions inside a container share an array, extends the rule to
-edits inside the elements of a container.
+Edits are of two kinds. The library's named writers, such as \code{List.set} and \code{List.push},
+consume their operand. So does list construction: in \code{[ x, …acc ]}, \code{[ …acc, x ]} and
+\code{acc ++ ys}, a fixed position rule chooses the operand whose array becomes the result (the
+first spread, or the left side of \code{++}), and that operand is reused in place, at either end; the
+other operands are only read. An accumulator, a fold, a recursive builder and an \code{update} that
+adds a row therefore run in place, as hand-written JavaScript would, and the error arises only when
+the consumed operand is used again.
 
-We present the model, the inference algorithm and its complexity, a sketch of a soundness argument
-(the value semantics and the in-place semantics produce the same observable trace) under twelve
-explicitly stated assumptions, the trusted surface those assumptions cover, an entry protocol for
-every function a UI runtime calls, a treatment of the hard cases, an error-message design that
-separates real sharing from the checker's own limits, the changes to the language and its library
-that the rule needs or invites, and worked programs, including twelve that an earlier version of
-the rules wrongly accepted and that the rules now reject. The design rejects some correct programs in
-exchange for a guarantee about cost; we state that cost plainly. Two applications we examined
-contain no in-place edit under the rule and gain nothing from it as written. We propose a
-report-mode experiment, with a differential run that traps every read of a stale array, before the
-rule is adopted. No results of that experiment exist yet, and the proof is a sketch that has not
-been mechanised.
+That makes the central question one of design: \emph{how should the language and the checker be
+designed so that idiomatic code almost never hits the ownership error?} We enumerate the idioms that
+must always be accepted---accumulators, folds, lists built by \code{map} and \code{filter}, pipelines,
+recursive builders and updates in The Elm Architecture---with examples from beni's core library and
+test programs, and for each give the analysis precision that accepts it and the language or library
+choice that makes it provable. The property checked is uniqueness \emph{at the update site, decided
+by liveness}. The analysis is directional, flow-sensitive and field-sensitive over which arrays each
+value may hold, including closure environments; its function summaries say of every result whether
+it is fresh, a parameter, a cell the closure holds, a top-level value, escaped or unknown; recursive
+groups are solved by an optimistic fixpoint over a finite lattice; an exclusive-contents flag extends
+the rule to edits inside a container's elements; and an entry protocol covers every function a UI
+runtime calls.
+
+We present the model, the inference algorithm, a sketch of a soundness argument under eleven stated
+assumptions, the trusted surface, the hard cases, an error design that separates real sharing from the
+checker's limits, the language changes the rule needs, and traces of thirty-four programs that test
+the rules. Two applications re-examined under construction-as-consumption contain in-place edits in
+their \code{update}s; traced by hand, they are accepted only once \code{init} is a function and after a
+one-line change to how one of them persists its list, and, on beni's current template renderer, only if the renderer stops skipping work by the
+identity of a list the program edits in place. We propose a report-mode experiment whose main metric
+is the frequency of the error on idiomatic code. No results of it exist yet, and the proof is a sketch
+that has not been mechanised.

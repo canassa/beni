@@ -1,13 +1,14 @@
 \chapter{Evaluation Plan}
 \label{sec:evaluation}
 
-The design's soundness can be argued at a desk, and an earlier version of the argument was wrong in a
-dozen places that short programs exposed. Its value cannot be argued at a desk at all. Whether the rule
-is worth adopting depends on whether it is sound in practice, how often it rejects code that people
-actually write, how many of those rejections are real sharing rather than limits of the checker, and how
-much code would use the in-place writers. We know of no published false-error rate for an inferred
-uniqueness checker in a functional language. This chapter describes the experiments we propose to run
-before deciding. \emph{None has been run, and we report no results.}
+The design's soundness can be argued at a desk, and the short programs of
+Table~\ref{tab:counterexamples} show how easily such an argument misses a case. Its value cannot be argued
+at a desk at all. Whether the rule is worth adopting depends on whether it is sound in practice and, above
+all, on \emph{how often idiomatic code meets the error}: with construction consuming its base, nearly every
+list-building idiom is a demand, and a rule that rejected a noticeable share of them would be unusable
+however sound. We know of no published false-error rate for an inferred uniqueness checker in a functional
+language. This chapter describes the experiments we propose to run before deciding. \emph{None has been
+run, and we report no results.}
 
 The experiments follow the path by which beni's write-set analysis was introduced
 (\S\ref{sec:bg-browser}): build the analysis, run it as a report over real programs, classify every
@@ -18,16 +19,15 @@ measures the precision of the classifier the checker would be.
 \section{First: a differential run that traps stale reads}
 \label{sec:eval-sanitiser}
 
-The obvious experiment, and the one that would have caught every hole in
-Table~\ref{tab:counterexamples}, is to run every program the checker accepts under both semantics. We
-build, in a test mode only:
+The first experiment runs every program the checker accepts under both semantics. We build, in a test
+mode only:
 \begin{itemize}
 \item \emph{an in-place backend}: the list runtime of Table~\ref{tab:backend}, with every accepted demand
-written in place and every \code{once} closure's call counted;
+written in place---constructions included---and every once closure's call counted;
 \item \emph{a stale-read sanitiser}: the instrumented semantics of \S\ref{sec:soundness-instrumented}
 made executable. Every array carries a version counter, incremented by each in-place write; every
 reference to an array that the emitted code creates---a local, a field, an element, a closure's
-environment, a pending argument, a runtime structure---is wrapped with the version at which it was
+environment, a pending operand, a runtime structure---is wrapped with the version at which it was
 obtained, and every dereference, identity comparison or call through a stale wrapper \emph{traps},
 printing the reference's origin and the write that made it stale. A second call of a once closure traps
 the same way.
@@ -39,11 +39,11 @@ its emitted output and its expected result, and skips re-running programs whose 
 differential run reuses that machinery, so it costs one extra run per changed program.
 
 The sanitiser is stronger than the trace comparison: it fires on a stale read that happens not to change
-the output. It also tests the trusted surface---a wrong asserted row shows up as a trap in the row's pinned
-test program (A8)---and the entry protocol, since browser programs are driven by scripted events in the
-compiler's test programs that run in a page. It cannot test what the corpora do not exercise, so every program of
-Table~\ref{tab:counterexamples}, and one program per transfer rule and per side condition, joins the
-corpus, written to fail before the rule that rejects it exists.
+the output. It also tests the trusted surface---a wrong asserted row shows up as a trap in the row's
+pinned test program (A8)---and the entry protocol, since browser programs are driven by scripted events in
+the compiler's test programs that run in a page. It cannot test what the corpora do not exercise, so every
+program of Table~\ref{tab:counterexamples}, and one program per transfer rule and per side condition, joins
+the corpus, written to fail before the rule that rejects it exists.
 
 \section{Report mode}
 \label{sec:eval-report}
@@ -54,51 +54,55 @@ output or recorded hash moves; nothing reads the dump but people and tests. The 
 \begin{Verbatim}
 summary <Decl>
   param <i>.<path> <unused|R|RA|RE|RW|⋯> [reason <tag>]
-  result <path> {<param paths>|fresh<k>} [excl]
+  result <path> {<param paths>|fresh<k>|esc<k>|env<path>|shared|top} [excl]
   fun <j> calls <0|1|many> supply <k> <owned|borrowed> {<provenance>}
-demand <Decl>:<inst> <writer> operand <cells>
+demand <Decl>:<inst> <writer|construction> operand <cells> idiom <I1..I7|other>
   unique                                               -- accepted
   shared <holder> kept-at <inst> used-at <inst> exact  -- real sharing
   shared <holder> ⋯ approx <limit-tag>                 -- possible sharing (a limit)
   unknown <limit-tag>                                  -- Known or Unescaped failed
-once <Decl>:<inst> created | called-twice-at <inst> | passed-to-many <callee>
+once <Decl>:<inst> created | called-twice-at <inst> | passed-to-many <callee> | escapes
 copy <Decl>:<inst> of-unique                           -- a copy of a list already unique
-build <Decl>:<inst> <spread|++> operand-unique-and-dead <in-loop|elsewhere>
-entry <program> path <path> <owned|aliased-with <path>|escaped by <arm>>
+entry <program> row <template|template+P7|direct> path <path>
+  <owned|aliased-with <path>|escaped by <arm>|shared|unknown>
 cap <which> fired at <Decl>
 \end{Verbatim}
-The dump is deterministic (\S\ref{sec:inf-modular}), is compared byte for byte by the determinism test,
-and is itself tested against expected output for a set of small programs, one per transfer rule and per
-side condition.
+The idiom of a demand is assigned by a syntactic classifier written before the run---a construction or
+writer whose operand is a parameter rebound by a tail call is I1, one in a callback passed to a fold is I2,
+and so on, following \S\ref{sec:idioms-list}---and a person checks the classifier's output on a sample. The
+entry check is reported under three rows: the template runtime as it is, the template runtime with
+\Obl{P7}, and the direct platform. The rows are declarations, so the report mode can evaluate a program
+under a row whose runtime does not yet exist. The dump is deterministic (\S\ref{sec:inf-modular}), is
+compared byte for byte by the determinism test, and is itself tested against expected output for a set of
+small programs, one per transfer rule and per side condition.
 
 \section{Corpora}
 \label{sec:eval-corpora}
 
-The corpora we have are biased. beni's core library and the compiler's test programs were written by
-the compiler's authors, partly to exercise the very edit scripts the rule would help; and the two
-applications we examined avoid the named writers altogether (\S\ref{sec:disc-apps}). We therefore run
-over five corpora and report each separately:
+The corpora we have are biased. beni's core library and the compiler's test programs were written by the
+compiler's authors, partly to exercise the very edit scripts the rule would help. We therefore run over
+five corpora and report each separately:
 \begin{enumerate}
 \item the core library;
 \item the compiler's test programs: those that run under Node, those that run in a page, and the
 write-set analysis's own tests;
-\item TodoMVC (four builds) and Conduit, \emph{on the platform they use}, the template runtime, and
-separately on a port to the direct platform, with the port's changes counted;
+\item TodoMVC (five programs) and Conduit, as written and with the changes of \S\ref{sec:disc-apps}
+counted;
 \item a table-rendering benchmark application on the direct platform;
 \item an \emph{external} corpus: open-source Elm applications, chosen before the run by a stated rule
 (for example the most-starred Elm applications above a size threshold), ported to beni. The port is
-mechanical in part---beni's formatter migrates syntax---and by hand in part, since beni has no
-automatic currying; we count the porting effort, and port without regard to the rule, writing each list
-operation the way the beni library makes most natural.
+mechanical in part---beni's formatter migrates syntax, turning \code{x :: acc} into \code{[ x, …acc ]}---and
+by hand in part, since beni has no automatic currying and \code{init} becomes a function; we count the
+porting effort, and port without regard to the rule, writing each list operation the way an Elm
+programmer wrote it.
 \end{enumerate}
-TEA programs are analysed under the entry protocol of their own platform (Table~\ref{tab:entry}), and
-every count is reported per platform: the rate a user of the template runtime would see is not the rate
-on the direct platform.
+The external corpus is the one the decision rests on, because it was not written with the rule in mind,
+and because Elm's own idioms, carried over, are exactly the idioms of Chapter~\ref{sec:idioms}.
 
 \section{Counts}
 \label{sec:eval-counts}
 
-For each corpus and in total we report:
+For each corpus, each entry row and in total we report:
 
 \begin{center}\small
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}X@{}}
@@ -106,19 +110,19 @@ For each corpus and in total we report:
 Count & Meaning \\
 \midrule
 sanitiser traps & stale uses found by the differential run; the target is zero \\
-demands & calls of named writers, and of the in-place forms of Change~1 where the corpus uses them \\
+demands & by kind (writer, construction, once closure) and by idiom I1--I7 or other \\
 accepted & unique at the site \\
-rejected, exact & real sharing, by holder kind: a later local read, a held argument, a closure, a command
-or fiber, a container, a payload, the view \\
-rejected, approximate & by limit tag: \code{foreign}/\code{Js}, \code{Ref}, path cut or cap, join,
-pessimistic summary, $\mathit{calls} = \mathit{many}$, elements may share, a command that may run late,
-a rendered list on the template runtime \\
-once-closure rejections & by kind: called twice, passed to a $\mathit{many}$ position, returned or stored
-and then used twice \\
+rejected, exact & real sharing, by holder kind: a later local read, a held operand, a closure, a command
+or fiber, a container, a payload, a kept version \\
+rejected, approximate & by limit tag (Table~\ref{tab:tags}) \\
+rejected, shared & a top-level list as a base \\
+\emph{idiomatic error rate} & rejected idiomatic demands over all idiomatic demands, per idiom and pooled;
+the main metric \\
+once-closure rejections & by kind: called twice, passed to a $\mathit{many}$ position, escaping \\
 exclusive containers & container paths that carry $\excl$ at a destructive read, against those that do
 not, and what cleared the flag \\
-copying builds & spreads and \code{++} whose operand was unique and dead (the warnings of
-\S\ref{sec:disc-copy}), in loops and elsewhere \\
+command captures & arms that escape a model list through a command, and the in-place edits that this
+blocks \\
 copies of unique lists & \code{List.copy} calls the checker would not have needed \\
 summaries changed per edit & under the fixed set of edit classes already used to measure interface
 churn, applied to every public declaration of the core library, how many interfaces change \\
@@ -133,16 +137,18 @@ trusted rows & asserted rows, and test programs pinning them \\
 \section{Hand classification}
 \label{sec:eval-hand}
 
-Every exact rejection is read by a person and classified as \emph{intended sharing} (the program keeps
-a version on purpose: an undo, a snapshot), \emph{accidental sharing} (the program would have been wrong
-had the write been in place---the bug class the rule exists to catch), or \emph{avoidable} (a reordering,
-a fold or the non-writing form would make the operand unique). Every approximate rejection is classified
-by whether a known extension---a discipline for mutable cells, a deeper path cut, a path-sensitive join,
-a summary on a platform \code{foreign}, a refined template-runtime row---would accept it. The model is
-Cann, Feo and DeBoni's report on the Sisal compiler, whose compilation statistics count copy operations
-in five application programs before and after optimisation---293 before, none unconditional and 29
-conditional after---and whose prose attributes each remaining conditional copy to row sharing
-\citep[Table~I]{cann1990sisal}; our classification adds by hand the step their table leaves to prose.
+Every exact rejection is read by a person and classified as \emph{intended sharing} (the program keeps a
+version on purpose: an undo, a snapshot), \emph{accidental sharing} (the program would have been wrong had
+the write been in place---the bug class the rule exists to catch), or \emph{avoidable} (a reordering, a
+fold or a reading form would make the operand unique), and by the idiom it occurs in. Every approximate
+rejection is classified by whether a known extension---a discipline for mutable cells, a deeper path cut, a
+path-sensitive join, a summary on a platform \code{foreign}, a summary split by message
+constructor---or a library choice---commands that take values, messages that carry identifiers---would
+accept it. The model is Cann, Feo and DeBoni's report on the Sisal compiler, whose compilation statistics
+count copy operations in five application programs before and after optimisation---293 before, none
+unconditional and 29 conditional after---and whose prose attributes each remaining conditional copy to row
+sharing \citep[Table~I]{cann1990sisal}; our classification adds by hand the step their table leaves to
+prose.
 
 \section{People}
 \label{sec:eval-people}
@@ -152,46 +158,55 @@ studies of Rust learners show that predicting a rejection and fixing it are diff
 \citep{crichton2023grounded}. We propose a small study alongside the counts: give programmers who know
 beni but not the rule a sample of rejected programs from the external corpus, with the messages of
 Chapter~\ref{sec:errors}, and record whether they fix each, how, and how long it takes---in particular,
-whether they reach for \code{List.copy}, for the non-writing form, or for a reordering, and whether they
-can tell an exact rejection from an approximate one from the verdict line. This measures the cost of
-rewriting, which the counts do not.
+whether they reach for \code{List.copy}, for a reading form, for a reordering or for computing a value
+before a command, whether they understand which operand a construction reuses, and whether they can tell
+an exact rejection from an approximate one from the verdict line.
 
 \section{Decision criteria, fixed in advance}
 \label{sec:eval-decisions}
 
-The numbers inform three decisions, in this order, against criteria we state now so that an outcome can
-refute the proposal.
+The numbers inform four decisions, in this order, against criteria we state now so that an outcome can
+refute the proposal. The decision rests on the external corpus under the entry row of the template
+runtime with \Obl{P7}, the design this thesis proposes for the platform those programs use; the other two
+rows are reported as context. Rates are computed pooled over all applications, and must also hold for the
+median application; the decision needs at least 500 idiomatic demand sites from at least ten applications,
+and if the corpus yields fewer, it is enlarged by the same selection rule before anything is decided.
 \begin{enumerate}
 \item \emph{Soundness.} If the differential run traps on any accepted program, or the two traces differ,
 the rule is not adopted until the cause is found and a test pins it. No rate of traps is acceptable.
-\item \emph{Error or warning.} The error is adopted only if, over the external corpus on the platform its
-programs use: (a) fewer than one in ten demand sites is rejected; (b) fewer than half of the rejections
-are approximate; and (c) in the study of \S\ref{sec:eval-people}, most rejections are fixed within a
-few minutes. Otherwise the warning mode of \S\ref{sec:disc-hatches} is the shipped form, with the run-time
-fallback of \S\ref{sec:disc-runtime}, and the error stays available as an opt-in.
+\item \emph{Adoption.} The rule is adopted only if (a) fewer than one in fifty idiomatic demand sites is
+rejected; (b) fewer than one in ten of all demand sites is rejected; (c) fewer than half of the rejections
+are approximate; and (d) in the study of \S\ref{sec:eval-people}, most rejections are fixed within a few
+minutes. Otherwise the in-place representation is not adopted yet: today's persistent \code{List} stays,
+the most frequent tags and idioms are addressed---by the checker, the library or the platforms---and the
+experiment is run again. There is no shipped form in which the compiler copies where it would reject.
+\item \emph{The renderer.} \Obl{P7} is adopted on the template runtime only if, on the existing benchmark
+harness for the renderer, every operation keeps the ordering it has today against the reference renderer,
+quoted as per-operation medians, with rows that walk because of \Obl{P7} included.
 \item \emph{Which extensions to build,} on the frequency of each approximate tag: a path-sensitive join
 only if the join tag is above a twentieth of rejections, a discipline for mutable cells only if the
-\code{Ref} tag is, a special case for a one-element \code{map} only if the $\mathit{calls} = \mathit{many}$
-tag is, and a refined template-runtime row only if rendered lists dominate.
+\code{Ref} tag is, summaries split by message constructor only if the view-event tag is, a special case for
+a one-element \code{map} only if the $\mathit{calls} = \mathit{many}$ tag is, and value-taking command
+constructors if the command tag is above a twentieth of rejections on the template-runtime row.
 \end{enumerate}
 The thresholds are our judgement, not derived; they are written down so that the decision cannot be
-fitted to the outcome. Whether to add the in-place forms of Change~1 is decided separately, on how often
-the external corpus's \code{map}, \code{filter} and sorts are applied to a list that is unique and dead
-at the call.
+fitted to the outcome. Whether to add the in-place forms of proposal O1 is decided separately, on how often
+the external corpus's \code{map}, \code{filter} and sorts are applied to a list that is unique and dead at
+the call.
 
 \section{What an implementation must provide}
 \label{sec:eval-brief}
 
 For the experiments to be run, an implementation must provide, in this order: the enumerated trusted
 surface of \S\ref{sec:soundness-trusted}, one asserted row and one pinned test program at a time; the
-in-place backend and the sanitiser of \S\ref{sec:eval-sanitiser}, in a test mode; the dump format above;
-the entry protocol of each platform as an asserted row on its program constructor; the derivation tags
-of \S\ref{sec:errors-tags}; one test program per transfer rule of Table~\ref{tab:transfer}, per summary
-rule of \S\ref{sec:inf-summarise} and per row of Table~\ref{tab:counterexamples}, each written to fail
-before the rule exists; the determinism test's comparison of the dump; a profiling event for the pass;
-and the hand-classification sheet. No emitted byte changes outside the test mode. The pass is to be
-specified as a normative part of the compiler's design before it is built; this thesis is the argument
-for that specification, not the specification itself.
+in-place backend and the sanitiser of \S\ref{sec:eval-sanitiser}, in a test mode; the dump format above,
+with the idiom classifier; the entry protocol of each platform as an asserted row on the function its
+runtime calls, under the three rows; the derivation tags of \S\ref{sec:errors-tags}; one test program per
+transfer rule of Table~\ref{tab:transfer}, per summary rule of \S\ref{sec:inf-summarise} and per row of
+Table~\ref{tab:counterexamples}, each written to fail before the rule exists; the determinism test's
+comparison of the dump; a profiling event for the pass; and the hand-classification sheet. No emitted byte
+changes outside the test mode. The pass is to be specified as a normative part of the compiler's design
+before it is built; this thesis is the argument for that specification, not the specification itself.
 
 \section{Performance, afterwards}
 \label{sec:eval-perf}
@@ -199,7 +214,7 @@ for that specification, not the specification itself.
 If the rule is adopted, a second experiment repeats the prototype study's benchmarks
 (\S\ref{sec:bg-measure}) with the trie removed and lists written in place---the static variant's
 numbers, without its fallback---together with page-size measurements, the direct platform's table
-benchmarks and their sweeps, and a measurement of the copying builds that list syntax now performs. The
-prototype study gives the expected shape: large gains when building in a fold and on steady grid ticks,
-gains hidden by the render walk on TEA table messages, and nothing for histories, which must copy. That
-expectation is to be measured, not assumed.
+benchmarks and their sweeps, the cost of prepending with room in front under the policies of proposal O3,
+and the per-render cost of \Obl{P7} on the template runtime. The prototype study gives the expected shape:
+large gains when building in a fold and on steady grid ticks, gains hidden by the render walk on TEA table
+messages, and nothing for histories, which must copy. That expectation is to be measured, not assumed.

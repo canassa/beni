@@ -1,276 +1,245 @@
 \chapter{Changes to the Language and Library}
 \label{sec:disc-options}
 
-beni's specification can change where the checker needs it. Each change below says why it is
-proposed, what precision or soundness it buys, what it costs developers, and how it weighs against the
-principle of Chapter~\ref{sec:discussion}, that a restriction must buy a guarantee. Changes 2, 4, 5,
-10, 11 and 14 are \emph{required} by the design as it now stands---without them the soundness argument
-does not go through or the rule rejects most list code; the others are trades.
+beni's specification can change where the checker needs it. This chapter gives each change's reason,
+what it buys, what it costs developers, which decision already recorded in the language's specification
+it touches, and how it weighs against the principle of Chapter~\ref{sec:discussion}, that a restriction
+must buy a guarantee. The changes fall into three groups. Changes 1--4 are \emph{decided}: they define the
+language the checker is designed for (\S\ref{sec:bg-language}). Changes 5--8 are \emph{required} by the
+design as it stands: without them the soundness argument does not go through, or the idioms of
+Chapter~\ref{sec:idioms} are rejected on the platform that runs them. Proposals O1--O7 are \emph{open}:
+each would buy precision, speed or convenience, each has a cost, and none is assumed by the rest of the
+thesis.
 
-\section*{Change 1: in-place forms of the same-shape rebuilds, under their own names}
-\addcontentsline{toc}{section}{Change 1: in-place forms of the same-shape rebuilds}
+\section{Decided changes}
 
-Add named writers that do in place what \code{map}, \code{filter}, \code{reverse}, \code{sort},
-\code{sortBy}, \code{sortWith} and \code{take} do by building: for example \code{List.updateEach xs f}
-(\code{a[i] = f(a[i])}, with \code{f : a → a}), \code{List.retain xs p} (compacts in place),
-\code{List.reverseInPlace}, \code{List.sortInPlace} (\code{a.sort(cmp)}, stable in every current engine)
-and \code{List.truncate xs n} (\code{a.length = n}). The names are illustrative; the point is that they
-are \emph{distinct names}, and \code{map} and \code{filter} keep building.
+\subsection*{Change 1: list construction consumes its base}
+\phantomsection\addcontentsline{toc}{subsection}{Change 1: list construction consumes its base}
 
-\emph{Reason.} Real programs edit lists this way, not with \code{set} and \code{push}
-(\S\ref{sec:disc-apps}); without in-place forms the rule changes nothing in TodoMVC or Conduit, and nested
-edits through \code{map} are not possible in place (\S\ref{sec:hard-containers}).
+In \code{[ x, …acc ]}, \code{[ …acc, x ]}, \code{[ …acc, …ys ]} and \code{acc ++ ys}, the first spread, or
+the left operand of \code{++}, is the base: its array is reused in place, at either end, and the other
+operands and the elements are only read. A literal with no spread allocates; a pattern only reads; a
+construction whose base is used again is an error whose message offers \code{List.copy}
+(\S\ref{sec:model-demands}).
 
-\emph{Why not make \code{map} itself a writer.} An earlier version of this design proposed widening the
-demand set to \code{map} and its kin, either as two functions or as one spelling ``decided by position''
-(a writer in \code{update}, a build in \code{view}). The second does not survive helpers: a helper
-called from both \code{update} and \code{view} has one summary, and position cannot be decided for it.
-And making \code{map} a writer everywhere makes every \code{List.map xs f} with \code{xs} used later an
-error, in every \code{view}, derived value and subscription, which all only read the model
-(\S\ref{sec:hard-tea}). Distinct names cost the library a second function per rebuild---the duplication
-FP\textsuperscript{2} identifies as the cost of static uniqueness typing, ``where a single function can
-have multiple different implementations'' \citep[\S1.4.1]{lorenzen2023fp2}---but only in the library, and
-the programmer chooses at the call, visibly.
+\emph{Reason.} Accumulators, folds, recursive builders and \code{update} arms are written with list syntax,
+and with construction consuming they run in place with no new name (Chapter~\ref{sec:idioms}).
 
-\emph{Buys.} In-place toggling, deletion and clearing in TodoMVC-like code on a platform that hands the
-model over; unique elements inside \code{updateEach}'s callback where the contents are exclusive
-(\S\ref{sec:model-excl}).
+\emph{Costs.} The checker meets a demand at every spread and every \code{++} on lists, so its precision
+on idioms carries the design. The programmer learns which operand is reused. A version that is kept and
+later extended needs an explicit copy.
 
-\emph{Against the principle.} An opt-in, not a restriction: no existing program changes meaning. The
-cost is a larger list module, and a choice the programmer must learn to make; the checker's warning on
-a copying build whose operand was unique and dead (\S\ref{sec:disc-copy}) names the in-place form.
+\emph{Recorded decisions it touches.} It keeps the language's decision that no way of building a list by
+prepending is quadratic for every accumulator, fold, recursive builder and TEA list, and reverses it for
+a persistent stack whose old versions are read later, which now needs a copy per kept version; the test
+program guarding that decision needs \code{List.copy} at the version it keeps
+(\S\ref{sec:idioms-rejected}). It withdraws the identity promise that \code{[] ++ ys} is \code{ys} itself
+(\S\ref{sec:model-demands}). It agrees with the decision that \code{++} on lists calls the list library's
+append.
 
-\section*{Change 2: drop the identity promises that alias}
-\addcontentsline{toc}{section}{Change 2: drop the identity promises that alias}
+\emph{Against the principle.} It buys the cost guarantee for the idioms people write; its restriction,
+that a base be dead, protects against a silent wrong answer.
 
-beni's library currently returns an input itself, or a view of it, from many functions
-(\S\ref{sec:bg-lists}). Under the rule a result that \emph{may} be the input names it in $\mathit{res}$,
-so the input must be unique at any later write of the result.
+\subsection*{Change 2: no silent fallback, and \code{List.copy}}
+\phantomsection\addcontentsline{toc}{subsection}{Change 2: no silent fallback, and List.copy}
 
-\emph{Proposal.} Functions that build return a fresh array always: \code{filter}, \code{map},
-\code{slice}, \code{take}, \code{reverse}, the sorts, \code{concat}, \code{[] ++ ys} and \code{xs ++ []},
-and the building loop's exit when its destination is empty, which today returns its tail argument
-itself (\S\ref{sec:model-demands}). Functions that return a view keep doing so and say so:
-\code{drop}, \code{tail}. The writers' no-ops return their operand, as their rows say. The claimed-head
-prepend that returns the base array goes with the trie.
+The compiler never copies a list, and never chooses a slower algorithm, to make an edit safe.
+\code{List.copy : List a → List a}, new, shallow and fresh, is the explicit copy, and every $O(n)$ copy a
+program pays for is written as one.
 
-\emph{Reason.} Otherwise \code{xs ▷ List.filter p ▷ List.push y} demands \code{xs} unique although
-\code{filter} usually returns a fresh array; and the building exit returning its tail made
-\code{zs = appendTo [] ys} the very array \code{ys}, while the summary said fresh---a soundness hole, not
-only a precision one (Table~\ref{tab:counterexamples}, F5).
+\emph{Reason.} A silent copy makes the cost model depend on facts the programmer cannot see; in our
+prototype study one turned a fold 8.2 times slower than the persistent baseline (\S\ref{sec:bg-measure}).
 
-\emph{Costs.} The renderer's skip on \code{===} for a \code{filter} that kept everything is lost: one
-$O(n)$ comparison of items instead of one pointer test. The building exit copies its tail when the
-destination is empty, which costs what the non-empty case already pays. The test that pins list identity
-changes its expected output. The library's specification is itself inconsistent about \code{filter}'s
-identity today, in one place promising the input itself and in another a new list; this change settles
-it.
+\emph{Costs.} Programs that share on purpose write the copy. There is no warning mode that copies.
 
-\emph{Against the principle.} No restriction; a representation choice that removes aliases the rule
-would otherwise have to carry. Required.
+\emph{Against the principle.} \code{List.copy} is the escape hatch the principle asks for.
 
-\section*{Change 3: add \code{List.copy}}
-\addcontentsline{toc}{section}{Change 3: add List.copy}
+\subsection*{Change 3: \code{eq} and \code{compare} only read}
+\phantomsection\addcontentsline{toc}{subsection}{Change 3: eq and compare only read}
 
-\code{List.copy : List a → List a}: new, shallow, fresh.
-
-\emph{Reason.} It is the explicit escape hatch and the mechanical fix that every message writes.
-
-\emph{Costs.} None. A copy of a list the checker can see is already unique could earn a warning,
-never an error.
-
-\emph{Against the principle.} An escape hatch is what the principle asks for.
-
-\section*{Change 4: list syntax builds; only named writers write}
-\addcontentsline{toc}{section}{Change 4: list syntax builds; only named writers write}
-
-A literal, a spread and \code{++} on lists build a new array, as they do in JavaScript; they lower to a
-fresh concatenation, not to the consuming \code{cons} and \code{append}. The writers \code{List.cons} and
-\code{List.append} remain, called by name.
-
-\emph{Reason.} An earlier version of this design lowered spreads and \code{++} to the consuming writers.
-That made every spread of a list still in use an error: a top-level list could never be spread,
-\code{a = base ++ [ 1 ]; b = base ++ [ 2 ]} was rejected, and every \code{view} that concatenated two
-model lists either wrote the model at each render or was an error. These are among the most common list
-operations in Elm-style code.
-
-\emph{Costs.} Accumulators written with syntax copy at each step, as in JavaScript and as
-\code{acc ++ [ x ]} already does in Elm; today's trie makes them amortised $O(1)$. The checker warns where
-the named writer would have been accepted (\S\ref{sec:disc-copy}).
-
-\emph{Against the principle.} It removes restrictions. Required: without it the rule rejects most list
-code.
-
-\section*{Change 5: ownership words on \code{foreign} declarations, and optionally on public annotations}
-\addcontentsline{toc}{section}{Change 5: ownership words on foreign declarations and public annotations}
-
-A \code{foreign} parameter may say \code{unused}, \code{borrowed}, \code{aliased}, \code{escaped} or
-\code{consumed}; a result \code{fresh} or ``is parameter $i$'', and whether it is exclusive. A public beni
-declaration \emph{may} say the same in its annotation, and when it does, the inferred summary must be at
-most what is written: an annotation can only claim \emph{more} of an argument than the body takes, never
-less. A stated borrowed where the body consumes is an error at the declaration, while a stated consumed
-where the body borrows is accepted and freezes the interface at consumed.
-
-\emph{Reason.} A \code{foreign} has no body, and platform contracts need the words (A2, A6). The core
-library's functions over \code{Js} have bodies that cannot show what they promise
-(\S\ref{sec:model-demands}), so \emph{the core library and the platforms may assert a summary that the
-body does not prove}---trusted, like the effect rung---while every other package may only \emph{narrow}
-an inferred one. For public beni code the annotation answers interface churn: it makes the summary a
-declared contract, so a body edit cannot change it, and annotated declarations were the ones whose
-interfaces did not change in our churn measurement (\S\ref{sec:bg-modules}). At Jane Street, OxCaml
-interface files carried 27\,382 locality annotations, because ``the implementations can generally infer
-locality, whereas interfaces must write it down explicitly'' \citep[\S7]{lorenzen2024oxidizing}. The
-vocabulary must also reach a function type inside a platform's record: the fields through which a TEA
-platform receives the program's functions are where the entry protocol of Table~\ref{tab:entry} is
-written.
-
-\emph{Buys.} Soundness at the boundary; stable interfaces for library authors who want them.
-
-\emph{Costs.} A vocabulary users may write but never must. Inference is complete without it, so
-application code carries no annotations.
-
-\emph{Against the principle.} An opt-in, not a restriction, for public declarations. Required for
-\code{foreign}.
-
-\section*{Change 6: closures that consume a capture are once}
-\addcontentsline{toc}{section}{Change 6: closures that consume a capture are once}
-
-A consequence of the rules (\S\ref{sec:model-functions}), listed because it is visible in the language:
-\code{List.map xs (λx → List.push acc x)} is an error whose fix is a fold, and a function that returns
-such a closure returns a value that may be called once.
-
-\emph{Buys.} Soundness: two calls would write one array.
-
-\emph{Costs.} A shape some people write; the message gives the fold.
-
-\emph{Against the principle.} It buys a correctness guarantee---no observable write---so it stays an
-error.
-
-\section*{Change 7: a persistent vector as a library}
-\addcontentsline{toc}{section}{Change 7: a persistent vector as a library}
-
-A core module---a persistent vector---holding the current trie, written in beni with no in-place
-writes, for programs that keep versions.
-
-\emph{Reason.} The trie's users---undo, time travel, shared tails---lose their $O(\log n)$ versions
-when \code{List} stops being persistent.
-
-\emph{Costs.} A second sequence type in the library, where the language deliberately has one; as a
-library module it has the status of a dictionary, not of \code{List}.
-
-\emph{Against the principle.} A capability filled inside the library rather than an instruction to
-work around its absence.
-
-\section*{Change 8: headroom for the named prepend}
-\addcontentsline{toc}{section}{Change 8: headroom for the named prepend}
-
-\code{List.cons x xs} on a unique list writes $b[o-1]$ and returns a new view header when the list is a
-view with headroom ($o > 0$); otherwise it reallocates with headroom proportional to the length.
-
-\emph{Reason.} Without it the named prepend on a plain array is \code{unshift}, $O(n)$, and a prepend
-loop the building-loop rewrite does not catch is quadratic even when the programmer asked for the
-in-place form; the cost guarantee of Chapter~\ref{sec:discussion} would have to except it.
-
-\emph{Buys.} Amortised $O(1)$ prepend, matching \code{push}.
-
-\emph{Costs.} Views become more common than today, and headroom costs space; the policy is to be
-measured. Adopted as part of the design, so that the guarantee holds as stated.
-
-\emph{Against the principle.} A cost, not a restriction.
-
-\section*{Change 9: sending consumes its message}
-\addcontentsline{toc}{section}{Change 9: sending consumes its message}
-
-A fiber or command that sends a list and still holds it is an error at the sender (\Obl{P6}).
-
-\emph{Buys.} Unique payloads at the arm: a list decoded in a fiber and sent can be stored in the model and
-edited in place later.
-
-\emph{Costs.} \code{send (Got rows)} followed by a use of \code{rows} must become
-\code{send (Got (List.copy rows))}; and the beginner's \code{Cmd.perform (λsend → send (Saved model.todos))}
-is rejected at the send, since the model still holds the list. The alternative---sending shares the
-payload---accepts that program but marks every payload escaped at every arm, so a list loaded over the
-network and stored in the model could never be edited in place.
-
-\emph{Against the principle.} It rejects a correct program to keep the common load-then-edit pattern
-writable in place; we judge that the better default, and the evaluation counts both.
-
-\section*{Change 10: write the dependence on evaluation order down}
-\addcontentsline{toc}{section}{Change 10: write the dependence on evaluation order down}
-
-The rule depends on the language's evaluation order being the order the emitted code runs in. The
-language definition should say that a call of a named writer is a write for the purpose of ordering,
-and narrow its statement that call-free evaluations may be ordered freely, and the optimiser's licence to
-fold a read of a beni value past calls, so that neither moves a read of a list across a demand that may
-write it (A5).
-
-\emph{Against the principle.} No restriction on programs; a constraint on the optimiser. Required.
-
-\section*{Change 11: \code{eq} and \code{compare} only read}
-\addcontentsline{toc}{section}{Change 11: eq and compare only read}
-
-A type's \code{eq} and \code{compare}, whether derived or written, must only read their arguments: an
-\code{eq} whose inferred summary writes, keeps or returns a cell of an argument is an error at its
-declaration (\S\ref{sec:inf-generic}).
+A type's \code{eq} and \code{compare}, derived or written, must only read their arguments; one whose
+inferred summary writes, keeps or returns a cell of an argument is an error at its declaration
+(\S\ref{sec:inf-generic}).
 
 \emph{Reason.} \code{==} on a list, a derived \code{eq} and every \code{where a.eq} function call the
-element type's \code{eq}, often with one cell as both arguments. An \code{eq} that pushed onto its argument
-wrote that cell twice, behind every caller's back; even ordinary multiset equality written with an
-in-place sort would do so.
+element type's \code{eq}, often with one cell as both arguments. An \code{eq} that edited its argument
+would write that cell twice, behind every caller's back.
 
-\emph{Buys.} The guarantee that \code{==} and \code{<} never change a value, on which the summaries of
-list equality, dictionaries, sets and sorting rest unconditionally.
+\emph{Buys.} The guarantee that \code{==} and \code{<} never change a value, on which the summaries of list
+equality, dictionaries, sets and sorting rest unconditionally.
 
-\emph{Costs.} An \code{eq} that wants to sort compares sorted copies: \code{List.sort a == List.sort b},
-which builds new lists and is accepted. We know of no program that needs an \code{eq} that writes its
-arguments.
+\emph{Costs.} A text search finds over a hundred public \code{eq} and \code{compare} declarations in the
+core library, the platforms, the test programs and the examples; those we read only read. An \code{eq}
+that wants to sort compares sorted copies, \code{List.sort a == List.sort b}. A \code{Debug.log} inside an
+\code{eq} stays legal.
 
-\emph{Against the principle.} A restriction that buys a guarantee---no silent change to a value through
-a comparison---and soundness of a fixed trusted surface. The alternative, summarising \code{eq} like
-any method and making every generic function's summary conditional on its evidence, is sound and
-restricts nothing; it costs every \code{where a.eq} function a guard, and makes the core library's list
-equality an asserted row that is conditional on its evidence. If the restriction is judged not worth
-it, that alternative is the fallback; it is not an unsound one.
+\emph{Against the principle.} A restriction that buys a guarantee---no silent change to a value through a
+comparison.
 
-\section*{Change 12: a TEA program's \code{init} is a function}
-\addcontentsline{toc}{section}{Change 12: a TEA program's init is a function}
+\subsection*{Change 4: \code{init} is a function, and top-level lists are shared}
+\phantomsection\addcontentsline{toc}{subsection}{Change 4: init is a function, and top-level lists are shared}
 
-\code{init : ⊤ → Model × Cmd Msg} instead of a value, as Elm's \code{init} is a function of its flags.
+A TEA program's \code{init} is \code{init : ⊤ → Model × Cmd Msg}, or a function of the program's flags,
+called by the platform once per mounted program; a \code{Reset} arm may call it again. A top-level value
+holding a list is shared and never edited in place; a program edits a list a function returns, or a
+\code{List.copy} (\S\ref{sec:model-check}).
 
-\emph{Reason.} A top-level value holds its cells for the program's life, so every list that starts in a
-value \code{init} is escaped, and the sound alternative of ignoring that hold would let a
-\code{Reset → init} arm return an array that earlier messages wrote (\S\ref{sec:hard-tea}).
+\emph{Reason.} A value \code{init} would put the same arrays in every mount and in every \code{Reset}, so
+editing them in place would change what the next mount or reset starts from. Rust, Clean and Futhark treat
+global values the same way.
 
-\emph{Costs.} A change to the platforms' program constructors; existing programs add \code{⊤} and a
-lambda. A program that keeps a value \code{init} stays correct and loses only in-place edits of the lists
-that start in it.
+\emph{Costs.} Every platform's program constructor changes; a text search finds 253 test programs, examples
+and benchmarks that call one, nearly all with \code{init} as a value, and each adds \code{⊤} and a
+lambda---or, where \code{init} is a top-level constant, \code{⊤} on its definition. The constructor
+modelled on Elm's \code{Browser.sandbox}, whose \code{init} is a value, diverges from Elm's API; the rule
+forces that divergence. A program that seeds its model from a top-level list is rejected at its first
+in-place edit until it builds or copies the list in \code{init}.
 
-\emph{Against the principle.} A platform API change, not a restriction.
+\emph{Against the principle.} A platform API change that buys a guarantee: no mount or reset sees another's
+edits.
 
-\section*{Change 13: platforms may drain sync commands before the next message}
-\addcontentsline{toc}{section}{Change 13: platforms may drain sync commands before the next message}
+\section{Changes the design requires}
 
-A platform may promise that a command whose thunk cannot suspend runs to completion before the next
-message reaches \code{update} (\Obl{P7}, A12), and declare such thunks' captures held until then.
+\subsection*{Change 5: ownership words on \code{foreign} declarations and foreign types}
+\phantomsection\addcontentsline{toc}{subsection}{Change 5: ownership words on foreign declarations and foreign types}
 
-\emph{Reason.} Persisting the model from a command, as TodoMVC does, captures the list in a thunk; without
-the promise the list is escaped for the program's life.
+A \code{foreign} parameter may say \code{unused}, \code{borrowed}, \code{aliased}, \code{escaped} or
+\code{consumed}, and a function-typed one how often it is called; a result \code{fresh}, ``is parameter
+$i$'', \code{escaped} or \code{unknown}, and whether it is exclusive. A \code{foreign type} may say that it
+crosses. The core library and the platforms may assert a summary that a body cannot show; every other
+package may only \emph{narrow} an inferred one. A public beni declaration \emph{may} carry the same words in
+its annotation, and the inferred summary must then be at most what is written: an annotation can claim
+more of an argument than the body takes, never less, and freezes the interface.
 
-\emph{Costs.} A scheduling constraint on the runtime: today's TEA runtime queues such commands to run
-soon after \code{update} returns, and would run any that are still queued at the start of the next
-dispatch. To be measured.
+\emph{Reason.} A \code{foreign} has no body, a foreign type has no definition, and the core library's
+functions over \code{Js} have bodies that cannot show what they promise (A2, A6, A10). For public beni code
+the optional annotation answers interface churn: annotated declarations were the ones whose interfaces did
+not change in our churn measurement (\S\ref{sec:bg-modules}). At Jane Street, OxCaml interface files
+carried 27\,382 locality annotations, because ``the implementations can generally infer locality, whereas
+interfaces must write it down explicitly'' \citep[\S7]{lorenzen2024oxidizing}.
+
+\emph{Costs.} A trusted vocabulary on every sibling, and the test program that pins each row. Inference is
+complete without the optional annotation, so application code carries none.
+
+\emph{Against the principle.} Required for \code{foreign}; an opt-in for public declarations.
+
+\subsection*{Change 6: an edit is a barrier to the optimiser}
+\phantomsection\addcontentsline{toc}{subsection}{Change 6: an edit is a barrier to the optimiser}
+
+The language definition says that a demand---a writer's call or a construction---is a write for the
+purpose of ordering, and narrows both its statement that call-free evaluations may be ordered freely and
+the optimiser's licence to fold a read of a beni value past calls, so that neither moves a read of a list
+across a demand that may write it (A5).
+
+\emph{Costs.} The single-use fold may no longer place \code{xs.length} past a construction on \code{xs}; a
+small size cost, unmeasured. It is a change to the language's evaluation-order licence.
+
+\emph{Against the principle.} No restriction on programs; a constraint on the optimiser.
+
+\subsection*{Change 7: \code{send} writes what \code{update} writes}
+\phantomsection\addcontentsline{toc}{subsection}{Change 7: send writes what update writes}
+
+A program's \code{send} consumes a payload path only when some arm of \code{update} edits that path in
+place, and otherwise only aliases it (\Obl{P6}).
+
+\emph{Reason.} Payloads that \code{update} edits must be unique at the arm; payloads it only reads need
+nothing. Consuming every payload would reject programs with no in-place edit at all, which buys no
+guarantee; sharing every payload would make a list decoded in a fiber, sent and stored in the model
+uneditable forever.
+
+\emph{Costs.} A send's verdict depends on \code{update}'s summary, so it is checked at the entry fixpoint
+rather than where the send is written; the message must point from the send to the arm that edits the
+payload.
+
+\emph{Against the principle.} It rejects exactly the sends whose payload an arm edits in place.
+
+\subsection*{Change 8: a renderer skips a list by identity only if no arm edits it}
+\phantomsection\addcontentsline{toc}{subsection}{Change 8: a renderer skips a list by identity only if no arm edits it}
+
+A renderer compiles every markup site that may show a list the program edits in place---learnt from
+\code{update}'s summary at the program constructor---without the skip that compares that list, or a row
+item holding one, with the last by identity; such a site walks its rows (\Obl{P7}).
+
+\emph{Reason.} An in-place edit keeps a list's identity, so a skip on identity would leave the page showing
+the old list. Without the change, every in-place edit of a rendered list is an error on beni's template
+runtime, which under Change~1 is the idiom I5 on every rendered list.
+
+\emph{Costs.} Such a site compares each row's item on every render where it compared one pointer. That
+cost falls on exactly the lists the program edits, and whether it is acceptable against the reference
+renderer is to be measured with the existing benchmark harness before the change is adopted
+(\S\ref{sec:eval-perf}). The direct platform already satisfies the obligation by design.
+
+\emph{Recorded decisions it touches.} None of the identity promises: the renderer still relies on them for
+every list the program does not edit.
 
 \emph{Against the principle.} A runtime contract, not a restriction on programs.
 
-\section*{Change 14: interfaces publish crossing and opaque summaries}
-\addcontentsline{toc}{section}{Change 14: interfaces publish crossing and opaque summaries}
+\section{Open proposals}
 
-Every type's crossing bit is computed in its declaring module and published in its interface, and an
-opaque type that does not cross has its public functions' summaries expressed over the opaque step
-(\S\ref{sec:model-cells}).
+\subsection*{O1: in-place forms of the same-shape rebuilds}
+\phantomsection\addcontentsline{toc}{subsection}{O1: in-place forms of the same-shape rebuilds}
 
-\emph{Reason.} An importer cannot see an opaque type's constructors; if it concluded that the type
-crosses, a value holding a list would hold ``no cell'', and a demand inside one of its module's functions
-would go unchecked (Table~\ref{tab:counterexamples}, F12).
+Named writers that do in place what \code{map}, \code{filter}, \code{reverse}, \code{sort} and \code{take} do
+by building: \code{List.updateEach xs f} (\code{a[i] = f(a[i])}), \code{List.retain xs p} (compacts in
+place), \code{List.reverseInPlace}, \code{List.sortInPlace} and \code{List.truncate xs n}. The names are
+illustrative; the point is that they are distinct, and \code{map} and \code{filter} keep building. They
+would let TodoMVC's toggles and deletions run in place. A spelling that made \code{map} itself a writer in
+some positions does not survive helpers, which have one summary however they are called. Cost: a second
+function per rebuild in the library---the duplication FP\textsuperscript{2} identifies as the cost of
+static uniqueness typing, ``where a single function can have multiple different implementations''
+\citep[\S1.4.1]{lorenzen2023fp2}---and a choice the programmer must learn. To be decided on how often the
+external corpus applies these functions to a list that is unique and dead at the call.
 
-\emph{Against the principle.} Interface content, not a restriction. Required.
+\subsection*{O2: drop the identity promises}
+\phantomsection\addcontentsline{toc}{subsection}{O2: drop the identity promises}
+
+Functions that build would return a fresh array always, instead of their input when the result would
+equal it. \emph{Buys:} $\mathit{res} = \{\fresh\}$ for \code{filter}, \code{map} and their kin, so an edit of
+the result never demands the source (\S\ref{sec:hard-pipelines}). \emph{Costs:} the renderer skips a
+\code{<For>} when its list is the same object as last time, and these promises are what make an unchanged
+filtered or mapped list the same object; without them, a \code{view} that renders
+\code{List.filter model.todos visible} hands the renderer a new array on every render, and every unrelated
+message walks every row, keyed matching included. \emph{Conflicts with} the language's recorded decision that
+these operations return their input itself, on which its rendering strategy rests. We recommend keeping
+the promises: their cost to the checker is precision only where the source is used again, which the
+idioms do not do.
+
+\subsection*{O3: the policy for room in front of a list}
+\phantomsection\addcontentsline{toc}{subsection}{O3: the policy for room in front of a list}
+
+How much free space a prepend leaves before a list's first element, whether plain arrays carry some from
+birth, and when a view is flattened (\S\ref{sec:compiler-backend}). Any policy that grows the space in
+proportion to the length keeps prepending amortised $O(1)$; the choices trade memory and the frequency of
+views against the cost of the first prepend onto a plain array. To be measured.
+
+\subsection*{O4: interfaces publish whether a type can hold a list}
+\phantomsection\addcontentsline{toc}{subsection}{O4: interfaces publish whether a type can hold a list}
+
+The declaring module of an opaque type computes whether it crosses and publishes the bit, so importers can
+drop its paths. Without it, an opaque type is tracked under its opaque step, which is sound and costs
+width rather than precision (\S\ref{sec:model-cells}). Cost: interface content, and churn when a type's
+definition gains or loses a list.
+
+\subsection*{O5: a persistent vector as a library}
+\phantomsection\addcontentsline{toc}{subsection}{O5: a persistent vector as a library}
+
+A core module holding the current trie, written in beni with no in-place writes, for programs that keep
+many versions. Cost: a second sequence type in the library, where the language deliberately has one; as a
+library module it has the status of a dictionary, not of \code{List}.
+
+\subsection*{O6: command constructors that take values}
+\phantomsection\addcontentsline{toc}{subsection}{O6: command constructors that take values}
+
+Platform commands that persist or send data---storage, HTTP bodies, logging---take the value to send
+(\code{Storage.save key text}) rather than a closure that computes it later, as Elm's HTTP library takes an
+encoded body. \emph{Buys:} the commonest escape in TEA programs disappears from idiomatic code
+(\S\ref{sec:hard-fibers}). \emph{Costs:} a body that genuinely needs the list later must say so with
+\code{List.copy}; more command constructors in each platform.
+
+\subsection*{O7: summaries split by the message's constructor}
+\phantomsection\addcontentsline{toc}{subsection}{O7: summaries split by the message's constructor}
+
+\code{update}'s summary published per constructor of its message, so the entry check can tell which arm a
+view-event payload reaches (\Obl{P6}). \emph{Buys:} one \code{onClick=\{Keep model.rows\}} no longer
+blocks in-place edits of \code{model.rows} in other arms. \emph{Costs:} a summary per constructor of the
+message type, in the interface. To be decided on how often the view-event tag fires.

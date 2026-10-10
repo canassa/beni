@@ -41,8 +41,7 @@ al.'s report of it.
 \emph{Taken.} The three aspects \citep[\S1]{aspinall2008usage} as the \textsf{W}, \textsf{A} and
 \textsf{R} facts of $\mathit{use}$; the \textsc{Let} rule's per-variable side condition, under which a
 variable used with aspect 3, ``used read-only and not shared with the result'', in the binding may be
-destroyed in the body, while one used with aspect 2 may not \citep[Fig.~8]{aspinall2008usage}---the
-reads-before-writes rule in its earliest typed form, restricted to reads whose result does not alias the
+destroyed in the body, while one used with aspect 2 may not \citep[Fig.~8]{aspinall2008usage}---a typed form of the reads-before-writes rule, restricted to reads whose result does not alias the
 variable, which is also why, in our rules, a read whose result aliases the list keeps a holder alive; the
 best-typing claim and its optimistic search \citep[\S6.2]{aspinall2008usage}; the
 separation theorem's clause that heap occupied by arguments with aspect 2 or 3 is not modified
@@ -236,7 +235,7 @@ and not a copy. A third finding cuts the other way: a run-time shared bit made t
 \section{Compile-time garbage collection for Mercury}
 
 \emph{Sources:} Mazur \citep{mazur2004thesis} and Mazur et al.\ \citep{mazur2001practical}; earlier
-sharing and update analyses known to us from secondary sources \citep{bloss1989update,hudak1987semantic,jones1989compile,baker1990unify}.
+sharing and update analyses known to us from secondary sources \citep{bloss1989update,hudak1986semantic,jones1989compile,baker1990unify}.
 
 \emph{Taken.} Liveness at the site of reuse; path-based sharing facts with recursive types folded into
 finite type graphs, as our folded paths; per-procedure summaries in interface files and a precondition

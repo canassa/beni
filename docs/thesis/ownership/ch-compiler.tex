@@ -24,11 +24,10 @@ so the hook for the first exists.
 The two effect bits and the ownership classes ride on the same function-type sites, are solved in the
 same per-module phase, and are published in the same kind of interface block. They interact in one
 place: a function that \emph{suspends} parks its locals in a continuation, which is one-shot (A7), so a
-parked local is the same holder it was and liveness is unchanged. The suspension bit is read in one
-more place: a platform that drains commands that cannot suspend before the next message (\Obl{P7})
-holds their captures only until then, and the bit says which commands those are. An impure call is a
-call like any other for holders, and the optimiser's duty to keep impure calls in place is what A5
-extends.
+parked local is the same holder it was and liveness is unchanged. No ownership fact depends on an effect
+bit: a command's captures are escaped whether or not its body can suspend (\S\ref{sec:hard-fibers}). An
+impure call is a call like any other for holders, and the optimiser's duty to keep impure calls in place
+is what A5 extends.
 
 \section{Static dispatch}
 \label{sec:compiler-dispatch}
@@ -73,8 +72,8 @@ nowhere else.
 \label{sec:compiler-backend}
 
 Every accepted demand is in place, so the backend needs no per-site decision: it emits each writer's
-call as it does today, and the core library's writers \emph{are} the in-place operations
-(Table~\ref{tab:backend}).
+call as it does today, lowers each construction to the writers on its base as the language already
+specifies, and the core library's writers \emph{are} the in-place operations (Table~\ref{tab:backend}).
 
 \begin{table}[t]
 \centering\small
@@ -86,12 +85,13 @@ Primitive & Today & Under the rule \\
 \code{push} & copy under 32 elements, else claim the tail & \code{a.push(v)}; amortised $O(1)$ \\
 \code{pop} & copy up to 256 elements, else a new header & \code{a.pop()}; $O(1)$ \\
 \code{insertAt}, \code{removeAt} & $O(n)$ plain copy & \code{a.splice(i, ⋯)}; $O(n)$ move, as hand-written code does \\
-\code{cons} (the named writer) & claim a head slot, short copy, or convert & write $b[o-1]$ on a unique view with headroom ($o > 0$) and return a new header; otherwise reallocate with headroom proportional to the length; amortised $O(1)$ (Change~8) \\
-\code{append} (the named writer) & push onto a trie or concatenate & push each element of the second list; $O(|ys|)$ \\
-\code{copy} & --- & \code{a.slice()}, or \code{b.slice(o)} for a view \\
+\code{cons}, and an element before a construction's base & claim a head slot, short copy, or convert & write $b[o-1]$ on a base with free space in front ($o > 0$) and return a new header; otherwise move the base into a larger array with free space in front proportional to its length; amortised $O(1)$ \\
+\code{append}, and a spread after a construction's base & push onto a trie or concatenate & push each element of the read operand onto the base; $O(|ys|)$ \\
+an element after a construction's base & claim the tail, or copy & \code{a.push(v)}; amortised $O(1)$ \\
+a literal with no spread & a new array & a new array; $O(n)$ \\
+\code{copy} & --- & \code{a.slice()}, or \code{b.slice(o, o + n)} for a view \\
 write through a view $(b, o)$ & --- & the same on $b$ at offset $o + i$; always a new header, with no cached copy (A1) \\
-a literal, a spread, \code{++} on lists & claim, convert or copy & a new plain array of the result's size; $O(|\mathit{result}|)$, as in JavaScript \\
-a building loop's exit & append the tail, or return it when empty & append the tail, or copy it when empty; $O(|ys|)$ either way \\
+a building loop's exit & append the tail, or return it when empty & attach the builder's elements in front of the consumed tail, or return the tail when the builder is empty \\
 \bottomrule
 \end{tabularx}
 \caption{List primitives today and under the rule.}
@@ -107,10 +107,18 @@ that build their result in tail position; and the three-fact protocol for reader
 the list runtime at 706 bytes compressed without the trie, against 1\,514 with it
 (Appendix~\ref{app:method}). The library's loops written in beni are unchanged.
 
-The backend must still keep the identity promises the library chooses to keep (\S\ref{sec:disc-options},
-Change~2) and the linearity of the builder. \code{++} on lists and every spread lower to a fresh
-concatenation, as on other appendable types such as strings; only the named writers write in place
-(\S\ref{sec:model-demands}).
+Moving a consumed base into a larger array is growth, not a copy in the sense of the rule: no old
+version survives it, because the base had no other live holder, and its cost is amortised over the
+additions that filled the space, exactly as for \code{push} on a JavaScript array. Prepending needs free
+space in front, so a list built by prepending is a view whose offset leaves room before its first
+element. How much room to keep, whether a plain array gains room in front on its first prepend or carries
+some from birth, and how often a view must be flattened when it is handed to JavaScript are open
+(\S\ref{sec:disc-options}); the amortised bound holds for any policy that grows the room in proportion
+to the length.
+
+The backend must still keep the identity promises the language keeps (\S\ref{sec:model-demands}) and the
+linearity of the builder. A construction returns its base's identity, \code{[ …xs ]} and the re-consing
+of a matched list return the list itself, and \code{xs ++ []} returns \code{xs}.
 
 \section{The release optimiser}
 \label{sec:compiler-release}
@@ -121,7 +129,9 @@ with no new exception---\emph{provided the optimiser treats a demand as a barrie
 single-use fold places a read of a beni value after calls that precede its use in the same statement,
 and a list's length and element reads are such reads after lowering (\S\ref{sec:bg-release}); a read
 of a cell and a demand on it do not commute, so the demand summaries become an input to the optimiser as
-the impure bit is, and a read of a cell is never moved across a demand that may write it. With that,
+the impure bit is, and a read of a cell is never moved across a demand that may write it---a construction
+included, since \code{n = List.length xs} followed by a use of \code{n} after \code{[ …xs, 1 ]} must read
+the length before the push. With that,
 the rest of the optimiser's contract carries over: an unused binding whose right-hand side is a pure
 call may be dropped (an unused \code{List.set} is then not performed, which no reader can tell); two
 surviving calls are never reordered; inlining substitutes bodies and never duplicates an argument's

@@ -8,70 +8,83 @@ warning, gets an escape hatch, or is dropped. A limit that bounds a real blow-up
 by an annotation is the model of a restriction done right. Every rule in this design is to be tested
 against that principle.
 
-This rule buys a guarantee about \emph{cost}: \emph{an in-place edit the program asks for, by calling a
-named writer, is performed in place}---\code{set}, \code{update}, \code{swap} and \code{pop} in $O(1)$,
-\code{push} and \code{cons} in amortised $O(1)$, \code{append} in time proportional to what it appends,
-\code{insertAt} and \code{removeAt} in the $O(n)$ element move a hand-written program also pays---and a
-list that is built rather than edited costs what the same construction costs in JavaScript. There is
-no hidden copy, no trie and no reference count, and the runtime is smaller. The price is that programs
-that are \emph{correct} under value semantics are rejected. The design choice made here is that the
-error is wanted. This chapter states its price without softening it.
+This rule buys a guarantee about \emph{cost}: \emph{an edit the program writes is performed in place},
+with no hidden copy and no slower path chosen behind the program's back---\code{set}, \code{update},
+\code{swap} and \code{pop} in $O(1)$; \code{push}, \code{cons} and every element a construction adds at
+either end of its base in amortised $O(1)$; the elements a construction copies from a read operand in
+time proportional to them, as JavaScript's spread copies them; \code{insertAt} and \code{removeAt} in the
+$O(n)$ element move a hand-written program also pays. Every $O(n)$ copy a program pays for is a
+\code{List.copy} in its source. There is no trie and no reference count, and the runtime is smaller. The
+price is that programs that are \emph{correct} under value semantics are rejected. The design choice made
+here is that the error is wanted. This chapter states its price without softening it.
 
 \section{Programs that are rejected}
 \label{sec:disc-rejected}
 
-Every one of the following is a correct beni program today.
+Every one of the following is a correct beni program today; Table~\ref{tab:rejected} gives each with its
+fix.
 \begin{enumerate}
-\item Keeping an old version and then editing it in place: an undo history, a snapshot for a diff, a
-``previous'' field in the model, a test that holds its input and compares it with the output
-(\S\ref{sec:hard-undo}).
+\item Keeping an old version and then editing it in place: an undo history of lists, a snapshot for a
+diff, a ``previous'' field in the model, a test that holds its input and compares it with the output, a
+persistent stack whose old versions are read (\S\ref{sec:hard-undo}), and two lists built from one,
+\code{a = base ++ [ 1 ]; b = base ++ [ 2 ]}.
+\item Reading a construction's base again in the same expression:
+\code{\{ model | items = [ …model.items, x ], count = List.length model.items \}}.
 \item A command, fiber, subscription or stored closure that captured a list which a later message edits
 in place (\S\ref{sec:hard-fibers}).
-\item Sending a list that the sender still holds: the beginner's
-\code{Cmd.perform (λsend → send (Saved model.todos))} is rejected at the \code{send}, because sending
-consumes the message while the model still holds \code{model.todos} (\S\ref{sec:hard-tea}, \Obl{P6}).
+\item A construction whose base is a top-level list, \code{[ x, …defaults ]}, or a model list in
+\code{view}, a derived value or \code{subscriptions}.
 \item A closure that edits a captured list in place and is passed to \code{map}, \code{filter},
-\code{sortBy} or any other $\mathit{many}$ position, or called twice (\S\ref{sec:hard-closures}).
+\code{sortBy} or any other $\mathit{many}$ position, called twice, or handed to the runtime
+(\S\ref{sec:hard-closures}).
 \item An in-place edit of a list read out of a container that is still live: a dictionary lookup
-followed by a push, or a push on an element of a list of lists whose contents are not exclusive
+followed by an extension, or an edit of an element of a list of lists whose contents are not exclusive
 (\S\ref{sec:hard-containers}).
-\item An in-place edit of a list from JavaScript, a \code{Ref}, a top-level value, \code{init} while it is
-a value, or a \code{foreign} without a summary (\S\ref{sec:hard-foreign}, \S\ref{sec:hard-ref},
-\S\ref{sec:hard-tea}).
-\item An in-place edit of a rendered list on a platform that keeps what it rendered: on beni's current
-template runtime, every list \code{view} shows (\S\ref{sec:hard-tea}).
-\item A named writer whose two arguments are one list, such as \code{List.append xs xs}, which fails
-\Disjoint; \code{xs ++ xs} builds a new list and is accepted.
+\item An in-place edit of a list from JavaScript, a \code{Ref}, a value the runtime retains, or a
+\code{foreign} without a summary (\S\ref{sec:hard-foreign}, \S\ref{sec:hard-ref}).
+\item An in-place edit of a rendered list on a platform whose renderer skips work by a list's identity:
+on beni's current template runtime, until it adopts \Obl{P7} (\S\ref{sec:hard-tea}).
+\item A writer or construction whose base is also another operand, such as \code{[ …xs, …xs ]}, which
+fails \Disjoint.
 \item Anything the checker's joins, path cut or caps cannot follow (\S\ref{sec:hard-branches}): limits.
 \end{enumerate}
 The fix is one call, \code{List.copy}, in every case, and the message writes it; where the edit need not
-be in place, the non-writing form---\code{++}, a spread, \code{List.map}---is the other fix. As Henriksen
-puts it for Futhark, ``an alias-related type error can always be fixed by copying''
-\citep{henriksen2022uniqueness}. What the fix costs is a copy where the program meant to share. For the
-first case that is the program's intended semantics made explicit; for the last it is a copy the
-programmer pays for the checker's blindness.
+be in place, a reading form---\code{[ x ] ++ ys}, \code{List.concat}, \code{List.map}---is the other fix,
+and for commands, computing the value before the command is made. As Henriksen puts it for Futhark, ``an
+alias-related type error can always be fixed by copying'' \citep{henriksen2022uniqueness}. What the fix
+costs is a copy where the program meant to share. For the first case that is the program's intended
+semantics made explicit; for the last it is a copy the programmer pays for the checker's blindness.
 
-\section{Programs that copy}
+\section{What construction-as-consumption costs}
 \label{sec:disc-copy}
 
-List syntax builds new arrays (\S\ref{sec:model-demands}). Today beni's representation makes
-\code{acc ++ [ x ]} and a prepend \code{[ x, …acc ]} amortised $O(1)$ by claiming a free slot at either
-end of the trie; under the rule each copies \code{acc}. An accumulator written that way in a loop the
-building-loop rewrite does not catch---a fold's lambda, a non-tail recursion---becomes quadratic, as it
-would be in JavaScript and as \code{acc ++ [ x ]} already is in Elm. The checker knows when the named
-writer would have been accepted, because it knows whether \code{acc} is unique and dead at the site,
-and in exactly that case it warns: ``this copies \code{acc}; \code{List.push acc x} would write it in
-place''. It is a warning, never an error, and never a change of meaning. The evaluation counts these
-warnings, separately for loops and elsewhere.
+Making construction consume is what lets idiomatic code run in place (Chapter~\ref{sec:idioms}), and it
+has three costs of its own.
+
+\emph{The error lives in the commonest code.} Every spread and every \code{++} on lists is a demand, so the
+checker's precision on idioms I1--I7 is not a refinement but the design's main obligation; a single
+false error in a common idiom would be met by every user. That is why the evaluation's main metric is the
+error's frequency on idiomatic code (\S\ref{sec:eval-decisions}).
+
+\emph{The programmer must learn which operand is reused.} \code{[ x, …ys ]} reuses \code{ys};
+\code{[ x ] ++ ys} reads it. Both mean the same list, at different costs and with different consequences
+for \code{ys}. The rule is positional and fixed so that it can be learned and read off the text, and
+every message about a construction states it (\S\ref{sec:errors-examples}), but it is one more thing to
+know, and a reader of Elm code will not expect a spread to have an effect on its operand.
+
+\emph{Versions cost a copy.} Today a prepend onto an older version copies at most 31 elements, so a
+persistent stack that keeps versions is linear; under the rules each kept version that is later extended
+needs an explicit $O(n)$ copy. This reverses the part of the language's linear-prepend decision that
+covers kept versions (\S\ref{sec:idioms-rejected}). It also withdraws one identity promise, that
+\code{[] ++ ys} is \code{ys} itself (\S\ref{sec:model-demands}).
 
 \section{What it costs the representation}
 
 The trie's reason to exist is gone, and so is its persistence: a program that wants versions pays
-$O(n)$ per version, explicitly. The named prepend, \code{List.cons}, keeps amortised $O(1)$ on a unique
-list through headroom in front of a view (\S\ref{sec:disc-options}, Change~8), at the cost of views
-being more common than today and of the space that headroom takes. Without that change, a named
-prepend on a unique plain array would be \code{unshift}, $O(n)$, and the guarantee above would have to
-say so.
+$O(n)$ per version, explicitly. Prepending in amortised $O(1)$ needs free space in front of a list, so
+lists built by prepending are views, as a pattern's \code{rest} already is, and a view handed to
+JavaScript must be flattened; the space in front costs memory. The policy is open
+(\S\ref{sec:compiler-backend}).
 
 \section{What it costs the API}
 
@@ -83,65 +96,27 @@ fresh-result annotations: they clutter interfaces, and the programmer ``will not
 completely ignorant of this facet of the type system'' \citep{henriksen2026aliasing}. Inferred summaries
 are not written, but they are published, and a caller depends on them; non-locality is, if anything,
 greater than with written annotations, since the cause of an error may be a body the caller never
-read.
+read. Construction-as-consumption sharpens this: a helper that once returned a new list and now returns
+one of its arguments, because its body was rewritten with a spread, makes that argument consumed at
+every call.
 
 \section{What it costs learners}
 
-The error will fire first in \code{update}. Crichton and Krishnamurthi found the chapter on ownership
-to be ``a significant drop-off point'' for readers of the Rust book \citep[\S3.1]{crichton2024profiling},
-and in Crichton, Gray and Krishnamurthi's study learners who could usually say why a program was
-rejected fixed it in only 46\,\% of cases \citep[\S2.4]{crichton2023grounded}. The message design of
-Chapter~\ref{sec:errors} is the mitigation; it is not a guarantee, and the evaluation plan measures
-something about people for this reason (\S\ref{sec:eval-people}).
+The error will fire first in \code{update}, in the very idiom TEA teaches. Crichton and Krishnamurthi
+found the chapter on ownership to be ``a significant drop-off point'' for readers of the Rust book
+\citep[\S3.1]{crichton2024profiling}, and in Crichton, Gray and Krishnamurthi's study learners who could
+usually say why a program was rejected fixed it in only 46\,\% of cases \citep[\S2.4]{crichton2023grounded}.
+The message design of Chapter~\ref{sec:errors} and the library choices of Chapter~\ref{sec:idioms} are
+the mitigation; they are not a guarantee, and the evaluation plan measures something about people for
+this reason (\S\ref{sec:eval-people}).
 
 \section{What two real applications say}
-\label{sec:disc-apps}
 
-We examined two applications written in beni: a TodoMVC implementation (in four builds) and an
-implementation of Conduit, the RealWorld example application. Both run on beni's TEA platform over the
-\emph{template} runtime, which keeps every list it rendered; neither runs on the direct platform. By our
-reading of their sources, neither calls \code{set}, \code{push}, \code{update}, \code{swap}, \code{pop},
-\code{insertAt} or \code{removeAt}; they edit lists with \code{List.map}, \code{List.filter} and
-\code{++}. An earlier version of this analysis claimed that the rule as stated changed nothing in them
-except to accept their concatenations; that claim was wrong in four ways, and we withdraw it:
-\begin{itemize}
-\item it analysed them on the direct platform, which they do not use, while their own platform keeps
-every rendered list, so any in-place edit of \code{model.todos} or of a rendered error list would be an
-error there;
-\item TodoMVC's \code{init} is a top-level value, so every list that starts in it is escaped;
-\item TodoMVC persists its list from a command, \code{save todos = Cmd.do λ⊤ → ⋯ (encode todos)}, which
-encodes \emph{inside} the thunk, so the list is captured by a command that the runtime does not promise
-to run before the next message;
-\item its helper \code{changed model todos = \{ model | todos = todos \}} was argued to read nothing of
-\code{.todos}, which that version's summary lattice could not express.
-\end{itemize}
-
-What is true under the revised rules is simpler. Because \code{++} builds a new list, neither
-application contains a demand at all: TodoMVC's one concatenation per build, \code{model.todos ++ [ new ]},
-and Conduit's sixteen (seven with a model field on the left, nine with a list built in the same
-function) all copy, as they do in JavaScript. Both applications are \emph{accepted, on their own
-platform, and nothing in them is written in place}. The rule costs them nothing and buys them nothing
-beyond the smaller list runtime.
-
-The in-place writes they could benefit from are their \code{List.map model.todos (λt → ⋯)} and
-\code{List.filter} calls. Under Change~1, which adds in-place forms of these under their own names, a
-TodoMVC rewritten to use them would be:
-\begin{itemize}
-\item \emph{rejected on its own platform}, because the template runtime keeps the rendered
-\code{model.todos};
-\item \emph{rejected on the direct platform as written}, because \code{init} is a value and
-\code{save}'s command captures the list;
-\item \emph{accepted on the direct platform} only with \code{init} a function (Change~12), with
-\code{save} encoding before the command is made or with the platform draining sync commands
-(\Obl{P7}), and with the helper's $\unused$ summary, which the revised lattice has
-(Appendix~\ref{app:examples}).
-\end{itemize}
-The core library has seven calls of \code{List.push}, every one an accumulator in a fold or a loop: in
-combining and partitioning results, in listing a dictionary's keys, values and pairs, and in a retry
-schedule. The compiler's test programs for the direct platform have about fifty in-place edits of keyed
-lists, written to exercise its edit scripts. So the code that would use the rule today is library code
-and tests written for the direct platform; whether application code would use it is the evaluation's
-question.
+Chapter~\ref{sec:idioms} re-assesses TodoMVC and Conduit (\S\ref{sec:disc-apps}). In short: both now edit
+lists in place, in \code{update}; neither is accepted exactly as written; TodoMVC needs \code{init} as a
+function and, where it persists, one binding moved before a command; and on their own platform both
+depend on the template runtime adopting \Obl{P7}. What they gain is small---in-place appends on short
+lists, and the smaller list runtime. They test whether the rule is livable, not whether it is fast.
 
 \section{The run-time alternative}
 \label{sec:disc-runtime}
@@ -158,26 +133,26 @@ he is himself exploring inference outside Futhark's language of types.
 Our own prototype study supports his alternative more than it supports us. A run-time scheme with a
 sticky ``shared'' bit on each array and no decrements made the same in-place decisions as a full
 reference count in every scenario; our static variant matched its in-place writes only with the help
-of inlined folds and per-field summaries (Appendix~\ref{app:method}). The bit accepts every program and never errs. Measured against it, the rule
-buys three things and only three: \emph{a cost the programmer can read from the source}---an edit
-written in place either is in place or is an error, never a silent $O(n)$ copy that turns a loop
-quadratic, which in the same study cost a fold 8.2 times the baseline's time---\emph{a smaller runtime},
-with no bit to test on every write and no copy-on-shared path to ship; and \emph{the absence of run-time
-ownership state}, which in a garbage-collected target has no other use. Whether those are worth the
-rejections is not a question the design can answer. It is why the evaluation compares the two
-(\S\ref{sec:eval-decisions}) and why the warning mode below exists.
+of inlined folds and per-field summaries (Appendix~\ref{app:method}). The bit accepts every program and
+never errs. Measured against it, the rule buys three things and only three: \emph{a cost the programmer
+can read from the source}---an edit either is in place or is an error, never a silent $O(n)$ copy that
+turns a loop quadratic, which in the same study cost a fold 8.2 times the baseline's time---\emph{a
+smaller runtime}, with no bit to test on every write and no copy-on-shared path to ship; and \emph{the
+absence of run-time ownership state}, which in a garbage-collected target has no other use. Whether those
+are worth the rejections is not a question the design can answer. It is why the evaluation measures the
+rejections (\S\ref{sec:eval-decisions}).
 
 \section{Escape hatches}
 \label{sec:disc-hatches}
 
-\code{List.copy}, always. The non-writing forms---\code{++}, spreads, \code{List.map}---which never
-demand anything. A persistent-vector library written in beni for programs that want versions, not a
-representation of \code{List}. And a \emph{warning mode}---a flag such as \code{--ownership=warn}---that
-keeps a run-time fallback (the sticky shared bit above) and copies where the checker would reject,
-printing the same message as a warning. That is the principle's ``make it a warning'' route, and it is
-the form every language with a run-time fallback ships in some way: Lean offers \code{dbgTraceIfShared},
-which prints a message ``if the argument's reference count is greater than one'' \citep{lean2025rc}, and
-Koka's \code{fip} check reports where a function is not fully in place \citep{lorenzen2023fp2}. But it
-gives up the one thing the rule is for: an accepted program's cost would again depend on whether its
-author read a warning. We do not propose it as the end state; we propose measuring first
-(Chapter~\ref{sec:evaluation}) and deciding between error and warning on criteria fixed in advance.
+\code{List.copy}, always. The reading forms---\code{[ x ] ++ ys}, \code{List.concat}, \code{List.map}---which
+read the operands they do not reuse. A persistent-vector library written in beni for programs that want
+versions, not a representation of \code{List}. There is deliberately no mode in which the compiler copies
+where it would reject: a run-time fallback that copies silently would give up the one thing the rule is
+for, an accepted program's cost being readable from its source. Lean offers a diagnostic,
+\code{dbgTraceIfShared}, which prints a message ``if the argument's reference count is greater than one''
+\citep{lean2025rc}, and Koka's \code{fip} check reports where a function is not fully in place
+\citep{lorenzen2023fp2}; both sit beside a run-time fallback that this design does not have. If the
+evaluation finds the error too frequent on idiomatic code, the response is to improve the checker or the
+library and measure again, or not to adopt in-place lists at all and keep today's persistent
+representation; it is not to ship a silent copy (\S\ref{sec:eval-decisions}).

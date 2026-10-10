@@ -3,18 +3,25 @@
 
 We have proposed a checker that makes an in-place edit of a list, while anything else still holds the
 old version, a compile error in beni, a pure language compiled to JavaScript, so that every list can be
-a plain array written in place with no run-time ownership information and no annotations in user code.
-The property is uniqueness at the update site, decided by liveness over an evaluation-order normal form;
-the inference is a directional, field-sensitive cell analysis whose paths reach into closure environments,
-with per-path liveness, four side conditions, closures that consume what they capture treated as cells
-that may be called once, and function summaries polymorphic over the ownership classes of function-typed
-parameters, solved for recursive groups by an optimistic, validated fixpoint over a stated finite
-lattice. The design depends on three properties of the language---strict evaluation in source order,
-saturated calls with no automatic currying, and an existing inference of per-function facts published in
-interfaces---on a handful of language and library changes, the largest being that list syntax builds new
-arrays and only named writers write, and on twelve assumptions about the runtime, the library and the
-platforms, of which the most demanding are the trusted surface of asserted summaries and the entry
-protocol of a UI runtime.
+an array written in place with no run-time ownership information, no annotations in user code and no
+silent copy. Edits are the library's named writers and list construction, which consumes a base chosen
+by position; so the question that decides whether the rule is usable is one of design: \emph{how should
+the language and the checker be designed so that idiomatic code almost never hits the ownership error?}
+
+Our answer has three parts. The \emph{analysis}: uniqueness at the update site, decided by liveness over
+an evaluation-order normal form; a directional, field-sensitive cell analysis whose paths reach into
+closure environments; summaries whose results say whether a cell is new, an argument's, the closure's own,
+a top-level value's, escaped or unknown; callback classes that hand an accumulator owned; an optimistic,
+validated fixpoint over a stated lattice; exclusive contents for nested edits; and an entry protocol for
+every function a UI runtime calls. The \emph{language and library}: construction consumes its base by a
+fixed rule of position; patterns only read; \code{eq} and \code{compare} only read; \code{init} is a
+function and top-level lists are shared; the folds and container updates supply their callbacks owned;
+and \code{List.copy} is the only copy. The \emph{platforms}: the runtime hands the model over, a renderer
+does not skip work by the identity of a list the program edits, and commands carry values rather than
+closures over lists. With these, every idiom we enumerated---accumulators, folds, recursive builders,
+lists built by \code{map} and \code{filter}, pipelines, \code{update} arms that extend a model list, edits
+inside containers, tuple accumulators---is accepted by the rules as written, and what remains rejected is a
+short list of forms, each real sharing or a named limit, each with a one-line fix.
 
 \section{What we are confident of, and what we are not}
 
@@ -24,26 +31,27 @@ the write is free and a dead alias is harmless. Every production system that acc
 has some form of it: Sisal's ordering edges, Clean's observing references, Futhark's syntactic order,
 Rust's two-phase borrows, Mazur's forward use. It is incomparable with Clean's occurrence-based
 uniqueness, not stronger.
-\item \emph{The first-order core held up.} When every value involved is a list, a record, a tuple or a
-constructor written in the body under analysis, we know of no counterexample to the rules, in their
-first version or now.
-\item \emph{Higher-order code did not.} An earlier version attached capture and once-ness to the binding
-of a lambda, and lost both when a closure was returned, stored or captured; it gave callbacks no
-provenance; it assumed \code{eq} read-only while letting a user \code{eq} write; and it stated an entry
-protocol for \code{update} alone. The revised rules---environments at $\env$, once closures as cells,
-provenance in $\mathit{supply}$, a rule on \code{eq} and \code{compare}, a protocol for every entry---reject
-every program that exposed those holes. That is where we would direct a reviewer next: at the closure
-rules, at Lemma~\ref{lem:once}, and at the entry protocol.
-\item \emph{The trusted surface is large.} The asserted rows the design needs are not nine but, by our
-estimate, several dozen to a hundred and fifty, and they are where an implementation is most likely to be
-wrong. The differential run with a stale-read sanitiser is the instrument for them.
+\item \emph{The first-order core holds up.} When every value involved is a list, a record, a tuple or a
+constructor written in the body under analysis, we know of no counterexample to the rules.
+\item \emph{Higher-order code is where the rules have needed the most care}: closures that return what
+they hold, once closures that leave the checked code, local functions used before their line, and
+results whose cells escaped or came from a top-level value. The rules now name each of these, and the
+thirty-four programs of Table~\ref{tab:counterexamples} are decided as they should be; Lemmas~\ref{lem:once}
+and~\ref{lem:entry} are the parts of the argument we would scrutinise first.
+\item \emph{The idioms are accepted by the rules as stated}, by derivations we have traced by hand, not
+by an implementation. The frequency of the error on real idiomatic code is unknown until the report mode
+runs.
+\item \emph{The trusted surface is large}: by our estimate several dozen to a hundred and fifty asserted
+rows, where an implementation is most likely to be wrong. The differential run with a stale-read
+sanitiser is the instrument for them.
 \end{itemize}
 
 What we cannot know from the design alone is whether the rule is worth its cost. It rejects correct
-programs---every program that keeps an old version and edits it in place, every list captured by a command
-that a later message edits in place---and it guarantees the cost only of edits the programmer spells with a
-named writer. The two applications we examined spell none, so as written they gain nothing; and on the
-platform they use, the template runtime, the rule could not let them edit a rendered list in place at all.
+programs---every program that keeps a version of a list and extends it, every list a command captured and
+a later message edits---and it moves part of its burden onto the platforms. The two applications we
+examined edit their lists in place under construction-as-consumption, but neither is accepted as written:
+one needs a value computed before a command, and on their own platform both need the renderer to stop
+skipping work by a list's identity, at a per-render cost not yet measured.
 
 \section{Recommendations}
 \label{sec:conc-recommend}
@@ -52,56 +60,61 @@ platform they use, the template runtime, the rule could not let them edit a rend
 \item \emph{Enumerate the trusted surface first}, one asserted row and one pinned test program at a time
 (\S\ref{sec:soundness-trusted}).
 \item \emph{Build the in-place backend and the stale-read sanitiser in a test mode}, and the report mode
-(Chapter~\ref{sec:evaluation}) as a checking-only pass with its dump and test programs, on the design of
-Chapters~\ref{sec:model} and~\ref{sec:inference}, with each platform's entry protocol as an asserted row.
-Nothing emitted outside the test mode changes.
-\item \emph{Make the required changes}: list syntax builds (Change~4), aliasing identity promises dropped
-(Change~2), \code{eq} and \code{compare} only read (Change~11), crossing published (Change~14), ownership
-words on \code{foreign} (Change~5), and the evaluation-order statement narrowed for the optimiser
-(Change~10).
-\item \emph{Run the experiments} over the five corpora, on each program's own platform, classify every
-rejection by hand, and run the study of \S\ref{sec:eval-people}.
-\item \emph{Decide on the criteria of \S\ref{sec:eval-decisions}}: soundness first, then error or
-warning, then which extensions to build; decide the in-place forms of Change~1 on the external corpus.
-\item \emph{Write the entry protocol into the direct platform's specification} whatever the decision:
-in-place records would need it too; and decide \code{init} as a function (Change~12) and the draining of
-sync commands (Change~13) on their own merits.
-\item \emph{If the error is adopted}, specify the pass as a normative amendment to the checker's design,
-the ownership words for \code{foreign} declarations in the boundary contract, the writers' rows and
-\code{List.copy} in the language definition, the representation change in the backend's contract, and the
-message catalogue among the language's diagnostics---then build it test-first, with the rule set
-versioned in the interface format.
+(Chapter~\ref{sec:evaluation}) as a checking-only pass with its dump, its idiom classifier and its test
+programs, on the design of Chapters~\ref{sec:model} and~\ref{sec:inference}, with each platform's entry
+protocol as an asserted row under the three rows of \S\ref{sec:eval-report}. Nothing emitted outside the
+test mode changes.
+\item \emph{Specify the decided changes} (Changes~1--4) and \emph{the required ones} (Changes~5--8) in the
+language's specification before building them, stating where they touch recorded decisions: the
+kept-version part of linear prepending, and the identity of \code{[] ++ ys}.
+\item \emph{Measure \Obl{P7} on the renderer} against the reference renderer, with the existing harness,
+before deciding it; it decides whether TEA idioms are accepted on beni's current browser platform.
+\item \emph{Run the experiments} over the five corpora, classify every rejection by idiom and by hand, and
+run the study of \S\ref{sec:eval-people}.
+\item \emph{Decide on the criteria of \S\ref{sec:eval-decisions}}: soundness first, then adoption on the
+idiomatic error rate, then the renderer, then which extensions and library choices to build.
+\item \emph{If the rule is adopted}, specify the pass as a normative amendment to the checker's design,
+the ownership words for \code{foreign} declarations and foreign types in the boundary contract, the
+writers' rows, the construction rule and \code{List.copy} in the language definition, the representation
+change in the backend's contract, and the message catalogue among the language's diagnostics---then build
+it test-first, with the rule set versioned in the interface format.
 \end{enumerate}
 
 \section{Limitations and open questions}
 \label{sec:disc-open}
 
 \begin{enumerate}
-\item \emph{The rejection rate on real code}, exact and approximate, per platform, and how much code would
-use the named writers at all. Nothing in the literature we know of stands in for it.
+\item \emph{The error rate on idiomatic code}, exact and approximate, per idiom and per entry row. Nothing in
+the literature we know of stands in for it.
+\item \emph{The renderer's identity skip} (\Obl{P7}): whether walking the rows of every list the program
+edits keeps the template runtime's speed against the reference renderer; if it does not, whether the
+rule is a direct-platform feature.
 \item \emph{The trusted surface}: its exact size, and whether every row can be pinned by a test that the
 sanitiser would catch failing.
 \item \emph{The proof}: monotonicity is checked case by case but not written out; nothing is mechanised;
-Lemma~\ref{lem:once} and the entry lemma are the newest parts and the least tested.
-\item \emph{The template runtime}: whether a refined row---escaping only the model paths \code{view}
-passes to markup---recovers enough in-place edits to matter there, or whether the rule is a direct-platform
-feature.
+the once-closure and entry lemmas are the newest parts and the least tested.
+\item \emph{Escapes for the rest of the program} (\S\ref{sec:hard-fibers}): how often a command's capture
+blocks an edit, and whether value-taking command constructors (O6) remove most of it.
 \item \emph{Mutable cells} (\S\ref{sec:hard-ref}): a sound discipline for in-place edits of a cell's
 contents needs a whole-program argument about readers; it is left as a limit with a copy as the fix.
 \item \emph{Path-sensitive cell sets} (\S\ref{sec:hard-branches}): worth their cost only if the join tag is
 frequent.
 \item \emph{Path-insensitive use}: \code{f xs flag = if flag then List.length xs else List.length
-(List.push xs 1)} is summarised as writing \code{xs}, so \code{n = f xs True; List.length xs} is a false
-error. A summary conditional on a \emph{value}, rather than on a class, is outside the summary grammar.
+[ …xs, 1 ]} is summarised as writing \code{xs}, so \code{n = f xs True; List.length xs} is a false error.
+A summary conditional on a \emph{value}, rather than on a class or an argument's state, is outside the
+summary grammar.
 \item \emph{Interface churn} under inferred summaries; Change~5's optional annotation is the remedy if it
 is high. Henriksen's objection that such facts clutter interfaces applies to published summaries too.
 \item \emph{The warm rebuild budget}, since a body edit that changes a summary is a signature edit.
-\item \emph{Copying syntax in loops}: how many accumulators the warning of \S\ref{sec:disc-copy} finds, and
-whether programmers act on it.
+\item \emph{Room in front of a list} (O3): the policy, its memory cost, and how often views must be
+flattened at the boundary.
 \item \emph{Exclusive contents in practice}: how often the containers that real programs edit through
 their elements are built exclusively, and which construction most often clears the flag. If decoded
 data---every list a schema parses---is not declared exclusive, every nested edit of loaded data is a limit.
-\item \emph{Sending}: whether consuming sends (Change~9) reject more than they enable.
+\item \emph{View-event payloads}: whether the coarse rule of \Obl{P6} fires often enough to justify
+summaries split by message constructor (O7).
+\item \emph{The identity promises} (O2): we recommend keeping them; the evaluation's count of rejections
+caused by a source read after its filtered result was edited would show whether that is right.
 \item \emph{A once closure called once in fact} but passed to a $\mathit{many}$ position stays an error.
 \item \emph{The development crash screen} must print no program value (A9); this is to be confirmed, or
 made so.
@@ -113,5 +126,5 @@ semantics coincide'' theorem for Cogent, against which Theorem~\ref{thm:main} co
 \end{enumerate}
 
 The next step is the differential run and the report mode of Chapter~\ref{sec:evaluation}: build them,
-run them over real programs, classify every rejection by hand, and decide on criteria written down
-beforehand.
+run them over real programs, classify every rejection by idiom and by hand, and decide on criteria written
+down beforehand.

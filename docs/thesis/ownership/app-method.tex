@@ -54,11 +54,28 @@ same corpus with the compiler as it was before static dispatch was introduced, 8
 under any edit class, on either corpus or compiler. We quote the absolute figure and not a ratio: a ratio
 against the annotated declarations is undefined, since they did not change at all.
 
-\section{Counts in the applications}
+\section{Counts from the sources}
 
-The counts of \S\ref{sec:disc-apps}---which list writers TodoMVC and Conduit call, how many concatenations
-they contain and what is on their left, the seven \code{List.push} calls in the core library, and the
-about fifty in-place edits in the compiler's test programs for the direct platform---come from reading
-the sources at the time of writing, with a text search for each writer and each operator, every hit read
-by hand. They are not the output of the analysis, which does not exist yet; the evaluation of
-Chapter~\ref{sec:evaluation} will replace them.
+Several counts in this thesis come from reading beni's sources at the time of writing: the idiom counts
+of \S\ref{sec:idioms-question}, the constructions and writers in TodoMVC and Conduit
+(\S\ref{sec:disc-apps}), the eight \code{List.push} calls in the core library, the trusted-surface counts
+of \S\ref{sec:soundness-trusted}, the program constructors and \code{eq} and \code{compare} declarations of
+Chapter~\ref{sec:disc-options}, and the absence of constructions on model lists outside \code{update} arms
+(\S\ref{sec:hard-tea}). They were made with a text search over the core library, the platforms, the
+compiler's test programs, the benchmarks and the example applications, by these rules:
+\begin{itemize}
+\item a prepending construction is a list expression with an element before a spread, \code{[ e, …x ]}; an
+appending one a spread followed by an element, \code{[ …x, e ]}; an append-by-operator an occurrence of
+\code{++ [}; a fold-callback prepend a lambda of the form \code{λx acc → [ e, …acc ]}; an \code{update} arm
+that extends a model list a record update whose new field value is a spread or a \code{++} with a model
+field as its base; patterns are excluded where the search can tell them apart;
+\item a public value is a declaration beginning \code{pub} followed by a value's name and a type; a
+\code{foreign} declaration is counted by its keyword at the start of a declaration; a low-level computation
+is an occurrence of \code{Js.pure} outside comments;
+\item a writer call is an occurrence of the writer's qualified name outside comments, excluding its own
+definition.
+\end{itemize}
+For the applications every hit was read by hand; for the corpus-wide idiom counts it was not, and they are
+approximate in both directions---a search by shape misses forms written over several lines and counts some
+it should not. None is the output of the analysis, which does not exist yet; the evaluation of
+Chapter~\ref{sec:evaluation} replaces them.
