@@ -1,0 +1,64 @@
+\chapter{Method Behind the Numbers}
+\label{app:method}
+
+Every number in this thesis that does not come from a cited publication comes from one of the
+measurements below. None is published elsewhere, and none was repeated on a second machine; we give
+what a reader needs to judge them, and the artefacts are in beni's source repository
+\citep{beni2026}.
+
+\section{The prototype study}
+
+\paragraph{What was measured.} Four ways to write lists in place, prototyped by transforming beni's own
+compiled JavaScript \emph{by hand}, exactly as a compiler pass would, each transformation named by the
+rule that licenses it:
+\begin{itemize}
+\item a \emph{static} variant: in place where last use and per-function interface summaries prove a value
+unique, and a copy where a caller cannot prove what a callee consumes;
+\item \emph{full counts}: a reference count on arrays and on records that hold them, with compiler-inserted
+increments and decrements in the style of Perceus and Lean's borrowed parameters;
+\item a \emph{sticky shared bit}: the counted variant with every decrement deleted;
+\item the bit with no trie at all, every array plain and copied whole when shared.
+\end{itemize}
+They were compared with the baseline, beni's \emph{adaptive} persistent array (plain copies up to 256
+elements, a 32-way trie above), and with plain copy-on-write, on six array scenarios (building by
+\code{push} in a fold, a histogram over 1\,000 and 100\,000 buckets, a coin-change table, a grid game on
+a board of one million cells with 1 or 100 cells changing per tick, a TEA table of 10\,000 rows, and an
+undo history) and on a set of list shapes.
+
+\paragraph{How.} Node~24.19; one pinned \code{node --expose-gc} process per variant; five rounds, two
+cores used in parallel; each figure is the median of the round medians. The machine was shared, with a
+load average of 4--17 on 32 hardware threads from other work, so the within-round spread is large for the
+smallest operations; we claim no ordering that rests on a ratio closer to 1 than 1.25, except where a
+smaller ratio is quoted with its context (the 0.84--0.95 of the TEA table). Headless Chrome~153 was a
+three-round spot check, which agreed on every ordering that cleared 1.25 and showed less of the counting
+variants' overhead. Correctness was checked by a differential test of 484 checks per variant, digesting
+every intermediate array and checking inputs unchanged, with tests that an array handed to JavaScript is
+never written afterwards and negative controls. Sizes are of the list runtime's JavaScript after brotli
+compression.
+
+\paragraph{Limits.} The transformations were made by hand, by the author, on the compiled output of
+small programs; they are what a pass would do, not what a pass did. The static variant is not the checker
+of this thesis: it had no exclusive-contents flag, no ownership classes for function values, no entry
+protocol, and it copied where it could not prove uniqueness; it matched the sticky bit's in-place writes
+only with inlined folds and summaries over record fields. No variance beyond the medians is reported
+here, and no second machine was used. The scripts and raw results are in the repository's array
+benchmark directory.
+
+\section{Interface churn}
+
+The churn figure of \S\ref{sec:bg-modules} comes from an instrument built to measure beni's inferred
+\code{where} constraints. It applies a fixed class of body edit to every public declaration of a corpus,
+re-checks, and counts declarations whose interface changed. For the edit ``add one equality test on a
+parameter'', 50 of 90 unannotated public declarations of the core library changed their interface; on the
+same corpus with the compiler as it was before static dispatch was introduced, 8 of 94 did. No annotated declaration changed
+under any edit class, on either corpus or compiler. We quote the absolute figure and not a ratio: a ratio
+against the annotated declarations is undefined, since they did not change at all.
+
+\section{Counts in the applications}
+
+The counts of \S\ref{sec:disc-apps}---which list writers TodoMVC and Conduit call, how many concatenations
+they contain and what is on their left, the seven \code{List.push} calls in the core library, and the
+about fifty in-place edits in the compiler's test programs for the direct platform---come from reading
+the sources at the time of writing, with a text search for each writer and each operator, every hit read
+by hand. They are not the output of the analysis, which does not exist yet; the evaluation of
+Chapter~\ref{sec:evaluation} will replace them.

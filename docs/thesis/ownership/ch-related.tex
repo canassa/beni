@@ -13,7 +13,15 @@ parallel'' \citep{wadler1991use}. Marshall, Vollmer and Orchard make the distinc
 restricts what can be done with a value in the future, uniqueness guarantees what has been done with it
 in the past \citep{marshall2022entente}. Our property is a uniqueness property at one program point,
 and our ``read before the write'' plays the part of \code{let!} with no construct, because strict
-evaluation order makes the reads' position syntactic. Boyland's alias burying lets a unique variable be
+evaluation order fixes where the reads happen. Guzm\'an and Hudak's single-threaded polymorphic
+lambda calculus infers single-threadedness for polymorphic code, and is the earliest typed precedent we
+know of for ordering reads before writes \citep{guzman1990single}. Odersky gave a static criterion that
+checks that the side effect of a destructive update stays invisible \citep{odersky1991destructive}, and
+then \emph{observers} for linear types, which let a linear value be read by short-lived observers without
+the read counting as a use \citep{odersky1992observers}---the type-system form of ``reads before writes are
+fine''. We know these two papers from their abstracts and from secondary sources; we reach the same
+permission without an observer type, since a read is harmless when what it read is dead at the later
+write. Boyland's alias burying lets a unique variable be
 read without being destroyed provided that every alias is dead before the unique variable is used again,
 checked by a liveness-style analysis rather than by types \citep{boyland2001alias}; it is the closest
 ancestor of our definition. Linear Haskell attaches linearity to function arrows and proves that its
@@ -24,16 +32,20 @@ writes the linear arrows and the array API's continuation style.
 relation between unique and non-unique types, propagation through containers, and an occurrence-based
 marking of variables refined by observer references for guards and strict \code{let}s
 \citep{smetsers1994guaranteeing,barendsen1993conventional,barendsen1996uniqueness,plasmeijer2011clean}.
-Barendsen and Smetsers show that the system has no principal uniqueness types and treat an expression
-whose typing would need a choice among instances as untypable \citep[\S8]{barendsen1996uniqueness}; de
-Vries et al.\ reformulate the system to fit standard inference, and still require every binding in a
-recursive group to be non-unique \citep{devries2007redefined,devries2008simplified}. They call partial
+Barendsen and Smetsers state no principal-type theorem for the uniqueness system---because of its
+treatment of higher-order functions, ``there is no `Principal Uniqueness Type Theorem'\,''---and Clean
+treats an expression whose most general typing cannot be attributed as untypable
+\citep[\S8]{barendsen1996uniqueness}; de Vries et al.\ reformulate the system to fit standard inference,
+and still give every binding in a recursive binding group a non-unique type
+\citep{devries2007redefined,devries2008simplified}. They call partial
 application ``probably the most subtle aspect of uniqueness typing'' \citep[\S4.2]{devries2008simplified}.
 We take from Clean the placement of the demand on library primitives and the notion of deep uniqueness;
 we differ in three ways. Our facts are flows, not attributes on types, so there is no principal-type
 problem and recursive groups get their best summaries by a fixpoint. Our uniqueness is decided by
-liveness rather than by occurrence counts, so reads before a write and dead aliases are free. And beni has
-no partial application to make subtle.
+liveness rather than by occurrence counts, so reads before a write and dead aliases are free; Clean's
+deep uniqueness accepts element edits that our per-site abstraction accepts only with exclusive contents,
+so neither system contains the other. And beni has no partial application to capture silently, although
+its explicit closures need the affinity facts of \S\ref{sec:model-functions}.
 
 \paragraph{Futhark.} Futhark is the closest production design in intent: a pure array language that
 guarantees in-place updates statically and reports a violation as an error
@@ -43,12 +55,12 @@ $(\mathcal{O}_2 \cup \mathcal{C}_2) \cap \mathcal{C}_1 = \emptyset$
 \citep[Fig.~5, \textsc{Occurence-Seq}]{henriksen2017futhark}, which is the one-line form of our \Dead\
 condition under syntactic order. Futhark differs from our design in requiring uniqueness annotations
 (\code{*}) on consuming parameters and unique results, and in an intraprocedural alias analysis, for which
-``we are forced to be conservative'' \citep[\S3.2]{henriksen2017futhark}. Henriksen's 2026 retrospective
-argues that other language designers should avoid making a type system reason about aliasing, and
-recommends reference counting with copy-when-shared for most languages \citep{henriksen2026aliasing}; the
-same year they moved alias checking out of the type checker into a pass over fully typed programs
-\citep{henriksen2026rewrite}. Our design is such a pass, with interprocedural summaries, and is not part of
-the type system.
+``we are forced to be conservative'' \citep[\S3.2]{henriksen2017futhark}. In a 2026 design note written
+while reworking Futhark's alias checking, Henriksen advises other designers against the feature and
+suggests reference counting with copy-when-shared for most languages that want in-place updates
+\citep{henriksen2026aliasing}; the same year Futhark moved alias checking out of the type checker into a
+pass over fully typed programs \citep{henriksen2026rewrite}. Our design is such a pass, with
+interprocedural summaries; that does not answer his objections, which \S\ref{sec:disc-runtime} takes up.
 
 \paragraph{Usage aspects and destructive-update analysis.} Aspinall, Hofmann and Kone\v{c}n\'y's usage
 aspects---destroyed, shared with the result, read only---are our $\mathit{use}$ lattice, and their
@@ -58,11 +70,35 @@ monomorphic, and uses explicit resources for allocation; higher-order functions 
 and effects extension, which our ownership classes are. Wand and Clinger optimise destructive array updates
 with set constraints: an update is made destructive when the array ``can't be bound to a live location''
 after its arguments are evaluated, and the constraints ``can be solved in polynomial time''
-\citep{wand2001set}. Their analysis is a first-order optimisation that falls back to a copy. Sisal's
-compiler removed copies by analysis and reference counts \citep{cann1990sisal}, as does SAC
-\citep{grelck2006sac,grelck2004implicit}; both are optimisations with a run-time fallback. Mercury's unique
-modes let a programmer declare when a value has one reference and when it will have no more
-\citep{mercury2026unique}.
+\citep{wand2001set}. Their analysis is a first-order optimisation that falls back to a copy. Earlier,
+Bloss's update analysis decided statically which updates to a functional aggregate can be done in place,
+for a lazy language \citep{bloss1989update}; Hudak's abstract reference counting approximated at compile
+time how many references each value has \citep{hudak1987semantic}; Jones and Le M\'etayer found, by a
+sharing analysis of first-order functional programs, cells that become garbage and can be reused in place
+\citep{jones1989compile}; and Baker observed that Hindley--Milner unification already computes a coarse,
+symmetric approximation of sharing, usable for update-in-place decisions \citep{baker1990unify}. We know
+these four from secondary sources; each answers ``is anyone else still looking at this?'' to optimise, and
+leaves a copy where the answer is no. Sisal's compiler removed copies by analysis and reference counts
+\citep{cann1990sisal}, as does SAC \citep{grelck2006sac,grelck2004implicit}; both are optimisations with a
+run-time fallback. Mercury's unique modes let a programmer declare when a value has one reference and when
+it will have no more \citep{mercury2026unique}.
+
+\paragraph{Compile-time garbage collection for Mercury.} The nearest prior art to Chapters~\ref{sec:model}
+and~\ref{sec:inference} is Mazur's compile-time garbage collection for Mercury
+\citep{mazur2004thesis,mazur2001practical}, built into the Melbourne Mercury compiler. It infers
+path-based structure sharing---variables with type selectors, paths into terms, over finite type graphs
+that fold recursive types---computes liveness at each deconstruction, and reuses a dead cell for a later
+construction of the same size. It is modular: sharing is summarised per procedure in interface files, and
+each exported procedure publishes a \emph{reuse condition}, ``a pre-condition that must be met by the
+caller in order for the memory reuses to be safe'' \citep[Ch.~14, p.~317]{mazur2004thesis}; for
+\code{append} the condition is that ``the backbone of the first list is not live in the calling
+environment'' \citep[\S10.3.3, p.~213]{mazur2004thesis}. Our summaries and side conditions are the same
+idea. The differences are in what failure means and in the facts kept. Mazur compiles ``a version with
+optimised memory usage \ldots\ and a plain non-optimised version that is always safe to use''
+\citep[p.~317]{mazur2004thesis}, so a caller that fails the condition silently gets the copy; we report an
+error. Mazur's sharing pairs are commutative \citep[\S6.4]{mazur2004thesis}, where our alias sets are
+directional. And higher-order calls ``are not handled at all'' \citep[\S12.7, p.~284]{mazur2004thesis},
+where we must summarise closures.
 
 \paragraph{Reference counting with reuse: Lean, Koka, Roc and Morphic.} Lean~4 updates arrays in place
 when their reference count is one, and infers which parameters may be borrowed (passed without a count
@@ -79,21 +115,26 @@ run-time counts or copies. Huisinga's static uniqueness analysis for Lean is the
 error-producing design in this family; it treats higher-order functions as always shared, which he calls a
 considerable limitation \citep[\S4.1]{huisinga2023lean}. In a garbage-collected JavaScript target, decrements
 buy little: our prototype study found that a sticky ``shared'' bit with no decrements made the same in-place
-decisions as a full count in every scenario, and that neither could help a UI runtime that retains what it rendered.
+decisions as a full count in every scenario, and that neither could help a UI runtime that retains what it
+rendered (\S\ref{sec:disc-runtime} weighs that alternative against the rule).
 
 \paragraph{OxCaml modes.} OxCaml adds modes---locality, uniqueness, linearity and more---to OCaml, with
 \code{once} closures for those that consume a unique capture, a lock rule for closures, and inference within
 implementations \citep{lorenzen2024oxidizing,oxcaml2025uniqueness}. Mode crossing exempts types whose values
 cannot interact with an axis, without which adoption ``would have been infeasible'' in a large codebase
-\citep[\S1]{peters2026mode}; our crossing rule is the same idea computed from beni's solved types. Two
-differences matter. Modes are written in interfaces, while our summaries are inferred and published. And
-OxCaml's authors note that the complications of currying for uniqueness ``go away if we imagine a change to
-the language forbidding currying'' \citep[\S6.4]{lorenzen2024oxidizing}---which is beni.
+\citep[\S1]{peters2026mode}; our crossing rule is the same idea computed from beni's solved types and
+published per type. Two differences matter. Modes are written in interfaces, while our summaries are
+inferred and published. And OxCaml's authors note that the complications of currying for modes ``go away if
+we imagine a change to the language forbidding currying'' \citep[\S6.4]{lorenzen2024oxidizing}---which
+beni does. Only the silent capture through partial application goes away: explicit closures still need
+OxCaml's lock rule, which our once closures are.
 
 \paragraph{Rust.} Rust's borrow checker is the most widely used ownership system, and two of its refinements
 are ours in another setting. Non-lexical lifetimes base borrows on liveness \citep{rfc2094}, and two-phase
-borrows let a mutable borrow act as a shared one until it is activated \citep{rfc2025}; Polonius recasts
-the analysis as Datalog over directional facts \citep{stjerna2020polonius}. Formal models of the borrow
+borrows let a mutable borrow act as a shared one until it is activated \citep{rfc2025}; Polonius,
+Matsakis's alias-based reformulation of the borrow checker \citep{matsakis2018alias}, recasts the analysis
+as Datalog over directional facts, and Stjerna extends it with initialisation and liveness and gives its
+first complete written description \citep{stjerna2020polonius}. Formal models of the borrow
 checker exist at several levels \citep{weiss2019oxide,pearce2021lightweight}. Rust has references into
 structures, lifetimes in signatures and explicit annotations; beni has none of these, so the problem cases
 that motivate much of Rust's machinery (a reference to a slot held across a conditional) do not arise, and
@@ -118,22 +159,43 @@ arguments its result may reach, with a freshness marker for new values
 on function arguments \citep{jia2026escape}, flow-sensitive use and kill effects for ownership transfer through
 closures \citep{deng2025capture}, and separation checking that rejects only interfering uses
 \citep{xu2026capybara}. O'Connor et al.\ state the guarantee of uniqueness as separation
-\citep{oconnor2026separation}. Our $\mathit{res}$ component is a reachability qualifier on results, our
-$\mathit{cap}$ facts are the use and kill effects of a closure, and $\fresh$ plays the freshness marker's part.
+\citep{oconnor2026separation}. Our $\mathit{res}$ component is a reachability qualifier on results, the
+cells a closure holds under $\env$ and its once-ness play the part of a closure's capture set and kill
+effect, and our numbered $\fresh$ cells play the freshness marker's part.
 We infer these facts where those systems declare them, which is possible because beni's lambdas are visible
 and its functions first-order in their arrows.
 
 \paragraph{Usage and escape analysis.} Usage analyses for lazy languages infer how often a value is used
-\citep{turner1995once,wansbrough1999once,wansbrough2002thesis}; Wansbrough and Peyton Jones's ``poisoning
-problem''---one call of a function poisoning the usage of all others---is why our summaries are polymorphic
-over function-typed parameters. Blanchet's escape analysis distinguishes closures that are applied from
-closures that escape \citep{blanchet1998escape}, which is our $\mathit{escapes}$ bit. Radanne et al.'s Affe
+\citep{turner1995once,wansbrough1999once,wansbrough2002thesis}. Wansbrough and Peyton Jones's ``poisoning
+problem''---``one call to $f$ `poisons' all the others''---is the failure our per-call instantiation of
+summaries avoids; they solve it with subsumption and argue against usage polymorphism, which they note is
+needed only to express dependencies among arguments, as in \code{apply} \citep[\S6.3]{wansbrough1999once}.
+Our summaries are polymorphic over function-typed parameters for exactly that reason: a callback's effect
+on its arguments depends on the callback. Blanchet's escape analysis distinguishes closures that are
+applied from closures that escape \citep{blanchet1998escape}, which is the $\mathsf{E}$ fact on a
+function-typed parameter's environment. Park and Goldberg's escape analysis decides, for higher-order
+functional programs over lists, which list cells never outlive a call \citep{park1992escape}; their
+question is the dual of our $\mathit{res}$, and they use the answer to optimise. Radanne et al.'s Affe
 captures borrows in closures with kinds \citep{radanne2020kindly}.
 
 \paragraph{Ownership inference in object-oriented languages.} Clarke et al.'s survey observes that
-ownership-type inference approaches ``infer any solution that satisfies the constraints, but cannot give a
-best solution'' \citep[\S5]{clarke2013survey}. Our constraints are monotone inclusions over a finite lattice
-with a least solution, which the optimistic start finds.
+ownership annotations ``are mostly design-driven'', that a trivial assignment always satisfies the
+constraints, and that inference approaches therefore ``infer any solution that satisfies the constraints,
+but cannot give a best solution'' \citep[\S5]{clarke2013survey}: a satisfying solution need not be the
+intended one. Our facts are properties of the program rather than design choices, so the least solution of
+our monotone constraints is the intended one (\S\ref{sec:inf-recursion}).
+
+\paragraph{Languages.} Austral checks linearity with two declared rules, a linear universe of types and a
+use-once rule---``a value of a linear type must be used once and only once'' \citep{austral}---designed so
+that its checker stays small; linearity there is declared per type, where ours is inferred per update site.
+Vale keeps single ownership and checks non-owning references at run time with generation numbers:
+``if the user dereferences an object and Vale isn't certain it's still alive, it will insert a run-time
+check'' \citep{vale}; it falls back to a run-time check where we fall back to an error. Pony defines
+reference capabilities by the aliases they deny, with \code{iso} for a uniquely held reference and
+\code{recover} to regain uniqueness for an expression that reaches only sendable variables \citep{pony}; its
+authors report local inference but still 8 capability annotations and 3 uses of \code{recover} in a
+249-line benchmark. Granule tracks how often each value is used with graded modal types the programmer
+writes \citep{granule}, and gained uniqueness later \citep{marshall2022entente}.
 
 \paragraph{Transient and copy-on-write structures.} Clojure's transients let code build a persistent
 structure through a mutable view in $O(1)$ conversion each way, with operations that ``are not designed to be

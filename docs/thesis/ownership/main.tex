@@ -35,6 +35,10 @@
 \newcommand{\borrowed}{\mathsf{borrowed}}
 \newcommand{\shared}{\mathsf{shared}}
 \newcommand{\consumed}{\mathsf{consumed}}
+\newcommand{\unused}{\mathsf{unused}}
+\newcommand{\aliased}{\mathsf{aliased}}
+\newcommand{\escaped}{\mathsf{escaped}}
+\newcommand{\env}{\diamond}
 \newcommand{\live}{\mathit{live}}
 \newcommand{\site}{\mathit{site}}
 \newcommand{\excl}{\mathsf{excl}}
@@ -60,7 +64,7 @@
 \vspace{2.5cm}
 {\large Cesar Canassa\par}
 \vspace{0.6cm}
-{\large 10 October 2026\par}
+{\large 10 October 2026 (revised)\par}
 \vfill
 {\small A thesis on the design of an inferred ownership checker for beni, a strict, pure,\\
 Elm-like language for the browser: the model, the inference algorithm, a soundness\\
@@ -94,6 +98,7 @@ argument, the hard cases, the error messages, and a proposed evaluation.\par}
 \appendix
 \input{app-examples}
 \input{app-priorart}
+\input{app-method}
 
 \bibliographystyle{plainnat}
 \bibliography{refs}

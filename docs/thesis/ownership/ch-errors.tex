@@ -11,9 +11,10 @@ A message names \emph{three places}, states \emph{a consequence}, writes \emph{a
 \emph{a verdict} on whether the rejection is real sharing or a limit of the checker. The three places
 are Rust's: the borrow, the invalidating action, and the later use, with the blame on the action---``the
 error, conceptually, is to perform an invalidating action in between two uses of the reference''
-\citep{rfc2094}. Futhark names the two sites, and its error index offers a copy as the fix on every one of its consumption errors, and notes
-when a copy ``subverts the purpose of using in-place updates in the first place''
-\citep{futhark2026errorindex}; its authors also learned that unnamed intermediate results must be
+\citep{rfc2094}. Futhark names the two sites, and its error index offers a copy as a fix for most of
+its consumption errors---``as with most alias-related errors, it can be fixed by using copy''---while
+noting that in most cases a copy ``subverts the purpose of using in-place updates in the first place''
+\citep[\S8.1]{futhark2026errorindex}; its authors also learned that unnamed intermediate results must be
 described in terms the user can read, as in ``Consuming result of applying "iota" (at 2:23-28)''
 \citep{henriksen2021anatomy}. Hylo's compiler ``will offer to insert these copies for you''
 \citep{hylo2024bindings}. Czaplicki's rules for Elm apply unchanged: the error shows the code exactly as
@@ -27,9 +28,11 @@ problematic'' \citep[\S7.2]{marceau2011mind}; that is why the message blames non
 alone.
 
 Crichton, Gray and Krishnamurthi's study of Rust learners shapes the verdict line. Participants ``could
-usually predict why the borrow checker would reject a program'' (64--78\,\% of the time), but ``could only fix the program in
-46\,\% of cases \ldots\ and could only create a counterexample in 31\,\% of cases''; asked about one
-rejected program that was in fact safe, only 3 of 15 participants identified that it was
+usually predict why the borrow checker would reject a program''---64\,\% of answers on average over all
+eight programs (their Table~1), and 78\,\% excluding the two about lifetime parameters
+\citep[\S2.5]{crichton2023grounded}---``however, participants could only fix the program in 46\,\% of
+cases \ldots\ and could only create a counterexample in 31\,\% of cases''; asked about one rejected
+program that was in fact safe, only 3 of 15 participants identified that it was
 \citep[\S2.4]{crichton2023grounded}. As Crichton put it earlier, a sound and incomplete analysis's
 errors ``may arise from either ownership-unsound behavior or limitations of the analyzer.
 Understanding this distinction is essential for fixing ownership errors''
@@ -80,7 +83,7 @@ copy: `show = λi → String.fromInt (List.length (List.copy rows))` — or comp
 what `show` needs before line 11.
 \end{Verbatim}
 
-\paragraph{A command that captured the list (real sharing, across messages).}
+\paragraph{A command that captured the list (possible sharing, across messages).}
 \begin{Verbatim}
 `List.push` changes `model.todos` in place, but a command started by another
 message may still be reading it.
@@ -101,7 +104,15 @@ Or encode before the command is made:
 
 40|     text = encode model.todos
 41|     Cmd.perform (λsend → send (Saved text))
+
+This may be sharing: whether the command reads the list after `Add` changes
+it depends on when the runtime runs the command, which this program does not
+decide.
 \end{Verbatim}
+The verdict is \emph{possible} sharing rather than real sharing because whether the command's read
+comes after the edit depends on the runtime's scheduling, which the checker cannot see; a platform that
+drains commands that cannot suspend before the next message (\Obl{P7}) removes the rejection for such
+commands altogether.
 
 \paragraph{A closure that consumes a capture, called many times (real sharing).}
 \begin{Verbatim}
@@ -143,17 +154,17 @@ Every message has the same skeleton:
 
 <one sentence: what primitive, what list, why that is a problem here>
 
-<the kept place, in source order, with a label beginning "… keeps"/"… holds">
+<the kept place, in source order, with a label beginning "⋯ keeps"/"⋯ holds">
 <the edit, with the label "changed in place here">
-<the later use, with the label "… read/called here, after the change">
+<the later use, with the label "⋯ read/called here, after the change">
 
 <one or two sentences: what the program would see if the change happened in place>
 
-<the fix, machine-applicable, as a replacement line, "To … , copy it: …">
+<the fix, machine-applicable, as a replacement line, "To ⋯ , copy it: ⋯">
 <an alternative fix that avoids the copy, when there is one>
 
-<the verdict line: "This is sharing the checker can see: …" or "This is a limit
- of the checker, not proof of sharing: …", naming the limit>
+<the verdict line: "This is sharing the checker can see: ⋯" or "This is a limit
+ of the checker, not proof of sharing: ⋯", naming the limit>
 \end{Verbatim}
 That is: a title; one sentence naming the primitive, the list and why that is a problem here; the kept
 place, the edit and the later use, in source order, labelled ``keeps'' or ``holds'', ``changed in place
@@ -185,10 +196,12 @@ Limit & Text of the tag \\
 a \code{foreign} or \code{Js} operation declared shared, or with no summary & ``came from / was given to JavaScript, which may keep it'' \\
 a cell made $\top$ by the path cut or a width cap & ``the value is nested deeper than the checker follows (8 steps)'' \\
 a path-insensitive join & ``the list may be either \code{a} or \code{b} here; the checker treats it as both'' \\
-a read from a \code{Ref} or \code{Queue} & ``was taken from a \code{Ref}, whose other readers the checker cannot see'' \\
+a read from a \code{Ref} & ``was taken from a \code{Ref}, whose other readers the checker cannot see'' \\
 a pessimistic summary on an unannotated platform \code{foreign} & ``\code{M.f} declares nothing about what it keeps'' \\
 $\mathit{calls} = \mathit{many}$ for a closure the program calls once in fact & ``\code{List.map} may call it more than once'' \\
 a container whose contents are not exclusive & ``the elements of \code{rows} may share'' \\
+a capture by a command or fiber that may run after later messages & ``a command started by another message may still be reading it'' \\
+a value returned by the runtime that it also keeps (\code{Task.join}, a deferred value) & ``other parts of the program receive the same list'' \\
 \bottomrule
 \end{tabularx}
 \caption{Approximate derivation tags and their wording.}
