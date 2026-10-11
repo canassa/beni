@@ -20,7 +20,7 @@
 //!       const g0 = () => { const v = …model…; if (v !== s0) { s0 = v; w1.data = v; } };
 //!       const h0 = () => { model = { ...model, n: model.n + 1 }; g0(); };   // one per key (§4.1)
 //!       const l0 = (e) => { h0(); };                      // the listener body (§4.2)
-//!       w2.addEventListener("click", (e) => { send(l0, e); });
+//!       on(w2, "click", l0);                              // the shared listener
 //!       g0();                                             // the mount writes every hole
 //!       root.append(r);
 //!     }
@@ -38,7 +38,7 @@
 //! its nodes and builds an instance `{ e, it, l, u, …nodes, …slots, …lists }`,
 //! and a function per row group taking the instance — and a **descriptor**
 //! per list `{ p, n, r, m, o, k, u }` that the runtime's list functions
-//! take (`Direct.mount`, `append`, `swap`, `row`, …: every loop is the
+//! take (`Direct.append`, which makes the first rows too, `swap`, `row`, …: every loop is the
 //! runtime's, since the builder has none). A handler runs, per list, the
 //! script its key's edit tag names under the tag's guard, then visits the
 //! rows its element writes name (`Direct.row`) and every row a read not
@@ -61,6 +61,8 @@ pub const lowering: m.Lowering = .{
         // `(f, x)`: the dispatch guard (§4.3), which a listener body, the
         // dispatcher and the mount enter program code through.
         .{ .name = "send", .arity = 2 },
+        // `()`: the page may send while a dispatch runs; the guard queues.
+        .{ .name = "reentrant", .arity = 0 },
         // The sentinel every slot starts at (§5.3).
         .{ .name = "unset", .arity = 0 },
         // The writes `backend.md` §15.3's table names, as `browser`'s `Rt`
@@ -83,12 +85,11 @@ pub const lowering: m.Lowering = .{
         // `globalThis.__beniFuzz.send(program, msg)` (§8.3).
         .{ .name = "fuzzMount", .arity = 1 },
         // Lists (§6, as amended for S2): each takes the list's descriptor.
-        // `(L, xs)`: every row made, in order, at the list's place.
-        .{ .name = "mount", .arity = 2 },
         // `(L, first, xs)`: the rows the template holds, from its first,
         // adopted (K3).
         .{ .name = "adopt", .arity = 3 },
-        // §6.2's scripts, each under its tag's guard.
+        // §6.2's scripts, each under its tag's guard; `append` makes a
+        // list's first rows at the mount too.
         .{ .name = "append", .arity = 2 },
         .{ .name = "prepend", .arity = 2 },
         .{ .name = "clear", .arity = 1 },
@@ -107,15 +108,21 @@ pub const lowering: m.Lowering = .{
         // or null; `rekey` makes the row again where its key changed.
         .{ .name = "row", .arity = 3 },
         .{ .name = "rekey", .arity = 3 },
+        // `(L, xs, i, j, f)`: two element writes of one message whose rows
+        // may take other keys, checked once after both (a swap).
+        .{ .name = "exchange", .arity = 5 },
         // `(L, xs, f)`: every row, its item updated, handed to `f`.
         .{ .name = "each", .arity = 3 },
         // `(L, xs, f)`: the positional pass (§6.2): the rows whose item
         // changed handed to `f`, then rows made or removed at the end.
         .{ .name = "positional", .arity = 3 },
-        // `(L, el, name, prop)`: the list's listener for a bubbling event
+        // `(id, el, name, prop)`: list `id`'s listener for a bubbling event
         // (§4.2); `(el, name, h, r)`: a row node's own, for one that is not.
         .{ .name = "delegate", .arity = 4 },
         .{ .name = "listen", .arity = 4 },
+        // `(el, name, h)`: a node's own listener outside a list, with no
+        // flags (the lean slice's shared listener).
+        .{ .name = "on", .arity = 3 },
         // `(L, xs, check, what, structural)`: the verify mode's list check.
         .{ .name = "verifyList", .arity = 5 },
     },
@@ -492,6 +499,12 @@ const List = struct {
     /// S3: some key's visit of every row is a selector visit: the
     /// descriptor keeps the last probe (`z`), the row's `Row.selector`.
     selector: ?m.Selector = null,
+    /// The list's number among the page's `For`s, which its rows carry as
+    /// `l` for the delegated walk (§4.2): a number, not the descriptor, so
+    /// the descriptor of a list of the view's root stays the program's own
+    /// and the release optimiser folds its constant fields (`o`, `i`, `n`)
+    /// into the runtime functions it reaches (`backend.md` §9, facts 3–4).
+    id: u32 = 0,
 
     fn keyed(l: *const List) bool {
         return l.mode != .position;
@@ -1168,6 +1181,11 @@ const Page = struct {
             try js.expression(pg.body, try pg.rt("fuzzMount", &.{try js.arrow(&.{msg}, blk)}));
         }
 
+        // A page that listens for an event a write can fire as it is made
+        // has the guard queue a send made during a dispatch (§4.3, as
+        // amended for the lean slice); any other page ships no queue.
+        if (pg.mayReenter()) try js.expression(pg.body, try pg.rt("reentrant", &.{}));
+
         // The model, which every handler replaces (§4.1).
         const init = try cx.programInit(pg.body);
         pg.model = try cx.fresh("$model");
@@ -1318,8 +1336,8 @@ const Page = struct {
         try js.nested(pg.body, listeners);
         // Each list of the view's root listening for its rows' bubbling
         // events, on its parent — the mount node at the top level (§4.2).
-        for (rs.lists) |maybe| if (maybe) |list| try pg.delegateList(pg.body, list, null, null);
-        for (rs.baked.items) |list| try pg.delegateList(pg.body, list, null, null);
+        for (rs.lists) |maybe| if (maybe) |list| try pg.delegateList(pg.body, list, null);
+        for (rs.baked.items) |list| try pg.delegateList(pg.body, list, null);
 
         // The mount: every group once and every list's rows, in source
         // order, a group no key calls written in place (§5.1); then the
@@ -1335,6 +1353,36 @@ const Page = struct {
 
         if (!cx.build.release) try pg.writeVerify();
         return js.arrow(&.{ pg.at_root, pg.t }, pg.body);
+    }
+
+    /// Whether some listener of the page is for an event a write of a
+    /// handler can fire while the handler runs: any event but those no DOM
+    /// write fires (a pointer's, a key's, a form's), which the user alone
+    /// does. `focus`, `blur` and the rest are fired by the removal of a
+    /// focused node, so a page listening for one keeps the guard's queue.
+    fn mayReenter(pg: *Page) bool {
+        const user_only = [_][]const u8{
+            "click",     "dblclick",    "auxclick",    "contextmenu", "mousedown", "mouseup",
+            "mousemove", "pointerdown", "pointerup",   "pointermove", "wheel",     "keydown",
+            "keyup",     "keypress",    "input",       "change",      "submit",    "touchstart",
+            "touchend",  "touchmove",   "beforeinput", "paste",       "copy",      "cut",
+            "dragstart", "drag",        "dragend",     "dragenter",   "dragover",  "dragleave",
+            "drop",
+        };
+        var sites: std.ArrayList(*Site) = .empty;
+        sites.append(pg.a(), pg.root_site) catch return true;
+        for (pg.lists.items) |list| sites.append(pg.a(), list.rows) catch return true;
+        for (pg.shareds.items) |sh| sites.append(pg.a(), sh.site) catch return true;
+        for (sites.items) |s| for (s.ops()) |op| switch (op.what) {
+            .event => |x| {
+                const name = pg.tree.string(pg.tree.eventFacts(x.item.event).dom_name);
+                for (user_only) |u| {
+                    if (std.mem.eql(u8, u, name)) break;
+                } else return true;
+            },
+            else => {},
+        };
+        return false;
     }
 
     // ---- Planning -------------------------------------------------------
@@ -1409,6 +1457,7 @@ const Page = struct {
                 };
                 rs.list = list;
                 s.lists[k] = list;
+                list.id = @intCast(pg.lists.items.len);
                 try pg.lists.append(pg.a(), list);
                 for (rb.ops.items) |rop| switch (rop.what) {
                     .event => |ev| {
@@ -1479,6 +1528,7 @@ const Page = struct {
             };
             rs.list = list;
             try s.baked.append(pg.a(), list);
+            list.id = @intCast(pg.lists.items.len);
             try pg.lists.append(pg.a(), list);
             for (rb.ops.items) |rop| switch (rop.what) {
                 .event => |ev| {
@@ -2027,7 +2077,7 @@ const Page = struct {
     // ---- Mount and make -----------------------------------------------------
 
     /// A site's first writes, in source order: each group once — in place
-    /// when no key calls it — and each list's rows (`Direct.mount`). In
+    /// when no key calls it — and each list's rows (`Direct.append`). In
     /// `make`, `inst` is the row's instance and `item`, `up` what it is
     /// made of.
     fn mountSite(pg: *Page, blk: m.Block, s: *Site, inst: ?Path) m.Error!void {
@@ -2055,7 +2105,7 @@ const Page = struct {
                 const list = s.lists[k].?;
                 const inner = try js.block();
                 const xs = try pg.eachValue(inner, list, inst);
-                try js.expression(inner, try pg.rt("mount", &.{ try pg.ref(list.desc, inst), try pg.ident(xs) }));
+                try js.expression(inner, try pg.rt("append", &.{ try pg.ref(list.desc, inst), try pg.ident(xs) }));
                 try js.nested(blk, inner);
                 continue;
             }
@@ -2162,7 +2212,7 @@ const Page = struct {
         try props.append(pg.a(), .{ .key = "e", .value = try pg.ident(e) });
         try props.append(pg.a(), .{ .key = "it", .value = try pg.ident(it) });
         const marked = list.delegated.items.len != 0;
-        if (marked) try props.append(pg.a(), .{ .key = "l", .value = try pg.ident(desc) });
+        if (marked) try props.append(pg.a(), .{ .key = "l", .value = try pg.num(list.id) });
         if (list.depth > 0) try props.append(pg.a(), .{ .key = "u", .value = try js.member(try pg.ident(desc), "u") });
         if (pg.readsPosition(s)) try props.append(pg.a(), .{ .key = "i", .value = try pg.ident(position) });
         for (s.walks, 0..) |w, t| if (w) |field| if (!std.mem.eql(u8, field.field, "e")) {
@@ -2201,7 +2251,7 @@ const Page = struct {
             const d = try pg.descriptor(inner_blk, inner, walked.walks, ri);
             try js.assign(inner_blk, try js.member(try pg.ident(r), inner.desc.field), d);
             try js.nested(blk, inner_blk);
-            try pg.delegateList(blk, inner, walked.walks, ri);
+            try pg.delegateList(blk, inner, walked.walks);
         };
         try pg.mountSite(blk, s, ri);
         try js.@"return"(blk, try pg.ident(r));
@@ -2211,7 +2261,7 @@ const Page = struct {
 
     /// A list's listener for each bubbling event its rows handle, on its
     /// parent — the mount node for a list at the view's top level (§4.2).
-    fn delegateList(pg: *Page, blk: m.Block, list: *List, walk: ?[]const ?m.Name, inst: ?Path) m.Error!void {
+    fn delegateList(pg: *Page, blk: m.Block, list: *List, walk: ?[]const ?m.Name) m.Error!void {
         const js = pg.jsb();
         if (list.delegated.items.len == 0) return;
         const el: m.Expr = if (list.parent_t) |t|
@@ -2219,7 +2269,7 @@ const Page = struct {
         else
             try pg.ident(pg.at_root);
         for (list.delegated.items) |name| {
-            try js.expression(blk, try pg.rt("delegate", &.{ try pg.ref(list.desc, inst), el, try js.string(name), try js.string(try pg.print("${s}", .{name})) }));
+            try js.expression(blk, try pg.rt("delegate", &.{ try pg.num(list.id), el, try js.string(name), try js.string(try pg.print("${s}", .{name})) }));
         }
     }
 
@@ -2236,24 +2286,42 @@ const Page = struct {
         const facts = pg.tree.eventFacts(x.item.event);
         const e = try cx.fresh("$e");
         const blk = try js.block();
-        try pg.listenerBody(blk, s, ctx, x, e, null);
+        const direct = try pg.listenerBody(blk, s, ctx, x, e, null);
+        const flagged = facts.prevent_default or facts.stop_propagation;
+        const node = try pg.ref(s.walks[x.t].?, null);
+        const event = try js.string(pg.tree.string(facts.dom_name));
+        // A listener with no flags is the runtime's one `on` (the lean
+        // slice), handed the key's handler itself when the body only calls
+        // it with nothing (`onClick={Run}`, through a helper called with
+        // constants).
+        if (!flagged) if (direct) |h| {
+            try js.expression(into, try pg.rt("on", &.{ node, event, try pg.ident(h) }));
+            return;
+        };
         const body = try cx.fresh("$l");
         try js.constant(into, body, try js.arrow(&.{e}, blk));
+        if (!flagged) {
+            try js.expression(into, try pg.rt("on", &.{ node, event, try pg.ident(body) }));
+            return;
+        }
         const dom_listener = try js.block();
         const ev = try cx.fresh("$e");
         if (facts.prevent_default) try js.expression(dom_listener, try js.call(try js.member(try pg.ident(ev), "preventDefault"), &.{}));
         if (facts.stop_propagation) try js.expression(dom_listener, try js.call(try js.member(try pg.ident(ev), "stopPropagation"), &.{}));
         try js.expression(dom_listener, try pg.rt("send", &.{ try pg.ident(body), try pg.ident(ev) }));
-        try js.expression(into, try js.call(try js.member(try pg.ref(s.walks[x.t].?, null), "addEventListener"), &.{
-            try js.string(pg.tree.string(facts.dom_name)),
+        try js.expression(into, try js.call(try js.member(node, "addEventListener"), &.{
+            event,
             try js.arrow(&.{ev}, dom_listener),
         }));
     }
 
     /// What a listener body does: the payload read, the message made — read
     /// at the event — and sent to its key's handler or the dispatcher.
-    /// `inst`: a row's instance, whose item the handler value reads.
-    fn listenerBody(pg: *Page, blk: m.Block, s: *Site, ctx: u32, x: @FieldType(dom.Op.What, "event"), e: m.Name, inst: ?Path) m.Error!void {
+    /// `inst`: a row's instance, whose item the handler value reads. The
+    /// key's handler when the body is only its call with nothing — no
+    /// payload, no field, every call written in place on the way given
+    /// constants — and null otherwise.
+    fn listenerBody(pg: *Page, blk: m.Block, s: *Site, ctx: u32, x: @FieldType(dom.Op.What, "event"), e: m.Name, inst: ?Path) m.Error!?m.Name {
         const cx = pg.cx;
         const js = pg.jsb();
         var payload: ?m.Expr = null;
@@ -2269,7 +2337,15 @@ const Page = struct {
                 const message = try cx.programMessage(blk, v, payload);
                 pg.leave();
                 switch (message) {
-                    .key => |kc| try js.expression(blk, try js.call(try pg.ident(try pg.handlerName(kc.key)), kc.args)),
+                    .key => |kc| {
+                        const h = try pg.handlerName(kc.key);
+                        try js.expression(blk, try js.call(try pg.ident(h), kc.args));
+                        if (kc.args.len != 0 or payload != null or inst != null) return null;
+                        for (try pg.framesOf(ctx)) |f| for (try pg.callValues(f)) |cv| {
+                            if (!pg.tree.isConstant(cv)) return null;
+                        };
+                        return h;
+                    },
                     .value => |msg| try pg.dispatchValue(blk, msg),
                 }
             },
@@ -2277,6 +2353,7 @@ const Page = struct {
             .constant => |c| try pg.dispatchValue(blk, try pg.g.make(.{ .constant = c })),
             else => {},
         }
+        return null;
     }
 
     /// Each event of a row: its body `(e, r) => …`, which `make` puts on
@@ -2296,7 +2373,7 @@ const Page = struct {
                 const e = try cx.fresh("$e");
                 const r = try cx.fresh("$r");
                 const blk = try js.block();
-                try pg.listenerBody(blk, s, op.ctx, x, e, .{ .base = r });
+                _ = try pg.listenerBody(blk, s, op.ctx, x, e, .{ .base = r });
                 const body = try cx.fresh("$l");
                 try js.constant(pg.body, body, try js.arrow(&.{ e, r }, blk));
                 const flags: u32 = @as(u32, @intFromBool(facts.prevent_default)) | (@as(u32, @intFromBool(facts.stop_propagation)) << 1);
@@ -2473,7 +2550,20 @@ const Page = struct {
         if (p.merge) try js.expression(inner, try pg.rt("merge", &.{ try pg.ref(list.desc, inst), try pg.ident(xs) }));
         if (p.reconcile) try js.expression(inner, try pg.rt("reconcile", &.{ try pg.ref(list.desc, inst), try pg.ident(xs) }));
         // One row at each index, its item updated where it changed.
-        if (p.at.items.len != 0) {
+        if (p.at.items.len == 2 and p.rekey and list.keyed()) {
+            // Two rows whose keys may change, checked once after both
+            // writes (the lean slice): a swap is one exchange of rows, not
+            // two rekeys, the first of which saw a key the second had not
+            // moved yet.
+            const visit = try pg.visitor(k, list, modes, p.at_groups.items, p.whole, false);
+            try js.expression(inner, try pg.rt("exchange", &.{
+                try pg.ref(list.desc, inst),
+                try pg.ident(xs),
+                try pg.ident(pg.indexOf(p.at.items[0]).?),
+                try pg.ident(pg.indexOf(p.at.items[1]).?),
+                visit,
+            }));
+        } else if (p.at.items.len != 0) {
             const r = try pg.cx.fresh("$r");
             const body = try js.block();
             try pg.rowBody(body, k, list, modes, .{ .base = r }, p.at_groups.items, p.whole, false);
@@ -2494,27 +2584,21 @@ const Page = struct {
         }
         // The identity walk: the rows whose item changed.
         if (p.walk) {
-            const r = try pg.cx.fresh("$r");
-            const body = try js.block();
-            try pg.rowBody(body, k, list, modes, .{ .base = r }, p.walk_groups.items, false, true);
-            try js.expression(inner, try pg.rt("walkItems", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), try js.arrow(&.{r}, body), try js.literal(if (p.walk_rekey) .true else .false) }));
+            const visit = try pg.visitor(k, list, modes, p.walk_groups.items, false, true);
+            try js.expression(inner, try pg.rt("walkItems", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), visit, try js.literal(if (p.walk_rekey) .true else .false) }));
         }
         // Every row, for what reads more than its own item.
         if (p.every) {
-            const r = try pg.cx.fresh("$r");
-            const body = try js.block();
-            try pg.rowBody(body, k, list, modes, .{ .base = r }, p.every_groups.items, false, true);
-            try js.expression(inner, try pg.rt("each", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), try js.arrow(&.{r}, body) }));
+            const visit = try pg.visitor(k, list, modes, p.every_groups.items, false, true);
+            try js.expression(inner, try pg.rt("each", &.{ try pg.ref(list.desc, inst), try pg.ident(xs), visit }));
         }
         // The selector (§6.4, as amended for S3): its visit after the
         // scripts; a visit of every row writes the new probe too.
         if (list.selector != null and (p.select or p.every)) {
             const probe = try pg.probeValue(inner, list, inst);
             if (p.select) {
-                const r = try pg.cx.fresh("$r");
-                const body = try js.block();
-                try pg.rowBody(body, k, list, modes, .{ .base = r }, p.select_groups.items, false, true);
-                try js.expression(inner, try pg.rt("select", &.{ try pg.ref(list.desc, inst), try pg.ident(probe), try js.arrow(&.{r}, body) }));
+                const visit = try pg.visitor(k, list, modes, p.select_groups.items, false, true);
+                try js.expression(inner, try pg.rt("select", &.{ try pg.ref(list.desc, inst), try pg.ident(probe), visit }));
             } else {
                 try js.assign(inner, try js.member(try pg.ref(list.desc, inst), "z"), try pg.ident(probe));
             }
@@ -2532,6 +2616,43 @@ const Page = struct {
         try js.constant(blk, z, try pg.cx.value(probe));
         pg.leave();
         return z;
+    }
+
+    /// A row visit handed to the runtime as a function (`(r) => …`): the
+    /// list's whole-row patch where the visit is that (`whole`, or every
+    /// live group of a row with no list), the one group function where it
+    /// calls one group of a row with no list, and otherwise a function of
+    /// its own (`rowBody`) — so a visit is never a lambda that only calls
+    /// what already has a name (the lean slice).
+    fn visitor(pg: *Page, k: u32, list: *List, modes: []const bool, groups: []const u32, whole: bool, every: bool) m.Error!m.Expr {
+        const js = pg.jsb();
+        const s = list.rows;
+        const no_lists = for (s.lists) |maybe| {
+            if (maybe != null) break false;
+        } else true;
+        if (whole) if (list.patch_fn) |w| return pg.ident(w);
+        if (no_lists) {
+            var called: ?m.Name = null;
+            var count: u32 = 0;
+            var live: u32 = 0;
+            for (s.groups.items) |gr| {
+                const name = gr.name orelse continue;
+                live += 1;
+                const yes = whole or gr.every or for (gr.sets.items) |set| {
+                    if (std.mem.indexOfScalar(u32, groups, set) != null) break true;
+                } else false;
+                if (yes) {
+                    count += 1;
+                    called = name;
+                }
+            }
+            if (count == live) if (list.patch_fn) |w| return pg.ident(w);
+            if (count == 1) return pg.ident(called.?);
+        }
+        const r = try pg.cx.fresh("$r");
+        const body = try js.block();
+        try pg.rowBody(body, k, list, modes, .{ .base = r }, groups, whole, every);
+        return js.arrow(&.{r}, body);
     }
 
     /// One row's visit: the row groups `groups` names — every live one when

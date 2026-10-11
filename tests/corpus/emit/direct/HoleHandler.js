@@ -1,5 +1,5 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
-import { Direct$unset, Direct$send, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
+import { Direct$unset, Direct$on, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 const HoleHandler$main = Tea$sandbox(($root$1, $t$2) => {
   const init$3 = { fixed: 7, tick: 0, title: "Holes" };
@@ -31,35 +31,33 @@ const HoleHandler$main = Tea$sandbox(($root$1, $t$2) => {
     const $l$21 = ($e$20) => {
       $hany$19("Tick");
     };
-    $w$11.addEventListener("click", ($e$22) => {
-      Direct$send($l$21, $e$22);
-    });
+    Direct$on($w$11, "click", $l$21);
   }
   {
-    const $t$23 = String$fromInt($model$4.fixed);
-    $w$10.data = $t$23;
-    $s$14 = $t$23;
+    const $t$22 = String$fromInt($model$4.fixed);
+    $w$10.data = $t$22;
+    $s$14 = $t$22;
   }
   $g$16();
   $root$1.append($r$5);
   Direct$verify(() => {
-    const $t$24 = $model$4.title;
-    const $t$25 = String$fromInt($model$4.fixed);
-    const $t$26 = String$fromInt($model$4.tick);
-    if (!Direct$same($t$25, $s$14)) {
-      Direct$wrong("the text hole at HoleHandler.beni:31:12", $s$14, $t$25);
+    const $t$23 = $model$4.title;
+    const $t$24 = String$fromInt($model$4.fixed);
+    const $t$25 = String$fromInt($model$4.tick);
+    if (!Direct$same($t$24, $s$14)) {
+      Direct$wrong("the text hole at HoleHandler.beni:31:12", $s$14, $t$24);
     }
-    if ($w$10.data !== `${$t$25}`) {
-      Direct$wrong("the text hole at HoleHandler.beni:31:12 in the document", $w$10.data, `${$t$25}`);
+    if ($w$10.data !== `${$t$24}`) {
+      Direct$wrong("the text hole at HoleHandler.beni:31:12 in the document", $w$10.data, `${$t$24}`);
     }
-    if (!Direct$same($t$26, $s$15)) {
-      Direct$wrong("the text hole at HoleHandler.beni:33:12", $s$15, $t$26);
+    if (!Direct$same($t$25, $s$15)) {
+      Direct$wrong("the text hole at HoleHandler.beni:33:12", $s$15, $t$25);
     }
-    if ($w$13.data !== `${$t$26}`) {
-      Direct$wrong("the text hole at HoleHandler.beni:33:12 in the document", $w$13.data, `${$t$26}`);
+    if ($w$13.data !== `${$t$25}`) {
+      Direct$wrong("the text hole at HoleHandler.beni:33:12 in the document", $w$13.data, `${$t$25}`);
     }
-    if ($w$8.data !== `${$t$24}`) {
-      Direct$wrong("the text HoleHandler.beni:30:13 baked into the page", $w$8.data, `${$t$24}`);
+    if ($w$8.data !== `${$t$23}`) {
+      Direct$wrong("the text HoleHandler.beni:30:13 baked into the page", $w$8.data, `${$t$23}`);
     }
   });
 });
