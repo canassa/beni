@@ -300,8 +300,8 @@ pub const Fuzz = struct {
 /// What the gates run: one fixed seed of thirty steps, so a run's verdict
 /// is a function of its inputs and its record can stand for it. One seed
 /// and not two of fifteen: a page and its module graph cost more than
-/// fifteen steps, and `browser/tea/ApiAndRoutes`, whose two builds take
-/// 3.4 of its 4.3 billion instructions, has room for two pages only.
+/// fifteen steps, and `browser/tea/ApiItems`, whose two builds take most
+/// of its 4.3 billion instructions, has room for two pages only.
 /// `zig build fuzz` runs fifty seeds (`BENI_FUZZ_SEEDS`, `BENI_FUZZ_STEPS`).
 pub const gate_seeds = "1";
 pub const gate_steps = 30;

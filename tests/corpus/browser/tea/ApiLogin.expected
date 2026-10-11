@@ -1,0 +1,44 @@
+-- load
+<body>
+  <main>
+    <button id="signin">"sign in"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #signin
+(fetch 1: POST /api/login {"accept":"application/json","content-type":"application/json"} "{\"user\":\"ada\",\"password\":\"lovelace\"}")
+(the DOM did not change)
+-- respond 1 200 "{\"access_token\":\"t0k3n\"}" Content-Type: "application/json"
+(fetch 2: GET /api/me {"authorization":"Bearer t0k3n"})
+<body>
+  <main>
+    <button id="signin">"sign in"</button>
+    <ol>
+      <li>"token t0k3n"</li>
+    </ol>
+  </main>
+</body>
+-- respond 2 200 "ada" Content-Type: "text/plain"
+<body>
+  <main>
+    <button id="signin">"sign in"</button>
+    <ol>
+      <li>"token t0k3n"</li>
+      <li>"hello ada"</li>
+    </ol>
+  </main>
+</body>
+-- click #signin
+(fetch 3: POST /api/login {"accept":"application/json","content-type":"application/json"} "{\"user\":\"ada\",\"password\":\"lovelace\"}")
+(the DOM did not change)
+-- respond 3 401 "{\"error\":\"bad credentials\"}" Content-Type: "application/json"
+<body>
+  <main>
+    <button id="signin">"sign in"</button>
+    <ol>
+      <li>"token t0k3n"</li>
+      <li>"hello ada"</li>
+      <li>"sign in: BadStatus 401"</li>
+    </ol>
+  </main>
+</body>
