@@ -609,7 +609,7 @@ const fiberPrograms = [
     source:
       "import Duration\nimport Io\nimport Node exposing (Program)\nimport Task\n\n\nmain : Program\nmain = Io.run λ⊤ →\n    ( a, b ) = Task.par (λ⊤ → after 2 1) λ⊤ → after 1 2\n    c = Task.race (λ⊤ → after 3 3) λ⊤ → after 1 4\n    d = Maybe.withDefault (Task.timeout (Duration.millis 5) λ⊤ → after 1 5) 0\n    Node.print (String.fromInt (a + b + c + d))\n\n\nafter : Int, Int → Int\nafter ms n =\n    _ = Io.sleep ms\n    n\n",
   },
-  { name: "ApiAndRoutes", platform: "browser-tea", file: "tests/corpus/browser/tea/ApiAndRoutes.beni" },
+  { name: "ApiAndRoutes", platform: "browser-tea", file: "bench/size-apps/ApiAndRoutes.beni" },
   { name: "TodoMVC", platform: "browser-tea", file: "tests/corpus/browser/tea/TodoMVC.beni" },
 ];
 
