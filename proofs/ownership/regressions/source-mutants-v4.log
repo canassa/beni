@@ -1,0 +1,19 @@
+disjoint: seed=20261011 exit=1 first-index=47 family=general seed=17 exit=1 first-index=187 family=general seed=271828 exit=1 first-index=54 family=general caught-seeds=3/3
+borrowedsupply: seed=20261011 exit=1 first-index=7685 family=general seed=17 exit=1 first-index=84 family=general seed=271828 exit=1 first-index=2403 family=general caught-seeds=3/3
+travexcl: seed=20261011 exit=1 first-index=1102 family=general seed=17 exit=1 first-index=468 family=general seed=271828 exit=1 first-index=791 family=general caught-seeds=3/3
+manycap: seed=20261011 exit=1 first-index=3546 family=general seed=17 exit=1 first-index=318 family=general seed=271828 exit=1 first-index=111 family=general caught-seeds=3/3
+copyexcl: seed=20261011 exit=1 first-index=1458 family=general seed=17 exit=1 first-index=1068 family=general seed=271828 exit=1 first-index=606 family=general caught-seeds=3/3
+closesrc: seed=20261011 exit=1 first-index=3323 family=general seed=17 exit=1 first-index=1652 family=general seed=271828 exit=1 first-index=296 family=general caught-seeds=3/3
+keepsshape: seed=20261011 exit=1 first-index=1819 family=general seed=17 exit=1 first-index=194 family=general seed=271828 exit=1 first-index=2788 family=general caught-seeds=3/3
+xres: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+separated: seed=20261011 exit=1 first-index=27 family=fresh-nested seed=17 exit=1 first-index=3 family=fresh-tower seed=271828 exit=1 first-index=4 family=fresh-tower caught-seeds=3/3
+dead: seed=20261011 exit=1 first-index=4 family=captures seed=17 exit=1 first-index=0 family=general seed=271828 exit=1 first-index=31 family=recursion caught-seeds=3/3
+escape: seed=20261011 exit=1 first-index=19 family=escape-traversal seed=17 exit=1 first-index=30 family=escape-traversal seed=271828 exit=1 first-index=50 family=escape-traversal caught-seeds=3/3
+focusexcl: seed=20261011 exit=1 first-index=27 family=fresh-nested seed=17 exit=1 first-index=3 family=fresh-tower seed=271828 exit=1 first-index=4 family=fresh-tower caught-seeds=3/3
+once: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+nestedsep: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+reqexcloutside: seed=20261011 exit=0 first-index=none seed=17 exit=1 first-index=760 family=general seed=271828 exit=0 first-index=none caught-seeds=1/3
+recvalidate: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+writeout: seed=20261011 exit=1 first-index=556 family=library-pipeline seed=17 exit=1 first-index=136 family=library-pipeline seed=271828 exit=1 first-index=225 family=library-pipeline caught-seeds=3/3
+tsupplyexcl: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+escapeowned: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
