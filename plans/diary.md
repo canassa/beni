@@ -4677,3 +4677,11 @@ boundary. An escape marker without a reader cannot test observational soundness;
 retaining real references and observing execution prefixes makes the omitted
 summary effect visible. A footprint lemma becomes relevant only after relating
 its cells to executable heap operations and their outside observers.
+
+Later the same session: PR #45 merged — an executable Lean 4 core of the checker
+(`proofs/ownership/`): value and in-place interpreters, a differential oracle, and `map`,
+`initialize`, `foldl` and `update` derived from five primitives rather than asserted. With the
+old freshness rule it rediscovers T59 within 100 programs; its first draft also found its own
+traversal dropping escape facts. I checked it by building it and running a fresh seed (5,000
+programs, zero mismatches). It answers soundness, not the error rate; that needs the report-mode
+prototype in the Zig compiler.
