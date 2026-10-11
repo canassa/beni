@@ -38,10 +38,11 @@ Nothing was implemented in beni and no code outside this report changed.*
    claim is brotli-or-zstd-on-a-long-lived-stream, not compression in general.
 5. **The client-CPU claim does not hold as a general one** — and Datastar mostly does not make it
    with numbers. Morphing a 1 000-row table in headless Chrome [measured, §4.3]: a patch that
-   changes nothing costs **≈ 11–15 ms** of script (parse 218 kB, walk every node), selecting one
-   row 24 ms against vanilla's 0.2 ms, updating every tenth row 33 ms against 2 ms; and **a patch
-   that replaces every keyed row is quadratic** — 56 ms at 250 rows, 452 ms at 1 000, **1.9 s at
-   2 000** — in the idiomorph matching loop (§2.3). No benchmark of Datastar's own was found in
+   changes nothing costs **15 ms** of script (parse 218 kB, walk every node), selecting one
+   row 24 ms against vanilla's 0.2 ms, updating every tenth row 33 ms against 2 ms (n = 10
+   medians); and **a patch that replaces every keyed row is quadratic** — 715 ms at 1 000 rows
+   in the n = 10 table, and in a separate scaling batch 56 ms at 250, 452 ms at 1 000, **1.9 s at
+   2 000** (×4.3 for ×2 rows) — in the idiomorph matching loop (§2.3). No benchmark of Datastar's own was found in
    its repository or on its site; its demos (DBmon, Bad Apple, TodoMVC) show a frame rate, not a
    method (§5).
 6. **What is genuinely new is small**: the event protocol (patch-elements / patch-signals over
@@ -191,8 +192,9 @@ morphdom and nanomorph for the input special cases:
 **The quadratic case** [source + measured]: when the new rows all carry ids the old ones do not
 (a replaced list), no node is persistent, no id-set match exists, and a soft match is refused
 because "oldElt has an `id` … and it doesn't match" — so `findBestMatch` scans **every remaining
-old sibling for every new one** and finds nothing. §4.3 measures it: 1 000 → 2 000 rows is
-452 → 1 939 ms, ×4.3. Unkeyed rows are linear (the first sibling soft-matches).
+old sibling for every new one** and finds nothing. §4.3 measures it: in one scaling batch, 1 000 → 2 000 rows
+is 452 → 1 939 ms, ×4.3 (the n = 10 table's median at 1 000 is 715 ms; the absolute values move
+with the machine's load, the ratio is the claim). Unkeyed rows are linear (the first sibling soft-matches).
 
 **What a morph costs even when nothing changed** [source]: the server's HTML is parsed into a
 fresh DOM; every new node is compared with an old one (attribute by attribute, both directions);
@@ -345,7 +347,10 @@ create/replace). Fresh page per sample, n = 10, median.
 
 All in ms; correctness was checked per sample (row count, the swapped ids, one `.danger` row,
 first row kept by identity where it should be). A cleaner n = 3 batch earlier read replace 497
-ms, update 22, select 20, nothing 14. Scaling of the replace and the floor (n = 5 each):
+ms, update 22, select 20, nothing 14. Scaling of the replace and the floor, a **separate batch**
+(n = 5 each, simpler two-cell rows, so its absolute values differ from the table above — 452 ms
+against 715 for the keyed replace at 1 000, 11 ms against 15 for the floor; the ratios between
+its own rows are what it shows):
 
 | rows | replace, keyed (new ids) | same HTML again | replace, unkeyed |
 |---|---|---|---|
@@ -388,7 +393,7 @@ client was found.
 | "1000 concurrent users at 10 FPS on a 2 vCore shared VPS" | [Murphy, 2026-09-29](https://andersmurphy.com/2026/09/29/faster-streaming-html-with-batches-and-aggregates.html) | server throughput of one app | **reported**, one app, no client cost |
 | "have the fastest signal implementation"; "BY FAR the fastest signal approach" | [HN 43657491](https://news.ycombinator.com/item?id=43657491), HN 45702558 | — | **rhetoric**: no benchmark published; the graph is alien-signals' (§2.2), so at best it equals alien-signals, which Solid 2 also builds on |
 | "looking like over 2x faster than idiomorph" | [HN 43657491](https://news.ycombinator.com/item?id=43657491) | morph | **unbacked**; the v1.0.4 morph is idiomorph's algorithm (§2.3) and has its quadratic replace (§4.3) |
-| "updates in microseconds above half RTT" | HN 45845582 | client apply time | **false at scale**: ≈ 15 ms floor for a 1 000-row region (§4.3); true for a small fragment |
+| "updates in microseconds above half RTT" | HN 45845582 | client apply time | **false at scale**: a 15 ms floor for a 1 000-row region (§4.3); true for a small fragment |
 | "it can do ANYTHING that React, Vue, or Svelte can do, faster and with less code" | *The Road to V1* | — | **rhetoric**, no data |
 | "In Morph We Trust … improving performance" | *Tao of Datastar* | — | **half**: a morph keeps DOM state; against a targeted write it is slower by 1–2 orders of magnitude (§4.3) |
 | DBmon "10x the rows" works locally; Bad Apple at 30 fps | [examples](https://data-star.dev/examples/dbmon) | a frame rate on a demo | demos, no method |
@@ -489,8 +494,12 @@ report are licensing, trust, CSP, round-trip latency, and breaking changes durin
 | **Datastar** | server, by doctrine | whole HTML regions (the fat morph) or JSON merge patches of signals | idiomorph port; signal effects | global signal store, expressions in attributes (`Function`) | SSE over `fetch`, any method |
 | **Solid 2** | client | — | compiled templates, per-hole effects | signals (alien-signals lineage) | — |
 
-[doc + estimate; the LiveView and Turbo rows are from those projects' documentation, not
-re-read for this report.] Carson Gross, htmx's author: "data-star isn't a successor to htmx,
+[doc + estimate. The LiveView row was checked for this report: its guide *Assigns and HEEx
+templates* says a first render sends "all of the static and dynamic parts", later renders
+"won't resend the static parts and it will only resend the dynamic part if it changes", and
+"the tracking of changes is done via assigns"; its client imports `morphdom`
+(`assets/js/phoenix_live_view/dom_patch.ts`, `main` at `a7f3538`). The htmx, Alpine and Turbo
+rows are from those projects' documentation as remembered, not re-read.] Carson Gross, htmx's author: "data-star isn't a successor to htmx,
 it's a pretty different take on hypermedia, using SSE for a streaming, dynamic hypermedia driven
 system" ([HN 42312746](https://news.ycombinator.com/item?id=42312746)) and it "combines ideas of
 htmx & solid (signals)" ([41734456](https://news.ycombinator.com/item?id=41734456)). Commenters
@@ -550,8 +559,14 @@ frames get smaller still.
 **What it conflicts with**: rule 9 and the "no runtime errors" promise must be carried across a
 network — a dropped stream, a reconnect, a server restart, a patch for a page version the
 client no longer shows are each a *typed* condition the program sees (as `Http`'s failures are),
-not a retry loop that hides them (Datastar's `catch {}` in `fetch.ts`'s `create` retries on
-**any** error, the broad catch rule 9 forbids). Every interaction pays a round trip, which is the
+not a retry loop that hides them. Datastar's `create` in `fetch.ts` (lines 683–692) ends in a
+bare `catch {` that calls `retryRequest()` for **every exception that is not an abort** — a
+`fetch` network `TypeError`, a stream read failure, a failure in `onopen` or in reading a
+`text/html` or `application/json` body — without naming any of them. (A watcher's own errors do
+not reach it: events are applied through `dispatchEvent`, which reports a listener's exception
+as uncaught instead of throwing it to the dispatcher.) HTTP statuses are handled before it, not
+by it. That is the shape rule 9 forbids: a catch that names nothing and keeps going, so an
+unanticipated failure becomes a silent reconnect, up to ten times. Every interaction pays a round trip, which is the
 opposite of "browser first" for interactive pages; Datastar's own answer — "no optimistic
 updates" — is a choice beni need not inherit, since a split platform could run some keys on the
 client (the keys whose write sets touch only client-owned paths) and the rest on the server.
@@ -561,7 +576,7 @@ client (the keys whose write sets touch only client-owned paths) and the rest on
 pages, the design to specify is "write-set frames over SSE", not "HTML + morph", and the first
 measurement is §4.3's table with the frame-applying client against Datastar and LiveView.
 
-### 8.2 One compressed long-lived stream — **adopt**, as a measured fact
+### 8.2 One compressed long-lived stream — **adopt as a note**: a measured fact, no design change
 
 Any beni protocol that streams updates — a server platform (§8.1), an `Http` streaming
 subscription, a dev server pushing rebuilt modules — should keep **one connection with one
@@ -605,7 +620,7 @@ store and JSON-merge-patch semantics, which beni's typed model does not want.
 ### 8.6 The morph — **reject** as a rendering strategy
 
 It is research 29 §6's virtual DOM with the browser's parser in place of `h()`: cost proportional
-to the patch, not the change (≈ 15 ms for a 1 000-row region that did not change), and
+to the patch, not the change (15 ms for a 1 000-row region that did not change), and
 quadratic when keyed rows are replaced (§4.3). beni's lists have keys and edit tags
 (`browser-direct.md` §6), so the id-set heuristics solve a problem beni does not have. If beni
 ever needs to patch foreign server HTML into a page (an interop corner), a morph would be a
@@ -759,6 +774,6 @@ In this repository: research 27 §1.2 (alien-signals in Solid 2), 29 §6 (the vi
 `backend.md` §15.6 (the `ssr` lowering); `boundary.md` §9.1, §9.8; `schema.md`;
 `plans/browser-decisions.md` W22.
 
-Not reached: transcripts of Gillilan's talks and the v1.0 podcast; LiveView's and Turbo's
-sources (§7's rows for them are from their documentation as remembered, not re-read); the
+Not reached: transcripts of Gillilan's talks and the v1.0 podcast; htmx's, Alpine's and Turbo's
+sources (§7's rows for them are from their documentation as remembered; LiveView's row was checked); the
 server-side CPU of compressing a fat morph.
