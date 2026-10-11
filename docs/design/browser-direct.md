@@ -42,8 +42,8 @@ flush — a handler writes as it runs (§4.3); no instance object for a unique m
 handlers take the payload as parameters and never build a message for a view event (§4.1);
 `Html.map` over a constructor is composed at compile time, and there is no context chain (§9.1);
 the reconciler is emitted only for a list some key replaces or permutes, and the rows' selector is
-kept (§6); the model half is not beni's output verbatim: the arm is specialised to the key, an
-accumulator loop builds a plain array, a derived `let` is recomputed only by the keys that can
+kept (§6); the model half is not beni's output verbatim: the arm is specialised to the key, a
+derived `let` is recomputed only by the keys that can
 change it, and in-place update is specified with its proof obligation (§7); and the design
 carries two early oracles of its own — differential fuzzing against today's platform and a
 development-only verify mode (§8.3) — from the first slice that writes a hole. **What is
@@ -704,17 +704,14 @@ arrays*): a plain array until written, a view for a pattern's `rest`, a 32-way t
 claimable head and tail past the thresholds (`push` at 32, `set` at 256, `cons` at 32). This
 document changes none of it (CLAUDE.md rule 10). What it adds is on the compiler's side:
 
-- **An accumulator loop builds a plain array.** The table app's `buildFrom` prepends one row per
-  iteration onto an accumulator parameter and returns it at the exit, so after 32 rows every
-  prepend is a trie operation and the program ships the trie's write half, 526 B in context
-  (research 59 §4.1), to build a list it then only reads. A tail-recursive loop whose accumulator
-  parameter is only ever `[ x, …acc ]`-prepended (or `[ …acc, x ]`-appended) and otherwise only
-  returned at the exit — never read, never passed elsewhere — is a **building loop** in the sense
-  of `backend.md` §8's *Tail calls modulo cons, onto an array*: the compiler builds it in an owned
-  plain array (invariant 5), reversed once at the exit for a prepend accumulator, and `cons` is
-  never called. That is `backend.md` §8's rule extended to the accumulator shape, specified there
-  when built (slice S3), shared by both platforms; it removes the trie from the table app and from
-  every Elm-style `go acc` loop, and makes `RunLots` one array of 10 000 rows.
+- ~~**An accumulator loop builds a plain array.**~~ *Withdrawn 2026-10-11 by the owner: prepending
+  is an anti-pattern the compiler must not reward.* This bullet specified a rule (S3, `backend.md`
+  §8's *Accumulators build a plain array*, withdrawn there too) that compiled a loop prepending
+  onto an accumulator into pushes onto a plain array reversed once at the exit, so that the table
+  app's `buildFrom` would not birth a trie. A loop that prepends is lowered as written: past 32
+  elements it conses onto a trie and ships the trie's write half. The table app builds its rows
+  in order instead, `[ …acc, x ]`, with no rule. Whether the compiler should do anything about
+  prepend-built lists is open with the owner.
 - **An indexed script reads one element** (`get`, §6.2); only a walk over the whole list reads
   it through the protocol (`length`, `Array.isArray`, `$plain()`), once per handler, into a
   local. A trie's `$plain()` is cached per header (`backend.md` §4, invariant 1), and a header
@@ -727,7 +724,7 @@ document changes none of it (CLAUDE.md rule 10). What it adds is on the compiler
 What the page ships of `List` is what it reaches: a TodoMVC's `map`, `filter` and `append` on a
 plain list are a few hundred bytes (research 59 §4.1: `indexedMap` 88, `filter` 82, `append` 188
 in context); the trie's write half ships for a program that pushes, prepends or sets past the
-thresholds outside a building loop — and **`set` past 256 elements births a trie as `cons` past
+thresholds — and **`set` past 256 elements births a trie as `cons` past
 32 does** (`backend.md` §4, *the read/write split*: "a trie is born only in a writer"), so a
 program that calls `List.update` or `List.swap` on a 1 000-row list ships the write half though
 it never prepends. The table app as written does not (`SwapRows` and `Update` are `indexedMap`,
@@ -1043,8 +1040,8 @@ All on the compiler's side, platform-independent, consumed by the `direct` lower
 4. **Ownership** (§7.4), for S7 only: per path, the two conditions, from the write-set
    interpreter's placements plus an escape scan (call arguments, lambda captures that reach a
    `Cmd`/`Sub`/stored function, view event payloads, `Debug`/`Js` arguments, `For` items).
-5. **Building loops** (§7.2): the accumulator shape of `backend.md` §8, in the backend, for both
-   platforms.
+5. ~~**Building loops** (§7.2)~~: *withdrawn 2026-10-11 by the owner* (§7.2); nothing is
+   analysed for an accumulator loop.
 
 None produces a diagnostic; every limit yields the coarse answer (the value path, the dispatcher,
 the spread, the trie, the `*` key), never an error (rule 7). Each is dumped, **from S0, before
@@ -1183,7 +1180,7 @@ true for the criterion to be met, not that it is.
 | **live rows 10 000** | ≤ 1.15× (P3: 1.25 at a 5 µs clock, with the flush) | ≤ 1.1 kB | §8.1; S4 |
 | **derived 100 000** | flat, ≤ 1.15× | ≤ 1 kB | §5.4; S4 |
 | **bursts and stream** | **the K = 1 ratio at every K**: ≤ 1.15× for all K, and the stream not worse than K = 1. With no batching, K messages cost K times the per-message path (guard, arm, spread, compares, write), so the ratio to vanilla is the one-message ratio; the 13 % win at K = 1 000 was the batching this design deletes, and before S7 every message also pays a model spread vanilla's `tick++` does not | — | §4.3; S1 |
-| **the table app** | every operation ≤ 1.2×; `select` ≤ 1.0× (the selector kept); `swap` ≤ 1.2× with the exact edit from `List.swap` or the index guards (`write-sets.md` §10.4); **and no operation slower than P3** (below) | ≤ 2× vanilla = 2 830 B: P3's own module 2 243 + core after §7.2's building loop ≈ 400 → **≈ 2 650 [estimate]**, a 6 % margin on an estimate, and the ≈ 400 holds only if the trie's write half is not reached (§7.2: the S0 stats gate measures it) | §6; S3 |
+| **the table app** | every operation ≤ 1.2×; `select` ≤ 1.0× (the selector kept); `swap` ≤ 1.2× with the exact edit from `List.swap` or the index guards (`write-sets.md` §10.4); **and no operation slower than P3** (below) | ≤ 2× vanilla = 2 830 B: P3's own module 2 243 + core ≈ 400 → **≈ 2 650 [estimate]**, a 6 % margin on an estimate, and the ≈ 400 holds only if the trie's write half is not reached (§7.2: the S0 stats gate measures it; *amended 2026-10-11*: the building-loop rule this leaned on is withdrawn, and the table app keeps the trie out by building its rows with `[ …acc, x ]`) | §6; S3 |
 | **TodoMVC** (`bench/todomvc/apps/beni/`, at **100 todos and 1 000 todos**: add one, toggle one, clear completed) | the three messages ≤ 1.2× vanilla TodoMVC at 100 todos; at 1 000, toggle-one is O(n) through the reconciler (§6.2, a `For` over a filtered list) where vanilla is O(1), so the target there is ≤ 1.3× and the measurement says what the derived-`each` precision §6.2 allows would buy | the **routing build** (the corpus page, no editing: today 10 053 B) ≤ 2× vanilla TodoMVC and below Svelte 4's 4 246 (tastejs's, persistence included) — **which depends on Q5** (§15): with the routing subscription on the fiber kernel, 1 948 B of it is the kernel (research 51 §0.2) and the target is out of reach; the sandbox build (today 5 317) is reported beside it | §6.3, §10.1; S5 |
 | **Conduit** | every key's handler bounded but `ChangedUrl`; a page message ≤ the frame's one DOM write + the page's groups | ≤ 0.7× today's 30 842 brotli, **if** the (key, group) pair count and the shared-site gate (§5.2) hold the handlers linear; the S0 stats gate gives the count | §4, §5.2; S0 for the counts, S6 for the bytes |
 
@@ -1191,7 +1188,7 @@ true for the criterion to be met, not that it is.
 the width and depth and long-list points reaching 1.15× only at S7 (in-place), which research 58
 itself ordered last. On bytes, the table app at ≤ 2× is expected to land within about a hundred
 bytes either side of the line: the renderer's share is under the bound (research 60 §4.6) and the
-rest is core's `List`, which §7.2's building loop cuts but does not remove (`append`, `get`,
+rest is core's `List`, which building in order keeps small but does not remove (`append`, `get`,
 `indexedMap`, `filter` stay). If it misses by core alone, that is reported as a finding on `List`
 for the owner and not restated (rule 10, and `compile-away.md` §6).
 
@@ -1201,8 +1198,9 @@ price of a second platform. So at S3, on the table app in one batch: the generat
 slower than P3 on any of the nine operations** (within one page's spread), **faster on `select`
 by at least 30 %** (the selector P3 dropped) and **on `swap`** (the exact edit P3 could not
 read), and **no larger than 0.85× P3's 3 454 B** (P3 with its trie and its loop removed is about
-2 900 B; the generated page must be under that, which is where §7.2's rule and §4.3's guard
-show). If any of the three fails, the design stops at S3 and the report says which mechanism
+2 900 B; the generated page must be under that, which is where building in order and §4.3's
+guard show — *amended 2026-10-11*: building in order is now the app's own code, §7.2's rule being
+withdrawn). If any of the three fails, the design stops at S3 and the report says which mechanism
 did not deliver. The same comparison is repeated at S5 on TodoMVC against the P3-shaped pages
 research 60 wrote where one exists, and at S8.
 
@@ -1298,8 +1296,9 @@ measured on both platforms, P3, vanilla and Solid 1 in one batch. The slices are
   `DetachedRowEvent`, `NestedFor`. *Kill criterion 4.*
 - **S3 — the table app, and the TodoMVC shape.** The reconciler (§6.3) for
   `replaced`/`permute`, the identity walk and the filter merge, the selector and key map with
-  their order (§6.4), helper inlining under the size gate and shared sites (§5.2, §9.2), the
-  building-loop rule (§7.2, in the backend, both platforms), `Html.map` static composition
+  their order (§6.4), helper inlining under the size gate and shared sites (§5.2, §9.2), ~~the
+  building-loop rule (§7.2, in the backend, both platforms)~~ (*withdrawn 2026-10-11 by the
+  owner*, §7.2), `Html.map` static composition
   (§9.1), the dispatcher for carriers (§4.4); the table benchmark against vanilla **and P3**
   (§13's P3 criterion), B1's part-by-part bytes on both platforms; the TodoMVC-shaped fixture
   `browser/direct/FilteredFor` measured at 100 and 1 000 todos; `browser/dom/KeyedEnds`,
@@ -1555,7 +1554,7 @@ key names. A message that maps to a `*` key is a `patchAll` dispatch.
 `--release` bundles: whether the core functions only `List`'s writers name — `fromPlain`,
 `triePrepend`, `triePushed`, `triePush`, `trieSet`, `triePop` and what they call — ship, and their
 bytes, for the table app as written, the table app with its building loop's prepend taken out
-(what S3's building-loop rule would leave), and a program whose only list write is `List.set`.
+(what S3's building-loop rule would have left; the rule was withdrawn on 2026-10-11, §7.2), and a program whose only list write is `List.set`.
 
 ### *Amended 2026-10-09 (slice S0, as built; research 65):* the platform, the hook and the floor
 
@@ -2087,8 +2086,8 @@ show. The page fuzzer runs in happy-dom and never meets the case.
 
 §6, §9 and §14 name S3's pieces; this fixes what they leave open, before a line of it is
 written, as S2's amendment did. The interface is `boundary.md` §9.4.6's version 1.9; the
-per-call facts it reads are `write-sets.md`'s amendment *a hole's facts per call*; the
-building-loop rule is `backend.md` §8's amendment *An accumulator loop builds a plain array*.
+per-call facts it reads are `write-sets.md`'s amendment *a hole's facts per call*. (This line
+named `backend.md` §8's building-loop rule too; the owner withdrew it on 2026-10-11, §7.2.)
 
 **What S3 compiles.** Every keyed `For` S2 refused for its tag: `permute`, `replaced`, an
 untagged `value` write at or above the list, a derived `each`, `kept [*]` (the identity walk),
