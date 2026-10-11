@@ -2256,3 +2256,12 @@ generates, for a list payload whose elements are records with an `Int` or a `Str
 drawn from what the page shows as well as fresh ones — the shown values in another order (a
 permutation), a subsequence (a filter), a value repeated (duplicate keys) — and each
 `browser/direct/` page keeps its value-fuzz case within the budget alone, as S2 set up.
+
+### *Amended 2026-10-11 (slice S3, as measured; research 70):* kill criterion 5 fires
+
+S3 is built (research 70 §0), its fixtures pass on both platforms, and the building-loop rule
+is withdrawn (§7.2). Measured in one batch on the table app: **4 524 B** brotli with a non-core
+part of 3 783 B (bars 2 830 and 2 400), and the swap at **2.13× vanilla and 2.6× P3**, because
+*Rank* hands `SwapRows`' two rekeys to the general reconciler; `select` is 0.60× vanilla but
+only 24 % faster than P3. Kill criterion 5 and the P3 criterion both fail, so by §13 the design
+stops at S3 until the owner decides; nothing was tuned around the result.
