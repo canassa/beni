@@ -180,8 +180,9 @@ pub fn check(in: Input) Error!Check.Counters {
     // switch only where it reaches (`Key.informationalReaches`): a gate
     // below that read the run's switch instead would make an entry replay
     // warnings its key does not account for.
-    const root = in.graph.modulePackage(in.module) == .app;
-    const informational = Key.informationalReaches(in.informational, in.explain, in.graph.modulePackage(in.module));
+    const package = in.graph.modulePackage(in.module);
+    const root = package == .app;
+    const informational = Key.informationalReaches(in.informational, in.explain, package);
     var discards: std.ArrayList(Context.Discard) = .empty;
     defer discards.deinit(scratch);
     // `unit_discarded` (checker-v2.md §34): the root package's, and under
