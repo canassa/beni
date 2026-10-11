@@ -91,6 +91,16 @@ at 1 000 as S5's TodoMVC target; this shape is above both now.
 - **The swap bar the owner moved to S7** (≤ 1.15× vanilla and no slower than P3 until S7) is the
   rows sweep's; the table app's swap misses it too, and its cause is not the model's
   `List.swap` but the reconciler the rank rule falls back to.
+- **The owner's verdict (2026-10-11): deferred, not accepted.** A size investigation by
+  leave-one-out brotli measurement found the miss is not compiling away: the per-message and
+  per-site code is ≈ 200 B, less than vanilla's hand-written DOM methods (≈ 500 B). The gap is
+  the persistent `List` (741 B; building rows reaches the trie), the general reconciler used as
+  the universal fallback (715 B; P3's whole `reconcile` is 406 B), one runtime script per write
+  shape plus a key map (≈ 460 B), mount checks and prose errors (275 B), and the page markup
+  vanilla keeps in its HTML (219 B). Fixable emission waste is ≈ 260 B. If the ownership
+  thesis (`docs/thesis/ownership/`) holds, a `List` becomes a plain array edited in place and
+  the library's cost mostly disappears, so the bar is judged again on a measurement of direct
+  with native arrays, a P3-sized reconciler and the waste removed.
 
 ## 5. What the withdrawn rule changes
 
