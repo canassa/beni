@@ -1,0 +1,10 @@
+name = "ownership"
+version = "0.1.0"
+defaultTargets = ["ownership"]
+
+[[lean_lib]]
+name = "Ownership"
+
+[[lean_exe]]
+name = "ownership"
+root = "Main"

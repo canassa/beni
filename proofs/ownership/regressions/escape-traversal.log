@@ -1,0 +1,45 @@
+T1 arguments: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T1 capture: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T2: expected=true actual=true
+T3: expected=false actual=false Except.error "Unescaped: shared cell"
+T5: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T7: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T8 A: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T8 C: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T10: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T11: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T12: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T15: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T17 record: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T17 operand: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T21: expected=false actual=false Except.error "Unescaped: shared cell"
+T23: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T24: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T31: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T32 key/value projection: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T33 kept version: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T33 copied version: expected=true actual=true
+T37 grid ownership: expected=true actual=true
+T40 record shape: expected=true actual=true
+T46 shared: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T46 capture: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T46 borrowed element: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T48 duplicate slots: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T48 distinct slots: expected=true actual=true
+T52 spine identity projection: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T52 copied spine projection: expected=true actual=true
+T53 top-level: expected=false actual=false Except.error "Unescaped: shared cell"
+T55 explicit call projection: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T56 mapping projection: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T57 distinct: expected=true actual=true
+T57 repeated: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T59 initialize shared: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T59 initialize distinct: expected=true actual=true
+T59 map shared: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T59 map distinct: expected=true actual=true
+generated map old-rule regression: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+generated initialize old-rule regression: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+escape ordinary call: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
+escape traversal RED: expected=false actual=true
+UNEXPECTED VERDICT; intended verdict retained. types=Except.ok (Ownership.Ty.list (Ownership.Ty.int))
+fixtures=43 passed=false
