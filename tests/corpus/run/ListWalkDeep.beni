@@ -1,12 +1,14 @@
 -- run: a walk by `[ x, ...rest ]` over 100 000 elements, the list carried
 -- in a record rather than as the walk's own parameter, over each form a
 -- list takes (`backend.md` §7, *List patterns over arrays*): a plain list,
--- whose `rest` is a view; a view; a trie built by `push`, whose tail is a
--- trie that copies at most 31 elements once every 32 steps; and a trie
--- built by prepending, whose tail inside its head is a new header. Each
--- step is O(1), so the walk is linear, and it is a tail call, so a loop
+-- whose `rest` is a view; a view; and a trie built by `push`, whose tail is
+-- a trie that copies at most 31 elements once every 32 steps. Each step is
+-- O(1), so the walk is linear, and it is a tail call, so a loop
 -- (`backend.md` §8). A second walk takes two elements a step,
 -- `[ a, b, ...rest ]`, so a tail that starts past a head's count too.
+-- A trie built by prepending was a fourth form until 2026-10-11, when a
+-- prepend became a copy that makes a plain list (`backend.md` §4, *The
+-- claimable head*, amended): there is no such trie left to walk.
 --
 -- `backend.md` §8's scalar views, which turn a walk of a function's OWN
 -- list parameter into an index loop, do not apply here: the list is a
@@ -50,10 +52,6 @@ pushed : List Int
 pushed = List.foldl (List.range 1 size) [] λn acc → List.push acc n
 
 
-prepended : List Int
-prepended = List.foldr (List.range 1 size) [] λn acc → [ n, …acc ]
-
-
 viewOf : List Int → List Int
 viewOf xs =
     case xs of
@@ -85,5 +83,4 @@ main =
         [ show "plain" (List.range 1 size)
         , show "view" (viewOf (List.range 0 size))
         , show "pushed" pushed
-        , show "prepended" prepended
         ]

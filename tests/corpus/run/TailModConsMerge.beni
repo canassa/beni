@@ -4,6 +4,11 @@
 -- of the loop and the two `[]` rows return the other list as the rest of the
 -- result. `mergeSort`'s own recursion is only as deep as the split, but
 -- `merge`'s was as deep as the output, and overflowed at 100 000.
+--
+-- `split` builds its halves by pushing, `[ …left, x ]`: a prepend copies
+-- the list (`language.md` §6.8, amended 2026-10-11), so a split that
+-- prepended would be quadratic in its own right. Which element lands in
+-- which half, and in what order, does not change what the sort returns.
 import List
 import Node exposing (Program)
 import String
@@ -31,7 +36,7 @@ split xs left right =
             ( left, right )
 
         [ x, …rest ] →
-            split rest right [ x, …left ]
+            split rest right [ …left, x ]
 
 
 merge : List Int, List Int → List Int
