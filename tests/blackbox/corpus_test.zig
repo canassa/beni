@@ -1355,6 +1355,29 @@ const Case = struct {
         return true;
     }
 
+    /// Whether the diagnostics a build or check of a fixture that must
+    /// compile printed, `stderr`, are accounted for. A `warning` is
+    /// legitimate output from a program that compiles, so a `run/`,
+    /// `emit/`, `browser/` or `writes/` fixture MAY carry a `.diag` golden
+    /// and then its warnings are compared with it byte for byte, as a
+    /// `check/good` fixture's are — the case it exists for is a fixture that
+    /// prepends in a loop on purpose and so meets `prepend_in_loop`
+    /// (checker-v2.md §35). Without the golden it must be silent, and a
+    /// golden on a silent fixture is refused, so a fixture can neither start
+    /// warning unnoticed nor keep a golden that says nothing.
+    fn warningsAccounted(c: Case, stderr: []const u8) !bool {
+        if (stderr.len == 0) {
+            if (c.goldenExists("diag") and !c.bless) {
+                detail("{s}: a fixture that compiles silently must not have a .diag golden\n", .{c.fixture.name});
+                return error.UnexpectedDiagGolden;
+            }
+            return true;
+        }
+        if (!c.goldenExists("diag") and !c.bless) return false;
+        try c.expectGolden("diag", stderr);
+        return true;
+    }
+
     /// Run the compiler in the repo root (fixtures are referenced by their
     /// repo-relative path, which is also what appears in diagnostics).
     fn compiler(c: Case, args: []const []const u8) !world.Result {
@@ -2112,8 +2135,8 @@ const Case = struct {
             because("[{s}] build exit {d}: {s}: {s}", .{ pass_name, built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
             return error.BuildFailed;
         }
-        if (built.stderr.len != 0) {
-            detail("{s} [{s}]: a browser fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass_name, built.stderr });
+        if (!try c.warningsAccounted(built.stderr)) {
+            detail("{s} [{s}]: a browser fixture must compile with no diagnostics but those of its .diag\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass_name, built.stderr });
             return error.GoodFixtureHasDiagnostics;
         }
         const chrome = c.cfg.chrome != null;
@@ -2416,8 +2439,8 @@ const Case = struct {
             classify("{s}: {s}", .{ passName(out_dir), failSignature(c.arena, built) });
             return error.BuildFailed;
         }
-        if (built.stderr.len != 0) {
-            detail("{s} [{s}]: a run fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stderr });
+        if (!try c.warningsAccounted(built.stderr)) {
+            detail("{s} [{s}]: a run fixture must compile with no diagnostics but those of its .diag\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stderr });
             because("[{s}] diagnostics on a build that must be clean: {s}", .{ out_dir, summarize(c.arena, built.stderr) });
             classify("{s}: {s}", .{ passName(out_dir), failSignature(c.arena, built) });
             return error.GoodFixtureHasDiagnostics;
@@ -2567,8 +2590,8 @@ const Case = struct {
             because("build exit {d}: {s}: {s}", .{ built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
             return error.BuildFailed;
         }
-        if (built.stderr.len != 0) {
-            detail("{s}: an emit fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stderr });
+        if (!try c.warningsAccounted(built.stderr)) {
+            detail("{s}: an emit fixture must compile with no diagnostics but those of its .diag\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stderr });
             return error.GoodFixtureHasDiagnostics;
         }
 
@@ -2644,8 +2667,8 @@ const Case = struct {
             try c.fixturePath();
         const checked = try c.compiler(&.{ "check", "--platform=browser-tea", path });
         try expectExit(0, checked);
-        if (checked.stderr.len != 0) {
-            detail("{s}: a writes fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
+        if (!try c.warningsAccounted(checked.stderr)) {
+            detail("{s}: a writes fixture must produce no diagnostics but those of its .diag\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
             return error.GoodFixtureHasDiagnostics;
         }
         var args: std.ArrayList([]const u8) = .empty;

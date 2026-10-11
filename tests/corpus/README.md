@@ -24,6 +24,15 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `browser/` | `build --platform=tests/platforms/page`, then the program in a page, driven by `<name>.steps` | `<name>.expected` | the second boundary in a DOM: the page after the load and after each step |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
+**Warnings on a fixture that compiles.** A `check/good/`, `writes/`,
+`emit/`, `run/` or `browser/` fixture must compile silently, unless it
+carries a `.diag` golden (`_expected.diag` in a project): then the warnings
+its compile prints are compared with it byte for byte, and a `.diag` on a
+fixture that compiles silently is refused. It exists for a program that
+means what a warning is about — a fixture that prepends in a loop on
+purpose meets `prepend_in_loop` (`checker-v2.md` §35) — so the warning is
+pinned rather than hidden.
+
 The two `check/` kinds also take a **directory** as one fixture: every
 `.beni` under it is a module of one project, and the golden is
 `<name>/_expected.iface` or `<name>/_expected.diag`. Cross-module
