@@ -193,7 +193,11 @@ decl_scheme: []const Var.Optional = &.{},
 /// P3's own-name index: every value of this module by name, sorted by
 /// symbol (§5).
 own_values: []const OwnValue = &.{},
-/// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
+/// The root package's informational warnings are emitted in this module:
+/// `ambiguous_method_receiver` (static-dispatch-spike.md §10.9), and
+/// `unkeyed_for` and `raw_markup_attribute` (checker-v2.md §25), "on by
+/// default for the root package only" (language.md §10). False in a core
+/// or a platform module, whose cache key does not carry the switch.
 informational: bool = false,
 
 pub const OwnValue = struct { name: InternPool.Symbol, decl: u32 };

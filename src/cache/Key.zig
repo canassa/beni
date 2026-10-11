@@ -346,11 +346,26 @@ pub const OptionBits = struct {
     core: bool,
     /// `Lower.Options.platform` for this module's file.
     platform: bool,
+    /// The informational switch as it reaches THIS module
+    /// (`informationalReaches`), not the run's.
     informational: bool,
     /// `--explain` (frontend.md §11.9): a module's cached warnings differ.
     explain: bool = false,
     pattern_budget: u32,
 };
+
+/// Whether the run's informational switch reaches a module of `package`:
+/// every warning it turns on is the root package's, and `--explain` extends
+/// two of them (`unit_discarded`, `prepend_in_loop`) to every package
+/// (`check/Module.zig`, which asks this same function). So a core or a
+/// platform module produces the same record with the switch on or off unless
+/// `--explain` is given, and its key carries the bit only then — which is
+/// what lets `dump`, run without the switch, hit the checked core
+/// (`fast-compiler.md` §8, *The option string*, amended 2026-10-11). The
+/// permission bits' argument, again: a sharper key is smaller, never wronger.
+pub fn informationalReaches(informational: bool, explain: bool, package: SourceStore.Package) bool {
+    return informational and (explain or package == .app);
+}
 
 /// Room for `core=0;platform=0;informational=0;explain=0;pattern_budget=` and ten
 /// digits, with slack.
@@ -537,7 +552,7 @@ fn ownTermsOf(
     const option_string = writeOptions(&options_buffer, .{
         .core = file.int() < options.lower_core.len and options.lower_core[file.int()],
         .platform = file.int() < options.lower_platform.len and options.lower_platform[file.int()],
-        .informational = options.informational,
+        .informational = informationalReaches(options.informational, options.explain, graph.modulePackage(m)),
         .explain = options.explain,
         .pattern_budget = options.pattern_budget,
     });
