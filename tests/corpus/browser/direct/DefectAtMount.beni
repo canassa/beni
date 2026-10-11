@@ -4,7 +4,10 @@
 -- missing element is thrown before it renders anything, and the third is
 -- never mounted. The development build shows the crash screen with the
 -- error the host reported; the release build adds nothing
--- (`DefectAtMount.release-expected`).
+-- (`DefectAtMount.release-expected`), and on `browser-direct` its error
+-- says the fault in a few words, where `browser-tea`'s keeps the prose
+-- (`DefectAtMount.tea-release-expected`; browser-direct.md §8.4, as amended
+-- for the lean slice).
 import Browser
 import Html exposing (Html)
 import Tea

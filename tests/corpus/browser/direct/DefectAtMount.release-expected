@@ -1,5 +1,5 @@
 -- throws load
-(threw: Error: no element has the id "nowhere" to mount a program at)
+(threw: Error: cannot mount at nowhere)
 <body>
   <p>"first"</p>
 </body>

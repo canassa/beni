@@ -1,5 +1,5 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
-import { Direct$unset, Direct$append, Direct$delegate, Direct$mount, Direct$adopt, Direct$wrong, Direct$safeUrl, Direct$same, Direct$verifyList, Direct$verify } from "./_platform/Direct.mjs";
+import { Direct$unset, Direct$append, Direct$delegate, Direct$adopt, Direct$wrong, Direct$safeUrl, Direct$same, Direct$verifyList, Direct$verify } from "./_platform/Direct.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 import { List$push } from "./_core/List.mjs";
 const BakedList$main = Tea$sandbox(($root$1, $t$2) => {
@@ -23,7 +23,7 @@ const BakedList$main = Tea$sandbox(($root$1, $t$2) => {
     const $w$24 = $w$23.firstChild;
     const $w$25 = $w$23.nextSibling;
     const $w$26 = $w$25.firstChild;
-    const $r$27 = { e: $e$22, it: $it$19, l: $L$20, w2: $w$24, w3: $w$25, w4: $w$26 };
+    const $r$27 = { e: $e$22, it: $it$19, l: 1, w2: $w$24, w3: $w$25, w4: $w$26 };
     $e$22.$r = $r$27;
     $e$22.$v = $L$20;
     $w$25.$click = $l$18;
@@ -57,11 +57,11 @@ const BakedList$main = Tea$sandbox(($root$1, $t$2) => {
   };
   {
   }
-  Direct$delegate($L$39, $w$10, "click", "$click");
+  Direct$delegate(1, $w$10, "click", "$click");
   {
     const $t$46 = $model$6.opened;
     const $xs$47 = $t$46;
-    Direct$mount($L$38, $xs$47);
+    Direct$append($L$38, $xs$47);
   }
   {
     const $t$48 = $model$6.menu;

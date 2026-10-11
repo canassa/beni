@@ -1,5 +1,5 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
-import { Direct$unset, Direct$send, Direct$identity, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
+import { Direct$unset, Direct$on, Direct$identity, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 const MessageKeys$A = { $: "A", a: null };
@@ -82,81 +82,73 @@ const MessageKeys$main = Tea$sandbox(($root$1, $t$2) => {
     $model$4 = $t$35;
     $g$26();
   };
-  const $dispatch$44 = ($msg$53) => {
-    if ($msg$53.$ === "Typed") {
-      $hTyped$29($msg$53.a);
+  const $dispatch$43 = ($msg$49) => {
+    if ($msg$49.$ === "Typed") {
+      $hTyped$29($msg$49.a);
       return;
     }
-    if ($msg$53.$ === "Clicked") {
+    if ($msg$49.$ === "Clicked") {
       $hClicked$30();
       return;
     }
-    if ($msg$53.$ === "Nested" && $msg$53.a.$ === "A") {
-      $hNested$A$33($msg$53);
+    if ($msg$49.$ === "Nested" && $msg$49.a.$ === "A") {
+      $hNested$A$33($msg$49);
       return;
     }
-    $hNested$B$36($msg$53);
+    $hNested$B$36($msg$49);
   };
   {
     const $l$39 = ($e$37) => {
       const $payload$38 = Html$targetValue($e$37);
       $hTyped$29($payload$38);
     };
-    $w$7.addEventListener("input", ($e$40) => {
-      Direct$send($l$39, $e$40);
-    });
-    const $l$45 = ($e$41) => {
-      const $payload$42 = Direct$identity($e$41);
-      $dispatch$44((($p$43) => MessageKeys$Clicked)($payload$42));
+    Direct$on($w$7, "input", $l$39);
+    const $l$44 = ($e$40) => {
+      const $payload$41 = Direct$identity($e$40);
+      $dispatch$43((($p$42) => MessageKeys$Clicked)($payload$41));
     };
-    $w$12.addEventListener("click", ($e$46) => {
-      Direct$send($l$45, $e$46);
-    });
+    Direct$on($w$12, "click", $l$44);
+    const $l$46 = ($e$45) => {
+      $dispatch$43({ $: "Nested", a: MessageKeys$A });
+    };
+    Direct$on($w$13, "click", $l$46);
     const $l$48 = ($e$47) => {
-      $dispatch$44({ $: "Nested", a: MessageKeys$A });
+      $dispatch$43({ $: "Nested", a: { $: "B", a: 7 } });
     };
-    $w$13.addEventListener("click", ($e$49) => {
-      Direct$send($l$48, $e$49);
-    });
-    const $l$51 = ($e$50) => {
-      $dispatch$44({ $: "Nested", a: { $: "B", a: 7 } });
-    };
-    $w$14.addEventListener("click", ($e$52) => {
-      Direct$send($l$51, $e$52);
-    });
+    Direct$on($w$14, "click", $l$48);
   }
   $g$21();
   $g$23();
   $g$26();
   $root$1.append($r$5);
   Direct$verify(() => {
-    const $t$54 = $model$4.text;
-    const $t$55 = $model$4.clicks > 1 ? "many" : "few";
-    const $t$56 = String$fromInt($model$4.clicks);
-    const $t$57 = String$fromInt($model$4.sub);
-    if (!Direct$same($t$54, $s$17)) {
-      Direct$wrong("the text hole at MessageKeys.beni:51:22", $s$17, $t$54);
+    const $t$50 = $model$4.text;
+    const $t$51 = $model$4.clicks > 1 ? "many" : "few";
+    const $t$52 = String$fromInt($model$4.clicks);
+    const $t$53 = String$fromInt($model$4.sub);
+    if (!Direct$same($t$50, $s$17)) {
+      Direct$wrong("the text hole at MessageKeys.beni:51:22", $s$17, $t$50);
     }
-    if ($w$9.data !== `${$t$54}`) {
-      Direct$wrong("the text hole at MessageKeys.beni:51:22 in the document", $w$9.data, `${$t$54}`);
+    if ($w$9.data !== `${$t$50}`) {
+      Direct$wrong("the text hole at MessageKeys.beni:51:22 in the document", $w$9.data, `${$t$50}`);
     }
-    if (!Direct$same($t$55, $s$18)) {
-      Direct$wrong("the attribute `class` at MessageKeys.beni:52:24", $s$18, $t$55);
+    if (!Direct$same($t$51, $s$18)) {
+      Direct$wrong("the attribute `class` at MessageKeys.beni:52:24", $s$18, $t$51);
     }
-    if ($w$10.getAttribute("class") !== `${$t$55}`) {
-      Direct$wrong("the attribute `class` at MessageKeys.beni:52:24 in the document", $w$10.getAttribute("class"), `${$t$55}`);
+    if ($w$10.getAttribute("class") !== `${$t$51}`) {
+      Direct$wrong("the attribute `class` at MessageKeys.beni:52:24 in the document", $w$10.getAttribute("class"), `${$t$51}`);
     }
-    if (!Direct$same($t$56, $s$19)) {
-      Direct$wrong("the text hole at MessageKeys.beni:53:13", $s$19, $t$56);
+    if (!Direct$same($t$52, $s$19)) {
+      Direct$wrong("the text hole at MessageKeys.beni:53:13", $s$19, $t$52);
     }
-    if ($w$11.data !== `${$t$56}`) {
-      Direct$wrong("the text hole at MessageKeys.beni:53:13 in the document", $w$11.data, `${$t$56}`);
+    if ($w$11.data !== `${$t$52}`) {
+      Direct$wrong("the text hole at MessageKeys.beni:53:13 in the document", $w$11.data, `${$t$52}`);
     }
-    if (!Direct$same($t$57, $s$20)) {
-      Direct$wrong("the text hole at MessageKeys.beni:58:21", $s$20, $t$57);
+    if (!Direct$same($t$53, $s$20)) {
+      Direct$wrong("the text hole at MessageKeys.beni:58:21", $s$20, $t$53);
     }
-    if ($w$16.data !== `${$t$57}`) {
-      Direct$wrong("the text hole at MessageKeys.beni:58:21 in the document", $w$16.data, `${$t$57}`);
+    if ($w$16.data !== `${$t$53}`) {
+      Direct$wrong("the text hole at MessageKeys.beni:58:21 in the document", $w$16.data, `${$t$53}`);
     }
   });
 });

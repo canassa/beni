@@ -1204,6 +1204,13 @@ withdrawn). If any of the three fails, the design stops at S3 and the report say
 did not deliver. The same comparison is repeated at S5 on TodoMVC against the P3-shaped pages
 research 60 wrote where one exists, and at S8.
 
+*Amended 2026-10-11 (the owner):* **the `select` test is accepted as met** by what research 70 §7
+measured — lean direct's `select` 18–25 % faster than P3 and 0.70× vanilla, its bytes 45 % under
+P3's, its swap tied with P3's. The owner accepted the result as it stands: the 30 % is no longer
+a stop condition for S3's lean slice or after it. Each later batch still reports `select` against
+P3, and the other two tests (no operation slower than P3, bytes under 0.85× P3) and kill
+criterion 5's bars hold as written.
+
 **Kill criteria, so the design fails early and not as "P3 again"**, checked at the slice named:
 
 1. **S0, the stats gate** (analysis only, no lowering needed — the numbers §11 dumps, over
@@ -2265,3 +2272,75 @@ part of 3 783 B (bars 2 830 and 2 400), and the swap at **2.13× vanilla and 2.6
 *Rank* hands `SwapRows`' two rekeys to the general reconciler; `select` is 0.60× vanilla but
 only 24 % faster than P3. Kill criterion 5 and the P3 criterion both fail, so by §13 the design
 stops at S3 until the owner decides; nothing was tuned around the result.
+
+### *Amended 2026-10-11 (the lean slice, as specified):* the runtime slimmed, the swap one edit
+
+The owner deferred kill criterion 5 (research 70 §4) for a measurement of direct with a
+P3-sized reconciler, exact edits and the emission waste removed; research 70 §7's hand-written
+lean direct priced that at ≈ 2.9 kB with the persistent `List` kept. This slice makes the
+compiler emit it, keeping every guarantee of §8 and of S3's amendment — rank (CK-221), the verify
+mode, the value fuzz, the defect rule, and the two platforms as each other's oracle (§12.3). What
+changes, against S3's amendment above:
+
+- **The reconciler** (§6.3) keeps S3's contract — rank-correct for any list, the new rows made and
+  the kept rows patched in `browser-tea`'s order, `browser-tea`'s moves (udomdiff over rows, so a
+  focus stays or goes as it does there), the replacement that empties an owned parent — and loses
+  its two matchers: the rows kept in place at the start, then one matcher for every list, a map from
+  each key to its first old row left and a link from each old row to the next with its key; an
+  item takes its key's first row left (its rank's). Whether a key repeated (among the old rows or
+  the new items) only picks the make-and-patch order, as before. The S3 matchers' end trimming
+  and their second, ranked, pass go. A reconcile that finds no row is `append` (below).
+- **One loop makes rows.** The mount's rows, an `append`'s, a reconcile from none and the
+  positional pass's new rows are all `Direct.append`; `Direct.mount` goes.
+- **A swap is one edit** (§6.2, `write-sets.md` §10.4). A key whose edits of a keyed list are
+  element writes at exactly two evaluable indices whose rows may take other keys (the table app's
+  `SwapRows`: an `indexedMap` with index guards) is one `Direct.exchange(L, xs, i, j, f)`, its keys
+  checked once, after both writes: each row keeping its key is patched where its item changed;
+  two rows that exchanged their keys while the list keeps its key map and every key is one row's
+  (`d` is 0) trade places — §6.2's swap, two `insertBefore`s, one for neighbours — and are then
+  patched where their item changed; anything else, a key that repeats among them, is the
+  reconcile, rank-correct for any list. *Rank*'s refusal of the intermediate state (one write
+  applied, a key held twice) no longer arises: the state checked is the message's last.
+- **The visit a runtime function is handed is a name where one exists**: the list's whole-row
+  patch `w` where the visit patches every live group, the group's own function where it calls one,
+  a function of its own only otherwise.
+- **The descriptor is the program's own.** A row's instance carries its list's number (`l`, a
+  number among the page's `For`s) for the delegated walk (§4.2), not the descriptor, so the
+  descriptor of a list of the view's root does not escape to the DOM and the release optimiser's
+  facts (`backend.md` §9, facts 3–4) fold its constant fields — `o`, `i`, a `null` end marker, the
+  key function — into the runtime functions the page reaches. `sameKey`'s `NaN` test goes: a key
+  that is not `===` itself reaches the reconcile, whose map holds `NaN` as one key.
+- **A listener outside a list with no flags** (§4.2) is `Direct.on(el, name, h)`, one shared
+  function; `h` is the key's handler itself where the body only calls it with nothing (no payload,
+  no field, every call written in place on the way given constants: the table app's buttons).
+- **The dispatch queue is paid for where a send can arrive during a dispatch** (§4.3): a page with
+  a listener for an event a DOM write fires as it is made — anything but a pointer's, a key's, a
+  form's input and the like, which the user alone fires; `blur` when a focused node is removed is
+  the case — calls `Direct.reentrant()` at its mount, and the guard queues. On any other page no
+  such send can come, the release optimiser folds the queue away, and one that came anyway would
+  be a defect of beni: the page stops (§8.2) rather than drop the message.
+- **Errors at the mount are short in a release build** (§8.2, §8.4): `mounted twice`, `cannot mount
+  at <id>`; the development build keeps the prose. `browser-tea`'s release keeps its own
+  (`DefectAtMount.tea-release-expected`).
+- **Unchanged**: the key map's rule (S3: kept where a selector or a script needing distinct keys
+  is reached — the table app reaches both), the merge, the identity walk, the selector visit, the
+  verify mode's checks.
+
+New fixtures: `browser/direct/ExchangeRows` (the swap as one exchange, a focused row no edit
+touches keeping the focus, then a key that repeats sending the swap to the reconcile, rank-correct)
+and `ReconcileMoves` (a row moved alone, crossed ends, a reversal, a replacement keeping the middle
+row's node), each on both platforms against one golden; `emit/release/direct/TableSwap` (the
+exchange, `on` with the handler, no test of `o` or `i`, no queue).
+
+### *Amended 2026-10-12 (the lean slice, as measured; research 73):* faster everywhere, 4.1 kB
+
+Built as specified above, with one change found by measurement: a reconcile that finds no row
+keeps S3's straight insertion of each row (a fragment there read 1.07× S3 on `create10k`). The
+table app is **4 080 B** brotli (3 872 with the markup in the HTML; S3 4 524 / 4 305), non-core
+3 348, core 732; every operation at or under S3 within its spread, `swap` 0.11 ms (S3 1.01; the
+same fast and slow sample groups as vanilla), `select` 0.67× vanilla and 0.80× P3. Kill criterion
+5 still fires on bytes, and the P3 criterion fails on bytes only. The gap to research 70 §7's
+2.9 kB is the guarantees this platform keeps and the prototype did not — rank-correct duplicates
+and their key map, `browser-tea`'s moves (P3's would save 140 B and make the focus differ from
+the oracle on eleven pages of the 50-seed sweep), the defect guard, several programs per page —
+and the persistent `List`; research 73 §5 lists what the owner decides.

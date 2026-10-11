@@ -1,5 +1,5 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
-import { Direct$unset, Direct$insertText, Direct$keyMap, Direct$row, Direct$rekey, Direct$swap, Direct$append, Direct$prepend, Direct$clear, Direct$insert, Direct$removeAt, Direct$each, Direct$positional, Direct$send, Direct$delegate, Direct$mount, Direct$wrong, Direct$same, Direct$verifyList, Direct$verify } from "./_platform/Direct.mjs";
+import { Direct$unset, Direct$insertText, Direct$keyMap, Direct$row, Direct$rekey, Direct$swap, Direct$append, Direct$prepend, Direct$clear, Direct$insert, Direct$removeAt, Direct$each, Direct$positional, Direct$on, Direct$delegate, Direct$wrong, Direct$same, Direct$verifyList, Direct$verify } from "./_platform/Direct.mjs";
 import { List$update, List$set, List$swap, List$push, List$cons, List$insertAt, List$removeAt, List$reverse } from "./_core/List.mjs";
 const ListScripts$fresh = (model$1, label$2) => ({ id: model$1.next, label: label$2 });
 const ListScripts$main = Tea$sandbox(($root$1, $t$2) => {
@@ -68,7 +68,7 @@ const ListScripts$main = Tea$sandbox(($root$1, $t$2) => {
     const $w$66 = $w$65.nextSibling;
     const $x$67 = Direct$insertText($e$64, $w$65, "");
     const $x$68 = Direct$insertText($e$64, $w$66, "");
-    const $r$69 = { e: $e$64, it: $it$61, l: $L$62, x1: $x$67, x2: $x$68, s1: Direct$unset, s2: Direct$unset };
+    const $r$69 = { e: $e$64, it: $it$61, l: 0, x1: $x$67, x2: $x$68, s1: Direct$unset, s2: Direct$unset };
     $e$64.$r = $r$69;
     $e$64.$v = $L$62;
     $e$64.$click = $l$53;
@@ -167,134 +167,97 @@ const ListScripts$main = Tea$sandbox(($root$1, $t$2) => {
       Direct$removeAt($L$75, $xs$117, $k$115);
     }
   };
-  const $hMark$121 = () => {
+  const $hMark$120 = () => {
     $model$20 = { ...$model$20, mark: `${$model$20.mark}*` };
     {
       const $t$118 = $model$20.rows;
       const $xs$119 = $t$118;
-      Direct$each($L$75, $xs$119, ($r$120) => {
-        $g$41($r$120);
-      });
+      Direct$each($L$75, $xs$119, $g$41);
     }
   };
-  const $hReverse$124 = () => {
+  const $hReverse$123 = () => {
     $model$20 = { ...$model$20, plain: List$reverse($model$20.plain) };
     {
-      const $t$122 = $model$20.plain;
-      const $xs$123 = $t$122;
-      Direct$positional($L$79, $xs$123, $W$71);
+      const $t$121 = $model$20.plain;
+      const $xs$122 = $t$121;
+      Direct$positional($L$79, $xs$122, $W$71);
     }
   };
   {
-    const $l$126 = ($e$125) => {
+    const $l$125 = ($e$124) => {
       $hEdit$86(1, "edited");
     };
-    $w$25.addEventListener("click", ($e$127) => {
-      Direct$send($l$126, $e$127);
-    });
-    const $l$129 = ($e$128) => {
+    Direct$on($w$25, "click", $l$125);
+    const $l$127 = ($e$126) => {
       $hSet$92(0);
     };
-    $w$26.addEventListener("click", ($e$130) => {
-      Direct$send($l$129, $e$130);
-    });
-    const $l$132 = ($e$131) => {
+    Direct$on($w$26, "click", $l$127);
+    const $l$129 = ($e$128) => {
       $hSwap$99(0, 2);
     };
-    $w$27.addEventListener("click", ($e$133) => {
-      Direct$send($l$132, $e$133);
-    });
-    const $l$135 = ($e$134) => {
-      $hAppend$102();
-    };
-    $w$28.addEventListener("click", ($e$136) => {
-      Direct$send($l$135, $e$136);
-    });
-    const $l$138 = ($e$137) => {
-      $hPrepend$105();
-    };
-    $w$29.addEventListener("click", ($e$139) => {
-      Direct$send($l$138, $e$139);
-    });
-    const $l$141 = ($e$140) => {
-      $hClear$108();
-    };
-    $w$30.addEventListener("click", ($e$142) => {
-      Direct$send($l$141, $e$142);
-    });
-    const $l$144 = ($e$143) => {
+    Direct$on($w$27, "click", $l$129);
+    Direct$on($w$28, "click", $hAppend$102);
+    Direct$on($w$29, "click", $hPrepend$105);
+    Direct$on($w$30, "click", $hClear$108);
+    const $l$134 = ($e$133) => {
       $hInsert$113(1);
     };
-    $w$31.addEventListener("click", ($e$145) => {
-      Direct$send($l$144, $e$145);
-    });
-    const $l$147 = ($e$146) => {
+    Direct$on($w$31, "click", $l$134);
+    const $l$136 = ($e$135) => {
       $hRemove$52(1);
     };
-    $w$32.addEventListener("click", ($e$148) => {
-      Direct$send($l$147, $e$148);
-    });
-    const $l$150 = ($e$149) => {
-      $hMark$121();
-    };
-    $w$33.addEventListener("click", ($e$151) => {
-      Direct$send($l$150, $e$151);
-    });
-    const $l$153 = ($e$152) => {
-      $hReverse$124();
-    };
-    $w$34.addEventListener("click", ($e$154) => {
-      Direct$send($l$153, $e$154);
-    });
+    Direct$on($w$32, "click", $l$136);
+    Direct$on($w$33, "click", $hMark$120);
+    Direct$on($w$34, "click", $hReverse$123);
   }
-  Direct$delegate($L$75, $w$35, "click", "$click");
+  Direct$delegate(0, $w$35, "click", "$click");
   {
-    const $t$155 = $model$20.rows;
-    const $xs$156 = $t$155;
-    Direct$mount($L$75, $xs$156);
+    const $t$139 = $model$20.rows;
+    const $xs$140 = $t$139;
+    Direct$append($L$75, $xs$140);
   }
   {
-    const $t$157 = $model$20.plain;
-    const $xs$158 = $t$157;
-    Direct$mount($L$79, $xs$158);
+    const $t$141 = $model$20.plain;
+    const $xs$142 = $t$141;
+    Direct$append($L$79, $xs$142);
   }
   $root$1.append($r$23);
-  const $check$161 = ($r$159) => {
-    const $it$160 = $r$159.it;
-    if (!Direct$same($it$160, $r$159.s0)) {
-      Direct$wrong("the text hole at ListScripts.beni:96:61", $r$159.s0, $it$160);
+  const $check$145 = ($r$143) => {
+    const $it$144 = $r$143.it;
+    if (!Direct$same($it$144, $r$143.s0)) {
+      Direct$wrong("the text hole at ListScripts.beni:96:61", $r$143.s0, $it$144);
     }
-    if ($r$159.w1.data !== `${$it$160}`) {
-      Direct$wrong("the text hole at ListScripts.beni:96:61 in the document", $r$159.w1.data, `${$it$160}`);
+    if ($r$143.w1.data !== `${$it$144}`) {
+      Direct$wrong("the text hole at ListScripts.beni:96:61 in the document", $r$143.w1.data, `${$it$144}`);
     }
   };
-  const $check$166 = ($r$162) => {
-    const $it$163 = $r$162.it;
-    const $t$164 = $it$163.label;
-    const $t$165 = $model$20.mark;
-    if (!Direct$same($t$164, $r$162.s1)) {
-      Direct$wrong("the text hole at ListScripts.beni:92:49", $r$162.s1, $t$164);
+  const $check$150 = ($r$146) => {
+    const $it$147 = $r$146.it;
+    const $t$148 = $it$147.label;
+    const $t$149 = $model$20.mark;
+    if (!Direct$same($t$148, $r$146.s1)) {
+      Direct$wrong("the text hole at ListScripts.beni:92:49", $r$146.s1, $t$148);
     }
-    if ($r$162.x1.data !== `${$t$164}`) {
-      Direct$wrong("the text hole at ListScripts.beni:92:49 in the document", $r$162.x1.data, `${$t$164}`);
+    if ($r$146.x1.data !== `${$t$148}`) {
+      Direct$wrong("the text hole at ListScripts.beni:92:49 in the document", $r$146.x1.data, `${$t$148}`);
     }
-    if (!Direct$same($t$165, $r$162.s2)) {
-      Direct$wrong("the text hole at ListScripts.beni:92:58", $r$162.s2, $t$165);
+    if (!Direct$same($t$149, $r$146.s2)) {
+      Direct$wrong("the text hole at ListScripts.beni:92:58", $r$146.s2, $t$149);
     }
-    if ($r$162.x2.data !== `${$t$165}`) {
-      Direct$wrong("the text hole at ListScripts.beni:92:58 in the document", $r$162.x2.data, `${$t$165}`);
+    if ($r$146.x2.data !== `${$t$149}`) {
+      Direct$wrong("the text hole at ListScripts.beni:92:58 in the document", $r$146.x2.data, `${$t$149}`);
     }
   };
   Direct$verify(() => {
     {
-      const $t$167 = $model$20.rows;
-      const $xs$168 = $t$167;
-      Direct$verifyList($L$75, $xs$168, $check$166, "the `For` at ListScripts.beni:91:14", false);
+      const $t$151 = $model$20.rows;
+      const $xs$152 = $t$151;
+      Direct$verifyList($L$75, $xs$152, $check$150, "the `For` at ListScripts.beni:91:14", false);
     }
     {
-      const $t$169 = $model$20.plain;
-      const $xs$170 = $t$169;
-      Direct$verifyList($L$79, $xs$170, $check$161, "the `For` at ListScripts.beni:96:14", false);
+      const $t$153 = $model$20.plain;
+      const $xs$154 = $t$153;
+      Direct$verifyList($L$79, $xs$154, $check$145, "the `For` at ListScripts.beni:96:14", false);
     }
   });
 });

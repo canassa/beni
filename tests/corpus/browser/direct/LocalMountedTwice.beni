@@ -5,7 +5,9 @@
 -- development build shows the crash screen. `browser-tea` keeps a state per
 -- mount, so it renders the first and then refuses the second for the body
 -- it already holds (`LocalMountedTwice.tea-expected`,
--- `.tea-release-expected`); the release builds show no screen.
+-- `.tea-release-expected`); the release builds show no screen, and
+-- `browser-direct`'s says the fault in a few words (§8.4, as amended for
+-- the lean slice).
 import Browser
 import Html exposing (Html)
 import Tea
