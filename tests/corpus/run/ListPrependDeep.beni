@@ -1,26 +1,26 @@
--- run: every Elm-shaped way of building a list by prepending is linear on
--- the array-backed `List` (`language.md` §6.8, *`[ x, ...xs ]` is cheap*;
--- `backend.md` §4, *The claimable head: E1tp*), at 100 000 elements:
+-- run: every Elm-shaped way of building a list by prepending still builds
+-- the right list on the array-backed `List`, at 3 000 elements:
 --
---   * an accumulator built with `[ x, ...acc ]` and then `List.reverse`;
+--   * an accumulator built with `[ x, …acc ]` and then `List.reverse`;
 --   * `List.foldr` whose callback prepends;
 --   * a persistent stack pushed and popped at its FRONT, old versions kept
 --     and read at the end;
---   * `[ ...acc, x ]` in a loop, which `List.append` answers by pushing,
+--   * `[ …acc, x ]` in a loop, which `List.append` answers by pushing,
 --     and `acc ++ [ x ]`, which calls `List.append` too since `++` on
 --     lists does (`plans/list-arrays.md` O6).
 --
--- Under E1t, where a prepend copied, each of the first three was
--- quadratic — 5 × 10⁹ element copies here — and the last copied too. The
--- guard was proved by a scratch core whose `cons` always copies and whose
--- `append` never pushes: this program then exceeds the test budget.
+-- A prepend copies the list by design (`language.md` §6.8, *`[ x, …xs ]`
+-- copies*, the owner's decision of 2026-10-11): the first three are
+-- quadratic, which is why this is 3 000 elements and not the 100 000 it
+-- was while the trie had a claimable head, and why the first two are
+-- `prepend_in_loop` warnings. The last two push and stay linear.
 import List
 import Node exposing (Program)
 import String
 
 
 size : Int
-size = 100000
+size = 3000
 
 
 prependAll : Int, List Int → List Int
@@ -53,7 +53,7 @@ type alias Stack =
     kept : List (List Int)
 
 
--- Two pushes and a pop at the front, over and over; every 10 000th
+-- Two pushes and a pop at the front, over and over; every 300th
 -- version kept.
 churn : Int, Stack → Stack
 churn i s =
@@ -74,7 +74,7 @@ churn i s =
                     [ i, …s.top ]
 
         kept =
-            if Int.mod i 10000 == 0 then
+            if Int.mod i 300 == 0 then
                 List.push s.kept top
             else
                 s.kept
