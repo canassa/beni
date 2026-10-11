@@ -1,0 +1,21 @@
+-- PREPEND IN LOOP -------------------------------------- ListPrepend.beni:46:29
+
+This puts elements in front of `xs`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ from, …xs ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …xs, from ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+46|        prependMany [ from, …xs ] (from + 1) (n - 1)
+                               ^^^

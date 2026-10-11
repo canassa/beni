@@ -402,6 +402,11 @@ pub const Code = enum {
     /// state per program value. Both `build`'s.
     view_not_compiled,
     program_mounted_twice,
+    /// Appended on 2026-10-11 with the owner's decision that a prepend
+    /// copies (`language.md` §6.8, *`[ x, …xs ]` copies*): a list built by
+    /// putting elements in front of an accumulator a loop carries. A
+    /// `warning`, the checker's (checker-v2.md §35).
+    prepend_in_loop,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -577,6 +582,7 @@ pub fn title(code: Code) []const u8 {
         .unit_discarded => "UNIT DISCARDED",
         .view_not_compiled => "VIEW NOT COMPILED",
         .program_mounted_twice => "PROGRAM MOUNTED TWICE",
+        .prepend_in_loop => "PREPEND IN LOOP",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

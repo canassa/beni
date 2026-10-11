@@ -1,0 +1,43 @@
+-- PREPEND IN LOOP ---------------------------------- ListPrependDeep.beni:31:44
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+31|        prependAll (n - 1) [ size - n + 1, …acc ]
+                                              ^^^^
+
+-- PREPEND IN LOOP --------------------------------- ListPrependDeep.beni:103:62
+
+This puts elements in front of `acc`, the accumulator this `List.foldr` hands
+back to its callback, so it happens at every step:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+`List.foldr` hands over the last element first, so to keep the order write
+the loop as `List.foldl`, which hands over the first element first.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+103|        , summary (List.foldr backwards [] λx acc → [ x * 2, …acc ])
+                                                                 ^^^^

@@ -1,0 +1,21 @@
+-- PREPEND IN LOOP -------------------------------- SpecializeScalars.beni:27:40
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+27|        turns (n - 1) [ λ_ → r.v * 10, …acc ]
+                                          ^^^^

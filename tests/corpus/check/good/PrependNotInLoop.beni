@@ -1,0 +1,69 @@
+-- check/good: the near misses of `prepend_in_loop` (checker-v2.md §35),
+-- every one silent. A one-off prepend copies once; a prepend onto a
+-- pattern's `rest` or onto a call is not onto an accumulator (the second is
+-- a cons step, built front to back with no copy, `backend.md` §8); a list
+-- pattern reads; a push is amortised O(1); a construction bound to a name
+-- first is the escape; and a named function handed to a fold is not a
+-- callback written at the call.
+import List
+
+
+type alias Model =
+    rows : List String
+
+
+pub addRow : Model, String → Model
+addRow model row = { model | rows = [ row, …model.rows ] }
+
+
+pub pairs : List Int → List Int
+pairs xs =
+    case xs of
+        [ a, b, …rest ] →
+            [ a + b, …pairs [ b, …rest ] ]
+
+        _ →
+            []
+
+
+pub firsts : List Int → Int
+firsts xs =
+    case xs of
+        [ x, …_ ] →
+            x
+
+        [] →
+            0
+
+
+pub pushed : List Int, List Int → List Int
+pushed xs acc =
+    case xs of
+        [ x, …rest ] →
+            pushed rest [ …acc, x ]
+
+        [] →
+            acc
+
+
+pub named : List Int, List Int → List Int
+named xs acc =
+    case xs of
+        [ x, …rest ] →
+            next = [ x, …acc ]
+            named rest next
+
+        [] →
+            acc
+
+
+pub foldPush : List Int → List Int
+foldPush xs = List.foldl xs [] λx acc → [ …acc, x ]
+
+
+pub foldNamed : List Int → List Int
+foldNamed xs = List.foldl xs [] List.cons
+
+
+pub onto : List Int, Int → List Int
+onto xs n = if n ≤ 0 then xs else onto xs (n - 1)

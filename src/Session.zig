@@ -2466,6 +2466,22 @@ fn reportCheckDiagnostics(session: *Session) RunError!void {
             try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, item.message);
             continue;
         }
+        // `prepend_in_loop` spans the spread of the accumulator, `…acc`
+        // (checker-v2.md §35): from the construction's own token, which
+        // is its spread, to the accumulator the chain of `cons` ends in.
+        if (item.code == .prepend_in_loop and item.region.int() < bir.insts.len) {
+            var at = item.region;
+            var depth: u32 = 0;
+            while (depth < 256 and bir.instTag(at) == .call) : (depth += 1) {
+                const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(at).rhs))), Bir.Inst.Index);
+                if (args.len != 2) break;
+                at = args[1];
+            }
+            const start, _ = session.tokenSpan(file, token);
+            _, const end = session.tokenSpan(file, @max(token, bir.insts.items(.main_token)[at.int()]));
+            try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, item.message);
+            continue;
+        }
         const start, const end = session.tokenSpan(file, token);
         try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, item.message);
     }

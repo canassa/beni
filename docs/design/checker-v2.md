@@ -5843,14 +5843,14 @@ is a cons step of `backend.md` §8, built front to back with no copy), a list pa
 to a name before it is passed on, or a named function handed to a fold (`List.foldl xs []
 List.cons`). Each of those is either not repeated or not a copy of the loop's own list.
 
-The warning is at the construction's span. Its message names the accumulator and shows the
+The warning spans the spread of the accumulator, `…acc`. Its message names the accumulator and shows the
 rewrite, the elements in the order the push form needs — for a self-recursion and `foldl`, the
 prepended elements reversed, because an Elm-style loop reverses its result once at the end and the
 push form needs no `List.reverse`; for `foldr`, the loop written as `foldl` with the elements in
 order, because `foldr` hands over the last element first:
 
-> This puts `x` in front of `acc`, which this function hands back to itself, so it happens at
-> every step of a loop:
+> This puts elements in front of `acc`, which this function hands back to itself, so it happens
+> at every step of a loop:
 >
 >     [ x, …acc ]
 >
@@ -5870,7 +5870,7 @@ For a fold the first sentence names it — "`acc`, the accumulator this `List.fo
 its callback, so it happens at every step" — and for `foldr` the last paragraph but one reads
 "`List.foldr` hands over the last element first, so to keep the order write the loop as
 `List.foldl`, which hands over the first element first." An element is printed as the call-style
-hints print an argument (§29.4); one that cannot be printed is `…`, and a construction of more
+hints print an argument (§29.4); one that cannot be printed is `(…)`, and a construction of more
 than eight elements prints its first eight and `…`.
 
 The escape is the binding (rule 7: a warning names how to silence it, as `unkeyed_for` and

@@ -1,0 +1,66 @@
+-- check/good: `prepend_in_loop` (checker-v2.md §35) is a `warning`, so the
+-- module still checks. A prepend onto an accumulator a loop carries copies
+-- the accumulator at every step (`language.md` §6.8, *`[ x, …xs ]`
+-- copies*). Both shapes: a self-recursion — the accumulator in the same
+-- slot, in another slot, behind an `if`, in a block-bound function and in a
+-- function whose body is a lambda — and a fold's callback, `List.foldl`
+-- and `List.foldr` by name, piped and as a method call. Each message shows
+-- the push form; `foldr`'s names `foldl`.
+import List
+
+
+pub reversed : List Int, List Int → List Int
+reversed xs acc =
+    case xs of
+        [ x, …rest ] →
+            reversed rest [ x, …acc ]
+
+        [] →
+            acc
+
+
+pub split : List a, List a, List a → List a × List a
+split xs left right =
+    case xs of
+        [ x, …rest ] →
+            split rest right [ x, …left ]
+
+        [] →
+            ( left, right )
+
+
+pub evens : List Int, List Int → List Int
+evens xs acc =
+    case xs of
+        [ x, …rest ] →
+            evens rest (if Int.mod x 2 == 0 then [ x * 2, x, …acc ] else acc)
+
+        [] →
+            acc
+
+
+pub countdown : Int → List Int
+countdown n =
+    go : Int, List Int → List Int
+    go i acc =
+        if i > n then
+            acc
+        else
+            go (i + 1) [ i, …acc ]
+    go 1 []
+
+
+pub lambdaLoop : Int, List Int → List Int
+lambdaLoop = λn acc → if n ≤ 0 then acc else lambdaLoop (n - 1) [ n, …acc ]
+
+
+pub folded : List Int → List Int
+folded xs = List.foldl xs [] λx acc → [ x + 1, …acc ]
+
+
+pub mapped : List Int → List Int
+mapped xs = xs ▷ List.foldr [] λx acc → [ x * 2, …acc ]
+
+
+pub method : List Int → List Int
+method xs = xs.foldl [] λx acc → [ x, …acc ]
