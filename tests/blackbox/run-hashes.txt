@@ -54,7 +54,7 @@ build_test.test.a non-zero exit code from the platform reaches the process #0 53
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
 build_test.test.a program computes something and prints the right answer #0 e21cbc95182532ea9fb9dc5ee4dbaab96efeda74c92f28618e3ed72b61685fb7
-build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 e3b1ad5b373cce915008b66b54ec3eb3fcbc1d4d814ce9222e9660708d077e35
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 e20227b5db1a1b0dc93bbcd11286ee7362f608ae14f0031b947578f138718f93
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 102394ae1ad44102a1cca9ef9e4371eb956a40c435d8c489b326988b77666f47
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
@@ -121,15 +121,15 @@ iface_test.test.a build whose evidence crosses modules is byte-identical through
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 a7e1ca4a7e6729c16f3facb662d2e03678d172b401b51b4042fe36396d3557ed
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 a4ad7f8eb938a9e4cb9adf0942b359fbce02e96be833c2729ee67d1042c89621
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 b43380771fa17b12628e137856bb7af843ae48b915698a71900b70e6eb2229a6
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 c383cd56c1b809d71fa2e8b19d26d18a7d3112c3ce92133ad60023a6141aaef2
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 8d7b0cc2e25266b6c96441ba22e5b0cffcaad1ff2d2d9332d65ac25606b673ac
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 e3c5daea723c588a468e4d6e6b9e4cdf3d9c885a852f883738a2e3ad585c99a6
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 e1511605e47ef26ef81d6ab3e8733fbdec0bd5803a2508fc9be12aa67d8bff61
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 0d0eae5f7f72108ad8342b9057f8f4d63600e8f111f783ecf860cebac6dfe44d
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 5c969f7b64049df06589838455bd8c4a435c5e85841849a0ffbb16c9e0bbf0e4
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 206228c550cf55fb30f2432354878d2d269ab1d216f2e19908227d83166f0fe5
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 c0bdfbc6c6efb4914e4031bd51b82338ca21e2b11c42f05829441c3a23b7da12
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 eac03ca47ebaff75ba17f49bffd440477cca28871a655f85220dd57fd13db99b
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 3c4614caa22adefd848ada50abbb7fa2c39e8882ed372d4fbdc4f4d351a96d51
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 e7adf71f11fb0acdc2b56b3877f143004830112ec77b8f5acbf60e4f17335111
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 c825c7629e1b24f09580a9bebb45db91886989345bc7fce790d3920f9b6426e3
 page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 65449b7d5994a2fc0968ec63c78209e9f3147a2c34d04087deed6e4b1124d9f7
 page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 7e8929af2a8477ec4c969dc541c9890172ae343caff6ca8e6636f96efb93d408
 page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 05abd1fff1d80e62c17a25a536f2cbe39f30f8c0371d98dc8b0dfdd35f29a036
 page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 a8d8bcbb1351ccf18792fd14aa004cfd707c89d0d005adf36e9c72e4225b07d9
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 05f4ee23f0a7a477b1e64e915c43898a71cdeb8c58f86253eb73bead6526cdee
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 f5b417c58889dc291c4c334ceeea1ebdeff9a8bb9f4f9b66a20e845be89712ac
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb

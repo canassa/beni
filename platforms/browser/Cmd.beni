@@ -58,6 +58,11 @@ pub type Cmd msg
 --| what the checker inferred of the body there (`Js.maySuspend`), so a
 --| program that never builds `Perform` or `Keyed` reaches no fiber. A
 --| program never needs to build or read one.
+--|
+--| A key path is held innermost segment first: `map` adds the segment of
+--| the component it wraps at the end, where a list grows, and the
+--| architecture reverses the path once when it reads the item, so its key
+--| is the outermost segment first.
 pub type Item msg
     = Perform (Job msg)
     | Now (Job msg)
@@ -155,16 +160,16 @@ mapItem item segment tag =
             Now (Hosted.mapJob job tag)
 
         Keyed path policy job →
-            Keyed [ segment, …path ] policy (Hosted.mapJob job tag)
+            Keyed [ …path, segment ] policy (Hosted.mapJob job tag)
 
         KeyedNow path policy job →
-            KeyedNow [ segment, …path ] policy (Hosted.mapJob job tag)
+            KeyedNow [ …path, segment ] policy (Hosted.mapJob job tag)
 
         Cancel path →
-            Cancel [ segment, …path ]
+            Cancel [ …path, segment ]
 
         CancelAll path →
-            CancelAll [ segment, …path ]
+            CancelAll [ …path, segment ]
 
         After work →
             After (Hosted.mapLater work tag)
