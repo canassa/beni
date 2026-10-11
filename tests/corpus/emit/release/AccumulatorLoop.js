@@ -1,1 +1,0 @@
-import{a,b,c}from"./_core/List.mjs";import{d}from"./_platform/Node.mjs";const e=(b,c)=>{let d=[];while(!(b<=0)){d.push(b);b--}return a(d.reverse(),c)},f=(a,c)=>{let d=[];while(!(a<=0)){d.push(a);a--}return b(c,d)},g=(b,c)=>{let d=[];while(!(b<=0)){d.push(b);b--}return{a:a(d.reverse(),c),b:b}},h=(a,b)=>{while(!(b.length>=a))b=c(a,b);return b},i=d([]);export{i,e,f,g,h};
