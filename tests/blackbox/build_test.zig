@@ -4528,9 +4528,21 @@ test "an unannotated pub function constant with a constraint builds and runs" {
 
 /// Print a failed run's diagnostics, so a red scenario names the file.
 fn reportUnclean(what: []const u8, r: world.Result) void {
-    if (r.exit_code != 0 or r.stderr.len != 0) {
+    if (r.exit_code != 0 or !onlyPrependWarnings(r)) {
         std.debug.print("bench/corpus did not {s} clean:\n{s}\n", .{ what, r.stderr });
     }
+}
+
+/// Whether every diagnostic of `r` is a `prepend_in_loop` warning. The
+/// corpus keeps its Elm-shaped prepend loops on purpose (the owner,
+/// 2026-10-11: benchmark programs stay as they are, so what they measure
+/// stays comparable), and since a prepend copies (`language.md` §6.8) the
+/// checker warns at each; any other diagnostic is still a failure.
+fn onlyPrependWarnings(r: world.Result) bool {
+    for (r.diagnostics) |d| {
+        if (d.code != .prepend_in_loop or d.severity != .warning) return false;
+    }
+    return true;
 }
 
 test "bench/corpus type-checks with no diagnostic and no platform" {
@@ -4549,12 +4561,13 @@ test "bench/corpus type-checks with no diagnostic and no platform" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // No diagnostic of any severity: a warning is something every reader of
-    // the corpus steps past, and the corpus is meant to be idiomatic.
+    // No diagnostic of any severity but `prepend_in_loop`: a warning is
+    // something every reader of the corpus steps past, and the corpus is
+    // meant to be idiomatic — except for the prepend loops it keeps as they
+    // were (`onlyPrependWarnings`).
     reportUnclean("check", checked);
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
-    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
-    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expect(onlyPrependWarnings(checked));
 }
 
 test "bench/corpus builds as a library for the node platform" {
@@ -4577,7 +4590,7 @@ test "bench/corpus builds as a library for the node platform" {
     // └─────────────────────────────────────────┘
     reportUnclean("build", built);
     try testing.expectEqual(@as(u8, 0), built.exit_code);
-    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    try testing.expect(onlyPrependWarnings(built));
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │

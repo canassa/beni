@@ -1,0 +1,9 @@
+module PrependInLoop
+  value countdown : Int → List Int
+  value evens : List Int, List Int → List Int
+  value folded : List Int → List Int
+  value lambdaLoop : Int, List Int → List Int
+  value mapped : List Int → List Int
+  value method : List Int → List Int
+  value reversed : List Int, List Int → List Int
+  value split : List a, List a, List a → List a × List a

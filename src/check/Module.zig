@@ -70,6 +70,7 @@ const Retained = @import("Retained.zig");
 const Effects = @import("Effects.zig");
 const Sync = @import("Sync.zig");
 const CallStyle = @import("CallStyle.zig");
+const Prepend = @import("Prepend.zig");
 const EffectPlan = @import("EffectPlan.zig");
 
 pub const Error = Allocator.Error;
@@ -321,6 +322,13 @@ pub fn check(in: Input) Error!Check.Counters {
     if (in.profile) |p| p.end(in.tid, effects_token.?, .effects, file.int(), 0);
     const p6_token = if (in.profile) |p| p.begin() else null;
     const p6 = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);
+    // `prepend_in_loop` (checker-v2.md §35): the root package's, and under
+    // `--explain` every package's, on a module that checked clean. After
+    // elaboration, which is what says which function a method call runs.
+    if (!quiet and report.errors == 0 and in.informational and (in.explain or in.graph.modulePackage(in.module) == .app)) {
+        try Prepend.check(report.staging(), &report, in.dispatch);
+        try report.flush();
+    }
     // The markup section (§25.7), for a module that checked clean: every
     // name resolved and every obligation was decided.
     if (cx.markup) |view| if (!quiet and report.errors == 0) {

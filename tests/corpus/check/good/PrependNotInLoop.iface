@@ -1,0 +1,9 @@
+module PrependNotInLoop
+  value addRow : Model, String → Model
+  value firsts : List Int → Int
+  value foldNamed : List Int → List Int
+  value foldPush : List Int → List Int
+  value named : List Int, List Int → List Int
+  value onto : List Int, Int → List Int
+  value pairs : List Int → List Int
+  value pushed : List Int, List Int → List Int

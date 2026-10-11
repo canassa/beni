@@ -1,0 +1,21 @@
+-- PREPEND IN LOOP -------------------- tests/corpus/writes/Recursion.beni:36:32
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ n, …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, n ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+36|        buildFrom (n - 1) [ n, …acc ]
+                                  ^^^^

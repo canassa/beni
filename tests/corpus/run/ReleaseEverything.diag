@@ -1,0 +1,263 @@
+-- PREPEND IN LOOP -------------------------------- ReleaseEverything.beni:72:41
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+72|            tokenizeChars rest [ TPlus, …acc ]
+                                           ^^^^
+
+-- PREPEND IN LOOP -------------------------------- ReleaseEverything.beni:75:42
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+75|            tokenizeChars rest [ TMinus, …acc ]
+                                            ^^^^
+
+-- PREPEND IN LOOP -------------------------------- ReleaseEverything.beni:78:41
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+78|            tokenizeChars rest [ TStar, …acc ]
+                                           ^^^^
+
+-- PREPEND IN LOOP -------------------------------- ReleaseEverything.beni:81:42
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+81|            tokenizeChars rest [ TSlash, …acc ]
+                                            ^^^^
+
+-- PREPEND IN LOOP -------------------------------- ReleaseEverything.beni:84:42
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+84|            tokenizeChars rest [ TCaret, …acc ]
+                                            ^^^^
+
+-- PREPEND IN LOOP -------------------------------- ReleaseEverything.beni:87:43
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+87|            tokenizeChars rest [ TLParen, …acc ]
+                                             ^^^^
+
+-- PREPEND IN LOOP -------------------------------- ReleaseEverything.beni:90:43
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+90|            tokenizeChars rest [ TRParen, …acc ]
+                                             ^^^^
+
+-- PREPEND IN LOOP -------------------------------- ReleaseEverything.beni:93:42
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+93|            tokenizeChars rest [ TComma, …acc ]
+                                            ^^^^
+
+-- PREPEND IN LOOP ------------------------------- ReleaseEverything.beni:102:62
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+102|                        tokenizeChars remaining [ TNumber n, …acc ]
+                                                                 ^^^^
+
+-- PREPEND IN LOOP ------------------------------- ReleaseEverything.beni:108:77
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ (…), …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, (…) ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+108|                tokenizeChars remaining [ TIdent (String.fromList letters), …acc ]
+                                                                                ^^^^
+
+-- PREPEND IN LOOP ------------------------------- ReleaseEverything.beni:123:29
+
+This puts elements in front of `taken`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ x, …taken ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …taken, x ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+123|                    go [ x, …taken ] rest
+                                ^^^^^^
+
+-- PREPEND IN LOOP ------------------------------- ReleaseEverything.beni:248:49
+
+This puts elements in front of `acc`, which this function hands back to
+itself, so it happens at every step of a loop:
+
+    [ arg, …acc ]
+
+A list is an array, so every step copies the whole accumulator, and the loop
+takes time that grows with the square of the list's length. Add at the end
+instead, which takes the same short time at every step:
+
+    [ …acc, arg ]
+
+That keeps the elements in the order they arrive, so the `List.reverse` that
+put a prepended result back in order is no longer needed.
+
+If the prepend is meant — the list stays short — give the new list a name
+first, and this warning goes.
+
+248|                    parseArgs afterComma [ arg, …acc ]
+                                                    ^^^^
