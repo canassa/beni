@@ -1,0 +1,14 @@
+out/lean-direct/_main.mjs: minified 5331 B, brotli 11 1982 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core: modBy, Nothing, in-place indexedMap/filter/append | 352 | 192 | 65 | 65 |
+| Rt: dispatch guard, template helper | 172 | 112 | 34 | 41 |
+| Rt: keyed reconcile (P3, rebuilds only) | 1264 | 546 | 393 | 392 |
+| Rt/page: row mount, groups, keep, state | 798 | 391 | 189 | 184 |
+| page: handlers (update branch + exact edit) | 1319 | 583 | 254 | 324 |
+| page: markup (the page template) | 1081 | 275 | 209 | 232 |
+| program: model half (data, build, swap, rowClass) | 1068 | 599 | 445 | 455 |
+| page: listener and button wiring | 330 | 199 | 1626 | 244 |
+| what is left (start-up statements) | | | | 45 |
+| **sum** | | 2897 | 3215 | 1982 |
