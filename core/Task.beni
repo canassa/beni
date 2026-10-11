@@ -1128,12 +1128,12 @@ fiberArray fibers = List.foldl fibers (Js.array []) λf arr →
 -- The values of fibers that have all ended: `Nothing` when one was
 -- cancelled.
 values : List (Fiber a) → Maybe (List a)
-values fibers = List.foldr fibers (Just []) λf acc →
+values fibers = List.foldl fibers (Just []) λf acc →
     case acc of
-        Just rest →
+        Just done →
             case guest (Js.get (Js.from f) "outcome") of
                 Done v →
-                    Just [ v, …rest ]
+                    Just [ …done, v ]
 
                 Cancelled →
                     Nothing

@@ -215,18 +215,27 @@ item host it state =
             _ = queue host job
             state
 
-        Keyed path policy job →
-            keyed host path policy job state
+        -- An item's path is innermost segment first (`Cmd.Item`); the key
+        -- is outermost first, so a prefix is a component and those inside.
+        Keyed inner policy job →
+            keyed host (List.reverse inner) policy job state
 
-        KeyedNow path policy job →
-            keyedNow host path policy job state
+        KeyedNow inner policy job →
+            keyedNow host (List.reverse inner) policy job state
 
-        Cancel path →
+        Cancel inner →
+            path = List.reverse inner
             stopped state.scope (runsAt state path) { state | jobs = Dict.remove state.jobs path }
 
-        CancelAll prefix →
+        CancelAll inner →
+            prefix = List.reverse inner
             ( gone, kept ) = Dict.partition state.jobs λpath _ → startsWith path prefix
-            { state | jobs = stopped state.scope (List.concat (Dict.values gone)) kept }
+            -- Each list is oldest first and `stopped` walks one from its end
+            -- (`runsAt`), so the lists go in reverse key order: the first
+            -- key's newest body is still the first stopped.
+            { state
+                | jobs = stopped state.scope (List.concat (List.reverse (Dict.values gone))) kept
+            }
 
         After work →
             Hosted.afterRender host work
@@ -251,7 +260,7 @@ keyed host path policy job state =
             put state path [ spawnAfter host state.scope (λ⊤ → waitFor old) job ]
 
         ( Concurrent, _ ) →
-            put state path [ spawn host state.scope job, …old ]
+            put state path [ …old, spawn host state.scope job ]
 
 
 -- A keyed body that never waits: queued as a fiber would have been
@@ -273,7 +282,7 @@ keyedNow host path policy job state =
             put state path [ (starter policy old) host state.scope job ]
 
         ( Concurrent, _ ) →
-            put state path [ queue host job, …old ]
+            put state path [ …old, queue host job ]
 
 
 -- How a body that never waits starts once `old` have ended (`Restart`
@@ -282,7 +291,7 @@ keyedNow host path policy job state =
 -- cancels them (`Restart`) or waits for them (`Queue`) first, since only a
 -- fiber can wait. The fiber is reached only through an `InFiber` arm.
 starter : Policy, List (Run msg) → (Host msg, Scope, Job msg → Run msg)
-starter policy old = List.foldl old (λhost _ job → queue host job) λr otherwise →
+starter policy old = List.foldr old (λhost _ job → queue host job) λr otherwise →
     startAfter policy old r otherwise
 
 
@@ -343,6 +352,9 @@ running r =
             Task.queued soon
 
 
+-- The bodies running at a key path, oldest first: a `Concurrent` body is
+-- added at the end, where a list grows, and every walk of the list below
+-- goes from its end, so the newest is closed, stopped and waited for first.
 runsAt : State model msg, List Key → List (Run msg)
 runsAt state path = Maybe.withDefault (Dict.get state.jobs path) []
 
@@ -364,7 +376,7 @@ stopped scope runs value =
 
 -- What cancels the fibers of `runs`: nothing when none is a fiber.
 cancelling : List (Run msg) → (Scope → ⊤)
-cancelling runs = List.foldl runs (λ_ → ⊤) λr k → canceller runs r k
+cancelling runs = List.foldr runs (λ_ → ⊤) λr k → canceller runs r k
 
 
 canceller : List (Run msg), Run msg, (Scope → ⊤) → (Scope → ⊤)
@@ -380,7 +392,7 @@ canceller runs r k =
 
 
 closing : List (Run msg), a → a
-closing runs value = List.foldl runs value λr v → after (close r) v
+closing runs value = List.foldr runs value λr v → after (close r) v
 
 
 close : Run msg → ⊤
@@ -395,7 +407,7 @@ close r =
 
 -- Cancel each fiber and wait for its cleanup.
 stop : List (Run msg) → ⊤
-stop runs = List.foldl runs ⊤ λr _ → stopOne r
+stop runs = List.foldr runs ⊤ λr _ → stopOne r
 
 
 stopOne : Run msg → ⊤
@@ -411,7 +423,7 @@ stopOne r =
 -- Wait for each fiber to end. Work queued before the fiber that waits runs
 -- before it.
 waitFor : List (Run msg) → ⊤
-waitFor runs = List.foldl runs ⊤ λr _ → waitOne r
+waitFor runs = List.foldr runs ⊤ λr _ → waitOne r
 
 
 waitOne : Run msg → ⊤
