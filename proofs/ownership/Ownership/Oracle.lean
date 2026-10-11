@@ -1,6 +1,7 @@
 import Ownership.Library
 import Ownership.OracleLegacy
 import Ownership.Semantics
+import Ownership.Generator
 
 namespace Ownership.Oracle
 
@@ -364,18 +365,80 @@ structure Counts where
   limits : Nat := 0
   executionErrors : Nat := 0
   mismatches : Nat := 0
+  withWrites : Nat := 0
   deriving Repr
 
-def run (count seed : Nat) (old := false) (legacy := false) (oldEscape := false) : IO Bool := do
+def Counts.line (c : Counts) : String :=
+  s!"candidates={c.candidates} distinct={c.distinct} typed={c.typed} accepted={c.accepted} withWrites={c.withWrites} rejected={c.rejected} limits={c.limits} typeErrors={c.typeErrors} executionErrors={c.executionErrors} mismatches={c.mismatches}"
+
+/-- Generator v4 keeps the eleven v3 template families and replaces the v3
+    `anf-chain`, whose final record kept every variable live (so none of its
+    accepted programs wrote), by the general family of `Generator.lean`, drawn
+    with probability 11/22. `--generator-version=3` reproduces v3 exactly. -/
+def generateV4 : Gen (String × Program) := do
+  let k ← draw 22
+  if k < 11 then
+    match k with
+    | 0 => return ("fresh-nested", ← nested)
+    | 1 => return ("captures", ← captureProgram)
+    | 2 => return ("identity-map", ← identityMap)
+    | 3 => return ("branch-traversal", ← loopProgram)
+    | 4 => return ("escape-traversal", ← escapedProgram)
+    | 5 => return ("recursion", ← recursiveProgram)
+    | 6 => return ("library-pipeline", ← pipeline)
+    | 7 => return ("indexed-chain", ← indexedProgram)
+    | 8 => return ("once-many-wrappers", ← onceProgram)
+    | 9 => return ("recursive-higher-order-limit", ← recursiveHigherOrder)
+    | _ => return ("fresh-tower", ← towerProgram)
+  else
+    let (_, p) ← Generator.general
+    return ("general", p)
+
+def generateVersion (version : Nat) : Gen (String × Program) :=
+  match version with
+  | 1 => do return ("frozen-legacy", ← OracleLegacy.generate)
+  | 3 => generateFamily
+  | _ => generateV4
+
+structure Options where
+  count : Nat
+  seed : Nat
+  version : Nat := 4
+  config : Config := {}
+  /-- Stop at the first accepted disagreement (negative controls). -/
+  stopAtFirst : Bool := false
+  quiet : Bool := false
+
+def Options.negative (o : Options) : Bool :=
+  o.config.oldFreshRule || o.config.dropTraversalEscapes
+
+def Options.label (o : Options) : String :=
+  if o.config.oldFreshRule then (if o.version == 1 then "legacy-old" else s!"old-v{o.version}")
+  else if o.config.dropTraversalEscapes then (if o.version == 4 then "old-escape-v4" else "old-escape")
+    else if o.version == 4 then "soundness-v4" else "soundness"
+
+structure RunResult where
+  ok : Bool
+  counts : Counts
+  firstMismatch : Option Nat := none
+  elapsed : Nat := 0
+
+/-- One deterministic campaign. In corrected mode any accepted disagreement is
+    a soundness finding and fails. Under a negative control the run succeeds
+    only if it finds an accepted disagreement whose minimized form the
+    corrected checker rejects. -/
+def runWith (o : Options) : IO RunResult := do
   let start ← IO.monoMsNow
-  let config : Config := { oldFreshRule := old, dropTraversalEscapes := oldEscape }
-  let mut state := seed
+  let config := o.config
+  let mut state := o.seed
   let mut counts : Counts := {}
-  let mut oldFound := false
+  let mut found : Option Nat := none
   let mut seen : Std.HashSet String := {}
   let mut families : List (String × Counts × Nat × Nat) := []
-  for index in List.range count do
-    let ((family,p), next) := (if legacy then do return ("frozen-legacy", ← OracleLegacy.generate) else generateFamily).run state
+  let header := s!"generator-version={o.version} seed={o.seed} control={o.label}"
+  for index in List.range o.count do
+    if o.stopAtFirst && found.isSome then break
+    let ((family,p), next) := (generateVersion o.version).run state
     let signature := toString (repr p)
     let isNew := !seen.contains signature
     seen := seen.insert signature
@@ -388,8 +451,8 @@ def run (count seed : Nat) (old := false) (legacy := false) (oldEscape := false)
     match typecheck p with
     | .error msg =>
       counts := { counts with typeErrors := counts.typeErrors + 1 }
-      IO.println s!"TYPE GENERATION ERROR seed={seed} index={index}: {msg}\n{repr p}"
-      return false
+      IO.println s!"TYPE GENERATION ERROR seed={o.seed} index={index}: {msg}\n{repr p}"
+      return { ok := false, counts }
     | .ok _ => counts := { counts with typed := counts.typed + 1 }
     let verdict := check p config
     families := families.map fun (f,c,lo,hi) => if f == family then
@@ -402,33 +465,60 @@ def run (count seed : Nat) (old := false) (legacy := false) (oldEscape := false)
     | .ok _ =>
       counts := { counts with accepted := counts.accepted + 1 }
       match compare p with
-      | .equal => pure ()
+      | .equal =>
+        if InPlaceSemantics.writeCount p > 0 then
+          counts := { counts with withWrites := counts.withWrites + 1 }
+          families := families.map fun (f,c,lo,hi) => if f == family then
+            (f,{ c with withWrites := c.withWrites+1 },lo,hi) else (f,c,lo,hi)
       | .inconclusive msg =>
         counts := { counts with executionErrors := counts.executionErrors + 1 }
-        IO.println s!"INCONCLUSIVE seed={seed} index={index}: {msg}"
-        return false
+        IO.println s!"INCONCLUSIVE seed={o.seed} index={index}: {msg}"
+        return { ok := false, counts }
       | .mismatch _ _ =>
         counts := { counts with mismatches := counts.mismatches + 1 }
         families := families.map fun (f,c,lo,hi) => if f == family then
           (f,{ c with mismatches := c.mismatches+1 },lo,hi) else (f,c,lo,hi)
+        if o.negative && found.isSome then continue
         let minimal := shrink p config
-        let report := s!"generator-version={if legacy then 1 else 3} seed={seed} index={index} old-rule={old} old-escape-rule={oldEscape}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (check minimal)}\n"
-        IO.FS.createDirAll "regressions"
-        IO.FS.writeFile s!"regressions/{if old then (if legacy then "legacy-old" else "old-v3") else if oldEscape then "old-escape" else "soundness"}-{seed}-{index}.txt" report
-        IO.println report
-        if !old && !oldEscape then
-          IO.println s!"STOP corrected-rule soundness finding: {repr counts}"
-          return false
+        let report := s!"{header} index={index} family={family}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (check minimal)}\n"
+        if !o.quiet then
+          IO.FS.createDirAll "regressions"
+          IO.FS.writeFile s!"regressions/{o.label}-{o.seed}-{index}.txt" report
+          IO.println report
+        if !o.negative then
+          IO.println s!"STOP corrected-rule soundness finding: {counts.line}"
+          return { ok := false, counts, firstMismatch := some index }
         if (check minimal).isOk then
-          IO.println "STOP old-rule mismatch also accepted by corrected rule"
-          return false
-        oldFound := true
-  for (family,c,lo,hi) in families do
-    IO.println s!"family={family} depth={lo}..{hi} {repr c}"
-  IO.println s!"generator-version={if legacy then 1 else 3} seed={seed} old-rule={old} old-escape-rule={oldEscape} {repr counts} elapsed-ms={(← IO.monoMsNow)-start}"
-  if (old || oldEscape) && !oldFound then
-    IO.println "NEGATIVE CONTROL FAILED: no generated accepted disagreement"
-    return false
-  pure (counts.accepted > 0 && counts.typeErrors == 0 && counts.executionErrors == 0)
+          IO.println s!"STOP {o.label} mismatch also accepted by corrected rule (index {index})"
+          return { ok := false, counts, firstMismatch := some index }
+        found := some index
+  let elapsed := (← IO.monoMsNow) - start
+  if !o.quiet then
+    for (family,c,lo,hi) in families do
+      IO.println s!"family={family} depth={lo}..{hi} {c.line}"
+  IO.println s!"{header} {counts.line} first-mismatch={found.map toString |>.getD "none"} elapsed-ms={elapsed}"
+  if o.negative && found.isNone then
+    IO.println s!"NEGATIVE CONTROL FAILED: {o.label} found no generated accepted disagreement"
+    return { ok := false, counts, elapsed }
+  pure { ok := counts.accepted > 0 && counts.typeErrors == 0 && counts.executionErrors == 0,
+         counts, firstMismatch := found, elapsed }
+
+/-- Rejection reasons and accepted-with-write counts of one family, for tuning
+    and for reporting what a family actually exercises. -/
+def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
+  let mut state := seed
+  let mut table : List (String × Nat) := []
+  for _ in List.range count do
+    let ((f, p), next) := (generateVersion version).run state
+    state := next
+    if f != family then continue
+    let key := match check p with
+      | .error m => (m.splitOn ":").head!
+      | .ok _ => if InPlaceSemantics.writeCount p > 0 then "accepted with write" else "accepted without write"
+    table := match table.find? (·.1 == key) with
+      | some (_, n) => table.map fun (k, m) => if k == key then (k, n + 1) else (k, m)
+      | none => table ++ [(key, 1)]
+  for (k, n) in table.mergeSort (fun a b => a.2 ≥ b.2) do IO.println s!"{n}\t{k}"
 
 end Ownership.Oracle
+

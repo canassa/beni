@@ -186,7 +186,12 @@ structure State where
   reads : Array Observation := #[]
   kept : Array Value := #[]
   externalReads : Array (List Observation) := #[]
+  /-- Program-level in-place writes executed (`set`, `push`, focus write-back);
+      builder `put` is excluded. A campaign statistic only, never compared. -/
+  writes : Nat := 0
 abbrev M := StateT State (Except String)
+
+def countWrite : M Unit := modify fun s => { s with writes := s.writes + 1 }
 
 def tick : M Unit := do
   let s ← get
@@ -257,8 +262,10 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     pure x
   | .set, [.ref c, .int i, v] => do
     let xs ← array c
+    countWrite
     write c (if i < 0 then xs else xs.set i.toNat v)
-  | .push, [.ref c, v] | .put, [.ref c, v] => do write c ((← array c) ++ [v])
+  | .push, [.ref c, v] => do countWrite; write c ((← array c) ++ [v])
+  | .put, [.ref c, v] => do write c ((← array c) ++ [v])
   | .copy, [.ref c] => do alloc (← array c)
   | .close, [.ref c] => pure (.ref c)
   | .close, [.ref c, .ref source] => do
@@ -323,6 +330,7 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         | some v =>
           read v
           let w ← eval (depth - 1) ds self ((x, v) :: env) body
+          countWrite
           write c (xs.set i.toNat w)
     observeKept
     pure result
@@ -333,6 +341,12 @@ def run (p : Program) (fuel := 100000) : Except String Trace := do
   let (v, s) ← (eval fuel p.declarations none [] p.main).run { fuel }
   let finalValue ← snapshot s.heap 256 v
   pure { reads := s.reads.toList, finalValue, externalReads := s.externalReads.toList }
+
+/-- Number of program-level in-place writes an execution performs. -/
+def writeCount (p : Program) (fuel := 100000) : Nat :=
+  match (eval fuel p.declarations none [] p.main).run { fuel } with
+  | .ok (_, s) => s.writes
+  | .error _ => 0
 
 end InPlaceSemantics
 end Ownership
