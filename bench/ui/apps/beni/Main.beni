@@ -115,14 +115,16 @@ pick : List String, Int, Int → String
 pick words count seed = List.get words (Int.mod seed count) ▷ Maybe.withDefault ""
 
 
--- `count` rows with ids from `id` up, and the seed after them.
+-- `count` rows with ids from `id` up, and the seed after them. The rows
+-- are built in order, each pushed at the end: prepending onto an
+-- accumulator is not rewarded (`browser-direct.md` §7.2, withdrawn).
 build : Int, Int, Int → List Row × Int
-build count id seed = buildFrom (id + count - 1) id seed []
+build count id seed = buildFrom id (id + count) seed []
 
 
 buildFrom : Int, Int, Int, List Row → List Row × Int
-buildFrom id first seed rows =
-    if id < first then
+buildFrom id stop seed rows =
+    if id ≥ stop then
         ( rows, seed )
     else
         a = next seed
@@ -132,7 +134,7 @@ buildFrom id first seed rows =
         n = next c
 
         label = "${pick adjectives 25 a} ${pick colours 11 c} ${pick nouns 13 n}"
-        buildFrom (id - 1) first n [ { id = id, label = label }, …rows ]
+        buildFrom (id + 1) stop n [ …rows, { id = id, label = label } ]
 
 
 replace : Model, Int → Model

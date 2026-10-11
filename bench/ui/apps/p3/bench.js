@@ -7,7 +7,7 @@
 // `buildFrom`, `build`, `replace`, `at` and `swapRows` as the development
 // build emits them, each `update` branch as the body of its constructor's
 // handler, over core's modules imported from that build (`build.mjs` makes
-// `out/beni-dev`). So `List` is beni's array-backed list, a trie when `cons`
+// `out/beni-dev`). So `List` is beni's array-backed list, a trie when `append`
 // builds it, exactly as in beni.
 //
 // The view half, and the fact behind each part:
@@ -51,7 +51,7 @@
 
 import { Basics$append } from "../../out/beni-dev/_core/Basics.mjs";
 import { Int$mod } from "../../out/beni-dev/_core/Int.mjs";
-import { List$append, List$base, List$cons, List$filter, List$get, List$indexedMap, List$offset } from "../../out/beni-dev/_core/List.mjs";
+import { List$append, List$base, List$filter, List$get, List$indexedMap, List$offset } from "../../out/beni-dev/_core/List.mjs";
 import { Maybe$withDefault } from "../../out/beni-dev/_core/Maybe.mjs";
 
 // ---- The dispatch loop (apps/scaling/common.mjs's p3Loop) -----------------
@@ -111,20 +111,20 @@ const Main$colours = ["red", "yellow", "blue", "green", "pink", "brown", "purple
 const Main$nouns = ["table", "chair", "house", "bbq", "desk", "car", "pony", "cookie", "sandwich", "burger", "pizza", "mouse", "keyboard"];
 const Main$next = (seed$1) => Int$mod(seed$1 * 16807, 1073741789);
 const Main$pick = (words$1, count$2, seed$3) => Maybe$withDefault(List$get(words$1, Int$mod(seed$3, count$2)), "");
-const Main$buildFrom = (id$1, first$2, seed$3, rows$4) => {
-  while (!(id$1 < first$2)) {
+const Main$buildFrom = (id$1, stop$2, seed$3, rows$4) => {
+  while (!(id$1 >= stop$2)) {
     const a$5 = Main$next(seed$3);
     const c$6 = Main$next(a$5);
     const n$7 = Main$next(c$6);
     const label$8 = `${Main$pick(Main$adjectives, 25, a$5)} ${Main$pick(Main$colours, 11, c$6)} ${Main$pick(Main$nouns, 13, n$7)}`;
-    const $t$1 = id$1 - 1;
+    const $t$1 = id$1 + 1;
     seed$3 = n$7;
-    rows$4 = List$cons({ id: id$1, label: label$8 }, rows$4);
+    rows$4 = List$append(rows$4, [{ id: id$1, label: label$8 }]);
     id$1 = $t$1;
   }
   return { a: rows$4, b: seed$3 };
 };
-const Main$build = (count$1, id$2, seed$3) => Main$buildFrom(id$2 + count$1 - 1, id$2, seed$3, []);
+const Main$build = (count$1, id$2, seed$3) => Main$buildFrom(id$2, id$2 + count$1, seed$3, []);
 const Main$replace = (model$1, count$2) => {
   const $t$2 = Main$build(count$2, model$1.nextId, model$1.seed);
   const rows$3 = $t$2.a;
