@@ -4784,5 +4784,5 @@ eleven pages of the 50-seed fuzz sweep, in both directions), the defect guard an
 mounting. Keeping the descriptor from escaping to the DOM was worth more than any hand edit: the
 optimiser's facts then fold the runtime to the page. The page fuzzer's driver cache grows to
 100 000+ entries in a sweep and then blows a gate's instruction budget; delete it after a sweep.
-The release renamer can declare one name twice in a `let` run after a fold (seen once, not yet
-reduced to a fixture).
+The release optimiser can declare one name twice in a `let` run after a fold: reduced to a
+20-line program, CK-222, red in `tests/pending/run/ReleaseRedeclared`.

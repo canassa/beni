@@ -1356,18 +1356,18 @@ const Page = struct {
     }
 
     /// Whether some listener of the page is for an event a write of a
-    /// handler can fire while the handler runs: any event but those no DOM
-    /// write fires (a pointer's, a key's, a form's), which the user alone
-    /// does. `focus`, `blur` and the rest are fired by the removal of a
-    /// focused node, so a page listening for one keeps the guard's queue.
+    /// handler can fire while the handler runs: any event but those only
+    /// the user's own input fires (a click, a key, a pointer's press, text
+    /// typed), which the list names. `focus`, `blur` and the rest are fired
+    /// by the removal of a focused node, and `change` by the blur of an
+    /// edited control, so a page listening for one keeps the guard's queue;
+    /// so does one listening for an event the list does not name.
     fn mayReenter(pg: *Page) bool {
         const user_only = [_][]const u8{
-            "click",     "dblclick",    "auxclick",    "contextmenu", "mousedown", "mouseup",
-            "mousemove", "pointerdown", "pointerup",   "pointermove", "wheel",     "keydown",
-            "keyup",     "keypress",    "input",       "change",      "submit",    "touchstart",
-            "touchend",  "touchmove",   "beforeinput", "paste",       "copy",      "cut",
-            "dragstart", "drag",        "dragend",     "dragenter",   "dragover",  "dragleave",
-            "drop",
+            "click",     "dblclick",    "auxclick",  "contextmenu", "mousedown", "mouseup",
+            "mousemove", "pointerdown", "pointerup", "pointermove", "wheel",     "keydown",
+            "keyup",     "keypress",    "input",     "beforeinput", "submit",    "paste",
+            "copy",      "cut",
         };
         var sites: std.ArrayList(*Site) = .empty;
         sites.append(pg.a(), pg.root_site) catch return true;

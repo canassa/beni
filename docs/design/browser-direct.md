@@ -2314,9 +2314,10 @@ changes, against S3's amendment above:
   function; `h` is the key's handler itself where the body only calls it with nothing (no payload,
   no field, every call written in place on the way given constants: the table app's buttons).
 - **The dispatch queue is paid for where a send can arrive during a dispatch** (§4.3): a page with
-  a listener for an event a DOM write fires as it is made — anything but a pointer's, a key's, a
-  form's input and the like, which the user alone fires; `blur` when a focused node is removed is
-  the case — calls `Direct.reentrant()` at its mount, and the guard queues. On any other page no
+  a listener for an event a DOM write fires as it is made — anything but a click, a pointer's
+  press, a key, text typed, which the user alone fires; `blur` when a focused node is removed, and
+  `change` on the blur of an edited control, are the cases — calls `Direct.reentrant()` at its
+  mount, and the guard queues. On any other page no
   such send can come, the release optimiser folds the queue away, and one that came anyway would
   be a defect of beni: the page stops (§8.2) rather than drop the message.
 - **Errors at the mount are short in a release build** (§8.2, §8.4): `mounted twice`, `cannot mount
