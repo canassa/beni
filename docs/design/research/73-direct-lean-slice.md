@@ -16,11 +16,13 @@ by the commands in §6.*
    −10 %; against the 2 830 B bar, P3's 3 198 B and 0.85 × P3 = 2 718 B, it misses all three.
    Its non-core part is 3 348 B (bar 2 400) and core's share 732 B (bar 600).
 2. **Speed: every operation is at or better than S3, and the swap is fixed**: `swap` 0.11 ms
-   median (S3 1.01), with the same fast and slow sample groups as vanilla (§2); `update10th`
-   0.64× S3, `select` 0.84× S3 and **0.67× vanilla**, `remove` 0.35× S3; the rest 0.96–1.03× S3,
-   inside their spreads.
-3. **Kill criterion 5 still fires on bytes** (and on `create10k`/`replace1k` at 1.10× vanilla
-   in a loaded cell, under the 1.2× bar); every operation is ≤ 1.2× vanilla and `select` ≤ 1.0×.
+   median (S3 1.01), with the same fast and slow sample groups as vanilla in 20 samples each
+   (§2: consistent with vanilla's, not a proof of it). Against S3 and against vanilla:
+   `update10th` 0.64× / 0.70×, `select` 0.84× / **0.67×**, `remove` 0.35× / 0.23×. `run1k`,
+   `replace1k`, `create10k` and `clear` are 0.96–1.03× S3 **in the n = 10 re-run after a fix**
+   (§2), not in the main table, where they read 1.02–1.12×.
+3. **Kill criterion 5 still fires on bytes**; every operation is ≤ 1.2× vanilla (the highest,
+   `replace1k` and `create10k`, at 1.10× in the main table) and `select` ≤ 1.0×.
    **The P3 criterion**: no operation is slower than P3 beyond its spread (`replace1k` 1.12× in
    the first batch, 1.00× at n = 10), `select` is **20 % faster than P3** (the 30 % test is
    withdrawn by the owner, §13 as amended), `swap` is 0.22× P3 — but bytes are 1.28× P3, not
@@ -91,13 +93,27 @@ measured again at n = 10 (load 5–12): **run1k 4.32 / S3 4.49 (0.96×), replace
 | Solid 1 | 0 / 20 | — | 20 | 1.905 |
 | Solid 2 | 0 / 20 | — | 20 | 1.973 |
 
-Lean direct's swap is vanilla's in both modes: the same two `insertBefore`s. S3, `browser-tea`
+Lean direct's swap looks like vanilla's in both modes (6 against 5 fast samples of 20: consistent
+with one distribution, too few to prove it): the same two `insertBefore`s. S3, `browser-tea`
 and both Solids are never fast. **The slow mode's cause**: six traces of vanilla's slow samples
 (`trace-dump.mjs` with the `v8`, `v8.execute`, GC and compile categories, down to 10 µs) show no
 GC, compile or other event inside the click's `FunctionCall`; the 0.6–1.0 ms is spent in the
 listener's own DOM calls. Which part of `insertBefore` (the removal steps, style invalidation of
 1 000 siblings) is not separated by these categories, so the cause stays unconfirmed past "the
 DOM calls, not V8".
+
+**The TodoMVC shape** (`FilteredFor`: a `For` over `List.filter`, which reconciles on every
+message; untraced, script ms, 2 pages × 4 samples per point; research 70 §3's command, load 3.6).
+It answers whether dropping S3's end trimming costs a reconcile that keeps most rows: no.
+
+| op | N | lean direct | `browser-tea` | Solid 1 | Solid 2 | vanilla | lean ÷ vanilla | S3 ÷ vanilla (research 70 §3) |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| toggle | 100 | 0.085 | 0.090 | 0.083 | 0.098 | 0.055 | 1.5 | 1.9 |
+| toggle | 1 000 | 0.113 | 0.100 | 0.090 | 0.110 | 0.060 | 1.9 | 2.7 |
+| filter | 100 | 0.528 | 0.613 | 0.583 | 0.693 | 0.245 | 2.2 | 3.1 |
+| filter | 1 000 | 3.77 | 4.06 | 4.32 | 4.67 | 1.84 | 2.0 | 3.2 |
+
+The machine was quieter than in research 70's batch, so only the ratios compare across the two.
 
 ## 3. Bytes (B1, part by part, `size-parts.mjs --map=direct-lean`, terser then brotli 11)
 
@@ -114,7 +130,9 @@ DOM calls, not V8".
 | program: the page | 716 | 782 |
 | **whole** | **4 080** (3 872 with the markup in the HTML) | 4 524 (4 305) |
 
-Coarse, leave-one-out: core 732, the platform runtime 1 464, the program 1 146.
+Coarse, leave-one-out: core 732, the platform runtime 1 464, the program 1 146. Leave-one-out
+figures do not add up to the whole (brotli shares context across parts: they sum to 3 061 of
+4 080), so the comparisons below are part against part, never sums against a total.
 
 **Against lean direct with the persistent list kept (2 931 B), where the 1 150 B are**: the
 reconciler (623 against P3's 393: rank-correct matching for any list and `browser-tea`'s
@@ -140,11 +158,13 @@ replacement keeping the middle row's node), and `emit/release/direct/TableSwap` 
 text: `DefectAtMount.release-expected`, `LocalMountedTwice.release-expected`, with
 `DefectAtMount.tea-release-expected` keeping `browser-tea`'s.
 
-**Found on the way, not fixed (out of scope)**: the release renamer gives two `let`s of one
-statement the same name when a loop-carried variable is left unread after a fold. Folding the
+**Found on the way, not fixed (out of scope)**: the release optimiser declares two locals under
+one name when two loops written in place leave results a folded branch never reads. Folding the
 reconcile's `once && not repeats` to `False` made `--release` print `let …,v=false … let m=h,v=true`
-(terser: `"v" is redeclared`). It needs a red-first fixture; a three-function user program of the
-same shape did not reproduce it.
+(terser: `"v" is redeclared`), and a 20-line user program does the same and does not load in
+Node. It is catalogued as CK-222 in `plans/checker-findings.md`, with its red fixture
+`tests/pending/run/ReleaseRedeclared.beni`; the shipped runtime does not reach it (its fold
+does not happen).
 
 ## 5. Verdicts, and what is the owner's
 

@@ -1,6 +1,8 @@
 -- A row whose key may change is made again only where its key did
 -- (browser-direct.md §6, as amended for S2: rekey), and keys are compared as
--- the keyed reconcile's key map compares them — `NaN` equal to `NaN`. A
+-- the keyed reconcile's key map compares them — `NaN` equal to `NaN`. Since
+-- the lean slice a `NaN` key is not `===` itself, so its row's edit reaches
+-- the reconcile, whose map holds `NaN` as one key: O(n), the same rows. A
 -- `Float` key of `NaN` written again with the same key keeps its row: the
 -- text typed into its input stays. A key that changes makes the row again.
 -- (A compound key cannot reach this: a tuple or record key is refused,

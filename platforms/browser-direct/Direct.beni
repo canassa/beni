@@ -752,6 +752,10 @@ trade list insts i j =
 --| row's, the rows trade places — the swap, two `insertBefore`s — and
 --| then each whose item changed is handed to `f`; anything else, a key
 --| that repeats included, is the reconcile, rank-correct for any list.
+--| The lowering calls it only for a key whose edits of the list are
+--| exactly those two element writes, so `xs` differs from the rows at
+--| `i` and `j` alone: a plan with any other edit of the list does not reach
+--| it.
 pub exchange : V, V, Int, Int, V → ⊤
 exchange list xs i j f =
     insts = Js.get list "r"

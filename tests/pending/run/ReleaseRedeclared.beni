@@ -1,0 +1,28 @@
+-- CK-222: two loops written where they are called, whose results a folded
+-- branch leaves unread, keep their declarations — and under `--release`
+-- the renamer gives both the same short name in one `let` run, so the
+-- module does not load (`let f=false;…;let f=true`: "Identifier 'f' has
+-- already been declared"). The development build prints 12; the release
+-- build must too.
+import Node
+
+
+countUp : Int, Int, Bool → Bool
+countUp j n seen = if j ≥ n then seen else countUp (j + 1) n (seen || j == 3)
+
+
+allSmall : Int, Int, Bool → Bool
+allSmall j n ok = if j ≥ n then ok else allSmall (j + 1) n (ok && j < 10)
+
+
+run : Int → Int
+run n =
+    a = n + 1
+    seen = countUp 0 n False
+    ok = allSmall 0 n True
+    b = a * 2
+    if False then (if ok && not seen then 1 else 2) else b
+
+
+main : Node.Program
+main = Node.print (String.fromInt (run 5))
