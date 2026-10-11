@@ -2313,17 +2313,11 @@ changes, against S3's amendment above:
 - **A listener outside a list with no flags** (§4.2) is `Direct.on(el, name, h)`, one shared
   function; `h` is the key's handler itself where the body only calls it with nothing (no payload,
   no field, every call written in place on the way given constants: the table app's buttons).
-- **The dispatch queue is paid for where a send can arrive during a dispatch** (§4.3): a page with
-  a listener for an event a DOM write fires as it is made — anything but a click, a pointer's
-  press, a key, text typed, which the user alone fires; `blur` when a focused node is removed, and
-  `change` on the blur of an edited control, are the cases — calls `Direct.reentrant()` at its
-  mount, and the guard queues. On any other page no
-  such send can come, the release optimiser folds the queue away, and one that came anyway would
-  be a defect of beni: the page stops (§8.2) rather than drop the message.
 - **Errors at the mount are short in a release build** (§8.2, §8.4): `mounted twice`, `cannot mount
   at <id>`; the development build keeps the prose. `browser-tea`'s release keeps its own
   (`DefectAtMount.tea-release-expected`).
-- **Unchanged**: the key map's rule (S3: kept where a selector or a script needing distinct keys
+- **Unchanged**: the dispatch guard queues a send that arrives mid-dispatch, on every page (§4.3,
+  the owner's decision below); the key map's rule (S3: kept where a selector or a script needing distinct keys
   is reached — the table app reaches both), the merge, the identity walk, the selector visit, the
   verify mode's checks.
 
@@ -2331,17 +2325,29 @@ New fixtures: `browser/direct/ExchangeRows` (the swap as one exchange, a focused
 touches keeping the focus, then a key that repeats sending the swap to the reconcile, rank-correct)
 and `ReconcileMoves` (a row moved alone, crossed ends, a reversal, a replacement keeping the middle
 row's node), each on both platforms against one golden; `emit/release/direct/TableSwap` (the
-exchange, `on` with the handler, no test of `o` or `i`, no queue).
+exchange, `on` with the handler, no test of `o` or `i`).
 
 ### *Amended 2026-10-12 (the lean slice, as measured; research 73):* faster everywhere, 4.1 kB
 
 Built as specified above, with one change found by measurement: a reconcile that finds no row
 keeps S3's straight insertion of each row (a fragment there read 1.07× S3 on `create10k`). The
-table app is **4 080 B** brotli (3 872 with the markup in the HTML; S3 4 524 / 4 305), non-core
-3 348, core 732; every operation at or under S3 within its spread, `swap` 0.11 ms (S3 1.01; the
+table app is **4 110 B** brotli (3 898 with the markup in the HTML; S3 4 524 / 4 305), non-core
+3 384, core 726 (with the queue on every page, below); every operation at or under S3 within its spread, `swap` 0.11 ms (S3 1.01; the
 same fast and slow sample groups as vanilla), `select` 0.67× vanilla and 0.80× P3. Kill criterion
 5 still fires on bytes, and the P3 criterion fails on bytes only. The gap to research 70 §7's
 2.9 kB is the guarantees this platform keeps and the prototype did not — rank-correct duplicates
 and their key map, `browser-tea`'s moves (P3's would save 140 B and make the focus differ from
 the oracle on eleven pages of the 50-seed sweep), the defect guard, several programs per page —
 and the persistent `List`; research 73 §5 lists what the owner decides.
+
+### *Amended 2026-10-12 (the owner, on PR #55):* the queue on every page, short mount errors kept
+
+Two decisions on the lean slice as first proposed. **The dispatch queue stays on every page.** A
+draft of this slice shipped the guard's queue only where an analysis of the page's listeners
+found an event a DOM write could fire mid-dispatch, and stopped the page on any other such send.
+The owner refused it: a page must never stop because an event the analysis did not foresee sent a
+message, and the ≈ 30–40 B the queue costs a page that never re-enters are accepted. `Direct.send`
+queues a send made while a dispatch runs, on every page, as S1 specified (§4.3); there is no
+`Direct.reentrant`. The fixtures that exercise a send mid-dispatch (`BlurBetweenHandlers`,
+`RowBlur`, `RemoveFocusedRow`) stay. **The short release errors at the mount are approved**:
+`mounted twice` and `cannot mount at <id>` under `--release`, the prose in development.

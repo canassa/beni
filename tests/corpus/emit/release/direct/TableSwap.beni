@@ -5,8 +5,8 @@
 -- constants, are each one call of the shared `on` with the key's handler;
 -- the rows carry their list's number, not its descriptor, so the
 -- descriptor is the program's own and the runtime it reaches is written
--- for it — no test of `o` or `i`, the end marker's `null` folded — and the
--- page, which listens for clicks only, has no dispatch queue.
+-- for it — no test of `o` or `i`, the end marker's `null` folded. The
+-- dispatch guard keeps its queue, as on every page.
 import Html exposing (Html)
 import Tea
 
