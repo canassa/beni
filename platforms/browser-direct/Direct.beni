@@ -46,55 +46,29 @@ queue : Js.Ref V
 queue = Js.ref Js.null
 
 
--- A send may come while a dispatch runs: some page listens for an event a
--- write of the page can fire as it is made (a `blur` when a focused node
--- goes). Set by that page's mount (`reentrant`); while nothing sets it, a
--- release build has no queue (`backend.md` §9, fact 2: the lean slice).
-queues : Js.Ref Bool
-queues = Js.ref False
-
-
---| `()`: the mount of a page that listens for an event one of its writes
---| can fire while a dispatch runs (browser-direct.md §4.3, as amended for
---| the lean slice): the guard queues such a send.
-pub reentrant : ⊤ → ⊤
-reentrant ⊤ = Js.write queues True
-
-
 --| `(f, x)`: one entry into program code — a listener body with its
 --| event, `dispatch` with a message, `run`'s mount with the page's
 --| programs. A send made while another runs is queued and applied, in
 --| order, before that dispatch ends, never re-entrantly (`boundary.md`
---| §9.8.4); once the page has stopped it does nothing. There is no
---| `catch`: a throw passes through to the host, and stops the page. On a
---| page no mount said may send so (`reentrant`), such a send is a defect
---| of beni: the page stops rather than lose the message.
+--| §9.8.4), on every page (the owner, 2026-10-12); once the page has
+--| stopped it does nothing. There is no `catch`: a throw passes through to
+--| the host, and stops the page.
 pub send : V, V → ⊤
 send f x =
     if Js.read dead then
         ⊤
     else if Js.read running then
-        if Js.read queues then
-            if Js.isNull (Js.read queue) then
-                Js.write queue (Js.array [])
-            _ = Js.call (Js.read queue) "push" [ f, x ]
-            ⊤
-        else
-            stop ⊤
-            fault
-                (if Js.development ⊤ then
-                    "a message was sent while a dispatch ran, on a page whose compiler said none could be: a defect of beni"
-                 else
-                    "re-entrant send"
-                )
+        if Js.isNull (Js.read queue) then
+            Js.write queue (Js.array [])
+        _ = Js.call (Js.read queue) "push" [ f, x ]
+        ⊤
     else
         Js.write running True
         ok = Js.ref False
         Js.finally
             (λ⊤ →
                 _ = Js.apply f [ x ]
-                if Js.read queues then
-                    drain ⊤
+                drain ⊤
                 -- The development verify mode (§8.3): every mounted
                 -- program's page checked against its model, once the
                 -- dispatch's messages have all applied. A release build

@@ -11,10 +11,10 @@ by the commands in §6.*
 
 ## 0. The answer in five sentences
 
-1. **Bytes drop, but not to 2.9 kB**: the table app on `browser-direct --release` is **4 080 B**
-   brotli with the markup in the bundle and **3 872 B** with it in the HTML (S3: 4 524 / 4 305),
-   −10 %; against the 2 830 B bar, P3's 3 198 B and 0.85 × P3 = 2 718 B, it misses all three.
-   Its non-core part is 3 348 B (bar 2 400) and core's share 732 B (bar 600).
+1. **Bytes drop, but not to 2.9 kB**: the table app on `browser-direct --release` is **4 110 B**
+   brotli with the markup in the bundle and **3 898 B** with it in the HTML (S3: 4 524 / 4 305),
+   −9 %; against the 2 830 B bar, P3's 3 198 B and 0.85 × P3 = 2 718 B, it misses all three.
+   Its non-core part is 3 384 B (bar 2 400) and core's share 726 B (bar 600).
 2. **Speed: every operation is at or better than S3, and the swap is fixed**: `swap` 0.11 ms
    median (S3 1.01), with the same fast and slow sample groups as vanilla in 20 samples each
    (§2: consistent with vanilla's, not a proof of it). Against S3 and against vanilla:
@@ -25,7 +25,7 @@ by the commands in §6.*
    `replace1k` and `create10k`, at 1.10× in the main table) and `select` ≤ 1.0×.
    **The P3 criterion**: no operation is slower than P3 beyond its spread (`replace1k` 1.12× in
    the first batch, 1.00× at n = 10), `select` is **20 % faster than P3** (the 30 % test is
-   withdrawn by the owner, §13 as amended), `swap` is 0.22× P3 — but bytes are 1.28× P3, not
+   withdrawn by the owner, §13 as amended), `swap` is 0.22× P3 — but bytes are 1.29× P3, not
    ≤ 0.85×.
 4. **What separates 4.1 kB from lean's 2.9 kB is guarantees and generality, not compiling away**
    (§3): lean dropped rank-correct duplicate keys (CK-221) and the key map that pays for them,
@@ -47,9 +47,14 @@ Each item is the amendment's; this is what it measured.
 | `exchange`: a swap's two writes checked once, after both | +≈ 40 | swap 1.01 → 0.11 ms |
 | visits handed as names (`w`, a group function) | −6 | |
 | `on` for listeners outside a list, the handler itself where it can be | in "the page" | six wrapper lambdas and listeners gone |
-| the dispatch queue only where a send can arrive during a dispatch | −40 | |
-| short release errors at the mount | in the scheduler's 151 (S3 287, with the queue) | |
+| short release errors at the mount (approved by the owner) | in the scheduler's 192 (S3 287) | |
 | `NaN`-aware key equality gone (a `NaN` key reaches the reconcile, whose `Map` is right) | −10 | |
+
+**Withdrawn by the owner (2026-10-12)**: a draft shipped the dispatch queue only on pages whose
+listeners an analysis found could re-enter, saving 30 B (4 080 B); the owner kept the queue on
+every page, since a page must never stop because the analysis missed an event. The figures in
+this report are with the queue; the timings were taken without it (the queue adds one test of a
+flag per dispatch when no send arrives mid-dispatch).
 
 **Rejected on the way, measured**: P3's own moves (both ends, crossed ends, the middle put from
 the back) in place of `browser-tea`'s udomdiff would save **140 B** (3 918 B). The page fuzzer's
@@ -119,28 +124,29 @@ The machine was quieter than in research 70's batch, so only the ratios compare 
 
 | part | lean slice, leave-one-out | S3 (research 70 §2) |
 |---|--:|--:|
-| core (the trie, `get`, `indexedMap`, `filter`, `modBy`) | 656 (coarse: 732) | 741 |
-| Rt scheduler: `send`, mount, `run` | 151 | 287 |
-| Rt lists: rows, keys, the key map | 58 | 116 |
-| Rt list scripts: `append`, `clear`, `exchange`, walk, select | 239 | 245 |
-| Rt reconciler | 623 | 721 |
-| Rt merge | 79 | 73 |
-| Rt delegation, `on` | 141 | 137 |
-| program data, update | 398 | 403 |
-| program: the page | 716 | 782 |
-| **whole** | **4 080** (3 872 with the markup in the HTML) | 4 524 (4 305) |
+| core (the trie, `get`, `indexedMap`, `filter`, `modBy`) | 676 (coarse: 726) | 741 |
+| Rt scheduler: `send` with its queue, mount, `run` | 192 | 287 |
+| Rt lists: rows, keys, the key map | 57 | 116 |
+| Rt list scripts: `append`, `clear`, `exchange`, walk, select | 231 | 245 |
+| Rt reconciler | 617 | 721 |
+| Rt merge | 90 | 73 |
+| Rt delegation, `on` | 138 | 137 |
+| program data, update | 404 | 403 |
+| program: the page | 719 | 782 |
+| **whole** | **4 110** (3 898 with the markup in the HTML) | 4 524 (4 305) |
 
-Coarse, leave-one-out: core 732, the platform runtime 1 464, the program 1 146. Leave-one-out
-figures do not add up to the whole (brotli shares context across parts: they sum to 3 061 of
-4 080), so the comparisons below are part against part, never sums against a total.
+Coarse, leave-one-out: core 726, the platform runtime 1 493, the program 1 157. Leave-one-out
+figures do not add up to the whole (brotli shares context across parts: they sum to 3 124 of
+4 110), so the comparisons below are part against part, never sums against a total.
 
-**Against lean direct with the persistent list kept (2 931 B), where the 1 150 B are**: the
-reconciler (623 against P3's 393: rank-correct matching for any list and `browser-tea`'s
+**Against lean direct with the persistent list kept (2 931 B), where the 1 180 B are**: the
+reconciler (617 against P3's 393: rank-correct matching for any list and `browser-tea`'s
 moves); the scripts, the merge and the key map (≈ 380 against lean's ≈ 250 of exact edits: each
 keeps rank — a script whose rows a repeated key would match by rank runs only while every key is
 one row's, and otherwise reconciles — and works for any page, a list in a row, a list not owning
-its parent, a row reading its position); the scheduler (151 against lean's 34: the `finally`
-that stops the page on a throw, the multi-program mount with its two checks); the delegation walk
+its parent, a row reading its position); the scheduler (192 against lean's 34: the `finally`
+that stops the page on a throw, the queue for a send made mid-dispatch, the multi-program mount
+with its two checks); the delegation walk
 (nested lists, `disabled`, the flags, other programs' mounts); and the page's descriptor, slots
 and group functions. None of these is code the compiler failed to compile away: each is a
 guarantee lean's prototype did not keep or a case the table app does not reach.
@@ -154,7 +160,7 @@ finds no difference on any direct page; `verify.mjs` passes for every subject. N
 keeping the focus; then a key that repeats sends the swap to the reconcile, rank-correct, as
 `browser-tea` matches it) and `ReconcileMoves` (a row moved alone, crossed ends, a reversal, a
 replacement keeping the middle row's node), and `emit/release/direct/TableSwap` (the exchange,
-`on` with the handler, no test of `o` or `i`, no queue). The release errors at the mount changed
+`on` with the handler, no test of `o` or `i`). The release errors at the mount changed
 text: `DefectAtMount.release-expected`, `LocalMountedTwice.release-expected`, with
 `DefectAtMount.tea-release-expected` keeping `browser-tea`'s.
 
@@ -168,21 +174,21 @@ does not happen).
 
 ## 5. Verdicts, and what is the owner's
 
-- **Kill criterion 5**: fires on bytes (4 080 > 2 830; non-core 3 348 > 2 400; core 732 > 600).
+- **Kill criterion 5**: fires on bytes (4 110 > 2 830; non-core 3 384 > 2 400; core 726 > 600).
   Speed passes: every operation ≤ 1.2× vanilla (the highest `replace1k` and `create10k` at 1.10×
   in loaded cells), `select` 0.67×.
 - **The P3 criterion**: speed passes (no operation slower than P3 beyond its spread, `swap`
-  0.22× P3, `select` 0.80× P3); bytes fail (1.28× P3 against ≤ 0.85×).
+  0.22× P3, `select` 0.80× P3); bytes fail (1.29× P3 against ≤ 0.85×).
 - **Decisions this measurement puts to the owner**, each with what it is worth:
   1. *Move rows by another order than `browser-tea`'s*: −140 B, and the focus differs from the
      oracle where the two orders differ. A minimal-move order (LIS) would keep focus at least as
      often as either, and would then need `browser-tea` to adopt it for the two to stay each
      other's oracle.
   2. *Plain arrays edited in place* (the ownership thesis): research 70 §7 measured −878 B on
-     lean; on this bundle core is 732 B.
+     lean; on this bundle core is 726 B.
   3. *Rank-correct duplicates and the key map*: they are CK-221's guarantee and stay; their
      cost is most of the scripts' and the merge's ≈ 130 B over lean's.
-  Without 1 and 2 the design does not reach 2.83 kB; with 2 alone the estimate is ≈ 3.4 kB [estimate: core's 732 B mostly gone].
+  Without 1 and 2 the design does not reach 2.83 kB; with 2 alone the estimate is ≈ 3.4 kB [estimate: core's 726 B mostly gone].
 
 ## 6. Commands
 

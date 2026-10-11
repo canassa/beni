@@ -61,8 +61,6 @@ pub const lowering: m.Lowering = .{
         // `(f, x)`: the dispatch guard (§4.3), which a listener body, the
         // dispatcher and the mount enter program code through.
         .{ .name = "send", .arity = 2 },
-        // `()`: the page may send while a dispatch runs; the guard queues.
-        .{ .name = "reentrant", .arity = 0 },
         // The sentinel every slot starts at (§5.3).
         .{ .name = "unset", .arity = 0 },
         // The writes `backend.md` §15.3's table names, as `browser`'s `Rt`
@@ -1181,11 +1179,6 @@ const Page = struct {
             try js.expression(pg.body, try pg.rt("fuzzMount", &.{try js.arrow(&.{msg}, blk)}));
         }
 
-        // A page that listens for an event a write can fire as it is made
-        // has the guard queue a send made during a dispatch (§4.3, as
-        // amended for the lean slice); any other page ships no queue.
-        if (pg.mayReenter()) try js.expression(pg.body, try pg.rt("reentrant", &.{}));
-
         // The model, which every handler replaces (§4.1).
         const init = try cx.programInit(pg.body);
         pg.model = try cx.fresh("$model");
@@ -1353,36 +1346,6 @@ const Page = struct {
 
         if (!cx.build.release) try pg.writeVerify();
         return js.arrow(&.{ pg.at_root, pg.t }, pg.body);
-    }
-
-    /// Whether some listener of the page is for an event a write of a
-    /// handler can fire while the handler runs: any event but those only
-    /// the user's own input fires (a click, a key, a pointer's press, text
-    /// typed), which the list names. `focus`, `blur` and the rest are fired
-    /// by the removal of a focused node, and `change` by the blur of an
-    /// edited control, so a page listening for one keeps the guard's queue;
-    /// so does one listening for an event the list does not name.
-    fn mayReenter(pg: *Page) bool {
-        const user_only = [_][]const u8{
-            "click",     "dblclick",    "auxclick",  "contextmenu", "mousedown", "mouseup",
-            "mousemove", "pointerdown", "pointerup", "pointermove", "wheel",     "keydown",
-            "keyup",     "keypress",    "input",     "beforeinput", "submit",    "paste",
-            "copy",      "cut",
-        };
-        var sites: std.ArrayList(*Site) = .empty;
-        sites.append(pg.a(), pg.root_site) catch return true;
-        for (pg.lists.items) |list| sites.append(pg.a(), list.rows) catch return true;
-        for (pg.shareds.items) |sh| sites.append(pg.a(), sh.site) catch return true;
-        for (sites.items) |s| for (s.ops()) |op| switch (op.what) {
-            .event => |x| {
-                const name = pg.tree.string(pg.tree.eventFacts(x.item.event).dom_name);
-                for (user_only) |u| {
-                    if (std.mem.eql(u8, u, name)) break;
-                } else return true;
-            },
-            else => {},
-        };
-        return false;
     }
 
     // ---- Planning -------------------------------------------------------
