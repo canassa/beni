@@ -186,9 +186,10 @@ imports (`backend.md` §9, `src/js/Minify.zig`): the empty mounted page is
 1.4 kB brotli (`bench/size.mjs`'s `page` lines).
 
 **`List` is array-backed** (the owner's decision, 2026-10-01; landed the same day): a plain
-array, an O(1) view for a pattern's `rest`, or a 32-way trie with a claimable head and tail
-(E1tp), so `length` and indexed reads are O(1) or near it, and `List.push` and `[ x, …xs ]` are
-amortised O(1) at either end. Every reader outside `core/List.js` uses three facts — `length`,
+array, an O(1) view for a pattern's `rest`, or a 32-way trie with a claimable tail
+(E1tp), so `length` and indexed reads are O(1) or near it, and `List.push` and `[ …xs, x ]` are
+amortised O(1). **A list grows at its end** (the owner, 2026-10-11): `[ x, …xs ]` copies, and
+prepending onto a loop accumulator is the warning `prepend_in_loop`. Every reader outside `core/List.js` uses three facts — `length`,
 `Array.isArray`, `$plain()`; `++` on lists calls `List.append`. Contract: `backend.md` §4 *Lists
 are arrays*, `language.md` §6.8; order of work and measurements: `plans/list-arrays.md`. Since
 2026-10-02 a loop that walks its list with `[ x, …rest ]` reads it by an offset into its base
