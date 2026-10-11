@@ -2211,6 +2211,51 @@ test "a check on a platform the binary carries lexes, parses, lowers and checks 
     try testing.expectEqual(@as(u64, 0), r.counters.hits);
 }
 
+test "a dump installs the checked core and platforms, though it runs without the informational warnings" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `dump` leaves the informational warnings off and `check` turns them
+    // on, and the switch was a term of every module's key, so no row of
+    // the checked core (made as `check` runs) matched a dump: every dump
+    // checked core and its platforms from source, five times the work of
+    // the check it stood beside. Those warnings are the root package's
+    // alone, so the switch is now a term only of the keys of the modules
+    // it reaches (`fast-compiler.md` §8, *The option string*).
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", reaches_node);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const interface = try runCounted(&w, arena, &.{ "dump", "--stage=interface", "--platform=node", "src/Main.beni" }, "interface.json");
+    const types = try runCounted(&w, arena, &.{ "dump", "--stage=types", "--platform=node", "src/Main.beni" }, "types.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]Run{ interface, types }) |r| {
+        try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+        try testing.expectEqualStrings("", r.result.stderr);
+        try testing.expect(r.result.stdout.len != 0);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // `Main` alone is checked; `Node`, `Random`, `Ssr`, `Html` and core
+    // were installed, as a `check` installs them.
+    for ([_]Run{ interface, types }) |r| {
+        try testing.expectEqual(@as(u64, 1), r.counters.checked);
+        try testing.expect(r.counters.embedded_modules >= 10);
+        try testing.expectEqual(r.counters.modules, r.counters.checked + r.counters.embedded_modules);
+    }
+}
+
 test "a platform read from a directory is checked by the build, and an embedded one beneath it is not" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

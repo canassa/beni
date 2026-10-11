@@ -925,6 +925,22 @@ run with it must produce the same record, and exempting it would excuse it from 
 matrix; `--out`, `--library`, `--release` because they are the backend's and no emitted byte is
 cached.
 
+*Amended 2026-10-11: **the informational bit is the switch as it reaches the module**, not the
+run's.* Every informational warning is the root package's (`language.md` §10, `checker-v2.md`
+§25.4, `static-dispatch-spike.md` §10.9), and `--explain` extends two of them, `unit_discarded`
+and `prepend_in_loop`, to every package. So a core or a platform module produces the same record
+with the switch on or off unless `--explain` is given, and its key writes `informational=1` only
+then: the bit is `informational ∧ (explain ∨ package = app)`, the permission bits' argument again —
+a sharper key is smaller, never wronger. One function computes it for the key and for the checker's
+gates (`Key.informationalReaches`), so a gate cannot read the run's switch where the key does not.
+What it buys is `dump`, which runs without the switch: it used to miss every row of the checked
+core and check core and its platforms from source — 857 million instructions for `dump
+--stage=writes --msg-types` on a `browser-tea` list page, 174 million now, the cost of a `check`
+(`tests/blackbox/cache_test.zig`, *a dump installs the checked core and platforms*). The same
+amendment gated `unkeyed_for` and `raw_markup_attribute` to the root package, as `language.md` §10
+already said they were; until then they were the one informational pair a core or platform module
+could emit.
+
 **The `stat` fast-path is the front-end artifacts'.** The persistent cache reads and hashes every source on every run because it reads
 every source anyway, so the hash is the only added cost: 1 836 kB at the 3.2 GB/s measured here is
 **0.57 ms** over the 100k corpus, against a 4.5 ms `read` phase. There is no size/mtime/inode column
@@ -1360,13 +1376,14 @@ the code that installs a directory's hit, and `lex`, `parse`, `lower` and the mo
 never run for it. **There is no new correctness argument**, which is the reason for the shape: a key
 is the whole input set of what it names (above), the rows were produced from the same sources by a
 compiler built from the same `src/` and `build.zig`, and every way a row can fail to apply — another
-option string, another `--pattern-budget`, a `dump` (which leaves the informational warnings off), a
+option string, another `--pattern-budget`, a
 `--cache-build-id` — is a key that is not in the table: a miss, and the module is checked as it
 always was. A malformed blob is the empty one.
 
 **Which runs read it.** Every run that enumerates the embedded core — `check`, `build`, `serve`,
-`dump --stage=interface|raw|types|graph|dispatch` (which miss, being keyed without the informational
-warnings, and check core as before) — **with or without a cache directory, and `--no-cache` does not
+`dump --stage=interface|raw|types|graph|dispatch` (which missed, being keyed without the informational
+warnings, until the amendment of 2026-10-11 to *The option string* took that bit out of the keys of
+the modules it cannot change) — **with or without a cache directory, and `--no-cache` does not
 turn it off**: it is part of the compiler, not a cache, and the run is byte-identical either way.
 **A core read with `--core-root` never reads it**, even a copy whose bytes are the embedded ones: it
 is somebody's core under development, and it keeps today's path — lowered and checked by the build,

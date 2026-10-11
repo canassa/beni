@@ -58,6 +58,7 @@ const Eager = @import("Eager.zig");
 const Tree = @import("constrain/Tree.zig");
 const MarkupTexts = @import("MarkupTexts.zig");
 const Instances = @import("Instances.zig");
+const Key = @import("../cache/Key.zig");
 const Elaborate = @import("Elaborate.zig");
 const Identity = @import("Identity.zig");
 const Groups = @import("Groups.zig");
@@ -174,11 +175,18 @@ pub fn check(in: Input) Error!Check.Counters {
     var effects_kept = false;
     defer if (!effects_kept) effects.deinit();
     cx.effects = &effects;
+    // Every informational warning is the root package's, `--explain`
+    // extends two to every package, and the module's cache key carries the
+    // switch only where it reaches (`Key.informationalReaches`): a gate
+    // below that read the run's switch instead would make an entry replay
+    // warnings its key does not account for.
+    const root = in.graph.modulePackage(in.module) == .app;
+    const informational = Key.informationalReaches(in.informational, in.explain, in.graph.modulePackage(in.module));
     var discards: std.ArrayList(Context.Discard) = .empty;
     defer discards.deinit(scratch);
     // `unit_discarded` (checker-v2.md §34): the root package's, and under
     // `--explain` every package's, which is how the migration reached core.
-    if (in.informational and !quiet and (in.explain or in.graph.modulePackage(in.module) == .app)) cx.discards = &discards;
+    if (informational and !quiet) cx.discards = &discards;
     var report: Report = undefined;
     try report.init(&cx, in.diagnostics, quiet, decl_scheme, local_type);
     defer report.deinit();
@@ -248,7 +256,7 @@ pub fn check(in: Input) Error!Check.Counters {
     defer solver.deinit();
     solver.decl_scheme = decl_scheme;
     solver.own_values = own_values;
-    solver.informational = in.informational;
+    solver.informational = informational and root;
     solver.resolver.decl_requirements = try scratch.alloc(Dispatch.Range, bir.decls.len);
     @memset(solver.resolver.decl_requirements, .empty);
     // The derived contexts (§11.2): the type-level units now, each answer
@@ -310,7 +318,7 @@ pub fn check(in: Input) Error!Check.Counters {
     if (!quiet and report.errors == 0) try Sync.check(&effects, .{ .cx = &cx, .report = &report, .decl_scheme = decl_scheme });
     // `suspicious_argument_order` (language.md §12.5), a warning for the
     // root package's modules, decided on a module that checked clean.
-    if (!quiet and report.errors == 0 and in.informational and in.graph.modulePackage(in.module) == .app) {
+    if (!quiet and report.errors == 0 and informational and root) {
         try CallStyle.suspiciousOrder(report.staging(), &report);
         try report.flush();
     }
@@ -325,7 +333,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // `prepend_in_loop` (checker-v2.md §35): the root package's, and under
     // `--explain` every package's, on a module that checked clean. After
     // elaboration, which is what says which function a method call runs.
-    if (!quiet and report.errors == 0 and in.informational and (in.explain or in.graph.modulePackage(in.module) == .app)) {
+    if (!quiet and report.errors == 0 and informational) {
         try Prepend.check(report.staging(), &report, in.dispatch);
         try report.flush();
     }
