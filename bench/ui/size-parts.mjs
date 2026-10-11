@@ -67,13 +67,55 @@ maps["table-for"] = maps.table.flatMap((p) =>
     : [p],
 );
 
-// Three parts: core, the platform runtime, the program.
-const coarse = (prefix) => maps.table.filter(([l]) => l.startsWith(prefix)).map(([, n]) => n).join(" ");
-maps["table-coarse"] = [
-  ["core (List, Basics, Maybe)", coarse("core")],
-  ["platform runtime (Rt)", coarse("Rt")],
-  ["program", coarse("program")],
+// The table app at slice S3 of browser-direct (research 70), its rows built
+// in order (`[ …rows, row ]`; the building-loop rule was withdrawn on
+// 2026-10-11): `browser-tea --release` (`table-s3`) and
+// `browser-direct --release` (`direct-s3`, `--file=out/beni-direct-rel/_main.mjs`).
+maps["table-s3"] = [
+  ["core List: the trie, views, `++` and push", "Q R S T U V W X Y Z $ _ aa ba ca da ea fa ia ja"],
+  ["core List.get", "ga ha"],
+  ["core List.indexedMap", "ka la"],
+  ["core List.filter", "ma na oa pa"],
+  ["core Basics.modBy, Maybe.Nothing", "O P"],
+  ["Rt keyed For: reconcile, fast path, row mount and patch", "A B C D E F G H I J K"],
+  ["Rt delegation: listener, walk, fire", "L M N"],
+  ["Rt scheduler: queue, turn, flush, defect guards, mount, run", "o p q r s t u v y"],
+  ["Rt slots: slot, unit, patch, child, refresh", "h i j k l m n z"],
+  ["Rt template", "g"],
+  ["Rt DOM ranges: first, last, put, drop", "a b c d e f"],
+  ["program: message constructors", "qa ra sa ta ua va wa"],
+  ["program: data (word lists, buildData)", "Fa Ga Ha Ia Ja Ka La"],
+  ["program: update (and swap)", "Ma Na x"],
+  ["program: view (templates, kinds, patches)", "xa ya za Aa Ba Ca Da Ea w"],
+  ["program: init and start", "Oa"],
 ];
+maps["direct-s3"] = [
+  ["core List: the trie, views, `++` and push", "b c d e f g h i j k l m n o p q r s v w"],
+  ["core List.get", "t u"],
+  ["core List.indexedMap", "x y"],
+  ["core List.filter", "z A B C"],
+  ["core Basics.modBy, Maybe.Nothing", "sa a ua"],
+  ["Rt scheduler: send, mount, run, the program", "D E F G H I J ta"],
+  ["Rt lists: rows, keys, the key map, renumber", "K L M N O P Q R S T U V W X Y"],
+  ["Rt list scripts: mount, append, clear, row patch, rekey, walk, select", "Z $ _ aa ma na qa"],
+  ["Rt reconciler: match, rank, patch, moves", "ba ca da ea fa ga ha ia ja ka la"],
+  ["Rt merge (a filter's script)", "oa pa"],
+  ["Rt delegation: the list's listener", "ra"],
+  ["program: data (word lists, buildData)", "va wa xa ya za Aa Ba"],
+  ["program: update (the swap)", "Ca Da"],
+  ["program: the page (templates, groups, handlers, listeners)", "Ea Fa"],
+];
+
+// Three parts: core, the platform runtime, the program.
+const coarseOf = (name) => {
+  const coarse = (prefix) => maps[name].filter(([l]) => l.startsWith(prefix)).map(([, n]) => n).join(" ");
+  return [
+    ["core (List, Basics, Maybe)", coarse("core")],
+    ["platform runtime (Rt)", coarse("Rt")],
+    ["program", coarse("program")],
+  ];
+};
+for (const name of ["table", "table-s3", "direct-s3"]) maps[`${name}-coarse`] = coarseOf(name);
 
 const map = maps[arg("map", "table")];
 const src = readFileSync(file, "utf8");

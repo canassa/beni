@@ -56,6 +56,7 @@ import { dirname, join } from "node:path";
 import { loadavg } from "node:os";
 import * as depth from "./apps/scaling/depth.mjs";
 import * as derived from "./apps/scaling/derived.mjs";
+import * as filtered from "./apps/scaling/filtered.mjs";
 import * as holes from "./apps/scaling/holes.mjs";
 import * as live from "./apps/scaling/live.mjs";
 import * as liveHelper from "./apps/scaling/live-helper.mjs";
@@ -129,6 +130,16 @@ const sweeps = [
     ops: [
       { id: "change", target: "go", done: (k, n) => textIs(`${row(rows.target(n))}.children[1]`, `changed ${k}`) },
       { id: "swap", target: "swap", done: (k, n) => textIs(`${row(1)}.firstChild`, k % 2 === 1 ? n - 1 : 2) },
+    ],
+  },
+  {
+    id: "filtered",
+    what: "TodoMVC's shape: a keyed list of N todos filtered, every other one done",
+    program: filtered,
+    params: { full: [100, 1000], quick: [100, 1000] },
+    ops: [
+      { id: "toggle", target: "go", done: (k, n) => `document.querySelector("ul").children[${filtered.target(n)}].className === ${JSON.stringify(filtered.classAfter(k, n))}` },
+      { id: "filter", target: "filter", done: (k, n) => `document.querySelector("ul").children.length === ${k % 2 === 1 ? filtered.active(n) : n}` },
     ],
   },
   {
