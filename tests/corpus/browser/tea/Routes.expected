@@ -1,0 +1,97 @@
+-- url "/login"
+-- load
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Sign in"</h1>
+    <p>"sign in"</p>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Sign in")
+(the DOM did not change)
+-- click #items
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Items"</h1>
+    <p>"items"</p>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Items")
+(the DOM did not change)
+-- click #login
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Sign in"</h1>
+    <p>"sign in"</p>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Sign in")
+(the DOM did not change)
+-- click #items
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Items"</h1>
+    <p>"items"</p>
+    <ol></ol>
+  </main>
+</body>
+-- back
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Sign in"</h1>
+    <p>"sign in"</p>
+    <ol></ol>
+  </main>
+</body>
+-- location
+(location: /login)
+(the DOM did not change)
+-- title
+(title: "Sign in")
+(the DOM did not change)
+-- back
+<body>
+  <main>
+    <nav>
+      <a id="login" href="/login">"login"</a>
+      <a id="items" href="/items">"items"</a>
+    </nav>
+    <h1>"Items"</h1>
+    <p>"items"</p>
+    <ol></ol>
+  </main>
+</body>
+-- location
+(location: /items)
+(the DOM did not change)
+-- title
+(title: "Items")
+(the DOM did not change)

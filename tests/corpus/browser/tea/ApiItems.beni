@@ -1,0 +1,93 @@
+-- The milestone's acceptance page (plans/http-and-routing.md, *Order*),
+-- its list half: a `GET` that carries a bearer token in its
+-- `Authorization` header and reads a JSON list through a schema
+-- (boundary.md §9.8.12, `expectJson` over `Schema.list`). Asked for
+-- again, the list is a 401, which is `BadStatus`: the items are emptied
+-- and the failure is shown, not a crash. Signing in is `ApiLogin` and
+-- routing `Routes`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Schema
+import Sub
+import Tea
+
+
+schema Item =
+    id : Int
+    name : String
+
+
+type Msg
+    = Load
+    | GotItems (Result Http.Error (List Item.Type))
+
+
+type alias Model =
+    items : List Item.Type
+    log : List String
+
+
+loadItems : String → Cmd Msg
+loadItems token =
+    Cmd.task
+        (λ⊤ →
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" "Bearer ${token}" ]
+                , url = "/api/items"
+                , body = Http.emptyBody
+                , expect = Http.expectJson (Schema.list (Item.schema ⊤))
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+        )
+        GotItems
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Load →
+            ( model, loadItems "t0k3n" )
+
+        GotItems (Ok items) →
+            ( { model
+                | items = items
+                , log = model.log ++ [ "${String.fromInt (List.length items)} items" ]
+              }
+            , Cmd.none
+            )
+
+        GotItems (Err (Http.BadStatus code)) →
+            ( { model | items = [], log = model.log ++ [ "BadStatus ${String.fromInt code}" ] }
+            , Cmd.none
+            )
+
+        GotItems (Err _) →
+            ( { model | items = [], log = model.log ++ [ "another error" ] }, Cmd.none )
+
+
+row : Item.Type → Html Msg
+row item = <li>{"${String.fromInt item.id}: ${item.name}"}</li>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="load" onClick={Load}>load</button>
+        <ul>
+            <For each={model.items} keyed={.id}>{row}</For>
+        </ul>
+        <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { items = [], log = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
