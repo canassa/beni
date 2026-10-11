@@ -183,7 +183,8 @@ ownership annotations ``are mostly design-driven'', that a trivial assignment al
 constraints, and that inference approaches therefore ``infer any solution that satisfies the constraints,
 but cannot give a best solution'' \citep[\S5]{clarke2013survey}: a satisfying solution need not be the
 intended one. Our facts are properties of the program rather than design choices, so the least solution of
-our monotone constraints is the intended one (\S\ref{sec:inf-recursion}).
+our constraints, where they are monotone, is the intended one; where one is not, we claim a sound solution
+rather than a least one (\S\ref{sec:inf-recursion}).
 
 \paragraph{Languages.} Austral checks linearity with two declared rules, a linear universe of types and a
 use-once rule---``a value of a linear type must be used once and only once'' \citep{austral}---designed so

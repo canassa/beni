@@ -309,6 +309,17 @@ the core library ships inside the compiler, so an edit to a core function that m
 more pessimistic would reject programs that were accepted, and a core summary may therefore only become
 more permissive. The one legitimate exception is a \emph{soundness fix}: a
 rule found unsound may reject previously accepted programs, and must do so with a diagnostic that says
-so and, where a mechanical rewrite exists, a migration in the formatter. The rule set is versioned in
+so and, where a mechanical rewrite exists, a migration in the formatter.
+
+The promise is a \emph{compatibility policy}, not a theorem, and it should be read as one. ``More precise''
+is not by itself ``accepts more'': a finer path language can add guard atoms or tracked paths, and the cap
+on atoms (\S\ref{sec:inf-lattice}) or on width (\S\ref{sec:inf-complexity}) then turns a summary that an
+older release computed exactly into its pessimistic value, rejecting a program the older release
+accepted. The supply bit's lack of monotonicity (\S\ref{sec:inf-lattice}) is a second way a change in one
+place can lose acceptance in another. What would make the promise a theorem is a simulation argument:
+that every derivation the older rules admit, caps included, is still admitted, or is mapped to one that
+is. We do not have it. Until we do, each release that changes the rules runs the previous release's
+accepted corpus and treats a newly rejected program as a defect of the release, unless the rejection is a
+soundness fix. The rule set is versioned in
 the interface format, so a cached interface produced under an older rule set is a cache miss, never a
 silent mix.

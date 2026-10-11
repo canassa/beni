@@ -19,14 +19,17 @@ measures the precision of the classifier the checker would be.
 \section{The next phase: a prototype checker and a differential soundness test}
 \label{sec:eval-next}
 
-This is the last form of the design to be argued on paper. Four rounds of adversarial reading each found
-accepted programs whose in-place run would differ from their value run---nine such holes in the last two
-rounds alone---and every one was at an \emph{interaction}: a fold's asserted row and a top-level value; an
-opaque type and a caller's \Disjoint; a recursive type's folding and liveness; a send and an arm that
-edits a payload without storing it; the release representation and the renderer's identity guards. Each
-rule was right on its own, and each repair was local. A fifth reading would likely find more of the same
-kind, more slowly, because the combinations grow faster than a reader can trace them. The next phase
-therefore replaces reading with testing.
+This is the last form of the design to be argued on paper. Five rounds of adversarial reading each found
+accepted programs whose in-place run would differ from their value run---nine such holes in the third and
+fourth rounds alone---and every one was at an \emph{interaction}: a fold's asserted row and a top-level
+value; an opaque type and a caller's \Disjoint; a recursive type's folding and liveness; a send and an arm
+that edits a payload without storing it; the release representation and the renderer's identity guards.
+Each rule was right on its own, and each repair was local. The fifth reading found one more of the same
+kind, as expected, and more slowly: freshness across a callback's calls and sharing inside one call's
+result, which \code{map}'s and \code{initialize}'s rows treated as one property (T59). The combinations
+grow faster than a reader can trace them, and the generator below is told to build exactly such heaps:
+fresh outer containers with duplicated inner cells, closures that share a capture, and one cell reachable
+through several abstract representatives. The next phase therefore replaces reading with testing.
 \begin{enumerate}
 \item \emph{A prototype checker in report mode} (\S\ref{sec:eval-report}): the analysis of
 Chapters~\ref{sec:model}--\ref{sec:hard} as a pass that prints its verdicts and changes no emitted byte,
@@ -48,6 +51,13 @@ not make, opaque and recursive types with every demand, and every program built 
 and a release build. Each generated program the prototype accepts goes through the differential test; each
 it rejects is kept as a measure of precision. A program that traps is shrunk to a minimal one, added to
 Table~\ref{tab:counterexamples}, and the rule it exposes is repaired before anything else proceeds.
+\item \emph{Controls on the test itself.} The test must be shown able to fail. Each run includes
+\emph{negative controls}: builds with a deliberately wrong asserted row (T46's fold row, T59's
+\code{initialize} row as it first stood) and with a retention fact removed from a runtime row, each of which
+must trap on some generated program within the budget. Each accepted program is run under several
+interleavings of its fibers' suspensions, several callback call counts where a row permits a range, and
+both builds; and where practical its value semantics is computed by a separate interpreter of the
+language, not by the compiler under test.
 \end{enumerate}
 Generated programs test what the corpus cannot: the corpus contains only the combinations someone wrote,
 and the holes so far were in combinations no one had. They do not prove anything either. What they buy is
@@ -71,10 +81,16 @@ make the first decision fire on programs that are correct;
 \item \emph{a stale-read sanitiser}: the instrumented semantics of \S\ref{sec:soundness-instrumented}
 made executable. Every array carries a version counter, incremented by each in-place write; every
 reference to an array that the emitted code creates---a local, a field, an element, a closure's
-environment, a pending operand, a runtime structure---is wrapped with the version at which it was
-obtained, and every dereference, identity comparison or call through a stale wrapper \emph{traps},
-printing the reference's origin and the write that made it stale. A second call of a once closure traps
-the same way;
+environment, a pending operand, a runtime structure---is wrapped with a stamp, and the stamp lives on the
+stored edge: a reference read out of a field or an element carries the stamp it was stored with, never a
+fresh one taken from the record or list it was read from, so a stale child reached through a current
+parent stays stale. Every dereference, identity comparison or call through a stale wrapper \emph{traps},
+printing the reference's origin and the write that made it stale, with one exception: an identity
+comparison at an \emph{exempt} site (\S\ref{sec:soundness-instrumented}, A11)---privileged code, a listed
+site, made through the dedicated primitive---is recorded and counted instead, and in the sanitised run
+the privileged code also builds the result of the branch not taken and checks that the two agree in
+contents. The proof and the sanitiser thus share one executable observation
+policy. A second call of a once closure traps the same way;
 \item \emph{a shadow mode}, for the template runtime and every other target that keeps persistent lists:
 the persistent runtime, unchanged, with each accepted demand marking the array it consumed as
 \emph{superseded}, and every later read of a superseded array by program code trapping. A superseded array
@@ -147,7 +163,8 @@ counted;
 mechanical in part---beni's formatter migrates syntax, turning \code{x :: acc} into \code{[ x, …acc ]}---and
 by hand in part, since beni has no automatic currying and \code{init} becomes a function; we count the
 porting effort, and port without regard to the rule, writing each list operation the way an Elm
-programmer wrote it, and building each for the direct platform.
+programmer wrote it, and building each for the direct platform. The raw port is frozen, by a recorded
+commit, before any repair, and every count is reported for it; the repaired port is reported separately.
 \end{enumerate}
 The external corpus is the one the decision rests on, because it was not written with the rule in mind.
 Its demands are idiomatic by definition: they are what Elm programmers wrote, carried over. The idioms
@@ -176,6 +193,12 @@ kept copies & rejections caused by an identity promise across the entry: a filte
 \emph{idiomatic error rate} & on the external corpus, rejected demands over \emph{all} its demands, pooled and
 per application; broken down by idiom I1--I7 and ``other'', and by kind (exact, approximate, position); the
 main metric \\
+applications accepted & on the external corpus, applications with no rejection at all, as written and after
+repair; a pooled rate over demands lets large applications dominate, and this count does not \\
+root causes & rejections grouped by the one holder or fact that causes them: one captured model list that
+blocks edits at many sites is one cause, reported beside its site count \\
+repair effort & per root cause, the repair iterations until the program is accepted, the lines changed
+outside the reported function, and the \code{List.copy} calls the repair introduced \\
 once-closure rejections & by kind: called twice, passed to a $\mathit{many}$ position, escaping \\
 exclusive containers & container paths that carry $\excl$ at a destructive read, against those that do
 not, and what cleared the flag \\
@@ -196,8 +219,10 @@ trusted rows & asserted rows, and test programs pinning them \\
 \label{sec:eval-hand}
 
 Every exact rejection is read by a person and classified as \emph{intended sharing} (the program keeps a
-version on purpose: an undo, a snapshot), \emph{accidental sharing} (the program would have been wrong had
-the write been in place---the bug class the rule exists to catch), or \emph{avoidable} (a reordering, a
+version on purpose: an undo, a snapshot), \emph{accidental sharing} (the program reads, after the edit, a
+version it did not mean to keep, so that compiling the edit in place would change what it prints; under
+value semantics the program is correct, and what the rule catches is an in-place compilation that would be
+wrong, not a bug the programmer wrote), or \emph{avoidable} (a reordering, a
 fold or a reading form would make the operand unique), and by the idiom it occurs in. Every approximate
 rejection is classified by whether a known extension---a discipline for mutable cells, a deeper path cut, a
 path-sensitive join, a summary on a platform \code{foreign}, a summary split by message
@@ -218,7 +243,10 @@ beni but not the rule a sample of rejected programs from the external corpus, wi
 Chapter~\ref{sec:errors}, and record whether they fix each, how, and how long it takes---in particular,
 whether they reach for \code{List.copy}, for a reading form, for a reordering or for computing a value
 before a command, whether they understand which operand a construction reuses, and whether they can tell
-an exact rejection from an approximate one from the verdict line.
+an exact rejection from an approximate one from the verdict line. Besides fixing given rejections,
+participants are asked to write small features that meet the rule where it is hardest---an undo, work
+that runs asynchronously and returns a list, an edit inside nested data---and to predict, before compiling,
+what each library function they call permits.
 
 \section{Decision criteria, fixed in advance}
 \label{sec:eval-decisions}
@@ -251,8 +279,7 @@ make run included.
 \item \emph{Which extensions to build,} on the frequency of each approximate tag: a path-sensitive join
 only if the join tag is above a twentieth of rejections, a discipline for mutable cells only if the
 \code{Ref} tag is, summaries split by message constructor only if the view-event tag is, a relational entry
-only if the entry-merge and kept-copy tags together are, dropping the identity promises (O2) only if the
-kept-copy and splice tags together are and a relational entry would not remove them, the split of a
+only if the entry-merge, kept-copy and splice tags together are, the split of a
 recursive value by a pattern only if the fold tag is, a special case for a one-element \code{map} only if the
 $\mathit{calls} = \mathit{many}$ tag is, and value-taking command constructors if the command tag is above a
 twentieth of rejections.
@@ -287,7 +314,7 @@ before it is built; this thesis is the argument for that specification, not the 
 If the rule is adopted, a second experiment repeats the prototype study's benchmarks
 (\S\ref{sec:bg-measure}) with the trie removed and lists written in place---the static variant's
 numbers, without its fallback---together with page-size measurements, the direct platform's table
-benchmarks and their sweeps, the cost of prepending with room in front under the policies of proposal O3,
+benchmarks and their sweeps,
 and the cost of \Obl{P7} on the direct platform, on a page whose list elements are lists edited in place,
 which none of its current benchmark pages exercises. The prototype study gives the expected shape:
 large gains when building in a fold and on steady grid ticks, gains hidden by the render walk on TEA table

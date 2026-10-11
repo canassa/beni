@@ -12,10 +12,11 @@ This rule buys a guarantee about \emph{cost}, on the direct platform, where list
 (rule~7; on every other target it buys only that the same source means the same thing there,
 \S\ref{sec:disc-targets}): \emph{an edit the program writes is performed in place},
 with no hidden copy and no slower path chosen behind the program's back---\code{set}, \code{update},
-\code{swap} and \code{pop} in $O(1)$; \code{push}, \code{cons} and every element a construction adds at
-either end of its base in amortised $O(1)$; the elements a construction copies from a read operand in
-time proportional to them, as JavaScript's spread copies them; \code{insertAt} and \code{removeAt} in the
-$O(n)$ element move a hand-written program also pays. Every $O(n)$ copy a program pays for is a
+\code{swap} and \code{pop} in $O(1)$; \code{push} and every element a construction adds after its base in
+amortised $O(1)$; the elements a construction copies from a read operand in time proportional to them, as
+JavaScript's spread copies them; \code{insertAt} and \code{removeAt} in the $O(n)$ element move a
+hand-written program also pays, and \code{cons} and an element before a construction's base likewise: a
+prepend copies the list, as \code{unshift} moves a JavaScript array, a cost the operation itself names. Every $O(n)$ copy a program pays for is a
 \code{List.copy} in its source. On the direct platform, where lists are written in place, there is no trie
 and no reference count, and the runtime is smaller. The
 price is that programs that are \emph{correct} under value semantics are rejected. The design choice made
@@ -86,8 +87,9 @@ know, and a reader of Elm code will not expect a spread to have an effect on its
 
 \emph{Versions cost a copy.} Today a prepend onto an older version copies at most 31 elements, so a
 persistent stack that keeps versions is linear; under the rules each kept version that is later extended
-needs an explicit $O(n)$ copy. This reverses the part of the language's linear-prepend decision that
-covers kept versions (\S\ref{sec:idioms-rejected}). It also withdraws one identity promise, that an
+needs an explicit $O(n)$ copy. Together with the representation's choice to reserve no room in front of
+a list, this withdraws the language's linear-prepend decision (\S\ref{sec:idioms-rejected}): building by
+prepending is no longer an idiom, and the accumulators the language offers push at the end. It also withdraws one identity promise, that an
 append whose left operand is empty at run time is its right operand itself, and it replaces the
 specification's right-to-left lowering of list literals and \code{++} chains with one from the base
 (\S\ref{sec:model-demands}).
@@ -95,9 +97,10 @@ specification's right-to-left lowering of list literals and \code{++} chains wit
 \section{What it costs the representation}
 
 On the direct platform the trie's reason to exist is gone, and so is its persistence: a program that wants versions pays
-$O(n)$ per version, explicitly. Prepending in amortised $O(1)$ needs free space in front of a list, so
-lists built by prepending are views, as a pattern's \code{rest} already is, and a view handed to
-JavaScript must be flattened; the space in front costs memory. The policy is open
+$O(n)$ per version, explicitly. The representation reserves no room in front of a list, so a prepend
+moves its base's elements, a copy proportional to the length; a loop that prepends at every step, Elm's
+accumulate-then-reverse, pays it at every step. The language's canonical accumulator is
+\code{[ …acc, x ]}, which pushes and needs no reverse, and the cost of a prepend is visible in the operation
 (\S\ref{sec:compiler-backend}).
 
 \section{What it costs the API}

@@ -9,18 +9,21 @@ language the checker is designed for (\S\ref{sec:bg-language}). Changes 5--9 are
 design as it stands: without them the soundness argument does not go through, or the idioms of
 Chapter~\ref{sec:idioms} are rejected on the platform that runs them; Change~8's scope, that only the direct
 platform writes lists in place, is decided (rule~7), and the renderer obligation it places on that platform is
-required. Proposals O1--O6 are \emph{open}:
-each would buy precision, speed or convenience, each has a cost, and none is assumed by the rest of the
-thesis.
+required; Change~9, that interfaces publish an opaque type's slots, is required and also decided
+(rule~8). Proposals O1 and O4--O6 are \emph{open}: each would buy precision, speed or convenience, each
+has a cost, and none is assumed by the rest of the thesis. O2 is decided, the identity promises being
+kept, and O3 is withdrawn; both keep their numbers.
 
 \section{Decided changes}
 
 \subsection*{Change 1: list construction consumes its base}
 \phantomsection\addcontentsline{toc}{subsection}{Change 1: list construction consumes its base}
 
-In \code{[ x, …acc ]}, \code{[ …acc, x ]}, \code{[ …acc, …ys ]} and \code{acc ++ ys}, the first spread, or
-the leftmost operand of a chain of \code{++}, is the base: its array is reused in place, at either end, and
-the other operands and the elements are only read. A chain \code{a ++ b ++ c} is one construction,
+In \code{[ …acc, x ]}, \code{[ …acc, …ys ]}, \code{acc ++ ys} and \code{[ x, …acc ]}, the first spread, or
+the leftmost operand of a chain of \code{++}, is the base: its array is reused in place, and the other
+operands and the elements are only read. What follows the base is pushed onto it in amortised constant
+time; what precedes it is placed in front of its elements, a copy proportional to its length, since the
+representation reserves no room in front. A chain \code{a ++ b ++ c} is one construction,
 \code{[ …a, …b, …c ]}. A literal with no spread allocates; a pattern only reads; a construction whose base
 is used again is an error whose message offers \code{List.copy} (\S\ref{sec:model-demands}).
 
@@ -30,11 +33,13 @@ and with construction consuming they run in place with no new name (Chapter~\ref
 \emph{Costs.} The checker meets a demand at every spread and every \code{++} on lists, so its precision
 on idioms carries the design. The programmer learns which operand is reused. A version that is kept and
 later extended needs an explicit copy. A list cannot be prepended in place onto an accumulator; the left
-fold that appends instead builds the same list.
+fold that appends instead builds the same list. Prepending is not an accumulator idiom: the canonical one is
+\code{[ …acc, x ]}.
 
-\emph{Recorded decisions it touches.} It keeps the language's decision that no way of building a list by
-prepending is quadratic for every accumulator, fold, recursive builder and TEA list, and reverses it for
-a persistent stack whose old versions are read later, which now needs a copy per kept version; the test
+\emph{Recorded decisions it touches.} With the representation's choice to reserve no room in front of a
+list, it withdraws the language's decision that no way of building a list by prepending is quadratic:
+the accumulators, folds, recursive builders and TEA lists the language offers push at the end, and a
+persistent stack whose old versions are read later also needs a copy per kept version; the test
 program guarding that decision needs \code{List.copy} at the version it keeps
 (\S\ref{sec:idioms-rejected}). It withdraws the identity promise that an append whose left operand is empty
 at run time returns its right operand itself, \code{[] ++ ys} among them (\S\ref{sec:model-demands}). It
@@ -215,7 +220,8 @@ the same list, are kept as they are. None of the identity promises of the list l
 \subsection*{Change 9: interfaces publish an opaque type's slots}
 \phantomsection\addcontentsline{toc}{subsection}{Change 9: interfaces publish an opaque type's slots}
 
-The declaring module of an opaque type numbers the tracked paths inside its definition, after folding,
+\emph{Decided} (rule~8 of \S\ref{sec:bg-language}). The declaring module of an opaque type numbers the
+tracked paths inside its definition, after folding,
 and publishes their number and which of them are containers; summaries over the type name its slots,
 $\langle T\rangle.1, \ldots$, never its fields (\S\ref{sec:model-cells}). A type with no slot crosses.
 
@@ -248,35 +254,50 @@ static uniqueness typing, ``where a single function can have multiple different 
 \citep[\S1.4.1]{lorenzen2023fp2}---and a choice the programmer must learn. To be decided on how often the
 external corpus applies these functions to a list that is unique and dead at the call.
 
-\subsection*{O2: drop the identity promises}
-\phantomsection\addcontentsline{toc}{subsection}{O2: drop the identity promises}
+\subsection*{O2: decided---the identity promises are kept}
+\phantomsection\addcontentsline{toc}{subsection}{O2: decided---the identity promises are kept}
 
-Functions that build would return a fresh array always, instead of their input when the result would
-equal it. \emph{Buys:} $\mathit{res} = \{\fresh\}$ for \code{filter}, \code{map} and their kin, so an edit of
-the result never demands the source (\S\ref{sec:hard-pipelines}); the splices of Table~\ref{tab:rejected}
-are accepted; and so is a filtered or mapped copy kept at another model path beside its source, which with
-the promises makes the two paths possibly one cell at every entry (T52). \emph{Costs:} the template runtime
-skips a \code{<For>} when its list is the same object as last time, and these promises are what make an
-unchanged filtered or mapped list the same object; without them, a \code{view} that renders
-\code{List.filter model.todos visible} hands the renderer a new array on every render, and every unrelated
-message walks every row, keyed matching included. \emph{Conflicts with} the language's recorded decision that
-these operations return their input itself, on which its rendering strategy rests. On balance we recommend
-keeping the promises, narrowly. Their cost to the checker is precision where
-the source is used again, which the local idioms do not do; the splices and rotations by \code{take} and
-\code{drop}, which the message answers with \code{List.insertAt} and \code{List.removeAt}; and the kept
-filtered copy, which is common in search and list interfaces and whose fix is an $O(n)$ \code{List.copy}
-at every store of the copy. A middle course, a promise kept in \code{view} and dropped in \code{update},
-would make one function's result depend on where it is called, which summaries cannot express. The count
-of the kept-copy tag decides it (\S\ref{sec:eval-decisions}); a relational entry would remove the cost
-without touching the promises (\S\ref{sec:disc-open}).
+The proposal was that functions that build return a fresh array always, instead of their input when the
+result would equal it. It is decided against, by the author: the promises stay, so the number now records a
+decision and its cost rather than an open choice.
 
-\subsection*{O3: the policy for room in front of a list}
-\phantomsection\addcontentsline{toc}{subsection}{O3: the policy for room in front of a list}
+\emph{What dropping them would have bought, stated exactly.} $\mathit{res} = \{\fresh\}$ at the
+\emph{spine} for \code{filter}, \code{map} and their kin: \code{filter} would never return its input, so an
+edit of the result's spine---a push, a construction on it, a \code{set} of a position---would never
+demand the source (\S\ref{sec:hard-pipelines}); the splices of Table~\ref{tab:rejected} would be accepted,
+and so would a filtered copy kept at another model path beside its source and extended there (T52). It
+would not have removed all sharing. A filtered list's elements \emph{are} the source's elements, at
+$[\ast]$, whatever the spine, so an edit \emph{inside} an element of the result still demands the
+source's element, and is rejected while the source is used---as it must be, since the source shows that
+element too. (A mapped list whose callback built new elements shares nothing at $[\ast]$; that is the
+callback's result, not the promise's.)
 
-How much free space a prepend leaves before a list's first element, whether plain arrays carry some from
-birth, and when a view is flattened (\S\ref{sec:compiler-backend}). Any policy that grows the space in
-proportion to the length keeps prepending amortised $O(1)$; the choices trade memory and the frequency of
-views against the cost of the first prepend onto a plain array. To be measured.
+\emph{What keeping them costs.} The template runtime skips a \code{<For>} when its list is the same object
+as last time, and these promises are what make an unchanged filtered or mapped list the same object, so
+the decision keeps the language's rendering strategy. Its cost to the checker is precision where the source
+is used again, which the local idioms do not do; the splices and rotations by \code{take} and \code{drop},
+which the message answers with \code{List.insertAt} and \code{List.removeAt}; and the kept filtered or
+mapped copy, common in search and list interfaces, whose spine needs an $O(n)$ \code{List.copy} at every
+store of the copy. That copy is shallow: the elements are shared at $[\ast]$ with the source either way,
+with or without the promises. A middle course, a promise kept in \code{view} and dropped in \code{update},
+would make one function's result depend on where it is called, which summaries cannot express. A relational
+entry remains the direction that could remove the spine copy without touching the promises
+(\S\ref{sec:disc-open}).
+
+\subsection*{O3: withdrawn---no room in front of a list}
+\phantomsection\addcontentsline{toc}{subsection}{O3: withdrawn---no room in front of a list}
+
+An earlier form of this thesis left open a policy for free space before a list's first element, so that
+prepending onto an accumulator would run in amortised constant time. It is withdrawn by the author's
+decision: prepending onto an accumulator is a habit of languages whose lists are linked, and a language
+whose lists are arrays should not encourage it. The representation reserves no room in front of a list,
+and the head slot that today's runtime lets a prepend claim goes with the trie; the canonical accumulator is
+\code{[ …acc, x ]}, a push at the end in amortised $O(1)$; and a prepend, \code{[ x, …acc ]}, is still an
+edit of its base under the same rules, and copies the list (\S\ref{sec:compiler-backend}). The compiler
+\emph{warns} on a prepend onto a loop accumulator---a parameter rebound by a tail call, or a fold
+callback's accumulator---and suggests \code{[ …acc, x ]}; it is a warning, not an error, because the
+program is correct and only slower (Chapter~\ref{sec:discussion}). The number stays so that the other
+proposals keep theirs.
 
 \subsection*{O4: a persistent vector as a library}
 \phantomsection\addcontentsline{toc}{subsection}{O4: a persistent vector as a library}

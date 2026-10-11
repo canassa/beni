@@ -99,7 +99,7 @@ Primitive & Today & Under the rule \\
 \code{push} & copy under 32 elements, else claim the tail & \code{a.push(v)}; amortised $O(1)$ \\
 \code{pop} & copy up to 256 elements, else a new header & \code{a.pop()}; $O(1)$ \\
 \code{insertAt}, \code{removeAt} & $O(n)$ plain copy & \code{a.splice(i, ⋯)}; $O(n)$ move, as hand-written code does \\
-\code{cons}, and an element before a construction's base & claim a head slot, short copy, or convert & write $b[o-1]$ on a base with free space in front ($o > 0$) and return a new header; otherwise move the base into a larger array with free space in front proportional to its length; amortised $O(1)$ \\
+\code{cons}, and an element before a construction's base & claim a head slot, short copy, or convert & the elements are moved to make room at the front; a copy proportional to the base's length, no room being reserved in front \\
 \code{append}, and a spread after a construction's base & push onto a trie or concatenate & push each element of the read operand onto the base; $O(|ys|)$ \\
 an element after a construction's base & claim the tail, or copy & \code{a.push(v)}; amortised $O(1)$ \\
 a literal with no spread & a new array & a new array; $O(n)$ \\
@@ -126,19 +126,18 @@ unchanged.
 
 Moving a consumed base into a larger array is growth, not a copy in the sense of the rule: no old
 version survives it, because the base had no other live holder, and its cost is amortised over the
-additions that filled the space, exactly as for \code{push} on a JavaScript array. Prepending needs free
-space in front, so a list built by prepending is a view whose offset leaves room before its first
-element. How much room to keep, whether a plain array gains room in front on its first prepend or carries
-some from birth, and how often a view must be flattened when it is handed to JavaScript are open
-(\S\ref{sec:disc-options}); the amortised bound holds for any policy that grows the room in proportion
-to the length.
+additions that filled the space, exactly as for \code{push} on a JavaScript array. The representation
+reserves no room in front of a list. Prepending onto an accumulator is not an idiom the language
+encourages---its canonical accumulator is \code{[ …acc, x ]}, a push---so a prepend is not optimised: it
+copies the list, and it is still an edit of its base, checked by the same rules. A prepend onto a loop
+accumulator draws a warning that suggests \code{[ …acc, x ]} (O3, \S\ref{sec:disc-options}).
 
 The backend must still keep the identity promises the language keeps (\S\ref{sec:model-demands}) and the
 linearity of the builder. Its release representation of a type with one constructor of one field, which
 is its field, is the one representation choice the design must account for, and it does so by reading
 every identity fact modulo it (A10, \Obl{P7}); a new choice of the same kind must be added to A10 before it
-ships. A construction returns its base's \emph{cell}---its header may be new, after a
-prepend or a write through a view, so the result need not be \code{===} the operand---while
+ships. A construction returns its base's \emph{cell}---its header may be new, after a write
+through a view, so the result need not be \code{===} the operand---while
 \code{[ …xs ]} and the re-building of a matched list return the list itself, and \code{xs ++ []} returns
 \code{xs}.
 
