@@ -57,6 +57,12 @@
           packages = [ pkgs.lcov ];
         };
 
+        # The ownership oracle is separate from the compiler gates. Its Lean
+        # version is pinned by nixpkgs and proofs/ownership/lean-toolchain.
+        ownership = pkgs.mkShell {
+          packages = [ pkgs.lean4 ];
+        };
+
         # `nix develop .#browser`: the default shell plus Chromium, for
         # `zig build test-browser`, which runs the `browser/` corpus in a
         # headless browser instead of the happy-dom the gates use

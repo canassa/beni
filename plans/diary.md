@@ -4590,3 +4590,60 @@ ledger is §4.6. Committed on `research/71-ownership-checker-thesis`; not pushed
   must become an input to `Opt`, like the `impure` bit.
 - The sandbox refuses heredocs and multi-command pipelines in a worktree; write parts with the
   Write tool and concatenate with `cat`.
+
+
+## 2026-10-11 15:54 CEST — executable ownership core and a retained finding
+
+**What I did.** Built `proofs/ownership/` from `origin/master`: a Lean 4.29.1
+Lake project supplied by a Nix shell, separate value and heap interpreters,
+per-path ownership inference, and ordinary map/initialize/foldl declarations
+over traversal, focus, builder and close. After those ran, delegated the
+sharing generator and thesis-fixture audit to Sol as requested. The old builder
+rule rediscovered internally shared callback results and produced shrunk,
+executable regressions. Proved the concrete builder/close footprint contract
+with no Mathlib or `sorry`. Stopped further exploration and proofs when the audit
+found traversal dropping callback escape facts. Preserved its expected-reject
+fixture and documented the unfinished coverage and proof obligations. The thesis
+and production compiler are unchanged; the PR is a draft, not a soundness claim.
+
+**What I learned.** Freshness and path multiplicity must remain separate:
+`[cell, cell]` has a fresh outer root and a duplicated inner footprint. The
+exclusive-element premise closes that negative control, but deriving a library
+summary still needs every effect of its callback, including escapes independent
+of its result. A trace oracle cannot detect an escape-demand failure if the
+abstract permanent-holder marker has no observable global-read semantics; fixed
+verdict tests expose that gap. The first missing invariant is in the executable
+core itself, so proving the top-level theorem would be premature.
+
+
+## 2026-10-11 16:18 CEST — recover the ownership work after the crash
+
+**What I did.** Verified that the Lean sources, proofs, fixtures and staged
+changes survived. The gate log showed the unchanged build-ID helper compilation
+killed, with 44 completed tests passing. Retried the gate once; terminated the
+same compiler process when swap usage reached 31 GB. An isolated-cache helper
+compile reproduced rising memory pressure and was automatically stopped. Kept
+all build/test rules unchanged and documented the gate as unverified. The earlier
+entry's draft-PR wording described the intended delivery; no PR has yet opened.
+Requested the owner's exception to commit/open that draft with its infrastructure
+blocker, because the repository requires green gates before doing so.
+
+**What I learned.** This helper hardwires the self-hosted Zig backend even when
+`-Dllvm` is selected for beni. Changing a compiler option for beni would not
+bypass this failure. The Lean finding and the inability to complete the Zig gate
+are separate blockers; neither justifies changing expected verdicts or claiming
+successful validation.
+
+
+## 2026-10-11 16:26 CEST — deliver the Lean work without further Zig builds
+
+**What I did.** The owner clarified that this is the Lean proof and instructed
+no Zig builds. Removed the gate-approval blocker under that explicit instruction
+and prepared the ownership oracle for its draft PR using the completed Lean
+validation. Kept the traversal escape finding red, the coverage gaps explicit,
+and proofs beyond the builder contract unclaimed. The commit skips hosted actions
+to respect the original prohibition on paid external services.
+
+**What I learned.** The explicit scope instruction overrides the repository's
+generic gate procedure for this work. A separate proof project should not turn
+into a compiler/toolchain investigation when the owner has excluded it.

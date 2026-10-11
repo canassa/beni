@@ -1,0 +1,172 @@
+import Ownership.Oracle
+import Ownership.Smoke
+import Ownership.GeneratedRegressions
+
+namespace Ownership.Fixtures
+
+private def v := Atom.var
+private def list : Expr := .prim (.literal .int) [.int 0]
+private def push (a : Atom) : Expr := .prim .push [a,.int 9]
+private def seq (rhs rest : Expr) : Expr := .letE 90 rhs rest
+
+def retained (copy := false) : Program := {
+  main := .letE 0 list <|
+    .letE 1 (if copy then .prim .copy [v 0] else .atom (v 0)) <|
+    .letE 2 (push (v 1)) (.prim .record [v 0,v 2]) }
+
+def readThenWrite : Program := {
+  main := .letE 0 list <| .letE 1 (.prim .length [v 0]) <|
+    .letE 2 (push (v 0)) (.prim .record [v 1,v 2]) }
+
+def shared : Program := {
+  main := .letE 0 list <| .letE 1 (.prim .shared [v 0]) (push (v 1)) }
+
+def calling (alias := false) : Program := {
+  declarations := [{
+    name := "grow", parameters := [.list .int,.list .int], result := .record [.list .int,.list .int],
+    body := .letE 2 (push (v 0)) (.prim .record [v 2,v 1]) }]
+  main := .letE 0 list <| .letE 1 list <| .letE 2 (.closure 0 [])
+    (.app (v 2) [v 0,if alias then v 0 else v 1]) }
+def argumentAlias : Program := calling true
+
+def capture (consume twice : Bool) : Program := {
+  declarations := [{
+    name := "capture", parameters := [.int], captures := [.list .int],
+    result := if consume then .list .int else .int,
+    body := if consume then push (v 1) else .prim .length [v 1] }]
+  main := .letE 0 list <| .letE 1 (.closure 0 [v 0]) <|
+    if consume then .letE 2 (.app (v 1) [.int 0])
+      (if twice then .app (v 1) [.int 1] else .atom (v 2))
+    else seq (push (v 0)) (.app (v 1) [.int 0]) }
+
+def recordSharing (duplicate := true) : Program := {
+  main := .letE 0 list <| .letE 1 list <|
+    .letE 2 (.prim .record [v 0,if duplicate then v 0 else v 1]) <|
+    .letE 3 (.prim (.literal (.record [.list .int,.list .int])) [v 2]) <|
+    .focus (v 3) (.int 0) 4 <|
+      .letE 5 (push (.field (v 4) 0)) (.prim .record [v 5,.field (v 4) 1]) }
+
+def copiedContents : Program := {
+  main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 2 (.prim .copy [v 1]) <|
+    .letE 3 (.focus (v 2) (.int 0) 4 (push (v 4))) (.prim .record [v 1,v 3]) }
+
+def returnCapture : Program := {
+  declarations := [{
+    name := "get", parameters := [], captures := [.list .int],
+    result := .list .int, body := .atom (v 0) }]
+  main := .letE 0 list <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.app (v 1) []) <| .letE 3 (push (v 2)) (.app (v 1) []) }
+
+def mapCapture : Program := {
+  declarations := [Library.map .int (.list .int),
+    { name := "get", parameters := [.int], captures := [.list .int],
+      result := .list .int, body := .atom (v 1) }]
+  main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 1,.int 2]) <|
+    .letE 2 (.closure 0 []) <| .letE 3 (.closure 1 [v 0]) <|
+    .letE 4 (.app (v 2) [v 1,v 3]) (.focus (v 4) (.int 0) 5 (push (v 5))) }
+
+def foldBorrow : Program := {
+  declarations := [Library.foldl (.list .int) (.list .int),
+    { name := "pick", parameters := [.list .int,.list .int], result := .record [.list .int,.list .int],
+      body := .atom (v 0) }]
+  main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 2 (.prim (.literal .int) []) <| .letE 3 (.closure 0 []) <|
+    .letE 4 (.closure 1 []) <| .letE 5 (.app (v 3) [v 1,v 2,v 4]) <|
+    .letE 6 (push (v 5)) (.prim .record [v 6,v 1]) }
+
+def foldBranch (captureShared : Bool) : Program := {
+  declarations := [Library.foldl .int (.list .int),
+    { name := "step", parameters := [.int,.list .int], captures := [.list .int],
+      result := .list .int, body := .branch (v 0) (.atom (v 2)) (push (v 1)) }]
+  main := .letE 0 list <|
+    .letE 1 (if captureShared then .prim .shared [v 0] else .atom (v 0)) <|
+    .letE 2 (.prim (.literal .int) [.int 0,.int 1]) <|
+    .letE 3 (.prim (.literal .int) []) <| .letE 4 (.closure 0 []) <|
+    .letE 5 (.closure 1 [v 1]) <| .letE 6 (.app (v 4) [v 2,v 3,v 5])
+      (.prim .record [v 6,v 1]) }
+
+def nestedMap (sharing : Bool) : Program := {
+  declarations := [Library.map .int (.list (.list .int)), Smoke.initializer sharing]
+  main := .letE 0 (.closure 0 []) <| .letE 1 (.closure 1 []) <|
+    .letE 8 (.prim (.literal .int) [.int 0]) <|
+    .letE 2 (.app (v 0) [v 8,v 1]) <| .focus (v 2) (.int 0) 3 <|
+      .focus (v 3) (.int 0) 4 (push (v 4)) }
+
+def escapeCall : Program := {
+  declarations := [{
+    name := "publish", parameters := [], captures := [.list .int], result := .int,
+    body := .letE 1 (.prim .shared [v 0]) (.atom (.int 0)) }]
+  main := .letE 0 list <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.app (v 1) []) (push (v 0)) }
+
+/-- Red regression: traversal must carry permanent escapes even when its
+    accumulator/result does not mention the escaped capture. -/
+def escapeTraversal : Program := {
+  main := .letE 0 list <|
+    .letE 1 (.traverse .range (.int 1) (.int 0) 2 3 4 <|
+      .letE 5 (.prim .shared [v 0]) (.atom (v 4))) (push (v 0)) }
+
+structure Fixture where
+  id : String
+  program : Program
+  accepted : Bool
+
+/-- Expected verdicts are transcribed from Table 6.2, never checker-generated. -/
+def all : List Fixture := [
+  ⟨"T1 arguments",argumentAlias,false⟩,
+  ⟨"T1 capture",capture false false,false⟩,
+  ⟨"T2",readThenWrite,true⟩, ⟨"T3",shared,false⟩,
+  ⟨"T5",capture true true,false⟩, ⟨"T7",capture false false,false⟩,
+  ⟨"T8 A",capture true true,false⟩, ⟨"T8 C",capture true true,false⟩,
+  ⟨"T10",recordSharing true,false⟩, ⟨"T11",copiedContents,false⟩,
+  ⟨"T12",retained false,false⟩, ⟨"T15",foldBorrow,false⟩,
+  ⟨"T17 record",retained false,false⟩, ⟨"T17 operand",argumentAlias,false⟩,
+  ⟨"T21",shared,false⟩, ⟨"T23",returnCapture,false⟩,
+  ⟨"T24",mapCapture,false⟩, ⟨"T31",capture true true,false⟩,
+  ⟨"T32 key/value projection",recordSharing true,false⟩,
+  ⟨"T33 kept version",retained false,false⟩, ⟨"T33 copied version",retained true,true⟩,
+  ⟨"T37 grid ownership",Smoke.nested false,true⟩,
+  ⟨"T40 record shape",recordSharing false,true⟩,
+  ⟨"T46 shared",foldBranch true,false⟩, ⟨"T46 capture",foldBranch false,false⟩,
+  ⟨"T46 borrowed element",foldBorrow,false⟩,
+  ⟨"T48 duplicate slots",recordSharing true,false⟩,
+  ⟨"T48 distinct slots",recordSharing false,true⟩,
+  ⟨"T52 spine identity projection",retained false,false⟩,
+  ⟨"T52 copied spine projection",retained true,true⟩,
+  ⟨"T53 top-level",shared,false⟩,
+  ⟨"T55 explicit call projection",argumentAlias,false⟩,
+  ⟨"T56 mapping projection",recordSharing true,false⟩,
+  ⟨"T57 distinct",Smoke.nested false,true⟩, ⟨"T57 repeated",Smoke.nested true,false⟩,
+  ⟨"T59 initialize shared",Smoke.nested true,false⟩,
+  ⟨"T59 initialize distinct",Smoke.nested false,true⟩,
+  ⟨"T59 map shared",nestedMap true,false⟩,
+  ⟨"T59 map distinct",nestedMap false,true⟩,
+  ⟨"generated map old-rule regression",GeneratedRegressions.oldSeed20261011Index8,false⟩,
+  ⟨"generated initialize old-rule regression",GeneratedRegressions.oldSeed20261011Index10,false⟩,
+  ⟨"escape ordinary call",escapeCall,false⟩,
+  ⟨"escape traversal RED",escapeTraversal,false⟩ ]
+
+def run : IO Bool := do
+  let mut ok := true
+  for f in all do
+    let typed := typecheck f.program
+    let verdict := check f.program
+    IO.println s!"{f.id}: expected={f.accepted} actual={verdict.isOk} {if verdict.isOk then "" else toString (repr verdict)}"
+    if !typed.isOk || verdict.isOk != f.accepted then
+      IO.println s!"UNEXPECTED VERDICT; intended verdict retained. types={repr typed}"
+      ok := false
+    if verdict.isOk then
+      match Oracle.compare f.program with
+      | .equal => pure ()
+      | result =>
+        IO.println s!"STOP fixture observational failure {f.id}: {repr result}"
+        return false
+  for p in [GeneratedRegressions.oldSeed20261011Index8, GeneratedRegressions.oldSeed20261011Index10] do
+    if !Oracle.disagrees p { oldFreshRule := true } || (check p).isOk then
+      IO.println "FROZEN NEGATIVE CONTROL FAILED"
+      ok := false
+  IO.println s!"fixtures={all.length} passed={ok}"
+  pure ok
+
+end Ownership.Fixtures
