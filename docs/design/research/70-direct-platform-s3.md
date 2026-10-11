@@ -129,3 +129,42 @@ From `bench/ui/`, `CHROME=google-chrome`, after `node build.mjs`:
   --out=results/2026-10-11-s3-filtered-untraced.json` (56 s);
 - `node sizes.mjs`; `node size-parts.mjs --map=table-s3[-coarse]`; `node size-parts.mjs
   --file=out/beni-direct-rel/_main.mjs --map=direct-s3[-coarse]`.
+
+## 7. Lean direct: the S3 table app in the shape the ownership thesis enables (2026-10-11)
+
+§4's deferral asked for direct to be judged with native arrays, a P3-sized reconciler and the
+waste removed. A hand-written variant of the S3 release bundle (`95de7d89b`) measured it: plain
+arrays edited in place, exact edits in the handlers (swap as two assignments, remove, append, set),
+P3's `reconcile` only for genuine rebuilds (Run, RunLots), no key map, one delegated listener, a
+one-line mount and dispatch guard. It is a prototype of what the compiler would emit, not compiler
+work. Its DOM equals direct-S3's after every step of a 36-operation sequence, and `verify.mjs`
+passes. Artifacts, raw results and the generator are in
+`bench/ui/results/2026-10-11-lean-direct/`.
+
+**Bytes** (terser then brotli 11): lean direct **1 764 B** with the page markup in the HTML, as
+vanilla's 1 415 B is counted, and **1 982 B** with it in the bundle, as §2 counted — under both
+the 2 830 B bar and P3 (3 198 B). Building new arrays where the thesis does not yet edit in place
+(`indexedMap`, `filter`; its O1 is open): 2 053 B. With S3's persistent `List` put back: 2 931 B.
+By leave-one-out the reductions were plain arrays −878 B (in-place over freshly built arrays only
+−71 B more), the reconciler ≈ −330 B, mount and dispatch ≈ −300 B, per-shape scripts and the key
+map replaced by ≈ 254 B of exact edits, and the markup −218 B.
+
+**Speed** (script ms medians, 4× throttle, Chrome pinned to cores 24–31, load 3–5; ² = rerun at
+n = 10): run1k 4.40 vs vanilla 4.37; update² 1.02 vs 0.97 (1.05×); select² 0.92 vs 1.32 (0.70×);
+remove² 0.35 vs 0.53; create10k² 43.4 vs 41.8; append 4.37 vs 4.41; clear 15.5 vs 18.0;
+replace1k unreliable (load 24 at its start). Swap² 0.53 vs 0.26 (2.0×), but every subject's swap
+samples are bimodal — ≈ 0.11 ms or 0.4–1.0 ms — with identical fast samples for vanilla and lean
+(the same two `insertBefore`s); direct-S3 was the only subject slow on every sample. The cause of
+the slow mode (a collection inside the trace is likely) is unconfirmed; the median does not
+separate lean from vanilla at this n.
+
+**Against the bars.** Kill criterion 5: bytes pass; every operation is ≤ 1.14× and `select`
+0.70×, except swap's median, which the measurement cannot yet judge. The P3 criterion: bytes pass
+(62 % of P3), swap ties, `select` is 18–25 % faster than P3 against the 30 % asked.
+
+**What it means.** The S3 miss was runtime weight and the persistent list, not compiling away.
+Two tracks follow: slimming the direct runtime (P3-sized reconcile, minimal mount, exact edits for
+per-shape scripts, the ≈ 260 B of emission waste) reaches ≈ 2.9 kB without the thesis; plain arrays
+in place — the ownership thesis — take it to ≈ 1.8–2.0 kB. Every in-place edit lean makes is one the
+thesis accepts, given `init` as a function and the swap written as `List.swap`. Open: a swap
+measurement that separates the two modes, and whether P3's 30 % `select` test still applies.

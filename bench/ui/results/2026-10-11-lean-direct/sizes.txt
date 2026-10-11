@@ -1,0 +1,18 @@
+| subject | files | as served raw | gzip -9 | brotli 11 | minified raw | minified brotli |
+|---|--:|--:|--:|--:|--:|--:|
+| beni, development | 10 | 65776 | 16760 | 14638 | 22039 | 8220 |
+| beni, --release | 1 | 13535 | 5998 | 5426 | 12898 | 5240 |
+| beni-direct, --release | 1 | 12640 | 5156 | 4666 | 12179 | 4524 |
+| lean direct (a) markup in bundle | 1 | 10653 | 3890 | 3390 | 5331 | 1982 |
+| lean direct (b) markup in HTML | 1 | 9628 | 3679 | 3216 | 4277 | 1764 |
+| lean strict: map/filter build, push in place | 1 | 10890 | 4000 | 3502 | 5469 | 2053 |
+| lean direct, persistent List kept (ablation) | 1 | 12664 | 4912 | 4413 | 7505 | 2931 |
+| Solid 2.0.0-rc.9 | 1 | 68518 | 24404 | 22131 | 68031 | 21988 |
+| Solid 1.9.15 | 1 | 11513 | 4803 | 4356 | 11512 | 4354 |
+| P2 (hand-written) | 1 | 7946 | 2903 | 2491 | 3726 | 1537 |
+| P3 (research 60) | 1 | 22776 | 7239 | 6411 | 8853 | 3198 |
+| vanillajs | 1 | 9486 | 2521 | 2172 | 4743 | 1415 |
+
+| beni --release file | raw | brotli 11 alone |
+|---|--:|--:|
+| _main.mjs | 13535 | 5426 |

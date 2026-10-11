@@ -1,0 +1,49 @@
+diff --git a/bench/ui/lib/serve.mjs b/bench/ui/lib/serve.mjs
+index 2722c5b08..509ebd5ab 100644
+--- a/bench/ui/lib/serve.mjs
++++ b/bench/ui/lib/serve.mjs
+@@ -59,7 +59,7 @@ if (imported === null) {
+       // Solid 2 is an ES module per page; Solid 1 is js-framework-benchmark's IIFE.
+       return `${head(subject.name)}<body><div id="main"></div><script ${subject.module === false ? "" : 'type="module" '}src="${subject.src ?? `/out/solid2/${subject.entry}.js`}"></script></body></html>`;
+     case "script":
+-      return `${head(subject.name)}<body>${subject.body === "static" ? staticBody() : ""}<script ${subject.module ? 'type="module" ' : ""}src="${subject.src}"></script></body></html>`;
++      return `${head(subject.name)}<body>${subject.body === "static" ? staticBody() : subject.body?.startsWith("file:") ? readFileSync(join(root, subject.body.slice(5)), "utf8") : ""}<script ${subject.module ? 'type="module" ' : ""}src="${subject.src}"></script></body></html>`;
+   }
+   throw new Error(`unknown subject kind ${subject.kind}`);
+ }
+diff --git a/bench/ui/size-parts.mjs b/bench/ui/size-parts.mjs
+index fa4470e35..21f7cdd67 100644
+--- a/bench/ui/size-parts.mjs
++++ b/bench/ui/size-parts.mjs
+@@ -106,6 +106,16 @@ maps["direct-s3"] = [
+   ["program: the page (templates, groups, handlers, listeners)", "Ea Fa"],
+ ];
+ 
++maps["lean"] = [
++  ["core: modBy, Nothing, in-place indexedMap/filter/append", "modBy Nothing indexedMapInPlace filterInPlace appendInPlace"],
++  ["Rt: dispatch guard, template helper", "dead send tpl"],
++  ["Rt: keyed reconcile (P3, rebuilds only)", "reconcile"],
++  ["Rt/page: row mount, groups, keep, state", "rowTpl tbody model insts patchClass patchLabel keep make"],
++  ["page: handlers (update branch + exact edit)", "Run RunLots Add Update Clear SwapRows selectRow removeRow mountFrom"],
++  ["page: markup (the page template)", "root"],
++  ["program: model half (data, build, swap, rowClass)", "adjectives colours nouns next pick buildFrom build replace swapRows rowClass"],
++  ["page: listener and button wiring", "listen buttons wire"],
++];
+ // Three parts: core, the platform runtime, the program.
+ const coarseOf = (name) => {
+   const coarse = (prefix) => maps[name].filter(([l]) => l.startsWith(prefix)).map(([, n]) => n).join(" ");
+diff --git a/bench/ui/sizes.mjs b/bench/ui/sizes.mjs
+index a760d582b..c6832b7a6 100644
+--- a/bench/ui/sizes.mjs
++++ b/bench/ui/sizes.mjs
+@@ -28,6 +28,10 @@ const subjects = [
+   ["beni, development", walk(join(root, "out/beni-dev"))],
+   ["beni, --release", walk(join(root, "out/beni-rel"))],
+   ["beni-direct, --release", walk(join(root, "out/beni-direct-rel"))],
++  ["lean direct (a) markup in bundle", [join(root, "out/lean-direct/_main.mjs")]],
++  ["lean direct (b) markup in HTML", [join(root, "out/lean-direct-html/_main.mjs")]],
++  ["lean strict: map/filter build, push in place", [join(root, "out/lean-strict/_main.mjs")]],
++  ["lean direct, persistent List kept (ablation)", [join(root, "out/lean-trie/_main.mjs")]],
+   ["Solid 2.0.0-rc.9", [join(root, "out/solid2/bench.js")]],
+   ["Solid 1.9.15", [join(root, "out/solid1/main.js")]],
+   ["P2 (hand-written)", [join(root, "apps/p2/bench.js")]],
