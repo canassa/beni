@@ -5,9 +5,10 @@
 --! A list is **array-backed** (`language.md` §6.8, `backend.md` §4, *Lists
 --! are arrays*): reading an element by index is O(1) — O(log₃₂ n), "near
 --! O(1)", on a list that has been written to — `length` is O(1), and a list
---! grows at either end in amortised O(1): `push` at the end, `[ x, …xs ]`
---! at the front. Each function's doc comment says what it costs, and which
---! results are the very list it was given rather than an equal copy
+--! grows at its end in amortised O(1): `push`, `[ …xs, x ]`. Its front has
+--! no room, so `[ x, …xs ]` copies the list. Each function's doc comment
+--! says what it costs, and which results are the very list it was given
+--! rather than an equal copy
 --! (`backend.md` §4, *Identity*), which is what lets a view skip what did
 --! not change.
 --!
@@ -23,8 +24,9 @@
 --! is, while `range lo hi` has no subject to put first.
 --!
 --! The whole runtime is beni over `Js` (research 50): the views and the
---! trie with its claimable head and tail are `Js.object` headers whose
---! `$plain` is a `Js.method`, read and written below the public surface.
+--! trie — its claimable tail, and the head a prefix removal leaves — are
+--! `Js.object` headers whose `$plain` is a `Js.method`, read and written
+--! below the public surface.
 --! Every function with a callback is a beni loop over the core-private
 --! `base`, `offset` and `at`, building its result in a core-private
 --! `Builder`, so a callback that suspends parks the loop (`language.md`
@@ -73,15 +75,24 @@ foreign type Builder a
 --| This is what `[ x, …xs ]` desugars to, which is why the element comes
 --| first here while every other function in this module takes the list first.
 --|
---| Amortised O(1), as `push` is at the other end: a list that has been
---| written to keeps a claimable head. At most 31 elements are copied when
---| `xs` was prepended onto before, and a list of 32 or more that nothing has
---| written to is converted once, O(n) (`backend.md` §4, *The claimable head*).
+--| O(n): a list is an array, and its front has no room, so this copies
+--| `xs`. To grow a list, add at the end — `[ …xs, x ]`, `push` — which is
+--| amortised O(1) and keeps the elements in the order they arrive. The one
+--| O(1) case builds nothing: putting back the element a pattern just took
+--| off, `[ x, …rest ]` after matching `[ x, …rest ]`, gives back the wider
+--| list (`backend.md` §4, *The claimable head*, amended 2026-10-11).
 pub cons : a, List a → List a
 cons x xs = Js.pure λ⊤ →
     t = Js.from xs
-    if isTrie t then
-        Js.to (triePrepend t (Js.from x))
+    if isTrie t && reconsed t (Js.from x) then
+        Js.to
+            (header
+                (length xs + 1)
+                (Js.get t "h")
+                (Js.to (Js.get t "hc") + 1)
+                (Js.get t "T")
+                (Js.get t "t")
+            )
     else
         b = base xs
         o = offset xs
@@ -90,10 +101,29 @@ cons x xs = Js.pure λ⊤ →
                 b
             else
                 Js.to (viewOf (Js.from b) (o - 1))
-        else if length xs ≥ 32 then
-            Js.to (triePrepend (fromPlain (Js.from b) o) (Js.from x))
-        else
+        else if length xs < 32 then
             Js.to (pushFrom (Js.from b) o (Js.array [ Js.from x ]))
+        else
+            -- One native copy, several times faster than a push per element
+            -- above a few dozen.
+            Js.to
+                (Js.call (Js.array [ Js.from x ]) "concat"
+                    [ if o == 0 then
+                        Js.from b
+                      else
+                        Js.call (Js.from b) "slice" [ Js.from o ]
+                    ]
+                )
+
+
+--| Whether trie `a` is the tail of a trie that began with `x`: its head
+--| array holds `x` in the slot past its count, so `x` then `a` is a header
+--| with one more, sharing every array — a re-cons, which builds nothing.
+reconsed : Js.Value, Js.Value → Bool
+reconsed a x =
+    hc = Js.to (Js.get a "hc")
+    h = Js.get a "h"
+    hc < Js.to (Js.get h "length") && Js.same (Js.at h hc) x
 
 
 --| `c` with `b[i] … b[b.length - 1]` pushed onto it.
@@ -757,34 +787,6 @@ rightGrow r s off tc leaf =
         treeOf (putLeaf r s (off + tc) leaf) s off (tc + 32)
 
 
---| Tree `tr` with `leaf` added at its left end; an empty tree starts
---| mid-root, and a root with no room left becomes child 16 of a new one.
-treeLeft : Js.Value, Js.Value → Js.Value
-treeLeft tr leaf =
-    tc = Js.to (Js.get tr "tc")
-    if tc == 0 then
-        leftGrow (Js.array []) 5 512 0 leaf
-    else
-        leftGrow (Js.get tr "r") (Js.to (Js.get tr "s")) (Js.to (Js.get tr "off")) tc leaf
-
-
-leftGrow : Js.Value, Int, Int, Int, Js.Value → Js.Value
-leftGrow r s off tc leaf =
-    if off < 32 then
-        leftGrow
-            (Js.call
-                (Js.call (Js.construct (Js.global "Array") [ Js.from 16 ]) "fill" [ Js.null ])
-                "concat"
-                [ Js.array [ r ] ]
-            )
-            (s + 5)
-            (off + 16 * 2 ^ (s + 5))
-            tc
-            leaf
-    else
-        treeOf (putLeaf r s (off - 32) leaf) s (off - 32) (tc + 32)
-
-
 --| THE CLAIM: buffer `b` of a version that reads its first `c` elements,
 --| with `v` at index `c` — in place when this version owns `b`'s end,
 --| shared when `b` already holds `v` there, a copy otherwise.
@@ -933,26 +935,6 @@ pushedLeaves a n tr t b i stop =
             stop
     else
         header n (Js.get a "h") (Js.to (Js.get a "hc")) tr t
-
-
---| Trie `a` with `v` at the front: the head claimed; a full head moves
---| into the tree as a leaf, reversed back into order.
-triePrepend : Js.Value, Js.Value → Js.Value
-triePrepend a v =
-    n = Js.to (Js.get a "length")
-    hc = Js.to (Js.get a "hc")
-    if hc < 32 then
-        header (n + 1) (claim (Js.get a "h") hc v) (hc + 1) (Js.get a "T") (Js.get a "t")
-    else
-        header
-            (n + 1)
-            (Js.array [ v ])
-            1
-            (treeLeft
-                (Js.get a "T")
-                (Js.call (Js.call (Js.get a "h") "slice" [ Js.from 0, Js.from 32 ]) "reverse" [])
-            )
-            (Js.get a "t")
 
 
 --| Trie `a` without its last element.
@@ -1717,8 +1699,7 @@ head xs = get xs 0
 --|
 --| O(1): the rest is a view of the list, sharing its elements, which keeps
 --| the whole list alive as a substring may. Of a list that has been written
---| to it is the same list without its first element, sharing its structure,
---| and prepending onto it is as cheap as onto the list itself.
+--| to it is the same list without its first element, sharing its structure.
 pub tail : List a → Maybe (List a)
 tail xs =
     if isEmpty xs then
