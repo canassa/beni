@@ -106,6 +106,24 @@ maps["direct-s3"] = [
   ["program: the page (templates, groups, handlers, listeners)", "Ea Fa"],
 ];
 
+// The lean slice (research 73): the same parts, on the bundle at its commit.
+maps["direct-lean"] = [
+  ["core List: the trie, views, `++` and push", "b c d e f g h i j k l m n o p q r s v w"],
+  ["core List.get", "t u"],
+  ["core List.indexedMap", "x y"],
+  ["core List.filter", "z A B C"],
+  ["core Basics.modBy, Maybe.Nothing", "ja a la"],
+  ["Rt scheduler: send, mount, run, the program", "D E F G H I J ka"],
+  ["Rt lists: rows, keys, the key map", "K L M N O P Q R S"],
+  ["Rt list scripts: append, clear, exchange, walk, select", "T U ba ca da ga"],
+  ["Rt reconciler: match, rank, patch, moves", "V W X Y Z $ _ aa"],
+  ["Rt merge (a filter's script)", "ea fa"],
+  ["Rt delegation: the list's listener, `on`", "ha ia"],
+  ["program: data (word lists, buildData)", "ma na oa pa qa ra sa ta"],
+  ["program: update (the swap)", "ua va"],
+  ["program: the page (templates, groups, handlers, listeners)", "wa"],
+];
+
 // Three parts: core, the platform runtime, the program.
 const coarseOf = (name) => {
   const coarse = (prefix) => maps[name].filter(([l]) => l.startsWith(prefix)).map(([, n]) => n).join(" ");
@@ -115,7 +133,7 @@ const coarseOf = (name) => {
     ["program", coarse("program")],
   ];
 };
-for (const name of ["table", "table-s3", "direct-s3"]) maps[`${name}-coarse`] = coarseOf(name);
+for (const name of ["table", "table-s3", "direct-s3", "direct-lean"]) maps[`${name}-coarse`] = coarseOf(name);
 
 const map = maps[arg("map", "table")];
 const src = readFileSync(file, "utf8");
