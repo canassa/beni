@@ -13,7 +13,26 @@ inductive Ty where
   | list (element : Ty)
   | builder (element : Ty)
   | fn (parameters : List Ty) (result : Ty)
-  deriving Repr, BEq, Inhabited
+  deriving Repr, Inhabited
+
+/-- Explicitly total: Lean's derived BEq for nested inductives is opaque. -/
+def Ty.equal (a b : Ty) : Bool :=
+  match a, b with
+  | .int, .int => true
+  | .record xs, .record ys =>
+    xs.length == ys.length && (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
+  | .list x, .list y | .builder x, .builder y => x.equal y
+  | .fn xs x, .fn ys y => x.equal y && xs.length == ys.length &&
+    (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
+  | _, _ => false
+termination_by sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals simp_all +arith
+  all_goals omega
+
+instance : BEq Ty := ⟨Ty.equal⟩
 
 inductive Atom where
   | int (value : Int)
@@ -106,7 +125,7 @@ def primType (p : Prim) (ts : List Ty) : Except String Ty := do
     if t == u then pure (.list t) else throw "incorrect close source"
   | _, _ => throw s!"ill-typed primitive {repr p} on {repr ts}"
 
-partial def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except String Ty
+def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except String Ty
   | .atom a => atomType env a
   | .letE v rhs rest => do
     let t ← exprType ds self env rhs

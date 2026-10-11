@@ -59,9 +59,16 @@
 
         # The ownership oracle is separate from the compiler gates. Its Lean
         # version is pinned by nixpkgs and proofs/ownership/lean-toolchain.
-        ownership = pkgs.mkShell {
-          packages = [ pkgs.lean4 ];
-        };
+        ownership =
+          let
+            leanVersion = builtins.replaceStrings [ "leanprover/lean4:v" "\n" ] [ "" "" ]
+              (builtins.readFile ./proofs/ownership/lean-toolchain);
+          in
+          assert pkgs.lib.assertMsg (pkgs.lean4.version == leanVersion)
+            "ownership: nixpkgs Lean and proofs/ownership/lean-toolchain must agree";
+          pkgs.mkShell {
+            packages = [ pkgs.lean4 ];
+          };
 
         # `nix develop .#browser`: the default shell plus Chromium, for
         # `zig build test-browser`, which runs the `browser/` corpus in a

@@ -1,5 +1,7 @@
 import Ownership.Library
 
+/- Frozen generator v1: retain low-bit draws and syntax for historical seed reproduction.
+    New exploration belongs in Oracle.lean. This module is not the current generator. -/
 namespace Ownership.OracleLegacy
 
 abbrev Gen := StateM Nat

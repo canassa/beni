@@ -1,0 +1,188 @@
+generator-version=3 seed=20261011 index=7 old-rule=true old-escape-rule=false
+AST:
+{ declarations := [{ name := "initialize",
+                     parameters := [Ownership.Ty.int,
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.int]
+                                      (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))))],
+                     captures := [],
+                     result := Ownership.Ty.list
+                                 (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)))),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim
+                                 (Ownership.Prim.builder
+                                   (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)))))
+                                 [])
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.traverse
+                                   (Ownership.Source.range)
+                                   (Ownership.Atom.var 0)
+                                   (Ownership.Atom.var 2)
+                                   4
+                                   5
+                                   6
+                                   (Ownership.Expr.letE
+                                     7
+                                     (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 4])
+                                     (Ownership.Expr.prim
+                                       (Ownership.Prim.put)
+                                       [Ownership.Atom.var 6, Ownership.Atom.var 7])))
+                                 (Ownership.Expr.prim (Ownership.Prim.close) [Ownership.Atom.var 3])) },
+                   { name := "freshTower",
+                     parameters := [Ownership.Ty.int],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))),
+                     body := Ownership.Expr.letE
+                               1
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+                                 (Ownership.Expr.letE
+                                   4
+                                   (Ownership.Expr.atom (Ownership.Atom.var 3))
+                                   (Ownership.Expr.prim
+                                     (Ownership.Prim.literal (Ownership.Ty.list (Ownership.Ty.int)))
+                                     [Ownership.Atom.var 4])))
+                               (Ownership.Expr.letE
+                                 2
+                                 (Ownership.Expr.atom (Ownership.Atom.var 1))
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.literal (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))))
+                                   [Ownership.Atom.var 1, Ownership.Atom.var 2])) }],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.closure 0 [])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.closure 1 [])
+              (Ownership.Expr.letE
+                2
+                (Ownership.Expr.app (Ownership.Atom.var 0) [Ownership.Atom.int 1, Ownership.Atom.var 1])
+                (Ownership.Expr.focus
+                  (Ownership.Atom.var 2)
+                  (Ownership.Atom.int 0)
+                  3
+                  (Ownership.Expr.focus
+                    (Ownership.Atom.var 3)
+                    (Ownership.Atom.int 0)
+                    4
+                    (Ownership.Expr.focus
+                      (Ownership.Atom.var 4)
+                      (Ownership.Atom.int 0)
+                      5
+                      (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 5, Ownership.Atom.int 0])))))) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [Ownership.Observation.list
+                [Ownership.Observation.list [Ownership.Observation.list []],
+                 Ownership.Observation.list [Ownership.Observation.list []]],
+              Ownership.Observation.list [Ownership.Observation.list []],
+              Ownership.Observation.list []],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.list [Ownership.Observation.list [Ownership.Observation.int 0]],
+                        Ownership.Observation.list [Ownership.Observation.list []]]],
+    externalReads := [] }
+  { reads := [Ownership.Observation.list
+                [Ownership.Observation.list [Ownership.Observation.list []],
+                 Ownership.Observation.list [Ownership.Observation.list []]],
+              Ownership.Observation.list [Ownership.Observation.list []],
+              Ownership.Observation.list []],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.list [Ownership.Observation.list [Ownership.Observation.int 0]],
+                        Ownership.Observation.list [Ownership.Observation.list [Ownership.Observation.int 0]]]],
+    externalReads := [] }
+corrected checker: Except.error "exclusive contents: positions or nested paths may share"
+
+family=anf-chain depth=13..13 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 0,
+  rejected := 1,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=once-many-wrappers depth=9..9 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 1,
+  rejected := 0,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=fresh-tower depth=7..7 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 1,
+  rejected := 0,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 1 }
+family=fresh-nested depth=6..6 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 1,
+  rejected := 0,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=branch-traversal depth=5..5 { candidates := 4,
+  distinct := 3,
+  typed := 4,
+  accepted := 2,
+  rejected := 2,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=identity-map depth=8..8 { candidates := 2,
+  distinct := 2,
+  typed := 2,
+  accepted := 1,
+  rejected := 1,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=recursion depth=4..4 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 1,
+  rejected := 0,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=library-pipeline depth=14..16 { candidates := 4,
+  distinct := 4,
+  typed := 4,
+  accepted := 1,
+  rejected := 3,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=escape-traversal depth=5..5 { candidates := 5,
+  distinct := 2,
+  typed := 5,
+  accepted := 0,
+  rejected := 5,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+generator-version=3 seed=20261011 old-rule=true old-escape-rule=false { candidates := 20,
+  distinct := 16,
+  typed := 20,
+  accepted := 8,
+  rejected := 12,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 1 } elapsed-ms=12

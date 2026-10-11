@@ -8,11 +8,32 @@ inductive Observation where
   | record (fields : List Observation)
   | list (items : List Observation)
   | closure (decl : Nat) (captures : List Observation)
-  deriving Repr, BEq, Inhabited
+  deriving Repr, Inhabited
+
+/-- A total structural comparison, also reducible by the proof kernel. -/
+def Observation.equal (a b : Observation) : Bool :=
+  match a, b with
+  | .int x, .int y => x == y
+  | .record xs, .record ys =>
+    xs.length == ys.length && (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
+  | .list xs, .list ys =>
+    xs.length == ys.length && (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
+  | .closure i xs, .closure j ys => i == j && xs.length == ys.length &&
+    (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
+  | _, _ => false
+termination_by sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals simp_all +arith
+  all_goals omega
+
+instance : BEq Observation := ⟨Observation.equal⟩
 
 structure Trace where
   reads : List Observation
   finalValue : Observation
+  externalReads : List (List Observation) := []
   deriving Repr, BEq, Inhabited
 
 namespace ValueSemantics
@@ -21,6 +42,8 @@ abbrev Value := Observation
 structure State where
   fuel : Nat
   reads : Array Observation := #[]
+  kept : Array Value := #[]
+  externalReads : Array (List Observation) := #[]
 abbrev M := StateT State (Except String)
 
 def tick : M Unit := do
@@ -29,6 +52,12 @@ def tick : M Unit := do
   set { s with fuel := s.fuel - 1 }
 
 def read (v : Value) : M Unit := modify fun s => { s with reads := s.reads.push v }
+
+/-- A permanent outside reader observes every completed expression. -/
+def observeKept : M Unit := do
+  let s ← get
+  if !s.kept.isEmpty then
+    set { s with externalReads := s.externalReads.push s.kept.toList }
 
 def atom (env : Env Value) : Atom → Except String Value
   | .int n => pure (.int n)
@@ -46,7 +75,9 @@ def prim (op : Prim) (vs : List Value) : M Value := do
   | .record, xs => pure (.record xs)
   | .literal _, xs => pure (.list xs)
   | .builder _, [] => pure (.list [])
-  | .shared, [x] => pure x
+  | .shared, [x] => do
+    modify fun s => { s with kept := s.kept.push x }
+    pure x
   | .length, [.list xs] => do
     let n := Observation.int xs.length
     read n
@@ -62,55 +93,62 @@ def prim (op : Prim) (vs : List Value) : M Value := do
   | .close, [.list xs] | .close, [.list xs, .list _] => pure (.list xs)
   | _, _ => throw "value primitive shape"
 
-partial def eval (ds : List Decl) (self : Option (Nat × List Value))
+def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
     (env : Env Value) (e : Expr) : M Value := do
-  tick
-  match e with
-  | .atom a => atom env a
-  | .letE v rhs rest =>
-    let x ← eval ds self env rhs
-    eval ds self ((v, x) :: env) rest
-  | .prim op args => prim op (← args.mapM (m := Except String) (atom env))
-  | .closure id captures => pure (.closure id (← captures.mapM (m := Except String) (atom env)))
-  | .app f args =>
-    let .closure id caps ← atom env f | throw "value call"
-    call ds id caps (← args.mapM (m := Except String) (atom env))
-  | .recur args =>
-    let some (id, caps) := self | throw "recursion outside function"
-    call ds id caps (← args.mapM (m := Except String) (atom env))
-  | .branch a yes no =>
-    let .int n ← atom env a | throw "value condition"
-    eval ds self env (if n == 0 then yes else no)
-  | .traverse kind src init i x acc body =>
-    let input ← atom env src
-    let values ← match kind, input with
-      | .list, .list xs => do read (.int xs.length); pure xs
-      | .range, .int n => pure ((List.range n.toNat).map (fun i => .int i))
-      | _, _ => throw "value traversal"
-    let mut a ← atom env init
-    for (v, n) in values.zipIdx do
-      tick
-      if kind == .list then read v
-      a ← eval ds self ((i, .int n) :: (x, v) :: (acc, a) :: env) body
-    pure a
-  | .focus src index x body =>
-    let .list xs ← atom env src | throw "value focus"
-    let .int i ← atom env index | throw "value index"
-    if i < 0 then return .list xs
-    match xs[i.toNat]? with
-    | none => pure (.list xs)
-    | some v =>
-      read v
-      let w ← eval ds self ((x, v) :: env) body
-      pure (.list (xs.set i.toNat w))
-where
-  call (ds : List Decl) (id : Nat) (caps args : List Value) : M Value := do
-    let d ← ds[id]?.toExcept "value missing declaration"
-    eval ds (some (id, caps)) (bindArgs (args ++ caps)) d.body
+  if depth = 0 then throw "value execution exhausted depth"
+  else
+    tick
+    let result ← do
+      match e with
+      | .atom a => atom env a
+      | .letE v rhs rest =>
+        let x ← eval (depth - 1) ds self env rhs
+        eval (depth - 1) ds self ((v, x) :: env) rest
+      | .prim op args => prim op (← args.mapM (m := Except String) (atom env))
+      | .closure id captures => pure (.closure id (← captures.mapM (m := Except String) (atom env)))
+      | .app f args =>
+        let .closure id caps ← atom env f | throw "value call"
+        let actuals ← args.mapM (m := Except String) (atom env)
+        let d ← ds[id]?.toExcept "value missing declaration"
+        eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+      | .recur args =>
+        let some (id, caps) := self | throw "recursion outside function"
+        let actuals ← args.mapM (m := Except String) (atom env)
+        let d ← ds[id]?.toExcept "value missing declaration"
+        eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+      | .branch a yes no =>
+        let .int n ← atom env a | throw "value condition"
+        eval (depth - 1) ds self env (if n == 0 then yes else no)
+      | .traverse kind src init i x acc body =>
+        let input ← atom env src
+        let values ← match kind, input with
+          | .list, .list xs => do read (.int xs.length); pure xs
+          | .range, .int n => pure ((List.range n.toNat).map (fun i => .int i))
+          | _, _ => throw "value traversal"
+        let mut a ← atom env init
+        for (v, n) in values.zipIdx do
+          tick
+          if kind == .list then read v
+          a ← eval (depth - 1) ds self ((i, .int n) :: (x, v) :: (acc, a) :: env) body
+        pure a
+      | .focus src index x body =>
+        let .list xs ← atom env src | throw "value focus"
+        let .int i ← atom env index | throw "value index"
+        if i < 0 then return .list xs
+        match xs[i.toNat]? with
+        | none => pure (.list xs)
+        | some v =>
+          read v
+          let w ← eval (depth - 1) ds self ((x, v) :: env) body
+          pure (.list (xs.set i.toNat w))
+    observeKept
+    pure result
+termination_by depth
+decreasing_by all_goals simp_wf; omega
 
 def run (p : Program) (fuel := 100000) : Except String Trace := do
-  let (v, s) ← (eval p.declarations none [] p.main).run { fuel }
-  pure { reads := s.reads.toList, finalValue := v }
+  let (v, s) ← (eval fuel p.declarations none [] p.main).run { fuel }
+  pure { reads := s.reads.toList, finalValue := v, externalReads := s.externalReads.toList }
 
 end ValueSemantics
 
@@ -121,12 +159,33 @@ inductive Value where
   | record (fields : List Value)
   | ref (address : Nat)
   | closure (decl : Nat) (captures : List Value)
-  deriving Repr, BEq, Inhabited
+  deriving Repr, Inhabited
+
+/-- A total structural comparison, also reducible by the proof kernel. -/
+def Value.equal (a b : Value) : Bool :=
+  match a, b with
+  | .int x, .int y => x == y
+  | .record xs, .record ys =>
+    xs.length == ys.length && (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
+  | .ref x, .ref y => x == y
+  | .closure i xs, .closure j ys => i == j && xs.length == ys.length &&
+    (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
+  | _, _ => false
+termination_by sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals simp_all +arith
+  all_goals omega
+
+instance : BEq Value := ⟨Value.equal⟩
 
 structure State where
   fuel : Nat
   heap : Array (List Value) := #[]
   reads : Array Observation := #[]
+  kept : Array Value := #[]
+  externalReads : Array (List Observation) := #[]
 abbrev M := StateT State (Except String)
 
 def tick : M Unit := do
@@ -161,6 +220,13 @@ def read (v : Value) : M Unit := do
   let o ← snapshot (← get).heap 256 v
   modify fun s => { s with reads := s.reads.push o }
 
+/-- Keep actual references, not snapshots made when a holder was registered. -/
+def observeKept : M Unit := do
+  let s ← get
+  if !s.kept.isEmpty then
+    let observations ← s.kept.toList.mapM (m := Except String) (snapshot s.heap 256)
+    set { s with externalReads := s.externalReads.push observations }
+
 def atom (env : Env Value) : Atom → Except String Value
   | .int n => pure (.int n)
   | .var v => lookup env v
@@ -177,7 +243,9 @@ def prim (op : Prim) (vs : List Value) : M Value := do
   | .record, xs => pure (.record xs)
   | .literal _, xs => alloc xs
   | .builder _, [] => alloc []
-  | .shared, [v] => pure v
+  | .shared, [v] => do
+    modify fun s => { s with kept := s.kept.push v }
+    pure v
   | .length, [.ref c] => do
     let n := Value.int (← array c).length
     read n
@@ -199,65 +267,72 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     if (← array c) == (← array source) then pure (.ref source) else pure (.ref c)
   | _, _ => throw "in-place primitive shape"
 
-partial def eval (ds : List Decl) (self : Option (Nat × List Value))
+def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
     (env : Env Value) (e : Expr) : M Value := do
-  tick
-  match e with
-  | .atom a => atom env a
-  | .letE v rhs rest =>
-    let x ← eval ds self env rhs
-    eval ds self ((v, x) :: env) rest
-  | .prim op args => prim op (← args.mapM (m := Except String) (atom env))
-  | .closure id captures => pure (.closure id (← captures.mapM (m := Except String) (atom env)))
-  | .app f args =>
-    let .closure id caps ← atom env f | throw "in-place call"
-    call ds id caps (← args.mapM (m := Except String) (atom env))
-  | .recur args =>
-    let some (id, caps) := self | throw "recursion outside function"
-    call ds id caps (← args.mapM (m := Except String) (atom env))
-  | .branch a yes no =>
-    let .int n ← atom env a | throw "in-place condition"
-    eval ds self env (if n == 0 then yes else no)
-  | .traverse kind src init i x acc body =>
-    let input ← atom env src
-    let n ← match kind, input with
-      | .list, .ref c => do
-        let n := (← array c).length
-        read (.int n)
-        pure n
-      | .range, .int n => pure n.toNat
-      | _, _ => throw "in-place traversal"
-    let mut a ← atom env init
-    for j in List.range n do
-      tick
-      let v ← match input with
-        | .ref c => do
-          let v ← (← array c)[j]?.toExcept "traversal source changed length"
+  if depth = 0 then throw "in-place execution exhausted depth"
+  else
+    tick
+    let result ← do
+      match e with
+      | .atom a => atom env a
+      | .letE v rhs rest =>
+        let x ← eval (depth - 1) ds self env rhs
+        eval (depth - 1) ds self ((v, x) :: env) rest
+      | .prim op args => prim op (← args.mapM (m := Except String) (atom env))
+      | .closure id captures => pure (.closure id (← captures.mapM (m := Except String) (atom env)))
+      | .app f args =>
+        let .closure id caps ← atom env f | throw "in-place call"
+        let actuals ← args.mapM (m := Except String) (atom env)
+        let d ← ds[id]?.toExcept "in-place missing declaration"
+        eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+      | .recur args =>
+        let some (id, caps) := self | throw "recursion outside function"
+        let actuals ← args.mapM (m := Except String) (atom env)
+        let d ← ds[id]?.toExcept "in-place missing declaration"
+        eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+      | .branch a yes no =>
+        let .int n ← atom env a | throw "in-place condition"
+        eval (depth - 1) ds self env (if n == 0 then yes else no)
+      | .traverse kind src init i x acc body =>
+        let input ← atom env src
+        let n ← match kind, input with
+          | .list, .ref c => do
+            let n := (← array c).length
+            read (.int n)
+            pure n
+          | .range, .int n => pure n.toNat
+          | _, _ => throw "in-place traversal"
+        let mut a ← atom env init
+        for j in List.range n do
+          tick
+          let v ← match input with
+            | .ref c => do
+              let v ← (← array c)[j]?.toExcept "traversal source changed length"
+              read v
+              pure v
+            | _ => pure (.int j)
+          a ← eval (depth - 1) ds self ((i, .int j) :: (x, v) :: (acc, a) :: env) body
+        pure a
+      | .focus src index x body =>
+        let .ref c ← atom env src | throw "in-place focus"
+        let .int i ← atom env index | throw "in-place index"
+        let xs ← array c
+        if i < 0 then return .ref c
+        match xs[i.toNat]? with
+        | none => pure (.ref c)
+        | some v =>
           read v
-          pure v
-        | _ => pure (.int j)
-      a ← eval ds self ((i, .int j) :: (x, v) :: (acc, a) :: env) body
-    pure a
-  | .focus src index x body =>
-    let .ref c ← atom env src | throw "in-place focus"
-    let .int i ← atom env index | throw "in-place index"
-    let xs ← array c
-    if i < 0 then return .ref c
-    match xs[i.toNat]? with
-    | none => pure (.ref c)
-    | some v =>
-      read v
-      let w ← eval ds self ((x, v) :: env) body
-      write c (xs.set i.toNat w)
-where
-  call (ds : List Decl) (id : Nat) (caps args : List Value) : M Value := do
-    let d ← ds[id]?.toExcept "in-place missing declaration"
-    eval ds (some (id, caps)) (bindArgs (args ++ caps)) d.body
+          let w ← eval (depth - 1) ds self ((x, v) :: env) body
+          write c (xs.set i.toNat w)
+    observeKept
+    pure result
+termination_by depth
+decreasing_by all_goals simp_wf; omega
 
 def run (p : Program) (fuel := 100000) : Except String Trace := do
-  let (v, s) ← (eval p.declarations none [] p.main).run { fuel }
+  let (v, s) ← (eval fuel p.declarations none [] p.main).run { fuel }
   let finalValue ← snapshot s.heap 256 v
-  pure { reads := s.reads.toList, finalValue }
+  pure { reads := s.reads.toList, finalValue, externalReads := s.externalReads.toList }
 
 end InPlaceSemantics
 end Ownership

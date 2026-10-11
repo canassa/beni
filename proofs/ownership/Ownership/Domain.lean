@@ -44,20 +44,56 @@ inductive Abstract where
   | record (fields : List Abstract)
   | list (roots : List Origin) (element : Abstract) (exclusive : Bool)
   | function (roots : List Origin) (alternatives : List (Nat × List Abstract))
-  deriving Repr, BEq, Inhabited
+  deriving Repr, Inhabited
 
-partial def Abstract.paths : Abstract → List (Path × List Origin)
+private theorem sndSize [SizeOf α] [SizeOf β] (p : α × β) :
+    sizeOf p.2 < sizeOf p := by
+  cases p
+  simp +arith
+
+/-- Total comparison for the fixpoint domain, including captured alternatives. -/
+def Abstract.equal (a b : Abstract) : Bool :=
+  match a, b with
+  | .bottom, .bottom | .scalar, .scalar => true
+  | .record xs, .record ys =>
+    xs.length == ys.length && (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
+  | .list cs x ex, .list ds y ey => cs == ds && ex == ey && x.equal y
+  | .function cs xs, .function ds ys => cs == ds && xs.length == ys.length &&
+    (xs.attach.zip ys).all fun (alt, other) =>
+      alt.val.1 == other.1 && alt.val.2.length == other.2.length &&
+      (alt.val.2.attach.zip other.2).all (fun (x, y) => x.val.equal y)
+  | _, _ => false
+termination_by sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals try have h₂ := List.sizeOf_lt_of_mem alt.property
+  all_goals try have h₃ := sndSize alt.val
+  all_goals simp_all +arith
+  all_goals omega
+
+instance : BEq Abstract := ⟨Abstract.equal⟩
+
+def Abstract.paths : Abstract → List (Path × List Origin)
   | .bottom | .scalar => []
-  | .record xs => xs.zipIdx.flatMap fun (x, i) =>
-    x.paths.map fun (p, cs) => (.field i :: p, cs)
+  | .record xs => xs.attach.zipIdx.flatMap fun (x, i) =>
+    x.val.paths.map fun (p, cs) => (.field i :: p, cs)
   | .list cs x _ => ([], cs) :: x.paths.map (fun (p, cs) => (.element :: p, cs))
-  | .function cs alts => ([], cs) :: alts.flatMap fun (_, caps) =>
-    caps.zipIdx.flatMap fun (x, i) => x.paths.map fun (p, cs) => (.capture i :: p, cs)
+  | .function cs alts => ([], cs) :: alts.attach.flatMap fun alt =>
+    alt.val.2.attach.zipIdx.flatMap fun (x, i) => x.val.paths.map fun (p, cs) => (.capture i :: p, cs)
+termination_by a => sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals try have h₂ := List.sizeOf_lt_of_mem alt.property
+  all_goals try have h₃ := sndSize alt.val
+  all_goals simp_all +arith
+  all_goals omega
 
 def Abstract.cells (a : Abstract) : List Origin :=
   a.paths.foldl (fun cs (_, xs) => union cs xs) []
 
-partial def Abstract.atPath (a : Abstract) (p : Path) : Abstract :=
+def Abstract.atPath (a : Abstract) (p : Path) : Abstract :=
   match p, a with
   | [], _ => a
   | .field i :: rest, .record xs => (xs[i]?.getD .bottom).atPath rest
@@ -74,37 +110,69 @@ def Abstract.roots : Abstract → List Origin
 def Abstract.cellsAt (a : Abstract) (p : Path) : List Origin :=
   a.paths.foldl (fun cs (q, xs) => if p == q then union cs xs else cs) []
 
-partial def Abstract.mapOrigins (f : Path → List Origin → List Origin) (a : Abstract)
+def Abstract.mapOrigins (f : Path → List Origin → List Origin) (a : Abstract)
     (path : Path := []) : Abstract :=
   match a with
   | .bottom => .bottom
   | .scalar => .scalar
-  | .record xs => .record (xs.zipIdx.map fun (x, i) => x.mapOrigins f (path ++ [.field i]))
+  | .record xs => .record (xs.attach.zipIdx.map fun (x, i) => x.val.mapOrigins f (path ++ [.field i]))
   | .list cs x ex => .list (f path cs) (x.mapOrigins f (path ++ [.element])) ex
-  | .function cs alts => .function (f path cs) (alts.map fun (id, caps) =>
-    (id, caps.zipIdx.map fun (x, i) => x.mapOrigins f (path ++ [.capture i])))
+  | .function cs alts => .function (f path cs) (alts.attach.map fun alt =>
+    (alt.val.1, alt.val.2.attach.zipIdx.map fun (x, i) => x.val.mapOrigins f (path ++ [.capture i])))
+termination_by sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals try have h₂ := List.sizeOf_lt_of_mem alt.property
+  all_goals try have h₃ := sndSize alt.val
+  all_goals simp_all +arith
+  all_goals omega
 
-partial def Abstract.join (a b : Abstract) : Abstract :=
+def Abstract.join (a b : Abstract) : Abstract :=
   match a, b with
   | .bottom, x | x, .bottom => x
   | .scalar, .scalar => .scalar
-  | .record xs, .record ys => .record (xs.zipWith Abstract.join ys)
+  | .record xs, .record ys => .record ((xs.attach.zip ys).map (fun (x, y) => x.val.join y))
   | .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex && ey)
   | .function cs xs, .function ds ys => .function (union cs ds) (union xs ys)
   | _, _ => .list [.unknown] .bottom false
+termination_by sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals try have h₂ := List.sizeOf_lt_of_mem alt.property
+  all_goals try have h₃ := sndSize alt.val
+  all_goals simp_all +arith
+  all_goals omega
 
-partial def Abstract.deepExclusive : Abstract → Bool
+def Abstract.deepExclusive : Abstract → Bool
   | .bottom | .scalar => true
-  | .record xs => xs.all Abstract.deepExclusive
+  | .record xs => xs.attach.all (fun x => x.val.deepExclusive)
   | .list _ x ex => ex && x.deepExclusive
-  | .function _ xs => xs.all fun (_, caps) => caps.all Abstract.deepExclusive
+  | .function _ xs => xs.attach.all fun alt => alt.val.2.attach.all (fun x => x.val.deepExclusive)
+termination_by a => sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals try have h₂ := List.sizeOf_lt_of_mem alt.property
+  all_goals try have h₃ := sndSize alt.val
+  all_goals simp_all +arith
+  all_goals omega
 
 /-- The recursive consequence of an exclusive element loan, thesis §3.11. -/
-partial def Abstract.grantExclusive : Abstract → Abstract
+def Abstract.grantExclusive : Abstract → Abstract
   | .list cs x _ => .list cs x.grantExclusive true
-  | .record xs => .record (xs.map Abstract.grantExclusive)
-  | .function cs xs => .function cs (xs.map fun (id, caps) => (id, caps.map Abstract.grantExclusive))
+  | .record xs => .record (xs.attach.map (fun x => x.val.grantExclusive))
+  | .function cs xs => .function cs (xs.attach.map fun alt => (alt.val.1, alt.val.2.attach.map (fun x => x.val.grantExclusive)))
   | x => x
+termination_by a => sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals try have h₂ := List.sizeOf_lt_of_mem alt.property
+  all_goals try have h₃ := sndSize alt.val
+  all_goals simp_all +arith
+  all_goals omega
 
 def separatedPaths (xs : List (Path × List Origin)) : Bool :=
   (xs.zipIdx).all fun ((_, cs), i) =>
