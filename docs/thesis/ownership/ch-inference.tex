@@ -129,10 +129,12 @@ starts from the most optimistic summary, the bottom of the lattice of \S\ref{sec
 parameter path $\unused$, every result path empty, every container exclusive and no exclusivity
 required, every function-typed parameter called at most once, supplied owned cells and needing nothing,
 and no function value once. The bodies are analysed under these assumptions, the resulting summaries
-are joined with the assumptions, and the process repeats until nothing changes. Every transfer is
-monotone---a more pessimistic callee summary creates more holders, aliases and escapes in the caller,
-never fewer---and the lattice is finite, so the iteration terminates (\S\ref{sec:inf-lattice} gives the
-height). Because no group can fail to converge, a cap on rounds, if an implementation wanted one, would
+are joined with the assumptions, and the process repeats until nothing changes. Because each round joins
+its result into the previous state, the states form an ascending chain in a finite lattice, and the
+iteration terminates (\S\ref{sec:inf-lattice} gives the height) whether or not every transfer is
+monotone. Almost every transfer is---a more pessimistic callee summary creates more holders, aliases and
+escapes in the caller, never fewer---but one component is not, and \S\ref{sec:inf-lattice} says which and
+what that costs. Because no group can fail to converge, a cap on rounds, if an implementation wanted one, would
 yield the top summary and a limit report, never a wrong answer.
 
 \emph{The group is then validated}: each body is checked once more against the final summaries, and
@@ -157,8 +159,10 @@ Clarke et al.'s survey explains why ownership-type inference is hard in object-o
 ownership annotations ``are mostly design-driven'', a trivial assignment always satisfies the
 constraints, and qualifier inference therefore ``cannot give a best solution''
 \citep[\S5]{clarke2013survey}---a satisfying solution need not be the intended one. Our facts are not
-design choices but properties of the program, so the least solution of the monotone constraints
-\emph{is} the intended one: it is the most permissive summary every body validates against. The
+design choices but properties of the program, so where the constraints are monotone their least solution
+\emph{is} the intended one: the most permissive summary every body validates against. They are not
+monotone everywhere (\S\ref{sec:inf-lattice}), and where they are not we claim less: the iteration's
+result validates, so it is a sound summary, but it need not be the least one. The
 closest work in that survey is Huang et al.'s Kleene iteration of a monotone transfer function from the
 lattice's bottom, maximising a programmer-supplied metric \citep[\S5.2]{clarke2013survey}.
 
@@ -176,7 +180,7 @@ rule meets de Vries et al.'s.
 \section{The lattice}
 \label{sec:inf-lattice}
 
-Termination and the existence of a least solution need the whole order, with every fact oriented so
+Termination needs the whole order, and the least solution, where it exists, needs every fact oriented so
 that ``up'' is ``more pessimistic''. For one declaration with parameter paths $P$, result paths $Q$,
 environment paths $V$ (for a lambda or local function) and function-typed parameters $J$, the facts and
 their orders are:
@@ -207,16 +211,25 @@ provenance at each step, so a path's height is $|\mathit{Pv}|$, the figure in th
 rules make of a set reads its maximal elements, and every test is \emph{antitone}: it can only turn
 from true to false as the set grows. \Known\ asks that $\top$ not be maximal; ``fresh'' (for
 $\excl$, for $\mathit{need}$, for ``keeps shape'') asks that every maximal element be some
-$\fresh_k$; \Unescaped\ asks that none be $\esc_k$ or $\shared$; ``returns owned'' asks that each be
+$\fresh_k$, and for $\excl$ also that the callback's $\mathit{xres}$ hold, a must fact that only falls;
+\Unescaped\ asks that none be $\esc_k$ or $\shared$; ``returns owned'' asks that each be
 some $\fresh_k$ or an owned parameter path. With this order the read-off rule is
 monotone: when more of a body's cells escape, a $\fresh_k$ becomes $\esc_k$, whose down-closure contains
 it. The same order applies to $\mathit{supply}$'s provenance sets. The base lattice $L_0$ is the product of these, ordered
 pointwise, and its height $h_0$ is the sum of the last column.
 
-A \emph{conditional} summary maps each valuation of its guard atoms to a point of $L_0$, monotonically:
-a more pessimistic class for a function-typed parameter, or a weaker state of an argument (not
-exclusive, not stored exclusively, possibly overlapping another), never yields a more optimistic
-summary. The atoms are finitely many: one per fact of a function-typed parameter's class, and one per
+A \emph{conditional} summary maps each valuation of its guard atoms to a point of $L_0$. For every
+component but one the map is monotone: a more pessimistic class for a function-typed parameter, or a
+weaker state of an argument (not exclusive, not stored exclusively, possibly overlapping another), never
+yields a more optimistic value. The exception is the ownership bit of a $\mathit{supply}$. \code{map}
+supplies its element \emph{owned} exactly when its callback consumes it, and \emph{borrowed} when the
+callback only reads; so a callback made more pessimistic by gaining $\mathsf{W}$ makes that bit more
+optimistic in the order $\mathrm{owned} \sqsubset \mathrm{borrowed}$ of the table. The bit is not wrong:
+an owned supply comes with $\mathsf{W}$ on the list in $f$'s own $\mathit{use}$, which is the price of it,
+and the two move together. But a supply is a guarantee $f$ gives the callback, and a guarantee and a
+requirement are ordered in opposite directions; the product order above treats the bit as if it were a
+requirement. A formulation of conditional summaries as contracts, with explicit requirements ordered one
+way and guarantees the other, would make the map monotone; we have not written it. The atoms are finitely many: one per fact of a function-typed parameter's class, and one per
 argument-state fact over $P$, the latter at most $2|P| + |P|^2$. With $a$ atoms that the body's facts
 actually depend on, the normal form is a join of at most $2^a$ guarded values and its lattice has height
 at most $2^a \cdot h_0$. We cap $a$ (at eight, say): a body whose facts would depend on more atoms is
@@ -228,13 +241,18 @@ decided by the caller's classes and arguments. In particular the entry check of 
 no guards, however many model paths \code{update} writes. The group's lattice is the product over its
 members, whose height is the sum of theirs.
 
-Every transfer of Table~\ref{tab:transfer} and every summary rule of \S\ref{sec:inf-summarise} is
-monotone in this order: each is a union, a projection, a membership test on a set that only grows, a
-must fact that only falls, or the move from $\fresh_k$ to $\esc_k$. We have checked this case by case but
-have not written the case analysis out; it is the first item of a mechanised proof. Given monotonicity,
-Knaster--Tarski gives a least fixpoint, Kleene iteration from bottom reaches it in at most the group's
-height in rounds, and the optimistic start finds it. In practice one or two rounds suffice, because
-summaries move only when a recursive call carries a new fact around the cycle.
+Every transfer of Table~\ref{tab:transfer} and every summary rule of \S\ref{sec:inf-summarise} other than
+the supply bit above is monotone in this order: each is a union, a projection, a membership test on a set
+that only grows, a must fact that only falls, or the move from $\fresh_k$ to $\esc_k$. We have checked this
+case by case but have not written the case analysis out; it is the first item of a mechanised proof. What
+the solver relies on is weaker. Each round joins its result into the previous state, $x_{i+1} = x_i \sqcup
+F(x_i)$, so the states ascend in a finite lattice and the iteration stops within the group's height in
+rounds, monotone or not; and the state it stops at satisfies $F(x) \sqsubseteq x$, which is exactly what
+validation checks, so it is a sound summary. What is lost without monotonicity is the claim that this
+state is the \emph{least} one, the most permissive summary the group admits; where the supply bit is
+involved we do not make that claim, and a program could in principle be rejected that a better solver
+would accept. In practice one or two rounds suffice, because summaries move only when a recursive call
+carries a new fact around the cycle.
 
 \section{Function values: ownership classes}
 \label{sec:inf-classes}
@@ -438,6 +456,21 @@ the usual argument for requiring signatures to be written. In our measurement of
 declarations of the core library and of none of the annotated ones (\S\ref{sec:bg-modules}); we expect
 summaries to behave similarly, and the evaluation measures it. An optional annotation can freeze a
 summary (\S\ref{sec:disc-options}).
+
+\emph{Summaries are part of a package's public API.} Hashing solves stale compilation; it does not solve
+compatibility between versions of a package. Replacing \code{prepare xs = List.copy xs} with
+\code{prepare xs = xs} keeps the function's type and the value it returns, and breaks every caller that
+writes \code{zs = [ …prepare xs, 9 ]} and then reads \code{xs}: the old result was fresh, the new one
+aliases the argument. Such a change is incompatible in the sense of semantic versioning, which asks a
+major release for any incompatible change to the declared public API \citep{semver2}, so a package
+ecosystem with this checker must count published summaries as declared API. Compatibility between two
+summaries is more than ``consumes no more'': a new result alias, a new escape, a callback called more
+often, a supply weakened from owned to borrowed, an exclusivity newly required or no longer guaranteed, each
+breaks some caller without any new write; and the comparison must be made modulo the renaming of opaque
+slots and of fresh numbers, which change interface bytes without changing what a client may do. Two tools
+would follow and are open (\S\ref{sec:disc-open}): generated, frozen public contracts that an
+implementation must satisfy while inference stays internal, and a compatibility report that says which
+client capability a new version lost.
 
 \emph{Everything the analysis reads about another module is in that module's interface.} This
 includes the entry protocol of a TEA program: it is evaluated at the call of the platform's program

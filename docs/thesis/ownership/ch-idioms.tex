@@ -13,7 +13,13 @@ two applications we examined.
 An \emph{idiom} here is a way of writing a list operation that beni's language and library make the most
 natural one and that an Elm programmer would write unprompted. Elm's own idioms carry over almost
 verbatim: \code{x :: acc} is written \code{[ x, …acc ]}, and the formatter's migration does the rewrite.
-Because list construction consumes its base (\S\ref{sec:model-demands}), nearly every idiom that builds
+One does not carry over as an idiom. Elm accumulates by prepending, because its lists are linked; beni's
+lists are arrays, and its canonical accumulator pushes at the end, \code{[ …acc, x ]}, in amortised
+constant time. A prepend onto an accumulator is checked by the same rules and accepted where they accept
+it, but it moves every element its base holds, a copy proportional to the base's length that the
+operation itself shows; the language does not encourage it, and the compiler warns on a prepend onto a loop accumulator (O3). The examples below that prepend are
+quoted as they are written; each has an appending form that builds the same list, with the reverse
+dropped where there is one. Because list construction consumes its base (\S\ref{sec:model-demands}), nearly every idiom that builds
 a list from another is a demand, and the checker meets demands everywhere. A text search over beni's
 core library, its platforms, the compiler's test programs and the example applications---approximate,
 with the method in Appendix~\ref{app:method}, and not the output of the analysis---finds about 112 list
@@ -33,7 +39,7 @@ error on idiomatic code is the main number the evaluation measures (\S\ref{sec:e
 \paragraph{I1. An accumulator in a loop.} From the core library and a test program:
 \begin{Verbatim}
 combineHelp rest (List.push values value)              -- Result.combine's helper
-prependAll (n - 1) [ size - n + 1, …acc ]               -- prepend, then reverse
+prependAll (n - 1) [ size - n + 1, …acc ]               -- a prepend: a copy per step
 growPlus (n - 1) (acc ++ [ size - n + 1 ])
 List.foldl rows [] (λr acc → acc ++ r.cells ++ [ sep ])  -- a chain: one construction
 \end{Verbatim}
@@ -246,7 +252,7 @@ the base read again in the same expression & \code{\{ model | items = [ …model
 a list captured by a command, then extended & TodoMVC's \code{save todos = Cmd.do λ⊤ → ⋯ (encode todos)} & real, possibly & compute before the command; command constructors that take values \\
 a top-level list as a base & \code{[ x, …defaults ]}; \code{init ⊤ = \{ todos = seed \}}; \code{k ++ both ++ [ ⋯ ]} with \code{k} top-level & position & build in a function; \code{List.copy}; the reading form \code{[ x ] ++ defaults} \\
 a top-level model & \code{initialModel = \{ todos = [] \}}; \code{init ⊤ = ( initialModel, Cmd.none )}; then any in-place edit & position & \code{initialModel ⊤ = ⋯}; counted on its own line in the evaluation \\
-a filtered or mapped copy kept beside its source & \code{\{ model | visible = List.filter model.all p \}}, then \code{[ …model.all, x ]} & limit (identity promise across the entry); real when the filter kept everything & \code{List.copy} where the copy is stored; a relational entry; dropping the promises (O2) \\
+a filtered or mapped copy kept beside its source & \code{\{ model | visible = List.filter model.all p \}}, then \code{[ …model.all, x ]} & limit (identity promise across the entry); real when the filter kept everything & \code{List.copy} where the copy is stored; a relational entry \\
 a fold callback that returns a list it does not own & \code{λx acc → if x < 0 then defaults else [ …acc, x ]}; a branch returning an element or a capture & real & \code{List.copy} on that branch \\
 a model list as a base in \code{view}, a derived value or \code{subscriptions} & \code{[ …model.pinned, …model.recent ]} in \code{view} & position & \code{List.concat [ model.pinned, model.recent ]}, which builds \\
 a list prepended onto an accumulator, the list still read & \code{List.foldr xss [] (λxs acc → xs ++ acc)}, \code{xss} read later & real & \code{List.foldl xss [] (λxs acc → acc ++ xs)}; \code{List.concat} \\
@@ -269,14 +275,15 @@ rejections, so that the decision of \S\ref{sec:eval-decisions} is neither met no
 rule. The filtered-copy row is common in search and list interfaces, and is the second customer, after
 the undo history, for a relational entry (\S\ref{sec:disc-open}).
 
-Four rows deserve comment. The first reverses part of a decision the language specification records:
-that no way of building a list by prepending is quadratic, a persistent stack included
-(\S\ref{sec:bg-lists}). Every accumulator, fold, recursive builder and TEA list keeps linear prepending
-under the rules, in place. A persistent stack whose old versions are read later does not: it is rejected
-until each kept version is copied, which costs $O(n)$ per kept version, written in the source. The test
-program that guards the decision builds four accumulators, which are accepted in place, and churns a front
-stack that keeps every 10\,000th version, which is rejected at its prepend: a kept version may share the
-array, and a prepend after a pop would overwrite a slot that the kept version still shows. With
+Four rows deserve comment. The first touches a decision the language specification records: that no way
+of building a list by prepending is quadratic, a persistent stack included (\S\ref{sec:bg-lists}). That
+decision is withdrawn with the trie. Lists are arrays with no room reserved in front, a prepend moves every
+element of its base, and the accumulators, folds, recursive builders and TEA lists that the language
+offers push at the end instead, in amortised constant time. As a matter of ownership, a persistent stack
+whose old versions are read later is rejected until each kept version is copied, which costs $O(n)$ per
+kept version, written in the source. The test program that guards the decision builds four accumulators,
+which the rules accept, and churns a front stack that keeps every 10\,000th version, which is rejected at
+its prepend: a kept version may share the array that the prepend writes. With
 \code{List.copy} at the version it keeps it is accepted, with ten copies of at most 100\,000 elements. The
 trade is the one the rule exists to make: a version costs what it costs, visibly.
 
@@ -377,6 +384,9 @@ appends and the prepend are append and prepend scripts guarded by length, and th
 evaluated again because its read conflicts (\Obl{P7}(d), (h)).
 \end{itemize}
 By our reading, Conduit is accepted as written: all seven appends and the prepend, with nothing changed.
+The prepend is accepted as an edit of its base, and it moves every comment the list holds, a copy
+proportional to the list's length; a page that shows the newest comment first adds at the front once per
+post, not in a loop.
 
 \paragraph{What the applications say.} Under construction-as-consumption the applications do edit their
 lists in place, in the idiom I5. The outcome for them turns on a one-line persistence change in one of

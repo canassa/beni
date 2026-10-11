@@ -454,8 +454,10 @@ study from here on; Chapter~\ref{sec:disc-options} gives each one's reasons and 
 \begin{enumerate}
 \item \emph{List construction consumes its base.} The base of a literal is the operand of its first
 spread; a chain of \code{++} on lists is one construction, \code{a ++ b ++ c} meaning
-\code{[ …a, …b, …c ]}, whose base is its leftmost operand. The base is written in place at either end,
-and the other operands are only read (\S\ref{sec:model-demands}).
+\code{[ …a, …b, …c ]}, whose base is its leftmost operand. The base is written in place, and the other
+operands are only read (\S\ref{sec:model-demands}). The canonical accumulator is \code{[ …acc, x ]}, a
+push at the end; no room is reserved in front of a list, so a prepend, \code{[ x, …acc ]}, is an edit of
+its base like any other but moves the base's elements, a copy proportional to its length.
 \item \emph{No silent fallback.} The compiler never copies a list, and never switches to a slower
 algorithm, to make an edit safe. An $O(n)$ copy is written as \code{List.copy}, a new library function.
 \item \emph{A type's \code{eq} and \code{compare} only read their arguments}; one that may write, keep or
@@ -478,14 +480,18 @@ language, checked on every build whatever the target, so that one source has one
 meaning on both browser back ends, which are compiled from the same source and used as each other's
 test oracle. On a target that keeps persistent lists an accepted program means what it meant before,
 and the rule changes nothing but which programs are accepted.
+\item \emph{Interfaces publish an opaque type's slots}: the declaring module numbers the tracked paths
+inside the type, and importers' summaries name those slots, never its fields (\S\ref{sec:model-cells},
+Change~9).
 \end{enumerate}
-Rule~7 is the author's decision of 10 October 2026. It withdraws the earlier plan of this thesis to make
+Rule~7 is the author's decision of 10 October 2026; rule~8, and the choice in rule~1 not to make
+prepending an accumulator idiom, are the author's decisions of 11 October 2026. It withdraws the earlier plan of this thesis to make
 the template runtime stop skipping work by identity for the lists a program edits; Chapter~\ref{sec:hard}
 and Appendix~\ref{app:history} say what that changed. The reading that the rule is checked on every
 target, and not only for the direct platform, is ours: a program that compiled for one browser back end
 and was rejected for the other would break the use of the two as each other's oracle.
 
-Everything else the thesis proposes---dropping identity promises, in-place forms of \code{map} and
+Everything else the thesis proposes---in-place forms of \code{map} and
 \code{filter}, publishing more facts in interfaces---is presented as an open proposal, with its costs.
 Where a rule above or a consequence of it changes a decision the language specification records, the
 text says so where it arises.

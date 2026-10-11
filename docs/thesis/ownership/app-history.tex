@@ -1,7 +1,7 @@
 \chapter{The Rules' History and the Programs That Shaped Them}
 \label{app:history}
 
-The rules of Chapters~\ref{sec:model}--\ref{sec:hard} reached their present form in six steps, each
+The rules of Chapters~\ref{sec:model}--\ref{sec:hard} reached their present form in seven steps, each
 prompted by short programs that the previous form accepted although their in-place run differed from
 their value-semantics run, or that it rejected although they were idiomatic. We record the steps here,
 once, so that the body of the thesis can state the design it defends. The programs are those of
@@ -73,7 +73,7 @@ known to pass, and called rejections ``real'' that read no old version.
 The same form stopped escaping every capture at a markup site, which had been right only while the
 template runtime was also to write lists in place.
 
-\paragraph{Present form.} A fourth adversarial reading of the fifth form found five accepted programs that
+\paragraph{Sixth form.} A fourth adversarial reading of the fifth form found five accepted programs that
 observe a write through the checker's own rules, in parts the fifth form called settled, and programs
 T46--T58 record them and the false errors found with them. The folds' asserted rows supplied the
 accumulator owned whatever the callback returned (T46); the atom ``returns owned'' now guards it, and an
@@ -94,3 +94,20 @@ that the fact the renderer needs of the write-set analysis, which the fifth form
 from that analysis's own soundness statement (Lemma~\ref{lem:writes}). That every hole of the last two
 readings was an interaction of features each handled correctly alone is why the next step is a prototype
 and a differential test over generated programs rather than a fifth reading (\S\ref{sec:eval-next}).
+
+\paragraph{Present form.} A fifth reading, of the sixth form, found one more accepted program that
+observes a write (T59), in rows the sixth form's audit had called sound. \code{map}, its family and
+\code{initialize} made their result exclusive when every callback result was fresh, and ``fresh'' asked only
+for new cells with distinct numbers at distinct paths: separation across calls. A callback that builds one
+array and stores it at two positions of its result passes that test, because two positions are one path,
+and the list it fills was then wrongly exclusive. The condition now asks for the callback's own
+$\mathit{xres}$ as well, and the schema parsers' rows, which had the same shape, ask for it too. The same
+reading found that clause~2 of Lemma~\ref{lem:summary} forbade the caller's own surviving holders rather
+than new ones; that the prefix induction needs a configuration invariant that is described and not yet
+written; that one component of a conditional summary, an owned supply earned by a more pessimistic
+callback, is not monotone, so termination rests on the iteration's join and the solution is no longer
+claimed to be least; that the release-stability promise needs a simulation argument it does not have; and
+that the instrumented semantics refreshed stale references read through a current record and did not
+define the one stale comparison the library makes. Each is repaired, or stated as open, in the body. In the
+same revision, prepending onto an accumulator stopped being presented as an idiom: the canonical
+accumulator is \code{[ …acc, x ]}, and the representation reserves no room in front of a list.

@@ -76,17 +76,22 @@ inner callback needs no exclusivity. \emph{Accepted}: the accumulator is written
 which is the building pattern our prototype study measured at 0.14--0.47 times the persistent
 representation's time.
 
-\section{Prepend, then reverse}
+\section{An accumulator by fold}
 
 \begin{Verbatim}
-evens xs = List.reverse (List.foldl xs [] λx acc → if Int.mod x 2 == 0 then [ x, …acc ] else acc)
+evens xs = List.foldl xs [] λx acc → if Int.mod x 2 == 0 then [ …acc, x ] else acc
 \end{Verbatim}
-Elm's accumulator idiom, carried over. The callback's construction consumes its second parameter; on the
-other arm it returns it unchanged, so its result is $\{\pi_2\}$ on both arms and its $\mathit{use}(2)$
-contains $\mathsf{W}$. \code{foldl} supplies the accumulator owned. Each prepend writes the slot in front of
-the accumulator's first element and returns a new header; when the room in front is used up, the base is
-moved to a larger array with room proportional to its length. \code{List.reverse} builds a new list, or
-returns its input when it is shorter than two. \emph{Accepted}, linear, in place.
+beni's accumulator idiom. The callback's construction consumes its second parameter; on the other arm it
+returns it unchanged, so its result is $\{\pi_2\}$ on both arms and its $\mathit{use}(2)$ contains
+$\mathsf{W}$. \code{foldl} supplies the accumulator owned, since the callback returns owned. Each push
+writes past the accumulator's last element, growing the array when it is full. \emph{Accepted}, linear, in
+place, with no reverse.
+
+Elm's form, \code{List.reverse (List.foldl xs [] λx acc → if ⋯ then [ x, …acc ] else acc)}, carried over
+as it is written, is accepted by the same derivation: a prepend consumes its base exactly as a push does.
+But no room is reserved in front of a list, so each prepend moves the accumulator's elements, a copy
+proportional to its length, and the loop is no longer linear. The cost is visible in the operation, and the
+language does not offer the form as an idiom.
 
 \section{Grouping into a dictionary}
 \label{app:groupby}

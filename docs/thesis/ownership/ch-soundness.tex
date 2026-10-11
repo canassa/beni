@@ -6,7 +6,7 @@ standard proofs for in-place update \citep{aspinall2008usage,bernardy2018linear}
 the usual ones for a flow analysis; but it is a sketch over an informal semantics of a real
 language, it has not been mechanised, and it rests on twelve assumptions about code the checker does
 not see (\S\ref{sec:soundness-assumptions}). Short programs are the sharpest test of such rules;
-\S\ref{sec:soundness-counterexamples} traces fifty-eight of them. Four successive adversarial readings of
+\S\ref{sec:soundness-counterexamples} traces fifty-nine of them. Five successive adversarial readings of
 earlier forms of these rules each found accepted programs whose in-place run differed from their value
 run, every one at an interaction of two features the rules treated separately; the argument below should
 be read with that record in mind. The differential test of \S\ref{sec:eval-next} is designed to find what
@@ -47,11 +47,22 @@ We add ghost state to $S_u$. Every cell $c$ carries a \emph{version} $\mathit{ve
 incremented by each in-place write; for a once closure, its call is the write. Every reference to $c$,
 wherever it is held---a local, a temporary of the normal form holding an evaluated operand, a field of a
 structure under construction, an element, a closure environment, a fiber, a runtime structure, a
-JavaScript variable---carries the version at which it was created or last obtained from a current
-reference: reading a field of a current record yields a current reference, and a binding \code{y = x}
-copies $x$'s stamp. A reference is \emph{stale} when its stamp is below $\mathit{ver}(c)$. A
-\emph{use} of a reference is a dereference of its elements or length, a call of it, or a comparison of
-it by identity.
+JavaScript variable---carries a \emph{stamp}. Stamps live on reference \emph{edges}, not on the cells
+that hold them: an allocation, and a write that returns its operand's cell, produce a reference stamped
+with the cell's current version; storing a reference in a field, an element or an environment stores its
+stamp with it; reading the reference back out copies the stored stamp; and a binding \code{y = x} copies
+$x$'s stamp. Reading a field of a current record therefore yields the reference the field \emph{holds},
+with the stamp it was stored with, which may be stale: the currency of a container says nothing about the
+currency of the references inside it, and a stale child is never refreshed by passing through a current
+parent. A reference is \emph{stale} when its stamp is below $\mathit{ver}(c)$. A \emph{use} of a
+reference is a dereference of its elements or length, a call of it, or a comparison of it by identity.
+
+One kind of identity comparison is \emph{exempt}. An exempt comparison is made by privileged code, at a
+site listed with the trusted surface, through a dedicated primitive that does nothing else; it compares a
+reference the code handed to a callback owned with that callback's result; and its outcome only chooses
+between two results that the relation below relates to the same value of $S_v$, both named in the
+function's $\mathit{res}$. \code{map}'s test that a callback returned its element itself is the one such
+site the library has (A11). Every other identity comparison of a stale reference is a use.
 
 The correspondence to $S_v$ is a function on references: the reference $(c, k)$ of $S_u$ corresponds to
 the array $c_k$ of $S_v$, the $k$th array in the chain $c_0 \to c_1 \to \cdots$ that $S_v$'s edits
@@ -63,25 +74,31 @@ version. A stale reference $(c, k)$, $k < \mathit{ver}(c)$, may disagree with $c
 identity with the current reference to $c$; those are the only places the two configurations differ.
 Two refinements make the function a relation. A write that leaves the contents as they were---\code{xs ++
 []}, \code{swap xs i i}, an \code{update} out of range, where $S_v$ returns its input---does not raise the
-version. And where privileged code chooses between returning its input and a new array by an identity
-test made after an in-place write (A11), as \code{map} does when its callback edited each element and
-returned it, $S_u$'s result is related to $S_v$'s new array, outside the chain of $c$; the two agree in
-contents at every depth, which is what the relation asks of related values.
+version. And at an exempt comparison, as when \code{map}'s callback edited each element in place and
+returned it, $S_u$ returns its input array and $S_v$ a new one; $S_u$'s result is related to $S_v$'s new
+array, outside the chain of $c$. That needs an argument about both branches, not only a $\mathit{res}$
+that names both: the branch $S_u$ takes returns the input array, each of whose positions now holds that
+position's callback result, and the branch $S_v$ takes returns a new array holding the same results, so
+the two agree position by position and in contents at every depth, which is what the relation asks of
+related values.
 
 \begin{lemma}[No stale use]
 \label{lem:stale}
-If no step of $S_u$ uses a stale reference, the two traces are equal.
+If no step of $S_u$ uses a stale reference, exempt comparisons aside, the two traces are equal.
 \end{lemma}
 \begin{proof}[Proof sketch]
 By a bisimulation relating configurations that have the same control state with every reference mapped
 by $(c, k) \mapsto c_k$. Every step preserves the relation: it uses only current references, whose
-contents and mutual identity agree, and the only step that writes---an accepted demand, or the call of
-a once closure---produces on both sides a reference whose contents agree ($c_{k+1}$ and $(c, k+1)$). An
-observation marshals by value from current references, so it agrees. Identity tests in privileged code
-on references the checker does not track are the subject of A4 and A11.
+contents and mutual identity agree, or it is an exempt comparison, whose two outcomes lead to related
+results; and the only step that writes---an accepted demand, or the call of a once closure---produces on
+both sides a reference whose contents agree ($c_{k+1}$ and $(c, k+1)$). An observation marshals by value
+from current references, so it agrees. Identity tests in privileged code on references the checker does
+not track are the subject of A4 and A11.
 \end{proof}
 
-The theorem therefore reduces to: \emph{in an accepted program, no stale reference is ever used}.
+The theorem therefore reduces to: \emph{in an accepted program, no stale reference is ever used, except
+by an exempt comparison}. The sanitiser of \S\ref{sec:eval-sanitiser} executes exactly this policy: it
+keeps stamps on stored edges, and it records an exempt comparison instead of trapping on it.
 
 \section{Lemmas}
 
@@ -136,7 +153,12 @@ keeps shape, so every path of what is stored back holds a cell made during the c
 else, or the element's own cell at the same path, which by the hypothesis was reachable only through this
 position and that path---so conditions 1--3 hold again. A single-pass function is a destructive read of
 each position in turn, storing each result at a position of a new array, and the same argument applies
-position by position. For a dictionary, the asserted row is the promise that its \code{update} reads no
+position by position. A list set exclusive because every callback result is fresh (``$g.\mathit{res}$
+fresh'', \S\ref{sec:model-demands}) needs both halves of that condition: the first, with clause~3 of
+Lemma~\ref{lem:summary}, gives conditions~1 and~3 across positions, since each result's cells were made
+during its own call and nothing but the result holds them; the second, $\mathit{xres}_g$ at every container
+path of the result, gives condition~2 within each position. Freshness alone gives only the first, and T59
+is the program that the first alone would accept. For a dictionary, the asserted row is the promise that its \code{update} reads no
 key that could alias the value it hands out, and keeps the flag on the same condition. A split pattern on
 a dead scrutinee hands out one position and keeps the others; for a representative the positions are
 unfoldings, and a constructor pattern hands out a deeper one. Every other store or read clears the flag.
@@ -185,9 +207,12 @@ it may write, so at creation every other holder of them is dead.
 For every call $f\,\bar a$ evaluated in $S_u$, with argument cells $C_1, \ldots, C_n$:
 \begin{enumerate}
 \item $f$ writes a cell of $C_i@q$ only if $\mathsf{W} \in \mathit{use}(i, q)$;
-\item if $\mathsf{E} \notin \mathit{use}(i, q)$, then after the call no cell of $C_i@q$ is reachable
-from any place that outlives the call other than the result, at the paths $\mathit{res}$ names, and
-from closures reachable from the result;
+\item if $\mathsf{E} \notin \mathit{use}(i, q)$, then the call creates no \emph{new} holder of a cell of
+$C_i@q$ that outlives it, other than the result, at the paths $\mathit{res}$ names, and closures reachable
+from the result. Holders that existed before the call---the caller's own binding of the argument, a
+structure the caller still uses---are not the call's to report, and survive it as they were: after
+\code{n = List.length xs}, the caller's \code{xs} still holds its cell, and the clause says only that
+\code{length} added no holder of it;
 \item the result's cells at $q'$ are within $\mathit{res}(q')$ instantiated: $\pi_i.q$ by the argument
 cells $C_i@q$, $\env.q$ by the called closure's environment cells, a callback's parameters through
 $\mathit{supply}$, $\fresh_k$ and $\esc_k$ by cells allocated during the call, $\shared$ by a top-level
@@ -218,8 +243,23 @@ owned'', and clause~4 then holds by induction over the callback's calls: the fir
 unique at the call of $f$, and each later one is the callback's previous result, which under the guard is
 a cell made during that call, held by nothing else, or a cell the callback was itself supplied owned. For a
 \code{foreign} or an asserted summary, the summary is declared and the implementation is trusted (A2, A8);
-the audit of \S\ref{sec:soundness-trusted} checked every asserted row against this argument. A call that
-never returns needs only clauses~1 and~4, which hold of every prefix.
+the audit of \S\ref{sec:soundness-trusted} checked every asserted row against this argument.
+
+The sketch has a gap we state rather than paper over. Its clauses are established when a call
+\emph{returns}, but Lemma~\ref{lem:dead} needs clauses~1 and~4 \emph{during} a call: a callback runs while
+its caller's frame is open, a recursion may not return, a returned closure carries a promise about calls
+that have not happened yet, and a fiber parks with a continuation that holds locals. Saying that clauses~1
+and~4 ``hold of every prefix'' of a call that never returns restates what is needed. The induction on the
+prefix is the right frame for all of these---it never descends a call tree or a closure's environment
+graph, which may be cyclic---but it needs a single invariant over the whole machine configuration,
+preserved by every step: for every open frame, the residual code and the permissions its call was given at
+entry (which arguments it may write, which it was supplied owned or exclusive); for every closure, the
+contract its creation established for all of its future calls; for every suspended continuation, the
+holders it keeps; and for every runtime structure, what it retains. Capture environments enter that
+invariant as finite graphs with a reachability relation, not as objects whose validity is proved by
+descending through capture paths. A step-indexed logical relation over a small operational semantics, or
+simultaneous preservation of such an invariant, would do. We have not written it, and until it is written
+the lemmas of this chapter are a sketch of a proof, not a proof (\S\ref{sec:soundness-gaps}).
 \end{proof}
 
 \begin{lemma}[Dead aliases]
@@ -316,7 +356,8 @@ By induction on the prefix. At each accepted demand, Lemma~\ref{lem:dead} says e
 written cell other than the one consumed is dead, hence never used again, and the returned reference is
 current. A renderer's identity holds are not uses of content (Table~\ref{tab:holders}); by A4 and
 Lemma~\ref{lem:writes}, no identity test lets the page show a content the value run would not show. So no
-step uses a stale reference, which is the hypothesis of Lemma~\ref{lem:stale}.
+step uses a stale reference except by an exempt comparison (A11), which is the hypothesis of
+Lemma~\ref{lem:stale}.
 \end{proof}
 
 \section{Assumptions}
@@ -332,7 +373,7 @@ a primitive whose row says written, or a construction's base. No other JavaScrip
 files, platform runtimes---writes a list it did not just create and still exclusively hold. The array
 builder stays linear. Every cached derived form of a cell---a view's cached plain copy, a stored
 length---lives in a header that a licensed write consumes and replaces: a write through a view, a
-prepend into headroom included, returns a new header and never leaves a live header whose cached fields
+prepend included, returns a new header and never leaves a live header whose cached fields
 describe the old version. \emph{Kept by} the list runtime's existing invariant that it writes only
 arrays it has just made, restated; with the trie gone, the exceptions for claimed head and tail slots
 disappear.
@@ -406,7 +447,13 @@ their functions' $\mathit{res}$ as both outcomes (\S\ref{sec:model-demands}), an
 remaining tests are listed with the trusted surface. One such test compares a reference that an in-place
 write has made stale: \code{map}'s check that a callback returned its element itself, after a callback
 that was supplied the element owned may have written it. Its outcome only chooses between returning the
-input array and returning the new one, whose contents are then the same, and $\mathit{res}$ names both.
+input array and returning the new one, whose contents are then the same position by position, and
+$\mathit{res}$ names both. It is the one \emph{exempt comparison} of \S\ref{sec:soundness-instrumented},
+and the definition there is deliberately narrow: privileged code, a listed site, a dedicated primitive, an
+owned hand-over to a callback compared with that callback's result, and an outcome that only chooses
+between two related results. A new privileged algorithm that needs another exempt comparison must meet
+the same definition and be listed; any other stale identity comparison is a use, and the sanitiser traps
+on it.
 \item[A12] \emph{The write-set analysis meets its own soundness statement.} For every message key, every
 model path whose value after the arm is not the same object as before it, in the value semantics, is
 covered by the key's write set. This is the analysis's existing contract over identity, argued rule by rule
@@ -464,6 +511,26 @@ handles a list. The surface is the same kind as the effect rungs the compiler al
 row is a bug in privileged code---but it is several times larger than the writers, and it is where an
 implementation is most likely to be wrong.
 
+\paragraph{Three kinds of trust.} Not all of this surface is trust in the same sense, and an enumeration
+should keep three kinds apart.
+\begin{itemize}
+\item \emph{Primitive contracts}: what connects beni's semantics to JavaScript and cannot be derived from
+beni code---array allocation, element reads and writes, the view representation, the builder's hand-over,
+what the host retains, what a continuation does, and the entry points of a runtime or renderer. These are
+the rows of the list primitives, of \code{foreign} declarations and of the runtime contracts A1, A3, A4,
+A7, A9--A12.
+\item \emph{Derived library contracts}: rows of functions that are algorithms over the primitives---the
+folds, \code{map} and its family, \code{initialize}, \code{Dict.update}, the schema parsers' mappings. Their
+ownership properties should follow from the primitives' contracts; they are asserted today only because
+the analysis cannot express what their proofs need: one call's fresh result told apart from the next's,
+and an element temporarily taken out of its container.
+\item \emph{Temporary assertions}: every derived row, until it is derived. Each carries an obligation, the
+derivation that would replace it, and one pinned test program is evidence for it, not a proof of a
+contract quantified over every callback. T59 shows the cost of the difference: \code{map}'s row was
+pinned and audited, and was still wrong.
+\end{itemize}
+A decomposition that would turn the derived rows into theorems is open (\S\ref{sec:disc-open}).
+
 \paragraph{An audit for one pattern.} One mistake recurs in asserted rows, because a row is written by
 hand and inference would not make it: a row that treats \emph{a callback's result} as owned, fresh or
 exclusive, or \emph{a container's contents} as disjoint, without the rules establishing it. The folds'
@@ -472,6 +539,12 @@ every row of the surface above that has a function-typed parameter or claims an 
 for it. Table~\ref{tab:audit} gives the result. Rows inferred from beni bodies are not listed: inference
 computes their supply bits by the read-off rule of \S\ref{sec:inf-summarise}, which guards a callback's
 result by ``returns owned''. Five rows, or groups of rows, needed a fix, and one edge was missing from the rules.
+A later reading found that the audit had passed \code{map}'s family, \code{initialize} and the schema
+parsers with the same kind of error, in its other half: the rows asked that a callback's results be new at
+every call, and not that each be exclusive inside (T59); the table records the repair. ``Sound'' in the
+table means that the row, as this thesis states it, assumes nothing the rules do not establish for this
+pattern; it does not mean that an implementation meets the row, nor that the row is right in every other
+respect.
 
 {\small
 \begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}>{\raggedright\arraybackslash}p{0.38\linewidth}>{\raggedright\arraybackslash}p{0.27\linewidth}@{}}
@@ -488,8 +561,8 @@ Row & What it could assume & Verdict \\
 \code{List.foldl}, \code{List.foldr} & the next accumulator, the callback's previous result, owned & \textbf{fixed}: owned only if the callback returns owned (T46) \\
 \code{String.foldl}, \code{String.foldr} & the same, through \code{List.foldl} & fixed with it; inferred \\
 \code{Dict.foldl}, \code{Dict.foldr}, \code{Set.foldl}, \code{Set.foldr} & the same & inferred; the read-off rule guards it \\
-\code{List.map}, \code{indexedMap}, \code{filterMap} & result exclusive from a callback's results; element owned & sound: \code{excl if g.res fresh} names fresh results only; owned element needs the list consumed and exclusive \\
-\code{List.initialize} & result exclusive from a callback's results & \textbf{fixed}: asserted with \code{excl if g.res fresh}; inference could not show it, and nothing claimed it \\
+\code{List.map}, \code{indexedMap}, \code{filterMap} & result exclusive from a callback's results; element owned & \textbf{fixed} (fifth reading): \code{excl if g.res fresh} asked only that the results be new at every call, not that each be exclusive inside; it now asks $\mathit{xres}_g$ too (T59). Owned element needs the list consumed and exclusive \\
+\code{List.initialize} & result exclusive from a callback's results & \textbf{fixed}, twice: asserted with \code{excl if g.res fresh}, which inference could not show; then that condition was found too weak, as for \code{map} (T59) \\
 \code{List.update}, \code{Dict.update}, single-pass rows & an owned element handed to a callback that itself requires its contents exclusive & \textbf{edge added}: $\mathit{xreq}_h(k) \Rightarrow$ the supply is exclusive (T57) \\
 \code{List.update} & slot overwritten by a result that keeps shape & sound: ``keeps shape'' requires fresh results or the element's own cells at the same paths \\
 \code{Dict.update} & dictionary consumed whatever the callback does & \textbf{fixed}: consumed only if the callback consumes (T51); keys disjoint from values is required, not assumed \\
@@ -497,11 +570,11 @@ Row & What it could assume & Verdict \\
 the list writers, \code{copy}, \code{at}, the builder and its fill & a stored value stored exclusively & sound: every row keeps $\excl$ only when the stored value is stored exclusively \\
 \code{Task.repeat}, \code{Task.retry} & a result fed back into the work & sound: the work takes \code{⊤}; each result goes only to the schedule, which reads it, and the last is returned as \code{g.res} \\
 \code{Task.scope}, \code{uninterruptible}, \code{restore}, \code{withClock}, \code{onExit}, \code{timeout} & the callback's result owned & sound: called at most once; result is \code{g.res}, translated, never ``fresh'' \\
-\code{Task.par}, \code{par3}, \code{parOk}, \code{race}, \code{raceAll}, \code{raceOk}, \code{forEach}, \code{forEachOk} & results of child fibers owned & sound if each result is \code{g.res} translated; the fibers are internal, joined by nobody else; \code{forEach}'s elements are supplied borrowed and its result is not exclusive unless \code{g.res} is fresh \\
+\code{Task.par}, \code{par3}, \code{parOk}, \code{race}, \code{raceAll}, \code{raceOk}, \code{forEach}, \code{forEachOk} & results of child fibers owned & sound if each result is \code{g.res} translated; the fibers are internal, joined by nobody else; \code{forEach}'s elements are supplied borrowed and its result is not exclusive unless \code{g.res} is fresh in the sense of \S\ref{sec:model-demands}, $\mathit{xres}_g$ included (T59) \\
 \code{Task.bracket} & the resource supplied owned to the use step & sound only as $\top$: the runtime keeps the resource for the release step (A6) \\
 \code{Task.spawn}, \code{join}, \code{wait}, \code{poll}, \code{Deferred.wait}, \code{poll} & a retained value owned & sound: $\top$ \\
 \code{Ref.update}, \code{Ref.modify} & the cell's contents supplied owned & sound: supplied $\top$; the new value is escaped \\
-\code{Schema.decode}, \code{parse}, \code{read} & output fresh and exclusive & \textbf{fixed}: the schema's \code{mapping}, \code{injection} and \code{conversion} functions build the output; it is fresh and exclusive only if every such function returns owned, and otherwise carries their results (T56) \\
+\code{Schema.decode}, \code{parse}, \code{read} & output fresh and exclusive & \textbf{fixed}: the schema's \code{mapping}, \code{injection} and \code{conversion} functions build the output; it is fresh only if every such function returns owned, exclusive only if in addition each is exclusive at every container path of its result ($\mathit{xres}$, T59), and otherwise carries their results (T56) \\
 \code{Schema.encode}, \code{print}, \code{write} & --- & sound: read, or escape when an array is handed to the host \\
 \code{Cmd.task}, \code{Http.expectStringResponse} & the payload a fresh temporary & \textbf{fixed}: owned only if the work and the tagger, or the callback, return owned (\Obl{P6}) \\
 \code{Cmd.perform}, \code{keyed}, \code{afterRender}, \code{Cmd.map}, \code{Cmd.batch}, \code{Sub.map}, \code{Sub.listen}, \code{Sub.on}, \code{Html.map} & payloads owned & sound as revised: the owned bit is the body's own supply bit, translated through taggers (\Obl{P6}) \\
@@ -516,7 +589,12 @@ the program constructors' entry row & \code{update}'s result handed back owned &
 \label{sec:soundness-gaps}
 
 \begin{itemize}
-\item \emph{Monotonicity}, case by case (\S\ref{sec:inf-lattice}); it is asserted, not written out.
+\item \emph{The configuration invariant} that the prefix induction needs, covering open frames, closure
+environments, suspended continuations and the future calls of returned closures (the proof of
+Lemma~\ref{lem:summary}); it is described, not written. Until it is, the lemmas are a sketch.
+\item \emph{Monotonicity}, case by case (\S\ref{sec:inf-lattice}); it is asserted, not written out, and one
+component, an owned supply that a more pessimistic callback earns, is not monotone at all; termination
+then rests on the iteration's join, not on monotonicity.
 \item \emph{Path-insensitive joins.} $A(e)$ for a \code{case} is the union of the arms, so a cell held
 only on the arm not taken is counted as a holder on the other. This is conservative: more rejections,
 never fewer.
@@ -525,7 +603,15 @@ never fewer.
 fibers is escaped, because it was captured by a spawned body (A6), so no demand on it is accepted.
 Within one fiber the sequential argument holds across a suspension, because the continuation holds
 exactly the locals liveness already counted, and it runs once (A7). Nothing in the argument depends on
-when a command's body runs relative to later messages: a command's captures are escaped.
+when a command's body runs relative to later messages: a command's captures are escaped. One-shot
+continuations are not the whole of it: the argument also uses that a finaliser keeps exactly its declared
+captures, that cancellation never reactivates an old continuation, that a re-entrant dispatch keeps the
+payload hand-over of \Obl{P6}, and that a value the runtime retains stays $\top$ after its fiber ends (A2,
+A6, A7). The configuration invariant above must state each of these, and the evaluation must exercise
+them. The treatment is also coarse where it is safe: a scoped child that only reads a list leaves it
+escaped after the child ends, and a child that alone owns its result cannot hand it to one joiner.
+\emph{Parked privately}, \emph{transferred to a child}, \emph{lent for a scope} and \emph{retained for
+several readers} are four different facts that the rules merge into the last.
 \item \emph{Defects.} A defect stops the program; its cleanup closures are stored, and therefore
 escaped holders. A9 covers what a crash screen may print.
 \item \emph{An identity shortcut in list equality} (answering \code{True} at once for
@@ -772,6 +858,19 @@ T58 & a removal by identifier on the direct platform &
 \code{Remove id → \{ model | rows = List.removeAt model.rows (indexOf id model.rows) \}}, rows rendered
 & accepted; the handler computes the index before the arm, as a scalar local, not from an old model
 read after it (\Obl{P2}) \\
+T59 & fresh results that share inside one result &
+\code{rows = List.initialize 1 (λ\_ → cell = [ 0 ]; [ cell, cell ])};
+\code{changed = List.update rows 0 (λpair → List.update pair 0 (λxs → [ …xs, 9 ]))}; then the sum of the
+lengths of \code{changed}'s inner lists, 3 in the value run. The callback returns $\fresh_1$ at
+$\varepsilon$ and $\fresh_2$ at $[\ast]$, distinct numbers at distinct paths, new at every call; but its
+result's two positions are one array, so $\mathit{xres}_g(\varepsilon)$ is \textsf{no}. Under the row that
+asked only for freshness, \code{rows} was exclusive, the outer \code{update} supplied \code{pair} owned and
+exclusive, the inner one supplied \code{xs} owned, and the append wrote the shared cell: both positions
+became \code{[ 0, 9 ]} and the in-place run printed 4. The same with \code{List.map}, and with a schema
+mapping that returns \code{[ a, a ]}; and the same with \code{[ [ 0 ], [ 0 ] ]} &
+rejected: ``$g.\mathit{res}$ fresh'' fails on $\mathit{xres}_g$, so \code{rows} is not exclusive, the
+outer \code{update} supplies \code{pair} borrowed, and the inner \code{update} consumes it (the supply
+edge); the last accepted, two literals being two cells \\
 \bottomrule
 \end{longtable}
 }

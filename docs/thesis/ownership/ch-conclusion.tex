@@ -38,26 +38,32 @@ has some form of it: Sisal's ordering edges, Clean's observing references, Futha
 Rust's two-phase borrows, Mazur's forward use. It is incomparable with Clean's occurrence-based
 uniqueness, not stronger.
 \item \emph{The core is not yet shown to hold.} Each adversarial reading of an earlier form found accepted
-programs that observe a write, and the last found them in parts we had called settled: the folds' asserted
-rows, the path abstraction's treatment of opaque and recursive types, and the send rule. Each was an
-interaction of two features, and each had a local repair, which this form makes; none required changing
-the design. We do not claim the repaired rules are sound. We claim that their holes, if any remain, are of
-that kind, and that the differential test of \S\ref{sec:eval-next} is the way to find them.
+programs that observe a write. The fourth found them in parts we had called settled: the folds' asserted
+rows, the path abstraction's treatment of opaque and recursive types, and the send rule. The fifth found
+one in rows the fourth's audit had called sound: \code{map} and \code{initialize} inferred an exclusive
+list from callback results that were new at every call but could share inside one result (T59). Each was
+an interaction of two features, and each had a local repair, which this form makes; none required changing
+the design. We do not claim the repaired rules are sound, and the proof of
+Chapter~\ref{sec:soundness} is a sketch whose central invariant is not yet written
+(\S\ref{sec:soundness-gaps}). We claim that the holes, if any remain, are of that kind, and that the
+differential test of \S\ref{sec:eval-next} is the way to find them.
 \item \emph{The boundary with the platform is precisely stated.} The renderer obligation \Obl{P7} is
 stated over every identity test the direct platform makes, over entry cells and modulo the release
 representation, and the fact it needs of the write-set analysis is now a lemma
 (Lemma~\ref{lem:writes}) derived from that analysis's own soundness statement rather than an assumption.
 Several of its parts---\Obl{P2}'s scalar locals, (a) for structure holes, (f), (g), \Obl{P3}'s rule for
 markup values---are additions to that platform's design. Lemmas~\ref{lem:once} and~\ref{lem:entry} are the
-parts of the argument we would scrutinise first; the fifty-eight programs of
+parts of the argument we would scrutinise first; the fifty-nine programs of
 Table~\ref{tab:counterexamples} are decided as they should be, by hand.
 \item \emph{The idioms are accepted by the rules as stated}, by derivations we have traced by hand, not
 by an implementation. The frequency of the error on real idiomatic code is unknown until the report mode
 runs.
 \item \emph{The trusted surface is large}: by our estimate several dozen to a hundred and fifty asserted
 rows, where an implementation is most likely to be wrong. An audit of every row that takes a callback
-found five that claimed an owned or exclusive result the rules did not establish, and one missing edge.
-The differential run with a stale-read sanitiser is the instrument for the rest.
+found five that claimed an owned or exclusive result the rules did not establish, and one missing edge;
+a later reading found that the audit had passed \code{map}'s family with the same kind of error. Many of
+the rows are algorithms over a few primitives rather than primitives themselves, and deriving them is
+open (\S\ref{sec:disc-open}). The differential run with a stale-read sanitiser is the instrument for the rest.
 \end{itemize}
 
 What we cannot know from the design alone is whether the rule is worth its cost. It rejects correct
@@ -81,9 +87,9 @@ of the rules. Nothing emitted outside the test mode changes.
 \item \emph{Run the differential soundness test} over the test corpus, the applications and the generated
 programs until it finds no trap over a budget fixed in advance, repairing the rules and pinning a program
 for every trap it finds.
-\item \emph{Specify the decided changes} (Changes~1--4) and \emph{the required ones} (Changes~5--9) in the
+\item \emph{Specify the decided changes} (Changes~1--4 and~9) and \emph{the required ones} (Changes~5--8) in the
 language's specification before building them, stating where they touch recorded decisions: the
-kept-version part of linear prepending, the identity of an append onto an empty list, the lowering of list
+linear-prepend decision, the identity of an append onto an empty list, the lowering of list
 literals and \code{++} chains, and the direct platform's element guards and its plan to keep elements that a
 row shows out of in-place updates.
 \item \emph{Specify \Obl{P1}--\Obl{P7} in the direct platform's design}, including the closure of
@@ -115,7 +121,7 @@ which the rules reject at the first in-place edit (T53); it may be the commonest
 corpus, and could decide the adoption criterion by itself.
 \item \emph{Kept copies.} How often a filtered or mapped copy is kept at another model path beside its
 source, which the identity promises make possibly one cell with it at every entry (T52); this weighs on
-keeping the promises (O2) and on a relational entry.
+a relational entry, the promises being kept by decision (O2).
 \item \emph{A relational entry} (\S\ref{sec:hard-undo}): the entry's fixpoint records which cells each path
 may hold, not which paths hold one cell at once. Two forms need it: an undo history of a list, which needs
 a second copy without it, and a kept copy, which needs \code{List.copy} at every store. Whether the split
@@ -148,9 +154,42 @@ functions return owned; how often hand-written schemas reuse a parsed list, and 
 functions are always known where it is used, is to be checked.
 \item \emph{The trusted surface}: its exact size, and whether every row can be pinned by a test that the
 sanitiser would catch failing. The audit of \S\ref{sec:soundness-trusted} covers one pattern, not all.
-\item \emph{The proof}: monotonicity is checked case by case but not written out; nothing is mechanised;
-the once-closure, entry and write-set lemmas are the newest parts and the least tested; and the write-set
-lemma rests on that analysis's own soundness argument, which is also a sketch.
+\item \emph{Derived traversal rows.} The rows of \code{map}, the folds, \code{initialize},
+\code{Dict.update} and the schema mappings are algorithms, asserted because the analysis cannot express
+their proofs. Four primitive contracts might derive them: a \emph{traversal} that hands out successive
+positions known to be separate; a \emph{focus} that takes one position out of a container's usable
+contents for the length of a callback; a \emph{builder} that accepts an element with stated ownership and
+separation evidence; and a \emph{close} that derives the finished container's facts from what the builder
+accepted. ``A list of fresh callback results is exclusive'' would then be a theorem with explicit
+premises, and the premise T59 shows missing would have to be stated to be used.
+\item \emph{Separation along written paths.} $\excl$ is global: every two paths of every position must be
+separate. A callback that appends to each card's own \code{notes} while all cards share one read-only
+\code{labels} list needs only that each written cell be separate from every other path that may observe
+it, not that the labels be. A family of separation facts indexed by the paths a callback writes would
+accept it, and the same relational machinery could keep \code{model.todos} separate from
+\code{model.history[*]} after a move, which would remove the undo history's second copy. Separation logic
+supplies the vocabulary, and uniqueness has been recast as separation \citep{oconnor2026separation}.
+\item \emph{Checkable evidence.} Inference could emit, with each accepted demand, the evidence it relied
+on---the known provenance, the absence of a conflicting escape, the deadness of every other holder, the
+separation required---for a small validator to check, so that the solver and its optimisations leave the
+trusted core. This is the architecture of proof-carrying code \citep{necula2002untrusted}. It would also
+give release stability a precise meaning: an old derivation remains acceptable while its premises and the
+primitive contracts it cites hold. Summaries and exclusive-container derivations, where this thesis leans
+most on informal assertion, are where it would start.
+\item \emph{Public ownership contracts.} Summaries are API (\S\ref{sec:inf-modular}). Generated, frozen
+public contracts that an implementation must satisfy, compared modulo the renaming of slots and fresh
+numbers, and a compatibility report that names the client capability a new version loses, are open.
+\item \emph{A task result taken once.} \code{Task.join} hands the same value to every joiner, so its result
+is $\top$, and a child that alone owns what it made cannot hand it over without a copy. A separate,
+affine task handle with a consuming \code{take}, whose runtime gives up its reference, would carry
+ownership out of a child; the producer would still have to return owned contents, and a finaliser keep
+no conflicting holder. Affine and borrowing disciplines inferred in an ML-style system are prior art
+\citep{radanne2020kindly}.
+\item \emph{The proof}: the configuration invariant the prefix induction needs is described but not
+written (\S\ref{sec:soundness-gaps}); monotonicity is checked case by case but not written out, and fails
+for one component; nothing is mechanised; the once-closure, entry and write-set lemmas are the newest parts
+and the least tested; and the write-set lemma rests on that analysis's own soundness argument, which is also
+a sketch.
 \item \emph{Escapes for the rest of the program} (\S\ref{sec:hard-fibers}): how often a command's capture
 blocks an edit, and whether value-taking command constructors (O5) remove most of it.
 \item \emph{Mutable cells} (\S\ref{sec:hard-ref}): a sound discipline for in-place edits of a cell's
@@ -164,8 +203,6 @@ summary grammar.
 \item \emph{Interface churn} under inferred summaries; Change~5's optional annotation is the remedy if it
 is high. Henriksen's objection that such facts clutter interfaces applies to published summaries too.
 \item \emph{The warm rebuild budget}, since a body edit that changes a summary is a signature edit.
-\item \emph{Room in front of a list} (O3): the policy, its memory cost, and how often views must be
-flattened at the boundary.
 \item \emph{Exclusive contents in practice}: how often the containers that real programs edit through
 their elements are built exclusively, and which construction most often clears the flag. If decoded
 data is not exclusive, every nested edit of loaded data is a limit.
@@ -174,7 +211,7 @@ summaries split by message constructor (O6).
 \item \emph{A once closure called once in fact} but passed to a $\mathit{many}$ position stays an error.
 \item \emph{Splices and rotations} (\S\ref{sec:idioms-rejected}): written with \code{take} and \code{drop},
 they are rejected because of identity promises that fire only at the edges; how often Elm code writes them
-decides whether a value-conditional summary, or dropping those promises (O2), is worth its cost.
+decides whether a value-conditional summary is worth its cost; the promises themselves are kept (O2).
 \item \emph{The rule on targets that do not use it}: how many rejections a program built only for the
 template runtime or for Node meets for nothing, and whether that cost of one verdict per source is
 accepted in practice.

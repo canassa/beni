@@ -96,7 +96,8 @@ function has $\mathit{res} = \{\fresh, \pi_1\}$, so
 In an \code{update} arm, where \code{xs} is a model path the arm replaces, or in a pipeline over a local
 list, \code{xs} is dead there and nothing is lost; a program that edits the filtered list and still reads
 the source afterwards is rejected, and the message offers \code{List.copy}. Dropping the promises would
-remove this cost and move it to the renderer; it is an open proposal (\S\ref{sec:disc-options}).
+remove the spine half of this cost, not the sharing of elements, and move it to the renderer; the promises
+are kept, by decision (O2, \S\ref{sec:disc-options}).
 \emph{Solved with a cost.}
 
 \section{Generic code}
@@ -731,7 +732,7 @@ wanted---a warning, never an error. \emph{Solved.}
 suffix; \code{[ …init, last ]} binds \code{init} to a view that is a prefix; \code{List.drop} and
 \code{List.tail} return views too. A view is a contiguous slice of its base, a holder of the base, and a
 write through a view writes the base: \code{List.set rest i v} is \code{b[o + i] = v}; a construction with
-a view as its base prepends into $b[o - 1]$ when $o > 0$, and pushes by writing $b[o + n]$---which for a
+a view as its base pushes by writing $b[o + n]$ (a prepend copies the list, as on any base)---which for a
 prefix view overwrites the slot after the view's last element, and for a suffix view is the base's own
 end. The demand on the view therefore asks that every holder of the base---\code{xs} included, and every
 other view of it---be dead, and that is what makes the overwrite safe: the slot after a prefix view holds

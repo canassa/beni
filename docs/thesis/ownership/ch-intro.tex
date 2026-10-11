@@ -29,15 +29,17 @@ its source, as \code{List.copy}.
 \end{quote}
 
 \paragraph{What an edit is.} The core library's named writers---\code{List.set}, \code{List.push} and
-their kin---edit their operand. So does \emph{list construction}. In \code{[ x, …acc ]},
-\code{[ …acc, x ]}, \code{[ …acc, …ys ]} and \code{acc ++ ys}, a fixed rule of position chooses the
+their kin---edit their operand. So does \emph{list construction}. In \code{[ …acc, x ]},
+\code{[ …acc, …ys ]}, \code{acc ++ ys} and \code{[ x, …acc ]}, a fixed rule of position chooses the
 operand whose array becomes the result: the first spread, or the leftmost operand of a chain of \code{++}. That operand
-is \emph{consumed}: its array is reused in place, at its back by pushing and at its front by
-prepending into free space kept there. The other operands, and the elements, are only read. A literal
-with no spread allocates a new array, and pattern matching---\code{[ x, …rest ]} in a \code{case}---only
-reads. An accumulator written with list syntax therefore runs as the hand-written JavaScript loop
-would, in amortised constant time per element at either end, and the error arises only when the
-consumed operand is used again.
+is \emph{consumed}: its array is reused in place, and what follows its spread is pushed onto it. The
+other operands, and the elements, are only read. A literal with no spread allocates a new array, and
+pattern matching---\code{[ x, …rest ]} in a \code{case}---only reads. The canonical accumulator,
+\code{[ …acc, x ]}, therefore runs as the hand-written JavaScript loop would, in amortised constant time
+per element, and the error arises only when the consumed operand is used again. Prepending,
+\code{[ x, …acc ]}, is checked by the same rules, but it is not an idiom the language encourages: no room
+is reserved in front of a list, so it copies the list, and the compiler warns when a loop accumulator is
+built that way and suggests \code{[ …acc, x ]}.
 
 \paragraph{The question.} With construction consuming, almost every list-building idiom of an
 Elm-style program is an edit, and the checker meets it constantly. A rule that rejected a noticeable
@@ -49,7 +51,7 @@ is therefore one of design, not only of analysis:
 ownership error?}
 \end{quote}
 
-The compiler must prove, whenever it is true, that \code{[ x, …acc ]} in an accumulator, a fold, a
+The compiler must prove, whenever it is true, that \code{[ …acc, x ]} in an accumulator, a fold, a
 recursive builder, a pipeline, or an \code{update} in The Elm Architecture such as
 \code{\{ model | items = [ …model.items, item ] \}} has no ownership problem, and then compile it in
 place, with nothing written by the programmer. We answer in three steps. We enumerate the idioms that
@@ -167,7 +169,7 @@ command is shared for the rest of the program. A body edit that changes a public
 re-checks its importers. And the error fires in the code people write most, so its
 messages carry much of the design (Chapter~\ref{sec:errors}).
 
-\paragraph{The proposal.} Four adversarial readings of earlier forms of this design each found holes, the
+\paragraph{The proposal.} Five adversarial readings of earlier forms of this design each found holes, the
 later ones all where two features interact. So the next step is not another reading but a prototype: build
 the checker as a
 \emph{report-mode pass first}, together with a
@@ -203,7 +205,7 @@ recursive groups, including groups of local functions; and publication in module
 \item A soundness argument (Chapter~\ref{sec:soundness}): under twelve stated assumptions about the
 runtime, the core library and the platforms, an accepted program produces the same observable trace
 under value semantics and under in-place semantics. We give the theorem, the lemmas and proof
-sketches, the trusted surface and an audit of it, the places we consider weakest, and fifty-eight programs that test the
+sketches, the trusted surface and an audit of it, the places we consider weakest, and fifty-nine programs that test the
 rules, each traced through them.
 \item An entry protocol for every function a TEA (Elm Architecture) runtime calls, a renderer obligation
 that states precisely what a back end that writes lists in place must re-render, and how compile-time
