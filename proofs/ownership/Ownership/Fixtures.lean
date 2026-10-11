@@ -202,13 +202,70 @@ def nestedUpdate (repeated : Bool) (outerRepeated := false) : Program := {
     .letE 3 (.prim (.literal (.list (.list .int))) (if outerRepeated then [v 2,v 2] else [v 2])) <|
     .letE 4 (.closure 0 []) <| .letE 5 (.closure 3 []) (.app (v 4) [v 3,.int 0,v 5]) }
 
+/-- T46 with two rows: the first iteration returns the borrowed first row and
+    the second pushes onto it, so the retained rows observe the write. With one
+    row the borrowed result is never written and the defect is invisible. -/
 def borrowedAccumulator : Program := {
   declarations := [Library.foldl (.list .int) (.list .int),
     { name := "borrowOrGrow", parameters := [.list .int,.list .int], result := .list .int,
       body := .letE 2 (.prim .length [v 1]) (.branch (v 2) (.atom (v 0)) (push (v 1))) }]
-  main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+  main := .letE 0 list <| .letE 9 (.prim (.literal .int) [.int 2]) <|
+    .letE 1 (.prim (.literal (.list .int)) [v 0, v 9]) <|
     .letE 2 (.prim (.literal .int) []) <| .letE 3 (.closure 0 []) <| .letE 4 (.closure 1 []) <|
     .letE 5 (.app (v 3) [v 1,v 2,v 4]) (.prim .record [v 5,v 1]) }
+
+/-! Negative-control probes: one hand-written program per deliberate checker
+    hole. Each is rejected by the checker, accepted under its mutant, and then
+    produces different value and in-place traces. -/
+
+/-- Disjoint: one cell passed as both arguments; the callee pushes one and reads the other. -/
+def probeDisjoint : Program := {
+  declarations := [{
+    name := "f", parameters := [.list .int, .list .int], result := .int,
+    body := .letE 2 (push (v 0)) (.prim .length [v 1]) }]
+  main := .letE 0 list (.letE 1 (.closure 0 []) (.app (v 1) [v 0, v 0])) }
+
+/-- Traversal exclusive source: a consuming traversal over `[c, c]`. -/
+def probeTraversalExclusive : Program := {
+  main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0, v 0]) <|
+    .traverse .list (v 1) (.int 0) 2 3 4
+      (.letE 5 (push (v 3)) (.letE 6 (.prim .length [v 5]) (.prim .add [v 4, v 6]))) }
+
+/-- Many calls: a range step pushes onto a captured list on every iteration. -/
+def probeManyCalls : Program := {
+  main := .letE 0 list <|
+    .traverse .range (.int 3) (.int 0) 1 2 3
+      (.letE 4 (.prim .push [v 0, .int 9]) (.letE 5 (.prim .length [v 4]) (.prim .add [v 3, v 5]))) }
+
+/-- Copy: the shallow copy of `[c, c]` is consumed at position 0. -/
+def probeCopyExclusive : Program := {
+  main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0, v 0]) <|
+    .letE 2 (.prim .copy [v 1]) <| .focus (v 2) (.int 0) 3 (push (v 3)) }
+
+/-- Close: map identity returns its source; a spine push then reaches the live source. -/
+def probeCloseSource : Program := {
+  declarations := [Library.map (.list .int) (.list .int),
+    { name := "identity", parameters := [.list .int], result := .list .int, body := .atom (v 0) }]
+  main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 2 (.closure 0 []) <| .letE 3 (.closure 1 []) <|
+    .letE 4 (.app (v 2) [v 1, v 3]) <| .letE 5 (.prim .push [v 4, v 0]) (.prim .record [v 5, v 1]) }
+
+/-- Keeps shape: focus stores position 1's cell at position 0, then consumes position 0. -/
+def probeKeepsShape : Program := {
+  main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 2]) <|
+    .letE 2 (.prim (.literal (.list .int)) [v 0, v 1]) <|
+    .letE 9 (.prim (.literal .int) [.int 0]) <| .letE 3 (.prim .at [v 2, .int 1, v 9]) <|
+    .letE 4 (.focus (v 2) (.int 0) 5 (.atom (v 3))) <|
+    .focus (v 4) (.int 0) 6 (push (v 6)) }
+
+def probes : List (String × Program × Mutant) := [
+  ("disjoint", probeDisjoint, .disjoint),
+  ("T46 two rows", borrowedAccumulator, .borrowedSupply),
+  ("traversal over [c, c]", probeTraversalExclusive, .traversalExclusive),
+  ("captured push per iteration", probeManyCalls, .manyCalls),
+  ("copy of [c, c]", probeCopyExclusive, .copyExclusive),
+  ("map identity then spine push", probeCloseSource, .closeSource),
+  ("focus breaks shape", probeKeepsShape, .keepsShape)]
 
 def scalarIndexOrder : Program := {
   main := .letE 0 list <| .letE 1 (.prim .at [v 0,.int 0,.int 0]) <|
@@ -381,6 +438,12 @@ def run : IO Bool := do
   for p in [escapeTraversal, GeneratedRegressions.escapeSeed20261011Index1] do
     if !Oracle.disagrees p { dropTraversalEscapes := true } || (check p).isOk then
       IO.println "ESCAPE NEGATIVE CONTROL FAILED"
+      ok := false
+  for (name, p, m) in probes do
+    let caught := Oracle.disagrees p { mutant := some m } && !(check p).isOk
+    IO.println s!"probe {name} under mutant {m.name}: corrected={repr (check p)} mutant-accepts={(check p { mutant := some m }).isOk} disagrees={caught}"
+    if !caught then
+      IO.println s!"MUTANT NEGATIVE CONTROL FAILED: {m.name}"
       ok := false
   IO.println s!"fixtures={all.length} passed={ok}"
   pure ok

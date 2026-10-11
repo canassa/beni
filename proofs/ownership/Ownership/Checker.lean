@@ -2,12 +2,40 @@ import Ownership.Domain
 
 namespace Ownership
 
+/-- Deliberate checker holes. Each is a required negative control: the oracle
+    must find an accepted disagreement under it (`ownership controls`), and a
+    fixture must disagree under it and be rejected by the unmutated checker. -/
+inductive Mutant where
+  | disjoint            -- a write ignores other operand paths (Disjoint dropped)
+  | borrowedSupply      -- traversal treats a borrowed source's elements as owned
+  | traversalExclusive  -- a consuming list traversal skips its exclusive-source demand
+  | manyCalls           -- a traversal step may consume a capture on every iteration
+  | copyExclusive       -- `copy` marks its shallow result exclusive
+  | closeSource         -- `close` forgets the map source's provenance
+  | keepsShape          -- focus keeps exclusivity without checking "keeps shape"
+  deriving Repr, BEq, Inhabited
+
+def Mutant.all : List Mutant :=
+  [.disjoint, .borrowedSupply, .traversalExclusive, .manyCalls, .copyExclusive,
+   .closeSource, .keepsShape]
+
+def Mutant.name : Mutant → String
+  | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
+  | .traversalExclusive => "traversal-exclusive" | .manyCalls => "many-calls"
+  | .copyExclusive => "copy-exclusive" | .closeSource => "close-source"
+  | .keepsShape => "keeps-shape"
+
+def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
+
 structure Config where
   oldFreshRule : Bool := false
   dropTraversalEscapes : Bool := false -- negative control for the original defect
+  mutant : Option Mutant := none
   inferenceFuel : Nat := 80
   rounds : Nat := 24
   deriving Repr, Inhabited
+
+def Config.has (c : Config) (m : Mutant) : Bool := c.mutant == some m
 
 structure Context where
   declarations : List Decl
@@ -31,12 +59,12 @@ def unescaped (o : Origin) : Bool := o.base != .unknown && o.base != .shared
 def noteRead (cs : List Origin) : CheckM Unit :=
   modify fun s => { s with reads := union s.reads (cs.filter external) }
 
-def demand (cs later others : List Origin) : CheckM Unit := do
+def demand (cfg : Config) (cs later others : List Origin) : CheckM Unit := do
   if !cs.all known then throw "Known: unknown cell"
   if !cs.all unescaped then throw "Unescaped: shared cell"
   if cellOverlap (cs.map Origin.base) ((← get).escapes.map Origin.base) then throw "Unescaped: program-lifetime holder"
   if cellOverlap cs later then throw "Dead: an old holder is live after the demand"
-  if cellOverlap cs others then throw "Disjoint: another operand path holds the written cell"
+  if !cfg.has .disjoint && cellOverlap cs others then throw "Disjoint: another operand path holds the written cell"
   modify fun s => { s with writes := union s.writes (cs.filter external) }
 
 def individuallyOwned (ctx : Context) (cs : List Origin) : Bool :=
@@ -97,10 +125,10 @@ def otherPaths (args caps : List Abstract) (o : Origin) : List Origin :=
   let es := caps.zipIdx.flatMap fun (a, i) => a.paths.map fun (p, cs) => (Origin.capture i p, cs)
   (ps ++ es).flatMap fun (q, cs) => if q == o then [] else cs
 
-def applySummary (s : Summary) (site : List Nat) (args caps : List Abstract)
+def applySummary (cfg : Config) (s : Summary) (site : List Nat) (args caps : List Abstract)
     (later : List Origin) : CheckM Abstract := do
   for w in s.writes do
-    demand (instantiateOrigin site args caps w) later (otherPaths args caps w)
+    demand cfg (instantiateOrigin site args caps w) later (otherPaths args caps w)
   for x in s.requiresExclusive do
     let a := match x with
       | .parameter i p => (args[i]?.getD .bottom).atPath p
@@ -169,18 +197,19 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   | .set, [.list cs elem ex, _, v]
   | .push, [.list cs elem ex, v]
   | .put, [.list cs elem ex, v] => do
-    demand cs later (union elem.cells v.cells)
+    demand ctx.config cs later (union elem.cells v.cells)
     let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)
     let stored := if exclusive && op == .put && ctx.config.oldFreshRule then v.grantExclusive else v
     pure (.list cs (elem.join stored) exclusive)
   | .copy, [.list cs elem _] => do
     noteRead cs
-    pure (.list [fresh] elem false)
+    pure (.list [fresh] elem (ctx.config.has .copyExclusive))
   | .close, [.list cs elem ex] => pure (.list cs elem ex)
   | .close, [.list cs elem ex, .list ds old _] =>
     -- A11: preserve every possible input alias, even if this execution's
     -- callback must allocate; no representation-based specialization here.
-    pure (.list (union cs ds) (elem.join old) ex)
+    if ctx.config.has .closeSource then pure (.list cs elem ex)
+    else pure (.list (union cs ds) (elem.join old) ex)
   | _, _ =>
     if args.any (· == .bottom) then pure .bottom else throw s!"abstract primitive shape: {repr op}"
 
@@ -214,18 +243,18 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let s ← inferFunction f ctx id proto caps []
       let writes := s.writes.filter fun c => match c with | .capture .. => true | _ => false
       for w in writes do
-        demand (instantiateOrigin site [] caps w) later (otherPaths [] caps w)
+        demand ctx.config (instantiateOrigin site [] caps w) later (otherPaths [] caps w)
       if s.recursive && !writes.isEmpty then throw "once recursive closure"
       pure (.function (if writes.isEmpty then [] else [.site site 0]) [(id, caps)])
     | .app callee args =>
       let fn ← abstractAtom env callee
       let actuals ← args.mapM (m := Except String) (abstractAtom env)
       let .function once alternatives := fn | if fn == .bottom then return .bottom else throw "abstract call"
-      demand once later (actuals.flatMap Abstract.cells)
+      demand ctx.config once later (actuals.flatMap Abstract.cells)
       let mut result := Abstract.bottom
       for (id, caps) in alternatives do
         let s ← inferFunction f ctx id actuals caps later
-        result := result.join (← applySummary s site actuals caps later)
+        result := result.join (← applySummary ctx.config s site actuals caps later)
       pure result
     | .recur args =>
       let actuals ← args.mapM (m := Except String) (abstractAtom env)
@@ -236,7 +265,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       if !(ctx.owned.all ownedNow.contains) then
         throw "recursive call does not preserve entry ownership assumptions"
       modify fun s => { s with recursive := true }
-      applySummary ctx.recursiveSummary site actuals ctx.recursiveCaptures later
+      applySummary ctx.config ctx.recursiveSummary site actuals ctx.recursiveCaptures later
     | .focus src index x body =>
       let input ← abstractAtom env src
       let _ ← abstractAtom env index
@@ -247,9 +276,9 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let s ← inferScope f ctx [(x, element)] caps body later
       let consumes := s.writes.any fun c => match c with | .parameter 0 _ => true | _ => false
       if consumes then requireExclusive input later (caps.flatMap (fun (_, a) => a.cells))
-      demand cs later (caps.flatMap (fun (_, a) => a.cells))
-      let out ← applySummary s (site ++ [0]) [element] (caps.map Prod.snd) later
-      pure (.list cs (item.join out) (ex && keepsShape s.result))
+      demand ctx.config cs later (caps.flatMap (fun (_, a) => a.cells))
+      let out ← applySummary ctx.config s (site ++ [0]) [element] (caps.map Prod.snd) later
+      pure (.list cs (item.join out) (ex && (ctx.config.has .keepsShape || keepsShape s.result)))
     | .traverse kind src initial i x acc body =>
       let input ← abstractAtom env src
       let init ← abstractAtom env initial
@@ -274,21 +303,24 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         if !done_ then
           let beforeEscapes := (← get).escapes
           let s ← inferScope f ctx [(i, .scalar), (x, element), (acc, current)] caps body later
-          if s.writes.any (fun c => match c with | .capture .. => true | _ => false) then
+          if !ctx.config.has .manyCalls &&
+              s.writes.any (fun c => match c with | .capture .. => true | _ => false) then
             throw "many calls: traversal step consumes a capture or once closure"
           let consumes := s.writes.any fun c => match c with | .parameter 1 _ => true | _ => false
           if consumes then
             if kind == .list then
-              requireExclusive input later (capValues.flatMap Abstract.cells)
-              demand roots later (union current.cells (capValues.flatMap Abstract.cells))
+              if !ctx.config.has .traversalExclusive then
+                requireExclusive input later (capValues.flatMap Abstract.cells)
+              demand ctx.config roots later (union current.cells (capValues.flatMap Abstract.cells))
           -- A borrowed source remains an observer of any accumulator cell drawn
           -- from it. Exclusive position loans separate past from current slots.
-          let retained := union roots (if consumes then later else union later rawElement.cells)
+          let retained := union roots (if consumes || ctx.config.has .borrowedSupply then later
+            else union later rawElement.cells)
           for w in s.writes do
             let outside := match w with
               | .parameter 1 _ => later
               | _ => retained
-            demand (instantiateOrigin site [.scalar, element, current] capValues w) outside
+            demand ctx.config (instantiateOrigin site [.scalar, element, current] capValues w) outside
               (otherPaths [.scalar, element, current] capValues w)
           for req in s.requiresExclusive do
             let a := match req with

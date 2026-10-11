@@ -410,11 +410,13 @@ structure Options where
   quiet : Bool := false
 
 def Options.negative (o : Options) : Bool :=
-  o.config.oldFreshRule || o.config.dropTraversalEscapes
+  o.config.oldFreshRule || o.config.dropTraversalEscapes || o.config.mutant.isSome
 
 def Options.label (o : Options) : String :=
-  if o.config.oldFreshRule then (if o.version == 1 then "legacy-old" else s!"old-v{o.version}")
-  else if o.config.dropTraversalEscapes then (if o.version == 4 then "old-escape-v4" else "old-escape")
+  match o.config.mutant with
+  | some m => s!"mutant-{m.name}"
+  | none => if o.config.oldFreshRule then (if o.version == 1 then "legacy-old" else s!"old-v{o.version}")
+    else if o.config.dropTraversalEscapes then (if o.version == 4 then "old-escape-v4" else "old-escape")
     else if o.version == 4 then "soundness-v4" else "soundness"
 
 structure RunResult where
@@ -519,6 +521,22 @@ def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
       | some (_, n) => table.map fun (k, m) => if k == key then (k, n + 1) else (k, m)
       | none => table ++ [(key, 1)]
   for (k, n) in table.mergeSort (fun a b => a.2 ≥ b.2) do IO.println s!"{n}\t{k}"
+
+/-- Every negative control must be caught by the generator alone within one
+    normal run's budget: each run stops at its first accepted disagreement. -/
+def controls (count seed : Nat) (version := 4) : IO Bool := do
+  let named : List (String × Config) :=
+    [("old-rule", { oldFreshRule := true }), ("old-escape-rule", { dropTraversalEscapes := true })] ++
+    Mutant.all.map fun m => (s!"mutant={m.name}", { mutant := some m })
+  let mut ok := true
+  let mut rows : List String := []
+  for (name, config) in named do
+    let r ← runWith { count, seed, version, config, stopAtFirst := true, quiet := true }
+    rows := rows ++ [s!"{name}: caught={r.firstMismatch.isSome && r.ok} first-index={r.firstMismatch.map toString |>.getD "none"} elapsed-ms={r.elapsed}"]
+    if !r.ok then ok := false
+  for row in rows do IO.println s!"CONTROL {row}"
+  IO.println s!"controls budget={count} seed={seed} generator-version={version} passed={ok}"
+  pure ok
 
 end Ownership.Oracle
 
