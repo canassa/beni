@@ -977,10 +977,30 @@ syntax*, below); the costs are the array's, after the flip.
 | `[ x, ...rest ] ->`, `[ a, b, ...rest ] ->` | `xs` has at least one (two) elements; `x` (and `b`) are the first ones, `rest` is the list after them — a **view** of `xs`, not a copy | O(1) — a match never copies (*E1tp:* on a list that has been written to, `rest` shares its structure and copies at most 31 elements once every 32 steps of a walk) |
 | `[ ...init, last ] ->` | `xs` has at least one element; `last` is the last one, `init` a view of the ones before it | O(1) |
 | `[ x, y ] ->` | `xs` has exactly two elements | O(1) |
-| `[ x, ...xs ]` as an expression | a **new list**: `x`, then every element of `xs` | *Amended 2026-10-01 (E1tp):* **amortised O(1)**, as `List.push` is at the other end; at most 31 elements copied when `xs` was prepended onto before; O(length of `xs`) once when `xs` is a list of 32 or more nothing has written to (it is converted, and everything built from it after is cheap). *Was, under E1t:* O(length of `xs`), a copy |
+| `[ x, ...xs ]` as an expression | a **new list**: `x`, then every element of `xs` | *Amended 2026-10-01 (E1tp):* **amortised O(1)**, as `List.push` is at the other end; at most 31 elements copied when `xs` was prepended onto before; O(length of `xs`) once when `xs` is a list of 32 or more nothing has written to (it is converted, and everything built from it after is cheap). *Was, under E1t:* O(length of `xs`), a copy. *Amended 2026-10-11, the owner:* **O(length of `xs`), a copy, again** — the representation reserves no room in front (*`[ x, …xs ]` copies*, below); O(1) only when it re-conses what a pattern just matched |
 | `[ ...xs, x ]` as an expression | a new list: every element of `xs`, then `x` | *Amended 2026-10-01 (E1tp):* what `List.push xs x` costs — amortised O(1). *Was:* O(length of `xs`) |
 | `[ ...xs, ...ys ]` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is | *Amended 2026-10-01 (E1tp):* O(length of `ys`) when `xs` has been written to, or has 32 elements or more while `ys` has fewer — each of `ys` is pushed — and O(length of both) otherwise |
 | `xs ++ ys` | the same list as `[ ...xs, ...ys ]` | O(length of both), always: `++` is `Basics.append`, which serves strings too and cannot reach the list's representation (`backend.md` §4). *Amended 2026-10-01 (O6, the manager on the owner's delegation, reversible):* a `++` on two lists calls `List.append` and costs what `[ ...xs, ...ys ]` does; this row still holds for a `++` over `appendable` |
+
+**`[ x, …xs ]` copies; build at the end.** *Amended 2026-10-11, the owner; it supersedes the
+paragraph after it, which is kept as the record.* Prepending is the cons list's habit — build at
+the front, then `List.reverse` — and the language must not reward it: on an array the natural way
+to grow a list is at its end. So the representation reserves **no room in front** (`backend.md`
+§4, *The claimable head: E1tp*, amended the same day): `[ x, …xs ]` and `List.cons x xs` make a
+new list holding `x` and then a copy of `xs`, O(length of `xs`), every time, while `[ …xs, x ]`
+and `List.push xs x` stay amortised O(1). A prepend in a loop is therefore quadratic, and the
+warning **`prepend_in_loop`** says so where the loop is visible ([`checker-v2.md`](checker-v2.md)
+§35): at a prepend onto an accumulator a function hands back to itself, or onto the one a
+`List.foldl` or `List.foldr` callback receives and returns, with the rewrite `[ …acc, x ]` — which
+keeps the elements in the order they arrive, so the `List.reverse` the Elm idiom needed goes too.
+Reading is unaffected: matching `[ x, …rest ]` is O(1) on every list, `rest` a view, and on a list
+that has been written to it still copies at most 31 elements once every 32 steps of a walk. A
+one-off prepend — a row added at the top of a TEA list — costs one copy, and is not warned about.
+What stays O(1) at the front is what builds nothing: **re-consing** what a pattern matched (the
+second bullet below), which the runtime does as well as the compiler; and a function's result
+`[ f x, …go rest ]`, which the compiler turns into a loop that builds front to back (the first
+bullet), so hand-written `map` and `filter` stay linear — without that loop they would be
+quadratic again as well as a stack frame per element.
 
 **`[ x, ...xs ]` is cheap.** *Amended 2026-10-01, the owner (W35, E1tp). Under E1t this paragraph
 read "`[ x, ...xs ]` is legal, and it copies" and told programs not to prepend in a loop.* A list
@@ -1010,7 +1030,9 @@ spread costs nothing at all, because the compiler sees what it means:
 
 (A third, "`e :: [ … ]` onto a literal is one literal", has nothing left to say: `[ e, … ]` is
 written as the one literal it always was.) *The warning `prepend_in_loop` proposed here was
-withdrawn by the owner on 2026-10-01 (W35's second amendment, O1).*
+withdrawn by the owner on 2026-10-01 (W35's second amendment, O1). Re-specified by the owner on
+2026-10-11, in a narrower form, with the claimable head withdrawn: [`checker-v2.md`](checker-v2.md)
+§35.*
 
 #### The list syntax: brackets and a spread
 
@@ -1338,6 +1360,7 @@ core_contract_violation
 invalid_js_object
 unit_spelling_removed  never_spelling_removed  if_without_else_not_unit  unit_discarded
 view_not_compiled  program_mounted_twice
+prepend_in_loop
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1376,7 +1399,8 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `core_contract_violation` | the backend again | the line before the last, appended on 2026-10-02, again never inserted. A core package that does not declare a value the code generator calls on its own — `Basics.eq` and `String.compare` for a comparison, `List`'s core-private `unsafeGet`, `view`, `base`, `offset` and `close` for a list pattern, a walk or a building loop ([`backend.md`](backend.md) §4, *The emitter's imports of the core-private exports*). Only a `--core-root` core can lack one. Reported where a module first needs the value, once per module and value, and nothing is written; it replaced `internal` for the two comparison values the same day |
 | `invalid_js_object` | `Js` | the line before the last, appended on 2026-10-02, again never inserted, with `Js.object` ([`boundary.md`](boundary.md) §4.2; [`backend.md`](backend.md) §4, *`Js.object` is an object literal*). The checker's, at a call of core's `Js.object` whose fields are not a list literal of `( "key", value )` pairs, each key a string literal that is a JavaScript identifier other than `__proto__`, no key twice. Only core and a platform package can write one (`js_outside_platform`) |
 | `unit_spelling_removed` … `unit_discarded` | `⊤` and `⊥` | the line before the last, appended on 2026-10-02, again never inserted, with §12.10 (built the same day). **`unit_spelling_removed`** is the parser's, at the `(` of a `()` in a type, an expression or a pattern; **`never_spelling_removed`** lowering's, at a `Never` that names `Basics`' empty type; both go on as `⊤` and `⊥`, so one stale spelling costs one message. **`if_without_else_not_unit`** is the checker's, at the `then` branch of an `if` without `else` whose type is not `⊤`. **`unit_discarded`** is a `warning`, the checker's, for the root package only, at a `_ =` in front of a `⊤` |
-| `view_not_compiled`, `program_mounted_twice` | the program hook | the last line, appended on 2026-10-09, again never inserted, with [`boundary.md`](boundary.md) §9.4.6's version 1.6 and `browser-direct`'s slice S0. Both are `build`'s, raised for a lowering that compiles whole programs. **`view_not_compiled`** is a program whose `view` no compiler can reach as markup — a `view` a call computes, a program constructor used as a value — on a platform with no run-time renderer to hand it to ([`browser-direct.md`](browser-direct.md) §11.1): the one refusal of a program shape left, an error because no fallback exists, and its message names `browser-tea`, which renders any `view`. **`program_mounted_twice`** is one top-level program value placed twice among `main`'s placements on a platform whose programs keep their state per program value ([`browser-direct.md`](browser-direct.md) §8.2): two mounts would share one model and show each other's writes, so it is an error, and the message names the escape, a program built by a function |
+| `view_not_compiled`, `program_mounted_twice` | the program hook | the line before the last, appended on 2026-10-09, again never inserted, with [`boundary.md`](boundary.md) §9.4.6's version 1.6 and `browser-direct`'s slice S0. Both are `build`'s, raised for a lowering that compiles whole programs. **`view_not_compiled`** is a program whose `view` no compiler can reach as markup — a `view` a call computes, a program constructor used as a value — on a platform with no run-time renderer to hand it to ([`browser-direct.md`](browser-direct.md) §11.1): the one refusal of a program shape left, an error because no fallback exists, and its message names `browser-tea`, which renders any `view`. **`program_mounted_twice`** is one top-level program value placed twice among `main`'s placements on a platform whose programs keep their state per program value ([`browser-direct.md`](browser-direct.md) §8.2): two mounts would share one model and show each other's writes, so it is an error, and the message names the escape, a program built by a function |
+| `prepend_in_loop` | the list representation | the last line, appended on 2026-10-11, again never inserted, with the owner's decision that a prepend copies (§6.8, *`[ x, …xs ]` copies*). A `warning`, the checker's, on by default for the root package only ([`checker-v2.md`](checker-v2.md) §35): a list built by putting elements in front of an accumulator a loop carries — a parameter a function hands back to itself, or the accumulator a `List.foldl` or `List.foldr` callback receives and returns — which copies the accumulator at every step. Its message shows the push form, `[ …acc, x ]`, which needs no `List.reverse`, and names the escape: bind the new list to a name first. Not at a one-off prepend, a list pattern or a push |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment

@@ -5799,3 +5799,89 @@ per candidate and walks nothing.
 `⊥` from the enforce step, in every message, the `types` and `interface` dumps, and the call-style
 hints (`xs.length ⊤`). The text of a type's run-time identity (§33) is a key, not source, and keeps
 `()`; so does the cache's type-body digest.
+
+## 35. Amendment of 2026-10-11: `prepend_in_loop`
+
+*The owner's decision of 2026-10-11.* Prepending is the cons list's habit — build at the front,
+then reverse — and on an array-backed `List` it is the wrong way round: `[ x, …xs ]` copies `xs`
+(`language.md` §6.8, `backend.md` §4, both amended the same day), while `[ …xs, x ]` pushes,
+amortised O(1). The language does not refuse a prepend, which guards nothing (CLAUDE.md rule 7);
+it says so where a prepend is repeated, in a loop, and the loop is therefore quadratic.
+
+**`prepend_in_loop`** is a `warning`, for the root package's modules only and on a module that
+checked clean, decided where `suspicious_argument_order` is (§29.4) — on BIR alone, after the
+module checked, so it cannot change a type. Under `--explain` it is emitted for every package,
+which is how core and the platforms are kept free of it. Its title is PREPEND IN LOOP.
+
+**A construction** is a call of core's `List.cons` — what lowering writes for a list literal whose
+last item is a spread, `[ e1, …, ek, …s ]` (`language.md` §6.8, *The list syntax*), and what a
+program writes as `List.cons e s` — or a chain of them, each the next one's tail; its **base** is
+the innermost tail, `s`. A construction is **in result position** of an expression when it is
+that expression, a branch of an `if` or a `case` in result position, or the last expression of a
+block in result position — and nowhere else: not inside another call's argument, a lambda, a
+record, a tuple or a binding.
+
+The warning is at every construction whose base is a **loop accumulator**, in either of two
+shapes, and at no other:
+
+1. **A self-recursion.** A function `f` — a top-level declaration, or a function a block binds,
+   with its parameters written or as a lambda — calls itself, and an argument of that call has
+   in result position a construction whose base is a read of one of `f`'s own parameters, bound
+   by a plain variable pattern: `go rest [ x, …acc ]`, `split rest right [ x, …left ]`. Which
+   argument the construction is, and which parameter it reads, need not agree: an accumulator
+   carried around the loop in a different slot is still carried around it.
+2. **A fold's callback.** A call of core's `List.foldl` or `List.foldr` — written by name,
+   qualified or exposed, piped, or as a method call `xs.foldl …` that resolved to it — whose
+   callback is a lambda written at the call, and whose body has in result position a
+   construction whose base is a read of the lambda's second parameter, the accumulator the fold
+   hands it and takes back: `List.foldl xs [] λx acc → [ f x, …acc ]`.
+
+So it is **not** at a one-off prepend (`[ row, …model.rows ]` in an `update`), a prepend onto
+anything but an accumulator parameter (onto a pattern's `rest`, onto a call — `[ f x, …go rest ]`
+is a cons step of `backend.md` §8, built front to back with no copy), a list pattern (matching
+`[ x, …rest ]` reads, the O(1) view), a push (`[ …acc, x ]`, `List.push`), a construction bound
+to a name before it is passed on, or a named function handed to a fold (`List.foldl xs []
+List.cons`). Each of those is either not repeated or not a copy of the loop's own list.
+
+The warning is at the construction's span. Its message names the accumulator and shows the
+rewrite, the elements in the order the push form needs — for a self-recursion and `foldl`, the
+prepended elements reversed, because an Elm-style loop reverses its result once at the end and the
+push form needs no `List.reverse`; for `foldr`, the loop written as `foldl` with the elements in
+order, because `foldr` hands over the last element first:
+
+> This puts `x` in front of `acc`, which this function hands back to itself, so it happens at
+> every step of a loop:
+>
+>     [ x, …acc ]
+>
+> A list is an array, so every step copies the whole accumulator, and the loop takes time that
+> grows with the square of the list's length. Add at the end instead, which takes the same short
+> time at every step:
+>
+>     [ …acc, x ]
+>
+> That keeps the elements in the order they arrive, so the `List.reverse` that put a prepended
+> result back in order is no longer needed.
+>
+> If the prepend is meant — the list stays short — give the new list a name first, and this
+> warning goes.
+
+For a fold the first sentence names it — "`acc`, the accumulator this `List.foldl` hands back to
+its callback, so it happens at every step" — and for `foldr` the last paragraph but one reads
+"`List.foldr` hands over the last element first, so to keep the order write the loop as
+`List.foldl`, which hands over the first element first." An element is printed as the call-style
+hints print an argument (§29.4); one that cannot be printed is `…`, and a construction of more
+than eight elements prints its first eight and `…`.
+
+The escape is the binding (rule 7: a warning names how to silence it, as `unkeyed_for` and
+`suspicious_argument_order` do). A deliberate prepend onto a list that stays short — a path of a
+few keys, a queue of pending commands — names its new list, and the line reads as the one-off it
+is.
+
+**Fixtures.** `check/good/PrependInLoop` fires on both shapes: a self-recursion (an accumulator in
+the same slot and in another, a construction in an `if`'s branch), `List.foldl` and `List.foldr`
+by name, piped and as a method call. `check/good/PrependNotInLoop` is silent on the near misses:
+a one-off prepend in an `update`, a prepend onto a pattern's `rest`, a cons step
+`[ f x, …go rest ]`, a list pattern, a push accumulator, a construction bound to a name first,
+and `List.foldl xs [] List.cons`. A dependency's prepend loop — a module outside the root package
+— is silent unless `--explain`.

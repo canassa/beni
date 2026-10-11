@@ -22,6 +22,18 @@ The prototype: `bench/arrays/ports/first-tail.js`, `bench/arrays/lists/first-cor
 (`bench/arrays/seq/e1tp.js`), and its sweep `bench/arrays/lists/claim-prepend-test.mjs`; research
 46 §11 is the evidence for the head.
 
+*Amended 2026-10-11, the owner:* **the head is no longer claimable, and a prepend copies.**
+Prepending is a cons-list habit the language must not reward; on an array the natural build is a
+push at the end. `[ x, …xs ]` and `List.cons` are O(n) copies again, but for the two runtime
+re-conses; `[ …xs, x ]` and `List.push` stay amortised O(1); matching `[ x, …rest ]` is unaffected,
+and the trie keeps its head and radix offset only for the prefix removal, which keeps a queue
+(push at the end, match at the front) amortised O(1). The warning `prepend_in_loop` names the
+loops that prepend. Contract: `backend.md` §4, *The claimable head: E1tp*, amended;
+`language.md` §6.8, *`[ x, …xs ]` copies*; `checker-v2.md` §35. Owed with the change: the
+`run/` fixtures that prepend print what they printed, `bench/list/run.mjs` and `bench/size.mjs`
+before and after (prepend loops slower is expected; anything else slower is a finding), and
+`node lists/claim-prepend-test.mjs core` still intact on old versions.
+
 ---
 
 ## 1. Decisions

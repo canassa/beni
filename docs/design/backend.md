@@ -425,7 +425,7 @@ mapping.
 | record-alias constructor | the **record literal** it builds, as the record row above: `P 1 "a"` for `type alias P = { x : Int, y : String }` is `{x: 1, y: "a"}`, keys in the canonical sorted order and the arguments evaluated in written order, with no tag — the value IS a `{ x : Int, y : String }` (`language.md` §0, Elm's semantics; the owner's decision that a record alias constructor builds the record, `checker-v2.md` §21). Unapplied or partially applied it is the same wrapper any constructor gets, `(a, b) => ({x: a, y: b})`. As a **pattern** (`nameOf (P n _) = n`) it is irrefutable — one constructor — and reads argument `i` as the alias's field `i` in declaration order, `.x` then `.y`, with no test (decided 2026-09-24 under rule 7). An **imported** alias's constructor is the same record, built and read by the field names interface v3's `record_alias` constructor row carries (`checker-v2.md` §14.2): until 2026-09-25 it was `not_implemented`, because interface v2 had no names |
 | nullary constructor | the bare tag — or, for a type that also has a constructor with fields, one module-level constant object per constructor (*A nullary constructor is one object*, below; 2026-09-29) |
 | tuple | fixed-shape object per arity, no runtime tag |
-| list | cons cells (`{$:1, a, b}` / the empty singleton), pending a benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below). *Amended 2026-10-01, the owner's decision (W35):* **a list is array-backed** — a plain JavaScript array, a view, or a 32-way trie with a claimable tail; *Lists are arrays*, below, is the contract, and it replaces this row when `plans/list-arrays.md`'s second slice lands. *Amended 2026-10-01 again (W35, E1tp):* the trie has a claimable **head** as well, so prepending is as cheap as appending (*The claimable head: E1tp*, below) |
+| list | cons cells (`{$:1, a, b}` / the empty singleton), pending a benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below). *Amended 2026-10-01, the owner's decision (W35):* **a list is array-backed** — a plain JavaScript array, a view, or a 32-way trie with a claimable tail; *Lists are arrays*, below, is the contract, and it replaces this row when `plans/list-arrays.md`'s second slice lands. *Amended 2026-10-01 again (W35, E1tp):* the trie has a claimable **head** as well, so prepending is as cheap as appending (*The claimable head: E1tp*, below). *Amended 2026-10-11, the owner:* the head is no longer claimable and a prepend copies; the head survives only as what a prefix removal leaves of the tree's first leaf (the same subsection's amendment) |
 | string | native JavaScript string; core's API exposes codepoints where the UTF-16 mismatch would show |
 | `Int` | a number |
 | `Int32` | **a number too** — an ordinary JavaScript number held in signed 32-bit range by every operation that produces one, with no box and no tag, so `toInt` is the identity and the whole cost of the type is the `\| 0` (ECMA-262's ToInt32) that keeps the invariant true. `mul` is `Math.imul` and `shiftRightZero` is `(x >>> n) \| 0`, because `>>>` answers unsigned. The type exists in beni and not at run time, which is what makes it free; `core/Int32.js` and this row are the contract (`fast-compiler.md` §3.1, `checker.md` Appendix B). *(Amended 2026-10-01: `core/Int32.beni` is, written over `Js` — `plans/core-in-beni.md` — and has no sibling.)* |
@@ -585,9 +585,9 @@ with a claimable **t**ail on its trie. A `List` value is one of three **forms**:
 
 | Form | JavaScript | Which lists have it |
 |---|---|---|
-| **plain** | a JavaScript array; the elements are `a[0] … a[a.length − 1]` | every list nothing has written: `[]`, a literal, and the result of every operation that builds a fresh sequence — `map`, `filter`, `range`, `initialize`, `slice`, `reverse`, the sorts, `concat`, `::`, `++`, `insertAt`, `removeAt`, a decoder, a sibling — and a list written below the thresholds. *E1tp:* `::` (`[ x, ...xs ]`) only onto a list of fewer than 32 elements |
+| **plain** | a JavaScript array; the elements are `a[0] … a[a.length − 1]` | every list nothing has written: `[]`, a literal, and the result of every operation that builds a fresh sequence — `map`, `filter`, `range`, `initialize`, `slice`, `reverse`, the sorts, `concat`, `::`, `++`, `insertAt`, `removeAt`, a decoder, a sibling — and a list written below the thresholds. *E1tp:* `::` (`[ x, ...xs ]`) only onto a list of fewer than 32 elements. *Amended 2026-10-11:* `[ x, …xs ]` onto any list, as under E1t, except a runtime re-cons (*The claimable head: E1tp*, amended) |
 | **view** | `{ b, o, length, $plain }`: the elements `b[o] … b[b.length − 1]` of a plain array `b` | what an `x :: rest` pattern binds as `rest`, `List.tail`, `List.drop`. Never empty, `o ≥ 1`, `length === b.length − o`: a view is always a **suffix** of its backing array. *E1tp:* only of a plain list or a view; those of a trie are tries |
-| **trie** | `{ length, s, r, t, p, $plain }`: the Clojure and Elm 32-way persistent vector — a root `r` whose height is the shift `s` (a multiple of 5), leaves of exactly 32 elements, and a **tail** array `t` holding the last 1 to 32 elements; `p` is the cached plain copy, or `null`. *E1tp:* `{ length, h, hc, T, t, p, $plain }`, with a claimable head `h` and the tree `T = { r, s, off, tc }` at a radix offset (*The claimable head: E1tp*, below) | the result of a single-element write (`set`, `update`, `swap`, `push`, `pop`) to a plain list above its threshold, and every write to a trie. *E1tp:* also a prepend onto a list of 32 or more, and a trie without its first elements (`rest`, `tail`, `drop`) unless only tail elements are left |
+| **trie** | `{ length, s, r, t, p, $plain }`: the Clojure and Elm 32-way persistent vector — a root `r` whose height is the shift `s` (a multiple of 5), leaves of exactly 32 elements, and a **tail** array `t` holding the last 1 to 32 elements; `p` is the cached plain copy, or `null`. *E1tp:* `{ length, h, hc, T, t, p, $plain }`, with a claimable head `h` and the tree `T = { r, s, off, tc }` at a radix offset (*The claimable head: E1tp*, below) | the result of a single-element write (`set`, `update`, `swap`, `push`, `pop`) to a plain list above its threshold, and every write to a trie. *E1tp:* also a prepend onto a list of 32 or more, and a trie without its first elements (`rest`, `tail`, `drop`) unless only tail elements are left. *Amended 2026-10-11:* no prepend makes or keeps a trie; the prefix removal still does |
 
 **The thresholds.** `push` converts a plain list of **32** elements or more to a trie; `set`,
 `update`, `swap` and `pop` convert one longer than **256**. Below them a write is copy-on-write and
@@ -611,6 +611,45 @@ quadratic: 11–2 500× the cons list at 10 000 elements on research 46 §11.4's
 the trie a second claimable buffer at its front, after Scala 2.13's `Vector` but without its
 per-level prefix arrays: one header shape and a **radix offset**. The plain and view forms, the
 thresholds and everything this subsection does not name are E1t's, unchanged.
+
+*Amended 2026-10-11, the owner:* **the head is no longer claimable, and a prepend copies.**
+Prepending is an anti-pattern the language must not reward — the cons list's habit of building at
+the front and reversing — and on an array the natural build is a push at the end. A claimable head
+made the habit cheap and so taught it (§8, *Accumulators build a plain array — withdrawn*, the
+same argument). So **the representation reserves no room in front**:
+
+- **`cons(x, xs)`** — what `[ x, …xs ]` and `List.cons` lower to — is a fresh plain array, `x`
+  then the elements of `xs`, O(length of `xs`), onto every form, as under E1t. It never claims a
+  head, never moves a full head into the tree, never grows the root left, and never converts a
+  plain list or a view to a trie. The *Prepending* table below is withdrawn but for its two
+  **re-cons** rows, which build nothing and stay: onto a view `(b, o)` with `b[o − 1] === x`, the
+  view `(b, o − 1)` or `b` itself; onto a trie whose head array holds `x` in the slot past this
+  version's count (`hc < h.length` and `h[hc] === x` — the tail of a trie that began with `x`), a
+  header with `hc + 1` sharing every array. A loop that builds from fresh elements reaches
+  neither, so neither rewards a prepend; both keep `pairwise` and a re-consing `merge` linear
+  outside the scalar views of §8 (§7, *re-consing*).
+- **What stays is the prefix removal** (*Removing a prefix*, below), unchanged: `view` of a trie —
+  a pattern's `rest`, `List.tail`, `List.drop` — is a trie that shares the tree, O(1) and at most
+  31 copied, never a flatten. It is not prepend machinery: it is what keeps a list pushed at one
+  end and taken from the other (a queue) amortised O(1) a step, where E1t's view over the cached
+  plain copy made each step after a push an O(n) flatten and an O(n) conversion back. So a trie
+  keeps its `h`, `hc` and the tree's radix offset, and the **head is now only what a prefix
+  removal leaves of the tree's first leaf**: a reversed fresh copy of at most 32, written once when
+  it is made and never after. A trie that `push` or a conversion makes has an empty head and its
+  tree at `off = 0`, and `off` only ever moves right. The reversed layout is kept because a
+  further removal inside the head shares it (`hc − k`), exactly as before.
+- **Invariant 1's head claim is withdrawn** (the exceptions are two again), and invariant 2's
+  remark on the head holds as written: the head is never a leaf and never written.
+- **What it costs.** Building by prepending is O(n²) again — 11–2 500× the cons list at 10 000
+  elements on research 46 §11.4's table A, E1t's figures — and the warning `prepend_in_loop`
+  ([`checker-v2.md`](checker-v2.md) §35) is at the loops that do it, with the push form as the
+  rewrite. Everything else costs what it did: `push`, `pop`, `set`, reads, walks and the prefix
+  removal are untouched, and `cons` becomes a reader (*`--release`*, below), so a program that
+  prepends and never pushes or sets ships none of the trie's write half.
+
+The rest of this subsection is the record of E1tp as built on 2026-10-01; where it describes a
+prepend onto a trie, the head claim, left growth or a conversion by `cons`, the amendment above
+replaces it.
 
 **The trie.** A header is `{ length, h, hc, T, t, p, $plain }`:
 
@@ -699,7 +738,9 @@ moment any code other than the operation creating it can reach it.
    - **The cache.** A trie header's `p` is written once, from `null` to a fresh plain array holding
      its elements, the first time a walk, a `$plain()` or a bulk operation needs one. A view may
      cache its own `$plain()` the same way. It is derived data.
-   - **The head claim** (*amended 2026-10-01, E1tp*: the exceptions are three). A trie's head array
+   - **The head claim** (*amended 2026-10-01, E1tp*: the exceptions are three; *withdrawn
+     2026-10-11*: the head is written only by the fresh copy that makes it, and the exceptions are
+     two again — *The claimable head: E1tp*, amended). A trie's head array
      `h` may be written at index `hc`, this version's head count, **only when `h.length === hc` and
      `hc < 32`**: a prepend onto the version that owns the end of `h` appends in place and returns a
      new header sharing it. It is the tail claim mirrored, and it is invisible for the same reason:
@@ -808,7 +849,7 @@ exports, each a `foreign` of `List.beni`, are the runtime every other part of th
 
 | Export | Visibility | What it does | Cost |
 |---|---|---|---|
-| `cons(h, t)` | `pub` (`::` desugars to it, `language.md` §6) | a fresh plain array `[h, …t]`. *E1tp:* the list `h` then `t` by *The claimable head*'s table: plain only onto fewer than 32 elements; `t`'s wider view, or its backing array, on a runtime re-cons | O(n). *E1tp:* amortised O(1) onto the newest version, at most 31 copied onto an older one, O(n) once per plain list converted |
+| `cons(h, t)` | `pub` (`::` desugars to it, `language.md` §6) | a fresh plain array `[h, …t]`. *E1tp:* the list `h` then `t` by *The claimable head*'s table: plain only onto fewer than 32 elements; `t`'s wider view, or its backing array, on a runtime re-cons | O(n). *E1tp:* amortised O(1) onto the newest version, at most 31 copied onto an older one, O(n) once per plain list converted. *Amended 2026-10-11:* a fresh plain array onto every form, O(n), but for the two runtime re-conses (O(1)); never a trie |
 | `append(xs, ys)` | `pub`; *added 2026-10-01 (E1tp)*: `List.append`, what `[ ...xs, … ]` lowers to (`language.md` §6.8), becomes `foreign` | `xs` when `ys` is empty and `ys` when `xs` is; when `xs` is a trie, or has 32 elements or more while `ys` has fewer than 32, each element of `ys` **pushed** onto `xs` (a plain `xs` converted first, as `push` converts it); otherwise a fresh plain concatenation. *Amended 2026-10-02:* a trie `xs` is concatenated too when `ys` is at least as long (the copy is within twice the elements appended, and a plain result is what a `For` reads without a copy), and `ys` is pushed a leaf at a time — one header, the tail filled as `push` claims it, each further 32 a slice of `ys` — not an element at a time | O(m) amortised when it pushes — so `[ ...xs, x ]` costs what `push xs x` does — and O(n + m) otherwise |
 | `length(xs)` | `pub` | `xs.length`; *amended 2026-10-02:* a call is written in place as `xs.length` (*`List.beni`'s loops read and write in place*, below) | O(1) |
 | `concat(ls)` | `pub`; *added 2026-10-02*: `List.concat` becomes `foreign` | the one non-empty list itself, `[]` when none is, otherwise a fresh plain array made its final size | O(total) |
@@ -937,7 +978,7 @@ guarantees on each function:
 |---|---|
 | `[]` | `[]`, a fresh empty array at each use. Two `[]`s are not promised to be one value, as the cons list's `{$:0}` was not |
 | `[ e1, …, en ]` | the array literal `[e1, …, en]`, the elements evaluated left to right (`language.md` §6, *Evaluation order*). It nests at no length, so `max_cons_elements` and the `reduceRight` form of *Emitted JavaScript nests only as deep as the source* are withdrawn with the cons cell |
-| `e :: t` | `List$cons(e, t)`: `e`, then `t`, then an O(n) copy (*E1tp:* the prepend of *The claimable head*, amortised O(1)). **Folded**: `e1 :: … :: ek :: [ l1, … ]` whose innermost tail is a literal is the one literal `[e1, …, ek, l1, …]`, which evaluates in the same order and copies nothing. A `::` that re-conses what a pattern matched is §7's; one that is a step of a tail call modulo cons is §8's |
+| `e :: t` | `List$cons(e, t)`: `e`, then `t`, then an O(n) copy (*E1tp:* the prepend of *The claimable head*, amortised O(1); *amended 2026-10-11:* an O(n) copy again). **Folded**: `e1 :: … :: ek :: [ l1, … ]` whose innermost tail is a literal is the one literal `[e1, …, ek, l1, …]`, which evaluates in the same order and copies nothing. A `::` that re-conses what a pattern matched is §7's; one that is a step of a tail call modulo cons is §8's |
 | `a ++ b` | `Basics$append(a, b)`, unchanged; the list half above. *Amended 2026-10-01, the manager on the owner's delegation (`plans/list-arrays.md` O6), reversible:* a `++` whose result the checker solved to a `List` is `List$append(a, b)` — the dispatch table's `appends`, as `==` on a list reaches `List.eq` — so it costs what `[ ...a, ...b ]` does; one over `appendable` stays `Basics$append` |
 | `case` on a list | §7, *List patterns over arrays* |
 | an `x :: rest` loop | §8, *Scalar views* |
@@ -986,6 +1027,9 @@ emitted calls do not change.
   pulled it in. `view`'s trie branch — the header arithmetic and the reversed copy of a leaf's rest
   into a head — is read-side code and is small. The slice that measures the read/write split
   (`plans/list-arrays.md`'s last) measures a program that only prepends as its own case.
+  *Amended 2026-10-11:* **`cons` is a reader again** — with no head claim, no left growth and no
+  conversion it only reads (a re-cons test, `$plain()`) — so a program that prepends and never
+  pushes, sets or appends ships none of the trie's write half. `append` stays a writer.
 - **Research 40 §8's other rules** apply to the file as written: one walk written once, parameters
   named by role, capitalised top-level names and lower-case locals, every speed-motivated line
   commented with its reason.
@@ -994,7 +1038,10 @@ emitted calls do not change.
 
 - **No front buffer** (research 38 §17.2's E2): prepending is O(n), and no measured array-first
   program prepends. *Withdrawn 2026-10-01 by the owner's E1tp amendment:* the claimable head is
-  that buffer, because Elm-style programs do prepend (research 46 §11).
+  that buffer, because Elm-style programs do prepend (research 46 §11). *Restored 2026-10-11 by
+  the owner:* there is no front buffer again — prepending is O(n) because the language must not
+  reward it, and `prepend_in_loop` names the loops that do it (*The claimable head: E1tp*,
+  amended).
 - *Added 2026-10-01 (E1tp):* **No prefix levels.** Scala 2.13's `Vector` keeps `prefix1 …
   prefixN-1` arrays and running counts per level, one class per depth and a comparison against the
   counts on every read (research 46 §11.1). E1tp keeps one head buffer and moves the radix offset
@@ -2578,6 +2625,10 @@ planned, for what only the compiler can give: the result is `===` the list match
 allocated or called. It is therefore an identity and constant-factor rule, and its fixture is an
 identity test (below).
 
+*Amended 2026-10-11 (§4, *The claimable head: E1tp*, amended).* "Everything else it does is
+amortised O(1)" no longer holds: a `cons` that is not a re-cons copies. The two runtime re-conses
+stay, so `pairwise` and `merge` written Elm's way stay linear wherever R5 does not reach.
+
 ```js
 // describe xs =
 //     case xs of
@@ -3432,6 +3483,12 @@ the rewrite does **not** reach — a building recursion through a `let` that com
 mutual recursion, a `foldr` whose lambda prepends: those are linear now, and deep only as far as
 their own recursion is (on `foldr`, a loop, not at all), exactly as on Elm's cons cells.
 
+*Amended 2026-10-11 (§4, *The claimable head: E1tp*, amended):* with the head no longer claimable
+the unrewritten `[ f x, …go rest ]` is O(n²) again, so the rewrite is mandatory for both reasons,
+as it was before E1tp; and what the rewrite does not reach — a `foldr` whose lambda prepends, a
+recursion that prepends through a `let` — is quadratic again. The loops among those that carry an
+accumulator are what `prepend_in_loop` warns about (`checker-v2.md` §35).
+
 What a **cons step** is, what **reaches** means, which functions build, the evaluation order, the
 evidence parameters, closures, `?`, mutual recursion and *Other constructors* are all unchanged.
 Only the destination changes:
@@ -3499,7 +3556,10 @@ reward**: a rule that makes the prepend-then-reverse idiom cheap teaches it. A l
 is lowered by §8 as written, `cons` per step, and a program that builds a list in order writes it
 in order (`[ …acc, x ]`, `List.push`), which §4's claimable tail already makes amortised O(1).
 Whether the compiler should do anything else about prepend-built lists is open with the owner. No
-code, fixture or golden of the rule remains.
+code, fixture or golden of the rule remains. *Decided 2026-10-11 by the owner:* two things, and
+neither rewards a prepend. The trie's head stops being claimable, so a prepend copies (§4, *The
+claimable head: E1tp*, amended); and the checker warns at a prepend onto a loop's accumulator,
+`prepend_in_loop`, with the push form as the rewrite (`checker-v2.md` §35).
 
 ### A cons step in the bracket spelling
 
