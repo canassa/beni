@@ -2234,6 +2234,7 @@ test "a dump installs the checked core and platforms, though it runs without the
     // └─────────────────────────────────────────┘
     const interface = try runCounted(&w, arena, &.{ "dump", "--stage=interface", "--platform=node", "src/Main.beni" }, "interface.json");
     const types = try runCounted(&w, arena, &.{ "dump", "--stage=types", "--platform=node", "src/Main.beni" }, "types.json");
+    const explained = try runCounted(&w, arena, &.{ "check", "--no-cache", "--explain", "--platform=node", "src" }, "explained.json");
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -2254,6 +2255,12 @@ test "a dump installs the checked core and platforms, though it runs without the
         try testing.expect(r.counters.embedded_modules >= 10);
         try testing.expectEqual(r.counters.modules, r.counters.checked + r.counters.embedded_modules);
     }
+    // The other half: under `--explain` two informational warnings reach
+    // every package, so a core module's record differs and no row of the
+    // checked core (made without it) may be installed — everything is
+    // checked. (`dump` accepts `--explain` and ignores it, so a `check`.)
+    try testing.expectEqual(@as(u64, 0), explained.counters.embedded_modules);
+    try testing.expectEqual(explained.counters.modules, explained.counters.checked);
 }
 
 test "a platform read from a directory is checked by the build, and an embedded one beneath it is not" {
