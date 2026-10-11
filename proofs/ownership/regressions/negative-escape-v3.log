@@ -1,0 +1,295 @@
+generator-version=3 seed=20261011 index=1 old-rule=false old-escape-rule=true
+AST:
+{ declarations := [],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.traverse
+                (Ownership.Source.range)
+                (Ownership.Atom.int 1)
+                (Ownership.Atom.int 0)
+                2
+                3
+                4
+                (Ownership.Expr.letE
+                  5
+                  (Ownership.Expr.prim (Ownership.Prim.shared) [Ownership.Atom.var 0])
+                  (Ownership.Expr.atom (Ownership.Atom.var 4))))
+              (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 0, Ownership.Atom.int 0])) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []]] }
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]]] }
+corrected checker: Except.error "Unescaped: program-lifetime holder"
+
+generator-version=3 seed=20261011 index=2 old-rule=false old-escape-rule=true
+AST:
+{ declarations := [],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.traverse
+                (Ownership.Source.range)
+                (Ownership.Atom.int 1)
+                (Ownership.Atom.int 0)
+                2
+                3
+                4
+                (Ownership.Expr.letE
+                  5
+                  (Ownership.Expr.prim (Ownership.Prim.shared) [Ownership.Atom.var 0])
+                  (Ownership.Expr.atom (Ownership.Atom.var 4))))
+              (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 0, Ownership.Atom.int 0])) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []]] }
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]]] }
+corrected checker: Except.error "Unescaped: program-lifetime holder"
+
+generator-version=3 seed=20261011 index=10 old-rule=false old-escape-rule=true
+AST:
+{ declarations := [],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.traverse
+                (Ownership.Source.range)
+                (Ownership.Atom.int 1)
+                (Ownership.Atom.int 0)
+                2
+                3
+                4
+                (Ownership.Expr.letE
+                  5
+                  (Ownership.Expr.prim (Ownership.Prim.shared) [Ownership.Atom.var 0])
+                  (Ownership.Expr.atom (Ownership.Atom.var 4))))
+              (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 0, Ownership.Atom.int 0])) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []]] }
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]]] }
+corrected checker: Except.error "Unescaped: program-lifetime holder"
+
+generator-version=3 seed=20261011 index=18 old-rule=false old-escape-rule=true
+AST:
+{ declarations := [],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.traverse
+                (Ownership.Source.range)
+                (Ownership.Atom.int 1)
+                (Ownership.Atom.int 0)
+                2
+                3
+                4
+                (Ownership.Expr.letE
+                  5
+                  (Ownership.Expr.prim (Ownership.Prim.shared) [Ownership.Atom.var 0])
+                  (Ownership.Expr.atom (Ownership.Atom.var 4))))
+              (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 0, Ownership.Atom.int 0])) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []]] }
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]]] }
+corrected checker: Except.error "Unescaped: program-lifetime holder"
+
+generator-version=3 seed=20261011 index=19 old-rule=false old-escape-rule=true
+AST:
+{ declarations := [],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.traverse
+                (Ownership.Source.range)
+                (Ownership.Atom.int 1)
+                (Ownership.Atom.int 0)
+                2
+                3
+                4
+                (Ownership.Expr.letE
+                  5
+                  (Ownership.Expr.prim (Ownership.Prim.shared) [Ownership.Atom.var 0])
+                  (Ownership.Expr.atom (Ownership.Atom.var 4))))
+              (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 0, Ownership.Atom.int 0])) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []]] }
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 0],
+    externalReads := [[Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list []],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]],
+                      [Ownership.Observation.list [Ownership.Observation.int 0]]] }
+corrected checker: Except.error "Unescaped: program-lifetime holder"
+
+family=anf-chain depth=13..13 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 0,
+  rejected := 1,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=once-many-wrappers depth=9..9 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 1,
+  rejected := 0,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=fresh-tower depth=7..7 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 0,
+  rejected := 1,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=fresh-nested depth=6..6 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 1,
+  rejected := 0,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=branch-traversal depth=5..5 { candidates := 4,
+  distinct := 3,
+  typed := 4,
+  accepted := 2,
+  rejected := 2,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=identity-map depth=8..8 { candidates := 2,
+  distinct := 2,
+  typed := 2,
+  accepted := 1,
+  rejected := 1,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=recursion depth=4..4 { candidates := 1,
+  distinct := 1,
+  typed := 1,
+  accepted := 1,
+  rejected := 0,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=library-pipeline depth=14..16 { candidates := 4,
+  distinct := 4,
+  typed := 4,
+  accepted := 1,
+  rejected := 3,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 0 }
+family=escape-traversal depth=5..5 { candidates := 5,
+  distinct := 2,
+  typed := 5,
+  accepted := 5,
+  rejected := 0,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 5 }
+generator-version=3 seed=20261011 old-rule=false old-escape-rule=true { candidates := 20,
+  distinct := 16,
+  typed := 20,
+  accepted := 12,
+  rejected := 8,
+  typeErrors := 0,
+  limits := 0,
+  executionErrors := 0,
+  mismatches := 5 } elapsed-ms=19

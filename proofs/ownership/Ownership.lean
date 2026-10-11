@@ -4,3 +4,4 @@ import Ownership.Domain
 import Ownership.Checker
 import Ownership.Library
 import Ownership.BuilderProof
+import Ownership.KernelChecks

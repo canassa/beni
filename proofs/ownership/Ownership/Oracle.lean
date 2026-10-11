@@ -19,11 +19,13 @@ def choose (xs : List α) (fallback : α) : Gen α := do
 /-- Compositional typed ANF generator. Every choice extends a typed environment;
     the checker is not consulted while constructing syntax. Sharing is selected
     by reusing existing atoms, including cells below record/container paths. -/
-partial def chain (depth next : Nat) (env : List (Atom × Ty)) : Gen Expr := do
+def chain : Nat → Nat → List (Atom × Ty) → Gen Expr
+  | 0, _, env => pure (.prim .record (env.map Prod.fst))
+  | depth + 1, next, env => do
   let lists := env.filterMap fun (a,t) => if t == .list .int then some a else none
-  if depth == 0 then
-    return .prim .record (env.map Prod.fst)
-  let choice ← draw 8
+  let nested := env.filterMap fun (a,t) => if t == .list (.list .int) then some a else none
+  let records := env.filterMap fun (a,t) => if t == .record [.list .int,.list .int] then some a else none
+  let choice ← draw 13
   let (rhs, ty) ← match choice with
     | 0 => pure (.prim (.literal .int) [← number, ← number], Ty.list .int)
     | 1 => pure (.prim .push [← choose lists (.var 0), ← number], Ty.list .int)
@@ -36,8 +38,18 @@ partial def chain (depth next : Nat) (env : List (Atom × Ty)) : Gen Expr := do
     | 6 => pure (.branch (← number)
                   (.prim .push [← choose lists (.var 0), ← number])
                   (.atom (← choose lists (.var 0))), Ty.list .int)
+    | 7 => pure (.prim .set [← choose lists (.var 0),← number,← number], Ty.list .int)
+    | 8 => pure (.prim .at [← choose lists (.var 0),← number,.int 0], Ty.int)
+    | 9 =>
+      if nested.isEmpty then pure (.prim (.literal (.list .int)) [← choose lists (.var 0)], Ty.list (.list .int))
+      else pure (.focus (← choose nested (.var 0)) (← number) (next+1000)
+        (.prim .push [.var (next+1000),← number]), Ty.list (.list .int))
+    | 10 =>
+      if records.isEmpty then pure (.prim .record [← choose lists (.var 0),← choose lists (.var 0)], Ty.record [.list .int,.list .int])
+      else pure (.prim .push [.field (← choose records (.var 0)) (← draw 2),← number], Ty.list .int)
+    | 11 => pure (.prim .shared [← choose lists (.var 0)], Ty.list .int)
     | _ => pure (.atom (← choose lists (.var 0)), Ty.list .int)
-  return .letE next rhs (← chain (depth - 1) (next + 1) ((.var next,ty)::env))
+  return .letE next rhs (← chain depth (next + 1) ((.var next,ty)::env))
 
 /-- Fresh callbacks are built from independently selected numbers, lengths,
     multiplicities and sharing decisions. This is not the fixed T59 fixture. -/
@@ -117,18 +129,172 @@ def escapedProgram : Gen Program := do
         .letE 5 (.prim .shared [.var 0]) (.atom (.var 4))) <|
       .prim .push [.var 0, cell] }
 
-def generate : Gen Program := do
-  match ← draw 6 with
-  | 0 => nested
-  | 1 => captureProgram
-  | 2 => identityMap
-  | 3 => loopProgram
-  | 4 => escapedProgram
+/-- Scalar recursion with a list accumulator, optional retained argument, and
+    optional consuming capture: termination is selected by a concrete bound. -/
+def recursiveProgram : Gen Program := do
+  let count ← draw 7
+  let capture ← draw 2
+  let retain ← draw 2
+  let d : Decl := {
+    name := "recursiveGrow", parameters := [.int,.list .int],
+    captures := if capture == 0 then [] else [.list .int], result := .list .int,
+    body := .branch (.var 0) (if capture == 0 then .atom (.var 1) else .prim .push [.var 2,.int 0])
+      (.letE 3 (.prim .sub [.var 0,.int 1]) <|
+       .letE 4 (.prim .push [.var 1,.var 0]) (.recur [.var 3,.var 4])) }
+  return {
+    declarations := [d],
+    main := .letE 0 (.prim (.literal .int) [← number]) <|
+      .letE 1 (.closure 0 (if capture == 0 then [] else [.var 0])) <|
+      .letE 2 (.app (.var 1) [.int count,.var 0]) <|
+      if retain == 0 then .atom (.var 2) else .prim .record [.var 0,.var 2] }
+
+/-- A variable-depth callback/library pipeline. The callback consumes records'
+    nested cells conditionally; its input is initialized independently or with
+    repeated captures. Update and fold then act on the map result. -/
+def pipeline : Gen Program := do
+  let repeated ← draw 2
+  let count ← draw 4
+  let stages ← draw 5
+  let retain ← draw 2
+  let row := Ty.record [.int,.list .int]
+  let ds : List Decl := [Library.initialize row, Library.map row row,
+    Library.update row, Library.foldl row (.list .int),
+    { name := "makeRow", parameters := [.int], captures := [.list .int], result := row,
+      body := .letE 2 (if repeated == 0 then .prim (.literal .int) [.var 0] else .atom (.var 1))
+        (.prim .record [.var 0,.var 2]) },
+    { name := "editRow", parameters := [row], result := row,
+      body := .branch (.field (.var 0) 0) (.atom (.var 0))
+        (.letE 1 (.prim .push [.field (.var 0) 1,.int 9])
+          (.prim .record [.field (.var 0) 0,.var 1])) },
+    { name := "foldRows", parameters := [row,.list .int], result := .list .int,
+      body := .letE 2 (.prim .length [.field (.var 0) 1]) (.prim .push [.var 1,.var 2]) }]
+  let mut rest : Expr := .letE 30 (.prim (.literal .int) []) <|
+    .letE 31 (.app (.var 3) [.var (10+stages),.var 30,.var 6]) <|
+    .letE 32 (.app (.var 2) [.var (10+stages),.int 0,.var 5]) <|
+    if retain == 0 then .prim .record [.var 31,.var 32]
+    else .prim .record [.var 31,.var 32,.var 10]
+  for j in (List.range stages).reverse do
+    rest := .letE (11+j) (.app (.var 1) [.var (10+j),.var 5]) rest
+  return {
+    declarations := ds,
+    main := .letE 7 (.prim (.literal .int) [← number]) <|
+      .letE 0 (.closure 0 []) <| .letE 1 (.closure 1 []) <|
+      .letE 2 (.closure 2 []) <| .letE 3 (.closure 3 []) <|
+      .letE 4 (.closure 4 [.var 7]) <| .letE 5 (.closure 5 []) <|
+      .letE 6 (.closure 6 []) <| .letE 10 (.app (.var 0) [.int (count+1),.var 4]) rest }
+
+/-- Copy/read/set sequences vary out-of-range indices and shallow sharing. -/
+def indexedProgram : Gen Program := do
+  let count ← draw 5
+  let index ← draw 8
+  let retain ← draw 2
+  let copied ← draw 2
+  let depth ← draw 12
+  let tail ← chain (depth+1) 10 [(.var 4,.list .int),(.var 0,.list .int)]
+  return {
+    main := .letE 0 (.prim (.literal .int) ((List.range count).map (fun n => .int (Int.ofNat n)))) <|
+    .letE 1 (.prim .at [.var 0,.int (Int.ofNat index - 1),.int 0]) <|
+    .letE 2 (if copied == 0 then .prim .copy [.var 0] else .atom (.var 0)) <|
+    .letE 3 (.prim .set [.var 2,.int index,.var 1]) <|
+    .letE 4 (.prim .push [.var 3,← number]) <|
+    if retain == 0 then tail else .prim .record [.var 0,.var 4] }
+
+/-- Returned and captured function cells, direct calls versus many positions. -/
+def onceProgram : Gen Program := do
+  let many ← draw 2
+  let calls ← draw 4
+  let readOnly ← draw 2
+  let count ← draw 4
+  let result := if readOnly == 0 then Ty.int else Ty.list .int
+  let ds := [
+    { name := "capturedOp", parameters := [Ty.int], captures := [.list .int], result := result,
+      body := if readOnly == 0 then .prim .length [.var 1] else .prim .push [.var 1,.var 0] : Decl },
+    { name := "factory", parameters := [.list .int], result := .fn [.int] result,
+      body := .closure 0 [.var 0] },
+    { name := "wrapper", parameters := [.int], captures := [.fn [.int] result], result := result,
+      body := .app (.var 1) [.var 0] }, Library.map .int result]
+  let mut rest : Expr := .atom (.int 0)
+  for j in (List.range (calls+1)).reverse do
+    rest := .letE (10+j) (.app (.var 3) [.int j]) rest
+  if many == 1 then
+    rest := .letE 4 (.closure 3 []) <|
+      .letE 5 (.prim (.literal .int) ((List.range (count+1)).map (fun n => .int (Int.ofNat n))))
+        (.app (.var 4) [.var 5,.var 3])
+  return {
+    declarations := ds,
+    main := .letE 0 (.prim (.literal .int) [← number]) <| .letE 1 (.closure 1 []) <|
+      .letE 2 (.app (.var 1) [.var 0]) <| .letE 3 (.closure 2 [.var 2]) rest }
+
+/-- Explicit limit exploration: recursive higher-order actuals have a precise
+    implementation-limit diagnostic rather than being silently accepted. -/
+def recursiveHigherOrder : Gen Program := do
+  let count ← draw 6
+  return {
+    declarations := [
+      { name := "recursiveHO", parameters := [.int,.fn [.int] .int], result := .int,
+        body := .branch (.var 0) (.app (.var 1) [.int 0])
+          (.letE 2 (.prim .sub [.var 0,.int 1]) (.recur [.var 2,.var 1])) },
+      { name := "id", parameters := [.int], result := .int, body := .atom (.var 0) }],
+    main := .letE 0 (.closure 0 []) <| .letE 1 (.closure 1 []) (.app (.var 0) [.int count,.var 1]) }
+
+def towerTy : Nat → Ty
+  | 0 => .list .int
+  | n+1 => .list (towerTy n)
+
+def freshTree : Nat → Nat → Bool → Gen (Expr × Nat)
+  | 0, next, _ => do return (.prim (.literal .int) [← number],next)
+  | n+1, next, sharing => do
+    let (left, after) ← freshTree n (next+2) sharing
+    let (right, last) ← freshTree n after sharing
+    return (.letE next left <|
+      .letE (next+1) (if sharing then .atom (.var next) else right)
+        (.prim (.literal (towerTy n)) [.var next,.var (next+1)]),last)
+
+def towerEdit : Nat → Atom → Nat → Expr
+  | 0, src, _ => .prim .push [src,.int 9]
+  | n+1, src, next => .focus src (.int 0) next (towerEdit n (.var next) (next+1))
+
+/-- Arbitrary nested callback-result depth, with fresh distinct or shared cells
+    at every interior layer. Scoped consumption follows all those layers. -/
+def towerProgram : Gen Program := do
+  let depth ← draw 4
+  let sharing ← draw 2
+  let count ← draw 3
+  let (body,_) ← freshTree (depth+1) 1 (sharing == 1)
+  let t := towerTy (depth+1)
+  return {
+    declarations := [Library.initialize t,
+      { name := "freshTower", parameters := [.int], result := t, body := body }],
+    main := .letE 0 (.closure 0 []) <| .letE 1 (.closure 1 []) <|
+      .letE 2 (.app (.var 0) [.int (count+1),.var 1])
+        (.focus (.var 2) (.int 0) 3 (towerEdit (depth+1) (.var 3) 4)) }
+
+def generateFamily : Gen (String × Program) := do
+  match ← draw 12 with
+  | 0 => return ("fresh-nested", ← nested)
+  | 1 => return ("captures", ← captureProgram)
+  | 2 => return ("identity-map", ← identityMap)
+  | 3 => return ("branch-traversal", ← loopProgram)
+  | 4 => return ("escape-traversal", ← escapedProgram)
+  | 5 => return ("recursion", ← recursiveProgram)
+  | 6 => return ("library-pipeline", ← pipeline)
+  | 7 => return ("indexed-chain", ← indexedProgram)
+  | 8 => return ("once-many-wrappers", ← onceProgram)
+  | 9 => return ("recursive-higher-order-limit", ← recursiveHigherOrder)
+  | 10 => return ("fresh-tower", ← towerProgram)
   | _ =>
-    let depth ← draw 8
-    pure {
+    let depth ← draw 24
+    return ("anf-chain", {
       main := .letE 0 (.prim (.literal .int) [← number])
-        (← chain (depth + 1) 1 [(.var 0,.list .int)]) }
+        (← chain (depth + 1) 1 [(.var 0,.list .int)]) })
+
+def generate : Gen Program := do return (← generateFamily).2
+
+def exprDepth : Expr → Nat
+  | .letE _ a b => 1 + max (exprDepth a) (exprDepth b)
+  | .branch _ a b => 1 + max (exprDepth a) (exprDepth b)
+  | .traverse _ _ _ _ _ _ b | .focus _ _ _ b => 1 + exprDepth b
+  | _ => 1
 
 inductive Outcome where
   | equal | mismatch (value inPlace : Trace) | inconclusive (message : String)
@@ -143,32 +309,54 @@ def disagrees (p : Program) (config : Config) : Bool :=
   (typecheck p).isOk && (check p config).isOk &&
     match compare p with | .mismatch .. => true | _ => false
 
-partial def reductions : Expr → List Expr
+def atomReductions : Atom → List Atom
+  | .int n => if n == 0 then [] else
+      [.int 0] ++ (if n.natAbs > 1 then [.int (n / 2),.int (if n < 0 then -1 else 1)] else [])
+  | .var _ => []
+  | .field a i => (atomReductions a).map (fun x => .field x i)
+
+def argumentReductions (args : List Atom) : List (List Atom) :=
+  args.zipIdx.flatMap fun (a,i) => (atomReductions a).map (fun x => args.set i x)
+
+def reductions : Expr → List Expr
   | .letE v rhs rest => [rhs, rest] ++
       (reductions rhs).map (fun r => .letE v r rest) ++
       (reductions rest).map (fun r => .letE v rhs r)
   | .branch c yes no => [yes,no] ++
       (reductions yes).map (fun y => .branch c y no) ++
       (reductions no).map (fun n => .branch c yes n)
-  | .prim (.literal t) args => (List.range args.length).map fun i =>
-      .prim (.literal t) (args.take i ++ args.drop (i+1))
+  | .prim (.literal t) args => ((List.range args.length).map fun i =>
+      .prim (.literal t) (args.take i ++ args.drop (i+1))) ++
+      (argumentReductions args).map (.prim (.literal t))
+  | .prim op args => (argumentReductions args).map (.prim op)
+  | .atom a => (atomReductions a).map .atom
+  | .app f args => (argumentReductions args).map (.app f)
+  | .recur args => (argumentReductions args).map .recur
+  | .closure d caps => (argumentReductions caps).map (.closure d)
   | .traverse k src init i x acc body => [.atom init] ++
-      (reductions body).map (fun b => .traverse k src init i x acc b)
-  | .focus src i x body => [.atom src] ++ (reductions body).map (fun b => .focus src i x b)
-  | _ => []
+      (reductions body).map (fun b => .traverse k src init i x acc b) ++
+      (atomReductions src).map (fun a => .traverse k a init i x acc body)
+  | .focus src i x body => [.atom src] ++ (reductions body).map (fun b => .focus src i x b) ++
+      (atomReductions i).map (fun a => .focus src a x body)
 
-/-- Greedy local minimum over syntax deletion and branch/list reduction. Every
+/-- Fuel-bounded greedy reduction over syntax, integers, indices and call counts. Every
     proposed reduction must remain ordinarily typed, accepted and disagreeing. -/
-partial def shrink (p : Program) (config : Config) : Program :=
-  let mains := (reductions p.main).map (fun e => { p with main := e })
-  let bodies := p.declarations.zipIdx.flatMap fun (d,i) =>
-    (reductions d.body).map fun e => { p with declarations := p.declarations.set i { d with body := e } }
-  match (mains ++ bodies).find? (fun q => q != p && disagrees q config) with
-  | none => p
-  | some q => shrink q config
+def shrinkFuel : Nat → Program → Config → Program
+  | 0, p, _ => p
+  | fuel+1, p, config =>
+    let mains := (reductions p.main).map (fun e => { p with main := e })
+    let bodies := p.declarations.zipIdx.flatMap fun (d,i) =>
+      (reductions d.body).map fun e => { p with declarations := p.declarations.set i { d with body := e } }
+    match (mains ++ bodies).find? (fun q => q != p && disagrees q config) with
+    | none => p
+    | some q => shrinkFuel fuel q config
+
+
+def shrink (p : Program) (config : Config) : Program := shrinkFuel 1000 p config
 
 structure Counts where
   candidates : Nat := 0
+  distinct : Nat := 0
   typed : Nat := 0
   accepted : Nat := 0
   rejected : Nat := 0
@@ -178,23 +366,35 @@ structure Counts where
   mismatches : Nat := 0
   deriving Repr
 
-def run (count seed : Nat) (old := false) (legacy := false) : IO Bool := do
+def run (count seed : Nat) (old := false) (legacy := false) (oldEscape := false) : IO Bool := do
   let start ← IO.monoMsNow
-  let config : Config := { oldFreshRule := old }
+  let config : Config := { oldFreshRule := old, dropTraversalEscapes := oldEscape }
   let mut state := seed
   let mut counts : Counts := {}
   let mut oldFound := false
+  let mut seen : Std.HashSet String := {}
+  let mut families : List (String × Counts × Nat × Nat) := []
   for index in List.range count do
-    let (p, next) := (if legacy then OracleLegacy.generate else generate).run state
+    let ((family,p), next) := (if legacy then do return ("frozen-legacy", ← OracleLegacy.generate) else generateFamily).run state
+    let signature := toString (repr p)
+    let isNew := !seen.contains signature
+    seen := seen.insert signature
+    let prior := families.find? (fun x => x.1 == family)
+    let fc := prior.map (fun x => x.2.1) |>.getD {}
+    let d := exprDepth p.main
+    families := families.filter (fun x => x.1 != family) ++ [(family, {fc with candidates := fc.candidates+1, distinct := fc.distinct+(if isNew then 1 else 0)}, min d (prior.map (fun x => x.2.2.1) |>.getD d), max d (prior.map (fun x => x.2.2.2) |>.getD d))]
     state := next
-    counts := { counts with candidates := counts.candidates + 1 }
+    counts := { counts with candidates := counts.candidates + 1, distinct := counts.distinct+(if isNew then 1 else 0) }
     match typecheck p with
     | .error msg =>
       counts := { counts with typeErrors := counts.typeErrors + 1 }
       IO.println s!"TYPE GENERATION ERROR seed={seed} index={index}: {msg}\n{repr p}"
       return false
     | .ok _ => counts := { counts with typed := counts.typed + 1 }
-    match check p config with
+    let verdict := check p config
+    families := families.map fun (f,c,lo,hi) => if f == family then
+      (f, { c with typed := c.typed+1, accepted := c.accepted+(if verdict.isOk then 1 else 0), rejected := c.rejected+(if verdict.isOk then 0 else 1), limits := c.limits+(match verdict with | .error m => if m.startsWith "limit:" then 1 else 0 | _ => 0) },lo,hi) else (f,c,lo,hi)
+    match verdict with
     | .error msg =>
       counts := { counts with
         rejected := counts.rejected + 1,
@@ -209,20 +409,24 @@ def run (count seed : Nat) (old := false) (legacy := false) : IO Bool := do
         return false
       | .mismatch _ _ =>
         counts := { counts with mismatches := counts.mismatches + 1 }
+        families := families.map fun (f,c,lo,hi) => if f == family then
+          (f,{ c with mismatches := c.mismatches+1 },lo,hi) else (f,c,lo,hi)
         let minimal := shrink p config
-        let report := s!"generator-version={if legacy then 1 else 2} seed={seed} index={index} old-rule={old}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (check minimal)}\n"
+        let report := s!"generator-version={if legacy then 1 else 3} seed={seed} index={index} old-rule={old} old-escape-rule={oldEscape}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (check minimal)}\n"
         IO.FS.createDirAll "regressions"
-        IO.FS.writeFile s!"regressions/{if old then "old" else "soundness"}-{seed}-{index}.txt" report
+        IO.FS.writeFile s!"regressions/{if old then (if legacy then "legacy-old" else "old-v3") else if oldEscape then "old-escape" else "soundness"}-{seed}-{index}.txt" report
         IO.println report
-        if !old then
+        if !old && !oldEscape then
           IO.println s!"STOP corrected-rule soundness finding: {repr counts}"
           return false
         if (check minimal).isOk then
           IO.println "STOP old-rule mismatch also accepted by corrected rule"
           return false
         oldFound := true
-  IO.println s!"generator-version={if legacy then 1 else 2} seed={seed} old-rule={old} {repr counts} elapsed-ms={(← IO.monoMsNow)-start}"
-  if old && !oldFound then
+  for (family,c,lo,hi) in families do
+    IO.println s!"family={family} depth={lo}..{hi} {repr c}"
+  IO.println s!"generator-version={if legacy then 1 else 3} seed={seed} old-rule={old} old-escape-rule={oldEscape} {repr counts} elapsed-ms={(← IO.monoMsNow)-start}"
+  if (old || oldEscape) && !oldFound then
     IO.println "NEGATIVE CONTROL FAILED: no generated accepted disagreement"
     return false
   pure (counts.accepted > 0 && counts.typeErrors == 0 && counts.executionErrors == 0)

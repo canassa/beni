@@ -1,6 +1,6 @@
 name = "ownership"
 version = "0.1.0"
-defaultTargets = ["ownership"]
+defaultTargets = ["Ownership", "ownership"]
 
 [[lean_lib]]
 name = "Ownership"

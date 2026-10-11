@@ -1,0 +1,83 @@
+generator-version=1 seed=20261011 index=95 old-rule=true old-escape-rule=false
+AST:
+{ declarations := [{ name := "map",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.int]
+                                      (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim
+                                 (Ownership.Prim.builder (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))))
+                                 [])
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.traverse
+                                   (Ownership.Source.list)
+                                   (Ownership.Atom.var 0)
+                                   (Ownership.Atom.var 2)
+                                   4
+                                   5
+                                   6
+                                   (Ownership.Expr.letE
+                                     7
+                                     (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 5])
+                                     (Ownership.Expr.prim
+                                       (Ownership.Prim.put)
+                                       [Ownership.Atom.var 6, Ownership.Atom.var 7])))
+                                 (Ownership.Expr.prim (Ownership.Prim.close) [Ownership.Atom.var 3])) },
+                   { name := "generatedFresh",
+                     parameters := [Ownership.Ty.int],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               1
+                               (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+                               (Ownership.Expr.letE
+                                 2
+                                 (Ownership.Expr.atom (Ownership.Atom.var 1))
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.literal (Ownership.Ty.list (Ownership.Ty.int)))
+                                   [Ownership.Atom.var 1, Ownership.Atom.var 2])) }],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.closure 0 [])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.closure 1 [])
+              (Ownership.Expr.letE
+                2
+                (Ownership.Expr.letE
+                  8
+                  (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.int 0])
+                  (Ownership.Expr.app (Ownership.Atom.var 0) [Ownership.Atom.var 8, Ownership.Atom.var 1]))
+                (Ownership.Expr.focus
+                  (Ownership.Atom.var 2)
+                  (Ownership.Atom.int 0)
+                  3
+                  (Ownership.Expr.focus
+                    (Ownership.Atom.var 3)
+                    (Ownership.Atom.int 0)
+                    4
+                    (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 4, Ownership.Atom.int 0]))))) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [Ownership.Observation.int 1,
+              Ownership.Observation.int 0,
+              Ownership.Observation.list [Ownership.Observation.list [], Ownership.Observation.list []],
+              Ownership.Observation.list []],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.list [Ownership.Observation.int 0], Ownership.Observation.list []]],
+    externalReads := [] }
+  { reads := [Ownership.Observation.int 1,
+              Ownership.Observation.int 0,
+              Ownership.Observation.list [Ownership.Observation.list [], Ownership.Observation.list []],
+              Ownership.Observation.list []],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.list [Ownership.Observation.int 0],
+                        Ownership.Observation.list [Ownership.Observation.int 0]]],
+    externalReads := [] }
+corrected checker: Except.error "exclusive contents: positions or nested paths may share"

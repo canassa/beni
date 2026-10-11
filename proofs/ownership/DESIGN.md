@@ -52,3 +52,31 @@ cannot express:
 Map, initialize and foldl must be declaration-table programs over these forms,
 never checker opcodes. Any contract that this inference cannot derive is to be
 recorded, rather than patched with an unlabelled special case.
+
+## Executable proof boundary
+
+The interpreters, ordinary type checker and ownership checker are total Lean
+definitions. Syntax/domain walks use structural recursion; evaluation and summary
+inference use explicit decreasing fuel. Fuel exhaustion is an error, not a
+successful finite execution. The existing shared execution budget also bounds
+wide traversals. Definitions used by proofs must be reducible in the kernel;
+`partial def`, `unsafe` and axioms are not a shortcut around this boundary.
+
+`shared x` registers a permanent external holder of the value of `x`. The value
+interpreter retains its immutable value, and the in-place interpreter retains
+the actual reference. After each completed expression the observer reads every
+registered holder, recording its recursively expanded value in a separate trace
+stream. These are observations of execution prefixes, so a write followed by a
+restoring write cannot hide an intervening violation. This is a small adversarial
+context for the shared-value rule, not an implementation of a host platform.
+
+Escapes persist independently of a callback's result. Every call, focus and
+traversal instantiates them into the enclosing state. Permanent escape facts
+compare underlying cells, not temporary current/previous position loans. Traversal
+validates against all accumulated escape facts before accepting its fixpoint.
+A named negative-control flag retains the old missing-escape transfer solely to
+prove that the oracle can now observe that defect.
+
+The builder proof must refer to concrete heap values and the actual `put`/`close`
+operations: a list of cell numbers alone is only an auxiliary set lemma. Every
+claimed certificate theorem must name the executable operation it certifies.

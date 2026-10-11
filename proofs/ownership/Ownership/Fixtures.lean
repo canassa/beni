@@ -68,7 +68,7 @@ def mapCapture : Program := {
 
 def foldBorrow : Program := {
   declarations := [Library.foldl (.list .int) (.list .int),
-    { name := "pick", parameters := [.list .int,.list .int], result := .record [.list .int,.list .int],
+    { name := "pick", parameters := [.list .int,.list .int], result := .list .int,
       body := .atom (v 0) }]
   main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
     .letE 2 (.prim (.literal .int) []) <| .letE 3 (.closure 0 []) <|
@@ -107,6 +107,193 @@ def escapeTraversal : Program := {
     .letE 1 (.traverse .range (.int 1) (.int 0) 2 3 4 <|
       .letE 5 (.prim .shared [v 0]) (.atom (v 4))) (push (v 0)) }
 
+/-- Faithful ordinary-call projection of g xs k = k (push xs 1). -/
+def callbackAlias : Program := {
+  declarations := [
+    { name := "g", parameters := [.list .int,.fn [.list .int] .int], result := .int,
+      body := .letE 2 (push (v 0)) (.app (v 1) [v 2]) },
+    { name := "readCaptured", parameters := [.list .int], captures := [.list .int], result := .int,
+      body := .prim .length [v 1] }]
+  main := .letE 0 list <| .letE 1 (.closure 0 []) <|
+    .letE 2 (.closure 1 [v 0]) (.app (v 1) [v 0,v 2]) }
+
+def foldAlias : Program := {
+  declarations := [Library.foldl .int (.list .int),
+    { name := "insert", parameters := [.int,.list .int], result := .list .int,
+      body := .prim .push [v 1,v 0] }]
+  main := .letE 0 list <| .letE 1 (.closure 0 []) <| .letE 2 (.closure 1 [])
+    (.app (v 1) [v 0,v 0,v 2]) }
+
+def returnedReader : Program := {
+  declarations := [
+    { name := "read", parameters := [], captures := [.list .int], result := .int,
+      body := .prim .length [v 0] },
+    { name := "mk", parameters := [.list .int], result := .fn [] .int,
+      body := .closure 0 [v 0] }]
+  main := .letE 0 list <| .letE 1 (.closure 1 []) <|
+    .letE 2 (.app (v 1) [v 0]) <| seq (push (v 0)) (.app (v 2) []) }
+
+def onceWrappers (variant : Nat) : Program := {
+  declarations := [
+    { name := "push1", parameters := [.int], captures := [.list .int], result := .list .int,
+      body := .prim .push [v 1,v 0] },
+    { name := "mk", parameters := [.list .int], result := .fn [.int] (.list .int),
+      body := .closure 0 [v 0] },
+    { name := "callCaptured", parameters := [.int], captures := [.fn [.int] (.list .int)],
+      result := .list .int, body := .app (v 1) [v 0] },
+    Library.map .int (.list .int),
+    { name := "give", parameters := [], captures := [.fn [.int] (.list .int)],
+      result := .fn [.int] (.list .int), body := .atom (v 0) }]
+  main := .letE 0 list <| .letE 1 (.closure 1 []) <|
+    .letE 2 (.app (v 1) [v 0]) <|
+    if variant == 1 then
+      .letE 3 (.closure 2 [v 2]) <| .letE 4 (.closure 3 []) <|
+      .letE 5 (.prim (.literal .int) [.int 1,.int 2]) (.app (v 4) [v 5,v 3])
+    else if variant == 2 then
+      .letE 3 (.prim .record [v 2]) <| .letE 4 (.app (.field (v 3) 0) [.int 1])
+        (.app (.field (v 3) 0) [.int 2])
+    else if variant == 3 then
+      .letE 3 (.closure 4 [v 2]) <| .letE 4 (.app (v 3) []) <|
+      .letE 5 (.app (v 4) [.int 1]) <| .letE 6 (.app (v 3) []) (.app (v 6) [.int 2])
+    else .letE 3 (.app (v 2) [.int 1]) (.app (v 2) [.int 2]) }
+
+def freshInitializers : Program := {
+  declarations := [{
+    name := "init", parameters := [], result := .record [.list .int,.int],
+    body := .letE 0 list (.prim .record [v 0,.int 0]) }]
+  main := .letE 0 (.closure 0 []) <| .letE 1 (.app (v 0) []) <|
+    .letE 2 (.app (v 0) []) <| .letE 3 (push (.field (v 1) 0))
+      (.prim .record [v 3,v 2]) }
+
+def recursiveAppend : Program := {
+  declarations := [{
+    name := "appendTo", parameters := [.int,.list .int], result := .list .int,
+    body := .branch (v 0) (.atom (v 1)) <|
+      .letE 2 (.prim .sub [v 0,.int 1]) <| .letE 3 (push (v 1)) (.recur [v 2,v 3]) }]
+  main := .letE 0 list <| .letE 1 (.closure 0 []) <|
+    .letE 2 (.app (v 1) [.int 2,v 0]) <| .letE 3 (push (v 2)) (.prim .record [v 3,v 0]) }
+
+def recursiveCapture : Program := {
+  declarations := [{
+    name := "upTo", parameters := [.int], captures := [.list .int], result := .list .int,
+    body := .branch (v 0) (.atom (v 1)) <|
+      .letE 2 (.prim .sub [v 0,.int 1]) <| .letE 3 (.recur [v 2]) (.prim .push [v 3,v 0]) }]
+  main := .letE 0 list <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.app (v 1) [.int 2]) (.app (v 1) [.int 1]) }
+
+def conditionalMap (repeated : Bool) : Program := {
+  declarations := [Library.map (.record [.int,.list .int]) (.record [.int,.list .int]),
+    { name := "edit", parameters := [.record [.int,.list .int]], result := .record [.int,.list .int],
+      body := .branch (.field (v 0) 0) (.atom (v 0)) <|
+        .letE 1 (push (.field (v 0) 1)) (.prim .record [.field (v 0) 0,v 1]) }]
+  main := .letE 0 list <| .letE 1 list <|
+    .letE 2 (.prim .record [.int 1,v 0]) <|
+    .letE 3 (.prim .record [.int 0,if repeated then v 0 else v 1]) <|
+    .letE 4 (.prim (.literal (.record [.int,.list .int])) [v 2,v 3]) <|
+    .letE 5 (.closure 0 []) <| .letE 6 (.closure 1 []) (.app (v 5) [v 4,v 6]) }
+
+def nestedUpdate (repeated : Bool) (outerRepeated := false) : Program := {
+  declarations := [Library.update (.list (.list .int)), Library.update (.list .int),
+    { name := "bump", parameters := [.list .int], result := .list .int, body := push (v 0) },
+    { name := "bumpHead", parameters := [.list (.list .int)], result := .list (.list .int),
+      body := .letE 1 (.closure 1 []) <| .letE 2 (.closure 2 []) (.app (v 1) [v 0,.int 0,v 2]) }]
+  main := .letE 0 list <| .letE 1 list <|
+    .letE 2 (.prim (.literal (.list .int)) [v 0,if repeated then v 0 else v 1]) <|
+    .letE 3 (.prim (.literal (.list (.list .int))) (if outerRepeated then [v 2,v 2] else [v 2])) <|
+    .letE 4 (.closure 0 []) <| .letE 5 (.closure 3 []) (.app (v 4) [v 3,.int 0,v 5]) }
+
+def borrowedAccumulator : Program := {
+  declarations := [Library.foldl (.list .int) (.list .int),
+    { name := "borrowOrGrow", parameters := [.list .int,.list .int], result := .list .int,
+      body := .letE 2 (.prim .length [v 1]) (.branch (v 2) (.atom (v 0)) (push (v 1))) }]
+  main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 2 (.prim (.literal .int) []) <| .letE 3 (.closure 0 []) <| .letE 4 (.closure 1 []) <|
+    .letE 5 (.app (v 3) [v 1,v 2,v 4]) (.prim .record [v 5,v 1]) }
+
+def scalarIndexOrder : Program := {
+  main := .letE 0 list <| .letE 1 (.prim .at [v 0,.int 0,.int 0]) <|
+    .prim .set [v 0,v 1,.int 9] }
+
+/-- Ordinary concatenation: consumes only its first spine, reads the second. -/
+def concatDecl : Decl := {
+  name := "appendCells", parameters := [.list .int,.list .int], result := .list .int,
+  body := .traverse .list (v 1) (v 0) 2 3 4 (.prim .push [v 4,v 3]) }
+
+def constructionFold (consumeRows : Bool) : Program := {
+  declarations := [Library.foldl (.record [.list .int]) (.list .int), concatDecl,
+    { name := "joinRow", parameters := [.record [.list .int],.list .int], result := .list .int,
+      body := .letE 2 (.closure 1 []) <|
+        .letE 3 (.app (v 2) (if consumeRows then [.field (v 0) 0,v 1] else [v 1,.field (v 0) 0]))
+          (.prim .push [v 3,.int 9]) }]
+  main := .letE 0 list <| .letE 1 list <|
+    .letE 2 (.prim .record [v 0]) <| .letE 3 (.prim .record [v 1]) <|
+    .letE 4 (.prim (.literal (.record [.list .int])) [v 2,v 3]) <|
+    .letE 5 (.prim (.literal .int) []) <| .letE 6 (.closure 0 []) <|
+    .letE 7 (.closure 2 []) <| .letE 8 (.app (v 6) [v 4,v 5,v 7]) <|
+    if consumeRows then .prim .record [v 8,v 4] else .atom (v 8) }
+
+/-- The previous version is restored from a history element, then copied (or
+    aliased) before the next edit. Entry merging itself belongs to TEA. -/
+def historyRestore (copied : Bool) : Program := {
+  main := .letE 0 list <| .letE 1 (.prim .copy [v 0]) <|
+    .letE 2 (.prim (.literal (.list .int)) [v 1]) <|
+    .letE 3 (.prim .at [v 2,.int 0,v 0]) <|
+    .letE 4 (if copied then .prim .copy [v 3] else .atom (v 3)) <|
+    .letE 5 (push (v 4)) (.prim .record [v 5,v 2]) }
+
+def compareHeld : Program := {
+  declarations := [{
+    name := "compareLengths", parameters := [.list .int,.list .int], result := .int,
+    body := .letE 2 (.prim .length [v 0]) <| .letE 3 (.prim .length [v 1]) (.prim .sub [v 2,v 3]) }]
+  main := .letE 0 list <| .letE 1 (.closure 0 []) <|
+    .letE 2 (push (v 0)) (.app (v 1) [v 0,v 2]) }
+
+def modelHeld : Program := {
+  main := .letE 0 list <| .letE 1 (.prim .record [v 0,.int 0]) <|
+    .letE 2 (push (.field (v 1) 0)) (.prim .record [.field (v 1) 0,v 2]) }
+
+/-- Reverse-order fold is ordinary range traversal plus total indexed reads.
+    No ownership-aware library constructor is involved. -/
+def foldRightBorrow : Program := {
+  declarations := [concatDecl,
+    { name := "prepend", parameters := [.list .int,.list .int], result := .list .int,
+      body := .letE 2 (.closure 0 []) (.app (v 2) [v 0,v 1]) },
+    { name := "foldr", parameters := [.list (.list .int),.list .int,.fn [.list .int,.list .int] (.list .int)], result := .list .int,
+      body := .letE 3 (.prim .length [v 0]) <| .letE 4 (.prim (.literal .int) []) <|
+        .traverse .range (v 3) (v 1) 5 6 7 <|
+          .letE 8 (.prim .sub [v 3,v 5]) <| .letE 9 (.prim .sub [v 8,.int 1]) <|
+          .letE 10 (.prim .at [v 0,v 9,v 4]) (.app (v 2) [v 10,v 7]) }]
+  main := .letE 0 list <| .letE 1 list <|
+    .letE 2 (.prim (.literal (.list .int)) [v 0,v 1]) <|
+    .letE 3 (.prim (.literal .int) []) <| .letE 4 (.closure 2 []) <|
+    .letE 5 (.closure 1 []) <| .letE 6 (.app (v 4) [v 2,v 3,v 5]) (.prim .record [v 6,v 2]) }
+
+def transparentColumn : Program := {
+  main := .letE 0 list <| .letE 1 (.prim .record [v 0]) <|
+    .letE 2 (.prim (.literal (.record [.list .int])) [v 1]) <|
+    .focus (v 2) (.int 0) 3 <| .letE 4 (push (.field (v 3) 0)) (.prim .record [v 4]) }
+
+def concatContents : Program := {
+  declarations := [{
+    name := "concatRows", parameters := [.list (.list .int),.list (.list .int)], result := .list (.list .int),
+    body := .traverse .list (v 1) (v 0) 2 3 4 (.prim .push [v 4,v 3]) }]
+  main := .letE 0 list <| .letE 1 list <|
+    .letE 2 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 3 (.prim (.literal (.list .int)) [v 1]) <| .letE 4 (.closure 0 []) <|
+    .letE 5 (.app (v 4) [v 2,v 3]) <|
+    .letE 6 (.focus (v 5) (.int 1) 7 (push (v 7))) (.prim .record [v 6,v 3]) }
+
+def initializedGridSet : Program := {
+  declarations := [Library.initialize (.list .int),
+    { name := "row", parameters := [.int], result := .list .int,
+      body := .prim (.literal .int) [.int 0,.int 0,.int 0] },
+    Library.update (.list .int),
+    { name := "reveal", parameters := [.list .int], result := .list .int,
+      body := .prim .set [v 0,.int 1,.int 1] }]
+  main := .letE 0 (.closure 0 []) <| .letE 1 (.closure 1 []) <|
+    .letE 2 (.app (v 0) [.int 3,v 1]) <| .letE 3 (.closure 2 []) <|
+    .letE 4 (.closure 3 []) (.app (v 3) [v 2,.int 1,v 4]) }
+
 structure Fixture where
   id : String
   program : Program
@@ -114,6 +301,31 @@ structure Fixture where
 
 /-- Expected verdicts are transcribed from Table 6.2, never checker-generated. -/
 def all : List Fixture := [
+  ⟨"T11 ordinary concat contents",concatContents,false⟩,
+  ⟨"T37 initialized grid set",initializedGridSet,true⟩,
+  ⟨"generated v3 tower old-rule regression",GeneratedRegressions.oldTowerSeed20261011Index7,false⟩,
+  ⟨"generated v3 external escape regression",GeneratedRegressions.escapeSeed20261011Index1,false⟩,
+  ⟨"T43 reverse consuming fold",foldRightBorrow,false⟩,
+  ⟨"T17 compare",compareHeld,false⟩, ⟨"T17 model record",modelHeld,false⟩,
+  ⟨"T41 restored alias projection",historyRestore false,false⟩,
+  ⟨"T41 restored copy projection",historyRestore true,true⟩,
+  ⟨"T43 accumulator construction fold",constructionFold false,true⟩,
+  ⟨"T43 consuming row fold projection",constructionFold true,false⟩,
+  ⟨"T1 fold alias",foldAlias,false⟩, ⟨"T1 callback alias",callbackAlias,false⟩,
+  ⟨"T7 returned reader",returnedReader,false⟩,
+  ⟨"T8 A returned",onceWrappers 0,false⟩, ⟨"T8 B captured many",onceWrappers 1,false⟩,
+  ⟨"T8 C stored",onceWrappers 2,false⟩, ⟨"T26 captured returned",onceWrappers 3,false⟩,
+  ⟨"T12 recursive append",recursiveAppend,false⟩, ⟨"T25 recursive capture",recursiveCapture,false⟩,
+  ⟨"T14 fresh init",freshInitializers,true⟩, ⟨"T30 independent init projection",freshInitializers,true⟩,
+  ⟨"T53 fresh init alternative",freshInitializers,true⟩,
+  ⟨"T42 distinct conditional map",conditionalMap false,true⟩,
+  ⟨"T42 repeated conditional map",conditionalMap true,false⟩,
+  ⟨"T46 empty accumulator",borrowedAccumulator,false⟩,
+  ⟨"T47 transparent wrapper projection",transparentColumn,true⟩,
+  ⟨"T57 distinct update calls",nestedUpdate false,true⟩,
+  ⟨"T57 repeated update calls",nestedUpdate true,false⟩,
+  ⟨"T57 repeated outer rows update calls",nestedUpdate false true,false⟩,
+  ⟨"T58 scalar index order projection",scalarIndexOrder,true⟩,
   ⟨"T1 arguments",argumentAlias,false⟩,
   ⟨"T1 capture",capture false false,false⟩,
   ⟨"T2",readThenWrite,true⟩, ⟨"T3",shared,false⟩,
@@ -145,7 +357,7 @@ def all : List Fixture := [
   ⟨"generated map old-rule regression",GeneratedRegressions.oldSeed20261011Index8,false⟩,
   ⟨"generated initialize old-rule regression",GeneratedRegressions.oldSeed20261011Index10,false⟩,
   ⟨"escape ordinary call",escapeCall,false⟩,
-  ⟨"escape traversal RED",escapeTraversal,false⟩ ]
+  ⟨"escape traversal",escapeTraversal,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true
@@ -162,9 +374,13 @@ def run : IO Bool := do
       | result =>
         IO.println s!"STOP fixture observational failure {f.id}: {repr result}"
         return false
-  for p in [GeneratedRegressions.oldSeed20261011Index8, GeneratedRegressions.oldSeed20261011Index10] do
+  for p in [GeneratedRegressions.oldSeed20261011Index8, GeneratedRegressions.oldSeed20261011Index10, GeneratedRegressions.oldTowerSeed20261011Index7] do
     if !Oracle.disagrees p { oldFreshRule := true } || (check p).isOk then
       IO.println "FROZEN NEGATIVE CONTROL FAILED"
+      ok := false
+  for p in [escapeTraversal, GeneratedRegressions.escapeSeed20261011Index1] do
+    if !Oracle.disagrees p { dropTraversalEscapes := true } || (check p).isOk then
+      IO.println "ESCAPE NEGATIVE CONTROL FAILED"
       ok := false
   IO.println s!"fixtures={all.length} passed={ok}"
   pure ok
