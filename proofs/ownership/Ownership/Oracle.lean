@@ -3,6 +3,7 @@ import Ownership.OracleLegacy
 import Ownership.Semantics
 import Ownership.Generator
 import Ownership.Reinfer
+import Ownership.Aliasing
 
 namespace Ownership.Oracle
 
@@ -310,8 +311,8 @@ def Outcome.disagrees : Outcome → Bool
   | .mismatch .. | .inPlaceFailed .. => true
   | _ => false
 
-def compare (p : Program) : Outcome :=
-  match ValueSemantics.run p, InPlaceSemantics.run p with
+def compare (p : Program) (fuel := 100000) : Outcome :=
+  match ValueSemantics.run p fuel, InPlaceSemantics.run p fuel with
   | .ok a, .ok b => if a == b then .equal else .mismatch a b
   | .ok a, .error e => .inPlaceFailed a e
   | a,b => .inconclusive s!"value={repr a}; in-place={repr b}"
@@ -386,6 +387,16 @@ structure Counts where
   executionErrors : Nat := 0
   mismatches : Nat := 0
   withWrites : Nat := 0
+  /-- Accepted programs counted once per distinct AST, all and with a write. -/
+  distinctAccepted : Nat := 0
+  distinctWithWrites : Nat := 0
+  /-- Accepted programs whose in-place run writes an array that two or more
+      names reach (`Aliasing`). -/
+  aliasedWrites : Nat := 0
+  /-- Precision: typed programs whose two runs agree, and how many of those
+      the checker accepts (not computed under a negative control). -/
+  agreeing : Nat := 0
+  agreeingAccepted : Nat := 0
   /-- Cross-check: verdicts that differ between the two checkers, and
       programs only the other checker accepts that then disagree. -/
   onlyThis : Nat := 0
@@ -397,10 +408,19 @@ structure Counts where
   deriving Repr
 
 def Counts.line (c : Counts) : String :=
-  s!"candidates={c.candidates} distinct={c.distinct} typed={c.typed} accepted={c.accepted} withWrites={c.withWrites} rejected={c.rejected} limits={c.limits} typeErrors={c.typeErrors} executionErrors={c.executionErrors} mismatches={c.mismatches}" ++
+  s!"candidates={c.candidates} distinct={c.distinct} typed={c.typed} accepted={c.accepted} distinctAccepted={c.distinctAccepted} withWrites={c.withWrites} distinctWithWrites={c.distinctWithWrites} aliasedWrites={c.aliasedWrites} agreeing={c.agreeing} agreeingAccepted={c.agreeingAccepted} rejected={c.rejected} limits={c.limits} typeErrors={c.typeErrors} executionErrors={c.executionErrors} mismatches={c.mismatches}" ++
   (if c.onlyThis + c.onlyOther + c.otherMismatches > 0 then
     s!" cross-only-this={c.onlyThis} cross-only-other={c.onlyOther} cross-other-mismatches={c.otherMismatches}" else "") ++
   s!" summaries-computed={c.summariesComputed} summaries-reused={c.summariesReused}"
+
+def percent (a b : Nat) : String :=
+  if b == 0 then "-" else s!"{(a * 1000 / b) / 10}.{(a * 1000 / b) % 10} %"
+
+/-- The campaign's headline: distinct accepted programs (all, with a write),
+    the share of accepted programs that write an aliased array, and
+    precision (accepted among programs whose two runs agree). -/
+def Counts.summary (c : Counts) (seed : Nat) : String :=
+  s!"summary seed={seed} accepted={c.accepted} distinct-accepted={c.distinctAccepted} with-write={c.withWrites} distinct-with-write={c.distinctWithWrites} aliased-write={c.aliasedWrites} ({percent c.aliasedWrites c.accepted} of accepted) agreeing={c.agreeing} accepted-of-agreeing={c.agreeingAccepted} precision={percent c.agreeingAccepted c.agreeing}"
 
 /-- Generator v4 keeps the eleven v3 template families and replaces the v3
     `anf-chain`, whose final record kept every variable live (so none of its
@@ -499,6 +519,8 @@ def runWith (o : Options) : IO RunResult := do
   let mut counts : Counts := {}
   let mut found : Option Nat := none
   let mut seen : Std.HashSet String := {}
+  let mut seenAccepted : Std.HashSet String := {}
+  let mut seenWithWrite : Std.HashSet String := {}
   let mut families : List (String × Counts × Nat × Nat) := []
   let mut rowHits : List (String × Nat) := []
   let header := s!"generator-version={o.version} seed={o.seed} control={o.label}"
@@ -540,15 +562,38 @@ def runWith (o : Options) : IO RunResult := do
       counts := { counts with
         rejected := counts.rejected + 1,
         limits := counts.limits + (if msg.startsWith "limit:" then 1 else 0) }
+      -- Precision: a rejected program whose runs agree is one the checker
+      -- could have accepted.
+      if !o.negative then
+        if let .equal := compare p 5000 then
+          counts := { counts with agreeing := counts.agreeing + 1 }
+          families := families.map fun (f,c,lo,hi) => if f == family then
+            (f,{ c with agreeing := c.agreeing+1 },lo,hi) else (f,c,lo,hi)
     | .ok _ =>
       let (made, reused, hits) := match stats with | .ok s => s | .error _ => (0, 0, [])
+      let newAccepted := !seenAccepted.contains signature
+      seenAccepted := seenAccepted.insert signature
       counts := { counts with
         accepted := counts.accepted + 1, summariesComputed := counts.summariesComputed + made,
-        summariesReused := counts.summariesReused + reused }
+        summariesReused := counts.summariesReused + reused,
+        distinctAccepted := counts.distinctAccepted + (if newAccepted then 1 else 0) }
+      families := families.map fun (f,c,lo,hi) => if f == family then
+        (f,{ c with distinctAccepted := c.distinctAccepted+(if newAccepted then 1 else 0) },lo,hi) else (f,c,lo,hi)
       match compare p with
       | .equal =>
+        counts := { counts with agreeing := counts.agreeing + 1, agreeingAccepted := counts.agreeingAccepted + 1 }
+        let aliased := if !o.negative && Aliasing.aliasedWrite p then 1 else 0
+        counts := { counts with aliasedWrites := counts.aliasedWrites + aliased }
+        families := families.map fun (f,c,lo,hi) => if f == family then
+          (f,{ c with agreeing := c.agreeing+1, agreeingAccepted := c.agreeingAccepted+1,
+                      aliasedWrites := c.aliasedWrites+aliased },lo,hi) else (f,c,lo,hi)
         if InPlaceSemantics.writeCount p > 0 then
-          counts := { counts with withWrites := counts.withWrites + 1 }
+          let newWrite := !seenWithWrite.contains signature
+          seenWithWrite := seenWithWrite.insert signature
+          counts := { counts with withWrites := counts.withWrites + 1,
+                                  distinctWithWrites := counts.distinctWithWrites + (if newWrite then 1 else 0) }
+          families := families.map fun (f,c,lo,hi) => if f == family then
+            (f,{ c with distinctWithWrites := c.distinctWithWrites+(if newWrite then 1 else 0) },lo,hi) else (f,c,lo,hi)
           for h in hits do
             rowHits := match rowHits.lookup h with
               | some n => rowHits.map fun (k, m) => if k == h then (k, n + 1) else (k, m)
@@ -585,6 +630,7 @@ def runWith (o : Options) : IO RunResult := do
     for (row, n) in rowHits.mergeSort (fun a b => a.1 < b.1) do
       IO.println s!"row-hits {n} {row}"
   IO.println s!"{header} {counts.line} first-mismatch={found.map toString |>.getD "none"} elapsed-ms={elapsed}"
+  if !o.negative then IO.println (counts.summary o.seed)
   if o.negative && found.isNone then
     IO.println s!"no generated accepted disagreement under {o.label} (a failure unless the control is optional)"
     return { ok := false, counts, elapsed }
