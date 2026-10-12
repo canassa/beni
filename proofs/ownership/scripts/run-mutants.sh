@@ -35,9 +35,13 @@ for m in "${names[@]}"; do
   if ! (cd "$d" && lake build ownership > build.log 2>&1); then echo "$m: BUILD FAILED"; continue; fi
   line="$m:"
   caught=0
+  # The seeds run side by side; each records its exit status.
   for s in "${seeds[@]}"; do
-    (cd "$d" && ./.lake/build/bin/ownership oracle "$count" "$s" > "oracle-$s.log" 2>&1)
-    status=$?
+    (cd "$d" && ./.lake/build/bin/ownership oracle "$count" "$s" > "oracle-$s.log" 2>&1; echo $? > "status-$s") &
+  done
+  wait
+  for s in "${seeds[@]}"; do
+    status=$(cat "$d/status-$s")
     index=$(grep -o "index=[0-9]*" "$d/oracle-$s.log" | head -1 | sed 's/index=//')
     family=""; [ -n "$index" ] && family=$(grep -o "family=[a-z-]*" "$d/oracle-$s.log" | head -1 | sed "s/family=//")
     [ $status -ne 0 ] && [ -n "$index" ] && caught=$((caught + 1))
