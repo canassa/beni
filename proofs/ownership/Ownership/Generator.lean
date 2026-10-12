@@ -68,6 +68,7 @@ def pairFresh := 25
 def initN := 26
 def identN := 27
 def capAppend := 28
+def apply1 := 29
 
 def decls : List Decl := [
   Library.map tL tL,
@@ -125,7 +126,9 @@ def decls : List Decl := [
   { name := "identN", parameters := [tN], result := tN, body := .atom (v 0) },
   -- A once callback: it pushes onto its capture.
   { name := "capAppend", parameters := [tL], captures := [tL], result := tL,
-    body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) }]
+    body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) },
+  -- Calls its callback and nothing else.
+  { name := "apply1", parameters := [tL, fLL], result := tL, body := .app (v 1) [v 0] }]
 
 abbrev Env := List (Atom × Ty)
 
@@ -696,6 +699,27 @@ def shadowWrite : Move := fun next env => do
         .letE x (← litList env) (.prim .push [v t, ← number env])
       pure [(inner, tL), (.prim .length [v x], .int)]
 
+/-- One list pushed twice onto a nested list, then a traversal that pushes
+    onto each element and reads its length: the last two elements are one
+    array, so the second push is seen through the first. -/
+def doublePush : Move := fun next env => withNested next env fun next n => do
+  let a ← anyList env
+  let (i, x, acc, y, k) := (sv next 0, sv next 1, sv next 2, sv next 3, sv next 4)
+  pure [(.prim .push [n, a], tN), (.prim .push [v next, a], tN),
+    (.traverse .list (v (next + 1)) (.int 0) i x acc <|
+      .letE y (.prim .push [v x, ← number env]) <|
+      .letE k (.prim .length [v y]) (.prim .add [v acc, v k]), .int)]
+
+/-- An empty list and a closure that appends to it, then an alias of the
+    list made by `close` over an empty builder (equal contents, so `close`
+    returns the list itself), then a callee that calls the closure, then the
+    alias read: the once-through-call shape with the capture written. -/
+def closeAliasCallee : Move := fun next env => do
+  pure [(.prim (.literal .int) [], tL), (.closure capAppend [v next], fLL),
+    (.prim (.builder .int) [], .builder .int), (.prim .close [v (next + 2), v next], tL),
+    (← litList env, tL), (.closure apply1 [], .fn [tL, fLL] tL),
+    (.app (v (next + 5)) [v (next + 4), v (next + 1)], tL), (.prim .record [v (next + 3), v (next + 6)], tR)]
+
 /-- `shared` on a nested list, then an element read out of it and pushed:
     the element is published with its container. -/
 def sharedNested : Move := fun next env => withNested next env fun next n => do
@@ -757,7 +781,7 @@ def movesFor (table : Table) : List (String × Move) :=
   weighted ++ [("branch-written", branchWritten), ("branch-block", branchBlock weighted),
     ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table),
     ("shadow-write", shadowWrite), ("shared-nested", sharedNested), ("shared-record", sharedRecord),
-    ("branch-closure", branchClosure)] ++ gen
+    ("branch-closure", branchClosure), ("double-push", doublePush), ("close-alias-callee", closeAliasCallee)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/
@@ -778,26 +802,29 @@ def plainDecl (table : Table) (name : String) : Gen Decl := do
   let rest ← blockOf (movesFor table) (← draw 4) (n + 1) env r
   return { name := name, parameters := ps, captures := caps, result := r, body := .letE n first rest }
 
-/-- Writes its first parameter in place before anything else: a push or set
+/-- Writes one of its parameters in place before anything else: a push or set
     of a flat list, an element edit or a spine push of a nested list (storing
     the second parameter), then a chain of moves; returns the written list or
     a length. Calls of it change an array the caller passed. -/
 def writerDecl (table : Table) (name : String) : Gen Decl := do
   let nested := (← draw 3) == 0
   let p0 := if nested then tN else tL
-  let ps := [p0, tL]
+  -- Half the time the written list is the second parameter.
+  let second := (← draw 2) == 0
+  let (wi, oi) := if second then (1, 0) else (0, 1)
+  let ps := if second then [tL, p0] else [p0, tL]
   let env := bodyEnv ps
   let first ← litList env
   let n := ps.length
   let w : Expr ← if nested then
       match ← draw 2 with
-      | 0 => pure (.prim .push [v 0, v 1])
-      | _ => do pure (.focus (v 0) (.int 0) (sv (n + 1) 0) (.prim .push [v (sv (n + 1) 0), ← number env]))
+      | 0 => pure (.prim .push [v wi, v oi])
+      | _ => do pure (.focus (v wi) (.int 0) (sv (n + 1) 0) (.prim .push [v (sv (n + 1) 0), ← number env]))
     else
       match ← draw 3 with
-      | 0 => pure (.letE (sv (n + 1) 1) (.prim .length [v 1]) (.prim .push [v 0, v (sv (n + 1) 1)]))
-      | 1 => do pure (.prim .set [v 0, .int 0, ← number env])
-      | _ => do pure (.prim .push [v 0, ← number env])
+      | 0 => pure (.letE (sv (n + 1) 1) (.prim .length [v oi]) (.prim .push [v wi, v (sv (n + 1) 1)]))
+      | 1 => do pure (.prim .set [v wi, .int 0, ← number env])
+      | _ => do pure (.prim .push [v wi, ← number env])
   let r ← pick [p0, p0, .int] p0
   let env' := (Atom.var (n + 1), p0) :: env
   let rest ← if (← draw 2) == 0 then
