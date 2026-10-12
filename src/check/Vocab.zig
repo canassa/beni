@@ -450,12 +450,23 @@ test patternsMeet {
 /// `duplicate_declaration`, at the later one (§25.2).
 fn duplicates(cx: *const Context, report: *Report) Error!void {
     const bir = cx.bir;
+    // Each declaration's name and whether it is a pattern, read once: the
+    // pairs below are quadratic in the vocabulary's size, and two exact
+    // names tie exactly when they are one interned symbol, so most pairs
+    // cost one comparison and no text.
+    const patterns = try cx.scratch.alloc(bool, bir.decls.len);
+    defer cx.scratch.free(patterns);
+    for (bir.decls, patterns) |d, *p| p.* = inNamespace(d.kind) and Name.of(text(cx, bir.symbol(d.name))).pattern;
     for (bir.decls, 0..) |d, i| {
         if (!inNamespace(d.kind)) continue;
-        const name = Name.of(text(cx, bir.symbol(d.name)));
-        for (bir.decls[0..i]) |e| {
+        const symbol = bir.symbol(d.name);
+        const name = Name.of(text(cx, symbol));
+        for (bir.decls[0..i], patterns[0..i]) |e, e_pattern| {
             if (!inNamespace(e.kind) or namespaceOf(e.kind) != namespaceOf(d.kind)) continue;
-            if (!try name.ties(Name.of(text(cx, bir.symbol(e.name))), cx.scratch)) continue;
+            if (e_pattern != name.pattern) continue;
+            if (!name.pattern) {
+                if (bir.symbol(e.name) != symbol) continue;
+            } else if (!try name.ties(Name.of(text(cx, bir.symbol(e.name))), cx.scratch)) continue;
             if (!onOverlap(bir, d, e)) continue;
             report.at(@intCast(i));
             try fail(cx, report, @intCast(i), .duplicate_declaration,
