@@ -267,24 +267,27 @@ def Corresponds (heap : Heap) (v : Observation) (w : Value) : Prop :=
     fifth reading named): the observations made so far are equal; every
     value-semantics binding corresponds to its in-place binding in the current
     heap; and the abstract environment describes the in-place one under a
-    separating naming. `env` pairs each variable's two values. -/
+    separating naming. `env` pairs each variable's two values. Only the
+    variables in `live` are required to correspond: a binding the checker knows
+    is dead may hold an array that was since written in place, and its value
+    copy then legitimately differs. -/
 structure Invariant (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
-    (env : List (Var × Observation × Value)) (aenv : Env Abstract) (γ : Naming) : Prop where
+    (env : List (Var × Observation × Value)) (live : List Var) (aenv : Env Abstract) (γ : Naming) : Prop where
   reads : vs.reads = hs.reads
   external : vs.externalReads = hs.externalReads
   fuel : vs.fuel = hs.fuel
-  bindings : ∀ x o w, (x, o, w) ∈ env → Corresponds hs.heap o w
+  bindings : ∀ x o w, (x, o, w) ∈ env → x ∈ live → Corresponds hs.heap o w
   separating : Separating γ
-  described : ∀ x o w a, (x, o, w) ∈ env → aenv.lookup x = some a → Describes γ hs.heap a w
+  described : ∀ x o w a, (x, o, w) ∈ env → x ∈ live → aenv.lookup x = some a → Describes γ hs.heap a w
 
-theorem invariant_initial (fuel : Nat) (γ : Naming) (hγ : Separating γ) :
-    Invariant { fuel } { fuel } [] [] γ :=
+theorem invariant_initial (fuel : Nat) (live : List Var) (γ : Naming) (hγ : Separating γ) :
+    Invariant { fuel } { fuel } [] live [] γ :=
   { reads := rfl, external := rfl, fuel := rfl
     bindings := by simp, separating := hγ, described := by simp }
 
 /-- What the invariant buys at the end: the two traces' observation streams
     so far are the same. -/
-theorem invariant_observations (h : Invariant vs hs env aenv γ) :
+theorem invariant_observations (h : Invariant vs hs env live aenv γ) :
     vs.reads.toList = hs.reads.toList ∧ vs.externalReads.toList = hs.externalReads.toList :=
   ⟨by rw [h.reads], by rw [h.external]⟩
 
@@ -292,32 +295,41 @@ def valueEnv (env : List (Var × Observation × Value)) : Env Observation := env
 def heapEnv (env : List (Var × Observation × Value)) : Env Value := env.map fun (x, _, w) => (x, w)
 
 /-- The context of the main expression of a program the corrected checker
-    accepted: its declarations, a corrected configuration, nothing owned,
-    escaped, recursive or framed, and every cached summary one the accepted
-    check published. -/
+    accepted: the equation fixes every other field of `Context` to its default
+    (`owned = []`, `escaped = []`, `recursiveSummary = {}`,
+    `recursiveCaptures = []`, `recursiveParameters = []`, `inScope = false`,
+    `frames = []`), so nothing is owned, escaped, recursive or framed; the
+    configuration is corrected; every cached summary is one the accepted check
+    published. -/
 def MainContext (p : Program) (a : Accepted) (ctx : Context) (st : St) : Prop :=
   ctx = { declarations := p.declarations, config := ctx.config } ∧ Corrected ctx.config ∧
   ∀ e ∈ st.cache.toList, e ∈ a.cache.toList
 
-/-- **The step case.** In a program the corrected checker accepted
-    (`check p = .ok a`), evaluating an expression that the checker accepts in
-    the main context and the abstract environment `aenv`, from configurations
-    related by the invariant, yields related configurations and corresponding
-    results, or both evaluations fail. This is the simultaneous preservation
-    over the whole configuration that the thesis says it has not written
-    (§6.3); calls inside `e` are where `summary_sound` and Lemmas 6.2–6.6 are
-    used. It quantifies over the expression and the environments, and both
-    interpreters spend fuel identically, so calls that never return exhaust
-    the same fuel in both. Unproved. -/
+def liveVars (l : Live) : List Var := l.map Prod.fst
+
+/-- **The step case, in the main context only.** In a program the corrected
+    checker accepted (`check p = .ok a`), evaluating an expression of the main
+    body that the checker accepts in the main context, the abstract
+    environment `aenv` and the continuation liveness `after`, from
+    configurations related on the variables the expression or its continuation
+    read, yields configurations related on the variables the continuation
+    reads, corresponding results, or both evaluations fail. Expressions inside
+    function bodies, traversal steps and focus bodies (other contexts) are not
+    covered by this statement; there `summary_sound` is the claim. It is the
+    simultaneous preservation the thesis says it has not written (§6.3).
+    Both interpreters spend fuel identically, so calls that never return
+    exhaust the same fuel in both. Unproved. -/
 theorem invariant_preserved (p : Program) (a : Accepted) (ok : check p = .ok a)
     (ctx : Context) (aenv : Env Abstract) (e : Expr)
     (after : Live) (site : List Nat) (st st' : St) (r : Abstract) (main : MainContext p a ctx st)
     (accepts : (inferExpr ctx.config.inferenceFuel ctx aenv e after site).run st = .ok (r, st'))
     (fuel : Nat) (env : List (Var × Observation × Value)) (γ : Naming)
-    (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (h : Invariant vs hs env aenv γ) :
+    (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
+    (h : Invariant vs hs env (liveVars (union (uses e) after)) aenv γ) :
     (∀ v vs', (ValueSemantics.eval fuel p.declarations none (valueEnv env) e).run vs = .ok (v, vs') →
       ∃ w hs' γ', (InPlaceSemantics.eval fuel p.declarations none (heapEnv env) e).run hs = .ok (w, hs') ∧
-        Invariant vs' hs' env aenv γ' ∧ Corresponds hs'.heap v w ∧ Describes γ' hs'.heap r w) ∧
+        Invariant vs' hs' env (liveVars after) aenv γ' ∧ Corresponds hs'.heap v w ∧
+        Describes γ' hs'.heap r w) ∧
     (∀ msg, (ValueSemantics.eval fuel p.declarations none (valueEnv env) e).run vs = .error msg →
       ∃ msg', (InPlaceSemantics.eval fuel p.declarations none (heapEnv env) e).run hs = .error msg') := by
   sorry
@@ -351,8 +363,8 @@ theorem accepted_traces_agree (p : Program) (a : Accepted) (ok : check p = .ok a
   obtain ⟨r, st', accepts, cache⟩ := check_accepts_main p a ok
   have main : MainContext p a { declarations := p.declarations, config := {} } {} :=
     ⟨rfl, corrected_default, by simp⟩
-  have inv : Invariant { fuel } { fuel } [] [] (fun _ => []) :=
-    invariant_initial fuel (fun _ => []) (by intro _ _ _ _ h; simp at h)
+  have inv : Invariant { fuel } { fuel } [] (liveVars (union (uses p.main) [])) [] (fun _ => []) :=
+    invariant_initial fuel _ (fun _ => []) (by intro _ _ _ _ h; simp at h)
   have step := (invariant_preserved p a ok _ [] p.main [] [] {} st' r main accepts fuel
     [] (fun _ => []) { fuel } { fuel } inv).1
   unfold ValueSemantics.run at ht
