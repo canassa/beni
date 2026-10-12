@@ -127,10 +127,12 @@ preceded it is frozen as `Reinfer.lean` (`--reinfer`, `--cross-check`).
 
 ## Negative controls
 
-`Config.mutant` names a deliberate hole: seven are the review's missed
-mutants, thirteen weaken a summary row. Each required one has a fixed probe in
-`Fixtures.lean` that disagrees under it and is rejected without it;
-`ownership ci` requires the probes and reports the generator's catches.
+`Config.mutant` names a deliberate hole: seven are the first review's missed
+mutants, fourteen weaken a summary row (including `once-through-call`), and
+`branch-live` weakens liveness (the second review's `branchlive`). Each
+required one has a fixed probe in `Fixtures.lean` that disagrees under it and
+is rejected without it; `ownership ci` requires the probes and that the
+generator alone catch every required hole within its budget.
 `ownership controls` runs one normal campaign (20000 trials) per hole and
 fails unless each required hole is caught by the generator alone; holes whose
 generator catch is rare or absent (`callback-escapes`, `forward-guards`, and

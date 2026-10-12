@@ -55,8 +55,8 @@ def Mutant.name : Mutant → String
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
 /-- Mutants the generator need not catch within one campaign: `callback-escapes`
-    and `forward-guards` are caught rarely (1–2 seeds of 3) and are required
-    through their fixed probe; `callback-requires`, `requires-edge` and
+    and `forward-guards` are caught rarely or not at all (generator v5: 2 and
+    0 seeds of 3) and are required through their fixed probe; `callback-requires`, `requires-edge` and
     `transfer-supplies` changed no verdict in 20000 trials and have no probe —
     known gaps (COVERAGE.md). `ownership controls` reports all five. -/
 def Mutant.generatorOptional : Mutant → Bool

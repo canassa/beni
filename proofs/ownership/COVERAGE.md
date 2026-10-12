@@ -117,43 +117,55 @@ The current generated higher-order recursion family intentionally exercises
 
 ## What the oracle tests now, and what it does not
 
-**Tested by generated programs** (generator v4, numbers in RESULTS.md):
+**Tested by generated programs** (generator v5, numbers in RESULTS.md):
 in-place writes in accepted programs of every family except `captures`,
-`escape-traversal` and the limit family; closures with shared captures called once and many times;
-list and range traversals that consume elements, accumulators or captures;
-focus that keeps or breaks shape; shallow and nested copies; literals with
-repeated elements; spine writes after `map`; two calls of one library function
-with different callback classes (summary reuse); callbacks handed a list that
-is read again (`applyThenRead`) and folds that read their rows after the loop
-(`foldKeep`); wrappers that pass their callback on (`mapVia`, `twiceVia`,
-`applyN`), callbacks that escape (`publish`) or require (`headBump`) their
-argument, a once list callback, and initialize over shared and distinct pairs.
+`escape-traversal` and the limit family; declarations the generator builds
+itself — functions over lists, nested lists and records returning fresh,
+aliasing or captured values, higher-order functions calling a callback that
+may capture the very list it is passed, counter-driven self-recursion
+(including reads, after the recursive call, of the lists passed to it),
+factories returning closures that are called later, calls between generated
+declarations; conditionals whose arms are chains of moves; closures with
+shared captures called once and many times; list and range traversals that
+consume elements, accumulators or captures; focus that keeps or breaks
+shape; shallow and nested copies; literals with repeated elements; spine
+writes after `map`; two calls of one library function with different
+callback classes (summary reuse); the fixed table's wrappers and callbacks
+(`applyThenRead`, `foldKeep`, `mapVia`, `twiceVia`, `applyN`, `publish`,
+`headBump`, a once list callback), and initialize over shared and distinct
+pairs. About half of the accepted programs write an array that two names
+reach.
 
-**Controls.** Every required control has a fixed probe program that
-disagrees under its mutant and is rejected without it; `ownership ci`
-requires those, so it does not depend on the generator's random stream.
-Separately, the generator alone catches, in one 20000-trial campaign on each
-of seeds 20261011, 17 and 271828: the two historical controls and fifteen
-mutants (disjoint, traversal-exclusive, many-calls, copy-exclusive,
+**Controls.** Every required control has a fixed probe that disagrees under
+its mutant and is rejected without it, and the generator alone catches it
+in one 20000-trial campaign on each of seeds 20261011, 17 and 271828;
+`ownership ci` requires both. Required: the two historical controls and
+seventeen flags (disjoint, traversal-exclusive, many-calls, copy-exclusive,
 close-source, keeps-shape, guard-reuse, callback-xres, supply-edge,
-supply-recheck, calls-edge, callback-writes, callback-aliases, callback-env;
-borrowed-supply only against the per-call checker). It catches
-callback-escapes on 2 seeds of 3 and forward-guards on 1; both are required
-through their probe only. RESULTS.md has the indices.
+supply-recheck, calls-edge, callback-writes, callback-aliases, callback-env,
+once-through-call, branch-live; borrowed-supply against the per-call
+checker). callback-escapes is caught on 2 seeds of 3 and forward-guards on
+none; both are required through their probe only. Of the source-level
+edits (`scripts/mutate.mjs`), the generator catches 26 of 43 on all three
+seeds (including six of the second review's nine) and two more on two
+(callbackescapes, and recwritesown, which removes a mask);
+RESULTS.md has every index.
 
 **Rows exercised.** `withWrites` counts executions, not which rows a write
 depends on. The checker records the rows each check exercised; over the
-accepted programs that write (three seeds, RESULTS.md): callback W 1252,
-callback argument in res 2995, env in res 319, fresh in res 3328, xres yes
-5865 / no 46, E on a callback argument 95, xreq on one 99 and its edge 99,
-guards forwarded and supplies transferred to the caller's input 134 each,
-supply owned bit cleared at a step end 237 and at the caller 981, a summary
-reused after re-asking its guards 881. Never hit: ⊤ in a callback's res, E on
-a callback's environment.
+accepted programs that write (three seeds, RESULTS.md): callback W 1214,
+callback argument in res 2420, env in res 279, fresh in res 2063, xres yes
+4211 / no 75, E on a callback argument 162, xreq on one 187 and its edge
+187, guards forwarded and supplies transferred to the caller's input 194
+each, supply owned bit cleared at a step end 323 and at the caller 770, a
+summary reused after re-asking its guards 856. Never hit: ⊤ in a callback's
+res, E on a callback's environment.
 
 **Tested only by fixtures or not at all:**
 * recursion inside a traversal or focus step — one hand-written fixture; the
-  generator never produces it (both checkers now refuse it as a limit);
+  generator never produces it (both checkers refuse it as a limit);
+* mutual recursion — generated (a pair recursing through each other's
+  closures), always rejected, as a limit when the checker reaches the cycle;
 * higher-order recursion, function values below an input path, callbacks with
   function-typed parameters or results — explicit limits, never accepted;
 * the `need` row, as a separate fact (DESIGN.md: argued, not checked, to be
@@ -162,15 +174,20 @@ a callback's environment.
 
 ## Known gaps
 
-Mutants no program has yet distinguished. None is claimed equivalent; each
-names the generator change that would be needed to reach it.
+Holes no generated program distinguished in 3 × 20000 v5 trials. For each,
+either what would reach it, or why we believe no program can (an argument,
+not a proof).
 
-| Mutant | What it weakens | Evidence | What would reach it |
+| Mutant | What it weakens | Evidence | Analysis |
 |---|---|---|---|
-| `callback-requires` (flag) | a callback's xreq not published as the caller's xreq | changed no verdict in 20000 trials (seed 20261011) | the xreq edge and the callee's own exclusivity check reject the same programs; a callback that requires exclusivity of an argument whose outside holders only the caller sees, with the edge also weakened |
-| `requires-edge` (flag) | xreq ⇒ exclusive supply unchecked | changed no verdict | as above: published xreq covers it; programs where a step's supply loses exclusivity between the call and the caller |
-| `transfer-supplies` (flag) | a callee's supplies to our own input dropped | changed no verdict | a wrapper whose callee supplies a borrowed cell to the forwarded callback, observable only through the edge (the forwarded W guards already cover the callee's writes) |
-| source `xres`, `once`, `nestedsep`, `reqexcloutside`, `recvalidate`, `tsupplyexcl`, `escapeowned` | the review's other seven | not caught on 3 seeds (`regressions/source-mutants-v4.log`) | `xres`/`nestedsep`: storing a non-exclusive nested value into a three-level container and consuming two levels down; `once`: a once closure called twice where the creation demand does not already reject; `recvalidate`: recursion whose candidate changes in the last round; the rest: not analysed |
+| `recwrites` (review) | a recursive call's W rows are not demanded at the call | probe `Rec` still rejected under it, by "recursive call does not preserve entry ownership assumptions"; 0/3 seeds | **Masked.** A recursive call re-checks that every input path owned at entry is still owned at the call (`canonicalOwned`: individually owned, not live later, not another operand's) — the same Unescaped/Dead/Disjoint test the W demand makes. A W row the summary publishes on a path not owned at entry is demanded at the outermost caller, whose canonical-ownership test of that same actual failed for the same reasons, so the program is rejected there. Removing both rules (`recwritesown`) is caught on 2 seeds of 3 (2717, 1176), so the generator does reach recursive writes. |
+| `symenv` (review) | a callback's own environment is not an "other operand" when its supplies are marked owned | probe `SymEnv` still rejected under it, by "supply edge"; 0/3 | **Masked.** Every supply is re-checked where its call is known (`recheckSupplies` at `callKnown`, against `otherPaths`, which include the callback's capture paths), so a supplied argument that the callback's environment also holds loses its owned bit there and the W ⇒ owned edge rejects. The summary-side test is redundant with that re-check, which `supply-recheck` (caught 3/3) controls. |
+| `keepsany` (review) | focus keeps exclusivity when the result's paths name *any* parameter path | 0/3; no hand-written program found | **Argued equivalent.** A focus scope has one parameter (the element), so the weakened test accepts a result whose path `p` holds the element's cells from another path `q` of the same type: a permutation of the element's own arrays (e.g. swapping two list fields of a record). `keepsShape` still requires the result deep-exclusive and its paths separated, so no array repeats inside it, and the arrays all came from the replaced element, so none is shared with another position. A later consuming focus meets the joined element, whose fields now name both origins, and fails separation. |
+| `forward-guards` (flag) | a callee's guards on our input are not re-asked | probe only; v4 caught it on 1 seed, v5 changes no verdict in 20000 trials (row hit 194 times) | reached by `mapVia` publishing a row in v4; v5 dilutes those programs. A wrapper whose callee's cached summary is reused for a callback of a different class |
+| `callback-requires`, `requires-edge` (flags) | a callback's xreq not published / xreq ⇒ exclusive supply unchecked | change no verdict (xreq rows hit 187 times) | the published xreq and the edge reject the same programs; reaching either alone needs a callback requiring exclusivity of an argument whose outside holders only the caller sees, with the other also weakened |
+| `transfer-supplies` (flag) | a callee's supplies to our own input dropped | changes no verdict (194 hits) | a wrapper whose callee supplies a borrowed cell to the forwarded callback, observable only through the edge (forwarded W guards already cover the callee's writes) |
+| `borrowedsupply` (source) | borrowed source elements dropped from a step's re-check | 0/3 under summaries; caught under the per-call checker | see "Borrowed supply under summaries" |
+| source `xres`, `once`, `nestedsep`, `reqexcloutside`, `recvalidate`, `tsupplyexcl`, `escapeowned` | the first review's other seven | 0/3 under v4 and v5 | `xres`/`nestedsep`: storing a non-exclusive nested value into a three-level container and consuming two levels down; `once`: a once closure called twice where the creation demand does not already reject; `recvalidate`: recursion whose candidate changes in the last round; the rest: not analysed |
 
 ## Summary layer: rows and their controls
 
@@ -179,24 +196,29 @@ names the generator change that would be needed to reach it.
 | use W through a callback | `consumes` from `W∈use_g(k,p)` guards | `--mutant=callback-writes` | probe; generator 3/3 |
 | use E through a callback | escapes from `E∈use_g(k,p)` | `--mutant=callback-escapes` | probe; generator 2/3 |
 | res, A | result built from `π_k.p∈res(q)`, `env∈res(q)`, fresh, shared, ⊤ guards | `--mutant=callback-aliases`, `--mutant=callback-env` | probe; generator 3/3 |
-| forwarding | a callee's guards on our input re-asked as ours | `--mutant=forward-guards` | probe; generator 1/3 |
-| xres | `xres(q)` guards | `--mutant=callback-xres` | probe; generator 3/3 (from the fresh-nested/fresh-tower families, not the callback families) |
+| forwarding | a callee's guards on our input re-asked as ours | `--mutant=forward-guards` | probe; generator 0/3 (v4: 1/3) |
+| xres | `xres(q)` guards | `--mutant=callback-xres` | probe; generator 3/3 |
 | supply owned | demand test at the call, re-checked where the scope ends and at the caller | `--mutant=supply-recheck` | probe; generator 3/3 |
 | edge W ⇒ owned | at a call that knows the callback | `--mutant=supply-edge` | probe; generator 3/3 |
 | calls, edge once ⇒ ≤1 | counted per slot, many in a step or recursion | `--mutant=calls-edge` | probe; generator 3/3 |
+| once consumed at a callee's call | a once function actual the callee calls is demanded, with its written captures | `--mutant=once-through-call` | probes; generator 3/3 |
 | guards | cache reused only where every guard answers the same | `--mutant=guard-reuse` | probe; generator 3/3 |
-| xreq, edge xreq ⇒ exclusive | published xreq, and checked at a call that knows the callback | `callback-requires`, `requires-edge` | known gaps (hit 99 times, no verdict change) |
-| supply transfer | a callee's supplies to our input become ours | `transfer-supplies` | known gap (hit 134 times, no verdict change) |
+| xreq, edge xreq ⇒ exclusive | published xreq, and checked at a call that knows the callback | `callback-requires`, `requires-edge` | known gaps (hit 187 times, no verdict change) |
+| supply transfer | a callee's supplies to our input become ours | `transfer-supplies` | known gap (hit 194 times, no verdict change) |
 | need | not a separate row | — | — |
+
+Liveness has its own required control, `--mutant=branch-live` (a
+conditional's nonzero arm contributes no uses; the second review's
+`branchlive`): probe, generator 3/3.
 
 ## Borrowed supply under summaries
 
 The review's `borrowed-supply` mutant drops the borrowed source's elements
 from the holders a non-consuming traversal re-checks its step's writes and
 supplies against. In the per-call checker it is load-bearing, and the
-generator catches it (first indices 249–1692). Under summaries the line is
+generator catches it (first indices 182–830 under v5; 249–1692 under v4). Under summaries the line is
 **live**: `ownership verdict-diff --mutant=borrowed-supply` shows it rejects
-21, 28 and 17 programs per 20000 trials (seeds 20261011, 17, 271828) that its
+33, 40 and 35 programs per 20000 v5 trials (seeds 20261011, 17, 271828; 21, 28, 17 under v4) that its
 removal would accept, and none of those disagree when run. A typical one folds
 `borrowOrGrow` over three fresh rows: the borrowed row is written once and
 never read again. The line is kept. That no program can distinguish it is

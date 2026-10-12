@@ -74,7 +74,15 @@ escape ordinary call: expected=false actual=false Except.error "Unescaped: progr
 escape traversal: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
 recursion inside a step (per-call checker accepted it): expected=false actual=false Except.error "limit: recursive call inside a traversal or focus step"
 T46 borrowed row read again: expected=false actual=false Except.error "supply edge: a callback writes a supply that is not owned"
+wrapper writes its callback's returned capture: expected=true actual=true 
+write through a callback's environment, then call it again: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+focus body pushes its own container: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+once closure called by a callee, then observed: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+close returns a once closure's capture, a callee calls it: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+read only in the nonzero arm after a push: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
 probe disjoint under mutant disjoint: corrected=Except.error "Disjoint: another operand path holds the written cell" disagrees=true
+probe focus body pushes its own container under mutant disjoint: corrected=Except.error "Disjoint: another operand path holds the written cell" disagrees=true
+probe read only in the nonzero arm after a push under mutant branch-live: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
 probe T46 two rows under mutant borrowed-supply (per-call checker): corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
 probe traversal over [c, c] under mutant traversal-exclusive: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=true
 probe captured push per iteration under mutant many-calls: corrected=Except.error "many calls: traversal step consumes a capture or once closure" disagrees=true
@@ -91,4 +99,6 @@ probe wrapper returns its argument under mutant callback-aliases: corrected=Exce
 probe map over a captured list under mutant callback-env: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=true
 probe mapVia publishes a row, then the row is pushed under mutant callback-escapes: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=true
 probe mapVia forwards map's guards about its callback under mutant forward-guards: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=true
-fixtures=76 passed=true
+probe once closure called by a callee, then observed under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
+probe close returns a once closure's capture, a callee calls it under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
+fixtures=82 passed=true
