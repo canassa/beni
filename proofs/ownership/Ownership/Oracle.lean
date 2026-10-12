@@ -2,6 +2,7 @@ import Ownership.Library
 import Ownership.OracleLegacy
 import Ownership.Semantics
 import Ownership.Generator
+import Ownership.Reinfer
 
 namespace Ownership.Oracle
 
@@ -306,8 +307,17 @@ def compare (p : Program) : Outcome :=
   | .ok a, .ok b => if a == b then .equal else .mismatch a b
   | a,b => .inconclusive s!"value={repr a}; in-place={repr b}"
 
+/-- The verdict of the selected checker: the summary layer, or the frozen
+    per-call re-inference checker when `config.reinfer`. -/
+def verdictStats (p : Program) (config : Config := {}) : Except String (Nat × Nat) :=
+  if config.reinfer then (Reinfer.check p config).map (fun _ => (0, 0))
+  else (check p config).map (fun a => (a.computed, a.reused))
+
+def verdictOf (p : Program) (config : Config := {}) : Except String Unit :=
+  (verdictStats p config).map (fun _ => ())
+
 def disagrees (p : Program) (config : Config) : Bool :=
-  (typecheck p).isOk && (check p config).isOk &&
+  (typecheck p).isOk && (verdictOf p config).isOk &&
     match compare p with | .mismatch .. => true | _ => false
 
 def atomReductions : Atom → List Atom
@@ -366,10 +376,21 @@ structure Counts where
   executionErrors : Nat := 0
   mismatches : Nat := 0
   withWrites : Nat := 0
+  /-- Cross-check: verdicts that differ between the two checkers, and
+      programs only the other checker accepts that then disagree. -/
+  onlyThis : Nat := 0
+  onlyOther : Nat := 0
+  otherMismatches : Nat := 0
+  /-- Summaries computed and call sites served from the cache, over accepted programs. -/
+  summariesComputed : Nat := 0
+  summariesReused : Nat := 0
   deriving Repr
 
 def Counts.line (c : Counts) : String :=
-  s!"candidates={c.candidates} distinct={c.distinct} typed={c.typed} accepted={c.accepted} withWrites={c.withWrites} rejected={c.rejected} limits={c.limits} typeErrors={c.typeErrors} executionErrors={c.executionErrors} mismatches={c.mismatches}"
+  s!"candidates={c.candidates} distinct={c.distinct} typed={c.typed} accepted={c.accepted} withWrites={c.withWrites} rejected={c.rejected} limits={c.limits} typeErrors={c.typeErrors} executionErrors={c.executionErrors} mismatches={c.mismatches}" ++
+  (if c.onlyThis + c.onlyOther + c.otherMismatches > 0 then
+    s!" cross-only-this={c.onlyThis} cross-only-other={c.onlyOther} cross-other-mismatches={c.otherMismatches}" else "") ++
+  s!" summaries-computed={c.summariesComputed} summaries-reused={c.summariesReused}"
 
 /-- Generator v4 keeps the eleven v3 template families and replaces the v3
     `anf-chain`, whose final record kept every variable live (so none of its
@@ -408,16 +429,20 @@ structure Options where
   /-- Stop at the first accepted disagreement (negative controls). -/
   stopAtFirst : Bool := false
   quiet : Bool := false
+  /-- Also run the other checker on every candidate and count verdicts that
+      differ; a program only the other checker accepts is executed too. -/
+  crossCheck : Bool := false
 
 def Options.negative (o : Options) : Bool :=
   o.config.oldFreshRule || o.config.dropTraversalEscapes || o.config.mutant.isSome
 
 def Options.label (o : Options) : String :=
-  match o.config.mutant with
-  | some m => s!"mutant-{m.name}"
-  | none => if o.config.oldFreshRule then (if o.version == 1 then "legacy-old" else s!"old-v{o.version}")
-    else if o.config.dropTraversalEscapes then (if o.version == 4 then "old-escape-v4" else "old-escape")
-    else if o.version == 4 then "soundness-v4" else "soundness"
+  let base := match o.config.mutant with
+    | some m => s!"mutant-{m.name}"
+    | none => if o.config.oldFreshRule then (if o.version == 1 then "legacy-old" else s!"old-v{o.version}")
+      else if o.config.dropTraversalEscapes then (if o.version == 4 then "old-escape-v4" else "old-escape")
+      else if o.version == 4 then "soundness-v4" else "soundness"
+  if o.config.reinfer then base ++ "-reinfer" else base
 
 structure RunResult where
   ok : Bool
@@ -456,7 +481,19 @@ def runWith (o : Options) : IO RunResult := do
       IO.println s!"TYPE GENERATION ERROR seed={o.seed} index={index}: {msg}\n{repr p}"
       return { ok := false, counts }
     | .ok _ => counts := { counts with typed := counts.typed + 1 }
-    let verdict := check p config
+    let stats := verdictStats p config
+    let verdict := stats.map (fun _ => ())
+    if o.crossCheck then
+      let other := verdictOf p { config with reinfer := !config.reinfer }
+      if verdict.isOk != other.isOk then
+        counts := if verdict.isOk then { counts with onlyThis := counts.onlyThis + 1 }
+          else { counts with onlyOther := counts.onlyOther + 1 }
+        if !o.quiet then
+          IO.println s!"CROSS-CHECK VERDICTS DIFFER index={index} family={family} this={repr verdict} other={repr other}"
+        if other.isOk then
+          if let .mismatch .. := compare p then
+            counts := { counts with otherMismatches := counts.otherMismatches + 1 }
+            IO.println s!"CROSS-CHECK: only the other checker accepts index={index}, and it disagrees:\n{repr p}"
     families := families.map fun (f,c,lo,hi) => if f == family then
       (f, { c with typed := c.typed+1, accepted := c.accepted+(if verdict.isOk then 1 else 0), rejected := c.rejected+(if verdict.isOk then 0 else 1), limits := c.limits+(match verdict with | .error m => if m.startsWith "limit:" then 1 else 0 | _ => 0) },lo,hi) else (f,c,lo,hi)
     match verdict with
@@ -465,7 +502,10 @@ def runWith (o : Options) : IO RunResult := do
         rejected := counts.rejected + 1,
         limits := counts.limits + (if msg.startsWith "limit:" then 1 else 0) }
     | .ok _ =>
-      counts := { counts with accepted := counts.accepted + 1 }
+      let (made, reused) := match stats with | .ok s => s | .error _ => (0, 0)
+      counts := { counts with
+        accepted := counts.accepted + 1, summariesComputed := counts.summariesComputed + made,
+        summariesReused := counts.summariesReused + reused }
       match compare p with
       | .equal =>
         if InPlaceSemantics.writeCount p > 0 then
@@ -482,7 +522,7 @@ def runWith (o : Options) : IO RunResult := do
           (f,{ c with mismatches := c.mismatches+1 },lo,hi) else (f,c,lo,hi)
         if o.negative && found.isSome then continue
         let minimal := shrink p config
-        let report := s!"{header} index={index} family={family}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (check minimal)}\n"
+        let report := s!"{header} index={index} family={family}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (verdictOf minimal { reinfer := config.reinfer })}\n"
         if !o.quiet then
           IO.FS.createDirAll "regressions"
           IO.FS.writeFile s!"regressions/{o.label}-{o.seed}-{index}.txt" report
@@ -490,7 +530,7 @@ def runWith (o : Options) : IO RunResult := do
         if !o.negative then
           IO.println s!"STOP corrected-rule soundness finding: {counts.line}"
           return { ok := false, counts, firstMismatch := some index }
-        if (check minimal).isOk then
+        if (verdictOf minimal { reinfer := config.reinfer }).isOk then
           IO.println s!"STOP {o.label} mismatch also accepted by corrected rule (index {index})"
           return { ok := false, counts, firstMismatch := some index }
         found := some index
@@ -514,7 +554,7 @@ def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
     let ((f, p), next) := (generateVersion version).run state
     state := next
     if f != family then continue
-    let key := match check p with
+    let key := match verdictOf p with
       | .error m => (m.splitOn ":").head!
       | .ok _ => if InPlaceSemantics.writeCount p > 0 then "accepted with write" else "accepted without write"
     table := match table.find? (·.1 == key) with
@@ -523,11 +563,17 @@ def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
   for (k, n) in table.mergeSort (fun a b => a.2 ≥ b.2) do IO.println s!"{n}\t{k}"
 
 /-- Every negative control must be caught by the generator alone within one
-    normal run's budget: each run stops at its first accepted disagreement. -/
-def controls (count seed : Nat) (version := 4) : IO Bool := do
+    normal run's budget: each run stops at its first accepted disagreement.
+    Summary-row mutants exist only in the summary checker. `borrowed-supply`
+    is run against the per-call checker even here: under summaries its rule
+    is subsumed (COVERAGE.md, "Borrowed supply"), so no program can tell. -/
+def controls (count seed : Nat) (version := 4) (reinfer := false) : IO Bool := do
   let named : List (String × Config) :=
-    [("old-rule", { oldFreshRule := true }), ("old-escape-rule", { dropTraversalEscapes := true })] ++
-    Mutant.all.map fun m => (s!"mutant={m.name}", { mutant := some m })
+    [("old-rule", { oldFreshRule := true, reinfer }), ("old-escape-rule", { dropTraversalEscapes := true, reinfer })] ++
+    (Mutant.all.filter (fun m => !reinfer || !m.summaryRow)).map fun m =>
+      if m == .borrowedSupply && !reinfer then
+        (s!"mutant={m.name} (per-call checker)", { mutant := some m, reinfer := true })
+      else (s!"mutant={m.name}", { mutant := some m, reinfer })
   let mut ok := true
   let mut rows : List String := []
   for (name, config) in named do
@@ -535,7 +581,7 @@ def controls (count seed : Nat) (version := 4) : IO Bool := do
     rows := rows ++ [s!"{name}: caught={r.firstMismatch.isSome && r.ok} first-index={r.firstMismatch.map toString |>.getD "none"} elapsed-ms={r.elapsed}"]
     if !r.ok then ok := false
   for row in rows do IO.println s!"CONTROL {row}"
-  IO.println s!"controls budget={count} seed={seed} generator-version={version} passed={ok}"
+  IO.println s!"controls budget={count} seed={seed} generator-version={version} checker={if reinfer then "reinfer" else "summaries"} passed={ok}"
   pure ok
 
 end Ownership.Oracle

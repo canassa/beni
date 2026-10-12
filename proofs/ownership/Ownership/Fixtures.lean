@@ -225,6 +225,33 @@ def probeDisjoint : Program := {
     body := .letE 2 (push (v 0)) (.prim .length [v 1]) }]
   main := .letE 0 list (.letE 1 (.closure 0 []) (.app (v 1) [v 0, v 0])) }
 
+/-- T46 where the rows die with the fold: `[r1, r2, r1]`. The first step
+    returns the borrowed r1, the second pushes onto it, the third reads it
+    again as an element. Only the traversal's borrowed-source rule rejects
+    it; the caller sees no live row. -/
+def borrowedReread : Program := {
+  declarations := [Library.foldl (.list .int) (.list .int),
+    { name := "borrowOrGrow", parameters := [.list .int,.list .int], result := .list .int,
+      body := .letE 2 (.prim .length [v 1]) (.branch (v 2) (.atom (v 0)) (push (v 1))) }]
+  main := .letE 0 list <| .letE 9 (.prim (.literal .int) [.int 2]) <|
+    .letE 1 (.prim (.literal (.list .int)) [v 0, v 9, v 0]) <|
+    .letE 2 (.prim (.literal .int) []) <| .letE 3 (.closure 0 []) <| .letE 4 (.closure 1 []) <|
+    .app (v 3) [v 1,v 2,v 4] }
+
+/-- A recursive call inside a range step writes the captured `ys` on every
+    iteration. The per-call checker analysed it with an empty summary and
+    accepted (value 8, in place 11); both checkers now refuse it as a limit. -/
+def recursionInStep : Program := {
+  declarations := [{
+    name := "rec", parameters := [.int, .list .int], result := .int,
+    body := .branch (v 0) (.atom (.int 0)) <|
+      .letE 2 (.prim .push [v 1, v 0]) <|
+      .letE 3 (.prim .sub [v 0, .int 1]) <|
+      .letE 4 (.traverse .range (.int 2) (.int 0) 5 6 7
+          (.letE 8 (.recur [v 3, v 2]) (.prim .add [v 7, v 8]))) <|
+      .letE 9 (.prim .length [v 2]) (.prim .add [v 9, v 4]) }]
+  main := .letE 0 list <| .letE 1 (.closure 0 []) <| .app (v 1) [.int 2, v 0] }
+
 /-- Traversal exclusive source: a consuming traversal over `[c, c]`. -/
 def probeTraversalExclusive : Program := {
   main := .letE 0 list <| .letE 1 (.prim (.literal (.list .int)) [v 0, v 0]) <|
@@ -258,14 +285,61 @@ def probeKeepsShape : Program := {
     .letE 4 (.focus (v 2) (.int 0) 5 (.atom (v 3))) <|
     .focus (v 4) (.int 0) 6 (push (v 6)) }
 
-def probes : List (String × Program × Mutant) := [
-  ("disjoint", probeDisjoint, .disjoint),
-  ("T46 two rows", borrowedAccumulator, .borrowedSupply),
-  ("traversal over [c, c]", probeTraversalExclusive, .traversalExclusive),
-  ("captured push per iteration", probeManyCalls, .manyCalls),
-  ("copy of [c, c]", probeCopyExclusive, .copyExclusive),
-  ("map identity then spine push", probeCloseSource, .closeSource),
-  ("focus breaks shape", probeKeepsShape, .keepsShape)]
+/-! Probes for the summary rows, over the general family's declaration table. -/
+
+open Generator in
+/-- Two folds of the same live rows: `grow` then `borrowOrGrow`. Reusing the
+    first call's summary for the second forgets that its result may be a row. -/
+def probeGuardReuse : Program := {
+  declarations := decls
+  main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 2]) <|
+    .letE 2 (.prim (.literal tL) [v 0, v 1]) <|
+    .letE 3 (.closure foldNL []) <| .letE 4 (.closure grow []) <| .letE 5 (.closure borrowOrGrow []) <|
+    .letE 6 (.prim (.literal .int) []) <| .letE 7 (.prim (.literal .int) []) <|
+    .letE 8 (.app (v 3) [v 2, v 6, v 4]) <| .letE 9 (.app (v 3) [v 2, v 7, v 5]) <|
+    .letE 10 (.prim .push [v 9, .int 3]) (.prim .record [v 10, v 8, v 2]) }
+
+open Generator in
+/-- `applyThenRead xs bump`: the list is pushed by the callback and then read. -/
+def probeSupplyEdge : Program := {
+  declarations := decls
+  main := .letE 0 list <| .letE 1 (.closure applyThenRead []) <| .letE 2 (.closure bump []) <|
+    .app (v 1) [v 0, v 2] }
+
+open Generator in
+/-- `foldKeep rows [] borrowOrGrow`: the borrowed first row is pushed by the
+    second step and read again after the loop. Owned inside the step, not
+    where the step ends. -/
+def probeSupplyRecheck : Program := {
+  declarations := decls
+  main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 2]) <|
+    .letE 2 (.prim (.literal tL) [v 0, v 1]) <| .letE 3 (.prim (.literal .int) []) <|
+    .letE 4 (.closure foldKeep []) <| .letE 5 (.closure borrowOrGrow []) <|
+    .app (v 4) [v 2, v 3, v 5] }
+
+open Generator in
+/-- A once closure (it pushes its capture) handed to map, which calls it per element. -/
+def probeCallsEdge : Program := {
+  declarations := decls
+  main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 0, .int 1]) <|
+    .letE 2 (.closure mapIL []) <| .letE 3 (.closure capPush [v 0]) <|
+    .app (v 2) [v 1, v 3] }
+
+/-- Probes: name, program, mutant, and whether the control is meaningful only
+    for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
+def probes : List (String × Program × Mutant × Bool) := [
+  ("disjoint", probeDisjoint, .disjoint, false),
+  ("T46 two rows", borrowedAccumulator, .borrowedSupply, true),
+  ("traversal over [c, c]", probeTraversalExclusive, .traversalExclusive, false),
+  ("captured push per iteration", probeManyCalls, .manyCalls, false),
+  ("copy of [c, c]", probeCopyExclusive, .copyExclusive, false),
+  ("map identity then spine push", probeCloseSource, .closeSource, false),
+  ("focus breaks shape", probeKeepsShape, .keepsShape, false),
+  ("two folds of the same rows", probeGuardReuse, .guardReuse, false),
+  ("T59 map shared", nestedMap true, .callbackXres, false),
+  ("callback writes a list read later", probeSupplyEdge, .supplyEdge, false),
+  ("fold reads its rows after the loop", probeSupplyRecheck, .supplyRecheck, false),
+  ("once closure handed to map", probeCallsEdge, .callsEdge, false)]
 
 def scalarIndexOrder : Program := {
   main := .letE 0 list <| .letE 1 (.prim .at [v 0,.int 0,.int 0]) <|
@@ -414,7 +488,9 @@ def all : List Fixture := [
   ⟨"generated map old-rule regression",GeneratedRegressions.oldSeed20261011Index8,false⟩,
   ⟨"generated initialize old-rule regression",GeneratedRegressions.oldSeed20261011Index10,false⟩,
   ⟨"escape ordinary call",escapeCall,false⟩,
-  ⟨"escape traversal",escapeTraversal,false⟩ ]
+  ⟨"escape traversal",escapeTraversal,false⟩,
+  ⟨"recursion inside a step (per-call checker accepted it)",recursionInStep,false⟩,
+  ⟨"T46 borrowed row read again",borrowedReread,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true
@@ -439,11 +515,18 @@ def run : IO Bool := do
     if !Oracle.disagrees p { dropTraversalEscapes := true } || (check p).isOk then
       IO.println "ESCAPE NEGATIVE CONTROL FAILED"
       ok := false
-  for (name, p, m) in probes do
-    let caught := Oracle.disagrees p { mutant := some m } && !(check p).isOk
-    IO.println s!"probe {name} under mutant {m.name}: corrected={repr (check p)} mutant-accepts={(check p { mutant := some m }).isOk} disagrees={caught}"
+  for (name, p, m, reinfer) in probes do
+    let corrected := Oracle.verdictOf p { reinfer }
+    let caught := Oracle.disagrees p { mutant := some m, reinfer } && !corrected.isOk
+    IO.println s!"probe {name} under mutant {m.name}{if reinfer then " (per-call checker)" else ""}: corrected={repr corrected} disagrees={caught}"
     if !caught then
       IO.println s!"MUTANT NEGATIVE CONTROL FAILED: {m.name}"
+      ok := false
+  -- Both checkers on every verdict fixture: the per-call checker is the
+  -- cross-check, and must agree with the intended verdicts too.
+  for f in all do
+    if (Reinfer.check f.program).isOk != f.accepted then
+      IO.println s!"PER-CALL CHECKER VERDICT DIFFERS: {f.id} expected={f.accepted}"
       ok := false
   IO.println s!"fixtures={all.length} passed={ok}"
   pure ok
