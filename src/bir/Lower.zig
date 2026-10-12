@@ -75,6 +75,8 @@ const Index = Inst.Index;
 const SubRange = Bir.SubRange;
 const SymbolIndex = Bir.SymbolIndex;
 const none_u32 = std.math.maxInt(u32);
+/// `Lower.own_slot` when no ownership word may stand at the type being lowered.
+const no_own_slot = std.math.maxInt(u32) - 2;
 
 const Lower = @This();
 
@@ -179,6 +181,16 @@ cur_token: TokenIndex = 0,
 /// is one the declaration RECEIVES, the only kind `sync` may mark
 /// (transparent-effects-proposal.md §15.2).
 receives: bool = false,
+/// The position the next `lowerType` call lowers, while a top-level
+/// signature is lowered: a parameter's index, `Bir.own_result`, or
+/// `no_own_slot` — an ownership word stands only there
+/// (ownership-checker.md §24.4). Read and cleared on entry.
+own_slot: u32 = no_own_slot,
+/// The signature's root node while it is lowered: its arrow's parameters
+/// and result are the positions a word may stand in front of.
+sig_root: u32 = no_own_slot,
+/// The words met while lowering one signature: position, word, token.
+own_seen: std.ArrayList([3]u32) = .empty,
 cur_decl: u32 = 0,
 /// While lowering a `via` Atom, lexical locals resolve normally and every
 /// nonlocal name stays as an unresolved schema-expression leaf for resolution.
@@ -388,6 +400,7 @@ pub fn lower(
         l.type_vars_seen.deinit(scratch);
         l.type_param_index.deinit(scratch);
         l.annotation_vars.deinit(scratch);
+        l.own_seen.deinit(scratch);
         l.rows.deinit(scratch);
         scratch.free(l.decl_stamp);
         scratch.free(l.ctor_stamp);
@@ -1124,6 +1137,18 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
     if (tag == .foreign_type) {
         try l.checkForeign(header, name_token, name_token - 2);
         try l.checkEquatableMarker(header.equatable_token);
+        // `crossing` (ownership-checker.md §24.2): a value of the type holds
+        // no list, a fact only the package that declares it may state.
+        if (header.crossing_token.unwrap()) |t| {
+            if (!l.options.core and !l.options.platform) {
+                try l.reportOwn(t, .own_outside_platform);
+            } else {
+                const d = &l.decls.items[index];
+                d.own_start = @intCast(l.extra.items.len);
+                try l.extra.appendSlice(l.gpa, &.{ Bir.own_type, Ast.OwnWord.crossing.bit() });
+                d.own_end = @intCast(l.extra.items.len);
+            }
+        }
     }
 }
 
@@ -1171,12 +1196,12 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
             .definition => try l.lowerDefinition(src.node, src.annotation),
             .annotation => {
                 const ann = l.tree.fullAnnotation(src.node);
-                l.decls.items[i].annotation = (try l.lowerRootType(ann.type_expr)).toOptional();
+                l.decls.items[i].annotation = (try l.lowerSignature(ann.type_expr)).toOptional();
                 try l.lowerWhere(ann.header, ann.name);
             },
             .foreign_value => {
                 const fv = l.tree.fullForeignValue(src.node);
-                const annotation = try l.lowerRootType(fv.type_expr);
+                const annotation = try l.lowerSignature(fv.type_expr);
                 l.decls.items[i].annotation = annotation.toOptional();
                 // §3.6: a `foreign` has no definition to count parameters
                 // from, so its `params` is what its ANNOTATION declares —
@@ -1575,7 +1600,7 @@ fn lowerDefinition(l: *Lower, node: NodeIndex, annotation: Node.OptionalIndex) A
     l.annotation_vars.clearRetainingCapacity();
     if (annotation.unwrap()) |ann| {
         const a = l.tree.fullAnnotation(ann);
-        l.decls.items[l.cur_decl].annotation = (try l.lowerRootType(a.type_expr)).toOptional();
+        l.decls.items[l.cur_decl].annotation = (try l.lowerSignature(a.type_expr)).toOptional();
         try l.annotation_vars.appendSlice(l.scratch_allocator, l.type_vars_seen.items);
         try l.lowerWhere(a.header, a.name);
     }
@@ -1986,11 +2011,136 @@ fn typeFnArity(l: *const Lower, inst: Index) u32 {
     return l.extra.items[at + 1] - l.extra.items[at];
 }
 
+/// A top-level signature: `lowerRootType`, with the ownership words in
+/// front of its arrow's parameters and its result recorded on the current
+/// declaration and checked (ownership-checker.md §24.4). The words are
+/// erased from the type itself.
+fn lowerSignature(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    l.own_seen.clearRetainingCapacity();
+    l.sig_root = node.int();
+    const t = try l.lowerRootType(node);
+    l.sig_root = no_own_slot;
+    l.own_slot = no_own_slot;
+    if (l.own_seen.items.len != 0) try l.recordOwnWords(t);
+    return t;
+}
+
+fn reportOwn(l: *Lower, token: TokenIndex, reading: Diagnostics.Item.Markup) Allocator.Error!void {
+    try l.diagnostics.append(l.gpa, .{ .code = .misplaced_ownership_word, .start = l.starts[token], .end = l.tokenEnd(token), .markup = reading });
+}
+
+/// The words `own_seen` holds, checked against their positions and each
+/// other (§24.4), and kept as `Bir.OwnSlot` pairs on the declaration. A
+/// refused word is reported and dropped; the others stand.
+fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
+    const seen = l.own_seen.items;
+    if (!l.options.core and !l.options.platform) {
+        // Change 5(b) is not approved: one message per signature.
+        return l.reportOwn(seen[0][2], .own_outside_platform);
+    }
+    const W = Ast.OwnWord;
+    const result_words = W.fresh.bit() | W.exclusive.bit() | W.unknown.bit();
+    const fn_words = W.once.bit() | W.many.bit() | W.owned.bit();
+    const is_fn_type = l.insts.items(.tag)[t.int()] == .type_fn;
+    // Positions in order: every parameter's, then the result's.
+    std.mem.sort([3]u32, seen, {}, struct {
+        fn less(_: void, x: [3]u32, y: [3]u32) bool {
+            return if (x[0] != y[0]) x[0] < y[0] else x[2] < y[2];
+        }
+    }.less);
+    var i: usize = 0;
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    while (i < seen.len) {
+        const slot = seen[i][0];
+        var j = i;
+        while (j < seen.len and seen[j][0] == slot) j += 1;
+        defer i = j;
+        // Whether the parameter is a function written out (`sync` included,
+        // which lowers to the arrow it marks).
+        const param_fn = slot != Bir.own_result and is_fn_type and blk: {
+            const at = l.insts.items(.data)[t.int()].lhs;
+            const inst = l.extra.items[l.extra.items[at] + slot];
+            break :blk l.insts.items(.tag)[inst] == .type_fn;
+        };
+        var bits: u32 = 0;
+        var firsts: [16]TokenIndex = undefined;
+        for (seen[i..j]) |s| {
+            const word: W = @fromBackingInt(@intCast(s[1]));
+            const b = word.bit();
+            const token: TokenIndex = s[2];
+            if (slot == Bir.own_result) {
+                if (b & (result_words | W.escaped.bit()) == 0) {
+                    try l.reportOwn(token, .own_parameter_word);
+                    continue;
+                }
+            } else {
+                if (b & result_words != 0) {
+                    try l.reportOwn(token, .own_result_word);
+                    continue;
+                }
+                if (b & fn_words != 0 and !param_fn) {
+                    try l.reportOwn(token, .own_not_function);
+                    continue;
+                }
+            }
+            const alone = W.unused.bit() | W.borrowed.bit();
+            const results = W.fresh.bit() | W.escaped.bit() | W.unknown.bit();
+            const impossible = bits & b != 0 or
+                (bits != 0 and (b & alone != 0 or bits & alone != 0)) or
+                (b | bits) & (W.aliased.bit() | W.returned.bit()) == (W.aliased.bit() | W.returned.bit()) or
+                (b == W.consumed.bit() and param_fn) or
+                (b | bits) & (W.once.bit() | W.many.bit()) == (W.once.bit() | W.many.bit()) or
+                (slot == Bir.own_result and @popCount((b | bits) & results) > 1);
+            if (impossible) {
+                try l.reportOwn(token, .own_impossible);
+                continue;
+            }
+            bits |= b;
+            firsts[s[1]] = token;
+        }
+        // The words that need another beside them.
+        if (bits & W.owned.bit() != 0 and bits & (W.once.bit() | W.many.bit()) == 0) {
+            try l.reportOwn(firsts[@backingInt(W.owned)], .own_impossible);
+            bits &= ~W.owned.bit();
+        }
+        if (bits & W.exclusive.bit() != 0 and bits & W.fresh.bit() == 0) {
+            try l.reportOwn(firsts[@backingInt(W.exclusive)], .own_impossible);
+            bits &= ~W.exclusive.bit();
+        }
+        if (bits == 0) continue;
+        try l.pushScratch(slot);
+        try l.pushScratch(bits);
+    }
+    const pairs = l.scratchSince(mark);
+    if (pairs.len == 0) return;
+    const d = &l.decls.items[l.cur_decl];
+    d.own_start = @intCast(l.extra.items.len);
+    try l.extra.appendSlice(l.gpa, pairs);
+    d.own_end = @intCast(l.extra.items.len);
+}
+
 fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const main_token = l.tree.nodeMainToken(node);
     l.cur_token = main_token;
     const data = l.tree.nodeData(node);
+    // The position an ownership word in front of this type would describe:
+    // this type's only, never one inside it (ownership-checker.md §24.4).
+    const own_slot = l.own_slot;
+    l.own_slot = no_own_slot;
     switch (l.tree.nodeTag(node)) {
+        // An ownership word: recorded for its position and erased, so the
+        // type, the interface and the emitted code are what they are
+        // without it. One where no position takes it is `nested`.
+        .type_own => {
+            if (own_slot != no_own_slot) {
+                try l.own_seen.append(l.scratch_allocator, .{ own_slot, @backingInt(Ast.OwnWord.inSignature(l.tokenText(main_token)).?), main_token });
+                l.own_slot = own_slot;
+            } else {
+                try l.diagnostics.append(l.gpa, .{ .code = .misplaced_ownership_word, .start = l.starts[main_token], .end = l.tokenEnd(main_token), .markup = .own_nested });
+            }
+            return l.lowerType(l.tree.operand(node));
+        },
         .type_var => return l.lowerTypeVarMarked(l.tree.nodeMainToken(node), @fromBackingInt(@intCast(data.lhs))),
         .type_con => {
             const con = l.tree.fullTypeCon(node);
@@ -2016,9 +2166,17 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             // parameter of a parameter one it hands back.
             const outer = l.receives;
             l.receives = !outer;
-            for (fn_type.params) |param| try l.pushScratch(try l.lowerType(param));
+            // The signature's own arrow: its parameters and its result are
+            // where ownership words stand (ownership-checker.md §24.4).
+            const root = node.int() == l.sig_root;
+            if (root) l.sig_root = no_own_slot;
+            for (fn_type.params, 0..) |param, i| {
+                if (root) l.own_slot = @intCast(i);
+                try l.pushScratch(try l.lowerType(param));
+            }
             l.receives = outer;
             const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
+            if (root) l.own_slot = Bir.own_result;
             const result = try l.lowerType(fn_type.result);
             return l.addInstAt(main_token, .type_fn, @backingInt(range), result.int());
         },

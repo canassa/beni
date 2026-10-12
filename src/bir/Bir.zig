@@ -960,6 +960,22 @@ pub const Rung = enum(u8) {
     }
 };
 
+/// One position's ownership words (ownership-checker.md §24.2), two words of
+/// `extra`: `slot` — a parameter's index from 0, `own_result` or `own_type`
+/// — and `words`, bit `@intFromEnum(w)` per `Ast.OwnWord` written there.
+pub const OwnSlot = struct { slot: u32, words: u32 };
+/// `OwnSlot.slot` of the signature's result, or of the whole type of a
+/// `foreign` value that is not a function.
+pub const own_result: u32 = std.math.maxInt(u32);
+/// `OwnSlot.slot` of a `foreign type`'s own words: `crossing`.
+pub const own_type: u32 = std.math.maxInt(u32) - 1;
+
+/// The ownership words of declaration `d`, in position order.
+pub fn ownSlots(b: *const Bir, d: Decl) []const [2]u32 {
+    const words = b.extra[d.own_start..d.own_end];
+    return @as([*]const [2]u32, @ptrCast(words.ptr))[0 .. words.len / 2];
+}
+
 pub const Decl = struct {
     kind: Kind,
     name: SymbolIndex,
@@ -1009,6 +1025,12 @@ pub const Decl = struct {
     /// none, which is every declaration outside the spike's fixtures.
     where_start: ExtraIndex,
     where_end: ExtraIndex,
+    /// The ownership words of the signature (ownership-checker.md §24.2),
+    /// as `OwnSlot` pairs in `extra[own_start..own_end]`: a position and the
+    /// bit set of `Ast.OwnWord`s written there. Empty for a declaration with
+    /// none, which is every declaration outside core and the platforms.
+    own_start: u32 = 0,
+    own_end: u32 = 0,
     /// `value`: the body expression. Else none.
     body: Inst.OptionalIndex,
     /// `schema`: root of the unresolved schema instruction graph. Else none.

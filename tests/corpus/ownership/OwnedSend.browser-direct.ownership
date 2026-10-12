@@ -11,10 +11,10 @@ module OwnedSend
   119:32 value Loaded: rejected need: Sub.listen sends what it returns, and it returns what Sub.listen hands it, which may be a list the sender still holds (§23.5)
   119:57 send <call List.range>: accepted call
   125:5 entry OwnedSend.shares model.rows: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
-  summary loads: π1 R, π1#Grow.0 RW, π1#Loaded.0 RA, π2 RA, π2.rows RAW, π2.rows[*] A; res .0 π2, .0.rows π1#Loaded.0 π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 fresh5{lost}, .1#Cmd.0[*]#Now.0⋆ ~fresh4{lost}, .1#Cmd.0[*]#Perform.0 fresh2{lost}, .1#Cmd.0[*]#Perform.0⋆ ~fresh1{lost}
-  summary fresh: res #Cmd.0 fresh3{lost}, #Cmd.0[*]#Now.0 fresh5{lost}, #Cmd.0[*]#Now.0⋆ ~fresh4{lost}, #Cmd.0[*]#Perform.0 fresh2{lost}, #Cmd.0[*]#Perform.0⋆ ~fresh1{lost}
-  summary reused: res #Cmd.0 fresh3{lost}, #Cmd.0[*]#Now.0 fresh5{lost}, #Cmd.0[*]#Now.0⋆ ~fresh4{lost}, #Cmd.0[*]#Perform.0 fresh2{lost}, #Cmd.0[*]#Perform.0⋆ ~fresh1{lost}
-  summary shares: π1 R, π2 RA, π2.rows RAS, π2.rows[*] A; res .0 π2, .0.rows π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 fresh5{lost}, .1#Cmd.0[*]#Now.0⋆ ~fresh4{lost}, .1#Cmd.0[*]#Perform.0 fresh2{lost}, .1#Cmd.0[*]#Perform.0⋆ ~fresh1{lost} ~π2.rows
+  summary loads: π1 R, π1#Grow.0 RW, π1#Loaded.0 RA, π2 RA, π2.rows RAW, π2.rows[*] A; res .0 π2, .0.rows π1#Loaded.0 π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
+  summary fresh: res #Cmd.0 fresh1
+  summary reused: res #Cmd.0 fresh1
+  summary shares: π1 R, π2 RA, π2.rows RAS, π2.rows[*] A; res .0 π2, .0.rows π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1{excl π2.rows} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇ π2.rows, .1#Cmd.0[*]#Perform.0◇◇ ~π2.rows
   summary view: π1.total R; res fresh1{lost}
   summary initial: res .rows fresh1
   demands 12: accepted 7 (fresh 0, call 2, param 3, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 5

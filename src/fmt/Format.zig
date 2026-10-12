@@ -1586,7 +1586,7 @@ const Measurer = struct {
     /// The first token a declaration occupies: its visibility words in
     /// source order, else `fallback` (the keyword before the name).
     fn headerFirst(_: *const Measurer, h: Ast.DeclHeader, fallback: TokenIndex) TokenIndex {
-        return h.pub_token.unwrap() orelse h.opaque_token.unwrap() orelse h.equatable_token.unwrap() orelse fallback;
+        return h.pub_token.unwrap() orelse h.opaque_token.unwrap() orelse h.crossing_token.unwrap() orelse h.equatable_token.unwrap() orelse fallback;
     }
 
     fn tokenText(m: *const Measurer, t: TokenIndex) []const u8 {
@@ -1929,6 +1929,13 @@ const Measurer = struct {
                 const inner = tree.operand(n);
                 try m.measure(inner);
                 m.set(n, m.w(inner) +| 5, main, m.last(inner));
+            },
+            // An ownership word, a space and the type it stands on
+            // (ownership-checker.md §24.3).
+            .type_own => {
+                const inner = tree.operand(n);
+                try m.measure(inner);
+                m.set(n, m.w(inner) +| m.tokenWidth(main) +| 1, main, m.last(inner));
             },
             // `a × b × c` (language.md §12.8, §12.9): its operands and ` × `
             // between them, on one line only when the author wrote it on one.
@@ -2830,6 +2837,10 @@ const Printer = struct {
             try p.space();
         }
         if (h.opaque_token.unwrap()) |t| {
+            try p.tok(t);
+            try p.space();
+        }
+        if (h.crossing_token.unwrap()) |t| {
             try p.tok(t);
             try p.space();
         }
@@ -4504,7 +4515,7 @@ const Printer = struct {
             .type_unit => try p.unitLeaf(main),
             .type_bottom => try p.tok(main),
             .type_paren => try p.wrapped(n, .type, indent),
-            .type_sync => {
+            .type_sync, .type_own => {
                 try p.tok(main);
                 try p.space();
                 try p.node(tree.operand(n), .type, indent);

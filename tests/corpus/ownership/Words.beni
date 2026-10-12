@@ -1,0 +1,101 @@
+-- ownership: the ownership words of core and the `node` platform
+-- (`ownership-checker.md` §24.8), each pinned by a verdict that depends on
+-- it. `String.join`, `String.fromList`, `Schema.print` and
+-- `Node.printLines` only read (`borrowed`): the list is written afterwards,
+-- accepted. `String.split`, `words`, `lines`, `toList` and `indexes` make a
+-- new array nobody else holds (`fresh exclusive`): an edit of their result
+-- is accepted, `call`. `Schema.parse` may return what the schema's own
+-- functions return (`unknown`): an edit of its answer is rejected
+-- `unknown`.
+import Node exposing (Program)
+import Schema
+import Ssr
+
+
+pub joined : String → String
+joined label =
+    parts = [ label ]
+    text = String.join parts ","
+    letters = [ 'a' ]
+    word = String.fromList letters
+    longer = [ …parts, text, word ]
+    more = [ …letters, 'b' ]
+    String.join longer (String.fromList more)
+
+
+pub printed : List Int → Int
+printed xs =
+    text = Schema.print (Schema.list Schema.int) xs
+    ys = [ …xs, 1 ]
+    case text of
+        Ok t →
+            String.length t + List.length ys
+
+        Err _ →
+            0
+
+
+pub fresh : String → Int
+fresh text =
+    a = [ …String.split text ",", "x" ]
+    b = [ …String.words text, "x" ]
+    c = [ …String.lines text, "x" ]
+    d = [ …String.toList text, 'x' ]
+    f = [ …String.indexes text "a", 0 ]
+    List.length a + List.length b + List.length c + List.length d + List.length f
+
+
+pub parsed : String → Int
+parsed text =
+    case Schema.parse (Schema.list Schema.int) text of
+        Ok xs →
+            List.length [ …xs, 1 ]
+
+        Err _ →
+            0
+
+
+pub printedWith : List Int → Int
+printedWith xs =
+    text = Schema.printWith (Schema.list Schema.int) Schema.defaultOptions xs
+    ys = [ …xs, 1 ]
+    case text of
+        Ok t →
+            String.length t + List.length ys
+
+        Err _ →
+            0
+
+
+pub parsedWith : String → Int
+parsedWith text =
+    case Schema.parseWith (Schema.list Schema.int) Schema.defaultOptions text of
+        Ok xs →
+            List.length [ …xs, 1 ]
+
+        Err _ →
+            0
+
+
+pub printing : List String → Program
+printing lines =
+    program = Node.printLines lines
+    more = [ …lines, "end" ]
+    if List.length more > 1 then program else Node.print "none"
+
+
+type Msg
+    = Pick (List String)
+
+
+-- `Ssr.render` only reads the markup it is handed (`borrowed`), so the list
+-- a handler's message holds is written afterwards: accepted. `Node.print`
+-- and `Node.exitWith` make a new value (`fresh`): the list of programs is
+-- the function's own.
+pub rendered : String → List Program
+rendered label =
+    rows = [ label ]
+    page = Ssr.render (<button onClick={Pick rows}>{label}</button>)
+    more = [ …rows, page ]
+    ps = [ Node.print page, Node.exitWith (String.join more ",") 1 ]
+    [ …ps, Node.print "end" ]

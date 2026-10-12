@@ -1,0 +1,88 @@
+-- ownership (core): the ownership words of `Js` (`ownership-checker.md`
+-- §24.8), each pinned by a verdict that depends on its row — a `foreign`
+-- with no words escapes every argument (§24.5), so each acceptance below is
+-- the row's. `from` and `to` return what they are handed, and `pure`,
+-- `finally` and `catchIf` what their function returns: the value is the
+-- list, read after the edit (`alias`). The comparisons, `typeOf`, `typeIs`
+-- and `fingerprint` keep nothing: accepted. `array` and `object` hold what
+-- they are handed in a new value: an edit while the new value is no longer
+-- read is accepted. `each`, `pure`, `finally`, `catchIf` and `suspending`
+-- call their functions during the call and keep them not, so what the
+-- functions captured is not escaped: accepted. `ref` and `write` keep what
+-- they are handed, and `read` answers what a cell holds, which may be
+-- anything: rejected `escaped` and `unknown`.
+import Js
+
+
+returns : List Int → Int
+returns xs =
+    v = Js.from xs
+    ys = [ …xs, 1 ]
+    back : List Int
+    back = Js.to v
+    List.length ys + List.length back
+
+
+returnsFromFunctions : List Int, List Int, List Int → Int
+returnsFromFunctions xs ys zs =
+    a = Js.pure λ⊤ → xs
+    b = Js.finally (λ⊤ → ys) λ⊤ → ⊤
+    c = Js.catchIf (λ⊤ → zs) (λ_ → False) λ_ → []
+    a2 = [ …a, 1 ]
+    b2 = [ …b, 1 ]
+    c2 = [ …c, 1 ]
+    List.length xs
+        + List.length ys
+        + List.length zs
+        + List.length a2
+        + List.length b2
+        + List.length c2
+
+
+compares : List Int, List Int → Int
+compares xs ys =
+    a = Js.same xs ys
+    b = Js.isNull (Js.from xs) && Js.isUndefined (Js.from xs) && Js.isNullish (Js.from xs)
+    c = Js.typeIs (Js.from xs) "object" && Js.same (Js.typeOf (Js.from xs)) (Js.from "x")
+    zs = [ …xs, 1 ]
+    if a && b && c then List.length zs else 0
+
+
+identity : List Int → Int
+identity xs =
+    name : String
+    name = Js.fingerprint xs EQ
+    ys = [ …xs, 1 ]
+    List.length ys + String.length name
+
+
+holds : List Int → Int
+holds xs =
+    a = Js.array [ Js.from xs ]
+    b = Js.object [ ( "x", Js.from xs ) ]
+    _ = Js.same a b
+    ys = [ …xs, 1 ]
+    List.length ys
+
+
+calls : List Int, Js.Value → Int
+calls xs v =
+    Js.each v λ_ → Js.to (Js.from (List.length xs))
+    n = Js.pure λ⊤ → List.length xs
+    m = Js.finally (λ⊤ → List.length xs) λ⊤ → ⊤
+    k = Js.catchIf (λ⊤ → List.length xs) (λ_ → False) λ_ → 0
+    s = Js.suspending λ⊤ → List.length xs
+    ys = [ …xs, n + m + k + s ]
+    List.length ys
+
+
+keeps : List Int, List Int → Int
+keeps xs ys =
+    r = Js.ref xs
+    zs = [ …xs, 1 ]
+    Js.write r ys
+    more = [ …ys, 1 ]
+    held : List Int
+    held = Js.read r
+    last = [ …held, 1 ]
+    List.length zs + List.length more + List.length last

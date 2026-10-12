@@ -982,6 +982,13 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
     // everywhere else, and making it a keyword would break every program
     // that already uses the name. Here it is the marker only when the very
     // next token is `foreign` — two tokens of lookahead, no backtracking.
+    // `crossing` (ownership-checker.md §24.2) is contextual in the same way:
+    // the marker only directly before `foreign` or `equatable foreign`.
+    if (p.peek() == .lower_ident and p.isWord(p.tok_i, "crossing") and
+        (p.peekAt(1) == .keyword_foreign or (p.peekAt(1) == .lower_ident and p.peekAt(2) == .keyword_foreign and p.isEquatableToken(p.tok_i + 1))))
+    {
+        header.crossing_token = .fromToken(p.next());
+    }
     if (p.peek() == .lower_ident and p.peekAt(1) == .keyword_foreign and p.isEquatableToken(p.tok_i)) {
         header.equatable_token = .fromToken(p.next());
     }
@@ -1802,6 +1809,18 @@ fn parseTypeItems(p: *Parse, elements: bool) Allocator.Error!void {
 /// flattened. A `*` where a `×` would continue a product is reported,
 /// with the `×` to write, and read as one.
 fn parseProduct(p: *Parse) Allocator.Error!Index {
+    // An ownership word (ownership-checker.md §24.3): contextual, in a
+    // top-level signature only, and only in front of something that starts
+    // a type — `unknown → a` still names a variable. What it may stand on,
+    // and in which package, is lowering's to decide.
+    if (p.in_signature and p.peek() == .lower_ident and canStartTypeAtom(p.peekAt(1)) and p.peekAt(1) != .invalid and
+        Ast.OwnWord.inSignature(p.tokenText(p.tok_i)) != null)
+    {
+        if (try p.enter()) |placeholder| return placeholder;
+        defer p.leave();
+        const word = p.next();
+        return p.unary(.type_own, word, try p.parseProduct());
+    }
     const first = try p.parseTypeApp();
     if (p.peek() != .times and p.peek() != .op_star) return first;
     const mark = p.scratchMark();
@@ -4529,7 +4548,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try testing.expect(r.base < token_count);
             try checkIndices(tree, r.fields);
         },
-        .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .stmt, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
+        .type_paren, .type_sync, .type_own, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .stmt, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
         .type_fn => {
             const f = tree.fullTypeFn(n);
             try testing.expect(f.params.len >= 1);

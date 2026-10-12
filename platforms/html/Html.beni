@@ -31,7 +31,7 @@ pub foreign type Html msg
 
 
 --| The event object a handler is handed when its event names no `via`.
-pub foreign type Event
+pub crossing foreign type Event
 
 
 --| The text, as a text hole shows it: `Html.text s` and `<>{s}</>` render

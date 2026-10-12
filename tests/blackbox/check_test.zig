@@ -856,3 +856,106 @@ test "a platform the binary carries is checked as far as the program reaches it,
     try testing.expectEqual(@as(u8, 0), directory.exit_code);
     try testing.expect(std.mem.indexOf(u8, directory.stdout, "platform:Unused -> core:Basics\n") != null);
 }
+
+// ---------------------------------------------------------------------------
+// The trusted surface of ownership words (ownership-checker.md §24.6)
+// ---------------------------------------------------------------------------
+
+const surface_list = "tests/corpus/ownership/trusted-surface.txt";
+
+/// Every declaration with ownership words that the ownership dump of one
+/// package prints — a `summary … (words)` line, or a `crossing … (words)`
+/// type — must be listed in `trusted-surface.txt` under that package, with
+/// a fixture that exists and names it; and every line listed under the
+/// package must be one the dump prints. One test per package, so that each
+/// stays within the per-test budget (one dump each).
+fn expectSurface(package: []const u8, args: []const []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const r = try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+
+    // What the dump prints: `Module.name` per worded declaration.
+    var printed: std.ArrayList([]const u8) = .empty;
+    var module: []const u8 = "";
+    var lines = std.mem.splitScalar(u8, r.stdout, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "module ")) module = line["module ".len..];
+        if (!std.mem.endsWith(u8, line, " (words)")) continue;
+        const rest = std.mem.trimStart(u8, line, " ");
+        const name = if (std.mem.startsWith(u8, rest, "summary "))
+            rest["summary ".len..std.mem.indexOfScalar(u8, rest, ':').?]
+        else if (std.mem.startsWith(u8, rest, "crossing "))
+            rest["crossing ".len .. rest.len - " (words)".len]
+        else
+            continue;
+        try printed.append(arena, try std.fmt.allocPrint(arena, "{s}.{s}", .{ module, name }));
+    }
+
+    // What the list says of the package.
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, surface_list, arena, .limited(1 << 20));
+    var listed: std.ArrayList([]const u8) = .empty;
+    var rows = std.mem.splitScalar(u8, list, '\n');
+    while (rows.next()) |row| {
+        if (row.len == 0 or row[0] == '#') continue;
+        var fields = std.mem.tokenizeScalar(u8, row, ' ');
+        const pkg = fields.next() orelse continue;
+        if (!std.mem.eql(u8, pkg, package)) continue;
+        const decl = fields.next() orelse return error.SurfaceRowWithoutDeclaration;
+        const fixture = fields.next() orelse return error.SurfaceRowWithoutFixture;
+        // The name the fixture must mention: the declaration's, or the one
+        // a program reaches it through when it is not `pub`.
+        const via = fields.next() orelse decl;
+        const path = try std.fmt.allocPrint(arena, "tests/corpus/{s}", .{fixture});
+        const text = std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(1 << 20)) catch {
+            std.debug.print("{s}: the fixture {s} that pins {s} is missing\n", .{ surface_list, path, decl });
+            return error.SurfaceFixtureMissing;
+        };
+        if (std.mem.indexOf(u8, text, via) == null) {
+            std.debug.print("{s}: the fixture {s} does not name {s}, which it pins\n", .{ surface_list, path, via });
+            return error.SurfaceFixtureUnrelated;
+        }
+        try listed.append(arena, decl);
+    }
+
+    var ok = true;
+    for (printed.items) |p| {
+        for (listed.items) |l| {
+            if (std.mem.eql(u8, p, l)) break;
+        } else {
+            std.debug.print("{s} carries ownership words and {s} does not list it under `{s}`\n", .{ p, surface_list, package });
+            ok = false;
+        }
+    }
+    for (listed.items) |l| {
+        for (printed.items) |p| {
+            if (std.mem.eql(u8, p, l)) break;
+        } else {
+            std.debug.print("{s} lists {s} under `{s}`, and its ownership dump prints no words for it\n", .{ surface_list, l, package });
+            ok = false;
+        }
+    }
+    if (!ok) return error.TrustedSurfaceNotCatalogued;
+}
+
+test "ownership words: core's are catalogued" {
+    try expectSurface("core", &.{ "dump", "--stage=ownership", "core" });
+}
+
+test "ownership words: the browser platform's are catalogued" {
+    try expectSurface("browser", &.{ "dump", "--stage=ownership", "--platform=browser-tea", "platforms/browser" });
+}
+
+test "ownership words: the html platform's are catalogued" {
+    try expectSurface("html", &.{ "dump", "--stage=ownership", "--platform=browser-tea", "platforms/html" });
+}
+
+test "ownership words: the node platform's are catalogued" {
+    try expectSurface("node", &.{ "dump", "--stage=ownership", "--platform=node", "platforms/node" });
+}
+
+test "ownership words: browser-tea and browser-direct carry none" {
+    try expectSurface("browser-tea", &.{ "dump", "--stage=ownership", "--platform=browser-tea", "platforms/browser-tea" });
+    try expectSurface("browser-direct", &.{ "dump", "--stage=ownership", "--platform=browser-direct", "platforms/browser-direct" });
+}
