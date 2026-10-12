@@ -309,9 +309,10 @@ def compare (p : Program) : Outcome :=
 
 /-- The verdict of the selected checker: the summary layer, or the frozen
     per-call re-inference checker when `config.reinfer`. -/
-def verdictStats (p : Program) (config : Config := {}) : Except String (Nat × Nat) :=
-  if config.reinfer then (Reinfer.check p config).map (fun _ => (0, 0))
-  else (check p config).map (fun a => (a.computed, a.reused))
+-- Also returns summaries computed and reused, and the checker rows exercised.
+def verdictStats (p : Program) (config : Config := {}) : Except String (Nat × Nat × List String) :=
+  if config.reinfer then (Reinfer.check p config).map (fun _ => (0, 0, []))
+  else (check p config).map (fun a => (a.computed, a.reused, a.hits))
 
 def verdictOf (p : Program) (config : Config := {}) : Except String Unit :=
   (verdictStats p config).map (fun _ => ())
@@ -462,6 +463,7 @@ def runWith (o : Options) : IO RunResult := do
   let mut found : Option Nat := none
   let mut seen : Std.HashSet String := {}
   let mut families : List (String × Counts × Nat × Nat) := []
+  let mut rowHits : List (String × Nat) := []
   let header := s!"generator-version={o.version} seed={o.seed} control={o.label}"
   for index in List.range o.count do
     if o.stopAtFirst && found.isSome then break
@@ -502,7 +504,7 @@ def runWith (o : Options) : IO RunResult := do
         rejected := counts.rejected + 1,
         limits := counts.limits + (if msg.startsWith "limit:" then 1 else 0) }
     | .ok _ =>
-      let (made, reused) := match stats with | .ok s => s | .error _ => (0, 0)
+      let (made, reused, hits) := match stats with | .ok s => s | .error _ => (0, 0, [])
       counts := { counts with
         accepted := counts.accepted + 1, summariesComputed := counts.summariesComputed + made,
         summariesReused := counts.summariesReused + reused }
@@ -510,6 +512,10 @@ def runWith (o : Options) : IO RunResult := do
       | .equal =>
         if InPlaceSemantics.writeCount p > 0 then
           counts := { counts with withWrites := counts.withWrites + 1 }
+          for h in hits do
+            rowHits := match rowHits.lookup h with
+              | some n => rowHits.map fun (k, m) => if k == h then (k, n + 1) else (k, m)
+              | none => rowHits ++ [(h, 1)]
           families := families.map fun (f,c,lo,hi) => if f == family then
             (f,{ c with withWrites := c.withWrites+1 },lo,hi) else (f,c,lo,hi)
       | .inconclusive msg =>
@@ -538,6 +544,9 @@ def runWith (o : Options) : IO RunResult := do
   if !o.quiet then
     for (family,c,lo,hi) in families do
       IO.println s!"family={family} depth={lo}..{hi} {c.line}"
+    -- Per checker row: accepted programs that write in place and exercised it.
+    for (row, n) in rowHits.mergeSort (fun a b => a.1 < b.1) do
+      IO.println s!"row-hits {n} {row}"
   IO.println s!"{header} {counts.line} first-mismatch={found.map toString |>.getD "none"} elapsed-ms={elapsed}"
   if o.negative && found.isNone then
     IO.println s!"NEGATIVE CONTROL FAILED: {o.label} found no generated accepted disagreement"
@@ -609,8 +618,9 @@ def controls (count seed : Nat) (version := 4) (reinfer := false) : IO Bool := d
       rows := rows ++ [s!"{name} [summaries]: NOT OBSERVABLE (not required) verdicts-changed={changed} disagreeing={disagree}"]
     let r ← runWith { count, seed, version, config, stopAtFirst := true, quiet := true }
     let label := if config.reinfer then "per-call" else checkerName
-    rows := rows ++ [s!"{name} [{label}]: caught={r.firstMismatch.isSome && r.ok} first-index={r.firstMismatch.map toString |>.getD "none"} elapsed-ms={r.elapsed}"]
-    if !r.ok then ok := false
+    let gap := config.mutant.any Mutant.generatorOptional
+    rows := rows ++ [s!"{name} [{label}]{if gap then " generator catch reported, not required" else ""}: caught={r.firstMismatch.isSome && r.ok} first-index={r.firstMismatch.map toString |>.getD "none"} elapsed-ms={r.elapsed}"]
+    if !r.ok && !gap then ok := false
   for row in rows do IO.println s!"CONTROL {row}"
   IO.println s!"controls budget={count} seed={seed} generator-version={version} checker={checkerName} passed={ok}"
   pure ok

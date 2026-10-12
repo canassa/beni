@@ -34,6 +34,9 @@ def fLL : Ty := .fn [tL] tL
 def fIL : Ty := .fn [.int] tL
 def fII : Ty := .fn [.int] .int
 def fLLL : Ty := .fn [tL, tL] tL
+def tNN : Ty := .list tN
+def fNN : Ty := .fn [tN] tN
+def fIN : Ty := .fn [.int] tN
 
 /-- Declaration indices used by the moves below. -/
 def mapLL := 0
@@ -55,6 +58,16 @@ def readTwo := 15
 def capPick := 16
 def applyThenRead := 17
 def foldKeep := 18
+def mapVia := 19
+def twiceVia := 20
+def applyN := 21
+def headBump := 22
+def publish := 23
+def pairShared := 24
+def pairFresh := 25
+def initN := 26
+def identN := 27
+def capAppend := 28
 
 def decls : List Decl := [
   Library.map tL tL,
@@ -89,7 +102,30 @@ def decls : List Decl := [
   { name := "foldKeep", parameters := [tN, tL, fLLL], result := tL,
     body := .letE 3 (.traverse .list (v 0) (v 1) 4 5 6 (.app (v 2) [v 5, v 6])) <|
       .letE 7 (.prim (.literal .int) []) <| .letE 8 (.prim .at [v 0, .int 0, v 7]) <|
-      .letE 9 (.prim .length [v 8]) (.prim .push [v 3, v 9]) }]
+      .letE 9 (.prim .length [v 8]) (.prim .push [v 3, v 9]) },
+  -- Higher-order wrappers: each passes its own callback on to another call,
+  -- so the callee's guards and supplies are forwarded to the wrapper's input.
+  { name := "mapVia", parameters := [tN, fLL], result := tN,
+    body := .letE 2 (.closure 0 []) (.app (v 2) [v 0, v 1]) },
+  { name := "twiceVia", parameters := [tL, fLL], result := tL,
+    body := .letE 2 (.app (v 1) [v 0]) (.app (v 1) [v 2]) },
+  { name := "applyN", parameters := [tN, fNN], result := tN, body := .app (v 1) [v 0] },
+  -- Requires its argument's contents exclusive (xreq): it edits inside them.
+  { name := "headBump", parameters := [tN], result := tN,
+    body := .letE 1 (.closure 13 []) <| .letE 2 (.closure 2 []) (.app (v 1) [v 0, .int 0, v 2]) },
+  -- Escapes its argument (E) and returns it shared.
+  { name := "publish", parameters := [tL], result := tL, body := .prim .shared [v 0] },
+  -- Internally shared fresh result ([c, c]: xres false) and a distinct one.
+  { name := "pairShared", parameters := [.int], result := tN,
+    body := .letE 1 (.prim (.literal .int) [v 0]) (.prim (.literal tL) [v 1, v 1]) },
+  { name := "pairFresh", parameters := [.int], result := tN,
+    body := .letE 1 (.prim (.literal .int) [v 0]) <| .letE 2 (.prim (.literal .int) [v 0])
+      (.prim (.literal tL) [v 1, v 2]) },
+  Library.initialize tN,
+  { name := "identN", parameters := [tN], result := tN, body := .atom (v 0) },
+  -- A once callback: it pushes onto its capture.
+  { name := "capAppend", parameters := [tL], captures := [tL], result := tL,
+    body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) }]
 
 abbrev Env := List (Atom × Ty)
 
@@ -167,6 +203,15 @@ def withNested (next : Nat) (env : Env) (k : Nat → Atom → Gen (List (Expr ×
     let bs ← nestedBindings next env
     let after := next + bs.length
     pure (bs ++ (← k after (v (after - 1))))
+
+/-- A list callback: identity, a writer, one that escapes its argument, or a
+    once closure that pushes onto a captured list. -/
+def listCallback (env : Env) : Gen (Expr × Ty) := do
+  match ← draw 4 with
+  | 0 => pure (.closure identL [], fLL)
+  | 1 => pure (.closure bump [], fLL)
+  | 2 => pure (.closure publish [], fLL)
+  | _ => pure (.closure capAppend [← anyList env], fLL)
 
 /-- Focus bodies: consume the element, keep it, or replace it by another cell. -/
 def focusBody (env : Env) (x : Var) (next : Nat) : Gen Expr := do
@@ -277,9 +322,26 @@ def moves : List (String × Move) := [
       (.app (v next) [n, v (next + 4), v (next + 2)], tL)]
     if (← draw 2) == 0 then pure (bs ++ [(.prim .push [v (next + 6), .int 3], tL)]) else pure bs),
   ("apply-read", fun next env => do
-    pure [(.closure applyThenRead [], .fn [tL, fLL] tL),
-      (.closure (if (← draw 2) == 0 then identL else bump) [], fLL),
+    pure [(.closure applyThenRead [], .fn [tL, fLL] tL), (← listCallback env),
       (.app (v next) [← anyList env, v (next + 1)], tL)]),
+  ("map-via", fun next env => withNested next env fun next n => do
+    pure [(.closure mapVia [], .fn [tN, fLL] tN), (← listCallback env),
+      (.app (v next) [n, v (next + 1)], tN)]),
+  ("twice-via", fun next env => do
+    pure [(.closure twiceVia [], .fn [tL, fLL] tL), (← listCallback env),
+      (.app (v next) [← anyList env, v (next + 1)], tL)]),
+  ("apply-n", fun next env => withNested next env fun next n => do
+    pure [(.closure applyN [], .fn [tN, fNN] tN),
+      (.closure (if (← draw 3) == 0 then identN else headBump) [], fNN),
+      (.app (v next) [n, v (next + 1)], tN)]),
+  ("init-pairs", fun next env => do
+    -- initialize over pairs, then an edit two levels down (T59's shape).
+    let count := Atom.int (Int.ofNat (1 + (← draw 2)))
+    let (x, y) := (sv next 0, sv next 1)
+    pure [(.closure initN [], .fn [.int, fIN] tNN),
+      (.closure (if (← draw 2) == 0 then pairShared else pairFresh) [], fIN),
+      (.app (v next) [count, v (next + 1)], tNN),
+      (.focus (v (next + 2)) (.int 0) x (.focus (v x) (.int 0) y (.prim .push [v y, .int 1])), tNN)]),
   ("fold-keep", fun next env => withNested next env fun next n => do
     let step ← match ← draw 3 with
       | 0 => pure (Expr.closure borrowOrGrow [])
@@ -360,7 +422,7 @@ def atomRoot : Atom → Option Var
 /-- Argument positions a table declaration may write or keep: the list a map,
     update or `two` edits, a fold's accumulator. Sources a call only reads stay. -/
 def handedArguments (d : Nat) : List Nat :=
-  if d == two || d == readTwo || d == updL || d == applyThenRead then [0]
+  if d == two || d == readTwo || d == updL || d == applyThenRead || d == mapVia || d == twiceVia || d == applyN then [0]
   else if d == foldNL || d == foldKeep then [1] else []
 
 /-- Operands a right-hand side may write or hand over: the target of a writer,

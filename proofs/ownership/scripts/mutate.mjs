@@ -37,14 +37,14 @@ export const mutants = {
   supplyedge: ["Checker.lean", "          if k < sp.args.length && !sp.owned.contains (k, p) && !ctx.config.has .supplyEdge then", "          if false then"],
   supplyrecheck: ["Checker.lean", "    if ctx.config.has .supplyRecheck then { sp with args := inst, env }", "    if true then { sp with args := inst, env }"],
   callsedge: ["Checker.lean", "        if count ≥ 2 && !roots.isEmpty && !ctx.config.has .callsEdge then", "        if false then"],
-  requiresedge: ["Checker.lean", "          if k < sp.args.length && !sp.exclusive.contains (k, p) then", "          if false then"],
+  requiresedge: ["Checker.lean", "          if k < sp.args.length && !sp.exclusive.contains (k, p) && !ctx.config.has .requiresEdge then", "          if false then"],
   callbackwrites: ["Checker.lean", "          modifyFacts fun s => { s with consumes := union s.consumes (cs.filter external) }", "          pure ()"],
   callbackescapes: ["Checker.lean", "          modifyFacts fun s => { s with escapes := union s.escapes cs }", "          pure ()"],
   callbackaliases: ["Checker.lean", "            cs := union cs ((args[k]?.getD .bottom).cellsAt p)", "            cs := cs"],
-  callbackenv: ["Checker.lean", "      if !(← ask f ctx (query (.env q))).isEmpty then cs := union cs envCells\n", ""],
+  callbackenv: ["Checker.lean", "      if !(← ask f ctx (query (.env q))).isEmpty && !ctx.config.has .callbackEnv then cs := union cs envCells\n", ""],
   callbackrequires: ["Checker.lean", "          modifyFacts fun s => { s with requiresExclusive := union s.requiresExclusive ((a.atPath p).roots.filter external) }", "          pure ()"],
-  forwardguards: ["Checker.lean", "        let _ ← ask f ctx { g.query with slot := j }", "        pure ()"],
-  transfersupplies: ["Checker.lean", "        modifyFacts fun facts => { facts with supplies := union facts.supplies [{ sp with slot := j }] }", "        pure ()"],
+  forwardguards: ["Checker.lean", "          let _ ← ask f ctx { g.query with slot := j }", "          pure ()"],
+  transfersupplies: ["Checker.lean", "          modifyFacts fun facts => { facts with supplies := union facts.supplies [{ sp with slot := j }] }", "          pure ()"],
 };
 
 const [name, dir] = process.argv.slice(2);
