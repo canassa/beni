@@ -904,6 +904,8 @@ fn expectSurface(package: []const u8, args: []const []const u8) !void {
         if (!std.mem.eql(u8, pkg, package)) continue;
         const decl = fields.next() orelse return error.SurfaceRowWithoutDeclaration;
         const fixture = fields.next() orelse return error.SurfaceRowWithoutFixture;
+        // The flips are `expectFlips`'s.
+        _ = fields.next() orelse return error.SurfaceRowWithoutFlips;
         // The name the fixture must mention: the declaration's, or the one
         // a program reaches it through when it is not `pub`.
         const via = fields.next() orelse decl;
@@ -937,6 +939,73 @@ fn expectSurface(package: []const u8, args: []const []const u8) !void {
         }
     }
     if (!ok) return error.TrustedSurfaceNotCatalogued;
+}
+
+/// Every row of `trusted-surface.txt` pinned by `fixture` has its words
+/// flipped the unsafe way, one flip at a time, and the fixture's report must
+/// change under each: the golden would fail if the word were wrong that way
+/// (ownership-checker.md §24.6). One process per fixture, which runs the
+/// pass once as written and once per flip (`--ownership-flips`).
+fn expectFlips(fixture: []const u8, flags: []const []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, surface_list, arena, .limited(1 << 20));
+    var flips: std.ArrayList(u8) = .empty;
+    var count: usize = 0;
+    var rows = std.mem.splitScalar(u8, list, '\n');
+    while (rows.next()) |row| {
+        if (row.len == 0 or row[0] == '#') continue;
+        var fields = std.mem.tokenizeScalar(u8, row, ' ');
+        _ = fields.next() orelse continue;
+        const decl = fields.next() orelse continue;
+        const fx = fields.next() orelse continue;
+        const spec = fields.next() orelse continue;
+        if (!std.mem.eql(u8, fx, fixture) or std.mem.eql(u8, spec, "-")) continue;
+        var alts = std.mem.splitScalar(u8, spec, '|');
+        while (alts.next()) |alt| {
+            if (flips.items.len != 0) try flips.append(arena, '|');
+            try flips.print(arena, "{s}:{s}", .{ decl, alt });
+            count += 1;
+        }
+    }
+    try testing.expect(count != 0);
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.appendSlice(arena, &.{ "dump", "--stage=ownership" });
+    try args.appendSlice(arena, flags);
+    try args.append(arena, try std.fmt.allocPrint(arena, "--ownership-flips={s}", .{flips.items}));
+    try args.append(arena, try std.fmt.allocPrint(arena, "tests/corpus/{s}", .{fixture}));
+    const r = try w.runWith(args.items, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    var ok = true;
+    var seen: usize = 0;
+    var lines = std.mem.splitScalar(u8, r.stdout, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        seen += 1;
+        if (!std.mem.endsWith(u8, line, ": changes")) {
+            std.debug.print("{s}: under {s}, tests/corpus/{s} does not notice — its words are pinned one way only\n", .{ surface_list, line, fixture });
+            ok = false;
+        }
+    }
+    try testing.expectEqual(count, seen);
+    if (!ok) return error.UnsafeFlipUnnoticed;
+}
+
+test "ownership words: flipping core's Js words is noticed" {
+    try expectFlips("ownership/core/JsWords.beni", &.{"--core"});
+}
+
+test "ownership words: flipping the Words fixture's words is noticed" {
+    try expectFlips("ownership/Words.beni", &.{"--platform=node"});
+}
+
+test "ownership words: flipping Debug's words is noticed" {
+    try expectFlips("ownership/JsPure.beni", &.{});
+}
+
+test "ownership words: flipping the browser platforms' words is noticed" {
+    try expectFlips("ownership/WordsBrowser.beni", &.{"--platform=browser-direct"});
 }
 
 test "ownership words: core's are catalogued" {

@@ -419,6 +419,13 @@ pub const Dump = struct {
     /// `--stage=ownership`, print only the `total`, `cause` and `pending`
     /// lines, for scripts (`ownership-checker.md` §16.11).
     ownership_totals: bool = false,
+    /// `--ownership-flips=<flip>|<flip>…` — hidden, test-only: with
+    /// `--stage=ownership`, run the pass once as written and once per flip
+    /// of an ownership word, and print whether each flip changes the report
+    /// (`ownership-checker.md` §24.6). A flip is
+    /// `Module.name:<slot>:<from>><to>[+…]`, `<slot>` a parameter from 1 or
+    /// `res`, a word or `-`.
+    ownership_flips: ?[]const u8 = null,
     file: []const u8,
 };
 
@@ -1075,6 +1082,7 @@ const DumpSpecific = struct {
     writes_work: ?u64 = null,
     msg_types: bool = false,
     ownership_totals: bool = false,
+    ownership_flips: ?[]const u8 = null,
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
@@ -1111,6 +1119,11 @@ const DumpSpecific = struct {
             if (value != null) return noValue(name);
             self.ownership_totals = true;
             self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--ownership-flips")) {
+            // Hidden and test-only (ownership-checker.md §24.6): what the
+            // trusted-surface tests flip a word with, to see a pin fail.
+            self.ownership_flips = value orelse return needsValue(name, "<flips>");
+            self.consumed = true;
         }
         return null;
     }
@@ -1139,6 +1152,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     if (s.specific.writes_work != null and stage != .writes) return .{ .usage = .init("beni: --writes-work applies to --stage=writes only", .{}) };
     if (s.specific.msg_types and stage != .writes) return .{ .usage = .init("beni: --msg-types applies to --stage=writes only", .{}) };
     if (s.specific.ownership_totals and stage != .ownership) return .{ .usage = .init("beni: --ownership-totals applies to --stage=ownership only", .{}) };
+    if (s.specific.ownership_flips != null and stage != .ownership) return .{ .usage = .init("beni: --ownership-flips applies to --stage=ownership only", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
         .stage = stage,
@@ -1147,6 +1161,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
         .writes_work = s.specific.writes_work,
         .msg_types = s.specific.msg_types,
         .ownership_totals = s.specific.ownership_totals,
+        .ownership_flips = s.specific.ownership_flips,
         .file = s.positionals.items[0],
     } } };
 }

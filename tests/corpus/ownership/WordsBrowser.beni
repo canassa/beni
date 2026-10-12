@@ -57,6 +57,16 @@ keys n =
     List.length more
 
 
+-- The other direction: the key is the key's (`aliased`), so a command still
+-- returned holds its key list, and writing the list first is rejected.
+pub keysHeld : Int → Cmd Msg × Int
+keysHeld n =
+    rows = [ n ]
+    cmd = Cmd.keyed rows Cmd.Restart λ_ → ⊤
+    more = [ …rows, 1 ]
+    ( cmd, List.length more )
+
+
 main : Tea.Program
 main =
     Tea.element

@@ -555,8 +555,7 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
             return .{ .line = pos.line, .col = pos.col };
         }
     };
-    const token = session.profile.begin();
-    var o = Ownership.init(.{
+    const input: Ownership.Input = .{
         .gpa = gpa,
         .graph = &session.graph,
         .birs = birs,
@@ -570,13 +569,48 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
         .spans = spans,
         .positions = .{ .ctx = session, .get = Pos.get },
         .platform_names = platform_names,
-    });
-    defer o.deinit();
-    const reports = onBigStackResult(struct {
+    };
+    const Run = struct {
         fn go(own: *Ownership, ts: []const u32) std.mem.Allocator.Error![]const Ownership.ModuleReport {
             return own.run(ts);
         }
-    }.go, .{ &o, targets.items }) catch
+    };
+    // `--ownership-flips` (ownership-checker.md §24.6): the report as written,
+    // then once per flip, and only whether each flip changed it.
+    if (dump.ownership_flips) |flips| {
+        var arena: std.heap.ArenaAllocator = .init(gpa);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const text = struct {
+            fn of(alloc: std.mem.Allocator, in: Ownership.Input, ts: []const u32, ns: []const []const u8, applied: *bool) ?[]const u8 {
+                var o = Ownership.init(in);
+                defer o.deinit();
+                const reports = onBigStackResult(Run.go, .{ &o, ts }) catch return null;
+                applied.* = o.flip_applied;
+                var buf: Io.Writer.Allocating = .init(alloc);
+                beni.dump.ownership.write(&buf.writer, reports, ns, .{}) catch return null;
+                return buf.written();
+            }
+        }.of;
+        var ignored = false;
+        const base = text(a, input, targets.items, names, &ignored) orelse return fail(stderr, "beni: out of memory", .{});
+        var it = std.mem.splitScalar(u8, flips, '|');
+        while (it.next()) |spec| {
+            const flip = (Ownership.Flip.parse(a, spec) catch return fail(stderr, "beni: out of memory", .{})) orelse
+                return fail(stderr, "beni: invalid flip '{s}'", .{spec});
+            var with = input;
+            with.flip = flip;
+            var applied = false;
+            const changed = text(a, with, targets.items, names, &applied) orelse return fail(stderr, "beni: out of memory", .{});
+            const verdict = if (!applied) "not applicable" else if (std.mem.eql(u8, base, changed)) "no change" else "changes";
+            stdout.print("flip {s}: {s}\n", .{ spec, verdict }) catch return 2;
+        }
+        return 0;
+    }
+    const token = session.profile.begin();
+    var o = Ownership.init(input);
+    defer o.deinit();
+    const reports = onBigStackResult(Run.go, .{ &o, targets.items }) catch
         return fail(stderr, "beni: out of memory", .{});
     session.profile.end(0, token, .ownership, beni.Profile.Event.no_file, 0);
     beni.dump.ownership.write(stdout, reports, names, .{ .totals_only = dump.ownership_totals }) catch return 2;
