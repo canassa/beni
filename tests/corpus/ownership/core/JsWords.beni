@@ -39,6 +39,13 @@ returnsFromFunctions xs ys zs =
         + List.length c2
 
 
+returnsSuspending : List Int → Int
+returnsSuspending ws =
+    d = Js.suspending λ⊤ → ws
+    d2 = [ …d, 1 ]
+    List.length ws + List.length d2
+
+
 compares : List Int, List Int → Int
 compares xs ys =
     a = Js.same xs ys
@@ -74,6 +81,46 @@ calls xs v =
     s = Js.suspending λ⊤ → List.length xs
     ys = [ …xs, n + m + k + s ]
     List.length ys
+
+
+-- The other direction of the same words: each verdict below needs the word
+-- as written, and would be an acceptance under a word that claims less.
+-- `array` and `object` keep what they are handed (`aliased`): written while
+-- the new value is still read, rejected. `each` may call its function many
+-- times (`many`): a function that writes what it captured runs once at
+-- most, so handing it to `each` is rejected `once`. `throw` hands what it
+-- throws to JavaScript (`escaped`): written afterwards, rejected.
+heldByArray : List Int → Js.Value
+heldByArray xs =
+    a = Js.array [ Js.from xs ]
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+heldByObject : List Int → Js.Value
+heldByObject xs =
+    o = Js.object [ ( "x", Js.from xs ) ]
+    ys = [ …xs, 1 ]
+    Js.array [ o, Js.from ys ]
+
+
+eachMany : List Int, Js.Value → Int
+eachMany xs v =
+    ys = [ …xs, 1 ]
+    Js.each v λ_ → Js.to (Js.from (List.push ys 2))
+    0
+
+
+thrown : Int → Int
+thrown n =
+    xs = [ n ]
+    m =
+        if n > 0 then
+            Js.throw (Js.from xs)
+        else
+            0
+    ys = [ …xs, 1 ]
+    m + List.length ys
 
 
 -- `throw` never returns, so what it returns is the call's own (`fresh`):

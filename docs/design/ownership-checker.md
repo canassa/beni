@@ -2038,7 +2038,19 @@ depends on its row: `tests/corpus/ownership/trusted-surface.txt` lists every one
 and a black-box test fails when the ownership dump of core or a platform prints a `(words)` summary that the
 list does not name, or the list names a fixture that does not exist or does not mention the declaration.
 
-The tests pin that each row exists and that a verdict depends on it; they do not prove it true. **A word on a
+*Amended 2026-10-12 (an adversarial review of PR #73).* **A pin must notice the word moved the unsafe way.** Each
+row of `trusted-surface.txt` also names its *flips*: the declaration's words moved toward the optimistic end — an
+argument claimed less of (`aliased` → `borrowed`, `escaped` → `borrowed`, `many` → `once`, `borrowed` → `unused`), a
+result claimed more of (`unknown` → `fresh`, `returned` → `fresh`). A hidden, test-only flag, `beni dump
+--stage=ownership --ownership-flips=<Module.name:slot:from>to>|…`, runs the pass once as written and once per flip
+and prints whether each changes the report; `check_test.zig` runs every pinning fixture under its rows' flips and
+fails unless every flip changes it — so the fixture's golden would fail were the word wrong that way. A row whose
+words have no unsafer neighbour a verdict can see says `-` with the reason beside it: `unused` is the bottom of the
+order and `fresh exclusive` the top; `crossing` is the unsafe end already; a one-argument function's `borrowed` read
+happens at the call and is no later use, so `unused` is not observable there.
+
+The tests pin that each row exists and that a verdict depends on it in both directions where one can; they do not
+prove it true. **A word on a
 beni body is not compared with that body**, deliberately: every such body goes through `Js.call` or `Js.get`, whose
 honest row escapes everything, so the body's own summary is always worse than the words — which is why the words
 exist. Reading the sibling or the `Js` operations, as §24.8 records, is the check, as it is for a `foreign`'s rung.

@@ -3,25 +3,37 @@ module JsWords
   31:12 construction a: rejected alias: xs holds it and is read at 34:5
   32:12 construction b: rejected alias: ys holds it and is read at 35:11
   33:12 construction c: rejected call: zs may hold it through the call at 30:9, and is read at 36:11 (approx)
-  47:12 construction xs: accepted param
-  55:12 construction xs: accepted param
-  64:12 construction xs: accepted param
-  75:12 construction xs: accepted param
-  88:12 construction xs: accepted call
-  95:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  97:14 construction ys: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  100:14 construction held: rejected unknown: the list came from JavaScript (approx)
+  45:12 construction d: rejected alias: ws holds it and is read at 46:5
+  54:12 construction xs: accepted param
+  62:12 construction xs: accepted param
+  71:12 construction xs: accepted param
+  82:12 construction xs: accepted param
+  96:12 construction xs: rejected call: a⋆ may hold it through the call at 95:9, and is read at 97:14 (approx)
+  103:12 construction xs: rejected call: o⋆ may hold it through the call at 102:9, and is read at 104:14 (approx)
+  109:12 construction xs: accepted param
+  110:36 List.push ys: rejected once: it is handed to Js.each, which may call it more than once
+  122:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  135:12 construction xs: accepted call
+  142:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  144:14 construction ys: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  147:14 construction held: rejected unknown: the list came from JavaScript (approx)
   summary returns: π1 RW
   summary returnsFromFunctions: π1 RW, π2 RW, π3 Rw
+  summary returnsSuspending: π1 RW
   summary compares: π1 RW
   summary identity: π1 RW
   summary holds: π1 RW
   summary calls: π1 RW, π2 RE
+  summary heldByArray: π1 RAW; res fresh2{lost}, ⋆ ~fresh1{lost} ~π1
+  summary heldByObject: π1 RAW; res fresh2{lost}, ⋆ ~fresh1{lost} ~π1
+  summary eachMany: π1 RW, π2 RE
+  summary thrown: unused
   summary throws: unused
   summary keeps: π1 REW, π2 REW
-  demands 12: accepted 5 (fresh 0, call 1, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
-total 12: accepted 5 (fresh 0, call 1, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+  demands 18: accepted 6 (fresh 0, call 1, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 12
+total 18: accepted 6 (fresh 0, call 1, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 12
 cause unknown 1
-cause escaped 2
-cause alias 3
-cause call 1
+cause escaped 3
+cause alias 4
+cause call 3
+cause once 1

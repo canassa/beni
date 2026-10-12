@@ -43,6 +43,7 @@ const Types = @import("../check/Types.zig");
 const Scc = @import("../check/Scc.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Token = @import("../lex/Token.zig");
+const Ast = @import("../parse/Ast.zig");
 
 const Inst = Bir.Inst;
 const Symbol = InternPool.Symbol;
@@ -107,6 +108,47 @@ pub const Input = struct {
     /// (the chain layer's manifest `"name"`), empty for any other; what
     /// the entry rows are keyed by (§20.2). Shorter when no chain is known.
     platform_names: []const []const u8 = &.{},
+    /// Test-only (`--ownership-flips`, §24.6): one declaration's words read
+    /// with some flipped, to show that the fixture pinning them depends on
+    /// them.
+    flip: ?Flip = null,
+};
+
+/// §24.6: a declaration's ownership words with some changed, `Module.name`
+/// and per edit a position (a parameter from 0, or `Bir.own_result`), the
+/// word taken away and the word put there — either may be none.
+pub const Flip = struct {
+    module: []const u8,
+    decl: []const u8,
+    edits: []const Edit,
+
+    pub const Edit = struct { slot: u32, from: ?Ast.OwnWord, to: ?Ast.OwnWord };
+
+    /// `Module.name:<slot>:<from>><to>[+<slot>:<from>><to>…]`, a slot a
+    /// parameter from 1 or `res`, a word or `-`; null when malformed.
+    pub fn parse(gpa: Allocator, text: []const u8) Allocator.Error!?Flip {
+        const colon = std.mem.indexOfScalar(u8, text, ':') orelse return null;
+        const name = text[0..colon];
+        const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+        var edits: std.ArrayList(Edit) = .empty;
+        var parts = std.mem.splitScalar(u8, text[colon + 1 ..], '+');
+        while (parts.next()) |part| {
+            const c = std.mem.indexOfScalar(u8, part, ':') orelse return null;
+            const gt = std.mem.indexOfScalar(u8, part, '>') orelse return null;
+            if (gt < c) return null;
+            const slot: u32 = if (std.mem.eql(u8, part[0..c], "res")) Bir.own_result else (std.fmt.parseUnsigned(u32, part[0..c], 10) catch return null) -% 1;
+            const word = struct {
+                fn f(t: []const u8) error{Bad}!?Ast.OwnWord {
+                    if (std.mem.eql(u8, t, "-")) return null;
+                    return std.meta.stringToEnum(Ast.OwnWord, t) orelse error.Bad;
+                }
+            }.f;
+            const from = word(part[c + 1 .. gt]) catch return null;
+            const to = word(part[gt + 1 ..]) catch return null;
+            try edits.append(gpa, .{ .slot = slot, .from = from, .to = to });
+        }
+        return .{ .module = name[0..dot], .decl = name[dot + 1 ..], .edits = edits.items };
+    }
 };
 
 /// §8.2; `entry` §20.6.
@@ -427,6 +469,8 @@ walk_arenas: [16]?std.heap.ArenaAllocator = @splat(null),
 walk_depth: u32 = 0,
 /// The summary `summaryText` prints, so that a slot's `cb` names its path.
 text_sum: ?*const Summary = null,
+/// `--ownership-flips` (§24.6): whether the flip met every word it takes away.
+flip_applied: bool = false,
 
 pub fn init(in: Input) Ownership {
     return .{ .in = in, .out = .init(in.gpa), .keep = .init(in.gpa), .paths = .{} };
@@ -1172,7 +1216,7 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
 fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     const bir = o.in.birs[m];
     const decl = bir.decls[d];
-    const slots = bir.ownSlots(decl);
+    const slots = try o.flipped(m, d, bir.ownSlots(decl));
     if (slots.len == 0 and decl.kind != .foreign_value) return null;
     const n = decl.params;
     const keep = o.keep.allocator();
@@ -1266,6 +1310,33 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     // assertion anyone made (§24.5).
     out.asserted = out.words;
     return out;
+}
+
+/// The words of declaration `d` of module `m`, with `--ownership-flips`'s
+/// edits applied when it names the declaration (§24.6).
+fn flipped(o: *Ownership, m: u32, d: u32, slots: []const [2]u32) Allocator.Error![]const [2]u32 {
+    const flip = o.in.flip orelse return slots;
+    const bir = o.in.birs[m];
+    if (!std.mem.eql(u8, o.in.module_names[m], flip.module)) return slots;
+    if (!std.mem.eql(u8, o.in.interner.slice(bir.symbol(bir.decls[d].name)), flip.decl)) return slots;
+    var out: std.ArrayList([2]u32) = .empty;
+    try out.appendSlice(o.keep.allocator(), slots);
+    var met = true;
+    for (flip.edits) |e| {
+        const i = for (out.items, 0..) |s, i| {
+            if (s[0] == e.slot) break i;
+        } else blk: {
+            try out.append(o.keep.allocator(), .{ e.slot, 0 });
+            break :blk out.items.len - 1;
+        };
+        if (e.from) |w| {
+            if (out.items[i][1] & w.bit() == 0) met = false;
+            out.items[i][1] &= ~w.bit();
+        }
+        if (e.to) |w| out.items[i][1] |= w.bit();
+    }
+    o.flip_applied = met;
+    return out.items;
 }
 
 /// core/Dict's `focus` (§20.8), whose row is its body's with one fact asserted.

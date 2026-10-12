@@ -1,48 +1,60 @@
 # The trusted surface of ownership words (docs/design/ownership-checker.md
 # §24.6): every declaration of core or a platform that carries ownership
-# words, the package whose ownership dump prints it, and the fixture under
-# tests/corpus/ whose verdict depends on its row. `check_test.zig` fails when
-# a dump prints a `(words)` line this list does not name, when the list
-# names one no dump prints, or when a fixture is missing or does not name
-# the declaration. The words of each are justified in §24.8.
+# words, the package whose ownership dump prints it, the fixture under
+# tests/corpus/ that pins it, and the flips that pin must notice.
 #
-# package  declaration          fixture
-core       Debug.log             ownership/JsPure.beni
-core       Debug.toString        ownership/JsPure.beni
-core       Js.from               ownership/core/JsWords.beni
-core       Js.to                 ownership/core/JsWords.beni
-core       Js.same               ownership/core/JsWords.beni
-core       Js.isNull             ownership/core/JsWords.beni
-core       Js.isUndefined        ownership/core/JsWords.beni
-core       Js.isNullish          ownership/core/JsWords.beni
-core       Js.typeOf             ownership/core/JsWords.beni
-core       Js.typeIs             ownership/core/JsWords.beni
-core       Js.fingerprint        ownership/core/JsWords.beni
-core       Js.array              ownership/core/JsWords.beni
-core       Js.object             ownership/core/JsWords.beni
-core       Js.each               ownership/core/JsWords.beni
-core       Js.ref                ownership/core/JsWords.beni
-core       Js.read               ownership/core/JsWords.beni
-core       Js.write              ownership/core/JsWords.beni
-core       Js.throw              ownership/core/JsWords.beni
-core       Js.finally            ownership/core/JsWords.beni
-core       Js.catchIf            ownership/core/JsWords.beni
-core       Js.pure               ownership/core/JsWords.beni
-core       Js.suspending         ownership/core/JsWords.beni
-core       Schema.parse          ownership/Words.beni
-core       Schema.parseWith      ownership/Words.beni
-core       Schema.print          ownership/Words.beni
-core       Schema.printWith      ownership/Words.beni
-core       String.join           ownership/Words.beni
-core       String.fromList       ownership/Words.beni
-core       String.split          ownership/Words.beni
-core       String.words          ownership/Words.beni
-core       String.lines          ownership/Words.beni
-core       String.toList         ownership/Words.beni
-core       String.indexes        ownership/Words.beni
-browser    Hosted.keyOf          ownership/WordsBrowser.beni Cmd.keyed
-html       Html.Event            ownership/WordsBrowser.beni
-node       Node.print            ownership/Words.beni
-node       Node.printLines       ownership/Words.beni
-node       Node.exitWith         ownership/Words.beni
-node       Ssr.render            ownership/Words.beni
+# A flip is what `beni dump --stage=ownership --ownership-flips=` takes:
+# `<slot>:<from>><to>[+…]`, a slot a parameter from 1 or `res`, a word or
+# `-`, several separated by `|`. Each is the declaration's words moved in the
+# UNSAFE direction — claiming less of an argument, or more of the result —
+# and `check_test.zig` runs the fixture under each and fails unless the
+# report changes: the fixture's golden would fail if the word were wrong
+# that way. `-` says the words have no unsafer neighbour a verdict can see,
+# and why is in the comment beside the row. A fifth column names what the
+# fixture must mention when the declaration is not `pub`.
+#
+# package  declaration          fixture                         flips
+core       Debug.log             ownership/JsPure.beni           2:returned>-+res:->fresh
+# toString, fromList, printLines, render: one argument, so a read at the call is no later use; unused is unobservable
+core       Debug.toString        ownership/JsPure.beni           -
+core       Js.from               ownership/core/JsWords.beni     1:returned>-+res:->fresh
+core       Js.to                 ownership/core/JsWords.beni     1:returned>-+res:->fresh
+# unused is the bottom of the order: no word claims less
+core       Js.same               ownership/core/JsWords.beni     -
+core       Js.isNull             ownership/core/JsWords.beni     -
+core       Js.isUndefined        ownership/core/JsWords.beni     -
+core       Js.isNullish          ownership/core/JsWords.beni     -
+core       Js.typeOf             ownership/core/JsWords.beni     -
+core       Js.typeIs             ownership/core/JsWords.beni     -
+core       Js.fingerprint        ownership/core/JsWords.beni     -
+core       Js.array              ownership/core/JsWords.beni     1:aliased>borrowed
+core       Js.object             ownership/core/JsWords.beni     1:aliased>borrowed
+core       Js.each               ownership/core/JsWords.beni     2:many>once
+core       Js.ref                ownership/core/JsWords.beni     1:escaped>borrowed
+core       Js.read               ownership/core/JsWords.beni     res:unknown>fresh
+core       Js.write              ownership/core/JsWords.beni     2:escaped>borrowed
+core       Js.throw              ownership/core/JsWords.beni     1:escaped>borrowed
+core       Js.finally            ownership/core/JsWords.beni     1:returned>-+res:->fresh
+core       Js.catchIf            ownership/core/JsWords.beni     1:returned>-+3:returned>-+res:->fresh
+core       Js.pure               ownership/core/JsWords.beni     1:returned>-+res:->fresh
+core       Js.suspending         ownership/core/JsWords.beni     1:returned>-+res:->fresh
+core       Schema.parse          ownership/Words.beni            res:unknown>fresh
+core       Schema.parseWith      ownership/Words.beni            res:unknown>fresh
+core       Schema.print          ownership/Words.beni            2:aliased>borrowed
+core       Schema.printWith      ownership/Words.beni            3:aliased>borrowed
+core       String.join           ownership/Words.beni            1:borrowed>unused
+core       String.fromList       ownership/Words.beni            -
+# fresh exclusive is the top of the order for a result: no word claims more
+core       String.split          ownership/Words.beni            -
+core       String.words          ownership/Words.beni            -
+core       String.lines          ownership/Words.beni            -
+core       String.toList         ownership/Words.beni            -
+core       String.indexes        ownership/Words.beni            -
+browser    Hosted.keyOf          ownership/WordsBrowser.beni     2:aliased>borrowed     Cmd.keyed
+# crossing is the unsafe end already: taking it away claims less
+html       Html.Event            ownership/WordsBrowser.beni     -
+# a fresh Program holds no list; fresh is the top for a result that holds none
+node       Node.print            ownership/Words.beni            -
+node       Node.printLines       ownership/Words.beni            -
+node       Node.exitWith         ownership/Words.beni            -
+node       Ssr.render            ownership/Words.beni            -

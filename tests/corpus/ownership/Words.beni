@@ -25,6 +25,15 @@ joined label =
     String.join longer (String.fromList more)
 
 
+-- `String.join` reads its list (`borrowed`, not `unused`): held as the
+-- outer call's first argument, it is read at that call after the inner
+-- call writes it — rejected `later-use`.
+pub joinedHeld : String → String
+joinedHeld label =
+    parts = [ label ]
+    String.join parts (String.join (List.push parts "!") "")
+
+
 pub printed : List Int → Int
 printed xs =
     n =
@@ -81,6 +90,18 @@ printedWith xs =
                 0
     ys = [ …xs, 1 ]
     n + List.length ys
+
+
+pub printedWithLate : List Int → Int
+printedWithLate xs =
+    text = Schema.printWith (Schema.list Schema.int) Schema.defaultOptions xs
+    ys = [ …xs, 1 ]
+    case text of
+        Ok t →
+            String.length t + List.length ys
+
+        Err _ →
+            0
 
 
 pub parsedWith : String → Int
