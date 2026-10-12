@@ -205,15 +205,33 @@ decreasing_by
 
 instance : BEq Value := ⟨Value.equal⟩
 
+/-- One call of a declaration, as the in-place run made it: the heap and the
+    permanent observers before and after, the inputs and the result. -/
+structure CallRecord where
+  decl : Nat
+  args : List Value
+  caps : List Value
+  preHeap : Array (List Value)
+  preKept : Array Value
+  postHeap : Array (List Value)
+  postKept : Array Value
+  result : Value
+
 structure State where
   fuel : Nat
   heap : Array (List Value) := #[]
   reads : Array Observation := #[]
   kept : Array Value := #[]
   externalReads : Array (List Observation) := #[]
-  /-- Program-level in-place writes executed (`set`, `push`, focus write-back);
-      builder `put` is excluded. A campaign statistic only, never compared. -/
+  /-- Program-level in-place writes that changed an array (`set`, `push`,
+      focus write-back); builder `put` is excluded. A campaign statistic only,
+      never compared. -/
   writes : Nat := 0
+  /-- When set, every call of a declaration is recorded in `calls` (for the
+      falsifier and campaign statistics); never compared, never read by the
+      interpreter itself. -/
+  logCalls : Bool := false
+  calls : Array CallRecord := #[]
 abbrev M := StateT State (Except String)
 
 def countWrite : M Unit := modify fun s => { s with writes := s.writes + 1 }
@@ -323,12 +341,20 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         let .closure id caps ← atom env f | throw "in-place call"
         let actuals ← args.mapM (m := Except String) (atom env)
         let d ← ds[id]?.toExcept "in-place missing declaration"
-        eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+        let pre ← get
+        let r ← eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+        if pre.logCalls then
+          modify fun s => { s with calls := s.calls.push (CallRecord.mk id actuals caps pre.heap pre.kept s.heap s.kept r) }
+        pure r
       | .recur args =>
         let some (id, caps) := self | throw "recursion outside function"
         let actuals ← args.mapM (m := Except String) (atom env)
         let d ← ds[id]?.toExcept "in-place missing declaration"
-        eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+        let pre ← get
+        let r ← eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+        if pre.logCalls then
+          modify fun s => { s with calls := s.calls.push (CallRecord.mk id actuals caps pre.heap pre.kept s.heap s.kept r) }
+        pure r
       | .branch a yes no =>
         let .int n ← atom env a | throw "in-place condition"
         eval (depth - 1) ds self env (if n == 0 then yes else no)

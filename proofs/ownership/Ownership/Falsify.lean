@@ -482,70 +482,13 @@ def invariantCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership
 
 /-! ## Calls of generated programs against `summary_sound` -/
 
-structure CallRecord where
-  decl : Nat
-  args : List Value
-  caps : List Value
-  pre : InPlaceSemantics.State
-  post : InPlaceSemantics.State
-  result : Value
+/-- The calls the real in-place interpreter made, recorded by its call log. -/
+def loggedCalls (p : Program) (fuel := 100000) : Except String (Array CallRecord) := do
+  let (_, s) ← (eval fuel p.declarations none [] p.main).run { fuel, logCalls := true }
+  pure s.calls
 
-abbrev LogM := StateT (Array CallRecord) InPlaceSemantics.M
-def liftE (x : Except String α) : LogM α := monadLift x
-def liftS (x : InPlaceSemantics.M α) : LogM α := monadLift x
-
-/-- The in-place interpreter, recording every call of a declaration (no
-    fuel, no observers: only heaps and results are compared here). -/
-partial def evalLog (ds : List Decl) (self : Option (Nat × List Value)) (env : Env Value) (e : Expr) :
-    LogM Value := do
-  let call := fun (id : Nat) (caps actuals : List Value) => do
-    let d ← liftE (ds[id]?.toExcept "missing declaration")
-    let pre ← getThe InPlaceSemantics.State
-    let r ← evalLog ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
-    let post ← getThe InPlaceSemantics.State
-    modify fun log => log.push { decl := id, args := actuals, caps, pre, post, result := r }
-    pure r
-  -- Evaluate with the real interpreter, except that calls are taken here.
-  match e with
-  | .letE x rhs rest =>
-    let a ← evalLog ds self env rhs
-    evalLog ds self ((x, a) :: env) rest
-  | .app f args =>
-    let .closure id caps ← liftE (InPlaceSemantics.atom env f) | throw "call"
-    let actuals ← liftE (args.mapM (m := Except String) (InPlaceSemantics.atom env))
-    call id caps actuals
-  | .recur args =>
-    let some (id, caps) := self | throw "recursion outside function"
-    let actuals ← liftE (args.mapM (m := Except String) (InPlaceSemantics.atom env))
-    call id caps actuals
-  | .branch c a b =>
-    let .int n ← liftE (InPlaceSemantics.atom env c) | throw "condition"
-    evalLog ds self env (if n == 0 then a else b)
-  | .traverse kind src init i x acc body =>
-    let input ← liftE (InPlaceSemantics.atom env src)
-    let n ← match kind, input with
-      | .list, .ref c => do pure (← liftS (InPlaceSemantics.array c)).length
-      | .range, .int n => pure n.toNat
-      | _, _ => throw "traversal"
-    let mut a ← liftE (InPlaceSemantics.atom env init)
-    for j in List.range n do
-      let item ← match input with
-        | .ref c => do pure (((← liftS (InPlaceSemantics.array c))[j]?).getD (.int 0))
-        | _ => pure (.int j)
-      a ← evalLog ds self ((i, .int j) :: (x, item) :: (acc, a) :: env) body
-    pure a
-  | .focus src idx x body =>
-    let .ref c ← liftE (InPlaceSemantics.atom env src) | throw "focus"
-    let .int i ← liftE (InPlaceSemantics.atom env idx) | throw "index"
-    let xs ← liftS (InPlaceSemantics.array c)
-    if i < 0 then return .ref c
-    match xs[i.toNat]? with
-    | none => pure (.ref c)
-    | some item =>
-      let w ← evalLog ds self ((x, item) :: env) body
-      liftS (do
-        InPlaceSemantics.write c ((← InPlaceSemantics.array c).set i.toNat w))
-  | _ => liftS (InPlaceSemantics.eval 1000 ds self env e)
+def preOf (cr : CallRecord) : InPlaceSemantics.State := { fuel := 0, heap := cr.preHeap, kept := cr.preKept }
+def postOf (cr : CallRecord) : InPlaceSemantics.State := { fuel := 0, heap := cr.postHeap, kept := cr.postKept }
 
 /-- The canonical naming of a call: each canonical input origin names the
     arrays at its path of the actual input; `none` if two non-aliasing origins
@@ -593,7 +536,7 @@ def holders (s : InPlaceSemantics.State) (c : Nat) : List Holder :=
 def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option String × Bool × Bool := Id.run do
   let inputs := cr.args ++ cr.caps
   let nargs := cr.args.length
-  let heap := cr.pre.heap
+  let heap := cr.preHeap
   let γ := canonicalNaming heap e.inputs inputs nargs
   if !separatingB γ then return (none, false, false)
   for (w, i) in inputs.zipIdx do
@@ -602,7 +545,7 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option St
   let inputArrays := inputs.flatMap (reachArrays heap depthFuel)
   for (c, os) in γ do
     if os.any e.owned.contains then
-      for h in holders cr.pre c do
+      for h in holders (preOf cr) c do
         match h with
         | .array d => if !inputArrays.contains d then return (none, false, false)
         | .kept => return (none, false, false)
@@ -621,16 +564,16 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option St
     let a := e.inputs[i]?.getD .bottom
     for (q, c) in pathsOf heap depthFuel w [] do
       if (a.paths.map Prod.fst).contains q then
-        if !((cr.post.heap[c]?) == (heap[c]?)) &&
+        if !((cr.postHeap[c]?) == (heap[c]?)) &&
             !rowHas (e.summary.writes ++ e.summary.consumes) (inputOrigin nargs i q) then
           return (some s!"clause 1: input {i} array {c} at {repr q} written, no W row", true, false)
         if !rowHas e.summary.escapes (inputOrigin nargs i q) then
-          let after := cr.post.kept.toList.any fun k => (reachArrays cr.post.heap depthFuel k).contains c
-          let before := cr.pre.kept.toList.any fun k => (reachArrays heap depthFuel k).contains c
+          let after := cr.postKept.toList.any fun k => (reachArrays cr.postHeap depthFuel k).contains c
+          let before := cr.preKept.toList.any fun k => (reachArrays heap depthFuel k).contains c
           if after && !before then
             return (some s!"clause 2: input {i} array {c} at {repr q} newly observed, no E row", true, false)
   -- Clause 3.
-  for (q, c) in pathsOf cr.post.heap depthFuel cr.result [] do
+  for (q, c) in pathsOf cr.postHeap depthFuel cr.result [] do
     if c < heap.size then
       let cells := namesAt e.summary.result q
       let ok := cells.any (fun o => o == .shared || o == .unknown) ||
@@ -642,7 +585,7 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option St
         return (some s!"clause 3: result array {c} at {repr q} is old and res({repr q}) = {repr cells} names no input path holding it", true, false)
   -- map: the certificate of the result.
   if decls[e.decl]?.map (·.name) == some "map" then
-    if let some why := certifiedB cr.post.heap e.summary.result cr.result then
+    if let some why := certifiedB cr.postHeap e.summary.result cr.result then
       return (some s!"map certificate: {why}", true, false)
   pure (none, true, false)
 
@@ -656,8 +599,8 @@ def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.C
     let ((family, p), next) := (Oracle.generateVersion 5).run state
     state := next
     let .ok acc := check p checker | continue
-    let run := ((evalLog p.declarations none [] p.main).run #[]).run { fuel := 100000 }
-    let .ok ((_, log), _) := run | continue
+    let run := loggedCalls p
+    let .ok log := run | continue
     for cr in log do
       t := { t with calls := t.calls + 1 }
       for e in acc.cache.toList do
