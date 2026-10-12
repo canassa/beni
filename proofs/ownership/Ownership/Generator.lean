@@ -803,6 +803,23 @@ def sharedClosureRecord : Move := fun next env => do
   pure [(.closure id [a], t), (.prim .record [v next, ← number env], .record [t, .int]),
     (.prim .shared [v (next + 1)], .record [t, .int]), (.prim .push [a, ← number env], tL)]
 
+/-- A nested list repeating one row (sometimes not), wrapped one level
+    deeper, a loop over it that keeps an element as its accumulator, and an
+    edit of that element: the element of a non-exclusive source is not
+    exclusive, however it is carried out of the loop. -/
+def loopPicksElement : Move := fun next env => do
+  let same := (← draw 4) != 0
+  let (i, x, acc, k) := (sv next 0, sv next 1, sv next 2, sv next 4)
+  let step ← match ← draw 3 with
+    | 0 => pure (Expr.atom (v x))
+    | 1 => pure (.letE k (.prim .length [v acc]) (.branch (v k) (.atom (v x)) (.atom (v acc))))
+    | _ => pure (.letE k (.prim .length [v x]) (.branch (v k) (.atom (v acc)) (.atom (v x))))
+  pure [(← litList env, tL), (← litList env, tL),
+    (.prim (.literal tL) [v next, if same then v next else v (next + 1)], tN),
+    (.prim (.literal tN) [v (next + 2)], tNN), (.prim (.literal tL) [], tN),
+    (.traverse .list (v (next + 3)) (v (next + 4)) i x acc step, tN),
+    (.focus (v (next + 5)) (.int 0) (sv next 5) (.prim .push [v (sv next 5), ← number env]), tN)]
+
 def finTy (t : Ty) : Nat → Env → Gen (List String × Expr) := fun next env => do
   let (bs, a) ← valueOf false next env t
   pure ([], wrap next bs (.atom a))
@@ -828,7 +845,8 @@ def movesFor (table : Table) : List (String × Move) :=
     ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table),
     ("shadow-write", shadowWrite), ("shared-nested", sharedNested), ("shared-record", sharedRecord),
     ("branch-closure", branchClosure), ("double-push", doublePush), ("close-alias-callee", closeAliasCallee),
-    ("copy-then-edit", copyThenEdit), ("once-in-loop", onceInLoop), ("shared-closure-record", sharedClosureRecord)] ++ gen
+    ("copy-then-edit", copyThenEdit), ("once-in-loop", onceInLoop), ("shared-closure-record", sharedClosureRecord),
+    ("loop-picks-element", loopPicksElement)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/

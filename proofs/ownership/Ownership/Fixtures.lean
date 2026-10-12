@@ -507,6 +507,17 @@ def unboundLive (config : Config) : Bool × Bool :=
     | _, _ => false
   (accepted, disagree)
 
+/-- A loop over a non-exclusive source returns one of its elements as the
+    accumulator, which is then edited in place: the element is not exclusive
+    (the source-level `xres` and `tsupplyexcl` holes both accept it). -/
+def loopPicksElement : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.prim (.literal (.list .int)) [v 0, v 0]) <|
+    .letE 2 (.prim (.literal (.list (.list .int))) [v 1]) <|
+    .letE 3 (.prim (.literal (.list .int)) []) <|
+    .letE 4 (.traverse .list (v 2) (v 3) 10 11 12 (.atom (v 11))) <|
+    .focus (v 4) (.int 0) 5 (.prim .push [v 5, .int 9]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -699,7 +710,8 @@ def all : List Fixture := [
   ⟨"shared on a nested list, then an element pushed",sharedNested,false⟩,
   ⟨"a closure in a conditional arm captures a pushed list",branchArmCapture,false⟩,
   ⟨"foldl calls a once closure on two rows",onceThroughFold,false⟩,
-  ⟨"shared on a record holding a closure over a list",sharedClosureInRecord,false⟩ ]
+  ⟨"shared on a record holding a closure over a list",sharedClosureInRecord,false⟩,
+  ⟨"a loop over a non-exclusive source returns an element, then edited",loopPicksElement,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true
