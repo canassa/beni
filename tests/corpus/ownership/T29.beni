@@ -1,0 +1,63 @@
+-- ownership: T29, a batch whose first body sends (thesis Table 6.2, §7
+-- *Fibers and commands*; `ownership-checker.md` §23.8). `Clear` keeps the
+-- todos `List.filter` lets through and returns two bodies: the first sends
+-- `Toggle 0`, which is dispatched at once, before the second runs
+-- (`boundary.md` §9.8.4; `browser/tea/SyncCommandOrder` pins the order),
+-- and the second captured `kept` to log it. `Toggle` edits `model.todos`
+-- in place, so it would write the list the second body is about to read:
+-- the capture escapes `kept` at every dispatch (§20.4 (a)) and the entry
+-- rejects the edit `escaped`, as it did before owned sends. The send
+-- itself gives up nothing — `Toggle 0`'s payload holds no list — and is no
+-- line.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type alias Model =
+    todos : List Int
+
+
+type Msg
+    = Clear
+    | Toggle Int
+
+
+encode : List Int → String
+encode todos = String.fromInt (List.length todos)
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Clear →
+            kept = List.filter model.todos λt → t > 0
+            ( { model | todos = kept }
+            , Cmd.batch
+                [ Cmd.perform λsend → send (Toggle 0)
+                , Cmd.do λ⊤ → Log.info (encode kept)
+                ]
+            )
+
+        Toggle i →
+            ( { model | todos = List.set model.todos i 0 }, Cmd.none )
+
+
+view : Model → Html Msg
+view _ =
+    <main>
+        <button onClick={Clear}>clear</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { todos = [ 1, 2, 3 ] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

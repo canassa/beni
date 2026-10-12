@@ -1,14 +1,16 @@
 -- ownership: messages, and what their payloads reach (thesis P6, Change 7,
--- T34, T38, T50; `ownership-checker.md` §20.5). Every payload is supplied
--- borrowed in slice 3b: the owned bit a send would carry is not built.
+-- T34, T38, T50; `ownership-checker.md` §20.5, §23). Since slice 3d a
+-- send hands its payload to `update` owned (§23.2): what a command sends
+-- was given up at its send, and the cell `msg` stands for owned payloads.
 --
 -- `pinned`: a view event carries `model.rows` (`onClick={Pin model.rows}`),
 -- and `Pin rows` stores it at `model.pinned`, which `Grow` extends in place:
--- the message may hold the model's own list, at every arm (P6, *View
--- events*), so the push is rejected `payload`, approximately. `stored`: a
--- command's payload is stored at `model.rows` (T38's shape), which `Add`
--- extends in place: rejected `payload`. `edited`: `update` extends its
--- message's list itself (T50): rejected `payload`. `counted`: the payload
+-- a view event is not a send, its message may hold the model's own list at
+-- every arm (P6, *View events*), so the push is rejected `payload`,
+-- approximately (§23.6). `stored`: a command's payload, built by its work,
+-- is stored at `model.rows` (T38's shape), which `Add` extends in place:
+-- accepted on browser-direct, owned at its send. `edited`: `update` extends
+-- its message's list itself (T50): accepted. `counted`: the payload
 -- reaches no list written in place (T34): `Add` is accepted on
 -- browser-direct.
 import Browser

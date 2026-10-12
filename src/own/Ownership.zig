@@ -224,6 +224,9 @@ pub const bit_k: u8 = 32;
 /// §18.6: escaped, and only by a function value handed to JavaScript that
 /// captured it — Change 5's words would decide it; printed `J`.
 pub const bit_j: u8 = 64;
+/// With `bit_w`: §23.2, a send's write — every cell at or below the path is
+/// given up, not only the one at it; printed `S` (`s` when approximate).
+pub const bit_d: u8 = 128;
 
 pub const UseEntry = struct { param: u32, path: u32, bits: u8 };
 
@@ -313,6 +316,9 @@ pub const FunFacts = struct {
     calls: Calls = .zero,
     need: bool = false,
     seen: bool = true,
+    /// §23.3: the callee hands this parameter, as its parameter `send`, a
+    /// function that sends what it is given to `update`; `none` otherwise.
+    send: u32 = none,
 };
 
 pub const Limit = enum(u8) { none, width, rounds };
@@ -648,6 +654,7 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
             const report = m < o.report_for.len and o.report_for[m];
             slots[x].sum = if (!report and try o.crosses(m, x)) .{ .params = bir.decls[x].params } else try o.walkSummary(m, x, false);
             if (o.isDictFocus(m, x)) slots[x].sum = try o.assertDictFocus(slots[x].sum);
+            if (o.hostedRow(m, x)) |row| slots[x].sum = try o.assertHosted(slots[x].sum, row);
             slots[x].state = .done;
         }
         return;
@@ -892,6 +899,7 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
             p.calls = @fromBackingInt(@max(@backingInt(p.calls), @backingInt(f.calls)));
             p.need = p.need or f.need;
             p.seen = p.seen and f.seen;
+            if (p.send == none) p.send = f.send;
             continue;
         }
         funs[nf] = f;
@@ -1156,6 +1164,73 @@ fn assertDictFocus(o: *Ownership, s: Summary) Allocator.Error!Summary {
     return o.normalize(out);
 }
 
+/// §23.3: the send positions — `browser`'s `Hosted` functions that hand a
+/// body to the runtime, which calls it with a send, and the taggers the
+/// runtime sends the results of.
+const HostedRow = enum {
+    /// `job`, `later`: π₁ is handed a send as its parameter 1.
+    body,
+    /// `tap`, `hook`: π₁ is handed a send of a raw value, and π₂ tags each
+    /// value it sends, supplied borrowed — one value goes through the tagger
+    /// of every current subscription of its key.
+    sub,
+    /// `mapJob`, `mapLater`: π₂ tags what the inner send gave up, owned.
+    map_owned,
+    /// `mapTap`: π₂ tags what a subscription's tagger made of a value that
+    /// went to every tagger of its key: borrowed.
+    map_borrowed,
+    /// `runJob`, `callJob`: π₂ is a send the runtime forwards to a body whose
+    /// sends were checked where it was made (`job`'s row).
+    forward,
+};
+
+fn hostedRow(o: *const Ownership, m: u32, d: u32) ?HostedRow {
+    if (m >= o.in.platform_names.len or !std.mem.eql(u8, o.in.platform_names[m], "browser")) return null;
+    if (!std.mem.eql(u8, o.in.module_names[m], "Hosted")) return null;
+    const bir = o.in.birs[m];
+    const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
+    if (eqlAny(name, &.{ "job", "later" })) return .body;
+    if (eqlAny(name, &.{ "tap", "hook" })) return .sub;
+    if (eqlAny(name, &.{ "mapJob", "mapLater" })) return .map_owned;
+    if (std.mem.eql(u8, name, "mapTap")) return .map_borrowed;
+    if (eqlAny(name, &.{ "runJob", "callJob" })) return .forward;
+    return null;
+}
+
+/// The row of a send position (§23.3): the body's inferred summary — what
+/// the value it makes holds — with the facts of the runtime it hands its
+/// functions to asserted, which no beni body shows: the runtime calls them,
+/// many times, a body with a send and a tagger with what is sent.
+fn assertHosted(o: *Ownership, s: Summary, row: HostedRow) Allocator.Error!Summary {
+    if (s.limit != .none) return s;
+    const keep = o.keep.allocator();
+    var funs: std.ArrayList(FunFacts) = .empty;
+    var supply: std.ArrayList(SupplyEntry) = .empty;
+    for (s.funs) |f| if (f.param > 1) try funs.append(keep, f);
+    for (s.supply) |e| if (e.fun > 1) try supply.append(keep, e);
+    const fresh: Prov = .{ .kind = .fresh };
+    switch (row) {
+        .body => try funs.append(keep, .{ .param = 0, .calls = .many, .send = 0 }),
+        .sub => {
+            try funs.append(keep, .{ .param = 0, .calls = .many, .send = 0 });
+            try funs.append(keep, .{ .param = 1, .calls = .many, .need = true });
+            try supply.append(keep, .{ .fun = 1, .k = 0, .path = eps, .prov = fresh, .owned = false });
+        },
+        .map_owned, .map_borrowed => {
+            try funs.append(keep, .{ .param = 1, .calls = .many, .need = true });
+            try supply.append(keep, .{ .fun = 1, .k = 0, .path = eps, .prov = fresh, .owned = row == .map_owned });
+        },
+        // The job calls it; what it is handed was checked at the job's send
+        // position, so the row supplies it nothing.
+        .forward => try funs.append(keep, .{ .param = 1, .calls = .many }),
+    }
+    var out = s;
+    out.funs = funs.items;
+    out.supply = supply.items;
+    out.asserted = true;
+    return o.normalize(out);
+}
+
 /// §18.3: a writer that stores parameter `v` in its base `b` keeps the base
 /// exclusive when `v` is, and shares no cell with the base's elements.
 fn stores(o: *Ownership, b: u32, v: u32, elem: u32) Allocator.Error!XSum {
@@ -1216,7 +1291,10 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
             if (u.bits & b[0] != 0) wr.writeAll(b[1]) catch return error.OutOfMemory;
         }
         // `w`: written only through an approximate step.
-        if (u.bits & bit_w != 0) wr.writeAll(if (u.bits & bit_x != 0) "W" else "w") catch return error.OutOfMemory;
+        // `S`: a send's write, of every cell below the path too (§23.2).
+        if (u.bits & bit_w != 0) wr.writeAll(if (u.bits & bit_d != 0)
+            (if (u.bits & bit_x != 0) "S" else "s")
+        else if (u.bits & bit_x != 0) "W" else "w") catch return error.OutOfMemory;
         try uses.append(arena, try buf.toOwnedSlice());
     }
     sortText(uses.items);
@@ -1257,6 +1335,7 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
         } }) catch return error.OutOfMemory;
         if (f.need) wr.writeAll(", need owned") catch return error.OutOfMemory;
         if (!f.seen) wr.writeAll(", unseen") catch return error.OutOfMemory;
+        if (f.send != none) wr.print(", sends π{d}", .{f.send + 1}) catch return error.OutOfMemory;
         var sup: std.ArrayList([]const u8) = .empty;
         for (s.supply) |e| {
             if (e.fun != f.param) continue;
@@ -1676,6 +1755,9 @@ const NominalFacts = struct {
     /// One constructor of one field: the release representation may make a
     /// value of it its field (thesis §3.1, A10).
     unboxed: bool = false,
+    /// §23.4: a `List` is reachable in the body without going through a
+    /// type parameter, a function or a `foreign type` other than `List`.
+    list: bool = false,
 };
 
 fn isPrimitive(o: *const Ownership, id: TypeId) bool {
@@ -1697,8 +1779,12 @@ fn nominalFacts(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
     var facts: NominalFacts = .{};
     if (e.schema_endpoint) {
         facts.own = true;
+        facts.list = true;
     } else switch (e.kind) {
-        .foreign => facts.own = id == o.in.types.well_known.list or !o.isPrimitive(id),
+        .foreign => {
+            facts.own = id == o.in.types.well_known.list or !o.isPrimitive(id);
+            facts.list = id == o.in.types.well_known.list;
+        },
         .alias, .adt => {
             const m = e.module.int();
             const bir = o.in.birs[m];
@@ -1713,6 +1799,7 @@ fn nominalFacts(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
                         const f = try o.birTypeFacts(m, bir, arg, 0);
                         facts.own = facts.own or f.own;
                         facts.params = facts.params or f.params;
+                        facts.list = facts.list or f.list;
                     }
                 }
                 if (ctors.len == 1) {
@@ -1726,7 +1813,7 @@ fn nominalFacts(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
 }
 
 fn birTypeFacts(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, depth: u32) Allocator.Error!NominalFacts {
-    if (depth > type_depth) return .{ .own = true };
+    if (depth > type_depth) return .{ .own = true, .list = true };
     const tag = bir.instTag(inst);
     const data = bir.instData(inst);
     const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
@@ -1751,23 +1838,53 @@ fn birTypeFacts(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, depth:
         },
         .type_top, .ext_type, .schema_type_top, .ext_schema_type => {
             const nf = try o.nominalFacts(o.in.types.headId(graph_m, tag, data));
-            return .{ .own = nf.own };
+            return .{ .own = nf.own, .list = nf.list };
         },
         .type_app => {
             const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
             const nf = try o.nominalFacts(o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head)));
-            var f: NominalFacts = .{ .own = nf.own };
+            var f: NominalFacts = .{ .own = nf.own, .list = nf.list };
             if (nf.params) for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |arg| {
                 f = joinFacts(f, try o.birTypeFacts(m, bir, arg, depth + 1));
             };
             return f;
         },
-        else => return .{ .own = true },
+        else => return .{ .own = true, .list = true },
     }
 }
 
 fn joinFacts(a: NominalFacts, b: NominalFacts) NominalFacts {
-    return .{ .own = a.own or b.own, .params = a.params or b.params };
+    return .{ .own = a.own or b.own, .params = a.params or b.params, .list = a.list or b.list };
+}
+
+/// §23.4: whether a value of this type may hold a list that beni code can
+/// reach without `Js`: what a send gives up that `update` could write in
+/// place. A function's captures and a `foreign type`'s insides are not
+/// such a list — §16.5's `pending` follows a writing closure, and a value
+/// read out of JavaScript is `⊤` wherever it is read.
+fn holdsList(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error!bool {
+    if (depth > type_depth) return true;
+    switch (store.resolvedContent(v)) {
+        .flex, .rigid, .err, .alias => return true,
+        .structure => |s| switch (s) {
+            .unit, .empty_record, .func => return false,
+            .tuple => |r| {
+                for (store.vars(r)) |el| if (try o.holdsList(store, el, depth + 1)) return true;
+                return false;
+            },
+            .record => |r| {
+                for (store.fields(r.fields)) |f| if (try o.holdsList(store, f.value, depth + 1)) return true;
+                return o.holdsList(store, r.ext, depth + 1);
+            },
+            .app => |a| {
+                if (a.type == o.in.types.well_known.list) return true;
+                const nf = try o.nominalFacts(a.type);
+                if (nf.list) return true;
+                if (nf.params) for (store.vars(a.args)) |arg| if (try o.holdsList(store, arg, depth + 1)) return true;
+                return false;
+            },
+        },
+    }
 }
 
 /// Whether a value of this type may hold a cell (§4.4: it does not cross).
@@ -1795,6 +1912,27 @@ fn tracked(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error
                 return false;
             },
         },
+    }
+}
+
+/// §23.6: the view-event rule's reason (P6).
+const view_event_detail = "a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6)";
+
+/// §23.2: what a send does with what it is handed — every cell of it is
+/// given up to `update`, which may write it in place.
+const send_class: Summary = .{ .params = 1, .uses = &.{.{ .param = 0, .path = eps, .bits = bit_w | bit_x | bit_d }}, .asserted = true };
+
+/// The `k`th parameter type of a function type, when `v` is one.
+fn funcParam(store: *TypeStore, v: Var, k: u32) ?Var {
+    switch (store.resolvedContent(v)) {
+        .structure => |st| switch (st) {
+            .func => |fun| {
+                const ps = store.vars(fun.params);
+                return if (k < ps.len) ps[k] else null;
+            },
+            else => return null,
+        },
+        else => return null,
     }
 }
 
@@ -2023,7 +2161,9 @@ const Entry = struct {
 
 const AV = []const Entry;
 
-const Capture = struct { local: u32, path: u32 };
+/// `deep`: in a closure's `env_writes`, a send gives up every cell at or
+/// below the path (§23.2).
+const Capture = struct { local: u32, path: u32, deep: bool = false };
 
 /// How a lambda was consumed: what decides its demands on its own
 /// parameters (§16.5).
@@ -2127,6 +2267,8 @@ const DemandRec = struct {
     creation_ci: u32 = none,
     /// §20.6: a demand at a program constructor's entry, by its row.
     entry: ?EntryRow = null,
+    /// §23.2: a send's demand, on every cell of its base; read off as `S`.
+    deep: bool = false,
 };
 
 /// §20.2: what a platform's runtime does with the model it hands `update`.
@@ -2171,6 +2313,8 @@ const FnState = struct {
     calls: Calls = .zero,
     need: bool = false,
     seen: bool = true,
+    /// §23.3: handed on to a send position.
+    send: u32 = none,
 };
 
 /// A supply to a function parameter, read off once its probe is resolved.
@@ -2269,6 +2413,12 @@ const Walker = struct {
     /// The writing top-level functions already reported out of sight: one
     /// line where each first leaves it (§16.5).
     unseen_funcs: std.AutoHashMapUnmanaged(u64, void) = .empty,
+    /// §23.4: per instruction, whether it is the parameter pattern of a lambda
+    /// written at a send position: a send value.
+    send_params: []bool = &.{},
+    /// `returnsOwned` reads only exact result entries: whether a failure was
+    /// an approximate step's alone.
+    ro_exact: bool = false,
     /// §18.2: the conditions, by index (`cond_yes`, `cond_lost` and
     /// `cond_shared` first), and the condition of each list cell that has
     /// one other than its kind's.
@@ -2319,6 +2469,8 @@ const Walker = struct {
         w.split_scrut = try w.a.alloc(?AV, insts);
         @memset(w.split_scrut, null);
         @memset(w.pat_closure, .{ none, none });
+        w.send_params = try w.a.alloc(bool, insts);
+        @memset(w.send_params, false);
         try w.ctx_nodes.append(w.a, .{ .parent = none, .case_id = none, .arm = 0, .depth = 0 });
         try w.frames.append(w.a, .{ .parent = none, .pending_base = 0 });
         try w.conds.appendSlice(w.a, &.{ .{}, .{ .no = 1 }, .{ .no = 2 } });
@@ -2987,7 +3139,11 @@ const Walker = struct {
     }
 
     fn useAt(w: *Walker, l: u32, path: u32, tok: u32, except: []const u32) Allocator.Error!void {
-        if (l >= w.local_frame.len or w.local_frame[l] != w.frame) return;
+        // A local of this frame, or one this frame captured from an
+        // enclosing one: a closure that gave up what it captured must not
+        // read it again (§18.8, §23.7).
+        if (l >= w.local_frame.len) return;
+        if (w.local_frame[l] != w.frame and (w.local_av[l] == null or !w.inFrameOf(w.local_frame[l]))) return;
         try w.uses.append(w.a, .{ .local = l, .path = path, .except = except, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok });
     }
 
@@ -3620,7 +3776,7 @@ const Walker = struct {
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 if (c.kind != .env) continue;
                 if (c.a < w.local_frame.len and w.local_av[c.a] != null and w.local_frame[c.a] == id) continue;
-                try env_writes.append(w.a, .{ .local = c.a, .path = c.path });
+                try env_writes.append(w.a, .{ .local = c.a, .path = c.path, .deep = rec.deep });
             }
         }
         w.closures.items[ci].env_writes = try env_writes.toOwnedSlice(w.a);
@@ -3646,7 +3802,7 @@ const Walker = struct {
                 (if (w.local_av[cap.local]) |held| try w.projPath(held, cap.path, null) else continue)
             else
                 try w.single(.{ .kind = .env, .a = cap.local, .path = cap.path });
-            const p = try w.onceDemand(.creation, tok, av, .{ .local = cap.local, .path = cap.path }, ci);
+            const p = try w.onceDemandDeep(.creation, tok, if (cap.deep) try w.flat(av) else av, .{ .local = cap.local, .path = cap.path }, ci, cap.deep);
             try w.closures.items[ci].once_probes.append(w.a, p);
         }
     }
@@ -3972,6 +4128,8 @@ const Walker = struct {
                 .func => |t| if (try w.o.ensureSummary(t.m, t.d)) |s| {
                     return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d) }, args, f, callee);
                 },
+                // §23.2: a send gives up every cell of its payload.
+                .send => return w.applySummary(inst, .{ .sum = &send_class, .name = "send", .op = "send" }, args, f, callee),
             }
         }
         try w.sight(f, .{ .pending = "it is called where the checker does not know which function runs" }, w.token(inst));
@@ -4004,6 +4162,14 @@ const Walker = struct {
         // A top-level value whose value is a function has no parameters to
         // apply a summary to: its call is §6.1's.
         const has_params = w.o.in.birs[t.m].decls[t.d].params > 0;
+        // `Js.maySuspend f` reads the static bit the checker inferred for
+        // `f` and nothing of its value: no use, and `f` stays in sight
+        // (§23.3), so `Cmd.perform`'s body keeps its send position.
+        if (w.isCore(t, "Js") and std.mem.eql(u8, w.targetName(t), "maySuspend")) {
+            const avs = try w.evalOperands(args, false);
+            w.popPending(avs.len);
+            return &.{};
+        }
         if (if (has_params) try w.o.ensureSummary(t.m, t.d) else null) |s| {
             return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d) }, args, &.{}, null);
         }
@@ -4129,9 +4295,13 @@ const Walker = struct {
         // The fixpoint (§20.4): update's fresh cells are one per number in
         // every round, so it settles; 8 rounds is a backstop. Its rounds
         // compute cells only; the round that settles lowers their conditions.
-        // A message that a view builds from the model is not carried round
-        // the loop: any demand its cells reach is the payload rule's already
-        // (§20.5), so the view is read once, on the settled model.
+        // §23.6: what a send gave up is owned; a view event's message is
+        // not, and may hold the lists the view's messages carry. They are not
+        // carried round the loop: they reach the model only where an arm
+        // stores a payload, which the cell `msg` marks, so a demand that
+        // reaches `msg` while the view's messages may hold a list is the
+        // view-event rule's (P6). So the view is read once, on the settled
+        // model.
         var model = m0;
         var res: AV = &.{};
         var round: u32 = 0;
@@ -4148,10 +4318,9 @@ const Walker = struct {
                 break;
             }
         }
-        res = try w.entryRes(inst, upd, &.{ payload, model }, 0);
-        const view_res = try w.entryRes(inst, view, &.{model}, 200_000);
-        const view_msgs: AV = if (msg_tracked) try w.anywhere(view_res, inst) else &.{};
+        const view_msgs: AV = if (msg_tracked) try w.viewMessages(inst, view, model, true) else &.{};
         const msg = try w.unionOf(&.{ payload, view_msgs });
+        res = try w.entryRes(inst, upd, &.{ msg, model }, 0);
         // (a) What every call the runtime makes escapes.
         for (upd.sums) |s| for (s.uses) |u| {
             if (u.param == 1) try w.entryEscape(inst, try w.projPath(model, u.path, null), u.bits);
@@ -4171,18 +4340,19 @@ const Walker = struct {
         // One demand per path written, its derivation and exclusivity the
         // worst any of update's classes gives (an exact write beats an
         // approximate one, a failed `xreq` beats a held one).
-        const Written = struct { param: u32, path: u32, origin: Origin, xfail: ?Rely };
+        const Written = struct { param: u32, path: u32, origin: Origin, xfail: ?Rely, deep: bool };
         var written: std.ArrayList(Written) = .empty;
         for (upd.classes, upd.sums) |cls, s| for (s.uses) |u| {
             if (u.bits & bit_w == 0 or u.param > 1) continue;
             const origin: Origin = if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact;
-            // update's xreq on the model, at this path (§18.4 item 3).
+            // update's xreq on the model, or on its message (§23.6), at
+            // this path (§18.4 item 3).
             var xfail: ?Rely = null;
-            if (u.param == 1) {
+            {
                 const ci: u32 = if (cls == .closure) cls.closure else none;
                 for (s.xreq) |x| {
                     const p = xreqParam(x) orelse continue;
-                    if (p != 1) continue;
+                    if (p != u.param) continue;
                     const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
                     const r = try w.rely(k, w.frame);
                     if (r == .ok) continue;
@@ -4190,25 +4360,32 @@ const Walker = struct {
                 }
             }
             var found = false;
+            const deep = u.bits & bit_d != 0;
             for (written.items) |*x| {
                 if (x.param != u.param or x.path != u.path) continue;
                 found = true;
+                x.deep = x.deep or deep;
                 if (origin == .exact or (origin == .approx and x.origin == .limit)) x.origin = origin;
                 if (xfail) |r| if (x.xfail == null or r == .exact) {
                     x.xfail = r;
                 };
             }
-            if (!found) try written.append(w.a, .{ .param = u.param, .path = u.path, .origin = origin, .xfail = xfail });
+            if (!found) try written.append(w.a, .{ .param = u.param, .path = u.path, .origin = origin, .xfail = xfail, .deep = deep });
         };
         for (written.items) |x| {
             if (x.param == 0) {
-                // §20.5: update writes its message in place.
-                try w.entryDemand(tok, op, try w.pathName("msg", x.path), try w.projPath(msg, x.path, null), &.{}, &.{}, row, x.origin, null);
+                // §20.5, §23.6: update writes its message in place — what a
+                // send gave up, or what a view event built from the model.
+                const at = try w.projPath(msg, x.path, null);
+                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{}, view_msgs, row, x.origin, x.xfail, x.deep);
                 continue;
             }
             var rest: std.ArrayList(Entry) = .empty;
             for (model) |e| if (!w.o.overlap(e.path, x.path)) try rest.append(w.a, e);
-            try w.entryDemand(tok, op, try w.pathName("model", x.path), try w.projPath(model, x.path, null), &.{ rest.items, payload }, view_msgs, row, x.origin, x.xfail);
+            const at = try w.projPath(model, x.path, null);
+            // Not Disjoint against this message: what a send put in the
+            // model was another send's, given up there (§23.6).
+            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{rest.items}, view_msgs, row, x.origin, x.xfail, x.deep);
         }
         // §20.3: view and subscriptions receive the model to read only.
         for ([_]struct { f: EntryFn, n: []const u8 }{ .{ .f = view, .n = "view" }, .{ .f = subs, .n = "subscriptions" } }) |x| {
@@ -4265,6 +4442,40 @@ const Walker = struct {
         if (bits & bit_j != 0) try w.escapeWhy(av, w.point, inst);
     }
 
+    /// §20.5, §23.6: the cells the messages `view` builds may carry, anywhere
+    /// in a message: its result's cells, closures expanded, but its own root.
+    fn viewMessages(w: *Walker, inst: Inst.Index, view: EntryFn, model: AV, conds: bool) Allocator.Error!AV {
+        if (view.sums.len == 0) return &.{};
+        // The model's own cells, and every list the view made: a markup value
+        // keeps its handlers from one dispatch to the next (P3), so a list a
+        // handler's message holds may be handed over twice. The markup's own
+        // node — what the view returns at its root — is no message.
+        var held: std.ArrayList(Entry) = .empty;
+        for (try w.entryResWith(inst, view, &.{model}, 200_000, conds)) |e| {
+            if (e.path == eps and (try w.reaches(model, &.{e})) == null) continue;
+            try held.append(w.a, e);
+        }
+        // A top-level value whose type can hold no list — a footer, an icon
+        // — is markup the view includes, not a message.
+        var out: std.ArrayList(Entry) = .empty;
+        for (try w.anywhere(try w.norm(held.items), inst)) |e| {
+            const c = w.cells.items[e.cell];
+            if (c.kind == .shared and c.path == eps and !try w.sharedHoldsList(c.a, c.b)) continue;
+            try out.append(w.a, e);
+        }
+        return w.norm(out.items);
+    }
+
+    /// Whether the top-level value `d` of module `m` may hold a list.
+    fn sharedHoldsList(w: *Walker, m: u32, d: u32) Allocator.Error!bool {
+        if (m >= w.o.in.modules.len) return true;
+        const km = &w.o.in.modules[m];
+        const body = w.o.in.birs[m].decls[d].body.unwrap() orelse return true;
+        if (body.int() >= km.inst_type.len) return true;
+        const v = km.inst_type[body.int()].unwrap() orelse return true;
+        return w.o.holdsList(&km.store, v, 0);
+    }
+
     /// A program value: the runtime's, which nothing in the program reads.
     fn entryResult(w: *Walker, inst: Inst.Index) Allocator.Error!AV {
         if (!try w.isTracked(inst)) return &.{};
@@ -4275,7 +4486,7 @@ const Walker = struct {
     fn entryName(w: *Walker, f: EntryFn, field: []const u8) Allocator.Error![]const u8 {
         for (f.classes) |cls| switch (cls) {
             .func => |t| return w.qualified(t),
-            .closure => {},
+            .closure, .send => {},
         };
         return std.fmt.allocPrint(w.o.out.allocator(), "<{s}>", .{field});
     }
@@ -4288,7 +4499,7 @@ const Walker = struct {
 
     /// A demand at the entry (§20.6): a call-site demand on the entry model
     /// at one path, or on the message.
-    fn entryDemand(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely) Allocator.Error!void {
+    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely, deep: bool) Allocator.Error!void {
         try w.demandOn(.{
             .kind = .callsite,
             .token = tok,
@@ -4302,6 +4513,7 @@ const Walker = struct {
             .xfail = xfail,
             .entry = row,
             .payload_from = payload_from,
+            .deep = deep,
         });
     }
 
@@ -4353,7 +4565,15 @@ const Walker = struct {
         return null;
     }
 
-    const Class = union(enum) { closure: u32, func: Target };
+    /// `send`: a send value (§23.2), whose class gives up everything it is
+    /// handed.
+    const Class = union(enum) { closure: u32, func: Target, send };
+
+    /// Whether a cell is the parameter of a lambda written at a send
+    /// position (§23.4).
+    fn isSend(w: *const Walker, c: Cell) bool {
+        return c.kind == .param and c.b == 1 and c.path == eps and w.instCol(bool, w.send_params, c.a, false);
+    }
 
     /// The classes a function value may have: the lambdas, local functions
     /// and top-level functions it may be (§16.5). Empty when any part of it
@@ -4363,6 +4583,10 @@ const Walker = struct {
         for (av) |e| {
             if (e.path != eps) return &.{};
             const c = w.cells.items[e.cell];
+            if (w.isSend(c)) {
+                try out.append(w.a, .send);
+                continue;
+            }
             switch (c.kind) {
                 .closure => try out.append(w.a, .{ .closure = c.a }),
                 .func => try out.append(w.a, .{ .func = .{ .m = c.a, .d = c.b } }),
@@ -4372,6 +4596,10 @@ const Walker = struct {
                     for (held) |h| {
                         if (h.path != eps) return &.{};
                         const hc = w.cells.items[h.cell];
+                        if (w.isSend(hc)) {
+                            try out.append(w.a, .send);
+                            continue;
+                        }
                         switch (hc.kind) {
                             .closure => try out.append(w.a, .{ .closure = hc.a }),
                             .func => try out.append(w.a, .{ .func = .{ .m = hc.a, .d = hc.b } }),
@@ -4588,6 +4816,18 @@ const Walker = struct {
     /// §16.4: a call whose callee has a summary.
     fn applySummary(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, callee_av: AV, callee_inst: ?Inst.Index) Allocator.Error!AV {
         const s = callee.sum;
+        // §23.4: a lambda written at a send position: its parameter there
+        // is a send, known before its body is walked.
+        for (s.funs) |f| {
+            if (f.send == none or f.param >= args.len) continue;
+            const arg = args[f.param];
+            if (w.bir.instTag(arg) != .lambda) continue;
+            const ps = w.bir.extraSlice(w.bir.subRange(@fromBackingInt(@intCast(w.bir.instData(arg).lhs))), Inst.Index);
+            if (f.send < ps.len) {
+                const at = ps[f.send].int() -% w.decl.inst_start.int();
+                if (at < w.send_params.len) w.send_params[at] = true;
+            }
+        }
         const avs = try w.a.alloc(AV, args.len);
         for (args, avs, 0..) |arg, *v, i| {
             v.* = try w.eval(arg);
@@ -4613,6 +4853,14 @@ const Walker = struct {
             try w.useOperand(c, tok, &.{});
             try w.useTemporaries(&.{c}, &.{callee_av}, tok);
         }
+        // §23.3: a function parameter handed to a send position takes the
+        // fact before anything the callee keeps of it is looked at.
+        if (w.frame == 0) for (s.funs) |f| {
+            if (f.send == none or f.param >= args.len) continue;
+            if (w.fnParamOf(avs[f.param])) |jj| if (w.fn_state[jj].send == none) {
+                w.fn_state[jj].send = f.send;
+            };
+        };
         // A lambda called here makes its calls of the declaration's function
         // parameters here (§18.9).
         if (callee.closure != none) try w.applyEnvCalls(callee.closure, null, 0, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 });
@@ -4640,7 +4888,7 @@ const Walker = struct {
             // A named writer's line keeps its slice-1 form; any other call
             // names the summary that wrote.
             const note = if (w.mode != .report or s.asserted or std.mem.startsWith(u8, callee.op, "List.")) "" else try std.fmt.allocPrint(w.o.out.allocator(), "{s} writes π{d}{s}", .{ callee.name, u.param + 1, try w.o.pathText(u.path) });
-            try w.callSiteDemand(inst, callee.op, args, avs, u.param, u.path, note, if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, xfail[u.param]);
+            try w.callSiteDemandDeep(inst, callee.op, args, avs, u.param, u.path, note, if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, xfail[u.param], u.bits & bit_d != 0);
             xfail[u.param] = null;
         }
         for (xfail, 0..) |f, i| {
@@ -4742,6 +4990,7 @@ const Walker = struct {
         return switch (cls) {
             .closure => |ci| w.closures.items[ci].class,
             .func => |t| w.o.ensureSummary(t.m, t.d),
+            .send => &send_class,
         };
     }
 
@@ -4924,7 +5173,15 @@ const Walker = struct {
     /// A call-site demand (§16.4 item 3): argument `i`'s cells at `q`,
     /// Disjoint against every other argument and every other path of `i`.
     fn callSiteDemand(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail: ?Rely) Allocator.Error!void {
-        const base = try w.projPath(avs[i], q, null);
+        return w.callSiteDemandDeep(inst, op, args, avs, i, q, note, origin, xfail, false);
+    }
+
+    /// `deep`: a send's demand (§23.2), on every cell at or below `q`; one
+    /// on no cell gives nothing up and is no line.
+    fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail: ?Rely, deep: bool) Allocator.Error!void {
+        const at = try w.projPath(avs[i], q, null);
+        const base = if (deep) try w.flat(at) else at;
+        if (deep and base.len == 0) return;
         var others: std.ArrayList(AV) = .empty;
         for (avs, 0..) |av, x| if (x != i) try others.append(w.a, av);
         var rest: std.ArrayList(Entry) = .empty;
@@ -4940,12 +5197,13 @@ const Walker = struct {
             .op = op,
             .base_text = base_text,
             .base_ref = if (ref) |r| .{ .local = r.local, .path = try w.o.concat(r.path, q) } else null,
-            .base_ty = if (q == eps) w.instType(args[i]) else null,
+            .base_ty = if (q == eps and !deep) w.instType(args[i]) else null,
             .base = base,
             .others = others.items,
             .note = note,
             .origin = origin,
             .xfail = xfail,
+            .deep = deep,
         });
     }
 
@@ -4955,6 +5213,10 @@ const Walker = struct {
     /// it writes (`creation`), or a call on its own cell (`probe`) — resolved
     /// with the probes, and read back where its writes are decided.
     fn onceDemand(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32) Allocator.Error!u32 {
+        return w.onceDemandDeep(kind, tok, base, base_ref, ci, false);
+    }
+
+    fn onceDemandDeep(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool) Allocator.Error!u32 {
         const idx: u32 = @intCast(w.probe_ok.items.len);
         try w.probe_ok.append(w.a, false);
         try w.probe_approx.append(w.a, false);
@@ -4971,8 +5233,21 @@ const Walker = struct {
             .probe = idx,
             .closures = true,
             .creation_ci = if (kind == .creation) ci else none,
+            .deep = deep,
         });
         return idx;
+    }
+
+    /// Every cell `av` holds, closures expanded, at ε: what a send gives up
+    /// (§23.2), as a probe's base is (§16.4 item 4).
+    fn flat(w: *Walker, av: AV) Allocator.Error!AV {
+        var base: std.ArrayList(Entry) = .empty;
+        for (try w.expand(av)) |e| {
+            const k = w.cells.items[e.cell].kind;
+            if (k == .closure or k == .func) continue;
+            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx });
+        }
+        return w.norm(base.items);
     }
 
     fn probeDemand(w: *Walker, inst: Inst.Index, av: AV, others: []const AV) Allocator.Error!u32 {
@@ -5070,7 +5345,10 @@ const Walker = struct {
                 },
                 .param => {
                     if (c.b != 0 or c.path != eps) continue;
-                    for (w.params, 0..) |p, i| if (p.int() == c.a and w.fn_state[i].is_fn) {
+                    // One handed to a send position is kept by the value the
+                    // position makes, and its row says what the runtime does
+                    // with it there (§23.3).
+                    for (w.params, 0..) |p, i| if (p.int() == c.a and w.fn_state[i].is_fn and w.fn_state[i].send == none) {
                         w.fn_state[i].seen = false;
                     };
                 },
@@ -5098,6 +5376,8 @@ const Walker = struct {
                 return;
             }
             const st = &w.fn_state[jj];
+            // §23.3: a function parameter handed on to a send position.
+            if (ff.send != none and st.send == none) st.send = ff.send;
             st.calls = @fromBackingInt(@min(2, @as(u8, @backingInt(st.calls)) + @as(u8, @backingInt(ff.calls))));
             if (w.recursive and ff.calls != .zero) st.calls = .many;
             st.need = st.need or ff.need;
@@ -5118,11 +5398,41 @@ const Walker = struct {
         }
         const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 };
         const classes = try w.classesOf(actual);
+        // §23.4: what is handed a send must be seen to send only what it owns.
+        if (ff.send != none) try w.checkSender(inst, callee, args[j], classes, ff.send);
+        // §23.5: a constructor handed as a tagger returns what it is given.
+        if (classes.len == 0 and ff.need) if (try w.ctorClass(args[j])) |c| {
+            if (!try w.returnsOwned(c, s, avs, j, 0, none)) {
+                // Approximate when only an approximate step made it so: a
+                // value from JavaScript, a conservative call's result.
+                w.ro_exact = true;
+                const approx = try w.returnsOwned(c, s, avs, j, 0, none);
+                w.ro_exact = false;
+                const why = try std.fmt.allocPrint(arena, "{s} sends what it returns, and it returns what {s} hands it, which may be a list the sender still holds (§23.5)", .{ callee.name, callee.name });
+                try w.demands.append(w.a, .{
+                    .kind = .value,
+                    .token = tok,
+                    .op = "value",
+                    .base = try w.baseText(args[j]),
+                    .base_local = none,
+                    .base_path = eps,
+                    .point = w.point,
+                    .frame = w.frame,
+                    .ctx = w.ctx,
+                    .element = false,
+                    .accept = .callback_param,
+                    .holders = &.{},
+                    .fixed = .{ .verdict = .{ .rejected = .need }, .detail = why },
+                    .prelim = .{ .cause = .need, .detail = why, .approx = approx },
+                });
+            }
+        };
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse continue;
             const name: []const u8 = switch (cls) {
                 .closure => "<lambda>",
                 .func => |t| try w.qualified(t),
+                .send => "send",
             };
             if (cls == .closure) try w.applyEnvCalls(cls.closure, s, j, ictx);
             // §18.8: a once closure goes only where it runs at most once, and
@@ -5138,6 +5448,28 @@ const Walker = struct {
                 if (writes) switch (cls) {
                     .closure => |ci| try w.closures.items[ci].consumed.append(w.a, .{ .kind = .pending, .why = try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}) }),
                     .func => try w.valueLine(tok, name, .pending, try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}), "", false),
+                    // §23.4: a send handed where its calls are not seen
+                    // sends what the checker cannot see, when what it sends
+                    // may hold a list.
+                    .send => if (w.instType(args[j])) |sty| if (funcParam(w.store, sty, 0)) |mty| if (try w.o.holdsList(w.store, mty, 0)) {
+                        const why = try std.fmt.allocPrint(arena, "{s} loses sight of the send it is handed, so the checker cannot see what is sent", .{callee.name});
+                        try w.demands.append(w.a, .{
+                            .kind = .value,
+                            .token = tok,
+                            .op = "send",
+                            .base = callee.name,
+                            .base_local = none,
+                            .base_path = eps,
+                            .point = w.point,
+                            .frame = w.frame,
+                            .ctx = w.ctx,
+                            .element = false,
+                            .accept = .callback_param,
+                            .holders = &.{},
+                            .fixed = .{ .verdict = .{ .rejected = .supply }, .detail = why },
+                            .prelim = .{ .cause = .supply, .detail = why, .approx = true },
+                        });
+                    },
                 };
                 continue;
             }
@@ -5159,7 +5491,9 @@ const Walker = struct {
                         // The first reason, unless a later one is exact and
                         // it was not: an exact reason labels the rejection.
                         if (bad[u.param] == null or (bad_approx[u.param] and !(!e.owned and e.approx))) {
-                            bad[u.param] = if (e.prov.kind == .cb and e.owned)
+                            bad[u.param] = if (cls == .send)
+                                try std.fmt.allocPrint(arena, "{s} sends what it may still hold ({s}), and a send gives its payload up (§23.2)", .{ callee.name, try w.o.provText(e.prov) })
+                            else if (e.prov.kind == .cb and e.owned)
                                 try std.fmt.allocPrint(arena, "{s} hands its parameter {d} what the callback returned before, which may be a list the callback does not own", .{ callee.name, u.param + 1 })
                             else
                                 try std.fmt.allocPrint(arena, "{s} supplies its parameter {d} borrowed ({s})", .{ callee.name, u.param + 1, try w.o.provText(e.prov) });
@@ -5188,7 +5522,7 @@ const Walker = struct {
                         var path = e.prov.path;
                         if (try w.o.suffix(e.path, u.path)) |rest| path = try w.o.concat(path, rest);
                         const note = if (w.mode != .report) "" else try std.fmt.allocPrint(arena, "{s} writes what {s} supplies it", .{ name, callee.name });
-                        try w.callSiteDemand(inst, callee.op, args, avs, e.prov.a, path, note, if (s.limit != .none or c.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, null);
+                        try w.callSiteDemandDeep(inst, callee.op, args, avs, e.prov.a, path, note, if (s.limit != .none or c.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, null, u.bits & bit_d != 0);
                     }
                 }
             }
@@ -5207,6 +5541,22 @@ const Walker = struct {
             var need_bad = false;
             if (ff.need and !try w.returnsOwned(c, s, avs, j, 0, none)) need_bad = true;
             switch (cls) {
+                .send => if (bad[0]) |why| try w.demands.append(w.a, .{
+                    .kind = .value,
+                    .token = tok,
+                    .op = "send",
+                    .base = callee.name,
+                    .base_local = none,
+                    .base_path = eps,
+                    .point = w.point,
+                    .frame = w.frame,
+                    .ctx = w.ctx,
+                    .element = false,
+                    .accept = .callback_param,
+                    .holders = &.{},
+                    .fixed = .{ .verdict = .{ .rejected = bad_cause[0] }, .detail = why },
+                    .prelim = .{ .cause = bad_cause[0], .detail = why, .approx = bad_approx[0] },
+                }),
                 .closure => |ci| {
                     try w.closures.items[ci].consumed.append(w.a, .{ .kind = .supply, .bad = bad, .bad_approx = bad_approx, .bad_cause = bad_cause, .name = callee.name });
                     if (need_bad) try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", false);
@@ -5243,6 +5593,97 @@ const Walker = struct {
                 },
             }
         }
+    }
+
+    /// §23.4: the function value `arg`, handed to a position where the
+    /// runtime gives it a send as its parameter `k`, must be seen to send
+    /// only what it owns. A lambda written there has its sends checked where
+    /// they are made; a top-level function's are its summary's supplies to
+    /// that parameter; anything else is not followed.
+    fn checkSender(w: *Walker, inst: Inst.Index, callee: Callee, arg: Inst.Index, classes: []const Class, k: u32) Allocator.Error!void {
+        const arena = w.o.out.allocator();
+        // A message type that holds no cell has nothing to give up.
+        const fty = w.instType(arg) orelse return;
+        const sty = funcParam(w.store, fty, k) orelse return;
+        const mty = funcParam(w.store, sty, 0) orelse return;
+        if (!try w.o.holdsList(w.store, mty, 0)) return;
+        const tok = w.token(inst);
+        var why: ?[]const u8 = null;
+        var approx = true;
+        if (classes.len == 0) why = try std.fmt.allocPrint(arena, "the checker does not know which function {s} is handed here, so it cannot see what it sends", .{callee.name});
+        for (classes) |cls| switch (cls) {
+            .send => {},
+            .closure => |ci| {
+                const ps = w.closures.items[ci].params;
+                if (k < ps.len and w.instCol(bool, w.send_params, ps[k].int(), false)) continue;
+                if (why == null) why = "a function value written apart from where it is handed a send: the checker follows the sends of a lambda written at the send position, or of a top-level function";
+            },
+            .func => |t| {
+                const s = (try w.o.ensureSummary(t.m, t.d)) orelse continue;
+                const f = s.funOf(k) orelse continue;
+                if (!f.seen) {
+                    if (why == null) why = try std.fmt.allocPrint(arena, "{s} hands its send where the checker cannot see its calls", .{try w.qualified(t)});
+                    continue;
+                }
+                for (s.supply) |e| {
+                    if (e.fun != k) continue;
+                    if (e.owned and e.prov.kind != .param and e.prov.kind != .cb) continue;
+                    if (why != null and !approx) continue;
+                    why = if (e.owned)
+                        try std.fmt.allocPrint(arena, "{s} sends what it was handed ({s}), which {s} does not supply it owned", .{ try w.qualified(t), try w.o.provText(e.prov), callee.name })
+                    else
+                        try std.fmt.allocPrint(arena, "{s} sends what it may still hold ({s}), and a send gives its payload up (§23.2)", .{ try w.qualified(t), try w.o.provText(e.prov) });
+                    approx = e.owned or e.approx;
+                }
+            },
+        };
+        const reason = why orelse return;
+        try w.demands.append(w.a, .{
+            .kind = .value,
+            .token = tok,
+            .op = "send",
+            .base = try w.baseText(arg),
+            .base_local = none,
+            .base_path = eps,
+            .point = w.point,
+            .frame = w.frame,
+            .ctx = w.ctx,
+            .element = false,
+            .accept = .callback_param,
+            .holders = &.{},
+            .fixed = .{ .verdict = .{ .rejected = .supply }, .detail = reason },
+            .prelim = .{ .cause = .supply, .detail = reason, .approx = approx },
+        });
+    }
+
+    /// §23.5: a constructor handed as a function: it returns its arguments,
+    /// each at its own field.
+    fn ctorClass(w: *Walker, arg: Inst.Index) Allocator.Error!?*const Summary {
+        switch (w.bir.instTag(arg)) {
+            .ctor, .ext_ctor => {},
+            else => return null,
+        }
+        const ty = w.instType(arg) orelse return null;
+        const ps = switch (w.store.resolvedContent(ty)) {
+            .structure => |st| switch (st) {
+                .func => |fun| w.store.vars(fun.params),
+                else => return null,
+            },
+            else => return null,
+        };
+        const c = try w.ctorOf(arg);
+        const keep = w.o.keep.allocator();
+        var uses: std.ArrayList(UseEntry) = .empty;
+        var res: std.ArrayList(ResEntry) = .empty;
+        // A field that can hold no list `update` could write carries nothing.
+        for (ps, 0..) |pt, i| {
+            if (!try w.o.holdsList(w.store, pt, 0)) continue;
+            try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = bit_a });
+            try res.append(keep, .{ .path = try w.o.child(eps, .ctor, c *% 64 +% @as(u32, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
+        }
+        const out = try w.a.create(Summary);
+        out.* = try w.o.normalize(.{ .params = @intCast(ps.len), .uses = uses.items, .res = res.items });
+        return out;
     }
 
     fn sharesText(w: *Walker, name: []const u8, k: u32, e: SupplyEntry, args: []const Inst.Index) Allocator.Error![]const u8 {
@@ -5313,6 +5754,7 @@ const Walker = struct {
         if (s.coarse or s.limit != .none) return false;
         for (c.res, 0..) |r, i| {
             if (written != none and !w.o.isPrefix(r.path, written)) continue;
+            if (w.ro_exact and r.approx) continue;
             switch (r.prov.kind) {
                 .fresh => {},
                 .param => {
@@ -5557,6 +5999,8 @@ const Walker = struct {
         /// §20.5: the messages a view builds, which may hold the cell: a
         /// payload, not an operand.
         payload_from: AV = &.{},
+        /// §23.2: a send's demand, its base already flattened.
+        deep: bool = false,
     };
 
     fn demandOn(w: *Walker, spec: DemandSpec) Allocator.Error!void {
@@ -5595,6 +6039,7 @@ const Walker = struct {
             .creation_ci = spec.creation_ci,
             .origin = spec.origin,
             .entry = spec.entry,
+            .deep = spec.deep,
         };
         // A probe on nothing passes: nothing is supplied.
         // Known, Unescaped, Captured, in that order across the cells.
@@ -5636,12 +6081,15 @@ const Walker = struct {
                     const b = w.o.in.birs[c.a];
                     detail = try std.fmt.allocPrint(out, "{s}.{s} is a top-level value", .{ w.o.in.module_names[c.a], w.o.in.interner.slice(b.symbol(b.decls[c.b].name)) });
                 },
+                // §23.6: a message's payload is owned — every send gave it
+                // up where it was made (§23.2) — so the cell `msg` is no
+                // cause; what a view event builds is `payload_from`'s.
+                .payload => if (spec.payload_from.len > 0) {
+                    cause = .payload;
+                    detail = view_event_detail;
+                },
                 // A write of a capture: the closure is once, and its creation
                 // and calls decide the write (§18.8).
-                .payload => {
-                    cause = .payload;
-                    detail = "it may be a message's payload, which its sender may still hold, and owned sends are not built (§20.5)";
-                },
                 .env => if (spec.kind != .probe and w.frameClosure(w.frame) != null) {
                     rec.once_ci = w.frameClosure(w.frame).?;
                 } else {
@@ -5688,7 +6136,7 @@ const Walker = struct {
         }
         // §20.5: a message a view builds from the model may hold the cell.
         if (spec.payload_from.len > 0 and (try w.reaches(spec.payload_from, cells.items)) != null) {
-            rec.prelim = .{ .cause = .payload, .detail = "a message a view event builds may hold it, and an arm may store it beside it (§20.5, P6)", .approx = true };
+            rec.prelim = .{ .cause = .payload, .detail = view_event_detail, .approx = true };
             try w.demands.append(w.a, rec);
             return;
         }
@@ -5758,6 +6206,14 @@ const Walker = struct {
                 }
             }
         }
+        // A capture: the captured local itself, read again in this frame
+        // after the demand (§18.8: the closure's own later reads of what it
+        // gave up, as a send's payload, §23.7).
+        for (cells.items) |e| {
+            const x = w.cells.items[try w.takenBase(e.cell)];
+            if (x.kind != .env or x.a >= w.local_frame.len or w.local_frame[x.a] == w.frame) continue;
+            try holders.append(w.a, .{ .local = x.a, .path = x.path, .approx = e.approx });
+        }
         rec.holders = try holders.toOwnedSlice(w.a);
         try w.demands.append(w.a, rec);
     }
@@ -5810,14 +6266,29 @@ const Walker = struct {
                 if (w.isSpreadCall(inst)) return "<construction>";
                 if (w.isListAppend(inst)) return "<++>";
                 const callee: Inst.Index = @fromBackingInt(@intCast(w.bir.instData(inst).lhs));
+                if (w.ctorName(callee)) |n| return std.fmt.allocPrint(out, "<{s} …>", .{n});
                 if (w.valueTarget(callee)) |t| {
                     return std.fmt.allocPrint(out, "<call {s}.{s}>", .{ w.o.in.module_names[t.m], w.targetName(t) });
                 }
                 return "<call>";
             },
             .method_call => return "<call>",
-            else => return "<expression>",
+            else => return w.ctorName(inst) orelse "<expression>",
         }
+    }
+
+    /// A constructor's name, as written.
+    fn ctorName(w: *const Walker, inst: Inst.Index) ?[]const u8 {
+        const data = w.bir.instData(inst);
+        const m: u32, const i: u32 = switch (w.bir.instTag(inst)) {
+            .ctor => .{ w.m, data.lhs },
+            .ext_ctor => .{ data.lhs, if (data.lhs < w.o.in.provenance.len) w.o.in.provenance[data.lhs].ctorIndex(data.rhs) orelse return null else return null },
+            else => return null,
+        };
+        if (m >= w.o.in.birs.len) return null;
+        const bir = w.o.in.birs[m];
+        if (i >= bir.ctors.len) return null;
+        return w.o.in.interner.slice(bir.symbol(bir.ctors[i].name));
     }
 
     /// A variable or top-level value with a field path, as written.
@@ -6032,6 +6503,24 @@ const Walker = struct {
         const cl = &w.closures.items[rec.once_ci];
         d.assumed = false;
         d.note = "";
+        // Its creation fails exactly — a live holder of what it captured, the
+        // model still holding a list a body sends (§23.7) — which names the
+        // holder; then a place known to call it more than once rejects it,
+        // wherever else it goes (a command's body, which may run again).
+        for (cl.once_probes.items) |p| {
+            const info = w.probe_info.items[p] orelse continue;
+            if (info.verdict != .rejected or info.approx) continue;
+            d.verdict = info.verdict;
+            d.detail = info.detail;
+            d.approx = false;
+            return d;
+        }
+        if (cl.once_bad) |why| {
+            d.verdict = .{ .rejected = .once };
+            d.detail = why;
+            d.approx = cl.once_bad_approx;
+            return d;
+        }
         for (cl.consumed.items) |c| if (c.kind == .pending) {
             d.verdict = .pending;
             d.detail = c.why;
@@ -6043,12 +6532,6 @@ const Walker = struct {
             d.approx = true;
             return d;
         };
-        if (cl.once_bad) |why| {
-            d.verdict = .{ .rejected = .once };
-            d.detail = why;
-            d.approx = cl.once_bad_approx;
-            return d;
-        }
         for (cl.once_probes.items) |p| {
             const info = w.probe_info.items[p] orelse continue;
             if (info.verdict == .accepted) continue;
@@ -6201,8 +6684,9 @@ const Walker = struct {
             if (rec.kind == .probe or rec.kind == .value) continue;
             for (rec.cells) |e| {
                 const c = w.cells.items[try w.takenBase(e.cell)];
+                const deep: u8 = if (rec.deep) bit_d else 0;
                 if (rec.frame == frame) {
-                    if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = bit_w | (if (e.approx == 0 and rec.origin == .exact) bit_x else 0) });
+                    if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = bit_w | deep | (if (e.approx == 0 and rec.origin == .exact) bit_x else 0) });
                 }
                 if (c.kind == .env and rec.frame != frame) {
                     const held = w.local_av[c.a] orelse continue;
@@ -6210,7 +6694,7 @@ const Walker = struct {
                     for (try w.projPath(held, c.path, null)) |h| {
                         if (h.path != eps) continue;
                         const hc = w.cells.items[h.cell];
-                        if (w.paramIndex(hc, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = hc.path, .bits = bit_w | (if (e.approx == 0 and h.approx == 0 and rec.origin == .exact) bit_x else 0) });
+                        if (w.paramIndex(hc, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = hc.path, .bits = bit_w | deep | (if (e.approx == 0 and h.approx == 0 and rec.origin == .exact) bit_x else 0) });
                     }
                 }
             }
@@ -6292,7 +6776,7 @@ const Walker = struct {
                         if (c.kind == .cbres and c.a == j) need = true;
                     }
                 }
-                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .seen = st.seen });
+                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .seen = st.seen, .send = st.send });
             }
             var atoms: u32 = 0;
             for (w.supplies.items) |sr| {
