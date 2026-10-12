@@ -9,6 +9,9 @@ Nothing in the compiler, the runtimes or the platforms changed. Every figure is 
 went past 24, which is more than the cores left outside the runner's `taskset`, in all three passes
 (§1). Read §1 before any number.*
 
+*2026-10-13: §7 re-runs four of the eight on a quiet machine, twice. Where §7 and §0–§4 disagree on
+CPU time, §7 is the measurement.*
+
 ---
 
 ## 0. The answer
@@ -285,3 +288,177 @@ node bench/jfb/phases.mjs 05_swap1k                    # §3's phase split, from
 after, load, retried pairs). The built table, `report/`, is about 840 kB of minified React app,
 so it is not committed. `--report-only` rebuilds it from `raw/`, and it is served from any static
 server: `npx http-server bench/jfb/results/2026-10-12/pass3/report`.
+
+## 7. The quiet re-run (2026-10-13, azathoth)
+
+*The same runner, suite, Chrome binary and entries as §1, run twice on a second machine that ran
+nothing else. By the owner's instruction it runs four frameworks: vanillajs, Solid 1.9.3,
+beni-direct and beni-tea. Svelte, React, Vue and Elm are in the 2026-10-12 run on dagon only (§2), so
+this section says nothing about where they stand on a quiet machine. Every figure is **[measured]**
+with the runner's default counts (no `--count`).*
+
+### 7.1 What ran, and the load
+
+| | |
+|---|---|
+| machine | azathoth: Intel Xeon E-2386G, 6 cores and 12 threads (CPU *n* and *n*+6 share a core), 31 GB, NixOS, Linux 6.18.55, governor `powersave` with turbo, left as configured |
+| benchmark | js-framework-benchmark `44f20790ba5c`, as §1 |
+| Chrome | **154.0.8037.97**, dagon's own Nix store path (`/nix/store/ds7933z0…-google-chrome-154.0.8037.97`) copied with `nix copy`, headless |
+| Node | v24.19.0, npm 11.17.0, from `nix develop` |
+| beni | `zig build -Doptimize=ReleaseFast` at `161eae05`. Both entries' `_main.mjs` are **byte-identical** to the output of `86d161d0b`, §1's commit (checked by building both on azathoth), so the pages are the ones dagon measured |
+| pinning | `--taskset=1-5,7-11` |
+| results | `bench/jfb/results/2026-10-13-azathoth/pass{1,2}/` (`raw/`, `results.json`, `meta.json`) |
+
+**The pinning.** The runner and every Chrome it starts get physical cores 1–5 with both of their
+threads. Core 0 (CPUs 0 and 6) is left to the OS, `run.mjs`, the benchmark's server and the load
+sampler. Pinning to one thread per core (CPUs 1–5) was the alternative. It was not chosen because
+it gains nothing on an idle machine. The scheduler puts runnable threads on idle cores before it
+doubles them up on siblings, and the benchmark has only a few busy threads at a time: the renderer's
+main thread, the compositor, raster and the browser process. Whole cores is also what dagon used
+(`8-15,24-31`). The IQRs below are ±1 % on most cells, so the pinning added no noise that shows.
+
+| pass | wall time | load at start → end | highest 1-minute load | retries |
+|---|---|---|---|---|
+| 1 | 00:07–00:38 (1 842 s) | 0.41 → 1.42 | **1.33** | none |
+| 2 | 00:38–01:09 (1 848 s) | 1.38 → 0.09 | **1.23** | none |
+
+The load was sampled once a minute (`meta.json`'s `load`). It stayed between 0.1 and 1.4, on 12
+threads, for the whole of both passes. An earlier pass with all eight frameworks was stopped after
+53 minutes, when the owner narrowed the field. Its partial results were discarded and are not in
+the tables.
+
+### 7.2 CPU, `total` ms, median [IQR], 15 runs (25 for `select`)
+
+Pass 1, then pass 2. The weighted geometric mean is the table's own (§2), over these four.
+
+| framework | run1k | replace1k | update10th | select | swap | remove | create10k | append | clear | weighted geomean |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| vanillajs | 45.7 [45.5–45.8] | 50.0 [49.7–50.2] | 24.1 [23.8–24.3] | 5.5 [5.3–5.7] | 27.6 [27.4–28.0] | 24.5 [24.4–24.8] | 476.1 [475.5–479.1] | 53.7 [53.5–54.2] | 18.0 [17.1–18.2] | **1.01** |
+| beni-direct | 46.6 [46.5–47.1] | 51.2 [50.9–51.6] | 24.8 [24.6–24.9] | 5.4 [5.2–5.6] | 28.9 [28.6–29.3] | 24.4 [24.3–24.7] | 498.3 [497.7–500.4] | 54.5 [54.3–54.6] | 17.3 [17.0–18.0] | **1.02** |
+| beni-tea | 46.8 [46.7–47.0] | 52.1 [51.8–52.5] | 25.3 [25.0–25.9] | 5.7 [5.6–5.9] | 30.0 [29.9–30.4] | 24.4 [24.1–24.5] | 499.0 [497.3–502.1] | 54.4 [54.2–54.6] | 17.7 [17.4–18.1] | **1.03** |
+| Solid 1 | 48.6 [48.3–48.8] | 53.8 [53.6–54.2] | 26.0 [25.6–26.4] | 7.0 [6.8–7.2] | 30.7 [30.0–31.0] | 25.0 [24.9–25.4] | 510.2 [506.4–522.1] | 56.4 [56.2–56.8] | 20.8 [20.2–22.9] | **1.09** |
+
+| framework | run1k | replace1k | update10th | select | swap | remove | create10k | append | clear | weighted geomean |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| vanillajs | 45.7 [45.6–45.8] | 49.7 [49.5–49.9] | 23.9 [23.8–24.5] | 5.5 [5.3–5.8] | 27.3 [27.1–27.8] | 24.5 [24.4–24.8] | 477.0 [474.9–478.3] | 53.7 [53.5–53.9] | 17.3 [17.1–18.1] | **1.00** |
+| beni-direct | 46.5 [46.3–46.6] | 51.0 [50.8–51.0] | 24.8 [24.3–25.2] | 5.5 [5.3–5.6] | 28.8 [28.7–29.1] | 24.5 [24.4–24.6] | 499.0 [496.3–500.4] | 54.6 [54.3–54.7] | 17.7 [17.5–18.1] | **1.02** |
+| beni-tea | 47.0 [46.8–47.4] | 51.9 [51.6–52.5] | 25.4 [25.2–25.6] | 5.5 [5.3–5.8] | 30.2 [29.7–30.6] | 24.4 [24.3–24.5] | 496.4 [493.9–498.5] | 54.4 [54.2–54.7] | 17.7 [17.3–18.3] | **1.03** |
+| Solid 1 | 48.9 [48.5–49.2] | 53.8 [53.6–55.2] | 26.1 [25.8–26.2] | 7.2 [7.0–7.4] | 30.6 [30.3–30.9] | 24.9 [24.8–25.1] | 522.1 [509.1–524.2] | 56.5 [56.3–56.8] | 20.6 [20.1–23.1] | **1.09** |
+
+As a ratio to vanillajs's median, pass 1 / pass 2:
+
+| | run1k | replace1k | update10th | select | swap | remove | create10k | append | clear |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| beni-direct | 1.02 / 1.02 | 1.02 / 1.03 | 1.03 / 1.04 | 0.98 / 1.00 | 1.05 / 1.06 | 1.00 / 1.00 | 1.05 / 1.05 | 1.02 / 1.02 | 0.96 / 1.02 |
+| beni-tea | 1.02 / 1.03 | 1.04 / 1.04 | 1.05 / 1.06 | 1.04 / 1.00 | 1.09 / 1.11 | 1.00 / 1.00 | 1.05 / 1.04 | 1.01 / 1.01 | 0.98 / 1.02 |
+| Solid 1 | 1.06 / 1.07 | 1.08 / 1.08 | 1.08 / 1.09 | 1.27 / 1.31 | 1.11 / 1.12 | 1.02 / 1.02 | 1.07 / 1.10 | 1.05 / 1.05 | 1.16 / 1.19 |
+
+### 7.3 `script` ms, memory and size
+
+| framework | run1k | replace1k | update10th | select | swap | remove | create10k | append | clear | weighted geomean (p1 / p2) |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| vanillajs | 3.60 | 7.00 | 0.90 | 0.60 [0.50–0.70] | 0.10 [0.10–0.65] | 0.60 | 35.20 | 3.80 | 14.40 | 1.11 / 1.15 |
+| beni-direct | 3.90 | 7.50 | 0.90 | 0.20 [0.10–0.50] | 0.40 [0.10–0.50] | 0.40 | 41.30 | 4.20 | 14.60 | 1.11 / 1.14 |
+| beni-tea | 4.00 | 8.10 | 1.50 | 0.70 [0.20–0.80] | 1.20 [0.95–1.20] | 0.50 | 40.00 | 4.20 | 14.80 | 1.36 / 1.39 |
+| Solid 1 | 5.60 | 10.40 | 2.00 | 1.30 | 1.70 | 0.80 | 49.30 | 5.80 | 17.60 | 1.85 / 1.85 |
+
+These are pass 1's medians. Pass 2's are within 0.3 ms of them, except on the sub-millisecond
+`select` and `swap` cells, whose quartiles span the throttler's two modes (§3, *The swap*).
+
+| framework | ready MB | run 1k MB | 5× create/clear MB | geomean (p1 / p2) | uncompressed kB | brotli kB | first paint ms (p1 / p2) |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| vanillajs | 0.53 | 1.87 | 0.62 | 1.00 / 1.01 | 11.3 | 2.5 | 86.5 / 86.8 |
+| beni-direct | 0.60 | 2.08 | 0.75 | 1.15 / 1.08 | 11.1 | 4.4 | 44.0 / 62.9 |
+| beni-tea | 0.62 | 2.13 | 0.79 | 1.19 / 1.13 | 13.5 | 5.5 | 51.2 / 61.9 |
+| Solid 1 | 0.59 | 2.69 | 0.77 | 1.26 / 1.21 | 11.5 | 4.5 | 85.0 / 75.7 |
+
+Memory and size are pass 1's. First paint is one run per pass. vanillajs reads 86 ms in both
+passes here and 50.6 on dagon, so the figure is not read as a ranking.
+
+### 7.4 Pass to pass
+
+The largest change in any `total` median between the two passes is 4.0 % (vanillajs `clear`,
+18.0 → 17.3 ms). The next are the 5–7 ms `select` cells (beni-tea 3.6 %, Solid 2.9 %), where
+0.2 ms is one step of the trace's resolution. Every other cell moved by 2.3 % or less. The weighted geometric means moved by
+at most 0.01, and the order is the same in both passes: **vanillajs, beni-direct, beni-tea,
+Solid 1**. Most IQRs are under ±1 % of the median, against ±5–30 % on dagon at its quietest
+(§2.5). The published table's are ±1 %, so this is the variance of a quiet machine.
+
+### 7.5 What held from the dagon run, and what did not
+
+- **"beni-tea ahead of vanillajs" (§0 item 1) did not hold.** On the quiet machine vanillajs is
+  first, at 1.00–1.01, in both passes. beni-tea's lead on dagon came from vanillajs's `create10k`
+  (922 ms) and `append` (138 ms), measured at load ≈ 10. Quiet, vanillajs is 476 and 54 ms, the
+  fastest of the four on both. §2.1 already said not to read that order as evidence. This run
+  shows it was load.
+- **"Within 10 % of vanillajs in `total`" (§0 item 2) held, and is tighter.** beni-direct is
+  between 4 % ahead of vanillajs and 6 % behind it on every operation in both passes, the extremes
+  being `clear` and `swap`. beni-tea is 0–11 % behind, and its widest gap is `swap` (+9–11 %), which is
+  §4's known `browser-tea` cost. Over the table's metric the two are 2 % and 3 % behind vanillajs.
+- **"Ahead of every framework" held for the one framework this run measured.** Both beni entries
+  have a lower median than Solid 1.9.3 on every operation in both passes, and a lower weighted
+  geomean (1.02–1.03 against 1.09). On `remove` (24.4 against 24.9–25.0) and beni-tea's `swap`
+  (30.0–30.2 against 30.6–30.7) the margin is about one IQR, and pass 2's quartiles overlap on
+  `swap`, so those two are level. On `select` and
+  `clear`, Solid is 16–31 % behind vanillajs and 15–30 % behind beni.
+- **`create10k`: dagon had beni level with Solid and Svelte. Here beni is ahead of Solid 1 by
+  2–5 % and 5 % behind vanillajs.** In `script`, beni is 17 % behind vanillajs on it (41.3 ms
+  against 35.2), where dagon's loaded pass 3 put beni ahead (53.4 against 67.0†). The quiet figure
+  is the one that stands, and it is the largest `script` gap between beni-direct and vanillajs in
+  the suite.
+- **The `script` ordering held**: vanillajs ≈ beni-direct (1.11–1.15, level), then beni-tea
+  (1.36–1.39), then Solid 1 (1.85). The two exceptions §2.2 named are still there: beni-tea's
+  `update10th` (1.4–1.5 ms against 0.8–0.9) and its `swap`.
+- **beni-direct's bimodal `append` (§4) was load.** Quiet, it is 54.5 ms [54.3–54.6] and
+  54.6 [54.3–54.7], level with vanillajs.
+- **Memory and size held exactly.** The memory order is vanillajs, beni-direct, beni-tea, Solid 1,
+  as in all three dagon passes, at the same geometric means within 0.07. Sizes are the same bytes.
+- **Against the published table**: there, Solid 1.9.3 is 1.08 of vanillajs over this suite, and here
+  it is 1.08 in both passes (1.09 / 1.01 and 1.09 / 1.00). The absolute figures are 2.1–2.3× above
+  the published ones (vanillajs `run1k` 45.7 ms against 20.6), from headless software
+  rasterisation (§2.5) and different hardware. So this run reproduces the published *relative*
+  standing of the two frameworks they share.
+
+### 7.6 What can be claimed
+
+On a quiet machine, in js-framework-benchmark's own runner, headless Chrome 154, with the runner's
+default counts and two passes that agree to within 4 %:
+
+- by the official weighted geometric mean of `total`, **vanillajs 1.00, beni-direct 1.02, beni-tea
+  1.03, Solid 1.9.3 1.09**;
+- per operation, beni-direct is between 4 % ahead of vanillajs and 6 % behind it, and beni-tea
+  between 2 % ahead and 11 % behind. Both are ahead of Solid 1.9.3 on seven of nine operations
+  and level with it on `remove`; beni-tea is also level on `swap`;
+- by memory, beni is between vanillajs and Solid; by brotli size, beni-direct is level with Solid.
+
+What cannot be claimed:
+
+- that beni is faster than vanillajs. Where its median is lower (`select`, `remove`, `clear` in
+  one pass), the difference is inside the IQRs and does not repeat in the other pass;
+- where Svelte, React, Vue or Elm stand on a quiet machine. They were not run here, and their
+  dagon figures are contaminated by load (§1);
+- anything about Solid 2. The benchmark has no Solid 2 entry, and rule 8's bar is Solid 2;
+- absolute milliseconds against the published table, or against dagon. The hardware differs, and
+  the published run is headed;
+- that the order holds headed, with GPU rasterisation, where paint is a smaller share of `total`.
+  `script` is the closer guide to that, and there beni-direct is level with vanillajs and beni-tea
+  between it and Solid.
+
+### 7.7 Reproducing
+
+The checkout on azathoth is `~/src/github.com/canassa/beni` (at `161eae05`, with its work tree in
+`bench/jfb/work/`). From a clone, with `nix develop`:
+
+```sh
+zig build -Doptimize=ReleaseFast
+node bench/jfb/run.mjs --frameworks=vanillajs,solid,svelte,react-hooks,vue,elm,beni-tea,beni-direct \
+    --chrome=$CHROME --skip-run                              # installs and builds, once
+node bench/jfb/run.mjs --frameworks=vanillajs,solid,beni-tea,beni-direct --chrome=$CHROME \
+    --taskset=1-5,7-11 --skip-install --skip-build \
+    --out=bench/jfb/results/2026-10-13-azathoth/pass1        # 31 min
+node bench/jfb/summary.mjs bench/jfb/results/2026-10-13-azathoth/pass1
+```
+
+Setup on a fresh NixOS machine took about 15 minutes: the clone with only the
+`js-framework-benchmark` submodule, `nix develop`, a 285 s ReleaseFast build, and the npm installs.
+Nothing in the machine's configuration changed.
