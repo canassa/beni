@@ -228,11 +228,19 @@ its fixed probe is T46 two rows, run against the per-call checker.
 | builder/close contracts, footprint framing, close identity (`BuilderProof`, `HeapProof`) | proved (unchanged) |
 | kernel checks of `storeExclusive` and permanent escapes | proved (unchanged) |
 
-`Axioms.lean` is the `AxiomCheck` target of `lake build`: it prints the
-axioms of all 335 theorems and fails unless exactly the three `sorry`s above
-and the main theorem depend on `sorryAx`, and nothing uses an axiom beyond
-`propext`, `Classical.choice` and `Quot.sound`. No axiom is declared. All
-statements take `check p = .ok _` under the default (corrected) config.
+`Axioms.lean` is the `AxiomCheck` target of `lake build`. It collects the
+axioms of **every constant** declared in an `Ownership` module (2 512 at the
+time of writing: theorems, definitions, instances, structures and their
+generated auxiliaries, not only the theorems) and fails unless exactly the
+three `sorry`s above and the main theorem depend on `sorryAx` and nothing uses
+an axiom beyond `propext`, `Classical.choice` and `Quot.sound`. An `example`
+adds no constant, so it also scans the source of every module, outside
+comments and strings: exactly three `sorry` tokens, and no `admit`,
+`native_decide` or `axiom`. Checked on a scratch copy: adding
+`def x : 1 + 1 = 3 := sorry`, `example : 1 + 1 = 3 := sorry`, an
+`instance … := sorry` or `example … := by native_decide` each fails
+`lake build`. No axiom is declared. All statements take `check p = .ok _`
+under the default (corrected) config.
 
 ## Thesis discrepancies found (the thesis is not edited)
 
