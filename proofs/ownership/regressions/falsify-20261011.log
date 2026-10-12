@@ -6,5 +6,5 @@ invariant_preserved: { tried := 100000,
   observational := 0,
   naming := 0,
   errorClause := 0 }
-summary_sound: { calls := 69482, checked := 64827, vacuous := 28875, guardsDiffer := 126, violations := 0, mapChecked := 5055 }
+summary_sound: { calls := 47492, checked := 44924, vacuous := 18745, guardsDiffer := 425, violations := 0, mapChecked := 3520 }
 falsify count=100000 seed=20261011 clean=true

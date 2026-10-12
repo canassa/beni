@@ -653,7 +653,7 @@ def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.C
   let mut t : CallTally := {}
   let mut shown := 0
   for index in List.range count do
-    let ((family, p), next) := (Oracle.generateVersion 4).run state
+    let ((family, p), next) := (Oracle.generateVersion 5).run state
     state := next
     let .ok acc := check p checker | continue
     let run := ((evalLog p.declarations none [] p.main).run #[]).run { fuel := 100000 }

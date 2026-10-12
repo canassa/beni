@@ -393,13 +393,13 @@ What it found, in order: the review's counterexample (on the earlier
 statement), dishonest closures, ill-typed expressions, `env` paths of known
 function values (`namesAt`), and, on the corrected statement, **the second
 checker defect below**. After the fixes, on 100 000 configurations and the
-calls of 100 000 generated programs per seed:
+calls of 100 000 generated programs (generator v5, with its own declarations) per seed:
 
 | Seed | Step configurations | Accepted | Accepted with a write | Failures | Calls checked against a summary | of which map | Vacuous | Failures |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 100 000 | 83 577 | 5 155 | 0 | 64 827 | 5 055 | 28 875 | 0 |
-| 17 | 100 000 | 83 539 | 4 993 | 0 | 65 001 | 5 182 | 28 715 | 0 |
-| 271828 | 100 000 | 83 649 | 5 255 | 0 | 65 031 | 5 096 | 28 862 | 0 |
+| 20261011 | 100 000 | 83 577 | 5 155 | 0 | 44 924 | 3 520 | 18 745 | 0 |
+| 17 | 100 000 | 83 539 | 4 993 | 0 | 44 503 | 3 473 | 18 386 | 0 |
+| 271828 | 100 000 | 83 649 | 5 255 | 0 | 45 953 | 3 783 | 18 594 | 0 |
 
 The falsifier has teeth: under `--mutant=` holes the step-lemma check fails
 (20 000 configurations, seed 17): disjoint 2, once-through-call 161,
