@@ -1,0 +1,17 @@
+-- ownership: a writing function value that leaves the walk's sight through
+-- a chain of captures (`ownership-checker.md` §16.5). `push` writes its
+-- parameter; it is renamed in three nested lambdas and stored in a record
+-- in the innermost, where its calls are no longer seen, so its demand is
+-- `pending` — however many lambdas lie between the record and the
+-- function. A walk that stopped following the chain would leave it
+-- `callback-param`, accepted with no caller checked.
+pub deep : ⊤ → (⊤ → (⊤ → (⊤ → { f : List Int → List Int })))
+deep ⊤ =
+    push = λy → [ …y, 1 ]
+    λ⊤ →
+        v1 = push
+        λ⊤ →
+            v2 = v1
+            λ⊤ →
+                v3 = v2
+                { f = v3 }
