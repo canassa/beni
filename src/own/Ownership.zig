@@ -6627,10 +6627,17 @@ const Walker = struct {
             if (e.approx != 0) return false;
             const c = w.cells.items[e.cell];
             switch (c.kind) {
+                // A list literal's new array.
                 .site => {},
+                // A call's result: `b` is the callee's fresh number, made
+                // from its summary's `fresh` (`instProv`). `b == 0` is §6.1's
+                // assumed fresh cell of a callee with no summary, which may
+                // be any argument or a top-level list: not known to be new.
                 .result => if (c.b == 0) return false,
                 else => return false,
             }
+            // Exact (above) and never handed to JavaScript (here), which
+            // could store it anywhere, the base's array included.
             if (try w.isEscaped(e.cell)) return false;
             try cells.append(w.a, e);
         }

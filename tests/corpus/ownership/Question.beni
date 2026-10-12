@@ -10,6 +10,9 @@
 -- through a local function's `?` (`local`, rejected before only through an
 -- approximate entry under `Ok`). A `Maybe`'s `Nothing` holds nothing, and a
 -- `String` error holds no list: `maybeOk` and `stringOk` are accepted.
+-- `twoFrames` has a `?` of its own and a local function's: each returns
+-- from its own definition, so the local function's `Err` holds `xs` (the
+-- push is rejected) and `twoFrames`' result holds nothing of `xs`.
 pick : Result (List Int) Int → Result (List Int) Int
 pick r =
     n = r?
@@ -85,3 +88,19 @@ stringOk xs =
     r = parse (Ok xs)
     ys = List.push xs 8
     Result.withDefault r 0 + List.length ys
+
+
+pub twoFrames : Result String Int, List Int → Result String Int
+twoFrames r xs =
+    inner res =
+        n = res?
+        Ok n
+    k = r?
+    got = inner (Err xs)
+    ys = List.push xs k
+    case got of
+        Err err →
+            Ok (List.length err + List.length ys)
+
+        Ok n →
+            Ok (n + List.length ys)
