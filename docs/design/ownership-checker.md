@@ -852,11 +852,20 @@ final summary.
 
 ### 16.7 The width cap
 
-A summary's width is the number of entries in its largest component (`use`, `res`, `supply`). Above **64**
-— thesis §4.9's "say 64" — the summary is the pessimistic one of §16.2 with `limit width`, and a rejection
-it causes is reported with the `limit` cause, approximate — a call-site demand it makes, and a `⊤` it
-returns, carry the mark however far they travel (`⊤limit` in a summary line). A recursive group that
-reaches the round cap gets `limit rounds`.
+A summary's width is the number of distinct paths in its largest component (`use`'s parameter paths,
+`res`'s result paths, `supply`'s `(j, k, q)`) — thesis §4.9's *w*. Above **64**, thesis §4.9's "say 64", a
+type with too many tracked paths "is tracked as a whole": the summary is **coarsened** — the parameter with
+the most paths is tracked whole, its bits joined at ε (a write there approximate), until the uses fit, and
+the result's and the supplies' paths are cut shallower, the rest of each replaced by `⋆` and made
+approximate, until they fit — and its line says `coarse`. Coarsening only merges places, so it adds holders
+and never removes one. A summary still too wide (a coarsened one cannot shrink further) is the pessimistic
+one of §16.2 with `limit width`, and a rejection it causes is reported with the `limit` cause, approximate —
+a call-site demand it makes, and a `⊤` it returns, carry the mark however far they travel (`⊤limit` in a
+summary line). A recursive group that reaches the round cap gets `limit rounds`.
+
+The fresh numbers do not count toward the width: as thesis §4.6 bounds them (`k ≤ |Q|`), a number only says
+which result paths may hold one new cell, so the read-off of §16.3 gives two new cells that appear at the
+same result paths the same number — a TEA `update` that builds its model from forty literals has a handful.
 
 **Recursive types are folded** (thesis §3.1, which slice 1 did not need, §1.2): a constructor step into a
 value of a type the path has already entered goes on from where the path first entered that type, so
