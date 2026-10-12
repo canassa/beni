@@ -1,0 +1,16 @@
+{
+  "name": "js-framework-benchmark-beni-direct",
+  "version": "1.0.0",
+  "description": "beni on browser-direct: the same program compiled to direct DOM edits",
+  "js-framework-benchmark": {
+    "frameworkVersion": "",
+    "frameworkHomeURL": "https://github.com/canassa/beni",
+    "repoURL": "https://github.com/canassa/beni",
+    "language": "beni"
+  },
+  "scripts": {
+    "build-prod": "node build.mjs browser-direct"
+  },
+  "license": "ISC",
+  "private": true
+}

@@ -1,0 +1,16 @@
+{
+  "name": "js-framework-benchmark-beni-tea",
+  "version": "1.0.0",
+  "description": "beni on browser-tea: The Elm Architecture over compiled templates",
+  "js-framework-benchmark": {
+    "frameworkVersion": "",
+    "frameworkHomeURL": "https://github.com/canassa/beni",
+    "repoURL": "https://github.com/canassa/beni",
+    "language": "beni"
+  },
+  "scripts": {
+    "build-prod": "node build.mjs browser-tea"
+  },
+  "license": "ISC",
+  "private": true
+}
