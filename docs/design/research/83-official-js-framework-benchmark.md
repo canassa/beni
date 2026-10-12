@@ -13,12 +13,14 @@ went past 24, which is more than the cores left outside the runner's `taskset`, 
 
 ## 0. The answer
 
-1. **On the official runner's own metric, beni is at the front of this field.** In the quietest
-   pass (pass 3), the table's weighted geometric mean of the CPU benchmarks (`total` time, their
-   default view) ranks **beni-tea 1.08, vanillajs 1.17, beni-direct 1.24**, Svelte 1.26, Solid
+1. **On the official runner's own metric, beni is at the front of this field, within noise of
+   vanillajs.** In the quietest pass (pass 3), the table's weighted geometric mean of the CPU
+   benchmarks (`total` time, their default view) ranks **beni-tea 1.08, vanillajs 1.17,
+   beni-direct 1.24**, Svelte 1.26, Solid
    1.47, Vue 1.47, Elm 1.76, React 1.84. That figure is the benchmark's official metric, reported
-   as theirs. It is not a parity claim (CLAUDE.md rule 8): the per-operation medians below are the
-   evidence, and some of them are skewed by load.
+   as theirs. It is not a parity claim (CLAUDE.md rule 8), and beni-tea ranking above vanillajs is not
+   evidence: it rests on two vanillajs cells that load reached (§2.1). The per-operation medians
+   below are the evidence.
 2. **Per operation, where the cells were measured at a quiet load, both beni entries are within
    10 % of vanillajs in `total` and ahead of every framework.** These are `replace`,
    `update10th`, `select`, `swap`, `remove` and `clear`, at load 4–10 (§2). On `create10k`, measured
@@ -243,7 +245,10 @@ dependency-free `package-lock.json`, and `build-prod`: `node build.mjs <platform
 `src/Main.beni` is a symlink to `bench/ui/apps/beni/Main.beni`, so both harnesses build the same
 program.
 
-- **Keyed**: `npm run isKeyed` passes for both, keyed for run, remove and swap.
+- **Keyed**: `npm run isKeyed` passes for both, keyed for run, remove and swap. `run.mjs` runs
+  `isKeyed` on the beni entries only, and takes the official entries as correct at the pinned
+  commit. `isCSPCompliant` checks every framework in the work tree, and no official entry fails
+  it in a way that contradicts its declared notes.
 - **HTML**: the rows are vanillajs's markup with `class=""` on the `<tr>`, as Solid's are. The
   structure check in `isKeyed` (`checkTRcorrect`) passes. The page has no `<div id="main">`,
   because `Tea.sandbox` mounts at `document.body`. Elm's entry also renders its own container, and

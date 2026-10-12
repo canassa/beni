@@ -41,5 +41,7 @@
     "18:44 6.2",
     "19:14 22.2 (5-min 28.6)",
     "19:36 6.7"
-  ]
+  ],
+  "beniSha256": "0ab971cd202498ae83fbadbee96ca330503bf9b271843d413c24a307aa5861b8",
+  "beniBuild": "zig build -Doptimize=ReleaseSafe at 86d161d0b (recorded after the run; the same binary built every entry)"
 }

@@ -32,7 +32,9 @@ git -C references/<name> sparse-checkout set <paths below>
 benchmark whose table and rules beni's UI is measured against (CLAUDE.md rule 8; research 83).
 It is pinned to the commit that published the official Chrome 154 results, shallow and
 **sparse**: the runner, the server, the results app and the six official keyed entries
-`bench/jfb/run.mjs` runs. `run.mjs` never writes into it; it copies it to `bench/jfb/work/`.
+`bench/jfb/run.mjs` runs. `run.mjs` never writes into it; it copies it to `bench/jfb/work/`. The pin is fetched by its
+SHA, which GitHub serves to a shallow fetch; a host that refuses fetch-by-SHA needs a deeper clone
+of `master` to reach it.
 
 ```sh
 git submodule update --init --depth 1 --filter=blob:none references/js-framework-benchmark
