@@ -171,11 +171,13 @@ by the Lean model and rejected here, all §5's finding:
 | T57 distinct | accepted | rejected `supply` | the same, for `update` with a callback that edits its element's head |
 | T59 initialize distinct | accepted | rejected `supply` | the same: two literals are two cells, but `update` supplies borrowed |
 
-No program the Lean model rejects is accepted here. The Lean model re-infers a callee at every call with the
-actual arguments (`inferFunction` per call site); slice 2 publishes one summary per function and instantiates
-it, so where they agree the agreement also says the modular summaries lose nothing on these programs. The
-model could not be run here (no Lean toolchain in the environment); the comparison is against its fixtures'
-recorded verdicts, which its own test suite asserts.
+No program the Lean model rejects is accepted here. The disagreement has a plain source: the Lean core has
+`focus` (an element edit, `update`'s shape) and `traverse` (`map`'s and the folds') as *primitives*, with
+exclusive contents built in — which is to say it asserts the destructive read that slice 2, following the
+brief, infers from `core/List`'s bodies and cannot reach. Since PR #59 the Lean checker also publishes one
+summary per function and applies it at calls (`Checker.lean`; the per-call re-inference is kept as
+`Reinfer.lean`), as slice 2 does. The model could not be run here (no Lean toolchain in the environment); the
+comparison is against its fixtures' recorded verdicts, which its own test suite asserts.
 
 ## 7. What it costs
 
