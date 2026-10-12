@@ -414,6 +414,15 @@ def finish (env : Env) : Gen Expr := do
   if kept.isEmpty then kept := [.int 0]
   pure (.prim .record kept)
 
+/-- v5's end of a chain: as `finish`, but a function value is kept with
+    probability 1/2, since observing a closure observes what it captured. -/
+def finishV5 (env : Env) : Gen Expr := do
+  let vars := env.filter fun (a, _) => match a with | .var _ => true | _ => false
+  let mut kept : List Atom := (vars.head?.map Prod.fst).toList
+  for (a, t) in vars.drop 1 do
+    if (← draw (if containsFunction t then 2 else 4)) == 0 then kept := kept ++ [a]
+  pure (.prim .record kept)
+
 def atomRoot : Atom → Option Var
   | .var x => some x
   | .field a _ => atomRoot a
@@ -499,6 +508,13 @@ def chainWith (ms : List (String × Move)) (protect : Bool) (fin : Nat → Env �
       | some (.closure d [], _) => if x ≥ next then some d else none
       | _ => none
     let gone := bs.flatMap (fun (rhs, _) => handedOver callee rhs)
+    -- v5: a closure hands over its captures, and a function value passed
+    -- to a call stays in the pool, so a callback may be used again after a
+    -- callee called it.
+    let gone := if !protect then gone else
+      let fns := bs.zipIdx.filterMap fun ((_, t), i) => if containsFunction t then some (next + i) else none
+      (gone.filter (!fns.contains ·)) ++
+        bs.flatMap fun (rhs, _) => match rhs with | .closure _ cs => cs.filterMap atomRoot | _ => []
     let (names, e) ← bindAll next env bs fun next' env' => do
       chainWith ms protect fin fuel next' (← retire env' gone protect)
     return (name :: names, e)
@@ -606,13 +622,35 @@ def callWith (table : Table) (next : Nat) (env : Env) (f : Atom) (ps : List Ty) 
     else pure args
   pure (bs ++ [(.app f args, r)])
 
-/-- Close over a generated declaration and call it. -/
-def callGenerated (table : Table) : Move := fun next env => do
-  let (i, d) ← pick table (0, default)
+/-- Close over generated declaration `i` and call it. -/
+def callDecl (table : Table) (next : Nat) (env : Env) (i : Nat) (d : Decl) : Gen (List (Expr × Ty)) := do
   let (bs, caps) ← firstOrderValues next env d.captures
   let at_ := next + bs.length
   let call ← callWith table (at_ + 1) (extend next bs env) (.var at_) d.parameters d.result
   pure (bs ++ [(.closure i caps, fnTy d)] ++ call)
+
+/-- Close over a generated declaration and call it. -/
+def callGenerated (table : Table) : Move := fun next env => do
+  let (i, d) ← pick table (0, default)
+  callDecl table next env i d
+
+/-- A fresh list first (the most recent list, so a callback built for the
+    call often captures it), then a call of a generated declaration or a
+    function value that takes a callback. -/
+def higherCall (table : Table) : Move := fun next env => do
+  let first := (← litList env, tL)
+  let env' := (Atom.var next, tL) :: env
+  let takesFn := fun (ps : List Ty) => ps.any (!firstOrder ·) && ps.all (fun p => firstOrder p || hasCallback table p)
+  let gens := table.filter fun (_, d) => takesFn d.parameters
+  let fs := env.filterMap fun (a, t) => match t with
+    | .fn ps r => if takesFn ps then some (a, ps, r) else none
+    | _ => none
+  if !gens.isEmpty && (fs.isEmpty || (← draw 2) == 0) then
+    let (i, d) ← pick gens (0, default)
+    return first :: (← callDecl table (next + 1) env' i d)
+  if fs.isEmpty then return [first]
+  let (f, ps, r) ← pick fs (.int 0, [], .int)
+  return first :: (← callWith table (next + 1) env' f ps r)
 
 /-- Call any function value in scope: a closure made earlier, one a
     generated factory returned, or a function parameter of the body. -/
@@ -656,7 +694,7 @@ def branchBlock (ms : List (String × Move)) : Move := fun next env => do
 def movesFor (table : Table) : List (String × Move) :=
   let gen := if table.isEmpty then [] else List.replicate 3 ("call-generated", callGenerated table)
   weighted ++ [("branch-written", branchWritten), ("branch-block", branchBlock weighted),
-    ("apply-any", applyAny table)] ++ gen
+    ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/
@@ -768,7 +806,7 @@ def generalV5 (declarations : Bool) : Gen (List String × Program) := do
   let t ← if declarations then generatedTable else pure []
   let length ← draw 12
   let first ← litList []
-  let (names, rest) ← chainWith (movesFor t) true (fun _ env => do return ([], ← finish env))
+  let (names, rest) ← chainWith (movesFor t) true (fun _ env => do return ([], ← finishV5 env))
     (length + 1) 1 [(.var 0, tL)]
   return (names, { declarations := decls ++ t.map Prod.snd, main := .letE 0 first rest })
 

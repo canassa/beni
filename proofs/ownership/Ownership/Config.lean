@@ -60,8 +60,7 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
     `transfer-supplies` changed no verdict in 20000 trials and have no probe —
     known gaps (COVERAGE.md). `ownership controls` reports all five. -/
 def Mutant.generatorOptional : Mutant → Bool
-  | .callbackEscapes | .callbackRequires | .requiresEdge | .forwardGuards | .transferSupplies
-  | .onceThroughCall => true
+  | .callbackEscapes | .callbackRequires | .requiresEdge | .forwardGuards | .transferSupplies => true
   | _ => false
 
 /-- Mutants of the summary layer's rows, and `branch-live`, which only the

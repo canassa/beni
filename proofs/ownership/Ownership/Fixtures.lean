@@ -416,6 +416,7 @@ def onceThroughCallee : Program := {
   main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.closure 0 [v 0]) <|
     .letE 2 (.prim (.literal .int) [.int 7]) <| .letE 3 (.closure 1 []) <|
     .letE 4 (.app (v 3) [v 2, v 1]) (.prim .record [v 4, v 1]) }
+
 /-- Branch liveness: `x` is read only in the nonzero arm, after it was pushed. -/
 def probeBranchLive : Program := {
   main := .letE 0 (.prim (.literal .int) [.int 1]) <|
