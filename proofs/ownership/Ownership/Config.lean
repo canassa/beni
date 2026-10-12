@@ -67,8 +67,8 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
     known gaps (COVERAGE.md). `ownership controls` reports all five. -/
 def Mutant.generatorOptional : Mutant → Bool
   | .callbackEscapes | .callbackRequires | .requiresEdge | .forwardGuards | .transferSupplies => true
-  -- Not yet reached by the generator (third review): required through their probe.
-  | .branchClosure | .sharedRoots | .shadowing => true
+  -- Not yet reached by the generator: required through its probe.
+  | .shadowing => true
   | _ => false
 
 /-- Mutants of the summary layer's rows, and `branch-live`, which only the

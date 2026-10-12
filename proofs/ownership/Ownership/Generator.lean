@@ -679,6 +679,32 @@ def applyAny (table : Table) : Move := fun next env => do
   let (f, ps, r) ← pick fs (.int 0, [], .int)
   callWith table false next env f ps r
 
+/-- `shared` on a nested list, then an element read out of it and pushed:
+    the element is published with its container. -/
+def sharedNested : Move := fun next env => withNested next env fun next n => do
+  pure [(.prim .shared [n], tN), (.prim .at [n, .int 0, ← anyList env], tL),
+    (.prim .push [v (next + 1), ← number env], tL)]
+
+/-- `shared` on a record of lists, then a push onto one of its fields. -/
+def sharedRecord : Move := fun next env => do
+  let a ← anyList env
+  let b ← anyList env
+  pure [(.prim .record [a, b], tR), (.prim .shared [v next], tR),
+    (.prim .push [.field (v next) (← draw 2), ← number env], tL)]
+
+/-- Closures created in a conditional's arms capture a list written just
+    before (or one written just after), and the chosen closure is called. -/
+def branchClosure : Move := fun next env => do
+  let a ← anyList env
+  let other ← if (← draw 3) == 0 then anyList env else pure a
+  let c ← number env
+  let (id, t, r) ← pick [(capLen, fII, Ty.int), (capGet, fIL, tL)] (capLen, fII, .int)
+  let br : Expr := .branch c (.closure id [a]) (.closure id [other])
+  if (← draw 3) == 0 then
+    pure [(br, t), (.prim .push [a, ← number env], tL), (.app (v next) [.int 0], r)]
+  else
+    pure [(.prim .push [a, ← number env], tL), (br, t), (.app (v (next + 1)) [.int 0], r)]
+
 /-- A list and its pushed version, then a conditional choosing between them:
     the list written in place is read again only in one arm. -/
 def branchWritten : Move := fun next env => do
@@ -712,7 +738,9 @@ def movesFor (table : Table) : List (String × Move) :=
   let gen := if table.isEmpty then [] else List.replicate 3 ("call-generated", callGenerated table) ++
     List.replicate 2 ("call-generated-fresh", callGeneratedFresh table)
   weighted ++ [("branch-written", branchWritten), ("branch-block", branchBlock weighted),
-    ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table)] ++ gen
+    ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table),
+    ("shared-nested", sharedNested), ("shared-record", sharedRecord),
+    ("branch-closure", branchClosure)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/
