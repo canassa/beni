@@ -376,6 +376,22 @@ def envThroughWrapper : Program := {
     .letE 6 (.closure applyThenRead []) <| .letE 7 (.closure capAppend [v 2]) <|
     .letE 8 (.app (v 6) [v 0, v 7]) <| .letE 9 (.prim .set [v 8, .int 1, .int 2]) (.prim .record [v 9]) }
 
+/-- The reverse of `envThroughWrapper`: the callee writes through its
+    callback's environment and then calls the callback again, which returns
+    the written capture. The callee's own Dead check must refuse it (the
+    closure is live after the write); the caller no longer counts the
+    closure's captures as another operand. -/
+def envWriteThenCall : Program := {
+  declarations := [
+    { name := "capReturn", parameters := [.list .int], captures := [.list .int], result := .list .int,
+      body := .atom (v 1) },
+    { name := "writeEnvThenCall", parameters := [.list .int, .fn [.list .int] (.list .int)],
+      result := .list .int,
+      body := .letE 2 (.app (v 1) [v 0]) <| .letE 3 (push (v 2)) <|
+        .letE 4 (.app (v 1) [v 0]) (.prim .push [v 4, .int 1]) }]
+  main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 5]) <|
+    .letE 2 (.closure 0 [v 1]) <| .letE 3 (.closure 1 []) (.app (v 3) [v 0, v 2]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -547,7 +563,8 @@ def all : List Fixture := [
   ⟨"escape traversal",escapeTraversal,false⟩,
   ⟨"recursion inside a step (per-call checker accepted it)",recursionInStep,false⟩,
   ⟨"T46 borrowed row read again",borrowedReread,false⟩,
-  ⟨"wrapper writes its callback's returned capture",envThroughWrapper,true⟩ ]
+  ⟨"wrapper writes its callback's returned capture",envThroughWrapper,true⟩,
+  ⟨"write through a callback's environment, then call it again",envWriteThenCall,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true

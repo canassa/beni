@@ -73,7 +73,7 @@ Accepted programs that write and exercised each checker row (three seeds):
 
 ## Summary layer
 
-* **No corrected-rule mismatch** in the 60 000 trials above, nor in the 77
+* **No corrected-rule mismatch** in the 60 000 trials above, nor in the 78
   fixtures; both checkers agree with every intended verdict.
 * **Computed once.** Per seed about 10 000 summaries were computed and about
   200 000 call sites (including class queries) served from the cache after
