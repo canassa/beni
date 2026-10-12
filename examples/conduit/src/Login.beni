@@ -40,6 +40,7 @@ pub type Msg
     | EnteredEmail String
     | EnteredPassword String
     | CompletedLogin (Result Api.Error Viewer)
+    | RouteRefused Route.Refusal
 
 
 pub update : Msg, Model → Model × Cmd Msg
@@ -69,10 +70,12 @@ update msg model =
         CompletedLogin (Ok viewer) →
             key = Session.navKey model.session
             ( { model | session = Session.LoggedIn key viewer }
-            , Cmd.do λ⊤ →
-                Api.storeViewer viewer
-                Route.replaceUrl key Route.Home
+            , Cmd.batch
+                [ Cmd.do λ⊤ → Api.storeViewer viewer, Route.replaceUrl key Route.Home RouteRefused ]
             )
+
+        RouteRefused _ →
+            ( model, Cmd.none )
 
 
 -- Change the form, as each field's input does.

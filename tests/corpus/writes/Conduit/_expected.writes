@@ -15,18 +15,21 @@ program Main.main : Tea.application
   key GotSettingsMsg · EnteredAvatar              exact      node ρ; node ρ.Settings#0; node ρ.Settings#0.status; node ρ.Settings#0.status.Loaded#0; value ρ.Settings#0.status.Loaded#0.avatar
   key GotSettingsMsg · CompletedSave · Err        exact      node ρ; node ρ.Settings#0; value ρ.Settings#0.problems
   key GotSettingsMsg · CompletedSave · Ok         exact      node ρ; node ρ.Settings#0; value ρ.Settings#0.session
+  key GotSettingsMsg · RouteRefused               exact      node ρ
   key GotSettingsMsg · PassedSlowLoadThreshold    exact      node ρ; node ρ.Settings#0; value ρ.Settings#0.status
   key GotLoginMsg · SubmittedForm                 indexed    node ρ; node ρ.Login#0; value ρ.Login#0.problems ⟨replaced⟩
   key GotLoginMsg · EnteredEmail                  exact      node ρ; node ρ.Login#0; node ρ.Login#0.form; value ρ.Login#0.form.email
   key GotLoginMsg · EnteredPassword               exact      node ρ; node ρ.Login#0; node ρ.Login#0.form; value ρ.Login#0.form.password
   key GotLoginMsg · CompletedLogin · Err          exact      node ρ; node ρ.Login#0; value ρ.Login#0.problems
   key GotLoginMsg · CompletedLogin · Ok           exact      node ρ; node ρ.Login#0; value ρ.Login#0.session
+  key GotLoginMsg · RouteRefused                  exact      node ρ
   key GotRegisterMsg · SubmittedForm              indexed    node ρ; node ρ.Register#0; value ρ.Register#0.problems ⟨replaced⟩
   key GotRegisterMsg · EnteredUsername            exact      node ρ; node ρ.Register#0; node ρ.Register#0.form; value ρ.Register#0.form.username
   key GotRegisterMsg · EnteredEmail               exact      node ρ; node ρ.Register#0; node ρ.Register#0.form; value ρ.Register#0.form.email
   key GotRegisterMsg · EnteredPassword            exact      node ρ; node ρ.Register#0; node ρ.Register#0.form; value ρ.Register#0.form.password
   key GotRegisterMsg · CompletedRegister · Err    exact      node ρ; node ρ.Register#0; value ρ.Register#0.problems
   key GotRegisterMsg · CompletedRegister · Ok     exact      node ρ; node ρ.Register#0; value ρ.Register#0.session
+  key GotRegisterMsg · RouteRefused               exact      node ρ
   key GotHomeMsg · ClickedTag                     exact      node ρ; node ρ.Home#0; value ρ.Home#0.feedPage; value ρ.Home#0.feedTab
   key GotHomeMsg · ClickedTab                     exact      node ρ; node ρ.Home#0; value ρ.Home#0.feedPage; value ρ.Home#0.feedTab
   key GotHomeMsg · ClickedFeedPage                exact      node ρ; node ρ.Home#0; value ρ.Home#0.feedPage
@@ -100,6 +103,7 @@ program Main.main : Tea.application
   key GotArticleMsg · CompletedDeleteArticle · Err
                                                   indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩
   key GotArticleMsg · PassedSlowLoadThreshold     exact      node ρ; node ρ.Article#0; value ρ.Article#0.article; value ρ.Article#0.comments
+  key GotArticleMsg · RouteRefused                exact      node ρ
   key GotEditorMsg · ClickedSave                  exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status; value ρ.Editor#1.status.Editing#1; value ρ.Editor#1.status.EditingNew#0
   key GotEditorMsg · EnteredTitle                 exact      node ρ; node ρ.Editor#1; node ρ.Editor#1.status; node ρ.Editor#1.status.Saving#1; value ρ.Editor#1.status.Saving#1.title; node ρ.Editor#1.status.Editing#2; value ρ.Editor#1.status.Editing#2.title; node ρ.Editor#1.status.EditingNew#1; value ρ.Editor#1.status.EditingNew#1.title; node ρ.Editor#1.status.Creating#0; value ρ.Editor#1.status.Creating#0.title
   key GotEditorMsg · EnteredDescription           exact      node ρ; node ρ.Editor#1; node ρ.Editor#1.status; node ρ.Editor#1.status.Saving#1; value ρ.Editor#1.status.Saving#1.description; node ρ.Editor#1.status.Editing#2; value ρ.Editor#1.status.Editing#2.description; node ρ.Editor#1.status.EditingNew#1; value ρ.Editor#1.status.EditingNew#1.description; node ρ.Editor#1.status.Creating#0; value ρ.Editor#1.status.Creating#0.description
@@ -113,7 +117,9 @@ program Main.main : Tea.application
                                                   exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
   key GotEditorMsg · CompletedArticleLoad#1 · Ok  exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
   key GotEditorMsg · PassedSlowLoadThreshold      exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status
-  keys 91: bounded 90 (98%), exact 71, indexed 16, structural 3, * 1; capped 0
+  key GotEditorMsg · RouteRefused                 exact      node ρ
+  key RouteRefused                                exact      ∅
+  keys 97: bounded 96 (98%), exact 77, indexed 16, structural 3, * 1; capped 0
   summary Url.Parser.firstMatch (cap I)
   hole Article.beni:199:36                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Article#0.article.Loaded#0.createdAt; ρ.Article#0.comments.Loaded#0.1[*].createdAt
   hole Article.beni:209:10                        dynamic    reads ρ.Article#0.article.Loaded#0.body
@@ -126,60 +132,60 @@ program Main.main : Tea.application
   hole Article.beni:233:13                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Article#0.article.Loaded#0.favoritesCount
   hole Article.beni:239:29                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug
   hole Article.beni:239:76                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title
-  hole ArticlePage.beni:220:33                    dynamic    reads ρ.Article#0.article.Loaded#0.title
-  hole ArticlePage.beni:221:29                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred
-  hole ArticlePage.beni:222:29                    dynamic    reads ρ.Article#0.errors; ρ.Article#0.errors[*]
-  hole ArticlePage.beni:228:33                    dynamic    reads ρ.Article#0.article.Loaded#0.body
-  hole ArticlePage.beni:229:33                    dynamic    reads ρ.Article#0.article.Loaded#0.tags; ρ.Article#0.article.Loaded#0.tags[*]
-  hole ArticlePage.beni:233:54                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred
-  hole ArticlePage.beni:236:33                    dynamic    reads tag ρ.Article#0.comments; tag ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0; ρ.Article#0.comments.Loaded#0.1; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].body; ρ.Article#0.comments.Loaded#0.1[*].createdAt; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred; ρ.Article#0.session.LoggedIn#1.image.Just#0
-  hole ArticlePage.beni:258:12                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
-  hole ArticlePage.beni:258:51                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0
-  hole ArticlePage.beni:260:13                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
-  hole ArticlePage.beni:261:13                    dynamic    reads ρ.Article#0.article.Loaded#0.createdAt
-  hole ArticlePage.beni:263:9                     dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred
-  hole ArticlePage.beni:281:21                    dynamic    reads ρ.Article#0.article.Loaded#0.slug
-  hole ArticlePage.beni:284:21                    literal    reads ∅
-  hole ArticlePage.beni:286:17                    literal    reads ∅
-  hole ArticlePage.beni:292:21                    literal    reads ∅
-  hole ArticlePage.beni:298:17                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
-  hole ArticlePage.beni:303:17                    static     reads ∅
-  hole ArticlePage.beni:304:17                    dynamic    reads tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount
-  hole ArticlePage.beni:318:17                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.image.Just#0
-  hole ArticlePage.beni:319:18                    dynamic    reads ρ.Article#0.comments.Loaded#0.1
-  hole ArticlePage.beni:355:25                    static     reads ∅
-  hole ArticlePage.beni:356:25                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0
-  hole ArticlePage.beni:357:25                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0
-  hole ArticlePage.beni:362:21                    dynamic    reads tag ρ.Article#0.session.LoggedIn#1.image; ρ.Article#0.session.LoggedIn#1.image.Just#0
-  hole ArticlePage.beni:363:60                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0
-  hole ArticlePage.beni:369:20                    static     reads ∅
-  hole ArticlePage.beni:370:17                    literal    reads ∅
-  hole ArticlePage.beni:371:20                    static     reads ∅
-  hole ArticlePage.beni:372:17                    literal    reads ∅
-  hole ArticlePage.beni:380:54                    dynamic    reads ρ.Article#0.comments.Loaded#0.1[*].body
-  hole ArticlePage.beni:382:39                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username
-  hole ArticlePage.beni:383:17                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image
-  hole ArticlePage.beni:385:13                    literal    reads ∅
+  hole ArticlePage.beni:224:33                    dynamic    reads ρ.Article#0.article.Loaded#0.title
+  hole ArticlePage.beni:225:29                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred
+  hole ArticlePage.beni:226:29                    dynamic    reads ρ.Article#0.errors; ρ.Article#0.errors[*]
+  hole ArticlePage.beni:232:33                    dynamic    reads ρ.Article#0.article.Loaded#0.body
+  hole ArticlePage.beni:233:33                    dynamic    reads ρ.Article#0.article.Loaded#0.tags; ρ.Article#0.article.Loaded#0.tags[*]
+  hole ArticlePage.beni:237:54                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred
+  hole ArticlePage.beni:240:33                    dynamic    reads tag ρ.Article#0.comments; tag ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0; ρ.Article#0.comments.Loaded#0.1; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].body; ρ.Article#0.comments.Loaded#0.1[*].createdAt; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred; ρ.Article#0.session.LoggedIn#1.image.Just#0
+  hole ArticlePage.beni:262:12                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
+  hole ArticlePage.beni:262:51                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0
+  hole ArticlePage.beni:264:13                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
+  hole ArticlePage.beni:265:13                    dynamic    reads ρ.Article#0.article.Loaded#0.createdAt
+  hole ArticlePage.beni:267:9                     dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred
+  hole ArticlePage.beni:285:21                    dynamic    reads ρ.Article#0.article.Loaded#0.slug
+  hole ArticlePage.beni:288:21                    literal    reads ∅
+  hole ArticlePage.beni:290:17                    literal    reads ∅
+  hole ArticlePage.beni:296:21                    literal    reads ∅
+  hole ArticlePage.beni:302:17                    dynamic    reads tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
+  hole ArticlePage.beni:307:17                    static     reads ∅
+  hole ArticlePage.beni:308:17                    dynamic    reads tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount
+  hole ArticlePage.beni:322:17                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.image.Just#0
+  hole ArticlePage.beni:323:18                    dynamic    reads ρ.Article#0.comments.Loaded#0.1
+  hole ArticlePage.beni:359:25                    static     reads ∅
+  hole ArticlePage.beni:360:25                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0
+  hole ArticlePage.beni:361:25                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0
+  hole ArticlePage.beni:366:21                    dynamic    reads tag ρ.Article#0.session.LoggedIn#1.image; ρ.Article#0.session.LoggedIn#1.image.Just#0
+  hole ArticlePage.beni:367:60                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0
+  hole ArticlePage.beni:373:20                    static     reads ∅
+  hole ArticlePage.beni:374:17                    literal    reads ∅
+  hole ArticlePage.beni:375:20                    static     reads ∅
+  hole ArticlePage.beni:376:17                    literal    reads ∅
+  hole ArticlePage.beni:384:54                    dynamic    reads ρ.Article#0.comments.Loaded#0.1[*].body
   hole ArticlePage.beni:386:39                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username
-  hole ArticlePage.beni:387:17                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username
-  hole ArticlePage.beni:389:13                    dynamic    reads ρ.Article#0.comments.Loaded#0.1[*].createdAt
-  hole ArticlePage.beni:390:13                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred
+  hole ArticlePage.beni:387:17                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image
+  hole ArticlePage.beni:389:13                    literal    reads ∅
+  hole ArticlePage.beni:390:39                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username
+  hole ArticlePage.beni:391:17                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username
+  hole ArticlePage.beni:393:13                    dynamic    reads ρ.Article#0.comments.Loaded#0.1[*].createdAt
+  hole ArticlePage.beni:394:13                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred
   hole Author.beni:119:25                         static     reads ∅
   hole Author.beni:119:37                         dynamic    reads tag ρ.Redirect#0.LoggedIn#1.image; ρ.Redirect#0.LoggedIn#1.image.Just#0; tag ρ.NotFound#0.LoggedIn#1.image; ρ.NotFound#0.LoggedIn#1.image.Just#0; tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; tag ρ.Home#0.session.LoggedIn#1.image; ρ.Home#0.session.LoggedIn#1.image.Just#0; tag ρ.Settings#0.session.LoggedIn#1.image; ρ.Settings#0.session.LoggedIn#1.image.Just#0; tag ρ.Login#0.session.LoggedIn#1.image; ρ.Login#0.session.LoggedIn#1.image.Just#0; tag ρ.Register#0.session.LoggedIn#1.image; ρ.Register#0.session.LoggedIn#1.image.Just#0; tag ρ.Profile#1.author.Loaded#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.image; ρ.Profile#1.author.Loaded#0.IsViewer#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image.Just#0; tag ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; tag ρ.Profile#1.session.LoggedIn#1.image; ρ.Profile#1.session.LoggedIn#1.image.Just#0; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image; tag ρ.Article#0.session.LoggedIn#1.image; ρ.Article#0.session.LoggedIn#1.image.Just#0; tag ρ.Editor#1.session.LoggedIn#1.image; ρ.Editor#1.session.LoggedIn#1.image.Just#0
   hole Author.beni:125:23                         dynamic    reads tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
   hole Author.beni:125:62                         dynamic    reads tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
   hole Author.beni:139:17                         dynamic    reads ρ.Profile#1.author.Loaded#0.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username
   hole Author.beni:145:17                         dynamic    reads ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
-  hole Editor.beni:265:21                         dynamic    reads tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#0; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0.body; ρ.Editor#1.status.Creating#0.description; ρ.Editor#1.status.Creating#0.tags; ρ.Editor#1.status.Creating#0.title
-  hole Editor.beni:297:14                         dynamic    reads ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.EditingNew#0
-  hole Editor.beni:300:25                         dynamic    reads tag ρ.Editor#1.status.Editing#1[*]; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; tag ρ.Editor#1.status.EditingNew#0[*]; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0
-  hole Editor.beni:312:23                         static     reads ∅
-  hole Editor.beni:318:25                         dynamic    reads ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0.title
-  hole Editor.beni:327:25                         dynamic    reads ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.Creating#0.description
-  hole Editor.beni:335:25                         static     reads ∅
-  hole Editor.beni:337:25                         dynamic    reads ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.Creating#0.body
-  hole Editor.beni:346:25                         dynamic    reads ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.Creating#0.tags
-  hole Editor.beni:350:70                         static     reads ∅
+  hole Editor.beni:269:21                         dynamic    reads tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#0; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0.body; ρ.Editor#1.status.Creating#0.description; ρ.Editor#1.status.Creating#0.tags; ρ.Editor#1.status.Creating#0.title
+  hole Editor.beni:301:14                         dynamic    reads ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.EditingNew#0
+  hole Editor.beni:304:25                         dynamic    reads tag ρ.Editor#1.status.Editing#1[*]; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; tag ρ.Editor#1.status.EditingNew#0[*]; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0
+  hole Editor.beni:316:23                         static     reads ∅
+  hole Editor.beni:322:25                         dynamic    reads ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0.title
+  hole Editor.beni:331:25                         dynamic    reads ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.Creating#0.description
+  hole Editor.beni:339:25                         static     reads ∅
+  hole Editor.beni:341:25                         dynamic    reads ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.Creating#0.body
+  hole Editor.beni:350:25                         dynamic    reads ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.Creating#0.tags
+  hole Editor.beni:354:70                         static     reads ∅
   hole Feed.beni:76:9                             dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]
   hole Feed.beni:77:9                             dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Home#0.feed.Loaded#0.Model#0.session; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; ρ.Profile#1.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred
   hole Feed.beni:81:18                            dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles
@@ -208,12 +214,12 @@ program Main.main : Tea.application
   hole Home.beni:234:10                           dynamic    reads ρ.Home#0.tags.Loaded#0
   hole Home.beni:238:21                           dynamic    reads ρ.Home#0.tags.Loaded#0[*]
   hole Home.beni:245:21                           dynamic    reads ρ.Home#0.tags.Loaded#0[*]
-  hole Login.beni:115:32                          static     reads ∅
-  hole Login.beni:117:25                          dynamic    reads ρ.Login#0.problems; ρ.Login#0.problems[*].InvalidEntry#1; ρ.Login#0.problems[*].ServerError#0
-  hole Login.beni:124:37                          dynamic    reads ρ.Login#0.form.email
-  hole Login.beni:134:37                          dynamic    reads ρ.Login#0.form.password
-  hole Login.beni:150:10                          dynamic    reads ρ.Login#0.problems
-  hole Login.beni:153:21                          dynamic    reads tag ρ.Login#0.problems[*]; ρ.Login#0.problems[*].InvalidEntry#1; ρ.Login#0.problems[*].ServerError#0
+  hole Login.beni:118:32                          static     reads ∅
+  hole Login.beni:120:25                          dynamic    reads ρ.Login#0.problems; ρ.Login#0.problems[*].InvalidEntry#1; ρ.Login#0.problems[*].ServerError#0
+  hole Login.beni:127:37                          dynamic    reads ρ.Login#0.form.email
+  hole Login.beni:137:37                          dynamic    reads ρ.Login#0.form.password
+  hole Login.beni:153:10                          dynamic    reads ρ.Login#0.problems
+  hole Login.beni:156:21                          dynamic    reads tag ρ.Login#0.problems[*]; ρ.Login#0.problems[*].InvalidEntry#1; ρ.Login#0.problems[*].ServerError#0
   hole Main.beni:57:58                            static     reads ∅
   hole Page.beni:31:13                            dynamic    reads tag ρ; ρ.Redirect#0; ρ.Redirect#0.LoggedIn#1; ρ.Redirect#0.LoggedIn#1.cred.username; ρ.Redirect#0.LoggedIn#1.image.Just#0; ρ.NotFound#0; ρ.NotFound#0.LoggedIn#1; ρ.NotFound#0.LoggedIn#1.cred.username; ρ.NotFound#0.LoggedIn#1.image.Just#0; ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred.username; ρ.Home#0.session.LoggedIn#1.image.Just#0; ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred.username; ρ.Settings#0.session.LoggedIn#1.image.Just#0; ρ.Login#0.session; ρ.Login#0.session.LoggedIn#1; ρ.Login#0.session.LoggedIn#1.cred.username; ρ.Login#0.session.LoggedIn#1.image.Just#0; ρ.Register#0.session; ρ.Register#0.session.LoggedIn#1; ρ.Register#0.session.LoggedIn#1.cred.username; ρ.Register#0.session.LoggedIn#1.image.Just#0; ρ.Profile#0; ρ.Profile#1.session; ρ.Profile#1.session.LoggedIn#1; ρ.Profile#1.session.LoggedIn#1.cred.username; ρ.Profile#1.session.LoggedIn#1.image.Just#0; ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred.username; ρ.Article#0.session.LoggedIn#1.image.Just#0; ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1; ρ.Editor#1.session.LoggedIn#1.cred.username; ρ.Editor#1.session.LoggedIn#1.image.Just#0
   hole Page.beni:32:13                            dynamic    reads tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; ρ.Home#0.feed.Loaded#0.Model#0.page; tag ρ.Home#0.feed.Loaded#0.Model#0.session; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; ρ.Home#0.feed.Loaded#0.Model#0.total; ρ.Home#0.feedTab; ρ.Home#0.feedTab.TagFeed#0; tag ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred; tag ρ.Home#0.tags; ρ.Home#0.tags.Loaded#0; ρ.Home#0.tags.Loaded#0[*]; ρ.Settings#0.problems; ρ.Settings#0.problems[*].InvalidEntry#1; ρ.Settings#0.problems[*].ServerError#0; tag ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred; tag ρ.Settings#0.status; ρ.Settings#0.status.Loaded#0.avatar; ρ.Settings#0.status.Loaded#0.bio; ρ.Settings#0.status.Loaded#0.email; ρ.Settings#0.status.Loaded#0.password; ρ.Settings#0.status.Loaded#0.username; ρ.Login#0.form.email; ρ.Login#0.form.password; ρ.Login#0.problems; ρ.Login#0.problems[*].InvalidEntry#1; ρ.Login#0.problems[*].ServerError#0; ρ.Register#0.form.email; ρ.Register#0.form.password; ρ.Register#0.form.username; ρ.Register#0.problems; ρ.Register#0.problems[*].InvalidEntry#1; ρ.Register#0.problems[*].ServerError#0; tag ρ.Profile#1.author; tag ρ.Profile#1.author.Loaded#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.bio; ρ.Profile#1.author.Loaded#0.IsViewer#0.bio.Just#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.image; ρ.Profile#1.author.Loaded#0.IsViewer#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.username; ρ.Profile#1.author.Loaded#0.IsFollowing#0.bio; ρ.Profile#1.author.Loaded#0.IsFollowing#0.bio.Just#0; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsFollowing#0.username; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.bio; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.bio.Just#0; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.username; ρ.Profile#1.errors; ρ.Profile#1.errors[*]; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]; ρ.Profile#1.feed.Loaded#0.Model#0.page; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; ρ.Profile#1.feed.Loaded#0.Model#0.total; ρ.Profile#1.feedTab; tag ρ.Profile#1.session; ρ.Profile#1.session.LoggedIn#1; ρ.Profile#1.session.LoggedIn#1.cred; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.body; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; ρ.Article#0.article.Loaded#0.tags; ρ.Article#0.article.Loaded#0.tags[*]; ρ.Article#0.article.Loaded#0.title; tag ρ.Article#0.comments; tag ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0; ρ.Article#0.comments.Loaded#0.1; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].body; ρ.Article#0.comments.Loaded#0.1[*].createdAt; ρ.Article#0.errors; ρ.Article#0.errors[*]; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred; ρ.Article#0.session.LoggedIn#1.image.Just#0; tag ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1; ρ.Editor#1.session.LoggedIn#1.cred; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#0; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0.body; ρ.Editor#1.status.Creating#0.description; ρ.Editor#1.status.Creating#0.tags; ρ.Editor#1.status.Creating#0.title
@@ -245,21 +251,21 @@ program Main.main : Tea.application
   hole ProfilePage.beni:248:33                    dynamic    reads ρ.Profile#1.feedTab
   hole ProfilePage.beni:259:33                    dynamic    reads ρ.Profile#1.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred
   hole ProfilePage.beni:260:33                    dynamic    reads ρ.Profile#1.feed.Loaded#0.Model#0.page; ρ.Profile#1.feed.Loaded#0.Model#0.total
-  hole Register.beni:142:32                       static     reads ∅
-  hole Register.beni:145:30                       dynamic    reads ρ.Register#0.problems
-  hole Register.beni:148:41                       dynamic    reads tag ρ.Register#0.problems[*]; ρ.Register#0.problems[*].InvalidEntry#1; ρ.Register#0.problems[*].ServerError#0
-  hole Register.beni:165:37                       dynamic    reads ρ.Register#0.form.username
-  hole Register.beni:174:37                       dynamic    reads ρ.Register#0.form.email
-  hole Register.beni:184:37                       dynamic    reads ρ.Register#0.form.password
-  hole Settings.beni:219:30                       dynamic    reads ρ.Settings#0.problems
-  hole Settings.beni:222:41                       dynamic    reads tag ρ.Settings#0.problems[*]; ρ.Settings#0.problems[*].InvalidEntry#1; ρ.Settings#0.problems[*].ServerError#0
-  hole Settings.beni:233:25                       dynamic    reads tag ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred; tag ρ.Settings#0.status; ρ.Settings#0.status.Loaded#0.avatar; ρ.Settings#0.status.Loaded#0.bio; ρ.Settings#0.status.Loaded#0.email; ρ.Settings#0.status.Loaded#0.password; ρ.Settings#0.status.Loaded#0.username
-  hole Settings.beni:267:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.avatar
-  hole Settings.beni:276:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.username
-  hole Settings.beni:284:21                       static     reads ∅
-  hole Settings.beni:286:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.bio
-  hole Settings.beni:295:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.email
-  hole Settings.beni:305:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.password
+  hole Register.beni:145:32                       static     reads ∅
+  hole Register.beni:148:30                       dynamic    reads ρ.Register#0.problems
+  hole Register.beni:151:41                       dynamic    reads tag ρ.Register#0.problems[*]; ρ.Register#0.problems[*].InvalidEntry#1; ρ.Register#0.problems[*].ServerError#0
+  hole Register.beni:168:37                       dynamic    reads ρ.Register#0.form.username
+  hole Register.beni:177:37                       dynamic    reads ρ.Register#0.form.email
+  hole Register.beni:187:37                       dynamic    reads ρ.Register#0.form.password
+  hole Settings.beni:222:30                       dynamic    reads ρ.Settings#0.problems
+  hole Settings.beni:225:41                       dynamic    reads tag ρ.Settings#0.problems[*]; ρ.Settings#0.problems[*].InvalidEntry#1; ρ.Settings#0.problems[*].ServerError#0
+  hole Settings.beni:236:25                       dynamic    reads tag ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred; tag ρ.Settings#0.status; ρ.Settings#0.status.Loaded#0.avatar; ρ.Settings#0.status.Loaded#0.bio; ρ.Settings#0.status.Loaded#0.email; ρ.Settings#0.status.Loaded#0.password; ρ.Settings#0.status.Loaded#0.username
+  hole Settings.beni:270:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.avatar
+  hole Settings.beni:279:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.username
+  hole Settings.beni:287:21                       static     reads ∅
+  hole Settings.beni:289:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.bio
+  hole Settings.beni:298:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.email
+  hole Settings.beni:308:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.password
   holes 145: static 19, literal 6, static-key 0, dynamic 120
   site Article.beni:199:17                        instanced
   site Article.beni:208:5                         unique
@@ -269,30 +275,30 @@ program Main.main : Tea.application
   site Article.beni:226:9                         instanced
   site Article.beni:231:9                         instanced
   site Article.beni:239:5                         instanced
-  site ArticlePage.beni:217:17                    unique
-  site ArticlePage.beni:244:44                    unique
-  site ArticlePage.beni:257:5                     shared     2 calls
-  site ArticlePage.beni:268:17                    unique
-  site ArticlePage.beni:278:13                    shared     2 calls
-  site ArticlePage.beni:297:13                    shared     2 calls
-  site ArticlePage.beni:317:13                    unique
-  site ArticlePage.beni:325:13                    unique
-  site ArticlePage.beni:345:13                    unique
-  site ArticlePage.beni:368:13                    unique
-  site ArticlePage.beni:379:5                     instanced
-  site ArticlePage.beni:392:21                    instanced
-  site ArticlePage.beni:400:21                    instanced
+  site ArticlePage.beni:221:17                    unique
+  site ArticlePage.beni:248:44                    unique
+  site ArticlePage.beni:261:5                     shared     2 calls
+  site ArticlePage.beni:272:17                    unique
+  site ArticlePage.beni:282:13                    shared     2 calls
+  site ArticlePage.beni:301:13                    shared     2 calls
+  site ArticlePage.beni:321:13                    unique
+  site ArticlePage.beni:329:13                    unique
+  site ArticlePage.beni:349:13                    unique
+  site ArticlePage.beni:372:13                    unique
+  site ArticlePage.beni:383:5                     instanced
+  site ArticlePage.beni:396:21                    instanced
+  site ArticlePage.beni:404:21                    instanced
   site Author.beni:119:20                         instanced
   site Author.beni:125:5                          instanced
   site Author.beni:134:13                         unique
   site Author.beni:137:13                         shared     3 calls
   site Author.beni:143:13                         shared     3 calls
-  site Editor.beni:255:17                         unique
-  site Editor.beni:261:5                          shared     2 calls
-  site Editor.beni:267:29                         unique
-  site Editor.beni:273:29                         unique
-  site Editor.beni:295:5                          shared     8 calls
-  site Editor.beni:299:21                         instanced
+  site Editor.beni:259:17                         unique
+  site Editor.beni:265:5                          shared     2 calls
+  site Editor.beni:271:29                         unique
+  site Editor.beni:277:29                         unique
+  site Editor.beni:299:5                          shared     8 calls
+  site Editor.beni:303:21                         instanced
   site Feed.beni:75:5                             shared     2 calls
   site Feed.beni:78:13                            unique
   site Feed.beni:80:13                            shared     2 calls
@@ -312,9 +318,9 @@ program Main.main : Tea.application
   site Home.beni:195:37                           unique
   site Home.beni:233:5                            unique
   site Home.beni:236:17                           instanced
-  site Login.beni:109:9                           unique
-  site Login.beni:149:5                           unique
-  site Login.beni:152:17                          instanced
+  site Login.beni:112:9                           unique
+  site Login.beni:152:5                           unique
+  site Login.beni:155:17                          instanced
   site Main.beni:51:66                            unique
   site Main.beni:57:21                            unique
   site Page.beni:30:9                             shared     10 calls
@@ -333,29 +339,29 @@ program Main.main : Tea.application
   site ProfilePage.beni:236:33                    unique
   site ProfilePage.beni:247:29                    unique
   site ProfilePage.beni:264:29                    unique
-  site Register.beni:136:9                        unique
-  site Register.beni:147:37                       instanced
-  site Settings.beni:213:9                        unique
-  site Settings.beni:221:37                       instanced
-  site Settings.beni:238:33                       unique
-  site Settings.beni:249:41                       unique
-  site Settings.beni:260:5                        unique
+  site Register.beni:139:9                        unique
+  site Register.beni:150:37                       instanced
+  site Settings.beni:216:9                        unique
+  site Settings.beni:224:37                       instanced
+  site Settings.beni:241:33                       unique
+  site Settings.beni:252:41                       unique
+  site Settings.beni:263:5                        unique
   sites 79: unique 39, shared 17, instanced 23, value 0
   markup_value_roots 0 (0% of 79 sites)
   carriers yes: commands
-  constructors 69: under * 1 (1%)
-  pairs 650 over 90 keys and 106 groups (7.22 per key); every key calls 0 of 106 groups (0%)
+  constructors 75: under * 1 (1%)
+  pairs 650 over 96 keys and 106 groups (6.77 per key); every key calls 0 of 106 groups (0%)
   list Article.beni:209:10                        positional ChangedUrl *; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
   list Article.beni:216:10                        positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
-  list ArticlePage.beni:319:18                    reconciler ChangedUrl *; GotArticleMsg · CompletedLoadComments · Ok value ρ.Article#0.comments; GotArticleMsg · CompletedLoadComments · Err value ρ.Article#0.comments; GotArticleMsg · PassedSlowLoadThreshold value ρ.Article#0.comments
-  list Editor.beni:297:14                         positional ChangedUrl *; GotEditorMsg · ClickedSave derived; GotEditorMsg · CompletedCreate · Err derived; GotEditorMsg · CompletedEdit · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Ok derived; GotEditorMsg · PassedSlowLoadThreshold derived
+  list ArticlePage.beni:323:18                    reconciler ChangedUrl *; GotArticleMsg · CompletedLoadComments · Ok value ρ.Article#0.comments; GotArticleMsg · CompletedLoadComments · Err value ρ.Article#0.comments; GotArticleMsg · PassedSlowLoadThreshold value ρ.Article#0.comments
+  list Editor.beni:301:14                         positional ChangedUrl *; GotEditorMsg · ClickedSave derived; GotEditorMsg · CompletedCreate · Err derived; GotEditorMsg · CompletedEdit · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Ok derived; GotEditorMsg · PassedSlowLoadThreshold derived
   list Feed.beni:81:18                            reconciler ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived
   list Feed.beni:130:14                           positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived
   list Feed.beni:158:14                           positional ChangedUrl *; GotHomeMsg · ClickedTag derived; GotHomeMsg · ClickedTab derived; GotProfileMsg · ClickedTab derived
   list Home.beni:234:10                           positional ChangedUrl *; GotHomeMsg · CompletedTagsLoad · Ok value ρ.Home#0.tags; GotHomeMsg · CompletedTagsLoad · Err value ρ.Home#0.tags; GotHomeMsg · PassedSlowLoadThreshold value ρ.Home#0.tags
-  list Login.beni:150:10                          positional ChangedUrl *; GotLoginMsg · SubmittedForm ⟨replaced⟩; GotLoginMsg · CompletedLogin · Err ⟨value⟩
+  list Login.beni:153:10                          positional ChangedUrl *; GotLoginMsg · SubmittedForm ⟨replaced⟩; GotLoginMsg · CompletedLogin · Err ⟨value⟩
   list Page.beni:102:14                           positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · ClickedDismissErrors derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · ClickedDismissErrors derived; GotProfileMsg · CompletedFollowChange · Err derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · ClickedDismissErrors derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · ClickedDismissErrors derived; GotArticleMsg · CompletedFavoriteChange · Err derived; GotArticleMsg · CompletedFollowChange · Err derived; GotArticleMsg · CompletedPostComment · Err derived; GotArticleMsg · CompletedDeleteComment#1 · Err derived; GotArticleMsg · CompletedDeleteArticle · Err derived
-  list Register.beni:145:30                       positional ChangedUrl *; GotRegisterMsg · SubmittedForm ⟨replaced⟩; GotRegisterMsg · CompletedRegister · Err ⟨value⟩
-  list Settings.beni:219:30                       positional ChangedUrl *; GotSettingsMsg · SubmittedForm ⟨replaced⟩; GotSettingsMsg · CompletedSave · Err ⟨value⟩
+  list Register.beni:148:30                       positional ChangedUrl *; GotRegisterMsg · SubmittedForm ⟨replaced⟩; GotRegisterMsg · CompletedRegister · Err ⟨value⟩
+  list Settings.beni:222:30                       positional ChangedUrl *; GotSettingsMsg · SubmittedForm ⟨replaced⟩; GotSettingsMsg · CompletedSave · Err ⟨value⟩
   reconciler 2 of 2 lists
   patchAll ChangedUrl

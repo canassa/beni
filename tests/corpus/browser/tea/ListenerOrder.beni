@@ -48,7 +48,7 @@ fragment url =
 
 
 push : Key, String → Cmd Msg
-push key url = Cmd.task (λ⊤ → Navigation.pushUrl key url) (Pushed url _)
+push key url = Cmd.task (λ⊤ → Navigation.push key url) (Pushed url _)
 
 
 note : Model, String → Model
@@ -61,7 +61,7 @@ update msg model =
         Follow →
             ( { model | following = True }
             , Cmd.afterRender λsend →
-                _ = Navigation.pushUrl model.key "#/early"
+                _ = Navigation.push model.key "#/early"
                 send (Note "after render: pushed #/early")
             )
 

@@ -75,6 +75,7 @@ pub type Msg
     | CompletedEdit (Result Api.Error Article)
     | CompletedArticleLoad String (Result Api.Error Article)
     | PassedSlowLoadThreshold
+    | RouteRefused Route.Refusal
 
 
 pub update : Msg, Model → Model × Cmd Msg
@@ -98,14 +99,14 @@ update msg model =
 
         CompletedCreate (Ok article) →
             key = Session.navKey model.session
-            ( model, Cmd.do λ⊤ → Route.replaceUrl key (Route.Article article.slug) )
+            ( model, Route.replaceUrl key (Route.Article article.slug) RouteRefused )
 
         CompletedCreate (Err error) →
             ( { model | status = savingError error model.status }, Cmd.none )
 
         CompletedEdit (Ok article) →
             key = Session.navKey model.session
-            ( model, Cmd.do λ⊤ → Route.replaceUrl key (Route.Article article.slug) )
+            ( model, Route.replaceUrl key (Route.Article article.slug) RouteRefused )
 
         CompletedEdit (Err error) →
             ( { model | status = savingError error model.status }, Cmd.none )
@@ -132,6 +133,9 @@ update msg model =
                     other →
                         other
             ( { model | status = status }, Cmd.none )
+
+        RouteRefused _ →
+            ( model, Cmd.none )
 
 
 save : Cred, Status → Status × Cmd Msg
