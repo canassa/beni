@@ -218,7 +218,16 @@ pub const Prov = struct {
 
 pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false };
 
-pub const SupplyEntry = struct { fun: u32, k: u32, path: u32, prov: Prov, owned: bool };
+pub const SupplyEntry = struct {
+    fun: u32,
+    k: u32,
+    path: u32,
+    prov: Prov,
+    owned: bool,
+    /// When borrowed: whether only an approximate step made it so (an
+    /// element, a level of a recursive value, a value from JavaScript).
+    approx: bool = false,
+};
 
 pub const Calls = enum(u8) { zero, once, many };
 
@@ -291,6 +300,8 @@ builder_id: ?TypeId = null,
 ctor_type: std.ArrayList(u64) = .empty,
 /// Per constructor id: its `(module, index)`, for printing.
 ctor_key: std.ArrayList(u64) = .empty,
+/// Per type `(module, declaration)`: whether it is recursive.
+recursive_types: std.AutoHashMapUnmanaged(u64, bool) = .empty,
 
 pub fn init(in: Input) Ownership {
     return .{ .in = in, .out = .init(in.gpa), .keep = .init(in.gpa), .paths = .{} };
@@ -304,6 +315,7 @@ pub fn deinit(o: *Ownership) void {
     o.ctor_ids.deinit(o.in.gpa);
     o.ctor_type.deinit(o.in.gpa);
     o.ctor_key.deinit(o.in.gpa);
+    o.recursive_types.deinit(o.in.gpa);
     o.in.gpa.free(o.slots);
     o.in.gpa.free(o.groups);
     o.in.gpa.free(o.report_for);
@@ -419,7 +431,9 @@ fn ensureSummary(o: *Ownership, m: u32, d: u32) Allocator.Error!?*const Summary 
     const bir = o.in.birs[m];
     if (d >= bir.decls.len) return null;
     const decl = bir.decls[d];
-    if (decl.params == 0) return null;
+    // A top-level value with no parameters has one too: the cells its
+    // definition makes, which are what is shared (thesis §3.10).
+    if (decl.params == 0 and (decl.kind != .value or decl.body == .none)) return null;
     if (decl.kind != .value and decl.kind != .foreign_value) return null;
     const slots = try o.slotsOf(m);
     const slot = &slots[d];
@@ -521,7 +535,7 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
     defer members.deinit(o.in.gpa);
     for (all) |x| {
         const dx = bir.decls[x];
-        if (dx.kind != .value or dx.params == 0 or dx.body == .none) continue;
+        if (dx.kind != .value or dx.body == .none) continue;
         if (slots[x].state != .none) continue;
         if (try o.assertedRow(m, x)) |row| {
             slots[x] = .{ .state = .done, .sum = row };
@@ -583,7 +597,7 @@ fn summaryEql(x: Summary, y: Summary) bool {
     if (x.uses.len != y.uses.len or x.res.len != y.res.len or x.supply.len != y.supply.len or x.funs.len != y.funs.len) return false;
     for (x.uses, y.uses) |a, b| if (!std.meta.eql(a, b)) return false;
     for (x.res, y.res) |a, b| if (a.path != b.path or !a.prov.eql(b.prov) or a.approx != b.approx) return false;
-    for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned) return false;
+    for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx) return false;
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
     return true;
 }
@@ -675,7 +689,10 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
         if (ns > 0) {
             const p = &supply[ns - 1];
             if (p.fun == e.fun and p.k == e.k and p.path == e.path and p.prov.eql(e.prov)) {
+                // A borrowed supply is exact when either side's reason is.
+                const exact = (!p.owned and !p.approx) or (!e.owned and !e.approx);
                 p.owned = p.owned and e.owned;
+                p.approx = !p.owned and !exact;
                 continue;
             }
         }
@@ -1046,6 +1063,87 @@ fn foldAt(o: *Ownership, parent: u32, arg: u32) ?u32 {
         if (t == ty) return o.paths.parent.items[node];
     }
     return null;
+}
+
+/// Whether `p` names a representative place (thesis §3.1, §3.11): one that
+/// stands for many run-time places — a list's elements, or a level of a
+/// recursive value that folding merged with the others. A demand there, or
+/// a holder there, is an approximate fact.
+fn representative(o: *Ownership, p: u32) Allocator.Error!bool {
+    var at = p;
+    while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
+        switch (o.paths.kind.items[at]) {
+            .elem => return true,
+            .ctor => if (o.ctorType(o.paths.arg.items[at] / 64)) |t| if (try o.typeRecursive(t)) return true,
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// Whether the type `(module, declaration)` reaches itself through its own
+/// definition.
+fn typeRecursive(o: *Ownership, key: u64) Allocator.Error!bool {
+    if (o.recursive_types.get(key)) |r| return r;
+    var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+    defer seen.deinit(o.in.gpa);
+    var work: std.ArrayList(u64) = .empty;
+    defer work.deinit(o.in.gpa);
+    try o.typeHeads(key, &work);
+    var found = false;
+    while (work.pop()) |k| {
+        if (k == key) {
+            found = true;
+            break;
+        }
+        const gop = try seen.getOrPut(o.in.gpa, k);
+        if (gop.found_existing) continue;
+        try o.typeHeads(k, &work);
+    }
+    try o.recursive_types.put(o.in.gpa, key, found);
+    return found;
+}
+
+/// The types a type's definition names directly.
+fn typeHeads(o: *Ownership, key: u64, out: *std.ArrayList(u64)) Allocator.Error!void {
+    const m: u32 = @intCast(key >> 32);
+    const d: u32 = @truncate(key);
+    if (m >= o.in.birs.len) return;
+    const bir = o.in.birs[m];
+    if (d >= bir.decls.len) return;
+    const decl = bir.decls[d];
+    switch (decl.kind) {
+        .type => for (bir.declCtors(decl)) |c| {
+            for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Inst.Index)) |arg| try o.typeExprHeads(m, bir, arg, out, 0);
+        },
+        .type_alias => if (decl.annotation.unwrap()) |body| try o.typeExprHeads(m, bir, body, out, 0),
+        else => {},
+    }
+}
+
+fn typeExprHeads(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, out: *std.ArrayList(u64), depth: u32) Allocator.Error!void {
+    if (depth > type_depth) return;
+    const tag = bir.instTag(inst);
+    const data = bir.instData(inst);
+    const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
+    switch (tag) {
+        .type_tuple => for (bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |el| try o.typeExprHeads(m, bir, el, out, depth + 1),
+        .type_record => for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| try o.typeExprHeads(m, bir, fl.value, out, depth + 1),
+        .type_record_ext => for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |fl| try o.typeExprHeads(m, bir, fl.value, out, depth + 1),
+        .type_top, .ext_type, .schema_type_top, .ext_schema_type => try o.pushHead(o.in.types.headId(graph_m, tag, data), out),
+        .type_app => {
+            const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+            try o.pushHead(o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head)), out);
+            for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |arg| try o.typeExprHeads(m, bir, arg, out, depth + 1);
+        },
+        else => {},
+    }
+}
+
+fn pushHead(o: *Ownership, id: TypeId, out: *std.ArrayList(u64)) Allocator.Error!void {
+    if (id == .none or id.int() >= o.in.types.entries.len) return;
+    const e = o.in.types.entries[id.int()];
+    try out.append(o.in.gpa, (@as(u64, e.module.int()) << 32) | e.decl.int());
 }
 
 fn ctorType(o: *const Ownership, c: u32) ?u64 {
@@ -1633,6 +1731,8 @@ const SupplyRec = struct {
     probe: u32,
     /// The callee's own `owned`, for a supply passed on (§16.4 item 4).
     owned: bool = true,
+    /// The callee's own `approx`, when it supplies borrowed.
+    approx: bool = false,
 };
 
 /// A summary or class being applied at a call.
@@ -1687,6 +1787,8 @@ const Walker = struct {
     fn_state: []FnState = &.{},
     supplies: std.ArrayList(SupplyRec) = .empty,
     probe_ok: std.ArrayList(bool) = .empty,
+    /// Per probe: failed for an approximate reason only.
+    probe_approx: std.ArrayList(bool) = .empty,
     result_av: AV = &.{},
     /// Per local: 1 for a local function of the `let` being created, 2 once
     /// it is named before its class exists (§16.5); 0 otherwise.
@@ -2216,6 +2318,9 @@ const Walker = struct {
                 if (decl.params > 0) return w.single(.{ .kind = .func, .a = t.m, .b = t.d });
                 if (!try w.isTracked(inst)) return &.{};
                 if (decl.kind == .foreign_value) return w.single(.{ .kind = .top, .a = 0 });
+                // What is shared is the cells the definition makes, and
+                // nothing else (thesis §3.10): `Dict.empty` makes none (T51).
+                if (try w.o.ensureSummary(t.m, t.d)) |s| return w.sharedOf(s, t, inst);
                 return w.single(.{ .kind = .shared, .a = t.m, .b = t.d, .ty = w.instTypeOpt(inst) });
             },
             .int, .float, .char, .string, .chunk, .unit, .ctor, .ext_ctor, .@"error" => return &.{},
@@ -2590,6 +2695,21 @@ const Walker = struct {
         return w.conservative(inst, args, f, callee, "");
     }
 
+    /// A top-level value's cells, from its definition's summary: each cell
+    /// it makes is shared at the path it makes it at (thesis §3.10).
+    fn sharedOf(w: *Walker, s: *const Summary, t: Target, inst: Inst.Index) Allocator.Error!AV {
+        var out: std.ArrayList(Entry) = .empty;
+        for (s.res) |r| {
+            const c: Cell = switch (r.prov.kind) {
+                .fresh, .esc => .{ .kind = .shared, .a = t.m, .b = t.d, .path = r.path, .ty = if (r.path == eps) w.instTypeOpt(inst) else .none },
+                .shared => .{ .kind = .shared, .a = r.prov.a, .b = r.prov.b, .path = r.prov.path },
+                else => .{ .kind = .top, .a = if (s.limit != .none or r.prov.a == 1) 1 else 0 },
+            };
+            try out.append(w.a, .{ .path = r.path, .cell = try w.cell(c), .approx = if (r.approx) inst.int() + 1 else 0 });
+        }
+        return w.norm(out.items);
+    }
+
     fn callOp(w: *Walker, t: Target) Allocator.Error![]const u8 {
         if (w.writerName(t)) |n| return std.fmt.allocPrint(w.o.out.allocator(), "List.{s}", .{n});
         return std.fmt.allocPrint(w.o.out.allocator(), "call {s}", .{try w.qualified(t)});
@@ -2597,7 +2717,10 @@ const Walker = struct {
 
     /// A call of a top-level value (§16.4), or §6.1 when it has no summary.
     fn callTarget(w: *Walker, inst: Inst.Index, t: Target, args: []const Inst.Index) Allocator.Error!AV {
-        if (try w.o.ensureSummary(t.m, t.d)) |s| {
+        // A top-level value whose value is a function has no parameters to
+        // apply a summary to: its call is §6.1's.
+        const has_params = w.o.in.birs[t.m].decls[t.d].params > 0;
+        if (if (has_params) try w.o.ensureSummary(t.m, t.d) else null) |s| {
             return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d) }, args, &.{}, null);
         }
         if (w.escapes(t)) return w.escapeCall(inst, args, try w.qualified(t));
@@ -3042,6 +3165,7 @@ const Walker = struct {
     fn probeDemand(w: *Walker, inst: Inst.Index, av: AV, others: []const AV) Allocator.Error!u32 {
         const idx: u32 = @intCast(w.probe_ok.items.len);
         try w.probe_ok.append(w.a, false);
+        try w.probe_approx.append(w.a, false);
         var base: std.ArrayList(Entry) = .empty;
         for (try w.expand(av)) |e| {
             const k = w.cells.items[e.cell].kind;
@@ -3166,7 +3290,7 @@ const Walker = struct {
                 var others: std.ArrayList(AV) = .empty;
                 for (avs, 0..) |x, i| if (i != j and i != from) try others.append(w.a, x);
                 const probe = if (e.owned and cells.len > 0) try w.probeDemand(inst, cells, others.items) else none;
-                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = probe, .owned = e.owned });
+                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = probe, .owned = e.owned, .approx = e.approx });
             }
             return;
         }
@@ -3206,7 +3330,7 @@ const Walker = struct {
                             // An element's borrowed supply is the checker's
                             // limit (§16.8); a parameter's or a callback's
                             // result is what the text shows.
-                            bad_approx[u.param] = w.o.hasStep(e.prov.path, .elem) or w.o.hasStep(e.prov.path, .any);
+                            bad_approx[u.param] = !e.owned and e.approx;
                         }
                         continue;
                     }
@@ -3520,7 +3644,7 @@ const Walker = struct {
         var worst_detail: []const u8 = "";
         for (cells.items) |e| {
             const c = w.cells.items[e.cell];
-            if (w.o.hasStep(c.path, .elem)) rec.element = true;
+            if (try w.o.representative(c.path)) rec.element = true;
             const rank: Accept = switch (c.kind) {
                 .param => if (c.b == 1) .callback_param else .param,
                 .result, .cbres => .call,
@@ -3709,6 +3833,7 @@ const Walker = struct {
             const verdict = try w.resolveOne(rec);
             if (rec.kind == .probe) {
                 w.probe_ok.items[rec.probe] = verdict.verdict != .rejected and verdict.verdict != .pending;
+                w.probe_approx.items[rec.probe] = verdict.verdict != .rejected or verdict.approx;
                 continue;
             }
             if (w.mode != .report) continue;
@@ -3771,7 +3896,7 @@ const Walker = struct {
             const u = first orelse continue;
             const cause: Cause = if (h.approx != 0)
                 .call
-            else if (rec.element and w.o.hasStep(h.path, .elem))
+            else if (rec.element and try w.o.representative(h.path))
                 .element
             else if (w.o.hasStep(h.path, .env))
                 .captured
@@ -4026,6 +4151,7 @@ const Walker = struct {
             var atoms: u32 = 0;
             for (w.supplies.items) |sr| {
                 const owned_probe = sr.owned and (sr.probe == none or w.probe_ok.items[sr.probe]);
+                const probe_approx = if (!sr.owned) sr.approx else sr.probe != none and w.probe_approx.items[sr.probe];
                 for (try w.expand(sr.av)) |e| {
                     var prov = (try w.provOf(e.cell, frame, params, &.{})) orelse continue;
                     if (prov.kind == .fresh or prov.kind == .esc) prov.a = 0;
@@ -4034,7 +4160,15 @@ const Walker = struct {
                         atoms += 1;
                         if (atoms > atom_cap) owned = false;
                     }
-                    try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned });
+                    // Shared is the position rule, exact; ⊤, an escape and a
+                    // capture are limits, as is a probe that failed only
+                    // through one.
+                    const approx = !owned and switch (prov.kind) {
+                        .shared => false,
+                        .top, .esc, .env => true,
+                        else => probe_approx or e.approx != 0,
+                    };
+                    try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx });
                 }
             }
         } else {
