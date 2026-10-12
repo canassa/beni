@@ -509,6 +509,11 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
               demand ctx.config roots later (union current.cells (capValues.flatMap Abstract.cells))
           -- A borrowed source remains an observer of any accumulator cell drawn
           -- from it. Exclusive position loans separate past from current slots.
+          -- Live under summaries: it rejects 20–34 programs per 20000 trials
+          -- that the line's removal would accept, none of which has been seen
+          -- to disagree (`ownership verdict-diff --mutant=borrowed-supply`).
+          -- Kept: removing a rule on an argued, unproved equivalence is not
+          -- done here (COVERAGE.md, "Borrowed supply").
           let retained := union roots (if consumes || ctx.config.has .borrowedSupply then later
             else union later rawElement.cells)
           let outsideFor := fun (w : Origin) => match w with

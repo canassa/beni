@@ -545,6 +545,28 @@ def runWith (o : Options) : IO RunResult := do
   pure { ok := counts.accepted > 0 && counts.typeErrors == 0 && counts.executionErrors == 0,
          counts, firstMismatch := found, elapsed }
 
+/-- How often a mutant changes a verdict at all: programs the mutated checker
+    accepts and the corrected one rejects, and how many of those disagree when
+    run. A mutant that changes no verdict on a campaign is inert there. -/
+def verdictDiff (count seed : Nat) (m : Mutant) (reinfer : Bool) (version := 4) (quiet := false) : IO (Nat × Nat) := do
+  let mut state := seed
+  let mut onlyMutant := 0
+  let mut disagreeing := 0
+  let mut firstIndex : Option Nat := none
+  for index in List.range count do
+    let ((family, p), next) := (generateVersion version).run state
+    state := next
+    if (verdictOf p { reinfer }).isOk then continue
+    if !(verdictOf p { mutant := some m, reinfer }).isOk then continue
+    onlyMutant := onlyMutant + 1
+    if firstIndex.isNone && !quiet then
+      firstIndex := some index
+      IO.println s!"first verdict change index={index} family={family} corrected={repr (verdictOf p { reinfer })}\n{repr p.main}"
+    if let .mismatch .. := compare p then disagreeing := disagreeing + 1
+  if !quiet then
+    IO.println s!"mutant={m.name} checker={if reinfer then "reinfer" else "summaries"} seed={seed} budget={count} verdicts-changed={onlyMutant} of-which-disagree={disagreeing}"
+  pure (onlyMutant, disagreeing)
+
 /-- Rejection reasons and accepted-with-write counts of one family, for tuning
     and for reporting what a family actually exercises. -/
 def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
@@ -568,20 +590,29 @@ def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
     is run against the per-call checker even here: under summaries its rule
     is subsumed (COVERAGE.md, "Borrowed supply"), so no program can tell. -/
 def controls (count seed : Nat) (version := 4) (reinfer := false) : IO Bool := do
+  let checkerName := if reinfer then "per-call" else "summaries"
   let named : List (String × Config) :=
     [("old-rule", { oldFreshRule := true, reinfer }), ("old-escape-rule", { dropTraversalEscapes := true, reinfer })] ++
     (Mutant.all.filter (fun m => !reinfer || !m.summaryRow)).map fun m =>
       if m == .borrowedSupply && !reinfer then
-        (s!"mutant={m.name} (per-call checker)", { mutant := some m, reinfer := true })
+        (s!"mutant={m.name}", { mutant := some m, reinfer := true })
       else (s!"mutant={m.name}", { mutant := some m, reinfer })
   let mut ok := true
   let mut rows : List String := []
   for (name, config) in named do
+    if config.mutant == some .borrowedSupply && !reinfer then
+      -- Reported separately, never swapped silently: under summaries this
+      -- mutant changes verdicts but no program it accepts has been seen to
+      -- disagree (COVERAGE.md, "Borrowed supply"). The required catch is
+      -- against the per-call checker, on the line below.
+      let (changed, disagree) ← verdictDiff count seed .borrowedSupply false version true
+      rows := rows ++ [s!"{name} [summaries]: NOT OBSERVABLE (not required) verdicts-changed={changed} disagreeing={disagree}"]
     let r ← runWith { count, seed, version, config, stopAtFirst := true, quiet := true }
-    rows := rows ++ [s!"{name}: caught={r.firstMismatch.isSome && r.ok} first-index={r.firstMismatch.map toString |>.getD "none"} elapsed-ms={r.elapsed}"]
+    let label := if config.reinfer then "per-call" else checkerName
+    rows := rows ++ [s!"{name} [{label}]: caught={r.firstMismatch.isSome && r.ok} first-index={r.firstMismatch.map toString |>.getD "none"} elapsed-ms={r.elapsed}"]
     if !r.ok then ok := false
   for row in rows do IO.println s!"CONTROL {row}"
-  IO.println s!"controls budget={count} seed={seed} generator-version={version} checker={if reinfer then "reinfer" else "summaries"} passed={ok}"
+  IO.println s!"controls budget={count} seed={seed} generator-version={version} checker={checkerName} passed={ok}"
   pure ok
 
 end Ownership.Oracle
