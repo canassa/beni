@@ -2120,6 +2120,13 @@ Soundness rests where it did: a writing function stored in a structure was repor
 (§16.5), so a slot needs only the result; a carried class that writes or escapes is not carried and its call stays
 §6.1's.
 
+*Amended 2026-10-12 (an adversarial review of PR #73).* **A `need` with no class is rejected.** A callee that
+edits what a function parameter or slot returns (`need`, §16.2) is checked against the actual's class; where the
+checker knows none — a function read out of a `Ref`, from JavaScript, out of a structure — or a class has no
+summary, nothing shows it returns a list it owns, and the edit is rejected `need`, approximately (`NeedUnknown`).
+Before, such a call checked nothing and the callee's write was accepted outright — on master too, for a function
+parameter.
+
 *As built:* `Http.request`, `get` and `post` return `cb(π1.expect#Expect.1)`, and Conduit's `Api.send` returns
 `#Ok.0` what its parser returns and `#Err.0` fresh errors — but also, at `#Err.0#Failed.0#BadRequest.0`, a `⊤`:
 `expectStringResponse`'s decoders forward the request's `Problem` from the answer, and the answer comes back through
