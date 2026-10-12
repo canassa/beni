@@ -50,7 +50,8 @@ lake exe ownership verdict-diff 20000 17 --mutant=borrowed-supply   # verdicts a
 lake exe ownership oracle 20000 17 --mutant=supply-edge
 lake exe ownership summaries --fixture="T43" # print published summaries
 lake exe ownership reasons 20000 17 --family=general   # rejection reasons
-lake env lean Axioms.lean                    # print the axiom audit again
+lake env lean Axioms.lean                    # print the in-build axiom audit again
+scripts/audit.sh                             # the authoritative audit: clean checkout, Lean parser, kernel replay
 lake exe ownership falsify 100000 17         # try to falsify the unproved statements
 ```
 

@@ -208,7 +208,7 @@ partial def tokens (s : String) : List String := Id.run do
   let files ← sources
   for path in files do
     let ts := tokens (← IO.FS.readFile path)
-    let audit := path.fileName == some "Axioms.lean"
+    let audit := path.fileName == some "Axioms.lean" || path.fileName == some "Audit.lean"
     for t in ts do
       if let some b := bannedIn t then
         unless audit && b == "#eval" do throwError "{path} uses `{t}` (`{b}`)"
