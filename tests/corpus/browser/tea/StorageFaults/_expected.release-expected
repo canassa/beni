@@ -5,6 +5,8 @@
     <button id="blocked">"blocked"</button>
     <button id="broken">"broken"</button>
     <button id="inc">"inc"</button>
+    <button id="save-quota">"save quota"</button>
+    <button id="save-blocked">"save blocked"</button>
     <ol></ol>
   </main>
 </body>
@@ -15,6 +17,8 @@
     <button id="blocked">"blocked"</button>
     <button id="broken">"broken"</button>
     <button id="inc">"inc"</button>
+    <button id="save-quota">"save quota"</button>
+    <button id="save-blocked">"save blocked"</button>
     <ol>
       <li>"over the quota"</li>
     </ol>
@@ -27,11 +31,50 @@
     <button id="blocked">"blocked"</button>
     <button id="broken">"broken"</button>
     <button id="inc">"inc"</button>
+    <button id="save-quota">"save quota"</button>
+    <button id="save-blocked">"save blocked"</button>
     <ol>
       <li>"over the quota"</li>
       <li>"nothing"</li>
       <li>"keys 0"</li>
       <li>"no storage"</li>
+    </ol>
+  </main>
+</body>
+-- click #save-quota
+<body>
+  <main>
+    <button id="quota">"quota"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="broken">"broken"</button>
+    <button id="inc">"inc"</button>
+    <button id="save-quota">"save quota"</button>
+    <button id="save-blocked">"save blocked"</button>
+    <ol>
+      <li>"over the quota"</li>
+      <li>"nothing"</li>
+      <li>"keys 0"</li>
+      <li>"no storage"</li>
+      <li>"saved: over the quota"</li>
+    </ol>
+  </main>
+</body>
+-- click #save-blocked
+<body>
+  <main>
+    <button id="quota">"quota"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="broken">"broken"</button>
+    <button id="inc">"inc"</button>
+    <button id="save-quota">"save quota"</button>
+    <button id="save-blocked">"save blocked"</button>
+    <ol>
+      <li>"over the quota"</li>
+      <li>"nothing"</li>
+      <li>"keys 0"</li>
+      <li>"no storage"</li>
+      <li>"saved: over the quota"</li>
+      <li>"saved: no storage"</li>
     </ol>
   </main>
 </body>

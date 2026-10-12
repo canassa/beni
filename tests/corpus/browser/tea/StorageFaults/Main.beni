@@ -5,7 +5,8 @@
 -- does nothing and `set` is `Err Unavailable`; and a `TypeError` from
 -- `setItem`, which no standard documents, is a defect that stops the page
 -- (the development build's crash screen; `_expected.release-expected` has
--- none).
+-- none). `Storage.save`, the command form (boundary.md §9.8.16), sends its
+-- tag each failure `set` returns, by the same names.
 import Cmd exposing (Cmd)
 import Fault
 import Html exposing (Html)
@@ -19,6 +20,9 @@ type Msg
     | Blocked
     | Broken
     | Inc
+    | SaveQuota
+    | SaveBlocked
+    | NotSaved Storage.Error
 
 
 written : Result Storage.Error ⊤ → String
@@ -68,6 +72,16 @@ update msg lines =
         Inc →
             ( lines ++ [ "inc" ], Cmd.none )
 
+        SaveQuota →
+            Fault.fillQuota ⊤
+            ( lines, Storage.save Local "k" "v" NotSaved )
+
+        SaveBlocked →
+            ( lines, Storage.save Session "k" "v" NotSaved )
+
+        NotSaved error →
+            ( lines ++ [ "saved: ${written (Err error)}" ], Cmd.none )
+
 
 view : List String → Html Msg
 view lines =
@@ -76,6 +90,8 @@ view lines =
         <button id="blocked" onClick={Blocked}>blocked</button>
         <button id="broken" onClick={Broken}>broken</button>
         <button id="inc" onClick={Inc}>inc</button>
+        <button id="save-quota" onClick={SaveQuota}>save quota</button>
+        <button id="save-blocked" onClick={SaveBlocked}>save blocked</button>
         <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 

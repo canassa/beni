@@ -20,6 +20,7 @@
 --! throw a `QuotaExceededError`. Every other exception is thrown on: a
 --! defect. `getItem`, `removeItem`, `key` and `length` document none.
 
+import Cmd exposing (Cmd)
 import Js
 
 
@@ -64,6 +65,24 @@ set area key value =
             )
             (λerror → isDomError error "QuotaExceededError")
             λ_ → Err QuotaExceeded
+
+
+--| The command form of `set`: store the text under the key when the
+--| command runs, and send `failed` the error only when the write did not
+--| happen. The text is a value, computed when the command is made — what
+--| is saved is the model as `update` left it, never a function that reads
+--| the model later (`docs/design/boundary.md` §9.8.16).
+--|
+--|     changed model todos =
+--|         ( { model | todos = todos }, Storage.save Storage.Local "todos" (encode todos) NotSaved )
+pub save : Area, String, String, (Error → msg) → Cmd msg
+save area key text failed = Cmd.perform λsend →
+    case set area key text of
+        Ok ⊤ →
+            ⊤
+
+        Err error →
+            send (failed error)
 
 
 --| Forget the key.
