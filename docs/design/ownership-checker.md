@@ -19,6 +19,10 @@ dictionary's focus primitive — is specified in §20 and built; §19 records th
 *Amended 2026-10-12: slice 3c — `init` a function on every platform, commands that take values, and `swap`'s row
 — is specified in §22 and built; §21 records the owner's decisions on §20.11.*
 
+*Amended 2026-10-12: slice 3d — owned sends (thesis Change 7, the owner's decision of 2026-10-12) and navigation
+as commands — is specified in §23 and built; §23.1 records the decisions it builds, the manager's answers to §22.7
+among them.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -1640,3 +1644,213 @@ failures as its tag), `browser/direct/InitThrows` (one golden on both platforms)
    say they only read; research 79 counts the lines that cause.
 3. **`Http.send` has no tracker and no `riskySend`**: a page that needs either writes a body. To be added
    when a program needs one.
+
+---
+
+## 23. Slice 3d — owned sends, and navigation as commands (normative from 2026-10-12)
+
+*Amends §16.2, §16.11, §18.8, §20.2–§20.9 and §22.3. Sections 1–22 keep their numbers and text; where this
+section changes a rule, it wins. Research 80 measures it.*
+
+### 23.1 The decisions it builds
+
+- **Owned sends** (the owner, 2026-10-12; thesis Change 7, §21 item 1). *A message's payload is handed to
+  `update` owned: the sender gives it up.* The checker verifies it where the send is written: a send consumes
+  every list cell its payload holds, and a later use by the sender, or the payload still being reachable from
+  the model or from another live holder, is a rejection **at the send**, with its reason — never a copy. Every
+  way a payload reaches `update` is covered: command results (`Cmd.perform`, `keyed`, `afterRender`, `task`,
+  `do`, `Http.send`, `Storage.save`, `Random.generate`), subscriptions, the platform's own sends, and view
+  events, which §23.6 says exactly what the checker does with.
+- **Navigation as commands** (the manager's answer to §22.7 item 1): elm/browser's `Browser.Navigation` —
+  `pushUrl`, `replaceUrl`, `back`, `forward`, `load`, `reload` are commands that take values, so an `update`
+  that changes the address hands the runtime the key and the address, not a function that reads the model
+  later. `boundary.md` §9.8.17 is the API; §23.8 is what the checker sees.
+- **`Http.send`'s tracker and credentials** (§22.7 item 3): a capability gap, out of this slice
+  (`plans/queue.md` row 82). **The `init` purity bytes** (queue row 81): out of this slice.
+- **Change 5** (ownership words on `foreign`) waits on the owner and is not built; research 80 counts the
+  rejections it would clear (§22.7 item 2: `String.join`, `Schema.print`, and the HTTP answers of §23.9).
+
+The owner's rule is stronger than the thesis's. Change 7 makes a send *owned* when the payload is unique there and
+*borrowed* otherwise, and rejects only a borrowed payload that reaches a cell written in place (T34: a sender
+that keeps using a payload no arm writes is accepted). Here every send gives its payload up, so T34's sender is
+rejected at the send. The guarantee it buys is modularity at the receiving end: `update` may write any payload
+it is handed, in any arm, with no reach analysis from the sends to the arms; §23.11 item 1 asks whether a send
+whose payload no arm writes should be a warning rather than an error once slice 4 enforces (CLAUDE.md rule 7).
+
+### 23.2 A send is a write of everything it is handed
+
+A **send value** is a function the runtime hands a body to send messages with (§23.3). Calling one is a
+**send**, and a send is a call-site demand (§16.4 item 3) of its argument — the payload — on **every cell the
+payload holds**, closures expanded, not only the one at its root: thesis §3.8's demands write one array, a send
+gives up the whole value. It is checked as §8.1 checks any demand, at the send's point:
+
+- **Known** — a list from JavaScript is not the sender's to give (`unknown`, approximate);
+- **Unescaped** — an escaped or top-level list (`escaped`, `top-level`);
+- **Disjoint** — no other operand holds it;
+- **Dead** — no holder is read after the send: the sender's own later reads of the list (`later-use`), a local
+  that holds it (`alias`), a pending operand. A lambda's later read of a list it captured counts too (§23.7);
+- a cell the body captured makes the body **once** (§18.8): its creation is the demand on the capture, in the
+  body that writes the lambda — so a body that sends `model.rows` while its arm keeps `model` in the next model
+  is rejected there, `later-use`, naming the model — and a body handed where it may run more than once is
+  rejected `once` (a command's body: §23.3);
+- a parameter cell makes the write the summary's (§16.3): a function that sends its parameter **gives it up**,
+  printed `S` in a summary line (`s` when derived through an approximate step), and its callers make a call-site
+  demand on every cell their argument holds there. The bit is `W` with a *deep* flag (`bit_d`); every rule
+  that reads `W` reads the deep flag with it — §16.4 item 3, the supply edge of item 4, a once closure's
+  creation (§18.8), the entry's demands (§20.6).
+
+A send whose payload holds no cell gives nothing up and is no line. The line's operation is `send`, its base
+the payload as written (`<Loaded …>` for a constructor's application).
+
+### 23.3 Send positions
+
+Where a send value comes from is a fact of the function the runtime is handed it through — a **send
+position**: `fun(j).send = k` says that the callee hands its function parameter πⱼ, as πⱼ's parameter k, a send
+value; printed `sends πk` after the parameter's other facts. The runtime hands its bodies their sends in
+JavaScript, which no beni body shows, so the send positions are **asserted rows** of `browser`'s `Hosted`, the
+module every command and subscription is built over (§20.9's trusted surface gains them). Each is the body's
+inferred summary — what the value it makes holds, so that a command still holds what its body captured, and
+that escapes at the entry (§20.4 (a)) — with these facts replaced:
+
+| Function | Row |
+|---|---|
+| `job body`, `later body` | π₁ `calls many`, `sends π1`: the runtime calls a body with a send, as often as the command value that holds it is returned |
+| `tap body tag`, `hook start tag` | π₁ as `job`'s: it sends raw values; π₂ `calls many`, `need owned`, supplied **borrowed**: one value goes through the tagger of every current subscription of its key (`Hosted.through`) |
+| `mapJob j tag`, `mapLater l tag` | π₂ `calls many`, `need owned`, supplied **owned**: what the inner send gave up |
+| `mapTap t tag` | π₂ as `tap`'s tagger: borrowed |
+| `runJob j send`, `callJob j send` | π₂ `calls many`, no supply: the runtime hands the send to a body whose sends were checked where it was made, at `job`'s row |
+
+Everything above them is inferred. A function parameter handed to a send position takes the fact (§16.4
+item 4's translation), so `Cmd.perform`, `keyed`, `afterRender`, `Sub.listen` and `Sub.on` get `sends π1`, and
+a parameter handed to one stays in sight where the value the position made keeps it (§16.5's `pending` would
+otherwise fire on every command). `Js.maySuspend f` (`backend.md` §4) reads the bit the checker inferred for `f`
+and nothing of `f`'s value: it is no use and no loss of sight. What the runtime sends a tagger's result to is a
+`need` (§16.2): `Cmd.task work tag` sends `tag (work ⊤)` from a body, so its `tag` needs to return owned, and the
+tagger a program hands it is checked there (§23.5).
+
+### 23.4 What is checked where
+
+A function value handed to a send position is checked where it is handed:
+
+- **a lambda written there** (`Cmd.perform λsend → …`, `Cmd.perform (search q _)`): its parameter k *is* a send
+  value, known before its body is walked, so each call of it in the body is a `send` line (§23.2), and handing
+  it to a function's parameter is the supply edge (§16.4 item 4) with the send as the actual: every supply the
+  callee makes to that parameter must be owned — a borrowed one is a `send` line at the call, rejected `supply`
+  ("`Main.search` sends what it may still hold (π1)") — and an owned one of the callee's own parameter is a
+  call-site demand, every cell, on the argument (`search q _` gives up `q`);
+- **a top-level function** (`Cmd.perform body`): its summary's supplies to its parameter k, at the hand-over: a
+  borrowed one, or one of a parameter or a callback's result that nothing supplies owned, is a `send` line
+  rejected `supply`; one that calls its send where it loses sight of it, the same;
+- **anything else** — a lambda bound to a local first, a local function, a value read out of a structure: its
+  sends are not followed (§16.5: a lambda's class does not follow its own function parameters), and it is a
+  `send` line rejected `supply`, approximately.
+
+None of these is a line when the message type can hold no list `update` could write: a type **holds a list**
+when a `List` is reachable in it without going through a function or a `foreign type` other than `List` — a
+closure's captures are §16.5's to follow, and what JavaScript holds is `⊤` wherever it is read. So the platform's
+key and pointer subscriptions, whose payloads are `Html.Event`s, are no lines.
+
+### 23.5 Taggers
+
+A constructor handed as a function (`Cmd.task work Loaded`) has a class: it returns each argument whose type
+holds a list at its own field (`res #Loaded.0 π1`). So a tagger's `need` is checked against what the callee
+supplies it: `Loaded` returns owned exactly when `Cmd.task`'s work does (§16.4 item 5), and `Cmd.task (λ⊤ →
+model.rows) Loaded` is rejected `need` at the tagger — "`Cmd.task` sends what it returns, and it returns what
+`Cmd.task` hands it, which may be a list the sender still holds" — exactly when the work returns a list the
+model holds, approximately when only an approximate step made it so (a list from JavaScript, a conservative
+call's result).
+
+### 23.6 The entry: messages are owned
+
+§20.5 is replaced. The message `update` receives is the symbolic cell **`msg`**, standing for every payload a
+send gave up, together with the lists a view's messages may carry:
+
+- **`msg` is owned.** Every send was checked where it was written (§23.2–§23.5), so a demand that reaches `msg`
+  only is accepted, `entry` on the direct row (`platform` on the template rows, §20.2). Nor is a model path
+  that holds a stored payload Disjoint-checked against the message in hand: a send gave each payload up, so the
+  one a dispatch receives is not the one an earlier dispatch stored. So T38's and T50's edits are accepted,
+  and the owned-send `payload` rejections of slice 3c are gone.
+- **A view event is not a send.** Nothing gives its payload up: the runtime builds the message from the
+  markup when the event fires — from the model current then (P3), and from a markup value's kept handlers,
+  which keep the message a render built from one dispatch to the next — so a list in it may be the model's, or
+  one handed over twice. Every such list is borrowed — the view's result's cells, closures expanded, but its
+  own root node and the top-level values whose type holds no list (a footer it includes): the model's lists
+  it reads and the lists it made. They reach the model only where an arm stores a payload, which the cell
+  `msg` marks wherever it is stored, so they are not carried round the fixpoint (§20.4) — carrying them
+  doubled the pass on Conduit and changed no verdict. A demand that reaches one of them, or reaches `msg`
+  when the view's messages may hold any list, is
+  rejected **`payload`**, approximately: "a message a view event builds may hold it — a list of the model, or one
+  a handler keeps from one dispatch to the next — and the check does not tell update's arms apart". That is
+  thesis P6's coarse rule; O6 (a summary split by the message's constructor) would confine a view event's
+  payload to the arm that receives it, and research 80 counts how often it fires.
+- **`update`'s `xreq` on its message** is checked as on the model (§20.6): `msg`'s condition is `lost` — a
+  send's payload is unique, but whether its elements share is not carried to the entry — so an arm that edits
+  an element of its message's list relies on what fails, approximately (`exclusive`).
+
+The cause `payload` (§20.7) is now the view-event rule's alone.
+
+### 23.7 Once closures read what they captured
+
+§18.8, made precise for sends. A use inside a lambda of a local it captured from an enclosing frame is recorded
+in the lambda's frame (§7.1, which recorded uses of the frame's own locals only), and a demand on a captured
+cell has the captured local as a holder there. So a body that sends `rows` and then reads `rows` is rejected
+at the send, as the same two lines outside a lambda are. And where a once closure's write is decided (§18.8), an
+exact failure of its creation — a live holder of what it captured — is reported before the place that may call
+it more than once, which is reported before a `pending` place: the holder is the reason a program can act on.
+
+### 23.8 Navigation
+
+`Browser.Navigation.pushUrl key url refused` is `Cmd.perform` over the direct form `push` (`boundary.md`
+§9.8.17): a lambda whose captures are the key, the address and the tagger, none a model list. So an arm that
+changes the address and returns its model leaves the model's lists unescaped, which a `Cmd.do` that read its
+key from the whole model did not (`NavigationCommands`): Conduit's shape. Nothing else in the checker changes
+for them.
+
+T29's ordering — a batch whose first body sends, dispatched at once before the second body runs (`boundary.md`
+§9.8.4) — is unchanged, and so is its verdict: the second body's capture escapes `kept`, and `Toggle`'s edit is
+rejected `escaped` (`T29`; `browser/tea/SyncCommandOrder` pins the order at run time).
+
+### 23.9 The trusted surface
+
+§20.9 gains:
+
+- **the send positions' rows** (§23.3): a body `job` and `later` keep is called with a send of its program, and
+  `tap`'s and `hook`'s with a send whose values go through the tagger of every current subscription of the key;
+- **the runtime's forwarding**: what a send hands the runtime — `Hosted.emit`, the architectures' `send`s, the
+  direct platform's dispatch queue (`Direct.send`) — reaches `update` once, as the message `update` receives,
+  and the runtime keeps nothing of it after the dispatch.
+
+### 23.10 The report
+
+Operations gain **`send`** (§23.2, §23.4); a summary line's bits gain **`S`** and `s` (§23.2) and a function
+parameter's facts **`sends πk`** (§23.3). No acceptance kind or cause is new: a send is accepted as any demand is
+(`fresh`, `call`, `param`, `callback-param`, `once`), and rejected with §8.3's causes, `supply` (§23.4) and
+`need` (§23.5).
+
+### 23.11 Testing
+
+New fixtures in `tests/corpus/ownership/` (each beside a `.platform` file, §20.10):
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `OwnedSend` (browser-direct, browser-tea) | §23.2, §23.5, §23.6; T38, T50 | a payload a work builds, stored and then pushed: `entry` on browser-direct; `update` pushing its message's list: `entry`; a body that sends a list and reads it after: `alias` at the send; `Cmd.task (λ⊤ → model.rows) Loaded`: `need` at the tagger, exact; a body that sends `model.rows` while the arm keeps `model`: `later-use` at the send |
+| `ViewEventPayload` (browser-direct) | §23.6, P6 | a view whose messages hold no list: both edits `entry`; a view event carrying `model.rows`, and one carrying a list the view made: `payload` |
+| `NavigationCommands` (browser-direct, browser-tea) | §23.8; `boundary.md` §9.8.17 | `Navigation.pushUrl` in Conduit's shape: the visits push `entry`; the slice-3c body that reads the key from the whole model: `escaped` |
+| `T29` (browser-direct) | §23.8, T29 | `escaped`, as before |
+| `EntryPayload` (rewritten) | §23.6 | `stores` and `edits` accepted `entry`; `pins` `payload`, now the view-event rule |
+
+and the page `browser/tea/NavigateCommands` (the commands' effects and refusals). `NavigatePush` and
+`NavigateErrors` keep testing the direct forms, renamed.
+
+### 23.12 Open questions
+
+1. **A send whose payload no arm writes** (T34). The owner's rule rejects it at the send; the thesis accepts it,
+   since nothing is written in place that the sender's later read could see. When slice 4 makes rejections
+   errors, rule 7 asks whether this one is a warning: no guarantee is lost by it on the template platforms, and
+   on the direct platform only the arms that write a payload need it. Research 80 counts the lines.
+2. **The HTTP answer.** A list an `Http` answer's decoder builds reaches the tagger through `Expect`, a function
+   stored in a record (§16.5: not followed) over text from JavaScript, so every `Cmd.task` over `Http.request`
+   and every `Http.send` whose answer holds a list is rejected `need`, approximately — Conduit's nineteen.
+   Change 5's words on the decoder's `Js` (the array `JSON.parse` makes is new and nobody else's) and a class
+   for `Expect`'s callback would clear them.
+3. **View events** (P6): O6, now that the view-event rule is the only `payload` rejection.
