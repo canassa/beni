@@ -158,8 +158,40 @@ def CertifiedExclusive (heap : Heap) (a : Abstract) (v : Value) : Prop :=
 
 /-- `a` describes `v`: it names its arrays path by path and its exclusivity
     certificates hold. -/
-def Describes (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
+def DescribesShallow (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
   Covers γ heap a v ∧ CertifiedExclusive heap a v
+
+/-- A concrete closure is one of the alternatives of an abstract function
+    value — the same declaration — its captures described by that
+    alternative's (their arrays named, their certificates holding). -/
+def DescribesClosure (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
+  match a, v with
+  | .function _ alts, .closure id caps => ∃ capsAbs, (id, capsAbs) ∈ alts ∧
+      capsAbs.length = caps.length ∧
+      ∀ k : Nat, DescribesShallow γ heap (capsAbs[k]?.getD .bottom) (caps[k]?.getD (.int 0))
+  -- A symbolic input stands for any closure of its type; what it may do is
+  -- fixed by the guards a summary records (`GuardsHold`), not here.
+  | .symbolic .., .closure _ _ => True
+  | _, _ => False
+
+/-- Paths through record fields and list elements: where an abstract value
+    has the shape of the concrete one (`atPath` of a capture step is only a
+    merge of cells). -/
+def shapePath (q : Path) : Bool :=
+  q.all fun s => match s with | .field _ | .element => true | _ => false
+
+/-- Every closure found at a field or element path is one the abstract
+    value at that path lists, with its own declaration (fourth review, P7: a
+    closure of `capPush`, which writes its capture, described as one of
+    `capGet`, which does not, made the step lemma false). -/
+def ClosuresDescribed (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
+  ∀ q id caps, shapePath q = true → AtPath heap v q (.closure id caps) →
+    DescribesClosure γ heap (a.atPath q) (.closure id caps)
+
+/-- `a` describes `v`: arrays named path by path, certificates holding, and
+    every closure at a field or element path one of `a`'s alternatives there. -/
+def Describes (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
+  DescribesShallow γ heap a v ∧ ClosuresDescribed γ heap a v
 
 theorem represents_empty_ref (h : Represents heap n (.ref c) o cs)
     (lookup : heap[c]? = some []) : cs = [c] := by
@@ -188,7 +220,7 @@ theorem builder_alloc_describes (γ : Naming) (s : State) (site : List Nat)
     ∃ s', (prim (.builder t) []).run s = .ok (.ref s.heap.size, s') ∧
       Describes γ s'.heap (.list [.site site 0] .bottom true) (.ref s.heap.size) := by
   have lookup : (s.heap.push [])[s.heap.size]? = some [] := by simp
-  refine ⟨{s with heap := s.heap.push []}, rfl, ?_, ?_⟩
+  refine ⟨{s with heap := s.heap.push []}, rfl, ⟨?_, ?_⟩, ?_⟩
   · intro q c h
     obtain ⟨hq, hc⟩ := atPath_empty_ref lookup h
     subst hq
@@ -199,6 +231,9 @@ theorem builder_alloc_describes (γ : Naming) (s : State) (site : List Nat)
     subst hw
     rw [represents_empty_ref hr lookup]
     simp
+  · intro q id caps _ h
+    obtain ⟨_, hw⟩ := atPath_empty_ref lookup h
+    cases hw
 
 /-! ## Summary soundness (Lemma 6.7) -/
 
@@ -294,15 +329,6 @@ def Holds (s : State) (h : Holder) (c : Nat) : Prop :=
     caller are not heap holders; their absence is the caller's Dead check.) -/
 def HeldOnlyByInputs (pre : State) (inputs : List Value) (c : Nat) : Prop :=
   ∀ h, Holds pre h c → ∃ (d i : Nat) (q : Path), h = .array d ∧ ArrayAt pre.heap (inputs[i]?.getD (.int 0)) q d
-
-/-- A concrete closure is one of the alternatives of an abstract function
-    value, its captures described by that alternative's. -/
-def DescribesClosure (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
-  match a, v with
-  | .function _ alts, .closure id caps => ∃ capsAbs, (id, capsAbs) ∈ alts ∧
-      capsAbs.length = caps.length ∧
-      ∀ k : Nat, Describes γ heap (capsAbs[k]?.getD .bottom) (caps[k]?.getD (.int 0))
-  | _, _ => False
 
 /-- The guards of a summary answer, for the function values `fs` a call
     passes (slot ↦ abstract closure), exactly as recorded. This is the
