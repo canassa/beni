@@ -1,0 +1,115 @@
+-- load
+console.log: view: "0"
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "0"
+      " frames, "
+      "0.0"
+      <!---->
+      " ms"
+    </p>
+    <p>
+      "also "
+      "0"
+      <!---->
+      ", at "
+      "0"
+      <!---->
+    </p>
+  </main>
+</body>
+-- frames
+(frames: 1)
+(the DOM did not change)
+-- frame 3
+(frame at 16 ms: 1 callback)
+console.log: view: "1"
+(frame at 32 ms: 1 callback)
+console.log: view: "2"
+(frame at 48 ms: 1 callback)
+console.log: view: "3"
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "3"
+      " frames, "
+      "48.0"
+      <!---->
+      " ms"
+    </p>
+    <p>
+      "also "
+      "3"
+      <!---->
+      ", at "
+      "48"
+      <!---->
+    </p>
+  </main>
+</body>
+-- frame 1 10 tasks
+(frame at 58 ms: 1 callback)
+console.log: view: "4"
+(the frame's task ended)
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "4"
+      " frames, "
+      "58.0"
+      <!---->
+      " ms"
+    </p>
+    <p>
+      "also "
+      "4"
+      <!---->
+      ", at "
+      "58"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #toggle
+(the DOM did not change)
+-- frames
+(frames: 0)
+(the DOM did not change)
+-- frame 2
+(frame at 74 ms: 0 callbacks)
+(frame at 90 ms: 0 callbacks)
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)
+-- click #toggle
+(the DOM did not change)
+-- frames
+(frames: 1)
+(the DOM did not change)
+-- frame 1
+(frame at 206 ms: 1 callback)
+console.log: view: "5"
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "5"
+      " frames, "
+      "74.0"
+      <!---->
+      " ms"
+    </p>
+    <p>
+      "also "
+      "5"
+      <!---->
+      ", at "
+      "206"
+      <!---->
+    </p>
+  </main>
+</body>

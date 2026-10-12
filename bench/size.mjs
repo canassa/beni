@@ -440,7 +440,8 @@ function measureFloor(options, beni, work) {
 /// architecture when it is asked for no work; `effects` is a page that
 /// fetches with `Http` on a keyed `Restart` and ticks with `Time.every`;
 /// `random` asks for `Random.generate` on every message, a command whose
-/// body never waits and so runs with no fiber (§9.8.11).
+/// body never waits and so runs with no fiber (§9.8.11); `frames`
+/// subscribes to `Browser.Events.onAnimationFrameDelta` (§9.8.18).
 /// `reaches_task` says whether the page ships core's fiber runtime — a
 /// fiber's record, the one place `interrupted` is written, in the release
 /// file, or else in the development tree's `_core/Task.mjs` (the runtime is
@@ -487,6 +488,14 @@ const pages = [
     imports: `${teaImports}import Cmd\nimport Sub\nimport Time\n`,
     main:
       "Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → 1) }",
+    view: "view : Int → Html Int",
+  },
+  {
+    name: "browser-tea frames",
+    platform: "browser-tea",
+    imports: `${teaImports}import Browser.Events\nimport Cmd\nimport Sub\n`,
+    main:
+      "Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = view, subscriptions = λ_ → Browser.Events.onAnimationFrameDelta (λ_ → 1) }",
     view: "view : Int → Html Int",
   },
   {

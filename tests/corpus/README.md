@@ -151,6 +151,19 @@ project) against it, one step per line, `#` for a comment:
                                 before any microtask it queued; a callback
                                 that throws is reported to the window's
                                 `error` listeners, as a host reports it
+    frame <n> [<ms>] [tasks]    draw `n` virtual frames, each `ms` (default
+                                16) after the one before: the clock moves on
+                                as `advance` moves it, then the callbacks
+                                `requestAnimationFrame` was asked for before
+                                the frame began run in one task, in the
+                                order asked, each handed the frame's time;
+                                one asked for while they run is the next
+                                frame's. Each frame logs `(frame at <t> ms:
+                                <k> callbacks)`; with `tasks`, `(the frame's
+                                task ended)` is logged as its callbacks
+                                return, before any microtask they queued
+    frames                      log `(frames: <n>)`, the frame callbacks
+                                asked for and neither run nor cancelled
     event <window|document|selector> <name> [<n>]
                                 `n` (default 1) plain `Event`s of that
                                 name on the window, the document or the
@@ -215,7 +228,12 @@ address or with something stored. Every page starts with empty storage.
 `clearTimeout` and `Date.now` before the program loads: `Date.now()` is 0
 until an `advance` step moves it, and a timer fires only when an `advance`
 step reaches its time, so a debounce of 250 ms costs no wall-clock time and
-a fixture about timing is deterministic in both DOMs. After each timer the
+a fixture about timing is deterministic in both DOMs. So are the page's
+frames: the driver replaces `requestAnimationFrame` and
+`cancelAnimationFrame` too, in Chrome as in happy-dom, and a callback runs
+only when a `frame` step draws a frame — so a fixture counts the frames a
+page asks for, and an idle page's `frames` reads 0
+(`browser/tea/AnimationFrames`, `boundary.md` §9.8.18 (g)). After each timer the
 page settles — the fibers it resumed run, and may set the next timer —
 before the next fires. A page has settled once its microtasks have run and
 a turn of the event loop has passed with, under happy-dom, no `setImmediate`
@@ -310,9 +328,10 @@ compares instead of `.expected`. The differences known today:
   SVG `<foreignObject>`, an HTML integration point, Chrome makes HTML
   elements and happy-dom SVG ones (`browser/dom/SvgDrawing`);
 - event loop order: the page runs on Node's event loop, so the order of
-  timers, `MessageChannel` messages and I/O against each other is Node's,
-  and there is no `requestAnimationFrame` frame clock; a fixture about
-  scheduling order belongs to `test-browser`;
+  timers, `MessageChannel` messages and I/O against each other is Node's;
+  a fixture about scheduling order belongs to `test-browser`. Frames are
+  not among the differences: both DOMs draw only the driver's virtual
+  frames (`frame`);
 - layout: happy-dom lays nothing out, so sizes and positions are zero;
 - steps dispatch untrusted events in both DOMs, and `key` types nothing —
   except `press` and the focus events a `focus()` or `blur()` call fires,
