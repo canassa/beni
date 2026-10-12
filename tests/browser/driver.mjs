@@ -160,13 +160,14 @@
 // Chrome runs microtasks between two listeners of a user's click).
 
 import { Console } from "node:console";
-import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { enableCompileCache } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import process from "node:process";
 import { Writable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { pruneCompileCache } from "./compile-cache.mjs";
 
 // happy-dom is one 890 kB file that every run compiles. V8's code cache for
 // it (and this file), kept between runs, makes a run about 100 million
@@ -178,39 +179,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // entry, replaced when it changes, and a worktree's cache goes with it.
 // Every page program is compiled too, each from a project directory no
 // later run repeats, so its entries are never read again and would pile
-// up without end: once a cache holds more than `cacheEntries`, each entry
-// older than `cacheAge` goes. The two bound it to a few hours of runs, and
-// happy-dom's entry is compiled again at most once per `cacheAge`.
-const cacheEntries = 1024;
-const cacheAge = 60 * 60 * 1000;
+// up without end: once a cache holds more than 1 024 entries, the old ones
+// go (`compile-cache.mjs`), a few at a run, so that what a page spends on
+// pruning does not depend on the size of the cache a fuzz sweep left.
 const cacheDir = fileURLToPath(new URL("../../zig-out/browser-driver-cache", import.meta.url));
 pruneCompileCache(cacheDir);
 enableCompileCache(cacheDir);
-
-// One directory per Node version holds the entries. Another driver may be
-// pruning the same files: one already gone is what was wanted.
-function pruneCompileCache(dir) {
-  let versions;
-  try {
-    versions = readdirSync(dir);
-  } catch (error) {
-    if (error.code === "ENOENT") return;
-    throw error;
-  }
-  const now = Date.now();
-  for (const version of versions) {
-    const entries = readdirSync(join(dir, version));
-    if (entries.length <= cacheEntries) continue;
-    for (const entry of entries) {
-      const path = join(dir, version, entry);
-      try {
-        if (now - statSync(path).mtimeMs > cacheAge) unlinkSync(path);
-      } catch (error) {
-        if (error.code !== "ENOENT") throw error;
-      }
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Page code. Each function is self-contained: Chrome receives its source.

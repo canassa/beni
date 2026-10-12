@@ -421,3 +421,72 @@ test "a library build's page delivers the events its markup delegates, with no p
     // └─────────────────────────────────────────┘
     try testing.expect(!w.exists("out/_main.mjs"));
 }
+
+/// Fills `cache/v1` with `argv[3]` entries, `argv[4]` seconds old, prunes it
+/// as the driver does, and prints how many entries are left.
+const prune_script =
+    \\import { mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
+    \\import { pathToFileURL } from "node:url";
+    \\const { pruneCompileCache } = await import(pathToFileURL(process.argv[2]).href);
+    \\const count = Number(process.argv[3]);
+    \\const when = new Date(Date.now() - Number(process.argv[4]) * 1000);
+    \\mkdirSync("cache/v1", { recursive: true });
+    \\for (let i = 0; i < count; i++) {
+    \\  const path = `cache/v1/${i.toString(16).padStart(8, "0")}`;
+    \\  writeFileSync(path, "");
+    \\  utimesSync(path, when, when);
+    \\}
+    \\pruneCompileCache("cache");
+    \\console.log(readdirSync("cache/v1").length);
+    \\
+;
+
+/// How many of `count` entries `age` seconds old a prune leaves.
+fn entriesLeft(w: *World, count: u32, age: u32) !u32 {
+    const arena = w.arena.allocator();
+    try w.write("prune.mjs", prune_script);
+    const module = try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/browser/compile-cache.mjs", arena);
+    const r = try w.runNode(&.{
+        "prune.mjs",
+        module,
+        try std.fmt.allocPrint(arena, "{d}", .{count}),
+        try std.fmt.allocPrint(arena, "{d}", .{age}),
+    });
+    try expectExit(0, r);
+    return std.fmt.parseInt(u32, std.mem.trim(u8, r.stdout, "\n"), 10);
+}
+
+test "the driver's cache pruning is bounded however many entries a fuzz sweep left" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // 5 000 entries, all two hours old: a prune that listed and statted the
+    // whole directory, as it did when a sweep left 116 000 and every page
+    // spent 85 million instructions on it, would remove every one.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const left = try entriesLeft(&w, 5000, 2 * 3600);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Some old entries went, but only the few a run looks at.
+    try testing.expect(left < 5000);
+    try testing.expect(left >= 5000 - 256);
+}
+
+test "the driver's cache pruning leaves a cache of 1 024 entries or fewer alone" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try testing.expectEqual(@as(u32, 1024), try entriesLeft(&w, 1024, 2 * 3600));
+}
+
+test "the driver's cache pruning keeps the entries of the last hour" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try testing.expectEqual(@as(u32, 5000), try entriesLeft(&w, 5000, 60));
+}

@@ -288,9 +288,13 @@ checkout's `zig-out/browser-driver-cache/` — never in `/tmp`, where every
 worktree's copy of happy-dom was an entry of its own and the cache once
 filled the disk. Node keys an entry by the file's path, and each page
 program is compiled from a directory no later run repeats, so the driver
-prunes the cache as it starts: once it holds more than 1 024 entries,
-those older than an hour go. Deleting the directory is always safe; a
-missing entry is compiled again. `zig build test-browser` runs the
+prunes the cache as it starts (`tests/browser/compile-cache.mjs`): once it
+holds more than 1 024 entries, it removes the old ones — those older than
+an hour — among the first 128 it reads. A run never reads more than 1 025
+names, so what a page spends on pruning does not grow with the cache: a
+fuzz sweep leaves about 116 000 entries, which the gates' runs then clear
+128 at a time. Deleting the directory is always safe; a missing entry is
+compiled again. `zig build test-browser` runs the
 same fixtures in one headless Chrome (a fresh target per page) against the
 same goldens; Chrome comes from `-Dchrome=` or `PATH` (`nix develop
 .#browser`). `tests/blackbox/browser.zig` has the measurements behind the
