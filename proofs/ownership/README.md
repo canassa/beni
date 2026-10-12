@@ -9,9 +9,9 @@ argument. This is **not a certified ownership checker**: the soundness theorems
 are stated and three of them are `sorry`. It does not change the beni compiler
 or the thesis.
 
-Current state ([RESULTS.md](RESULTS.md)): 76 fixed verdict fixtures, checked by
+Current state ([RESULTS.md](RESULTS.md)): 77 fixed verdict fixtures, checked by
 both checkers; three 20 000-trial campaigns of generator v4 with no
-corrected-rule mismatch, 14 777 accepted programs, 9 660 of them with an
+corrected-rule mismatch, 14 780 accepted programs, 9 663 of them with an
 in-place write. Seventeen required negative controls (two historical, the
 review's seven, eight summary-row mutants) each have a fixed probe, and the
 generator alone catches each of them on each of three seeds (borrowed-supply

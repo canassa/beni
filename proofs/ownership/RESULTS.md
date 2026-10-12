@@ -29,7 +29,7 @@ interpreters with identical traces. `ownership ci` fails below 30 %.
 
 | Family | Accepted (3 seeds) | With write | Before (v3) |
 |---|---:|---:|---|
-| general (v4, replaces anf-chain) | 4781 | **3018** | anf-chain: 522 accepted, **0** with write (review: 0 of 166 on one seed; 0 of 186 on seed 20261011) |
+| general (v4, replaces anf-chain) | 4784 | **3021** | anf-chain: 522 accepted, **0** with write (review: 0 of 166 on one seed; 0 of 186 on seed 20261011) |
 | once-many-wrappers | 1544 | 178 | |
 | fresh-tower | 1372 | 1372 | |
 | identity-map | 1365 | 1365 | |
@@ -43,8 +43,8 @@ interpreters with identical traces. `ownership ci` fails below 30 %.
 
 | Seed | Typed | Distinct ASTs | Accepted | With write | Limits | Mismatches |
 |---|---:|---:|---:|---:|---:|---:|
-| 20261011 | 20000 | 12160 | 4901 | 3203 (65 %) | 913 | 0 |
-| 17 | 20000 | 12193 | 5001 | 3314 (66 %) | 880 | 0 |
+| 20261011 | 20000 | 12160 | 4903 | 3205 (65 %) | 913 | 0 |
+| 17 | 20000 | 12193 | 5002 | 3315 (66 %) | 880 | 0 |
 | 271828 | 20000 | 12239 | 4875 | 3143 (64 %) | 930 | 0 |
 
 `--generator-version=3` on seed 20261011 reproduces v3 unchanged (6363
@@ -56,16 +56,16 @@ Accepted programs that write and exercised each checker row (three seeds):
 
 | Row | Programs |
 |---|---:|
-| callback called through its class; supply resolved at a known callback | 5868 |
-| xres yes / xres no | 5862 / 46 |
-| fresh in a callback's res | 3327 |
-| a callback's argument in its res | 2994 |
-| W on a callback argument; edge W ⇒ owned checked | 1251 |
+| callback called through its class; supply resolved at a known callback | 5871 |
+| xres yes / xres no | 5865 / 46 |
+| fresh in a callback's res | 3328 |
+| a callback's argument in its res | 2995 |
+| W on a callback argument; edge W ⇒ owned checked | 1252 |
 | supply owned bit cleared at the caller | 981 |
 | summary reused after re-asking its guards | 881 |
-| env in a callback's res | 316 |
-| supply owned bit cleared where a step ends | 236 |
-| once callback's calls checked | 178 |
+| env in a callback's res | 319 |
+| supply owned bit cleared where a step ends | 237 |
+| once callback's calls checked | 181 |
 | guard forwarded / supply transferred to the caller's own input | 134 / 134 |
 | xreq on a callback argument; edge xreq ⇒ exclusive checked | 99 |
 | E on a callback argument; shared in its res | 95 |
@@ -73,16 +73,16 @@ Accepted programs that write and exercised each checker row (three seeds):
 
 ## Summary layer
 
-* **No corrected-rule mismatch** in the 60 000 trials above, nor in the 76
+* **No corrected-rule mismatch** in the 60 000 trials above, nor in the 77
   fixtures; both checkers agree with every intended verdict.
 * **Computed once.** Per seed about 10 000 summaries were computed and about
   200 000 call sites (including class queries) served from the cache after
   re-asking their guards.
-* **Cross-check** (`--cross-check`): the two checkers differ on 68 of 60 000
-  programs. In 65 only the summary checker accepts (the per-call checker
-  says Disjoint or "exclusive contents"), in 3 only the per-call checker
-  accepts (summaries say Disjoint). Every program either one accepts ran with
-  equal traces.
+* **Cross-check** (`--cross-check`): the two checkers differ on 65 of 60 000
+  programs, and in every one only the summary checker accepts (the per-call
+  checker says Disjoint or "exclusive contents"); each ran with equal traces.
+  Before the fix in "Findings" there were also 3 programs only the per-call
+  checker accepted.
 * `ownership summaries` prints the published rows of the accepted fixtures
   (`regressions/summaries-fixtures.log`).
 
@@ -159,6 +159,16 @@ uncaught ones as known gaps with what would reach them.
   accepted a program whose value run returns 8 and in-place run 11. Fixture
   "recursion inside a step"; both checkers now refuse it as a limit. Found by
   reading while building the summary layer; no generated family produces it.
+* **Precision defect, summary checker.** Three programs (seed 17 index 13951,
+  seed 20261011 indices 8894 and 13920) were accepted by the per-call checker
+  only. Common cause: all pass the once callback `capAppend` to
+  `applyThenRead`, whose result is the callback's environment and is then
+  written. The summary names that write `π_1.env` while the actual closure
+  names the same cells under its `.capture` paths, and the caller's Disjoint
+  test counted those as another operand. They are the same path; `otherPaths`
+  now treats them so, and the closure's later uses remain the callee's Dead
+  check. After the fix: no program is accepted by the per-call checker alone,
+  no mismatch.
 * No corrected-rule mismatch otherwise.
 
 ## Reproduction

@@ -6,14 +6,12 @@ CROSS-CHECK VERDICTS DIFFER index=5089 family=general this=Except.ok () other=Ex
 CROSS-CHECK VERDICTS DIFFER index=5737 family=general this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
 CROSS-CHECK VERDICTS DIFFER index=6273 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
 CROSS-CHECK VERDICTS DIFFER index=8082 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
-CROSS-CHECK VERDICTS DIFFER index=8894 family=general this=Except.error "Disjoint: another operand path holds the written cell" other=Except.ok ()
 CROSS-CHECK VERDICTS DIFFER index=9801 family=general this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
 CROSS-CHECK VERDICTS DIFFER index=10118 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
 CROSS-CHECK VERDICTS DIFFER index=10353 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
 CROSS-CHECK VERDICTS DIFFER index=10667 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
 CROSS-CHECK VERDICTS DIFFER index=11120 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
 CROSS-CHECK VERDICTS DIFFER index=13097 family=general this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
-CROSS-CHECK VERDICTS DIFFER index=13920 family=general this=Except.error "Disjoint: another operand path holds the written cell" other=Except.ok ()
 CROSS-CHECK VERDICTS DIFFER index=14374 family=general this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
 CROSS-CHECK VERDICTS DIFFER index=15673 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
 CROSS-CHECK VERDICTS DIFFER index=17238 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
@@ -31,25 +29,25 @@ family=once-many-wrappers depth=6..9 candidates=901 distinct=80 typed=901 accept
 family=library-pipeline depth=13..17 candidates=967 distinct=354 typed=967 accepted=215 withWrites=215 rejected=752 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
 family=fresh-nested depth=6..6 candidates=941 distinct=437 typed=941 accepted=307 withWrites=307 rejected=634 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
 family=recursion depth=4..4 candidates=902 distinct=140 typed=902 accepted=218 withWrites=191 rejected=684 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
-family=general depth=3..49 candidates=9937 distinct=9905 typed=9937 accepted=1604 withWrites=992 rejected=8333 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=general depth=3..49 candidates=9937 distinct=9905 typed=9937 accepted=1606 withWrites=994 rejected=8331 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
 family=branch-traversal depth=5..5 candidates=944 distinct=10 typed=944 accepted=471 withWrites=283 rejected=473 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
 row-hits 23 E∈use(callback arg) yes
-row-hits 413 W∈use(callback arg) yes
-row-hits 974 callback arg∈res yes
-row-hits 1939 callback called through its class
-row-hits 48 calls of a once callback checked
-row-hits 413 edge W ⇒ owned supply checked
+row-hits 414 W∈use(callback arg) yes
+row-hits 975 callback arg∈res yes
+row-hits 1941 callback called through its class
+row-hits 50 calls of a once callback checked
+row-hits 414 edge W ⇒ owned supply checked
 row-hits 28 edge xreq ⇒ exclusive supply checked
-row-hits 96 env∈res yes
+row-hits 98 env∈res yes
 row-hits 1125 fresh∈res yes
 row-hits 37 guard forwarded to the caller's own input
 row-hits 23 shared∈res yes
 row-hits 275 summary reused after re-asking its guards
 row-hits 319 supply owned bit cleared at the caller
-row-hits 63 supply owned bit cleared where a step ends
-row-hits 1939 supply resolved at a known callback
+row-hits 64 supply owned bit cleared where a step ends
+row-hits 1941 supply resolved at a known callback
 row-hits 37 supply transferred to the caller's own input
 row-hits 28 xreq(callback arg) yes
 row-hits 16 xres no
-row-hits 1936 xres yes
-generator-version=4 seed=20261011 control=soundness-v4 candidates=20000 distinct=12160 typed=20000 accepted=4901 withWrites=3203 rejected=15099 limits=913 typeErrors=0 executionErrors=0 mismatches=0 cross-only-this=21 cross-only-other=2 cross-other-mismatches=0 summaries-computed=10028 summaries-reused=200791 first-mismatch=none elapsed-ms=23582
+row-hits 1938 xres yes
+generator-version=4 seed=20261011 control=soundness-v4 candidates=20000 distinct=12160 typed=20000 accepted=4903 withWrites=3205 rejected=15097 limits=913 typeErrors=0 executionErrors=0 mismatches=0 cross-only-this=21 cross-only-other=0 cross-other-mismatches=0 summaries-computed=10037 summaries-reused=200935 first-mismatch=none elapsed-ms=23487
