@@ -4335,7 +4335,8 @@ const Walker = struct {
         for (s.res) |r| {
             // A lambda the value holds (§24.9), when it captured nothing: a
             // capture the definition made would be a shared cell, which a
-            // carried binding cannot say.
+            // carried binding cannot say. Dropped otherwise: a call of the
+            // value then finds no class and is §6.1's, as it was before.
             if (r.prov.kind == .klass) {
                 if (r.prov.a < s.klasses.len and s.klasses[r.prov.a].binds.len == 0 and s.klasses[r.prov.a].cb_js.len == 0) {
                     const av = try w.carry(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .depth = 0 });

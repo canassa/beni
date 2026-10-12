@@ -2036,6 +2036,11 @@ depends on its row: `tests/corpus/ownership/trusted-surface.txt` lists every one
 and a black-box test fails when the ownership dump of core or a platform prints a `(words)` summary that the
 list does not name, or the list names a fixture that does not exist or does not mention the declaration.
 
+The tests pin that each row exists and that a verdict depends on it; they do not prove it true. **A word on a
+beni body is not compared with that body**, deliberately: every such body goes through `Js.call` or `Js.get`, whose
+honest row escapes everything, so the body's own summary is always worse than the words — which is why the words
+exist. Reading the sibling or the `Js` operations, as §24.8 records, is the check, as it is for a `foreign`'s rung.
+
 ### 24.7 The report
 
 A summary read from words prints `(words)` where an asserted row prints `(asserted)`, and a `crossing foreign type`
@@ -2071,7 +2076,7 @@ names the fixture that pins each (§24.6).
 | `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`) |
 | `Schema.parse`, `parseWith` | `borrowed Schema e a, String → unknown Result …` | `JSON.parse` makes new values, but the answer holds what the schema's own mapping, injection and conversion functions return, which may be anything (thesis §6.5) |
 | `Debug.toString` | `borrowed a → String` | `toStringAs` walks the value; the set of objects being printed holds each only while it is printed |
-| `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value and returns the value |
+| `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value — a string, so the console keeps no reference to the value — and returns the value |
 | `Hosted.keyOf` | `String, aliased k → fresh Key` | `Hosted.js`: `({ t: type, c: compare, v: value })`, a new object holding the value |
 | `Html.Event` | `crossing` | a DOM event, made by the host: no beni value is ever put in one |
 | `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.js`: `({ code, out })`, a new object of a number and a string |
@@ -2130,6 +2135,7 @@ inside the body `Cmd.task` runs, a lambda, where slots are not built: its tagger
 | `check/bad/core/MisplacedOwnershipWord` | §24.4 | every reading: nested, on a value, not a function, a result word on a parameter and the reverse, each impossible pair |
 | `ownership/ForeignNoWords` (`tests/platforms/page`) | §24.5 | a list handed to a `foreign` without words, and one a handler handed to it captured: `escaped`; `String.join`'s read: accepted |
 | `ownership/Words` (node), `ownership/core/JsWords`, `ownership/JsPure`, `ownership/WordsBrowser` (browser-direct, browser-tea) | §24.8 | each annotated declaration's row, against what the default would give |
+| `ownership/CarriedLambda` | §24.9 | a list a returned lambda captured, written before the lambda is called: `captured`; after: accepted |
 | `ownership/HttpAnswer` (browser-direct) | §24.9 | a decoder whose answer is owned: no line; Conduit's forwarding decoder: `need`, approximately; a top-level answer: `need`; the model's list: `need` |
 
 and `check_test.zig`'s four tests of `trusted-surface.txt` (§24.6).
@@ -2150,5 +2156,6 @@ and `check_test.zig`'s four tests of `trusted-surface.txt` (§24.6).
 3. **Interpreting 5(a).** The words stand on core's and the platforms' functions over `Js` as well as on their
    `foreign`s (§24.4), because the thesis gives those functions the same words and they are `foreign` in all but
    form; the owner approved words on `foreign` declarations in core and the platforms. If that is read narrowly,
-   `String.join`, `Debug`'s two and `Schema`'s four lose their words and are inferred, escaping what they hand to
-   JavaScript.
+   the thirteen beni declarations with words — `String.join`, `fromList`, `split`, `words`, `lines`, `toList`,
+   `indexes`, `Debug.log`, `Debug.toString`, `Schema.parse`, `parseWith`, `print`, `printWith` — lose them and are
+   inferred, escaping what they hand to JavaScript.
