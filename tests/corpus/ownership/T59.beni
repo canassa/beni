@@ -1,14 +1,14 @@
 -- ownership: T59, fresh results that share inside one result
--- (`ownership-checker.md` §16.8; thesis Table 6.2). The initializer returns
--- `[ cell, cell ]`, two positions of one new array. Editing one position's
--- inner list through two `List.update`s would be seen at the other, so the
--- program must be rejected: `update`'s summary, inferred from
--- `set xs i (func (unsafeGet xs i))`, supplies its element borrowed, and
--- both lambdas write what they are supplied — rejected, `supply`. The
--- round-5 fix holds by construction: no asserted row hands out a callback's
--- result as exclusive. The thesis accepts `distinct`, two literals being
--- two cells; slice 2, which builds no exclusive contents, rejects it the
--- same way — a finding, not a rule.
+-- (`ownership-checker.md` §18.2–§18.5; thesis Table 6.2, review 5 item
+-- 1.1). The initializer returns `[ cell, cell ]`, two positions of one new
+-- array. Editing one position's inner list through two `List.update`s would
+-- be seen at the other, so the program must be rejected. `initialize`'s
+-- result is exclusive only when its callback's result is — fresh across
+-- calls and exclusive inside — and `[ cell, cell ]` is not: the outer
+-- `update`'s callback relies on what it is handed being exclusive, and is
+-- rejected, `exclusive`. `distinct` returns two literals, two cells:
+-- accepted, as the thesis and the Lean model accept it. `mapped` and
+-- `mappedShared` are the Lean model's `map` forms of the same program.
 pub t59 : Int → Int
 t59 n =
     rows = List.initialize 1 λ_ →
@@ -21,5 +21,21 @@ t59 n =
 pub distinct : Int → Int
 distinct n =
     rows = List.initialize 1 λ_ → [ [ 0 ], [ 0 ] ]
+    changed = List.update rows 0 λpair → List.update pair 0 λxs → [ …xs, 9 ]
+    List.length changed + n
+
+
+pub mappedShared : Int → Int
+mappedShared n =
+    rows = List.map [ 0 ] λ_ →
+        cell = [ 0 ]
+        [ cell, cell ]
+    changed = List.update rows 0 λpair → List.update pair 0 λxs → [ …xs, 9 ]
+    List.length changed + n
+
+
+pub mapped : Int → Int
+mapped n =
+    rows = List.map [ 0 ] λ_ → [ [ 0 ], [ 0 ] ]
     changed = List.update rows 0 λpair → List.update pair 0 λxs → [ …xs, 9 ]
     List.length changed + n

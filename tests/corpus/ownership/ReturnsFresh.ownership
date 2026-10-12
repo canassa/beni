@@ -3,10 +3,10 @@ module ReturnsFresh
   30:12 construction <call ReturnsFresh.copied>: accepted call
   37:11 construction r.a: accepted call
   summary pair: res fresh1
-  summary copied: π1 R, π1[*] RA; res [*] π1[*], fresh1
+  summary copied: π1 R, π1[*] RA; res [*] π1[*], fresh1{lost}
   summary twoFields: res .a fresh1, .b fresh2
   summary built: π1 R
   summary copiedThenRead: π1 R, π1[*] R
   summary fields: unused
-  demands 3: accepted 3 (fresh 0, call 3, param 0, callback-param 0; assumed 0), pending 0, rejected 0
-total 3: accepted 3 (fresh 0, call 3, param 0, callback-param 0; assumed 0), pending 0, rejected 0
+  demands 3: accepted 3 (fresh 0, call 3, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 0, call 3, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 0

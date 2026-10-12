@@ -1,0 +1,52 @@
+-- ownership: an element edited in place through `List.update` and
+-- `List.map` (`ownership-checker.md` §18.4–§18.5; thesis §3.11, the
+-- destructive read). `update` is `List.focus` and `map` reads each element
+-- with `List.traverseAt`, the two primitives whose rows hand the element out
+-- owned; a callback that edits it makes the list's own elements written, at
+-- the call, and relies on the list's contents being exclusive. So the edit
+-- is accepted when the list is unique, exclusive and dead after the call:
+-- `addKid` and `tagAll` on a list built of distinct literals. It is rejected
+-- when the list is read after the call (`readAfter`, `later-use`), when two
+-- positions hold one list (`repeated`, `exclusive`, exact: the literal shows
+-- it), and when one element is also held outside (`heldOutside`, `alias`).
+-- The slice-2 flips this pins: `NestedFor`'s edit inside `List.update`, and
+-- the one inside `List.map`.
+type alias Group =
+    title : String
+    kids : List String
+
+
+pub addKid : List Group, Int → List Group
+addKid groups i = List.update groups i λg → { g | kids = List.push g.kids "new" }
+
+
+pub tagAll : List (List Int) → List (List Int)
+tagAll rows = List.map rows λr → [ …r, 0 ]
+
+
+pub distinct : ⊤ → Int
+distinct ⊤ =
+    groups = [ { title = "a", kids = [] }, { title = "b", kids = [ "x" ] } ]
+    rows = tagAll [ [ 1 ], [ 2 ] ]
+    List.length (addKid groups 0) + List.length rows
+
+
+pub readAfter : List (List Int) → Int
+readAfter rows =
+    grown = List.map rows λr → [ …r, 0 ]
+    List.length grown + List.length rows
+
+
+pub repeated : ⊤ → Int
+repeated ⊤ =
+    kids = [ "x" ]
+    groups = [ { title = "a", kids = kids }, { title = "b", kids = kids } ]
+    List.length (addKid groups 0)
+
+
+pub heldOutside : ⊤ → Int
+heldOutside ⊤ =
+    first = [ 1 ]
+    rows = [ first, [ 2 ] ]
+    grown = tagAll rows
+    List.length grown + List.length first

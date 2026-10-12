@@ -1,0 +1,16 @@
+module Split
+  16:17 construction r: accepted param
+  16:26 construction rest: accepted param
+  20:27 call Split.bumpHead <literal>: accepted fresh (Split.bumpHead writes π1)
+  20:27 call Split.bumpHead <literal>[*]: accepted fresh (Split.bumpHead writes π1[*])
+  26:18 call Split.bumpHead <literal>: rejected exclusive: the callee needs the list's elements not to share, and they may (Split.bumpHead writes π1)
+  26:18 call Split.bumpHead <literal>[*]: accepted fresh (Split.bumpHead writes π1[*])
+  36:27 construction r: rejected alias: rows[*] holds it and is read at 36:37
+  summary bumpHead: π1 RAW, π1[*] RAW; res [*] π1[*]{excl π1}, fresh1 π1; xreq excl π1
+  summary distinct: unused
+  summary repeated: unused
+  summary readAfter: π1 R, π1[*] RW; xreq excl π1
+  demands 7: accepted 5 (fresh 3, call 0, param 2, callback-param 0, once 0; assumed 0), pending 0, rejected 2
+total 7: accepted 5 (fresh 3, call 0, param 2, callback-param 0, once 0; assumed 0), pending 0, rejected 2
+cause alias 1
+cause exclusive 1

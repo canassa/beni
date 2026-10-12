@@ -1,11 +1,11 @@
 module Copy
   12:20 construction history: rejected later-use: history is read again at 12:16
   16:27 construction <call List.copy>: accepted call
-  24:27 construction first: rejected element: rows[*] holds it and is read at 24:41 (approx)
+  24:27 construction first: rejected alias: rows[*] holds it and is read at 24:41
   summary kept: π1 RAW; res .0 π1, .1 π1
-  summary copiedFirst: π1 RA, π1[*] RA; res .0 fresh1, .0[*] π1[*], .1 π1
+  summary copiedFirst: π1 RA, π1[*] RA; res .0 fresh1{lost}, .0[*] π1[*], .1 π1
   summary shallow: π1 R, π1[*] RW
-  demands 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 2
-total 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 2
+  demands 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 2
 cause later-use 1
-cause element 1
+cause alias 1

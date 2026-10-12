@@ -7,7 +7,7 @@ module Changed
   summary logged: π1.todos R, π2 RAW; res .todos π2
   summary add: π1.todos RAW; res .todos π1.todos
   summary addLogged: π1.todos RAW; res .todos π1.todos
-  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0; assumed 0), pending 0, rejected 2
-total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0; assumed 0), pending 0, rejected 2
+  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0; assumed 0), pending 0, rejected 2
 cause disjoint 1
 cause held-operand 1

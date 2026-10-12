@@ -5,9 +5,9 @@
 -- says `fresh1`, `List.copy`'s asserted row (`ownership-checker.md` §16.8).
 -- The copy is
 -- shallow: its elements are the original's, so editing an element of the
--- copy while the original lives is still rejected, `element` — the
--- exclusive contents of slice 2 cannot help here, since the element really
--- is shared.
+-- copy while the original lives is still rejected — `alias`, exact: the
+-- element split off the copy (§18.4 item 4) is one position, and `rows`
+-- holds it and is read after.
 pub kept : List Int → List Int × List Int
 kept history = ( [ …history, 0 ], history )
 

@@ -67,6 +67,7 @@ fn acceptText(a: Ownership.Accept) []const u8 {
         .call => "call",
         .param => "param",
         .callback_param => "callback-param",
+        .once => "once",
     };
 }
 

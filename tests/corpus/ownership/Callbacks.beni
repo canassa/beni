@@ -7,11 +7,11 @@
 -- may return a top-level list does not return owned, so the accumulator is
 -- supplied borrowed and the edit is rejected, `supply`. T15: a callback
 -- that returns its element makes `pick`'s result an alias of `rows`'s
--- elements. `List.map` hands each element to its callback while the list
--- is still read by the loop, so the inferred supply is borrowed: a callback
--- that consumes its element is rejected (§16.8's finding — the thesis's
--- single-pass row needs exclusive contents), and one that only reads it is
--- accepted. `apply` calls its function parameter on its own argument,
+-- elements. `List.map` reads each element with the traversal primitive
+-- (§18.5), so it supplies the element owned: a callback that consumes its
+-- element is accepted, its write `consumes`'s own, at the call, relying on
+-- the list being exclusive (`xreq`); one that only reads it is accepted too.
+-- `apply` calls its function parameter on its own argument,
 -- owned, so a lambda that writes is accepted and the write is `apply`'s
 -- caller's demand.
 defaults : List Int

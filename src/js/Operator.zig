@@ -63,12 +63,15 @@ pub const Which = enum {
     int32_shiftRightZero,
     // `List`'s core-private primitives, which only `List.beni` can name
     // (`backend.md` §4, *`List.beni`'s loops read and write in place*):
-    // `at a i` is `a[i]`, `put b i x` is the statement `b[i] = x;` and then
+    // `at a i` and `traverseAt a i` are `a[i]` (the second differs only in
+    // its ownership row, `ownership-checker.md` §18.5), `put b i x` is the
+    // statement `b[i] = x;` and then
     // `b`, `identical x y` is `x === y`, `kept s o b` is `s ? o : b`, and
     // `half n` is `n >>> 1`. And the one `pub` one: `List.length xs` is
     // `xs.length`, which every form of a list answers (§4, *What a reader
     // of a list may rely on*).
     list_at,
+    list_traverseAt,
     list_put,
     list_identical,
     list_kept,
@@ -100,8 +103,8 @@ const int32 = [_]struct { []const u8, Which }{
 };
 
 const list = [_]struct { []const u8, Which }{
-    .{ "at", .list_at },     .{ "put", .list_put },   .{ "identical", .list_identical },
-    .{ "kept", .list_kept }, .{ "half", .list_half }, .{ "length", .list_length },
+    .{ "at", .list_at },     .{ "traverseAt", .list_traverseAt }, .{ "put", .list_put },       .{ "identical", .list_identical },
+    .{ "kept", .list_kept }, .{ "half", .list_half },             .{ "length", .list_length },
 };
 
 /// The operator `inst` names, or null. `module` is the module `bir` is;

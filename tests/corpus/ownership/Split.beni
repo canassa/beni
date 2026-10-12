@@ -1,0 +1,36 @@
+-- ownership: the split of a list pattern (`ownership-checker.md` §18.4
+-- item 4; thesis §3.11, `bumpHead`). `[ r, …rest ]` binds `r` to the first
+-- position and `rest` to the others; when the scrutinee's contents are
+-- exclusive, `rest` holds no cell of `r`, so `bumpHead` extends `r` in place
+-- and is accepted — relying on its parameter being exclusive, which its
+-- callers discharge: `distinct` passes two literals, accepted; `repeated`
+-- passes one list twice, rejected `exclusive`. The scrutinee itself still
+-- holds `r`: `readAfter` reads `rows` after the edit, rejected `later-use`.
+pub bumpHead : List (List Int) → List (List Int)
+bumpHead rows =
+    case rows of
+        [] →
+            []
+
+        [ r, …rest ] →
+            [ [ …r, 0 ], …rest ]
+
+
+pub distinct : ⊤ → Int
+distinct ⊤ = List.length (bumpHead [ [ 1 ], [ 2 ] ])
+
+
+pub repeated : ⊤ → Int
+repeated ⊤ =
+    r = [ 1 ]
+    List.length (bumpHead [ r, r ])
+
+
+pub readAfter : List (List Int) → Int
+readAfter rows =
+    case rows of
+        [] →
+            0
+
+        [ r, …_ ] →
+            List.length [ …r, 0 ] + List.length rows

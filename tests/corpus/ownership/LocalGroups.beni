@@ -1,0 +1,53 @@
+-- ownership: local functions as one group (`ownership-checker.md` §18.7;
+-- thesis §3.6, *Local functions*). `go` calls itself and extends its
+-- accumulator: the group is solved like a recursive top-level group, so its
+-- class writes its first parameter, the demand inside it is decided at its
+-- calls, and the call `go [] xs` passes a fresh list: accepted. `keeps`
+-- calls `go` with a list it reads after: rejected at that call. `even` and
+-- `odd` call each other before either's class is known: one group, solved
+-- together.
+pub reverse : List Int → List Int
+reverse xs =
+    go acc ys =
+        case ys of
+            [] →
+                acc
+
+            [ y, …rest ] →
+                go [ …acc, y ] rest
+
+    go [] xs
+
+
+pub keeps : List Int, List Int → Int
+keeps start xs =
+    go acc ys =
+        case ys of
+            [] →
+                acc
+
+            [ y, …rest ] →
+                go [ …acc, y ] rest
+
+    List.length (go start xs) + List.length start
+
+
+pub split : List Int → List Int
+split xs =
+    even acc ys =
+        case ys of
+            [] →
+                acc
+
+            [ y, …rest ] →
+                odd [ …acc, y ] rest
+
+    odd acc ys =
+        case ys of
+            [] →
+                acc
+
+            [ _, …rest ] →
+                even acc rest
+
+    even [] xs

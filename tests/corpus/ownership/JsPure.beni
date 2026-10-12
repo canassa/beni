@@ -1,0 +1,10 @@
+-- ownership: a function value handed to JavaScript escapes what it captured
+-- (`ownership-checker.md` §18.6; §15 decision 6). `Debug.toString` hands its
+-- argument to `Js.pure` inside a lambda, so its summary escapes it — `J`,
+-- the conservative rule until Change 5's words exist — and a list shown and
+-- then extended is rejected `escaped`, the line saying it is this rule.
+pub shown : List Int → Int
+shown xs =
+    s = Debug.toString xs
+    ys = [ …xs, 1 ]
+    String.length s + List.length ys
