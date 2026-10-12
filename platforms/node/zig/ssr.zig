@@ -202,7 +202,7 @@ const Render = struct {
         const name = r.tree.string(facts.name);
         // An SVG element at a root is placed inside an `<svg>` the page
         // writes around it, so it is written in that scope (boundary.md §9.9).
-        const here = if (scope.parent == null and !scope.svg and facts.namespace == .svg) parser.Scope.svg_root else scope;
+        const here = scope.of(facts.namespace == .svg);
         if (parser.misnested(here, name)) |why| return r.restructured(n, here.parent orelse "", why);
         if (parser.misplaced(here, name, facts.namespace == .svg)) |why| return r.restructured(n, here.parent orelse "", why);
         try r.write("<");

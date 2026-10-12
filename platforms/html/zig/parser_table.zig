@@ -69,6 +69,13 @@ pub const Scope = struct {
     /// and a server render places it inside one.
     pub const svg_root: Scope = .{ .svg = true };
 
+    /// The scope an element declared in the SVG namespace (`svg`) or
+    /// HTML's is written in, given the scope it stands in: at a root, an
+    /// SVG element is `svg_root`'s. One rule for every lowering.
+    pub fn of(scope: Scope, svg: bool) Scope {
+        return if (scope.parent == null and !scope.svg and svg) svg_root else scope;
+    }
+
     /// The scope of the children of `name`, written in `outer`.
     pub fn enter(outer: Scope, name: []const u8) Scope {
         var s = outer;
@@ -134,6 +141,8 @@ pub fn misnested(scope: Scope, child: []const u8) ?[]const u8 {
 pub fn misplaced(scope: Scope, child: []const u8, svg: bool) ?[]const u8 {
     if (svg and !scope.svg and !std.mem.eql(u8, child, "svg"))
         return "an SVG element is one only inside an `<svg>`, and not in the HTML its `<foreignObject>` holds; elsewhere the parser makes an HTML element of its name, which draws nothing";
+    // The names both namespaces have, declared once (as HTML's) by `html`:
+    // a vocabulary that adds another such name adds it here too.
     if (!svg and scope.svg and !among(child, &.{ "a", "title", "style", "script" }))
         return "inside an `<svg>`, the parser makes an SVG element of an HTML element's name, or ends the `<svg>` before it; HTML inside a drawing is written in a `<foreignObject>`";
     return null;
