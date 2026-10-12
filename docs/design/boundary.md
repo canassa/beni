@@ -4277,12 +4277,16 @@ it is worth compiling.
   vocabulary is.
 
 **(h) What it costs.** A page without SVG does not move a byte: no runtime changed, and every `emit/`
-golden and `run/` record is what it was. A markup program's compile reads a vocabulary of 410 declarations
-where it read 180 — measured on `browser/dom/Events` with the ReleaseSafe compiler the gates run (median of 15, warm cache), a check
-went from 37 to 43 ms, the difference in building the type table and resolving the larger module. The
-duplicate-declaration check of `checker-v2.md` §25.2 compared every pair of declarations by text, which
-grows with the square of the vocabulary; it now compares two exact names by their interned symbol, and
-text only for two patterns.
+golden and `run/` record is what it was. A markup program reads a vocabulary of 410 declarations where it
+read 180, and **pays for it linearly**. Two quadratic costs were found and removed. The type table gave every
+element, attribute and event declaration an entry, as if it were a `foreign type` named `rect` or `onClick`,
+and settling each entry scanned its module for a `pub compare` — 410 × 410 in `html`, `Types.build` going
+from 2.5 to 8.3 ms with SVG declared; vocabulary declarations now name no type, and it takes 1.4 ms, less
+than before SVG. And the duplicate-declaration check of `checker-v2.md` §25.2 compared every pair of
+declarations by text; it compares two exact names by their interned symbol. What remains is the larger
+module loaded, resolved and digested: about 4 ms of CPU across the worker threads in the ReleaseSafe
+compiler on `browser/dom/Events` (minimum of 30 runs, warm cache), mostly in parallel with other modules,
+leaving the check's wall time within the noise of the compiler before SVG.
 
 ## Appendix — what is deliberately not done
 
