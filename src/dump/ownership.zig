@@ -18,7 +18,7 @@ const Ownership = @import("../own/Ownership.zig");
 pub const Error = std.Io.Writer.Error;
 
 const Counts = struct {
-    accepted: [4]u32 = @splat(0),
+    accepted: [@typeInfo(Ownership.Accept).@"enum".field_names.len]u32 = @splat(0),
     rejected: [@typeInfo(Ownership.Cause).@"enum".field_names.len]u32 = @splat(0),
 
     fn add(c: *Counts, v: Ownership.Verdict) void {
@@ -38,9 +38,13 @@ const Counts = struct {
         for (c.accepted) |x| acc += x;
         var rej: u32 = 0;
         for (c.rejected) |x| rej += x;
-        try w.print("{s} {d}: accepted {d} (fresh {d}, call {d}, param {d}, callback-param {d}), rejected {d}\n", .{
-            label, acc + rej, acc, c.accepted[0], c.accepted[1], c.accepted[2], c.accepted[3], rej,
-        });
+        try w.print("{s} {d}: accepted {d} (", .{ label, acc + rej, acc });
+        // Every kind, in `Accept`'s order, so a new kind cannot be dropped.
+        for (c.accepted, 0..) |n, i| {
+            if (i > 0) try w.writeAll(", ");
+            try w.print("{s} {d}", .{ acceptText(@fromBackingInt(@intCast(i))), n });
+        }
+        try w.print("), rejected {d}\n", .{rej});
     }
 };
 

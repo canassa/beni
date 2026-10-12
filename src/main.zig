@@ -535,7 +535,8 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
             const f = s.graph.moduleFile(@fromBackingInt(@intCast(module)));
             const line_starts = s.store.lineStarts(f);
             const sp = s.artifacts.spans(f);
-            if (line_starts.len == 0 or tok >= sp.len()) return .{ .line = 1, .col = 1 };
+            // `0:0`, never a plausible position: a golden must show it.
+            if (line_starts.len == 0 or tok >= sp.len()) return .{ .line = 0, .col = 0 };
             const pos = @import("diagnostic").position(line_starts, s.store.bytes(f), sp.starts[tok]);
             return .{ .line = pos.line, .col = pos.col };
         }

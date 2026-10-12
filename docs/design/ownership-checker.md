@@ -599,3 +599,7 @@ thesis §12.1 — the differential test against the oracle.
    dispatch table and is treated as a construction. The thesis speaks only of `++`; confirm.
 5. **The report's home.** The dump prints per module; the measurement of research 74 sums totals over
    many invocations. Should a hidden `--ownership-totals` print only the totals line, for scripts?
+6. **`foreign pure` as a conservative call.** §6.1 item 2 narrows the thesis's `foreign` row (escape
+   by default) for slice 1 only. Slice 2's Change 5 words must replace it: this question stays open
+   until every `foreign pure` that handles a cell in core and the platforms has its ownership words,
+   and §6.1 is then amended to the thesis's row.
