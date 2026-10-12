@@ -215,20 +215,18 @@ item host it state =
             _ = queue host job
             state
 
-        -- An item's path is innermost segment first (`Cmd.Item`); the key
-        -- is outermost first, so a prefix is a component and those inside.
-        Keyed inner policy job →
-            keyed host (List.reverse inner) policy job state
+        -- An item's path is outermost segment first (`Cmd.Item`), so a
+        -- prefix is a component and those inside.
+        Keyed path policy job →
+            keyed host path policy job state
 
-        KeyedNow inner policy job →
-            keyedNow host (List.reverse inner) policy job state
+        KeyedNow path policy job →
+            keyedNow host path policy job state
 
-        Cancel inner →
-            path = List.reverse inner
+        Cancel path →
             stopped state.scope (runsAt state path) { state | jobs = Dict.remove state.jobs path }
 
-        CancelAll inner →
-            prefix = List.reverse inner
+        CancelAll prefix →
             ( gone, kept ) = Dict.partition state.jobs λpath _ → startsWith path prefix
             -- Each list is oldest first and `stopped` walks one from its end
             -- (`runsAt`), so the lists go in reverse key order: the first
