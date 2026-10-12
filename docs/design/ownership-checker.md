@@ -9,6 +9,10 @@ section after the last.*
 fixpoint and the library's asserted primitive rows — is specified in §16 and built; §15 records the
 manager's answers to §14.*
 
+*Amended 2026-10-12: slice 3a — the destructive read as two primitives, exclusive contents, local-function
+groups, once closures and capture paths of function parameters — is specified in §18 and built; §17 records
+the manager's answers to §16.14.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -1040,3 +1044,254 @@ The slice-1 fixtures' goldens move where slice 2 decides what slice 1 left pendi
    iteration's element from the next, so that they are derived.
 3. **Local-function groups and once closures** (thesis §3.6): the `pending` and `captured-edit` counts are what
    they would recover.
+
+*Answered 2026-10-12: §17.*
+
+---
+
+## 17. The manager's decisions on §16.14 (2026-10-12)
+
+1. **Element ownership in `update`, `map`, the folds and `Dict.update`** (§16.14 question 2). No row is
+   asserted for any of them. Following the round-5 review (`reviews/review-5.md` item 1.4) and the Lean
+   model (`proofs/ownership/Ownership/Library.lean`, whose `map`, `initialize`, `foldl` and `update` are
+   ordinary declarations over `traverse`, `focus`, `builder` and `close`), the destructive read becomes a
+   **primitive** with an asserted row — a *traversal* primitive and a *focus* primitive — and `core/List`'s
+   `map`, `indexedMap`, `filterMap`, `update`, `foldl`, `foldr` and `initialize` are written over them, so
+   that their summaries are inferred. Exclusive contents (thesis §3.11) are built with them, with the
+   round-5 condition that a callback's fresh result be exclusive inside (T59). The rewrite changes no
+   behaviour; a slowdown is a finding. §18.
+2. **`Js.pure` lambdas capturing lists** (§16.14 question 1): a function value handed to a `foreign` with
+   no summary escapes what it captured, and the report line says so, until Change 5's words exist. §18.6.
+3. **Local-function groups and once closures** (§16.14 question 3) are built. §18.7, §18.8.
+4. **A function parameter captured by a lambda** stays in sight: its calls inside the lambda are calls of
+   the declaration's parameter, made wherever the lambda runs. §18.9.
+5. **Cost**: the pass is profiled and brought toward 20 % of a check without changing a verdict. §18.11.
+
+---
+
+## 18. Slice 3a — destructive reads, exclusive contents, closures (normative from 2026-10-12)
+
+*Amends §1.2's and §16.1's tables, §8.2–§8.3, §16.2, §16.4, §16.5, §16.8 and §16.11. Sections 1–16 keep their
+numbers and text; where this section changes a rule, it wins. Research 77 measures it.*
+
+### 18.1 What slice 3a builds
+
+| Thesis piece | Slice 3a |
+|---|---|
+| Exclusive contents (§3.11) | **built** (§18.2–§18.4): conditions 1 and 2 as a condition on each list cell; condition 3 at the write; `xres` and `xreq` published |
+| The destructive read (§3.8, §3.11; review 5 item 1.4) | **built** as two asserted primitives, `traverseAt` and `focus` (§18.5); `map`, `indexedMap`, `filterMap`, `update`, `foldl`, `foldr` and `initialize` inferred over them |
+| The split of `[ x, …rest ]` (§3.11) | **built** (§18.4 item 4) |
+| The exempt identity comparison (§6.2, A11) | **built**, at `kept` alone (§18.5) |
+| `Js.pure` and function values handed to JavaScript | conservative: what they captured escapes, and the line says so (§18.6) |
+| Local-function groups (§3.6, *Local functions*) | **built** (§18.7) |
+| Once closures (§3.6, *Affinity*) | **built** (§18.8) |
+| Capture paths of function parameters (§3.6, §4.7) | **built** (§18.9) |
+| `Dict.update`'s owned value | not built: a dictionary needs a focus of its own (§18.13) |
+| TEA entry protocol (§7) | not built: slice 3b |
+
+### 18.2 Exclusive contents as a condition
+
+Thesis §3.11's three conditions are split by when they can be known. **Conditions 1 and 2** — no cell is
+reachable from two positions of the list, and within one position distinct paths hold distinct cells,
+recursively — are facts about how a list was *built*, and the walk computes them where it is built.
+**Condition 3** — no cell reachable through the container has a live holder outside it — is a liveness
+fact, and the walk checks it where it matters: at the write, as the call-site demand on the written path
+already does (§16.4 item 3). A list whose outside holder is read only *before* the edit is exclusive here,
+which the thesis's construction-time check refuses; the edit is no less safe, since a dead holder observes
+nothing.
+
+The fact is a **condition**, because most lists a function sees arrived from outside. Every cell has one,
+which a write in place only ever lowers, so a table of them per walk is sound at every point:
+
+- it *holds*, *fails exactly* (one cell at two positions, or at two paths of one value, as the text shows:
+  `[ cell, cell ]`, `{ a = xs, b = xs }`), or *fails approximately* (a value from JavaScript, a conservative
+  call's result, an append of a list that lives on, two places the analysis cannot tell apart);
+- when it holds, it rests on **atoms**, each about cells that arrived from outside the body — parameters,
+  captures, callback results: `excl c` (`c` is deeply exclusive) and `sep c d` (`c` and `d` share no cell;
+  `sep c c` of a callback's result: *two calls' results share none*, the thesis's "fresh across calls").
+
+A cell the body makes (a literal, a construction's fresh base, a callee's `fresh_k`) shares no cell with
+one that arrived from outside, except with a callback's result when it was handed to that call; so atoms
+name only arrivals, and a summary can state them over its parameters.
+
+| Where | The list cell's condition |
+|---|---|
+| a list literal `[ v₁, …, vₙ ]` | every item's deep condition, and `sep` between every two items |
+| a construction (§3.2) | the base's, lowered by each item stored: its deep condition, `sep` against the base's elements and the other items; a later spread stored element by element when it is a temporary, and *failing approximately* when it is a variable (thesis §3.8: an append copies in a list that lives on) |
+| a call through a summary | its `res` entry's condition (§18.3), instantiated |
+| a conservative call, `⊤`, `List.copy`, `List.append` by name | fails approximately |
+
+A value's **deep condition** is the conjunction of its cells' conditions, closures expanded, and of `sep`
+between the cells at every two of its paths neither of which is a prefix of the other.
+
+### 18.3 The summary's new facts
+
+§16.2's `xres` and `xreq`, constant in slice 2, become real:
+
+- **`xres`**: each `res` entry carries its cell's condition, atoms written over the summary's parameters —
+  `excl πᵢ.q`, `excl cb_j`, `sep πᵢ.p πⱼ.q`, `sep cb_j cb_j`, in a class `excl ◇x`, and `focus`'s
+  `keep cb_j πᵢ` (§18.5). A parameter's own `excl` is left out: instantiation supplies it.
+- **`xreq`**: the atoms the body *relied on* (§18.4), which every caller discharges.
+- **each `supply` entry** carries the condition of what it supplies, and is **taken** when it is an element
+  handed out by a destructive read (§18.5).
+
+A summary line prints a condition after its provenance — `π1{excl π2, sep π1[*] π2}`, `{lost}` when it
+fails approximately, `{shared}` exactly — `taken` on a destructive supply, and `xreq …` after the function
+parameters. An `excl` that another implies (`excl π1[*]` beside `excl π1`) is not printed.
+
+### 18.4 Relying on a condition
+
+A condition is **relied on** where a write is safe only if the contents are exclusive:
+
+1. a callback writes what a destructive supply gives it: the container must be exclusive, so that writing
+   one position is not seen at another;
+2. a callback's class has `xreq`: what the callee supplies it there;
+3. a callee has `xreq`: the arguments, instantiated;
+4. **the split** (thesis §3.11): `[ x, …rest ]` (or `[ …init, x ]`) binds `x` to its position *taken* from
+   the scrutinee — a cell that the pattern's other bindings do not hold, and every other holder of the
+   scrutinee does. A write of `x` relies on the scrutinee being exclusive.
+
+To rely on a condition that fails is a rejection, cause **`exclusive`** ("the elements of `rows` may share
+one list"), exact when the condition failed exactly, and decided after `Dead`, so that a live holder is
+named first. To rely on one that holds records its atoms: on the declaration's own parameters and callback
+results, as `xreq` of its summary; on a lambda's parameters or captures, as `xreq` of its class, which the
+lambda's caller discharges against what it supplies or what the lambda captured. Instantiating an atom at a
+call (§16.4) evaluates it in the caller: `excl πᵢ.q` becomes the argument's deep condition at `q`, `sep`
+the condition that two arguments share no cell, and an atom about a callback the condition of the actual
+class's result — `sep cb_j cb_j` holds when every provenance of it is `fresh_k`, or the element the callee
+hands it destructively (each call gets another position).
+
+A callee's `xreq` that fails at a call is reported on the call-site demand of the argument it names; an
+`xreq` is recorded only beside a write of that parameter, so the line exists.
+
+### 18.5 The two primitives, and the exempt comparison
+
+Thesis §6.5 (round 5) keeps *primitive contracts* — what connects beni's semantics to JavaScript — apart from
+*derived contracts*, and review 5 item 1.4 names the destructive read as the missing primitive: "a traversal
+primitive establishes that successive elements occupy separated positions; a focus operation temporarily
+removes one position from the container's usable contents". `core/List` gains both, not `pub`, and asserts
+their rows (§16.8's table gains them); everything built on them is inferred.
+
+**`traverseAt : List a, Int → a`** — the traversal primitive. It reads element `i` of an array `base`
+returned, and lowers to `a[i]` exactly as `at` does. Its row: π₁ `R`, π₁`[*]` `A`; `res ε = π₁[*]`,
+*taken*. A **taken cell** (`taken(B, ι)`: the element cell `B`, taken at the instruction `ι`) is held by
+no holder of its container, within the body that takes it — the container's later reads are of other
+positions, by the obligation below; every other rule sees through it to `B` (escaped, shared or unknown
+when `B` is). Read off, a supply of a taken cell is **taken**; a result never is. *The obligation*, which
+the trusted surface lists and every use meets: **the body that calls `traverseAt a i` reads `a` only
+through it, once per index, at an index that moves one way.** `foldlFrom`, `foldrFrom` (downward),
+`mapHelp`, `indexedMapHelp` and `filterMapHelp` are such loops; no other function calls it.
+
+**`focus : List a, Int, (a → a) → List a`** — the focus primitive: `set xs i (func (unsafeGet xs i))` in
+range, else `xs`. Its row: π₁ `RAW`, π₁`[*]` `A`; π₃ `calls ≤1`, supply 1 `π₁[*]` *owned, taken*, condition
+`excl π₁`; `res ε = π₁` with condition `keep cb₃ π₁`, `[*] = π₁[*], cb₃`. `keep` (the thesis's "keeps
+shape") holds when every provenance of the callback's result at a path `q` is `fresh_k` or the element's
+own `π₁.q`, and the result is exclusive inside.
+
+**At a call** whose callee supplies a taken element of its argument `πᵢ.q` — directly or through a supply it
+passes on — a callback that writes its parameter at `p` makes, as for any owned supply (§16.4 item 4), a
+call-site demand on the argument at `q.p`, and relies on the argument's condition at `q` (§18.4 item 1).
+
+**The exempt comparison** (thesis §6.2, A11): `map` and `indexedMap` return their input itself when every
+result is the element it was given. Their loops now answer the array `a` they traversed in that case, and
+`map` answers `kept (identical r a) xs r`. `kept`'s row marks its second parameter **`K`**: aliased by the
+result, never read, and no use at the call. It is the one exempt site — it chooses between two results that
+hold the same elements at every position when it chooses the first; no other row has `K`, and `K` is never
+inferred.
+
+**The rewrite.** `foldl`, `foldr`, `map`, `indexedMap` and `filterMap` read their element with `traverseAt`
+where they read it with `at`; `mapHelp` and `indexedMapHelp` no longer take `xs`; `update` is `focus`;
+`initialize` is unchanged, its builder loop already inferable. Every loop keeps its own call site of the
+callback (a shared higher-order `traverse` was measured first and costs `foldl` 65 % where callbacks are many,
+§18.13).
+
+### 18.6 Function values handed to JavaScript
+
+A function value passed to a `foreign` with no summary (`Js.pure`, `Js.method`, …) escapes every cell it
+captured, at the call: the foreign may keep it and call it later (§15 decision 6). A parameter escaped only
+so is `J` in a summary — `E` for every other rule — and a rejection through either says it is this rule:
+"a function value that `Debug.toString` hands to JavaScript captured it, and JavaScript is taken to keep it".
+
+### 18.7 Local-function groups
+
+A block's local functions are one group (thesis §3.6, *Local functions*): their closures exist, each with the
+bottom class, from the block's entry. When a member names a member, the group is solved as a recursive
+top-level group is (§16.6): each round walks every member against the current classes and joins what it
+reads off; a round's demands, uses, supplies and conditions are discarded before the next, and the round
+that changes nothing is the walk the report keeps. 32 rounds is the backstop, with pessimistic classes.
+§16.5's `pending` for a local function that calls itself is withdrawn.
+
+### 18.8 Once closures
+
+A lambda or local function whose body writes a cell it captured is **once** (thesis §3.6, *Affinity*):
+
+- **its creation** is a demand on the captures it writes, in the enclosing body, where the lambda is written
+  — for a local function, at each call, since its captures are read when it runs; the closure's own uses of
+  what it captured are no later use;
+- **each call of it** is a demand on the closure's own cell, so a holder of it read after a call — a second
+  call — fails `Dead`; handing it to a callee is accepted only where the callee's `fun(j)` is `seen` with
+  `calls ≤1`; a once local function that calls itself fails; anywhere else out of sight is `pending`, and a
+  callee with no summary is a rejection.
+
+The write inside it is then **accepted `once`** (a new acceptance kind) or rejected with the creation
+demand's own cause, or the cause **`once`** ("it is handed to `List.map`, which may call it more than
+once"). `captured-edit` is left for a write of a capture the walk cannot place in a closure.
+
+### 18.9 Capture paths of function parameters
+
+A call of the declaration's function parameter `πⱼ` inside a lambda is recorded with the lambda, its
+arguments probed there, in the lambda's vocabulary. Where the lambda is checked — handed to a callee whose
+`fun(k)` is `seen`, or called — the call becomes a call of `πⱼ` in the declaration: `fun(j).calls` gains the
+callee's calls of the lambda, and each argument is a supply of `πⱼ` whose provenance is what the callee
+supplies the lambda (or the call passes), owned when the lambda's probe, the callee's supply and a probe at
+the call all pass. A lambda's class names such a result `cb_j` of the enclosing declaration. A lambda that
+leaves the walk's sight takes `πⱼ` out of sight with it. So `Set.foldl`'s callback, handed to `Dict.foldl`
+inside a lambda, is supplied `Dict.foldl`'s accumulator owned.
+
+### 18.10 The report
+
+Acceptance kinds (§8.2) gain **`once`**, counted after `callback-param`; causes (§8.3) gain **`exclusive`**
+and **`once`**, after `limit`. When the base's own variable holds the written cell and is read after, the
+cause is `later-use` even where the base is an element; a holder found through a split element is `alias`,
+exact.
+
+### 18.11 Cost
+
+The pass still runs only in `dump`. Work that changes no verdict — checked by dumping core, the platforms,
+Conduit, `bench/corpus` and the corpus with the binary before and after each step — brought it back to
+slice 2's cost while it does slice 3a's work: an index of Esc by cell, columns for the conditions and the
+path arithmetic, `tracked` remembered per type variable, uses indexed by local, the empty summary of a
+declaration whose parameters and result all cross read without a walk, and no verdict or line text built
+in a walk whose lines nobody prints. Research 77 §6 gives the figures; the 20 % target is reached on the
+100 000-line program and not on the smaller ones; on Conduit two thirds of the time is summarising the
+library the program reaches, again, in every dump.
+
+### 18.12 Testing
+
+New fixtures in `tests/corpus/ownership/`:
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `Differential` (updated) | T40, T42, T57, T59 against the Lean model | the parameter forms accepted with `xreq`; distinct callers accepted, repeated ones rejected `exclusive` — the model's verdicts |
+| `T59` (updated) | review 5 item 1.1, `initialize` and `map` | `[ cell, cell ]` rejected `exclusive`; two literals accepted |
+| `ElementEdits` | §18.5; the slice-2 flips (`NestedFor`) | an element edit through `update` and `map` accepted when the list is unique, exclusive and dead; rejected when it is read after, not exclusive, or held outside |
+| `Split` | §18.4 item 4; thesis `bumpHead` | accepted on exclusive contents; rejected when they share and when the scrutinee is read after |
+| `LocalGroups` | §18.7 | recursive local functions writing their accumulator, one group, and a caller that reads after |
+| `Once` | §18.8 | called once (accepted), twice, captured list read after creation, `Maybe.map` (accepted), `List.map` |
+| `CapturedParam` | §18.9 | a lambda calling a function parameter, handed to `List.foldl` and `Set.foldl`; one stored out of sight |
+| `JsPure` | §18.6 | a list shown with `Debug.toString` then extended: `escaped`, the rule named |
+
+### 18.13 Open questions
+
+1. **`Dict.update`.** It hands out the value at one key while the tree waits; its owned supply needs a
+   dictionary focus of its own (thesis §7, *Containers*), a primitive over the tree, not `List`'s.
+2. **The traversal's obligation is on its callers.** `traverseAt` is sound only in a loop that reads its
+   array once per index; the obligation is stated beside it and met by five loops. A higher-order
+   `traverse`, whose one loop carries it, would shrink the trusted surface to one body, but costs a call per
+   element: measured in Node, `foldl` written over it is 65 % slower where its callbacks are many.
+3. **Writes that propagate.** Now that `List.map` supplies its element owned, `Cmd.map`'s `mapItem`, which
+   extends each command's key path in place, is accepted inside the platform and becomes a write of every
+   caller's command: Conduit's 57 rejections (research 77 §3) are this one choice. Copying the path in
+   `mapItem`, or a key-path representation that is not a list, would remove them.
+4. **Cost.** On Conduit two thirds of the pass is summarising the library, in every dump; the summaries belong in the
+   embedded checked core and the interfaces (§16.10), which is slice 4's.
