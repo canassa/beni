@@ -476,7 +476,7 @@ test "the driver's cache pruning is bounded however many entries a fuzz sweep le
     // └─────────────────────────────────────────┘
     // Some old entries went, but only the few a run looks at.
     try testing.expect(left < 5000);
-    try testing.expect(left >= 5000 - 256);
+    try testing.expect(left >= 5000 - 128);
 }
 
 test "the driver's cache pruning leaves a cache of 1 024 entries or fewer alone" {

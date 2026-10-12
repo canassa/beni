@@ -11,6 +11,9 @@
 // is left alone; a larger one loses the old entries among the names looked
 // at, so a cache far over the cap shrinks by `examine` a run — gradually,
 // over the many runs of the gates, rather than all at once in one page's.
+// Which names are looked at is the file system's listing order, so how
+// fast a cache shrinks is not promised (one that lists the youngest first
+// shrinks once they are an hour old); the cost of a run is.
 import { opendirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
