@@ -135,14 +135,36 @@ def immutablePath (q : Path) : Bool :=
 
 /-! ## Abstract values and concrete heaps -/
 
-/-- The cells an abstract value names at a path. A path ending in `env`
-    names every cell the environment of the function value above it holds
-    (`envCells`): for a symbolic input that is its `[env]` row, for a known
-    function value the cells of all its alternatives' captures. -/
-def namesAt (a : Abstract) (q : Path) : List Origin :=
-  match q.getLast? with
-  | some .env => (a.atPath q.dropLast).envCells
-  | _ => a.cellsAt q
+/-- Whether an abstract value is the checker's unknown value of mismatched
+    shapes (`Abstract.join`'s fallback): a list whose roots include ⊤ and
+    every cell either side held. -/
+def isTop : Abstract → Bool
+  | .list cs _ _ => cs.contains .unknown
+  | _ => false
+
+/-- The cells an abstract value names at a path, walking the abstract value
+    itself step by step (fifth review: `atPath` merges a capture step into a
+    plain list, which loses a closure captured by a closure):
+    * a field, an element: the abstract value there;
+    * `capture i` of a known function value: the union over its alternatives
+      of what their `i`th capture names at the rest of the path, so a closure
+      captured by a closure keeps its own captures and environment;
+    * `capture i` or `env` of a symbolic input: its `env` row, every cell its
+      environment may hold (fifth review: it had no capture paths, so no
+      closure capturing an array was ever described by one);
+    * `env` of a known function value: every cell of its captures;
+    * anything below the unknown value of mismatched shapes: all its cells. -/
+def namesAt : Abstract → Path → List Origin
+  | a, [] => a.cellsAt []
+  | .function _ alts, .capture i :: rest =>
+    alts.foldl (fun cs (_, caps) => union cs (namesAt (caps[i]?.getD .bottom) rest)) []
+  | .function cs alts, [.env] => (Abstract.function cs alts).envCells
+  | .symbolic _ _ _ es, .capture _ :: _ | .symbolic _ _ _ es, .env :: _ => es
+  | .list cs x ex, .element :: rest =>
+    if cs.contains .unknown then cs else namesAt x rest
+  | .list cs _ _, _ :: _ => if cs.contains .unknown then cs else []
+  | .record xs, .field i :: rest => namesAt (xs[i]?.getD .bottom) rest
+  | _, _ :: _ => []
 
 /-- Path by path, every array of `v` is named by a cell `a` has at that
     path. (Naming the footprint only as a whole is not enough: the Dead and
@@ -172,6 +194,10 @@ def DescribesClosure (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Pr
   -- A symbolic input stands for any closure of its type; what it may do is
   -- fixed by the guards a summary records (`GuardsHold`), not here.
   | .symbolic .., .closure _ _ => True
+  -- The unknown value of mismatched shapes describes any closure: it holds
+  -- every cell of both sides (`Covers` names them), and calling it, or
+  -- handing it to a callee that calls it, is refused ("abstract call").
+  | .list cs _ _, .closure _ _ => cs.contains .unknown
   | _, _ => False
 
 /-- Paths through record fields and list elements: where an abstract value
@@ -267,9 +293,14 @@ def keptReaches (s : State) (c : Nat) : Prop := ∃ k ∈ s.kept.toList, Reaches
     written cells among its own). -/
 structure CallSound (s : Summary) (ins : List Abstract) (inputs : List Value) (nargs : Nat)
     (pre post : State) (r : Value) : Prop where
-  /-- 1. An input array changed by the call is at a `W` path. -/
+  /-- 1. An input array changed by the call is at a `W` path, or is in the
+      environment of a function input the call calls (`calls` row): a once
+      callback writes its own captures, which the summary does not see and
+      the caller demands dead where it hands the callback over
+      (`once-through-call`). -/
   writes : ∀ i q c, canonicalPath ins i q → ArrayAt pre.heap (inputs[i]?.getD (.int 0)) q c →
-    post.heap[c]? ≠ pre.heap[c]? → rowHas (s.writes ++ s.consumes) (inputOrigin nargs i q) = true
+    post.heap[c]? ≠ pre.heap[c]? → rowHas (s.writes ++ s.consumes) (inputOrigin nargs i q) = true ∨
+      (q == [.env] && (s.calls.lookup i).getD 0 ≥ 1) = true
   /-- 2 (repaired). A permanent observer reaches an input array after the
       call only if it did before, or the path escapes (`E`). -/
   noNewHolders : ∀ i q c, canonicalPath ins i q → ArrayAt pre.heap (inputs[i]?.getD (.int 0)) q c →
@@ -344,9 +375,11 @@ def GuardsHold (decls : List Decl) (config : Config) (s : Summary) (fs : List (N
     that declaration whose inputs the summary's canonical inputs describe
     (`described`: arrays named path by path under a separating naming,
     exclusivity certificates hold), whose function-typed inputs are closures
-    resolving the summary's guards as recorded (`classes`), and whose owned
-    input paths are unique at the call (`unique`: held by no array outside the
-    inputs and by no permanent observer) satisfies clauses 1–3.
+    resolving the summary's guards as recorded (`classes`), satisfies clauses
+    1–3. (A `unique` hypothesis — owned input arrays held by no array outside
+    the inputs — was dropped in the fifth round: no clause needs it, and it
+    made the statement vacuous for calls whose inputs garbage arrays still
+    referenced, most calls the falsifier saw.)
     Because the naming separates distinct canonical origins, a call that
     passes one array at two input paths is outside this statement (it is
     vacuous there); the caller's Disjoint test is what makes such a call safe
@@ -360,7 +393,6 @@ theorem summary_sound (p : Program) (a : Accepted) (ok : check p = .ok a)
     (fs : List (Nat × Abstract))
     (classes : GuardsHold p.declarations {} e.summary fs ∧
       ∀ j f, fs.lookup j = some f → DescribesClosure γ pre.heap f ((args ++ caps)[j]?.getD (.int 0)))
-    (unique : ∀ o ∈ e.owned, ∀ c ∈ γ o, HeldOnlyByInputs pre (args ++ caps) c)
     (run : callResult p.declarations e.decl args caps fuel pre = .ok (r, post)) :
     CallSound e.summary e.inputs (args ++ caps) args.length pre post r := by
   sorry
@@ -379,7 +411,6 @@ theorem map_summary_sound (a b : Ty) (p : Program) (acc : Accepted) (ok : check 
     (fs : List (Nat × Abstract))
     (classes : GuardsHold p.declarations {} e.summary fs ∧
       ∀ j f, fs.lookup j = some f → DescribesClosure γ pre.heap f ((args ++ caps)[j]?.getD (.int 0)))
-    (unique : ∀ o ∈ e.owned, ∀ c ∈ γ o, HeldOnlyByInputs pre (args ++ caps) c)
     (run : callResult p.declarations e.decl args caps fuel pre = .ok (r, post)) :
     CallSound e.summary e.inputs (args ++ caps) args.length pre post r ∧
       CertifiedExclusive post.heap e.summary.result r := by
