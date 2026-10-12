@@ -1,158 +1,164 @@
-# Step 4: repaired oracle and expanded core exploration
+# Results: generator v4, the summary layer, required negative controls
 
-The final suite has **74 fixed verdict fixtures**, all independently ordinarily
-typed and matching their intended verdict. The 19 accepted fixtures run both
-interpreters and compare the complete `Trace`: final value, ordinary reads, and
-external observer snapshots after every completed expression. All agree. Three
-frozen freshness-rule counterexamples and two frozen traversal-escape controls
-also require acceptance plus an actual disagreement under their respective old
-rule, and rejection under the corrected checker. No expected verdict was changed
-and no expected-failure routing was added.
+All runs: Lean 4.29.1, from `proofs/ownership`, logs in `regressions/`
+(`scripts/campaigns.sh` regenerates them). Elapsed time is the oracle's
+monotonic clock (generation, checking, both interpreters, shrinking), measured
+while other campaigns ran on the same machine, so it is an upper bound.
 
-The prior traversal defect was real implementation failure: a step could publish
-a captured cell without returning it, and traversal discarded that escape.
-`shared` now keeps actual values/references as program-lifetime external roots.
-The corrected checker propagates escapes and rejects the write. With
-`dropTraversalEscapes=true`, final values agree but **externalReads differ**:
-the value observer still sees the old list and the in-place observer sees the
-push. The minimized generated regression is
-`regressions/old-escape-20261011-1.txt` and its frozen executable is
-`GeneratedRegressions.escapeSeed20261011Index1`. The historical
-`regressions/escape-traversal.log` documents discovery before the repair; its
-red verdict and old observation limitation are superseded by these results.
+## What changed since the review
 
-## Corrected campaigns
+The review (2026-10-11) found that none of seven deliberate checker holes was
+caught in 60 000 trials; that the only general family (`anf-chain`) ended
+every program with a record of all its variables, so **0** of its accepted
+programs wrote in place; and that the checker re-inferred each callee per
+call, so the oracle never exercised the thesis's summary rows.
 
-All campaigns below used final generator v3, Lean 4.29.1, seeds listed explicitly,
-and independently typechecked each generated candidate before ownership checking.
-All accepted candidates executed successfully with identical complete traces.
-Elapsed time is the generator's monotonic clock and includes generation, AST
-uniqueness accounting, checking and evaluation, excluding process startup/build.
+* Generator v4 replaces `anf-chain` by a general family (`Generator.lean`).
+* The checker publishes per-function summaries and uses them at call sites
+  (`Checker.lean`); the per-call checker is kept as `Reinfer.lean`.
+* Twelve mutants are `--mutant=` flags and required controls; each has a
+  fixture that disagrees under it.
 
-| Seed | Candidates/typed | Distinct ASTs within seed | Accepted | Rejected | Limits | Type/execution errors | Mismatches | Elapsed |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 20000/20000 | 4789 | 6363 | 13637 | 1665 | 0/0 | 0 | 5060 ms |
-| 17 | 20000/20000 | 4816 | 6328 | 13672 | 1683 | 0/0 | 0 | 5368 ms |
-| 271828 | 20000/20000 | 4783 | 6414 | 13586 | 1609 | 0/0 | 0 | 5126 ms |
-| Total | 60000/60000 | not a union count | 19105 | 40895 | 4957 | 0/0 | 0 | 15554 ms |
+## Accepted programs that write in place
 
-Full per-seed metrics are retained in `regressions/campaign-v3-{seed}.log`.
-Limits are a subset of rejected candidates, not additional candidates. All
-observed limits are the deliberate higher-order recursive argument family,
-`limit: higher-order recursive argument`. Type errors, execution errors and
-interpreter fuel exhaustion fail a run rather than count as agreement.
+Corrected checker (summaries), 20 000 trials per seed. "With write" counts
+accepted programs whose in-place run executed at least one `set`, `push` or
+focus write-back (builder `put` excluded). Every accepted program ran in both
+interpreters with identical traces.
 
-Per-family totals below combine the three campaigns. Distinct ASTs are **summed
-within-seed counts**, so overlap across seeds remains counted repeatedly. The
-low distinct counts of shallow controls are explicit: total trials are not a
-claim of 60,000 different programs. Depth is main-expression AST depth, not
-recursion iterations or declaration-body depth.
+| Family | Accepted (3 seeds) | With write | Before (v3) |
+|---|---:|---:|---|
+| general (v4, replaces anf-chain) | 4918 | **3173** | anf-chain: 522 accepted, **0** with write (review: 0 of 166 on one seed; 0 of 186 here on seed 20261011) |
+| identity-map | 1413 | 1413 | |
+| fresh-tower | 1308 | 1308 | |
+| once-many-wrappers | 1502 | 176 | |
+| branch-traversal | 1345 | 839 | |
+| fresh-nested | 911 | 911 | |
+| indexed-chain | 833 | 833 | |
+| library-pipeline | 666 | 666 | |
+| recursion | 665 | 573 | |
+| captures | 1357 | 0 | |
+| escape-traversal, recursive-higher-order-limit | 0 | 0 | |
 
-| Family | Candidates | Summed distinct | Accepted | Rejected | Limits | Depth |
-|---|---:|---:|---:|---:|---:|---:|
-| anf-chain | 5074 | 5009 | 522 | 4552 | 0 | 3–27 |
-| branch-traversal | 4963 | 30 | 2547 | 2416 | 0 | 5–5 |
-| captures | 4985 | 60 | 2489 | 2496 | 0 | 5–5 |
-| escape-traversal | 5000 | 45 | 0 | 5000 | 0 | 5–5 |
-| fresh-nested | 4914 | 1568 | 1629 | 3285 | 0 | 6–6 |
-| fresh-tower | 5083 | 2199 | 2468 | 2615 | 0 | 6–9 |
-| identity-map | 4966 | 24 | 2548 | 2418 | 0 | 8–8 |
-| indexed-chain | 5048 | 3594 | 1529 | 3519 | 0 | 6–19 |
-| library-pipeline | 4952 | 1181 | 1268 | 3684 | 0 | 13–17 |
-| once-many-wrappers | 5056 | 240 | 2856 | 2200 | 0 | 6–9 |
-| recursion | 5002 | 420 | 1249 | 3753 | 0 | 4–4 |
-| recursive-higher-order-limit | 4957 | 18 | 0 | 4957 | 4957 | 3–3 |
+| Seed | Typed | Distinct ASTs | Accepted | With write | Limits | Mismatches | Elapsed |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 20261011 | 20000 | 12166 | 4889 | 3202 | 933 | 0 | 72 s |
+| 17 | 20000 | 12171 | 4995 | 3325 | 882 | 0 | 40 s |
+| 271828 | 20000 | 12262 | 5034 | 3365 | 959 | 0 | 48 s |
 
-The ANF generator extends a typed environment at every binding and selects
-existing cells below records and nested containers. Later operations can focus,
-set, copy, publish, read or reuse those generated values. Chains vary from 1 to
-24 extensions. Fresh towers independently construct cells down 1–4 nested
-layers, optionally repeating internal references at each layer, then consume
-through every layer. The pipeline family composes ordinary initialize, zero to
-four conditional map stages, foldl and update on records containing lists. Input
-records are fresh per callback or repeatedly capture the same cell; retained
-source variants stress cross-stage sharing. Function factories return closures,
-wrappers capture them, and direct call counts (1–4) contrast with map's many-call
-position. Scalar recursive functions vary iteration counts, consumed accumulators,
-consuming captures and retained original arguments. Indexed chains include empty
-lists and negative/in-range/out-of-range indices. All these library operations
-remain ordinary declarations; no map/fold/update-specific checking rule exists.
+Generator v3 on seed 20261011 is reproduced unchanged by
+`--generator-version=3` (6363 accepted, 4080 with write, 0 mismatches) under
+the summary checker, the same acceptance as the per-call checker gave.
 
-## Negative controls and reduction
+## Summary layer
 
-| Final v3 seed 20261011 | Candidates | Accepted | Rejected | Actual disagreements | Elapsed |
-|---|---:|---:|---:|---:|---:|
-| `--old-escape-rule` | 20 | 12 | 8 | 5 | 19 ms |
-| `--old-rule` | 20 | 8 | 12 | 1 | 12 ms |
-| frozen v1 `--generator-version=1 --old-rule` | 100 | 55 | 45 | 16 | 92 ms |
+* **No corrected-rule mismatch** in the 60 000 trials above, nor in the 76
+  fixtures (both checkers agree with every intended verdict).
+* **Computed once.** Per seed about 9 700 summaries were computed and about
+  183 000 call sites (including class queries) were served from the cache
+  after re-asking their guards.
+* **Cross-check** (`--cross-check`): the summary and per-call checkers differ
+  on 2 of 60 000 programs (seed 17 index 9380, seed 271828 index 4830), both
+  accepted only by the summaries and both with equal traces; the per-call
+  checker rejected them with "exclusive contents". No program is accepted by
+  the per-call checker alone.
+* `ownership summaries` prints the published rows of the accepted fixtures
+  (`regressions/summaries-fixtures.log`). For T43's construction fold, foldl
+  publishes `use π1 = RAW`, `res ε = {π1} excl`, `calls slot 2 = many` and a
+  supply `arg1 = {π1} owned excl`, under 14 class facts per argument state.
 
-The final frozen v1 campaign rediscovered 16 sharing failures through both map
-and initialize. Reports use `legacy-old-...` names so the original indices 8/10
-reports remain unchanged; the complete campaign is `negative-fresh-v1.log`.
+## Negative controls
 
-Each disagreeing candidate was minimized while retaining ordinary typing,
-ownership acceptance under the selected old configuration, and observational
-disagreement. The corrected checker rejects each minimized result. The new
-freshness counterexample is a deeper shared tower, not an imported T59 fixture;
-it is frozen as `oldTowerSeed20261011Index7` and saved in
-`regressions/old-v3-20261011-7.txt`. The original frozen v1 map/initialize ASTs and
-reports at indices 8/10 are retained unchanged. The legacy low-bit generator is
-explicitly frozen in `OracleLegacy.lean`; new exploration uses v3 high-bit draws.
+`ownership controls 20000 <seed>`: one campaign per control, stopped at the
+first accepted disagreement, which is shrunk and must be rejected by the
+unmutated checker. First index caught (0-based), generator alone:
 
-The reducer is total and fuel bounded (1000 accepted reductions). It removes
-lets/list elements, selects branch arms, simplifies traversal/focus, reduces
-integers and indices towards zero, shortens traversal/recursive call counts,
-and applies the same transformations inside declaration bodies. Every reduction
-is independently typechecked and checked for accepted disagreement. This is a
-bounded greedy reduction, not a global minimality claim. Corrected-rule findings
-persist an AST/trace report immediately and stop that campaign; none occurred.
+| Control | 20261011 | 17 | 271828 |
+|---|---:|---:|---:|
+| `--old-rule` (T59 freshness only) | 13 | 4 | 18 |
+| `--old-escape-rule` | 33 | 42 | 5 |
+| disjoint | 368 | 591 | 267 |
+| borrowed-supply (per-call checker; COVERAGE.md) | 131 | 1809 | 2555 |
+| traversal-exclusive | 1340 | 2159 | 1126 |
+| many-calls | 424 | 1595 | 723 |
+| copy-exclusive | 997 | 7568 | 11288 |
+| close-source | 2417 | 311 | 759 |
+| keeps-shape | 1099 | 19351 | 484 |
+| guard-reuse | 1825 | 135 | 2499 |
+| callback-xres | 13 | 4 | 18 |
+| supply-edge | 458 | 202 | 664 |
+| supply-recheck | 458 | 295 | 5432 |
+| calls-edge | 55 | 9 | 136 |
 
-Corrected mode exits 1 on any accepted observational mismatch. Negative-control
-flags intentionally exit 0 only when at least one typed, old-rule-accepted
-program actually disagrees and every minimized disagreement is rejected by the
-corrected checker. A corrected-accepted negative-control disagreement, absence
-of any disagreement, typing error or execution failure exits 1.
+Against the per-call checker (`--reinfer`, seed 20261011) the review's seven
+are caught at 368, 131, 1340, 424, 997, 2417, 1099. `keeps-shape` on seed 17
+(19 351 of 20 000) is the thinnest margin. The fixtures check each control's
+probe: rejected by the checker, accepted under the mutant, traces differ.
 
-## Fixed coverage and limitations
+## Source-level mutants
 
-`COVERAGE.md` audits all T1–T59 identifiers and each named variant. Applicable
-pending core examples from the prior audit are now implemented, including
-returned/captured once wrappers, scalar recursion, independent initialization,
-conditional record map edits, construction/reverse folds, history restoration,
-empty-accumulator borrow, transparent wrappers, nested ordinary update calls and
-scalar read-before-write ordering. Full runtime, TEA, opaque/module, dictionary,
-schema, renderer and release protocols remain explicitly excluded; these tests
-do not reproduce a full application. The reverse fold rejects earlier under a
-conservative captured-consumption/many-call rule, rather than reaching the
-thesis's final Dead edge. Other precise exclusions and shared projections are
-listed in the coverage table.
+`scripts/run-mutants.sh` applies each edit of `scripts/mutate.mjs` to a copy
+of the sources, builds it and runs the unmodified `oracle 20000 <seed>` for
+the three seeds (generator only, no fixtures). Results are in
+`regressions/source-mutants-v4.log`. First index caught per seed
+(20261011 / 17 / 271828); "—" means not caught in 20 000 trials.
 
-The checker and interpreters have finite depth/fuel/summary bounds, and higher-
-order recursive actuals and changing recursive shape/exclusivity are rejected
-implementation limits. These campaigns are bounded and biased, not exhaustive
-and not a universal soundness or library proof. There is no random recursive
-data type, effects/runtime entry protocol, renderer or dictionary generation.
+| Mutant (source edit) | First index | Seeds |
+|---|---|---:|
+| disjoint | 368 / 591 / 267 | 3/3 |
+| borrowedsupply | — / — / — | 0/3 (subsumed under summaries; caught by the per-call checker, see controls) |
+| travexcl | 1340 / 2159 / 1126 | 3/3 |
+| manycap | 424 / 1595 / 723 | 3/3 |
+| copyexcl | 997 / 7568 / 11288 | 3/3 |
+| closesrc | 2417 / 311 / 759 | 3/3 |
+| keepsshape | 1099 / 19351 / 484 | 3/3 |
+| separated | 13 / 4 / 18 | 3/3 |
+| dead | 3 / 11 / 8 | 3/3 |
+| escape | 33 / 42 / 5 | 3/3 |
+| focusexcl | 13 / 4 / 18 | 3/3 |
+| writeout | 125 / 219 / 88 | 3/3 |
+| xres, once, nestedsep, reqexcloutside, recvalidate, tsupplyexcl, escapeowned | — | 0/3 |
+| guardreuse | 1825 / 135 / 2499 | 3/3 |
+| callbackxres | 13 / 4 / 18 | 3/3 |
+| supplyedge | 458 / 202 / 664 | 3/3 |
+| supplyrecheck | 458 / 295 / 5432 | 3/3 |
+| callsedge | 55 / 9 / 136 | 3/3 |
+| callbackaliases | 59 / 77 / 336 | 3/3 |
+| callbackenv | 125 / 8 / 17 | 3/3 |
+| callbackwrites | 1763 / — / 3040 | 2/3 |
+| requiresedge, callbackrequires, callbackescapes, forwardguards, transfersupplies | — | 0/3 |
 
-## Reproduction and validation
+The seven the review required are all caught in summary mode except
+`borrowedsupply`, which is caught against the per-call checker (COVERAGE.md
+argues it cannot be observed under summaries). The flag versions of the
+first seven and the summary rows give identical first indices, so the flags
+are the same edits. Not caught, and not claimed equivalent: the review's other
+seven that it also reported missed (`once` and `xres` among them), the `xreq`
+edge and the `xreq`/`E` guards of callbacks (no callback in the tables
+requires its argument exclusive or publishes it), and the two forwarding
+mechanisms (`forwardguards`, `transfersupplies`): no generated declaration
+passes its own function-typed input to another declaration, so forwarding a
+guard or a supply to the caller is untested.
 
-From `proofs/ownership`, with the pinned Lean 4.29.1 toolchain:
+## Findings
+
+* **Real defect, executable checker (not the thesis).** The per-call checker
+  analysed a recursive call inside a traversal step with an empty summary and
+  accepted a program whose value run returns 8 and in-place run 11. Fixture
+  "recursion inside a step"; both checkers now refuse it as a limit. Found by
+  reading while building the summary layer; no generated family produces it.
+* No corrected-rule mismatch otherwise.
+
+## Reproduction
 
 ```sh
+nix develop .#ownership
+cd proofs/ownership
 lake build
-.lake/build/bin/ownership fixtures
-.lake/build/bin/ownership oracle 20000 20261011
-.lake/build/bin/ownership oracle 20000 17
-.lake/build/bin/ownership oracle 20000 271828
-.lake/build/bin/ownership oracle 20 20261011 --old-escape-rule
-.lake/build/bin/ownership oracle 20 20261011 --old-rule
-# all runs the fixed suite followed by generation:
-.lake/build/bin/ownership all 1000 20261011
-# frozen v1 is explicitly opt-in:
-.lake/build/bin/ownership oracle 100 20261011 --generator-version=1 --old-rule
+.lake/build/bin/ownership ci                      # fixtures, one campaign, every control
+.lake/build/bin/ownership oracle 20000 17 --cross-check
+.lake/build/bin/ownership controls 20000 271828
+scripts/campaigns.sh                              # all logs above
+scripts/run-mutants.sh /tmp/mutants 20000 20261011 17 271828
+lake env lean Axioms.lean                         # axioms of each theorem
 ```
-
-The executable and owned oracle/fixture modules build successfully; the fixture
-log is `regressions/fixtures-v3.log`. Proof-module validation is recorded by the
-parent's step 1–3 work. No Mathlib, paid tool, production compiler modification,
-or Zig command was used for this repair, as directed by the owner. Historical
-Zig gate crashes remain historical and are not represented as a green gate.

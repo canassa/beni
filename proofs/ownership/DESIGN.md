@@ -80,3 +80,66 @@ prove that the oracle can now observe that defect.
 The builder proof must refer to concrete heap values and the actual `put`/`close`
 operations: a list of cell numbers alone is only an auxiliary set lemma. Every
 claimed certificate theorem must name the executable operation it certifies.
+
+## The summary layer (thesis §3.7, §4.4–§4.7)
+
+`Checker.lean` summarises each declaration once per guard valuation and uses
+only the published summary at a call. The per-call re-inference checker that
+preceded it is frozen as `Reinfer.lean` (`--reinfer`, `--cross-check`).
+
+* **Inputs.** A declaration's parameters and captures are canonical: each path
+  with cells is named `π_i.q` (or `◇_i.q`), keeping exclusivity flags. A
+  function-typed input is `symbolic`: its alternatives (code and captures) are
+  hidden; its environment is one origin `π_i.env`, its own cell `π_i` when the
+  actual value may be once. A function value below an input path is a limit.
+* **Guards.** The body learns a symbolic input's class only by asking `Fact`s
+  about one call of it: `W`/`E`/`xreq` on each argument path, `π_k.p ∈ res(q)`,
+  `env ∈ res(q)`, the fresh numbers in `res(q)`, `shared`/`⊤ ∈ res(q)`,
+  `xres(q)`, `E` on its environment, once. A query carries σ, the argument
+  state at that call: canonical argument shapes and the argument paths unique
+  there. Every answer is recorded as a guard of the summary being computed.
+  The answer comes from the call site: the actual closure's own summary under
+  σ (its class), or, if the actual is itself a symbolic input of the caller,
+  the caller's answer, recorded as the caller's guard.
+* **Rows.** A summary publishes `use` (reads R, result cells A, escapes E,
+  writes and consumes W), `res` and `xres` (the result value), `xreq`
+  (`requiresExclusive`), and per function-typed input its `calls` (0, ≤1,
+  many) and one `Supply` per call: what is passed, the callee's environment,
+  σ, and the argument paths supplied owned (Known, Unescaped, Dead, Disjoint
+  at that call) and exclusive. `consumes` is W through a supply: it becomes W
+  on the declaration's parameters and is never demanded inside it.
+* **Reuse.** The cache is keyed by declaration, canonical inputs and the owned
+  set. A cached summary serves a call only if every guard it recorded answers
+  the same there; this is the guarded value of §3.7 resolved at the call.
+* **Call sites.** A call re-checks each supply against the caller's live
+  holders and other operand paths; a supply to a symbolic input of the caller
+  is transferred to the caller's rows; one to a known closure meets the edges:
+  W ⇒ owned supply, xreq ⇒ exclusive supply, once ⇒ at most one call. The
+  same re-check runs where a traversal or focus step ends, with the
+  traversal's own holder sets.
+* **Recursion.** A group starts from the bottom summary, joins each round
+  into the previous one and is validated against the final assignment (§4.5).
+  A recursive call inside a traversal or focus step is a limit (the step's
+  vocabulary is not the declaration's).
+* **No `need` row.** Where a declaration promises an exclusive result built
+  from a callback's results, its `xres` is guarded on the callback's `res` and
+  `xres` facts; no separate `need` fact was required by any fixture or mutant.
+
+## Negative controls
+
+`Config.mutant` names a deliberate hole; `ownership controls` runs one normal
+campaign (20000 trials) per hole and fails unless each finds an accepted
+disagreement that the unmutated checker rejects after shrinking. Seven are the
+review's missed mutants, five weaken a summary row. `borrowed-supply` is
+controlled against the per-call checker: under summaries its rule is subsumed
+(COVERAGE.md). `scripts/run-mutants.sh` re-applies source-level edits
+(`scripts/mutate.mjs`) and runs the unmodified generator on each build.
+
+## Soundness statements
+
+`Soundness.lean` names origins by arrays (`Naming`), calls a naming separating
+when origins the checker calls non-aliasing name disjoint arrays, relates an
+abstract value to a concrete one (`Describes`: footprint named, certificate
+nodup), states Lemma 6.7 (`CallSound`, clause 2 as repaired) and the main
+theorem over every fuel bound with an explicit `Invariant`. What is proved and
+what is `sorry` is listed in COVERAGE.md.
