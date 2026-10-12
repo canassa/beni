@@ -2539,6 +2539,8 @@ as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`
 *(Amended 2026-10-01: `onKeyDown`, `Random` and `Storage` are §9.8.10's, with `Url` read-only and
 `Log`.)* *(Amended again 2026-10-01: `Http`'s row, `getJson`/`postJson` and the request record are
 superseded by §9.8.12, HTTP version 2; `Nav` and `Tea.application` are §9.8.13's.)*
+*(Amended 2026-10-12: `onAnimationFrame`, with `onAnimationFrameDelta` and their direct forms, is
+§9.8.18's; `Browser.nextFrame` stays owed, for the reason given there.)*
 
 #### 9.8.9 The rest of the answers
 
@@ -4158,6 +4160,102 @@ unprovided (§9.8.13 (c)).
 `browser/tea/NavigatePush`, `NavigateErrors` and `ListenerOrder` test the direct forms under their new names, and
 `browser/tea/NavigateCommands` the commands. §9.8.16 (c)'s inventory row for the direct forms names `push`,
 `replace`, `goBack`, `goForward`, `loadPage` and `reloadPage`; the commands are values (b).
+
+#### 9.8.18 Animation frames (2026-10-12)
+
+*Added 2026-10-12*, closing §9.8.8's owed `onAnimationFrame`. Normative for `Browser.Events`' frame
+subscriptions and their direct forms, and for how a frame's messages meet the render loop
+(`backend.md` §15.11). elm/browser's `Browser.Events` is the model
+(`references/elm-browser/src/Browser/AnimationManager.elm`, `Elm/Kernel/Browser.js`), and every
+departure is listed in (e).
+
+**(a) The API.** In `Browser.Events` (`browser`), re-exported by `browser-tea` and `browser-direct`
+(which runs no subscription of any kind until its slice S5 compiles `Tea.element`,
+`browser-direct.md` §10.1, §14 — nothing here is specific to either architecture):
+
+```elm
+pub onAnimationFrame : (Time.Posix → msg) → Sub msg        -- the moment each frame began
+pub onAnimationFrameDelta : (Float → msg) → Sub msg        -- the milliseconds since the frame before
+pub eachAnimationFrame : (Time.Posix → ⊤) → ⊤              -- the direct forms (§9.8.11 (a))
+pub eachAnimationFrameDelta : (Float → ⊤) → ⊤
+```
+
+Each subscription is a `Sub.on` listener (§9.8.5's amendment), so it runs with no fiber; the direct
+forms are `Listen.each` over the same listener, as every pair of this module is. `Time.Posix` exists
+(§9.8.8), and `Browser.nextFrame`, R45's "wait for the next frame", is **not** built: Elm has no such
+function, `eachAnimationFrame` is the direct form a fiber that animates needs, and waiting for a
+render is `Dom.rendered` (§9.8.6). It stays owed until a program needs it.
+
+**(b) One request per frame.** The page has one frame clock: the listeners every frame subscription
+and direct form added, in the order added, and at most one pending `requestAnimationFrame`. The first
+listener added while no frame is pending asks for one; each frame asks for the next before it hands
+the listeners anything; the last listener removed cancels the pending frame with
+`cancelAnimationFrame` **at once**, so a page with no live frame subscription has no frame pending and
+asks for none — no idle loop, at any rate. Any number of subscriptions, of either kind, and of one key
+or several, share that one request: declarations of one key share one listener (§9.8.5), and the two
+keys' listeners share the clock. Elm's effect manager has the same shape, one `rAF` for every
+subscriber.
+
+**(c) What a frame sends.** A frame reads the host's `Date.now()` once — the frame's time, as Elm's
+kernel does — and hands every listener that time and the clock's previous time: `onAnimationFrame`
+sends `Time.fromMillis now`, `onAnimationFrameDelta` sends `toFloat (now − last)`. The previous time
+is the last frame's, or, before the clock's first frame, **the time the clock started** — when its
+first listener was added — so the first delta of a fresh start is the time from the subscription's
+arrival to its first frame, Elm's `oldTime` from `now` at `onEffects`. Each listener sends in the
+order the listeners were added, and its declarations' taggers in declaration order (§9.8.5).
+
+**(d) The render loop.** Elm renders on `requestAnimationFrame`; beni renders on a microtask after the
+messages of a task (`backend.md` §15.11), so the question is only whether a frame's message can miss
+its frame. It cannot: the frame callback runs its listeners under core's `Task.fromHost`, as a
+timer's callback does (`browser/tea/TimerTurn`), so the deliveries they queue (§9.8.5 point 2) are
+drained before the callback returns, the drain is a turn (`Task.onTurn`), and the turn renders. **A
+frame's messages are applied, and the page rendered, inside the frame's callback** — before the
+browser's style, layout and paint of that frame, with no extra frame of latency. Three subscriptions
+that each send a message are three `update`s and one render. A message that turns the subscriptions
+off is rendered in the same callback, whose diff removes the listener and cancels the frame the
+clock had just asked for, so an animation that ends leaves nothing pending.
+
+**(e) Where it departs from Elm, and the hidden page.**
+
+- **A hidden page draws no frames.** The host does not call frame callbacks while the document is
+  hidden; the pending request waits, nothing is sent, and the first frame after the page is shown
+  again carries a delta spanning the hidden spell — as Elm's does. A program that must not jump
+  clamps the delta, or turns the subscription off on `onVisibilityChange`.
+- **The clock restarts whenever no frame listener is left**, even for an instant: a model that swaps
+  `onAnimationFrame` for `onAnimationFrameDelta` in one message removes the one listener (cancelling
+  the frame) before the other is added, so the new delta counts from the swap, where Elm's manager,
+  which sees one list, keeps its `oldTime`. Keeping the frame pending until the next frame instead
+  would leave a page that stopped animating with one callback still asked for, against (b).
+- **No fallback to `setTimeout`.** Elm's kernel uses `setTimeout(…, 1000 / 60)` where
+  `requestAnimationFrame` is missing. Every host `browser` targets has it; where it is missing the
+  call throws, a defect at the first frame listener's start (§9.8.10 (c)), never a timer pretending
+  to be a display (`CLAUDE.md` rule 9: nothing is caught).
+
+**(f) Failures.** `requestAnimationFrame` and `cancelAnimationFrame` document no failure in a window.
+A tagger, or `update` on a frame's message, that throws does so inside the frame's drain: a defect, by
+§9.8.5 point 4's path, which stops the page; after it, `Task.onShutdown`'s sweep removes the frame
+listeners as it removes every listener, and the last removal cancels the pending frame (§9.8.5
+point 5).
+
+**(g) The test driver's frames.** `tests/browser/driver.mjs` replaces `requestAnimationFrame` and
+`cancelAnimationFrame` before the program loads, in happy-dom and in Chrome alike, so frames are the
+script's: `frame <n> [<ms>] [tasks]` draws `n` frames `ms` apart (default 16) on the virtual clock,
+moving it as `advance` does, each frame's callbacks in one task, and logs `(frame at <t> ms: <k>
+callbacks)`; `frames` logs the callbacks pending (`tests/corpus/README.md`). The count is what proves
+(b): a page with three frame subscriptions logs one callback per frame.
+
+*As built, 2026-10-12* (`platforms/browser/Browser/Events.beni`, beni over `Js` with no `foreign`;
+`tests/browser/driver.mjs`; `bench/size.mjs`'s `frames` page), as specified. The pages are
+`browser/tea/AnimationFrames` — three subscriptions over two keys, one callback a frame, a first
+delta from the start, a frame's render inside its task (`frame … tasks`: the view's log comes before
+`(the frame's task ended)`, and after it with `Task.fromHost` taken out), no request while off, and a
+restarted clock — and `browser/tea/AnimationFrameStops`, whose third frame's message ends the
+subscription and leaves no frame pending. Both run as development, release and `--fiber-page` builds
+against one golden. **Measured** (`bench/size.mjs`, `--release`, brotli 11): no existing page moved
+by a byte, and a page subscribing to `onResize` is byte-identical to before — the frame keys are a
+type of their own, so their tags stay out of `Key`'s table; the `frames` page (a `Tea.element` on
+`onAnimationFrameDelta`) is 3 479 bytes and reaches no fiber, about 60 more than the same page on
+`onResize`, the rest being the listener machinery every `Sub.on` page shares.
 
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 

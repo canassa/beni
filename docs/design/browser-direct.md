@@ -1013,6 +1013,15 @@ owner that `boundary.md` §9.8.11's rule — a command that cannot wait runs wit
 twin for subscriptions, and that the twin would take the routing subscription off the kernel
 (Q5, §15).
 
+*Amended 2026-10-12 (`boundary.md` §9.8.18):* `Browser.Events.onAnimationFrame` and
+`onAnimationFrameDelta` are re-exported here, and nothing in them is `browser-tea`'s: each is a
+`Sub.on` listener over `browser`'s frame clock, which hands its frame's messages on under
+`Task.fromHost`. What is missing on this platform is subscriptions themselves — the lowering refuses
+`Tea.element` until slice S5 (§14) — so a program here cannot subscribe to frames yet. When S5 lands,
+the one thing to check is §9.8.18 (d)'s promise that a frame's messages render inside the frame: a
+frame listener's delivery must enter through `send` (§4.3), whose dispatch writes synchronously, so
+the promise holds if S5's subscription deliveries do not defer past the drain `Task.fromHost` runs.
+
 ### 10.2 The after-render point
 
 `Dom.rendered`, after-render work (`Hosted.afterRender`, focus after a render) and

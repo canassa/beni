@@ -8519,7 +8519,10 @@ platform layered on it; `browser-tea` adds no JavaScript.
   for inputs.
 - **Several renders per frame are possible**, as in Solid 2 and unlike Elm's one per frame; the
   browser coalesces the DOM mutations into one paint (research 27 §3.6), and `view` is skipped when
-  the model did not change.
+  the model did not change. *(Amended 2026-10-12, `boundary.md` §9.8.18 (d):* the loop never waits
+  for a frame, and a frame waits for nothing of the loop: `Browser.Events`' frame subscriptions run
+  their listeners under `Task.fromHost`, so a frame's messages are applied and rendered inside its
+  `requestAnimationFrame` callback, before that frame's paint — one render for all of them.)*
 
 *As built, 2026-09-29, for §15.2–§15.5 and §15.11* (`platforms/browser/`: `zig/dom.zig`,
 `runtime.js`, `Browser.beni`; `tests/corpus/emit/dom/`, `emit/release/dom/`, `browser/dom/`,
