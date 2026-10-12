@@ -2658,6 +2658,15 @@ these accessors are what Elm's `targetValue` and `keyCode` decoders are, and a "
 function `Event -> msg`. Elm's `preventDefaultOn` returns the decision with the message; a beni
 handler may call an impure function, so it calls `preventDefault` instead.
 
+*Amended 2026-10-13:* **the drag-and-drop events** `onDragStart`, `onDragEnd`, `onDragOver` and
+`onDrop` join the vocabulary, `delegated` since all four bubble, each handed the `Event`. They are
+added as `onMouseMove` was (§9.9 (c)): for a program that needs them and that Elm writes with
+`Html.Events.on "dragstart"` and `preventDefaultOn "dragover"` (the port of rvcas/sternhalma,
+research 88). A drop target allows the drop by calling `Html.preventDefault` in its `onDragOver`
+handler, as Elm's `preventDefaultOn` returns `True`. Nothing reads the drag's `dataTransfer` yet;
+the other drag events (`drag`, `dragenter`, `dragleave`) wait for a use, and Elm's general `on`
+stays the open question it is.
+
 `Browser.Events` gains **`onKeyDown`, `onKeyUp`, `onKeyPress : (Html.Event -> msg) -> Sub msg`**,
 Elm's three, each taking the function a handler would be (`onKeyDown (λevent -> Pressed
 (Html.key event))`, Elm's `onKeyDown (Decode.map Pressed (Decode.field "key" Decode.string))`).
