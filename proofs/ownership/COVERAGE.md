@@ -429,12 +429,12 @@ generator makes.
    capture, a callee calls it"). Found by the falsifier on the restated step
    lemma.
 
-The generator never built either shape; the `once-through-call` control is
-reported, and required once the generator reaches it.
+Generator v4 never built either shape; v5 does, and `once-through-call` is a
+required control caught by the generator on all three seeds (RESULTS.md).
 
 
 `Axioms.lean` is the `AxiomCheck` target of `lake build`. It collects the
-axioms of **every constant** declared in an `Ownership` module (2 644 at the
+axioms of **every constant** declared in an `Ownership` module (2 653 at the
 time of writing: theorems, definitions, instances, structures and their
 generated auxiliaries, not only the theorems) and fails unless exactly the
 three `sorry`s above and the main theorem depend on `sorryAx` and nothing uses
