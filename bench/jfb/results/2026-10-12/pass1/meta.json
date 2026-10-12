@@ -1,0 +1,45 @@
+{
+  "benchmarkCommit": "44f20790ba5ce71f5e782dc1b19a25cc9c628dbc",
+  "chrome": "154.0.8037.97",
+  "node": "v24.19.0",
+  "beni": "beni 0.1.0-m1 521799b966571db82998dfa258a6cfda",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+  "cores": 32,
+  "taskset": "8-15,24-31",
+  "count": "runner default (CPU 15, select 25, memory 1, size 1)",
+  "headless": true,
+  "frameworks": [
+    "vanillajs",
+    "solid",
+    "svelte",
+    "react-hooks",
+    "vue",
+    "elm",
+    "beni-direct",
+    "beni-tea"
+  ],
+  "started": "2026-10-12T15:59:00Z (main pass)",
+  "uptimeBefore": "19:36:38 up 6 days, 21:24,  7 users,  load average: 6.66, 15.76, 24.84",
+  "load": [],
+  "isKeyed": [
+    "beni-direct-v0.1.0-m1-keyed is keyed for 'run benchmark' and keyed for 'remove row benchmark' and keyed for 'swap rows benchmark' . It'll appear as keyed in the results",
+    "beni-tea-v0.1.0-m1-keyed is keyed for 'run benchmark' and keyed for 'remove row benchmark' and keyed for 'swap rows benchmark' . It'll appear as keyed in the results"
+  ],
+  "retried": [
+    "vanillajs 08_create1k-after1k_x2",
+    "beni-tea 22_run-memory"
+  ],
+  "benchSeconds": 73,
+  "uptimeAfter": "19:37:52 up 6 days, 21:25,  7 users,  load average: 5.83, 13.53, 23.36",
+  "finished": "2026-10-12T17:37:56.197Z",
+  "note": "The main pass ran 17:59-19:35 local (CEST); run.mjs then stopped on its two failures, and this meta.json is the --resume that re-ran them (19:36-19:38). 1-minute load during the main pass, sampled by hand: 28.6 (18:06), 9.6 (18:13), 24.1 (18:33), 6.2 (18:44), 22.2 (19:14), 6.7 (19:36).",
+  "maxLoad": 33.2,
+  "loadSampledByHand": [
+    "18:06 28.6",
+    "18:13 9.6",
+    "18:33 24.1 (5-min 33.2)",
+    "18:44 6.2",
+    "19:14 22.2 (5-min 28.6)",
+    "19:36 6.7"
+  ]
+}

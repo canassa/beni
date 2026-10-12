@@ -1,0 +1,1 @@
+{"framework":"react-hooks-v19.2.0-keyed","keyed":true,"benchmark":"21_ready-memory","type":"memory","values":{"DEFAULT":{"min":1.151611328125,"max":1.151611328125,"median":1.151611328125,"mean":1.151611328125,"stddev":null,"values":[1.151611328125]}}}

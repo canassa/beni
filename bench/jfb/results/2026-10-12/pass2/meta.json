@@ -1,0 +1,48 @@
+{
+  "benchmarkCommit": "44f20790ba5ce71f5e782dc1b19a25cc9c628dbc",
+  "chrome": "154.0.8037.97",
+  "node": "v24.19.0",
+  "beni": "beni 0.1.0-m1 521799b966571db82998dfa258a6cfda",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+  "cores": 32,
+  "taskset": "8-15,24-31",
+  "count": "runner default (CPU 15, select 25, memory 1, size 1)",
+  "headless": true,
+  "frameworks": [
+    "vanillajs",
+    "solid",
+    "svelte",
+    "react-hooks",
+    "vue",
+    "elm",
+    "beni-direct",
+    "beni-tea"
+  ],
+  "started": "2026-10-12T17:38:15.998Z",
+  "uptimeBefore": "19:38:16 up 6 days, 21:25,  7 users,  load average: 5.04, 12.85, 22.92",
+  "isKeyed": [
+    "beni-direct-v0.1.0-m1-keyed is keyed for 'run benchmark' and keyed for 'remove row benchmark' and keyed for 'swap rows benchmark' . It'll appear as keyed in the results",
+    "beni-tea-v0.1.0-m1-keyed is keyed for 'run benchmark' and keyed for 'remove row benchmark' and keyed for 'swap rows benchmark' . It'll appear as keyed in the results"
+  ],
+  "retried": [
+    "vanillajs 04_select1k",
+    "solid 04_select1k",
+    "svelte 04_select1k",
+    "react-hooks 04_select1k",
+    "elm 04_select1k",
+    "beni-direct 04_select1k",
+    "beni-tea 04_select1k"
+  ],
+  "benchSeconds": 4825,
+  "uptimeAfter": "20:58:41 up 6 days, 22:46,  7 users,  load average: 5.75, 8.87, 12.73",
+  "finished": "2026-10-12T18:58:44.823Z",
+  "loadSampledByHand": [
+    "19:38 5.0",
+    "19:39 4.3",
+    "20:09 41.1",
+    "20:19 31.8",
+    "20:58 8.4"
+  ],
+  "maxLoad": 41.1,
+  "note": "run.mjs sampled the load in-process, which a spawnSync blocks, so this pass has no per-minute load; the samples above were taken by hand. The main pass failed 04_select1k for seven frameworks (Protocol error IO.read under load); run.mjs re-ran each one alone."
+}

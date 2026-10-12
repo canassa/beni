@@ -1,0 +1,1 @@
+{"framework":"beni-direct-v0.1.0-m1-keyed","keyed":true,"benchmark":"25_run-clear-memory","type":"memory","values":{"DEFAULT":{"min":0.7336740493774414,"max":0.7336740493774414,"median":0.7336740493774414,"mean":0.7336740493774414,"stddev":null,"values":[0.7336740493774414]}}}
