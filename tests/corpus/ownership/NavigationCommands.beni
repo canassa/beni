@@ -1,0 +1,106 @@
+-- ownership: navigation as commands (`boundary.md` §9.8.17;
+-- `ownership-checker.md` §22.7 item 1, §23.8), in Conduit's shape.
+-- `commands`: a link click pushes the address with
+-- `Navigation.pushUrl key url Refused`, a command that takes the key and
+-- the address `update` computed, so the command holds two values and no
+-- model list; `Visited` extends `model.visits` in place and the entry
+-- accepts it on browser-direct (`platform` on browser-tea). `bodies` writes
+-- the same push the slice-3c way, a body that computes its key from the
+-- whole model when it runs: the body captured `model`, everything a command
+-- holds escapes at the entry (§20.4 (a)), and the same edit is rejected
+-- `escaped`. A refused push sends `Refused`, whose payload holds no list.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type alias Model =
+    key : Navigation.Key
+    visits : List String
+
+
+type Msg
+    = Clicked Browser.UrlRequest
+    | Changed Url
+    | Visited String
+    | Refused Navigation.Error
+
+
+keyOf : Model → Navigation.Key
+keyOf model = model.key
+
+
+commands : Msg, Model → Model × Cmd Msg
+commands msg model =
+    case msg of
+        Clicked (Browser.Internal url) →
+            ( model, Navigation.pushUrl (keyOf model) (Url.toString url) Refused )
+
+        Clicked (Browser.External href) →
+            ( model, Navigation.load href Refused )
+
+        Changed url →
+            ( model, Cmd.none )
+
+        Visited path →
+            ( { model | visits = List.push model.visits path }, Cmd.none )
+
+        Refused _ →
+            ( model, Cmd.none )
+
+
+bodies : Msg, Model → Model × Cmd Msg
+bodies msg model =
+    case msg of
+        Clicked (Browser.Internal url) →
+            ( model, Cmd.do λ⊤ → refusedOrNot (Navigation.push (keyOf model) (Url.toString url)) )
+
+        Visited path →
+            ( { model | visits = List.push model.visits path }, Cmd.none )
+
+        _ →
+            ( model, Cmd.none )
+
+
+refusedOrNot : Result Navigation.Error ⊤ → ⊤
+refusedOrNot _ = ⊤
+
+
+view : Model → Tea.Document Msg
+view model = { title = "visits", body = <p>{String.fromInt (List.length model.visits)}</p> }
+
+
+start : Url, Navigation.Key → Model × Cmd Msg
+start _ key = ( { key = key, visits = [] }, Cmd.none )
+
+
+withCommands : Tea.Program
+withCommands =
+    Tea.application
+        { init = start
+        , update = commands
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = Clicked
+        , onUrlChange = Changed
+        }
+
+
+withBodies : Tea.Program
+withBodies =
+    Tea.application
+        { init = start
+        , update = bodies
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = Clicked
+        , onUrlChange = Changed
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ withCommands, withBodies ]

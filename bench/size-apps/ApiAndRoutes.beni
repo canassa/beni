@@ -53,7 +53,7 @@ toRoute url = Maybe.withDefault (Url.Parser.parse route url) NotFound
 type Msg
     = ClickedLink Browser.UrlRequest
     | UrlChanged Url
-    | Navigated (Result Navigation.Error ⊤)
+    | Refused Navigation.Error
     | SignIn
     | GotToken (Result Http.Error String)
     | GotItems (Result Http.Error (List Item.Type))
@@ -108,7 +108,7 @@ update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
         ClickedLink (Browser.Internal url) →
-            ( model, Cmd.task (λ⊤ → Navigation.pushUrl model.key (Url.toString url)) Navigated )
+            ( model, Navigation.pushUrl model.key (Url.toString url) Refused )
 
         ClickedLink (Browser.External href) →
             ( { model | log = model.log ++ [ "external ${href}" ] }, Cmd.none )
@@ -121,10 +121,7 @@ update msg model =
                 ( r, _ ) →
                     ( { model | route = r }, Cmd.none )
 
-        Navigated (Ok ⊤) →
-            ( model, Cmd.none )
-
-        Navigated (Err _) →
+        Refused _ →
             ( { model | log = model.log ++ [ "refused" ] }, Cmd.none )
 
         SignIn →
@@ -147,7 +144,7 @@ update msg model =
 
         GotToken (Ok token) →
             ( { model | token = Just token, log = model.log ++ [ "signed in" ] }
-            , Cmd.task (λ⊤ → Navigation.pushUrl model.key "/items") Navigated
+            , Navigation.pushUrl model.key "/items" Refused
             )
 
         GotToken (Err problem) →

@@ -106,6 +106,7 @@ type Msg
     | GotProfileMsg ProfilePage.Msg
     | GotArticleMsg ArticlePage.Msg
     | GotEditorMsg Editor.Msg
+    | RouteRefused Route.Refusal
 
 
 toSession : Model → Session
@@ -147,7 +148,7 @@ changeRouteTo maybeRoute model =
             ( NotFound session, Cmd.none )
 
         Just Route.Root →
-            ( model, Cmd.do λ⊤ → Route.replaceUrl (Session.navKey session) Route.Home )
+            ( model, Route.replaceUrl (Session.navKey session) Route.Home RouteRefused )
 
         Just Route.Logout →
             -- GAP: elm-spa-example hears the stored user change through a
@@ -156,9 +157,7 @@ changeRouteTo maybeRoute model =
             -- and other open tabs keep the old session until reloaded.
             key = Session.navKey session
             ( Redirect (Session.Guest key)
-            , Cmd.do λ⊤ →
-                Api.logout ⊤
-                Route.replaceUrl key Route.Home
+            , Cmd.batch [ Cmd.do λ⊤ → Api.logout ⊤, Route.replaceUrl key Route.Home RouteRefused ]
             )
 
         Just Route.NewArticle →
@@ -201,13 +200,17 @@ update msg model =
         ( ClickedLink urlRequest, _ ) →
             case urlRequest of
                 Browser.Internal url →
-                    -- The key is read now, when the command is made: the
-                    -- command holds it, not the model (boundary.md §9.8.16).
-                    key = Session.navKey (toSession model)
-                    ( model, Cmd.do λ⊤ → Route.pushUrl key (Url.toString url) )
+                    -- A command that takes values: the address and the page's key, read
+                    -- now (boundary.md §9.8.16 (b), §9.8.17).
+                    ( model
+                    , Navigation.pushUrl
+                        (Session.navKey (toSession model))
+                        (Url.toString url)
+                        RouteRefused
+                    )
 
                 Browser.External href →
-                    ( model, Cmd.do λ⊤ → loaded (Navigation.load href) )
+                    ( model, Navigation.load href RouteRefused )
 
         ( ChangedUrl url, _ ) →
             changeRouteTo (Route.fromUrl url) model
@@ -233,6 +236,10 @@ update msg model =
         ( GotEditorMsg subMsg, Editor slug editor ) →
             updateWith (Editor slug _) GotEditorMsg (Editor.update subMsg editor)
 
+        ( RouteRefused _, _ ) →
+            -- A change of address the browser refused leaves the page as it is.
+            ( model, Cmd.none )
+
         ( _, _ ) →
             -- A message for a page the viewer has already left.
             ( model, Cmd.none )
@@ -240,11 +247,6 @@ update msg model =
 
 updateWith : (subModel → Model), (subMsg → Msg), subModel × Cmd subMsg → Model × Cmd Msg
 updateWith toModel toMsg ( subModel, subCmd ) = ( toModel subModel, Cmd.map subCmd ⊤ toMsg )
-
-
--- An external link the browser refuses to follow leaves the page as it is.
-loaded : Result Navigation.Error ⊤ → ⊤
-loaded _ = ⊤
 
 
 main : Tea.Program

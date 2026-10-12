@@ -509,7 +509,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation as Navigation\nimport Cmd\nimport Sub\nimport Url exposing (Url)\n`,
     main:
-      "Tea.element { init = λ⊤ → ( \"\", Cmd.none ), update = λm _ → ( m, Cmd.task (λ⊤ → Navigation.pushUrl (Navigation.key ⊤) m) (λ_ → \"\") ), view = view, subscriptions = λ_ → Navigation.onUrlChange Url.toString }",
+      "Tea.element { init = λ⊤ → ( \"\", Cmd.none ), update = λm _ → ( m, Navigation.pushUrl (Navigation.key ⊤) m (λ_ → \"\") ), view = view, subscriptions = λ_ → Navigation.onUrlChange Url.toString }",
     view: "view : String → Html String",
   },
   {

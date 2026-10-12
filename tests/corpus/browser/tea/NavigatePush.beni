@@ -1,10 +1,10 @@
 -- `Browser.Navigation` changes the page's address (boundary.md §9.8.13
--- (c)): `pushUrl` adds a history entry and `replaceUrl` replaces one, each
+-- (c)): its direct forms: `push` adds a history entry and `replace` replaces one, each
 -- resolved against the page, and every change is announced to the
 -- page's followers, so `onUrlChange` sends one message per push, in order
 -- — two pushes in one command are two messages. The driver's `back` and
 -- `forward` traverse the entries the program pushed, and `onUrlChange`
--- hears each. `back key 0` does nothing and sends nothing.
+-- hears each. `goBack key 0` does nothing and sends nothing.
 import Browser.Navigation as Navigation exposing (Key)
 import Cmd exposing (Cmd)
 import Html exposing (Html)
@@ -64,7 +64,7 @@ address url =
 
 
 push : Key, String → Cmd Msg
-push key url = Cmd.task (λ⊤ → Navigation.pushUrl key url) (Done "push ${url}" _)
+push key url = Cmd.task (λ⊤ → Navigation.push key url) (Done "push ${url}" _)
 
 
 update : Msg, Model → Model × Cmd Msg
@@ -75,14 +75,14 @@ update msg model =
 
         Replace url →
             ( model
-            , Cmd.task (λ⊤ → Navigation.replaceUrl model.key url) (Done "replace ${url}" _)
+            , Cmd.task (λ⊤ → Navigation.replace model.key url) (Done "replace ${url}" _)
             )
 
         PushTwo →
             ( model, Cmd.batch [ push model.key "/c", push model.key "/d" ] )
 
         BackNone →
-            ( model, Cmd.task (λ⊤ → Navigation.back model.key 0) (Done "back 0" _) )
+            ( model, Cmd.task (λ⊤ → Navigation.goBack model.key 0) (Done "back 0" _) )
 
         Done label result →
             ( { model | lines = model.lines ++ [ "${label}: ${shown result}" ] }, Cmd.none )

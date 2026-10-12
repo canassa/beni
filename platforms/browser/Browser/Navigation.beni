@@ -1,18 +1,26 @@
---! The page's address (`docs/design/boundary.md` §9.8.13 (c)): elm/browser's
---! `Browser.Navigation`, each function a direct form that answers at once
---! (§9.8.11). Reading the address — `currentUrl`, `eachUrlChange`,
---! `onUrlChange` — needs nothing; changing it goes through the page's
---! `Key`.
+--! The page's address (`docs/design/boundary.md` §9.8.13 (c), §9.8.17):
+--! elm/browser's `Browser.Navigation`. Reading the address — `currentUrl`,
+--! `eachUrlChange`, `onUrlChange` — needs nothing; changing it goes through
+--! the page's `Key`.
 --!
---! Every change `pushUrl`, `replaceUrl`, `back` and `forward` make is
---! announced to every follower of the address on the page, whoever made
---! it, so no program falls out of step with the address. The command form
---! is `Cmd.task` over a function:
+--! Elm's names are commands that take values — `pushUrl`, `replaceUrl`,
+--! `back`, `forward`, `load`, `reload` — so an `update` hands the runtime
+--! the address it computed and no function that reads the model later
+--! (§9.8.16 (b)). Each sends its last argument's message only when the
+--! change was refused, as `Storage.save` does: a typed failure is never
+--! dropped (CLAUDE.md rule 9). Each has a direct form that answers at once
+--! (§9.8.11): `push`, `replace`, `goBack`, `goForward`, `loadPage`,
+--! `reloadPage`.
 --!
 --!     ClickedLink (Browser.Internal url) →
---!         ( model, Cmd.task (λ⊤ → Navigation.pushUrl model.key (Url.toString url)) Pushed )
+--!         ( model, Navigation.pushUrl model.key (Url.toString url) Refused )
+--!
+--! Every change `push`, `replace`, `goBack` and `goForward` make is
+--! announced to every follower of the address on the page, whoever made
+--! it, so no program falls out of step with the address.
 
 import Browser
+import Cmd exposing (Cmd)
 import Js
 import Listen
 import Sub exposing (Sub)
@@ -51,35 +59,87 @@ currentUrl ⊤ = Url.fromString (Js.to (Js.get (Js.global "location") "href"))
 
 
 --| Add an entry to the browser's history with the URL, resolved against
---| the page, and tell every follower of the address. The page is not
---| reloaded.
-pub pushUrl : Key, String → Result Error ⊤
-pushUrl _ url = change "pushState" url
+--| the page, and tell every follower of the address, when the command
+--| runs. The page is not reloaded. `refused error` is sent only when the
+--| change did not happen.
+--|
+--|     ClickedLink (Browser.Internal url) →
+--|         ( model, Navigation.pushUrl model.key (Url.toString url) Refused )
+pub pushUrl : Key, String, (Error → msg) → Cmd msg
+pushUrl k url refused = command (λ⊤ → push k url) refused
 
 
---| Replace the current entry of the browser's history with the URL, and
---| tell every follower of the address.
-pub replaceUrl : Key, String → Result Error ⊤
-replaceUrl _ url = change "replaceState" url
+--| Replace the current entry of the browser's history with the URL, as
+--| `pushUrl` adds one.
+pub replaceUrl : Key, String, (Error → msg) → Cmd msg
+replaceUrl k url refused = command (λ⊤ → replace k url) refused
 
 
---| Go back `n` entries in the history. The address changes when the
---| browser has gone back, and followers hear it then; `n = 0` does
---| nothing.
-pub back : Key, Int → Result Error ⊤
-back _ n = go (negate n)
+--| Go back `n` entries in the history, as `goBack` does, when the command
+--| runs.
+pub back : Key, Int, (Error → msg) → Cmd msg
+back k n refused = command (λ⊤ → goBack k n) refused
 
 
---| Go forward `n` entries in the history, as `back` goes back.
-pub forward : Key, Int → Result Error ⊤
-forward _ n = go n
+--| Go forward `n` entries in the history, as `goForward` does, when the
+--| command runs.
+pub forward : Key, Int, (Error → msg) → Cmd msg
+forward k n refused = command (λ⊤ → goForward k n) refused
 
 
---| Leave the page for the URL, resolved against the page. An address that
---| does not resolve, and a `javascript:` one, which would run text as
---| script, is `BadUrl`.
-pub load : String → Result Error ⊤
-load url =
+--| Leave the page for the URL, as `loadPage` does, when the command runs.
+pub load : String, (Error → msg) → Cmd msg
+load url refused = command (λ⊤ → loadPage url) refused
+
+
+--| Load the page again, when the command runs.
+pub reload : Cmd msg
+reload = Cmd.perform λ_ → reloadPage ⊤
+
+
+-- A change made when the command runs, and its refusal sent: the change is
+-- a function of `⊤` so that it is made then, not when `update` returns.
+command : (⊤ → Result Error ⊤), (Error → msg) → Cmd msg
+command attempt refused = Cmd.perform λsend →
+    case attempt ⊤ of
+        Ok ⊤ →
+            ⊤
+
+        Err error →
+            send (refused error)
+
+
+--| The direct form of `pushUrl`: add an entry to the browser's history
+--| with the URL, resolved against the page, and tell every follower of
+--| the address. The page is not reloaded.
+pub push : Key, String → Result Error ⊤
+push _ url = change "pushState" url
+
+
+--| The direct form of `replaceUrl`: replace the current entry of the
+--| browser's history with the URL, and tell every follower of the address.
+pub replace : Key, String → Result Error ⊤
+replace _ url = change "replaceState" url
+
+
+--| The direct form of `back`: go back `n` entries in the history. The
+--| address changes when the browser has gone back, and followers hear it
+--| then; `n = 0` does nothing.
+pub goBack : Key, Int → Result Error ⊤
+goBack _ n = go (negate n)
+
+
+--| The direct form of `forward`: go forward `n` entries in the history,
+--| as `goBack` goes back.
+pub goForward : Key, Int → Result Error ⊤
+goForward _ n = go n
+
+
+--| The direct form of `load`: leave the page for the URL, resolved
+--| against the page. An address that does not resolve, and a
+--| `javascript:` one, which would run text as script, is `BadUrl`.
+pub loadPage : String → Result Error ⊤
+loadPage url =
     target = resolve url
     if Js.isNull target || Js.same (Js.get target "protocol") (Js.from "javascript:") then
         Err (BadUrl url)
@@ -100,9 +160,9 @@ load url =
                     Err Throttled
 
 
---| Load the page again.
-pub reload : ⊤ → ⊤
-reload ⊤ = Js.to (Js.call (Js.global "location") "reload" [])
+--| The direct form of `reload`: load the page again.
+pub reloadPage : ⊤ → ⊤
+reloadPage ⊤ = Js.to (Js.call (Js.global "location") "reload" [])
 
 
 -- The subscriptions' keys, one type each, so a page that follows only the

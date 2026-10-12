@@ -63,6 +63,7 @@ pub type Msg
     | CompletedFollowChange (Result Api.Error Author)
     | CompletedPostComment (Result Api.Error Comment)
     | PassedSlowLoadThreshold
+    | RouteRefused Route.Refusal
 
 
 pub update : Msg, Model → Model × Cmd Msg
@@ -179,7 +180,7 @@ update msg model =
 
         CompletedDeleteArticle (Ok ⊤) →
             key = Session.navKey model.session
-            ( model, Cmd.do λ⊤ → Route.replaceUrl key Route.Home )
+            ( model, Route.replaceUrl key Route.Home RouteRefused )
 
         CompletedDeleteArticle (Err error) →
             ( { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
@@ -200,6 +201,9 @@ update msg model =
                     other →
                         other
             ( { model | article = article, comments = comments }, Cmd.none )
+
+        RouteRefused _ →
+            ( model, Cmd.none )
 
 
 pub toSession : Model → Session

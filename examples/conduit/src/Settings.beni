@@ -90,6 +90,7 @@ pub type Msg
     | EnteredAvatar String
     | CompletedSave (Result Api.Error Viewer)
     | PassedSlowLoadThreshold
+    | RouteRefused Route.Refusal
 
 
 pub update : Msg, Model → Model × Cmd Msg
@@ -137,10 +138,12 @@ update msg model =
         CompletedSave (Ok viewer) →
             key = Session.navKey model.session
             ( { model | session = Session.LoggedIn key viewer }
-            , Cmd.do λ⊤ →
-                Api.storeViewer viewer
-                Route.replaceUrl key Route.Home
+            , Cmd.batch
+                [ Cmd.do λ⊤ → Api.storeViewer viewer, Route.replaceUrl key Route.Home RouteRefused ]
             )
+
+        RouteRefused _ →
+            ( model, Cmd.none )
 
         PassedSlowLoadThreshold →
             case model.status of
