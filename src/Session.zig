@@ -210,6 +210,10 @@ pub const Options = struct {
     /// `Never` as `⊥`, drop `else ⊤`, and delete the `_ = ` of each line
     /// `top_discards` names (`Format.migrateTop`, frontend.md §11.9).
     migrate_top: bool = false,
+    /// `beni fmt --migrate-init` (hidden): write the `init = e` of every
+    /// program record `init = λ⊤ → e` (`Format.migrateInit`, frontend.md
+    /// §11.10).
+    migrate_init: bool = false,
     /// `--discards=<file>`'s `unit_discarded` lines, by file path.
     top_discards: []const TopDiscard = &.{},
     /// `beni fmt --migrate-names` (hidden): write the removed `Basics`
@@ -1807,6 +1811,37 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
         }
     } else if (session.options.migrate_top) {
         if (try session.migrateTopFile(worker, file, tree, text, &out)) return;
+    } else if (session.options.migrate_init) {
+        const problem = Format.migrateInit(
+            worker.arena.allocator(),
+            tree,
+            session.artifacts.tokens(file),
+            session.artifacts.comments(file),
+            text,
+            &out.writer,
+        ) catch |err| switch (err) {
+            error.SyntaxErrors => {
+                out.deinit();
+                return;
+            },
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
+        };
+        if (problem) |found| {
+            // The rewrite does not parse (frontend.md §11.10): the file is
+            // left alone and named, with where the re-parse stopped.
+            out.deinit();
+            const line_starts = session.store.lineStarts(file);
+            const at = diagnostic.position(line_starts, text, found.start);
+            var message: Io.Writer.Allocating = .init(gpa);
+            defer message.deinit();
+            try message.writer.print(
+                "`beni fmt --migrate-init` left this file alone: with `init = λ⊤ → …` in its program records it does not parse ({t} here). Write `init` as a function of `⊤` by hand.",
+                .{found.code},
+            );
+            try worker.report(session, file, found.code, at, at, message.written());
+            return;
+        }
     } else if (session.options.migrate_unicode) {
         const problem = Format.migrateUnicode(
             worker.arena.allocator(),
