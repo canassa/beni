@@ -1,0 +1,125 @@
+-- ownership: owned sends (thesis Change 7, P6; `ownership-checker.md` §23).
+-- A send hands its payload to `update` owned: the sender gives it up, and
+-- the checker demands it at the send as a write — every cell of the
+-- payload unique there and dead after it — rejecting at the send, never
+-- copying (§23.2).
+--
+-- `loads`: a command's work builds the list (`Cmd.task`'s work returns a
+-- literal), `Loaded rows` stores it at `model.rows`, and `Add` extends
+-- `model.rows` in place: the entry accepts the push on browser-direct
+-- (`platform` on browser-tea), where slice 3c rejected it `payload` (T38's
+-- shape, owned at its send). `Grow` extends its message's list itself
+-- (T50): accepted. `fresh` sends from a body: `send (Loaded rows)` of a
+-- list the body made (`List.range`'s result), accepted at the send.
+--
+-- `reused`: the body sends `rows` and then reads it (`List.length rows`):
+-- rejected at the send, `alias` — the sender did not give it up.
+--
+-- `shared`: the payload is the model's own list. `Cmd.task (λ⊤ →
+-- model.rows) Loaded` sends what its work returns, which the model still
+-- holds: rejected at the tagger, `need`, exactly. A body that sends
+-- `model.rows` while the arm keeps `model` is rejected at the send: the
+-- model, returned, still holds the list.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    rows : List Int
+    total : Int
+
+
+type Msg
+    = Loaded (List Int)
+    | Grow (List Int)
+    | Add Int
+    | Fetch
+    | Count Int
+
+
+loads : Msg, Model → Model × Cmd Msg
+loads msg model =
+    case msg of
+        Loaded rows →
+            ( { model | rows = rows }, Cmd.none )
+
+        Grow more →
+            ( { model | total = List.length (List.push more 0) }, Cmd.none )
+
+        Add n →
+            ( { model | rows = List.push model.rows n }, Cmd.none )
+
+        Fetch →
+            ( model, Cmd.task (λ⊤ → [ 1, 2, 3 ]) Loaded )
+
+        Count n →
+            ( { model | total = n }, Cmd.none )
+
+
+fresh : ⊤ → Cmd Msg
+fresh ⊤ = Cmd.perform λsend →
+    rows = List.range 1 3
+    send (Loaded rows)
+
+
+reused : ⊤ → Cmd Msg
+reused ⊤ = Cmd.perform λsend →
+    rows = List.range 1 3
+    send (Loaded rows)
+    send (Count (List.length rows))
+
+
+shares : Msg, Model → Model × Cmd Msg
+shares msg model =
+    case msg of
+        Fetch →
+            ( model, Cmd.task (λ⊤ → model.rows) Loaded )
+
+        Count _ →
+            ( model, Cmd.perform λsend → send (Loaded model.rows) )
+
+        Add n →
+            ( { model | rows = List.push model.rows n }, Cmd.none )
+
+        _ →
+            ( model, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Fetch}>fetch</button>
+        <button onClick={Add model.total}>add</button>
+        <p>{String.fromInt model.total}</p>
+    </main>
+
+
+initial : ⊤ → Model
+initial ⊤ = { rows = [], total = 0 }
+
+
+owned : Tea.Program
+owned =
+    Tea.element
+        { init = λ⊤ → ( initial ⊤, Cmd.batch [ fresh ⊤, reused ⊤ ] )
+        , update = loads
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+shared : Tea.Program
+shared =
+    Tea.element
+        { init = λ⊤ → ( initial ⊤, Cmd.none )
+        , update = shares
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ owned, shared ]

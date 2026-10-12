@@ -1,0 +1,94 @@
+-- ownership: a view event's message (thesis P6, *View events*;
+-- `ownership-checker.md` §23.6). A view event is not a send: nothing gives
+-- its payload up. The runtime builds the message from the markup — from
+-- the model, and a markup value keeps its handlers from one dispatch to the
+-- next (P3), so a list a handler's message holds may be handed to `update`
+-- twice. So every list the view's messages may carry, the model's own and
+-- the ones the view made, is borrowed, and the check, which does not tell
+-- `update`'s arms apart (O6), takes every message path to hold them.
+--
+-- `plain`: the view's messages hold no list, and the edits of `model.kept`
+-- and `model.seeded` — each a payload stored by another arm — are accepted
+-- on browser-direct, owned at their sends. `keeps`: a view event carries
+-- `model.rows` (`Keep model.rows`), and both edits are rejected `payload`,
+-- approximately. `seeds`: a view event carries a list the view made
+-- (`Seed [ 1, 2 ]`): rejected the same way.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    rows : List Int
+    kept : List Int
+    seeded : List Int
+
+
+type Msg
+    = Keep (List Int)
+    | Seed (List Int)
+    | GrowKept
+    | GrowSeeded
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Keep rows →
+            { model | kept = rows }
+
+        Seed made →
+            { model | seeded = made }
+
+        GrowKept →
+            { model | kept = List.push model.kept 0 }
+
+        GrowSeeded →
+            { model | seeded = List.push model.seeded 0 }
+
+
+grows : Model → Html Msg
+grows model =
+    <main>
+        <button onClick={GrowKept}>grow kept</button>
+        <button onClick={GrowSeeded}>grow seeded</button>
+        <p>{String.fromInt (List.length model.seeded)}</p>
+    </main>
+
+
+keeping : Model → Html Msg
+keeping model =
+    <main>
+        <button onClick={Keep model.rows}>keep</button>
+        <button onClick={GrowKept}>grow kept</button>
+    </main>
+
+
+seeding : Model → Html Msg
+seeding model =
+    <main>
+        <button onClick={Seed [ 1, 2 ]}>seed</button>
+        <button onClick={GrowSeeded}>grow seeded</button>
+        <p>{String.fromInt (List.length model.seeded)}</p>
+    </main>
+
+
+initial : ⊤ → Model
+initial ⊤ = { rows = [ 1 ], kept = [], seeded = [] }
+
+
+plain : Tea.Program
+plain = Tea.sandbox { init = initial, update = update, view = grows }
+
+
+keeps : Tea.Program
+keeps = Tea.sandbox { init = initial, update = update, view = keeping }
+
+
+seeds : Tea.Program
+seeds = Tea.sandbox { init = initial, update = update, view = seeding }
+
+
+main : Tea.Program
+main = Browser.programs [ plain, keeps, seeds ]
