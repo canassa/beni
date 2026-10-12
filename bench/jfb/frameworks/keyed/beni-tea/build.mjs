@@ -3,6 +3,9 @@
 // not an npm package, so js-framework-benchmark's `npm ci` cannot fetch it.
 //
 //   node build.mjs <platform>
+//
+// beni-tea/build.mjs and beni-direct/build.mjs are the same file, one per
+// entry because the benchmark wants each entry self-contained: keep them equal.
 
 import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";

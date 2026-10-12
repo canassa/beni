@@ -30,11 +30,14 @@
 //
 // --count replaces the runner's iteration counts (15 CPU runs, select 25, 1
 // for memory and size) with its own `--count`, as `npm run bench -- --count`
-// does. --report-only rebuilds report/ from a results directory's raw files.
+// does. --report-only rebuilds report/ from a results directory's raw files;
+// it makes the work tree and installs the benchmark's tools if they are
+// missing, and builds no framework.
 // --resume keeps the work copy's results and only runs the missing pairs.
 // --checks-only stops after the keyed and strict-CSP checks of the beni entries.
 
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -119,19 +122,6 @@ const report = () => {
   cpSync(join(work, "webdriver-ts/results.json"), join(out, "results.json"));
 };
 
-if (flag("report-only")) {
-  // The raw files of `out` are the only results the table sees.
-  rmSync(join(work, "webdriver-ts/results"), { recursive: true, force: true });
-  cpSync(join(out, "raw"), join(work, "webdriver-ts/results"), { recursive: true });
-  const server = await startServer();
-  try {
-    report();
-  } finally {
-    stopServer(server);
-  }
-  process.exit(0);
-}
-
 // 2. The work copy. node_modules and builds survive from run to run;
 // an entry built by an earlier run stays, and the runner and the table see
 // only the frameworks named here (the table drops entries without results).
@@ -147,13 +137,20 @@ mkdirSync(join(work, "frameworks/keyed"), { recursive: true });
 mkdirSync(join(work, "frameworks/non-keyed"), { recursive: true });
 writeShims();
 const beniVersion = existsSync(beni) || beni === "beni" ? text(beni, ["version"]) : "";
+// A report rebuilt from raw files names the beni entries as those files do,
+// whichever compiler is on hand now.
+const recorded = (name) => {
+  if (!flag("report-only")) return null;
+  const file = readdirSync(join(out, "raw")).find((f) => f.startsWith(`${name}-v`));
+  return file === undefined ? null : file.slice(name.length + 2, file.indexOf("-keyed_"));
+};
 for (const name of frameworks) {
   const dest = join(work, "frameworks/keyed", name);
   if (ours.includes(name)) {
     cpSync(join(here, "frameworks/keyed", name), dest, { recursive: true, dereference: true });
     // The version the table shows is the compiler's.
     const pkg = JSON.parse(readFileSync(join(dest, "package.json"), "utf8"));
-    pkg["js-framework-benchmark"].frameworkVersion = beniVersion.replace(/^beni\s*/, "").split(/\s/)[0];
+    pkg["js-framework-benchmark"].frameworkVersion = recorded(name) ?? beniVersion.replace(/^beni\s*/, "").split(/\s/)[0];
     writeFileSync(join(dest, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
   } else {
     if (!existsSync(join(submodule, "frameworks/keyed", name))) throw new Error(`${name} is not in the sparse checkout; add it to the sparse paths`);
@@ -169,6 +166,19 @@ if (!flag("skip-install")) {
   for (const dir of ["server", "webdriver-ts", "webdriver-ts-results"])
     if (!existsSync(join(work, dir, "node_modules"))) run("npm", ["ci", "--no-audit", "--no-fund"], join(work, dir));
   run("npm", ["run", "compile"], join(work, "webdriver-ts"));
+}
+if (flag("report-only")) {
+  // A fresh clone has no work tree: steps 2 and 3 above made it, without
+  // building any framework, which the table does not need.
+  rmSync(join(work, "webdriver-ts/results"), { recursive: true, force: true });
+  cpSync(join(out, "raw"), join(work, "webdriver-ts/results"), { recursive: true });
+  const server = await startServer();
+  try {
+    report();
+  } finally {
+    stopServer(server);
+  }
+  process.exit(0);
 }
 if (!flag("skip-build")) {
   for (const name of frameworks) {
@@ -186,6 +196,9 @@ const meta = {
   chrome: chromeVersion,
   node: process.version,
   beni: beniVersion,
+  // The compiler binary that built the entries: --release fixes the output,
+  // whatever the binary's own optimisation mode.
+  beniSha256: existsSync(beni) ? createHash("sha256").update(readFileSync(beni)).digest("hex") : null,
   cpu: cpus()[0].model,
   cores: cpus().length,
   taskset,
@@ -222,7 +235,9 @@ try {
   }
   // The runner exits 1 when any (framework, benchmark) failed, and its
   // README's remedy is to run that pair again; a pass leaves no result file
-  // for it. Each missing pair is run again, at most twice.
+  // for it. Each missing pair is run again, at most twice. Its status is not
+  // read: a result file is written once, after every iteration of the pair
+  // succeeded (writeResults), so a file's presence is the success.
   const runner = (fws, bms) => {
     const args = ["dist/benchmarkRunner.js", ...headless, "--chromeBinary", chrome, ...(count === null ? [] : ["--count", count]), ...(bms === null ? [] : ["--benchmark", ...bms]), "--framework", ...fws.map((f) => `keyed/${f}`)];
     const [cmd, all] = taskset === null ? ["node", args] : ["taskset", ["-c", taskset, "node", ...args]];
@@ -256,7 +271,8 @@ try {
     meta.load = readFileSync(loadFile, "utf8").trim().split("\n");
     // More runnable threads than the cores outside --taskset: the pinned
     // cores were shared too, and the pass is not a quiet-machine measurement.
-    meta.maxLoad = Math.max(...meta.load.map((l) => Number(l.split(" ")[1])));
+    meta.load = meta.load.filter((l) => l !== "");
+    meta.maxLoad = meta.load.length === 0 ? null : Math.max(...meta.load.map((l) => Number(l.split(" ")[1])));
     if (meta.maxLoad > 24) console.log(`WARNING: the 1-minute load reached ${meta.maxLoad} during the pass`);
   }
   if (missing().length > 0) throw new Error(`no result after two retries: ${missing().map((m) => m.join(" ")).join(", ")}`);

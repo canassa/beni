@@ -97,5 +97,7 @@
   "maxLoad": 39.97,
   "benchSeconds": 3979,
   "uptimeAfter": "22:13:44 up 7 days, 1 min,  7 users,  load average: 5.30, 6.48, 8.36",
-  "finished": "2026-10-12T20:13:48.135Z"
+  "finished": "2026-10-12T20:13:48.135Z",
+  "beniSha256": "0ab971cd202498ae83fbadbee96ca330503bf9b271843d413c24a307aa5861b8",
+  "beniBuild": "zig build -Doptimize=ReleaseSafe at 86d161d0b (recorded after the run; the same binary built every entry)"
 }

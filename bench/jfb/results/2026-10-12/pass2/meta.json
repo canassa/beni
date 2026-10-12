@@ -44,5 +44,7 @@
     "20:58 8.4"
   ],
   "maxLoad": 41.1,
-  "note": "run.mjs sampled the load in-process, which a spawnSync blocks, so this pass has no per-minute load; the samples above were taken by hand. The main pass failed 04_select1k for seven frameworks (Protocol error IO.read under load); run.mjs re-ran each one alone."
+  "note": "run.mjs sampled the load in-process, which a spawnSync blocks, so this pass has no per-minute load; the samples above were taken by hand. The main pass failed 04_select1k for seven frameworks (Protocol error IO.read under load); run.mjs re-ran each one alone.",
+  "beniSha256": "0ab971cd202498ae83fbadbee96ca330503bf9b271843d413c24a307aa5861b8",
+  "beniBuild": "zig build -Doptimize=ReleaseSafe at 86d161d0b (recorded after the run; the same binary built every entry)"
 }
