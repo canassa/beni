@@ -196,7 +196,7 @@ Against the per-call checker (seed 20261011) the first seven are caught at
 `callback-escapes` is caught on one seed of three (two before the third
 review's changes); it stays required through its probe (COVERAGE.md, "Known
 gaps"). `ci` took 4 min 18 s on the generator before the last two generator
-commits (ci TIME on the final one).
+commits and 6 min 18 s on the final one.
 
 ## Source-level mutants
 
