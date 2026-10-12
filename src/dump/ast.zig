@@ -143,6 +143,7 @@ const Dumper = struct {
     fn visibility(d: *Dumper, header: Ast.DeclHeader) !void {
         if (header.pub_token != .none) try d.w.writeAll(" pub");
         if (header.opaque_token != .none) try d.w.writeAll(" opaque");
+        if (header.crossing_token != .none) try d.w.writeAll(" crossing");
         if (header.equatable_token != .none) try d.w.writeAll(" equatable");
     }
 
@@ -298,7 +299,7 @@ const Dumper = struct {
                 try d.w.print(" {s}", .{d.text(main)});
                 try d.child(tree.operand(n), inner);
             },
-            .type_paren, .type_sync, .interp, .negate, .spread, .paren, .question, .stmt, .pat_paren, .pat_spread => {
+            .type_paren, .type_sync, .type_own, .interp, .negate, .spread, .paren, .question, .stmt, .pat_paren, .pat_spread => {
                 try d.openTag(tag, main);
                 try d.child(tree.operand(n), inner);
             },

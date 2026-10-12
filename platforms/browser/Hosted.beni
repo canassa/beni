@@ -54,7 +54,7 @@ key k = keyOf (Js.fingerprint k EQ) k
 -- Hand-written: a beni `<` on the identities is `String.compare`'s
 -- code-point order, which ships that function to a page that had none,
 -- where JavaScript's `<`, which `Js` cannot write, orders them alike.
-foreign pure keyOf : String, k → Key
+foreign pure keyOf : String, aliased k → fresh Key
     where k.compare : k, k → Order
 
 

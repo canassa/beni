@@ -204,7 +204,7 @@ trimRight s = Js.pure λ⊤ → Js.to (Js.call (Js.from s) "trimEnd" [])
 --| Break a string into words, splitting on chunks of whitespace.
 --|
 --|     words "How are \n you? \t Good?" == [ "How", "are", "you?", "Good?" ]
-pub words : String → List String
+pub words : String → fresh exclusive List String
 words s = Js.pure λ⊤ →
     Js.to
         (Js.call (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ]) "filter"
@@ -219,7 +219,7 @@ isWord w = Js.to (Js.get w "length") ≠ 0
 --| Break a string into lines, splitting on newlines.
 --|
 --|     lines "How are you?\nGood?" == [ "How are you?", "Good?" ]
-pub lines : String → List String
+pub lines : String → fresh exclusive List String
 lines s = Js.pure λ⊤ → Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n|\r|\n" "" ])
 
 
@@ -236,7 +236,7 @@ lines s = Js.pure λ⊤ → Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n
 --|
 --|     split "" "" == []
 --|     split "" "," == [ "" ]
-pub split : String, String → List String
+pub split : String, String → fresh exclusive List String
 split s separator = Js.pure λ⊤ →
     if separator == "" then
         Js.to (Js.call (Js.global "Array") "from" [ Js.from s ])
@@ -262,7 +262,7 @@ split s separator = Js.pure λ⊤ →
 --|     indexes "aaaa" "aa" == [ 0, 2 ]
 --|     indexes "abc" "" == []
 --|     indexes "" "" == []
-pub indexes : String, String → List Int
+pub indexes : String, String → fresh exclusive List Int
 indexes haystack needle = Js.pure λ⊤ →
     -- `indexOf` answers in UTF-16 code units, so each match is translated
     -- by one forward walk that carries its position between matches —
@@ -390,14 +390,14 @@ fromChar c = Js.to (Js.from c)
 --| Convert a string to a list of characters.
 --|
 --|     toList "abc" == [ 'a', 'b', 'c' ]
-pub toList : String → List Char
+pub toList : String → fresh exclusive List Char
 toList s = Js.pure λ⊤ → Js.to (Js.call (Js.global "Array") "from" [ Js.from s ])
 
 
 --| Convert a list of characters into a string.
 --|
 --|     fromList [ 'a', 'b', 'c' ] == "abc"
-pub fromList : List Char → String
+pub fromList : borrowed List Char → String
 fromList list = Js.pure λ⊤ →
     xs = Js.from list
 
@@ -461,7 +461,7 @@ concat strings = join strings ""
 --| here, so `names ▷ join ", "` puts the separator between its elements.
 --|
 --|     join [ "cat", "dog" ] ", " == "cat, dog"
-pub join : List String, String → String
+pub join : borrowed List String, String → String
 join chunks sep = Js.pure λ⊤ → Js.to (Js.call (elements (Js.from chunks)) "join" [ Js.from sep ])
 
 

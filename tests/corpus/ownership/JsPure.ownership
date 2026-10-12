@@ -1,6 +1,8 @@
 module JsPure
-  9:12 construction xs: rejected escaped: a function value that Debug.toString hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
-  summary shown: π1 RJW
-  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-cause escaped 1
+  11:12 construction xs: accepted param
+  19:12 construction ys: rejected alias: xs holds it and is read at 20:5
+  summary shown: π1 RW
+  summary logged: unused
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

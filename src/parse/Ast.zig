@@ -271,6 +271,11 @@ pub const Node = struct {
         /// (transparent-effects-proposal.md §15.2). `main_token` is the
         /// word `sync`; `lhs` is the parenthesised type after it.
         type_sync,
+        /// An ownership word in front of a parameter's or the result's type
+        /// in a top-level signature (ownership-checker.md §24.3):
+        /// `borrowed List a`. `main_token` is the word; `lhs` is the type
+        /// after it, itself a `type_own` when several words stand there.
+        type_own,
         /// `k.compare : k, k -> Order`, one constraint of a `where` clause
         /// (static-dispatch-spike.md §2.1). `main_token` is the constrained
         /// variable's lower identifier; the method name is the abutting
@@ -628,6 +633,37 @@ pub const Node = struct {
 // ---------------------------------------------------------------------------
 
 /// The front of every declaration's extra record.
+/// The ownership words (ownership-checker.md §24.2): contextual words in a
+/// top-level signature of core or a platform package, and `crossing` in
+/// front of `foreign type`. Lowering records them as a bit set per position
+/// (`Bir.OwnSlot`), bit `@intFromEnum(word)`.
+pub const OwnWord = enum(u5) {
+    unused,
+    borrowed,
+    aliased,
+    returned,
+    escaped,
+    consumed,
+    once,
+    many,
+    owned,
+    fresh,
+    exclusive,
+    unknown,
+    crossing,
+
+    /// The word a signature's identifier is, `crossing` excepted: that one
+    /// is read only in front of `foreign`.
+    pub fn inSignature(text: []const u8) ?OwnWord {
+        const w = std.meta.stringToEnum(OwnWord, text) orelse return null;
+        return if (w == .crossing) null else w;
+    }
+
+    pub fn bit(w: OwnWord) u32 {
+        return @as(u32, 1) << @backingInt(w);
+    }
+};
+
 pub const DeclHeader = struct {
     /// The `pub` token, if any.
     pub_token: OptionalTokenIndex,
@@ -639,6 +675,11 @@ pub const DeclHeader = struct {
     /// before `foreign type`; whether the file may write it at all is a
     /// package fact lowering decides (`equatable_outside_core`).
     equatable_token: OptionalTokenIndex,
+    /// The `crossing` token, if any: `pub crossing foreign type Event`
+    /// (ownership-checker.md §24.2). The grammar allows it only directly
+    /// before `foreign type` or `equatable foreign type`; whether the file
+    /// may write it is a package fact lowering decides.
+    crossing_token: OptionalTokenIndex = .none,
     /// Comment indices `[doc_start, doc_end)` of the attached `--|` block.
     doc_start: u32,
     doc_end: u32,
@@ -1506,7 +1547,7 @@ pub fn fullError(tree: *const Ast, node: Node.Index) full.ErrorNode {
 /// the markup `{…}` forms.
 pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
     switch (tree.nodeTag(node)) {
-        .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .stmt, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
+        .type_paren, .type_sync, .type_own, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .stmt, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
         else => unreachable, // not a one-operand node
     }
     return @fromBackingInt(@intCast(tree.nodeData(node).lhs));
@@ -1520,19 +1561,20 @@ pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
 const testing = std.testing;
 
 test "extraData flattens nested headers and extraLen agrees" {
-    try testing.expectEqual(@as(u32, 7), extraLen(DeclHeader));
-    try testing.expectEqual(@as(u32, 9), extraLen(Definition));
-    try testing.expectEqual(@as(u32, 11), extraLen(TypeDecl));
+    try testing.expectEqual(@as(u32, 8), extraLen(DeclHeader));
+    try testing.expectEqual(@as(u32, 10), extraLen(Definition));
+    try testing.expectEqual(@as(u32, 12), extraLen(TypeDecl));
     try testing.expectEqual(@as(u32, 5), extraLen(Import));
 
     const none_token = std.math.maxInt(u32);
-    const words = [_]u32{ 7, none_token, 3, 2, 5, 0, 0, 10, 12 };
+    const words = [_]u32{ 7, none_token, 3, none_token, 2, 5, 0, 0, 10, 12 };
     var tree: Ast = empty;
     tree.extra = &words;
     const d = tree.extraData(@fromBackingInt(@intCast(0)), Definition);
     try testing.expectEqual(@as(?TokenIndex, 7), d.header.pub_token.unwrap());
     try testing.expectEqual(@as(?TokenIndex, null), d.header.opaque_token.unwrap());
     try testing.expectEqual(@as(?TokenIndex, 3), d.header.equatable_token.unwrap());
+    try testing.expectEqual(@as(?TokenIndex, null), d.header.crossing_token.unwrap());
     try testing.expectEqual(@as(u32, 2), d.header.doc_start);
     try testing.expectEqual(@as(u32, 5), d.header.doc_end);
     try testing.expectEqual(@as(u32, 10), @backingInt(d.params_start));

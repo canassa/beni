@@ -1,0 +1,67 @@
+-- ownership: the browser platforms' ownership words (`ownership-checker.md`
+-- §24.8), each pinned by a verdict that depends on it. `Html.Event` is
+-- `crossing`: a DOM event holds no beni list, so a message that carries one
+-- carries no cell, and `update`'s push onto `model.items` is accepted
+-- `entry` (rejected `payload` while the event could stand for a list). The
+-- key of a keyed command is held by the command (`Hosted.keyOf`, `aliased`),
+-- not given to JavaScript: a command built and dropped leaves its key list
+-- unescaped, and `keys` writes it afterwards, accepted. On browser-tea every
+-- entry edit is `platform` (§20.2).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    items : List Int
+    draft : String
+
+
+type Msg
+    = Key Html.Event
+    | Typed String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Key event →
+            if Html.key event == "Enter" then
+                Html.preventDefault event
+                ( { model | items = List.push model.items (String.length model.draft) }, Cmd.none )
+            else
+                ( model, Cmd.none )
+
+        Typed text →
+            ( { model | draft = text }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <input onKeyDown={Key} onInput={Typed} />
+        <ul>
+            <For each={model.items}>
+                {λn → <li>{String.fromInt n}</li>}
+            </For>
+        </ul>
+    </main>
+
+
+pub keys : Int → Int
+keys n =
+    rows = [ n ]
+    _ = Cmd.keyed rows Cmd.Restart λ_ → ⊤
+    more = [ …rows, 1 ]
+    List.length more
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { items = [], draft = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

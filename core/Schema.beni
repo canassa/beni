@@ -1992,14 +1992,14 @@ writeWith s o v = runRoot s o Encoding typeSide False encodedSide True (toHost v
 
 
 --| JSON text read to the Type.
-pub parse : Schema e a, String → Result (List Issue) a
+pub parse : borrowed Schema e a, String → unknown Result (List Issue) a
 parse schema text = parseWith schema defaultOptions text
 
 
 --| `parse` with options. `JSON.parse` reports malformed text by throwing a
 --| `SyntaxError`, and only that is an answer; anything else it throws goes
 --| on as it came (CLAUDE.md rule 9).
-pub parseWith : Schema e a, Options, String → Result (List Issue) a
+pub parseWith : borrowed Schema e a, Options, String → unknown Result (List Issue) a
 parseWith s o text =
     case rootProblem s o Decoding encodedSide True typeSide False of
         Just issues →
@@ -2021,12 +2021,12 @@ parseWith s o text =
 
 
 --| A Type value printed as JSON text.
-pub print : Schema e a, a → Result (List Issue) String
+pub print : borrowed Schema e a, borrowed a → fresh Result (List Issue) String
 print schema input = printWith schema defaultOptions input
 
 
 --| `print` with options.
-pub printWith : Schema e a, Options, a → Result (List Issue) String
+pub printWith : borrowed Schema e a, Options, borrowed a → fresh Result (List Issue) String
 printWith s o v =
     case rootProblem s o Encoding typeSide False encodedSide True of
         Just issues →

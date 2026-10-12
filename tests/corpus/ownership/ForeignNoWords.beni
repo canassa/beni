@@ -1,0 +1,33 @@
+-- ownership: a `foreign` that carries no ownership words has the thesis's
+-- row (`ownership-checker.md` §24.5; thesis Table 3.2): it escapes every
+-- argument, whatever its rung, and a function value handed to it escapes
+-- what it captured (§18.6). The test platform's `Page.element` and
+-- `Page.onInput` carry none, so a list handed to either, or captured by a
+-- handler handed to the second, is not written in place afterwards:
+-- `children` and `handled` are rejected `escaped`. `String.join`'s words say
+-- it only reads (§24.8), so `joined` writes its list afterwards: accepted.
+import Page exposing (Node)
+
+
+pub children : String → Node msg
+children label =
+    kids = [ Page.text label ]
+    node = Page.element "div" [] kids
+    more = [ …kids, Page.text "!" ]
+    Page.element "p" [] [ node, Page.element "span" [] more ]
+
+
+pub handled : (String → msg) → Node msg
+handled tag =
+    names = [ "a" ]
+    field = Page.element "input" [ Page.onInput λs → tag (String.join names s) ] []
+    longer = [ …names, "b" ]
+    Page.element "p" [] [ field, Page.text (String.join longer ",") ]
+
+
+pub joined : String → String
+joined label =
+    parts = [ label ]
+    text = String.join parts ","
+    longer = [ …parts, text ]
+    String.join longer ","

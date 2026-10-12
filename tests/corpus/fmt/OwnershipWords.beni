@@ -1,0 +1,11 @@
+-- Formatter: ownership words (ownership-checker.md §24.3) with odd spacing,
+-- stacked in front of `sync`, on a signature broken over lines, and
+-- `crossing` in front of a foreign type; expected: one space after each word,
+-- the words kept in the order written, and the broken signature one
+-- parameter per line as it would be without them.
+pub   crossing   foreign   type   Event
+pub foreign pure pure :   once    returned   sync ( ⊤ → a ) →   a
+pub foreign impure catchIf :   once returned sync (⊤ → a),
+    once sync (Value → bool), once returned sync (Value → a) → a
+pub join : borrowed   List String, String →   fresh  exclusive List String
+join xs s = xs

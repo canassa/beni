@@ -25,7 +25,7 @@ import Js
 --| The label comes first, as in Elm: it is short and the value is often
 --| long, so the label stays beside the word `log` when the call wraps an
 --| expression (`language.md` §12.4). As a statement, `Debug.log "done" ⊤`.
-pub log : String, a → a
+pub log : String, returned a → a
 log tag value = logAs (Js.from untyped) tag value
 
 
@@ -59,7 +59,7 @@ todo message =
 --| descriptor (`backend.md` §4, *`Debug.toString` reads the argument's
 --| type*). Under a type variable nobody knows, and the value is read by its
 --| representation alone.
-pub toString : a → String
+pub toString : borrowed a → String
 toString value = toStringAs (Js.from untyped) value
 
 
