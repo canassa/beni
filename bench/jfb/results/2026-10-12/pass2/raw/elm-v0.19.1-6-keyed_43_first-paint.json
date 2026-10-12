@@ -1,0 +1,1 @@
+{"framework":"elm-v0.19.1-6-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"min":83.4,"max":83.4,"median":83.4,"mean":83.4,"stddev":null,"values":[83.4]}}}
