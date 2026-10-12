@@ -8,19 +8,23 @@ This module states the theorems the thesis's argument needs (ch-soundness.tex
 §6.3, with fifth-review clause 2 as repaired) over the executable checker and
 the two interpreters of this project, and proves the parts that are within
 reach. Every unproved statement is a named theorem whose proof is `sorry`;
-COVERAGE.md lists them. No axiom is introduced.
+COVERAGE.md lists them. No axiom is introduced. All statements are about
+programs the *corrected* checker accepts (`check p = .ok _`, default config).
 
-Proved here:
+Proved, but **conditional on a naming** (`Separating γ`, or `hsite` for the
+builder), which the unproved step lemma would have to construct:
 * `cellOverlap_sound`, `demandProblem_sound`: the checker's cell tests, read
   through a separating naming of origins, exclude every shared array.
-* `builder_alloc_describes`: the abstract builder value describes the concrete
-  allocation, exclusive certificate included.
-* `invariant_initial`, `invariant_observations`: the configuration invariant
-  holds at the start and fixes every observation made so far.
-* `accepted_traces_agree`: the main theorem, *derived* from the two named
-  unproved lemmas `invariant_preserved` and `summary_sound`.
+* `builder_alloc_describes`: given that the naming names the new array, the
+  abstract builder value describes the concrete allocation.
 
-Unproved (`sorry`): `summary_sound` (Lemma 6.7, clauses 1–4, clause 2 as
+Proved outright (bookkeeping): `invariant_initial`, `invariant_observations`,
+`check_accepts_main`, `corrected_default`.
+
+Proved **conditionally** on `invariant_preserved`: `accepted_traces_agree`, the
+main theorem; it adds only bookkeeping to that lemma.
+
+Unproved (`sorry`): `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as
 repaired), `map_summary_sound` (map's derived row), `invariant_preserved`
 (the step case of the prefix induction). -/
 
@@ -204,30 +208,49 @@ def callResult (ds : List Decl) (id : Nat) (args caps : List Value) (fuel : Nat)
   | some d => (eval fuel ds (some (id, caps)) (bindArgs (args ++ caps)) d.body).run pre
   | none => .error "no declaration"
 
-/-- **Summary soundness** (Lemma 6.7). For every accepted program and every
-    summary it published, every concrete call of that declaration whose
-    arguments the summary's inputs describe (exclusivity certificates and the
-    owned paths unique at the call) satisfies the four clauses. Unproved: it
-    needs the configuration invariant below for the callee's own frame and the
-    induction over earlier calls in the prefix. -/
+/-- The configuration the theorems speak about: the checker as published, with
+    no deliberate hole, no historical old rule and not the per-call checker.
+    Under any other configuration the controls show the theorems are false. -/
+def Corrected (c : Config) : Prop :=
+  c.mutant = none ∧ c.oldFreshRule = false ∧ c.dropTraversalEscapes = false ∧ c.reinfer = false
+
+theorem corrected_default : Corrected ({} : Config) := ⟨rfl, rfl, rfl, rfl⟩
+
+/-- An array is held, at the call, only by arrays of the call's own arguments:
+    no other array and no program-lifetime observer. (Live locals of the
+    caller are not heap holders; their absence is the caller's Dead check.) -/
+def HeldOnlyByArguments (pre : State) (inputs : List Value) (c : Nat) : Prop :=
+  ∀ h, Holds pre h c → ∃ (d i : Nat) (q : Path), h = .array d ∧ d ∈ pathCells pre.heap 64 (inputs[i]?.getD (.int 0)) q
+
+/-- **Summary soundness** (Lemma 6.7). For every program accepted by the
+    corrected checker and every summary it published, every concrete call of
+    that declaration whose arguments the summary's inputs describe
+    (`described`: footprints named, exclusivity certificates hold) and whose
+    owned input paths are unique at the call (`unique`: held by no array
+    outside the arguments and by no permanent observer) satisfies clauses 1–3.
+    Unproved: it needs the configuration invariant for the callee's own frame
+    and the induction over earlier calls in the prefix. -/
 theorem summary_sound (p : Program) (a : Accepted) (ok : check p = .ok a)
     (e : CacheEntry) (he : e ∈ a.cache.toList) (args caps : List Value) (pre post : State)
     (r : Value) (fuel : Nat) (γ : Naming) (hγ : Separating γ)
     (described : ∀ i : Nat, Describes γ pre.heap (e.inputs[i]?.getD .bottom) ((args ++ caps)[i]?.getD (.int 0)))
+    (unique : ∀ o ∈ e.owned, ∀ c ∈ γ o, HeldOnlyByArguments pre (args ++ caps) c)
     (run : callResult p.declarations e.decl args caps fuel pre = .ok (r, post)) :
     CallSound e.summary args pre post r := by
   sorry
 
 /-- **Map's derived summary is sound.** `Library.map` is an ordinary
-    declaration; this is `summary_sound` at its summaries, stated separately
-    because it is the row T59 lived in: if map's published result is
-    exclusive, the concrete result's footprint repeats no array. Unproved. -/
+    declaration; this is `summary_sound` at its summaries plus the certificate,
+    stated separately because it is the row T59 lived in: if map's published
+    result is exclusive, the concrete result's footprint repeats no array.
+    Unproved. -/
 theorem map_summary_sound (a b : Ty) (p : Program) (acc : Accepted) (ok : check p = .ok acc)
     (e : CacheEntry) (he : e ∈ acc.cache.toList)
     (isMap : p.declarations[e.decl]? = some (Library.map a b))
     (args caps : List Value) (pre post : State) (r : Value) (fuel : Nat) (γ : Naming)
     (hγ : Separating γ)
     (described : ∀ i : Nat, Describes γ pre.heap (e.inputs[i]?.getD .bottom) ((args ++ caps)[i]?.getD (.int 0)))
+    (unique : ∀ o ∈ e.owned, ∀ c ∈ γ o, HeldOnlyByArguments pre (args ++ caps) c)
     (run : callResult p.declarations e.decl args caps fuel pre = .ok (r, post)) :
     CallSound e.summary args pre post r ∧ CertifiedExclusive post.heap e.summary.result r := by
   sorry
@@ -268,42 +291,69 @@ theorem invariant_observations (h : Invariant vs hs env aenv γ) :
 def valueEnv (env : List (Var × Observation × Value)) : Env Observation := env.map fun (x, o, _) => (x, o)
 def heapEnv (env : List (Var × Observation × Value)) : Env Value := env.map fun (x, _, w) => (x, w)
 
-/-- **The step case.** Evaluating an expression the checker accepted in the
-    abstract environment `aenv`, from configurations related by the invariant,
-    yields related configurations and corresponding results, or both
-    evaluations fail. This is the simultaneous preservation over the whole
-    configuration that the thesis says it has not written (§6.3), and the
-    place `summary_sound` and Lemmas 6.2–6.6 are used. It quantifies over the
-    expression, the environments and the enclosing function (`self`), so the
-    induction covers calls that never return: they exhaust the shared fuel at
-    the same tick in both interpreters. Unproved. -/
-theorem invariant_preserved (ds : List Decl) (ctx : Context) (aenv : Env Abstract) (e : Expr)
-    (after : Live) (site : List Nat) (st st' : St) (r : Abstract)
+/-- The context of the main expression of a program the corrected checker
+    accepted: its declarations, a corrected configuration, nothing owned,
+    escaped, recursive or framed, and every cached summary one the accepted
+    check published. -/
+def MainContext (p : Program) (a : Accepted) (ctx : Context) (st : St) : Prop :=
+  ctx = { declarations := p.declarations, config := ctx.config } ∧ Corrected ctx.config ∧
+  ∀ e ∈ st.cache.toList, e ∈ a.cache.toList
+
+/-- **The step case.** In a program the corrected checker accepted
+    (`check p = .ok a`), evaluating an expression that the checker accepts in
+    the main context and the abstract environment `aenv`, from configurations
+    related by the invariant, yields related configurations and corresponding
+    results, or both evaluations fail. This is the simultaneous preservation
+    over the whole configuration that the thesis says it has not written
+    (§6.3); calls inside `e` are where `summary_sound` and Lemmas 6.2–6.6 are
+    used. It quantifies over the expression and the environments, and both
+    interpreters spend fuel identically, so calls that never return exhaust
+    the same fuel in both. Unproved. -/
+theorem invariant_preserved (p : Program) (a : Accepted) (ok : check p = .ok a)
+    (ctx : Context) (aenv : Env Abstract) (e : Expr)
+    (after : Live) (site : List Nat) (st st' : St) (r : Abstract) (main : MainContext p a ctx st)
     (accepts : (inferExpr ctx.config.inferenceFuel ctx aenv e after site).run st = .ok (r, st'))
-    (fuel : Nat) (selfV : Option (Nat × List Observation)) (selfH : Option (Nat × List Value))
-    (env : List (Var × Observation × Value)) (γ : Naming)
+    (fuel : Nat) (env : List (Var × Observation × Value)) (γ : Naming)
     (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (h : Invariant vs hs env aenv γ) :
-    (∀ v vs', (ValueSemantics.eval fuel ds selfV (valueEnv env) e).run vs = .ok (v, vs') →
-      ∃ w hs' γ', (InPlaceSemantics.eval fuel ds selfH (heapEnv env) e).run hs = .ok (w, hs') ∧
+    (∀ v vs', (ValueSemantics.eval fuel p.declarations none (valueEnv env) e).run vs = .ok (v, vs') →
+      ∃ w hs' γ', (InPlaceSemantics.eval fuel p.declarations none (heapEnv env) e).run hs = .ok (w, hs') ∧
         Invariant vs' hs' env aenv γ' ∧ Corresponds hs'.heap v w ∧ Describes γ' hs'.heap r w) ∧
-    (∀ msg, (ValueSemantics.eval fuel ds selfV (valueEnv env) e).run vs = .error msg →
-      ∃ msg', (InPlaceSemantics.eval fuel ds selfH (heapEnv env) e).run hs = .error msg') := by
+    (∀ msg, (ValueSemantics.eval fuel p.declarations none (valueEnv env) e).run vs = .error msg →
+      ∃ msg', (InPlaceSemantics.eval fuel p.declarations none (heapEnv env) e).run hs = .error msg') := by
   sorry
 
-/-- **Main theorem** (Theorem 6.1 for this core). For an accepted program and
-    every fuel bound — every execution prefix, since both interpreters spend
-    fuel identically — a successful value run is matched by a successful
-    in-place run with the same trace: final value, every read, and every
-    external observer read. Derived from `invariant_preserved` at the main
-    expression; it inherits that lemma's gap and nothing else. -/
-theorem accepted_traces_agree (p : Program) (ctx : Context) (r : Abstract) (st' : St)
-    (accepts : (inferExpr ctx.config.inferenceFuel ctx [] p.main [] []).run {} = .ok (r, st'))
+theorem check_accepts_main (p : Program) (a : Accepted) (ok : check p = .ok a) :
+    ∃ r st', (inferExpr ({} : Config).inferenceFuel { declarations := p.declarations, config := {} }
+      [] p.main [] []).run {} = .ok (r, st') ∧ st'.cache = a.cache := by
+  unfold check at ok
+  cases ht : typecheck p with
+  | error msg => simp [ht, bind, Except.bind] at ok
+  | ok _ =>
+    simp only [ht, bind, Except.bind] at ok
+    split at ok
+    · contradiction
+    · rename_i res hrun
+      obtain ⟨r, st'⟩ := res
+      simp only [pure, Except.pure, Except.ok.injEq] at ok
+      exact ⟨r, st', hrun, by rw [← ok]⟩
+
+/-- **Main theorem** (Theorem 6.1 for this core). For every program the
+    corrected checker accepts and every fuel bound — every execution prefix,
+    since both interpreters spend fuel identically — a successful value run is
+    matched by a successful in-place run with the same trace: final value,
+    every read, and every external observer read. **Conditional**: it is
+    `invariant_preserved` at the main expression plus bookkeeping, and holds
+    only as far as that unproved lemma does. -/
+theorem accepted_traces_agree (p : Program) (a : Accepted) (ok : check p = .ok a)
     (fuel : Nat) (t : Trace) (ht : ValueSemantics.run p fuel = .ok t) :
     ∃ t', InPlaceSemantics.run p fuel = .ok t' ∧ t.reads = t'.reads ∧
       t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue := by
+  obtain ⟨r, st', accepts, cache⟩ := check_accepts_main p a ok
+  have main : MainContext p a { declarations := p.declarations, config := {} } {} :=
+    ⟨rfl, corrected_default, by simp⟩
   have inv : Invariant { fuel } { fuel } [] [] (fun _ => []) :=
     invariant_initial fuel (fun _ => []) (by intro _ _ _ _ h; simp at h)
-  have step := (invariant_preserved p.declarations ctx [] p.main [] [] {} st' r accepts fuel none none
+  have step := (invariant_preserved p a ok _ [] p.main [] [] {} st' r main accepts fuel
     [] (fun _ => []) { fuel } { fuel } inv).1
   unfold ValueSemantics.run at ht
   cases hv : (ValueSemantics.eval fuel p.declarations none [] p.main).run { fuel } with
@@ -322,4 +372,3 @@ theorem accepted_traces_agree (p : Program) (ctx : Context) (r : Abstract) (st' 
     simp [bind, Except.bind, hrun, corr, pure, Except.pure]
 
 end Ownership.Soundness
-
