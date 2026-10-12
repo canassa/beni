@@ -1,0 +1,81 @@
+-- run: `ReleaseRedeclared`'s siblings under `--release` (`backend.md` §9,
+-- item 2, *amended 2026-10-12*): three loops whose results nothing reads
+-- in one function, two in an `if`'s arm, and four where two results are
+-- read and two are not, so heads and declarations interleave. Every loop
+-- variable the printer leaves outside its `for` must have a spelling of
+-- its own in the scope it is left in. Both builds print `15 106 10`.
+import Node
+
+
+countUp : Int, Int, Bool → Bool
+countUp j n seen = if j ≥ n then seen else countUp (j + 1) n (seen || j == 3)
+
+
+allSmall : Int, Int, Bool → Bool
+allSmall j n ok = if j ≥ n then ok else allSmall (j + 1) n (ok && j < 10)
+
+
+anyBig : Int, Int, Bool → Bool
+anyBig j n big = if j ≥ n then big else anyBig (j + 1) n (big || j > 100)
+
+
+three : Int → Int
+three n =
+    seen = countUp 0 n False
+    ok = allSmall 0 n True
+    big = anyBig 0 n False
+    if False then (if ok && not seen && big then 1 else 2) else n * 3
+
+
+hasTwo : Int, Int, Bool → Bool
+hasTwo j n two = if j ≥ n then two else hasTwo (j + 1) n (two || j == 2)
+
+
+allPositive : Int, Int, Bool → Bool
+allPositive j n pos = if j ≥ n then pos else allPositive (j + 1) n (pos && j ≥ 0)
+
+
+inArm : Int → Int
+inArm n =
+    if n > 2 then
+        two = hasTwo 0 n False
+        pos = allPositive 0 n True
+        if False then (if two && pos then 1 else 2) else n + 100
+    else
+        n
+
+
+hasOne : Int, Int, Bool → Bool
+hasOne j n one = if j ≥ n then one else hasOne (j + 1) n (one || j == 1)
+
+
+sumTo : Int, Int, Int → Int
+sumTo j n acc = if j ≥ n then acc else sumTo (j + 1) n (acc + j)
+
+
+allBelow : Int, Int, Bool → Bool
+allBelow j n below = if j ≥ n then below else allBelow (j + 1) n (below && j < 50)
+
+
+countDown : Int, Int → Int
+countDown k steps = if k ≤ 0 then steps else countDown (k - 1) (steps + 1)
+
+
+mixed : Int → Int
+mixed n =
+    one = hasOne 0 n False
+    total = sumTo 0 n 0
+    below = allBelow 0 n True
+    left = countDown n 0
+    if False then (if one && below then 1 else 2) else total + left
+
+
+main : Node.Program
+main =
+    Node.print
+        (String.fromInt (three 5)
+            ++ " "
+            ++ String.fromInt (inArm 6)
+            ++ " "
+            ++ String.fromInt (mixed 4)
+        )

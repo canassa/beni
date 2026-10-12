@@ -264,15 +264,27 @@ pub const Failure = struct {
         reserved,
         /// A reference reached the printer with no assignment behind it.
         unresolved,
+        /// A loop's variable was named as the loop's own, and the printer
+        /// left its declaration in the scope around the loop.
+        mispulled,
 
         pub fn text(k: Kind) []const u8 {
             return switch (k) {
                 .collision => "two names in one scope were given the same short spelling",
                 .reserved => "a short spelling is a reserved word or a host global",
                 .unresolved => "a reference has no short name behind it",
+                .mispulled => "a loop's variable was named as the loop's own, but its declaration was not written in the loop's head",
             };
         }
     };
+};
+
+/// The printer's `headOf`, which `collectList` asks (`backend.md` §9, item
+/// 2, *amended 2026-10-12*): the index of the declaration of `list` the
+/// printer writes in the `for` head of the loop at `list[at]`, or null.
+pub const Heads = struct {
+    ctx: *anyopaque,
+    headOf: *const fn (ctx: *anyopaque, list: []const Index, at: usize) Allocator.Error!?usize,
 };
 
 /// The renamer for one module. Created once per module, then driven by the
@@ -291,6 +303,11 @@ pub const Module = struct {
     /// whole-program name in the order it first meets it, and assigns
     /// nothing.
     met: ?*Met = null,
+    /// Set by the printer for as long as it prints: which declaration a
+    /// loop's head takes. Null (a unit test's renamer without a printer)
+    /// takes the `let` just before the loop, as a printer that always
+    /// could would.
+    heads: ?Heads = null,
     /// The ordinal assigned to each local `NameIndex`, valid when `stamp`
     /// agrees with `current`. One array for the module and a stamp per
     /// declaration, so restarting the alphabet costs no `@memset`.
@@ -578,6 +595,33 @@ pub const Module = struct {
         }
     }
 
+    /// Whether the printer writes `list[at]` in the `for` head of the loop
+    /// at `list[at + 1]`.
+    fn headed(m: *Module, list: []const Index, at: usize) Allocator.Error!bool {
+        const heads = m.heads orelse return true;
+        const decl = try heads.headOf(heads.ctx, list, at + 1) orelse return false;
+        return decl == at;
+    }
+
+    /// Whether local `n` of the declaration being printed was named as its
+    /// loop's own (`collectList`) and is still homed in that loop's scope —
+    /// read nowhere after the loop — so that only the loop's head may
+    /// declare it.
+    pub fn pulledLoopVariable(m: *const Module, n: NameIndex) bool {
+        const i = n.unwrap() orelse return false;
+        if (i >= m.local.len or m.stamp[i] != m.current or m.pulled_stamp[i] != m.current) return false;
+        const home = m.home[i];
+        return home != 0 and m.pulled_outer[i] == m.scopes.items[home].parent;
+    }
+
+    /// Note that the printer left a loop variable `pulledLoopVariable`
+    /// names outside its loop's head.
+    pub fn mispulled(m: *Module, n: NameIndex) void {
+        if (!std.debug.runtime_safety) return;
+        if (m.failure != null) return;
+        m.failure = .{ .kind = .mispulled, .name = n };
+    }
+
     /// Note that a reference reached the printer with nothing behind it.
     pub fn unresolved(m: *Module, n: NameIndex) void {
         if (!std.debug.runtime_safety) return;
@@ -719,9 +763,18 @@ pub const Module = struct {
             // around the loop has, nor one of the names of enclosing scopes
             // that scope uses, since the printer may as well leave it where
             // it is (`pulled_outer`). `a` is evaluated where it stands.
+            //
+            // *Amended 2026-10-12*: only when the printer does write it in
+            // the head (`heads`). One it leaves where it stands — whose
+            // update is not the loop's last statement, so the head takes
+            // an earlier member of the run or none — is a name of the scope
+            // around the loop, and two such of sibling loops, named as if
+            // each lived in its own loop, were one spelling declared twice
+            // in one scope.
             if (m.met == null and i + 1 < list.len and m.ir.tag(list[i]) == .let_decl and
                 m.ir.tag(list[i + 1]) == .while_true and
-                @as(NameIndex, @fromBackingInt(@intCast(m.ir.data(list[i + 1]).lhs))) == .none)
+                @as(NameIndex, @fromBackingInt(@intCast(m.ir.data(list[i + 1]).lhs))) == .none and
+                try m.headed(list, i))
             {
                 const d = m.ir.data(list[i]);
                 const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
