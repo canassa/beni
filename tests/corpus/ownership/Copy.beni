@@ -1,7 +1,9 @@
 -- ownership: `List.copy` makes an edit acceptable (Change 2, thesis
 -- §7 *The explicit copy*; T33's and T41's fix). `kept` extends a list it
 -- also returns: rejected, `later-use`. `copiedFirst` extends a copy instead,
--- a fresh array nothing else holds: accepted, `fresh`. The copy is
+-- a fresh array nothing else holds: accepted, `call` — a call whose summary
+-- says `fresh1`, `List.copy`'s asserted row (`ownership-checker.md` §16.8).
+-- The copy is
 -- shallow: its elements are the original's, so editing an element of the
 -- copy while the original lives is still rejected, `element` — the
 -- exclusive contents of slice 2 cannot help here, since the element really

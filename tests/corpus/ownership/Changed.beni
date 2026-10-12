@@ -1,0 +1,28 @@
+-- ownership: TodoMVC's `changed` (idiom I5, thesis §5.2;
+-- `ownership-checker.md` §16.4 items 1–2). The pending record
+-- `{ model | draft = "" }` still holds the old `model.todos` while
+-- `model.todos ++ [ n ]` writes it. Slice 1 assumed every call reads every
+-- argument and rejected the append as `call`; `changed`'s summary says it
+-- never reads its first argument's `.todos` — it replaces it — so the
+-- pending operand is no holder, and the append is accepted, `param`. A
+-- helper that does read the field, `logged`, keeps the rejection, now the
+-- exact `held-operand`.
+type alias Model =
+    draft : String
+    todos : List Int
+
+
+changed : Model, List Int → Model
+changed model todos = { model | todos = todos }
+
+
+logged : Model, List Int → Model
+logged model todos = { model | todos = [ …todos, List.length model.todos ] }
+
+
+pub add : Model, Int → Model
+add model n = changed { model | draft = "" } (model.todos ++ [ n ])
+
+
+pub addLogged : Model, Int → Model
+addLogged model n = logged { model | draft = "" } (model.todos ++ [ n ])

@@ -3,6 +3,11 @@ module Toplevel
   24:41 construction Toplevel.initialModel.todos: rejected top-level: Toplevel.initialModel is a top-level value
   34:25 construction model.todos: accepted call
   38:19 ++ <literal>: accepted fresh
-  demands 4: accepted 2 (fresh 1, call 1, param 0, callback-param 0), rejected 2
-total 4: accepted 2 (fresh 1, call 1, param 0, callback-param 0), rejected 2
+  summary addSeed: res shared(Toplevel.seed)
+  summary addModel: res .todos shared(Toplevel.initialModel).todos
+  summary init: res .todos fresh1
+  summary addFresh: res .todos fresh1
+  summary reading: res [*] shared(Toplevel.seed)[*], fresh1
+  demands 4: accepted 2 (fresh 1, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 1, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 2
 cause top-level 2

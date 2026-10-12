@@ -337,6 +337,11 @@ pub const Options = struct {
     /// core again. Any core or platform file and module may be installed
     /// from it, whatever directory it was read from.
     pack_in: ?[]const u8 = null,
+    /// Check every module, reading nothing from the checked core: what
+    /// `dump --stage=ownership` needs, because a summary is read off a
+    /// module's solved types, which only a module this run checks keeps
+    /// (`ownership-checker.md` §16.9). No `check` or `build` sets it.
+    no_pack: bool = false,
     /// With `pack_out`: the build id of the compiler that will carry the
     /// pack, which every key is computed with in place of this one's.
     pack_build_id: ?[16]u8 = null,
@@ -526,7 +531,7 @@ pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
     // from, and a run that makes a pack reads only the rows it was handed.
     if (options.pack_out != null) {
         if (options.pack_in) |bytes| session.pack = CorePack.Pack.init(bytes);
-    } else if (options.core_package and options.core_root == null) {
+    } else if (options.core_package and options.core_root == null and !options.no_pack) {
         session.pack = CorePack.Pack.init(core_pack.bytes);
     }
     session.profile = try Profile.init(gpa, io, .{

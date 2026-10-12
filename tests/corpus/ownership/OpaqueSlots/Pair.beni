@@ -1,0 +1,27 @@
+-- ownership (project): T48, an opaque record whose module may put one list
+-- at two fields (`ownership-checker.md` §16.4 item 3, §16.10's slots;
+-- thesis Change 9). `pushA` writes the `.a` slot and leaves Disjoint with
+-- the `.b` slot to its callers; `fromList` names one cell at both.
+pub opaque type Pair
+    = Pair Fields
+
+
+type alias Fields =
+    a : List Int
+    b : List Int
+
+
+pub fromList : List Int → Pair
+fromList xs = Pair { a = xs, b = xs }
+
+
+pub fromTwo : List Int, List Int → Pair
+fromTwo xs ys = Pair { a = xs, b = ys }
+
+
+pub pushA : Pair, Int → Pair
+pushA (Pair r) x = Pair { r | a = [ …r.a, x ] }
+
+
+pub getB : Pair → List Int
+getB (Pair r) = r.b

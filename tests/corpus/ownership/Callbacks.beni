@@ -1,0 +1,57 @@
+-- ownership: callbacks and what their callers supply them
+-- (`ownership-checker.md` §16.4 items 4–5; thesis §4.7). `List.foldl`'s
+-- summary is inferred from its loop: it supplies its accumulator owned —
+-- the initial value, or the callback's previous result when the callback
+-- returns owned — so `sum`'s `[ …acc, x ]` is accepted (I2), and the
+-- initial `[]` is the caller-side demand at the call. T46: a callback that
+-- may return a top-level list does not return owned, so the accumulator is
+-- supplied borrowed and the edit is rejected, `supply`. T15: a callback
+-- that returns its element makes `pick`'s result an alias of `rows`'s
+-- elements. `List.map` hands each element to its callback while the list
+-- is still read by the loop, so the inferred supply is borrowed: a callback
+-- that consumes its element is rejected (§16.8's finding — the thesis's
+-- single-pass row needs exclusive contents), and one that only reads it is
+-- accepted. `apply` calls its function parameter on its own argument,
+-- owned, so a lambda that writes is accepted and the write is `apply`'s
+-- caller's demand.
+defaults : List Int
+defaults = [ 0 ]
+
+
+apply : List Int, (List Int → List Int) → List Int
+apply xs f = f xs
+
+
+pub sum : List Int → List Int
+sum xs = List.foldl xs [] λx acc → [ …acc, x ]
+
+
+pub t46 : List Int → List Int
+t46 xs = List.foldl xs [] λx acc →
+    if x < 0 then
+        defaults
+    else
+        [ …acc, x ]
+
+
+pub t15 : List (List Int) → Int
+t15 rows =
+    picked = List.foldl rows [] λr acc → r
+    grown = [ …picked, 9 ]
+    List.length grown + List.length rows
+
+
+pub consumes : List (List Int) → List (List Int)
+consumes rows = List.map rows λr → [ …r, 0 ]
+
+
+pub reads : List (List Int) → List (List Int)
+reads rows = List.map rows λr → [ 0 ] ++ r
+
+
+pub applied : ⊤ → List Int
+applied ⊤ = apply [ 1 ] λys → [ …ys, 2 ]
+
+
+pub appliedRead : List Int → Int
+appliedRead xs = List.length (apply xs λys → [ …ys, 2 ]) + List.length xs

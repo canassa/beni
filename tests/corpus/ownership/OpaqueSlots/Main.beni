@@ -1,0 +1,15 @@
+-- ownership (project): T48 from the importer's side. `Pair` is opaque here,
+-- yet the call of `Pair.pushA` on `Pair.fromList [ 1 ]` is rejected,
+-- `disjoint`: the summary of `fromList` puts one cell at both slots, and
+-- `pushA`'s writes one of them while the other is an operand path of the
+-- same argument. Conduit's case is the other: two lists, two cells,
+-- accepted.
+import Pair
+
+
+pub shared : ⊤ → Int
+shared ⊤ = List.length (Pair.getB (Pair.pushA (Pair.fromList [ 1 ]) 2))
+
+
+pub separate : ⊤ → Int
+separate ⊤ = List.length (Pair.getB (Pair.pushA (Pair.fromTwo [ 1 ] [ 2 ]) 3))

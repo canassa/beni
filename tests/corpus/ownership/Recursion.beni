@@ -1,0 +1,55 @@
+-- ownership: recursion (`ownership-checker.md` §16.6; thesis §4.5). T12:
+-- `appendTo` builds in tail position modulo a construction, and the base of
+-- `[ x, …appendTo rest ys ]` is the recursive call's result — `ys` in the
+-- base case — so the optimistic fixpoint finds `π2 RAW, res π2`: it
+-- consumes `ys` and returns it. `t12`'s call is then a demand on `ys`, which
+-- is read afterwards: rejected at the call. `evens` and `odds` call each
+-- other, one group solved together: the accumulator is written, so
+-- `everyOther` (a fresh `[]`) is accepted and `keepsAcc`, which reads its
+-- accumulator after, is rejected.
+appendTo : List Int, List Int → List Int
+appendTo xs ys =
+    case xs of
+        [] →
+            ys
+
+        [ x, …rest ] →
+            [ x, …appendTo rest ys ]
+
+
+evens : List Int, List Int → List Int
+evens xs acc =
+    case xs of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            odds rest [ …acc, x ]
+
+
+odds : List Int, List Int → List Int
+odds xs acc =
+    case xs of
+        [] →
+            acc
+
+        [ _, …rest ] →
+            evens rest acc
+
+
+pub t12 : List Int → Int
+t12 ys =
+    zs = appendTo [] ys
+    zs2 = [ …zs, 3 ]
+    List.length zs2 + List.length ys
+
+
+pub everyOther : List Int → List Int
+everyOther xs = evens xs []
+
+
+pub keepsAcc : List Int → Int
+keepsAcc xs =
+    acc = [ 0 ]
+    out = evens xs acc
+    List.length out + List.length acc

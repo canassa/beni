@@ -1,0 +1,15 @@
+module Main
+  11:36 call Pair.pushA <call Pair.fromList>#Pair.0.a: rejected disjoint: another operand of the same operation reaches it (Pair.pushA writes π1#Pair.0.a)
+  15:38 call Pair.pushA <call Pair.fromTwo>#Pair.0.a: accepted fresh (Pair.pushA writes π1#Pair.0.a)
+  summary shared: unused
+  summary separate: unused
+  demands 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0; assumed 0), pending 0, rejected 1
+module Pair
+  23:37 construction r.a: accepted param
+  summary fromList: π1 RA; res #Pair.0.a π1, #Pair.0.b π1
+  summary fromTwo: π1 RA, π2 RA; res #Pair.0.a π1, #Pair.0.b π2
+  summary pushA: π1#Pair.0.a RAW, π1#Pair.0.b RA; res #Pair.0.a π1#Pair.0.a, #Pair.0.b π1#Pair.0.b
+  summary getB: π1#Pair.0.b RA; res π1#Pair.0.b
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0; assumed 0), pending 0, rejected 0
+total 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0; assumed 0), pending 0, rejected 1
+cause disjoint 1

@@ -1,0 +1,20 @@
+module Recursion
+  17:18 construction <call Recursion.appendTo>: accepted param
+  17:19 call Recursion.appendTo ys: accepted param (Recursion.appendTo writes π2)
+  27:13 call Recursion.odds <construction>: accepted param (Recursion.odds writes π2)
+  27:25 construction acc: accepted param
+  37:13 call Recursion.evens acc: accepted param (Recursion.evens writes π2)
+  42:10 call Recursion.appendTo ys: rejected later-use: ys is read again at 44:23 (Recursion.appendTo writes π2)
+  43:13 construction zs: rejected alias: ys holds it and is read at 44:23
+  48:17 call Recursion.evens <literal>: accepted fresh (Recursion.evens writes π2)
+  54:11 call Recursion.evens acc: rejected later-use: acc is read again at 55:23 (Recursion.evens writes π2)
+  summary appendTo: π1 R, π2 RAW; res π2
+  summary evens: π1 R, π2 RAW; res π2
+  summary odds: π1 R, π2 RAW; res π2
+  summary t12: π1 RW
+  summary everyOther: π1 R; res fresh1
+  summary keepsAcc: π1 R
+  demands 9: accepted 6 (fresh 1, call 0, param 5, callback-param 0; assumed 0), pending 0, rejected 3
+total 9: accepted 6 (fresh 1, call 0, param 5, callback-param 0; assumed 0), pending 0, rejected 3
+cause later-use 2
+cause alias 1

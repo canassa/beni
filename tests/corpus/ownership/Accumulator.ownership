@@ -1,6 +1,13 @@
 module Accumulator
-  14:24 construction acc: accepted param
-  22:42 construction acc: accepted callback-param
-  28:7 construction start: accepted fresh
-  demands 3: accepted 3 (fresh 1, call 0, param 1, callback-param 1), rejected 0
-total 3: accepted 3 (fresh 1, call 0, param 1, callback-param 1), rejected 0
+  16:9 call Accumulator.upTo <construction>: accepted param (Accumulator.upTo writes π2)
+  16:24 construction acc: accepted param
+  20:15 call Accumulator.upTo <literal>: accepted fresh (Accumulator.upTo writes π2)
+  24:14 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  24:42 construction acc: accepted callback-param (List.foldl supplies it owned)
+  30:7 construction start: accepted fresh
+  summary upTo: π2 RAW; res π2
+  summary countdown: res fresh1
+  summary squares: π1 R; res ~fresh1
+  summary doubled: res fresh1
+  demands 6: accepted 6 (fresh 3, call 0, param 2, callback-param 1; assumed 0), pending 0, rejected 0
+total 6: accepted 6 (fresh 3, call 0, param 2, callback-param 1; assumed 0), pending 0, rejected 0

@@ -412,6 +412,10 @@ pub const Dump = struct {
     /// program's message type for the page fuzzer instead of its write
     /// sets (browser-direct.md §8.3, amended 2026-10-09).
     msg_types: bool = false,
+    /// `--ownership-totals` — hidden, like the stage: with
+    /// `--stage=ownership`, print only the `total`, `cause` and `pending`
+    /// lines, for scripts (`ownership-checker.md` §16.11).
+    ownership_totals: bool = false,
     file: []const u8,
 };
 
@@ -1060,6 +1064,7 @@ const DumpSpecific = struct {
     platform: ?[]const u8 = null,
     writes_work: ?u64 = null,
     msg_types: bool = false,
+    ownership_totals: bool = false,
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
@@ -1090,6 +1095,12 @@ const DumpSpecific = struct {
             if (value != null) return noValue(name);
             self.msg_types = true;
             self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--ownership-totals")) {
+            // Hidden, as `--stage=ownership` is (ownership-checker.md
+            // §16.11): the report's totals alone, for scripts.
+            if (value != null) return noValue(name);
+            self.ownership_totals = true;
+            self.consumed = true;
         }
         return null;
     }
@@ -1117,6 +1128,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     if (s.positionals.items.len != 1) return .{ .usage = .init("beni: dump needs exactly one file", .{}) };
     if (s.specific.writes_work != null and stage != .writes) return .{ .usage = .init("beni: --writes-work applies to --stage=writes only", .{}) };
     if (s.specific.msg_types and stage != .writes) return .{ .usage = .init("beni: --msg-types applies to --stage=writes only", .{}) };
+    if (s.specific.ownership_totals and stage != .ownership) return .{ .usage = .init("beni: --ownership-totals applies to --stage=ownership only", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
         .stage = stage,
@@ -1124,6 +1136,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
         .platform = s.specific.platform,
         .writes_work = s.specific.writes_work,
         .msg_types = s.specific.msg_types,
+        .ownership_totals = s.specific.ownership_totals,
         .file = s.positionals.items[0],
     } } };
 }
@@ -1247,6 +1260,9 @@ test "dump: stage, positions, exactly one file" {
     try expectCommand(.{ .dump = .{ .stage = .bir, .file = "M.beni" } }, &.{ "dump", "--stage=bir", "M.beni" });
     // Hidden (ownership-checker.md §2.4): parsed, but in no usage text.
     try expectCommand(.{ .dump = .{ .stage = .ownership, .file = "src" } }, &.{ "dump", "--stage=ownership", "src" });
+    // Hidden too (§16.11): the totals alone, and only for that stage.
+    try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_totals = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-totals", "src" });
+    try expectUsage("beni: --ownership-totals applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-totals", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .graph, .file = "src" } }, &.{ "dump", "--stage=graph", "src" });
