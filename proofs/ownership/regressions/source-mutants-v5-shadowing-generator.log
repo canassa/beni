@@ -1,0 +1,57 @@
+# Source-level mutants, generator at commit 7f9783f71 ("generate shadowing"),
+# before the last two generator commits (0723d842c, d8c9e8077). 20000 trials,
+# seeds 20261011 / 17 / 271828; first index per seed, "none" = not caught.
+# Transcribed from the run's output: run-mutants.sh then did not record a
+# mismatch before shrinking it, so a run that overflowed the stack while
+# shrinking was reported as "none" (argrecheck2 was such a case, see below).
+disjoint 571 139 140 3/3
+borrowedsupply none none none 0/3
+travexcl 3092 237 1963 3/3
+manycap 2438 1313 2456 3/3
+copyexcl 1562 9256 3611 3/3
+closesrc 824 1085 2551 3/3
+keepsshape 312 2676 8054 3/3
+xres none none none 0/3
+separated 34 43 1 3/3
+dead 8 2 3 3/3
+escape 96 60 39 3/3
+focusexcl 34 29 1 3/3
+once none none none 0/3
+nestedsep none none none 0/3
+reqexcloutside none none none 0/3
+recvalidate none none none 0/3
+writeout 62 1 180 3/3
+tsupplyexcl none none none 0/3
+escapeowned none none none 0/3
+guardreuse 2333 996 18 3/3
+callbackxres 34 43 1 3/3
+supplyedge 384 141 1141 3/3
+supplyrecheck 3189 141 8693 3/3
+callsedge 58 17 42 3/3
+requiresedge none none none 0/3
+callbackwrites 1638 773 63 3/3
+callbackescapes 6276 none 6075 2/3
+callbackaliases 283 141 18 3/3
+callbackenv 0 1 180 3/3
+callbackrequires none none none 0/3
+forwardguards none none none 0/3
+transfersupplies none none none 0/3
+oncethroughcall 6922 9635 8398 3/3
+capturelive 252 417 1244 3/3
+copyelems 732 3294 5508 3/3
+putexcl 62 1 180 3/3
+recwrites none none none 0/3
+recwritesown 360 none 1021 2/3
+keepsany none none none 0/3
+symenv none none none 0/3
+branchlive 267 116 1275 3/3
+branchclosure 8 536 393 3/3
+sharedroots 607 95 376 3/3
+resprov 62 1 83 3/3
+argrecheck2 none none none 0/3 (two seeds aborted while shrinking)
+pushexcl none none none 0/3
+nofix1 6922 9635 8398 3/3
+nofix2 none none none 0/3
+hiddencopy none none none 0/3
+focuscontainer 2847 825 202 3/3
+atelem 66 251 858 3/3

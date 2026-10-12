@@ -10,20 +10,24 @@ statements three are `sorry` and the main theorem is proved only from one of
 them. It does not change the beni compiler
 or the thesis.
 
-Current state ([RESULTS.md](RESULTS.md)): 82 fixed verdict fixtures, checked by
+Current state ([RESULTS.md](RESULTS.md)): 86 fixed verdict fixtures, checked by
 both checkers; three 20 000-trial campaigns of generator v5 (which generates
-declarations, recursion and closures of its own) with no corrected-rule
-mismatch: 12 077 accepted programs, 8 718 of them distinct, 7 687 with an
-in-place write, half of them writing an array two names reach; precision
-62 % (accepted among programs whose two runs agree). Nineteen required
-negative controls (two historical, the first review's seven, eight
-summary-row mutants, `once-through-call` and `branch-live`) each have a
-fixed probe, and the generator alone catches each of them on each of three
-seeds (borrowed-supply only against the per-call checker); `ci` requires
-both. Two more are required through their probe only; three are known gaps.
-Of 43 source-level edits, including the second review's nine planted holes,
-the generator catches 26 on all three seeds; the misses are analysed in
-COVERAGE.md.
+declarations, recursion, closures and shadowing of its own) with no
+corrected-rule mismatch: 10 681 accepted programs, 7 400 of them distinct,
+6 878 with an in-place write that changes an array, 55 % writing an array
+two names reach; precision 58 % (accepted among programs whose two runs
+agree). In the declaration family 96 % of accepted programs run a generated
+declaration, a third have one change an array the caller passed, and 15 %
+of generated calls pass one array twice. Twenty-two required negative
+controls (two historical, the first review's seven, eight summary-row
+mutants, `once-through-call`, `branch-live`, and the third review's
+`branch-closure`, `shared-roots` and `shadowing`) each have a fixed probe,
+and the generator alone catches each of them on each of three seeds
+(borrowed-supply only against the per-call checker); `ci` requires both.
+Two more are required through their probe only; three are known gaps. The
+third review's planted holes are re-run on the final generator; the other
+source-level edits were last run on an earlier v5 generator (RESULTS.md says
+which); the misses are analysed in COVERAGE.md.
 
 ## Run
 
