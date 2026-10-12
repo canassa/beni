@@ -1147,8 +1147,17 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         uses = &.{.{ .param = 0, .path = eps, .bits = R | A | W }};
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps) }, .{ .path = elem, .prov = p(0, elem) } });
     } else if (std.mem.eql(u8, name, "cons")) {
-        uses = &.{ .{ .param = 0, .path = eps, .bits = A }, .{ .param = 1, .path = eps, .bits = R | A | W } };
-        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(1, eps), .xc = try o.stores(1, 0, elem) }, .{ .path = elem, .prov = p(1, elem) }, .{ .path = elem, .prov = p(0, eps) } });
+        // §3.1 as amended for slice 3f: a prepend copies, so it reads its
+        // base and writes nothing. Its result is a new array, or — the
+        // runtime's re-cons — a header over the base's own array, so it
+        // aliases π₂ as well (thesis §3.8: "a prepend into a view returns a
+        // new header over the same array").
+        uses = &.{ .{ .param = 0, .path = eps, .bits = A }, .{ .param = 1, .path = eps, .bits = R | A }, .{ .param = 1, .path = elem, .bits = A } };
+        const made = try keep.alloc(XAtom, 3);
+        made[0] = .{ .kind = .excl, .a = p(0, eps) };
+        made[1] = .{ .kind = .excl, .a = p(1, eps) };
+        made[2] = sepAtom(p(0, eps), p(1, elem));
+        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = fresh, .xc = .{ .atoms = sortAtoms(made) } }, .{ .path = eps, .prov = p(1, eps) }, .{ .path = elem, .prov = p(1, elem) }, .{ .path = elem, .prov = p(0, eps) } });
     } else if (std.mem.eql(u8, name, "append")) {
         // Copying in the elements of a list that lives on (thesis §3.8).
         uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = R }, .{ .param = 1, .path = elem, .bits = A } };
@@ -2290,10 +2299,57 @@ fn mayShare(o: *Ownership, store: *TypeStore, a: Var, b: Var, depth: u32) Alloca
             }
         },
         .func => return sb == .func or (sb == .app and try o.unboxed(sb.app.type)),
-        .record => return sb == .record or (sb == .app and try o.unboxed(sb.app.type)),
+        .record => |x| switch (sb) {
+            // §6.1 as amended for slice 3f: two closed records are one
+            // object only when they have the same fields, each of which may
+            // be one value — an `Explosion → Obstacle` callback never
+            // returns what it was handed (thesis §3.8).
+            .record => |y| return o.recordsMayShare(store, x, y, depth),
+            .app => |y| return o.unboxed(y.type),
+            else => return false,
+        },
         .tuple => return sb == .tuple or (sb == .app and try o.unboxed(sb.app.type)),
         .unit, .empty_record => return false,
     }
+}
+
+/// The fields of a record type with its extension chain followed, into
+/// `buf`; null when the row is open, or wider than `buf`.
+fn closedFields(store: *TypeStore, r: TypeStore.Structure.Record, buf: []TypeStore.Field) ?[]const TypeStore.Field {
+    var n: usize = 0;
+    var at = r;
+    while (true) {
+        const fs = store.fields(at.fields);
+        if (n + fs.len > buf.len) return null;
+        @memcpy(buf[n..][0..fs.len], fs);
+        n += fs.len;
+        switch (store.resolvedContent(at.ext)) {
+            .structure => |s| switch (s) {
+                .empty_record => return buf[0..n],
+                .record => |next| at = next,
+                else => return null,
+            },
+            else => return null,
+        }
+    }
+}
+
+/// Whether a value of record type `x` may be one of record type `y`: two
+/// closed rows only when they name the same fields, each pair of which may
+/// be one value (§6.1, amended for slice 3f).
+fn recordsMayShare(o: *Ownership, store: *TypeStore, x: TypeStore.Structure.Record, y: TypeStore.Structure.Record, depth: u32) Allocator.Error!bool {
+    var bx: [64]TypeStore.Field = undefined;
+    var by: [64]TypeStore.Field = undefined;
+    const fx = closedFields(store, x, &bx) orelse return true;
+    const fy = closedFields(store, y, &by) orelse return true;
+    if (fx.len != fy.len) return false;
+    for (fx) |f| {
+        const g = for (fy) |g| {
+            if (g.name == f.name) break g;
+        } else return false;
+        if (!try o.mayShare(store, f.value, g.value, depth + 1)) return false;
+    }
+    return true;
 }
 
 /// Whether a value of type `r`, or a part of it, may be the same object
@@ -2555,6 +2611,10 @@ const Pending = struct {
 
 const CtxNode = struct { parent: u32, case_id: u32, arm: u32, depth: u32 };
 
+/// A `Maybe.withDefault (Maybe.map m f) d` (§7.2 as amended for slice 3f):
+/// the call, and the branch contexts of its `Just` and `Nothing` outcomes.
+const MaybeJoin = struct { call: Inst.Index, just: u32, nothing: u32 };
+
 const Frame = struct {
     /// The enclosing frame, or `none` for the declaration's.
     parent: u32,
@@ -2644,6 +2704,9 @@ const Walker = struct {
     ctx_nodes: std.ArrayList(CtxNode) = .empty,
     ctx: u32 = 0,
     cases: u32 = 0,
+    /// §7.2 as amended for slice 3f: the `Maybe.withDefault (Maybe.map m f) d`
+    /// being walked, and the context of each of its two outcomes.
+    maybe_join: ?MaybeJoin = null,
     pending: std.ArrayList(Pending) = .empty,
     uses: std.ArrayList(Use) = .empty,
     demands: std.ArrayList(DemandRec) = .empty,
@@ -3703,7 +3766,9 @@ const Walker = struct {
     fn writerName(w: *const Walker, t: Target) ?[]const u8 {
         if (!w.isCore(t, "List")) return null;
         const name = w.targetName(t);
-        const writers = [_][]const u8{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "cons", "append" };
+        // Not `cons`: a prepend copies its base and writes nothing (§3.1,
+        // amended for slice 3f).
+        const writers = [_][]const u8{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" };
         for (writers) |x| if (std.mem.eql(u8, x, name)) return x;
         return null;
     }
@@ -4445,10 +4510,53 @@ const Walker = struct {
             return &.{};
         }
         if (if (has_params) try w.o.ensureSummary(t.m, t.d) else null) |s| {
+            const saved = w.maybe_join;
+            defer w.maybe_join = saved;
+            if (try w.isMaybeJoin(t, args)) w.maybe_join = try w.openMaybeJoin(inst);
             return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d) }, args, &.{}, null);
         }
         if (w.escapes(t)) return w.escapeCall(inst, args, try w.qualified(t));
         return w.conservative(inst, args, &.{}, null, try w.qualified(t), w.o.in.birs[t.m].decls[t.d].kind == .foreign_value);
+    }
+
+    /// §7.2 as amended for slice 3f: `Maybe.withDefault (Maybe.map m f) d`,
+    /// both core's, where `m` and `d` are variable paths and `f` a lambda or
+    /// a top-level value. `Maybe.map` calls `f` exactly when `m` is `Just`,
+    /// and `withDefault` returns `d` exactly when `map` answered `Nothing`,
+    /// so what `f`'s call writes and what `d` is read for are on two paths
+    /// no run takes both of. `m`, `f` and `d` evaluate nothing but reads, so
+    /// the arms hold only the call of `f` and the read of `d`.
+    fn isMaybeJoin(w: *Walker, t: Target, args: []const Inst.Index) Allocator.Error!bool {
+        if (args.len != 2 or !w.isCore(t, "Maybe") or !std.mem.eql(u8, w.targetName(t), "withDefault")) return false;
+        if ((try w.refPath(args[1])) == null) return false;
+        const inner = args[0];
+        if (w.bir.instTag(inner) != .call) return false;
+        const it = w.valueTarget(@fromBackingInt(@intCast(w.bir.instData(inner).lhs))) orelse return false;
+        if (!w.isCore(it, "Maybe") or !std.mem.eql(u8, w.targetName(it), "map")) return false;
+        const ia = w.callArgs(inner);
+        if (ia.len != 2 or (try w.refPath(ia[0])) == null) return false;
+        return switch (w.bir.instTag(ia[1])) {
+            .lambda, .top, .ext_value => true,
+            else => false,
+        };
+    }
+
+    /// The two arms of a `MaybeJoin`, as a `case` of its own (§7.2).
+    fn openMaybeJoin(w: *Walker, inst: Inst.Index) Allocator.Error!MaybeJoin {
+        const case_id = w.cases;
+        w.cases += 1;
+        const depth = w.ctx_nodes.items[w.ctx].depth + 1;
+        const just: u32 = @intCast(w.ctx_nodes.items.len);
+        try w.ctx_nodes.append(w.a, .{ .parent = w.ctx, .case_id = case_id, .arm = 0, .depth = depth });
+        try w.ctx_nodes.append(w.a, .{ .parent = w.ctx, .case_id = case_id, .arm = 1, .depth = depth });
+        return .{ .call = inst, .just = just, .nothing = just + 1 };
+    }
+
+    /// The branch context argument `i` of the call at `inst` is walked in.
+    fn joinArm(w: *const Walker, inst: Inst.Index, i: usize) ?u32 {
+        const j = w.maybe_join orelse return null;
+        if (j.call != inst) return null;
+        return if (i == 0) j.just else j.nothing;
     }
 
     // ---- the entry protocol (§20) -----------------------------------------
@@ -5107,7 +5215,10 @@ const Walker = struct {
         }
         const avs = try w.a.alloc(AV, args.len);
         for (args, avs, 0..) |arg, *v, i| {
+            const outer = w.ctx;
+            if (w.joinArm(inst, i)) |arm| w.ctx = arm;
             v.* = try w.eval(arg);
+            w.ctx = outer;
             const is_ref = (try w.refPath(arg)) != null;
             try w.pending.append(w.a, .{ .av = v.*, .frame = w.frame, .token = w.token(arg), .is_ref = is_ref, .by_call = true, .consumer = s, .arg = @intCast(i) });
         }
@@ -5118,6 +5229,9 @@ const Walker = struct {
         for (args, avs, 0..) |arg, av, i| {
             const pi: u32 = @intCast(i);
             if (try w.refPath(arg)) |r| {
+                const outer = w.ctx;
+                defer w.ctx = outer;
+                if (w.joinArm(inst, i)) |arm| w.ctx = arm;
                 for (s.uses) |u| {
                     if (u.param != pi or noUse(u.bits)) continue;
                     try w.useAt(r.local, try w.o.concat(r.path, u.path), tok, &.{});
@@ -6331,6 +6445,9 @@ const Walker = struct {
         // A list re-built in the shape a pattern just matched is that list
         // (thesis §3.8): an alias, not a demand.
         if (w.reconsed(items)) return avs[bi];
+        // A prepend — items, then the one spread, last — copies its base
+        // and writes nothing (§3.2 as amended for slice 3f).
+        if (bi > 0 and bi == items.len - 1) return w.prepended(top, avs, bi);
         const others = try w.a.alloc(AV, avs.len - 1);
         var k: usize = 0;
         for (avs, 0..) |av, i| if (i != bi) {
@@ -6377,6 +6494,43 @@ const Walker = struct {
             }
         }
         return w.unionOf(parts.items);
+    }
+
+    /// A prepend, `[ x, …xs ]` (§3.2 as amended for slice 3f): a new array
+    /// holding the items and then a copy of the base's elements, so the base
+    /// is only read. The result is that new array, or — when the runtime
+    /// re-conses onto a view (`backend.md` §4) — a header over the base's
+    /// own array: it aliases the base, whose condition it does not lower.
+    fn prepended(w: *Walker, top: Inst.Index, avs: []const AV, bi: usize) Allocator.Error!AV {
+        const site = try w.single(.{ .kind = .site, .a = top.int(), .ty = w.instTypeOpt(top) });
+        var stored: std.ArrayList(AV) = .empty;
+        for (avs[0..bi]) |av| try stored.append(w.a, av);
+        const k = try w.condAnd(try w.storedCond(stored.items, try w.elementsOf(avs[bi])), try w.deepCond(avs[bi]));
+        try w.initCond(site[0].cell, k);
+        var parts: std.ArrayList(AV) = .empty;
+        try parts.append(w.a, site);
+        // The array may be the base's — only a re-cons makes it so, which
+        // the text does not show (§8.4) — while the elements are the base's.
+        try parts.append(w.a, try w.approxAll(avs[bi], top));
+        try parts.append(w.a, try w.shift(try w.proj(avs[bi], .{ .kind = .elem, .arg = 0 }, w.listElement(top)), .{ .kind = .elem, .arg = 0 }));
+        for (stored.items) |av| try parts.append(w.a, try w.shift(av, .{ .kind = .elem, .arg = 0 }));
+        return w.unionOf(parts.items);
+    }
+
+    /// The element type of a list-typed instruction, when the checker solved it.
+    fn listElement(w: *Walker, inst: Inst.Index) ?Var {
+        const v = w.instType(inst) orelse return null;
+        switch (w.store.resolvedContent(v)) {
+            .structure => |s| switch (s) {
+                .app => |a| {
+                    if (a.type != w.o.in.types.well_known.list) return null;
+                    const args = w.store.vars(a.args);
+                    return if (args.len == 1) args[0] else null;
+                },
+                else => return null,
+            },
+            else => return null,
+        }
     }
 
     /// §20.8: cells two arguments of a constructor place at one folded path —

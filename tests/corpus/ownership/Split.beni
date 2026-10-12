@@ -4,7 +4,9 @@
 -- exclusive, `rest` holds no cell of `r`, so `bumpHead` extends `r` in place
 -- and is accepted — relying on its parameter being exclusive, which its
 -- callers discharge: `distinct` passes two literals, accepted; `repeated`
--- passes one list twice, rejected `exclusive`. The scrutinee itself still
+-- passes one list twice, rejected `exclusive`. The outer `[ …, …rest ]` is a
+-- prepend, which copies (§25.2): `bumpHead` writes its rows, `π1[*]`, and
+-- not its spine, so each call's line is at `[*]`. The scrutinee itself still
 -- holds `r`: `readAfter` reads `rows` after the edit, rejected `later-use`.
 pub bumpHead : List (List Int) → List (List Int)
 bumpHead rows =

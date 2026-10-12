@@ -1,0 +1,11 @@
+module MapAcrossTypes
+  32:42 ++ <call List.map>: accepted call
+  38:42 ++ <call List.map>: rejected call: explosions may hold it through the call at 38:11, and is read at 39:23 (approx)
+  52:13 ++ <call List.map>: rejected call: wrapped may hold it through the call at 45:9, and is read at 53:23 (approx)
+  summary toObstacle: unused
+  summary obstacles: π1 R, π1[*] R
+  summary moved: π1 Rw, π1[*] R
+  summary unwrapped: π1 Rw, π1[*] R
+  demands 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause call 2

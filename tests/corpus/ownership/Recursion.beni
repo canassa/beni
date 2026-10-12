@@ -1,10 +1,13 @@
 -- ownership: recursion (`ownership-checker.md` §16.6; thesis §4.5). T12:
--- `appendTo` builds in tail position modulo a construction, and the base of
--- `[ x, …appendTo rest ys ]` is the recursive call's result — `ys` in the
--- base case — so the optimistic fixpoint finds `π2 RAW, res π2`: it
--- consumes `ys` and returns it. `t12`'s call is then a demand on `ys`, which
--- is read afterwards: rejected at the call. `evens` and `odds` call each
--- other, one group solved together: the accumulator is written, so
+-- `appendTo` builds in tail position modulo a construction. Since a prepend
+-- copies (§25.2), `[ x, …appendTo rest ys ]` only reads the recursive
+-- call's result, and the optimistic fixpoint finds `π2 RA`: `appendTo`
+-- reads `ys` and may return it — the base case, and the backend's loop,
+-- which hands `ys` back when it built nothing (`List.close`). `t12` pushes
+-- onto that result while `ys` is read afterwards: rejected at the push,
+-- approximately, since the result is `ys` only on some runs. `evens` and
+-- `odds` call each other, one group solved together: the accumulator is
+-- written, so
 -- `everyOther` (a fresh `[]`) is accepted and `keepsAcc`, which reads its
 -- accumulator after, is rejected.
 appendTo : List Int, List Int → List Int
