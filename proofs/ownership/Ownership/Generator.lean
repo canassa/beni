@@ -820,6 +820,17 @@ def loopPicksElement : Move := fun next env => do
     (.traverse .list (v (next + 3)) (v (next + 4)) i x acc step, tN),
     (.focus (v (next + 5)) (.int 0) (sv next 5) (.prim .push [v (sv next 5), ← number env]), tN)]
 
+/-- One wrapper (`mapVia`) called twice, with an identity or writing callback
+    and then one that publishes its argument, and the published row then
+    written: the second call must not reuse the first one's summary, and the
+    callback's escape must reach the caller. -/
+def publishVia : Move := fun next env => do
+  let first ← pick [identL, bump] identL
+  pure [(← litList env, tL), (.prim (.literal tL) [v next], tN), (.closure mapVia [], .fn [tN, fLL] tN),
+    (.closure first [], fLL), (.app (v (next + 2)) [v (next + 1), v (next + 3)], tN),
+    (.closure publish [], fLL), (.app (v (next + 2)) [v (next + 4), v (next + 5)], tN),
+    (.prim .push [v next, ← number env], tL)]
+
 def finTy (t : Ty) : Nat → Env → Gen (List String × Expr) := fun next env => do
   let (bs, a) ← valueOf false next env t
   pure ([], wrap next bs (.atom a))
@@ -846,7 +857,7 @@ def movesFor (table : Table) : List (String × Move) :=
     ("shadow-write", shadowWrite), ("shared-nested", sharedNested), ("shared-record", sharedRecord),
     ("branch-closure", branchClosure), ("double-push", doublePush), ("close-alias-callee", closeAliasCallee),
     ("copy-then-edit", copyThenEdit), ("once-in-loop", onceInLoop), ("shared-closure-record", sharedClosureRecord),
-    ("loop-picks-element", loopPicksElement)] ++ gen
+    ("loop-picks-element", loopPicksElement), ("publish-via", publishVia)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/

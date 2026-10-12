@@ -12,7 +12,7 @@ def flagValue (args : List String) (name : String) : Option String :=
 def main (args : List String) : IO UInt32 := do
   let mode := args.head?.getD "all"
   let positional := args.filter (fun a => !a.startsWith "--" &&
-    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff", "falsify"].contains a)
+    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff", "falsify", "accepted"].contains a)
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
   let version := (flagValue args "generator-version").bind String.toNat? |>.getD 5
@@ -47,6 +47,16 @@ def main (args : List String) : IO UInt32 := do
           IO.println s!"== {f.id}: {a.computed} summaries computed, {a.reused} reused"
           for e in a.cache do IO.println (Report.entryS f.program.declarations e)
         | .error e => IO.println s!"== {f.id}: rejected ({e})"
+    return 0
+  -- The indices of the generated programs this build's checker accepts, one
+  -- per line: two builds' lists differ exactly where a source-level edit
+  -- changes a verdict (`verdict-diff` does this for the `--mutant=` flags).
+  if mode == "accepted" then
+    let mut state := seed
+    for index in List.range count do
+      let ((_, p), next) := (Oracle.generateVersion version).run state
+      state := next
+      if (check p).isOk then IO.println s!"{index}"
     return 0
   if mode == "verdict-diff" then
     match mutant with

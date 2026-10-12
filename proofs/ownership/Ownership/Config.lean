@@ -66,13 +66,13 @@ def Mutant.name : Mutant → String
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
-/-- Mutants the generator need not catch within one campaign: `callback-escapes`
-    and `forward-guards` are caught rarely or not at all (generator v5: 2 and
-    0 seeds of 3) and are required through their fixed probe; `callback-requires`, `requires-edge` and
-    `transfer-supplies` changed no verdict in 20000 trials and have no probe —
-    known gaps (COVERAGE.md). `ownership controls` reports all five. -/
+/-- Mutants the generator need not catch: `callback-requires`, `requires-edge`
+    and `transfer-supplies` change no verdict on any generated program and are
+    argued equivalent in this core (COVERAGE.md, "Equivalent (argued)");
+    `no-scope` cannot be reached by a typed program and is required through its
+    checker-level probe. `ownership controls` reports all four. -/
 def Mutant.generatorOptional : Mutant → Bool
-  | .callbackEscapes | .callbackRequires | .requiresEdge | .forwardGuards | .transferSupplies => true
+  | .callbackRequires | .requiresEdge | .transferSupplies => true
   | .noScope => true
   | _ => false
 
