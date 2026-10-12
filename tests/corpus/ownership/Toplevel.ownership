@@ -1,13 +1,18 @@
 module Toplevel
-  20:15 construction Toplevel.seed: rejected top-level: Toplevel.seed is a top-level value
-  24:41 construction Toplevel.initialModel.todos: rejected top-level: Toplevel.seed is a top-level value
-  34:25 construction model.todos: accepted call
-  38:19 ++ <literal>: accepted fresh
+  26:15 construction Toplevel.seed: rejected top-level: Toplevel.seed is a top-level value
+  30:41 construction Toplevel.initialModel.todos: rejected top-level: Toplevel.seed is a top-level value
+  40:25 construction model.todos: accepted call
+  44:19 ++ <literal>: accepted fresh
+  51:31 construction xs: rejected element: d#Dict.0#Node.2 holds it and is read at 51:13 (approx)
+  58:15 call Toplevel.bump Dict.empty#Dict.0#Node.2: accepted fresh (Toplevel.bump writes π1#Dict.0#Node.2)
   summary addSeed: res shared(Toplevel.seed)
   summary addModel: res .todos shared(Toplevel.seed)
   summary init: res .todos fresh1
   summary addFresh: res .todos fresh1
   summary reading: res [*] shared(Toplevel.seed)[*], fresh1
-  demands 4: accepted 2 (fresh 1, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 2
-total 4: accepted 2 (fresh 1, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 2
+  summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0#Node.1 ~π1#Dict.0#Node.1, #Dict.0#Node.2 ~fresh1 ~π1#Dict.0#Node.2, #Dict.0#Node.3 ~π1#Dict.0#Node.3 ~π1#Dict.0#Node.4, #Dict.0#Node.4 ~π1#Dict.0#Node.3 ~π1#Dict.0#Node.4
+  summary fromEmpty: res #Dict.0#Node.2 ~fresh1
+  demands 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 3
+total 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 3
 cause top-level 2
+cause element 1
