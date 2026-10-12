@@ -27,6 +27,10 @@ among them.*
 5(a), the owner's decision of 2026-10-12; 5(b) refused), the thesis's row for a `foreign` that carries none, and
 HTTP decoders followed through `Expect` — is specified in §24 and built.*
 
+*Amended 2026-10-12: slice 3f — a prepend copies and demands nothing (the owner's decision that `[ x, …xs ]`
+copies), `map`'s identity promise read with the record types, and `Maybe.withDefault (Maybe.map m f) d` walked as
+the two arms it means — is specified in §25 and built.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -181,6 +185,9 @@ demands its first argument; `List.cons` its second; `List.append` its first. Onl
 module counts: a platform module named `List` is not core's. A writer passed as a value and called
 through a local is not a demand in slice 1; it is a conservative call (§6).
 
+*Amended 2026-10-12 (slice 3f, §25.2):* `List.cons` is not a writer. A prepend copies its base (the owner's
+decision of 2026-10-11), so it reads its second argument and demands nothing.
+
 ### 3.2 Constructions
 
 **A list literal with a spread is one construction, and its base is the operand of its first spread**
@@ -204,6 +211,10 @@ does not yet lower either way in place (slice 5 lowers the flattened chain, Chan
 spread, which allocates; a pattern, which only reads; and a list re-built in the shape a pattern just
 matched — `[ h, …t ]` whose items are exactly the locals that `[ h, …t ]` bound in an enclosing arm,
 or `[ …init, last ]` after `[ …init, last ]` — which is an alias of the scrutinee.
+
+*Amended 2026-10-12 (slice 3f, §25.2):* nor a **prepend**, a construction whose items all precede its one spread
+(`[ x, …xs ]`, `[ a, b, …xs ]`): it copies its base, reads it, and its result is a new list that may be the
+base's array (a re-cons). A construction with anything after its first spread still demands its base.
 
 ### 3.3 The order of a construction
 
@@ -357,6 +368,8 @@ summaries inferred for `update` and `swap`; constructions keep §3.2.*
 These are thesis §3.8's asserted rows, restricted to what slice 1 reads: which operand is written
 and which cell is returned. Their exclusivity and callback clauses are slice 2's.
 
+*Amended 2026-10-12 (slice 3f):* `List.cons`'s row is §25.2's — no demand.
+
 ---
 
 ## 7. Liveness
@@ -377,6 +390,9 @@ field-sensitive deadness).
 Every use and every demand carries its **branch context**: the chain of `(case, arm)` it sits in. A use
 is *after* a demand when its point is greater and the two are not in different arms of one `case`
 (thesis §7, *Branches that keep the old value*). An `if` is a `case` on `Bool`.
+
+*Amended 2026-10-12 (slice 3f, §25.4):* so is `Maybe.withDefault (Maybe.map m f) d` with `m` and `d` variable
+paths and `f` a lambda or a top-level value: the call of `Maybe.map` is one arm, the read of `d` the other.
 
 ### 7.3 Frames
 
@@ -823,6 +839,8 @@ value holds closures or top-level functions, or of a function parameter — whos
    an argument the result's type cannot be — by the argument's type, or by the cell's — is dropped, so
    `List.map xs String.fromInt` is never `xs`. A `List` and `core/List`'s `Builder` are one run-time
    object (`done` hands the one over as the other), so the filter never separates them.
+   *Amended 2026-10-12 (slice 3f, §25.3):* two closed record types are one object only when they name the
+   same fields, each pair of which may be one object; `List.map explosions toObstacle` is never `explosions`.
 7. **Derivations** (thesis §8.4): an instantiated entry is exact when its `res` path names one provenance;
    when it names two or more — the two outcomes of an identity promise, `List.filter`'s `{fresh, π₁}`,
    arms joined path-insensitively — every entry instantiated from it is approximate, tagged with the call,
@@ -920,7 +938,7 @@ Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2
 
 | Function | Row | Thesis |
 |---|---|---|
-| `cons x xs` | π₁ `A`; π₂ `RAW`; `res ε = π₂`, `[*] = π₂[*], π₁` | §3.8, the writers |
+| `cons x xs` | π₁ `A`; π₂ `RAW`; `res ε = π₂`, `[*] = π₂[*], π₁` — *amended 2026-10-12 (slice 3f, §25.2):* π₁ `A`; π₂ `RA`, π₂`[*]` `A`; `res ε = fresh₁, π₂`, `[*] = π₂[*], π₁` | §3.8, the writers; the owner's decision that a prepend copies |
 | `append xs ys` | π₁ `RAW`; π₂ `R`, π₂`[*]` `A`; `res ε = π₁`, `[*] = π₁[*], π₂[*]` | §3.8, with its decided change: `[] ++ ys` is the base, not `ys` |
 | `set xs i v`, `insertAt xs i v` | π₁ `RAW`; π₃ `A`; `res ε = π₁`, `[*] = π₁[*], π₃` | §3.8 |
 | `push xs v` | π₁ `RAW`; π₂ `A`; `res ε = π₁`, `[*] = π₁[*], π₂` | §3.8 |
@@ -2214,3 +2232,120 @@ and `check_test.zig`'s four tests of `trusted-surface.txt` (§24.6).
    the platforms assert a summary a body cannot show (A2, A6, A10), and 5(a) is "core and the platforms only"
    (§24.4). Item 1 goes to the owner (rule 10) and is not built.
    *Decided 2026-10-12 (the owner):* the thirteen keep their words, guarded by the body hashes of §24.6.
+
+## 25. Slice 3f — a prepend copies, `map` across types, and the default read on the other path (normative from 2026-10-12)
+
+*Amends §3.1, §3.2, §6.1 item 3, §6.2, §7.2, §16.4 item 6 and §16.8. Sections 1–24 keep their numbers and text;
+where this section changes a rule, it wins. Research 85 measures it on the first external port (research 82) and
+the rest.*
+
+### 25.1 The decisions it builds
+
+- **A prepend is not an in-place demand** (the manager, 2026-10-12, on the owner's decision of 2026-10-11 that
+  `[ x, …xs ]` copies: `language.md` §6.8, *`[ x, …xs ]` copies*; `backend.md` §4, *The claimable head*, its
+  amendment). Change 1 was written when a prepend could claim room in front of its base; with no such room, a
+  prepend builds a new array and cannot make an old version observable, so it must not consume its base. The
+  forms that append — `[ …acc, x ]`, `[ …a, …b ]`, `++`, `List.push` — keep consuming their base. This departs
+  from thesis Change 1's "`[ x, …acc ]` also consumes `acc`", by that decision.
+- **`map`'s identity promise is named only where it can fire** (thesis §3.8, the paragraph on `map`): the type
+  filter of §16.4 item 6 is applied as the thesis states it. Research 82's R4 had it applied, but §6.1's "may be
+  one object" answered *yes* for any two record types.
+- **The default read on the path where no edit happened** (research 82's R5): the narrowest path-sensitive rule
+  that accepts `m ▷ Maybe.map (edit model _) ▷ Maybe.withDefault model` and stays sound (§25.4).
+
+### 25.2 A prepend copies
+
+A **prepend** is a construction (§3.2) whose items all precede its one spread, which is last:
+`[ x₁, …, xₖ, …xs ]` with k ≥ 1; and a call of core `List.cons`. It is **not a demand**:
+
+1. **Its base is read**, at the construction's point (§3.3): every item and the base are used there, as the
+   operands of any consumer are (§7.1). A copy reads what it copies.
+2. **Its result** is a new cell made at the construction — `site(ι)`, whose contents are exclusive when the
+   items are, are apart from one another and from the base's elements, and the base's contents are (§18.2's
+   table) — **and the base's own cells, approximately**: core's `cons` re-conses onto a view whose previous
+   element is the one put in front, answering a header over the base's own array (`backend.md` §4, the two
+   re-cons rows), so the result may be the base. The text does not show when that happens, so those entries are
+   tagged with the construction, and a rejection through them is the `call` cause (§16.4 item 7). The base's
+   elements are the result's elements, exactly. The base's condition is not lowered: nothing is stored into it.
+3. A construction with anything after its first spread — `[ x, …xs, y ]`, `[ x, …xs, …ys ]` — still appends onto
+   its base (it lowers to `List.cons x (List.append xs …)`, `language.md` §6.8), so it is §3.2's demand,
+   unchanged. A re-built `[ h, …t ]` after `[ h, …t ]` stays an alias of the scrutinee (§3.2), exactly.
+
+`List.cons`'s asserted row (§16.8) becomes: π₁ `A`; π₂ `RA`, π₂`[*]` `A`; `res ε = fresh₁, π₂`,
+`[*] = π₂[*], π₁`, with `fresh₁`'s condition `excl π₁, excl π₂, sep π₁ π₂[*]`. Its two provenances at `ε` make
+a demand through it approximate, as item 2 says of the construction.
+
+**The backend agrees** (checked for slice 3f, research 85 §2). Every prepend is emitted as a call of
+`List.cons`, which is `pushFrom` onto a new `[ x ]`, one `concat` into a new array, or a re-cons that answers a
+header over the base's array and writes nothing (`core/List.beni`). A function's result `[ f x, …go rest ]` is
+the tail-modulo-cons loop (`backend.md` §8), which pushes onto its own array and closes with `List.close`: the
+tail's elements copied after the loop's array, or the tail itself when the loop built nothing — never a write of
+the tail. A prepend onto a loop's accumulator is `List.cons` at each step, and a pattern's suffix re-built in a
+walk over scalar views is an offset (`list - 1`), which writes nothing. So no prepend writes an array that
+existed before it, on any platform, today. **Slice 5 must keep it so**: a prepend lowered in place on
+`browser-direct` would be a correctness bug, since this rule accepts programs that read the base afterwards.
+
+### 25.3 `map` across types
+
+§6.1 item 3's "may be one object" decides the type filter of §16.4 item 6. A record value is one run-time
+object of one type, so **two closed records** — their extension chains end in the empty record — **may share
+only when they name the same fields, each pair of which may share**. A record with an open row may be any
+record, as before. A record against a nominal type of one constructor with one field may be that field (the
+release representation), as before; a record against any other type may not share. So
+`List.map explosions Explosion.toObstacle`, from `{ center, size, ticksLeft }` to `{ n, e, s, w }`, is a new
+list, and `List.map items (λi → i)` from a record type to itself keeps π₁.
+
+*Soundness.* A record value is made by one record literal or update, at one type. Two closed record types with
+different field names do not unify, so no value has both; with the same names, one value at both types holds one
+value at each field, which must then be one object at both field types. A function `Explosion → Obstacle` can
+therefore never return what it was handed, and `map` returns its input only when every result was its element
+(`identical`, `core/List.beni`).
+
+### 25.4 The default read on the other path
+
+§7.2's branch contexts gain one shape that is not a `case` in the text. A call
+
+    Maybe.withDefault (Maybe.map m f) d
+
+where `Maybe.withDefault` and `Maybe.map` are core's, **`m` and `d` are variable paths** (a local, or a field or
+tuple path of one: §7.1's references) and **`f` is a lambda written there** — `handleInput model _` is one, by
+lowering — **or a top-level value**, is walked as a `case` of its own with two arms. The evaluation of
+`Maybe.map m f` — `m`, `f`, the call, and every demand the call makes through `f` — is in arm `Just`; the use of
+`d` at `withDefault`'s call is in arm `Nothing`. What is read after the whole expression is ordered after both
+arms, as after any `case`.
+
+*Soundness.* `Maybe.map` (`core/Maybe.beni`) calls `f` only when `m` is `Just`, and answers `Nothing` exactly
+when `m` is `Nothing`; `Maybe.withDefault` answers `d` exactly when its argument is `Nothing`. So on a run where
+`f` was called, `d` is discarded unread, and on a run where `d` is the result, `f` was not called. The operands
+are restricted so that the arms hold nothing else: evaluating a variable path, a lambda or a top-level value
+reads and writes no list, while a call in `f`'s place (`Maybe.map m (handler model)`) would edit whatever `m` is,
+a call in `m`'s place would edit before the match, and an expression in `d`'s place would read the edited model
+on the `Just` path. Those forms are walked as ordinary calls, and rejected where the old value is read after an
+edit (§25.6). The fact rests on the two bodies in `core/Maybe.beni`: it joins the trusted surface (§20.9) as a
+rule of the checker, and a change to either body must revisit it.
+
+Not built: `Maybe.andThen`, `Result.map` with `Result.withDefault`, and a `case` on `Maybe.map`'s result. The
+argument is the same; no measured program needs them (research 85 §4).
+
+### 25.5 The report
+
+Unchanged in form. A prepend prints no line; a demand on a value a prepend made names the construction as the
+approximate step (`… may hold it through the call at L:C`), as a call with an identity promise does.
+
+### 25.6 Testing
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `ownership/Prepend` | §25.2; research 82 R1 (`Helpers` 51), R4 (`Bike` 60); T33 | a prepend and `List.cons` onto a list read afterwards: no line; the suffix re-built after `[ a, b, …tail ]`: its walk writes nothing; a prepend onto `map`'s result: no line; T33's stack: accepted; `[ …s, 0 ]` and `[ x, …s, x ]` with `s` read afterwards: `later-use`; extending a prepend's result with its base read afterwards: `call`, approximate; with the base dead: accepted |
+| `ownership/MapAcrossTypes` | §25.3; research 82 R4 | an append onto a map between two closed records: accepted; onto a map from a record type to itself, and from a one-field wrapper to its field: `call`, approximate |
+| `ownership/MaybeDefault` | §25.4; research 82 R5 (`Game` 127) | the pipeline, the lambda and the `case`: accepted; the old model read after the expression, an eager handler, a default that is not a variable, an edit while computing `m`, `Maybe.andThen`: `later-use` |
+| `ownership/Differential` | T33 against the Lean model | the prepend form accepted, with no Lean counterpart (the model has no prepend); `t33Pushed`, the model's projection onto a push: kept rejected, copied accepted, as in the model |
+| `ownership/Recursion`, `ownership/Split` | §25.2 through a recursion and a split | `appendTo` reads `ys` and may return it; `bumpHead` writes its rows, not its spine |
+
+### 25.7 Open questions
+
+1. **A prepend of fresh items.** A re-cons needs the item put in front to be the element already before the
+   view, so a prepend whose items were all made after its base cannot alias it. In bike-wars that would clear
+   `Bike.update`'s `[ frontWall other, …omitLastSections current.trail ] ++ …` and the line it causes in
+   `Game.stepGame` (research 85 §3). The domain has no notion of "made after"; not built.
+2. **`Maybe.andThen` and `Result`.** §25.4's argument covers them; they wait for a program that needs them.
