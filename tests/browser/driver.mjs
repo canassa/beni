@@ -646,6 +646,9 @@ function step(s) {
     case "dblclick":
       target.dispatchEvent(new MouseEvent("dblclick", { ...init, button: 0, detail: 2 }));
       return null;
+    case "mouse":
+      target.dispatchEvent(new MouseEvent(s.name, { ...init, button: 0 }));
+      return null;
     // A user's click, trusted. Chrome's is the driver's to send, at the
     // element's centre: this answers where that is. happy-dom's is
     // dispatched here, `isTrusted` as the prelude reads it.
@@ -932,6 +935,9 @@ if (stepsPath !== undefined) {
         else if (/^code:\S+$/.test(w)) s.code = w.slice("code:".length);
         else usage(`${where}: \`key\` takes \`ctrl\`, \`shift\`, \`alt\`, \`meta\`, \`repeat\` or \`code:<code>\` after the key, not \`${w}\``);
       }
+    } else if (command === "mouse") {
+      if (!/^mouse[a-z]+$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\``);
+      s.name = argument;
     } else usage(`${where}: unknown command \`${command}\``);
     steps.push(s);
   });

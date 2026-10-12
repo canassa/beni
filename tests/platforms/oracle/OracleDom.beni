@@ -58,6 +58,9 @@ pub element "rect" svg
 pub element "stop" svg
 
 
+pub element "text" svg
+
+
 pub element "mi" mathml
 
 

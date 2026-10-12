@@ -198,8 +198,13 @@ const Render = struct {
 
     fn element(r: *Render, n: m.Node.Index, scope: parser.Scope) m.Error!void {
         const e = r.tree.element(n);
-        const name = r.tree.string(r.tree.elementFacts(e.row).name);
-        if (parser.misnested(scope, name)) |why| return r.restructured(n, scope.parent orelse "", why);
+        const facts = r.tree.elementFacts(e.row);
+        const name = r.tree.string(facts.name);
+        // An SVG element at a root is placed inside an `<svg>` the page
+        // writes around it, so it is written in that scope (boundary.md §9.9).
+        const here = if (scope.parent == null and !scope.svg and facts.namespace == .svg) parser.Scope.svg_root else scope;
+        if (parser.misnested(here, name)) |why| return r.restructured(n, here.parent orelse "", why);
+        if (parser.misplaced(here, name, facts.namespace == .svg)) |why| return r.restructured(n, here.parent orelse "", why);
         try r.write("<");
         try r.write(name);
         var content: ?m.Expr = null;
@@ -213,8 +218,8 @@ const Render = struct {
             return;
         }
         if (content) |c| try r.dynamic(c, true);
-        const inner = scope.enter(name);
-        switch (parser.content(name)) {
+        const inner = here.enter(name);
+        switch (parser.contentIn(here, name)) {
             .normal => for (children) |child| try r.node(child, inner),
             // Nothing is decoded in raw text, so it is written as it is: text
             // known now is refused if it would end the element early, and a

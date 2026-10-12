@@ -1,0 +1,38 @@
+-- `markup_restructured` from the `dom` lowering for an element in the
+-- wrong namespace's place (boundary.md §9.9): the page's parser decides an
+-- element's namespace by where it stands, so markup whose namespace the
+-- template would not give it is refused at the node. An SVG element
+-- outside any `<svg>`, which would be an HTML element that draws nothing
+-- (17:17); an HTML element inside an `<svg>`, which the parser would move
+-- out of it (21:16); an SVG element inside a `<foreignObject>`, whose
+-- content is HTML again (25:36); and an SVG element beside an HTML one at
+-- the top of one value, which one template cannot parse in both
+-- namespaces (29:20). The `<title>` and `<a>` inside the drawing, names of
+-- both vocabularies, are SVG's there and are not refused.
+import Browser
+import Html exposing (Html)
+
+
+outside : Html msg
+outside = <div><rect /></div>
+
+
+inside : Html msg
+inside = <svg><div>x</div><title>t</title><a href="/">a</a></svg>
+
+
+integration : Html msg
+integration = <svg><foreignObject><rect /></foreignObject></svg>
+
+
+mixed : Html msg
+mixed = <><p>a</p><rect /></>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → ⊤
+        , update = λ_ m → m
+        , view = λ_ → <div>{[ outside, inside, integration, mixed ]}</div>
+        }

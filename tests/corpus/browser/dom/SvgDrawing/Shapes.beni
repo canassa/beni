@@ -1,0 +1,7 @@
+-- See Main.beni: a component whose markup is one SVG element, written as a
+-- tag there and called in a hole.
+import Html exposing (Html)
+
+
+pub dot : { cx : String, fill : String } → Html msg
+dot props = <circle cx={props.cx} cy="40" r="2" fill={props.fill} />

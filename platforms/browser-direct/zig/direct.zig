@@ -241,7 +241,9 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     page.root_calls_hi = @intCast(page.ctxs.items.len);
     // A root element in the SVG or MathML namespace that is not that
     // namespace's own root is parsed inside a wrapper the mount would take
-    // off (`dom`'s flag 2); no vocabulary that ships reaches it.
+    // off (`dom`'s flag 2). Mounted into the page's HTML mount node it
+    // would draw nothing, so it waits for S4 and a mount node that may be
+    // an `<svg>` (boundary.md §9.9 (f)).
     if (b.flags & 2 != 0) return cx.notImplemented(r.node,
         \\`browser-direct` does not compile a `view` whose root is an SVG or MathML element
         \\other than `<svg>` or `<math>` yet: it arrives with slice S4
@@ -1192,7 +1194,12 @@ const Page = struct {
             cx.at(list.node);
             try js.assign(pg.body, try js.member(try pg.ident(pg.t), "innerHTML"), try js.string(s.b.html.items));
             s.template = try cx.fresh("$T");
-            try js.constant(pg.body, s.template.?, try js.member(try js.member(try pg.ident(pg.t), "content"), "firstChild"));
+            // A row whose root is an SVG element other than `<svg>` is
+            // parsed inside the `<svg>` its template is wrapped in (`dom`'s
+            // flag 2), and its template is the wrapper's child.
+            var row_t = try js.member(try js.member(try pg.ident(pg.t), "content"), "firstChild");
+            if (s.b.flags & 2 != 0) row_t = try js.member(row_t, "firstChild");
+            try js.constant(pg.body, s.template.?, row_t);
         }
 
         // Each shared site's template, parsed once.
@@ -1381,7 +1388,7 @@ const Page = struct {
                 // removes (§6.2).
                 const one = rb.top == 1 and rb.first != null and rb.first.? == .node and rb.tnodes.items[rb.first.?.node].kind == .element and rb.flags & 4 == 0;
                 if (!one) try refuse(pg.cx, op.node, "a `For` row that is not one element — several nodes, text, or a hole at its root", "S4", "§6.1");
-                if (rb.flags & 2 != 0) try refuse(pg.cx, op.node, "a `For` row whose root is an SVG or MathML element other than `<svg>` or `<math>`", "S4", "§14");
+                if (rb.flags & 2 != 0 and rb.root_element.?.namespace != .svg) try refuse(pg.cx, op.node, "a `For` row whose root is a MathML element other than `<math>`", "S4", "§14");
                 const rs = try pg.a().create(Site);
                 rs.* = .{ .b = rb, .node = body.node, .index = row.body, .row = f.row, .prefix = prefix, .calls_lo = calls_lo, .calls_hi = calls_hi };
                 const list = try pg.a().create(List);

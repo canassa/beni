@@ -1,0 +1,42 @@
+-- SVG rendered to a string by the `ssr` lowering (boundary.md §9.9,
+-- backend.md §15.6). Names keep their case (`viewBox`, `linearGradient`),
+-- an attribute hole is escaped as any is, a `For` of `<rect>`s and a
+-- helper whose markup is one `<circle>` render as their elements with no
+-- wrapper, since the page's parser reads them inside the `<svg>` the string
+-- holds. Inside an `<svg>`, a `<style>` and a `<title>` are SVG's, whose
+-- text is ordinary, so `<` and `&` in it are escaped rather than written
+-- raw as an HTML `<style>`'s would be; a `<foreignObject>` holds HTML. A
+-- URL attribute refuses a script URL in SVG as anywhere: `href` and
+-- `xlink:href` are written as nothing.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+dot : String → Html msg
+dot x = <circle cx={x} cy="5" r="2" />
+
+
+view : String, List Int, String → Html msg
+view label bars link =
+    <svg viewBox="0 0 100 50" width="100%" stroke-width="0.5">
+        <title>{label}</title>
+        <style>{"rect { fill: red } /* a < b & c */"}</style>
+        <defs><linearGradient id="g"><stop offset="0" stop-color="white" /></linearGradient></defs>
+        <g transform="translate(${label} 0)" fill="url(#g)">
+            <For each={bars}>
+                {λn → <rect x={String.fromInt (n * 5)} height={String.fromInt n} width="4" />}
+            </For>
+        </g>
+        {dot "40"}
+        <use href={link} xlink:href={link} />
+        <foreignObject width="10" height="10"><p class="note">{label}</p></foreignObject>
+    </svg>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render (view "a<b" [ 1, 2 ] "#g")
+        , Ssr.render (view "c&d" [] "javascript:alert(1)")
+        ]
