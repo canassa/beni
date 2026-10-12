@@ -87,6 +87,8 @@ export const mutants = {
   // A traversal step's single call of a callback counts as one (also `--mutant=many-off`).
   manyoff: ["Checker.lean", "(j, if many && n > (if ctx.config.has .manyOff then 1 else 0) then 2 else n)",
     "(j, if many && n > 1 then 2 else n)"],
+  // An unbound live variable is read as dead (also `--mutant=no-scope`).
+  noscope: ["Checker.lean", "    if !ctx.config.has .noScope then liveScope env after", "    pure ()"],
   // Joining an exclusive list with a non-exclusive one stays exclusive.
   joinexcl: ["Domain.lean", "| .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex && ey)",
     "| .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex || ey)"],

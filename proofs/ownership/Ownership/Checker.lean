@@ -426,7 +426,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
   else
     let f := fuel - 1
     let ctx := { ctx with escaped := union ctx.escaped (← getFacts).escapes }
-    liveScope env after
+    if !ctx.config.has .noScope then liveScope env after
     let later := union (liveCells env after) ctx.pinned
     match e with
     | .atom a => abstractAtom env a

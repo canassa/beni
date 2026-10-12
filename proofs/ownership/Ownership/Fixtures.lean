@@ -488,6 +488,25 @@ def sharedClosureInRecord : Program := {
     .letE 2 (.prim .record [v 1, .int 0]) <| .letE 3 (.prim .shared [v 2]) <|
     .letE 4 (.prim .push [v 0, .int 9]) (.prim .length [v 4]) }
 
+/-- The third review's P1, at the checker: a live variable (`1`, the same
+    array as `0`) that the abstract environment does not bind. No typed
+    program reaches this (every live variable of a typed program is bound),
+    so only this probe can see the `no-scope` control: the checker must
+    refuse it; with the refusal dropped it accepts, and the push changes the
+    array the live `1` holds. Returns (accepted, the runs disagree). -/
+def unboundLive (config : Config) : Bool × Bool :=
+  let heap : Array (List InPlaceSemantics.Value) := #[[.int 0]]
+  let aenv : Env Abstract := [(0, .list [.site [99] 0] .scalar true)]
+  let e : Expr := .prim .push [v 0, .int 1]
+  let accepted := ((inferExpr 200 { declarations := [], config } aenv e [(1, [])] [7]).run {}).isOk
+  let vEnv : Env Observation := [(0, .list [.int 0]), (1, .list [.int 0])]
+  let hEnv : Env InPlaceSemantics.Value := [(0, .ref 0), (1, .ref 0)]
+  let disagree := match (ValueSemantics.eval 50 [] none vEnv e).run { fuel := 50 },
+      (InPlaceSemantics.eval 50 [] none hEnv e).run { fuel := 50, heap } with
+    | .ok _, .ok (_, hs) => (InPlaceSemantics.snapshot hs.heap 10 (.ref 0)).toOption != some (.list [.int 0])
+    | _, _ => false
+  (accepted, disagree)
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -712,6 +731,13 @@ def run : IO Bool := do
     if !caught then
       IO.println s!"MUTANT NEGATIVE CONTROL FAILED: {m.name}"
       ok := false
+  -- `no-scope` at the checker: no program reaches it (see `unboundLive`).
+  let (correctedAccepts, _) := unboundLive {}
+  let (mutantAccepts, mutantDisagrees) := unboundLive { mutant := some .noScope }
+  IO.println s!"probe unbound live variable under mutant no-scope: corrected accepts={correctedAccepts} mutant accepts={mutantAccepts} disagrees={mutantDisagrees}"
+  if correctedAccepts || !mutantAccepts || !mutantDisagrees then
+    IO.println "MUTANT NEGATIVE CONTROL FAILED: no-scope"
+    ok := false
   -- Both checkers on every verdict fixture: the per-call checker is the
   -- cross-check, and must agree with the intended verdicts too.
   for f in all do

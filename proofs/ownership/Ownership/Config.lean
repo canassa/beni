@@ -37,6 +37,8 @@ inductive Mutant where
   | sharedFn            -- `shared` does not escape cells captured by a closure held in a record field
   -- Counting.
   | manyOff             -- a traversal step that calls a callback once is not counted as many calls
+  -- Scope (probe only: no typed program has an unbound live variable).
+  | noScope             -- an unbound live variable is read as dead instead of refused
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
@@ -44,7 +46,7 @@ def Mutant.all : List Mutant :=
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
-   .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff]
+   .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff, .noScope]
 
 def Mutant.name : Mutant → String
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
@@ -60,7 +62,7 @@ def Mutant.name : Mutant → String
   | .onceThroughCall => "once-through-call"
   | .branchLive => "branch-live" | .branchClosure => "branch-closure"
   | .shadowing => "shadowing" | .sharedRoots => "shared-roots"
-  | .sharedFn => "shared-fn" | .manyOff => "many-off"
+  | .sharedFn => "shared-fn" | .manyOff => "many-off" | .noScope => "no-scope"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
@@ -71,6 +73,7 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
     known gaps (COVERAGE.md). `ownership controls` reports all five. -/
 def Mutant.generatorOptional : Mutant → Bool
   | .callbackEscapes | .callbackRequires | .requiresEdge | .forwardGuards | .transferSupplies => true
+  | .noScope => true
   | _ => false
 
 /-- Mutants of the summary layer's rows, and `branch-live`, which only the
@@ -79,7 +82,7 @@ def Mutant.summaryRow : Mutant → Bool
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
   | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive | .branchClosure
-  | .shadowing | .sharedRoots | .sharedFn | .manyOff => true
+  | .shadowing | .sharedRoots | .sharedFn | .manyOff | .noScope => true
   | _ => false
 
 structure Config where
