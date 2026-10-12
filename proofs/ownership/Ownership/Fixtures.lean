@@ -454,6 +454,20 @@ def shadowedLiveInDecl : Program := {
         (.prim .length [v 0]) }]
   main := .letE 0 (.prim (.literal .int) [.int 1]) (.letE 1 (.closure 0 []) (.app (v 1) [v 0])) }
 
+/-- `shared` on a nested list must escape its elements too (third review):
+    the element `[1]` is pushed after its container was published. -/
+def sharedNested : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 2 (.prim .shared [v 1]) <| .letE 3 (.prim .push [v 0, .int 7]) (.prim .length [v 3]) }
+
+/-- A closure created in a conditional arm captures a list that was pushed
+    before: the capture is a use of the old list (third review). -/
+def branchArmCapture : Program := {
+  declarations := Generator.decls
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim .push [v 0, .int 5]) <|
+    .letE 2 (.branch (.int 0) (.closure Generator.capLen [v 0]) (.closure Generator.capLen [v 0])) <|
+    .app (v 2) [.int 0] }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -462,6 +476,8 @@ def probes : List (String × Program × Mutant × Bool) := [
   ("read only in the nonzero arm after a push", probeBranchLive, .branchLive, false),
   ("a let shadows a variable its continuation uses", shadowedLive, .shadowing, false),
   ("the same in a declaration body", shadowedLiveInDecl, .shadowing, false),
+  ("shared on a nested list, then an element pushed", sharedNested, .sharedRoots, false),
+  ("a closure in a conditional arm captures a pushed list", branchArmCapture, .branchClosure, false),
   ("T46 two rows", borrowedAccumulator, .borrowedSupply, true),
   ("traversal over [c, c]", probeTraversalExclusive, .traversalExclusive, false),
   ("captured push per iteration", probeManyCalls, .manyCalls, false),
@@ -638,7 +654,9 @@ def all : List Fixture := [
   ⟨"close returns a once closure's capture, a callee calls it",closeThenOnceThroughCallee,false⟩,
   ⟨"read only in the nonzero arm after a push",probeBranchLive,false⟩,
   ⟨"a let shadows a variable its continuation uses",shadowedLive,false⟩,
-  ⟨"the same in a declaration body",shadowedLiveInDecl,false⟩ ]
+  ⟨"the same in a declaration body",shadowedLiveInDecl,false⟩,
+  ⟨"shared on a nested list, then an element pushed",sharedNested,false⟩,
+  ⟨"a closure in a conditional arm captures a pushed list",branchArmCapture,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true

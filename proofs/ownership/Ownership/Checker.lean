@@ -243,7 +243,7 @@ def keepsShape (a : Abstract) (parameter := 0) : Bool :=
 
 /-- `uses`, or the `branch-live` control's weakened liveness. -/
 def usesWith (cfg : Config) (e : Expr) : Live :=
-  usesArms (!cfg.has .branchLive) e
+  usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) e
 
 def closureCaps (cfg : Config) (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
   let names := (removeVars bound (usesWith cfg body)).map Prod.fst |>.foldl (fun xs x => union xs [x]) []
@@ -359,7 +359,7 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
     pure (.list [fresh] (xs.foldl Abstract.join .bottom) (storeExclusive ctx xs later []))
   | .builder _, [] => pure (.list [fresh] .bottom true)
   | .shared, [a] => do
-    modifyFacts fun s => { s with escapes := union s.escapes a.cells }
+    modifyFacts fun s => { s with escapes := union s.escapes (if ctx.config.has .sharedRoots then a.roots else a.cells) }
     pure (a.mapOrigins fun _ cs => if cs.isEmpty then [] else union cs [.shared])
   | .length, [a] => do noteRead a.roots; pure .scalar
   | .at, [.list cs elem _, _, fallback] => do

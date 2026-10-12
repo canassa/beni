@@ -238,21 +238,36 @@ def atomsUses (xs : List Atom) : Live := xs.flatMap atomUses
 
 def removeVars (xs : List Var) (l : Live) : Live := l.filter fun (v, _) => !xs.contains v
 
+/-- The captures of the closures an expression creates along its let chain
+    and conditional arms (what the `branch-closure` control forgets). -/
+def closureCapUses : Expr → Live
+  | .closure _ xs => atomsUses xs
+  | .letE _ a b | .branch _ a b => closureCapUses a ++ closureCapUses b
+  | _ => []
+
 /-- The uses of an expression. `nonzero := false` is the `branch-live`
     control's weakened liveness, which ignores a conditional's nonzero arm;
     one definition, so the control cannot drift from the rule it weakens. -/
-def usesArms (nonzero : Bool) : Expr → Live
+def usesArms (nonzero : Bool) (armClosures : Bool := true) : Expr → Live
   | .atom a => atomUses a
-  | .letE v rhs rest => union (usesArms nonzero rhs) (removeVars [v] (usesArms nonzero rest))
+  | .letE v rhs rest => union (usesArms nonzero armClosures rhs) (removeVars [v] (usesArms nonzero armClosures rest))
   | .prim .close (x :: _) => atomUses x
-  | .prim _ xs | .closure _ xs | .recur xs => atomsUses xs
+  | .prim _ xs | .recur xs => atomsUses xs
+  | .closure _ xs => atomsUses xs
   | .app f xs => union (atomUses f) (atomsUses xs)
-  | .branch c a b => union (atomUses c) (union (usesArms nonzero a) (if nonzero then usesArms nonzero b else []))
+  | .branch c a b =>
+    -- The `branch-closure` control (`armClosures := false`) drops an arm's
+    -- uses that are captures of the closures the arm creates.
+    let ua := usesArms nonzero armClosures a
+    let ub := if nonzero then usesArms nonzero armClosures b else []
+    let ua := if armClosures then ua else ua.filter fun u => !(closureCapUses a).contains u
+    let ub := if armClosures then ub else ub.filter fun u => !(closureCapUses b).contains u
+    union (atomUses c) (union ua ub)
   | .traverse _ src init i x acc body =>
-    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero body))
-  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero body))
+    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero armClosures body))
+  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero armClosures body))
 
-def uses (e : Expr) : Live := usesArms true e
+def uses (e : Expr) : Live := usesArms true true e
 
 def isPrefix (a b : Path) : Bool := a == b.take a.length
 

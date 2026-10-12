@@ -75,8 +75,12 @@ export const mutants = {
   symenv: ["Checker.lean", "let others := fun (k : Nat) => union envCells (args.zipIdx.flatMap",
     "let others := fun (k : Nat) => union [] (args.zipIdx.flatMap"],
   // Liveness ignores a conditional's nonzero arm (also `--mutant=branch-live`).
-  branchlive: ["Domain.lean", "(union (usesArms nonzero a) (if nonzero then usesArms nonzero b else []))",
-    "(usesArms nonzero a)"],
+  branchlive: ["Domain.lean", "    let ub := if nonzero then usesArms nonzero armClosures b else []",
+    "    let ub : Live := []"],
+  // Liveness ignores the captures of closures a conditional arm creates (also `--mutant=branch-closure`).
+  branchclosure: ["Checker.lean", "usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) e", "usesArms (!cfg.has .branchLive) false e"],
+  // `shared` escapes only its operand's spine (also `--mutant=shared-roots`).
+  sharedroots: ["Checker.lean", "union s.escapes (if ctx.config.has .sharedRoots then a.roots else a.cells)", "union s.escapes a.roots"],
   // focus drops the demand on its container.
   focuscontainer: ["Checker.lean", "      demand ctx.config cs later (capValues.flatMap Abstract.cells)\n      let out",
     "      let out"],

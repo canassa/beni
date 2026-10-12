@@ -30,7 +30,10 @@ inductive Mutant where
   | onceThroughCall     -- a once callback called by a callee is not consumed at the call
   -- Liveness (summary checker only).
   | branchLive          -- liveness ignores the nonzero arm of a conditional
+  | branchClosure       -- liveness ignores the captures of closures a conditional arm creates
   | shadowing           -- shadowing is allowed and a let resolves its continuation's uses inside
+  -- Escapes.
+  | sharedRoots         -- `shared` escapes only the spine of its operand, not what it contains
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
@@ -38,7 +41,7 @@ def Mutant.all : List Mutant :=
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
-   .shadowing]
+   .branchClosure, .shadowing, .sharedRoots]
 
 def Mutant.name : Mutant → String
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
@@ -52,8 +55,8 @@ def Mutant.name : Mutant → String
   | .callbackRequires => "callback-requires" | .requiresEdge => "requires-edge"
   | .forwardGuards => "forward-guards" | .transferSupplies => "transfer-supplies"
   | .onceThroughCall => "once-through-call"
-  | .branchLive => "branch-live"
-  | .shadowing => "shadowing"
+  | .branchLive => "branch-live" | .branchClosure => "branch-closure"
+  | .shadowing => "shadowing" | .sharedRoots => "shared-roots"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
@@ -64,6 +67,8 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
     known gaps (COVERAGE.md). `ownership controls` reports all five. -/
 def Mutant.generatorOptional : Mutant → Bool
   | .callbackEscapes | .callbackRequires | .requiresEdge | .forwardGuards | .transferSupplies => true
+  -- Not yet reached by the generator (third review): required through their probe.
+  | .branchClosure | .sharedRoots | .shadowing => true
   | _ => false
 
 /-- Mutants of the summary layer's rows, and `branch-live`, which only the
@@ -71,8 +76,8 @@ def Mutant.generatorOptional : Mutant → Bool
 def Mutant.summaryRow : Mutant → Bool
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
-  | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive
-  | .shadowing => true
+  | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive | .branchClosure
+  | .shadowing | .sharedRoots => true
   | _ => false
 
 structure Config where
