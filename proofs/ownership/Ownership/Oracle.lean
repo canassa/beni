@@ -405,7 +405,35 @@ structure Counts where
   /-- Summaries computed and call sites served from the cache, over accepted programs. -/
   summariesComputed : Nat := 0
   summariesReused : Nat := 0
+  /-- The declaration family's accepted programs: how many call a generated
+      declaration at run time, how many of those calls change an array the
+      caller passed, and generated calls in all and those passing one array
+      at two argument positions (from the in-place run's call log). -/
+  declAccepted : Nat := 0
+  declRunsGenerated : Nat := 0
+  declGeneratedWrites : Nat := 0
+  generatedCalls : Nat := 0
+  generatedSameArray : Nat := 0
+  /-- Rejections by the no-shadowing rule. -/
+  shadowing : Nat := 0
   deriving Repr
+
+/-- How a run exercises generated declarations (declarations past the fixed
+    table): whether it calls one, whether such a call changes an array its
+    inputs reach, how many such calls, and how many pass one array at two
+    argument positions. -/
+def generatedUse (p : Program) : Bool × Bool × Nat × Nat :=
+  let fixed := Generator.decls.length
+  match (InPlaceSemantics.eval 100000 p.declarations none [] p.main).run { fuel := 100000, logCalls := true } with
+  | .error _ => (false, false, 0, 0)
+  | .ok (_, s) =>
+    let gen := s.calls.toList.filter (·.decl ≥ fixed)
+    let changes := gen.any fun cr => (cr.args ++ cr.caps).any fun v =>
+      (Aliasing.reach cr.preHeap 64 v).any fun c => !(cr.preHeap[c]? == cr.postHeap[c]?)
+    let same := gen.filter fun cr =>
+      let rs := cr.args.map (Aliasing.reach cr.preHeap 64)
+      rs.zipIdx.any fun (a, i) => (rs.drop (i + 1)).any fun b => a.any b.contains
+    (!gen.isEmpty, changes, gen.length, same.length)
 
 def Counts.line (c : Counts) : String :=
   s!"candidates={c.candidates} distinct={c.distinct} typed={c.typed} accepted={c.accepted} distinctAccepted={c.distinctAccepted} withWrites={c.withWrites} distinctWithWrites={c.distinctWithWrites} aliasedWrites={c.aliasedWrites} agreeing={c.agreeing} agreeingAccepted={c.agreeingAccepted} rejected={c.rejected} limits={c.limits} typeErrors={c.typeErrors} executionErrors={c.executionErrors} mismatches={c.mismatches}" ++
@@ -420,7 +448,8 @@ def percent (a b : Nat) : String :=
     the share of accepted programs that write an aliased array, and
     precision (accepted among programs whose two runs agree). -/
 def Counts.summary (c : Counts) (seed : Nat) : String :=
-  s!"summary seed={seed} accepted={c.accepted} distinct-accepted={c.distinctAccepted} with-write={c.withWrites} distinct-with-write={c.distinctWithWrites} aliased-write={c.aliasedWrites} ({percent c.aliasedWrites c.accepted} of accepted) agreeing={c.agreeing} accepted-of-agreeing={c.agreeingAccepted} precision={percent c.agreeingAccepted c.agreeing}"
+  s!"summary seed={seed} accepted={c.accepted} distinct-accepted={c.distinctAccepted} with-write={c.withWrites} distinct-with-write={c.distinctWithWrites} aliased-write={c.aliasedWrites} ({percent c.aliasedWrites c.accepted} of accepted) agreeing={c.agreeing} accepted-of-agreeing={c.agreeingAccepted} precision={percent c.agreeingAccepted c.agreeing}" ++
+  s!" declarations-accepted={c.declAccepted} run-generated={c.declRunsGenerated} ({percent c.declRunsGenerated c.declAccepted}) generated-call-writes-input={c.declGeneratedWrites} ({percent c.declGeneratedWrites c.declAccepted}) generated-calls={c.generatedCalls} same-array-twice={c.generatedSameArray} ({percent c.generatedSameArray c.generatedCalls}) rejected-shadowing={c.shadowing}"
 
 /-- Generator v4 keeps the eleven v3 template families and replaces the v3
     `anf-chain`, whose final record kept every variable live (so none of its
@@ -561,7 +590,8 @@ def runWith (o : Options) : IO RunResult := do
     | .error msg =>
       counts := { counts with
         rejected := counts.rejected + 1,
-        limits := counts.limits + (if msg.startsWith "limit:" then 1 else 0) }
+        limits := counts.limits + (if msg.startsWith "limit:" then 1 else 0),
+        shadowing := counts.shadowing + (if msg.startsWith "shadowing:" then 1 else 0) }
       -- Precision: a rejected program whose runs agree is one the checker
       -- could have accepted.
       if !o.negative then
@@ -577,6 +607,13 @@ def runWith (o : Options) : IO RunResult := do
         accepted := counts.accepted + 1, summariesComputed := counts.summariesComputed + made,
         summariesReused := counts.summariesReused + reused,
         distinctAccepted := counts.distinctAccepted + (if newAccepted then 1 else 0) }
+      if family == "declarations" && !o.negative then
+        let (runs, writes, calls, same) := generatedUse p
+        counts := { counts with declAccepted := counts.declAccepted + 1 }
+        counts := { counts with declRunsGenerated := counts.declRunsGenerated + (if runs then 1 else 0) }
+        counts := { counts with declGeneratedWrites := counts.declGeneratedWrites + (if writes then 1 else 0) }
+        counts := { counts with generatedCalls := counts.generatedCalls + calls }
+        counts := { counts with generatedSameArray := counts.generatedSameArray + same }
       families := families.map fun (f,c,lo,hi) => if f == family then
         (f,{ c with distinctAccepted := c.distinctAccepted+(if newAccepted then 1 else 0) },lo,hi) else (f,c,lo,hi)
       match compare p with

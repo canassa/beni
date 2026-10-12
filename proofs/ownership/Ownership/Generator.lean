@@ -615,18 +615,29 @@ def valuesOf (table : Table) (fresh : Bool) (next : Nat) (env : Env) : List Ty �
 
 /-- Call `f : ps → r`, binding fresh arguments and callbacks first. A leading
     Int parameter may be a recursion counter: it gets a literal 0–3. -/
-def callWith (table : Table) (fresh : Bool) (next : Nat) (env : Env) (f : Atom) (ps : List Ty) (r : Ty) :
+def callWith (table : Table) (fresh : Bool) (next : Nat) (env : Env) (f : Atom) (ps : List Ty) (r : Ty) (dup := true) :
     Gen (List (Expr × Ty)) := do
   let (bs, args) ← valuesOf table fresh next env ps
   let args ← if ps.head? == some .int then do pure (Atom.int (Int.ofNat (← draw 4)) :: args.drop 1)
     else pure args
+  -- Half the time, a later argument repeats an earlier one of the same
+  -- type: the callee then sees one array at two parameters.
+  let args ← if dup && (← draw 2) == 0 then do
+      let pairs := (ps.zip args).zipIdx.filter fun ((t, _), _) => firstOrder t && t != .int
+      match pairs with
+      | ((t, a), _) :: more =>
+        match more.find? (fun ((u, _), _) => u == t) with
+        | some (_, j) => pure (args.set j a)
+        | none => pure args
+      | [] => pure args
+    else pure args
   pure (bs ++ [(.app f args, r)])
 
 /-- Close over generated declaration `i` and call it. -/
-def callDecl (table : Table) (fresh : Bool) (next : Nat) (env : Env) (i : Nat) (d : Decl) : Gen (List (Expr × Ty)) := do
+def callDecl (table : Table) (fresh : Bool) (next : Nat) (env : Env) (i : Nat) (d : Decl) (dup := true) : Gen (List (Expr × Ty)) := do
   let (bs, caps) ← firstOrderValues fresh next env d.captures
   let at_ := next + bs.length
-  let call ← callWith table fresh (at_ + 1) (extend next bs env) (.var at_) d.parameters d.result
+  let call ← callWith table fresh (at_ + 1) (extend next bs env) (.var at_) d.parameters d.result dup
   pure (bs ++ [(.closure i caps, fnTy d)] ++ call)
 
 /-- Close over a generated declaration and call it. -/
@@ -722,6 +733,46 @@ def plainDecl (table : Table) (name : String) : Gen Decl := do
   let rest ← blockOf (movesFor table) (← draw 4) (n + 1) env r
   return { name := name, parameters := ps, captures := caps, result := r, body := .letE n first rest }
 
+/-- Writes its first parameter in place before anything else: a push or set
+    of a flat list, an element edit or a spine push of a nested list (storing
+    the second parameter), then a chain of moves; returns the written list or
+    a length. Calls of it change an array the caller passed. -/
+def writerDecl (table : Table) (name : String) : Gen Decl := do
+  let nested := (← draw 3) == 0
+  let p0 := if nested then tN else tL
+  let ps := [p0, tL]
+  let env := bodyEnv ps
+  let first ← litList env
+  let n := ps.length
+  let w : Expr ← if nested then
+      match ← draw 2 with
+      | 0 => pure (.prim .push [v 0, v 1])
+      | _ => do pure (.focus (v 0) (.int 0) (sv (n + 1) 0) (.prim .push [v (sv (n + 1) 0), ← number env]))
+    else
+      match ← draw 3 with
+      | 0 => pure (.letE (sv (n + 1) 1) (.prim .length [v 1]) (.prim .push [v 0, v (sv (n + 1) 1)]))
+      | 1 => do pure (.prim .set [v 0, .int 0, ← number env])
+      | _ => do pure (.prim .push [v 0, ← number env])
+  let r ← pick [p0, p0, .int] p0
+  let env' := (Atom.var (n + 1), p0) :: env
+  let rest ← if (← draw 2) == 0 then
+      pure (if r == .int then Expr.prim .length [v (n + 1)] else .atom (v (n + 1)))
+    else blockOf (movesFor table) (← draw 3) (n + 2) env' r
+  return { name := name, parameters := ps, result := r, body := .letE n first (.letE (n + 1) w rest) }
+
+/-- Two lists of one type it only reads (lengths, an element, a copy), so
+    a call may pass one array at both parameters and still be accepted. -/
+def readerDecl (name : String) : Gen Decl := do
+  let t := if (← draw 3) == 0 then tN else tL
+  let ps := [t, t]
+  let r ← pick [tL, .int] .int
+  let body : Expr := .letE 2 (.prim .length [v 0]) <| .letE 3 (.prim .length [v 1]) <|
+    .letE 4 (.prim .add [v 2, v 3]) <|
+    if r == .int then .atom (v 4)
+    else if t == tL then .letE 5 (.prim .copy [v 1]) (.prim .push [v 5, v 4])
+    else .prim (.literal .int) [v 4]
+  return { name := name, parameters := ps, result := r, body := body }
+
 /-- Takes a list and a callback over it, and calls the callback first. -/
 def higherOrderDecl (table : Table) (name : String) : Gen Decl := do
   let t := if (← draw 4) == 0 then tN else tL
@@ -809,8 +860,10 @@ def generatedTable : Gen Table := do
       t := t ++ (mutualPair i).zipIdx.map fun (d, k) => (i + k, d)
     else
       let d ← if kind ≤ 3 then recursiveDecl t s!"rec{i}"
-        else if kind ≤ 7 then higherOrderDecl t s!"higher{i}"
-        else if kind ≤ 10 then factoryDecl t s!"factory{i}"
+        else if kind ≤ 5 then higherOrderDecl t s!"higher{i}"
+        else if kind ≤ 7 then factoryDecl t s!"factory{i}"
+        else if kind ≤ 11 then writerDecl t s!"writer{i}"
+        else if kind ≤ 13 then readerDecl s!"reader{i}"
         else plainDecl t s!"plain{i}"
       t := t ++ [(i, d)]
   pure t
@@ -819,10 +872,33 @@ def generatedTable : Gen Table := do
     moves; with `declarations`, after a generated table the moves may call. -/
 def generalV5 (declarations : Bool) : Gen (List String × Program) := do
   let t ← if declarations then generatedTable else pure []
-  let length ← draw 12
+  -- With a table, chains are shorter (1–6 moves): the table is what the
+  -- family is for, and a long chain mostly adds unrelated rejections.
+  let length ← draw (if declarations then 6 else 12)
   let first ← litList []
-  let (names, rest) ← chainWith (movesFor t) true (fun _ env => do return ([], ← finishV5 env))
-    (length + 1) 1 [(.var 0, tL)]
+  -- With a table, the chain ends by calling one or two generated
+  -- declarations (on fresh arguments half the time), so most programs of
+  -- the family run one, then reads the lists the calls were given.
+  let fin := fun (next : Nat) (env : Env) => do
+    if t.isEmpty then return ([], ← finishV5 env)
+    let mut next := next
+    let mut env := env
+    let mut bs : List (Expr × Ty) := []
+    -- A mutual pair is always a limit; it is called by the moves only.
+    let callable := t.filter fun (_, d) => !d.name.startsWith "mutual"
+    if callable.isEmpty then return ([], ← finishV5 env)
+    for _ in List.range (if (← draw 4) == 0 then 2 else 1) do
+      -- Half the time a declaration that writes its parameters, if any.
+      let writers := callable.filter fun (_, d) => d.name.startsWith "writer" || d.name.startsWith "rec"
+      let pool := if !writers.isEmpty && (← draw 2) == 0 then writers else callable
+      let (i, d) ← pick pool (0, default)
+      let isWriter := writers.any (·.1 == i)
+      let more ← callDecl t (isWriter || (← draw 3) != 0) next env i d (dup := !isWriter)
+      env := extend next more env
+      next := next + more.length
+      bs := bs ++ more
+    return ([], wrap (next - bs.length) bs (← finishV5 env))
+  let (names, rest) ← chainWith (movesFor t) true fin (length + 1) 1 [(.var 0, tL)]
   return (names, { declarations := decls ++ t.map Prod.snd, main := .letE 0 first rest })
 
 end Ownership.Generator
