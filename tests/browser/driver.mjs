@@ -67,6 +67,13 @@
 //                               or `(keyup's …)` when its dispatch returns
 //   dblclick <selector>         a bubbling, cancelable `dblclick` MouseEvent
 //                               (`detail` 2), alone: no `click`s before it
+//   drag <selector> <name>      a bubbling drag event (`dragstart`, `drag`,
+//                               `dragenter`, `dragover`, `dragleave`, `drop`,
+//                               `dragend`), a MouseEvent with no
+//                               `dataTransfer`, cancelable but for
+//                               `dragleave` and `dragend`; one whose default
+//                               a handler prevented logs `(drop's default
+//                               prevented)` (or its own name's)
 //   press <selector>            a user's click: trusted, as the browser
 //                               dispatches one with nothing of the page's
 //                               beneath it (Chrome: `Input.dispatchMouseEvent`
@@ -735,6 +742,15 @@ function step(s) {
     case "mouse":
       target.dispatchEvent(new MouseEvent(s.name, { ...init, button: 0 }));
       return null;
+    // A drag event is a MouseEvent (DragEvent extends it), so both DOMs
+    // dispatch the same object; nothing here carries a `dataTransfer`.
+    // `dragleave` and `dragend` are not cancelable, as the HTML standard's
+    // drag-and-drop processing model fires them.
+    case "drag": {
+      const cancelable = s.name !== "dragleave" && s.name !== "dragend";
+      if (!target.dispatchEvent(new MouseEvent(s.name, { ...init, cancelable, button: 0 }))) globalThis.__beniHarness.log.push(`(${s.name}'s default prevented)`);
+      return null;
+    }
     // A user's click, trusted, in two tasks: the button pressed, then
     // released. Chrome's is the driver's to send, at the element's
     // centre: this answers where that is, and refuses an element a user
@@ -1067,6 +1083,9 @@ if (stepsPath !== undefined) {
       }
     } else if (command === "mouse") {
       if (!/^mouse[a-z]+$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\``);
+      s.name = argument;
+    } else if (command === "drag") {
+      if (!["dragstart", "drag", "dragenter", "dragover", "dragleave", "drop", "dragend"].includes(argument ?? "")) usage(`${where}: \`drag\` takes a selector and one drag event name: \`dragstart\`, \`drag\`, \`dragenter\`, \`dragover\`, \`dragleave\`, \`drop\` or \`dragend\``);
       s.name = argument;
     } else usage(`${where}: unknown command \`${command}\``);
     steps.push(s);
