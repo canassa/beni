@@ -694,7 +694,9 @@ const Printer = struct {
     }
 
     /// The index of the statement before `list[at]` that the plan keeps,
-    /// when it is a declaration: a member of the same run.
+    /// when it is a declaration: a member of the same run. `statements`
+    /// starts a run at the first declaration after a statement that is
+    /// neither one nor dropped, so this never walks out of the run.
     fn declBefore(p: *Printer, list: []const Index, at: usize) ?usize {
         var k = at;
         while (k > 0) {
@@ -717,7 +719,8 @@ const Printer = struct {
     /// one this loop's head takes. Otherwise its declaration stays in the
     /// scope around the loop under a spelling a sibling loop's variable
     /// may share (`let f=false;for(…)…;let f=true`), and the build stops
-    /// with the name in it instead.
+    /// with the name in it instead. Coupled to `Rename.collectList`, which
+    /// pulls only the `let` at `list[at - 1]`: pull another and look here.
     fn checkPulled(p: *Printer, list: []const Index, at: usize, head: anytype) void {
         if (!std.debug.runtime_safety) return;
         const m = p.rename orelse return;

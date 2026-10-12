@@ -604,9 +604,10 @@ pub const Module = struct {
     }
 
     /// Whether local `n` of the declaration being printed was named as its
-    /// loop's own (`collectList`) and is still homed in that loop's scope —
-    /// read nowhere after the loop — so that only the loop's head may
-    /// declare it.
+    /// loop's own (`collectList`) and is still homed in a scope whose parent
+    /// is the one around the loop — every place it is written lies inside
+    /// the loop, its declaration included — so that only the loop's head
+    /// may declare it.
     pub fn pulledLoopVariable(m: *const Module, n: NameIndex) bool {
         const i = n.unwrap() orelse return false;
         if (i >= m.local.len or m.stamp[i] != m.current or m.pulled_stamp[i] != m.current) return false;
