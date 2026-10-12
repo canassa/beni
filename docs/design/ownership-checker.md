@@ -1995,7 +1995,9 @@ value — of a package that may write `foreign` (core, and a package whose manif
 whose body is written over `Js` — `String.join`, `Debug.toString`, `Schema.print` — is `foreign` in all but form:
 its body calls JavaScript the checker cannot see into, which is why thesis Change 5 gives "the core library's
 functions over `Js`" the same words. Its summary is its words, and its body is still walked for its own demand
-lines (§24.5).
+lines (§24.5). *Decided 2026-10-12 (the manager):* this reading stands — thesis Change 5 lets "the core library
+and the platforms … assert a summary that a body cannot show" (its reasons A2, A6, A10), and the owner's 5(a) is
+"core and the platforms only", which is the package wall, not the `foreign` keyword (§24.11 item 3 answered).
 
 Refused, as `misplaced_ownership_word`, reported by lowering, and the word dropped (the declaration otherwise
 lowers as written):
@@ -2159,3 +2161,6 @@ and `check_test.zig`'s four tests of `trusted-surface.txt` (§24.6).
    the thirteen beni declarations with words — `String.join`, `fromList`, `split`, `words`, `lines`, `toList`,
    `indexes`, `Debug.log`, `Debug.toString`, `Schema.parse`, `parseWith`, `print`, `printWith` — lose them and are
    inferred, escaping what they hand to JavaScript.
+   *Answered 2026-10-12 (the manager):* the words stay on all thirteen — thesis Change 5 lets the core library and
+   the platforms assert a summary a body cannot show (A2, A6, A10), and 5(a) is "core and the platforms only"
+   (§24.4). Item 1 goes to the owner (rule 10) and is not built.
