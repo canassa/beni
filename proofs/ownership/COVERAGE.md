@@ -436,13 +436,13 @@ What it found, in order: the review's counterexample (on the earlier
 statement), dishonest closures, ill-typed expressions, `env` paths of known
 function values (`namesAt`), and, on the corrected statement, **the second
 checker defect below**. After the fixes, on 100 000 configurations and the
-calls of 100 000 generated programs (generator v5, with its own declarations) per seed:
+calls of 100 000 generated programs (the final generator, with its own declarations) per seed:
 
 | Seed | Step configurations | Not covered (all refused) | Accepted | Accepted with a write | Failures | Calls checked against a summary | of which map | Vacuous | Failures |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 100 000 | 10 993 | 75 715 | 29 661 | 0 | 44 924 | 3 520 | 18 745 | 0 |
-| 17 | 100 000 | 10 845 | 75 755 | 30 013 | 0 | 44 503 | 3 473 | 18 386 | 0 |
-| 271828 | 100 000 | 10 932 | 75 831 | 29 745 | 0 | 45 953 | 3 783 | 18 594 | 0 |
+| 20261011 | 100 000 | 10 993 | 75 715 | 29 661 | 0 | 48 493 | 3 090 | 19 735 | 0 |
+| 17 | 100 000 | 10 845 | 75 755 | 30 013 | 0 | 49 035 | 3 220 | 19 140 | 0 |
+| 271828 | 100 000 | 10 932 | 75 831 | 29 745 | 0 | 48 934 | 3 164 | 19 651 | 0 |
 
 The falsifier has teeth: under `--mutant=` holes the step-lemma check fails
 (20 000 configurations, seed 17): once-through-call 40, close-source 442
