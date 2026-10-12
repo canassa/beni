@@ -459,7 +459,8 @@ RealWorld app, whose release build alone is ~5 800M because of the release optim
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds a
 repo-relative directory whose `.beni` files are the program, so several scripts can drive one
-application (`examples/conduit/src`).
+application (`examples/conduit/src`). Its subdirectories are walked too, and the build is then
+given `--root=.`, so `Math/Vector2.beni` is the module `Math.Vector2` (`examples/bike-wars/src`).
 
 ## Golden discipline
 
