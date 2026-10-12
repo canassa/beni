@@ -1037,7 +1037,7 @@ two:
 
 | Platform | Depends on | Declares |
 |---|---|---|
-| `html` | — | the HTML vocabulary: elements, attributes, events, the markup primitives `text` and `map`, the markup type `Html msg` (§9.3), and in its Zig the HTML parser's table (§9.5). No `program` and no lowering; it is only depended on |
+| `html` | — | the HTML vocabulary, and since 2026-10-12 the SVG one in the same module (§9.9): elements, attributes, events, the markup primitives `text` and `map`, the markup type `Html msg` (§9.3), and in its Zig the HTML parser's table (§9.5). No `program` and no lowering; it is only depended on |
 | `browser` | `html` | DOM capabilities, a low-level `Program` and its runtime, the `dom` lowering; re-exports `Html` |
 | `browser-tea` | `browser` | The Elm Architecture in beni over `browser`'s `Program`; re-exports `Html` and `browser`'s modules |
 | `node` | `html` | today's Node platform, plus the `ssr` lowering, so a `view` renders to a string under Node and `tests/corpus/run/` can test it (research 36 §5.5); re-exports `Html` |
@@ -1291,6 +1291,11 @@ the language's or the vocabulary's (research 36 question 2, accepted; `backend.m
 content categories, which would make misnesting a type error, are later (research 27 §6.12). **HTML's
 character references are not here**: they are JSX's text syntax, decoded by the compiler before any
 lowering sees the text (`language.md` §11.4, `frontend.md` §9.7).
+
+*Amended 2026-10-12* (§9.9 (d)): the table also knows SVG's foreign content — inside an `<svg>`, short
+of its HTML integration points, none of HTML's rules apply, and an element whose declared namespace the
+parser would not give it where it stands is `markup_restructured`. Which namespace an element is declared
+in is the vocabulary's fact, handed to the table by the lowering.
 
 *As built, 2026-09-29, for §9.2–§9.3* (`platforms/html/`, `src/js/Emit.zig`, `src/platform.zig`).
 The smallest readings, and what waits for the lowering interface:
@@ -4153,6 +4158,131 @@ unprovided (§9.8.13 (c)).
 `browser/tea/NavigatePush`, `NavigateErrors` and `ListenerOrder` test the direct forms under their new names, and
 `browser/tea/NavigateCommands` the commands. §9.8.16 (c)'s inventory row for the direct forms names `push`,
 `replace`, `goBack`, `goForward`, `loadPage` and `reloadPage`; the commands are values (b).
+
+### 9.9 SVG in the `html` vocabulary (2026-10-12)
+
+*Specified and built 2026-10-12.* The language could mark an element `svg` (`language.md` §11.14) and the
+`dom` lowering knew the namespace (`backend.md` §15.3's flag `2`), but no platform declared an SVG element,
+so no program could draw. This section is the contract for SVG markup: which module declares it, how its
+names meet HTML's, how an element gets its namespace on the page, and what each lowering writes. The house
+rule is Elm's API: the vocabulary covers elm/svg's `Svg`, `Svg.Attributes` and `Svg.Events`, everything
+ohanhi/bike-wars draws with among them.
+
+**(a) One vocabulary module: `Html`.** The SVG elements, attributes and events are declarations of
+`platforms/html/Html.beni`, beside HTML's, and there is no `Svg`, `Svg.Attributes` or `Svg.Events` module.
+Four reasons, each sufficient:
+
+1. **A tag resolves in one vocabulary with no import** (`language.md` §11.5, §9.2's `"vocabulary"` key):
+   `<rect>` in any view must find its row in the module the manifest names. A second module would make the
+   key a list and the checker merge rows across modules — a language change bought for a module name.
+2. **beni already folded elm/html's three modules into one**: an element, an attribute and an event are
+   declarations, not functions, so `Html.Attributes` and `Html.Events` have nothing to hold. SVG's are the
+   same kind of thing.
+3. **The two vocabularies nest in each other**: an `<svg>` inside a `<div>`, a `<p>` inside a
+   `<foreignObject>`, `onClick` on both. One module types them together.
+4. **SVG markup is `Html msg`**, as Elm's `Svg msg` and `Html msg` are both `VirtualDom.Node msg`: a view
+   that draws is annotated `Html Msg`, a component that returns a `<circle>` is a component like any other,
+   and `Html.map` and `Html.text` work on SVG unchanged. **JSX and the plain-call form produce the same
+   type** (rule 8): `<Shapes.dot cx="4" />` and `Shapes.dot { cx = "4" }` are one program (§11.13), and an
+   element has no plain-call form for SVG for the reason it has none for HTML — a tag chosen at run time
+   waits on `language.md` §11.5's design. Elm's `Svg.node`, `Svg.text_` and `Svg.text` are therefore
+   `<…>`, `<text>` and `Html.text`.
+
+**(b) Names are SVG's, spelled as the page spells them.** As HTML's vocabulary declares `tabindex` and not
+Elm's `tabindex` function, SVG's declares the markup name: `stroke-width` (Elm's `strokeWidth`),
+`viewBox`, `xlink:href`, `<text>` (Elm's `text_`), `<linearGradient>`. **Case is kept and matched exactly**:
+`viewbox` is `unknown_attribute` with "did you mean `viewBox`" — exact matching is §11.5's rule, and here it
+also buys a guarantee, since `setAttribute("viewbox", …)` on an SVG element writes an attribute no renderer
+reads. **Every SVG attribute's value is a `String`**, as every elm/svg attribute takes one: a length may
+carry a unit (`"50%"`, `"2px"`), so `width="100%"` on an `<svg>` is a string where HTML's `width` on an
+`<img>` stays an `Int`.
+
+**(c) Collisions with HTML, decided one by one.**
+
+| Name | Decision |
+|---|---|
+| elements `a`, `title`, `style` | **one declaration each, HTML's.** Inside an `<svg>` the page's parser makes the SVG element of the name (d), so `<svg><a href="…"><text>…</text></a></svg>` is SVG's link and `<title>` SVG's tooltip; the attributes are typed against the one row (`a`'s `href` is a `url`, and `xlink:href` is declared on `a` too) |
+| `width`, `height` | **a second declaration**, `String`, `on` the SVG elements that have them (`svg`, `rect`, `image`, `foreignObject`, `use`, `pattern`, `mask`, `filter`, `symbol`, the filter primitives), beside HTML's `Int` one on its elements. The `on` sets are disjoint, so no name has two answers (`language.md` §11.14) |
+| `class`, `style`, `id`, `tabindex`, `lang` | **HTML's declarations serve SVG**, every lowering writing them as attributes: `class` is `setAttribute("class", …)` — never `className`, which is an `SVGAnimatedString` on an SVG element — and the class and style lists use `classList` and `style.setProperty`, which SVG elements have (`language.md` §11.19) |
+| `href` | SVG's is declared `url` on `use`, `image`, `pattern`, the gradients, `textPath`, `mpath`, `feImage`, `filter` and the animation elements; `a` keeps HTML's. **`xlink:href`** is declared `url` on the same elements and `a`, and is written with `setAttributeNS` in the XLink namespace (`backend.md` §15.3's existing row) |
+| `type`, `min`, `max`, `method`, `x`, `y`, … | **a declaration `on` the SVG elements that have the attribute**, so `type` on `feColorMatrix` is SVG's and on `input` HTML's; `x` and `y` are SVG's only |
+| presentation attributes (`fill`, `stroke`, `stroke-width`, `transform`, `opacity`, `font-size`, …) | **declared for every element**, as every elm/svg attribute may be put on any node. The cost is that `<div fill="red">` checks and writes an attribute nothing reads; no guarantee is at stake (rule 7) — the name is not a typo, the attribute is written, the page shows what it would show — and an `on` list of every SVG element on each of fifty-six attributes would more than double the vocabulary's text. A fact meaning "on every element declared `svg`" would make them exact; it is a change to §11.14's fact set and is left for when a misuse is reported |
+| events | **HTML's serve SVG**: elm/svg's `Svg.Events` is `onClick`, `onMouseDown`, `onMouseUp`, `onMouseOver` and `onMouseOut`, and the last two are added to the vocabulary for both, `delegated` since both bubble, with `onMouseMove`, which a drawing needs and Elm writes with `on "mousemove"` |
+
+**(d) The namespace is the parser's, decided by where an element stands.** Every lowering writes markup as
+text the page's HTML parser reads — a template's `innerHTML`, a server render — and that parser, not the
+name, decides an element's namespace: inside an `<svg>` it is in **foreign content**, where every element
+it makes is an SVG element, until an **HTML integration point** (`foreignObject`, `desc`, `title`) whose
+content is HTML again. So:
+
+- **Inside one template, nothing is created by name**: no `createElementNS`, no namespace argument; the
+  `<svg>` the template holds puts everything under it in its namespace, as dom-expressions relies on.
+- **At the top of a template**, an element declared `svg` other than `<svg>` is wrapped in an `<svg>` for
+  the parser and taken out of it at clone (`backend.md` §15.3's flag `2`, now also with flag `4`: a value
+  of several top-level nodes among which an SVG element stands is wrapped whole and its nodes returned in a
+  fragment). A component that returns a `<circle>`, a `For` row that is a `<rect>`, a helper that returns
+  `<><line /><text>…</text></>` all draw.
+- **The parser table learns foreign content** (§9.3's *Where HTML's parser rules live*;
+  `parser_table.zig`'s `Scope.svg`, `misplaced`, `contentIn`). Inside an `<svg>` none of HTML's rules apply —
+  no void element, no raw text (`<style>` and `<title>` are SVG's, whose text is ordinary and escaped), no
+  `<p>` closing, no table — and an element is **`markup_restructured`** where its namespace would not be
+  the one its declaration says: an SVG element outside any `<svg>`, or inside a `<foreignObject>`'s HTML,
+  which the parser would make an HTML element that draws nothing; an HTML element inside an `<svg>`, which
+  the parser would make an SVG element of the name or, for most of HTML's phrasing and block elements, end
+  the `<svg>` before (`a`, `title`, `style` and `script` excepted: names of both); and, in `dom`, an SVG
+  element beside an HTML one at the top of one markup value, which one template cannot parse in both
+  namespaces. Each was a page that silently differed from the program; Solid's compiler writes them all.
+- **What the parser table cannot see**, a markup value placed in a slot at run time, keeps the namespace
+  its own template gave it, as an Elm `Svg` node keeps its own: an HTML block in a slot inside an `<svg>`
+  is an HTML element there. An `<a>` or `<title>` at the **top** of a markup value is HTML's (its
+  declaration's namespace), so a component returning `<a>…</a>` for use inside a drawing writes it inside a
+  `<g>`; a namespace taken from the slot a value lands in waits on a use that needs it.
+
+**(e) Attributes are attributes.** No SVG attribute is declared `property`: every value class is written
+with `setAttribute` (`removeAttribute` for a `Bool` or `Maybe String` that is absent), `xlink:` and
+`xml:` names with `setAttributeNS` — `backend.md` §15.3's table, which needed no change. A constant is
+baked into the template as written, the parser restoring the case of a mixed-case name in foreign content
+and putting `xlink:href` in its namespace.
+
+**(f) Per lowering.** `dom` (`browser`, and `browser-tea` over it): (d) and (e), no runtime change —
+`Rt.template` already unwrapped flags `2` and `2|4`. `ssr` (`node`): the same parser-table rules, an SVG
+element at a root written as itself (the string is placed inside the `<svg>` the page's string holds), names
+and case as declared, `xlink:href` written as written. `direct` (`browser-direct`): a `For` row whose root
+is an SVG element compiles, its template taken from inside the wrapper (`t.content.firstChild.firstChild`);
+a `view` whose root is an SVG element other than `<svg>` stays refused until slice S4
+(`browser-direct.md` §14) — a page's root is mounted into the page's mount node, an HTML element, where such
+an element draws nothing, so S4 needs a mount node that may be an `<svg>` (`Browser.mountAt` on one) before
+it is worth compiling.
+
+**(g) What is included, and what is deferred.**
+
+- **Elements** (58): `svg`, `foreignObject`, `circle`, `ellipse`, `image`, `line`, `path`, `polygon`,
+  `polyline`, `rect`, `use`, `animate`, `animateMotion`, `animateTransform`, `mpath`, `set`, `desc`,
+  `metadata`, `defs`, `g`, `marker`, `mask`, `pattern`, `switch`, `symbol`, `textPath`, `text`, `tspan`,
+  `linearGradient`, `radialGradient`, `stop`, every filter primitive and light source elm/svg has
+  (`feBlend` … `feTurbulence`, `feDistantLight`, `fePointLight`, `feSpotLight`), `clipPath`, `filter`,
+  `view`; and `a`, `title`, `style` through HTML's rows (c).
+- **Attributes** (169 declarations): the 56 presentation attributes, and elm/svg's geometry, text, reference, marker, gradient,
+  pattern, clip, mask, filter-primitive and animation attributes, each `on` its elements.
+- **Events**: `onMouseOver`, `onMouseOut`, `onMouseMove` added; the rest are HTML's.
+- **Deferred, each for want of a use, none refused**: what SVG 2 removed and browsers do not draw — fonts
+  and glyphs (`font`, `glyph`, `altGlyph*`, `glyphRef`, `tref`, `color-profile`, `cursor` the element) and
+  their attributes (`horiz-adv-x`, `unicode`, `glyph-name`, `v-*`, `kerning`, `enable-background`, …),
+  `animateColor`, `xlink:` attributes but `href`, `xml:base`/`lang`/`space`, `requiredFeatures`,
+  `externalResourcesRequired`, `baseProfile`, `version`, `zoomAndPan`; and `systemLanguage` and
+  `requiredExtensions` (a `<switch>` draws its first child without them). elm/svg's `Svg.Events.on`,
+  `custom`, `preventDefaultOn` and `stopPropagationOn` are HTML's open question too — a handler takes an
+  `Event` and reads it (§9.8.10). MathML stays undeclared: its foreign-content rules are (d)'s, with
+  `mi`, `mo`, `mn`, `ms`, `mtext` and `annotation-xml` as its integration points, written when its
+  vocabulary is.
+
+**(h) What it costs.** A page without SVG does not move a byte: no runtime changed, and every `emit/`
+golden and `run/` record is what it was. A markup program's compile reads a vocabulary of 410 declarations
+where it read 180 — measured on `browser/dom/Events` with the ReleaseSafe compiler the gates run (median of 15, warm cache), a check
+went from 37 to 43 ms, the difference in building the type table and resolving the larger module. The
+duplicate-declaration check of `checker-v2.md` §25.2 compared every pair of declarations by text, which
+grows with the square of the vocabulary; it now compares two exact names by their interned symbol, and
+text only for two patterns.
 
 ## Appendix — what is deliberately not done
 

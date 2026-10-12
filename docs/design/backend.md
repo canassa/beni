@@ -7615,6 +7615,18 @@ would imply are omitted (`c/dom/attrs.rs:510-563`). An element whose vocabulary 
 `mathml` and is not the namespace's own root element is wrapped for parsing and unwrapped on clone,
 flag `2` (`c/dom/element.rs:476-495`).
 
+*Amended 2026-10-12* (`boundary.md` §9.9 (d)): **a template of several top-level nodes among which an SVG
+element other than `<svg>` stands is wrapped in an `<svg>` too**, flags `2` and `4`, and `Rt.template`
+gathers the wrapper's children into a fragment, as it already could; until then such a value — a helper
+returning `<><line /><text>…</text></>` — was parsed as HTML elements of those names and drew nothing. An
+SVG element beside an HTML element at the top of one value is `markup_restructured`: no wrapper parses
+both. dom-expressions makes one template per top-level element of a fragment, so it never meets the case.
+
+**SVG** (`boundary.md` §9.9) needs nothing else of this section: inside an `<svg>` the page's parser gives
+every element its namespace, so a template writes SVG as text like HTML, and every SVG attribute is an
+attribute (the table below). The parser table's foreign-content rules (`boundary.md` §9.3, as amended)
+refuse what the parser would give the other namespace.
+
 **The HTML parser table.** What the HTML parser does with a string — void elements, implied end tags,
 table foster-parenting, a `<p>` closed by a block element, `<a>` inside `<a>`, `<form>` inside
 `<form>`, raw-text elements — is a **fixed table**, `html`'s `parser_table` (`boundary.md` §9.5;
@@ -8327,6 +8339,13 @@ holds, with these readings:
 - **A view is printed with `Node.print (Ssr.render (view model))`**: `render` is the `foreign` of
   `node`'s module `Ssr`, not of `Node`, so a program that writes no markup does not check the
   vocabulary (`boundary.md` §9.3, *As built … with the first lowering*).
+
+*Amended 2026-10-12* (`boundary.md` §9.9 (d), (f)): **SVG is written as declared** — names and case as the
+vocabulary spells them, `xlink:href` as written, which the page's parser puts in its namespace — and the
+parser table's foreign-content rules apply as in `dom`: inside an `<svg>`, a `<style>` or `<title>` is
+SVG's, whose text is ordinary and escaped rather than written raw, and an element in the wrong namespace's
+place is `markup_restructured`. An SVG element at a root is written as itself, with no wrapper: the string
+is read inside the `<svg>` the page's string holds (`run/MarkupSvg`).
 
 ### 15.7 The release optimiser
 

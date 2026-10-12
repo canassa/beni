@@ -1776,6 +1776,14 @@ building it settled, each a resolution of a place this document left open or cou
   pass; dom's flag 1 (a custom element, `is`, a lazy `img`/`iframe`) is no longer refused: such a
   template is imported through the template element's own document (`t.ownerDocument.importNode`,
   as `Rt.template` imports it). Flag 2 stays refused (S4); no vocabulary that ships reaches it.
+  *Amended 2026-10-12* (`boundary.md` §9.9 (f)): `html` declares SVG now, and **a `For` row whose root
+  is an SVG element is compiled**: its template is parsed inside the `<svg>` wrapper and taken from
+  inside it (`$t.content.firstChild.firstChild`), and everything after is a row like any other
+  (`browser/direct/SvgRows`, against `browser-tea` in both DOMs). SVG nested in a view's template
+  needed no change. **A `view` whose root is an SVG element other than `<svg>` stays refused until
+  S4**, which needs first a mount node that may be an `<svg>` (`Browser.mountAt` on one): mounted into
+  an HTML element, as every page is today, such a root draws nothing. A MathML row root stays refused
+  with it.
 - **Q1's observable difference in S1 is bubbling**, not a removed input: a click a button handles
   bubbles to its section, whose message, read at the event, carries the model the button's
   message made (`browser/direct/EventReadsModel`). The removed-focused-input shape needs branches
