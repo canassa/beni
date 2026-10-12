@@ -701,7 +701,8 @@ type Step
     | Defect Js.Value
 
 
--- The request's own timer ran out, or the host found no answer.
+-- The request's own timer ran out, or the host reported a network
+-- error: no answer, or a body cut off while it was read.
 type Failure
     = TimedOut
     | Unreachable
