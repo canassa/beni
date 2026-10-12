@@ -4863,6 +4863,7 @@ variable must not "share" with a type that contains it (an element is never its 
 `List.set` inside core looks like Disjoint; and adding a `pub copy` to `List` collides with three
 locals of that name under the shadowing rule, so dev JavaScript and every source map of `List`
 move — release output does not.
+
 ## 2026-10-12 02:45 CEST — Ownership oracle: writes, controls, summaries, theorems
 
 **What I did.** Answered the read-only review of `proofs/ownership/` in five commits. Generator
@@ -4884,3 +4885,16 @@ is subsumed (the caller re-checks translated writes and supplies), so that contr
 against the per-call checker. Supply bits must be re-checked where a step ends — the thesis
 does not say where an accumulator's bit is established. Forwarding a callback to another
 declaration is still untested by the generator.
+
+## 2026-10-12 03:28 CEST — Ownership oracle: answering the PR #59 review
+
+**What I did.** One commit per review item:
+- `ci` fails when fewer than 30 % of accepted programs write.
+- The soundness theorems now take `check p = .ok _` under the corrected config (they were false for a mutant config), and `summary_sound` gains its uniqueness hypothesis.
+- `lake build` audits the axioms of all 335 theorems against a pinned list of four `sorry`-dependent ones.
+- `borrowed-supply` is reported under both checkers.
+- Every required control has a fixed probe, so `ci` no longer depends on the RNG stream.
+- A higher-order family (wrappers that pass their callback on, callbacks that escape or require exclusivity) and per-row hit counts reach the callback rows. Eight more mutants became flags: three are required, two are probe-only, three are known gaps.
+- COVERAGE claims softened as listed.
+
+**What I learned.** Under summaries the `borrowed-supply` line is live — it rejects about 20 programs per seed — yet none of those disagree; liveness in verdicts and observability are different questions. After the generator change the cross-check finds 68 differing verdicts, 3 of them in the per-call checker's favour, none unsound. The xreq rows are covered three times over: published xreq, the edge, and the callee's own exclusivity check under σ. So their mutants change no verdict.
