@@ -2298,6 +2298,9 @@ const Case = struct {
             try dump.append(c.arena, dir);
         } else try dump.append(c.arena, sources[0]);
         const dumped = try c.inProject(dump.items);
+        // Gone once read, so no later case finds its copies; deleted
+        // before writing too, after a run stopped in between.
+        try c.w.tmp.dir.deleteTree(c.w.io, "_msg-types");
         if (dumped.exit_code != 0) {
             detail("{s} [fuzz]: the message types dump failed\n{s}\n", .{ c.fixture.name, dumped.stderr });
             return error.MsgTypesDumpFailed;
