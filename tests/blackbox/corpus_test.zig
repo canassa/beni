@@ -2286,9 +2286,17 @@ const Case = struct {
         try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) tea_arg else platform_arg });
         // A project with a platform of its own names its modules: `.`
         // would take the platform's files for the project's.
+        // Any other project's modules are dumped from a directory holding
+        // only them: the world is the worker's, shared by every case it
+        // runs, so `.` would also take the modules earlier cases left.
         if (c.fixture.project and hasPlatformDir(try c.fixturePath())) {
             try dump.appendSlice(c.arena, sources);
-        } else try dump.append(c.arena, if (c.fixture.project) "." else sources[0]);
+        } else if (c.fixture.project) {
+            const dir = "_msg-types";
+            try c.w.tmp.dir.deleteTree(c.w.io, dir);
+            for (sources) |name| try c.w.write(try std.fs.path.join(c.arena, &.{ dir, name }), try c.w.read(name));
+            try dump.append(c.arena, dir);
+        } else try dump.append(c.arena, sources[0]);
         const dumped = try c.inProject(dump.items);
         if (dumped.exit_code != 0) {
             detail("{s} [fuzz]: the message types dump failed\n{s}\n", .{ c.fixture.name, dumped.stderr });
