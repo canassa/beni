@@ -6581,6 +6581,76 @@ of the 16 400 numbers cost 26 million more. Fixtures: `emit/release/app/SpecTrut
 (red before: `score`'s `n < 0 || true` kept its `if` and its dead statements),
 `run/SpecializeTruthiness` (a decided test that logs keeps its log, in both builds).
 
+**Amended 2026-10-12 — fact 3 by its constraints** (`Pts.byConstraints`; a step toward slice 5
+of *The combined solver*, below, not slice 5 itself). Measured on `browser/tea/ApiItems`, a
+schema-reading `Tea.element` page whose release build was 2.03 billion instructions of the
+ReleaseSafe compiler: specialisation was 1.36 billion of it, eight analyses (three rounds before
+the inlining passes, three after the first, one after each of the other two — the passes' cap is
+reached) each taking fact 3 to its fixpoint from ⊥ in about twelve sweeps, 560 million in all.
+Nothing about schemas makes it so: the page is the `browser-tea` runtime, `core/Task` and `Http`
+around a small program, about 23 000 nodes, and a sweep re-walked every unit that read anything
+that changed. Of the 386 000 node evaluations of the eight fixpoints, 88 000 were the first
+sweeps'; of the rest, five in six gave the value the node already had — a unit (a function body)
+was walked again whole for one changed read in it.
+
+- **The first sweep is the walk it was, and records constraints.** Every evaluation it makes —
+  of an expression node, or of a statement's own transfer (a binding's join, an assignment's
+  write, a `return`, `for…of`, `throw`: `Pts.effect`) — is a constraint, numbered in walk order:
+  its node and context (the top-level statement, which keys locals; for a `return`, its
+  function), and the constraints whose values it read (`inputsOf`: a node's operands, an
+  object's property values, a call's arguments and the object whose method it calls). A node
+  lowering shares between two expressions (`a.b` in `a.b.c` and `a.b.d`) is evaluated twice
+  and is two constraints; once the fixpoint is reached a node holds its last evaluation's value,
+  as a walk leaves it. A node whose value its tag alone makes (an operator but `&&` and `||`, a
+  template) is no constraint. Every read of a var, a site's escape or its properties registers
+  the constraint making it, as it registered the unit.
+- **A guard's death is recorded, not replayed.** A read is narrowed by a guard in view (fact 5,
+  *What fact 3 learns*) while nothing between the guard's push and the read killed it. A call,
+  an assignment, a declaration or a loop's next turn kills whatever the values are; such a guard
+  is never recorded for the read. A read through a host value kills only once its object is
+  `top`: the walk records, per guard a read may be narrowed by, the reads between them, and the
+  read is evaluated again when one of their objects changes. An object no constraint makes
+  (`this`, an operator) has its one value and kills, or not, for good.
+- **After the walk, a change wakes constraints, not units.** A constraint is evaluated again
+  alone, by the walk's own transfer function, with its inputs' values; one whose value changed
+  wakes those that read it. A sweep is the constraints waiting, in walk order, then what the
+  files the pass cannot see read, the entry's call and `propagate`; `max_pts_sweeps` caps them
+  as before.
+
+Every transfer function is the walk's and monotone, so this reaches the one least fixpoint the
+sweeps reached (research 52 §2.3), and sites are numbered by the same first walk. **Checked**:
+the safety build's comparison (*Amended 2026-10-02 — fact 3 is order-free*) now runs a sweep of
+everything in a shuffled order against the constraints, on programs of at most 1 500 nodes; run
+for this change on every program of the corpus whatever its size, it agreed everywhere (it
+found one disagreement while the change was built, a guard killed through `this`, the last
+bullet's case). Every output is byte for byte as before: all 519 `run/` and `browser/tea/`
+programs built `--release` by both compilers, every `emit/release/` golden and every release
+run hash.
+
+Two smaller cuts of the same kind, each exact. **A round's first sweep of facts 1, 2, 4 and 5
+counts from the record**: `countTop`'s record of a statement, kept while its module's version
+stands, holds the whole-program names it read too, so the first sweep, which counts each read
+once for the substitution rule, replays it as the later sweeps did. **`rewrite` drops dropped
+parameters' arguments only in modules that name a function that lost one** (`rewriteCalls`):
+a call of one names it.
+
+Measured, millions of instructions of the ReleaseSafe compiler, one `--release` build, before
+and after:
+
+| build | before | after |
+|---|--:|--:|
+| `browser/tea/ApiItems` (fact 3: 560 → 396) | 2 022 | **1 824** |
+| `browser/tea/ApiLogin` | 1 737 | 1 603 |
+| `browser/tea/HttpJson` | 1 655 | 1 540 |
+| `bench/size-apps/ApiAndRoutes` | 2 228 | 2 045 |
+| `run/SchemaDeclRecords` | 1 047 | 988 |
+| `run/SchemaDeclRecords`, `--schema-library` | 643 | 622 |
+
+The corpus case `browser/tea/ApiItems`, both builds and the harness with its hashes valid, is
+2.58 billion; with Node running the page about 3.8 of its 4.3 budget. The compiler users get
+(ReleaseFast, LLVM): `ApiItems` 406 → **359**, `ApiLogin` 342 → 311, `HttpJson` 326 → 298,
+`ApiAndRoutes` 446 → 401, `run/SchemaDeclRecords` 211 → 197.
+
 ### The combined solver
 
 *Specified 2026-10-02, normative for `src/js/Spec.zig`'s analysis from slice 4 of research 52
