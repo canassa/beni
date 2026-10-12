@@ -13,6 +13,9 @@ manager's answers to §14.*
 groups, once closures and capture paths of function parameters — is specified in §18 and built; §17 records
 the manager's answers to §16.14.*
 
+*Amended 2026-10-12: slice 3b — the entry protocol of the functions a platform calls, per platform, and the
+dictionary's focus primitive — is specified in §20 and built; §19 records the manager's answers to §18.13.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -1295,3 +1298,205 @@ New fixtures in `tests/corpus/ownership/`:
    `mapItem`, or a key-path representation that is not a list, would remove them.
 4. **Cost.** On Conduit two thirds of the pass is summarising the library, in every dump; the summaries belong in the
    embedded checked core and the interfaces (§16.10), which is slice 4's.
+
+---
+
+## 19. The manager's decisions on §18.13 (2026-10-12)
+
+1. **`Cmd.map`'s and `Sub.batch`'s key paths** (§18.13 question 3): the platform must not edit a caller's list
+   in place. `Cmd.map` builds each item's extended key path as a list of its own, and `Sub.batch` its joined
+   list, so the write stops propagating into callers. Behaviour must be identical, and a slowdown or size
+   growth beyond noise is a finding. *As built*: a key path is held outermost segment first and `Cmd.map` writes
+   `[ …[ segment ], …path ]` — the new one-segment list is the construction's base, and `path` is only read
+   into it — so browser-tea's architecture no longer reverses a path when it reads an item; `Sub.batch` joins
+   with `[ …[], …list, …more ]`. Research 78 §2 gives the measurements, and the two forms rejected for them
+   (`List.copy`, `List.concat`).
+2. **A dictionary focus primitive for `Dict.update`**: built as `List.focus` is, `Dict.update` inferred over
+   it (§20.8).
+3. **`traverseAt`'s obligation by convention** (§18.13 question 2) is accepted while it is core-private and
+   met by the five loops §18.5 names; the trusted surface lists it (§20.9).
+4. **Cost** (§18.13 question 4) is deferred to slice 4, which embeds core's summaries with the checked core.
+
+---
+
+## 20. Slice 3b — the entry protocol (normative from 2026-10-12)
+
+*Amends §1.2's, §16.1's and §18.1's tables, §8.2–§8.3, §16.5 and §16.11. Sections 1–19 keep their numbers
+and text; where this section changes a rule, it wins. Research 78 measures it.*
+
+### 20.1 What slice 3b builds
+
+| Thesis piece | Slice 3b |
+|---|---|
+| TEA entry protocol (§7, Table 7.1, P1, P5) | **built** (§20.2–§20.6): the abstract model at entry as a fixpoint of `init` and `update`, checked at the program constructor's call, per platform |
+| `init` is a function (Change 4) | **met by the direct platform's mount** (§20.3); no platform API changes |
+| Payloads (P6, Change 7) | every send is supplied borrowed: the owned bits of command values are not built (§20.5) |
+| `view` and `subscriptions` read only (T13) | **built** (§20.3, §20.6) |
+| The renderer obligation (P7) and P2–P4 | not the checker's: obligations on browser-direct before slice 5 writes in place (§20.9) |
+| `Dict.update`'s owned value (§7, *A dictionary*) | **built** (§20.8), with the separation of what is stored at one folded path |
+
+### 20.2 Entry rows
+
+Thesis §7, *The protocol*: the protocol "is an asserted row on the function the runtime actually calls … the
+program constructors", whose record parameter holds the functions the runtime calls. Until Change 5's words let
+a platform declare its rows, the checker asserts them:
+
+| The build's platform | Program constructors | Row |
+|---|---|---|
+| `browser-direct` | `Tea.sandbox`, `Tea.element`, `Tea.document`, `Tea.application` | **direct**: thesis Table 7.1 |
+| `browser-tea` | `Tea.sandbox`, `Tea.element`, `Tea.document`, `Tea.application` | **template** |
+| `browser` | `Browser.program` | **template** |
+
+A constructor is the declaration of that name, in the module of that name, of the platform package of that name
+(the chain layer's manifest `"name"`). Any other program constructor — `Browser.hosted`, which a program never
+meets, or a test platform's — has no row: the functions it is handed stay `pending` (§16.5).
+
+**Which platform.** Thesis §7 checks every program against the direct row "so that a source has one verdict on
+both browser back ends"; Change 8 keeps in-place lists to the direct platform. Both hold here: a template row
+computes everything the direct row does, and then an edit the direct row would accept is rejected with the cause
+**`platform`**, of the position kind — browser-tea's and browser's runtimes keep the model they hand `update`
+(the renderer compares the values the last render read by identity, and keeps that render's handlers), so they
+hand it nothing owned. Every other rejection is the same line on every browser platform. Verdicts therefore
+differ between platforms by exactly the `platform` lines.
+
+### 20.3 What each function receives (the direct row)
+
+- **`init`** (Change 4). On `browser-direct` the expression in the record's `init` field is evaluated by the
+  mount, once per mount (`browser-direct.md` §11.1 as built), and one program value mounted twice is refused
+  (`program_mounted_twice`): the expression *is* the body of Change 4's `init ⊤`. The cells it makes — its
+  literals, its callees' fresh results — are fresh at entry; a top-level value it names is shared (T53:
+  `init = initialModel` is rejected at the first in-place edit, `init = initialModel ⊤` or a literal is accepted).
+  So no platform's API changes in this slice. On the template platforms `init` is a value evaluated with `main`,
+  which their `platform` rejection makes moot. `application`'s `init` is a function of the page's address,
+  which crosses, and its navigation key, a foreign type: its class is applied to `∅` and `⊤`.
+- **`update msg model`**: the model owned (P1); the message as §20.5 says. Its result's model half is the next
+  entry model; everything its command half holds escapes (thesis §7, *Fibers and commands*).
+- **`view model`**: the model to read only. A write of view's on its model is rejected (T13), cause
+  **`read-only`**; what its summary escapes on the model (E, J) escapes at entry; its result escapes nothing
+  (P3: a handler made by one render reads the model at its event).
+- **`subscriptions model`**: to read only, as `view`; everything its result holds escapes.
+- **`onUrlRequest`, `onUrlChange`**: their arguments cross; nothing.
+
+The model a function receives is its record field's model half: `init`'s whole value for `sandbox` and
+`Browser.program`, its first component otherwise; `update`'s parameter 2 and result alike.
+
+### 20.4 The model at entry
+
+Thesis P5: the abstract model at entry is a least fixpoint, computed at the constructor's call from the classes of
+the record's functions (§16.5: a top-level function's summary, a lambda's class):
+
+    M₀ = init's model        Mₖ₊₁ = Mₖ ∪ update's result's model half, instantiated with π₁ = the message, π₂ = Mₖ
+
+Instantiation is §16.4 item 6's. update's `fresh_k` is the one cell `result(constructor call, k)` in every round
+— two dispatches' new lists taken for one, which only adds aliasing, as §16.6 merges a recursive group's — so the
+fixpoint is over a finite set of cells; `esc_k` is that cell, escaped; `shared` and `⊤` are carried; a parameter
+cell's condition is lowered by its `xres` (§18.3). A fixpoint not reached in 8 rounds adds `⊤` (a backstop).
+
+Then, at the call's point: **(a)** every cell update's summary escapes on π₂, its result's command half holds,
+`init`'s command half holds, `subscriptions`' result holds, and `view`'s or `subscriptions`' summary escapes on
+their model joins Esc; **(b)** the demands of §20.6, after (a), so that an escape at any dispatch is seen.
+
+### 20.5 Messages (P6, Change 7)
+
+The message `update` receives is a symbolic cell of its own, **`msg`**, standing for every payload, together
+with every cell `view`'s result holds: a message built in markup from a model path (`onClick={Keep model.rows}`)
+holds the model's cell, at every arm (thesis P6, *View events*: coarse, a limit). A send is a supply to `update`
+(Change 7) whose owned bit is a fact of each command value; slice 3b does not build those bits — the rows of
+`Cmd.perform`, `Cmd.map`, `Cmd.batch`, `Cmd.task` and the subscription constructors that carry them — so **every
+payload is supplied borrowed**. A demand that reaches `msg` is rejected, cause **`payload`**, approximate: "a
+message's payload may still be held by its sender, and owned sends are not built (Change 7)". That covers
+`update` writing its message in place (W on π₁, T50) and an arm editing a model path where another stored a
+payload (T38). A payload that reaches no cell written in place is accepted (T34).
+
+### 20.6 The demands at the entry
+
+At the constructor's position, after (a):
+
+- **for each path `q` at which `update` writes its model** (W on π₂.q): a line `entry M.update`, base `model`
+  with `q` (`model.todos`), checked as a call-site demand (§16.4 item 3) on the entry model at `q` — Known,
+  Unescaped, Disjoint against the model's other paths and the message, Dead (on the direct row nothing holds
+  the model after the call, P1) — then `update`'s `xreq` on `(msg, M)`, a failure the `exclusive` cause.
+  Accepted with the new kind **`entry`**: the runtime hands `update` the model owned;
+- **for each path `p` at which `update` writes its message** (W on π₁.p): base `msg` with `p`, rejected
+  `payload`;
+- **for each path at which `view` or `subscriptions` writes its model**: rejected `read-only`, exact.
+
+The template row turns each accepted `entry` line into `rejected platform`. The record's functions are in sight
+at a constructor with a row: a writing `update`, `view`, `init` or `subscriptions` gets no `value … pending`
+line there (§16.5), and a lambda's demands on its own parameters are decided by the entry lines (`decided at its
+calls`).
+
+### 20.7 The report
+
+Acceptance kinds (§8.2) gain **`entry`**, after `once`. Causes (§8.3) gain, after `once`, **`payload`**
+(approximate), **`read-only`** (exact) and **`platform`** (position).
+
+### 20.8 The dictionary's focus
+
+`core/Dict` gains `focus : Dict k v, k, (Maybe v → Maybe v) → Dict k v`, not `pub`, whose body is the one
+`update` had — the value at the key handed to `alter`, its answer inserted or the key removed — and `update` is
+`focus`. Its row is its body's summary, inferred, with one fact asserted (thesis §7, *A dictionary*: "the
+module's one asserted row"): the supply to `alter` at `#Just.0` is the value at the key, **taken** and **owned**,
+on condition `excl π₁` — a destructive read when the dictionary is exclusive, as §18.5's `focus` is for a list.
+The row writes nothing of its own: a callback that edits what it is handed makes a call-site demand on the
+dictionary's values (§18.5, *At a call*), and one that only reads leaves the dictionary aliased by the result
+(T51).
+
+What `excl` of a dictionary means is a fact about representatives (thesis §3.1; §7: the slots `⟨Dict⟩.k` and
+`⟨Dict⟩.v` are "containers whose positions are the nodes"), which §16.1 left unbuilt. Slice 3b builds the part
+the focus relies on:
+
+- **What is stored beside what is there.** A constructor application that places cells of two of its arguments
+  at one folded path — a node's value, and its subtree's values, both at `#Node.2` — lowers the condition of each
+  pair of distinct cells there by `sep` (§18.2): what is stored at a representative shares no cell with what is
+  there. So `Dict.insert`'s inferred result says `π3{sep π3 π1#Dict.0#Node.2}`, and one list inserted at two keys
+  fails `exclusive`, exactly (thesis §7: insert "keeps `excl` only if both were stored exclusively, disjoint from
+  each other and from the rest").
+- **The positions of one arrival.** A cell that arrived from outside (a parameter, a capture, a callback's
+  result) at a folded path of core `Dict`'s tree stands for the values at all of its positions, so `sep` of it
+  with itself is its own condition: distinct positions of an exclusive dictionary share no cell. This rests on
+  an obligation on `core/Dict` that the trusted surface lists (§20.9): **no function of `core/Dict` places one
+  value at two positions of a tree.** Every other folded path keeps §18.2's rule: a cell that stands for many is
+  not separated from itself, approximately.
+
+### 20.9 The trusted surface
+
+What the checker takes on trust, each item privileged code whose error is a correctness bug (thesis §6.5):
+
+- `core/List`'s asserted primitive rows (§16.8, §18.5);
+- `traverseAt`'s obligation, met by `foldlFrom`, `foldrFrom`, `mapHelp`, `indexedMapHelp` and `filterMapHelp`,
+  the only functions that call it, core-private and audited (§19 item 3);
+- `Dict.focus`'s destructive read, and `core/Dict`'s obligation that no function places one value at two
+  positions of a tree (§20.8);
+- the entry rows (§20.2): the template rows are what browser-tea and browser do today; the direct row is what
+  browser-direct must meet — P1's hand-over, and P2–P4 and P7, which the checker does not see — before slice 5
+  writes a list in place (thesis §7, *The obligation a future slice must meet*).
+
+### 20.10 Testing
+
+New fixtures in `tests/corpus/ownership/`, named `Entry…`. A fixture beside a `.platform` file is checked and
+dumped under each platform the file names, one golden per platform (`EntryPush.browser-direct.ownership`):
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `EntryPush` | P1, I5 | `update` pushes onto `model.items`: accepted `entry` on browser-direct, rejected `platform` on browser-tea |
+| `EntryKeepsOld` | T17 at the entry | an arm keeps the old list in the model and edits a copy target: rejected |
+| `EntryCommand` | T20, thesis §7 *Fibers* | a command captures `model.items` and another arm pushes: rejected `escaped` |
+| `EntryInit` | T53, Change 4 | `init = initialModel`: rejected `top-level`; `init = initialModel ⊤`: accepted |
+| `EntryPayload` | P6, *View events* | a view event carries `model.rows`, an arm pushes: rejected `payload` |
+| `EntryView` | T13 | `view` extends a model list: rejected `read-only` |
+| `DictFocus` | §20.8, T44, T51, T32 | `Dict.update` editing its value accepted on an exclusive dictionary; rejected when one list is at two keys, or a key and a value; a reading callback consumes nothing |
+
+and the applications (Conduit, TodoMVC, the table app) are measured per platform by research 78.
+
+### 20.11 Open questions
+
+1. **Owned sends** (Change 7): the bit per message path on command and subscription values, and its rows. Until
+   it is built every payload is borrowed, and research 78 counts what that rejects.
+2. **`init` on the template platforms**: Change 4 changes every constructor so that `init` is a function. On
+   browser-direct the mount already evaluates it per mount (§20.3); on browser-tea and browser it is evaluated
+   once with `main`, which is sound only because they write nothing in place. Whether to change their API anyway,
+   so that one source's `init` means the same on all three, is the owner's.
+3. **View-event payloads** are aliased with the model at every arm (P6). A summary of `update` split by its
+   message's constructor would confine them to the arm that receives them; research 78 counts how often the
+   coarse rule fires.
