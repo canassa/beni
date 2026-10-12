@@ -39,6 +39,9 @@ rules not yet modelled in the Lean oracle listed in §26.7.*
 *Amended 2026-10-13: the owner dropped the identity promises of `core/List`'s functions that build, reversing
 thesis O2 — `map`, `filter` and their kin return a fresh list, their summaries say so, and `identical`, `kept`,
 the exempt comparison and §25.3 are gone — in §27.*
+*Amended 2026-10-13: slice 4 — enforcement: a platform that edits lists in place declares it, and on such a
+platform `check` and `build` run the pass and every rejected or pending line is an error with an Elm-quality
+message; core's and the platforms' summaries ship in the checked core — is specified in §28.*
 
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
@@ -123,6 +126,10 @@ The thesis's decision is that only `browser-direct` writes lists in place (Chang
 `core/`, and the dump runs under any `--platform` (§9). Slice 5 is the first that is
 platform-specific.
 
+*Amended 2026-10-13 (slice 4, §28.2): whether a verdict is an error is the platform's — a platform declares that it
+edits lists in place (`"lists": "in-place"`), and only on such a platform do `check` and `build` run the pass. The
+verdicts themselves still do not depend on the platform, but for §20.2's entry rows.*
+
 ---
 
 ## 2. Where it runs
@@ -180,6 +187,9 @@ build that the report does not change the output; a dump writes no output to cha
 `--platform`, `--core` and `--core-root`. It takes a file or a directory (§9.1). The stage is
 **hidden** — parsed, but listed in no usage text and no error message — until slice 4 makes the
 checker a diagnostic; `--writes-work` and `--allow-debug` are hidden the same way.
+
+*Amended 2026-10-13 (slice 4, §28.3): the stage is listed in `dump`'s usage text; `--ownership-totals` and
+`--ownership-flips` stay hidden, the first being for scripts and the second for tests.*
 
 ---
 
@@ -645,6 +655,9 @@ place — with thesis Chapter 8's fixed shape: three places, a consequence, a ma
 `List.copy` fix and an alternative, and the verdict line naming exact sharing or the limit (thesis
 §8.3, Table 8.1). The stability policy of thesis §8.5 begins: every later release runs the previous
 release's accepted corpus.
+
+*Amended 2026-10-13: §28 is the slice-4 contract as built. The message shape is thesis Chapter 8's; the
+stability policy of thesis §8.5 is not started (§28.11).*
 
 ### 13.4 Slice 5 — in-place code on `browser-direct`
 
@@ -1398,7 +1411,13 @@ a platform declare its rows, the checker asserts them:
 | `browser` | `Browser.program` | **template** |
 
 A constructor is the declaration of that name, in the module of that name, of the platform package of that name
-(the chain layer's manifest `"name"`). Any other program constructor — `Browser.hosted`, which a program never
+(the chain layer's manifest `"name"`).
+
+*Amended 2026-10-13 (slice 4, §28.2):* the direct row is chosen by the property, not by the name: `Tea.sandbox`,
+`element`, `document` and `application` of a platform package whose own manifest declares `"lists": "in-place"` have
+the direct row, whatever the package is called, so that the row survives `browser-direct`'s rename to `browser-tea`.
+The template rows keep their names (`browser-tea`'s `Tea`, `browser`'s `Browser.program`) and apply only to a
+package that does not declare the property. Any other program constructor — `Browser.hosted`, which a program never
 meets, or a test platform's — has no row: the functions it is handed stay `pending` (§16.5).
 
 **Which platform.** Thesis §7 checks every program against the direct row "so that a source has one verdict on
@@ -2655,3 +2674,282 @@ name. No in-place write existed for that to break.
 | `ownership/Disjoint` | §16.4, thesis Table 3.1's pending row | the held call temporary through a helper of two arms (`forCall`): `call`, approximate; through `List.reverse` (`forFresh`): accepted |
 | `ownership/Differential` | T52 against the Lean model | `t52` accepted, the model's copied projection |
 | `ownership/MapAcrossTypes` | §25.3, §27.2 | all three appends accepted |
+
+---
+
+## 28. Slice 4 — enforcement (normative from 2026-10-13)
+
+*Amends §1.3, §2.4, §9.2, §13.3, §16.9, §16.10 and §20.2. Sections 1–27 keep their numbers and text; where this
+section changes a rule, it wins. Research 89 measures it.*
+
+### 28.1 The decisions it builds
+
+- **An unsafe in-place edit is a compile error** (the owner, 2026-10-11; thesis Change 2): never a silent copy and
+  never a slower algorithm. The fix a message offers is an explicit `List.copy`, or a restructuring.
+- **Errors only where lists are edited in place** (the owner, 2026-10-12): on every other platform nothing is
+  edited in place, so the checker is silent there — no error and no warning. The rule is a property a platform
+  declares (§28.2), not a platform's name: `browser-direct` is expected to take `browser-tea`'s name.
+- **beni has no users**: no flag turns enforcement off, and nothing is deprecated first.
+
+| Piece | Slice 4 |
+|---|---|
+| A platform declares that it edits lists in place | **built**: `"lists": "in-place"` (§28.2; `boundary.md` §5.2) |
+| The pass in `check` and `build` | **built**, on such a platform only, after the module check (§28.3) |
+| Summaries across a module boundary at build time | **built** as a *summary block* per module, in the cache entry and the checked core (§28.4); not yet in the interface record (§16.10, §28.11) |
+| Rejections and pending lines as errors | **built**: every one, exact, approximate and position alike (§28.5) |
+| Messages in thesis Chapter 8's shape | **built**: three places, a consequence, a `List.copy` fix and a verdict line (§28.6) |
+| Core and the platforms checked once, when beni is built | **built**: the checked core carries their blocks, and refuses an in-place chain with a rejection (§28.7) |
+| The stability policy (thesis §8.5) | not started (§28.11) |
+| In-place code | slice 5 (§13.4) |
+
+### 28.2 Which platform
+
+A platform package's manifest may say
+
+```json
+"lists": "in-place"
+```
+
+and it is then an **in-place platform**: the code it emits may write a list's array where §8's verdict accepted
+the demand (slice 5), so an accepted demand is a promise the build relies on and a rejected one is a program the
+build cannot compile. `"in-place"` is the only value; any other is the chain's exit-2 `malformed` failure, as any
+manifest field of the wrong shape is (`boundary.md` §5.3). The field is inherited first-found down the chain like
+every other (`boundary.md` §9.1), so a platform layered on an in-place platform is one. `browser-direct` declares
+it; `browser-tea`, `browser`, `html` and `node` do not, and `tests/platforms/*` do not.
+
+The entry rows of §20.2 read the same property, of the package that declares the program constructor (§20.2's
+amendment).
+
+### 28.3 When the pass runs
+
+**`check` and `build`, when the chain is in-place, and the run's own check produced no error.** The pass
+reads solved types (§2.3), and a module with a type error has none worth reading; one message at a time is
+Elm's rule (`Check.Options.quiet`), and the ownership errors of a program follow its type errors as type errors
+follow its parse errors. A run with no platform, or with a platform that is not in-place, runs no pass, keeps no
+type store and allocates no `inst_type` table: it is byte for byte what it was.
+
+**Where.** After `Check.run` returns, on one thread, before the check's diagnostics are reported and before the
+cache entries are written — so an ownership error is one of the module's diagnostics, and a module with one is
+never cached (`Session.storeEntries`' rule). Moving the pass onto the DAG, beside the module's check, is §16.9's
+design; §28.11 says why this slice does not.
+
+**What it walks.** The run keeps every checked module's type store (§2.3). Each module the run checked is walked
+from its BIR; every module the run installed — from the checked core, or from the cache directory — is read from
+its summary block (§28.4). **A module sees another only through that other's block**, also when both were checked
+in this run: before a declaration of module *m* is summarised for a caller in another module, every summary of
+*m* is computed and *m* is **sealed** — its summaries written as its block and read back. So a verdict never
+depends on whether an import was checked or installed, which is what lets a block stand in for a walk, and the
+dump (§9.1), which seals the same way, prints exactly the verdicts a build enforces.
+
+**What it reports.** The modules of the app's packages that the run checked: an installed app module was cached
+clean, which by §28.5 means without an ownership error. Core and the platforms are not reported — their verdicts
+are the checked core's (§28.7).
+
+### 28.4 The summary block
+
+A module's summaries, as bytes: every top-level declaration with a summary (§16.2) — functions, values with no
+parameters, asserted and worded rows alike — with the one fact about a value with no parameters that a caller in
+another module reads besides its summary, whether its type may hold a list (§23.6's view footer). The block names
+nothing by a session's id:
+
+- a **module** by its package and dotted name, through a table at the block's head;
+- a **declaration** by its index in its module's BIR, and a **constructor** by its module and its index in that
+  module's constructor table — both functions of the module's source, which the key covers;
+- a **path** step by step (§4.1), a field by its name, a constructor step by its constructor and argument;
+- a **local** of a carried lambda (§24.9) by its index in the declaration, as BIR numbers it.
+
+The format is versioned with the rule set (`summary_bytes.version`, thesis §8.5): a block of another version is
+absent. Reading a block re-interns its paths, re-sorts each summary by this run's ids (§16.6's normal form) and
+re-merges nothing.
+
+**Where it is kept.** In the module's **cache entry**, as a fifth section (`entry_bytes` format 10), written by
+every run that summarises the module and empty otherwise; so also in the checked core, whose rows are entries.
+Not in the interface record, which §16.10 specifies for the slice that moves the pass onto the DAG.
+
+**What the key must cover.** A module's verdicts are a function of its source and of its imports' blocks, and a
+block is a function of the module's source and of *its* imports' blocks. The firewall's import term — the
+interface hash and the dependency digest (`fast-compiler.md` §8) — does not cover a block, so **in a run that
+enforces**, two rules keep a hit sound:
+
+1. **An entry with no block is a miss.** An entry a run that did not enforce wrote — the same key, since nothing
+   in a module's own terms says whether the run enforces — is checked again, and its entry rewritten with a block.
+2. **Every module the run did not install from the checked core publishes, for its importers' keys, the hash of
+   its interface record followed by its own key**, in place of the interface hash. Its key covers its source and,
+   by induction, every import's; so an importer's key moves whenever any block it can read may have moved — the
+   transitive recipe, for in-place builds only. A module from the checked core publishes its interface hash as
+   always: its block is fixed by the build id, and its importers' keys inside core must stay the checked core's.
+
+The price is the firewall, on in-place builds only: an edit to a module's body re-checks every module that
+imports it, directly or not, where a build elsewhere re-checks only those whose imports' interfaces moved. §28.11
+item 1 is how it comes back.
+
+### 28.5 What is an error
+
+**Every rejected line and every pending line of a reported module is an `error`.** One sentence per kind, each
+against CLAUDE.md rule 7's test — what guarantee does the error buy?
+
+- **Exact rejections** (`later-use`, `alias`, `captured`, `held-operand`, `disjoint`, and `once`, `supply`, `need`,
+  `exclusive` when exact): real sharing the text shows. Writing in place would make an old value observable; the
+  guarantee is value semantics, and an error is the only alternative to a silent copy, which the owner refused.
+- **Position rejections** (`top-level`, `read-only`, and `platform` should a template row ever meet an in-place
+  build): the language's rule for which lists may be written — a top-level value is shared by every part of the
+  program and never changes; the model `view` reads is the runtime's to keep. Writing either in place breaks the
+  same guarantee, on every run that reaches the write.
+- **Approximate rejections** (`unknown`, `escaped`, `captured-edit`, `element`, `call`, `supply`, `need`, `limit`,
+  `exclusive`, `once`, `payload` when approximate): the checker could not prove the write safe. Accepting them would
+  write in place a list the checker cannot show unique — the guarantee lost exactly where the analysis is weakest —
+  and copying them silently is what the owner refused. So they are errors too, and their message says that it is a
+  limit, not proof of sharing (thesis §8.4), and how to make the program provable or copy.
+- **Pending lines** (§16.5): a function that writes a parameter in place has gone where the checker cannot see
+  every call of it. A build cannot leave an obligation undischarged, so a pending line is a rejection, with the
+  approximate rejection's code: its message names where the function left the checker's sight.
+
+**Acceptances are not errors**, including one that rests on a callee with no summary (`assumed`, §15 decision 2): a
+writing function value that reaches such a callee is pending where it gets there (§16.5), so the obligation is
+reported once, at that place.
+
+**One diagnostic per root cause.** Lines of one module with the same position, verdict, cause and detail are one
+diagnostic, listing every base — the entry's lines for several model paths that one top-level list or one view
+event reaches are one message, not one per path. Lines at different positions are different diagnostics.
+
+### 28.6 Diagnostics
+
+Four codes, appended to `language.md` §10's catalogue:
+
+| Code | Title | Lines |
+|---|---|---|
+| `list_still_used` | `LIST CHANGED WHILE STILL IN USE` | exact rejections, and `platform` |
+| `top_level_list_changed` | `TOP-LEVEL LIST CHANGED` | `top-level` |
+| `view_changes_model` | `VIEW CHANGES THE MODEL` | `read-only` |
+| `list_may_be_shared` | `LIST MAY BE SHARED` | approximate rejections and pending lines |
+
+All four are `error`s, the checker's, and only on an in-place platform. The diagnostic's span is the edit — a
+construction from its `[` to its `]`, a `++` chain, a writer's call, a call that writes an argument, a send — and
+its file the module's.
+
+**The message has thesis §8.3's fixed shape**:
+
+1. **One sentence** naming the operation, the list, and why that is a problem here. A construction "adds to the end
+   of `acc` itself"; a `++` "adds to the end of `a` itself"; a writer "changes `xs` in place"; a call whose callee
+   writes its argument names the callee; an entry line names `update`; a send "gives up" its payload.
+2. **The places, in source order**, each as `N|` and the line, a caret run under the place and a label: the place
+   that keeps the list ("`saved` keeps the list here", "`show` holds the list here", "this value, computed first,
+   still holds the list"), the edit ("the list is changed in place here"), and the later use ("and `saved` is read
+   here, after the change", "`show` is called here, after the change"). A place in another file is preceded by the
+   file's path. Line numbers are right-aligned to the widest.
+3. **The consequence**, one sentence: what the later use would see if the change happened in place.
+4. **The fix**, a replacement line: the edit's line with its base wrapped in `List.copy` — `[ …List.copy acc, x ]`,
+   `List.copy a ++ b`, `List.push (List.copy xs) 4` — which is always correct, since it changes a list nobody else
+   holds; and, where one exists, a fix without the copy (read before the change; build the list in `init`). A base
+   that is not written in the source (a temporary, a record's path) gets the fix in prose.
+5. **The verdict line**: "This is sharing the checker can see: …" for an exact rejection, "This is a limit of the
+   checker, not proof of sharing: …" naming the limit (thesis Table 8.1) for an approximate one or a pending line,
+   and for a position rejection the language's rule it follows.
+
+The trailing excerpt every other diagnostic gets is not printed: the message holds its places. A JSON diagnostic
+carries the same message.
+
+Example, a later read through another name (`build/bad/direct/OwnershipAlias`):
+
+```
+-- LIST CHANGED WHILE STILL IN USE ------------------------------------ src/Main.beni:15:12
+
+`[ …model.todos, todo ]` adds to the end of `model.todos` itself, but `saved`
+still holds the old list and is read afterwards.
+
+12|     saved = model.todos
+        ^^^^^ `saved` keeps the list here
+15|     next = [ …model.todos, todo ]
+               ^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
+19|     List.length saved
+                    ^^^^^ and `saved` is read here, after the change
+
+If the list were changed in place, `saved` would see the change when it is read
+on line 19.
+
+To change a copy and leave `model.todos` as it was, copy it there:
+
+15|     next = [ …List.copy model.todos, todo ]
+
+This is sharing the checker can see: `saved` is read on line 19, after the change.
+```
+
+A limit of the checker (`build/bad/direct/OwnershipLimit`):
+
+```
+-- LIST MAY BE SHARED -------------------------------------------------- src/Main.beni:9:5
+
+`List.take rows k ++ [ r, …List.drop rows k ]` adds to the end of `List.take
+rows k` itself, and the checker cannot show that nothing else holds that list.
+
+9|     List.take rows k ++ [ r, …List.drop rows k ]
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
+
+To be safe, change a copy:
+
+9|     List.copy (List.take rows k) ++ [ r, …List.drop rows k ]
+
+This is a limit of the checker, not proof of sharing: another operand may be the
+same list, through the call on line 9.
+```
+
+### 28.7 Core and the platforms
+
+Their summaries are computed once, when beni is built: the maker of the checked core (`src/core_pack_main.zig`)
+keeps type stores and runs the pass over every module it checks, so every core and platform row of the checked core
+carries its block, and a build reads them instead of summarising the library again — the cost §18.11 and §18.13
+item 4 measured, two thirds of the pass on Conduit. Core's blocks are computed in the run that checks core alone; a
+platform's in the run for its chain, over core's rows.
+
+**An in-place chain must have no rejected or pending line** in core or in any of its platforms' modules: they are
+privileged code (CLAUDE.md rule 6), shipped in the binary, which no program can repair with a `List.copy`. The maker
+fails the build of beni with the lines, as it does for a core that does not check. On 2026-10-13 core and
+`browser-direct`'s chain have none: 117 and 5 lines, all accepted.
+
+### 28.8 Cost
+
+The target: the pass adds at most 10 % to `check` on Conduit and the corpus pages, on `browser-direct`, and leaves
+the 100 000-line benchmark's check throughput where it was. The benchmark has no platform, so it runs no pass and
+keeps no store. Research 89 gives the figures.
+
+### 28.9 What does not change
+
+Emitted JavaScript, interfaces and run hashes: the pass writes nothing a build emits. Builds on every platform
+that is not in-place, byte for byte, including their cache keys and entries but for the entry's format version. The
+verdicts: the dump's lines are the same as before the slice, the sealing (§28.3) changing none — `tests/corpus/
+ownership/` is the check. **Determinism**: the pass is serial and walks in graph order (§10); a block is a function
+of the module's source and its imports' blocks; the determinism test runs `check --platform=browser-direct` at
+`--jobs=1` and `--jobs=8` and compares its diagnostics.
+
+### 28.10 Testing
+
+- **`build/bad/direct/Ownership…`**, one project per kind of error: `OwnershipLaterUse`, `OwnershipAlias`,
+  `OwnershipCaptured`, `OwnershipHeldOperand`, `OwnershipTopLevel`, `OwnershipView`, `OwnershipLimit` (an
+  approximate rejection), `OwnershipEscaped`, `OwnershipPending`, and `OwnershipGrouped` (one diagnostic for several
+  model paths). Each is built for `browser-direct` and fails with its golden; **each is also built for
+  `browser-tea`, which must succeed with no diagnostic at all** — the corpus harness does that for every
+  `build/bad/direct/` project whose golden holds only the four codes of §28.6.
+- **Every `browser/direct/` page still builds**: they are built for `browser-direct` already. A page that a rule
+  rejects is either a real unsafe edit, reported and fixed with the message's own fix, or a checker limit (research
+  89 §3).
+- **The dump against the build**: `tests/blackbox/ownership_test.zig` builds the `browser-direct` fixtures of
+  `tests/corpus/ownership/` and checks that a module fails exactly when its golden has a rejected or pending line.
+- **The block**: `summary_bytes`'s unit tests round-trip every summary core and the platforms produce, byte for
+  byte; the corpus's ownership goldens, unchanged by sealing, are the semantic check.
+- **The cache**: an enforcing run after a non-enforcing one re-checks (rule 1 of §28.4); a body edit of an import
+  that changes its block re-checks the importer (rule 2) — `tests/blackbox/cache_test.zig`.
+- **The checked core**: the pack maker's refusal is exercised by a unit test of the rule, not by building a broken
+  core.
+
+### 28.11 Open questions
+
+1. **The pass on the DAG, and the block in the interface.** §16.9 and §16.10 put the summaries in the interface
+   record, computed by the worker that checked the module; the firewall then holds on in-place builds as
+   elsewhere, a summary change being a signature change. This slice runs the pass after the check instead, on one
+   thread, because the pass's state — its path table, its constructor ids, its on-demand recursion — is the whole
+   program's, and making it per module is a refactor of the pass rather than of the build. The cost of not doing it
+   is the firewall on in-place builds (§28.4) and a serial pass; research 89 measures the second.
+2. **Stability** (thesis §8.5): every later release runs the previous release's accepted corpus. Not started: the
+   corpus is this repository's, whose goldens already pin every verdict.
+3. **Machine-applicable fixes.** The `List.copy` line is written for a person; a `--fix` that inserts it is the
+   formatter's, not this slice's.
