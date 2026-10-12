@@ -45,6 +45,34 @@ export const mutants = {
   callbackrequires: ["Checker.lean", "          modifyFacts fun s => { s with requiresExclusive := union s.requiresExclusive ((a.atPath p).roots.filter external) }", "          pure ()"],
   forwardguards: ["Checker.lean", "          let _ ← ask f ctx { g.query with slot := j }", "          pure ()"],
   transfersupplies: ["Checker.lean", "          modifyFacts fun facts => { facts with supplies := union facts.supplies [{ sp with slot := j }] }", "          pure ()"],
+  // A once callback called by a callee is consumed at the call (also `--mutant=once-through-call`).
+  oncethroughcall: ["Checker.lean", "        if count ≥ 1 && !roots.isEmpty && !ctx.config.has .onceThroughCall then", "        if false then"],
+  // The second review's nine planted holes (2026-10-12).
+  // A closure's captured cells are not live through the closure binding.
+  capturelive: ["Domain.lean", "if isPrefix p q || isPrefix q p then union cs ds else cs",
+    "if (isPrefix p q || isPrefix q p) && !(match q with | .capture _ :: _ => true | _ => false) then union cs ds else cs"],
+  // copy's elements are treated as fresh cells aliasing nothing.
+  copyelems: ["Checker.lean", "pure (.list [fresh] elem (ctx.config.has .copyExclusive))",
+    "pure (.list [fresh] (elem.mapOrigins fun _ cs => if cs.isEmpty then [] else [Origin.site site 1]) (ctx.config.has .copyExclusive))"],
+  // Builder put always stores exclusively (T59's per-element certificate dropped for put only).
+  putexcl: ["Checker.lean", "let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)",
+    "let exclusive := ex && (op == .put || storeExclusive ctx [v] later elem.cells (op == .put))"],
+  // A recursive call's writes are ignored at the call.
+  recwrites: ["Checker.lean", "applyCall ctx ctx.recursiveSummary site actuals ctx.recursiveCaptures later",
+    "applyCall ctx { ctx.recursiveSummary with writes := [], consumes := [] } site actuals ctx.recursiveCaptures later"],
+  // keeps-shape accepts any parameter path.
+  keepsany: ["Checker.lean", "      | .parameter i q => i == parameter && p == q", "      | .parameter _ _ => true"],
+  // A callback's own environment is not another operand of its arguments.
+  symenv: ["Checker.lean", "let others := fun (k : Nat) => union envCells (args.zipIdx.flatMap",
+    "let others := fun (k : Nat) => union [] (args.zipIdx.flatMap"],
+  // Liveness ignores a conditional's nonzero arm (also `--mutant=branch-live`).
+  branchlive: ["Domain.lean", "| .branch c a b => union (atomUses c) (union (uses a) (uses b))",
+    "| .branch c a b => union (atomUses c) (uses a)"],
+  // focus drops the demand on its container.
+  focuscontainer: ["Checker.lean", "      demand ctx.config cs later (capValues.flatMap Abstract.cells)\n      let out",
+    "      let out"],
+  // An indexed read's result forgets the element cells.
+  atelem: ["Checker.lean", "pure (elem.join fallback)", "pure (fallback.join (elem.mapOrigins fun _ _ => []))"],
 };
 
 const [name, dir] = process.argv.slice(2);
