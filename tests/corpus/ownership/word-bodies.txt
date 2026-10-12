@@ -1,0 +1,46 @@
+# The code each declaration's ownership words were justified by reading
+# (docs/design/ownership-checker.md §24.6, §24.8; the owner's guard of
+# 2026-10-12): a beni body's signature and definition, or a `foreign`'s
+# sibling export, folded to single spaces and hashed (Wyhash, seed 0).
+# `check_test.zig` fails when one changes: read it again, re-justify the
+# words in §24.8, then put the new hash here.
+#
+# file                          declaration         hash
+core/String.beni                String.join         a4c5252506c48f9e
+core/String.beni                String.fromList     2314036c27c6ce4d
+core/String.beni                String.split        dbdc45997aec8e2e
+core/String.beni                String.words        cdb8ccae3a82ff4c
+core/String.beni                String.lines        32ee860cae60f4cd
+core/String.beni                String.toList       ac77873f17883eb5
+core/String.beni                String.indexes      41976950e278c371
+core/Debug.beni                 Debug.log           b6f30ef763bad18e
+core/Debug.beni                 Debug.toString      ba4a7a1279f9ae0a
+core/Schema.beni                Schema.parse        f4dfce1a9029494e
+core/Schema.beni                Schema.parseWith    073b4743f88664ed
+core/Schema.beni                Schema.print        bc1e0a2f31781887
+core/Schema.beni                Schema.printWith    57a7157d1c09137f
+core/Js.js                      Js.from             a7b67bcf25707474
+core/Js.js                      Js.to               ee3360159da0400b
+core/Js.js                      Js.same             6ff266bbec3147d0
+core/Js.js                      Js.isNull           3015125653531934
+core/Js.js                      Js.isUndefined      a5736fe77ed46c7c
+core/Js.js                      Js.isNullish        2f379d7a7d5a6529
+core/Js.js                      Js.typeOf           4db3a3884de35b6c
+core/Js.js                      Js.typeIs           497d5087c548810e
+core/Js.js                      Js.array            02b419ed4a78c150
+core/Js.js                      Js.object           e1afa26a8dc59945
+core/Js.js                      Js.each             d958761dd24f4046
+core/Js.js                      Js.ref              8c961c783f376da4
+core/Js.js                      Js.read             313d21e5f6b23512
+core/Js.js                      Js.write            5acadbdd1c9ddb03
+core/Js.js                      Js.throw            21a9a2031876589f
+core/Js.js                      Js.finally          fbc20bfbcd8b2c14
+core/Js.js                      Js.catchIf          0ef3721ddf2dbb63
+core/Js.js                      Js.pure             6d890db8e4efec43
+core/Js.js                      Js.fingerprint      310671ecbd1d6f09
+core/Js.js                      Js.suspending       8e04ac759a36a771
+platforms/browser/Hosted.js     Hosted.keyOf        5b43377005cf45c8
+platforms/node/Node.js          Node.print          795fd93faf33ae33
+platforms/node/Node.js          Node.printLines     acf18cabb8185c61
+platforms/node/Node.js          Node.exitWith       f878d0acd91ed068
+platforms/node/Ssr.js           Ssr.render          7711f0fe03ad3e89

@@ -1008,6 +1008,129 @@ test "ownership words: flipping the browser platforms' words is noticed" {
     try expectFlips("ownership/WordsBrowser.beni", &.{"--platform=browser-direct"});
 }
 
+// ---------------------------------------------------------------------------
+// The bodies the words describe (ownership-checker.md §24.6, the owner's
+// guard of 2026-10-12)
+// ---------------------------------------------------------------------------
+
+const bodies_list = "tests/corpus/ownership/word-bodies.txt";
+
+/// The text a declaration's words describe, from its source file: for a
+/// `.beni` file the signature and definition (from `pub name :` or `name :`
+/// to the last indented line of the definition), for a `.js` sibling the
+/// export (`export const name = …` or the `const` an `export { x as name }`
+/// names, to its closing `;`). Whitespace runs fold to one space, so a
+/// reformatting that changes no token does not move it; a comment inside it
+/// does, which is on the safe side.
+fn bodyOf(arena: std.mem.Allocator, source: []const u8, file: []const u8, name: []const u8) !?[]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    if (std.mem.endsWith(u8, file, ".beni")) {
+        const sig_pub = try std.fmt.allocPrint(arena, "pub {s} :", .{name});
+        const sig = try std.fmt.allocPrint(arena, "{s} :", .{name});
+        const def = try std.fmt.allocPrint(arena, "{s} ", .{name});
+        var in = false;
+        while (lines.next()) |line| {
+            if (!in) {
+                if (std.mem.startsWith(u8, line, sig_pub) or std.mem.startsWith(u8, line, sig)) in = true else continue;
+            } else if (line.len != 0 and line[0] != ' ' and !std.mem.startsWith(u8, line, def)) break;
+            try out.appendSlice(arena, line);
+            try out.append(arena, '\n');
+        }
+    } else {
+        // `export { x as name }` names the `const` that holds it.
+        var local = name;
+        const alias = try std.fmt.allocPrint(arena, " as {s} }}", .{name});
+        var it = std.mem.splitScalar(u8, source, '\n');
+        while (it.next()) |line| if (std.mem.indexOf(u8, line, alias)) |at| {
+            const open = std.mem.indexOf(u8, line, "{ ") orelse continue;
+            local = line[open + 2 .. at];
+        };
+        const head_export = try std.fmt.allocPrint(arena, "export const {s} =", .{name});
+        const head_local = try std.fmt.allocPrint(arena, "const {s} =", .{local});
+        var in = false;
+        var depth: i32 = 0;
+        while (lines.next()) |line| {
+            if (!in) {
+                if (std.mem.startsWith(u8, line, head_export) or std.mem.startsWith(u8, line, head_local)) in = true else continue;
+            }
+            try out.appendSlice(arena, line);
+            try out.append(arena, '\n');
+            for (line) |c| switch (c) {
+                '{', '(' => depth += 1,
+                '}', ')' => depth -= 1,
+                else => {},
+            };
+            if (depth == 0 and std.mem.endsWith(u8, std.mem.trimEnd(u8, line, " "), ";")) break;
+        }
+    }
+    if (out.items.len == 0) return null;
+    var folded: std.ArrayList(u8) = .empty;
+    var space = false;
+    for (std.mem.trim(u8, out.items, " \n")) |c| {
+        if (c == ' ' or c == '\n' or c == '\t') {
+            space = true;
+            continue;
+        }
+        if (space and folded.items.len != 0) try folded.append(arena, ' ');
+        space = false;
+        try folded.append(arena, c);
+    }
+    return folded.items;
+}
+
+test "ownership words: the bodies they describe have not changed" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, arena, .limited(1 << 20));
+    var pinned: std.ArrayList([]const u8) = .empty;
+    var ok = true;
+    var rows = std.mem.splitScalar(u8, list, '\n');
+    while (rows.next()) |row| {
+        if (row.len == 0 or row[0] == '#') continue;
+        var fields = std.mem.tokenizeScalar(u8, row, ' ');
+        const file = fields.next() orelse return error.BodyRowWithoutFile;
+        const decl = fields.next() orelse return error.BodyRowWithoutDeclaration;
+        const hash = fields.next() orelse return error.BodyRowWithoutHash;
+        try pinned.append(arena, decl);
+        const name = decl[(std.mem.lastIndexOfScalar(u8, decl, '.') orelse return error.BodyRowName) + 1 ..];
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file, arena, .limited(1 << 24));
+        const body = (try bodyOf(arena, source, file, name)) orelse {
+            std.debug.print("{s}: {s} names {s}, which {s} does not declare\n", .{ bodies_list, decl, name, file });
+            ok = false;
+            continue;
+        };
+        const now = try std.fmt.allocPrint(arena, "{x:0>16}", .{std.hash.Wyhash.hash(0, body)});
+        if (!std.mem.eql(u8, now, hash)) {
+            std.debug.print(
+                "{s} changed in {s}. Its ownership words were justified by reading that code: read it again, re-justify the words in docs/design/ownership-checker.md §24.8, and set its hash in {s} to {s}.\n",
+                .{ decl, file, bodies_list, now },
+            );
+            ok = false;
+        }
+    }
+    // Every declaration with words is pinned, but a `crossing` type, which
+    // has no body.
+    const surface = try std.Io.Dir.cwd().readFileAlloc(testing.io, surface_list, arena, .limited(1 << 20));
+    var srows = std.mem.splitScalar(u8, surface, '\n');
+    while (srows.next()) |row| {
+        if (row.len == 0 or row[0] == '#') continue;
+        var fields = std.mem.tokenizeScalar(u8, row, ' ');
+        _ = fields.next() orelse continue;
+        const decl = fields.next() orelse continue;
+        const short = decl[(std.mem.lastIndexOfScalar(u8, decl, '.') orelse continue) + 1 ..];
+        if (short.len != 0 and std.ascii.isUpper(short[0])) continue;
+        for (pinned.items) |p| {
+            if (std.mem.eql(u8, p, decl)) break;
+        } else {
+            std.debug.print("{s} carries ownership words and {s} pins no body for it\n", .{ decl, bodies_list });
+            ok = false;
+        }
+    }
+    if (!ok) return error.WordedBodyChanged;
+}
+
 test "ownership words: core's are catalogued" {
     try expectSurface("core", &.{ "dump", "--stage=ownership", "core" });
 }
