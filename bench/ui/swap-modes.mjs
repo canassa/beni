@@ -1,4 +1,4 @@
-// Why `05_swap1k` is bimodal for every subject (research 74). The same
+// Why `05_swap1k` is bimodal for every subject (research 81). The same
 // sample as `bench.mjs` — fresh page, the benchmark's warm-up, one traced
 // click, js-framework-benchmark's `script` figure — under conditions that
 // separate the DOM work from Chrome's CPU throttling:
@@ -13,7 +13,8 @@
 //                      spinK@1 is its real cost); no DOM work at all
 //
 // Every condition is in one batch, rotated per iteration. A sample is "fast"
-// when its script time is within 0.15 ms of the condition's minimum.
+// when its script time is within 0.15 ms of the condition's minimum (so one
+// low outlier, as in swap-nowarm, makes the split meaningless: read the quartiles).
 //
 //   node swap-modes.mjs [--n=30] [--taskset=24-31] [--out=results/…json]
 //   node swap-modes.mjs --others=06_remove-one-1k,04_select1k [--n=…] [--out=…]
@@ -64,6 +65,8 @@ if (arg("report", null) !== null) {
 }
 
 const n = Number(arg("n", "30"));
+// `--others=<ids>`: instead, those benchmarks, every subject, at their official rate and at 1.
+const others = arg("others", null);
 const out = join(root, arg("out", "out/swap-modes.json"));
 const taskset = arg("taskset", null);
 const browser = await launch({ chrome: arg("chrome", undefined), taskset });
@@ -78,13 +81,11 @@ const calibrate = async () => {
   await page.close();
   return median(rates);
 };
-const perUs = await calibrate();
-console.log(`spin: ${perUs.toFixed(1)} iterations per µs`);
+const perUs = others === null ? await calibrate() : NaN;
+if (others === null) console.log(`spin: ${perUs.toFixed(1)} iterations per µs`);
 
 const swapDone = swap.done;
 const subjectNames = ["vanillajs", "beni-direct-release", "p3"];
-// `--others=<ids>`: instead, those benchmarks, every subject, at their official rate and at 1.
-const others = arg("others", null);
 const conditions = others !== null
   ? others.split(",").flatMap((id) => {
       const b = benchmarks.find((x) => x.id === id);
@@ -147,7 +148,10 @@ for (let i = 0; i < n; i++) {
         console.error(`${c.name} #${i}: ${e.message}`);
       }
     }
-    if (r === null) continue;
+    if (r === null) {
+      console.error(`WARNING: ${c.name} #${i} dropped after 3 attempts; its n is below ${n}`);
+      continue;
+    }
     result.samples.push({ condition: c.name, iteration: i, load: loadavg()[0], ...r });
     console.log(`${c.name.padEnd(30)} #${String(i).padStart(2)} script ${r.script.toFixed(3)} click ${r.click.toFixed(3)}`);
   }
