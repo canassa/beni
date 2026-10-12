@@ -236,6 +236,14 @@ def write (c : Nat) (xs : List Value) : M Value := do
   modify fun s => { s with heap := s.heap.set! c xs }
   pure (.ref c)
 
+/-- A program-level write (`set`, `push`, focus write-back), counted only
+    when it changes the array: an out-of-range `set` or a focus that stores
+    the same element back is not an in-place write anyone could see. -/
+def writeCounted (c : Nat) (xs : List Value) : M Value := do
+  let old ← array c
+  if !(old == xs) then countWrite
+  write c xs
+
 def snapshot (heap : Array (List Value)) : Nat → Value → Except String Observation
   | 0, _ => throw "snapshot exhausted depth (possibly cyclic heap)"
   | n + 1, v => match v with
@@ -287,9 +295,8 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     pure x
   | .set, [.ref c, .int i, v] => do
     let xs ← array c
-    countWrite
-    write c (if i < 0 then xs else xs.set i.toNat v)
-  | .push, [.ref c, v] => do countWrite; write c ((← array c) ++ [v])
+    writeCounted c (if i < 0 then xs else xs.set i.toNat v)
+  | .push, [.ref c, v] => do writeCounted c ((← array c) ++ [v])
   | .put, [.ref c, v] => do write c ((← array c) ++ [v])
   | .copy, [.ref c] => do alloc (← array c)
   | .close, [.ref c] => pure (.ref c)
@@ -365,11 +372,10 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         | some v =>
           read v
           let w ← eval (depth - 1) ds self ((x, v) :: env) body
-          countWrite
           -- Re-read the container: the body may have written it (through a
           -- capture), and a runtime stores the element into the array as it
           -- is now, not into a copy taken before the body ran.
-          write c ((← array c).set i.toNat w)
+          writeCounted c ((← array c).set i.toNat w)
     observeKept
     pure result
 termination_by depth
