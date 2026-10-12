@@ -1,0 +1,97 @@
+-- ownership: an HTTP answer's decoded list is the work's own, so `update`
+-- may edit it in place (`ownership-checker.md` §24.9, §24.11 item 1 as
+-- answered 2026-10-12; boundary.md §9.8.12 (c), as amended). `expecting`
+-- and `fetch` are Conduit's `Api.expecting` and `Api.send`: the parser is
+-- a parameter of the function that sends, the decoder hands it a good
+-- body and forwards every failure, the request's `Problem` among them.
+-- What a failed request resumes its fiber with is `Http`'s
+-- two-constructor failure, which holds no list, so nothing from
+-- JavaScript reaches the answer: no `value Fetched` line, the message is
+-- sent owned, and on browser-direct, where the runtime hands `update` its
+-- model owned, the push onto the answer is accepted. Before the failure
+-- had its own type, `Fetched` was rejected `need`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type alias Model =
+    words : List String
+    errors : List String
+
+
+type Msg
+    = Fetch
+    | Fetched (Result Http.Error (List String))
+
+
+words : String → List String
+words body = String.split body ","
+
+
+expecting : (String → List String) → Http.Expect Http.Error (List String)
+expecting parse = Http.expectStringResponse λresponse →
+    case response of
+        Http.GoodStatus_ _ body →
+            Ok (parse body)
+
+        Http.BadStatus_ meta _ →
+            Err (Http.BadStatus meta.statusCode)
+
+        Http.BadUrl_ u →
+            Err (Http.BadUrl u)
+
+        Http.BadRequest_ problem →
+            Err (Http.BadRequest problem)
+
+        Http.Timeout_ →
+            Err Http.Timeout
+
+        Http.NetworkError_ →
+            Err Http.NetworkError
+
+
+fetch : String, (String → List String) → Result Http.Error (List String)
+fetch url parse =
+    Http.request
+        { method = "GET"
+        , headers = []
+        , url = url
+        , body = Http.emptyBody
+        , expect = expecting parse
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Fetch →
+            ( model, Cmd.task (λ⊤ → fetch "/words" words) Fetched )
+
+        Fetched (Ok answer) →
+            ( { model | words = List.push answer "end" }, Cmd.none )
+
+        Fetched (Err _) →
+            ( { model | errors = List.push model.errors "failed" }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Fetch}>fetch</button>
+        <p>{String.join model.words ", "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { words = [], errors = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
