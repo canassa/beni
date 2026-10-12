@@ -258,6 +258,10 @@ pub const Summary = struct {
 const Slot = struct {
     state: enum { none, computing, done } = .none,
     sum: Summary = .{ .params = 0 },
+    /// In a module the run reports on: the lines of the walk the summary was
+    /// last read off, which ran against the final assumptions (§16.6's
+    /// validation walk), so the report need not walk the body again.
+    lines: ?[]const Demand = null,
 };
 
 const Groups = struct {
@@ -280,6 +284,8 @@ ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
 /// Per module: the summary of each declaration, allocated on first use.
 slots: []?[]Slot = &.{},
 groups: []?Groups = &.{},
+/// Per module: whether the run reports on it.
+report_for: []bool = &.{},
 builder_id: ?TypeId = null,
 /// Per constructor id: its type's `(module, declaration)`, or none.
 ctor_type: std.ArrayList(u64) = .empty,
@@ -300,12 +306,18 @@ pub fn deinit(o: *Ownership) void {
     o.ctor_key.deinit(o.in.gpa);
     o.in.gpa.free(o.slots);
     o.in.gpa.free(o.groups);
+    o.in.gpa.free(o.report_for);
 }
 
 /// The report for `targets`, in their order.
 pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleReport {
     try o.seedPaths();
     const arena = o.out.allocator();
+    o.report_for = try o.in.gpa.alloc(bool, o.in.birs.len);
+    @memset(o.report_for, false);
+    for (targets) |m| if (m < o.report_for.len) {
+        o.report_for[m] = true;
+    };
     const reports = try arena.alloc(ModuleReport, targets.len);
     for (targets, reports) |m, *r| {
         r.* = .{ .module = m, .checked = false, .demands = &.{} };
@@ -315,9 +327,14 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         // Every summary first (§16.9): a report walk reads them all.
         for (bir.decls, 0..) |_, di| _ = try o.ensureSummary(m, @intCast(di));
         var demands: std.ArrayList(Demand) = .empty;
+        const slots = try o.slotsOf(m);
         for (bir.decls, 0..) |d, di| {
             if (d.kind != .value) continue;
             const body = d.body.unwrap() orelse continue;
+            if (slots[di].lines) |ls| {
+                try demands.appendSlice(arena, ls);
+                continue;
+            }
             var scratch: std.heap.ArenaAllocator = .init(o.in.gpa);
             defer scratch.deinit();
             var w = o.walker(m, @intCast(di), scratch.allocator(), .report);
@@ -535,7 +552,10 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
         if (!changed) break;
     }
     if (round == round_cap) {
-        for (members.items) |x| slots[x].sum = try o.pessimistic(slots[x].sum, .rounds);
+        for (members.items) |x| {
+            slots[x].sum = try o.pessimistic(slots[x].sum, .rounds);
+            slots[x].lines = null;
+        }
     }
     for (members.items) |x| slots[x].state = .done;
 }
@@ -544,11 +564,13 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
 fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!Summary {
     var scratch: std.heap.ArenaAllocator = .init(o.in.gpa);
     defer scratch.deinit();
-    var w = o.walker(m, d, scratch.allocator(), .summary);
+    const report = m < o.report_for.len and o.report_for[m];
+    var w = o.walker(m, d, scratch.allocator(), if (report) .report else .summary);
     w.recursive = recursive;
     try w.walkDecl(w.decl.body.unwrap().?);
-    var ignored: std.ArrayList(Demand) = .empty;
-    try w.resolve(&ignored);
+    var lines: std.ArrayList(Demand) = .empty;
+    try w.resolve(&lines);
+    if (report) o.slots[m].?[d].lines = try lines.toOwnedSlice(o.out.allocator());
     return w.readOff();
 }
 
