@@ -60,6 +60,12 @@ def write (c : Nat) (xs : List Value) : M Value := do
   modify fun s => { s with heap := s.heap.set! c xs }
   pure (.ref c)
 
+/-- A program-level write, noted only when it changes the array (as the
+    interpreter's own write count). -/
+def writeNoted (env : Env Value) (c : Nat) (xs : List Value) : M Value := do
+  if !((← array c) == xs) then noteWrite env c
+  write c xs
+
 def prim (env : Env Value) (op : Prim) (vs : List Value) : M Value := do
   match op, vs with
   | .add, [.int a, .int b] => pure (.int (a + b))
@@ -76,9 +82,8 @@ def prim (env : Env Value) (op : Prim) (vs : List Value) : M Value := do
     pure (if i < 0 then fallback else xs[i.toNat]?.getD fallback)
   | .set, [.ref c, .int i, v] => do
     let xs ← array c
-    noteWrite env c
-    write c (if i < 0 then xs else xs.set i.toNat v)
-  | .push, [.ref c, v] => do noteWrite env c; write c ((← array c) ++ [v])
+    writeNoted env c (if i < 0 then xs else xs.set i.toNat v)
+  | .push, [.ref c, v] => do writeNoted env c ((← array c) ++ [v])
   | .put, [.ref c, v] => do write c ((← array c) ++ [v])
   | .copy, [.ref c] => do alloc (← array c)
   | .close, [.ref c] => pure (.ref c)
@@ -144,8 +149,7 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
       | none => pure (.ref c)
       | some v =>
         let w ← eval (depth - 1) ds self ((x, v) :: env) body
-        noteWrite env c
-        write c ((← array c).set i.toNat w)
+        writeNoted env c ((← array c).set i.toNat w)
 termination_by depth
 decreasing_by all_goals simp_wf; omega
 
