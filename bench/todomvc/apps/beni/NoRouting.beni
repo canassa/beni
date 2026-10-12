@@ -48,6 +48,7 @@ type Msg
     | EditTyped String
     | EditKey Html.Event
     | EditDone
+    | NotSaved Storage.Error
 
 
 -- ---- Persistence --------------------------------------------------------
@@ -68,14 +69,12 @@ decode text =
         { id = i, title = String.dropLeft line 1, completed = String.startsWith line "1" }
 
 
+-- The text is computed here, when `update` makes the command, and the
+-- command stores it (`Storage.save`, boundary.md §9.8.16). A todo list too
+-- big for the quota, or storage the browser withholds, is kept in the page
+-- only: `NotSaved` changes nothing.
 save : List Todo → Cmd Msg
-save todos = Cmd.do λ⊤ → saved (Storage.set Local key (encode todos))
-
-
--- A todo list too big for the quota, or storage the browser withholds,
--- is kept in the page only.
-saved : Result Storage.Error ⊤ → ⊤
-saved _ = ⊤
+save todos = Storage.save Local key (encode todos) NotSaved
 
 
 -- ---- The program -----------------------------------------------------------
@@ -102,6 +101,9 @@ init ⊤ =
 update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
+        NotSaved _ →
+            ( model, Cmd.none )
+
         Typed text →
             ( { model | draft = text }, Cmd.none )
 

@@ -1,0 +1,118 @@
+-- ownership: commands that take values (thesis O5; boundary.md §9.8.16;
+-- `ownership-checker.md` §22.3). `values`' commands are handed what they
+-- persist or send — the text `Storage.save` stores, the request
+-- `Http.send` sends with its body already text, the line `Log.write`
+-- writes — computed by `update` before it makes the command, so no command
+-- holds `model.items`, and `Add`'s push is accepted on browser-direct
+-- (`platform` on browser-tea). `closure` saves through `Cmd.do`, whose
+-- work is a function run later (an effect, which stays a closure): it
+-- captured `model`, and everything a command holds escapes at the entry
+-- (§20.4 (a)), so the same push is rejected `escaped` — the program says
+-- `List.copy` if it means the command to keep the list.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Log
+import Storage exposing (Local)
+import Sub
+import Tea
+
+
+type alias Model =
+    items : List String
+
+
+type Msg
+    = Add String
+    | Save
+    | Post
+    | Report
+    | Done
+
+
+joined : List String → String
+joined items = List.foldl items "" λitem text →
+    if text == "" then
+        item
+    else
+        text ++ "," ++ item
+
+
+values : Msg, Model → Model × Cmd Msg
+values msg model =
+    case msg of
+        Add t →
+            ( { model | items = List.push model.items t }, Cmd.none )
+
+        Save →
+            ( model, Storage.save Local "items" (joined model.items) λ_ → Done )
+
+        Post →
+            ( model
+            , Http.send
+                { method = "POST"
+                , headers = []
+                , url = "/items"
+                , body = Http.stringBody "text/plain" (joined model.items)
+                , expect = Http.expectWhatever
+                , timeout = Nothing
+                }
+                λ_ → Done
+            )
+
+        Report →
+            ( model, Log.write Log.Info (joined model.items) )
+
+        Done →
+            ( model, Cmd.none )
+
+
+ignored : Result Storage.Error ⊤ → ⊤
+ignored _ = ⊤
+
+
+closure : Msg, Model → Model × Cmd Msg
+closure msg model =
+    case msg of
+        Add t →
+            ( { model | items = List.push model.items t }, Cmd.none )
+
+        Save →
+            ( model, Cmd.do λ⊤ → ignored (Storage.set Local "items" (joined model.items)) )
+
+        _ →
+            ( model, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Add "x"}>add</button>
+        <button onClick={Save}>save</button>
+        <p>{String.fromInt (List.length model.items)}</p>
+    </main>
+
+
+valued : Tea.Program
+valued =
+    Tea.element
+        { init = λ⊤ → ( { items = [] }, Cmd.none )
+        , update = values
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+captured : Tea.Program
+captured =
+    Tea.element
+        { init = λ⊤ → ( { items = [] }, Cmd.none )
+        , update = closure
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ valued, captured ]

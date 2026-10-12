@@ -13,6 +13,7 @@
 --!         ( model, Cmd.keyed SearchKey Cmd.Restart λsend →
 --!             send (Found (Http.get { url = "/api/search?q=" ++ q, expect = Http.expectString })) )
 
+import Cmd exposing (Cmd)
 import Dict exposing (Dict)
 import Js
 import Schema exposing (Schema)
@@ -236,7 +237,7 @@ pub request :
       }
     → Result x a
 request r =
-    send
+    transfer
         problemOf
         "same-origin"
         r.method
@@ -261,7 +262,7 @@ pub riskyRequest :
       }
     → Result x a
 riskyRequest r =
-    send
+    transfer
         problemOf
         "include"
         r.method
@@ -277,12 +278,58 @@ riskyRequest r =
 --|
 --|     Http.get { url = "/api/items", expect = Http.expectString }
 pub get : { url : String, expect : Expect x a } → Result x a
-get r = send unchecked "same-origin" "GET" [] r.url Empty r.expect NoTimer Plain
+get r = transfer unchecked "same-origin" "GET" [] r.url Empty r.expect NoTimer Plain
 
 
 --| `POST` the body to the URL.
 pub post : { url : String, body : Body, expect : Expect x a } → Result x a
-post r = send bodyChecks "same-origin" "POST" [] r.url r.body r.expect NoTimer Plain
+post r = transfer bodyChecks "same-origin" "POST" [] r.url r.body r.expect NoTimer Plain
+
+
+--| The command form of `request`, as elm/http's `send` was: the request
+--| is a value, built and encoded when the command is made — its body
+--| `jsonBody`'s text, never a function that reads the model when the
+--| request runs (`docs/design/boundary.md` §9.8.16) — and its answer is
+--| sent through `tag`. It has no `tracker`: a body that tracks progress
+--| calls `request` itself.
+--|
+--|     Save →
+--|         ( model
+--|         , Http.send
+--|             { method = "PUT"
+--|             , headers = []
+--|             , url = "/api/notes/7"
+--|             , body = Http.jsonBody noteSchema model.note
+--|             , expect = Http.expectWhatever
+--|             , timeout = Nothing
+--|             }
+--|             Saved
+--|         )
+pub send :
+      { method : String
+      , headers : List Header
+      , url : String
+      , body : Body
+      , expect : Expect x a
+      , timeout : Maybe Duration
+      }
+    , (Result x a → msg)
+    → Cmd msg
+send r tag =
+    Cmd.task
+        (λ⊤ →
+            transfer
+                problemOf
+                "same-origin"
+                r.method
+                r.headers
+                r.url
+                r.body
+                r.expect
+                (timerOf r.timeout)
+                Plain
+        )
+        tag
 
 
 -- ---- What a request does (§9.8.12 (b)) ------------------------------------
@@ -337,8 +384,18 @@ bodyChecks : String, List Header, Body → Maybe Problem
 bodyChecks method _ body = bodyProblem method [] body
 
 
-send : Checks, String, String, List Header, String, Body, Expect x a, Timer, Reading → Result x a
-send checks credentials method headers url body (Expect accept read) timer reading =
+transfer :
+      Checks
+    , String
+    , String
+    , List Header
+    , String
+    , Body
+    , Expect x a
+    , Timer
+    , Reading
+    → Result x a
+transfer checks credentials method headers url body (Expect accept read) timer reading =
     read (exchange checks credentials method headers url body accept timer reading)
 
 

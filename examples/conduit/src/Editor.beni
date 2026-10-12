@@ -97,19 +97,15 @@ update msg model =
             updateForm (λform → { form | body = body }) model
 
         CompletedCreate (Ok article) →
-            ( model
-            , Cmd.do λ⊤ →
-                Route.replaceUrl (Session.navKey model.session) (Route.Article article.slug)
-            )
+            key = Session.navKey model.session
+            ( model, Cmd.do λ⊤ → Route.replaceUrl key (Route.Article article.slug) )
 
         CompletedCreate (Err error) →
             ( { model | status = savingError error model.status }, Cmd.none )
 
         CompletedEdit (Ok article) →
-            ( model
-            , Cmd.do λ⊤ →
-                Route.replaceUrl (Session.navKey model.session) (Route.Article article.slug)
-            )
+            key = Session.navKey model.session
+            ( model, Cmd.do λ⊤ → Route.replaceUrl key (Route.Article article.slug) )
 
         CompletedEdit (Err error) →
             ( { model | status = savingError error model.status }, Cmd.none )

@@ -201,10 +201,10 @@ update msg model =
         ( ClickedLink urlRequest, _ ) →
             case urlRequest of
                 Browser.Internal url →
-                    ( model
-                    , Cmd.do λ⊤ →
-                        Route.pushUrl (Session.navKey (toSession model)) (Url.toString url)
-                    )
+                    -- The key is read now, when the command is made: the
+                    -- command holds it, not the model (boundary.md §9.8.16).
+                    key = Session.navKey (toSession model)
+                    ( model, Cmd.do λ⊤ → Route.pushUrl key (Url.toString url) )
 
                 Browser.External href →
                     ( model, Cmd.do λ⊤ → loaded (Navigation.load href) )

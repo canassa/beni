@@ -2,6 +2,7 @@ program NoEditing.main : Tea.element
   model NoEditing.Model
   init
     literal ρ.draft
+  key NotSaved                                    exact      ∅
   key Typed                                       exact      node ρ; value ρ.draft
   key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
   key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
@@ -10,36 +11,37 @@ program NoEditing.main : Tea.element
   key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
   key UrlChanged · Just                           exact      node ρ; value ρ.filter
   key UrlChanged · _                              exact      node ρ; value ρ.filter
-  keys 8: bounded 8 (100%), exact 3, indexed 1, structural 4, * 0; capped 0
-  hole NoEditing.beni:184:17                      dynamic    reads ρ.draft
-  hole NoEditing.beni:189:31                      dynamic    reads ρ.todos
-  hole NoEditing.beni:194:17                      dynamic    reads ρ.todos; ρ.todos[*].completed
-  hole NoEditing.beni:199:18                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoEditing.beni:201:29                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoEditing.beni:206:37                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoEditing.beni:209:40                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoEditing.beni:217:32                      dynamic    reads ρ.todos
-  hole NoEditing.beni:219:25                      dynamic    reads ρ.todos; ρ.todos[*].completed
-  hole NoEditing.beni:219:55                      dynamic    reads ρ.todos; ρ.todos[*].completed
-  hole NoEditing.beni:226:34                      dynamic    reads ρ.filter
-  hole NoEditing.beni:228:40                      dynamic    reads ρ.filter
-  hole NoEditing.beni:231:43                      dynamic    reads ρ.filter
-  hole NoEditing.beni:239:17                      dynamic    reads ρ.todos; ρ.todos[*].completed
+  keys 9: bounded 9 (100%), exact 4, indexed 1, structural 4, * 0; capped 0
+  hole NoEditing.beni:186:17                      dynamic    reads ρ.draft
+  hole NoEditing.beni:191:31                      dynamic    reads ρ.todos
+  hole NoEditing.beni:196:17                      dynamic    reads ρ.todos; ρ.todos[*].completed
+  hole NoEditing.beni:201:18                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoEditing.beni:203:29                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoEditing.beni:208:37                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoEditing.beni:211:40                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoEditing.beni:219:32                      dynamic    reads ρ.todos
+  hole NoEditing.beni:221:25                      dynamic    reads ρ.todos; ρ.todos[*].completed
+  hole NoEditing.beni:221:55                      dynamic    reads ρ.todos; ρ.todos[*].completed
+  hole NoEditing.beni:228:34                      dynamic    reads ρ.filter
+  hole NoEditing.beni:230:40                      dynamic    reads ρ.filter
+  hole NoEditing.beni:233:43                      dynamic    reads ρ.filter
+  hole NoEditing.beni:241:17                      dynamic    reads ρ.todos; ρ.todos[*].completed
   holes 14: static 0, literal 0, static-key 0, dynamic 14
-  site NoEditing.beni:176:5                       unique
-  site NoEditing.beni:201:25                      instanced
+  site NoEditing.beni:178:5                       unique
+  site NoEditing.beni:203:25                      instanced
   sites 2: unique 1, shared 0, instanced 1, value 0
   markup_value_roots 0 (0% of 2 sites)
   carriers yes: commands
-  constructors 7: under * 0 (0%)
-  pairs 28 over 8 keys and 6 groups (3.50 per key); every key calls 0 of 6 groups (0%)
-  list NoEditing.beni:199:18                      reconciler KeyDown derived; Toggle derived; ToggleAll derived; Destroy derived; ClearCompleted derived; UrlChanged · Just derived; UrlChanged · _ derived
+  constructors 8: under * 0 (0%)
+  pairs 28 over 9 keys and 6 groups (3.11 per key); every key calls 0 of 6 groups (0%)
+  list NoEditing.beni:201:18                      reconciler KeyDown derived; Toggle derived; ToggleAll derived; Destroy derived; ClearCompleted derived; UrlChanged · Just derived; UrlChanged · _ derived
   reconciler 1 of 1 lists
   patchAll <none>
 program NoRouting.main : Tea.element
   model NoRouting.Model
   init
     literal ρ.draft; ρ.editing; ρ.filter
+  key NotSaved                                    exact      ∅
   key Typed                                       exact      node ρ; value ρ.draft
   key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
   key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
@@ -51,34 +53,34 @@ program NoRouting.main : Tea.element
   key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
   key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
   key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
-  keys 11: bounded 11 (100%), exact 4, indexed 1, structural 6, * 0; capped 0
-  hole NoRouting.beni:240:17                      dynamic    reads ρ.editing.Just#0.draft
-  hole NoRouting.beni:261:17                      dynamic    reads ρ.draft
-  hole NoRouting.beni:266:31                      dynamic    reads ρ.todos
-  hole NoRouting.beni:271:17                      dynamic    reads ρ.todos; ρ.todos[*].completed
-  hole NoRouting.beni:276:18                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoRouting.beni:279:29                      dynamic    reads tag ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoRouting.beni:288:37                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoRouting.beni:292:37                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoRouting.beni:296:29                      dynamic    reads tag ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; tag ρ.filter; ρ.todos; ρ.todos[*].completed
-  hole NoRouting.beni:302:32                      dynamic    reads ρ.todos
-  hole NoRouting.beni:304:25                      dynamic    reads ρ.todos; ρ.todos[*].completed
-  hole NoRouting.beni:304:55                      dynamic    reads ρ.todos; ρ.todos[*].completed
-  hole NoRouting.beni:314:25                      dynamic    reads ρ.filter
-  hole NoRouting.beni:323:25                      dynamic    reads ρ.filter
-  hole NoRouting.beni:332:25                      dynamic    reads ρ.filter
-  hole NoRouting.beni:342:17                      dynamic    reads ρ.todos; ρ.todos[*].completed
+  keys 12: bounded 12 (100%), exact 5, indexed 1, structural 6, * 0; capped 0
+  hole NoRouting.beni:242:17                      dynamic    reads ρ.editing.Just#0.draft
+  hole NoRouting.beni:263:17                      dynamic    reads ρ.draft
+  hole NoRouting.beni:268:31                      dynamic    reads ρ.todos
+  hole NoRouting.beni:273:17                      dynamic    reads ρ.todos; ρ.todos[*].completed
+  hole NoRouting.beni:278:18                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoRouting.beni:281:29                      dynamic    reads tag ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoRouting.beni:290:37                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoRouting.beni:294:37                      dynamic    reads tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoRouting.beni:298:29                      dynamic    reads tag ρ.editing; ρ.editing.Just#0.draft; ρ.editing.Just#0.id; tag ρ.filter; ρ.todos; ρ.todos[*].completed
+  hole NoRouting.beni:304:32                      dynamic    reads ρ.todos
+  hole NoRouting.beni:306:25                      dynamic    reads ρ.todos; ρ.todos[*].completed
+  hole NoRouting.beni:306:55                      dynamic    reads ρ.todos; ρ.todos[*].completed
+  hole NoRouting.beni:316:25                      dynamic    reads ρ.filter
+  hole NoRouting.beni:325:25                      dynamic    reads ρ.filter
+  hole NoRouting.beni:334:25                      dynamic    reads ρ.filter
+  hole NoRouting.beni:344:17                      dynamic    reads ρ.todos; ρ.todos[*].completed
   holes 16: static 0, literal 0, static-key 0, dynamic 16
-  site NoRouting.beni:237:13                      instanced
-  site NoRouting.beni:247:13                      instanced
-  site NoRouting.beni:253:5                       unique
-  site NoRouting.beni:278:25                      instanced
+  site NoRouting.beni:239:13                      instanced
+  site NoRouting.beni:249:13                      instanced
+  site NoRouting.beni:255:5                       unique
+  site NoRouting.beni:280:25                      instanced
   sites 4: unique 1, shared 0, instanced 3, value 0
   markup_value_roots 0 (0% of 4 sites)
   carriers yes: commands
-  constructors 11: under * 0 (0%)
-  pairs 47 over 11 keys and 8 groups (4.27 per key); every key calls 0 of 8 groups (0%)
-  list NoRouting.beni:276:18                      reconciler KeyDown derived; Toggle derived; ToggleAll derived; Destroy derived; ClearCompleted derived; SetFilter derived; EditKey derived; EditDone derived
+  constructors 12: under * 0 (0%)
+  pairs 47 over 12 keys and 8 groups (3.92 per key); every key calls 0 of 8 groups (0%)
+  list NoRouting.beni:278:18                      reconciler KeyDown derived; Toggle derived; ToggleAll derived; Destroy derived; ClearCompleted derived; SetFilter derived; EditKey derived; EditDone derived
   reconciler 1 of 1 lists
   patchAll <none>
 program NoStorage.main : Tea.element

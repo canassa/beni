@@ -178,7 +178,8 @@ update msg model =
             ( model, Cmd.task (λ⊤ → Article.delete cred slug) CompletedDeleteArticle )
 
         CompletedDeleteArticle (Ok ⊤) →
-            ( model, Cmd.do λ⊤ → Route.replaceUrl (Session.navKey model.session) Route.Home )
+            key = Session.navKey model.session
+            ( model, Cmd.do λ⊤ → Route.replaceUrl key Route.Home )
 
         CompletedDeleteArticle (Err error) →
             ( { model | errors = model.errors ++ Api.errorMessages error }, Cmd.none )
