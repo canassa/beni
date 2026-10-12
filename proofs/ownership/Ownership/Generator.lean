@@ -820,6 +820,21 @@ def loopPicksElement : Move := fun next env => do
     (.traverse .list (v (next + 3)) (v (next + 4)) i x acc step, tN),
     (.focus (v (next + 5)) (.int 0) (sv next 5) (.prim .push [v (sv next 5), ← number env]), tN)]
 
+/-- A nested list that repeats one row (sometimes not), its shallow copy,
+    and an edit inside the copy: a copy of a list is never exclusive, and
+    its rows are the original's (the copy shares them). The original is
+    read afterwards half the time. -/
+def copyRepeatEdit : Move := fun next env => do
+  let same := (← draw 4) != 0
+  let x := sv next 0
+  let i ← draw 2
+  let readBack := (← draw 2) == 0
+  let edit : Expr := .focus (v (next + 3)) (.int (Int.ofNat i)) x (.prim .push [v x, ← number env])
+  let bs : List (Expr × Ty) := [(← litList env, tL), (← litList env, tL),
+    (.prim (.literal tL) [v next, if same then v next else v (next + 1)], tN),
+    (.prim .copy [v (next + 2)], tN), (edit, tN)]
+  pure (if readBack then bs ++ [(.prim .at [v (next + 2), .int (Int.ofNat i), v next], tL)] else bs)
+
 /-- One wrapper (`mapVia`) called twice, with an identity or writing callback
     and then one that publishes its argument, and the published row then
     written: the second call must not reuse the first one's summary, and the
@@ -856,7 +871,8 @@ def movesFor (table : Table) : List (String × Move) :=
     ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table),
     ("shadow-write", shadowWrite), ("shared-nested", sharedNested), ("shared-record", sharedRecord),
     ("branch-closure", branchClosure), ("double-push", doublePush), ("close-alias-callee", closeAliasCallee),
-    ("copy-then-edit", copyThenEdit), ("once-in-loop", onceInLoop), ("shared-closure-record", sharedClosureRecord),
+    ("copy-then-edit", copyThenEdit), ("copy-repeat-edit", copyRepeatEdit),
+    ("once-in-loop", onceInLoop), ("shared-closure-record", sharedClosureRecord),
     ("loop-picks-element", loopPicksElement), ("publish-via", publishVia)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
