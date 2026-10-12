@@ -679,6 +679,23 @@ def applyAny (table : Table) : Move := fun next env => do
   let (f, ps, r) ← pick fs (.int 0, [], .int)
   callWith table false next env f ps r
 
+/-- Rebinds a list variable inside a let's right-hand side, after writing
+    the list through an alias, then reads the outer variable: `let n = (let
+    t = x; let x = []; push t k); length x`. The no-shadowing rule refuses it;
+    without that rule, liveness must still see the outer `x` as live. -/
+def shadowWrite : Move := fun next env => do
+  let xs := (listsOf env).filterMap fun a => match a with | .var x => some x | _ => none
+  -- Drawn a quarter of the times it is picked: every one is refused.
+  let quarter := (← draw 4) == 0
+  match xs with
+  | [] => pure [(← litList env, tL)]
+  | _ => if !quarter then pure [(← litList env, tL)] else do
+      let x ← pick xs 0
+      let t := sv next 0
+      let inner : Expr := .letE t (.atom (v x)) <|
+        .letE x (← litList env) (.prim .push [v t, ← number env])
+      pure [(inner, tL), (.prim .length [v x], .int)]
+
 /-- `shared` on a nested list, then an element read out of it and pushed:
     the element is published with its container. -/
 def sharedNested : Move := fun next env => withNested next env fun next n => do
@@ -739,7 +756,7 @@ def movesFor (table : Table) : List (String × Move) :=
     List.replicate 2 ("call-generated-fresh", callGeneratedFresh table)
   weighted ++ [("branch-written", branchWritten), ("branch-block", branchBlock weighted),
     ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table),
-    ("shared-nested", sharedNested), ("shared-record", sharedRecord),
+    ("shadow-write", shadowWrite), ("shared-nested", sharedNested), ("shared-record", sharedRecord),
     ("branch-closure", branchClosure)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
