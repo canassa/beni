@@ -5,6 +5,8 @@
 # .#ownership` from proofs/ownership; node must be on PATH.
 #   scripts/run-mutants.sh <scratch-dir> [count] [seeds...] [-- mutants...]
 set -u
+# Shrinking a deep program can exhaust the default stack.
+ulimit -s unlimited
 scratch=$1; shift
 count=${1:-20000}; shift || true
 seeds=()

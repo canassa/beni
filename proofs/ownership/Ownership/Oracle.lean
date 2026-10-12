@@ -646,6 +646,8 @@ def runWith (o : Options) : IO RunResult := do
         families := families.map fun (f,c,lo,hi) => if f == family then
           (f,{ c with mismatches := c.mismatches+1 },lo,hi) else (f,c,lo,hi)
         if o.negative && found.isSome then continue
+        -- Recorded before shrinking, which may exhaust the stack on a deep program.
+        IO.println s!"{header} mismatch index={index} family={family} (shrinking)"
         let minimal := shrink p config
         let report := s!"{header} index={index} family={family}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (verdictOf minimal { reinfer := config.reinfer })}\n"
         if !o.quiet then
