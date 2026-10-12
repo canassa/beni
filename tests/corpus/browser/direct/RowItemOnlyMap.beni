@@ -64,7 +64,10 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { rows = [ { id = 1, label = "one" }, { id = 2, label = "two" } ], selected = Nothing }
+            λ⊤ →
+                { rows = [ { id = 1, label = "one" }, { id = 2, label = "two" } ]
+                , selected = Nothing
+                }
         , update = update
         , view = view
         }

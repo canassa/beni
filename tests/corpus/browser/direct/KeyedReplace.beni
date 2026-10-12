@@ -102,9 +102,11 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ]
-            , next = 10
-            }
+            λ⊤ →
+                { rows =
+                    [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ]
+                , next = 10
+                }
         , update = update
         , view = view
         }

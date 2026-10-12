@@ -65,20 +65,21 @@ main : Tea.Program
 main =
     Tea.sandbox
         { init =
-            { n = 0
-            , ff = "a\u{000C}b"
-            , tabbed = "a\tb"
-            , lf = "a\nb"
-            , cr = "a\rb"
-            , sp = "a b"
-            , gt = "a>b"
-            , eq = "a=b"
-            , bt = "a`b"
-            , sq = "a'b"
-            , dq = "a\"b"
-            , lt = "a<b"
-            , slash = "a/"
-            }
+            λ⊤ →
+                { n = 0
+                , ff = "a\u{000C}b"
+                , tabbed = "a\tb"
+                , lf = "a\nb"
+                , cr = "a\rb"
+                , sp = "a b"
+                , gt = "a>b"
+                , eq = "a=b"
+                , bt = "a`b"
+                , sq = "a'b"
+                , dq = "a\"b"
+                , lt = "a<b"
+                , slash = "a/"
+                }
         , update = update
         , view = view
         }

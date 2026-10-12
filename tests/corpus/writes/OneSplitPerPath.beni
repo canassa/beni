@@ -43,4 +43,4 @@ view model = <p>{model.a}</p>
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { a = 0, b = 0, c = 0 }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { a = 0, b = 0, c = 0 }, update = update, view = view }

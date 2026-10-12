@@ -105,13 +105,13 @@ initial ⊤ = { rows = [], pinned = [], total = 0 }
 
 
 pinned : Tea.Program
-pinned = Tea.sandbox { init = initial ⊤, update = pins, view = view }
+pinned = Tea.sandbox { init = λ⊤ → initial ⊤, update = pins, view = view }
 
 
 stored : Tea.Program
 stored =
     Tea.element
-        { init = ( initial ⊤, Cmd.none )
+        { init = λ⊤ → ( initial ⊤, Cmd.none )
         , update = stores
         , view = plain
         , subscriptions = λ_ → Sub.none
@@ -121,7 +121,7 @@ stored =
 edited : Tea.Program
 edited =
     Tea.element
-        { init = ( initial ⊤, Cmd.none )
+        { init = λ⊤ → ( initial ⊤, Cmd.none )
         , update = edits
         , view = plain
         , subscriptions = λ_ → Sub.none
@@ -131,7 +131,7 @@ edited =
 counted : Tea.Program
 counted =
     Tea.element
-        { init = ( initial ⊤, Cmd.none )
+        { init = λ⊤ → ( initial ⊤, Cmd.none )
         , update = counts
         , view = plain
         , subscriptions = λ_ → Sub.none

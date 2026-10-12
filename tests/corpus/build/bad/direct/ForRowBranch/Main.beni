@@ -15,4 +15,4 @@ view xs =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = [ 1, 2 ], update = λ_ m → m, view = view }
+main = Tea.sandbox { init = λ⊤ → [ 1, 2 ], update = λ_ m → m, view = view }

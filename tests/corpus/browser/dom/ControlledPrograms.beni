@@ -16,7 +16,7 @@ type Msg
 outer : Browser.Program
 outer =
     Browser.program
-        { init = 0
+        { init = λ⊤ → 0
         , update = λTick n → n + 1
         , view =
             λn →
@@ -31,7 +31,7 @@ outer =
 inner : Browser.Program
 inner =
     Browser.program
-        { init = 0
+        { init = λ⊤ → 0
         , update = λTick n → n + 1
         , view =
             λn →

@@ -72,7 +72,7 @@ view shown =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( "idle", Cmd.none )
+        { init = λ⊤ → ( "idle", Cmd.none )
         , update = update
         , view = view
         , subscriptions = λ_ → Sub.none

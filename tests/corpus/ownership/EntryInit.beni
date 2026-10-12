@@ -1,11 +1,15 @@
 -- ownership: `init` is a function, and top-level lists are shared (Change 4,
--- T53, T14, T21; `ownership-checker.md` §20.3). browser-direct evaluates the
--- record's `init` expression in the mount, once per mount, so the expression
--- is the body of Change 4's `init ⊤`. `fromTop` names the top-level
--- `initialModel`, whose list every mount and every `Reset` would share:
--- `Add`'s push is rejected `top-level`. `fromFunction` calls `initialModelOf ⊤`,
--- which builds the list anew at each mount and each `Reset` (T14): accepted.
--- `seeded` builds its model in `init` from a top-level list (T21): rejected.
+-- T53, T14, T21; `ownership-checker.md` §20.3, §22.2). Every platform calls
+-- `init ⊤` once per mount (boundary.md §9.8.16), so what it returns is the
+-- entry model's start. `fromTop` returns the top-level `initialModel`, whose
+-- list every mount and every `Reset` would share: `Add`'s push is rejected
+-- `top-level`, and so it is in `fromTopFunction`, whose `init` is a named
+-- function of `⊤` that returns the same top-level value (T53 through
+-- `init ⊤ = initialModel`). `fromFunction` names `initialModelOf`, which
+-- builds the list anew at each mount and each `Reset` (T14), and
+-- `fromLambda` writes the literal in the record: accepted on browser-direct,
+-- `platform` on browser-tea. `seeded` builds its model in `init` from a
+-- top-level list (T21): rejected `top-level` on both.
 import Browser
 import Html exposing (Html)
 import Tea
@@ -26,6 +30,10 @@ initialModel = { todos = [] }
 
 initialModelOf : ⊤ → Model
 initialModelOf ⊤ = { todos = [] }
+
+
+initTop : ⊤ → Model
+initTop ⊤ = initialModel
 
 
 seed : List String
@@ -56,6 +64,16 @@ updateFresh msg model =
             initialModelOf ⊤
 
 
+updateAdd : Msg, Model → Model
+updateAdd msg model =
+    case msg of
+        Add t →
+            { model | todos = List.push model.todos t }
+
+        Reset →
+            model
+
+
 view : Model → Html Msg
 view model =
     <main>
@@ -66,16 +84,24 @@ view model =
 
 
 fromTop : Tea.Program
-fromTop = Tea.sandbox { init = initialModel, update = updateTop, view = view }
+fromTop = Tea.sandbox { init = λ⊤ → initialModel, update = updateTop, view = view }
+
+
+fromTopFunction : Tea.Program
+fromTopFunction = Tea.sandbox { init = initTop, update = updateAdd, view = view }
 
 
 fromFunction : Tea.Program
-fromFunction = Tea.sandbox { init = initialModelOf ⊤, update = updateFresh, view = view }
+fromFunction = Tea.sandbox { init = initialModelOf, update = updateFresh, view = view }
+
+
+fromLambda : Tea.Program
+fromLambda = Tea.sandbox { init = λ⊤ → { todos = [] }, update = updateAdd, view = view }
 
 
 seeded : Tea.Program
-seeded = Tea.sandbox { init = { todos = seed }, update = updateFresh, view = view }
+seeded = Tea.sandbox { init = λ⊤ → { todos = seed }, update = updateFresh, view = view }
 
 
 main : Tea.Program
-main = Browser.programs [ fromTop, fromFunction, seeded ]
+main = Browser.programs [ fromTop, fromTopFunction, fromFunction, fromLambda, seeded ]

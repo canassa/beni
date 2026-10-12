@@ -862,7 +862,7 @@ fn chainProgram(arena: std.mem.Allocator, n: usize) ![]const u8 {
         \\
         \\
         \\main : Browser.Program
-        \\main = Tea.sandbox {{ init = {{ count = 0, pick = 0 }}, update = update, view = view }}
+        \\main = Tea.sandbox {{ init = λ⊤ → {{ count = 0, pick = 0 }}, update = update, view = view }}
         \\
     , .{n});
     return out.items;

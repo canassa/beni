@@ -11061,7 +11061,7 @@ pub const Lowerer = struct {
                         \\its nodes — for as long as the page runs, so two mounts of one value would
                         \\share it and each would show the other's writes (`docs/design/browser-direct.md`
                         \\§8.2). Build the program with a function, so that each mount is a value of its
-                        \\own: `counter start = Tea.sandbox {{ init = start, … }}`, then
+                        \\own: `counter start = Tea.sandbox {{ init = λ⊤ → start, … }}`, then
                         \\`Browser.programs [ counter 0, counter 5 ]`.
                     , .{ shown, l.in.markup.?.lowering.name });
                 };
@@ -11165,15 +11165,26 @@ pub const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         pc.init_used = true;
-        // The lowering places `init` in a function that cannot wait. The
-        // checker already refuses it where `main` would evaluate it
-        // (`must_not_suspend`), so this guards what that misses: an `init`
-        // that may suspend is refused, never lowered into a mount that would
-        // return a suspension in place of the model.
-        if (l.reaches(init, .suspension)) {
+        // `init` is a function of `⊤` (`boundary.md` §9.8.16), and what the
+        // mount evaluates is `init ⊤`. A lambda written in the record,
+        // `λ⊤ → e`, is evaluated as its body `e`, in place, so the mount
+        // holds no closure it calls once; any other function is called.
+        const body: ?Inst.Index = blk: {
+            if (l.bir.instTag(init) != .lambda) break :blk null;
+            const d = l.bir.instData(init);
+            const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index);
+            if (params.len != 1 or l.bir.instTag(params[0]) != .pat_unit) break :blk null;
+            break :blk @fromBackingInt(@intCast(d.rhs));
+        };
+        // The lowering places `init ⊤` in a function that cannot wait. The
+        // checker already refuses one that may (`init` is `sync`), so this
+        // guards what that misses: an `init` that may suspend is refused,
+        // never lowered into a mount that would return a suspension in place
+        // of the model.
+        if (body) |b| if (l.reaches(b, .suspension)) {
             try l.report(.not_implemented, init, "This program's `init` may suspend, and the markup lowering `{s}` evaluates `init` where nothing can wait for it. Compute it with no waiting, and do the waiting in a command once programs with effects compile on this platform.", .{st.lowering.name});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-        }
+        };
         var stmts: StmtList = .empty;
         const depth = l.case_depth;
         l.case_depth = 0;
@@ -11182,13 +11193,16 @@ pub const Lowerer = struct {
         defer l.leaveFunction(outer);
         const saved = try l.enterDecl(pc.record_decl);
         defer l.leaveDecl(saved);
-        const value = try l.expr(&stmts, init);
+        // A function of `⊤` takes no JavaScript argument (`backend.md` §6, *A
+        // parameter of type `()`*).
+        const value = if (body) |b| try l.expr(&stmts, b) else try l.call(try l.expr(&stmts, init), &.{}, p);
         // Bound to a name, which `--release` keeps though nothing reads it
         // when `init` may have an effect — a throw that stops the page, a
-        // `Debug.log` — as it keeps any such binding (`backend.md` §9).
+        // `Debug.log` — as it keeps any such binding (`backend.md` §9). A
+        // function called here is taken to have one.
         const bound = try l.fresh(try l.interner.getOrPut(l.gpa, "init"));
         try l.constDecl(&stmts, bound, value, p);
-        if (l.mayHaveEffect(init)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
+        if (if (body) |b| l.mayHaveEffect(b) else true) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
         try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
         return l.ident(bound, p);
     }

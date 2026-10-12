@@ -48,7 +48,7 @@ ${range(w)
 
 
 main : Browser.Program
-main = Tea.sandbox { init = init, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → init, update = update, view = view }
 `;
 
 const initObject = (w) => `{ ${range(w)

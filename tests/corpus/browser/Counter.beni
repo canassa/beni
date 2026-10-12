@@ -38,4 +38,4 @@ view count =
 
 
 main : Page.Program
-main = Page.sandbox { init = 0, update = update, view = view }
+main = Page.sandbox { init = λ⊤ → 0, update = update, view = view }

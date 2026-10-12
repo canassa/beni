@@ -16,4 +16,6 @@ plain label = Html.text label
 
 
 main : Tea.Program
-main = Tea.sandbox { init = [ badge "a", plain "b" ], update = λ_ m → m, view = λ_ → <p>static</p> }
+main =
+    Tea.sandbox
+        { init = λ⊤ → [ badge "a", plain "b" ], update = λ_ m → m, view = λ_ → <p>static</p> }

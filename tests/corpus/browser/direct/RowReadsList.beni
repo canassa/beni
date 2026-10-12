@@ -38,7 +38,7 @@ view rows =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ]
+        { init = λ⊤ → [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ]
         , update = update
         , view = view
         }

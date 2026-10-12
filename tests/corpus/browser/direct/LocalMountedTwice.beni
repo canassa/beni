@@ -19,5 +19,5 @@ view _ = <p>twice</p>
 
 main : Tea.Program
 main =
-    p = Tea.sandbox { init = {}, update = λ_ m → m, view = view }
+    p = Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }
     Browser.programs [ p, p ]

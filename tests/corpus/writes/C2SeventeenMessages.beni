@@ -145,4 +145,4 @@ page0 =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { page = page0 }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { page = page0 }, update = update, view = view }

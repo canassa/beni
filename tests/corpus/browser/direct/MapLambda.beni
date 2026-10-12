@@ -77,4 +77,4 @@ view model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { log = "" }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { log = "" }, update = update, view = view }

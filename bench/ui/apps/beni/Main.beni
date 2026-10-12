@@ -250,7 +250,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { rows = [], selected = Nothing, nextId = 1, seed = 42 }
+        { init = λ⊤ → { rows = [], selected = Nothing, nextId = 1, seed = 42 }
         , update = update
         , view = view
         }

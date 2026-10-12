@@ -4132,4 +4132,4 @@ view model = <p>{List.length model.xs}</p>
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { xs = [] }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { xs = [] }, update = update, view = view }

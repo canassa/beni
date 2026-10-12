@@ -71,7 +71,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { outer = { mid = { inner = Idle }, note = "" }, side = Idle }
+        { init = λ⊤ → { outer = { mid = { inner = Idle }, note = "" }, side = Idle }
         , update = update
         , view = view
         }

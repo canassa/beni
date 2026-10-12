@@ -49,4 +49,4 @@ view model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = HomePage Home.init, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → HomePage Home.init, update = update, view = view }

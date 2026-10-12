@@ -59,4 +59,6 @@ view model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { rows = [ "a", "b", "c" ], empty = [] }, update = update, view = view }
+main =
+    Tea.sandbox
+        { init = λ⊤ → { rows = [ "a", "b", "c" ], empty = [] }, update = update, view = view }

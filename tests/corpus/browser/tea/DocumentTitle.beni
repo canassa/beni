@@ -23,7 +23,7 @@ view n =
 main : Tea.Program
 main =
     Tea.document
-        { init = ( 0, Cmd.none )
+        { init = λ⊤ → ( 0, Cmd.none )
         , update = λInc n → ( n + 1, Cmd.none )
         , view = view
         , subscriptions = λ_ → Sub.none

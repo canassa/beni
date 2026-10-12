@@ -42,4 +42,4 @@ view model =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = { n = 0, text = "" }, update = withLogging update, view = view }
+main = Tea.sandbox { init = λ⊤ → { n = 0, text = "" }, update = withLogging update, view = view }

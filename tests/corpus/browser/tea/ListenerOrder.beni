@@ -113,7 +113,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { key = Navigation.key ⊤, following = False, lines = [] }, Cmd.none )
+        { init = λ⊤ → ( { key = Navigation.key ⊤, following = False, lines = [] }, Cmd.none )
         , update = update
         , view = view
         , subscriptions = subscriptions

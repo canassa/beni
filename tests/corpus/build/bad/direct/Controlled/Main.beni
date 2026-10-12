@@ -10,4 +10,4 @@ view s = <input value={s} />
 
 
 main : Tea.Program
-main = Tea.sandbox { init = "x", update = λ_ m → m, view = view }
+main = Tea.sandbox { init = λ⊤ → "x", update = λ_ m → m, view = view }

@@ -43,4 +43,4 @@ view m =
 
 
 main : Browser.Program
-main = Browser.program { init = { n = 0, o = 0 }, update = update, view = view }
+main = Browser.program { init = λ⊤ → { n = 0, o = 0 }, update = update, view = view }

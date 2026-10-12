@@ -3993,6 +3993,16 @@ fn programRecord(a: *Writes, m: u32, d: u32, arg: Inst.Index) ?Fields {
     return null;
 }
 
+/// The body of `inst` when it is a lambda of one `⊤` parameter, `λ⊤ → e`.
+fn unitLambdaBody(a: *Writes, m: u32, inst: Inst.Index) ?Inst.Index {
+    const b = a.bir(m);
+    if (b.instTag(inst) != .lambda) return null;
+    const d = b.instData(inst);
+    const params = b.extraSlice(b.subRange(@fromBackingInt(d.lhs)), Inst.Index);
+    if (params.len != 1 or b.instTag(params[0]) != .pat_unit) return null;
+    return @fromBackingInt(d.rhs);
+}
+
 fn isFunctionField(a: *Writes, m: u32, inst: Inst.Index) bool {
     const b = a.bir(m);
     if (b.instTag(inst) == .lambda) return true;
@@ -4234,18 +4244,30 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         // init (§3.5).
         a.ctx = .{ .mode = .init };
         init_model = blk: {
+            // `init` is a function: of the address and the key for an
+            // application, of `⊤` for every other kind (`boundary.md`
+            // §9.8.16). A lambda of `⊤` written in the record is its body,
+            // evaluated where the record is, as the mount evaluates it
+            // (`Lower.programInit`); any other function is applied, to
+            // arguments that hold nothing the program wrote.
+            if (a.unitLambdaBody(fs.m, fs.init.?)) |body| if (kind != .application) {
+                var r = a.eval(&frame, body, 0) catch |err| switch (err) {
+                    error.WorkCap => break :blk try a.freshEmpty(),
+                    else => |e| return e,
+                };
+                if (kind == .element or kind == .document) r = try a.proj(r, .tuple, 0, 0);
+                break :blk r;
+            };
             const v = a.eval(&frame, fs.init.?, 0) catch |err| switch (err) {
                 error.WorkCap => break :blk try a.freshEmpty(),
                 else => |e| return e,
             };
-            var r = v;
-            if (kind == .application) {
-                const fe = try a.freshEmpty();
-                r = a.apply(v, &.{ fe, fe }, 0) catch |err| switch (err) {
-                    error.WorkCap => break :blk try a.freshEmpty(),
-                    else => |e| return e,
-                };
-            }
+            const fe = try a.freshEmpty();
+            const args: []const u32 = if (kind == .application) &.{ fe, fe } else &.{fe};
+            var r = a.apply(v, args, 0) catch |err| switch (err) {
+                error.WorkCap => break :blk try a.freshEmpty(),
+                else => |e| return e,
+            };
             if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
             break :blk r;
         };

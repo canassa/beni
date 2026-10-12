@@ -60,4 +60,7 @@ view m =
 main : Browser.Program
 main =
     Browser.program
-        { init = { text = "ab", on = False, choice = "a", n = 0 }, update = update, view = view }
+        { init = λ⊤ → { text = "ab", on = False, choice = "a", n = 0 }
+        , update = update
+        , view = view
+        }

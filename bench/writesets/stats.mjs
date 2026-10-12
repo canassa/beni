@@ -326,7 +326,7 @@ view model =
 
 main : Browser.Program
 main =
-    Tea.sandbox { init = { rows = List.range 0 999 }, update = update, view = view }
+    Tea.sandbox { init = λ⊤ → { rows = List.range 0 999 }, update = update, view = view }
 `;
   return [
     trieOf("table", tableSrc),

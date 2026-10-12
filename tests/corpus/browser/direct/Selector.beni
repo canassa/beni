@@ -107,16 +107,17 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { rows =
-                [ { id = 1, label = "one" }
-                , { id = 2, label = "two" }
-                , { id = 3, label = "three" }
-                , { id = 2, label = "twin" }
-                ]
-            , selected = Nothing
-            , cursor = 1
-            , ids = [ 1, 2, 3 ]
-            }
+            λ⊤ →
+                { rows =
+                    [ { id = 1, label = "one" }
+                    , { id = 2, label = "two" }
+                    , { id = 3, label = "three" }
+                    , { id = 2, label = "twin" }
+                    ]
+                , selected = Nothing
+                , cursor = 1
+                , ids = [ 1, 2, 3 ]
+                }
         , update = update
         , view = view
         }

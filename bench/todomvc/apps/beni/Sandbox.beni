@@ -49,8 +49,8 @@ type Msg
 
 -- ---- The program -----------------------------------------------------------
 
-init : Model
-init =
+init : ⊤ → Model
+init ⊤ =
     { todos = []
     , draft = ""
     , filter = All

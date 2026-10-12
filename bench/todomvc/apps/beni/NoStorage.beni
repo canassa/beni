@@ -66,8 +66,8 @@ filterOf url =
 
 -- ---- The program -----------------------------------------------------------
 
-init : Model × Cmd Msg
-init =
+init : ⊤ → Model × Cmd Msg
+init ⊤ =
     ( { todos = []
       , draft = ""
       , filter = filterOf (Browser.Navigation.currentUrl ⊤)

@@ -59,4 +59,4 @@ view model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { rows = [ 1, 2, 3 ], log = "" }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { rows = [ 1, 2, 3 ], log = "" }, update = update, view = view }

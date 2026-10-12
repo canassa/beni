@@ -67,7 +67,7 @@ view model =
 main : Browser.Program
 main =
     Browser.program
-        { init = { user = Just { id = 1, name = "Ada" }, left = True }
+        { init = λ⊤ → { user = Just { id = 1, name = "Ada" }, left = True }
         , update = update
         , view = view
         }

@@ -66,4 +66,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { a = 0, b = 10, c = 20, d = 30, title = "first" }, update = update, view = view }
+        { init = λ⊤ → { a = 0, b = 10, c = 20, d = 30, title = "first" }
+        , update = update
+        , view = view
+        }

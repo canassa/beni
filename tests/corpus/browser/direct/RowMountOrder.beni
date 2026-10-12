@@ -87,7 +87,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" } ], mark = "" }
+        { init = λ⊤ → { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" } ], mark = "" }
         , update = update
         , view = view
         }

@@ -12,4 +12,5 @@ view _ = <p>one of many</p>
 
 
 main : Tea.Program
-main = Browser.programs (List.map [ { init = {}, update = λ_ m → m, view = view } ] Tea.sandbox)
+main =
+    Browser.programs (List.map [ { init = λ⊤ → {}, update = λ_ m → m, view = view } ] Tea.sandbox)

@@ -41,7 +41,7 @@ view model = <p>{model}</p>
 main : Tea.Program
 main =
     Tea.element
-        { init = ( "waiting", Cmd.task fetch Got )
+        { init = λ⊤ → ( "waiting", Cmd.task fetch Got )
         , update = update
         , view = view
         , subscriptions = λ_ → Sub.none

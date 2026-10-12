@@ -101,7 +101,7 @@ view model =
 main : Tea.Program
 main =
     Tea.sandbox
-        { init = { rows = [], plain = [ "a", "b" ], mark = "", next = 0 }
+        { init = λ⊤ → { rows = [], plain = [ "a", "b" ], mark = "", next = 0 }
         , update = update
         , view = view
         }

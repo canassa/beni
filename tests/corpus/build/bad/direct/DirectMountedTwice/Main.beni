@@ -13,7 +13,7 @@ view _ = <p>count</p>
 
 
 counter : Tea.Program
-counter = Tea.sandbox { init = {}, update = λ_ m → m, view = view }
+counter = Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }
 
 
 main : Tea.Program

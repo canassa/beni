@@ -123,4 +123,5 @@ view model =
 
 main : Browser.Program
 main =
-    Tea.sandbox { init = { rows = [], first = Nothing, total = 0 }, update = update, view = view }
+    Tea.sandbox
+        { init = λ⊤ → { rows = [], first = Nothing, total = 0 }, update = update, view = view }

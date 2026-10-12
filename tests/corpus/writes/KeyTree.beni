@@ -75,4 +75,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { form = { title = "", body = "" }, done = False }, update = update, view = view }
+        { init = λ⊤ → { form = { title = "", body = "" }, done = False }
+        , update = update
+        , view = view
+        }

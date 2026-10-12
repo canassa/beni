@@ -75,7 +75,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { rows = [], box = { items = [] }, query = "", log = [] }
+        { init = λ⊤ → { rows = [], box = { items = [] }, query = "", log = [] }
         , update = update
         , view = view
         }

@@ -43,7 +43,7 @@ view model =
 main : Browser.Program
 main =
     Tea.element
-        { init = ( { title = "Conduit", note = "A & B", count = 3, hits = 0 }, Cmd.none )
+        { init = λ⊤ → ( { title = "Conduit", note = "A & B", count = 3, hits = 0 }, Cmd.none )
         , update = update
         , view = view
         , subscriptions = λ_ → Sub.none

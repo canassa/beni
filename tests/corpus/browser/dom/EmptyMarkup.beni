@@ -68,4 +68,5 @@ view model =
 
 main : Browser.Program
 main =
-    Browser.program { init = { on = False, rows = [ 1, 2, 3, 4 ] }, update = update, view = view }
+    Browser.program
+        { init = λ⊤ → { on = False, rows = [ 1, 2, 3, 4 ] }, update = update, view = view }

@@ -91,7 +91,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { on = False, seen = [] }, Cmd.none )
+        { init = λ⊤ → ( { on = False, seen = [] }, Cmd.none )
         , update = update
         , view = view
         , subscriptions = subscriptions

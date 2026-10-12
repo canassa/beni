@@ -82,11 +82,12 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            [ { id = 1, label = "a" }
-            , { id = 2, label = "b" }
-            , { id = 2, label = "c" }
-            , { id = 3, label = "d" }
-            ]
+            λ⊤ →
+                [ { id = 1, label = "a" }
+                , { id = 2, label = "b" }
+                , { id = 2, label = "c" }
+                , { id = 3, label = "d" }
+                ]
         , update = update
         , view = view
         }

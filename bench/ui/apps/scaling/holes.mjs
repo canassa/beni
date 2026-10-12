@@ -46,7 +46,7 @@ ${indent(sections(n, beniHole), 8)}
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { tick = 0, name = "beni", count = 7, cls = "c" }
+        { init = λ⊤ → { tick = 0, name = "beni", count = 7, cls = "c" }
         , update = update
         , view = view
         }

@@ -1,10 +1,13 @@
 -- An `init` that may suspend, in a program built by a function: the
--- `direct` lowering evaluates `init` inside a mount that cannot wait
+-- `direct` lowering calls `init` inside a mount that cannot wait
 -- (docs/design/browser-direct.md §8.2), so such a program must be refused,
 -- never miscompiled into a mount that returns a suspension in place of a
--- model. It is: the checker's `must_not_suspend` at `main`, which builds
--- the program, before any lowering runs. (The lowering refuses an `init`
--- that may suspend too, a backstop no program reaches past the checker.)
+-- model. It is, by the checker, before any lowering runs: `init` is a
+-- `sync` function of `⊤` (boundary.md §9.8.16), so a lambda that may
+-- suspend handed to it is `sync_boundary`. (Until `init` was a function
+-- it was `must_not_suspend` at `main`, which built the program; the
+-- lowering refuses an `init` that may suspend too, a backstop no program
+-- reaches past the checker.)
 import Browser
 import Html exposing (Html)
 import Tea
@@ -22,7 +25,7 @@ slow n =
 
 
 counter : Int → Tea.Program
-counter n = Tea.sandbox { init = slow n, update = λ_ m → m, view = view }
+counter n = Tea.sandbox { init = λ⊤ → slow n, update = λ_ m → m, view = view }
 
 
 main : Tea.Program

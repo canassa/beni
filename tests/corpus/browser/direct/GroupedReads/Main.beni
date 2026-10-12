@@ -111,13 +111,14 @@ main : Tea.Program
 main =
     Tea.sandbox
         { init =
-            { a = 0
-            , b = 1
-            , c = 2
-            , nested = { x = 0, y = 0 }
-            , pick = Nothing
-            , set = 0
-            }
+            λ⊤ →
+                { a = 0
+                , b = 1
+                , c = 2
+                , nested = { x = 0, y = 0 }
+                , pick = Nothing
+                , set = 0
+                }
         , update = update
         , view = view
         }

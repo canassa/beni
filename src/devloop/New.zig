@@ -44,7 +44,7 @@ pub const browser_tea_main =
     \\
     \\
     \\main : Tea.Program
-    \\main = Tea.sandbox { init = 0, update = update, view = view }
+    \\main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
     \\
 ;
 

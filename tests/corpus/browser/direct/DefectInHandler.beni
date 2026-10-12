@@ -22,4 +22,4 @@ view count =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = 0, update = λInc count → count + 1, view = view }
+main = Tea.sandbox { init = λ⊤ → 0, update = λInc count → count + 1, view = view }

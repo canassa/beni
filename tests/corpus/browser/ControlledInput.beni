@@ -50,4 +50,4 @@ view model =
 
 
 main : Page.Program
-main = Page.sandbox { init = { draft = "", saved = [] }, update = update, view = view }
+main = Page.sandbox { init = λ⊤ → { draft = "", saved = [] }, update = update, view = view }

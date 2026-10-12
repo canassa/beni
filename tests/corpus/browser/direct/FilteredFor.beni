@@ -107,14 +107,15 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { todos =
-                [ { id = 1, title = "one", done = False }
-                , { id = 2, title = "two", done = True }
-                , { id = 3, title = "three", done = False }
-                ]
-            , filter = All
-            , next = 4
-            }
+            λ⊤ →
+                { todos =
+                    [ { id = 1, title = "one", done = False }
+                    , { id = 2, title = "two", done = True }
+                    , { id = 3, title = "three", done = False }
+                    ]
+                , filter = All
+                , next = 4
+                }
         , update = update
         , view = view
         }

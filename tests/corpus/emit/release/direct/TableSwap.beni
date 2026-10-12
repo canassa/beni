@@ -82,14 +82,15 @@ main : Tea.Program
 main =
     Tea.sandbox
         { init =
-            { rows =
-                [ { id = 1, label = "a" }
-                , { id = 2, label = "b" }
-                , { id = 3, label = "c" }
-                , { id = 4, label = "d" }
-                ]
-            , selected = Nothing
-            }
+            λ⊤ →
+                { rows =
+                    [ { id = 1, label = "a" }
+                    , { id = 2, label = "b" }
+                    , { id = 3, label = "c" }
+                    , { id = 4, label = "d" }
+                    ]
+                , selected = Nothing
+                }
         , update = update
         , view = view
         }

@@ -53,7 +53,7 @@ view model = <p>{model.answer}</p>
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { answer = "waiting" }, Cmd.task (λ⊤ → fetch (Ref.make 0)) Got )
+        { init = λ⊤ → ( { answer = "waiting" }, Cmd.task (λ⊤ → fetch (Ref.make 0)) Got )
         , update = update
         , view = view
         , subscriptions = λ_ → Sub.none

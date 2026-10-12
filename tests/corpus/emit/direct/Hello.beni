@@ -24,4 +24,4 @@ update _ model = model
 
 
 main : Tea.Program
-main = Tea.sandbox { init = {}, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → {}, update = update, view = view }

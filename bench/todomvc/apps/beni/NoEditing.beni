@@ -85,8 +85,8 @@ filterOf url =
 
 -- ---- The program -----------------------------------------------------------
 
-init : Model × Cmd Msg
-init =
+init : ⊤ → Model × Cmd Msg
+init ⊤ =
     todos =
         case Storage.get Local key of
             Just text →

@@ -107,7 +107,7 @@ const program =
     \\main : Tea.Program
     \\main =
     \\    Tea.sandbox
-    \\        { init = { color = Red, flag = False, n = 0, name = "" }, update = update, view = view }
+    \\        { init = λ⊤ → { color = Red, flag = False, n = 0, name = "" }, update = update, view = view }
     \\
 ;
 
@@ -183,7 +183,7 @@ const document =
     \\main : Tea.Program
     \\main =
     \\    Tea.document
-    \\        { init = ( { marked = False, rows = [ 1, 2, 3 ], text = "", title = "start" }, Cmd.none )
+    \\        { init = λ⊤ → ( { marked = False, rows = [ 1, 2, 3 ], text = "", title = "start" }, Cmd.none )
     \\        , update = update
     \\        , view = view
     \\        , subscriptions = λ_ → Sub.none
@@ -334,9 +334,9 @@ test "a lambda's update has its parameter's type, and each of several programs i
         \\main : Tea.Program
         \\main =
         \\    Browser.programs
-        \\        [ Tea.sandbox { init = 0, update = λstep n → n + step, view = counter }
+        \\        [ Tea.sandbox { init = λ⊤ → 0, update = λstep n → n + step, view = counter }
         \\        , Browser.mountAt
-        \\            (Tea.sandbox { init = [], update = λs all → [ s, …all ], view = shapes })
+        \\            (Tea.sandbox { init = λ⊤ → [], update = λs all → [ s, …all ], view = shapes })
         \\            "shapes"
         \\        ]
         \\
@@ -588,7 +588,7 @@ test "a page that stopped hands nothing to the next: a message that throws in up
         \\
         \\main : Tea.Program
         \\main =
-        \\    Tea.sandbox { init = 0, update = update, view = view }
+        \\    Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
         \\
     );
 
@@ -654,7 +654,7 @@ const lists =
     \\
     \\
     \\main : Browser.Program
-    \\main = Tea.sandbox { init = { n = 0, rows = [ 1, 2 ] }, update = update, view = view }
+    \\main = Tea.sandbox { init = λ⊤ → { n = 0, rows = [ 1, 2 ] }, update = update, view = view }
     \\
 ;
 
@@ -798,7 +798,7 @@ const selector =
     \\
     \\
     \\main : Browser.Program
-    \\main = Tea.sandbox { init = { selected = 0, rows = [ 1, 2, 3 ] }, update = update, view = view }
+    \\main = Tea.sandbox { init = λ⊤ → { selected = 0, rows = [ 1, 2, 3 ] }, update = update, view = view }
     \\
 ;
 

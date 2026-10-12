@@ -51,7 +51,7 @@ view model =
 main : Browser.Program
 main =
     Browser.program
-        { init = { rows = [ "a", "b", "c" ], selected = "", ticks = 0 }
+        { init = λ⊤ → { rows = [ "a", "b", "c" ], selected = "", ticks = 0 }
         , update = update
         , view = view
         }

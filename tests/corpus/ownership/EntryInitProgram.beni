@@ -1,0 +1,36 @@
+-- ownership: the `browser` platform's own constructor takes `init` as a
+-- function of `⊤` too (boundary.md §9.8.16; `ownership-checker.md` §22.2),
+-- and its row is the template one (§20.2). `fromTop`'s `init` returns a
+-- top-level list, rejected `top-level` as on every platform; `fresh`'s
+-- builds one, which the direct row would accept and the template row
+-- rejects `platform`.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+
+
+start : List Int
+start = [ 1 ]
+
+
+update : Msg, List Int → List Int
+update _ items = List.push items 2
+
+
+view : List Int → Html Msg
+view items = <button onClick={Add}>{String.fromInt (List.length items)}</button>
+
+
+fromTop : Browser.Program
+fromTop = Browser.program { init = λ⊤ → start, update = update, view = view }
+
+
+fresh : Browser.Program
+fresh = Browser.program { init = λ⊤ → [ 1 ], update = update, view = view }
+
+
+main : Browser.Program
+main = Browser.programs [ fromTop, fresh ]

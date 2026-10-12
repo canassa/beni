@@ -46,4 +46,4 @@ view model =
 
 
 main : Browser.Program
-main = Browser.program { init = { unsafe = True }, update = update, view = view }
+main = Browser.program { init = λ⊤ → { unsafe = True }, update = update, view = view }
