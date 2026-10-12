@@ -19,11 +19,13 @@ lands while the handler runs, the trace sees its real cost. If one does, the tra
 busy-wait of 3 × that window, 0.3–0.8 ms. The pause is not a trace event, so research 73's traces
 put the time "inside `insertBefore`": that is where the thread was when the signal came.
 
-Under this mechanism the **mean** at rate R estimates R × the real cost. A sample is hit with
+Under this mechanism the **mean** at rate R is *expected* (not proven) to estimate R × the real
+cost. A sample is hit with
 probability c / w (c the handler's cost, w its window) and the hit costs (R − 1) × w, so the
 expected extra time is (R − 1) × c. In §1–§2 the 4× means are 4.1–4.9× the 1× means. For the swap,
 vanilla and direct lie within their ±0.08–0.12 ms intervals of 4×, but P3 (4.9×) does not, so
-the model is approximate. The **median** has no such property. Once c is near half a
+the model is approximate. It assumes c is short against w; as c nears w, a handler can span two
+windows. The **median** has no such property. Once c is near half a
 window, the median jumps from about c to about c + 3w. Every throttled operation under ≈ 1 ms of
 script is therefore affected: `swap`, `remove`, `select` and `update10th`.
 
@@ -31,7 +33,9 @@ script is therefore affected: `swap`, `remove`, `select` and `update10th`.
 
 `script` in ms, n = 30 per condition, every condition in one batch, rotated each iteration. Chrome
 154 headless, `--taskset=24-31`, load 10.0 at the start and 4.8 at the end. A sample is *fast*
-when it is within 0.15 ms of its condition's minimum.
+when it is within 0.15 ms of its condition's minimum. The cut follows the minimum, so one low
+outlier makes it meaningless (the no-warm-up row: read its quartiles). No condition lost a sample:
+every n is the nominal one.
 
 | condition | median | mean | p25–p75 | fast | fast median | slow median |
 |---|--:|--:|--:|--:|--:|--:|
@@ -45,7 +49,8 @@ when it is within 0.15 ms of its condition's minimum.
 | vanilla, swap without warm-up @4 | 0.863 | 0.836 | 0.724–0.958 | 1 / 30 | 0.250 | 0.867 |
 | one `insertBefore` of adjacent rows @4 | 0.720 | 0.692 | 0.533–0.835 | 3 / 30 | 0.173 | 0.738 |
 | **empty listener @4** | **0.438** | 0.418 | 0.084–0.663 | **11 / 30** | 0.079 | **0.631** |
-| pure-JS loop, no DOM @4 / @1 | 1.286 / 0.265 | 1.257 / 0.276 | | 2 / 29 of 30 | | |
+| pure-JS loop, no DOM @4 | 1.286 | 1.257 | 1.042–1.447 | 2 / 30 | 0.835 | 1.300 |
+| the same loop @1 | 0.265 | 0.276 | 0.248–0.297 | — | — | — |
 
 - **Throttling (supported).** Unthrottled, the swap is unimodal for all three subjects, with an
   IQR of about 0.02 ms. An empty listener at 4× has the same two modes as the swap: 0.08 ms and
@@ -107,7 +112,11 @@ ordering does not.
   fixed slices rather than through a signal. None of the issues found
   (`gh search issues` for swap, variance, throttling) names the signal handler's lumpiness.
 
-## 4. Protocol for operations under ≈ 1 ms of script
+## 4. Protocol for operations under ≈ 1 ms of script (Linux, Chrome 154)
+
+The throttler in §0 is the POSIX one. Windows suspends the thread in fixed slices, so this
+protocol is measured for Linux and has to be checked again before it is used on macOS or
+Windows.
 
 1. **Primary figure: `script` unthrottled (rate 1)**, median and IQR, n ≥ 20, every subject in
    one batch. It measures the code with the throttler removed for every subject alike. The
@@ -119,9 +128,10 @@ ordering does not.
 3. Do not quote a throttled `script` median below ≈ 1 ms as a ranking. `total`, which
    js-framework-benchmark shows by default, is not distorted the same way.
 
-No rule here favours one subject: rate 1 is the same machine for everyone, and it ranks beni
-below vanilla on `swap` (0.118 against 0.108) and `update10th`, where the 4× medians had ranked
-it ahead.
+No rule here favours one subject: rate 1 is the same machine for everyone, and it shows no
+resolvable difference between beni and vanilla on `swap` (0.118 against 0.108, overlapping
+IQRs), and it ranks beni behind vanilla on `update10th` (0.277 against 0.234, IQRs disjoint).
+The 4× medians had ranked beni ahead on both.
 
 ## 5. Commands
 
