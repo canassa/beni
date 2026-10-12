@@ -4261,7 +4261,7 @@ subscription and leaves no frame pending. Both run as development, release and `
 against one golden. **Measured** (`bench/size.mjs`, `--release`, brotli 11): no existing page moved
 by a byte, and a page subscribing to `onResize` is byte-identical to before — the frame keys are a
 type of their own, so their tags stay out of `Key`'s table; the `frames` page (a `Tea.element` on
-`onAnimationFrameDelta`) is 3 479 bytes and reaches no fiber, about 60 more than the same page on
+`onAnimationFrameDelta`) is 3 451 bytes and reaches no fiber, about 65 more than the same page on
 `onResize`, the rest being the listener machinery every `Sub.on` page shares.
 
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
