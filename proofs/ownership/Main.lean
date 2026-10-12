@@ -43,7 +43,14 @@ def main (args : List String) : IO UInt32 := do
   if mode == "ci" then
     let budget := positional[0]?.bind String.toNat? |>.getD 20000
     if !(← Fixtures.run) then return 1
-    if !(← Oracle.runWith { count := budget, seed, version, quiet := true }).ok then return 1
+    let r ← Oracle.runWith { count := budget, seed, version, quiet := true }
+    if !r.ok then return 1
+    -- The review's original defect was a general family none of whose accepted
+    -- programs wrote. Require that at least 30 % of accepted programs do.
+    if r.counts.withWrites * 10 < r.counts.accepted * 3 then
+      IO.println s!"CI FAILED: only {r.counts.withWrites} of {r.counts.accepted} accepted programs write in place (< 30 %)"
+      return 1
+    IO.println s!"writes: {r.counts.withWrites} of {r.counts.accepted} accepted programs write in place"
     return (if ← Oracle.controls budget seed version then 0 else 1)
   if mode != "oracle" && mode != "--generator-only" then
     if !(← Fixtures.run) then return 1
