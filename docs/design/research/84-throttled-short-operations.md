@@ -1,4 +1,4 @@
-# 81 — Why `swap` is bimodal: Chrome's CPU throttler, not the DOM
+# 84 — Why `swap` is bimodal: Chrome's CPU throttler, not the DOM
 
 *2026-10-12. Research 73 §2 found the table app's `swap` bimodal for every subject, vanilla
 included: a sample takes ≈ 0.11 ms or ≈ 0.4–1.0 ms of `script`, so its median depends on which
