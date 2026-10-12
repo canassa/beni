@@ -543,7 +543,12 @@ pub fn build(
             }
             try schema_type_by_decl.append(gpa, .none);
             try schema_encoded_by_decl.append(gpa, .none);
-            if (d.kind.isValue()) {
+            // A vocabulary's element, attribute and event declarations name
+            // no type either: as entries they were `foreign` types named
+            // `rect` or `onClick`, one per declaration, and settling each
+            // scanned its module's declarations for a `compare`, quadratic in
+            // the vocabulary's size.
+            if (d.kind.isValue() or d.kind.isVocab()) {
                 try by_decl.append(gpa, .none);
                 continue;
             }
