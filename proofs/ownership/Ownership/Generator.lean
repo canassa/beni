@@ -52,6 +52,9 @@ def freshRow := 12
 def updL := 13
 def capStep := 14
 def readTwo := 15
+def capPick := 16
+def applyThenRead := 17
+def foldKeep := 18
 
 def decls : List Decl := [
   Library.map tL tL,
@@ -76,7 +79,17 @@ def decls : List Decl := [
   { name := "capStep", parameters := [tL, tL], captures := [tL], result := tL,
     body := .letE 3 (.prim .length [v 1]) (.branch (v 3) (.atom (v 2)) (.prim .push [v 1, .int 7])) },
   { name := "readTwo", parameters := [tR], result := .int,
-    body := .letE 1 (.prim .push [.field (v 0) 0, .int 5]) (.prim .length [.field (v 0) 1]) }]
+    body := .letE 1 (.prim .push [.field (v 0) 0, .int 5]) (.prim .length [.field (v 0) 1]) },
+  { name := "capPick", parameters := [tL, tL], captures := [tL], result := tL,
+    body := .letE 3 (.prim .length [v 0]) (.branch (v 3) (.atom (v 2)) (.prim .push [v 1, .int 7])) },
+  -- Hands its list to the callback, then reads the list again.
+  { name := "applyThenRead", parameters := [tL, fLL], result := tL,
+    body := .letE 2 (.app (v 1) [v 0]) <| .letE 3 (.prim .length [v 0]) (.prim .push [v 2, v 3]) },
+  -- A fold that reads its rows again after the loop.
+  { name := "foldKeep", parameters := [tN, tL, fLLL], result := tL,
+    body := .letE 3 (.traverse .list (v 0) (v 1) 4 5 6 (.app (v 2) [v 5, v 6])) <|
+      .letE 7 (.prim (.literal .int) []) <| .letE 8 (.prim .at [v 0, .int 0, v 7]) <|
+      .letE 9 (.prim .length [v 8]) (.prim .push [v 3, v 9]) }]
 
 abbrev Env := List (Atom × Ty)
 
@@ -115,10 +128,11 @@ def nestedOrNew (env : Env) : Gen (Option Atom) := do
   let ns := ofTy env tN
   if ns.isEmpty then pure none else some <$> pickRecent ns
 
+/-- An Int list literal of 0–3 items (empty with probability 1/4). -/
 def litList (env : Env) : Gen Expr := do
-  let n ← draw 3
+  let n ← draw 4
   let mut xs := []
-  for _ in List.range (n + 1) do xs := xs ++ [← number env]
+  for _ in List.range n do xs := xs ++ [← number env]
   pure (.prim (.literal .int) xs)
 
 /-- A nested list of 1–3 items. Each item is a fresh inner literal (3/4), a
@@ -242,6 +256,37 @@ def moves : List (String × Move) := [
     pure [(.closure mapLL [], .fn [tN, fLL] tN),
       (.closure (if (← draw 2) == 0 then identL else bump) [], fLL),
       (.app (v next) [n, v (next + 1)], tN)]),
+  ("map-pipeline", fun next env => withNested next env fun next n => do
+    -- Two calls of one map declaration with independently drawn callbacks,
+    -- chained or over the same source: the second call meets a summary the
+    -- first one computed.
+    let chained := (← draw 2) == 0
+    pure [(.closure mapLL [], .fn [tN, fLL] tN),
+      (.closure (if (← draw 2) == 0 then identL else bump) [], fLL),
+      (.closure (if (← draw 2) == 0 then identL else bump) [], fLL),
+      (.app (v next) [n, v (next + 1)], tN),
+      (.app (v next) [if chained then v (next + 3) else n, v (next + 2)], tN)]),
+  ("fold-twice", fun next env => withNested next env fun next n => do
+    -- Two reductions of the same rows with independently drawn steps, then
+    -- possibly an edit of the second result.
+    let step := fun (k : Nat) => if k == 0 then borrowOrGrow else grow
+    let bs : List (Expr × Ty) := [(.closure foldNL [], .fn [tN, tL, fLLL] tL),
+      (.closure (step (← draw 2)) [], fLLL), (.closure (step (← draw 2)) [], fLLL),
+      (.prim (.literal .int) [], tL), (.prim (.literal .int) [], tL),
+      (.app (v next) [n, v (next + 3), v (next + 1)], tL),
+      (.app (v next) [n, v (next + 4), v (next + 2)], tL)]
+    if (← draw 2) == 0 then pure (bs ++ [(.prim .push [v (next + 6), .int 3], tL)]) else pure bs),
+  ("apply-read", fun next env => do
+    pure [(.closure applyThenRead [], .fn [tL, fLL] tL),
+      (.closure (if (← draw 2) == 0 then identL else bump) [], fLL),
+      (.app (v next) [← anyList env, v (next + 1)], tL)]),
+  ("fold-keep", fun next env => withNested next env fun next n => do
+    let step ← match ← draw 3 with
+      | 0 => pure (Expr.closure borrowOrGrow [])
+      | 1 => pure (Expr.closure grow [])
+      | _ => do pure (Expr.closure capPick [← anyList env])
+    pure [(.prim (.literal .int) [], tL), (.closure foldKeep [], .fn [tN, tL, fLLL] tL), (step, fLLL),
+      (.app (v (next + 1)) [n, v next, v (next + 2)], tL)]),
   ("map-ints", fun next env => do
     let fs := ofTy env fIL
     let src ← anyList env
@@ -265,10 +310,11 @@ def moves : List (String × Move) := [
     let fresh := (← draw 2) == 0
     let init ← if fresh then pure (v next) else anyList env
     let base := if fresh then next + 1 else next
-    let step ← match ← draw 3 with
+    let step ← match ← draw 4 with
       | 0 => pure (Expr.closure borrowOrGrow [])
       | 1 => pure (Expr.closure grow [])
-      | _ => do pure (Expr.closure capStep [← anyList env])
+      | 2 => do pure (Expr.closure capStep [← anyList env])
+      | _ => do pure (Expr.closure capPick [← anyList env])
     let call : List (Expr × Ty) := [(.closure foldNL [], .fn [tN, tL, fLLL] tL), (step, fLLL),
       (.app (v base) [n, init, v (base + 1)], tL)]
     pure (if fresh then (.prim (.literal .int) [], tL) :: call else call)),
@@ -314,8 +360,8 @@ def atomRoot : Atom → Option Var
 /-- Argument positions a table declaration may write or keep: the list a map,
     update or `two` edits, a fold's accumulator. Sources a call only reads stay. -/
 def handedArguments (d : Nat) : List Nat :=
-  if d == two || d == readTwo || d == updL then [0]
-  else if d == foldNL then [1] else []
+  if d == two || d == readTwo || d == updL || d == applyThenRead then [0]
+  else if d == foldNL || d == foldKeep then [1] else []
 
 /-- Operands a right-hand side may write or hand over: the target of a writer,
     a focus container and the cell a focus stores, a traversal's source and

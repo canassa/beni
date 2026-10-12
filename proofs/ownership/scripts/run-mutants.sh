@@ -15,12 +15,15 @@ names=("$@")
 [ ${#names[@]} -eq 0 ] && read -r -a names <<< "$(node scripts/mutate.mjs --list)"
 here=$(pwd)
 mkdir -p "$scratch"
+# One snapshot of the sources at the start, so later edits do not leak in.
+base="$scratch/base"
+rm -rf "$base"; mkdir -p "$base"
+cp -r "$here/Ownership" "$here/Main.lean" "$here/Ownership.lean" "$here/lakefile.toml" \
+  "$here/lean-toolchain" "$here/lake-manifest.json" "$base/"
+[ -d "$here/.lake" ] && cp -r "$here/.lake" "$base/"
 for m in "${names[@]}"; do
   d="$scratch/m-$m"
-  rm -rf "$d"; mkdir -p "$d"
-  cp -r "$here/Ownership" "$here/Main.lean" "$here/Ownership.lean" "$here/lakefile.toml" \
-    "$here/lean-toolchain" "$here/lake-manifest.json" "$d/"
-  [ -d "$here/.lake" ] && cp -r "$here/.lake" "$d/"
+  rm -rf "$d"; cp -r "$base" "$d"
   if ! node scripts/mutate.mjs "$m" "$d"; then echo "$m: PATCH FAILED"; continue; fi
   if ! (cd "$d" && lake build ownership > build.log 2>&1); then echo "$m: BUILD FAILED"; continue; fi
   line="$m:"

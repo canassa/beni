@@ -6,6 +6,9 @@ inductive Step where
   | field (i : Nat)
   | element
   | capture (i : Nat)
+  /-- Every cell a function value's environment holds, merged. Only the path
+      `[env]` of a function-typed input of a summarised declaration uses it. -/
+  | env
   deriving Repr, BEq, Inhabited
 abbrev Path := List Step
 
@@ -37,13 +40,18 @@ def aliases (a b : Origin) : Bool :=
 def cellOverlap (a b : List Origin) : Bool := a.any fun x => b.any (aliases x)
 
 /-- Positions are deliberately merged. `exclusive` carries information that
-    provenance sets cannot carry, including separation inside one position. -/
+    provenance sets cannot carry, including separation inside one position.
+    `symbolic` is a function-typed input of the declaration being summarised:
+    its code is unknown there, and its class is asked through atoms that the
+    call site answers (thesis §3.7, §4.7). `roots` is non-empty when the actual
+    value may be once; `env` stands for every cell its environment holds. -/
 inductive Abstract where
   | bottom
   | scalar
   | record (fields : List Abstract)
   | list (roots : List Origin) (element : Abstract) (exclusive : Bool)
   | function (roots : List Origin) (alternatives : List (Nat × List Abstract))
+  | symbolic (slot : Nat) (type : Ty) (roots env : List Origin)
   deriving Repr, Inhabited
 
 private theorem sndSize [SizeOf α] [SizeOf β] (p : α × β) :
@@ -62,6 +70,7 @@ def Abstract.equal (a b : Abstract) : Bool :=
     (xs.attach.zip ys).all fun (alt, other) =>
       alt.val.1 == other.1 && alt.val.2.length == other.2.length &&
       (alt.val.2.attach.zip other.2).all (fun (x, y) => x.val.equal y)
+  | .symbolic i t cs es, .symbolic j u ds fs => i == j && t == u && cs == ds && es == fs
   | _, _ => false
 termination_by sizeOf a
 decreasing_by
@@ -81,6 +90,7 @@ def Abstract.paths : Abstract → List (Path × List Origin)
   | .list cs x _ => ([], cs) :: x.paths.map (fun (p, cs) => (.element :: p, cs))
   | .function cs alts => ([], cs) :: alts.attach.flatMap fun alt =>
     alt.val.2.attach.zipIdx.flatMap fun (x, i) => x.val.paths.map fun (p, cs) => (.capture i :: p, cs)
+  | .symbolic _ _ cs es => [([], cs), ([.env], es)]
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -101,14 +111,21 @@ def Abstract.atPath (a : Abstract) (p : Path) : Abstract :=
   | .capture i :: rest, .function _ alts =>
     -- Used only for origin substitution; collect cells across alternatives.
     .list (alts.flatMap fun (_, xs) => ((xs[i]?.getD .bottom).atPath rest).cells) .bottom false
+  | .env :: _, .symbolic _ _ _ es => .list es .bottom false
   | _, _ => .bottom
 
 def Abstract.roots : Abstract → List Origin
-  | .list cs _ _ | .function cs _ => cs
+  | .list cs _ _ | .function cs _ | .symbolic _ _ cs _ => cs
   | _ => []
 
 def Abstract.cellsAt (a : Abstract) (p : Path) : List Origin :=
   a.paths.foldl (fun cs (q, xs) => if p == q then union cs xs else cs) []
+
+/-- Every cell a function value's environment may hold. -/
+def Abstract.envCells : Abstract → List Origin
+  | .function _ alts => alts.foldl (fun cs (_, xs) => xs.foldl (fun ds x => union ds x.cells) cs) []
+  | .symbolic _ _ _ es => es
+  | _ => []
 
 def Abstract.mapOrigins (f : Path → List Origin → List Origin) (a : Abstract)
     (path : Path := []) : Abstract :=
@@ -119,6 +136,7 @@ def Abstract.mapOrigins (f : Path → List Origin → List Origin) (a : Abstract
   | .list cs x ex => .list (f path cs) (x.mapOrigins f (path ++ [.element])) ex
   | .function cs alts => .function (f path cs) (alts.attach.map fun alt =>
     (alt.val.1, alt.val.2.attach.zipIdx.map fun (x, i) => x.val.mapOrigins f (path ++ [.capture i])))
+  | .symbolic j t cs es => .symbolic j t (f path cs) (f (path ++ [.env]) es)
 termination_by sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -135,6 +153,8 @@ def Abstract.join (a b : Abstract) : Abstract :=
   | .record xs, .record ys => .record ((xs.attach.zip ys).map (fun (x, y) => x.val.join y))
   | .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex && ey)
   | .function cs xs, .function ds ys => .function (union cs ds) (union xs ys)
+  | .symbolic i t cs es, .symbolic j _ ds fs =>
+    if i == j then .symbolic i t (union cs ds) (union es fs) else .list [.unknown] .bottom false
   | _, _ => .list [.unknown] .bottom false
 termination_by sizeOf a
 decreasing_by
@@ -145,11 +165,13 @@ decreasing_by
   all_goals simp_all +arith
   all_goals omega
 
+/-- A symbolic function's environment is unknown, so it is never certified. -/
 def Abstract.deepExclusive : Abstract → Bool
   | .bottom | .scalar => true
   | .record xs => xs.attach.all (fun x => x.val.deepExclusive)
   | .list _ x ex => ex && x.deepExclusive
   | .function _ xs => xs.attach.all fun alt => alt.val.2.attach.all (fun x => x.val.deepExclusive)
+  | .symbolic .. => false
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -165,6 +187,22 @@ def Abstract.grantExclusive : Abstract → Abstract
   | .record xs => .record (xs.attach.map (fun x => x.val.grantExclusive))
   | .function cs xs => .function cs (xs.attach.map fun alt => (alt.val.1, alt.val.2.attach.map (fun x => x.val.grantExclusive)))
   | x => x
+termination_by a => sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals try have h₂ := List.sizeOf_lt_of_mem alt.property
+  all_goals try have h₃ := sndSize alt.val
+  all_goals simp_all +arith
+  all_goals omega
+
+/-- Function-typed input slots a value mentions. -/
+def Abstract.slots : Abstract → List Nat
+  | .record xs => xs.attach.flatMap (fun x => x.val.slots)
+  | .list _ x _ => x.slots
+  | .function _ xs => xs.attach.flatMap fun alt => alt.val.2.attach.flatMap (fun x => x.val.slots)
+  | .symbolic j .. => [j]
+  | _ => []
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -220,6 +258,63 @@ def liveCells (env : Env Abstract) (l : Live) : List Origin :=
     | some a => a.paths.foldl (fun cs (q, ds) =>
         if isPrefix p q || isPrefix q p then union cs ds else cs) cs) []
 
+/-! ## The summary layer's vocabulary (thesis §3.7, §4.5–§4.7)
+
+A function-typed input of a summarised declaration is `symbolic`; the body
+learns its class only by asking `Fact`s about one call of it. A `Query` names
+the input (`slot`), the state of the arguments at that call (σ: their canonical
+shapes, which carry exclusivity, and the argument paths unique there), and the
+fact. The answer is a list of numbers: `[]`/`[1]` for a yes/no fact, the fresh
+numbers at a result path for `fresh`. A summary records every query it made
+with its answer as a `Guard`; it is reused only where every guard answers the
+same, which is the thesis's guarded value resolved at a call. -/
+
+inductive Fact where
+  | writes (k : Nat) (p : Path)      -- W ∈ use(k, p)
+  | escapes (k : Nat) (p : Path)     -- E ∈ use(k, p)
+  | requires (k : Nat) (p : Path)    -- xreq(k, p)
+  | aliases (k : Nat) (p q : Path)   -- π_k.p ∈ res(q)
+  | env (q : Path)                   -- env ∈ res(q)
+  | fresh (q : Path)                 -- the fresh numbers in res(q)
+  | shared (q : Path)                -- shared or esc ∈ res(q)
+  | top (q : Path)                   -- ⊤ ∈ res(q)
+  | xres (q : Path)                  -- xres(q)
+  | escapesEnv                       -- E on its own environment
+  | once                             -- the value may be once
+  deriving Repr, BEq, Inhabited
+
+structure Query where
+  slot : Nat
+  args : List Abstract
+  owned : List Origin
+  fact : Fact
+  deriving Repr, BEq, Inhabited
+
+structure Guard where
+  query : Query
+  answer : List Nat
+  deriving Repr, BEq, Inhabited
+
+/-- One call of a function-typed input: what is passed (in the vocabulary of
+    the scope that recorded it), the callee's environment cells, the σ its
+    class was asked under, and the argument paths supplied owned (they pass
+    Known, Unescaped, Dead and Disjoint at the call) and exclusive. -/
+structure Supply where
+  slot : Nat
+  site : List Nat
+  state : List Abstract × List Origin
+  args : List Abstract
+  env : List Origin
+  owned : List (Nat × Path)
+  exclusive : List (Nat × Path)
+  deriving Repr, BEq, Inhabited
+
+/-- Slot ↦ the actual function value at the call, in the next frame's
+    vocabulary. -/
+structure Frame where
+  actuals : List (Nat × Abstract) := []
+  deriving Repr, BEq, Inhabited
+
 structure Summary where
   result : Abstract := .bottom
   reads : List Origin := []
@@ -227,8 +322,22 @@ structure Summary where
   escapes : List Origin := []
   requiresExclusive : List Origin := []
   recursive : Bool := false
+  /-- W through a supply: cells handed to a callback that writes them. They
+      are checked by the supply's owned bit and the call-site edge, and become
+      `W` on the declaration's own parameters. -/
+  consumes : List Origin := []
+  supplies : List Supply := []
+  /-- Slot ↦ 0, 1 or 2 (many) calls. -/
+  calls : List (Nat × Nat) := []
+  guards : List Guard := []
   deriving Repr, BEq, Inhabited
 
+def mergeCalls (combine : Nat → Nat → Nat) (a b : List (Nat × Nat)) : List (Nat × Nat) :=
+  b.foldl (fun xs (j, n) => match xs.lookup j with
+    | some m => xs.map fun (i, k) => if i == j then (i, min 2 (combine m n)) else (i, k)
+    | none => xs ++ [(j, min 2 n)]) a
+
+/-- The fixpoint join: the more pessimistic of two summaries. -/
 def Summary.join (a b : Summary) : Summary := {
   result := a.result.join b.result
   reads := union a.reads b.reads
@@ -236,6 +345,10 @@ def Summary.join (a b : Summary) : Summary := {
   escapes := union a.escapes b.escapes
   requiresExclusive := union a.requiresExclusive b.requiresExclusive
   recursive := a.recursive || b.recursive
+  consumes := union a.consumes b.consumes
+  supplies := union a.supplies b.supplies
+  calls := mergeCalls max a.calls b.calls
+  guards := union a.guards b.guards
 }
 
 end Ownership

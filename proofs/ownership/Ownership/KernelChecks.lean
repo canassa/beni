@@ -26,7 +26,7 @@ theorem old_rule_falsely_certifies :
 
 theorem permanent_escape_ignores_position_partition :
     ((demand {} [.position [0] true (.site [1] 0)] [] []).run
-      {escapes := [.position [0] false (.site [1] 0)]}).isOk = false := by
+      {facts := {escapes := [.position [0] false (.site [1] 0)]}}).isOk = false := by
   decide +kernel
 
 end Ownership.KernelChecks
