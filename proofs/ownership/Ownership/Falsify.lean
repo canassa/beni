@@ -92,8 +92,29 @@ def certifiedB (heap : Heap) (a : Abstract) (v : Value) : Option String :=
     | _ => false
   bad.map fun (q, _) => s!"exclusive at {repr q} but the footprint repeats an array"
 
-def describesB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option String :=
+/-- The closures at field and element paths (`ClosuresDescribed`'s paths). -/
+def closuresAt (heap : Heap) : Nat → Value → Path → List (Path × Value)
+  | 0, _, _ => []
+  | _ + 1, w@(.closure _ _), pre => [(pre, w)]
+  | n + 1, .ref c, pre => ((heap[c]?).getD []).flatMap fun x => closuresAt heap n x (pre ++ [.element])
+  | n + 1, .record xs, pre => xs.zipIdx.flatMap fun (x, i) => closuresAt heap n x (pre ++ [.field i])
+  | _, .int _, _ => []
+
+def shallowB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option String :=
   (coversB γ heap a v).orElse fun _ => certifiedB heap a v
+
+/-- `ClosuresDescribed` as a test. -/
+def closuresB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option String :=
+  match (closuresAt heap depthFuel v []).find? (fun (q, w) => match a.atPath q, w with
+      | .symbolic .., .closure _ _ => false
+      | .function _ alts, .closure id caps => !alts.any fun (i, cs) =>
+          i == id && cs.length == caps.length && (cs.zip caps).all fun (ca, cv) => (shallowB γ heap ca cv).isNone
+      | _, _ => true) with
+  | some (q, w) => some s!"closure {repr w} at {repr q} is not one of {repr (a.atPath q)}"
+  | none => none
+
+def describesB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option String :=
+  ((shallowB γ heap a v).orElse fun _ => closuresB γ heap a v)
 
 def correspondsB (heap : Heap) (o : Observation) (w : Value) : Bool :=
   match snapshot heap depthFuel w with
@@ -280,9 +301,13 @@ def config (distinct : Bool := false) : Generator.Gen Setup := do
           let c ← leafFor x 0
           let id ← pick [3, 4, 5, 10] 4
           let once ← coin 2
-          let roots := if id == 3 || id == 10 || once then [Origin.site [2000 + x] 0] else []
+          -- A fifth of `capPush`/`capGet` closures are described as the
+          -- other (same type): `ClosuresDescribed` must exclude them (P7).
+          let swap ← coin 5
+          let absId := if swap && (id == 3 || id == 5) then 8 - id else id
+          let roots := if absId == 3 || absId == 10 || once then [Origin.site [2000 + x] 0] else []
           let t := if id == 4 then fII else if id == 10 then fLL else fIL
-          pure (.closure id [.ref c], .function roots [(id, [← leafAbs c])], t))
+          pure (.closure id [.ref c], .function roots [(absId, [← leafAbs c])], t))
     env := env ++ [(x, (snapshot heap depthFuel w).toOption.getD (.int 0), w)]
     aenv := aenv ++ [(x, a)]
     types := types ++ [(x, t)]
@@ -414,7 +439,7 @@ def writeExpr (types : List (Var × Ty)) (next : Nat) : Generator.Gen (Expr × O
     Two thirds are write-heavy (each variable its own arrays, one write to a
     variable the continuation does not use); a sixth of all drop one
     variable from the abstract environment (`covered` false). -/
-def sample : Generator.Gen (Setup × Expr × Live) := do
+def sample : Generator.Gen (Setup × Expr × Live × Bool) := do
   let writes := (← draw 3) != 0
   let cfg ← config writes
   let (e, target) ← if writes then writeExpr cfg.types 100
@@ -427,10 +452,26 @@ def sample : Generator.Gen (Setup × Expr × Live) := do
     let f ← draw 2
     if c1 then after := after ++ [(x, [])]
     else if ty == tR && c2 then after := after ++ [(x, [.field f])]
+  -- A third of the write-heavy samples alias the written variable: another
+  -- variable bound to the same value, with the same description, live
+  -- afterwards half the time (the checker must then refuse the write).
+  let alias ← coin 3
+  let liveAlias ← coin 2
+  let (cfg, after2, aliased) := match target with
+    | some x =>
+      if writes && alias then
+        match cfg.env.lookup x, cfg.aenv.lookup x, cfg.types.lookup x with
+        | some (o, w), some a, some ty =>
+          let y := cfg.env.length + 50
+          ({ cfg with env := cfg.env ++ [(y, o, w)], aenv := cfg.aenv ++ [(y, a)], types := cfg.types ++ [(y, ty)] },
+           if liveAlias then after ++ [(y, [])] else after, true)
+        | _, _, _ => (cfg, after, false)
+      else (cfg, after, false)
+    | none => (cfg, after, false)
   let drop ← coin 6
   let which ← draw cfg.aenv.length
   let cfg := if drop && !cfg.aenv.isEmpty then { cfg with aenv := cfg.aenv.eraseIdx which } else cfg
-  pure (cfg, e, after)
+  pure (cfg, e, after2, aliased)
 
 def program : Program := { declarations := decls, main := .atom (.int 0) }
 
@@ -439,6 +480,11 @@ structure Tally where
   hypothesisFalse : Nat := 0
   uncovered : Nat := 0
   uncoveredAccepted : Nat := 0
+  closureMislabeled : Nat := 0
+  lowFuel : Nat := 0
+  lowFuelBothFail : Nat := 0
+  aliased : Nat := 0
+  aliasedAccepted : Nat := 0
   accepted : Nat := 0
   valueOk : Nat := 0
   withWrite : Nat := 0
@@ -456,10 +502,13 @@ def writeOps : Expr → Bool
 
 /-- One configuration: `none` if fine or vacuous, otherwise what failed. -/
 def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally × Option String := Id.run do
-  let ((cfg, e, after), _) := sample.run seed
-  let mut t := { t with tried := t.tried + 1 }
-  let vs : ValueSemantics.State := { fuel := 5000, kept := cfg.keptObs.toArray }
-  let hs : InPlaceSemantics.State := { fuel := 5000, heap := cfg.heap, kept := cfg.kept.toArray }
+  let ((cfg, e, after, aliased), _) := sample.run seed
+  -- A quarter of the samples run with fuel 1–8: the error clause (both runs
+  -- fail, or neither) is exercised, not only the success clause.
+  let fuel := if seed % 4 == 0 then 1 + (seed / 4) % 8 else 5000
+  let mut t := { t with tried := t.tried + 1, lowFuel := t.lowFuel + (if fuel < 5000 then 1 else 0), aliased := t.aliased + (if aliased then 1 else 0) }
+  let vs : ValueSemantics.State := { fuel, kept := cfg.keptObs.toArray }
+  let hs : InPlaceSemantics.State := { fuel, heap := cfg.heap, kept := cfg.kept.toArray }
   -- `covered` false: the statement does not speak about the sample; the
   -- checker must still refuse it (a live use it cannot resolve).
   let covered := (union (uses e) after).all fun (x, _) =>
@@ -471,6 +520,9 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
     | .ok _ => return ({ t with uncovered := t.uncovered + 1, uncoveredAccepted := t.uncoveredAccepted + 1 },
         some "the checker accepted an expression whose live uses it cannot resolve")
   if let some why := invariantB vs hs cfg.env (union (uses e) after) cfg.aenv cfg.escapes cfg.γ then
+    -- A closure described as another declaration is meant to fail here.
+    if (why.splitOn "is not one of").length > 1 then
+      return ({ t with closureMislabeled := t.closureMislabeled + 1 }, none)
     return ({ t with hypothesisFalse := t.hypothesisFalse + 1 }, some s!"hypothesis does not hold by construction: {why}")
   let typed := (exprType decls (mainDecl e) cfg.types e).isOk &&
     cfg.env.all fun (x, o, _) => match cfg.types.lookup x with
@@ -485,11 +537,11 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
   match (inferExpr ctx.config.inferenceFuel ctx cfg.aenv e after [7]).run st with
   | .error _ => return (t, none)
   | .ok (r, st') =>
-    t := { t with accepted := t.accepted + 1 }
-    let ve := (ValueSemantics.eval 5000 decls none (valueEnv cfg.env) e).run vs
-    let he := (InPlaceSemantics.eval 5000 decls none (heapEnv cfg.env) e).run hs
+    t := { t with accepted := t.accepted + 1, aliasedAccepted := t.aliasedAccepted + (if aliased then 1 else 0) }
+    let ve := (ValueSemantics.eval fuel decls none (valueEnv cfg.env) e).run vs
+    let he := (InPlaceSemantics.eval fuel decls none (heapEnv cfg.env) e).run hs
     match ve, he with
-    | .error _, .error _ => return (t, none)
+    | .error _, .error _ => return ({ t with lowFuelBothFail := t.lowFuelBothFail + (if fuel < 5000 then 1 else 0) }, none)
     | .error m, .ok _ => return ({ t with errorClause := t.errorClause + 1 }, some s!"value run fails ({m}), in-place run succeeds")
     | .ok _, .error m => return ({ t with observational := t.observational + 1 }, some s!"in-place run fails: {m}")
     | .ok (o, vs'), .ok (w, hs') =>
@@ -532,7 +584,7 @@ def invariantCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership
     if let some why := bad then
       if shown < limit then
         shown := shown + 1
-        let ((cfg, e, after), _) := sample.run s
+        let ((cfg, e, after, _), _) := sample.run s
         IO.println s!"FALSIFY invariant_preserved configuration {i} (state {s}): {why}\n  heap={repr cfg.heap}\n  env={repr (cfg.env.map fun (x, _, w) => (x, w))}\n  aenv={repr cfg.aenv}\n  kept={repr cfg.kept} escapes={repr cfg.escapes}\n  naming={repr cfg.γ}\n  expr={repr e}"
   IO.println s!"invariant_preserved: {repr t}"
   pure t

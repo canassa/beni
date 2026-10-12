@@ -300,7 +300,16 @@ restatement found").
    named by the abstract value's cells at that path (`Covers`), and an
    exclusive list certifies the value at its path (`CertifiedExclusive`). A
    whole-footprint naming was too weak: an array named only by an element
-   origin could be written through a root demand;
+   origin could be written through a root demand. **A closure is described
+   by its own declaration** (`ClosuresDescribed`, fourth review, P7): every
+   closure at a field or element path is one of the abstract alternatives
+   there with the same declaration and described captures. Without it a
+   closure of `capPush` (writes its capture) described as one of `capGet`
+   (does not) satisfied every hypothesis, the checker accepted a call of it
+   with the captured list live, and the step lemma's conclusion failed. A
+   symbolic input describes any closure; its class is `GuardsHold`'s
+   business. Closures captured inside closures are not tied (their abstract
+   values are merged across alternatives); stated as a limit;
 5. **every binding, live or dead, keeps its arrays at immutable paths (root,
    fields, captures) named by its abstract value**: `close b xs` reads `xs`
    without using it (`uses` omits a close's source), so `xs`'s naming must
@@ -425,6 +434,13 @@ hypotheses checked rather than assumed:
   array (5 % before). A sixth of all samples drop one variable from the
   abstract environment, so `covered` fails: the statement does not speak
   about them, and the checker must refuse them, which it did in every case.
+  Since the fourth review: a fifth of `capPush`/`capGet` closures are
+  described as the other declaration (`ClosuresDescribed` must exclude them,
+  and does, ≈4 300 per seed); a third of the write-heavy samples alias the
+  written variable with another one, live afterwards half the time (≈18 000
+  per seed, ≈6 600 accepted); and a quarter of all samples run with fuel 1–8,
+  so the error clause is exercised (≈1 150 per seed where both runs fail,
+  never one alone).
 * **`summary_sound` / `map_summary_sound`**: every call the real in-place
   interpreter makes (its call log: heap and observers before and after) while
   running the accepted programs of a generated campaign, against every published summary
@@ -440,14 +456,19 @@ calls of 100 000 generated programs (the final generator, with its own declarati
 
 | Seed | Step configurations | Not covered (all refused) | Accepted | Accepted with a write | Failures | Calls checked against a summary | of which map | Vacuous | Failures |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 100 000 | 10 993 | 75 715 | 29 661 | 0 | 48 493 | 3 090 | 19 735 | 0 |
-| 17 | 100 000 | 10 845 | 75 755 | 30 013 | 0 | 49 035 | 3 220 | 19 140 | 0 |
-| 271828 | 100 000 | 10 932 | 75 831 | 29 745 | 0 | 48 934 | 3 164 | 19 651 | 0 |
+| 20261011 | 100 000 | 10 643 | 66 444 | 23 226 | 0 | 48 493 | 3 090 | 19 735 | 0 |
+| 17 | 100 000 | 10 481 | 66 611 | 23 501 | 0 | 49 035 | 3 220 | 19 140 | 0 |
+| 271828 | 100 000 | 10 569 | 66 675 | 23 354 | 0 | 48 934 | 3 164 | 19 651 | 0 |
+
+(Fewer accepted than before the fourth review: the mislabelled closures are
+excluded and the low-fuel quarter ends early.)
 
 The falsifier has teeth: under `--mutant=` holes the step-lemma check fails
-(20 000 configurations, seed 17): once-through-call 40, close-source 442
-failures with the write-heavy mix (before it: disjoint 2, once-through-call
-161, keeps-shape 1, close-source 209 with the all-random mix). The
+(20 000 configurations, seed 17): once-through-call 22 on the current mix
+(40 and close-source 442 before the fourth review's additions; disjoint 2,
+once-through-call 161, keeps-shape 1, close-source 209 with the all-random
+mix). The aliased samples alias whole variables, which Dead, not Disjoint,
+decides, so they do not reach the disjoint hole either. The
 write-heavy samples give each variable its own arrays, which is what lets
 writes pass and also why they rarely meet the disjoint and keeps-shape
 holes; the random third still does. It does not see copy-exclusive or
