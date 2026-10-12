@@ -518,6 +518,20 @@ def loopPicksElement : Program := {
     .letE 4 (.traverse .list (v 2) (v 3) 10 11 12 (.atom (v 11))) <|
     .focus (v 4) (.int 0) 5 (.prim .push [v 5, .int 9]) }
 
+/-- A declaration returns either a closure over its list argument or its
+    function argument (fifth review, P6). The checker joined the two shapes
+    to an unknown value holding no cells, so the list stayed writable while
+    the returned closure over it was live (value: the closure captures `[1]`;
+    in place: `[1, 9]`). The join now keeps both sides' cells. -/
+def closureJoinedWithInput : Program := {
+  declarations := [
+    { name := "capGet", parameters := [.int], captures := [.list .int], result := .list .int, body := .atom (v 1) },
+    { name := "choose", parameters := [.int, .list .int, .fn [.int] (.list .int)], result := .fn [.int] (.list .int),
+      body := .branch (v 0) (.closure 0 [v 1]) (.atom (v 2)) }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal .int) [.int 2]) <|
+    .letE 2 (.closure 0 [v 1]) <| .letE 3 (.closure 1 []) <| .letE 4 (.app (v 3) [.int 0, v 0, v 2]) <|
+    .letE 5 (.prim .push [v 0, .int 9]) (.prim .record [v 4, v 5]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -711,7 +725,8 @@ def all : List Fixture := [
   ⟨"a closure in a conditional arm captures a pushed list",branchArmCapture,false⟩,
   ⟨"foldl calls a once closure on two rows",onceThroughFold,false⟩,
   ⟨"shared on a record holding a closure over a list",sharedClosureInRecord,false⟩,
-  ⟨"a loop over a non-exclusive source returns an element, then edited",loopPicksElement,false⟩ ]
+  ⟨"a loop over a non-exclusive source returns an element, then edited",loopPicksElement,false⟩,
+  ⟨"a closure joined with a function input stays live",closureJoinedWithInput,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true

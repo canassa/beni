@@ -154,8 +154,11 @@ def Abstract.join (a b : Abstract) : Abstract :=
   | .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex && ey)
   | .function cs xs, .function ds ys => .function (union cs ds) (union xs ys)
   | .symbolic i t cs es, .symbolic j _ ds fs =>
-    if i == j then .symbolic i t (union cs ds) (union es fs) else .list [.unknown] .bottom false
-  | _, _ => .list [.unknown] .bottom false
+    if i == j then .symbolic i t (union cs ds) (union es fs) else .list (union [.unknown] (union a.cells b.cells)) .bottom false
+  -- Values of different shapes (a known closure and a function input, two
+  -- function inputs): unknown, and holding every cell either side holds, so
+  -- a live use of the join still keeps them (it used to drop them all).
+  | _, _ => .list (union [.unknown] (union a.cells b.cells)) .bottom false
 termination_by sizeOf a
 decreasing_by
   all_goals simp_wf
