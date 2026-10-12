@@ -1812,13 +1812,23 @@ rejected `escaped` (`T29`; `browser/tea/SyncCommandOrder` pins the order at run 
 
 ### 23.9 The trusted surface
 
-§20.9 gains:
+§20.9 gains, approved by the manager on 2026-10-12 on condition that each row names the runtime code that
+justifies it. The browser runtime is beni over `Js` (`platforms/browser/Hosted.js` holds only the keys), so the
+references are to its beni functions:
 
-- **the send positions' rows** (§23.3): a body `job` and `later` keep is called with a send of its program, and
-  `tap`'s and `hook`'s with a send whose values go through the tagger of every current subscription of the key;
-- **the runtime's forwarding**: what a send hands the runtime — `Hosted.emit`, the architectures' `send`s, the
-  direct platform's dispatch queue (`Direct.send`) — reaches `update` once, as the message `update` receives,
-  and the runtime keeps nothing of it after the dispatch.
+| Row (§23.3) | What it asserts | Justified by |
+|---|---|---|
+| `Hosted.job`, `Hosted.later` | the runtime calls the body it keeps, as often as the command that holds it is returned, with a send of its program | `platforms/browser-tea/Tea.beni`: `spawn`, `spawnAfter` and `queue` run each `Perform`/`Now` job through `Hosted.runJob`/`callJob` handed `Hosted.emit o _`; `platforms/browser/Hosted.beni`: `afterRender` calls a `later` body with a function that `send`s to its host |
+| `Hosted.tap`, `Hosted.hook` | the body or listener is handed a send of raw values; each value goes through the tagger of **every** current subscription of the key, so a tagger receives it borrowed | `platforms/browser/Hosted.beni`: `run` and `hear` hand the body or listener `λvalue → tagged r value`; `tagged` and `through` apply every tap's tagger of the relay to the one value; `platforms/browser-tea/Tea.beni`: `arrive`/`begin` start one relay per key |
+| `Hosted.mapJob`, `mapLater` | the tagger is handed what the inner send gave up, once | `platforms/browser/Hosted.beni`: `mapJob` wraps the send as `λm → s (tag m)`, `mapLater` composes its tagger in front of the outer one |
+| `Hosted.mapTap` | the tagger is handed what an inner tagger made of a fanned-out value: borrowed | `platforms/browser/Hosted.beni`: `mapTap` composes `f` after the inner tagger, which `through` applies per tap |
+| `Hosted.runJob`, `callJob` | the send handed to them only reaches a body whose sends were checked at `job`'s row | `platforms/browser/Hosted.beni`: `runJob`/`callJob` apply the job to the send and nothing else |
+
+and **the runtime's forwarding**: what a send hands the runtime reaches `update` once, as the message `update`
+receives, and the runtime keeps nothing of it after the dispatch — `platforms/browser/Hosted.beni`: `emit` and
+`send` (one `Js.call h "send"` per message); `platforms/browser/Browser.beni`: `host`'s `send`, which applies a message, or queues one
+sent during a dispatch and applies it after, in order (`boundary.md` §9.8.4); `platforms/browser-direct/Direct.beni`:
+`send`, the dispatch guard's queue.
 
 ### 23.10 The report
 
@@ -1842,15 +1852,25 @@ New fixtures in `tests/corpus/ownership/` (each beside a `.platform` file, §20.
 and the page `browser/tea/NavigateCommands` (the commands' effects and refusals). `NavigatePush` and
 `NavigateErrors` keep testing the direct forms, renamed.
 
+T34-shaped sends — a sender that reads a list after sending it, where no arm of `update` writes what the
+payload reaches — are rejected by the strict rule (§23.12 item 1); the external-corpus slice (§13.2) counts them,
+and the rule is revisited if they appear.
+
 ### 23.12 Open questions
 
 1. **A send whose payload no arm writes** (T34). The owner's rule rejects it at the send; the thesis accepts it,
    since nothing is written in place that the sender's later read could see. When slice 4 makes rejections
    errors, rule 7 asks whether this one is a warning: no guarantee is lost by it on the template platforms, and
    on the direct platform only the arms that write a payload need it. Research 80 counts the lines.
+   *Answered 2026-10-12 (the manager):* the strict rule stays, and stays an error under rule 7 — it buys a real
+   guarantee, that `update` may write any payload it is handed with no reach analysis from the sends to the arms —
+   while no measured line pays for it. The external-corpus slice (§13.2) counts T34-shaped sends, and the decision
+   is revisited if they appear (`plans/queue.md` row 83).
 2. **The HTTP answer.** A list an `Http` answer's decoder builds reaches the tagger through `Expect`, a function
    stored in a record (§16.5: not followed) over text from JavaScript, so every `Cmd.task` over `Http.request`
    and every `Http.send` whose answer holds a list is rejected `need`, approximately — Conduit's nineteen.
    Change 5's words on the decoder's `Js` (the array `JSON.parse` makes is new and nobody else's) and a class
    for `Expect`'s callback would clear them.
+   *Answered 2026-10-12 (the manager):* Change 5(a), ownership words on `foreign` (approved by the owner), is
+   the next slice, 3e, together with following the decoder stored in `Expect`.
 3. **View events** (P6): O6, now that the view-event rule is the only `payload` rejection.
