@@ -692,11 +692,30 @@ settled flight =
         Js.to (Js.apply (Js.global "clearTimeout") [ Js.at flight 1 ])
 
 
--- What a promise of the request gave the fiber that waits on it.
+-- What a promise of the request gave the fiber that waits on it: its
+-- value, one of the two failures a rejection can be (§9.8.12 (c), as
+-- amended 2026-10-12), or a defect.
 type Step
     = Got Js.Value
-    | Failed (Response String)
+    | Failed Failure
     | Defect Js.Value
+
+
+-- The request's own timer ran out, or the host found no answer.
+type Failure
+    = TimedOut
+    | Unreachable
+
+
+-- A failure as the answer's `Response`.
+failed : Failure → Response String
+failed failure =
+    case failure of
+        TimedOut →
+            Timeout_
+
+        Unreachable →
+            NetworkError_
 
 
 -- Send, then read the body as text: its answer, or the failure. A tracker
@@ -719,7 +738,7 @@ answer flight href init body reading =
                             received response (Js.to text)
 
                         Failed failure →
-                            failure
+                            failed failure
 
                         Defect error →
                             Js.throw error
@@ -728,7 +747,7 @@ answer flight href init body reading =
                     tracked flight response (size body) f
 
         Failed failure →
-            failure
+            failed failure
 
         Defect error →
             Js.throw error
@@ -757,7 +776,7 @@ tracked flight response bytes f =
                 received response text
 
             Err failure →
-                failure
+                failed failure
 
 
 -- What `headers.get` answers, null when the header is absent, as text.
@@ -777,7 +796,7 @@ chunks :
     , Maybe Int
     , Int
     , String
-    → Result (Response String) String
+    → Result Failure String
 chunks flight reader decoder f length count text =
     case wait flight λ⊤ → Js.call reader "read" [] of
         Got chunk →
@@ -825,13 +844,13 @@ rejected flight resume error =
     -- class: the reason, or an engine's `TypeError` for a body cut off.
     if Js.to (Js.get signal "aborted") then
         if Js.same (Js.get signal "reason") (Js.at flight 2) then
-            resumeWith resume (Failed Timeout_)
+            resumeWith resume (Failed TimedOut)
         else
             ⊤
     else
         settled flight
         if Js.instanceOf error (Js.global "TypeError") then
-            resumeWith resume (Failed NetworkError_)
+            resumeWith resume (Failed Unreachable)
         else
             resumeWith resume (Defect error)
 
