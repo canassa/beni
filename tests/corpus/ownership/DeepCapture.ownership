@@ -1,0 +1,5 @@
+module DeepCapture
+  10:19 construction y: pending: it is stored in a record
+  summary deep: unused
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0; assumed 0), pending 1, rejected 0
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0; assumed 0), pending 1, rejected 0

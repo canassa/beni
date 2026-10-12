@@ -802,7 +802,13 @@ fn coarsen(o: *Ownership, s: Summary) Allocator.Error!Summary {
                 r.approx = true;
             }
         }
-        for (supply) |*e| e.path = try o.truncate(e.path, depth);
+        for (supply) |*e| {
+            const t = try o.truncate(e.path, depth);
+            if (t != e.path) {
+                e.path = t;
+                e.approx = true;
+            }
+        }
     }
     var out = try o.normalizeRaw(.{ .params = s.params, .uses = uses.items, .res = res, .supply = supply, .funs = s.funs, .asserted = s.asserted });
     out.coarse = true;
@@ -3225,7 +3231,9 @@ const Walker = struct {
     }
 
     fn sightAt(w: *Walker, av: AV, why: Sight, tok: u32, depth: u32) Allocator.Error!void {
-        if (depth > 2) return;
+        // Each `◇` hop goes to a local of a strictly enclosing frame, so the
+        // chain ends within the frames; the bound only guards that.
+        if (depth > w.frames.items.len) return;
         for (av) |e| {
             const c = w.cells.items[e.cell];
             switch (c.kind) {
@@ -3322,7 +3330,9 @@ const Walker = struct {
                     const written = (try w.o.suffix(e.path, u.path)) orelse eps;
                     const owned = e.owned and try w.provOwned(e.prov, s, avs, none, 0, written);
                     if (!owned) {
-                        if (bad[u.param] == null) {
+                        // The first reason, unless a later one is exact and
+                        // it was not: an exact reason labels the rejection.
+                        if (bad[u.param] == null or (bad_approx[u.param] and !(!e.owned and e.approx))) {
                             bad[u.param] = if (e.prov.kind == .cb and e.owned)
                                 try std.fmt.allocPrint(arena, "{s} hands its parameter {d} what the callback returned before, which may be a list the callback does not own", .{ callee.name, u.param + 1 })
                             else
@@ -3409,6 +3419,9 @@ const Walker = struct {
     /// every path).
     fn returnsOwned(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, j: u32, depth: u32, written: u32) Allocator.Error!bool {
         if (c.limit != .none) return false;
+        // A coarsened or pessimistic callee's supply rows no longer say
+        // where each parameter is supplied: nothing it hands back is owned.
+        if (s.coarse or s.limit != .none) return false;
         for (c.res, 0..) |r, i| {
             if (written != none and !w.o.isPrefix(r.path, written)) continue;
             switch (r.prov.kind) {
