@@ -2055,13 +2055,16 @@ happens at the call and is no later use, so `unused` is not observable there.
 lists every worded declaration — the thirteen beni bodies over `Js` and the `foreign`s — with a hash of the code its
 words were read off: for a beni declaration its signature and definition as they stand in the `.beni` file, for a
 `foreign` its sibling's export (`export const name = …`, or the `const` an `export { x as name }` names, to its
-closing `;`), each folded to single spaces and hashed (Wyhash). `check_test.zig` fails when one changes, saying to
+closing `;`, and the helpers in the same file it calls, such as `Js.js`'s `args`), each folded to single spaces and hashed (SHA-256, as the run hashes are). `check_test.zig` fails when one changes, saying to
 read the code again, re-justify the words in §24.8 and update the pin; and fails when a worded declaration has no
 pin. *Why the source text and not the BIR*: the text is what the justification read, and nothing but an edit of
 that declaration moves it — not an edit elsewhere in the file, not a change to lowering or to the instruction set,
 which would move every BIR hash at once and train editors to update pins without reading; folding whitespace lets
 the formatter re-lay a body without a false alarm, while a changed comment inside it still alarms, on the safe
-side. A `crossing` type has no body and is not pinned.
+side. A `crossing` type has no body and is not pinned. The helpers a body calls in its own file are pinned beside
+it — `Js.js`'s `args`, `Node.js`'s `spine`, `String`'s `elements`, `Debug`'s `logAs` and `toStringAs` — but not
+transitively: the schema engine behind `Schema`'s four, and `Debug`'s printer below `toStringAs`, move no pin, and a
+change there relies on review.
 
 The tests pin that each row exists and that a verdict depends on it in both directions where one can; they do not
 prove it true. **A word on a

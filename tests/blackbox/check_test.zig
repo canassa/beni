@@ -992,6 +992,19 @@ fn expectFlips(fixture: []const u8, flags: []const []const u8) !void {
     if (!ok) return error.UnsafeFlipUnnoticed;
 }
 
+test "ownership words: a flip that meets no word it takes away is not applicable" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // A declaration that does not exist, and a word the declaration does
+    // not carry: neither may pass as a flip the fixture did not notice.
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership-flips=Debug.nothing:1:borrowed>unused|Debug.toString:1:escaped>unused", "tests/corpus/ownership/JsPure.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(
+        "flip Debug.nothing:1:borrowed>unused: not applicable\nflip Debug.toString:1:escaped>unused: not applicable\n",
+        r.stdout,
+    );
+}
+
 test "ownership words: flipping core's Js words is noticed" {
     try expectFlips("ownership/core/JsWords.beni", &.{"--core"});
 }
@@ -1056,6 +1069,10 @@ fn bodyOf(arena: std.mem.Allocator, source: []const u8, file: []const u8, name: 
             }
             try out.appendSlice(arena, line);
             try out.append(arena, '\n');
+            // Brackets are counted with no regard for strings, regular
+            // expressions or templates: one unbalanced inside a literal runs the
+            // scan on, which over-includes — an unrelated edit below may then
+            // trip the pin, never miss one.
             for (line) |c| switch (c) {
                 '{', '(' => depth += 1,
                 '}', ')' => depth -= 1,
@@ -1101,7 +1118,9 @@ test "ownership words: the bodies they describe have not changed" {
             ok = false;
             continue;
         };
-        const now = try std.fmt.allocPrint(arena, "{x:0>16}", .{std.hash.Wyhash.hash(0, body)});
+        var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(body, &digest, .{});
+        const now = try arena.dupe(u8, &std.fmt.bytesToHex(digest, .lower));
         if (!std.mem.eql(u8, now, hash)) {
             std.debug.print(
                 "{s} changed in {s}. Its ownership words were justified by reading that code: read it again, re-justify the words in docs/design/ownership-checker.md §24.8, and set its hash in {s} to {s}.\n",
