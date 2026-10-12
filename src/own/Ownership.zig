@@ -5216,6 +5216,11 @@ const Walker = struct {
         const avs = try w.a.alloc(AV, args.len);
         for (args, avs, 0..) |arg, *v, i| {
             const outer = w.ctx;
+            // §25.4: `Maybe.map m f` is walked whole in arm `Just`, `m`
+            // included, which is sound only because `isMaybeJoin` keeps `m`
+            // and `d` variable paths and `f` a lambda or top-level value —
+            // operands whose evaluation writes nothing. Widening any of
+            // them must move its evaluation out of the arm.
             if (w.joinArm(inst, i)) |arm| w.ctx = arm;
             v.* = try w.eval(arg);
             w.ctx = outer;
@@ -6501,6 +6506,9 @@ const Walker = struct {
     /// is only read. The result is that new array, or — when the runtime
     /// re-conses onto a view (`backend.md` §4) — a header over the base's
     /// own array: it aliases the base, whose condition it does not lower.
+    /// Sound only while the backend never writes a prepend's base in place
+    /// (§25.2, *The backend agrees*): `emit/PrependShapes` pins every shape,
+    /// and slice 5's in-place lowering must leave prepends as copies.
     fn prepended(w: *Walker, top: Inst.Index, avs: []const AV, bi: usize) Allocator.Error!AV {
         const site = try w.single(.{ .kind = .site, .a = top.int(), .ty = w.instTypeOpt(top) });
         var stored: std.ArrayList(AV) = .empty;
