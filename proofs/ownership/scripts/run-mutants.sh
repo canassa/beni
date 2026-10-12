@@ -37,4 +37,6 @@ for m in "${names[@]}"; do
     line="$line seed=$s exit=$status first-index=${index:-none}${family:+ family=$family}"
   done
   echo "$line caught-seeds=$caught/${#seeds[@]}"
+  rm -rf "$d"
 done
+rm -rf "$base"

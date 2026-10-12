@@ -1,0 +1,225 @@
+== T11 ordinary concat contents: rejected (exclusive contents: positions or nested paths may share)
+== T37 initialized grid set: 4 summaries computed, 66 reused
+summary of row
+  res ε = {fresh0} excl
+  guards (0): 
+summary of initialize
+  res ε = {fresh0} excl
+  res [*] = {fresh1} excl
+  calls slot 1 = many
+  supply to slot 1: arg0 = {} owned at [] excl at []
+  guards (6): slot1:E∈use(env)=[], slot1:env∈res()=[], slot1:fresh∈res()=[0], slot1:shared∈res()=[], slot1:⊤∈res()=[], slot1:xres()=[1]
+summary of reveal
+  use π0 = AW
+  res ε = {π0} excl
+  guards (0): 
+summary of update
+  use π0[*] = RAW
+  use π0 = AW
+  res ε = {π0} excl
+  res [*] = {π0[*]} excl
+  xreq {π0}
+  calls slot 2 = ≤1
+  supply to slot 2: arg0 = {π0[*]} owned at [ε] excl at [ε]
+  guards (10): slot2:W∈use(π0)=[1], slot2:E∈use(π0)=[], slot2:xreq(π0)=[], slot2:E∈use(env)=[], slot2:π0∈res()=[1], slot2:env∈res()=[], slot2:fresh∈res()=[], slot2:shared∈res()=[], slot2:⊤∈res()=[], slot2:xres()=[1]
+== generated v3 tower old-rule regression: rejected (exclusive contents: positions or nested paths may share)
+== generated v3 external escape regression: rejected (Unescaped: program-lifetime holder)
+== T43 reverse consuming fold: rejected (many calls: traversal step consumes a capture or once closure)
+== T17 compare: rejected (Dead: an old holder is live after the demand)
+== T17 model record: rejected (Dead: an old holder is live after the demand)
+== T41 restored alias projection: rejected (Dead: an old holder is live after the demand)
+== T41 restored copy projection: 0 summaries computed, 0 reused
+== T43 accumulator construction fold: 5 summaries computed, 88 reused
+summary of appendCells
+  use π1 = R
+  use π0 = AW
+  res ε = {π0} excl
+  guards (0): 
+summary of joinRow
+  use π0.0 = R
+  use π1 = AW
+  res ε = {π1} excl
+  guards (0): 
+summary of appendCells
+  use π1 = R
+  use π0 = AW
+  res ε = {π0} excl
+  guards (0): 
+summary of joinRow
+  use π0.0 = R
+  use π1 = AW
+  res ε = {π1} excl
+  guards (0): 
+summary of foldl
+  use π0 = R
+  use π0[*].0 = R
+  use π1 = RAW
+  res ε = {π1} excl
+  calls slot 2 = many
+  supply to slot 2: arg0 = {π0[*].0} owned at [.0] excl at [.0]; arg1 = {π1} owned at [ε] excl at [ε]
+  supply to slot 2: arg0 = {π0[*].0} owned at [.0] excl at [.0]; arg1 = {π1} owned at [ε] excl at [ε]
+  guards (28): slot2:W∈use(π0.0)=[], slot2:E∈use(π0.0)=[], slot2:xreq(π0.0)=[], slot2:W∈use(π1)=[1], slot2:E∈use(π1)=[], slot2:xreq(π1)=[], slot2:E∈use(env)=[], slot2:π0.0∈res()=[], slot2:π1∈res()=[1], slot2:env∈res()=[], slot2:fresh∈res()=[], slot2:shared∈res()=[], slot2:⊤∈res()=[], slot2:xres()=[1], slot2:W∈use(π0.0)=[], slot2:E∈use(π0.0)=[], slot2:xreq(π0.0)=[], slot2:W∈use(π1)=[1], slot2:E∈use(π1)=[], slot2:xreq(π1)=[], slot2:E∈use(env)=[], slot2:π0.0∈res()=[], slot2:π1∈res()=[1], slot2:env∈res()=[], slot2:fresh∈res()=[], slot2:shared∈res()=[], slot2:⊤∈res()=[], slot2:xres()=[1]
+== T43 consuming row fold projection: rejected (supply edge: a callback writes a supply that is not owned)
+== T1 fold alias: rejected (supply edge: a callback writes a supply that is not owned)
+== T1 callback alias: rejected (Disjoint: another operand path holds the written cell)
+== T7 returned reader: rejected (Dead: an old holder is live after the demand)
+== T8 A returned: rejected (Dead: an old holder is live after the demand)
+== T8 B captured many: rejected (calls edge: a once callback is called many times)
+== T8 C stored: rejected (Dead: an old holder is live after the demand)
+== T26 captured returned: rejected (Dead: an old holder is live after the demand)
+== T12 recursive append: rejected (Dead: an old holder is live after the demand)
+== T25 recursive capture: rejected (once recursive closure)
+== T14 fresh init: 1 summaries computed, 1 reused
+summary of init
+  res .0 = {fresh0} excl
+  guards (0): 
+== T30 independent init projection: 1 summaries computed, 1 reused
+summary of init
+  res .0 = {fresh0} excl
+  guards (0): 
+== T53 fresh init alternative: 1 summaries computed, 1 reused
+summary of init
+  res .0 = {fresh0} excl
+  guards (0): 
+== T42 distinct conditional map: 2 summaries computed, 60 reused
+summary of edit
+  use π0.1 = AW
+  res .1 = {π0.1} excl
+  guards (0): 
+summary of map
+  use π0 = RAW
+  use π0[*].1 = RAW
+  res ε = {fresh0, π0} excl
+  res [*].1 = {π0[*].1} excl
+  xreq {π0}
+  calls slot 1 = many
+  supply to slot 1: arg0 = {π0[*].1} owned at [.1] excl at [.1]
+  guards (10): slot1:W∈use(π0.1)=[1], slot1:E∈use(π0.1)=[], slot1:xreq(π0.1)=[], slot1:E∈use(env)=[], slot1:π0.1∈res(.1)=[1], slot1:env∈res(.1)=[], slot1:fresh∈res(.1)=[], slot1:shared∈res(.1)=[], slot1:⊤∈res(.1)=[], slot1:xres(.1)=[1]
+== T42 repeated conditional map: rejected (exclusive contents: positions or nested paths may share)
+== T46 empty accumulator: rejected (supply edge: a callback writes a supply that is not owned)
+== T47 transparent wrapper projection: 0 summaries computed, 0 reused
+== T57 distinct update calls: 4 summaries computed, 117 reused
+summary of bump
+  use π0 = AW
+  res ε = {π0} excl
+  guards (0): 
+summary of update
+  use π0[*] = RAW
+  use π0 = AW
+  res ε = {π0} excl
+  res [*] = {π0[*]} excl
+  xreq {π0}
+  calls slot 2 = ≤1
+  supply to slot 2: arg0 = {π0[*]} owned at [ε] excl at [ε]
+  guards (10): slot2:W∈use(π0)=[1], slot2:E∈use(π0)=[], slot2:xreq(π0)=[], slot2:E∈use(env)=[], slot2:π0∈res()=[1], slot2:env∈res()=[], slot2:fresh∈res()=[], slot2:shared∈res()=[], slot2:⊤∈res()=[], slot2:xres()=[1]
+summary of bumpHead
+  use π0[*] = RAW
+  use π0 = AW
+  res ε = {π0} excl
+  res [*] = {π0[*]} excl
+  xreq {π0}
+  guards (0): 
+summary of update
+  use π0[*] = RAW
+  use π0[*][*] = RAW
+  use π0 = AW
+  res ε = {π0} excl
+  res [*] = {π0[*]} excl
+  res [*][*] = {π0[*][*]} excl
+  xreq {π0, π0[*]}
+  calls slot 2 = ≤1
+  supply to slot 2: arg0 = {π0[*], π0[*][*]} owned at [ε, [*]] excl at [ε, [*]]
+  guards (21): slot2:W∈use(π0)=[1], slot2:E∈use(π0)=[], slot2:xreq(π0)=[1], slot2:W∈use(π0[*])=[1], slot2:E∈use(π0[*])=[], slot2:xreq(π0[*])=[], slot2:E∈use(env)=[], slot2:π0∈res()=[1], slot2:π0[*]∈res()=[], slot2:env∈res()=[], slot2:fresh∈res()=[], slot2:shared∈res()=[], slot2:⊤∈res()=[], slot2:xres()=[1], slot2:π0∈res([*])=[], slot2:π0[*]∈res([*])=[1], slot2:env∈res([*])=[], slot2:fresh∈res([*])=[], slot2:shared∈res([*])=[], slot2:⊤∈res([*])=[], slot2:xres([*])=[1]
+== T57 repeated update calls: rejected (exclusive contents: positions or nested paths may share)
+== T57 repeated outer rows update calls: rejected (exclusive contents: positions or nested paths may share)
+== T58 scalar index order projection: 0 summaries computed, 0 reused
+== T1 arguments: rejected (Disjoint: another operand path holds the written cell)
+== T1 capture: rejected (Dead: an old holder is live after the demand)
+== T2: 0 summaries computed, 0 reused
+== T3: rejected (Unescaped: shared cell)
+== T5: rejected (Dead: an old holder is live after the demand)
+== T7: rejected (Dead: an old holder is live after the demand)
+== T8 A: rejected (Dead: an old holder is live after the demand)
+== T8 C: rejected (Dead: an old holder is live after the demand)
+== T10: rejected (exclusive contents: positions or nested paths may share)
+== T11: rejected (exclusive contents: positions or nested paths may share)
+== T12: rejected (Dead: an old holder is live after the demand)
+== T15: rejected (Dead: an old holder is live after the demand)
+== T17 record: rejected (Dead: an old holder is live after the demand)
+== T17 operand: rejected (Disjoint: another operand path holds the written cell)
+== T21: rejected (Unescaped: shared cell)
+== T23: rejected (Dead: an old holder is live after the demand)
+== T24: rejected (exclusive contents: positions or nested paths may share)
+== T31: rejected (Dead: an old holder is live after the demand)
+== T32 key/value projection: rejected (exclusive contents: positions or nested paths may share)
+== T33 kept version: rejected (Dead: an old holder is live after the demand)
+== T33 copied version: 0 summaries computed, 0 reused
+== T37 grid ownership: 2 summaries computed, 66 reused
+summary of nestedInitializer
+  res ε = {fresh0} excl
+  res [*] = {fresh1, fresh2} excl
+  guards (0): 
+summary of initialize
+  res ε = {fresh0} excl
+  res [*] = {fresh1} excl
+  res [*][*] = {fresh2, fresh3} excl
+  calls slot 1 = many
+  supply to slot 1: arg0 = {} owned at [] excl at []
+  guards (11): slot1:E∈use(env)=[], slot1:env∈res()=[], slot1:fresh∈res()=[0], slot1:shared∈res()=[], slot1:⊤∈res()=[], slot1:xres()=[1], slot1:env∈res([*])=[], slot1:fresh∈res([*])=[1, 2], slot1:shared∈res([*])=[], slot1:⊤∈res([*])=[], slot1:xres([*])=[1]
+== T40 record shape: 0 summaries computed, 0 reused
+== T46 shared: rejected (supply edge: a callback writes a supply that is not owned)
+== T46 capture: rejected (supply edge: a callback writes a supply that is not owned)
+== T46 borrowed element: rejected (Dead: an old holder is live after the demand)
+== T48 duplicate slots: rejected (exclusive contents: positions or nested paths may share)
+== T48 distinct slots: 0 summaries computed, 0 reused
+== T52 spine identity projection: rejected (Dead: an old holder is live after the demand)
+== T52 copied spine projection: 0 summaries computed, 0 reused
+== T53 top-level: rejected (Unescaped: shared cell)
+== T55 explicit call projection: rejected (Disjoint: another operand path holds the written cell)
+== T56 mapping projection: rejected (exclusive contents: positions or nested paths may share)
+== T57 distinct: 2 summaries computed, 66 reused
+summary of nestedInitializer
+  res ε = {fresh0} excl
+  res [*] = {fresh1, fresh2} excl
+  guards (0): 
+summary of initialize
+  res ε = {fresh0} excl
+  res [*] = {fresh1} excl
+  res [*][*] = {fresh2, fresh3} excl
+  calls slot 1 = many
+  supply to slot 1: arg0 = {} owned at [] excl at []
+  guards (11): slot1:E∈use(env)=[], slot1:env∈res()=[], slot1:fresh∈res()=[0], slot1:shared∈res()=[], slot1:⊤∈res()=[], slot1:xres()=[1], slot1:env∈res([*])=[], slot1:fresh∈res([*])=[1, 2], slot1:shared∈res([*])=[], slot1:⊤∈res([*])=[], slot1:xres([*])=[1]
+== T57 repeated: rejected (exclusive contents: positions or nested paths may share)
+== T59 initialize shared: rejected (exclusive contents: positions or nested paths may share)
+== T59 initialize distinct: 2 summaries computed, 66 reused
+summary of nestedInitializer
+  res ε = {fresh0} excl
+  res [*] = {fresh1, fresh2} excl
+  guards (0): 
+summary of initialize
+  res ε = {fresh0} excl
+  res [*] = {fresh1} excl
+  res [*][*] = {fresh2, fresh3} excl
+  calls slot 1 = many
+  supply to slot 1: arg0 = {} owned at [] excl at []
+  guards (11): slot1:E∈use(env)=[], slot1:env∈res()=[], slot1:fresh∈res()=[0], slot1:shared∈res()=[], slot1:⊤∈res()=[], slot1:xres()=[1], slot1:env∈res([*])=[], slot1:fresh∈res([*])=[1, 2], slot1:shared∈res([*])=[], slot1:⊤∈res([*])=[], slot1:xres([*])=[1]
+== T59 map shared: rejected (exclusive contents: positions or nested paths may share)
+== T59 map distinct: 2 summaries computed, 66 reused
+summary of nestedInitializer
+  res ε = {fresh0} excl
+  res [*] = {fresh1, fresh2} excl
+  guards (0): 
+summary of map
+  use π0 = R
+  res ε = {fresh0} excl
+  res [*] = {fresh1} excl
+  res [*][*] = {fresh2, fresh3} excl
+  calls slot 1 = many
+  supply to slot 1: arg0 = {} owned at [] excl at []
+  guards (11): slot1:E∈use(env)=[], slot1:env∈res()=[], slot1:fresh∈res()=[0], slot1:shared∈res()=[], slot1:⊤∈res()=[], slot1:xres()=[1], slot1:env∈res([*])=[], slot1:fresh∈res([*])=[1, 2], slot1:shared∈res([*])=[], slot1:⊤∈res([*])=[], slot1:xres([*])=[1]
+== generated map old-rule regression: rejected (exclusive contents: positions or nested paths may share)
+== generated initialize old-rule regression: rejected (exclusive contents: positions or nested paths may share)
+== escape ordinary call: rejected (Unescaped: program-lifetime holder)
+== escape traversal: rejected (Unescaped: program-lifetime holder)
+== recursion inside a step (per-call checker accepted it): rejected (limit: recursive call inside a traversal or focus step)
+== T46 borrowed row read again: rejected (supply edge: a callback writes a supply that is not owned)

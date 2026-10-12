@@ -1,0 +1,14 @@
+CROSS-CHECK VERDICTS DIFFER index=9380 family=general this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
+family=once-many-wrappers depth=6..9 candidates=927 distinct=80 typed=927 accepted=516 withWrites=60 rejected=411 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=library-pipeline depth=13..17 candidates=890 distinct=356 typed=890 accepted=217 withWrites=217 rejected=673 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=escape-traversal depth=5..5 candidates=933 distinct=15 typed=933 accepted=0 withWrites=0 rejected=933 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=branch-traversal depth=5..5 candidates=935 distinct=10 typed=935 accepted=479 withWrites=300 rejected=456 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=recursive-higher-order-limit depth=3..3 candidates=882 distinct=6 typed=882 accepted=0 withWrites=0 rejected=882 limits=882 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=captures depth=5..5 candidates=920 distinct=20 typed=920 accepted=457 withWrites=0 rejected=463 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=fresh-tower depth=6..9 candidates=931 distinct=451 typed=931 accepted=448 withWrites=448 rejected=483 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=fresh-nested depth=6..6 candidates=906 distinct=433 typed=906 accepted=270 withWrites=270 rejected=636 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=general depth=3..47 candidates=9972 distinct=9923 typed=9972 accepted=1616 withWrites=1065 rejected=8356 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=identity-map depth=8..8 candidates=963 distinct=8 typed=963 accepted=507 withWrites=507 rejected=456 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=indexed-chain depth=6..19 candidates=909 distinct=729 typed=909 accepted=263 withWrites=263 rejected=646 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=recursion depth=4..4 candidates=832 distinct=140 typed=832 accepted=222 withWrites=195 rejected=610 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+generator-version=4 seed=17 control=soundness-v4 candidates=20000 distinct=12171 typed=20000 accepted=4995 withWrites=3325 rejected=15005 limits=882 typeErrors=0 executionErrors=0 mismatches=0 cross-only-this=1 cross-only-other=0 cross-other-mismatches=0 summaries-computed=9673 summaries-reused=182281 first-mismatch=none elapsed-ms=40120

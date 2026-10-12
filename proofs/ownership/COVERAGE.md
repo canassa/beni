@@ -60,7 +60,7 @@ here; it is not evidence for unimplemented wrappers/algorithms.
 | T43 | core tested with precision limit | Ordinary concat loop and foldl rows construction based on accumulator accepted. Consuming row-based fold with source retained rejected. Reverse-order foldr implemented by range/indexed reads and prepend concat, also rejected, but conservative many-call captured-consumption check fires before thesis Dead edge. |
 | T44 | out of scope | Dictionary lookup/keyed update and Maybe data absent; no asserted Dict rule substituted. |
 | T45 | out of scope | Command retained capture precision across TEA arms absent. |
-| T46 | core tested | Shared/captured conditional accumulator branches rejected; borrowed element result then later push rejected; List.isEmpty projection via length with zero/nonzero branch returning row or pushing acc, with rows retained, rejected. |
+| T46 | projection tested; summary row tested | Previously listed as "core tested" on one row, where the borrowed row is returned but never written, so owned and borrowed were indistinguishable. Now: shared and captured conditional accumulators rejected; borrowed element then later push rejected; the List.isEmpty projection runs over **two rows**, so the second step pushes onto the borrowed first row, retained afterwards (rejected; under `borrowed-supply` with the per-call checker it is accepted and the traces differ); a three-row variant `[r1, r2, r1]` that reads r1 again. The row the thesis repaired — foldl's accumulator supplied owned only if the callback returns owned — is the summary layer's supply bit, re-checked where the step ends; its mutants `supply-recheck` and `supply-edge` are required controls caught by generated programs (`fold-keep`, `apply-read`). Only ordinary foldl and two callbacks; no Dict/fiber/TEA variant. |
 | T47 | projection tested; release/renderer excluded | Transparent one-field Column record under list focus edited by push and wrapped again, accepted. Erased constructor identity and renderer release protocol absent. |
 | T48 | projections tested | Duplicate versus distinct transparent record slots in list rejected/accepted. Opaque module summaries and Conduit entry protocol absent. |
 | T49 | out of scope | Recursive data representatives and across-level exclusivity absent. |
@@ -73,7 +73,7 @@ here; it is not evidence for unimplemented wrappers/algorithms.
 | T56 | projection tested; schema out of scope | Duplicate fields from record constructor rejected on focused write. Actual schema parse/mapping algorithm absent. |
 | T57 | core tested | Distinct/repeated inner cells tested both by scoped focus and ordinary Library.update wrappers with bumpHead callback: accepted/rejected respectively. Separate repeated-outer-row case builds internally distinct row, rows=[row,row], then nested ordinary update: rejected. |
 | T58 | projection tested; renderer excluded | Scalar at read computes index before set; accepted with equal traces. removeAt/indexOf and renderer protocol absent. |
-| T59 | core tested; schema excluded | Initialize/map internally shared fresh results rejected, distinct variants accepted. Frozen v1 map/initialize and v3 deeper tower controls disagree under oldFreshRule and corrected rejects. Schema mapping absent. |
+| T59 | core tested; summary row tested; schema excluded | Initialize/map internally shared fresh results rejected, distinct variants accepted. Frozen v1 map/initialize and v3 deeper tower controls disagree under oldFreshRule and corrected rejects. Under summaries map's builder sees the callback's result through its `res`/`xres` guards; dropping `xres` (`callback-xres`) is a required control, caught by generated programs within 20 trials. Schema mapping absent. |
 
 ## Explicit general limits
 
@@ -88,7 +88,7 @@ than new thesis rules (Ch. 3 demand/summary contracts; Ch. 4 inference; Ch. 6
 soundness/derived-contract obligations). No excluded runtime or language-boundary variant is reported as passed. The broadened campaigns reach higher-order-recursion `limit:` rejections,
 reported separately; this does not prove recursive contracts universally derivable.
 
-The fixed suite has 74 intended verdict tests. Each independently typechecks;
+The fixed suite has 76 intended verdict tests (74 transcribed, plus the recursion-in-a-step finding and the three-row T46 variant), checked by both checkers. Each independently typechecks;
 accepted tests compare the complete Trace, including externally retained roots.
 The traversal escape defect is repaired. Frozen controls demonstrate both
 freshness-only and missing-transfer implementations accept an actual mismatch,
@@ -114,3 +114,119 @@ table remain excluded, and no full application is claimed to be reproduced.
 There are no remaining applicable pending core fixtures from the previous audit.
 The current generated higher-order recursion family intentionally exercises
 `limit: higher-order recursive argument`; campaign logs count these separately.
+
+## What the oracle tests now, and what it does not
+
+**Tested by generated programs** (generator v4, numbers in RESULTS.md):
+in-place writes in accepted programs of every family except `captures`,
+`escape-traversal` and the limit family; closures with shared captures called once and many times;
+list and range traversals that consume elements, accumulators or captures;
+focus that keeps or breaks shape; shallow and nested copies; literals with
+repeated elements; spine writes after `map`; two calls of one library function
+with different callback classes (summary reuse); callbacks handed a list that
+is read again (`applyThenRead`) and folds that read their rows after the loop
+(`foldKeep`). Every one of the twelve mutants below and the two historical
+controls is caught **by the generator alone** in one 20000-trial campaign on
+each of seeds 20261011, 17 and 271828.
+
+**Tested only by fixtures or not at all:**
+* recursion inside a traversal or focus step — one hand-written fixture; the
+  generator never produces it (both checkers now refuse it as a limit);
+* higher-order recursion, function values below an input path, callbacks with
+  function-typed parameters or results — explicit limits, never accepted;
+* the `need` row, as a separate fact (DESIGN.md: subsumed by guarded `xres`);
+* summary-row edge `xreq ⇒ exclusive supply`, and the `xreq` and `E` guards
+  of callbacks: no callback in the tables requires its argument exclusive or
+  publishes it, so their source mutants (`requiresedge`, `callbackrequires`,
+  `callbackescapes`) are not caught;
+* forwarding: no generated declaration passes its own function-typed input
+  to another declaration, so forwarding a guard or a supply to the caller
+  (`forwardguards`, `transfersupplies`) is untested; `callbackwrites` is
+  caught on two seeds of three;
+* the review's other seven missed source mutants (`xres`, `once`,
+  `nestedsep`, `reqexcloutside`, `recvalidate`, `tsupplyexcl`,
+  `escapeowned`) remain uncaught; none is claimed equivalent;
+* everything outside the core listed in the table above.
+
+## Summary layer: rows and their controls
+
+| Row (§3.7) | Implementation | Required control | Caught by |
+|---|---|---|---|
+| use W through a callback | `consumes` from `W∈use_g(k,p)` guards | source `callbackwrites` | generator, 2 of 3 seeds |
+| res, A | result built from `π_k.p∈res(q)`, `env∈res(q)`, fresh, shared, ⊤ guards | source `callbackaliases`, `callbackenv` | generator |
+| xres | `xres(q)` guards | `--mutant=callback-xres` | generator + fixture |
+| supply owned | demand test at the call, re-checked where the scope ends and at the caller | `--mutant=supply-recheck` | generator + fixture |
+| edge W ⇒ owned | at a call that knows the callback | `--mutant=supply-edge` | generator + fixture |
+| calls, edge once ⇒ ≤1 | counted per slot, many in a step or recursion | `--mutant=calls-edge` | generator + fixture |
+| guards | cache reused only where every guard answers the same | `--mutant=guard-reuse` | generator + fixture |
+| edge xreq ⇒ exclusive | at a call that knows the callback | none (source `requiresedge` reported) | not reached |
+| need | not a separate row | — | — |
+
+## Borrowed supply under summaries
+
+The review's `borrowed-supply` mutant drops the borrowed source's elements
+from the holders a non-consuming traversal re-checks its step's writes and
+supplies against. In the per-call checker it is load-bearing, and the
+generator catches it (first indices 131–2555). Under summaries no generated or
+hand-written program distinguishes it, and we argue none can in this core: a
+written cell that was an element of the borrowed source is observed only
+through (a) a holder live after the traversal, which is in `later`; (b) the
+source itself at a later position, which for a non-exclusive source is the
+same origin as the current element parameter, so the re-demand's Disjoint
+against the other step inputs fails, and for an exclusive source is a
+different array; or (c) the caller, where the summary's writes and supplies
+are re-checked against the caller's live holders. The per-call checker lacked
+(c) because it dropped position-tagged writes at the caller. The control is
+therefore run against the per-call checker (`ownership controls` labels it),
+and its fixture is T46 two rows.
+
+## Theorems (Soundness.lean, BuilderProof.lean, HeapProof.lean, KernelChecks.lean)
+
+| Theorem | Status |
+|---|---|
+| `cellOverlap_sound`, `demandProblem_sound` — the overlap and demand tests exclude shared arrays under a separating naming | proved |
+| `builder_alloc_describes` — abstract builder value describes the concrete allocation | proved |
+| `invariant_initial`, `invariant_observations` — the configuration invariant at the start, and what it fixes | proved |
+| `accepted_traces_agree` — main theorem: accepted ⇒ same final value, reads and external reads, for every fuel bound | proved **from** `invariant_preserved`; inherits its `sorry` |
+| `invariant_preserved` — the step case of the prefix induction over the whole configuration | **sorry** |
+| `summary_sound` — Lemma 6.7 clauses 1–3, clause 2 as repaired in round 5 | **sorry** |
+| `map_summary_sound` — map's derived summary, including its certificate | **sorry** |
+| Lemma 6.7 clause 4 (calls, supply) | **not stated**: the interpreters do not record callback invocations |
+| builder/close contracts, footprint framing, close identity (`BuilderProof`, `HeapProof`) | proved (unchanged) |
+| kernel checks of `storeExclusive` and permanent escapes | proved (unchanged) |
+
+`Axioms.lean` prints the axioms of each: the proved ones use only `propext`,
+`Classical.choice` and `Quot.sound`; the three above and the main theorem use
+`sorryAx`. No axiom is declared.
+
+## Thesis discrepancies found (the thesis is not edited)
+
+1. **Supply bits must be re-checked where a step ends** (§3.7, §4.7). The
+   thesis computes a supply's ownership bit at the call of the callback, with
+   "returns owned" decided at the caller. Inside a traversal step the bit is
+   computed against the step's holders only; the holders the loop retains
+   across iterations (the borrowed source, captures) are outside it. The
+   implementation re-checks every supply where its step ends and again at the
+   caller; `supply-recheck` shows the re-check is load-bearing (fixture
+   "fold reads its rows after the loop"). The thesis's text does not say where
+   the bit is established for an accumulator that is a step input.
+2. **`need` is not needed as a separate row** in this core: guarding the
+   declaration's own `xres` on the callback's `res`/`xres` carries it.
+3. **Guard count.** §4.6 proposes capping a summary at about eight atoms. With
+   atoms at the granularity the rows need (one per argument path and result
+   path), foldl's summary asks 14 distinct facts per argument state and the
+   fixtures' summaries up to 28 guards. Either the atoms are coarser than the
+   rows (and §4.6 must say how `returns owned` is decided from them) or the cap
+   is too low.
+4. **Lemma 6.7 clause 2 needs a notion of holder.** Stating it over heaps
+   required choosing what a holder is: another array, or a program-lifetime
+   observer; frame locals are not holders after return. "Closures reachable
+   from the result" are values, not heap objects, in this model; a closure
+   holding a cell is covered only when stored in an array of the result.
+5. **Clause 4 needs instrumented calls.** It quantifies over the callback
+   invocations a call makes; neither semantics records them, so the clause has
+   no statement here.
+6. **Recursion inside a loop body** (§4.5) is analysed through the group's
+   summary in the thesis; the earlier executable checker used an empty summary
+   there and accepted an unsound program. This is an implementation defect,
+   not a thesis one; both checkers now refuse it as a limit.

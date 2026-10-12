@@ -1,0 +1,19 @@
+generator-version=4 seed=20261011 control=old-v4-reinfer candidates=14 distinct=14 typed=14 accepted=6 withWrites=4 rejected=8 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=13 elapsed-ms=27
+generator-version=4 seed=20261011 control=old-escape-v4-reinfer candidates=34 distinct=34 typed=34 accepted=12 withWrites=7 rejected=22 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=33 elapsed-ms=41
+generator-version=4 seed=20261011 control=mutant-disjoint-reinfer candidates=369 distinct=318 typed=369 accepted=108 withWrites=65 rejected=261 limits=15 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=368 elapsed-ms=464
+generator-version=4 seed=20261011 control=mutant-borrowed-supply-reinfer candidates=132 distinct=125 typed=132 accepted=40 withWrites=22 rejected=92 limits=5 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=131 elapsed-ms=235
+generator-version=4 seed=20261011 control=mutant-traversal-exclusive-reinfer candidates=1341 distinct=1034 typed=1341 accepted=331 withWrites=208 rejected=1010 limits=63 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=1340 elapsed-ms=1521
+generator-version=4 seed=20261011 control=mutant-many-calls-reinfer candidates=425 distinct=354 typed=425 accepted=123 withWrites=73 rejected=302 limits=23 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=424 elapsed-ms=516
+generator-version=4 seed=20261011 control=mutant-copy-exclusive-reinfer candidates=998 distinct=794 typed=998 accepted=252 withWrites=157 rejected=746 limits=51 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=997 elapsed-ms=1361
+generator-version=4 seed=20261011 control=mutant-close-source-reinfer candidates=2418 distinct=1793 typed=2418 accepted=592 withWrites=382 rejected=1826 limits=102 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=2417 elapsed-ms=3265
+generator-version=4 seed=20261011 control=mutant-keeps-shape-reinfer candidates=1100 distinct=867 typed=1100 accepted=281 withWrites=179 rejected=819 limits=56 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=1099 elapsed-ms=1415
+CONTROL old-rule: caught=true first-index=13 elapsed-ms=27
+CONTROL old-escape-rule: caught=true first-index=33 elapsed-ms=41
+CONTROL mutant=disjoint: caught=true first-index=368 elapsed-ms=464
+CONTROL mutant=borrowed-supply: caught=true first-index=131 elapsed-ms=235
+CONTROL mutant=traversal-exclusive: caught=true first-index=1340 elapsed-ms=1521
+CONTROL mutant=many-calls: caught=true first-index=424 elapsed-ms=516
+CONTROL mutant=copy-exclusive: caught=true first-index=997 elapsed-ms=1361
+CONTROL mutant=close-source: caught=true first-index=2417 elapsed-ms=3265
+CONTROL mutant=keeps-shape: caught=true first-index=1099 elapsed-ms=1415
+controls budget=20000 seed=20261011 generator-version=4 checker=reinfer passed=true

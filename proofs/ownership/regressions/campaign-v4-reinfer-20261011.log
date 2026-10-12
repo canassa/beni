@@ -1,0 +1,13 @@
+family=library-pipeline depth=13..17 candidates=923 distinct=364 typed=923 accepted=222 withWrites=222 rejected=701 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=branch-traversal depth=5..5 candidates=854 distinct=10 typed=854 accepted=407 withWrites=242 rejected=447 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=indexed-chain depth=6..19 candidates=860 distinct=696 typed=860 accepted=276 withWrites=276 rejected=584 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=recursion depth=4..4 candidates=977 distinct=140 typed=977 accepted=231 withWrites=197 rejected=746 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=captures depth=5..5 candidates=933 distinct=20 typed=933 accepted=437 withWrites=0 rejected=496 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=escape-traversal depth=5..5 candidates=857 distinct=15 typed=857 accepted=0 withWrites=0 rejected=857 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=identity-map depth=8..8 candidates=914 distinct=8 typed=914 accepted=458 withWrites=458 rejected=456 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=recursive-higher-order-limit depth=3..3 candidates=933 distinct=6 typed=933 accepted=0 withWrites=0 rejected=933 limits=933 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=fresh-tower depth=6..9 candidates=911 distinct=438 typed=911 accepted=433 withWrites=433 rejected=478 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=once-many-wrappers depth=6..9 candidates=861 distinct=80 typed=861 accepted=506 withWrites=52 rejected=355 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=fresh-nested depth=6..6 candidates=974 distinct=445 typed=974 accepted=322 withWrites=322 rejected=652 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=general depth=3..51 candidates=10003 distinct=9944 typed=10003 accepted=1597 withWrites=1000 rejected=8406 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+generator-version=4 seed=20261011 control=soundness-v4-reinfer candidates=20000 distinct=12166 typed=20000 accepted=4889 withWrites=3202 rejected=15111 limits=933 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0 first-mismatch=none elapsed-ms=53644
