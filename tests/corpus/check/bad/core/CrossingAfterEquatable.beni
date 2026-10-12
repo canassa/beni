@@ -1,0 +1,5 @@
+-- check/bad (core): `crossing` stands before `equatable`, never after
+-- (ownership-checker.md §24.3: `'crossing'? 'equatable'? 'foreign' 'type'`).
+-- After `equatable` it is no marker, so the head is read as a definition and
+-- refused where `foreign` follows (5:24).
+pub equatable crossing foreign type Thing

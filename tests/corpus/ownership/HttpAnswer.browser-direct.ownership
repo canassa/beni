@@ -1,14 +1,19 @@
 module HttpAnswer
-  79:19 value Fetched: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may hold a list the checker cannot place — from JavaScript, or through a call it does not see into (§23.5) (approx)
-  80:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may be a list the sender still holds (§23.5)
-  81:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may hold a list the checker cannot place — from JavaScript, or through a call it does not see into (§23.5) (approx)
-  89:34 List.push model.errors: accepted param
-  95:34 List.push model.errors: accepted param
-  108:5 entry HttpAnswer.update model.errors: accepted entry
+  54:17 List.push issues: accepted param
+  61:10 value HttpAnswer.pushing: pending: Http.expectStringResponse loses sight of what calls it
+  61:10 value HttpAnswer.pushing: pending: it is returned
+  68:17 List.push issues: pending: Http.expectStringResponse loses sight of what calls it
+  107:19 value Fetched: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may hold a list the checker cannot place — from JavaScript, or through a call it does not see into (§23.5) (approx)
+  108:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may be a list the sender still holds (§23.5)
+  109:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may hold a list the checker cannot place — from JavaScript, or through a call it does not see into (§23.5) (approx)
+  117:34 List.push model.errors: accepted param
+  123:34 List.push model.errors: accepted param
+  136:5 entry HttpAnswer.update model.errors: accepted entry
+  summary pushing: π1 R, π1#BadRequest_.0#UnprintableBody.0 RAW, π1#BadRequest_.0#UnprintableBody.0[*] A; res #Ok.0 π1#BadRequest_.0#UnprintableBody.0, #Ok.0[*] ~π1#BadRequest_.0#UnprintableBody.0[*], #Ok.0[*].path ~fresh1
   summary expecting: π1 RA; res #Expect.1 λ, #Expect.1◇ π1; π1 calls 0, unseen
   summary get: π1 R; res cb(π1#Expect.1){excl cb(π1#Expect.1)}; π1#Expect.1 calls ≤1, supply 1 fresh borrowed{lost}, supply 1 ⊤ borrowed{lost}, supply 1#BadRequest_.0 fresh borrowed{lost}
   summary update: π1 R, π1#Fetched.0#Ok.0 RA, π1#Loaded.0#Ok.0 RA, π2 RA, π2.errors RAW, π2.errors[*] A, π2.words RA; res .0 π2, .0.errors π2.errors, .0.errors[*] ~π2.errors[*], .0.words π1#Fetched.0#Ok.0 π1#Loaded.0#Ok.0 π2.words, .1#Cmd.0 shared(Cmd.none)#Cmd.0 ~fresh1{lost}, .1#Cmd.0[*] ~fresh2{lost}, .1#Cmd.0[*]#Perform.0◇◇ ~π2.words
   summary view: π1.words R; res fresh1{lost}
-  demands 6: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 3
-total 6: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 3
+  demands 10: accepted 4 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 1; assumed 0), pending 3, rejected 3
+total 10: accepted 4 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 1; assumed 0), pending 3, rejected 3
 cause need 3

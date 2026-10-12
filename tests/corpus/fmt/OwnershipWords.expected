@@ -16,5 +16,8 @@ pub foreign impure catchIf :
     → a
 
 
+pub foreign pure each : escaped aliased Value, many owned returned (Value → a) → a
+
+
 pub join : borrowed List String, String → fresh exclusive List String
 join xs s = xs

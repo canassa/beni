@@ -7,5 +7,6 @@ pub   crossing   foreign   type   Event
 pub foreign pure pure :   once    returned   sync ( ⊤ → a ) →   a
 pub foreign impure catchIf :   once returned sync (⊤ → a),
     once sync (Value → bool), once returned sync (Value → a) → a
+pub   foreign   pure   each :  escaped  aliased    Value,  many   owned   returned  ( Value → a ) → a
 pub join : borrowed   List String, String →   fresh  exclusive List String
 join xs s = xs

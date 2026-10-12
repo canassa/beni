@@ -14,6 +14,7 @@
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Http
+import Schema
 import Sub
 import Tea
 
@@ -38,6 +39,33 @@ split = Http.expectStringResponse λresponse →
     case response of
         Http.GoodStatus_ _ body →
             Ok (String.split body ",")
+
+        _ →
+            Err ⊤
+
+
+-- A decoder that writes what it is handed: its class writes, so no call
+-- carries it, and it is reported where it leaves the walk's sight — stored
+-- in the `Expect` — whether it is a lambda or a top-level function.
+pushing : Http.Response String → Result ⊤ (List Schema.Issue)
+pushing response =
+    case response of
+        Http.BadRequest_ (Http.UnprintableBody issues) →
+            Ok (List.push issues (Schema.issue "pushed"))
+
+        _ →
+            Err ⊤
+
+
+writes : Http.Expect ⊤ (List Schema.Issue)
+writes = Http.expectStringResponse pushing
+
+
+writesInPlace : Http.Expect ⊤ (List Schema.Issue)
+writesInPlace = Http.expectStringResponse λresponse →
+    case response of
+        Http.BadRequest_ (Http.UnprintableBody issues) →
+            Ok (List.push issues (Schema.issue "pushed"))
 
         _ →
             Err ⊤
