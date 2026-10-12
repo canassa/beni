@@ -137,6 +137,14 @@ project) against it, one step per line, `#` for a comment:
     mouse <selector> <name>     a bubbling `MouseEvent` of that name
                                 (`mouseover`, `mouseout`, `mousemove`, …),
                                 button 0
+    drag <selector> <name>      a bubbling drag event of that name
+                                (`dragstart`, `drag`, `dragenter`,
+                                `dragover`, `dragleave`, `drop`,
+                                `dragend`): a `MouseEvent` in both DOMs,
+                                with no `dataTransfer`, cancelable but for
+                                `dragleave` and `dragend`; one whose
+                                default a handler prevented logs
+                                `(drop's default prevented)` (or its name's)
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable
