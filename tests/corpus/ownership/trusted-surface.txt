@@ -24,6 +24,7 @@ core       Js.each               ownership/core/JsWords.beni
 core       Js.ref                ownership/core/JsWords.beni
 core       Js.read               ownership/core/JsWords.beni
 core       Js.write              ownership/core/JsWords.beni
+core       Js.throw              ownership/core/JsWords.beni
 core       Js.finally            ownership/core/JsWords.beni
 core       Js.catchIf            ownership/core/JsWords.beni
 core       Js.pure               ownership/core/JsWords.beni
