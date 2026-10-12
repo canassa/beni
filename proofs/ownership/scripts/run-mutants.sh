@@ -25,6 +25,11 @@ for m in "${names[@]}"; do
   d="$scratch/m-$m"
   rm -rf "$d"; cp -r "$base" "$d"
   if ! node scripts/mutate.mjs "$m" "$d"; then echo "$m: PATCH FAILED"; continue; fi
+  # The executable's `falsify` mode imports Soundness.lean, whose proofs
+  # follow the checker's text (a mutant that deletes a demand side condition
+  # breaks them). The campaign needs neither: drop the mode from the copy.
+  sed -i -e '/^import Ownership.Falsify$/d' \
+    -e '/^  if mode == "falsify" then$/,/^    return (if clean then 0 else 1)$/d' "$d/Main.lean"
   if ! (cd "$d" && lake build ownership > build.log 2>&1); then echo "$m: BUILD FAILED"; continue; fi
   line="$m:"
   caught=0

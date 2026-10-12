@@ -739,7 +739,10 @@ def recursiveDecl (table : Table) (name : String) : Gen Decl := do
   let r ← pick [tL, .int] tL
   let n := ps.length + caps.length
   let env := bodyEnv (ps ++ caps)
-  let ms := movesFor table
+  -- Half the bodies use only flat list moves, so that more recursive
+  -- declarations are accepted and their recursive writes are exercised.
+  let ms := if (← draw 2) == 0 then movesFor table
+    else moves.filter fun (name, _) => ["literal", "push", "set", "read", "length", "copy"].contains name
   let first ← litList env
   let base ← blockOf ms (← draw 3) (n + 2) env r
   let pushed ← draw (ts.length + 1)
