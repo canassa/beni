@@ -1,4 +1,4 @@
-// Why `05_swap1k` is bimodal for every subject (research 81). The same
+// Why `05_swap1k` is bimodal for every subject (research 84). The same
 // sample as `bench.mjs` — fresh page, the benchmark's warm-up, one traced
 // click, js-framework-benchmark's `script` figure — under conditions that
 // separate the DOM work from Chrome's CPU throttling:

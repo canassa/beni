@@ -9,6 +9,10 @@ by the commands in §6.*
 
 ---
 
+> **Note (2026-10-12):** the 4×-throttled medians below for operations under about 1 ms of script
+> (swap, select, remove, update10th) are not reliable rankings: Chrome's CPU throttler makes them
+> bimodal (research 84). At 1×, beni direct ties vanilla on swap and is 1.18× vanilla on update10th.
+
 ## 0. The answer in five sentences
 
 1. **Bytes drop, but not to 2.9 kB**: the table app on `browser-direct --release` is **4 110 B**
