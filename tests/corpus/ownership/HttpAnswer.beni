@@ -1,0 +1,113 @@
+-- ownership: the decoder an `Http.Expect` holds is followed where `Http`
+-- calls it (`ownership-checker.md` §24.9): a function stored at a path of
+-- a parameter is a function slot of the summary, and a lambda a call
+-- returns keeps its class. So the tagger of an HTTP answer is handed what
+-- the decoder returns. `split` reads the body and builds a new list, and
+-- answers `Err ()` for every failure: its answer is the work's own, and
+-- `Loaded`'s payload is owned — no line. `expecting` is Conduit's: it hands
+-- the body to the program's parser and forwards the request's `Problem`,
+-- which comes back through `Task.callback` from JavaScript, so its tagger
+-- is rejected `need`, approximately, at `Fetched`. A decoder that answers a
+-- top-level list is rejected, exactly; one that answers the model's list,
+-- which the work's lambda captured, is rejected too, approximately: the
+-- checker does not place a capture of a capture.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type alias Model =
+    words : List String
+    errors : List String
+
+
+type Msg
+    = Fetch
+    | Loaded (Result ⊤ (List String))
+    | Fetched (Result Http.Error (List String))
+
+
+defaults : List String
+defaults = [ "a", "b" ]
+
+
+split : Http.Expect ⊤ (List String)
+split = Http.expectStringResponse λresponse →
+    case response of
+        Http.GoodStatus_ _ body →
+            Ok (String.split body ",")
+
+        _ →
+            Err ⊤
+
+
+expecting : (String → List String) → Http.Expect Http.Error (List String)
+expecting parse = Http.expectStringResponse λresponse →
+    case response of
+        Http.GoodStatus_ _ body →
+            Ok (parse body)
+
+        Http.BadRequest_ problem →
+            Err (Http.BadRequest problem)
+
+        _ →
+            Err Http.Timeout
+
+
+get : Http.Expect x a → Result x a
+get expect =
+    Http.request
+        { method = "GET"
+        , headers = []
+        , url = "/words"
+        , body = Http.emptyBody
+        , expect = expect
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Fetch →
+            ( model
+            , Cmd.batch
+                [ Cmd.task (λ⊤ → get split) Loaded
+                , Cmd.task (λ⊤ → get (expecting (String.split _ " "))) Fetched
+                , Cmd.task (λ⊤ → get (Http.expectStringResponse λ_ → Ok defaults)) Loaded
+                , Cmd.task (λ⊤ → get (Http.expectStringResponse λ_ → Ok model.words)) Loaded
+                ]
+            )
+
+        Loaded (Ok words) →
+            ( { model | words = words }, Cmd.none )
+
+        Loaded (Err _) →
+            ( { model | errors = List.push model.errors "failed" }, Cmd.none )
+
+        Fetched (Ok words) →
+            ( { model | words = words }, Cmd.none )
+
+        Fetched (Err _) →
+            ( { model | errors = List.push model.errors "failed" }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Fetch}>fetch</button>
+        <p>{String.join model.words ", "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { words = [], errors = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

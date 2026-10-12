@@ -76,6 +76,19 @@ calls xs v =
     List.length ys
 
 
+-- `throw` never returns, so what it returns is the call's own (`fresh`):
+-- an edit of a list that is either a literal or a throw is accepted.
+throws : Int → Int
+throws n =
+    xs =
+        if n > 0 then
+            [ n ]
+        else
+            Js.throw (Js.from "negative")
+    ys = [ …xs, 1 ]
+    List.length ys
+
+
 keeps : List Int, List Int → Int
 keeps xs ys =
     r = Js.ref xs
