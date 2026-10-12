@@ -1,0 +1,24 @@
+-- ownership: a lambda a call returns keeps its class, and what it captured
+-- stays held by the value it is (`ownership-checker.md` §24.9). `counter`'s
+-- summary carries `λ` with `◇ π1` beside it, so the caller's list is held by
+-- `count` for as long as `count` lives: `later` pushes onto the list and then
+-- calls `count`, rejected `captured`; `before` calls it first, accepted.
+counter : List Int → (⊤ → Int)
+counter xs = λ⊤ → List.length xs
+
+
+pub later : Int → Int
+later n =
+    xs = [ n ]
+    count = counter xs
+    ys = List.push xs 1
+    count ⊤ + List.length ys
+
+
+pub before : Int → Int
+before n =
+    xs = [ n ]
+    count = counter xs
+    m = count ⊤
+    ys = List.push xs 1
+    m + List.length ys
