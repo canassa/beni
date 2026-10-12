@@ -1041,7 +1041,10 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     } else if (std.mem.eql(u8, name, "push")) {
         uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = try o.stores(0, 1, elem) }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(1, eps) } });
-    } else if (eqlAny(name, &.{ "pop", "removeAt", "done" })) {
+    } else if (eqlAny(name, &.{ "pop", "removeAt", "swap", "done" })) {
+        // A writer that stores nothing new: it drops an element, or permutes
+        // two (`swap`, §22.5), so the list stays exclusive when it was
+        // (thesis §3.11's row: `excl if π₁ excl`).
         uses = &.{.{ .param = 0, .path = eps, .bits = R | A | W }};
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps) }, .{ .path = elem, .prov = p(0, elem) } });
     } else if (std.mem.eql(u8, name, "cons")) {
