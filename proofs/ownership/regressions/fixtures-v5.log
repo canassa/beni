@@ -84,6 +84,9 @@ a let shadows a variable its continuation uses: expected=false actual=false Exce
 the same in a declaration body: expected=false actual=false Except.error "shadowing: variable 0 is bound twice"
 shared on a nested list, then an element pushed: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
 a closure in a conditional arm captures a pushed list: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+foldl calls a once closure on two rows: expected=false actual=false Except.error "calls edge: a once callback is called many times"
+shared on a record holding a closure over a list: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
+a loop over a non-exclusive source returns an element, then edited: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
 probe disjoint under mutant disjoint: corrected=Except.error "Disjoint: another operand path holds the written cell" disagrees=true
 probe focus body pushes its own container under mutant disjoint: corrected=Except.error "Disjoint: another operand path holds the written cell" disagrees=true
 probe read only in the nonzero arm after a push under mutant branch-live: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
@@ -109,4 +112,7 @@ probe mapVia publishes a row, then the row is pushed under mutant callback-escap
 probe mapVia forwards map's guards about its callback under mutant forward-guards: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=true
 probe once closure called by a callee, then observed under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
 probe close returns a once closure's capture, a callee calls it under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
-fixtures=86 passed=true
+probe foldl calls a once closure on two rows under mutant many-off: corrected=Except.error "calls edge: a once callback is called many times" disagrees=true
+probe shared on a record holding a closure over a list under mutant shared-fn: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=true
+probe unbound live variable under mutant no-scope: corrected accepts=false mutant accepts=true disagrees=true
+fixtures=89 passed=true

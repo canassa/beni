@@ -10,27 +10,26 @@ statements three are `sorry` and the main theorem is proved only from one of
 them. It does not change the beni compiler
 or the thesis.
 
-Current state ([RESULTS.md](RESULTS.md)): 86 fixed verdict fixtures, checked by
+Current state ([RESULTS.md](RESULTS.md)): 89 fixed verdict fixtures, checked by
 both checkers; three 20 000-trial campaigns of generator v5 (which generates
 declarations, recursion, closures and shadowing of its own) with no
-corrected-rule mismatch: 10 681 accepted programs, 7 400 of them distinct,
-6 878 with an in-place write that changes an array, 55 % writing an array
-two names reach; precision 58 % (accepted among programs whose two runs
-agree). In the declaration family 96 % of accepted programs run a generated
-declaration, a third have one change an array the caller passed, and 15 %
-of generated calls pass one array twice. Twenty-two required negative
-controls (two historical, the first review's seven, eight summary-row
-mutants, `once-through-call`, `branch-live`, and the third review's
-`branch-closure`, `shared-roots` and `shadowing`) each have a fixed probe,
-and the generator alone catches each of them on each of three seeds
-(borrowed-supply only against the per-call checker); `ci` requires both.
-Two more are required through their probe only; three are known gaps. The
-third review's planted holes are re-run on the final generator; the other
-source-level edits were last run on an earlier v5 generator (RESULTS.md says
-which) and are not current until re-run; the misses are analysed in
+corrected-rule mismatch: 9 759 accepted programs, 6 565 of them distinct,
+6 193 with an in-place write that changes an array, 55 % writing an array
+two names reach; precision 59 % (accepted among programs whose two runs
+agree). In the declaration family 95–97 % of accepted programs run a
+generated declaration, a third have one change an array the caller passed,
+and 16 % of generated calls pass one array twice. Twenty-six required
+negative controls (two historical and twenty-four flags, among them the
+fourth review's `many-off` and `shared-fn`) each have a fixed probe, and the
+generator alone catches each of them on each of three seeds (borrowed-supply
+only against the per-call checker); `ci` requires both. `no-scope` is
+required through a checker-level probe, because no typed program can reach
+it. **Every** source-level edit (55) was run on the final generator: 41
+caught on all three seeds, 14 on none, each of those argued equivalent (with
+its changed verdicts counted) or listed as a gap with what catches it, in
 COVERAGE.md. One planted hole, `hiddencopy`, is in the in-place interpreter,
-not the checker: an interpreter that copies on every write computes the value
-semantics, so no generated program can disagree under it, and only the
+not the checker: an interpreter that copies on every write computes the
+value semantics, so no generated program can disagree under it, and only the
 fixtures' runs catch it.
 
 ## Run

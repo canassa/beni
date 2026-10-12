@@ -1,0 +1,22 @@
+Verdicts changed by the source-level edits no generated program distinguishes
+(final generator, 20000 programs per seed). "mutant-only": programs the edited
+checker accepts and the unmutated one rejects (compared with `ownership
+accepted`); "corrected-only": the reverse. The edited builds' campaigns
+(source-mutants-round5.log) found no disagreement, so every mutant-only program
+runs equal. Flag versions use `ownership verdict-diff`.
+
+edit               seed 20261011    seed 17          seed 271828
+once               0 / 0            0 / 0            0 / 0
+nestedsep          0 / 0            0 / 0            0 / 0
+reqexcloutside     0 / 0            0 / 0            0 / 0
+recvalidate        0 / 0            0 / 0            0 / 0
+escapeowned        2 / 0            0 / 0            0 / 0      (both run equal)
+recwrites          0 / 0            0 / 0            0 / 0
+keepsany           0 / 0            0 / 0            0 / 0
+symenv             0 / 0            0 / 0            0 / 0
+
+flag (verdict-diff)  changed / of which disagree, per seed
+borrowed-supply      28 / 0          23 / 0          31 / 0
+requires-edge         0 / 0           0 / 0           0 / 0
+callback-requires     0 / 0           0 / 0           0 / 0
+transfer-supplies     0 / 0           0 / 0           0 / 0

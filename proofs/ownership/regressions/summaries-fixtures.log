@@ -250,3 +250,6 @@ summary of applyThenRead
 == the same in a declaration body: rejected (shadowing: variable 0 is bound twice)
 == shared on a nested list, then an element pushed: rejected (Unescaped: program-lifetime holder)
 == a closure in a conditional arm captures a pushed list: rejected (Dead: an old holder is live after the demand)
+== foldl calls a once closure on two rows: rejected (calls edge: a once callback is called many times)
+== shared on a record holding a closure over a list: rejected (Unescaped: program-lifetime holder)
+== a loop over a non-exclusive source returns an element, then edited: rejected (exclusive contents: positions or nested paths may share)

@@ -1,0 +1,55 @@
+disjoint: seed=20261011 exit=1 first-index=229 family=declarations seed=17 exit=1 first-index=121 family=general seed=271828 exit=1 first-index=150 family=general caught-seeds=3/3
+borrowedsupply: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+travexcl: seed=20261011 exit=1 first-index=411 family=general seed=17 exit=1 first-index=68 family=general seed=271828 exit=1 first-index=514 family=declarations caught-seeds=3/3
+manycap: seed=20261011 exit=1 first-index=1447 family=declarations seed=17 exit=1 first-index=5187 family=declarations seed=271828 exit=1 first-index=29 family=declarations caught-seeds=3/3
+copyexcl: seed=20261011 exit=1 first-index=29 family=general seed=17 exit=1 first-index=304 family=general seed=271828 exit=1 first-index=2790 family=declarations caught-seeds=3/3
+closesrc: seed=20261011 exit=1 first-index=2565 family=general seed=17 exit=1 first-index=177 family=declarations seed=271828 exit=1 first-index=352 family=declarations caught-seeds=3/3
+keepsshape: seed=20261011 exit=1 first-index=9830 family=declarations seed=17 exit=1 first-index=2286 family=general seed=271828 exit=1 first-index=7381 family=general caught-seeds=3/3
+xres: seed=20261011 exit=1 first-index=215 family=general seed=17 exit=1 first-index=44 family=general seed=271828 exit=1 first-index=769 family=general caught-seeds=3/3
+separated: seed=20261011 exit=1 first-index=20 family=declarations seed=17 exit=1 first-index=43 family=fresh-nested seed=271828 exit=1 first-index=11 family=fresh-nested caught-seeds=3/3
+dead: seed=20261011 exit=1 first-index=7 family=indexed-chain seed=17 exit=1 first-index=39 family=indexed-chain seed=271828 exit=1 first-index=28 family=indexed-chain caught-seeds=3/3
+escape: seed=20261011 exit=1 first-index=21 family=declarations seed=17 exit=1 first-index=15 family=escape-traversal seed=271828 exit=1 first-index=4 family=escape-traversal caught-seeds=3/3
+focusexcl: seed=20261011 exit=1 first-index=20 family=declarations seed=17 exit=1 first-index=43 family=fresh-nested seed=271828 exit=1 first-index=11 family=fresh-nested caught-seeds=3/3
+once: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+nestedsep: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+reqexcloutside: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+recvalidate: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+writeout: seed=20261011 exit=1 first-index=411 family=general seed=17 exit=1 first-index=68 family=general seed=271828 exit=1 first-index=47 family=library-pipeline caught-seeds=3/3
+tsupplyexcl: seed=20261011 exit=1 first-index=215 family=general seed=17 exit=1 first-index=44 family=general seed=271828 exit=1 first-index=769 family=general caught-seeds=3/3
+escapeowned: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+guardreuse: seed=20261011 exit=1 first-index=499 family=declarations seed=17 exit=1 first-index=267 family=declarations seed=271828 exit=1 first-index=236 family=general caught-seeds=3/3
+callbackxres: seed=20261011 exit=1 first-index=20 family=declarations seed=17 exit=1 first-index=43 family=fresh-nested seed=271828 exit=1 first-index=11 family=fresh-nested caught-seeds=3/3
+supplyedge: seed=20261011 exit=1 first-index=2346 family=declarations seed=17 exit=1 first-index=923 family=declarations seed=271828 exit=1 first-index=317 family=declarations caught-seeds=3/3
+supplyrecheck: seed=20261011 exit=1 first-index=4601 family=declarations seed=17 exit=1 first-index=2492 family=declarations seed=271828 exit=1 first-index=4787 family=declarations caught-seeds=3/3
+callsedge: seed=20261011 exit=1 first-index=218 family=once-many-wrappers seed=17 exit=1 first-index=3 family=once-many-wrappers seed=271828 exit=1 first-index=217 family=once-many-wrappers caught-seeds=3/3
+requiresedge: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+callbackwrites: seed=20261011 exit=1 first-index=230 family=general seed=17 exit=1 first-index=1316 family=declarations seed=271828 exit=1 first-index=225 family=declarations caught-seeds=3/3
+callbackescapes: seed=20261011 exit=1 first-index=499 family=declarations seed=17 exit=1 first-index=267 family=declarations seed=271828 exit=1 first-index=2728 family=general caught-seeds=3/3
+callbackaliases: seed=20261011 exit=1 first-index=129 family=declarations seed=17 exit=1 first-index=220 family=declarations seed=271828 exit=1 first-index=68 family=declarations caught-seeds=3/3
+callbackenv: seed=20261011 exit=1 first-index=579 family=library-pipeline seed=17 exit=1 first-index=472 family=declarations seed=271828 exit=1 first-index=47 family=library-pipeline caught-seeds=3/3
+callbackrequires: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+forwardguards: seed=20261011 exit=1 first-index=499 family=declarations seed=17 exit=1 first-index=267 family=declarations seed=271828 exit=1 first-index=2728 family=general caught-seeds=3/3
+transfersupplies: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+oncethroughcall: seed=20261011 exit=1 first-index=46 family=general seed=17 exit=1 first-index=535 family=general seed=271828 exit=1 first-index=1034 family=general caught-seeds=3/3
+capturelive: seed=20261011 exit=1 first-index=1324 family=general seed=17 exit=1 first-index=295 family=declarations seed=271828 exit=1 first-index=3361 family=general caught-seeds=3/3
+copyelems: seed=20261011 exit=1 first-index=16452 family=declarations seed=17 exit=1 first-index=10046 family=declarations seed=271828 exit=1 first-index=8912 family=general caught-seeds=3/3
+putexcl: seed=20261011 exit=1 first-index=579 family=library-pipeline seed=17 exit=1 first-index=524 family=library-pipeline seed=271828 exit=1 first-index=47 family=library-pipeline caught-seeds=3/3
+recwrites: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+recwritesown: seed=20261011 exit=1 first-index=826 family=declarations seed=17 exit=1 first-index=310 family=declarations seed=271828 exit=1 first-index=2276 family=declarations caught-seeds=3/3
+keepsany: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+symenv: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+branchlive: seed=20261011 exit=1 first-index=291 family=general seed=17 exit=1 first-index=2936 family=general seed=271828 exit=1 first-index=558 family=general caught-seeds=3/3
+branchclosure: seed=20261011 exit=1 first-index=56 family=declarations seed=17 exit=1 first-index=109 family=general seed=271828 exit=1 first-index=1102 family=declarations caught-seeds=3/3
+sharedroots: seed=20261011 exit=1 first-index=485 family=declarations seed=17 exit=1 first-index=713 family=general seed=271828 exit=1 first-index=590 family=declarations caught-seeds=3/3
+sharedfn: seed=20261011 exit=1 first-index=822 family=declarations seed=17 exit=1 first-index=5336 family=declarations seed=271828 exit=1 first-index=590 family=declarations caught-seeds=3/3
+manyoff: seed=20261011 exit=1 first-index=1450 family=declarations seed=17 exit=1 first-index=72 family=declarations seed=271828 exit=1 first-index=399 family=declarations caught-seeds=3/3
+noscope: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+joinexcl: seed=20261011 exit=1 first-index=215 family=general seed=17 exit=1 first-index=44 family=general seed=271828 exit=1 first-index=47 family=library-pipeline caught-seeds=3/3
+resprov: seed=20261011 exit=1 first-index=579 family=library-pipeline seed=17 exit=1 first-index=121 family=general seed=271828 exit=1 first-index=47 family=library-pipeline caught-seeds=3/3
+argrecheck2: seed=20261011 exit=1 first-index=75 family=recursion seed=17 exit=1 first-index=203 family=declarations seed=271828 exit=1 first-index=357 family=recursion caught-seeds=3/3
+pushexcl: seed=20261011 exit=1 first-index=411 family=general seed=17 exit=1 first-index=68 family=general seed=271828 exit=1 first-index=514 family=declarations caught-seeds=3/3
+nofix1: seed=20261011 exit=1 first-index=46 family=general seed=17 exit=1 first-index=535 family=general seed=271828 exit=1 first-index=1034 family=general caught-seeds=3/3
+nofix2: seed=20261011 exit=1 first-index=2588 family=general seed=17 exit=1 first-index=535 family=general seed=271828 exit=1 first-index=2312 family=general caught-seeds=3/3
+hiddencopy: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+focuscontainer: seed=20261011 exit=1 first-index=1017 family=general seed=17 exit=1 first-index=5137 family=declarations seed=271828 exit=1 first-index=3655 family=general caught-seeds=3/3
+atelem: seed=20261011 exit=1 first-index=2536 family=declarations seed=17 exit=1 first-index=202 family=general seed=271828 exit=1 first-index=322 family=declarations caught-seeds=3/3

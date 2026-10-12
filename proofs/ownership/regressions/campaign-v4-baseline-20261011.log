@@ -29,5 +29,5 @@ row-hits 34 supply transferred to the caller's own input
 row-hits 28 xreq(callback arg) yes
 row-hits 15 xres no
 row-hits 1903 xres yes
-generator-version=4 seed=20261011 control=soundness-v4 candidates=20000 distinct=12160 typed=20000 accepted=4903 distinctAccepted=2526 withWrites=3113 distinctWithWrites=1788 aliasedWrites=2806 agreeing=7603 agreeingAccepted=4903 rejected=15097 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10037 summaries-reused=200985 first-mismatch=none elapsed-ms=72008
+generator-version=4 seed=20261011 control=soundness-v4 candidates=20000 distinct=12160 typed=20000 accepted=4903 distinctAccepted=2526 withWrites=3113 distinctWithWrites=1788 aliasedWrites=2806 agreeing=7603 agreeingAccepted=4903 rejected=15097 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10037 summaries-reused=200985 first-mismatch=none elapsed-ms=79307
 summary seed=20261011 accepted=4903 distinct-accepted=2526 with-write=3113 distinct-with-write=1788 aliased-write=2806 (57.2 % of accepted) agreeing=7603 accepted-of-agreeing=4903 precision=64.4 % declarations-accepted=0 run-generated=0 (-) generated-call-writes-input=0 (-) generated-calls=0 same-array-twice=0 (-) rejected-shadowing=0
