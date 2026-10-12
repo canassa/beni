@@ -1204,6 +1204,9 @@ fn hostedRow(o: *const Ownership, m: u32, d: u32) ?HostedRow {
 fn assertHosted(o: *Ownership, s: Summary, row: HostedRow) Allocator.Error!Summary {
     if (s.limit != .none) return s;
     const keep = o.keep.allocator();
+    // π₁'s and π₂'s facts are the row's. In the `map…` and `forward`
+    // rows π₁ is a `Job`, `Later` or `Tap` — a `foreign
+    // type`, no function, with no facts to keep — checked where it was made.
     var funs: std.ArrayList(FunFacts) = .empty;
     var supply: std.ArrayList(SupplyEntry) = .empty;
     for (s.funs) |f| if (f.param > 1) try funs.append(keep, f);
@@ -1865,6 +1868,8 @@ fn joinFacts(a: NominalFacts, b: NominalFacts) NominalFacts {
 fn holdsList(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error!bool {
     if (depth > type_depth) return true;
     switch (store.resolvedContent(v)) {
+        // A type variable may be anything; an alias `resolvedContent` left
+        // unexpanded is taken to hold one rather than walked.
         .flex, .rigid, .err, .alias => return true,
         .structure => |s| switch (s) {
             .unit, .empty_record, .func => return false,

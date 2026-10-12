@@ -11,8 +11,9 @@
 -- and `model.seeded` — each a payload stored by another arm — are accepted
 -- on browser-direct, owned at their sends. `keeps`: a view event carries
 -- `model.rows` (`Keep model.rows`), and both edits are rejected `payload`,
--- approximately. `seeds`: a view event carries a list the view made
--- (`Seed [ 1, 2 ]`): rejected the same way.
+-- approximately, and so is `KeepGrown`'s, which stores the message's list
+-- and writes it in the same arm (`msg#KeepGrown.0`). `seeds`: a view event
+-- carries a list the view made (`Seed [ 1, 2 ]`): rejected the same way.
 import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)
@@ -30,6 +31,7 @@ type Msg
     | Seed (List Int)
     | GrowKept
     | GrowSeeded
+    | KeepGrown (List Int)
 
 
 update : Msg, Model → Model
@@ -47,6 +49,9 @@ update msg model =
         GrowSeeded →
             { model | seeded = List.push model.seeded 0 }
 
+        KeepGrown rows →
+            { model | kept = List.push rows 0 }
+
 
 grows : Model → Html Msg
 grows model =
@@ -61,6 +66,7 @@ keeping : Model → Html Msg
 keeping model =
     <main>
         <button onClick={Keep model.rows}>keep</button>
+        <button onClick={KeepGrown model.rows}>keep grown</button>
         <button onClick={GrowKept}>grow kept</button>
     </main>
 

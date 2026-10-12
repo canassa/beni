@@ -1,0 +1,10 @@
+module CapturedReread
+  13:14 List.push xs: rejected later-use: xs is read again at 14:26
+  20:42 List.push xs: accepted once
+  26:46 List.push xs: rejected later-use: xs is read again at 27:5
+  summary rereads: unused
+  summary once: unused
+  summary holder: unused
+  demands 3: accepted 1 (fresh 0, call 0, param 0, callback-param 0, once 1, entry 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 0, param 0, callback-param 0, once 1, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 2
