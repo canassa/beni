@@ -736,6 +736,18 @@ After the walk (§5, §7) and the resolution of its demands (§8):
 A lambda's class is read off its frame the same way, over its own parameters, with `◇x.q` for its captured
 cells.
 
+A top-level value with no parameters is read off the same way, and its `res` is what a reference to it holds:
+each cell its definition makes is `shared(M.v)` at the path it is made at, and a cell of another value it
+names is that value's. *What is shared is the cells the definition makes, and nothing else* (thesis §3.10):
+`Dict.empty`, `Dict Leaf`, makes none, so a dictionary started from it is nobody's top-level list (T51). This
+amends §4.2 and §5's top-level row, under which a value of a type that does not cross was one shared cell
+whatever it held.
+
+Derivation tags of supplies (§16.8's findings, §16.11): a supply is borrowed *exactly* when its probe failed
+an exact condition (a parameter the body reads later, a top-level list), and *approximately* when it failed
+only through an approximate step — a list's element, a level of a recursive value that folding merged
+(§16.7; thesis §3.1's representatives), a cell from JavaScript.
+
 ### 16.4 Applying a summary at a call
 
 A call `f a₁ … aₙ` — of a top-level value, of a method the dispatch table resolves to one, of a local whose
