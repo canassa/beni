@@ -353,6 +353,21 @@ clampIndex i n =
         Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "min" [ Js.from i, Js.from n ])
 
 
+--| A new list with the same elements, in the same order: the explicit copy.
+--| A change to the copy is never seen through the original, nor the other
+--| way round, which is what a version kept on purpose — an undo history, a
+--| snapshot — wants (`docs/design/ownership-checker.md` §3.4).
+--|
+--|     copy [ 1, 2, 3 ] == [ 1, 2, 3 ]
+--|
+--| O(n), and always a fresh list, never the list itself. The elements are
+--| not copied: a list of lists copies the outer list only.
+pub copy : List a → List a
+copy xs =
+    o = offset xs
+    Js.pure λ⊤ → Js.to (Js.call (Js.from (base xs)) "slice" [ Js.from o, Js.from (o + length xs) ])
+
+
 --| Elements `from` up to `to` of `xs`, a fresh plain array.
 sliceOf : List a, Int, Int → List a
 sliceOf xs from to =
@@ -557,9 +572,9 @@ viewPlain : Js.Value
 viewPlain = Js.method λv →
     cached = Js.get v "p"
     if Js.isNull cached then
-        copy = Js.call (Js.get v "b") "slice" [ Js.get v "o" ]
-        Js.set v "p" copy
-        copy
+        copied = Js.call (Js.get v "b") "slice" [ Js.get v "o" ]
+        Js.set v "p" copied
+        copied
     else
         cached
 
@@ -798,17 +813,17 @@ claim b c v =
     else if Js.same (Js.at b c) v then
         b
     else
-        copy = Js.call b "slice" [ Js.from 0, Js.from c ]
-        _ = Js.call copy "push" [ v ]
-        copy
+        copied = Js.call b "slice" [ Js.from 0, Js.from c ]
+        _ = Js.call copied "push" [ v ]
+        copied
 
 
 --| Buffer `b`'s first `c` elements with index `k` set to `v`: a copy.
 changed : Js.Value, Int, Int, Js.Value → Js.Value
 changed b c k v =
-    copy = Js.call b "slice" [ Js.from 0, Js.from c ]
-    Js.setAt copy k v
-    copy
+    copied = Js.call b "slice" [ Js.from 0, Js.from c ]
+    Js.setAt copied k v
+    copied
 
 
 --| Plain array `b` from index `o` as a trie: an empty head, the tree at
