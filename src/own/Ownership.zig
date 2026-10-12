@@ -6527,7 +6527,7 @@ const Walker = struct {
         if (w.reconsed(items)) return avs[bi];
         // A prepend — items, then the one spread, last — copies its base
         // and writes nothing (§3.2 as amended for slice 3f).
-        if (bi > 0 and bi == items.len - 1) return w.prepended(top, avs, bi);
+        if (bi > 0 and bi == items.len - 1) return w.prepended(top, insts, avs, bi);
         const others = try w.a.alloc(AV, avs.len - 1);
         var k: usize = 0;
         for (avs, 0..) |av, i| if (i != bi) {
@@ -6584,7 +6584,7 @@ const Walker = struct {
     /// Sound only while the backend never writes a prepend's base in place
     /// (§25.2, *The backend agrees*): `emit/PrependShapes` pins every shape,
     /// and slice 5's in-place lowering must leave prepends as copies.
-    fn prepended(w: *Walker, top: Inst.Index, avs: []const AV, bi: usize) Allocator.Error!AV {
+    fn prepended(w: *Walker, top: Inst.Index, insts: []const Inst.Index, avs: []const AV, bi: usize) Allocator.Error!AV {
         const site = try w.single(.{ .kind = .site, .a = top.int(), .ty = w.instTypeOpt(top) });
         var stored: std.ArrayList(AV) = .empty;
         for (avs[0..bi]) |av| try stored.append(w.a, av);
@@ -6594,10 +6594,41 @@ const Walker = struct {
         try parts.append(w.a, site);
         // The array may be the base's — only a re-cons makes it so, which
         // the text does not show (§8.4) — while the elements are the base's.
-        try parts.append(w.a, try w.approxAll(avs[bi], top));
+        // Not when the item put in front of the base is a list made after
+        // it (§26.3): a re-cons needs that item to be already stored before
+        // the base's view, and a new array the base cannot reach is not.
+        if (!try w.madeAfter(insts[bi - 1], avs[bi - 1], avs[bi])) try parts.append(w.a, try w.approxAll(avs[bi], top));
         try parts.append(w.a, try w.shift(try w.proj(avs[bi], .{ .kind = .elem, .arg = 0 }, w.listElement(top)), .{ .kind = .elem, .arg = 0 }));
         for (stored.items) |av| try parts.append(w.a, try w.shift(av, .{ .kind = .elem, .arg = 0 }));
         return w.unionOf(parts.items);
+    }
+
+    /// §26.3: whether `item`, put in front of a prepend's base, is a list
+    /// made after the base — so that no re-cons can answer the base's
+    /// array. Core's `cons` re-conses only when the item is `Js.same` as the
+    /// element stored before the base's view (or in a trie head's slack),
+    /// an element of a list whose array the base shares: one the domain
+    /// names at the base's cells (a view is its scrutinee's cells, §5). A
+    /// list is compared by identity, and a new array — a literal's, or a
+    /// callee's fresh result, exact, never handed to JavaScript — is that
+    /// element only if the base reaches it. Anything else may be.
+    fn madeAfter(w: *Walker, item: Inst.Index, item_av: AV, base: AV) Allocator.Error!bool {
+        if (w.listElement(item) == null) return false;
+        var cells: std.ArrayList(Entry) = .empty;
+        for (item_av) |e| {
+            if (e.path != eps) continue;
+            if (e.approx != 0) return false;
+            const c = w.cells.items[e.cell];
+            switch (c.kind) {
+                .site => {},
+                .result => if (c.b == 0) return false,
+                else => return false,
+            }
+            if (try w.isEscaped(e.cell)) return false;
+            try cells.append(w.a, e);
+        }
+        if (cells.items.len == 0) return false;
+        return (try w.reaches(base, cells.items)) == null;
     }
 
     /// The element type of a list-typed instruction, when the checker solved it.
