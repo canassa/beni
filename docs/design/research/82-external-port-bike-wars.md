@@ -6,7 +6,7 @@ before any repair. The application is Ossi Hanhinen's Bike Wars (<https://github
 commit `ed263780`, Elm 0.19.0, BSD-3-Clause). It is a two-player light-cycle game of 1 413 lines of Elm in
 11 modules, and the port adds the parts of three packages it uses. The port is
 `examples/bike-wars` (`PORTING.md` lists every change beni forced). The frozen raw port is commit
-`93ff7b7fb`, and every count below is taken on it. The checker is master's at `7405633c2`, through slice
+`51739633e`, and every count below is taken on it. The checker is master's at `7405633c2`, through slice
 3d (research 80). Every figure is **[measured]** with the commands in §6. The probes of §4 are
 hypothetical edits made in a scratch copy, and none of them is applied.*
 
@@ -262,7 +262,7 @@ reasonably make.
 ## 6. Commands
 
 ```sh
-git checkout 93ff7b7fb                       # the frozen raw port
+git checkout 51739633e                       # the frozen raw port
 zig build                                    # the beni of master at 7405633c2
 cd examples/bike-wars
 ../../zig-out/bin/beni dump --stage=ownership --platform=browser-tea src
