@@ -63,6 +63,17 @@ pub const width_cap: usize = 64;
 pub const round_cap: u32 = 32;
 /// §16.7: the most `returns owned` atoms a summary's `owned` bits use.
 pub const atom_cap: u32 = 8;
+/// §20.4: a value this wide is indexed by its first step when projected.
+const wide_index: usize = 256;
+
+const WideIndex = struct {
+    roots: std.ArrayList(Entry) = .empty,
+    any: std.ArrayList(Entry) = .empty,
+    by: std.AutoHashMapUnmanaged([2]u32, std.ArrayList(Entry)) = .empty,
+};
+
+/// §20.4: the widest value whose deep condition is computed pair by pair.
+const deep_cap: usize = 256;
 /// How deep a callback's result is instantiated through another's.
 const inst_depth: u32 = 4;
 
@@ -2278,6 +2289,8 @@ const Walker = struct {
     /// The uses by local, for `resolve` (§18.11).
     use_start: []u32 = &.{},
     use_order: []u32 = &.{},
+    /// §20.4: wide values indexed by first step, by their slice.
+    wide: std.AutoHashMapUnmanaged([2]usize, WideIndex) = .empty,
 
     // ---- setup -------------------------------------------------------------
 
@@ -2496,8 +2509,49 @@ const Walker = struct {
         var buf: [k_limit + 1]Step = undefined;
         var at = av;
         const s = w.o.steps(p, &buf);
-        for (s, 0..) |st, i| at = try w.proj(at, st, if (i + 1 == s.len) ty else null);
+        var from: usize = 0;
+        // A wide value projected again and again — an entry model (§20.4) —
+        // is indexed by its first step once.
+        if (s.len > 0 and av.len >= wide_index) {
+            if (s.len == 1) if (ty) |v| if (!try w.trackedVar(v)) return &.{};
+            at = try w.projFirst(av, s[0]);
+            from = 1;
+        }
+        for (s[from..], from..) |st, i| at = try w.proj(at, st, if (i + 1 == s.len) ty else null);
         return at;
+    }
+
+    /// `proj(av, s)` for a wide value, through an index by first step that
+    /// is built once per value: the same answer, without the scan.
+    fn projFirst(w: *Walker, av: AV, s: Step) Allocator.Error!AV {
+        const key: [2]usize = .{ @intFromPtr(av.ptr), av.len };
+        const gop = try w.wide.getOrPut(w.a, key);
+        if (!gop.found_existing) {
+            var idx: WideIndex = .{};
+            for (av) |e| {
+                if (e.path == eps) {
+                    try idx.roots.append(w.a, e);
+                    continue;
+                }
+                const first = w.o.firstStep(e.path).?;
+                if (first.kind == .any) {
+                    try idx.any.append(w.a, e);
+                    continue;
+                }
+                const g = try idx.by.getOrPut(w.a, .{ @backingInt(first.kind), first.arg });
+                if (!g.found_existing) g.value_ptr.* = .empty;
+                try g.value_ptr.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx });
+            }
+            gop.value_ptr.* = idx;
+        }
+        const idx = gop.value_ptr;
+        var out: std.ArrayList(Entry) = .empty;
+        for (idx.roots.items) |e| {
+            if (try w.projCell(e.cell, s, null)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx });
+        }
+        try out.appendSlice(w.a, idx.any.items);
+        if (idx.by.get(.{ @backingInt(s.kind), s.arg })) |list| try out.appendSlice(w.a, list.items);
+        return w.norm(out.items);
     }
 
     // ---- exclusive contents (§18.2–§18.4) ---------------------------------
@@ -2669,8 +2723,10 @@ const Walker = struct {
     fn sepValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
         if (x.len == 0 or y.len == 0) return cond_yes;
         var k = cond_yes;
-        const ex = try w.expand(x);
-        const ey = try w.expand(y);
+        // Only the cells matter, and whether each is reached exactly: a
+        // value holding one cell at many paths is compared once (§20.4).
+        const ex = try w.cellsOf(try w.expand(x));
+        const ey = try w.cellsOf(try w.expand(y));
         for (ex) |a| for (ey) |b| {
             k = try w.condAnd(k, try w.sepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
             if (k == cond_shared) return k;
@@ -2678,11 +2734,34 @@ const Walker = struct {
         return k;
     }
 
+    /// `av`'s distinct cells, each at ε, exact when any entry reaches it exactly.
+    fn cellsOf(w: *Walker, av: AV) Allocator.Error!AV {
+        if (av.len <= 1) return av;
+        const out = try w.a.alloc(Entry, av.len);
+        for (av, out) |e, *o| o.* = .{ .path = eps, .cell = e.cell, .approx = e.approx };
+        std.mem.sort(Entry, out, {}, struct {
+            fn less(_: void, p: Entry, q: Entry) bool {
+                if (p.cell != q.cell) return p.cell < q.cell;
+                return p.approx < q.approx;
+            }
+        }.less);
+        var n: usize = 1;
+        for (out[1..]) |e| {
+            if (e.cell == out[n - 1].cell) continue;
+            out[n] = e;
+            n += 1;
+        }
+        return out[0..n];
+    }
+
     /// A value's deep condition (§18.2): every cell it holds, and no cell at
     /// two of its paths neither of which is a prefix of the other.
     fn deepCond(w: *Walker, av: AV) Allocator.Error!u32 {
         if (av.len == 0) return cond_yes;
         const ex = try w.expand(av);
+        // A value this wide is not told apart cell by cell: the pairs are
+        // quadratic, and the answer is the pessimistic one (§16.7's rule).
+        if (ex.len > deep_cap) return cond_lost;
         var k = cond_yes;
         for (ex) |e| k = try w.condAnd(k, try w.cellCond(e.cell));
         for (ex, 0..) |e, i| for (ex[i + 1 ..]) |f| {
@@ -3977,10 +4056,14 @@ const Walker = struct {
     /// `f`'s result for these arguments: each class's `res`, instantiated
     /// at the constructor's call (§16.4 item 6).
     fn entryRes(w: *Walker, inst: Inst.Index, f: EntryFn, avs: []const AV, ns: u32) Allocator.Error!AV {
+        return w.entryResWith(inst, f, avs, ns, true);
+    }
+
+    fn entryResWith(w: *Walker, inst: Inst.Index, f: EntryFn, avs: []const AV, ns: u32, conds: bool) Allocator.Error!AV {
         var parts: std.ArrayList(AV) = .empty;
         for (f.classes, f.sums) |cls, s| {
             const ci: u32 = if (cls == .closure) cls.closure else none;
-            try parts.append(w.a, try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = ci, .depth = 0, .fresh_ns = ns }));
+            try parts.append(w.a, try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = ci, .depth = 0, .fresh_ns = ns, .conds = conds }));
         }
         return w.unionOf(parts.items);
     }
@@ -4034,24 +4117,28 @@ const Walker = struct {
         const msg_tracked = try w.messageTracked(arg);
         const payload: AV = if (msg_tracked) try w.single(.{ .kind = .payload, .a = inst.int() }) else &.{};
         // The fixpoint (§20.4): update's fresh cells are one per number in
-        // every round, so it settles; 8 rounds is a backstop.
+        // every round, so it settles; 8 rounds is a backstop. Its rounds
+        // compute cells only; the round that settles lowers their conditions.
+        // A message that a view builds from the model is not carried round
+        // the loop: any demand its cells reach is the payload rule's already
+        // (§20.5), so the view is read once, on the settled model.
         var model = m0;
-        var view_msgs: AV = &.{};
         var res: AV = &.{};
         var round: u32 = 0;
         while (true) : (round += 1) {
-            if (msg_tracked) view_msgs = try w.anywhere(try w.entryRes(inst, view, &.{model}, 200_000), inst);
-            const msg = try w.unionOf(&.{ payload, view_msgs });
-            res = try w.entryRes(inst, upd, &.{ msg, model }, 0);
+            res = try w.entryResWith(inst, upd, &.{ payload, model }, 0, false);
             const half = if (whole) res else try w.proj(res, tuple0, null);
             const next = try w.unionOf(&.{ model, half });
             if (next.len == model.len) break;
             model = next;
-            if (round == 8) {
+            if (round >= 8) {
                 model = try w.unionOf(&.{ model, try w.single(.{ .kind = .top, .a = 0 }) });
                 break;
             }
         }
+        res = try w.entryRes(inst, upd, &.{ payload, model }, 0);
+        const view_res = try w.entryRes(inst, view, &.{model}, 200_000);
+        const view_msgs: AV = if (msg_tracked) try w.anywhere(view_res, inst) else &.{};
         const msg = try w.unionOf(&.{ payload, view_msgs });
         // (a) What every call the runtime makes escapes.
         for (upd.sums) |s| for (s.uses) |u| {
@@ -4648,6 +4735,9 @@ const Walker = struct {
         /// §20.4: the functions an entry instantiates at one call number
         /// their fresh cells apart.
         fresh_ns: u32 = 0,
+        /// §20.4: the fixpoint's rounds compute cells only; the round that
+        /// settles lowers their conditions once.
+        conds: bool = true,
         /// At the call itself: the arguments' types and the result's.
         arg_types: []const ?Var = &.{},
         result_ty: ?Var = null,
@@ -4661,10 +4751,8 @@ const Walker = struct {
     fn instRes(w: *Walker, s: *const Summary, ctx: InstCtx) Allocator.Error!AV {
         var out: std.ArrayList(Entry) = .empty;
         for (s.res, 0..) |r, i| {
-            var several = false;
-            for (s.res, 0..) |x, j| if (j != i and x.path == r.path) {
-                several = true;
-            };
+            // `res` is sorted by path: another entry at this path is a neighbour.
+            const several = (i > 0 and s.res[i - 1].path == r.path) or (i + 1 < s.res.len and s.res[i + 1].path == r.path);
             // An identity promise names an argument the result's type
             // cannot be (§16.4 item 6): `List.map xs String.fromInt` is
             // never `xs`, whatever `xs`'s cells are.
@@ -4674,7 +4762,7 @@ const Walker = struct {
             const cells = try w.instProv(r.prov, ctx);
             // §18.3: a fresh cell starts at the summary's condition, and a
             // parameter's is lowered by it.
-            switch (r.prov.kind) {
+            if (ctx.conds) switch (r.prov.kind) {
                 .fresh, .esc => {
                     const k = try w.instXSum(r.xc, ctx);
                     for (cells) |e| if (e.path == eps) try w.initCond(e.cell, k);
@@ -4684,7 +4772,7 @@ const Walker = struct {
                     for (cells) |e| if (e.path == eps) try w.lowerCond(e.cell, k);
                 },
                 else => {},
-            }
+            };
             var av = try w.under(cells, r.path);
             if (several or r.approx) av = try w.approxAll(av, ctx.inst);
             try out.appendSlice(w.a, av);
