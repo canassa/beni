@@ -392,10 +392,21 @@ def envWriteThenCall : Program := {
   main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 5]) <|
     .letE 2 (.closure 0 [v 1]) <| .letE 3 (.closure 1 []) (.app (v 3) [v 0, v 2]) }
 
+/-- A focus body pushes onto the focused container through a capture. The
+    in-place interpreter used to store the element into the array as it was
+    before the body ran, discarding the push, so the two runs agreed even with
+    Disjoint dropped; the write-back now re-reads the container. -/
+def focusStale : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 2 (.prim (.literal .int) [.int 5]) <|
+    .focus (v 1) (.int 0) 3 (.letE 4 (.prim .push [v 1, v 2]) (.atom (v 3))) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
   ("disjoint", probeDisjoint, .disjoint, false),
+  ("focus body pushes its own container", focusStale, .disjoint, false),
   ("T46 two rows", borrowedAccumulator, .borrowedSupply, true),
   ("traversal over [c, c]", probeTraversalExclusive, .traversalExclusive, false),
   ("captured push per iteration", probeManyCalls, .manyCalls, false),
@@ -564,7 +575,8 @@ def all : List Fixture := [
   ⟨"recursion inside a step (per-call checker accepted it)",recursionInStep,false⟩,
   ⟨"T46 borrowed row read again",borrowedReread,false⟩,
   ⟨"wrapper writes its callback's returned capture",envThroughWrapper,true⟩,
-  ⟨"write through a callback's environment, then call it again",envWriteThenCall,false⟩ ]
+  ⟨"write through a callback's environment, then call it again",envWriteThenCall,false⟩,
+  ⟨"focus body pushes its own container",focusStale,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true

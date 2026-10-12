@@ -310,7 +310,15 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
           | .range, .int n => pure n.toNat
           | _, _ => throw "in-place traversal"
         let mut a ← atom env init
-        for j in List.range n do
+        -- A list source is read as a runtime iterates an array: its length
+        -- and element `j` are read before step `j`, never taken from a copy
+        -- made when the loop began. If a step grows the source the loop runs
+        -- on, until fuel ends it (each step ticks).
+        for j in [0:n + (← get).fuel + 1] do
+          let more ← match input with
+            | .ref c => do pure (decide (j < (← array c).length))
+            | _ => pure (decide (j < n))
+          if !more then break
           tick
           let v ← match input with
             | .ref c => do
@@ -331,7 +339,10 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
           read v
           let w ← eval (depth - 1) ds self ((x, v) :: env) body
           countWrite
-          write c (xs.set i.toNat w)
+          -- Re-read the container: the body may have written it (through a
+          -- capture), and a runtime stores the element into the array as it
+          -- is now, not into a copy taken before the body ran.
+          write c ((← array c).set i.toNat w)
     observeKept
     pure result
 termination_by depth

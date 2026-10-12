@@ -298,13 +298,22 @@ def exprDepth : Expr → Nat
   | .traverse _ _ _ _ _ _ b | .focus _ _ _ b => 1 + exprDepth b
   | _ => 1
 
+/-- `inPlaceFailed`: the value run finished and the in-place run failed (for
+    example a traversal whose source grew until fuel ran out). It is a
+    disagreement like `mismatch`; `inconclusive` is a value run that fails. -/
 inductive Outcome where
-  | equal | mismatch (value inPlace : Trace) | inconclusive (message : String)
+  | equal | mismatch (value inPlace : Trace) | inPlaceFailed (value : Trace) (message : String)
+  | inconclusive (message : String)
   deriving Repr
+
+def Outcome.disagrees : Outcome → Bool
+  | .mismatch .. | .inPlaceFailed .. => true
+  | _ => false
 
 def compare (p : Program) : Outcome :=
   match ValueSemantics.run p, InPlaceSemantics.run p with
   | .ok a, .ok b => if a == b then .equal else .mismatch a b
+  | .ok a, .error e => .inPlaceFailed a e
   | a,b => .inconclusive s!"value={repr a}; in-place={repr b}"
 
 /-- The verdict of the selected checker: the summary layer, or the frozen
@@ -319,7 +328,7 @@ def verdictOf (p : Program) (config : Config := {}) : Except String Unit :=
 
 def disagrees (p : Program) (config : Config) : Bool :=
   (typecheck p).isOk && (verdictOf p config).isOk &&
-    match compare p with | .mismatch .. => true | _ => false
+    (compare p).disagrees
 
 def atomReductions : Atom → List Atom
   | .int n => if n == 0 then [] else
@@ -493,7 +502,7 @@ def runWith (o : Options) : IO RunResult := do
         if !o.quiet then
           IO.println s!"CROSS-CHECK VERDICTS DIFFER index={index} family={family} this={repr verdict} other={repr other}"
         if other.isOk then
-          if let .mismatch .. := compare p then
+          if (compare p).disagrees then
             counts := { counts with otherMismatches := counts.otherMismatches + 1 }
             IO.println s!"CROSS-CHECK: only the other checker accepts index={index}, and it disagrees:\n{repr p}"
     families := families.map fun (f,c,lo,hi) => if f == family then
@@ -522,7 +531,7 @@ def runWith (o : Options) : IO RunResult := do
         counts := { counts with executionErrors := counts.executionErrors + 1 }
         IO.println s!"INCONCLUSIVE seed={o.seed} index={index}: {msg}"
         return { ok := false, counts }
-      | .mismatch _ _ =>
+      | .mismatch .. | .inPlaceFailed .. =>
         counts := { counts with mismatches := counts.mismatches + 1 }
         families := families.map fun (f,c,lo,hi) => if f == family then
           (f,{ c with mismatches := c.mismatches+1 },lo,hi) else (f,c,lo,hi)
@@ -571,7 +580,7 @@ def verdictDiff (count seed : Nat) (m : Mutant) (reinfer : Bool) (version := 4) 
     if firstIndex.isNone && !quiet then
       firstIndex := some index
       IO.println s!"first verdict change index={index} family={family} corrected={repr (verdictOf p { reinfer })}\n{repr p.main}"
-    if let .mismatch .. := compare p then disagreeing := disagreeing + 1
+    if (compare p).disagrees then disagreeing := disagreeing + 1
   if !quiet then
     IO.println s!"mutant={m.name} checker={if reinfer then "reinfer" else "summaries"} seed={seed} budget={count} verdicts-changed={onlyMutant} of-which-disagree={disagreeing}"
   pure (onlyMutant, disagreeing)
