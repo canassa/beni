@@ -1089,6 +1089,8 @@ pub fn migrateTop(
 
 /// The program constructors whose `init` became a function of `⊤`
 /// (`boundary.md` §9.8.16), by module: `Tea.application`'s already was one.
+/// A platform whose constructor of that shape goes by another module or name
+/// is added here; the edit tells constructors by name alone (frontend.md §11.10).
 const init_constructors = [_]struct { module: []const u8, names: []const []const u8 }{
     .{ .module = "Tea", .names = &.{ "sandbox", "element", "document" } },
     .{ .module = "Browser", .names = &.{"program"} },

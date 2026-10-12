@@ -1909,8 +1909,9 @@ top-level value with no parameters that such a call names (`main = Tea.sandbox a
 no types: `Tea.sandbox`, `Tea.element`, `Tea.document`, `Browser.program` and the test platform's
 `Page.sandbox`, written with the qualifier the file's import gives the module (its alias, or its name)
 or unqualified when that import exposes it. `Tea.application`'s `init` already was a function and is
-not touched; nor is any other record, so a record a helper returns (`Tea.sandbox (app ⊤)`) or a list of
-records mapped to a constructor is left to the type checker, whose error names the field ("The `init`
+not touched; nor is any other record, so a record a helper returns (`Tea.sandbox (app ⊤)`), one bound in a
+block, one handed to a constructor a platform other than these exports, or a list of records mapped to a
+constructor is left to the type checker, whose error names the field ("The `init`
 field of this record is not what I expect … `⊤ → model`").
 
 The edit wraps; it does not restructure. `init = initialModel`, a top-level value, becomes `init = λ⊤ →
