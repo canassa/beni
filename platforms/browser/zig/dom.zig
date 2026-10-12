@@ -1431,7 +1431,7 @@ pub const Gen = struct {
         const name = g.tree.string(facts.name);
         // An SVG element at the top level is parsed inside the `<svg>` the
         // template wraps it in (`plan`), so it is written in that scope.
-        const here = if (parent == null and facts.namespace == .svg) parser.Scope.svg_root else scope;
+        const here = scope.of(facts.namespace == .svg);
         if (parser.misnested(here, name)) |why| return g.restructured(n, here.parent orelse "", why);
         if (parser.misplaced(here, name, facts.namespace == .svg)) |why| return g.restructured(n, here.parent orelse "", why);
         if (parent == null) {
