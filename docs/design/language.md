@@ -2188,6 +2188,15 @@ runtime, its entry file — never through a `view`, so `<script>` is `unknown_el
 value a view holds can become a script. A vocabulary of another platform may declare one; the
 `html` platform, which `node` and `browser` share, does not.
 
+*Amended 2026-10-12* ([`boundary.md`](boundary.md) §9.9): **the `html` vocabulary declares SVG**, in
+the same module: elm/svg's elements, attributes and events, written with their SVG names and case
+(`<linearGradient>`, `viewBox`, `stroke-width`, `<text>` for Elm's `text_`), every attribute a
+`String`. `<svg><rect width="4" /></svg>` needs no import and is `Html msg`, as Elm's `Svg msg` is its
+`Html msg`. A name both vocabularies have (`a`, `title`, `style`) has one declaration, and inside an
+`<svg>` it is SVG's element; `width` and `height` have two, one per vocabulary's elements. An element's
+namespace on the page is the one its place gives it — the `svg` fact says which it must be, and a lowering
+refuses markup whose place would give it the other (`markup_restructured`, §11.17).
+
 The markup type itself is an ordinary `pub foreign type` of one parameter, named by the platform's
 manifest (`boundary.md` §9.2). **The vocabulary module may write markup itself**, against its own
 declarations: the markup edge of `frontend.md` §9.8 is never added from a module to itself, and a
