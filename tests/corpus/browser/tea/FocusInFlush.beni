@@ -4,7 +4,11 @@
 -- — trusted — while the flush's after-render phase runs, and the message
 -- the handler sends renders in the next flush, after that work has
 -- finished: "focused" is logged before the view that counts the focus,
--- never a render inside the one running.
+-- never a render inside the one running. That next flush is a microtask:
+-- Chrome runs it when the click's listener returns, before the window's
+-- later listener (HTML's microtask checkpoint after a callback the host
+-- ran), and happy-dom, whose click the driver dispatches, after it —
+-- `FocusInFlush.chrome-expected` moves that one line.
 import Cmd exposing (Cmd)
 import Dom
 import Html exposing (Html)

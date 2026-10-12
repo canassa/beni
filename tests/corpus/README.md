@@ -137,10 +137,18 @@ project) against it, one step per line, `#` for a comment:
     mouse <selector> <name>     a bubbling `MouseEvent` of that name
                                 (`mouseover`, `mouseout`, `mousemove`, …),
                                 button 0
-    press <selector>            a user's click: trusted (below); a listener
-                                the driver added on the window, after every
-                                listener of the page, logs `(a later
-                                listener ran)`
+    press <selector>            a user's click: trusted (below), in two
+                                tasks — `pointerdown` and `mousedown`,
+                                whose default focuses the nearest focusable
+                                element the press is in (or takes focus from
+                                the one that has it), then, the page
+                                settled, `pointerup`, `mouseup` and
+                                `click`; a listener the driver added on the
+                                window, after every listener of the page,
+                                logs `(a later listener ran)`. In Chrome the
+                                press is at the element's centre, and a step
+                                whose element is covered there — by a crash
+                                screen, say — fails: no user could press it
     focus <selector>            `.focus()`
     blur <selector>             `.blur()`
     advance <ms> [tasks]        move the page's virtual clock on by `ms`,
@@ -344,7 +352,10 @@ compares instead of `.expected`. The differences known today:
   emulation is dispatched from the driver's stack, so where Chrome runs
   microtasks between two listeners of a user's click, happy-dom does not:
   a fixture shows what the runtime does at a listener's end, not what the
-  host does after it;
+  host does after it. A microtask a click's listener queues therefore runs
+  before `(a later listener ran)` in Chrome (HTML's microtask checkpoint
+  after a callback the host ran) and after it under happy-dom
+  (`browser/tea/FocusInFlush`);
 - `Headers`: happy-dom iterates names as they were written, where the Fetch
   standard and Chrome lower-case them, so a fixture that shows headers
   lower-cases them itself (the fetch log does);
