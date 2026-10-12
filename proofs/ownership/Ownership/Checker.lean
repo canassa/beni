@@ -237,8 +237,25 @@ def keepsShape (a : Abstract) (parameter := 0) : Bool :=
       | .fresh _ => true
       | _ => false
 
-def closureCaps (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
-  let names := (removeVars bound (uses body)).map Prod.fst |>.foldl (fun xs x => union xs [x]) []
+/-- Liveness of residual syntax, as `uses`, except that a conditional's
+    nonzero arm contributes no uses: the `branch-live` control's hole. -/
+def usesDroppingNonzero : Expr → Live
+  | .atom a => atomUses a
+  | .letE v rhs rest => union (usesDroppingNonzero rhs) (removeVars [v] (usesDroppingNonzero rest))
+  | .prim .close (x :: _) => atomUses x
+  | .prim _ xs | .closure _ xs | .recur xs => atomsUses xs
+  | .app f xs => union (atomUses f) (atomsUses xs)
+  | .branch c a _ => union (atomUses c) (usesDroppingNonzero a)
+  | .traverse _ src init i x acc body =>
+    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesDroppingNonzero body))
+  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesDroppingNonzero body))
+
+/-- `uses`, or the `branch-live` control's weakened liveness. -/
+def usesWith (cfg : Config) (e : Expr) : Live :=
+  if cfg.has .branchLive then usesDroppingNonzero e else uses e
+
+def closureCaps (cfg : Config) (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
+  let names := (removeVars bound (usesWith cfg body)).map Prod.fst |>.foldl (fun xs x => union xs [x]) []
   names.filterMap fun v => (env.lookup v).map (v, ·)
 
 def capabilityShape : Abstract → Abstract
@@ -415,7 +432,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
     match e with
     | .atom a => abstractAtom env a
     | .letE v rhs rest =>
-      let a ← inferExpr f ctx env rhs (union after (removeVars [v] (uses rest))) (site ++ [0])
+      let a ← inferExpr f ctx env rhs (union after (removeVars [v] (usesWith ctx.config rest))) (site ++ [0])
       inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .branch c yes no =>
@@ -485,7 +502,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let _ ← abstractAtom env index
       if input == .bottom then return .bottom
       let .list cs item ex := input | throw "abstract focus"
-      let caps := closureCaps env body [x]
+      let caps := closureCaps ctx.config env body [x]
       let capValues := caps.map Prod.snd
       let element := if ex then item.grantExclusive else item
       let s ← inferScope f ctx [(x, element)] caps body later
@@ -503,7 +520,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         | .list, .bottom => pure ([], Abstract.bottom, true)
         | _, _ => throw "abstract traversal"
       noteRead roots
-      let caps := closureCaps env body [i, x, acc]
+      let caps := closureCaps ctx.config env body [i, x, acc]
       let capValues := caps.map Prod.snd
       let element := if sourceEx then
           (rawElement.grantExclusive).mapOrigins (fun _ cs => cs.map (.position site true))

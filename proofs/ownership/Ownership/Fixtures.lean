@@ -416,6 +416,11 @@ def onceThroughCallee : Program := {
   main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.closure 0 [v 0]) <|
     .letE 2 (.prim (.literal .int) [.int 7]) <| .letE 3 (.closure 1 []) <|
     .letE 4 (.app (v 3) [v 2, v 1]) (.prim .record [v 4, v 1]) }
+/-- Branch liveness: `x` is read only in the nonzero arm, after it was pushed. -/
+def probeBranchLive : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.prim .push [v 0, .int 5]) <|
+    .branch (.int 1) (.atom (v 1)) (.atom (v 0)) }
 
 /-- `close b xs` with an empty builder returns `xs`'s own array (equal
     contents); `xs` is the written capture of a once closure, which a callee
@@ -435,6 +440,7 @@ def closeThenOnceThroughCallee : Program := {
 def probes : List (String × Program × Mutant × Bool) := [
   ("disjoint", probeDisjoint, .disjoint, false),
   ("focus body pushes its own container", focusStale, .disjoint, false),
+  ("read only in the nonzero arm after a push", probeBranchLive, .branchLive, false),
   ("T46 two rows", borrowedAccumulator, .borrowedSupply, true),
   ("traversal over [c, c]", probeTraversalExclusive, .traversalExclusive, false),
   ("captured push per iteration", probeManyCalls, .manyCalls, false),
@@ -608,7 +614,8 @@ def all : List Fixture := [
   ⟨"write through a callback's environment, then call it again",envWriteThenCall,false⟩,
   ⟨"focus body pushes its own container",focusStale,false⟩,
   ⟨"once closure called by a callee, then observed",onceThroughCallee,false⟩,
-  ⟨"close returns a once closure's capture, a callee calls it",closeThenOnceThroughCallee,false⟩ ]
+  ⟨"close returns a once closure's capture, a callee calls it",closeThenOnceThroughCallee,false⟩,
+  ⟨"read only in the nonzero arm after a push",probeBranchLive,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true

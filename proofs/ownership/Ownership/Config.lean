@@ -28,13 +28,15 @@ inductive Mutant where
   | forwardGuards       -- a callee's guards on our own input are not re-asked
   | transferSupplies    -- a callee's supplies to our own input are dropped
   | onceThroughCall     -- a once callback called by a callee is not consumed at the call
+  -- Liveness (summary checker only).
+  | branchLive          -- liveness ignores the nonzero arm of a conditional
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
   [.disjoint, .borrowedSupply, .traversalExclusive, .manyCalls, .copyExclusive,
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
-   .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall]
+   .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive]
 
 def Mutant.name : Mutant → String
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
@@ -48,6 +50,7 @@ def Mutant.name : Mutant → String
   | .callbackRequires => "callback-requires" | .requiresEdge => "requires-edge"
   | .forwardGuards => "forward-guards" | .transferSupplies => "transfer-supplies"
   | .onceThroughCall => "once-through-call"
+  | .branchLive => "branch-live"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
@@ -61,11 +64,12 @@ def Mutant.generatorOptional : Mutant → Bool
   | .onceThroughCall => true
   | _ => false
 
-/-- Mutants of the summary layer's rows: inert in the per-call checker. -/
+/-- Mutants of the summary layer's rows, and `branch-live`, which only the
+    summary checker implements: inert in the per-call checker. -/
 def Mutant.summaryRow : Mutant → Bool
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
-  | .forwardGuards | .transferSupplies | .onceThroughCall => true
+  | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive => true
   | _ => false
 
 structure Config where
