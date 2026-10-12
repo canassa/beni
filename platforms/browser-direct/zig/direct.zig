@@ -47,6 +47,19 @@
 //! and event name on the list's parent (`Direct.delegate`), or a listener
 //! of the row's own for one that does not bubble (`Direct.listen`).
 //!
+//! Slice S4 (its amendment, items 1 and 2) adds the value path and
+//! controlled inputs. Markup this platform does not write in place — a
+//! `Maybe Html` or `List Html` hole, another module's markup, a helper
+//! that calls itself or computes its markup, a component with children,
+//! `Html.text`, `Html.map` of any of these, a whole `For` whose row is not
+//! one element — is `dom`'s kinds and blocks (`root`, and `Page.vg`), each
+//! placed through a **value slot**: `Direct.slot` at mount, and an op of a
+//! group that hands the value to `childHtml`, `childMaybe` or `childList`.
+//! Its events listen on their own nodes and reach the program's
+//! dispatcher, written on the mount node as `$$root`. A `stateful`
+//! attribute is `Direct.control`, and the writes that may change a control
+//! mark it (`Direct.edited`).
+//!
 //! Everything a later slice adds is refused at build time, naming that
 //! slice — never a silent miscompile.
 
@@ -56,7 +69,7 @@ const dom = @import("platform_browser").dom;
 
 pub const lowering: m.Lowering = .{
     .name = "direct",
-    .targets = .{ .major = 1, .minor = 9 },
+    .targets = .{ .major = 1, .minor = 10 },
     .runtime = &.{
         // `(f, x)`: the dispatch guard (§4.3), which a listener body, the
         // dispatcher and the mount enter program code through.
@@ -117,12 +130,33 @@ pub const lowering: m.Lowering = .{
         // `(id, el, name, prop)`: list `id`'s listener for a bubbling event
         // (§4.2); `(el, name, h, r)`: a row node's own, for one that is not.
         .{ .name = "delegate", .arity = 4 },
-        .{ .name = "listen", .arity = 4 },
+        .{ .name = "listenRow", .arity = 4 },
         // `(el, name, h)`: a node's own listener outside a list, with no
         // flags (the lean slice's shared listener).
         .{ .name = "on", .arity = 3 },
         // `(L, xs, check, what, structural)`: the verify mode's list check.
         .{ .name = "verifyList", .arity = 5 },
+        // S4 (the amendment's item 1): what `dom`'s kinds call on the value
+        // path, `backend.md` §15.3's table — `browser`'s `Rt` functions
+        // that touch only the DOM — and the events and controls this
+        // platform keeps itself: `(el, name, flags)`, a kind's handler node
+        // listening on itself; `(el, prop, v)` and `(el)`, the edited set
+        // (item 2). And `(slot, value, kind, what)`, the verify mode's check
+        // of a value slot.
+        .{ .name = "template", .arity = 2 },
+        .{ .name = "slot", .arity = 3 },
+        .{ .name = "childHtml", .arity = 2 },
+        .{ .name = "childMaybe", .arity = 2 },
+        .{ .name = "childList", .arity = 2 },
+        .{ .name = "forKeyed", .arity = 5 },
+        .{ .name = "forPosition", .arity = 4 },
+        .{ .name = "show", .arity = 3 },
+        .{ .name = "hide", .arity = 2 },
+        .{ .name = "restate", .arity = 1 },
+        .{ .name = "listen", .arity = 3 },
+        .{ .name = "control", .arity = 3 },
+        .{ .name = "edited", .arity = 1 },
+        .{ .name = "verifySlot", .arity = 4 },
     },
     .module = module,
     .root = root,
@@ -142,17 +176,9 @@ pub const lowering: m.Lowering = .{
         .{ .module = "Browser", .name = "programs", .places = .list },
         .{ .module = "Browser", .name = "mountAt", .places = .first },
     },
-    .no_markup_values = no_markup_values,
 };
 
 const until_then = "Build this program with `--platform=browser-tea` until then.";
-
-const no_markup_values =
-    \\`browser-direct` does not compile markup as a value yet — markup that is not the
-    \\`view` a program constructor is called with (held, passed or returned by another
-    \\function, or a `view` that is `pub` or used elsewhere), `Html.text` and `Html.map` —
-    \\it arrives with slice S4 (`docs/design/browser-direct.md` §5.2, §14).
-++ " " ++ until_then;
 
 const refused_program =
     \\`Browser.program` is `browser`'s own program, which `browser-direct` does not run:
@@ -173,12 +199,13 @@ fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {
     _ = tree;
 }
 
-/// Never called: the compiler refuses a markup root that is a value under
-/// this lowering (`no_markup_values`) before it would be.
+/// Markup that is a value — held, passed or returned, another module's,
+/// `Html.text`'s and `Html.map`'s blocks — is `dom`'s kinds and blocks,
+/// unchanged (`backend.md` §15.3–§15.5; S4's amendment, item 1), but that
+/// every event listens on its own node: the value path.
 fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr {
-    _ = tree;
-    _ = index;
-    return cx.js.literal(.undefined);
+    var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .own_listeners = true };
+    return g.rootBlock(index);
 }
 
 /// The program hook: the mount of a `Tea.sandbox`.
@@ -223,12 +250,15 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     const index = p.view_root.?;
     const r = tree.root(index);
     var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .bake = bakeOf, .bake_item = bakeItemOf, .bake_list = bakeListOf, .inline_call = Page.inlineOf };
-    var page: Page = .{ .cx = cx, .tree = tree, .g = &g };
+    // What plans markup on the value path: `dom`'s own, every event on its
+    // node (S4's amendment, item 1).
+    var vg: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .own_listeners = true };
+    var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .vg = &vg };
     g.user = &page;
     try page.ctxs.append(cx.arena, .{ .parent = 0, .node = .none, .root = index });
     var stack: std.ArrayList(m.Root.Index) = .empty;
     try stack.append(cx.arena, index);
-    try page.supported(r.node, &stack);
+    _ = try page.supported(r.node, &stack);
     if (!cx.grouped(index)) return cx.notImplemented(r.node,
         \\`browser-direct` compiles a `view` whose values can be evaluated outside it, and
         \\this one's cannot (a `?`, or a function that takes evidence); that arrives with a
@@ -434,6 +464,9 @@ const Site = struct {
     walks: []?Ref = &.{},
     texts: []?Ref = &.{},
     slots: []?Ref = &.{},
+    /// S4: per value-slot op, its slot (`Direct.slot`): a name of the
+    /// mount, a field `c<k>` of a row's instance.
+    vslots: []?Ref = &.{},
     facts: []m.Program.HoleFacts = &.{},
     groups: std.ArrayList(Group) = .empty,
     group_of: []u32 = &.{},
@@ -505,6 +538,10 @@ const List = struct {
     /// and the release optimiser folds its constant fields (`o`, `i`, `n`)
     /// into the runtime functions it reaches (`backend.md` §9, facts 3–4).
     id: u32 = 0,
+    /// S4: its rows, or a list in them, hold a value slot whose read set the
+    /// pass does not record (a component's, a whole `For`'s): every key
+    /// visits every row for it, which is the value path's cost.
+    unknown: bool = false,
 
     fn keyed(l: *const List) bool {
         return l.mode != .position;
@@ -585,6 +622,14 @@ const Page = struct {
     in_row: u32 = 0,
     planning_row: bool = false,
     planning_shared: bool = false,
+    /// S4 (the amendment's item 1): what plans a value slot's markup, and
+    /// the holes, components and `For`s on the value path (`supported`).
+    vg: *dom.Gen,
+    value_calls: std.AutoHashMapUnmanaged(m.Node.Index, void) = .empty,
+    value_fors: std.AutoHashMapUnmanaged(m.Node.Index, void) = .empty,
+    /// Some site holds a value slot: the program has a dispatcher, written
+    /// on its mount node as `$$root`.
+    has_values: bool = false,
 
     fn a(pg: *Page) std.mem.Allocator {
         return pg.cx.arena;
@@ -646,67 +691,136 @@ const Page = struct {
 
     /// Refuse the first thing in the markup that a later slice compiles,
     /// naming that slice — following each call written in place into its
-    /// markup (S3), `stack` the markup roots on the way.
-    fn supported(pg: *Page, n: m.Node.Index, stack: *std.ArrayList(m.Root.Index)) m.Error!void {
+    /// markup (S3), `stack` the markup roots on the way — and find what this
+    /// platform does not write in place, which is markup as a value (S4's
+    /// amendment, item 1): each hole, component and `For` on the value path
+    /// is recorded (`value_calls`, `value_fors`). Whether the markup this
+    /// platform writes under `n` holds one.
+    fn supported(pg: *Page, n: m.Node.Index, stack: *std.ArrayList(m.Root.Index)) m.Error!bool {
         const cx = pg.cx;
         const tree = pg.tree;
         switch (tree.kind(n)) {
             .element => {
                 const e = tree.element(n);
                 for (tree.itemsOf(e.items)) |it| switch (it.kind) {
-                    .event => {},
-                    .attribute, .escape => if (it.kind == .attribute and it.attribute != .none and tree.attributeFacts(it.attribute).stateful) {
-                        return refuse(cx, n, "a controlled attribute (`value`, `checked`, `selected`)", "S4", "§8.1");
+                    .event, .attribute, .escape => {},
+                    else => {
+                        try refuse(cx, n, "this attribute", "S4", "§5");
+                        unreachable;
                     },
-                    else => return refuse(cx, n, "this attribute", "S4", "§5"),
                 };
-                for (tree.childrenOf(e.children)) |c| try pg.supported(c, stack);
+                var holds = false;
+                for (tree.childrenOf(e.children)) |c| {
+                    if (try pg.supported(c, stack)) holds = true;
+                }
+                return holds;
             },
-            .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| try pg.supported(c, stack),
-            .text => {},
-            .hole => switch (tree.hole(n).kind) {
-                .text_string, .text_number, .text_char, .text_bool => {},
-                .html => try pg.supportedCall(n, stack),
-                else => return refuse(cx, n, "a hole that shows a `Maybe Html` or a `List Html` — markup as a value", "S4", "§5.2"),
+            .fragment => {
+                var holds = false;
+                for (tree.childrenOf(tree.fragment(n).children)) |c| {
+                    if (try pg.supported(c, stack)) holds = true;
+                }
+                return holds;
             },
-            .component => try pg.supportedCall(n, stack),
+            .text => return false,
+            .hole => return switch (tree.hole(n).kind) {
+                .text_string, .text_number, .text_char, .text_bool => false,
+                .html => pg.supportedCall(n, stack),
+                // A `Maybe Html` or a `List Html` hole: a value slot.
+                else => pg.valueAt(n),
+            },
+            .component => return pg.supportedCall(n, stack),
             .for_ => {
                 const f = tree.for_(n);
-                if (f.fallback != null) return refuse(cx, n, "a `For`'s `fallback`, markup shown in its place when the list is empty", "S4", "§5.5");
                 const row = tree.row(f.row);
-                if (row.kind != .markup) return refuse(cx, n, "a `For` row that is not markup written in place — an `if`, a `case`, a `let` or a helper's call around it", "S4", "§5.4, §5.5");
+                // A `For` with a `fallback`, or whose row is not one element
+                // written in place, is `dom`'s, placed through a value slot.
+                if (f.fallback != null or row.kind != .markup or !try pg.oneElement(tree.root(row.body).node, stack)) {
+                    try pg.value_fors.put(pg.a(), n, {});
+                    return true;
+                }
                 pg.in_row += 1;
                 defer pg.in_row -= 1;
-                try pg.supported(tree.root(row.body).node, stack);
+                const holds = try pg.supported(tree.root(row.body).node, stack);
+                // A call at the row's root that turned out to be on the
+                // value path makes the row not one element.
+                if (!try pg.oneElement(tree.root(row.body).node, stack)) {
+                    try pg.value_fors.put(pg.a(), n, {});
+                    return true;
+                }
+                return holds;
             },
-            .show => return refuse(cx, n, "a `Show`", "S4", "§5.5"),
-            else => return refuse(cx, n, "this markup", "S4", "§5"),
+            .show => {
+                try refuse(cx, n, "a `Show`", "S4", "§5.5");
+                unreachable;
+            },
+            else => {
+                try refuse(cx, n, "this markup", "S4", "§5");
+                unreachable;
+            },
         }
     }
 
+    /// `n` is on the value path.
+    fn valueAt(pg: *Page, n: m.Node.Index) m.Error!bool {
+        try pg.value_calls.put(pg.a(), n, {});
+        return true;
+    }
+
     /// A hole that shows markup, or a component: a call S3 writes in place
-    /// (§5.2, §9.2, as amended for S3), its markup checked in turn, or
-    /// refused naming why.
-    fn supportedCall(pg: *Page, n: m.Node.Index, stack: *std.ArrayList(m.Root.Index)) m.Error!void {
+    /// (§5.2, §9.2, as amended for S3), its markup checked in turn, or a
+    /// value slot (S4's amendment, item 1) — markup of another module, a
+    /// helper that calls itself or computes its markup, a component with
+    /// children, `Html.text`, markup held in a value, and an `Html.map` of
+    /// any of these. A branch is item 3's, and refused until it is built.
+    fn supportedCall(pg: *Page, n: m.Node.Index, stack: *std.ArrayList(m.Root.Index)) m.Error!bool {
         const cx = pg.cx;
-        const callee = cx.programCallee(n) orelse
-            return refuse(cx, n, "a hole whose markup is computed here — an `if`, a `case`, `Html.text`, or markup held in a value", "S4", "§5.2, §5.5");
-        const r = callee.root orelse return switch (callee.refusal) {
-            .recursive => refuse(cx, n, "a helper that calls itself, whose markup is a value", "S4", "§5.2"),
-            .children => refuse(cx, n, "a component with children written between its tags (or a spread of its props), whose children are markup as a value", "S4", "§5.2, §9.2"),
-            .other_module => refuse(cx, n, "markup of another module, which this module cannot write in place: it is markup as a value here", "S4", "§5.2, §9.2"),
-            else => refuse(cx, n, "a helper whose body computes its markup — an `if`, a `case` — rather than writing it", "S4", "§5.4, §5.5"),
-        };
-        for (stack.items) |x| if (x == r) return refuse(cx, n, "a helper that calls itself, whose markup is a value", "S4", "§5.2");
+        if (cx.programBranch(n)) {
+            try refuse(cx, n, "a hole whose value is an `if` or a `case` choosing markup — a branch", "S4", "§5.5");
+            unreachable;
+        }
+        const callee = cx.programCallee(n) orelse return pg.valueAt(n);
+        const r = callee.root orelse return pg.valueAt(n);
+        for (stack.items) |x| if (x == r) return pg.valueAt(n);
+        try stack.append(pg.a(), r);
+        const holds = try pg.supported(pg.tree.root(r).node, stack);
+        _ = stack.pop();
+        // An `Html.map` written in place composes its messages at compile
+        // time, which markup on the value path inside it could not: the
+        // whole call is then on the value path, its maps `dom`'s.
+        if (holds and callee.maps > 0) return pg.valueAt(n);
         // The size gate counts a helper's calls in the view's root site.
         if (pg.in_row == 0) {
             const gop = try pg.call_nodes.getOrPut(pg.a(), r);
             if (!gop.found_existing) gop.value_ptr.* = .empty;
             try gop.value_ptr.append(pg.a(), n);
         }
-        try stack.append(pg.a(), r);
-        defer _ = stack.pop();
-        try pg.supported(pg.tree.root(r).node, stack);
+        return holds;
+    }
+
+    /// Whether a `For` row's markup is one element written in place: an
+    /// element, alone in its fragment, or reached through calls written in
+    /// place, none of them on the value path (§6.1).
+    fn oneElement(pg: *Page, n: m.Node.Index, stack: *std.ArrayList(m.Root.Index)) m.Error!bool {
+        const tree = pg.tree;
+        switch (tree.kind(n)) {
+            .element => return true,
+            .fragment => {
+                const kids = tree.childrenOf(tree.fragment(n).children);
+                return kids.len == 1 and try pg.oneElement(kids[0], stack);
+            },
+            .hole, .component => {
+                if (tree.kind(n) == .hole and tree.hole(n).kind != .html) return false;
+                if (pg.value_calls.contains(n) or pg.cx.programBranch(n)) return false;
+                const callee = pg.cx.programCallee(n) orelse return false;
+                const r = callee.root orelse return false;
+                for (stack.items) |x| if (x == r) return false;
+                try stack.append(pg.a(), r);
+                defer _ = stack.pop();
+                return pg.oneElement(tree.root(r).node, stack);
+            },
+            else => return false,
+        }
     }
 
     /// Whether markup holds a `For` the pass bakes, through the calls
@@ -716,8 +830,8 @@ const Page = struct {
         switch (tree.kind(n)) {
             .element => for (tree.childrenOf(tree.element(n).children)) |c| if (try pg.anyBaked(c)) return true,
             .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| if (try pg.anyBaked(c)) return true,
-            .for_ => return pg.cx.programList(n).baked != null,
-            .hole, .component => if (pg.cx.programCallee(n)) |callee| if (callee.root) |r| {
+            .for_ => return !pg.value_fors.contains(n) and pg.cx.programList(n).baked != null,
+            .hole, .component => if (!pg.value_calls.contains(n)) if (pg.cx.programCallee(n)) |callee| if (callee.root) |r| {
                 try pg.cx.programInlineEnter(null, n, null, false);
                 defer pg.cx.programInlineLeave();
                 return pg.anyBaked(tree.root(r).node);
@@ -737,7 +851,7 @@ const Page = struct {
                 for (tree.childrenOf(e.children)) |c| if (pg.hasEvent(c)) return true;
             },
             .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| if (pg.hasEvent(c)) return true,
-            .hole, .component => if (pg.cx.programCallee(n)) |callee| if (callee.root) |r| return pg.hasEvent(tree.root(r).node),
+            .hole, .component => if (!pg.value_calls.contains(n)) if (pg.cx.programCallee(n)) |callee| if (callee.root) |r| return pg.hasEvent(tree.root(r).node),
             else => {},
         }
         return false;
@@ -823,6 +937,7 @@ const Page = struct {
                 .helper, .component => {},
                 else => continue,
             }
+            if (pg.value_calls.contains(op.node)) continue;
             const callee = pg.cx.programCallee(op.node) orelse continue;
             const r = callee.root orelse continue;
             if (!(pg.gate.get(r) orelse false)) continue;
@@ -926,6 +1041,7 @@ const Page = struct {
             try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.walks[t].?) });
         };
         for (s.texts, 0..) |x, k| if (x) |field| try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.texts[k].?) });
+        for (s.vslots, 0..) |x, k| if (x) |field| try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.slots[k].?) });
         for (s.slots) |slot| if (slot) |field| try props.append(pg.a(), .{ .key = field.field, .value = try js.name(try cx.runtime("unset")) });
         try js.constant(blk, r, try js.object(props.items));
         // Each handler node listens with its call's own body (§4.2).
@@ -935,7 +1051,7 @@ const Page = struct {
                 const facts = pg.tree.eventFacts(x.item.event);
                 const node = try pg.ident(walked.walks[x.t].?);
                 const name = pg.tree.string(facts.dom_name);
-                try js.expression(blk, try pg.rt("listen", &.{ node, try js.string(name), try js.index(try pg.ident(bodies), try pg.num(ei)), try pg.ident(r) }));
+                try js.expression(blk, try pg.rt("listenRow", &.{ node, try js.string(name), try js.index(try pg.ident(bodies), try pg.num(ei)), try pg.ident(r) }));
                 ei += 1;
             },
             else => {},
@@ -1126,11 +1242,104 @@ const Page = struct {
         return if (ctx == 0) s.index else pg.ctxs.items[ctx].root;
     }
 
+    // ---- The value path (S4's amendment, item 1) ---------------------------
+
+    /// Whether an op is a value slot: a hole, a component or a whole `For`
+    /// this platform does not write in place (a call the size gate keeps
+    /// shared is a shared site's, not one).
+    fn isValue(pg: *const Page, op: dom.Op) bool {
+        return switch (op.what) {
+            .html, .helper, .component => pg.value_calls.contains(op.node),
+            .for_ => pg.value_fors.contains(op.node),
+            else => false,
+        };
+    }
+
+    /// A value slot whose read set the pass does not record — a component's
+    /// call, a whole `For` — which every key calls: correct, at the value
+    /// path's cost (S4's amendment, item 1, as built).
+    fn unknownValue(pg: *const Page, op: dom.Op) bool {
+        return switch (op.what) {
+            .component => pg.value_calls.contains(op.node),
+            .for_ => pg.value_fors.contains(op.node),
+            else => false,
+        };
+    }
+
+    /// The values of the enclosing markup a value slot's markup is made of,
+    /// which its group evaluates first.
+    fn valueValues(pg: *Page, s: *const Site, op: dom.Op) m.Error![]const m.Value.Index {
+        var out: std.ArrayList(m.Value.Index) = .empty;
+        switch (op.what) {
+            .html => |x| try out.append(pg.a(), operandValue(s, x.value)),
+            .helper => |x| for (x.args) |k| try out.append(pg.a(), operandValue(s, k)),
+            .component, .for_ => try pg.vg.nodeValues(op.node, false, &out),
+            else => {},
+        }
+        return out.items;
+    }
+
+    /// A value slot's markup, as a block — or for a `Maybe Html` hole its
+    /// value, for a `List Html` its list — its values evaluated.
+    fn valueBlock(pg: *Page, s: *const Site, op: dom.Op) m.Error!m.Expr {
+        const cx = pg.cx;
+        const site = pg.tree.root(pg.rootOf(s, op.ctx)).site.inst;
+        return switch (op.what) {
+            .html, .helper => cx.value(pg.tree.hole(op.node).value),
+            .component => blk: {
+                const kids = pg.tree.childrenOf(pg.tree.component(op.node).children_nodes);
+                const children: ?m.Expr = if (kids.len != 0) try pg.vg.valueBlock(kids, site, op.node) else null;
+                break :blk try cx.componentCall(op.node, children);
+            },
+            .for_ => pg.vg.valueBlock(&.{op.node}, site, op.node),
+            else => unreachable,
+        };
+    }
+
+    /// The runtime function that shows a value slot's markup, and its
+    /// verify kind (`Direct.verifySlot`: 0 a block, 1 a block or null, 2 a
+    /// list of blocks).
+    fn valueKind(op: dom.Op) struct { []const u8, u32 } {
+        return switch (op.what) {
+            .html => |x| switch (x.kind) {
+                .maybe_html => .{ "childMaybe", 1 },
+                .list_html => .{ "childList", 2 },
+                else => .{ "childHtml", 0 },
+            },
+            else => .{ "childHtml", 0 },
+        };
+    }
+
+    /// A value slot's write: its markup evaluated and handed to its slot,
+    /// which patches the instance shown when the block is of its kind and
+    /// mounts a new one otherwise (`backend.md` §15.4).
+    fn writeValue(pg: *Page, blk: m.Block, s: *const Site, op: dom.Op, k: u32, inst: ?Path) m.Error!void {
+        const cx = pg.cx;
+        const slot = try pg.ref(s.vslots[k].?, inst);
+        var v = try pg.valueBlock(s, op);
+        const how = valueKind(op);
+        if (how[1] == 1) v = try cx.maybe(v);
+        try pg.jsb().expression(blk, try pg.rt(how[0], &.{ slot, v }));
+    }
+
+    /// `Direct.edited(el)` for each controlled element of site `s` that the
+    /// writes of ops `ops` may change (`dom`'s `controlsOver`; §8.1, the
+    /// runtime's marks): the elements an attribute, a text, a slot or a
+    /// list written inside or on them.
+    fn writeMarks(pg: *Page, blk: m.Block, s: *const Site, ops: []const u32, inst: ?Path) m.Error!void {
+        var seen: std.ArrayList(u32) = .empty;
+        for (ops) |k| for (try pg.g.controlsOver(s.b, s.ops()[k])) |t| {
+            if (std.mem.indexOfScalar(u32, seen.items, t) == null) try seen.append(pg.a(), t);
+        };
+        for (seen.items) |t| try pg.jsb().expression(blk, try pg.rt("edited", &.{try pg.ref(s.walks[t].?, inst)}));
+    }
+
     /// `Gen.inline_call` (S3): an `html` hole or a component the compiler
     /// says may be written in place — and that does not call itself — is
     /// planned at the call, in a context of its own.
     fn inlineOf(g: *dom.Gen, n: m.Node.Index) m.Error!?dom.Gen.Inline {
         const pg: *Page = @ptrCast(@alignCast(g.user.?));
+        if (pg.value_calls.contains(n)) return null;
         const callee = pg.cx.programCallee(n) orelse return null;
         const r = callee.root orelse return null;
         var at = g.ctx;
@@ -1163,6 +1372,21 @@ const Page = struct {
         try pg.planShared(rs);
         for (pg.shareds.items) |sh| sh.site.prefix = try pg.callPrefix(sh.calls.items[0]);
         for (pg.lists.items) |list| try pg.checkList(list);
+        // A list whose rows hold a value slot no read set covers is visited
+        // whole by every key, and so is each list around it (S4, as built).
+        {
+            var li = pg.lists.items.len;
+            while (li > 0) {
+                li -= 1;
+                const list = pg.lists.items[li];
+                for (list.rows.ops()) |op| if (pg.unknownValue(op)) {
+                    list.unknown = true;
+                };
+                if (list.unknown) if (list.site.list) |outer| {
+                    outer.unknown = true;
+                };
+            }
+        }
         // A row patched whole shows another item, whose lists are other
         // lists: each patched whole in its turn (outermost first).
         for (pg.lists.items) |list| if (list.patch) for (list.rows.lists) |maybe| if (maybe) |inner| {
@@ -1220,6 +1444,8 @@ const Page = struct {
         for (rs.walks, walked.walks) |*w, n| w.* = if (n) |x| .{ .name = x } else null;
         rs.texts = try pg.a().alloc(?Ref, walked.texts.len);
         for (rs.texts, walked.texts) |*w, n| w.* = if (n) |x| .{ .name = x } else null;
+        rs.vslots = try pg.a().alloc(?Ref, walked.slots.len);
+        for (rs.vslots, walked.slots) |*w, n| w.* = if (n) |x| .{ .name = x } else null;
         try pg.makeGroups(rs);
         try pg.writeSlots(rs);
         for (rs.groups.items) |*gr| if (!gr.static) {
@@ -1327,11 +1553,16 @@ const Page = struct {
             .event => |x| try pg.listener(listeners, rs, x, @intCast(k)),
             else => {},
         };
+        // A program with a value slot has a dispatcher, written on its mount
+        // node as `$$root`: a kind's handler sends its message value there
+        // (S4's amendment, item 1).
+        if (pg.has_values and pg.dispatch == null) pg.dispatch = try cx.fresh("$dispatch");
         if (pg.dispatch) |d| {
             const msg = try cx.fresh("$msg");
             const blk = try js.block();
             try cx.programDispatch(blk, try pg.ident(msg), pg.handlers);
             try js.constant(pg.body, d, try js.arrow(&.{msg}, blk));
+            if (pg.has_values) try js.assign(pg.body, try js.member(try pg.ident(pg.at_root), "$$root"), try pg.ident(d));
         }
         try js.nested(pg.body, listeners);
         // Each list of the view's root listening for its rows' bubbling
@@ -1364,6 +1595,9 @@ const Page = struct {
         @memset(s.lists, null);
         for (s.ops(), 0..) |op, k| switch (op.what) {
             .for_ => |x| {
+                // A `For` on the value path is a value slot, its rows
+                // `dom`'s (S4's amendment, item 1).
+                if (pg.value_fors.contains(op.node)) continue;
                 const f = pg.tree.for_(op.node);
                 const row = pg.tree.row(f.row);
                 const body = pg.tree.root(row.body);
@@ -1579,7 +1813,7 @@ const Page = struct {
 
     // ---- The view's root, and a row's fields ------------------------------
 
-    const Walked = struct { walks: []?m.Name, texts: []?m.Name };
+    const Walked = struct { walks: []?m.Name, texts: []?m.Name, slots: []?m.Name };
 
     /// Every needed node of a site's template, reached from the parsed
     /// content — or, for a row, from its root element `row_root` — into
@@ -1633,7 +1867,25 @@ const Page = struct {
             },
             else => {},
         };
-        return .{ .walks = names, .texts = texts };
+        // Each value slot, made where it stands (S4's amendment, item 1):
+        // at the view's top level its parent is its marker's.
+        const slots = try pg.a().alloc(?m.Name, s.ops().len);
+        @memset(slots, null);
+        for (s.ops(), 0..) |op, k| {
+            if (!pg.isValue(op)) continue;
+            const at = placeOf(op).?;
+            pg.cx.at(op.node);
+            const parent = if (at.parent) |p| try pg.ident(names[p].?) else try js.literal(.null);
+            const marker = switch (at.marker) {
+                .node => |mk| try pg.ident(names[mk].?),
+                else => try js.literal(.null),
+            };
+            const n = try pg.cx.fresh("$c");
+            try js.constant(blk, n, try pg.rt("slot", &.{ parent, marker, try js.literal(.null) }));
+            slots[k] = n;
+            pg.has_values = true;
+        }
+        return .{ .walks = names, .texts = texts, .slots = slots };
     }
 
     /// A row's nodes, as fields of its instance: `e` for its root element,
@@ -1644,7 +1896,10 @@ const Page = struct {
         @memset(s.walks, null);
         s.texts = try pg.a().alloc(?Ref, s.ops().len);
         @memset(s.texts, null);
+        s.vslots = try pg.a().alloc(?Ref, s.ops().len);
+        @memset(s.vslots, null);
         for (s.ops(), 0..) |op, k| {
+            if (pg.isValue(op)) s.vslots[k] = .{ .field = try pg.print("c{d}", .{k}) };
             const t: ?u32 = switch (op.what) {
                 .placeholder => |x| x.t,
                 .attribute => |x| x.t,
@@ -1696,19 +1951,29 @@ const Page = struct {
         const static_bit: u64 = 1 << 62;
         const constant_bit: u64 = 1 << 61;
         for (all, s.facts, key_of, 0..) |op, *f, *key, k| {
+            // A value slot (S4's amendment, item 1): a hole's read set is
+            // the pass's, as any hole's; a component's call or a whole
+            // `For` has none the pass records, and every key calls it.
+            const unknown = pg.unknownValue(op);
             const ref_: ?m.Program.HoleRef = switch (op.what) {
                 .placeholder, .text => .{ .node = op.node },
+                .html, .helper => if (pg.isValue(op)) .{ .node = op.node } else null,
                 .attribute => |x| if (x.constant) null else .{ .item = x.index },
                 .toggle => |x| .{ .item = x.index },
                 .style => |x| .{ .item = x.index },
                 else => null,
             };
-            f.* = if (ref_) |r| try pg.holeFacts(s, op.ctx, r) else .{ .group = std.math.maxInt(u32), .static = true, .bake = null };
-            if (op.what == .event or op.what == .for_) {
+            f.* = if (unknown)
+                .{ .group = std.math.maxInt(u32), .static = false, .bake = null }
+            else if (ref_) |r|
+                try pg.holeFacts(s, op.ctx, r)
+            else
+                .{ .group = std.math.maxInt(u32), .static = true, .bake = null };
+            if ((op.what == .event or op.what == .for_) and !unknown) {
                 key.* = event_key;
                 continue;
             }
-            const every = if (valueOf(s, op)) |v| pg.tree.everyRender(v) else false;
+            const every = try pg.opEvery(s, op);
             if (s.list) |list| if (ref_ != null) {
                 f.static = !(try pg.rowCalled(list, f.group)) and !(list.whole and !f.static);
             };
@@ -1722,7 +1987,7 @@ const Page = struct {
             };
             // A group is one read set in one call written in place (S3).
             const in_ctx = @as(u64, op.ctx) << 34;
-            key.* = if (ref_ == null)
+            key.* = if (ref_ == null and !unknown)
                 constant_bit | k
             else if (f.static)
                 static_bit | in_ctx | f.group
@@ -1777,7 +2042,7 @@ const Page = struct {
             const gr = &s.groups.items[at_root[r]];
             s.group_of[k] = at_root[r];
             try gr.ops.append(pg.a(), @intCast(k));
-            const every = if (valueOf(s, all[k])) |v| pg.tree.everyRender(v) else false;
+            const every = try pg.opEvery(s, all[k]);
             gr.every = gr.every or every;
             const static = key_of[k] & (static_bit | constant_bit) != 0;
             gr.static = gr.static and static;
@@ -1785,6 +2050,20 @@ const Page = struct {
                 try gr.sets.append(pg.a(), s.facts[k].group);
             }
         }
+    }
+
+    /// Whether an op's group must run on every message: a value that may
+    /// have an effect (`tree.everyRender`), or a call of a value slot that
+    /// may (`Hole.call`'s, `Component.impure`).
+    fn opEvery(pg: *Page, s: *const Site, op: dom.Op) m.Error!bool {
+        if (!pg.isValue(op)) return if (valueOf(s, op)) |v| pg.tree.everyRender(v) else false;
+        switch (op.what) {
+            .helper => |x| if (x.impure) return true,
+            .component => |x| if (x.impure) return true,
+            else => {},
+        }
+        for (try pg.valueValues(s, op)) |v| if (pg.tree.everyRender(v)) return true;
+        return false;
     }
 
     /// Whether some key's edits of `list` call row group `group`.
@@ -1805,7 +2084,8 @@ const Page = struct {
         s.slots = try pg.a().alloc(?Ref, s.ops().len);
         @memset(s.slots, null);
         for (s.ops(), 0..) |op, k| {
-            if (op.what == .event or op.what == .for_) continue;
+            // A value slot compares inside its kind (S4's amendment, item 1).
+            if (op.what == .event or op.what == .for_ or pg.isValue(op)) continue;
             const gr = s.groups.items[s.group_of[k]];
             if (gr.static and (pg.cx.build.release or valueOf(s, op) == null)) continue;
             if (s.row != null or s.shared != null) {
@@ -1926,7 +2206,12 @@ const Page = struct {
     /// The values a group's ops write.
     fn groupValues(pg: *Page, s: *const Site, gr: *const Group) m.Error![]const m.Value.Index {
         var values: std.ArrayList(m.Value.Index) = .empty;
-        for (gr.ops.items) |k| if (valueOf(s, s.ops()[k])) |v| try values.append(pg.a(), v);
+        for (gr.ops.items) |k| {
+            const op = s.ops()[k];
+            if (pg.isValue(op)) {
+                try values.appendSlice(pg.a(), try pg.valueValues(s, op));
+            } else if (valueOf(s, op)) |v| try values.append(pg.a(), v);
+        }
         return values.items;
     }
 
@@ -1955,19 +2240,25 @@ const Page = struct {
         for (gr.ops.items) |k| {
             const op = s.ops()[k];
             if (op.node != .none) cx.at(op.node);
+            // A value slot: its markup handed to its slot, which compares
+            // inside the kind (S4's amendment, item 1).
+            if (pg.isValue(op)) {
+                try pg.writeValue(blk, s, op, k, inst);
+                continue;
+            }
             const slot = s.slots[k];
             switch (op.what) {
                 .attribute => |x| if (x.constant) {
                     const v = try pg.g.make(.{ .constant = s.b.operands.items[x.value].constant });
                     const el = try pg.ref(s.walks[x.t].?, inst);
                     if (once or slot == null) {
-                        try pg.g.writeAttribute(blk, el, x.item, v, null);
+                        try pg.writeConstant(blk, el, x.item, v);
                     } else {
                         // Written once, where its group puts it, and never
                         // again: the group may run on later messages.
                         const then = try js.block();
                         try js.assign(then, try pg.ref(slot.?, inst), try js.literal(.true));
-                        try pg.g.writeAttribute(then, el, x.item, v, null);
+                        try pg.writeConstant(then, el, x.item, v);
                         try js.@"if"(blk, try js.binary(.strict_eq, try pg.ref(slot.?, inst), try js.name(try cx.runtime("unset"))), then, null);
                     }
                     continue;
@@ -1986,6 +2277,16 @@ const Page = struct {
             try js.assign(then, try pg.ref(slot.?, inst), try pg.leafOf(op, v));
             try js.@"if"(blk, try js.binary(.strict_ne, leaf, try pg.ref(slot.?, inst)), then, null);
         }
+        // The controls the group's writes may change, marked (§8.1, the
+        // runtime's marks).
+        try pg.writeMarks(blk, s, gr.ops.items, inst);
+    }
+
+    /// A constant attribute that needs code: a `stateful` one kept on its
+    /// element (§8.1), any other as `dom` writes it.
+    fn writeConstant(pg: *Page, blk: m.Block, el: m.Expr, it: m.Item, v: m.Expr) m.Error!void {
+        if (pg.g.stateful(it)) return pg.g.writeControl(blk, el, it, v);
+        return pg.g.writeAttribute(blk, el, it, v, null);
     }
 
     /// What a slot holds of an op's value: the value itself, or a `Maybe`'s
@@ -2007,7 +2308,12 @@ const Page = struct {
         switch (op.what) {
             .placeholder => |x| try js.assign(blk, try js.member(try pg.ref(s.walks[x.t].?, inst), "data"), try cx.value(v)),
             .text => try js.assign(blk, try js.member(try pg.ref(s.texts[k].?, inst), "data"), try cx.value(v)),
-            .attribute => |x| try pg.g.writeAttribute(blk, try pg.ref(s.walks[x.t].?, inst), x.item, try cx.value(v), if (slot) |sl| try pg.ref(sl, inst) else null),
+            // A `stateful` attribute is kept on its element and written when
+            // the page's differs (§8.1; S4's amendment, item 2).
+            .attribute => |x| if (pg.g.stateful(x.item))
+                try pg.g.writeControl(blk, try pg.ref(s.walks[x.t].?, inst), x.item, try cx.value(v))
+            else
+                try pg.g.writeAttribute(blk, try pg.ref(s.walks[x.t].?, inst), x.item, try cx.value(v), if (slot) |sl| try pg.ref(sl, inst) else null),
             .toggle => |x| {
                 // A class that is off is not written before it was on: a
                 // toggle off would leave an empty `class` in some DOMs.
@@ -2071,11 +2377,14 @@ const Page = struct {
                 try pg.sharedMount(blk, call);
                 continue;
             }
-            if (op.what == .for_) {
+            if (op.what == .for_ and !pg.isValue(op)) {
                 const list = s.lists[k].?;
                 const inner = try js.block();
                 const xs = try pg.eachValue(inner, list, inst);
                 try js.expression(inner, try pg.rt("append", &.{ try pg.ref(list.desc, inst), try pg.ident(xs) }));
+                // A `select` whose options are the rows: its value written
+                // before they were, put back once they are (§8.1).
+                try pg.writeMarks(inner, s, &.{@intCast(k)}, inst);
                 try js.nested(blk, inner);
                 continue;
             }
@@ -2189,6 +2498,7 @@ const Page = struct {
             try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.walks[t].?) });
         };
         for (s.texts, 0..) |x, k| if (x) |field| try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.texts[k].?) });
+        for (s.vslots, 0..) |x, k| if (x) |field| try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.slots[k].?) });
         for (s.slots) |slot| if (slot) |field| try props.append(pg.a(), .{ .key = field.field, .value = try js.name(try cx.runtime("unset")) });
         for (s.lists) |maybe| if (maybe) |inner| try props.append(pg.a(), .{ .key = inner.desc.field, .value = try js.literal(.null) });
         try js.constant(blk, r, try js.object(props.items));
@@ -2210,7 +2520,7 @@ const Page = struct {
                 if (facts.delegated) {
                     try js.assign(blk, try js.member(node, try pg.print("${s}", .{name})), body_);
                 } else {
-                    try js.expression(blk, try pg.rt("listen", &.{ node, try js.string(name), body_, try pg.ident(r) }));
+                    try js.expression(blk, try pg.rt("listenRow", &.{ node, try js.string(name), body_, try pg.ident(r) }));
                 }
             },
             else => {},
@@ -2468,6 +2778,12 @@ const Page = struct {
                 },
             }
         }
+        // A value slot no read set covers, in the rows or under them: every
+        // row, for it (S4, as built).
+        if (list.unknown) {
+            p.every = true;
+            try addGroup(pg.a(), &p.every_groups, std.math.maxInt(u32));
+        }
         // The rows the inner lists' edits are in.
         for (pg.lists.items) |inner| {
             if (!pg.inside(inner, list)) continue;
@@ -2573,6 +2889,8 @@ const Page = struct {
                 try js.assign(inner, try js.member(try pg.ref(list.desc, inst), "z"), try pg.ident(probe));
             }
         }
+        // A controlled element the rows are in, marked (§8.1).
+        if (list.op != std.math.maxInt(u32)) try pg.writeMarks(inner, list.site, &.{list.op}, inst);
         try js.nested(blk, inner);
     }
 
@@ -2660,6 +2978,7 @@ const Page = struct {
         } else {
             try js.expression(b, try pg.rt("positional", &.{ try pg.ref(inner.desc, r), try pg.ident(xs), try pg.ident(inner.patch_fn.?) }));
         }
+        try pg.writeMarks(b, inner.site, &.{inner.op}, r);
         try js.nested(blk, b);
     }
 
@@ -2739,6 +3058,20 @@ const Page = struct {
         for (s.lists) |maybe| if (maybe != null) {
             lists = true;
         };
+        // Each value slot, but one whose markup may print or be another
+        // value on every evaluation (S4's amendment, item 1, as built).
+        var values_checked: std.ArrayList(u32) = .empty;
+        for (s.ops(), 0..) |op, k| {
+            if (!pg.isValue(op) or try pg.opEvery(s, op)) continue;
+            const vs = try pg.valueValues(s, op);
+            const debug = for (vs) |v| {
+                if (cx.reachesDebug(v)) break true;
+            } else false;
+            if (debug) continue;
+            if (op.what == .html or op.what == .helper) if (cx.reachesDebug(pg.tree.hole(op.node).value)) continue;
+            try values_checked.append(pg.a(), @intCast(k));
+        }
+        if (values_checked.items.len != 0) lists = true;
         if (checked.items.len == 0 and kept.items.len == 0 and !lists) return false;
         // Each call written in place's values in its own context (S3).
         var ctxs: std.ArrayList(u32) = .empty;
@@ -2774,6 +3107,20 @@ const Page = struct {
             for (kept.items) |x| if (x.ctx == ctx) try pg.checkNode(inner, x.what, s.walks[x.t].?, inst, x.item, x.value);
             pg.leave();
             if (ctx != 0) try js.nested(blk, inner);
+        }
+        // Each value slot: its markup made again and the instance shown
+        // compared with it — kind by identity, page by its text.
+        for (values_checked.items) |k| {
+            const op = s.ops()[k];
+            cx.at(op.node);
+            const inner = try js.block();
+            try pg.enterOp(inner, s, op.ctx, inst, null, null, try pg.valueValues(s, op), null);
+            const v = try pg.valueBlock(s, op);
+            pg.leave();
+            const where = if (s.facts[k].where.len != 0) s.facts[k].where else "a hole";
+            const what = try pg.print("the markup at {s}", .{where});
+            try js.expression(inner, try pg.rt("verifySlot", &.{ try pg.ref(s.vslots[k].?, inst), if (valueKind(op)[1] == 1) try cx.maybe(v) else v, try pg.num(valueKind(op)[1]), try js.string(what) }));
+            try js.nested(blk, inner);
         }
         // Each list: its rows against its items, and each row's checks.
         for (s.lists) |maybe| if (maybe) |list| try pg.verifyList(blk, list, inst);
@@ -2877,6 +3224,14 @@ fn placeOf(op: dom.Op) ?dom.Place {
         .component => |y| y.at,
         .show => |y| y.at,
         else => null,
+    };
+}
+
+/// The value operand `k` of a site's plan is.
+fn operandValue(s: *const Site, k: u32) m.Value.Index {
+    return switch (s.b.operands.items[k]) {
+        .value => |v| v,
+        else => unreachable,
     };
 }
 

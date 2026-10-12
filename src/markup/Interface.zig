@@ -30,8 +30,10 @@ const std = @import("std");
 /// `programViewEnter`, `programMessage`, `programDispatch`), `reachesDebug`
 /// and `Build.fuzz`, 1.8 the calls a program lowering compiles a `For`'s rows
 /// with (`programList`, `programEdits`, `programIndex`, `rowValuesOf`,
-/// `programRowBake`).
-pub const version: Version = .{ .major = 1, .minor = 9 };
+/// `programRowBake`), 1.9 the calls that write helpers, components and
+/// `Html.map` in place (`programCallee`, `programInlineArgs`,
+/// `programInlineEnter`), 1.10 `programBranch`.
+pub const version: Version = .{ .major = 1, .minor = 10 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1065,6 +1067,13 @@ pub const Context = struct {
     pub fn programInlineLeave(cx: *Context) void {
         cx.vtable.program_inline_leave(cx.impl);
     }
+
+    /// 1.10: whether an `html` hole's value is an `if` or a `case` — its
+    /// `let`s peeled — which `browser-direct.md`'s S4 amendment compiles as
+    /// a branch (item 3) rather than as markup on the value path (item 1).
+    pub fn programBranch(cx: *Context, node: Node.Index) bool {
+        return cx.vtable.program_branch(cx.impl, node);
+    }
 };
 
 /// `JsIr` restricted to what a template needs. Assignment is a statement,
@@ -1239,6 +1248,7 @@ pub const VTable = struct {
     program_inline_args: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error![]const Expr,
     program_inline_enter: *const fn (impl: *anyopaque, block: ?Block, node: Node.Index, args: ?[]const Expr, made: bool) Error!void,
     program_inline_leave: *const fn (impl: *anyopaque) void,
+    program_branch: *const fn (impl: *anyopaque, node: Node.Index) bool,
 
     literal: *const fn (impl: *anyopaque, which: Literal, text: []const u8) Error!Expr,
     template: *const fn (impl: *anyopaque, parts: []const TemplatePart) Error!Expr,

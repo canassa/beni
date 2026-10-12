@@ -1,5 +1,5 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
-import { Direct$insertText, Direct$unset, Direct$listen, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
+import { Direct$insertText, Direct$unset, Direct$listenRow, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 const Helpers$main = Tea$sandbox(($root$1, $t$2) => {
   const init$6 = { a: 0, b: 0, c: 0, name: "beni" };
   let $model$7 = init$6;
@@ -48,7 +48,7 @@ const Helpers$main = Tea$sandbox(($root$1, $t$2) => {
     const $w$35 = $w$33.nextSibling;
     const $w$36 = $w$35.firstChild;
     const $r$37 = { e: $e$30, c: $c$28, w2: $w$32, w4: $w$34, w6: $w$36, s1: Direct$unset, s2: Direct$unset, s3: Direct$unset };
-    Direct$listen($e$30, "click", $b$29[0], $r$37);
+    Direct$listenRow($e$30, "click", $b$29[0], $r$37);
     {
       const $a$38 = $r$37.c();
       const title$10 = $a$38[0];

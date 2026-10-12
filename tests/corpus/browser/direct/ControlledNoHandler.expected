@@ -1,0 +1,22 @@
+-- load
+<body>
+  <main>
+    <button id="tick">"0"</button>
+    <input id="free" .value="ab">
+    <input id="box" type="checkbox" .value="on" .checked=true>
+  </main>
+</body>
+-- type #free "zz"
+(the DOM did not change)
+-- click #box
+(the DOM did not change)
+-- advance 0
+(the DOM did not change)
+-- click #tick
+<body>
+  <main>
+    <button id="tick">"1"</button>
+    <input id="free" .value="ab">
+    <input id="box" type="checkbox" .value="on" .checked=true>
+  </main>
+</body>

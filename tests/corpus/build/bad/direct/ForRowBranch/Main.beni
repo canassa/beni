@@ -1,6 +1,8 @@
--- A `For` row that is an `if` around its markup is a branch, which slice S4
--- compiles (docs/design/browser-direct.md §5.5, §14): S2 refuses it at the
--- `For`, never a row that shows one arm for good.
+-- A branch inside a `For` row — an `if` choosing the markup of a hole of
+-- the row's element — is item 3 of slice S4's amendment
+-- (docs/design/browser-direct.md §5.5), not yet built: `not_implemented`
+-- at the hole, never a row that shows one arm for good. (A row that IS an
+-- `if` is the value path's since S4's first step: `browser/direct/WholeFor`.)
 import Html exposing (Html)
 import Tea
 
@@ -9,7 +11,7 @@ view : List Int → Html {}
 view xs =
     <ul>
         <For each={xs} keyed={False}>
-            {λx → if x > 1 then <li>big</li> else <li>small</li>}
+            {λx → <li>{if x > 1 then <b>big</b> else <i>small</i>}</li>}
         </For>
     </ul>
 

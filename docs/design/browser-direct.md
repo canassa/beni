@@ -2554,3 +2554,75 @@ batch with vanilla, Solid 1, Solid 2, `browser-tea`, P3 where it has a page, and
 again; research 84's protocol for an operation under a millisecond. Kill criterion 8 at every
 step. §13 names no kill criterion of S4's own; a target missed is reported, not tuned around
 (rule 10).
+
+### *Amended 2026-10-13 (slice S4, the value path and controlled inputs, as built)*
+
+Items 1 and 2 of the amendment above are built (`boundary.md` §9.4.6, version 1.10;
+`platforms/browser-direct/zig/direct.zig`, `Direct.beni`); items 3–6 are not, and are still
+refused naming S4. What building them settled, each a place the amendment left open:
+
+- **`Rt` is imported, not copied.** `Direct` imports `browser`'s `Rt` — a runtime module may import
+  every module its package sees (`boundary.md` §9.2), and `browser-direct` layers on `browser` —
+  and supplies each export `dom`'s kinds call (`template`, `slot`, `childHtml`, `childMaybe`,
+  `childList`, `forKeyed`, `forPosition`, `show`, `hide`, `restate`, `text`, `map`) as a function
+  that calls `Rt`'s. A page that reaches none ships none: the release empty page did not move
+  (`emit/release/direct/EmptyPage`, 588 B, byte for byte). The kinds' `listen(el, name, flags)`
+  is `Direct`'s own; the row node's own listener of S2, which had that name, is `listenRow`.
+- **What is a value slot**, decided by one walk before planning (`supported`): a `Maybe Html` or
+  `List Html` hole; an `html` hole that is not a call S3 writes in place — no callee, a refused one
+  (another module's, a component with children, a body that computes its markup), or a call of a
+  helper already being written on the current path; and a `For` with a `fallback` or whose row is
+  not one element written in place, judged structurally (an element, alone in its fragment, or
+  reached through calls written in place) and checked again by the plan. An `html` hole whose value
+  is an `if` or a `case` is item 3's branch and is refused until it is built
+  (`cx.programBranch`, version 1.10). **An `Html.map` written in place whose markup holds a value
+  slot is itself a value slot**, its maps `dom`'s: S3 composes a mapped call's messages at compile
+  time, and a slot made with no context would send its markup's messages unmapped.
+- **Read sets.** A value slot of an `html` hole is grouped by the pass's facts for the hole
+  (`programHole`), as any hole. A component's call and a whole `For` have none the pass records —
+  a component node is no hole, and a `For`'s hole is its `each` — so **every key calls them**, and
+  every key visits every row of a list whose rows hold one, and of each list around it. Correct, at
+  the value path's cost; recording these reads in the pass would narrow it.
+- **What the hook consumes and its code names is written.** S3's rule leaves unwritten a markup
+  helper only consumed declarations name; a value slot calls such a helper (`List.map xs row`), so a
+  consumed declaration the lowering's code names is lowered after all (`boundary.md` §9.4.6,
+  version 1.10).
+- **A skipped value slot is not restated**: an every-render value (`Random.value`, `Time.now`) in
+  markup on the value path is evaluated when its slot's group runs, not on every message. A
+  stated limit in §16's terms, as the verify mode's below.
+- **The verify mode checks a value slot by its page, not its block's values.** The value is
+  computed again; the instance the slot shows must be of its kind, by identity, and a fresh
+  instance of the value, mounted off the page, must read as the slot's nodes do (each element's
+  markup, each text's and comment's data; `Direct.verifySlot`). Comparing the block's values
+  structurally, as the amendment says, would report what is not a defect: a grouped kind's block
+  holds its root's inputs, whole locals, so `viewStatus model`'s block holds a `model` that a key
+  writing a field `viewStatus` never reads leaves behind, rightly. An instance that is live
+  (`l`, holding an every-render value) is checked by its kind only; a slot whose value reaches
+  `Debug`, or may be another value on every evaluation, is not checked. A component's call is not
+  a value the check can ask `reachesDebug` of, so a `Debug` in a component's body on the value
+  path prints again in a development build: a known limit.
+- **`end()` is queued, not called.** The first mark of a dispatch — a control's capture listener,
+  or `edited` — queues the reconcile behind what the dispatch has queued (§4.3's queue), so it runs
+  as the queue drains, after the writes queued before it and before the verify mode; a mark a later
+  message makes queues it again. That is §4.3's `end()` for the edited set, and it leaves `send`
+  as it was: a page with no `stateful` attribute ships none of it. S5's after-render point, which
+  needs `end()` in `send`, is S5's to add. This platform's own writes mark as `dom`'s do
+  (`backend.md` §15.3, *the runtime's marks*): a group marks the controlled elements its writes are
+  on or in, at its end; a list's scripts mark those its rows are in, as do its first rows at mount
+  (`browser/direct/ControlledOptions`).
+- **Not rebuilt**, each for a reason of this platform's: `browser/dom/ControlledPrograms` — the
+  marks are the page's, one set, by the amendment, where that page pins one set per program;
+  `ControlledRemoved` — a control's edit is put back at once by the no-op send, so it is never
+  still marked when a later message removes it; `ControlledReset` — happy-dom resets a form's
+  controls before it dispatches `reset`, so the no-op send puts them back at once where Chrome,
+  which dispatches first, puts them back in the task, and one golden cannot hold both. The edits
+  with no handler are `ControlledNoHandler`'s, which is `browser-tea`'s `.tea-expected` where they
+  differ. `ControlledOptions` adds options of distinct values: two options of one value are a page
+  happy-dom selects both of, which the two platforms' orders of writes then show differently.
+- **`ValuePathEvents`' reverse nesting** — a handler this platform writes inside one on the value
+  path — cannot be written: markup on the value path is `dom`'s to its leaves. The page pins the
+  order across a value slot both ways a stop can stand (a stopper on the value path below one of
+  this platform's handlers, and one of this platform's around value-path markup) and inside one.
+- **The value fuzz** of a project that has a platform of its own and several modules dumps its
+  message types from a directory of its modules, as a project without a platform does
+  (`tests/blackbox/corpus_test.zig`): `dump` takes one path.

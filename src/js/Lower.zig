@@ -827,7 +827,11 @@ pub const Lowerer = struct {
     /// `update` a program record names and nothing else does, which is not
     /// emitted — the hook compiles what it needs of it where the program
     /// is called. Empty: none is.
-    consumed: []const bool = &.{},
+    consumed: []bool = &.{},
+    /// Per declaration, whether code the program hook wrote names one it
+    /// consumed (version 1.10: a helper whose markup is a value, `List.map
+    /// xs row`): `declarations` lowers it after all, so it is emitted.
+    wanted: []bool = &.{},
     /// The program call whose hook is running (`cx.programInit`).
     program_now: ?*ProgramCall = null,
     /// Inside `cx.programViewEnter` (version 1.7): the `view` root whose
@@ -1543,6 +1547,19 @@ pub const Lowerer = struct {
         // place references too.
         const parts = try l.scratch.alloc([]const Node.Index, order.len);
         for (order, parts) |index, *part| part.* = try l.declarationPart(index);
+        // A declaration the program hook consumed that its code names after
+        // all (`wanted`) is lowered now, in its place — and what it names in
+        // turn, until nothing more is wanted.
+        var again = l.wanted.len != 0;
+        while (again) {
+            again = false;
+            for (order, parts) |index, *part| {
+                if (index >= l.wanted.len or !l.wanted[index] or !l.consumed[index]) continue;
+                l.consumed[index] = false;
+                part.* = try l.declarationPart(index);
+                again = true;
+            }
+        }
         for (order, parts) |index, part| {
             if (index < l.inlined.len and l.inlined[index]) continue;
             try out.appendSlice(l.scratch, part);
@@ -3702,6 +3719,9 @@ pub const Lowerer = struct {
     fn topName(l: *Lowerer, decl: u32) !JsIr.NameIndex {
         const base = l.bir.symbol(l.bir.decls[decl].name);
         try l.requireLive(l.liveDecl(decl), l.text(base));
+        // A declaration the program hook consumed, named after all — markup
+        // on the value path calls it — is emitted (`declarations`).
+        if (decl < l.wanted.len) l.wanted[decl] = true;
         return l.name(.{
             .module = l.module_name.toOptional(),
             .base = base,
@@ -11006,6 +11026,8 @@ pub const Lowerer = struct {
             }
         }
         l.consumed = candidate;
+        l.wanted = try l.scratch.alloc(bool, decls.len);
+        @memset(l.wanted, false);
     }
 
     /// One top-level program value a placement places, by module and
@@ -11873,6 +11895,22 @@ pub const Lowerer = struct {
             },
             else => return null,
         }
+    }
+
+    /// `cx.programBranch` (version 1.10): an `html` hole whose value, past
+    /// its `let`s, is a `case` — which an `if` is too.
+    fn directBranch(l: *Lowerer, node: beni_markup.Node.Index) bool {
+        const st = l.mk orelse return false;
+        const tree = &st.built.tree;
+        if (tree.kind(node) != .hole) return false;
+        const h = tree.hole(node);
+        if (h.kind != .html) return false;
+        var i = switch (st.built.values[@backingInt(h.value)]) {
+            .inst => |x| x,
+            else => return false,
+        };
+        while (l.bir.instTag(i) == .let) i = @fromBackingInt(@intCast(l.bir.instData(i).rhs));
+        return l.bir.instTag(i) == .case;
     }
 
     /// The chain of expression `i`: markup written in place, a call of a
@@ -13493,6 +13531,10 @@ const markup_vtable: beni_markup.VTable = struct {
         lowerer(impl).directInlineLeave();
     }
 
+    fn programBranch(impl: *anyopaque, n: M.Node.Index) bool {
+        return lowerer(impl).directBranch(n);
+    }
+
     fn literal(impl: *anyopaque, which: M.Literal, bytes: []const u8) E!M.Expr {
         const l = lowerer(impl);
         const p = pos(l);
@@ -13668,6 +13710,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_inline_args = programInlineArgs,
         .program_inline_enter = programInlineEnter,
         .program_inline_leave = programInlineLeave,
+        .program_branch = programBranch,
         .literal = literal,
         .template = template,
         .name = name,

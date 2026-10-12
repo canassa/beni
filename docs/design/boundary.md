@@ -1980,6 +1980,25 @@ two more facts of an edit. Valid inside `Lowering.program` only.
 
 `direct` targets 1.9.
 
+**Version 1.10** (*amended 2026-10-13*, additive and gated on nothing; `browser-direct.md`'s S4
+amendment, as built for its value path and controlled inputs): one call, valid inside
+`Lowering.program` only, and one change to what a program lowering's hook leaves unwritten.
+
+- **`cx.programBranch(node) bool`**, for an `html` hole of markup the program writes: whether
+  its value, its `let`s peeled, is an `if` or a `case` — a branch, which `browser-direct.md`'s S4
+  amendment (item 3) compiles in place — rather than markup on the value path (item 1). False
+  for any other node.
+- **A consumed declaration the hook's code names is written after all.** Version 1.9's rule
+  leaves a markup helper that only consumed declarations name unwritten, since the hook writes
+  each of its calls in place. A program lowering that puts markup on the value path calls such
+  a helper instead (`List.map xs row`, a helper that calls itself, an `Html.map` of one), so a
+  consumed declaration whose name the code a lowering wrote asks for is lowered after the
+  module's other declarations, in its place, and whatever it names in turn.
+
+With `Lowering.no_markup_values` left unset, a program lowering is handed markup roots that are
+values (`Lowering.root`) as any lowering is, and its markup runtime is held to the vocabulary's
+primitives (§9.4.5). `direct` targets 1.10, and no longer sets `no_markup_values`.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

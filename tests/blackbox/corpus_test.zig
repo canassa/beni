@@ -2367,12 +2367,13 @@ const Case = struct {
         // One path: a project's directory, whose modules import each other,
         // or the one file.
         try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) tea_arg else platform_arg });
-        // A project with a platform of its own names its modules: `.`
-        // would take the platform's files for the project's.
+        // A project with a platform of its own and one module names it:
+        // `.` would take the platform's files for the project's.
         // Any other project's modules are dumped from a directory holding
         // only them: the world is the worker's, shared by every case it
-        // runs, so `.` would also take the modules earlier cases left.
-        if (c.fixture.project and hasPlatformDir(try c.fixturePath())) {
+        // runs, so `.` would also take the modules earlier cases left (and
+        // `dump` takes one path).
+        if (c.fixture.project and sources.len == 1 and hasPlatformDir(try c.fixturePath())) {
             try dump.appendSlice(c.arena, sources);
         } else if (c.fixture.project) {
             const dir = "_msg-types";
