@@ -1,0 +1,57 @@
+-- ownership: the dictionary's focus primitive (thesis §7, *A dictionary*;
+-- T32, T44, T51; `ownership-checker.md` §20.8). `Dict.update` is `focus`,
+-- whose row hands `alter` the value at the key taken out of the tree and
+-- owned when the dictionary is exclusive. What `excl` of a dictionary means
+-- is built from how it was filled: a constructor that stores a value at a
+-- folded path keeps it apart from what is there, so `Dict.insert` says its
+-- value must share no list with the values already in.
+--
+-- `grow` edits a value of a unique dictionary of fresh lists: accepted.
+-- `groups` is T44, grouping by a fold from `Dict.empty`: accepted.
+-- `twice` puts one list at two keys and edits one: rejected `exclusive`.
+-- `keyAndValue` puts one list at a key and its value (T32): rejected,
+-- the key and the value being one list (`call`: `insert`'s result names
+-- them through approximate entries) and the value not exclusive.
+-- `readLater` reads the dictionary after the edit: rejected (`call`, for
+-- the same reason). `reads` hands `update` a callback that only reads,
+-- then reads the dictionary (T51): nothing is written, and no line.
+import Dict exposing (Dict)
+
+
+grow : ⊤ → Dict Int (List Int)
+grow ⊤ =
+    d = Dict.insert (Dict.insert Dict.empty 1 [ 1 ]) 2 [ 2 ]
+    Dict.update d 1 λm → Maybe.map m λv → List.push v 9
+
+
+groups : List Int → Dict Int (List Int)
+groups xs = List.foldl xs Dict.empty λx d →
+    Dict.update d (Int.mod x 3) λg → Just [ …Maybe.withDefault g [], x ]
+
+
+twice : ⊤ → Dict Int (List Int)
+twice ⊤ =
+    xs = [ 1 ]
+    d = Dict.insert (Dict.insert Dict.empty 1 xs) 2 xs
+    Dict.update d 1 λm → Maybe.map m λv → List.push v 9
+
+
+keyAndValue : ⊤ → Dict (List Int) (List Int)
+keyAndValue ⊤ =
+    xs = [ 1 ]
+    d = Dict.insert Dict.empty xs xs
+    Dict.update d [ 1 ] λm → Maybe.map m λv → List.push v 9
+
+
+readLater : ⊤ → Int
+readLater ⊤ =
+    d = Dict.insert Dict.empty 1 [ 1 ]
+    after = Dict.update d 1 λm → Maybe.map m λv → List.push v 9
+    Dict.size d + Dict.size after
+
+
+reads : ⊤ → Int
+reads ⊤ =
+    d = Dict.insert Dict.empty 1 [ 1 ]
+    after = Dict.update d 1 λm → Just [ Maybe.withDefault (Maybe.map m List.length) 0 ]
+    Dict.size d + Dict.size after

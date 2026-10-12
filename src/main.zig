@@ -513,6 +513,10 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
     defer gpa.free(packages);
     const spans = gpa.alloc(beni.lex.Token.Spans, n) catch return fail(stderr, "beni: out of memory", .{});
     defer gpa.free(spans);
+    // Each module's platform package by its manifest name: the entry rows
+    // are keyed by it (ownership-checker.md §20.2).
+    const platform_names = gpa.alloc([]const u8, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(platform_names);
     for (0..n) |i| {
         const m: beni.resolve.Graph.Index = @fromBackingInt(@intCast(i));
         const f = session.graph.moduleFile(m);
@@ -520,6 +524,11 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
         names[i] = session.store.moduleName(f);
         packages[i] = session.graph.modulePackage(m);
         spans[i] = session.artifacts.spans(f);
+        platform_names[i] = "";
+        if (packages[i] != .platform) continue;
+        const chain = session.options.chain orelse continue;
+        const layer = if (f.int() < session.file_layers.len) session.file_layers[f.int()] else 0;
+        if (layer < chain.layers.len) platform_names[i] = chain.layers[layer].name;
     }
     // The targets, in path order (fast-compiler.md §10).
     var targets: std.ArrayList(u32) = .empty;
@@ -558,6 +567,7 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
         .packages = packages,
         .spans = spans,
         .positions = .{ .ctx = session, .get = Pos.get },
+        .platform_names = platform_names,
     });
     defer o.deinit();
     const reports = onBigStackResult(struct {

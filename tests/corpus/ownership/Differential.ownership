@@ -55,8 +55,8 @@ module Differential
   summary t57Distinct: unused
   summary t57Repeated: unused
   summary t57RepeatedRows: unused
-  demands 37: accepted 27 (fresh 11, call 2, param 9, callback-param 5, once 0; assumed 0), pending 0, rejected 10
-total 37: accepted 27 (fresh 11, call 2, param 9, callback-param 5, once 0; assumed 0), pending 0, rejected 10
+  demands 37: accepted 27 (fresh 11, call 2, param 9, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 10
+total 37: accepted 27 (fresh 11, call 2, param 9, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 10
 cause top-level 2
 cause disjoint 2
 cause later-use 1

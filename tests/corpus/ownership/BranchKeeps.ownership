@@ -4,6 +4,6 @@ module BranchKeeps
   21:15 construction xs: rejected later-use: xs is read again at 24:22
   summary choose: π2 RAW; res .0 π2, .1 fresh1 π2
   summary after: π2 RW
-  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0; assumed 0), pending 0, rejected 2
-total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0; assumed 0), pending 0, rejected 2
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause later-use 2

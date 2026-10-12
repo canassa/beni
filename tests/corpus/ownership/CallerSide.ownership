@@ -17,7 +17,7 @@ module CallerSide
   summary twiceRead: π1 RW
   summary twin: π1 RAW; res .a π1, .b π1
   summary apart: res .a fresh1, .b fresh2
-  demands 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0; assumed 0), pending 0, rejected 3
-total 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0; assumed 0), pending 0, rejected 3
+  demands 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause disjoint 1
 cause later-use 2

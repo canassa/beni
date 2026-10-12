@@ -14,7 +14,7 @@ module Recursion
   summary t12: π1 RW
   summary everyOther: π1 R; res fresh1
   summary keepsAcc: π1 R
-  demands 9: accepted 6 (fresh 1, call 0, param 5, callback-param 0, once 0; assumed 0), pending 0, rejected 3
-total 9: accepted 6 (fresh 1, call 0, param 5, callback-param 0, once 0; assumed 0), pending 0, rejected 3
+  demands 9: accepted 6 (fresh 1, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 9: accepted 6 (fresh 1, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause later-use 2
 cause alias 1

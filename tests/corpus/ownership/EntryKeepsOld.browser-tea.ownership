@@ -1,0 +1,12 @@
+module EntryKeepsOld
+  31:31 List.push model.items: accepted param
+  41:31 List.push model.items: accepted param
+  57:8 entry EntryKeepsOld.keepOld model.items: rejected disjoint: another path of the model may hold it after some message: update's arms are joined, so the entry cannot tell them apart (§20.4) (approx)
+  61:10 entry EntryKeepsOld.saveCopy model.items: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  summary keepOld: π2.items RAW, π2.items[*] A, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved π2.items π2.saved
+  summary saveCopy: π2.items RAW, π2.items[*] RA, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved fresh1{lost} π2.saved, .saved[*] π2.items[*]
+  summary view: π1.items R, π1.saved R; res fresh1{lost}
+  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause disjoint 1
+cause platform 1

@@ -92,10 +92,14 @@ pub const Input = struct {
     /// Per module index: the file's token tags.
     spans: []const Token.Spans,
     positions: Positions,
+    /// Per module index: the name of the platform package it belongs to
+    /// (the chain layer's manifest `"name"`), empty for any other; what
+    /// the entry rows are keyed by (§20.2). Shorter when no chain is known.
+    platform_names: []const []const u8 = &.{},
 };
 
-/// §8.2.
-pub const Accept = enum { fresh, call, param, callback_param, once };
+/// §8.2; `entry` §20.6.
+pub const Accept = enum { fresh, call, param, callback_param, once, entry };
 
 /// §8.3, in its order, then §16.11's.
 pub const Cause = enum {
@@ -117,6 +121,12 @@ pub const Cause = enum {
     exclusive,
     /// §18.8: a closure that writes what it captured may run more than once.
     once,
+    /// §20.5: a message's payload may still be held by its sender.
+    payload,
+    /// §20.3: `view` and `subscriptions` receive the model to read only.
+    read_only,
+    /// §20.2: a template platform keeps the model it hands `update`.
+    platform,
 
     pub fn text(c: Cause) []const u8 {
         return switch (c) {
@@ -136,6 +146,9 @@ pub const Cause = enum {
             .limit => "limit",
             .exclusive => "exclusive",
             .once => "once",
+            .payload => "payload",
+            .read_only => "read-only",
+            .platform => "platform",
         };
     }
 
@@ -143,7 +156,7 @@ pub const Cause = enum {
     /// decided per rejection (§16.11).
     pub fn approximate(c: Cause) bool {
         return switch (c) {
-            .unknown, .escaped, .captured_edit, .element, .call, .limit, .exclusive => true,
+            .unknown, .escaped, .captured_edit, .element, .call, .limit, .exclusive, .payload => true,
             else => false,
         };
     }
@@ -623,6 +636,7 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
             // does not report on need not walk it.
             const report = m < o.report_for.len and o.report_for[m];
             slots[x].sum = if (!report and try o.crosses(m, x)) .{ .params = bir.decls[x].params } else try o.walkSummary(m, x, false);
+            if (o.isDictFocus(m, x)) slots[x].sum = try o.assertDictFocus(slots[x].sum);
             slots[x].state = .done;
         }
         return;
@@ -1079,6 +1093,55 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     });
 }
 
+/// core/Dict's `focus` (§20.8), whose row is its body's with one fact asserted.
+fn isDictFocus(o: *const Ownership, m: u32, d: u32) bool {
+    if (o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Dict")) return false;
+    const bir = o.in.birs[m];
+    return std.mem.eql(u8, o.in.interner.slice(bir.symbol(bir.decls[d].name)), "focus");
+}
+
+/// The dictionary's destructive read (§20.8, thesis §7 *A dictionary*): the
+/// value handed to `alter` is taken out of the tree and owned, on condition
+/// that the dictionary is exclusive — as `List.focus`'s supply is (§18.5).
+fn assertDictFocus(o: *Ownership, s: Summary) Allocator.Error!Summary {
+    if (s.limit != .none) return s;
+    const keep = o.keep.allocator();
+    const whole = try keep.dupe(XAtom, &.{.{ .kind = .excl, .a = .{ .kind = .param, .a = 0, .path = eps } }});
+    const supply = try keep.dupe(SupplyEntry, s.supply);
+    for (supply) |*e| {
+        if (e.fun != 2 or e.prov.kind != .param or e.prov.a != 0) continue;
+        e.owned = true;
+        e.approx = false;
+        e.prov.taken = true;
+        e.xc = .{ .atoms = whole };
+    }
+    // What `alter` returns is put back where the value was taken from: the
+    // dictionary stays exclusive when it keeps shape (thesis §7: "excl if π₁
+    // excl and g keeps shape"), which states the body's `sep` of the value
+    // put back from the rest in the focus's own terms.
+    const keep_atom: XAtom = .{ .kind = .keep, .a = .{ .kind = .cb, .a = 2 }, .b = .{ .kind = .param, .a = 0, .path = eps } };
+    const res = try keep.dupe(ResEntry, s.res);
+    for (res) |*r| {
+        var atoms: std.ArrayList(XAtom) = .empty;
+        var dropped = false;
+        for (r.xc.atoms) |x| {
+            if (x.a.kind == .cb or x.b.kind == .cb) {
+                dropped = true;
+                continue;
+            }
+            try atoms.append(keep, x);
+        }
+        if (!dropped) continue;
+        if (r.prov.kind == .param) try atoms.append(keep, keep_atom);
+        r.xc = .{ .no = r.xc.no, .atoms = sortAtoms(atoms.items) };
+    }
+    var out = s;
+    out.supply = supply;
+    out.res = res;
+    out.asserted = true;
+    return o.normalize(out);
+}
+
 /// §18.3: a writer that stores parameter `v` in its base `b` keeps the base
 /// exclusive when `v` is, and shares no cell with the base's elements.
 fn stores(o: *Ownership, b: u32, v: u32, elem: u32) Allocator.Error!XSum {
@@ -1341,6 +1404,19 @@ fn representative(o: *Ownership, p: u32) Allocator.Error!bool {
             .ctor => if (o.ctorType(o.paths.arg.items[at] / 64)) |t| if (try o.typeRecursive(t)) return true,
             else => {},
         }
+    }
+    return false;
+}
+
+/// Whether a path goes through core Dict's recursive tree (§20.8).
+fn dictTreePath(o: *Ownership, p: u32) Allocator.Error!bool {
+    var at = p;
+    while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
+        if (o.paths.kind.items[at] != .ctor) continue;
+        const t = o.ctorType(o.paths.arg.items[at] / 64) orelse continue;
+        const m: u32 = @intCast(t >> 32);
+        if (m >= o.in.packages.len or o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Dict")) continue;
+        if (try o.typeRecursive(t)) return true;
     }
     return false;
 }
@@ -1861,14 +1937,15 @@ fn mayHold(o: *Ownership, store: *TypeStore, r: Var, t: Var, depth: u32) Allocat
 
 const Mode = enum { summary, report };
 
-const CellKind = enum(u8) { site, param, result, env, shared, top, closure, func, cbres, taken };
+const CellKind = enum(u8) { site, param, result, env, shared, top, closure, func, cbres, taken, payload };
 
 const Cell = struct {
     kind: CellKind,
     /// site/result: the instruction; param: the parameter pattern
     /// instruction; env: the captured local; shared: the module; closure:
     /// its index; func: the module; cbres: the function parameter's index;
-    /// taken: the element cell it was taken from (§18.5).
+    /// taken: the element cell it was taken from (§18.5); payload: the
+    /// program constructor's call (§20.5).
     a: u32,
     /// shared/func: the declaration; param: 1 for a lambda's or local
     /// function's parameter, 0 for the declaration's own; result: 0 for a
@@ -2034,6 +2111,16 @@ const DemandRec = struct {
     /// §18.8: a once closure's creation demand: its own uses of what it
     /// captured are no later use.
     creation_ci: u32 = none,
+    /// §20.6: a demand at a program constructor's entry, by its row.
+    entry: ?EntryRow = null,
+};
+
+/// §20.2: what a platform's runtime does with the model it hands `update`.
+const EntryRow = enum {
+    /// browser-direct: hands it owned and keeps nothing (P1).
+    direct,
+    /// browser-tea, browser: keeps it, and skips by identity (Change 8).
+    template,
 };
 
 /// Where a call-site demand's W came from: a summary's exact write, one
@@ -2184,6 +2271,10 @@ const Walker = struct {
     split_scrut: []?AV = &.{},
     /// §18.9: calls of the declaration's function parameters inside lambdas.
     env_calls: std.ArrayList(EnvCall) = .empty,
+    /// The record a program constructor with an entry row is handed: its
+    /// functions are in sight there (§20.6), so storing them in it is not
+    /// leaving the walk's sight.
+    entry_arg: u32 = none,
     /// The uses by local, for `resolve` (§18.11).
     use_start: []u32 = &.{},
     use_order: []u32 = &.{},
@@ -2342,7 +2433,7 @@ const Walker = struct {
                 y.ty = if (ty) |v| v.toOptional() else .none;
                 return try w.cell(y);
             },
-            .param, .result, .env, .cbres, .taken => {
+            .param, .result, .env, .cbres, .taken, .payload => {
                 var y = x;
                 y.path = try w.o.child(x.path, s.kind, s.arg);
                 y.ty = if (ty) |v| v.toOptional() else .none;
@@ -2460,7 +2551,8 @@ const Walker = struct {
         const x = w.cells.items[c];
         const k: u32 = switch (x.kind) {
             .site, .shared, .closure, .func => cond_yes,
-            .top => cond_lost,
+            // A message: what its sender built, which the entry does not see (§20.5).
+            .top, .payload => cond_lost,
             // A call's result: what instantiation set at its root; a result
             // no summary made has none, and is lost.
             .result => if (x.path != eps) blk: {
@@ -2523,6 +2615,10 @@ const Walker = struct {
         return w.cell(b);
     }
 
+    fn inCoreDict(w: *const Walker) bool {
+        return w.o.in.packages[w.m] == .core and std.mem.eql(u8, w.o.in.module_names[w.m], "Dict");
+    }
+
     fn madeHere(k: CellKind) bool {
         return k == .site or k == .result;
     }
@@ -2532,13 +2628,20 @@ const Walker = struct {
         const cx = w.cells.items[x];
         const cy = w.cells.items[y];
         if (cx.kind == .closure or cx.kind == .func or cy.kind == .closure or cy.kind == .func) return cond_yes;
+        // §20.8: inside core/Dict, one cell that arrived from outside at a
+        // folded path of its tree stands for distinct positions, which the
+        // module never makes share (the trusted surface, §20.9).
+        if (x == y and w.inCoreDict()) switch (cx.kind) {
+            .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellCond(x),
+            else => {},
+        };
         if (x == y or (try w.covers(x, y)) != null or (try w.covers(y, x)) != null) {
             // Exact only when the text shows it: one place, not a list's
             // elements or a folded level standing for many (§8.4).
             const one = !(try w.o.representative(cx.path)) and !(try w.o.representative(cy.path));
             return if (exact and one) cond_shared else cond_lost;
         }
-        if (cx.kind == .top or cy.kind == .top) return cond_lost;
+        if (cx.kind == .top or cy.kind == .top or cx.kind == .payload or cy.kind == .payload) return cond_lost;
         // A taken element and its container's other positions share no cell
         // when the container is exclusive (§18.5).
         if (cx.kind == .taken or cy.kind == .taken) {
@@ -2903,7 +3006,7 @@ const Walker = struct {
         for ([_]u32{ c, try w.takenBase(c) }) |cc| {
             const x = w.cells.items[cc];
             const symbolic = switch (x.kind) {
-                .param, .result, .env, .shared, .cbres, .taken => true,
+                .param, .result, .env, .shared, .cbres, .taken, .payload => true,
                 else => false,
             };
             var at = x.path;
@@ -3236,7 +3339,7 @@ const Walker = struct {
                 var parts = try w.a.alloc(AV, avs.len);
                 for (fields, avs, 0..) |f, av, i| parts[i] = try w.shift(av, .{ .kind = .field, .arg = @backingInt(b.symbol(f.name)) });
                 const out = try w.unionOf(parts);
-                try w.sight(out, .{ .pending = "it is stored in a record" }, w.token(inst));
+                if (inst.int() != w.entry_arg) try w.sight(out, .{ .pending = "it is stored in a record" }, w.token(inst));
                 return out;
             },
             .record_update => return w.evalRecordUpdate(inst),
@@ -3749,6 +3852,7 @@ const Walker = struct {
                 try w.consume(args, w.token(inst));
                 var parts = try w.a.alloc(AV, avs.len);
                 for (avs, 0..) |av, i| parts[i] = try w.shift(av, .{ .kind = .ctor, .arg = c *% 64 +% @as(u32, @intCast(i)) });
+                try w.storedBeside(parts);
                 const out = try w.unionOf(parts);
                 try w.sight(out, .{ .pending = "it is stored in a constructor" }, w.token(inst));
                 return out;
@@ -3758,6 +3862,7 @@ const Walker = struct {
         if (w.valueTarget(callee)) |t| {
             try w.evidenceSight(callee);
             try w.evidenceSight(inst);
+            if (args.len == 1) if (w.entryRow(t)) |row| return w.entryCall(inst, t, args[0], row);
             return w.callTarget(inst, t, args);
         }
         // A function value: its classes, when the walk knows where it came
@@ -3822,6 +3927,268 @@ const Walker = struct {
         }
         if (w.escapes(t)) return w.escapeCall(inst, args, try w.qualified(t));
         return w.conservative(inst, args, &.{}, null, try w.qualified(t), w.o.in.birs[t.m].decls[t.d].kind == .foreign_value);
+    }
+
+    // ---- the entry protocol (§20) -----------------------------------------
+
+    /// The entry row of a program constructor (§20.2), or null.
+    fn entryRow(w: *const Walker, t: Target) ?EntryRow {
+        const names = w.o.in.platform_names;
+        if (t.m >= names.len) return null;
+        const pkg = names[t.m];
+        const module = w.o.in.module_names[t.m];
+        const name = w.targetName(t);
+        if (std.mem.eql(u8, module, "Tea") and eqlAny(name, &.{ "sandbox", "element", "document", "application" })) {
+            if (std.mem.eql(u8, pkg, "browser-direct")) return .direct;
+            if (std.mem.eql(u8, pkg, "browser-tea")) return .template;
+        }
+        if (std.mem.eql(u8, pkg, "browser") and std.mem.eql(u8, module, "Browser") and std.mem.eql(u8, name, "program")) return .template;
+        return null;
+    }
+
+    /// A record value's field, by name.
+    fn fieldOf(w: *Walker, av: AV, name: []const u8) Allocator.Error!AV {
+        const sym = w.o.in.interner.find(name) orelse return &.{};
+        return w.proj(av, .{ .kind = .field, .arg = @backingInt(sym) }, null);
+    }
+
+    /// One of a record's functions, with its class summaries.
+    const EntryFn = struct {
+        classes: []const Class = &.{},
+        sums: []const *const Summary = &.{},
+    };
+
+    fn entryFn(w: *Walker, av: AV) Allocator.Error!?EntryFn {
+        if (av.len == 0) return .{};
+        const classes = try w.classesOf(av);
+        if (classes.len == 0) return null;
+        const sums = try w.a.alloc(*const Summary, classes.len);
+        for (classes, sums) |cls, *s| s.* = (try w.classSummary(cls)) orelse return null;
+        // The runtime calls it: a lambda's demands on its own parameters are
+        // the entry's (§20.6), and a once closure runs at every message.
+        for (classes, sums) |cls, s| if (cls == .closure) {
+            const cl = &w.closures.items[cls.closure];
+            try cl.consumed.append(w.a, .{ .kind = .local });
+            if (s.once and cl.once_bad == null) cl.once_bad = "the platform's runtime calls it at every message";
+        };
+        return .{ .classes = classes, .sums = sums };
+    }
+
+    /// `f`'s result for these arguments: each class's `res`, instantiated
+    /// at the constructor's call (§16.4 item 6).
+    fn entryRes(w: *Walker, inst: Inst.Index, f: EntryFn, avs: []const AV, ns: u32) Allocator.Error!AV {
+        var parts: std.ArrayList(AV) = .empty;
+        for (f.classes, f.sums) |cls, s| {
+            const ci: u32 = if (cls == .closure) cls.closure else none;
+            try parts.append(w.a, try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = ci, .depth = 0, .fresh_ns = ns }));
+        }
+        return w.unionOf(parts.items);
+    }
+
+    /// Every cell of `av`, closures expanded, at `⋆`: what a value built
+    /// from them may hold anywhere.
+    fn anywhere(w: *Walker, av: AV, inst: Inst.Index) Allocator.Error!AV {
+        const any = try w.o.child(eps, .any, 0);
+        var out: std.ArrayList(Entry) = .empty;
+        for (try w.expand(av)) |e| {
+            const k = w.cells.items[e.cell].kind;
+            if (k == .closure or k == .func) continue;
+            try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = inst.int() + 1 });
+        }
+        return w.norm(out.items);
+    }
+
+    /// A call of a program constructor with an entry row (§20.2–§20.6): the
+    /// model at entry as the fixpoint of `init` and `update`, what the
+    /// runtime's calls escape, and a demand for each path `update` writes.
+    fn entryCall(w: *Walker, inst: Inst.Index, t: Target, arg: Inst.Index, row: EntryRow) Allocator.Error!AV {
+        const saved = w.entry_arg;
+        w.entry_arg = arg.int();
+        const app = try w.eval(arg);
+        w.entry_arg = saved;
+        w.point += 1;
+        const tok = w.token(inst);
+        try w.useOperand(arg, tok, &.{});
+        try w.useTemporaries(&.{arg}, &.{app}, tok);
+        const name = w.targetName(t);
+        // The model is `init`'s whole value, or its first component (§20.3).
+        const whole = std.mem.eql(u8, name, "sandbox") or std.mem.eql(u8, name, "program");
+        const tuple0: Step = .{ .kind = .tuple, .arg = 0 };
+        const tuple1: Step = .{ .kind = .tuple, .arg = 1 };
+        const upd = (try w.entryFn(try w.fieldOf(app, "update"))) orelse {
+            // The runtime calls a function the walk cannot place.
+            try w.sight(app, .{ .pending = "it is handed to a program whose update the checker cannot place" }, tok);
+            return w.entryResult(inst);
+        };
+        const view = (try w.entryFn(try w.fieldOf(app, "view"))) orelse EntryFn{};
+        const subs = (try w.entryFn(try w.fieldOf(app, "subscriptions"))) orelse EntryFn{};
+        var init_av = try w.fieldOf(app, "init");
+        if (std.mem.eql(u8, name, "application")) {
+            // A function of the address, which crosses, and the navigation
+            // key, a foreign type (§20.3).
+            const f = (try w.entryFn(init_av)) orelse EntryFn{};
+            init_av = try w.entryRes(inst, f, &.{ &.{}, try w.single(.{ .kind = .top, .a = 0 }) }, 100_000);
+        }
+        const m0 = if (whole) init_av else try w.proj(init_av, tuple0, null);
+        // A message type that holds no cell brings none (§20.5).
+        const msg_tracked = try w.messageTracked(arg);
+        const payload: AV = if (msg_tracked) try w.single(.{ .kind = .payload, .a = inst.int() }) else &.{};
+        // The fixpoint (§20.4): update's fresh cells are one per number in
+        // every round, so it settles; 8 rounds is a backstop.
+        var model = m0;
+        var view_msgs: AV = &.{};
+        var res: AV = &.{};
+        var round: u32 = 0;
+        while (true) : (round += 1) {
+            if (msg_tracked) view_msgs = try w.anywhere(try w.entryRes(inst, view, &.{model}, 200_000), inst);
+            const msg = try w.unionOf(&.{ payload, view_msgs });
+            res = try w.entryRes(inst, upd, &.{ msg, model }, 0);
+            const half = if (whole) res else try w.proj(res, tuple0, null);
+            const next = try w.unionOf(&.{ model, half });
+            if (next.len == model.len) break;
+            model = next;
+            if (round == 8) {
+                model = try w.unionOf(&.{ model, try w.single(.{ .kind = .top, .a = 0 }) });
+                break;
+            }
+        }
+        const msg = try w.unionOf(&.{ payload, view_msgs });
+        // (a) What every call the runtime makes escapes.
+        for (upd.sums) |s| for (s.uses) |u| {
+            if (u.param == 1) try w.entryEscape(inst, try w.projPath(model, u.path, null), u.bits);
+        };
+        if (!whole) {
+            try w.escape(try w.proj(res, tuple1, null), w.point);
+            try w.escape(try w.proj(init_av, tuple1, null), w.point);
+        }
+        for ([_]EntryFn{ view, subs }) |f| for (f.sums) |s| for (s.uses) |u| {
+            if (u.param == 0) try w.entryEscape(inst, try w.projPath(model, u.path, null), u.bits);
+        };
+        try w.escape(try w.entryRes(inst, subs, &.{model}, 300_000), w.point);
+        w.point += 1;
+        // (b) The demands.
+        const arena = w.o.out.allocator();
+        const op = if (w.mode == .report) try std.fmt.allocPrint(arena, "entry {s}", .{try w.entryName(upd, "update")}) else "entry";
+        var done: std.ArrayList(u64) = .empty;
+        for (upd.classes, upd.sums) |cls, s| for (s.uses) |u| {
+            if (u.bits & bit_w == 0 or u.param > 1) continue;
+            const key = (@as(u64, u.param) << 32) | u.path;
+            if (std.mem.indexOfScalar(u64, done.items, key) != null) continue;
+            try done.append(w.a, key);
+            const origin: Origin = if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact;
+            if (u.param == 0) {
+                // §20.5: update writes its message in place.
+                try w.entryDemand(tok, op, try w.pathName("msg", u.path), try w.projPath(msg, u.path, null), &.{}, &.{}, row, origin, null);
+                continue;
+            }
+            // update's xreq on the model, at this path (§18.4 item 3).
+            var xfail: ?Rely = null;
+            const ci: u32 = if (cls == .closure) cls.closure else none;
+            for (s.xreq) |x| {
+                const p = xreqParam(x) orelse continue;
+                if (p != 1) continue;
+                const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
+                const r = try w.rely(k, w.frame);
+                if (r == .ok) continue;
+                if (xfail == null or r == .exact) xfail = r;
+            }
+            var rest: std.ArrayList(Entry) = .empty;
+            for (model) |e| if (!w.o.overlap(e.path, u.path)) try rest.append(w.a, e);
+            try w.entryDemand(tok, op, try w.pathName("model", u.path), try w.projPath(model, u.path, null), &.{ rest.items, payload }, view_msgs, row, origin, xfail);
+        };
+        // §20.3: view and subscriptions receive the model to read only.
+        for ([_]struct { f: EntryFn, n: []const u8 }{ .{ .f = view, .n = "view" }, .{ .f = subs, .n = "subscriptions" } }) |x| {
+            const vop = if (w.mode == .report) try std.fmt.allocPrint(arena, "entry {s}", .{try w.entryName(x.f, x.n)}) else "entry";
+            for (x.f.sums) |s| for (s.uses) |u| {
+                if (u.bits & bit_w == 0 or u.param != 0) continue;
+                try w.demands.append(w.a, .{
+                    .kind = .value,
+                    .token = tok,
+                    .op = vop,
+                    .base = try w.pathName("model", u.path),
+                    .base_local = none,
+                    .base_path = eps,
+                    .point = w.point,
+                    .frame = w.frame,
+                    .ctx = w.ctx,
+                    .element = false,
+                    .accept = .param,
+                    .holders = &.{},
+                    .fixed = .{ .verdict = .{ .rejected = .read_only }, .detail = try std.fmt.allocPrint(arena, "the runtime hands {s} the model to read only (§20.3)", .{x.n}) },
+                });
+            };
+        }
+        return w.entryResult(inst);
+    }
+
+    /// Whether `update`'s message type may hold a cell: the type of the
+    /// record literal's `update` field, when the walk has it.
+    fn messageTracked(w: *Walker, arg: Inst.Index) Allocator.Error!bool {
+        if (w.bir.instTag(arg) != .record) return true;
+        const sym = w.o.in.interner.find("update") orelse return true;
+        for (w.bir.extraSlice(Bir.inlineRange(w.bir.instData(arg)), Bir.Field)) |fl| {
+            if (w.bir.symbol(fl.name) != sym) continue;
+            const v = w.instType(fl.value) orelse return true;
+            switch (w.store.resolvedContent(v)) {
+                .structure => |st| switch (st) {
+                    .func => |fun| {
+                        const ps = w.store.vars(fun.params);
+                        if (ps.len == 0) return true;
+                        return w.trackedVar(ps[0]);
+                    },
+                    else => return true,
+                },
+                else => return true,
+            }
+        }
+        return true;
+    }
+
+    /// What a function the runtime calls escapes of the model: `E`, or `J`
+    /// alone, §18.6's conservative escape, which the line names (§20.4).
+    fn entryEscape(w: *Walker, inst: Inst.Index, av: AV, bits: u8) Allocator.Error!void {
+        if (bits & bit_e != 0) return w.escape(av, w.point);
+        if (bits & bit_j != 0) try w.escapeWhy(av, w.point, inst);
+    }
+
+    /// A program value: the runtime's, which nothing in the program reads.
+    fn entryResult(w: *Walker, inst: Inst.Index) Allocator.Error!AV {
+        if (!try w.isTracked(inst)) return &.{};
+        return w.single(.{ .kind = .top, .a = 0 });
+    }
+
+    /// How an entry line names the function: `Main.update`, or `<lambda>`.
+    fn entryName(w: *Walker, f: EntryFn, field: []const u8) Allocator.Error![]const u8 {
+        for (f.classes) |cls| switch (cls) {
+            .func => |t| return w.qualified(t),
+            .closure => {},
+        };
+        return std.fmt.allocPrint(w.o.out.allocator(), "<{s}>", .{field});
+    }
+
+    /// `model.todos`: a root's name with a path.
+    fn pathName(w: *Walker, root: []const u8, p: u32) Allocator.Error![]const u8 {
+        if (w.mode != .report) return root;
+        return std.fmt.allocPrint(w.o.out.allocator(), "{s}{s}", .{ root, try w.o.pathText(p) });
+    }
+
+    /// A demand at the entry (§20.6): a call-site demand on the entry model
+    /// at one path, or on the message.
+    fn entryDemand(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely) Allocator.Error!void {
+        try w.demandOn(.{
+            .kind = .callsite,
+            .token = tok,
+            .op = op,
+            .base_text = text,
+            .base_ref = null,
+            .base_ty = null,
+            .base = base,
+            .others = others,
+            .origin = origin,
+            .xfail = xfail,
+            .entry = row,
+            .payload_from = payload_from,
+        });
     }
 
     fn evalMethod(w: *Walker, inst: Inst.Index) Allocator.Error!AV {
@@ -4278,6 +4645,9 @@ const Walker = struct {
         /// The callee is in the recursive group being solved: its fresh
         /// cells are one cell per call, so the numbering stays finite.
         merge_fresh: bool = false,
+        /// §20.4: the functions an entry instantiates at one call number
+        /// their fresh cells apart.
+        fresh_ns: u32 = 0,
         /// At the call itself: the arguments' types and the result's.
         arg_types: []const ?Var = &.{},
         result_ty: ?Var = null,
@@ -4343,7 +4713,7 @@ const Walker = struct {
             },
             .fresh, .esc => {
                 const base_k = if (ctx.merge_fresh) 1 else p.a;
-                const k = if (ctx.depth == 0) base_k else base_k + 1000 * ctx.depth;
+                const k = (if (ctx.depth == 0) base_k else base_k + 1000 * ctx.depth) + ctx.fresh_ns;
                 const ty: Var.Optional = if (ctx.depth == 0) w.instTypeOpt(ctx.inst) else .none;
                 const av = try w.single(.{ .kind = .result, .a = ctx.inst.int(), .b = @max(k, 1), .ty = ty });
                 if (p.kind == .esc) try w.escape(av, w.point);
@@ -4959,6 +5329,22 @@ const Walker = struct {
         return w.unionOf(parts.items);
     }
 
+    /// §20.8: cells two arguments of a constructor place at one folded path —
+    /// a node's value and its subtree's values — are kept apart: what is
+    /// stored at a representative shares no cell with what is there. One cell
+    /// met twice is one arrival's positions, which its own condition covers.
+    fn storedBeside(w: *Walker, parts: []const AV) Allocator.Error!void {
+        for (parts, 0..) |p, i| for (parts[i + 1 ..]) |q| for (p) |e| for (q) |f| {
+            if (e.path != f.path or e.cell == f.cell) continue;
+            const ke = w.cells.items[e.cell].kind;
+            const kf = w.cells.items[f.cell].kind;
+            if (ke == .closure or ke == .func or kf == .closure or kf == .func) continue;
+            const k = try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+            try w.lowerCond(e.cell, k);
+            try w.lowerCond(f.cell, k);
+        };
+    }
+
     /// The entries of a list value at its elements, re-rooted.
     fn elementsOf(w: *Walker, av: AV) Allocator.Error!AV {
         return w.proj(av, .{ .kind = .elem, .arg = 0 }, null);
@@ -4990,7 +5376,7 @@ const Walker = struct {
         const o = w.cells.items[outer];
         const i = w.cells.items[inner];
         switch (o.kind) {
-            .param, .result, .env, .shared, .cbres, .taken => {},
+            .param, .result, .env, .shared, .cbres, .taken, .payload => {},
             else => return null,
         }
         if (o.kind != i.kind or o.a != i.a or o.b != i.b) return null;
@@ -5044,6 +5430,11 @@ const Walker = struct {
         /// §18.8: a closure's own cell is demanded (a once closure's call).
         closures: bool = false,
         creation_ci: u32 = none,
+        /// §20.6: an entry demand, by its row.
+        entry: ?EntryRow = null,
+        /// §20.5: the messages a view builds, which may hold the cell: a
+        /// payload, not an operand.
+        payload_from: AV = &.{},
     };
 
     fn demandOn(w: *Walker, spec: DemandSpec) Allocator.Error!void {
@@ -5081,6 +5472,7 @@ const Walker = struct {
             .probe = spec.probe,
             .creation_ci = spec.creation_ci,
             .origin = spec.origin,
+            .entry = spec.entry,
         };
         // A probe on nothing passes: nothing is supplied.
         // Known, Unescaped, Captured, in that order across the cells.
@@ -5124,6 +5516,10 @@ const Walker = struct {
                 },
                 // A write of a capture: the closure is once, and its creation
                 // and calls decide the write (§18.8).
+                .payload => {
+                    cause = .payload;
+                    detail = "it may be a message's payload, which its sender may still hold, and owned sends are not built (§20.5)";
+                },
                 .env => if (spec.kind != .probe and w.frameClosure(w.frame) != null) {
                     rec.once_ci = w.frameClosure(w.frame).?;
                 } else {
@@ -5136,7 +5532,11 @@ const Walker = struct {
             const esc = try w.escapeOf(e.cell);
             if (esc.gen < w.point or esc.js < w.point) if (cause == null or @backingInt(Cause.escaped) < @backingInt(cause.?)) {
                 cause = .escaped;
-                detail = if (esc.gen < w.point)
+                detail = if (spec.entry != null and esc.gen >= w.point)
+                    "a function the runtime calls hands a function value that captured it to JavaScript, which is taken to keep it (§18.6, §20.4)"
+                else if (spec.entry != null)
+                    "at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4)"
+                else if (esc.gen < w.point)
                     "it was given to JavaScript, or kept by a callee"
                 else
                     try std.fmt.allocPrint(out, "a function value that {s} hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6)", .{try w.callName(@fromBackingInt(esc.why - 1))});
@@ -5164,6 +5564,12 @@ const Walker = struct {
             try w.demands.append(w.a, rec);
             return;
         }
+        // §20.5: a message a view builds from the model may hold the cell.
+        if (spec.payload_from.len > 0 and (try w.reaches(spec.payload_from, cells.items)) != null) {
+            rec.prelim = .{ .cause = .payload, .detail = "a message a view event builds may hold it, and an arm may store it beside it (§20.5, P6)", .approx = true };
+            try w.demands.append(w.a, rec);
+            return;
+        }
         // Disjoint: another operand of the demand reaches the cell.
         var approx_hit: u32 = 0;
         for (spec.others) |av| {
@@ -5173,6 +5579,13 @@ const Walker = struct {
                 continue;
             }
             rec.prelim = .{ .cause = .disjoint, .detail = "another operand of the same operation reaches it" };
+            try w.demands.append(w.a, rec);
+            return;
+        }
+        if (approx_hit != 0 and spec.entry != null) {
+            // At an entry the other operands are the model's other paths,
+            // as update's joined arms leave them (§20.4, §16.4 item 7).
+            rec.prelim = .{ .cause = .disjoint, .detail = "another path of the model may hold it after some message: update's arms are joined, so the entry cannot tell them apart (§20.4)", .approx = true };
             try w.demands.append(w.a, rec);
             return;
         }
@@ -5378,6 +5791,18 @@ const Walker = struct {
                 d.approx = true;
             },
         };
+        // §20.6: the entry's acceptance is its row's.
+        if (rec.entry != null and d.verdict == .accepted) {
+            if (rec.entry.? == .template) {
+                d.verdict = .{ .rejected = .platform };
+                d.detail = "the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)";
+                d.approx = false;
+                d.assumed = false;
+                d.note = "";
+            } else if (rec.accept != .param) {
+                d.verdict = .{ .accepted = .entry };
+            }
+        }
         return d;
     }
 
@@ -5815,6 +6240,8 @@ const Walker = struct {
             .shared => return .{ .kind = .shared, .a = c.a, .b = c.b, .path = c.path },
             // `a` 1: a ⊤ a pessimistic summary made (§16.7).
             .top => return .{ .kind = .top, .a = c.a },
+            // A message, which only the entry computation names (§20.5).
+            .payload => return .{ .kind = .top },
             .cbres => {
                 // In a lambda: the declaration's callback result, called inside it (§18.9).
                 if (frame != 0) return .{ .kind = .cb, .a = c.a, .b = 1, .path = c.path };

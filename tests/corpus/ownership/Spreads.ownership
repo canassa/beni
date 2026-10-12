@@ -9,7 +9,7 @@ module Spreads
   summary whole: π1 RA; res π1
   summary recons: π1 RA; res fresh1 π1
   summary twice: π1 RAW, π1[*] A; res [*] π1[*], π1{lost}
-  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0; assumed 0), pending 0, rejected 2
-total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0; assumed 0), pending 0, rejected 2
+  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause disjoint 1
 cause later-use 1

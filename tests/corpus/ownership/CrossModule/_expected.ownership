@@ -3,7 +3,7 @@ module Lists
   summary grow: π1 RAW; res π1
   summary same: π1 RA; res π1
   summary fresh: res fresh1
-  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0; assumed 0), pending 0, rejected 0
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Main
   13:10 call Lists.grow xs: rejected later-use: xs is read again at 14:22 (Lists.grow writes π1)
   19:12 construction <call Lists.same>: rejected alias: xs holds it and is read at 20:22
@@ -11,7 +11,7 @@ module Main
   summary grown: π1 RW
   summary aliased: π1 RW
   summary built: res fresh1
-  demands 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 2
-total 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0; assumed 0), pending 0, rejected 2
+  demands 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause later-use 1
 cause alias 1

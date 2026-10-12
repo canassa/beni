@@ -1,0 +1,65 @@
+-- ownership: an arm that keeps the old list in the model (T17 and T41 at the
+-- entry; thesis §7, P5 *Aliasing between paths*; `ownership-checker.md`
+-- §20.4, §20.6). `Save` stores `model.items` at `model.saved` and `Add`
+-- pushes onto `model.items` in place. Each arm is accepted on its own, but
+-- the model at entry is the fixpoint over every dispatch: after a `Save`,
+-- `saved` and `items` hold one list, so `Add`'s push would change what
+-- `saved` shows — rejected `disjoint` on every platform, approximately,
+-- since update's arms are joined (§16.4 item 7) and the thesis counts it a
+-- limit (T41). `copied` saves `List.copy model.items` (Change 2), a list of
+-- its own, and is accepted on browser-direct, rejected `platform` on
+-- browser-tea.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    items : List Int
+    saved : List Int
+
+
+type Msg
+    = Add Int
+    | Save
+
+
+keepOld : Msg, Model → Model
+keepOld msg model =
+    case msg of
+        Add n →
+            { model | items = List.push model.items n }
+
+        Save →
+            { model | saved = model.items }
+
+
+saveCopy : Msg, Model → Model
+saveCopy msg model =
+    case msg of
+        Add n →
+            { model | items = List.push model.items n }
+
+        Save →
+            { model | saved = List.copy model.items }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Add (List.length model.items)}>add</button>
+        <button onClick={Save}>save</button>
+        <p>{String.fromInt (List.length model.saved)}</p>
+    </main>
+
+
+kept : Tea.Program
+kept = Tea.sandbox { init = { items = [], saved = [] }, update = keepOld, view = view }
+
+
+copied : Tea.Program
+copied = Tea.sandbox { init = { items = [], saved = [] }, update = saveCopy, view = view }
+
+
+main : Tea.Program
+main = Browser.programs [ kept, copied ]

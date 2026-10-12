@@ -2678,8 +2678,33 @@ const Case = struct {
     /// §9, §11): the fixture must check clean, and `dump --stage=ownership`
     /// is the golden. It prints verdicts, never diagnostics, so its exit is
     /// 0 whatever it rejects.
+    ///
+    /// A fixture beside a `.platform` file is checked and dumped under each
+    /// platform it names, one golden per platform (`X.browser-direct.ownership`):
+    /// the entry protocol's verdicts are the build's platform's
+    /// (ownership-checker.md §20.2, §20.10).
     fn ownershipReport(c: Case) !void {
         const path = try c.fixturePath();
+        if (c.goldenExists("platform")) {
+            const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("platform"), c.arena, .limited(4096));
+            var names = std.mem.tokenizeAny(u8, text, " \t\r\n");
+            var any = false;
+            while (names.next()) |name| {
+                any = true;
+                const flag = try std.fmt.allocPrint(c.arena, "--platform={s}", .{name});
+                const checked = try c.compiler(&.{ "check", flag, path });
+                try expectExit(0, checked);
+                if (checked.stderr.len != 0) {
+                    detail("{s}: an ownership fixture must check clean under {s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, name, checked.stderr });
+                    return error.GoodFixtureHasDiagnostics;
+                }
+                const r = try c.compiler(&.{ "dump", "--stage=ownership", flag, path });
+                try expectExit(0, r);
+                try c.expectGolden(try std.fmt.allocPrint(c.arena, "{s}.ownership", .{name}), r.stdout);
+            }
+            if (!any) return error.PlatformFileEmpty;
+            return;
+        }
         const checked = try c.compiler(&.{ "check", path });
         try expectExit(0, checked);
         if (!try c.warningsAccounted(checked.stderr)) {

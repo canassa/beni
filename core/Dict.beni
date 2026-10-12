@@ -390,7 +390,18 @@ moveRedRight tree =
 --|     update animals "Tom" λ_ → Just Cat
 pub update : Dict k v, k, (Maybe v → Maybe v) → Dict k v
     where k.compare : k, k → Order
-update dict targetKey alter =
+update dict targetKey alter = focus dict targetKey alter
+
+
+--| The focus primitive of a dictionary (`ownership-checker.md` §20.8): the
+--| value at `targetKey` taken out of the tree, handed to `alter`, and what
+--| it makes put back, or the key removed. Its ownership row is asserted:
+--| the value is handed out while no other position holds it, so `alter`
+--| may edit it in place when the dictionary is unique, exclusive and dead
+--| after the call. `update` is this.
+focus : Dict k v, k, (Maybe v → Maybe v) → Dict k v
+    where k.compare : k, k → Order
+focus dict targetKey alter =
     case alter (get dict targetKey) of
         Just value →
             insert dict targetKey value
