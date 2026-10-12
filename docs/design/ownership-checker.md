@@ -23,6 +23,10 @@ dictionary's focus primitive — is specified in §20 and built; §19 records th
 as commands — is specified in §23 and built; §23.1 records the decisions it builds, the manager's answers to §22.7
 among them.*
 
+*Amended 2026-10-12: slice 3e — ownership words on the signatures of core and the platforms (thesis Change
+5(a), the owner's decision of 2026-10-12; 5(b) refused), the thesis's row for a `foreign` that carries none, and
+HTTP decoders followed through `Expect` — is specified in §24 and built.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -1874,3 +1878,180 @@ and the rule is revisited if they appear.
    *Answered 2026-10-12 (the manager):* Change 5(a), ownership words on `foreign` (approved by the owner), is
    the next slice, 3e, together with following the decoder stored in `Expect`.
 3. **View events** (P6): O6, now that the view-event rule is the only `payload` rejection.
+
+---
+
+## 24. Slice 3e — ownership words, and the decoder in `Expect` (normative from 2026-10-12)
+
+*Amends §4.4, §6.1 item 2, §15 decision 6, §16.5, §16.8, §16.11, §18.6 and §20.9. Sections 1–23 keep their
+numbers and text; where this section changes a rule, it wins. Research 81 measures it.*
+
+### 24.1 The decisions it builds
+
+- **Change 5(a)** (the owner, 2026-10-12): *ownership words on `foreign` declarations, in core and the
+  platforms only — the only packages that may write `foreign`.* A signature in those packages may say what a
+  call does with each argument and what it returns, and the checker takes the words for the declaration's
+  summary (§16.2), which no body shows.
+- **Change 5(b) is not approved**: no ownership words on a user's declarations. The checker infers every beni
+  declaration of a user package from its body, as it did, and a word written there is refused (§24.4).
+- **A `foreign` that carries no words gets the thesis's row** (Table 3.2's `foreign` row): it escapes every
+  argument and returns `⊤`. §15 decision 6 kept §6.1 item 2's narrowing — a `foreign pure` read and kept
+  nothing — *until every `foreign pure` that handles a cell in core and the platforms has its words*; this slice
+  writes them (§24.8), so the narrowing is withdrawn, as §14 question 6 said it would be.
+- **HTTP decoders are followed** (the manager's answer to §23.12 item 2): the function an `Expect` holds is
+  called where `Http` calls it, so a tagger's payload holds what the decoder returns (§24.9).
+
+### 24.2 The words
+
+A word says one fact of §16.2's summary. Each stands in front of the type it describes.
+
+**On a parameter** (thesis Change 5: "`unused`, `borrowed`, `aliased`, `escaped` or `consumed`"; "is parameter
+*i*", which the thesis puts on the result, is written on the parameter as `returned`):
+
+| Word | Meaning | Summary (§16.2) |
+|---|---|---|
+| `unused` | the call neither reads nor keeps it | no bits |
+| `borrowed` | read during the call; not kept, not in the result | `R` |
+| `aliased` | read; the result may hold it, or part of it, somewhere | `RA`; `res ⋆ πᵢ`, approximate |
+| `returned` | read; the result *is* it | `RA`; `res ε πᵢ` |
+| `escaped` | JavaScript may keep it after the call returns | `RE` |
+| `consumed` | written in place or given up: every cell at or below it | `RW` deep (`S`, §23.2) |
+
+**On a parameter whose type is a function written out** (thesis: "a function-typed one how often it is called"
+and what it is handed):
+
+| Word | Meaning | Summary |
+|---|---|---|
+| `once` | called at most once, during the call | `calls ≤1`, seen |
+| `many` | called any number of times, during the call | `calls many`, seen |
+| `owned` | each call is handed values nobody else holds | each supply fresh and owned |
+| `escaped` | kept by JavaScript and called later: what it captured escapes | `RE`, `calls many`, unseen |
+| `returned` | the result is what it returns | `res ε cb_j` |
+| `aliased` | the result may hold what it returns | `res ⋆ cb_j`, approximate |
+| `unused` | never called, not kept | `calls 0` |
+
+Without `owned`, what a call of it is handed is borrowed (`supply ⊤ borrowed`): the host may still hold it.
+
+**On the result** (thesis: "a result `fresh`, … `escaped` or `unknown`, and whether it is exclusive"):
+
+| Word | Meaning | Summary |
+|---|---|---|
+| `fresh` | made by the call; nobody else holds it | `res ε fresh₁{lost}` |
+| `exclusive`, with `fresh` | and no cell inside it is held twice (§18.2) | `res ε fresh₁` |
+| `escaped` | made by the call, and JavaScript keeps it too | `res ε esc₁{lost}` |
+| `unknown` | anything | `res ε ⊤` |
+
+**On a `foreign type`**: `crossing` — a value of the type holds no list and no function, so it carries no cell
+(§4.4, thesis §3.1's mode crossing). `pub crossing foreign type Event`.
+
+**What is not written.** A declaration that carries a word anywhere is read entirely from its words: a parameter
+with none is `escaped` (a function-typed one is kept and called later), and a result with none is `unknown` —
+unless a parameter is `returned`, when the result is exactly the `returned` parameters. What a word leaves out
+is the worst case, never the best: no default is optimistic.
+
+A word on a parameter or a result whose type crosses (§4.4) is allowed and says nothing the type does not.
+
+### 24.3 The syntax
+
+```
+Signature := Owned (',' Owned)* '→' Owned                  -- a top-level signature of a function
+Owned     := OwnWord* Product
+OwnWord   := 'unused' | 'borrowed' | 'aliased' | 'returned' | 'escaped' | 'consumed'
+           | 'once' | 'many' | 'owned' | 'fresh' | 'exclusive' | 'unknown'
+Foreign   := 'crossing'? 'equatable'? 'foreign' 'type' upper_ident lower_ident*
+```
+
+```elm
+pub join : borrowed List String, String → String
+pub foreign pure from : returned a → Value
+pub foreign pure pure : once returned sync (⊤ → a) → a
+pub foreign impure array : aliased elements → fresh Value
+pub crossing foreign type Event
+```
+
+The words are contextual, as the rung and `sync` are (`language.md` §5.4): a word is one only in a top-level
+signature, in front of something that starts a type — `borrowed List a`, `borrowed a`, `borrowed (a, b)` — and an
+ordinary type variable everywhere else (`unknown → a` names a variable). They are erased by lowering: the
+type, the interface, the emitted JavaScript and every check but this one are what they were without them.
+
+*Rejected:*
+
+- **A clause after the type** (`join : List String, String → String owns 1 borrowed`), like `where`: it numbers
+  the parameters, and a reader matches numbers to positions by counting commas.
+- **Parentheses**, as `sync` takes (`borrowed (List String)`): `sync` needs them because it marks one arrow
+  inside a type; a word describes the whole parameter, so it needs no delimiter, and `List` binds as it does
+  anywhere.
+- **"Is parameter *i*" on the result** (`→ is 1 a`), the thesis's spelling: a number again. `returned` on the
+  parameter says the same thing in place, and on a function-typed parameter says what the thesis's `cb_j` says.
+- **Symbols** (`&`, `!`, `↑`) as in Rust or OxCaml: beni's notation is symbols for operators and words for
+  meanings, and these are meanings a reader of core should not need a table for.
+
+### 24.4 Where a word may stand, and what is refused
+
+A word may be written in the signature of a top-level declaration — a `foreign` value or an annotated beni
+value — of a package that may write `foreign` (core, and a package whose manifest says `"platform": true`,
+`boundary.md` §2): the wall `sync` has (`language.md` §5.4, R47-4). A beni declaration of core or a platform
+whose body is written over `Js` — `String.join`, `Debug.toString`, `Schema.print` — is `foreign` in all but form:
+its body calls JavaScript the checker cannot see into, which is why thesis Change 5 gives "the core library's
+functions over `Js`" the same words. Its summary is its words, and its body is still walked for its own demand
+lines (§24.5).
+
+Refused, as `misplaced_ownership_word`, reported by lowering, and the word dropped (the declaration otherwise
+lowers as written):
+
+| Reading | When |
+|---|---|
+| outside a platform | any word in a package that may not write `foreign` — **Change 5(b)**: the checker infers a user's declaration from its body |
+| nested | a word anywhere but in front of a parameter of the signature's outermost arrow or its result — inside a type, or on a value that is not a function, which every reader shares and nothing makes per call |
+| not a function | `once`, `many` or `owned` on a parameter whose type is not a function written out |
+| on the result / on a parameter | a result word (`fresh`, `exclusive`, `unknown`) on a parameter, or a parameter word (`unused`, `borrowed`, `aliased`, `returned`, `consumed`, `once`, `many`, `owned`) on the result |
+| impossible | two words that cannot both hold: a word twice; `unused` or `borrowed` with any other; `aliased` with `returned`; `consumed` on a function; `once` with `many`; `owned` without `once` or `many`; two of `fresh`, `escaped`, `unknown`; `exclusive` without `fresh` |
+
+`crossing` is read only directly in front of `foreign` (or `equatable foreign`) and is refused outside a
+platform with the same code.
+
+### 24.5 How the checker reads them
+
+- **A declaration with words** has the summary its words give (§24.2), marked asserted, printed with `(words)`
+  after it (§16.11). For a beni declaration the words replace the summary read off its body; the body is still
+  walked, once, for the demand lines a report on its module prints.
+- **The rows the checker asserts itself** keep precedence: `core/List`'s primitives (§16.8, §18.5, §22.5),
+  `Dict.focus` (§20.8), `Hosted`'s send positions (§23.3) and the program constructors' entry rows (§20.2). Their
+  facts — an element path, a taken supply, `K`, a send position — are finer than the vocabulary can state, so
+  those declarations carry no words.
+- **A `foreign` with no words** has the thesis's row: every parameter `escaped` — its cells join Esc at the call,
+  and a function value handed to it escapes what it captured (§18.6) — and the result `⊤` unless its type
+  crosses. The rung does not change it. §6.1 item 2 and §16.5's "keeps slice 1's rule" for a `foreign` without
+  words are withdrawn.
+- **A `crossing` foreign type** crosses in §4.4's sense: a value of it carries no entries, so a `⊤` it is read
+  from does not stand for a list.
+
+### 24.6 The trusted surface
+
+§20.9 gains every declaration with words: each is privileged code whose wrong word is a correctness bug, as an
+asserted row is (thesis §6.5). Each word is justified by reading the sibling's export, or the `Js` operations
+the body is compiled to (§24.8), and **each annotated declaration is pinned by a test program** whose verdict
+depends on its row: `tests/corpus/ownership/trusted-surface.txt` lists every one with the fixture that pins it,
+and a black-box test fails when the ownership dump of core or a platform prints a `(words)` summary that the
+list does not name, or the list names a fixture that does not exist or does not mention the declaration.
+
+### 24.7 The report
+
+A summary read from words prints `(words)` where an asserted row prints `(asserted)`. The note `(no summary:
+M.f)` (§16.11) no longer names a `foreign`: every `foreign` has a summary, from its words or the thesis's row.
+
+### 24.8 The annotated surface
+
+*Filled in as built.*
+
+### 24.9 The decoder in `Expect`
+
+*Filled in as built.*
+
+### 24.10 Testing
+
+*Filled in as built.*
+
+### 24.11 Open questions
+
+*Filled in as built.*

@@ -170,6 +170,24 @@ the owner chose this mark — not a `foreign` — for `Ref.update` and `Ref.modi
 parameter, so that their read and write cannot be split by another fiber; `transparent-effects-proposal.md`
 §17.2 says what the mark promises there. Nothing in the check changes.
 
+*Amended 2026-10-12, ownership words* ([`ownership-checker.md`](ownership-checker.md) §24; thesis Change
+5(a), the owner's decision of 2026-10-12). **A `foreign` may say what a call does with the lists it is
+handed and what it returns** — `pub foreign pure from : returned a → Value`, `pub foreign impure array :
+aliased elements → fresh Value`, `pub crossing foreign type Event` — with the vocabulary of
+`ownership-checker.md` §24.2: a parameter `unused`, `borrowed`, `aliased`, `returned`, `escaped` or
+`consumed`, a function-typed one `once` or `many` and `owned`, a result `fresh` (`exclusive`), `escaped` or
+`unknown`. The words are part of the declaration's contract, like the rung and `sync`, and the same kind of
+promise: about the sibling, checked by no reading of the JavaScript, and trusted — a wrong word is a
+correctness bug in privileged code, which is why each annotated declaration is listed with a test program
+that pins it (`ownership-checker.md` §24.6). The four checks below do not read them; lowering erases them,
+so the type, the interface, the arity check 4 counts and the emitted code are what they are without them.
+**What carries no words is taken at its worst**: a `foreign` with none escapes every argument and returns
+anything (the thesis's row), whatever its rung. The same words may stand on an ordinary declaration's
+signature in a package that may write `foreign` — core's functions over `Js`, such as `String.join`, are
+`foreign` in all but form — and on no declaration of any other package (`misplaced_ownership_word`): the
+owner did not approve them for application code (Change 5(b)), whose ownership the checker reads from the
+body.
+
 Four checks run at build time, and all four are things Elm does not do:
 
 1. **The type must be one of exactly two shapes.** Either (a) a total pure function over
