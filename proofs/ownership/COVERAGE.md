@@ -88,7 +88,7 @@ than new thesis rules (Ch. 3 demand/summary contracts; Ch. 4 inference; Ch. 6
 soundness/derived-contract obligations). No excluded runtime or language-boundary variant is reported as passed. The broadened campaigns reach higher-order-recursion `limit:` rejections,
 reported separately; this does not prove recursive contracts universally derivable.
 
-The fixed suite has 76 intended verdict tests (74 transcribed, plus the recursion-in-a-step finding and the three-row T46 variant), checked by both checkers. Each independently typechecks;
+The fixed suite has 77 intended verdict tests (74 transcribed, plus the recursion-in-a-step finding, the three-row T46 variant and the env-through-a-wrapper precision fixture), checked by both checkers. Each independently typechecks;
 accepted tests compare the complete Trace, including externally retained roots.
 The traversal escape defect is repaired. Frozen controls demonstrate both
 freshness-only and missing-transfer implementations accept an actual mismatch,
@@ -143,11 +143,11 @@ through their probe only. RESULTS.md has the indices.
 
 **Rows exercised.** `withWrites` counts executions, not which rows a write
 depends on. The checker records the rows each check exercised; over the
-accepted programs that write (three seeds, RESULTS.md): callback W 1251,
-callback argument in res 2994, env in res 316, fresh in res 3327, xres yes
-5862 / no 46, E on a callback argument 95, xreq on one 99 and its edge 99,
+accepted programs that write (three seeds, RESULTS.md): callback W 1252,
+callback argument in res 2995, env in res 319, fresh in res 3328, xres yes
+5865 / no 46, E on a callback argument 95, xreq on one 99 and its edge 99,
 guards forwarded and supplies transferred to the caller's input 134 each,
-supply owned bit cleared at a step end 236 and at the caller 981, a summary
+supply owned bit cleared at a step end 237 and at the caller 981, a summary
 reused after re-asking its guards 881. Never hit: ⊤ in a callback's res, E on
 a callback's environment.
 

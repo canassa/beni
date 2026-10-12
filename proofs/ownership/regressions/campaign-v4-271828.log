@@ -51,4 +51,4 @@ row-hits 53 supply transferred to the caller's own input
 row-hits 34 xreq(callback arg) yes
 row-hits 12 xres no
 row-hits 1913 xres yes
-generator-version=4 seed=271828 control=soundness-v4 candidates=20000 distinct=12239 typed=20000 accepted=4875 withWrites=3143 rejected=15125 limits=930 typeErrors=0 executionErrors=0 mismatches=0 cross-only-this=22 cross-only-other=0 cross-other-mismatches=0 summaries-computed=10334 summaries-reused=199964 first-mismatch=none elapsed-ms=25414
+generator-version=4 seed=271828 control=soundness-v4 candidates=20000 distinct=12239 typed=20000 accepted=4875 withWrites=3143 rejected=15125 limits=930 typeErrors=0 executionErrors=0 mismatches=0 cross-only-this=22 cross-only-other=0 cross-other-mismatches=0 summaries-computed=10334 summaries-reused=199964 first-mismatch=none elapsed-ms=23754

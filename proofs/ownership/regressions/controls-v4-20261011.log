@@ -1,51 +1,51 @@
-generator-version=4 seed=20261011 control=old-v4 candidates=24 distinct=24 typed=24 accepted=8 withWrites=5 rejected=16 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=13 summaries-reused=275 first-mismatch=23 elapsed-ms=29
-generator-version=4 seed=20261011 control=old-escape-v4 candidates=15 distinct=15 typed=15 accepted=5 withWrites=3 rejected=10 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=4 summaries-reused=156 first-mismatch=14 elapsed-ms=15
-generator-version=4 seed=20261011 control=mutant-disjoint candidates=100 distinct=92 typed=100 accepted=26 withWrites=18 rejected=74 limits=3 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=56 summaries-reused=1251 first-mismatch=99 elapsed-ms=105
-generator-version=4 seed=20261011 control=mutant-borrowed-supply-reinfer candidates=250 distinct=225 typed=250 accepted=50 withWrites=29 rejected=200 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=249 elapsed-ms=351
-generator-version=4 seed=20261011 control=mutant-traversal-exclusive candidates=237 distinct=213 typed=237 accepted=49 withWrites=29 rejected=188 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=90 summaries-reused=1734 first-mismatch=236 elapsed-ms=234
-generator-version=4 seed=20261011 control=mutant-many-calls candidates=367 distinct=313 typed=367 accepted=79 withWrites=45 rejected=288 limits=16 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=147 summaries-reused=2581 first-mismatch=366 elapsed-ms=366
+generator-version=4 seed=20261011 control=old-v4 candidates=24 distinct=24 typed=24 accepted=8 withWrites=5 rejected=16 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=13 summaries-reused=275 first-mismatch=23 elapsed-ms=28
+generator-version=4 seed=20261011 control=old-escape-v4 candidates=15 distinct=15 typed=15 accepted=5 withWrites=3 rejected=10 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=4 summaries-reused=156 first-mismatch=14 elapsed-ms=14
+generator-version=4 seed=20261011 control=mutant-disjoint candidates=100 distinct=92 typed=100 accepted=26 withWrites=18 rejected=74 limits=3 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=56 summaries-reused=1251 first-mismatch=99 elapsed-ms=103
+generator-version=4 seed=20261011 control=mutant-borrowed-supply-reinfer candidates=250 distinct=225 typed=250 accepted=50 withWrites=29 rejected=200 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=249 elapsed-ms=346
+generator-version=4 seed=20261011 control=mutant-traversal-exclusive candidates=237 distinct=213 typed=237 accepted=49 withWrites=29 rejected=188 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=90 summaries-reused=1734 first-mismatch=236 elapsed-ms=232
+generator-version=4 seed=20261011 control=mutant-many-calls candidates=367 distinct=313 typed=367 accepted=79 withWrites=45 rejected=288 limits=16 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=147 summaries-reused=2581 first-mismatch=366 elapsed-ms=362
 generator-version=4 seed=20261011 control=mutant-copy-exclusive candidates=232 distinct=210 typed=232 accepted=51 withWrites=31 rejected=181 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=96 summaries-reused=1917 first-mismatch=231 elapsed-ms=229
-generator-version=4 seed=20261011 control=mutant-close-source candidates=3316 distinct=2399 typed=3316 accepted=826 withWrites=515 rejected=2490 limits=149 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1636 summaries-reused=32516 first-mismatch=3315 elapsed-ms=3163
-generator-version=4 seed=20261011 control=mutant-keeps-shape candidates=3758 distinct=2689 typed=3758 accepted=920 withWrites=569 rejected=2838 limits=172 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1797 summaries-reused=35211 first-mismatch=3757 elapsed-ms=3587
-generator-version=4 seed=20261011 control=mutant-guard-reuse candidates=1650 distinct=1260 typed=1650 accepted=405 withWrites=247 rejected=1245 limits=64 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=792 summaries-reused=15578 first-mismatch=1649 elapsed-ms=1697
+generator-version=4 seed=20261011 control=mutant-close-source candidates=3316 distinct=2399 typed=3316 accepted=826 withWrites=515 rejected=2490 limits=149 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1636 summaries-reused=32516 first-mismatch=3315 elapsed-ms=3158
+generator-version=4 seed=20261011 control=mutant-keeps-shape candidates=3758 distinct=2689 typed=3758 accepted=920 withWrites=569 rejected=2838 limits=172 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1797 summaries-reused=35211 first-mismatch=3757 elapsed-ms=3605
+generator-version=4 seed=20261011 control=mutant-guard-reuse candidates=1650 distinct=1260 typed=1650 accepted=405 withWrites=247 rejected=1245 limits=64 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=792 summaries-reused=15578 first-mismatch=1649 elapsed-ms=1712
 generator-version=4 seed=20261011 control=mutant-callback-xres candidates=24 distinct=24 typed=24 accepted=8 withWrites=5 rejected=16 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=13 summaries-reused=275 first-mismatch=23 elapsed-ms=28
-generator-version=4 seed=20261011 control=mutant-supply-edge candidates=584 distinct=476 typed=584 accepted=130 withWrites=80 rejected=454 limits=23 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=249 summaries-reused=4785 first-mismatch=583 elapsed-ms=593
-generator-version=4 seed=20261011 control=mutant-supply-recheck candidates=4742 distinct=3295 typed=4742 accepted=1146 withWrites=715 rejected=3596 limits=230 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=2345 summaries-reused=46334 first-mismatch=4741 elapsed-ms=4485
-generator-version=4 seed=20261011 control=mutant-calls-edge candidates=46 distinct=45 typed=46 accepted=13 withWrites=9 rejected=33 limits=1 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=22 summaries-reused=610 first-mismatch=45 elapsed-ms=48
-generator-version=4 seed=20261011 control=mutant-callback-writes candidates=401 distinct=339 typed=401 accepted=88 withWrites=52 rejected=313 limits=19 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=184 summaries-reused=3732 first-mismatch=400 elapsed-ms=748
-generator-version=4 seed=20261011 control=mutant-callback-aliases candidates=250 distinct=225 typed=250 accepted=50 withWrites=29 rejected=200 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=99 summaries-reused=1938 first-mismatch=249 elapsed-ms=480
-generator-version=4 seed=20261011 control=mutant-callback-env candidates=120 distinct=111 typed=120 accepted=28 withWrites=19 rejected=92 limits=3 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=66 summaries-reused=1431 first-mismatch=119 elapsed-ms=237
-generator-version=4 seed=20261011 control=mutant-callback-escapes candidates=20000 distinct=12160 typed=20000 accepted=4902 withWrites=3204 rejected=15098 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10030 summaries-reused=200852 first-mismatch=none elapsed-ms=19378
-NEGATIVE CONTROL FAILED: mutant-callback-escapes found no generated accepted disagreement
-generator-version=4 seed=20261011 control=mutant-callback-requires candidates=20000 distinct=12160 typed=20000 accepted=4901 withWrites=3203 rejected=15099 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10028 summaries-reused=200791 first-mismatch=none elapsed-ms=19982
-NEGATIVE CONTROL FAILED: mutant-callback-requires found no generated accepted disagreement
-generator-version=4 seed=20261011 control=mutant-requires-edge candidates=20000 distinct=12160 typed=20000 accepted=4901 withWrites=3203 rejected=15099 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10028 summaries-reused=200791 first-mismatch=none elapsed-ms=18736
-NEGATIVE CONTROL FAILED: mutant-requires-edge found no generated accepted disagreement
-generator-version=4 seed=20261011 control=mutant-forward-guards candidates=20000 distinct=12160 typed=20000 accepted=4901 withWrites=3203 rejected=15099 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10028 summaries-reused=198841 first-mismatch=none elapsed-ms=19899
-NEGATIVE CONTROL FAILED: mutant-forward-guards found no generated accepted disagreement
-generator-version=4 seed=20261011 control=mutant-transfer-supplies candidates=20000 distinct=12160 typed=20000 accepted=4901 withWrites=3203 rejected=15099 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10028 summaries-reused=200717 first-mismatch=none elapsed-ms=20190
-NEGATIVE CONTROL FAILED: mutant-transfer-supplies found no generated accepted disagreement
-CONTROL old-rule [summaries]: caught=true first-index=23 elapsed-ms=29
-CONTROL old-escape-rule [summaries]: caught=true first-index=14 elapsed-ms=15
-CONTROL mutant=disjoint [summaries]: caught=true first-index=99 elapsed-ms=105
+generator-version=4 seed=20261011 control=mutant-supply-edge candidates=584 distinct=476 typed=584 accepted=131 withWrites=81 rejected=453 limits=23 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=253 summaries-reused=4869 first-mismatch=583 elapsed-ms=614
+generator-version=4 seed=20261011 control=mutant-supply-recheck candidates=4742 distinct=3295 typed=4742 accepted=1152 withWrites=721 rejected=3590 limits=230 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=2375 summaries-reused=46904 first-mismatch=4741 elapsed-ms=4533
+generator-version=4 seed=20261011 control=mutant-calls-edge candidates=46 distinct=45 typed=46 accepted=13 withWrites=9 rejected=33 limits=1 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=22 summaries-reused=610 first-mismatch=45 elapsed-ms=49
+generator-version=4 seed=20261011 control=mutant-callback-writes candidates=401 distinct=339 typed=401 accepted=88 withWrites=52 rejected=313 limits=19 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=184 summaries-reused=3732 first-mismatch=400 elapsed-ms=746
+generator-version=4 seed=20261011 control=mutant-callback-aliases candidates=250 distinct=225 typed=250 accepted=50 withWrites=29 rejected=200 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=99 summaries-reused=1938 first-mismatch=249 elapsed-ms=481
+generator-version=4 seed=20261011 control=mutant-callback-env candidates=120 distinct=111 typed=120 accepted=28 withWrites=19 rejected=92 limits=3 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=66 summaries-reused=1431 first-mismatch=119 elapsed-ms=234
+generator-version=4 seed=20261011 control=mutant-callback-escapes candidates=20000 distinct=12160 typed=20000 accepted=4904 withWrites=3206 rejected=15096 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10039 summaries-reused=200996 first-mismatch=none elapsed-ms=19514
+no generated accepted disagreement under mutant-callback-escapes (a failure unless the control is optional)
+generator-version=4 seed=20261011 control=mutant-callback-requires candidates=20000 distinct=12160 typed=20000 accepted=4903 withWrites=3205 rejected=15097 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10037 summaries-reused=200935 first-mismatch=none elapsed-ms=19030
+no generated accepted disagreement under mutant-callback-requires (a failure unless the control is optional)
+generator-version=4 seed=20261011 control=mutant-requires-edge candidates=20000 distinct=12160 typed=20000 accepted=4903 withWrites=3205 rejected=15097 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10037 summaries-reused=200935 first-mismatch=none elapsed-ms=18817
+no generated accepted disagreement under mutant-requires-edge (a failure unless the control is optional)
+generator-version=4 seed=20261011 control=mutant-forward-guards candidates=20000 distinct=12160 typed=20000 accepted=4903 withWrites=3205 rejected=15097 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10037 summaries-reused=198985 first-mismatch=none elapsed-ms=19658
+no generated accepted disagreement under mutant-forward-guards (a failure unless the control is optional)
+generator-version=4 seed=20261011 control=mutant-transfer-supplies candidates=20000 distinct=12160 typed=20000 accepted=4903 withWrites=3205 rejected=15097 limits=913 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=10037 summaries-reused=200861 first-mismatch=none elapsed-ms=18668
+no generated accepted disagreement under mutant-transfer-supplies (a failure unless the control is optional)
+CONTROL old-rule [summaries]: caught=true first-index=23 elapsed-ms=28
+CONTROL old-escape-rule [summaries]: caught=true first-index=14 elapsed-ms=14
+CONTROL mutant=disjoint [summaries]: caught=true first-index=99 elapsed-ms=103
 CONTROL mutant=borrowed-supply [summaries]: NOT OBSERVABLE (not required) verdicts-changed=21 disagreeing=0
-CONTROL mutant=borrowed-supply [per-call]: caught=true first-index=249 elapsed-ms=351
-CONTROL mutant=traversal-exclusive [summaries]: caught=true first-index=236 elapsed-ms=234
-CONTROL mutant=many-calls [summaries]: caught=true first-index=366 elapsed-ms=366
+CONTROL mutant=borrowed-supply [per-call]: caught=true first-index=249 elapsed-ms=346
+CONTROL mutant=traversal-exclusive [summaries]: caught=true first-index=236 elapsed-ms=232
+CONTROL mutant=many-calls [summaries]: caught=true first-index=366 elapsed-ms=362
 CONTROL mutant=copy-exclusive [summaries]: caught=true first-index=231 elapsed-ms=229
-CONTROL mutant=close-source [summaries]: caught=true first-index=3315 elapsed-ms=3163
-CONTROL mutant=keeps-shape [summaries]: caught=true first-index=3757 elapsed-ms=3587
-CONTROL mutant=guard-reuse [summaries]: caught=true first-index=1649 elapsed-ms=1697
+CONTROL mutant=close-source [summaries]: caught=true first-index=3315 elapsed-ms=3158
+CONTROL mutant=keeps-shape [summaries]: caught=true first-index=3757 elapsed-ms=3605
+CONTROL mutant=guard-reuse [summaries]: caught=true first-index=1649 elapsed-ms=1712
 CONTROL mutant=callback-xres [summaries]: caught=true first-index=23 elapsed-ms=28
-CONTROL mutant=supply-edge [summaries]: caught=true first-index=583 elapsed-ms=593
-CONTROL mutant=supply-recheck [summaries]: caught=true first-index=4741 elapsed-ms=4485
-CONTROL mutant=calls-edge [summaries]: caught=true first-index=45 elapsed-ms=48
-CONTROL mutant=callback-writes [summaries]: caught=true first-index=400 elapsed-ms=748
-CONTROL mutant=callback-aliases [summaries]: caught=true first-index=249 elapsed-ms=480
-CONTROL mutant=callback-env [summaries]: caught=true first-index=119 elapsed-ms=237
-CONTROL mutant=callback-escapes [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=19378
-CONTROL mutant=callback-requires [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=19982
-CONTROL mutant=requires-edge [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=18736
-CONTROL mutant=forward-guards [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=19899
-CONTROL mutant=transfer-supplies [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=20190
+CONTROL mutant=supply-edge [summaries]: caught=true first-index=583 elapsed-ms=614
+CONTROL mutant=supply-recheck [summaries]: caught=true first-index=4741 elapsed-ms=4533
+CONTROL mutant=calls-edge [summaries]: caught=true first-index=45 elapsed-ms=49
+CONTROL mutant=callback-writes [summaries]: caught=true first-index=400 elapsed-ms=746
+CONTROL mutant=callback-aliases [summaries]: caught=true first-index=249 elapsed-ms=481
+CONTROL mutant=callback-env [summaries]: caught=true first-index=119 elapsed-ms=234
+CONTROL mutant=callback-escapes [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=19514
+CONTROL mutant=callback-requires [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=19030
+CONTROL mutant=requires-edge [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=18817
+CONTROL mutant=forward-guards [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=19658
+CONTROL mutant=transfer-supplies [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=18668
 controls budget=20000 seed=20261011 generator-version=4 checker=summaries passed=true

@@ -220,7 +220,15 @@ def normalized (s : Summary) : Summary :=
 def otherPaths (args caps : List Abstract) (o : Origin) : List Origin :=
   let ps := args.zipIdx.flatMap fun (a, i) => a.paths.map fun (p, cs) => (Origin.parameter i p, cs)
   let es := caps.zipIdx.flatMap fun (a, i) => a.paths.map fun (p, cs) => (Origin.capture i p, cs)
-  (ps ++ es).flatMap fun (q, cs) => if q == o then [] else cs
+  -- A write through a function input's environment (`π_i.env`) names the
+  -- same cells as that input's capture paths: they are the same path, not
+  -- another operand. Uses of the closure after the write are the callee's
+  -- own Dead check (its `π_i` stays live), as for any other input path.
+  let same := fun (q : Origin) => q == o || match o, q with
+    | .parameter i (.env :: _), .parameter j (.capture _ :: _) => i == j
+    | .capture i (.env :: _), .capture j (.capture _ :: _) => i == j
+    | _, _ => false
+  (ps ++ es).flatMap fun (q, cs) => if same q then [] else cs
 
 def keepsShape (a : Abstract) (parameter := 0) : Bool :=
   a.deepExclusive && separatedPaths a.paths && a.paths.all fun (p, cs) =>

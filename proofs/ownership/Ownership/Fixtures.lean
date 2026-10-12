@@ -364,6 +364,18 @@ def probePublishVia : Program := {
     .letE 4 (.app (v 2) [v 1, v 3]) <| .letE 5 (.closure mapVia []) <|
     .letE 6 (.closure publish []) <| .letE 7 (.app (v 5) [v 4, v 6]) (.prim .push [v 0, .int 0]) }
 
+open Generator in
+/-- `applyThenRead xs (capAppend c)`: the once callback pushes its capture and
+    returns it, and applyThenRead pushes the result again. The closure is dead
+    afterwards, so this is accepted; the summary checker once rejected it by
+    counting the closure's captures as another operand of the write through
+    its environment. From seed 20261011, index 13920. -/
+def envThroughWrapper : Program := {
+  declarations := decls
+  main := .letE 0 (.prim (.literal .int) [.int 3]) <| .letE 2 (.prim (.literal .int) [.int 3, .int 0]) <|
+    .letE 6 (.closure applyThenRead []) <| .letE 7 (.closure capAppend [v 2]) <|
+    .letE 8 (.app (v 6) [v 0, v 7]) <| .letE 9 (.prim .set [v 8, .int 1, .int 2]) (.prim .record [v 9]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -534,7 +546,8 @@ def all : List Fixture := [
   ⟨"escape ordinary call",escapeCall,false⟩,
   ⟨"escape traversal",escapeTraversal,false⟩,
   ⟨"recursion inside a step (per-call checker accepted it)",recursionInStep,false⟩,
-  ⟨"T46 borrowed row read again",borrowedReread,false⟩ ]
+  ⟨"T46 borrowed row read again",borrowedReread,false⟩,
+  ⟨"wrapper writes its callback's returned capture",envThroughWrapper,true⟩ ]
 
 def run : IO Bool := do
   let mut ok := true
