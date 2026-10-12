@@ -1,0 +1,53 @@
+-- ownership: `map`'s identity promise is named only where it can fire
+-- (`ownership-checker.md` §25.3; thesis §3.8, "the promise is named only
+-- where it can fire"). Research 82's R4 maps `Explosion` records to
+-- `Obstacle` records (`Bike.update`, line 60): two closed records with
+-- different fields are never one object, so the map's result is a new
+-- list and appending onto it while the explosions are read afterwards is
+-- accepted (`obstacles`). Where the callback's result may be its element
+-- the promise stands, and the same append is rejected, approximately:
+-- a map from a record type to itself (`moved`), and a map whose element
+-- is a nominal type of one constructor with one field, which the release
+-- representation makes its field (`unwrapped`, thesis §3.1).
+type alias Explosion =
+    center : Int
+    size : Int
+
+
+type alias Obstacle =
+    n : Int
+    s : Int
+
+
+type Wrapped
+    = Wrapped Explosion
+
+
+toObstacle : Explosion → Obstacle
+toObstacle ex = { n = ex.center - ex.size, s = ex.center + ex.size }
+
+
+pub obstacles : List Explosion, Obstacle → Int
+obstacles explosions wall =
+    all = List.map explosions toObstacle ++ [ wall ]
+    List.length all + List.length explosions
+
+
+pub moved : List Explosion, Explosion → Int
+moved explosions extra =
+    all = List.map explosions (λex → ex) ++ [ extra ]
+    List.length all + List.length explosions
+
+
+pub unwrapped : List Wrapped, Explosion → Int
+unwrapped wrapped extra =
+    all =
+        List.map
+            wrapped
+            (λw →
+                case w of
+                    Wrapped ex →
+                        ex
+            )
+            ++ [ extra ]
+    List.length all + List.length wrapped

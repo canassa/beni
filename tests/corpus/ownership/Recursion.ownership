@@ -1,20 +1,17 @@
 module Recursion
-  17:18 construction <call Recursion.appendTo>: accepted param
-  17:19 call Recursion.appendTo ys: accepted param (Recursion.appendTo writes π2)
-  27:13 call Recursion.odds <construction>: accepted param (Recursion.odds writes π2)
-  27:25 construction acc: accepted param
-  37:13 call Recursion.evens acc: accepted param (Recursion.evens writes π2)
-  42:10 call Recursion.appendTo ys: rejected later-use: ys is read again at 44:23 (Recursion.appendTo writes π2)
-  43:13 construction zs: rejected alias: ys holds it and is read at 44:23
-  48:17 call Recursion.evens <literal>: accepted fresh (Recursion.evens writes π2)
-  54:11 call Recursion.evens acc: rejected later-use: acc is read again at 55:23 (Recursion.evens writes π2)
-  summary appendTo: π1 R, π2 RAW; res π2
+  30:13 call Recursion.odds <construction>: accepted param (Recursion.odds writes π2)
+  30:25 construction acc: accepted param
+  40:13 call Recursion.evens acc: accepted param (Recursion.evens writes π2)
+  46:13 construction zs: rejected call: ys may hold it through the call at 45:10, and is read at 47:23 (approx)
+  51:17 call Recursion.evens <literal>: accepted fresh (Recursion.evens writes π2)
+  57:11 call Recursion.evens acc: rejected later-use: acc is read again at 58:23 (Recursion.evens writes π2)
+  summary appendTo: π1 R, π2 RA; res fresh2{excl π2} ~fresh1{excl π2} π2
   summary evens: π1 R, π2 RAW; res π2
   summary odds: π1 R, π2 RAW; res π2
-  summary t12: π1 RW
+  summary t12: π1 Rw
   summary everyOther: π1 R; res fresh1
   summary keepsAcc: π1 R
-  demands 9: accepted 6 (fresh 1, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-total 9: accepted 6 (fresh 1, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-cause later-use 2
-cause alias 1
+  demands 6: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 1
+cause call 1

@@ -1,0 +1,72 @@
+-- ownership: the old value read only when no edit happened
+-- (`ownership-checker.md` §25.4; research 82's R5, `Game.pureUpdate`, line
+-- 127). In `Maybe.withDefault (Maybe.map m f) d`, `f` runs exactly when `m`
+-- is `Just`, and `d` is the result exactly when it is `Nothing`, so `f`'s
+-- edit of the model and the read of `d` are two arms no run takes both of:
+-- `step` (the port's pipeline) and `stepLambda` are accepted, as the `case`
+-- they mean (`stepCase`) always was.
+--
+-- Rejected wherever the old model is read after an edit, or the checker
+-- cannot see that it is not: `readAfter` reads it after the whole
+-- expression; `eagerHandler`'s function is a call that edits as it is
+-- evaluated, whatever `m` is; `defaultReads`' default is not a variable, so
+-- it reads the edited list on the `Just` path; `editInMaybe` edits while
+-- computing `m`; `andThen` is not `map`. Each is `later-use`.
+type alias Model =
+    items : List Int
+    other : List Int
+
+
+handle : Model, Int → Model
+handle model k = { model | items = List.push model.items k }
+
+
+handler : Model → (Int → Model)
+handler model =
+    edited = { model | items = List.push model.items 0 }
+    λk → { edited | other = [ k ] }
+
+
+pub step : Maybe Int, Model → Model
+step m model =
+    m
+        ▷ Maybe.map (handle model _)
+        ▷ Maybe.withDefault model
+
+
+pub stepLambda : Maybe Int, Model → Model
+stepLambda m model = Maybe.withDefault (Maybe.map m λk → handle model k) model
+
+
+pub stepCase : Maybe Int, Model → Model
+stepCase m model =
+    case m of
+        Just k →
+            handle model k
+
+        Nothing →
+            model
+
+
+pub readAfter : Maybe Int, Model → Int
+readAfter m model =
+    next = Maybe.withDefault (Maybe.map m (handle model _)) model
+    List.length next.items + List.length model.items
+
+
+pub eagerHandler : Maybe Int, Model → Model
+eagerHandler m model = Maybe.withDefault (Maybe.map m (handler model)) model
+
+
+pub defaultReads : Maybe Int, Model → Model
+defaultReads m model =
+    Maybe.withDefault (Maybe.map m (handle model _)) { model | other = model.items }
+
+
+pub editInMaybe : Model → Model
+editInMaybe model =
+    Maybe.withDefault (Maybe.map (List.head (List.push model.items 1)) (handle model _)) model
+
+
+pub andThen : Maybe Int, Model → Model
+andThen m model = Maybe.withDefault (Maybe.andThen m λk → Just (handle model k)) model

@@ -8,7 +8,10 @@
 -- the write. T3: rejected (Lean: rejected) — a top-level list. T10:
 -- rejected (Lean: rejected) — one list at two fields of one element. T14:
 -- accepted (Lean: accepted) — each call of `init` makes its lists. T33:
--- the kept version rejected, the copied one accepted (Lean: the same).
+-- since a prepend copies (`ownership-checker.md` §25.2), the kept version
+-- and the copied one are both accepted; the Lean model has no prepend and
+-- runs T33 projected onto a push (`retained`), which `t33Pushed` is: the
+-- kept version rejected, the copied one accepted (Lean: the same).
 -- T52: the retained spine rejected, the copy accepted (Lean: the same).
 --
 -- T40, T42 and T57 edit an element in place through `List.update` or
@@ -69,6 +72,15 @@ t33 s =
     top = [ 0, …s ]
     copied = List.copy s
     top2 = [ 0, …copied ]
+    List.length top + List.length top2 + List.length kept
+
+
+pub t33Pushed : List Int → Int
+t33Pushed s =
+    kept = s
+    top = [ …s, 0 ]
+    copied = List.copy kept
+    top2 = [ …copied, 0 ]
     List.length top + List.length top2 + List.length kept
 
 

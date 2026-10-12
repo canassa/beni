@@ -1,0 +1,23 @@
+module Prepend
+  33:39 call Prepend.recurse <literal>: accepted fresh (Prepend.recurse writes π1)
+  40:13 call Prepend.recurse <construction>: accepted param (Prepend.recurse writes π1)
+  40:23 construction acc: accepted param
+  47:32 call Prepend.recurse <literal>: accepted fresh (Prepend.recurse writes π1)
+  65:15 construction s: rejected later-use: s is read again at 66:25
+  71:18 construction s: rejected later-use: s is read again at 72:25
+  78:15 construction top: rejected call: s may hold it through the call at 77:16, and is read at 79:25 (approx)
+  85:7 construction top: accepted param
+  summary keepsBase: π2 R, π2[*] R
+  summary suffix: π1 R, π1[*] RA; res [*] ~fresh2 ~π1[*], ~fresh1
+  summary recurse: π1 RAW, π2 R; res π1
+  summary suffixRead: π1 R
+  summary mapped: π1 R, π1[*] R
+  summary stack: π1 R
+  summary pushed: π1 RW
+  summary between: π2 RW
+  summary grownAfter: π2 Rw
+  summary grownDead: π2 RAw; res fresh1{excl π2} ~π2
+  demands 8: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 8: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause later-use 2
+cause call 1

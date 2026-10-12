@@ -1,0 +1,85 @@
+-- ownership: a prepend copies (`ownership-checker.md` §25.2, the owner's
+-- decision that `[ x, …xs ]` copies, `language.md` §6.8). A construction
+-- whose items all come before its one spread, and `List.cons`, build a new
+-- array and write nothing, so they are no demand: `keepsBase` prepends onto
+-- a list it reads afterwards, accepted with no line. `suffix` is research
+-- 82's R1 (`Helpers.trailToLines`, line 51): `[ b, …tail ]` rebuilt after
+-- matching `[ a, b, …tail ]`, which wrote the scrutinee before. `mapped` is
+-- its R4 (`Bike.update`, line 60): a prepend onto `List.map`'s result,
+-- which may be its input. `stack` is T33's persistent stack, its old
+-- version read after the new one is made: no `List.copy` needed.
+--
+-- What still writes: anything after the first spread appends onto the base
+-- (`[ …xs, x ]`, `[ x, …xs, y ]`, `++`), so `pushed` and `between`, which
+-- read their base afterwards, are rejected `later-use`. A prepend's result
+-- may be its base's own array — the runtime re-conses onto a view whose
+-- previous element is the one put in front (`backend.md` §4) — so
+-- extending the result while the base is read afterwards is rejected
+-- (`grownAfter`), approximately: the text does not show that the re-cons
+-- happens. `grownDead` extends it with the base dead: accepted.
+type alias Point =
+    x : Int
+    y : Int
+
+
+pub keepsBase : Int, List Int → Int
+keepsBase x xs =
+    ys = [ x, …xs ]
+    zs = List.cons x xs
+    List.length ys + List.length zs + List.length xs
+
+
+pub suffix : List (List Point) → List (List Int)
+suffix lists = List.map lists λlist → recurse [] list
+
+
+recurse : List Int, List Point → List Int
+recurse acc list =
+    case list of
+        [ a, b, …tail ] →
+            recurse [ …acc, a.x + b.x ] [ b, …tail ]
+
+        _ →
+            acc
+
+
+pub suffixRead : List Point → Int
+suffixRead list = List.length (recurse [] list) + List.length list
+
+
+pub mapped : List Point, Point → Int
+mapped points p =
+    near = [ p, …List.map points λq → { q | x = q.x + 1 } ]
+    List.length near + List.length points
+
+
+pub stack : List Int → Int
+stack s =
+    kept = s
+    top = [ 0, …s ]
+    List.length top + List.length kept
+
+
+pub pushed : List Int → Int
+pushed s =
+    grown = [ …s, 0 ]
+    List.length grown + List.length s
+
+
+pub between : Int, List Int → Int
+between x s =
+    grown = [ x, …s, x ]
+    List.length grown + List.length s
+
+
+pub grownAfter : Int, List Int → Int
+grownAfter x s =
+    top = [ x, …s ]
+    grown = [ …top, x ]
+    List.length grown + List.length s
+
+
+pub grownDead : Int, List Int → List Int
+grownDead x s =
+    top = [ x, …s ]
+    [ …top, x ]
