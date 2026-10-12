@@ -658,7 +658,11 @@ def runWith (o : Options) : IO RunResult := do
           IO.FS.createDirAll "regressions"
           IO.FS.writeFile s!"regressions/{o.label}-{o.seed}-{index}-unshrunk.txt"
             s!"{header} index={index} family={family}\nAST:\n{repr p}\n"
-        let minimal := shrink p config
+        let shrunk := shrink p config
+        -- Shrinking judged candidates at fuel 5 000; keep the shrunk program
+        -- only if it still disagrees at the campaign's fuel, else report the
+        -- original (a candidate must not disagree only for want of fuel).
+        let minimal := if disagrees shrunk config then shrunk else p
         let report := s!"{header} index={index} family={family}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (verdictOf minimal { reinfer := config.reinfer })}\n"
         if !o.quiet then
           IO.FS.createDirAll "regressions"

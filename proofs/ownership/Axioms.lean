@@ -58,7 +58,8 @@ def sources : IO (List System.FilePath) := do
     (`skipKernelTC`, `addDecl`, `addAndCompile`, `setEnv`, `modifyEnv`); what
     runs code at elaboration time (`run_cmd`, `run_elab`, `run_meta`, `elab`,
     `elab_rules`, `macro`, `macro_rules`, `syntax`, `initialize`,
-    `builtin_initialize`, `#eval` — `#guard` evaluates a closed `Bool` and is
+    `builtin_initialize`, `#eval`, and the notation and simproc commands that
+    expand to macros or run code — `#guard` evaluates a closed `Bool` and is
     allowed); and what swaps in another implementation (`implemented_by`,
     `implementedByAttr`, `extern`, `externAttr`, `setParam`, `unsafe`). Only
     this audit file may use `#eval` and `import Lean`; every other file imports
@@ -69,7 +70,8 @@ where
       like `Library.«initialize»`, is not the command). -/
   bannedWords : List String :=
     ["admit", "axiom", "run_cmd", "run_elab", "run_meta", "elab", "elab_rules", "macro",
-     "macro_rules", "syntax", "initialize", "builtin_initialize", "#eval", "unsafe"]
+     "macro_rules", "syntax", "initialize", "builtin_initialize", "#eval", "unsafe", "notation",
+     "infix", "infixl", "infixr", "prefix", "postfix", "declare_syntax_cat", "simproc", "dsimproc"]
   /-- Names, banned as any dot-separated part of a token, guillemets or not. -/
   bannedNames : List String :=
     ["native_decide", "skipKernelTC", "addDecl", "addAndCompile", "setEnv", "modifyEnv",
