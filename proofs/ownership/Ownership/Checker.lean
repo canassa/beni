@@ -677,6 +677,12 @@ def callKnown (fuel : Nat) (ctx : Context) (id : Nat) (actuals caps : List Abstr
         if !roots.isEmpty then hit "calls of a once callback checked"
         if count ≥ 2 && !roots.isEmpty && !ctx.config.has .callsEdge then
           throw "calls edge: a once callback is called many times"
+        -- A once callback the callee may call is consumed by this call, as a
+        -- direct call consumes it: its environment may be written, so no
+        -- holder of the closure may be live afterwards.
+        if count ≥ 1 && !roots.isEmpty && !ctx.config.has .onceThroughCall then
+          let self := if slot < n then Origin.parameter slot [] else .capture (slot - n) []
+          demand ctx.config roots later (otherPaths actuals caps self)
       | _ => pure ()
     applyCall ctx s site actuals caps later
 termination_by (fuel, 2)

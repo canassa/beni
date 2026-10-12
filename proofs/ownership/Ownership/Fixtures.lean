@@ -402,6 +402,21 @@ def focusStale : Program := {
     .letE 2 (.prim (.literal .int) [.int 5]) <|
     .focus (v 1) (.int 0) 3 (.letE 4 (.prim .push [v 1, v 2]) (.atom (v 3))) }
 
+/-- A once closure (it pushes onto its capture) is handed to a callee that
+    calls it once, and is then observed in the result. A direct call consumes
+    a once closure; the summary checker did not consume it when the call was
+    made by a callee, and accepted a program whose runs disagree (value: the
+    closure still captures `[1]`; in place: `[1, 1]`). -/
+def onceThroughCallee : Program := {
+  declarations := [
+    { name := "capAppend", parameters := [.list .int], captures := [.list .int], result := .list .int,
+      body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) },
+    { name := "apply1", parameters := [.list .int, .fn [.list .int] (.list .int)],
+      result := .list .int, body := .app (v 1) [v 0] }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.prim (.literal .int) [.int 7]) <| .letE 3 (.closure 1 []) <|
+    .letE 4 (.app (v 3) [v 2, v 1]) (.prim .record [v 4, v 1]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -422,7 +437,8 @@ def probes : List (String × Program × Mutant × Bool) := [
   ("wrapper returns its argument", probeCallbackAliases, .callbackAliases, false),
   ("map over a captured list", probeCallbackEnv, .callbackEnv, false),
   ("mapVia publishes a row, then the row is pushed", probePublishVia, .callbackEscapes, false),
-  ("mapVia forwards map's guards about its callback", probePublishVia, .forwardGuards, false)]
+  ("mapVia forwards map's guards about its callback", probePublishVia, .forwardGuards, false),
+  ("once closure called by a callee, then observed", onceThroughCallee, .onceThroughCall, false)]
 
 def scalarIndexOrder : Program := {
   main := .letE 0 list <| .letE 1 (.prim .at [v 0,.int 0,.int 0]) <|
@@ -576,7 +592,8 @@ def all : List Fixture := [
   ⟨"T46 borrowed row read again",borrowedReread,false⟩,
   ⟨"wrapper writes its callback's returned capture",envThroughWrapper,true⟩,
   ⟨"write through a callback's environment, then call it again",envWriteThenCall,false⟩,
-  ⟨"focus body pushes its own container",focusStale,false⟩ ]
+  ⟨"focus body pushes its own container",focusStale,false⟩,
+  ⟨"once closure called by a callee, then observed",onceThroughCallee,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true
