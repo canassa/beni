@@ -271,10 +271,20 @@ def uses (e : Expr) : Live := usesArms true true e
 
 def isPrefix (a b : Path) : Bool := a == b.take a.length
 
+/-- Every live variable is bound: a checker refuses a continuation whose uses
+    name a variable the environment does not bind, rather than read it as
+    dead (third review, P1). -/
+def liveScope (env : Env Abstract) (l : Live) : Except String Unit :=
+  match l.find? (fun (x, _) => (env.lookup x).isNone) with
+  | some (x, _) => throw s!"liveness: live variable {x} is not in scope"
+  | none => pure ()
+
+/-- The cells live uses hold. An unbound variable (never reached after
+    `liveScope`) would hold anything: ⊤. -/
 def liveCells (env : Env Abstract) (l : Live) : List Origin :=
   l.foldl (fun cs (v, p) =>
     match env.lookup v with
-    | none => cs
+    | none => union cs [.unknown]
     | some a => a.paths.foldl (fun cs (q, ds) =>
         if isPrefix p q || isPrefix q p then union cs ds else cs) cs) []
 

@@ -543,7 +543,9 @@ theorem invariant_preserved (p : Program) (a : Accepted) (ok : check p = .ok a)
     (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
     (h : Invariant vs hs env (union (uses e) after) aenv st.facts.escapes γ)
     (honest : ∀ x a, aenv.lookup x = some a → HonestClosures p.declarations a)
-    (typed : WellTyped p.declarations env e) :
+    (typed : WellTyped p.declarations env e)
+    (covered : ∀ x q, (x, q) ∈ union (uses e) after → ∀ o w, env.lookup x = some (o, w) →
+      (aenv.lookup x).isSome = true) :
     (∀ v vs', (ValueSemantics.eval fuel p.declarations none (valueEnv env) e).run vs = .ok (v, vs') →
       ∃ w hs' γ', (InPlaceSemantics.eval fuel p.declarations none (heapEnv env) e).run hs = .ok (w, hs') ∧
         Invariant vs' hs' env after aenv st'.facts.escapes γ' ∧ Corresponds hs'.heap v w ∧
@@ -594,7 +596,8 @@ theorem accepted_traces_agree (p : Program) (a : Accepted) (ok : check p = .ok a
       (fun _ => []) :=
     invariant_initial fuel _ _ (fun _ => []) (by intro _ _ _ _ h; simp at h)
   have step := (invariant_preserved p a ok _ [] p.main [] [] {} st' r main accepts fuel
-    [] (fun _ => []) { fuel } { fuel } inv (by intro x a h; simp at h) (check_typed p a ok)).1
+    [] (fun _ => []) { fuel } { fuel } inv (by intro x a h; simp at h) (check_typed p a ok)
+    (by intro x q _ o w h; simp at h)).1
   unfold ValueSemantics.run at ht
   cases hv : (ValueSemantics.eval fuel p.declarations none [] p.main).run { fuel } with
   | error msg => simp [hv] at ht; cases ht

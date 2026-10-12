@@ -199,6 +199,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
   else
     let f := fuel - 1
     let ctx := { ctx with escaped := union ctx.escaped (← get).escapes }
+    liveScope env after
     let later := liveCells env after
     match e with
     | .atom a => abstractAtom env a

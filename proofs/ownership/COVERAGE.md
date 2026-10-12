@@ -304,7 +304,22 @@ Besides `Invariant`, the step lemma now assumes, and concludes for its result:
 * `HonestClosures`: a function value described as not once (no roots) is one
   the checker itself would create as not once (re-creating it from its
   abstract captures gives no roots). A writing closure described as not once
-  is one no program builds, and with it the statement is false (falsifier).
+  is one no program builds, and with it the statement is false (falsifier);
+* `covered` (third review, P1): every variable of the expression's and the
+  continuation's uses that the environment binds has an abstract value.
+  Without it, a live variable missing from `aenv` contributed no holders,
+  since `liveCells` skipped it, and a write it still reached passed Dead. Both
+  checkers now also refuse a live use of a variable the abstract environment
+  does not bind (`liveScope`), and `liveCells` reads one as ⊤;
+* no shadowing: `check` runs `typecheck`, which now refuses a binder that
+  rebinds a variable in scope (third review, P2: both checkers had accepted
+  `let 0 = [1]; let 6 = (let 5 = 0; let 0 = []; push 5 1); length 0`, value
+  1, in place 2), and a `let` pins its continuation's uses of the variable it
+  rebinds to the outer binding's cells, so liveness stays right if the rule
+  is ever relaxed (`--mutant=shadowing` turns off both). The step lemma
+  speaks about expressions of accepted programs' main context, so it needs no
+  extra hypothesis for this; its `uses`-based live sets name each variable
+  once.
 
 `summary_sound` (and `map_summary_sound`) were restated too:
 
@@ -382,9 +397,18 @@ hypotheses checked rather than assumed:
   branches). When the checker accepts, both interpreters run and every part
   of the conclusion is checked; for the naming, one is constructed (each
   array named by every origin of a single base that every requirement
-  mentions) and checked against every clause.
-* **`summary_sound` / `map_summary_sound`**: every call made while running the
-  accepted programs of a generated campaign, against every published summary
+  mentions) and checked against every clause. Two thirds of the samples
+  (since the third review) are write-heavy: every variable has arrays and an
+  origin of its own, certificates where they hold, and the expression writes
+  one variable the continuation does not use (push, set, a record field, a
+  consuming focus or traversal, `update` or `map` with a writing callback);
+  about 40 % of accepted samples execute an in-place write that changes an
+  array (5 % before). A sixth of all samples drop one variable from the
+  abstract environment, so `covered` fails: the statement does not speak
+  about them, and the checker must refuse them, which it did in every case.
+* **`summary_sound` / `map_summary_sound`**: every call the real in-place
+  interpreter makes (its call log: heap and observers before and after) while
+  running the accepted programs of a generated campaign, against every published summary
   of the called declaration whose hypotheses the call meets under the
   canonical naming (each canonical origin names the arrays at its path),
   guards resolved with abstract closures built from the actual ones.
@@ -395,15 +419,19 @@ function values (`namesAt`), and, on the corrected statement, **the second
 checker defect below**. After the fixes, on 100 000 configurations and the
 calls of 100 000 generated programs (generator v5, with its own declarations) per seed:
 
-| Seed | Step configurations | Accepted | Accepted with a write | Failures | Calls checked against a summary | of which map | Vacuous | Failures |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 100 000 | 83 577 | 5 155 | 0 | 44 924 | 3 520 | 18 745 | 0 |
-| 17 | 100 000 | 83 539 | 4 993 | 0 | 44 503 | 3 473 | 18 386 | 0 |
-| 271828 | 100 000 | 83 649 | 5 255 | 0 | 45 953 | 3 783 | 18 594 | 0 |
+| Seed | Step configurations | Not covered (all refused) | Accepted | Accepted with a write | Failures | Calls checked against a summary | of which map | Vacuous | Failures |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20261011 | 100 000 | 10 993 | 75 715 | 29 661 | 0 | 44 924 | 3 520 | 18 745 | 0 |
+| 17 | 100 000 | 10 845 | 75 755 | 30 013 | 0 | 44 503 | 3 473 | 18 386 | 0 |
+| 271828 | 100 000 | 10 932 | 75 831 | 29 745 | 0 | 45 953 | 3 783 | 18 594 | 0 |
 
 The falsifier has teeth: under `--mutant=` holes the step-lemma check fails
-(20 000 configurations, seed 17): disjoint 2, once-through-call 161,
-keeps-shape 1, close-source 209 failures. It does not see copy-exclusive or
+(20 000 configurations, seed 17): once-through-call 40, close-source 442
+failures with the write-heavy mix (before it: disjoint 2, once-through-call
+161, keeps-shape 1, close-source 209 with the all-random mix). The
+write-heavy samples give each variable its own arrays, which is what lets
+writes pass and also why they rarely meet the disjoint and keeps-shape
+holes; the random third still does. It does not see copy-exclusive or
 many-calls at this size. The Lemma 6.7 check, over the summaries a mutated
 checker publishes (20 000 programs, seed 17), reports callback-writes 721,
 callback-aliases 466, callback-xres 323 and callback-escapes 69 violations,

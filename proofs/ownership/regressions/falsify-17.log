@@ -1,8 +1,10 @@
 invariant_preserved: { tried := 100000,
   hypothesisFalse := 0,
-  accepted := 83539,
-  valueOk := 83539,
-  withWrite := 4993,
+  uncovered := 10845,
+  uncoveredAccepted := 0,
+  accepted := 75755,
+  valueOk := 75755,
+  withWrite := 30013,
   observational := 0,
   naming := 0,
   errorClause := 0 }

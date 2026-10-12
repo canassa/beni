@@ -223,37 +223,43 @@ structure Setup where
 def coin (n : Nat) : Generator.Gen Bool := do pure ((← draw n) == 0)
 
 /-- A random heap, naming, environment and abstract environment. -/
-def config : Generator.Gen Setup := do
-  let leaves := 1 + (← draw 4)
+def config (distinct : Bool := false) : Generator.Gen Setup := do
+  -- `distinct`: every variable its own arrays and origins, so writes pass
+  -- (the write-heavy half of the samples).
+  let some4 ← draw 4
+  let leaves := if distinct then 12 else 1 + some4
   let mut heap : Array (List Value) := #[]
   for _ in List.range leaves do
     let n ← draw 3
     let mut xs : List Value := []
     for _ in List.range n do xs := xs ++ [.int (Int.ofNat (← draw 5))]
     heap := heap.push xs
-  let nested ← draw 3
+  let nested ← if distinct then draw 2 else draw 3
   for _ in List.range nested do
     let n ← draw 3
     let mut xs : List Value := []
-    for _ in List.range n do xs := xs ++ [.ref (← draw leaves)]
+    for k in List.range n do
+      xs := xs ++ [.ref (← if distinct then pure (10 + k % 2) else draw leaves)]
     heap := heap.push xs
   -- Each array gets one origin; two arrays may share one.
   let mut γ : FNaming := []
   for c in List.range heap.size do
     let shareWith ← draw (4 * heap.size)
-    γ := γ ++ [(c, [.site [1000 + (if shareWith < heap.size then shareWith else c)] 0])]
+    γ := γ ++ [(c, [.site [1000 + (if shareWith < heap.size && !distinct then shareWith else c)] 0])]
   let orig := fun (c : Nat) => originsOf γ c
   let extra : Generator.Gen (List Origin) := do
-    if ← coin 4 then pure (orig (← draw heap.size)) else pure []
+    if !distinct && (← coin 4) then pure (orig (← draw heap.size)) else pure []
+  let leafFor : Nat → Nat → Generator.Gen Nat := fun x k =>
+    if distinct then pure ((2 * x + k) % 10) else draw leaves
   let leafAbs : Nat → Generator.Gen Abstract := fun c => do
-    pure (Abstract.list (orig c ++ (← extra)) .scalar (← coin 2))
+    pure (Abstract.list (orig c ++ (← extra)) .scalar (distinct || (← coin 2)))
   let nestedAbs : Nat → Generator.Gen Abstract := fun c => do
     let items := (heap[c]?.getD []).filterMap fun x => match x with | .ref d => some d | _ => none
-    let innerEx ← coin 2
+    let innerEx ← if distinct then pure true else coin 2
     let elem := if items.isEmpty then Abstract.bottom
       else .list (items.flatMap orig |>.eraseDups) .scalar innerEx
-    let distinct := nodup (footprint heap depthFuel (.ref c))
-    pure (Abstract.list (orig c ++ (← extra)) elem (distinct && (← coin 2)))
+    let nd := nodup (footprint heap depthFuel (.ref c))
+    pure (Abstract.list (orig c ++ (← extra)) elem (nd && (distinct || (← coin 2))))
   let vars := 1 + (← draw 5)
   let mut env : Bindings := []
   let mut aenv : Env Abstract := []
@@ -263,15 +269,15 @@ def config : Generator.Gen Setup := do
     let kind ← draw 6
     let (w, a, t) ← (show Generator.Gen (Value × Abstract × Ty) from match kind with
       | 0 => do pure (Value.int (Int.ofNat (← draw 3)), Abstract.scalar, Ty.int)
-      | 1 => do let c ← draw leaves; pure (.ref c, ← leafAbs c, tL)
-      | 2 => if nested == 0 then do let c ← draw leaves; pure (.ref c, ← leafAbs c, tL)
+      | 1 => do let c ← leafFor x 0; pure (.ref c, ← leafAbs c, tL)
+      | 2 => if nested == 0 then do let c ← leafFor x 0; pure (.ref c, ← leafAbs c, tL)
           else do let c := leaves + (← draw nested); pure (.ref c, ← nestedAbs c, tN)
       | 3 => do
-          let c ← draw leaves
-          let d ← draw leaves
+          let c ← leafFor x 0
+          let d ← leafFor x 1
           pure (.record [.ref c, .ref d], .record [← leafAbs c, ← leafAbs d], tR)
       | _ => do
-          let c ← draw leaves
+          let c ← leafFor x 0
           let id ← pick [3, 4, 5, 10] 4
           let once ← coin 2
           let roots := if id == 3 || id == 10 || once then [Origin.site [2000 + x] 0] else []
@@ -375,11 +381,64 @@ def expr (types : List (Var × Ty)) (next : Nat) : Nat → Generator.Gen (Expr �
       let (b, u) ← expr types (next + 20) depth
       if t == u then pure (.branch num a b, t) else pure (a, t)
 
+/-- A write to one variable (the target returned), for the write-heavy half
+    of the samples: push, set, a push through a record field, a consuming
+    focus, a consuming traversal, `update` and `map` with a writing callback. -/
+def writeExpr (types : List (Var × Ty)) (next : Nat) : Generator.Gen (Expr × Option Var) := do
+  let ls := (types.filter (·.2 == tL)).map Prod.fst
+  let ns := (types.filter (·.2 == tN)).map Prod.fst
+  let rs := (types.filter (·.2 == tR)).map Prod.fst
+  let num := Atom.int (Int.ofNat (← draw 3))
+  let idx := Atom.int (Int.ofNat (← draw 2))
+  let l ← pick ls 0
+  let n ← pick ns 0
+  let r ← pick rs 0
+  let none' : Expr × Option Var := (.atom (.int 0), none)
+  -- Only the writes whose operand type the configuration has.
+  let kinds := (if ls.isEmpty then [] else [0, 1]) ++ (if rs.isEmpty then [] else [2]) ++
+    (if ns.isEmpty then [] else [3, 4, 5, 6])
+  match ← pick kinds 7 with
+  | 0 => pure (if ls.isEmpty then none' else (.prim .push [v l, num], some l))
+  | 1 => pure (if ls.isEmpty then none' else (.prim .set [v l, idx, num], some l))
+  | 2 => do let f ← draw 2; pure (if rs.isEmpty then none' else (.prim .push [.field (v r) f, num], some r))
+  | 3 => pure (if ns.isEmpty then none' else (.focus (v n) idx next (.prim .push [v next, num]), some n))
+  | 4 => pure (if ns.isEmpty then none' else
+      (.traverse .list (v n) (.int 0) next (next + 1) (next + 2)
+        (.letE (next + 3) (.prim .push [v (next + 1), num]) (.prim .length [v (next + 3)])), some n))
+  | 5 => pure (if ns.isEmpty then none' else
+      (.letE next (.closure 6 []) (.letE (next + 1) (.closure 2 []) (.app (v next) [v n, idx, v (next + 1)])), some n))
+  | _ => pure (if ns.isEmpty then none' else
+      (.letE next (.closure 0 []) (.letE (next + 1) (.closure 2 []) (.app (v next) [v n, v (next + 1)])), some n))
+
+/-- One sample: a configuration, an expression and the continuation's uses.
+    Two thirds are write-heavy (each variable its own arrays, one write to a
+    variable the continuation does not use); a sixth of all drop one
+    variable from the abstract environment (`covered` false). -/
+def sample : Generator.Gen (Setup × Expr × Live) := do
+  let writes := (← draw 3) != 0
+  let cfg ← config writes
+  let (e, target) ← if writes then writeExpr cfg.types 100
+    else do let (e, _) ← expr cfg.types 100 (1 + (← draw 3)); pure (e, none)
+  let mut after : Live := []
+  for (x, ty) in cfg.types do
+    if some x == target then continue
+    let c1 ← coin 2
+    let c2 ← coin 3
+    let f ← draw 2
+    if c1 then after := after ++ [(x, [])]
+    else if ty == tR && c2 then after := after ++ [(x, [.field f])]
+  let drop ← coin 6
+  let which ← draw cfg.aenv.length
+  let cfg := if drop && !cfg.aenv.isEmpty then { cfg with aenv := cfg.aenv.eraseIdx which } else cfg
+  pure (cfg, e, after)
+
 def program : Program := { declarations := decls, main := .atom (.int 0) }
 
 structure Tally where
   tried : Nat := 0
   hypothesisFalse : Nat := 0
+  uncovered : Nat := 0
+  uncoveredAccepted : Nat := 0
   accepted : Nat := 0
   valueOk : Nat := 0
   withWrite : Nat := 0
@@ -397,19 +456,20 @@ def writeOps : Expr → Bool
 
 /-- One configuration: `none` if fine or vacuous, otherwise what failed. -/
 def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally × Option String := Id.run do
-  let ((cfg, e, after), _) := (show Generator.Gen (Setup × Expr × Live) from do
-      let cfg ← config
-      let (e, _) ← expr cfg.types 100 (1 + (← draw 3))
-      let mut after : Live := []
-      for (x, ty) in cfg.types do
-        if ← coin 2 then
-          after := after ++ [(x, [])]
-        else if ty == tR && (← coin 3) then
-          after := after ++ [(x, [.field (← draw 2)])]
-      pure (cfg, e, after)).run seed
+  let ((cfg, e, after), _) := sample.run seed
   let mut t := { t with tried := t.tried + 1 }
   let vs : ValueSemantics.State := { fuel := 5000, kept := cfg.keptObs.toArray }
   let hs : InPlaceSemantics.State := { fuel := 5000, heap := cfg.heap, kept := cfg.kept.toArray }
+  -- `covered` false: the statement does not speak about the sample; the
+  -- checker must still refuse it (a live use it cannot resolve).
+  let covered := (union (uses e) after).all fun (x, _) =>
+    (cfg.env.lookup x).isNone || (cfg.aenv.lookup x).isSome
+  if !covered then
+    let ctx0 : Context := { declarations := decls, config := checker }
+    match (inferExpr ctx0.config.inferenceFuel ctx0 cfg.aenv e after [7]).run { facts := { escapes := cfg.escapes } } with
+    | .error _ => return ({ t with uncovered := t.uncovered + 1 }, none)
+    | .ok _ => return ({ t with uncovered := t.uncovered + 1, uncoveredAccepted := t.uncoveredAccepted + 1 },
+        some "the checker accepted an expression whose live uses it cannot resolve")
   if let some why := invariantB vs hs cfg.env (union (uses e) after) cfg.aenv cfg.escapes cfg.γ then
     return ({ t with hypothesisFalse := t.hypothesisFalse + 1 }, some s!"hypothesis does not hold by construction: {why}")
   let typed := (exprType decls (mainDecl e) cfg.types e).isOk &&
@@ -433,7 +493,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
     | .error m, .ok _ => return ({ t with errorClause := t.errorClause + 1 }, some s!"value run fails ({m}), in-place run succeeds")
     | .ok _, .error m => return ({ t with observational := t.observational + 1 }, some s!"in-place run fails: {m}")
     | .ok (o, vs'), .ok (w, hs') =>
-      t := { t with valueOk := t.valueOk + 1, withWrite := t.withWrite + (if writeOps e then 1 else 0) }
+      t := { t with valueOk := t.valueOk + 1, withWrite := t.withWrite + (if hs'.writes > 0 then 1 else 0) }
       if !correspondsB hs'.heap o w then
         return ({ t with observational := t.observational + 1 }, some "results do not correspond")
       -- Observational part of the conclusion, on any naming.
@@ -472,10 +532,7 @@ def invariantCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership
     if let some why := bad then
       if shown < limit then
         shown := shown + 1
-        let ((cfg, e), _) := (show Generator.Gen (Setup × Expr) from do
-            let cfg ← config
-            let (e, _) ← expr cfg.types 100 (1 + (← draw 3))
-            pure (cfg, e)).run s
+        let ((cfg, e, after), _) := sample.run s
         IO.println s!"FALSIFY invariant_preserved configuration {i} (state {s}): {why}\n  heap={repr cfg.heap}\n  env={repr (cfg.env.map fun (x, _, w) => (x, w))}\n  aenv={repr cfg.aenv}\n  kept={repr cfg.kept} escapes={repr cfg.escapes}\n  naming={repr cfg.γ}\n  expr={repr e}"
   IO.println s!"invariant_preserved: {repr t}"
   pure t
