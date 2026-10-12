@@ -655,6 +655,20 @@ function step(s) {
     for (let n = 0; n < s.count; n++) on.dispatchEvent(new Event(s.name));
     return null;
   }
+  // The up half of a happy-dom `press`: released on the element the down
+  // half pressed, not on what the selector matches now. One the down half's
+  // handlers or the settle took off the page fails the step: where a
+  // user's release would then land is layout, which happy-dom has none of.
+  if (s.command === "press" && s.up) {
+    const { target, prevented } = globalThis.__beniHarness.pressed;
+    if (!target.isConnected) return `\`${s.selector}\` left the page while it was pressed: where the release lands is the layout's to say`;
+    const init = { bubbles: true, cancelable: true, composed: true };
+    const trust = globalThis.__beniHarness.trust;
+    target.dispatchEvent(trust(new PointerEvent("pointerup", { ...init, button: 0, buttons: 0, pointerId: 1, pointerType: "mouse", isPrimary: true })));
+    if (!prevented) target.dispatchEvent(trust(new MouseEvent("mouseup", { ...init, button: 0, buttons: 0, detail: 1 })));
+    target.dispatchEvent(trust(new MouseEvent("click", { ...init, button: 0, detail: 1 })));
+    return null;
+  }
   const target = document.querySelector(s.selector);
   if (target === null) return `no element matches \`${s.selector}\``;
   const init = { bubbles: true, cancelable: true, composed: true };
@@ -746,18 +760,18 @@ function step(s) {
         }
         return { x, y };
       }
-      const pointer = { ...init, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true };
-      if (s.up) {
-        target.dispatchEvent(trust(new PointerEvent("pointerup", { ...pointer, buttons: 0 })));
-        if (!globalThis.__beniHarness.pressPrevented) target.dispatchEvent(trust(new MouseEvent("mouseup", { ...init, button: 0, buttons: 0, detail: 1 })));
-        target.dispatchEvent(trust(new MouseEvent("click", { ...init, button: 0, detail: 1 })));
-        return null;
-      }
       addEventListener("click", () => globalThis.__beniHarness.log.push("(a later listener ran)"), { once: true });
+      const pointer = { ...init, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true };
       const mouse = target.dispatchEvent(trust(new PointerEvent("pointerdown", { ...pointer, buttons: 1 })));
-      globalThis.__beniHarness.pressPrevented = !mouse;
+      // The up half reads what the down half pressed and whether its
+      // `pointerdown` was prevented; every press sets both first.
+      globalThis.__beniHarness.pressed = { target, prevented: !mouse };
       if (!mouse || target.dispatchEvent(trust(new MouseEvent("mousedown", { ...init, button: 0, buttons: 1, detail: 1 })))) {
-        const focusable = "button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex],[contenteditable]";
+        // The focusable elements the corpus presses, not HTML's whole
+        // definition of a focusable area (no `summary`, `iframe`,
+        // `area` or `label` activation): widen it when a fixture needs it.
+        const focusable =
+          "button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex],[contenteditable]:not([contenteditable=false])";
         const into = target.closest(focusable);
         if (into !== null) {
           if (document.activeElement !== into) into.focus();
