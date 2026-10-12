@@ -1087,6 +1087,144 @@ pub fn migrateTop(
     return null;
 }
 
+/// The program constructors whose `init` became a function of `⊤`
+/// (`boundary.md` §9.8.16), by module: `Tea.application`'s already was one.
+const init_constructors = [_]struct { module: []const u8, names: []const []const u8 }{
+    .{ .module = "Tea", .names = &.{ "sandbox", "element", "document" } },
+    .{ .module = "Browser", .names = &.{"program"} },
+    .{ .module = "Page", .names = &.{"sandbox"} },
+};
+
+/// `beni fmt --migrate-init` (frontend.md §11.10): `source` with the
+/// `init = e` of every program record written `init = λ⊤ → e` — an edit,
+/// like `migrateLambda`, so a file keeps its layout and plain `beni fmt`
+/// lays the lambdas out afterwards.
+///
+/// A program record is the record literal argument of a call of a program
+/// constructor (`init_constructors`), named as this file can name it —
+/// qualified by the module or its alias, or unqualified when the import
+/// exposes it — or the body of a top-level value with no parameters that
+/// such a call names. A file has no types, so the constructor is told by
+/// its name alone, which is what the platforms' names are. An `init` that
+/// is already a lambda is left as it is, which makes one run the fixed
+/// point. The output is parsed again; a file whose rewrite does not parse
+/// is written unchanged and the problem returned.
+pub fn migrateInit(
+    scratch: Allocator,
+    tree: *const Ast,
+    tokens: *const Token.TokenList,
+    comments: []const Token.Comment,
+    source: [:0]const u8,
+    w: *Io.Writer,
+) Error!?LambdaProblem {
+    if (tree.errors.len != 0) return error.SyntaxErrors;
+    const n = tree.nodes.len;
+    var m: Measurer = .{
+        .tree = tree,
+        .tags = tokens.items(.tag),
+        .starts = tokens.items(.start),
+        .tok_lines = tokens.items(.line),
+        .comments = comments,
+        .source = source,
+        .widths = try scratch.alloc(u32, n),
+        .firsts = try scratch.alloc(u32, n),
+        .lasts = try scratch.alloc(u32, n),
+        .scratch = scratch,
+    };
+    defer m.stack.deinit(scratch);
+    try m.measureRoot();
+
+    // The names a constructor goes by here: `Q.name` for the module's
+    // qualifier (its alias, else its name) and `name` when it is exposed.
+    var names: std.ArrayList([]const u8) = .empty;
+    for (tree.rootItems()) |item| {
+        if (tree.nodeTag(item) != .import) continue;
+        const imp = tree.fullImport(item);
+        const module = m.tokenText(imp.name orelse continue);
+        const qualifier = if (imp.alias) |a| m.tokenText(a) else module;
+        for (init_constructors) |c| {
+            if (!std.mem.eql(u8, c.module, module)) continue;
+            for (c.names) |name| {
+                try names.append(scratch, try std.fmt.allocPrint(scratch, "{s}.{s}", .{ qualifier, name }));
+                for (imp.exposed) |e| {
+                    if (std.mem.eql(u8, m.tokenText(tree.nodeMainToken(e)), name)) try names.append(scratch, name);
+                }
+            }
+        }
+    }
+    if (names.items.len == 0) {
+        try w.writeAll(source);
+        return null;
+    }
+
+    var inserts: std.ArrayList(u32) = .empty;
+    for (0..n) |i| {
+        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
+        if (tree.nodeTag(node) != .apply) continue;
+        const call = tree.fullApply(node);
+        if (call.args.len != 1 or tree.nodeTag(call.function) != .ident) continue;
+        const callee = m.tokenText(tree.nodeMainToken(call.function));
+        for (names.items) |name| {
+            if (std.mem.eql(u8, name, callee)) break;
+        } else continue;
+        const record = initRecord(tree, &m, call.args[0]) orelse continue;
+        for (tree.children(record)) |field| {
+            if (!std.mem.eql(u8, m.tokenText(tree.nodeMainToken(field)), "init")) continue;
+            const value: Index = @fromBackingInt(@intCast(tree.nodeData(field).lhs));
+            if (tree.nodeTag(value) == .lambda) continue;
+            const at = m.starts[m.first(value)];
+            // A top-level record two calls name is one edit.
+            if (std.mem.indexOfScalar(u32, inserts.items, at) == null) try inserts.append(scratch, at);
+        }
+    }
+    if (inserts.items.len == 0) {
+        try w.writeAll(source);
+        return null;
+    }
+    std.mem.sort(u32, inserts.items, {}, std.sort.asc(u32));
+    const lambda = "λ⊤ → ";
+    var out: std.ArrayList(u8) = .empty;
+    var at: u32 = 0;
+    for (inserts.items) |start| {
+        try out.appendSlice(scratch, source[at..start]);
+        try out.appendSlice(scratch, lambda);
+        at = start;
+    }
+    try out.appendSlice(scratch, source[at..]);
+    try out.append(scratch, 0);
+    const text = out.items[0 .. out.items.len - 1 :0];
+    if (try reparseProblem(scratch, text)) |found| {
+        // Map the offset back: each insertion before it added its bytes.
+        var shift: u32 = 0;
+        for (inserts.items) |start| {
+            if (start + shift > found.start) break;
+            shift += lambda.len;
+        }
+        try w.writeAll(source);
+        return .{ .code = found.code, .start = found.start -| shift };
+    }
+    try w.writeAll(text);
+    return null;
+}
+
+/// The record a program constructor's argument is: the literal itself, or
+/// the body of the top-level value with no parameters it names.
+fn initRecord(tree: *const Ast, m: *const Measurer, arg: Index) ?Index {
+    var at = arg;
+    while (tree.nodeTag(at) == .paren) at = @fromBackingInt(@intCast(tree.nodeData(at).lhs));
+    if (tree.nodeTag(at) == .record) return at;
+    if (tree.nodeTag(at) != .ident) return null;
+    const name = m.tokenText(tree.nodeMainToken(at));
+    for (tree.rootItems()) |item| {
+        if (tree.nodeTag(item) != .definition) continue;
+        const def = tree.fullDefinition(item);
+        if (def.params.len != 0 or !std.mem.eql(u8, m.tokenText(def.name), name)) continue;
+        if (tree.nodeTag(def.body) == .record) return def.body;
+        return null;
+    }
+    return null;
+}
+
 /// Whether `Never` in this file may name something other than the prelude's:
 /// the file declares a type, alias or schema of that name, or imports one by
 /// name from a module other than `Basics` (frontend.md §11.9).

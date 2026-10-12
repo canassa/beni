@@ -391,6 +391,9 @@ pub const Fmt = struct {
     /// as `⊥`, drop `else ⊤`, and delete the `_ = ` of each line
     /// `--discards` names (`Format.migrateTop`, frontend.md §11.9).
     migrate_top: bool = false,
+    /// `--migrate-init`, hidden: write the `init = e` of every program
+    /// record `init = λ⊤ → e` (`Format.migrateInit`, frontend.md §11.10).
+    migrate_init: bool = false,
     /// `--discards=<file>`, hidden, with `--migrate-top`: the JSON array
     /// of a `check --explain --diagnostics=json` run.
     discards: ?[]const u8 = null,
@@ -964,10 +967,15 @@ const FmtSpecific = struct {
     migrate_trailing_lambda: bool = false,
     migrate_unicode: bool = false,
     migrate_top: bool = false,
+    migrate_init: bool = false,
     discards: ?[]const u8 = null,
 
     fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
-        if (std.mem.eql(u8, name, "--migrate-top")) {
+        if (std.mem.eql(u8, name, "--migrate-init")) {
+            if (value != null) return noValue(name);
+            self.migrate_init = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--migrate-top")) {
             if (value != null) return noValue(name);
             self.migrate_top = true;
             self.consumed = true;
@@ -1032,7 +1040,8 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         @intFromBool(s.specific.migrate_let) +
         @intFromBool(s.specific.migrate_trailing_lambda) +
         @intFromBool(s.specific.migrate_unicode) +
-        @intFromBool(s.specific.migrate_top);
+        @intFromBool(s.specific.migrate_top) +
+        @intFromBool(s.specific.migrate_init);
     if (migrations > 1) {
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: fmt's --migrate-* flags are mutually exclusive", .{}) };
@@ -1052,6 +1061,7 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .migrate_trailing_lambda = s.specific.migrate_trailing_lambda,
         .migrate_unicode = s.specific.migrate_unicode,
         .migrate_top = s.specific.migrate_top,
+        .migrate_init = s.specific.migrate_init,
         .discards = s.specific.discards,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
