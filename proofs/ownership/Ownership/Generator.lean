@@ -710,6 +710,15 @@ def doublePush : Move := fun next env => withNested next env fun next n => do
       .letE y (.prim .push [v x, ← number env]) <|
       .letE k (.prim .length [v y]) (.prim .add [v acc, v k]), .int)]
 
+/-- A shallow copy of a nested list, an element of the copy edited in place,
+    then the same element of the original read: the copy shares elements. -/
+def copyThenEdit : Move := fun next env => withNested next env fun next n => do
+  let i ← draw 2
+  let x := sv next 0
+  pure [(.prim .copy [n], tN),
+    (.focus (v next) (.int (Int.ofNat i)) x (.prim .push [v x, ← number env]), tN),
+    (.prim .at [n, .int (Int.ofNat i), ← anyList env], tL)]
+
 /-- An empty list and a closure that appends to it, then an alias of the
     list made by `close` over an empty builder (equal contents, so `close`
     returns the list itself), then a callee that calls the closure, then the
@@ -781,7 +790,8 @@ def movesFor (table : Table) : List (String × Move) :=
   weighted ++ [("branch-written", branchWritten), ("branch-block", branchBlock weighted),
     ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table),
     ("shadow-write", shadowWrite), ("shared-nested", sharedNested), ("shared-record", sharedRecord),
-    ("branch-closure", branchClosure), ("double-push", doublePush), ("close-alias-callee", closeAliasCallee)] ++ gen
+    ("branch-closure", branchClosure), ("double-push", doublePush), ("close-alias-callee", closeAliasCallee),
+    ("copy-then-edit", copyThenEdit)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/
