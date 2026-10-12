@@ -84,3 +84,7 @@
 	path = references/ghc
 	url = https://github.com/ghc/ghc.git
 	shallow = true
+[submodule "references/js-framework-benchmark"]
+	path = references/js-framework-benchmark
+	url = https://github.com/krausest/js-framework-benchmark
+	shallow = true

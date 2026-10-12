@@ -25,3 +25,22 @@ git -C references/<name> sparse-checkout set <paths below>
 | `ghc` | `c35096f5` (2026-10-01) | `compiler/GHC/Core/Opt` | the simplifier, occurrence analysis, SpecConstr, demand/CPR and worker/wrapper |
 | `mlton` | `936011ca` (2026-09-30) | (full, 62 MB) | the SSA pass list, ConstantPropagation, Useless, RemoveUnused, Contify, flattening |
 | `egg` | `73975c98` (2026-09-28) | (full, under 1 MB) | equality saturation's runner and its limits |
+
+## js-framework-benchmark (added 2026-10-12)
+
+[krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), the
+benchmark whose table and rules beni's UI is measured against (CLAUDE.md rule 8; research 83).
+It is pinned to the commit that published the official Chrome 154 results, shallow and
+**sparse**: the runner, the server, the results app and the six official keyed entries
+`bench/jfb/run.mjs` runs. `run.mjs` never writes into it; it copies it to `bench/jfb/work/`.
+
+```sh
+git submodule update --init --depth 1 --filter=blob:none references/js-framework-benchmark
+git -C references/js-framework-benchmark sparse-checkout set --no-cone '/*' '!/frameworks/' '!/broken-frameworks/' \
+  /frameworks/keyed/vanillajs/ /frameworks/keyed/solid/ /frameworks/keyed/svelte/ \
+  /frameworks/keyed/react-hooks/ /frameworks/keyed/vue/ /frameworks/keyed/elm/
+```
+
+| Submodule | Pinned at | Sparse paths | Read for |
+|---|---|---|---|
+| `js-framework-benchmark` | `44f20790` (2026-10-04, "chrome 154 results") | everything but `frameworks/` and `broken-frameworks/`, plus `frameworks/keyed/{vanillajs,solid,svelte,react-hooks,vue,elm}` | `webdriver-ts` (the runner), `server`, `webdriver-ts-results` (the table), the implementation rules in its README |

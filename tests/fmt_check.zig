@@ -34,6 +34,7 @@ const skipped_dirs = [_][]const u8{
     "bench/compare/work",
     "bench/fiber/node_modules",
     "bench/fiber/out",
+    "bench/jfb/work",
     "bench/schema-libraries/bundles",
     "bench/schema-libraries/node_modules",
     "bench/ui/apps/solid1/node_modules",

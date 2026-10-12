@@ -34,3 +34,8 @@
 # The compiled ownership thesis; docs/thesis/ownership/main.tex is the source.
 /docs/thesis/ownership/*.pdf
 /references/ownership/ownership-thesis.pdf
+
+# bench/jfb: the js-framework-benchmark work copy (installs, builds, traces).
+/bench/jfb/work/
+# The built results table is rebuilt by `run.mjs --report-only`; only its data is committed.
+/bench/jfb/results/**/report/
