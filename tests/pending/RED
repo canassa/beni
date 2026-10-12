@@ -91,7 +91,3 @@
 # `For` whose key repeats matches rows by rank on browser-tea and by index
 # under S2's exact scripts on browser-direct. Written and checked on S2's
 # branch; S3's reconciler owns the fix (browser-direct.md, S3 blocker).
-# CK-222 (2026-10-12), found by browser-direct's lean slice: under --release
-# two loops written in place whose results a folded branch leaves unread are
-# declared under one short name in one let run, and the module does not load.
-tests/pending/run/ReleaseRedeclared.beni release: exit=0 program-exit=1

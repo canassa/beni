@@ -4567,6 +4567,22 @@ rename and nothing more:
   the printer (*Compact statements*, below) or left where it is. It is homed in the loop's scope
   but given no spelling of the scope around the loop, nor of the enclosing names that scope uses,
   so either way it collides with nothing.
+  *Amended 2026-10-12: only when the printer writes it in the head* (`Print.headOf`, which
+  `Rename` asks through `Rename.Heads`). "Either way" was wrong: two such variables of sibling
+  loops, each homed in its own loop, could share one spelling, and when the printer left both
+  where they stood — a variable whose update is not the loop's last statement, so the head took an
+  earlier member of the run or none — the scope around the loops declared one name twice
+  (`let f=false;for(…)…;let f=true`, a `SyntaxError` at load). A loop's variable is now its loop's
+  own exactly when `headOf`, the one predicate the printer itself uses, names it; any other is a
+  name of the scope around the loop like its neighbours. `headOf` reads the IR, the plan and the
+  loop's own body, so it answers the same before the declaration is printed as while it is, and a
+  safety build checks that it did (`mispulled`). Measured (`bench/size.mjs`, release, the whole
+  bundle): raw bytes unchanged for every program and page; 17 `run/Schema*` programs renamed,
+  brotli −6 over them; `browser-direct`'s keyed reconciler renamed one variable
+  (`emit/release/direct/ListScripts` +1, `TableSwap` +2 brotli); every empty page and the floor
+  byte for byte. Fixtures: `run/ReleaseRedeclared`,
+  `run/ReleaseRedeclaredSiblings` (three loops, two in an `if`'s arm, read and unread results
+  interleaved) — both red before the change.
 
 Assignment is still a function of the input alone (CLAUDE.md rule 5): scopes are numbered in walk
 order, and within one the order is the emission order it always was. The safety build's self-check

@@ -169,6 +169,12 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .spelled = scratch,
         .spellings = spellings,
     };
+    // `Rename` names a loop's variable as the loop's own only when the
+    // printer will write it in the loop's head, and asks the printer which.
+    if (p.rename) |m| m.heads = .{ .ctx = &p, .headOf = Printer.headThunk };
+    defer if (p.rename) |m| {
+        m.heads = null;
+    };
     // The module body is walked here rather than through `statements`,
     // because §9 item 2's local alphabet RESTARTS at every top-level
     // declaration and this is the only place that boundary is visible.
@@ -646,45 +652,80 @@ const Printer = struct {
             // `JsIr` node moves, because it is a printing decision. §8's loop
             // prologue is what reserved it.
             if (p.compact and (p.ir.tag(list[i]) == .const_decl or p.ir.tag(list[i]) == .let_decl)) {
-                // The run's last member may be a loop's variable, written in
-                // the loop's `for` head (`forHead`).
-                var last: ?usize = null;
                 var j = i;
-                while (j < list.len) : (j += 1) {
-                    if (p.plan.isDropped(list[j])) continue;
-                    if (!isDeclaration(p.ir.tag(list[j]))) break;
-                    last = j;
-                }
-                // The candidate goes last: the members after it may only
-                // hold literals, which nothing evaluates.
-                var cand = last;
-                while (cand) |l| {
-                    if (j >= list.len) break;
-                    if (try p.forHead(list[l], list[j], list[j + 1 ..])) |head| {
-                        try p.constRunSkip(list[0..j], i, l, level);
-                        try p.forLoop(list[l], list[j], head, level);
+                while (j < list.len and (p.plan.isDropped(list[j]) or isDeclaration(p.ir.tag(list[j])))) : (j += 1) {}
+                // A member of the run may be a loop's variable, written in
+                // the loop's `for` head (`headOf`).
+                if (j < list.len) {
+                    const head = try p.headOf(list, j);
+                    p.checkPulled(list, j, head);
+                    if (head) |h| {
+                        try p.constRunSkip(list[0..j], i, h.decl, level);
+                        try p.forLoop(list[h.decl], list[j], h.shape, level);
                         i = j;
-                        break;
-                    }
-                    if (!p.literalDecl(list[l])) {
-                        cand = null;
-                        break;
-                    }
-                    cand = null;
-                    var k = l;
-                    while (k > i) {
-                        k -= 1;
-                        if (p.plan.isDropped(list[k])) continue;
-                        cand = k;
-                        break;
+                        continue;
                     }
                 }
-                if (cand != null) continue;
                 i = try p.constRun(list, i, level);
                 continue;
             }
             try p.statement(list[i], level);
         }
+    }
+
+    /// Which declaration of the run before the loop at `list[at]` the
+    /// printer writes in the loop's `for` head, and the loop's shape: the
+    /// run's last member, or, while the members after a candidate hold only
+    /// literals (which nothing evaluates, so the candidate may go last), an
+    /// earlier one. Null when none can be. **The one predicate both the
+    /// printer and `Rename` ask** (`headThunk`): a loop's variable named as
+    /// if it lived inside its loop must be the one the printer moves there
+    /// (`backend.md` §9, item 2, *amended 2026-10-12*). It reads the IR,
+    /// the plan and the loop's own body — nothing a position in the walk
+    /// changes — so it answers the same before printing as during it.
+    fn headOf(p: *Printer, list: []const Index, at: usize) Allocator.Error!?struct { decl: usize, shape: BreakShape } {
+        var cand = p.declBefore(list, at);
+        while (cand) |l| {
+            if (try p.forHead(list[l], list[at], list[at + 1 ..])) |shape| return .{ .decl = l, .shape = shape };
+            if (!p.literalDecl(list[l])) return null;
+            cand = p.declBefore(list, l);
+        }
+        return null;
+    }
+
+    /// The index of the statement before `list[at]` that the plan keeps,
+    /// when it is a declaration: a member of the same run.
+    fn declBefore(p: *Printer, list: []const Index, at: usize) ?usize {
+        var k = at;
+        while (k > 0) {
+            k -= 1;
+            if (p.plan.isDropped(list[k])) continue;
+            return if (isDeclaration(p.ir.tag(list[k]))) k else null;
+        }
+        return null;
+    }
+
+    /// `Rename.Heads`' entry into `headOf`.
+    fn headThunk(ctx: *anyopaque, list: []const Index, at: usize) Allocator.Error!?usize {
+        const p: *Printer = @ptrCast(@alignCast(ctx));
+        const head = try p.headOf(list, at) orelse return null;
+        return head.decl;
+    }
+
+    /// The safety-build wall behind `headOf`'s claim: a `let` just before
+    /// the loop at `list[at]` that `Rename` named as the loop's own is the
+    /// one this loop's head takes. Otherwise its declaration stays in the
+    /// scope around the loop under a spelling a sibling loop's variable
+    /// may share (`let f=false;for(…)…;let f=true`), and the build stops
+    /// with the name in it instead.
+    fn checkPulled(p: *Printer, list: []const Index, at: usize, head: anytype) void {
+        if (!std.debug.runtime_safety) return;
+        const m = p.rename orelse return;
+        if (at == 0 or p.ir.tag(list[at - 1]) != .let_decl) return;
+        const n: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(list[at - 1]).lhs));
+        if (!m.pulledLoopVariable(n)) return;
+        if (head) |h| if (h.decl == at - 1) return;
+        m.mispulled(n);
     }
 
     /// A `while` loop whose variable is declared just before it and updated

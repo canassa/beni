@@ -1,0 +1,29 @@
+-- run: two loops written where they are called, whose results a folded
+-- branch leaves unread, keep their declarations; under `--release` each
+-- loop's carried variable was named as if it lived inside its loop, but
+-- the printer wrote another variable in the `for` head and left both
+-- declarations in the function's scope, under one short name — `let
+-- f=false;for(…)…;let f=true` did not load (`backend.md` §9, item 2,
+-- *amended 2026-10-12*). Both builds print 12.
+import Node
+
+
+countUp : Int, Int, Bool → Bool
+countUp j n seen = if j ≥ n then seen else countUp (j + 1) n (seen || j == 3)
+
+
+allSmall : Int, Int, Bool → Bool
+allSmall j n ok = if j ≥ n then ok else allSmall (j + 1) n (ok && j < 10)
+
+
+run : Int → Int
+run n =
+    a = n + 1
+    seen = countUp 0 n False
+    ok = allSmall 0 n True
+    b = a * 2
+    if False then (if ok && not seen then 1 else 2) else b
+
+
+main : Node.Program
+main = Node.print (String.fromInt (run 5))
