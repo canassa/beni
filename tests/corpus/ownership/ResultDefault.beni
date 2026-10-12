@@ -1,0 +1,84 @@
+-- ownership: the default read only when no edit happened, for `Result`
+-- (`ownership-checker.md` §26.4, extending §25.4). In
+-- `Result.withDefault (Result.map m f) d`, `f` runs exactly when `m` is `Ok`,
+-- and `d` is the result exactly when `map` answered `Err`, so `f`'s edit of
+-- the model and the read of `d` are two arms no run takes both of: `step`
+-- (the pipeline) and `stepLambda` are accepted, as the `case` they mean
+-- (`stepCase`) always was.
+--
+-- `andThen` is not `map`, in either module: its `f` runs and may then answer
+-- `Err` (or `Nothing`), and `withDefault` reads `d` after the edit.
+-- `resultAndThen` and `maybeAndThen` do exactly that, and are rejected
+-- `later-use`, as are `readAfter` (the old model read after the whole
+-- expression), `defaultReads` (a default that is not a variable) and `mixed`
+-- (a `Maybe.map` converted to a `Result` first: the rule matches one module's
+-- `withDefault` of the same module's `map`, nothing between).
+type alias Model =
+    items : List Int
+    other : List Int
+
+
+handle : Model, Int → Model
+handle model k = { model | items = List.push model.items k }
+
+
+pub step : Result String Int, Model → Model
+step m model =
+    m
+        ▷ Result.map (handle model _)
+        ▷ Result.withDefault model
+
+
+pub stepLambda : Result String Int, Model → Model
+stepLambda m model = Result.withDefault (Result.map m λk → handle model k) model
+
+
+pub stepCase : Result String Int, Model → Model
+stepCase m model =
+    case m of
+        Ok k →
+            handle model k
+
+        Err _ →
+            model
+
+
+pub readAfter : Result String Int, Model → Int
+readAfter m model =
+    next = Result.withDefault (Result.map m (handle model _)) model
+    List.length next.items + List.length model.items
+
+
+pub defaultReads : Result String Int, Model → Model
+defaultReads m model =
+    Result.withDefault (Result.map m (handle model _)) { model | other = model.items }
+
+
+pub resultAndThen : Result String Int, Model → Model
+resultAndThen m model =
+    Result.withDefault
+        (Result.andThen m λk →
+            edited = handle model k
+            if List.length edited.items > 3 then
+                Err "full"
+            else
+                Ok edited
+        )
+        model
+
+
+pub maybeAndThen : Maybe Int, Model → Model
+maybeAndThen m model =
+    Maybe.withDefault
+        (Maybe.andThen m λk →
+            edited = handle model k
+            if List.length edited.items > 3 then
+                Nothing
+            else
+                Just edited
+        )
+        model
+
+
+pub mixed : Maybe Int, Model → Model
+mixed m model = Result.withDefault (Result.fromMaybe (Maybe.map m (handle model _)) "none") model

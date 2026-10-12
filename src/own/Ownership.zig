@@ -4601,13 +4601,20 @@ const Walker = struct {
     /// so what `f`'s call writes and what `d` is read for are on two paths
     /// no run takes both of. `m`, `f` and `d` evaluate nothing but reads, so
     /// the arms hold only the call of `f` and the read of `d`.
+    ///
+    /// §26.4: `Result.withDefault (Result.map m f) d` is the same shape —
+    /// `Result.map` calls `f` exactly when `m` is `Ok`, and `withDefault`
+    /// answers `d` exactly when `map` answered `Err`. Not `andThen`, of
+    /// either module: its `f` may answer `Nothing` or `Err`, and then `d` is
+    /// read after `f` ran.
     fn isMaybeJoin(w: *Walker, t: Target, args: []const Inst.Index) Allocator.Error!bool {
-        if (args.len != 2 or !w.isCore(t, "Maybe") or !std.mem.eql(u8, w.targetName(t), "withDefault")) return false;
+        if (args.len != 2 or !std.mem.eql(u8, w.targetName(t), "withDefault")) return false;
+        const module: []const u8 = if (w.isCore(t, "Maybe")) "Maybe" else if (w.isCore(t, "Result")) "Result" else return false;
         if ((try w.refPath(args[1])) == null) return false;
         const inner = args[0];
         if (w.bir.instTag(inner) != .call) return false;
         const it = w.valueTarget(@fromBackingInt(@intCast(w.bir.instData(inner).lhs))) orelse return false;
-        if (!w.isCore(it, "Maybe") or !std.mem.eql(u8, w.targetName(it), "map")) return false;
+        if (!w.isCore(it, module) or !std.mem.eql(u8, w.targetName(it), "map")) return false;
         const ia = w.callArgs(inner);
         if (ia.len != 2 or (try w.refPath(ia[0])) == null) return false;
         return switch (w.bir.instTag(ia[1])) {
