@@ -475,9 +475,9 @@ calls of 100 000 generated programs (the final generator, with its own declarati
 
 | Seed | Step configurations | Not covered (all refused) | Accepted | Accepted with a write | Failures | Calls checked against a summary | of which map | Vacuous | Failures |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 100 000 | 10 643 | 66 444 | 23 226 | 0 | 48 493 | 3 090 | 19 735 | 0 |
-| 17 | 100 000 | 10 481 | 66 611 | 23 501 | 0 | 49 035 | 3 220 | 19 140 | 0 |
-| 271828 | 100 000 | 10 569 | 66 675 | 23 354 | 0 | 48 934 | 3 164 | 19 651 | 0 |
+| 20261011 | 100 000 | 10 643 | 66 444 | 23 226 | 0 | 43 771 | 2 962 | 17 710 | 0 |
+| 17 | 100 000 | 10 481 | 66 611 | 23 501 | 0 | 44 611 | 2 989 | 18 521 | 0 |
+| 271828 | 100 000 | 10 569 | 66 675 | 23 354 | 0 | 44 086 | 2 951 | 18 333 | 0 |
 
 (Fewer accepted than before the fourth review: the mislabelled closures are
 excluded and the low-fuel quarter ends early.)
@@ -521,7 +521,7 @@ required control caught by the generator on all three seeds (RESULTS.md).
 
 
 `Axioms.lean` is the `AxiomCheck` target of `lake build`. It collects the
-axioms of **every constant** declared in an `Ownership` module (2 705 at the
+axioms of **every constant** declared in an `Ownership` module (2 723 at the
 time of writing: theorems, definitions, instances, structures and their
 generated auxiliaries, not only the theorems) and fails unless exactly the
 three `sorry`s above and the main theorem depend on `sorryAx` and nothing uses
