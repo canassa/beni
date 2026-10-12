@@ -144,6 +144,31 @@ fn KeyMap(comptime K: type, comptime V: type) type {
             (try m.getOrPut(gpa, k)).value_ptr.* = v;
         }
 
+        /// Takes `k` out, if it is in. Every entry after it in its probe
+        /// run that may sit in its slot moves back into it (backward-shift
+        /// deletion), so `find` needs no tombstones.
+        pub fn remove(m: *Map, k: K) void {
+            if (m.len == 0) return;
+            const mask = m.slots.len - 1;
+            var hole = m.find(k);
+            if (!m.slots[hole].used) return;
+            var j = hole;
+            while (true) {
+                j = (j + 1) & mask;
+                if (!m.slots[j].used) break;
+                const home: usize = @intCast(hash(m.slots[j].key) & mask);
+                // The entry may move into the hole unless its home lies in
+                // the cyclic interval (hole, j].
+                const stays = if (hole < j) home > hole and home <= j else home > hole or home <= j;
+                if (!stays) {
+                    m.slots[hole] = m.slots[j];
+                    hole = j;
+                }
+            }
+            m.slots[hole].used = false;
+            m.len -= 1;
+        }
+
         fn grow(m: *Map, gpa: Allocator) Allocator.Error!void {
             const old = m.slots;
             m.slots = try gpa.alloc(Slot, if (old.len == 0) 16 else old.len * 2);
@@ -1713,15 +1738,22 @@ const Spec = struct {
             .cond => blk: {
                 const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
                 const t = m.memo[d.lhs];
+                // Fact 5's second case is decided by this evaluation alone:
+                // one an earlier sweep made, from facts that have grown
+                // since, is taken back unless this one makes it again. A
+                // statement's last walk saw the final facts (`sweeps`), so
+                // what stays is decided by them, as `memo` is.
+                const key: NodeRef = .{ .module = m.index, .node = node.int() };
+                if (t.state == .top or t.state == .nonnull) {
+                    if (try s.nullTestTaken(m, @fromBackingInt(@intCast(d.lhs)), c)) |taken| {
+                        try s.decided_conds.put(s.arena, key, taken);
+                        break :blk m.memo[taken.int()];
+                    }
+                }
+                s.decided_conds.remove(key);
                 break :blk switch (t.state) {
                     .bot => .bot,
                     .top, .nonnull => undecided: {
-                        // Fact 5's second case: a test of a nonnull read
-                        // against `null`, whose taken branch is that read.
-                        if (try s.nullTestTaken(m, @fromBackingInt(@intCast(d.lhs)), c)) |taken| {
-                            try s.decided_conds.put(s.arena, .{ .module = m.index, .node = node.int() }, taken);
-                            break :undecided m.memo[taken.int()];
-                        }
                         // A test that is always truthy, or always falsy,
                         // whatever its value: the branch it takes — never
                         // as its literal, since the test is still made.
@@ -8746,4 +8778,27 @@ test "a value read from a var keeps its sites when a later join adds one" {
         try want.insert(arena, 0, site);
     }
     try testing.expectEqualSlices(u32, want.items, (try p.view(v)).sites);
+}
+
+test "a key map's removal keeps every other key reachable" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // Enough keys in a small table that probe runs wrap and cross: each
+    // removal must move back exactly the entries whose home allows it.
+    var map: KeyMap(Spec.NodeRef, u32) = .empty;
+    const n = 200;
+    for (0..n) |i| try map.put(arena, .{ .module = @intCast(i % 3), .node = @intCast(i) }, @intCast(i));
+    for (0..n) |i| if (i % 3 != 1) map.remove(.{ .module = @intCast(i % 3), .node = @intCast(i) });
+    // Removing what is not there changes nothing.
+    map.remove(.{ .module = 7, .node = 7 });
+    var left: u32 = 0;
+    for (0..n) |i| {
+        const got = map.get(.{ .module = @intCast(i % 3), .node = @intCast(i) });
+        if (i % 3 == 1) {
+            try testing.expectEqual(@as(?u32, @intCast(i)), got);
+            left += 1;
+        } else try testing.expectEqual(@as(?u32, null), got);
+    }
+    try testing.expectEqual(left, map.count());
 }

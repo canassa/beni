@@ -1,0 +1,45 @@
+--! Fact 5's second case (`backend.md` §9, *slice 4*) is decided from the
+--! final facts, not from a sweep part-way to them: `pick`'s test of `i.p`
+--! against `null` reads a property the analysis first sees written with
+--! `"x"` alone, and only a sweep later — once `pass`'s recursion has
+--! carried `Js.null` round — with `null` too.
+
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+mk : V → V
+mk a = Js.from { p = a }
+
+
+-- What `pick` reads may be `null` as far as the analysis knows, so its
+-- test reads a chain that may throw and is not folded to a literal.
+choose : Bool, V → V
+choose b a =
+    if b then
+        mk a
+    else
+        Js.null
+
+
+pick : V → String
+pick i =
+    if Js.isNull (Js.get i "p") then
+        "none"
+    else
+        Js.to (Js.get i "p")
+
+
+pass : Int, V → V
+pass k a =
+    if k > 0 then
+        pass (k - 1) a
+    else
+        choose True a
+
+
+pub demo : ⊤ → List String
+demo ⊤ = [ pick (choose True (Js.from "x")), pick (pass 3 Js.null) ]

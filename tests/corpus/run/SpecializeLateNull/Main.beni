@@ -1,0 +1,8 @@
+-- A `null` test the release optimiser must not decide from a fact that was
+-- still growing: the second line is `none` in both builds.
+import Node
+import Probe
+
+
+main : Node.Program
+main = Node.printLines (Probe.demo ⊤)

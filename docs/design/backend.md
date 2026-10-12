@@ -6382,6 +6382,16 @@ sweeping the whole program about eleven times a round, from scratch every round.
   needs to fill them is not taken. `rewrite` likewise takes a statement's values from its last
   sweep and only counts its names, unless it was left woken at the fixpoint or reads a
   module-level constant this rewrite has already patched (`nameValue` reads the initialiser).
+- **So is a conditional fact 5 decides** (*amended 2026-10-12*, `Spec.combine`'s `.cond`). Fact
+  5's second case — `x.p === null ? f : x.p` is `x.p` when the read is nonnull — is recorded in
+  `decided_conds` for `rewrite`, and the facts climb from ⊥: a read may be nonnull at one sweep
+  and ⊤ at the next, when a `null` written to it arrives a sweep later (through a recursive
+  function's parameter, say). Until this amendment a decision once recorded stayed, so `rewrite`
+  took the branch on a fact the fixpoint had withdrawn — a release build that printed what the
+  development build did not (`run/SpecializeLateNull`). Each evaluation of a conditional now
+  records its decision or removes it, so what stays is the last walk's, made from the final facts
+  as `memo` is. The safety check above could not see it: both of its fixpoints kept the same stale
+  entry. Every other output byte for byte (the `emit/release/` goldens, every run hash).
 - **What every round asked of the whole program, it asks of what changed.** `namedIn` answers
   every whole-program name at once from one walk of the module, kept while the module's `version`
   stands; inside `rewrite`, which only takes mentions away, a name the walk did not meet is still
