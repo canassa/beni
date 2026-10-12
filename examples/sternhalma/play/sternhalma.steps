@@ -1,0 +1,45 @@
+# Sternhalma, the external port (examples/sternhalma), played by drag and
+# drop on the page driver (tests/corpus/README.md, the `browser/` kind).
+# It is a corpus case held out of the gates: the case costs ~5 000 million
+# instructions against the 4 300 million budget, and a load alone is over
+# it (PORTING.md, *The play script*). Replay it with
+#
+#     beni build --out=out src
+#     node ../../tests/browser/driver.mjs \
+#         --dom=../../tests/browser/happy-dom.mjs out/_main.mjs \
+#         play/sternhalma.steps | diff - play/sternhalma.expected
+#
+# The board is 121 cells drawn row by row, sorted by z then x, so a cell is
+# the n-th child of the board's div: 8 is (2,-5) in red's home, 17 is
+# (2,-4), 10 is (4,-5), 30 is (2,-3), 61 is the centre (0,0), 115 is (-1,5)
+# in purple's home and 106 is (-1,4). A drag is the bubbling events a
+# browser fires: dragstart on the piece, then dragover and drop on the cell
+# under it, whose handlers allow the drop by preventing the default, as
+# Elm's `preventDefaultOn` does; dragend on the piece when no drop took it.
+#
+# Two players: red starts in the top triangle, purple in the bottom one.
+click .items-center>button:nth-child(1)
+# It is red's turn, so purple's piece does not start a drag.
+drag div[style*=width]>div:nth-child(115)>div dragstart
+# Red picks up (2,-5): the two cells it may reach are ringed.
+drag div[style*=width]>div:nth-child(8)>div dragstart
+drag div[style*=width]>div:nth-child(17)>div dragover
+# A step to (2,-4); purple's turn.
+drag div[style*=width]>div:nth-child(17)>div drop
+# Purple drops on the centre, out of reach: nothing moves, the rings go,
+# and it is still purple's turn.
+drag div[style*=width]>div:nth-child(115)>div dragstart
+drag div[style*=width]>div:nth-child(61)>div drop
+# A drag let go off the board ends with dragend alone: the rings go.
+drag div[style*=width]>div:nth-child(115)>div dragstart
+drag div[style*=width]>div:nth-child(115)>div dragend
+# A step to (-1,4).
+drag div[style*=width]>div:nth-child(115)>div dragstart
+drag div[style*=width]>div:nth-child(106)>div drop
+# Red's multi-jump: (4,-5) is ringed to its two steps, to (2,-5) by one
+# hop over (3,-5), and to (2,-3) by a second hop over (2,-4), which no
+# single hop reaches. It lands there.
+drag div[style*=width]>div:nth-child(10)>div dragstart
+drag div[style*=width]>div:nth-child(30)>div drop
+# New Game goes back to choosing the number of players.
+click button.bg-gray-200

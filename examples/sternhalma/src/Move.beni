@@ -1,0 +1,113 @@
+-- Sternhalma, by Lucas (https://github.com/rvcas/sternhalma, commit
+-- ffb3f91bd1b2be28015f4c69beaadbb5763bb0f4), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Board exposing (Board, Cell, Triangle)
+import Hex exposing (Coord)
+import Set exposing (Set)
+
+
+pub type MoveType
+    = Step
+    | Hop
+    | Invalid
+
+
+--| Check if a move from one cell to another is valid
+pub canMove : Int, Int, Cell, Cell, Board → Bool
+canMove totalPlayers currentPlayer from to board =
+    -- Must be moving own piece
+    (from.occupant == Just currentPlayer)
+        -- Target must be empty
+        && (to.occupant == Nothing)
+        -- Must be different cells
+        && (from.index ≠ to.index)
+        -- Must not leave goal triangle once inside
+        && canLeaveCell totalPlayers currentPlayer from to
+        -- Must be valid movement (step or hop chain)
+        && isValidMovement from to board
+
+
+--| Check if piece can leave its current cell (goal triangle restriction)
+canLeaveCell : Int, Int, Cell, Cell → Bool
+canLeaveCell totalPlayers playerId from to =
+    case Board.goalTriangle totalPlayers playerId of
+        Nothing →
+            True
+
+        Just goalTri →
+            fromInGoal = Board.triangleOf from.coord == Just goalTri
+            toInGoal = Board.triangleOf to.coord == Just goalTri
+            -- If in goal, must stay in goal
+            not fromInGoal || toInGoal
+
+
+--| Check if movement is valid (step or hop chain)
+isValidMovement : Cell, Cell, Board → Bool
+isValidMovement from to board =
+    dist = Hex.distance from.coord to.coord
+    case dist of
+        1 →
+            -- Simple step to adjacent empty cell
+            True
+
+        _ →
+            -- Must be reachable via hop chain
+            Set.member (reachableByHops from board) ( to.coord.x, to.coord.z )
+
+
+--| Find all cells reachable via hop chains from a starting cell.
+--|     Uses BFS to explore all possible hop sequences.
+pub reachableByHops : Cell, Board → Set (Int × Int)
+reachableByHops start board =
+    bfsHops
+        board
+        (Set.singleton ( start.coord.x, start.coord.z ))
+        [ start.coord ]
+        Set.empty
+
+
+bfsHops : Board, Set (Int × Int), List Coord, Set (Int × Int) → Set (Int × Int)
+bfsHops board visited frontier reachable =
+    case frontier of
+        [] →
+            reachable
+
+        [ current, …rest ] →
+            hopTargets =
+                getHopTargets current board
+                    ▷ List.filter λc → not (Set.member visited ( c.x, c.z ))
+            newVisited = List.foldl hopTargets visited λc s → Set.insert s ( c.x, c.z )
+            newReachable = List.foldl hopTargets reachable λc s → Set.insert s ( c.x, c.z )
+            newFrontier = rest ++ hopTargets
+            bfsHops board newVisited newFrontier newReachable
+
+
+--| Get all valid hop targets from a position.
+--|     A hop jumps over an adjacent occupied cell to land on an empty cell.
+getHopTargets : Coord, Board → List Coord
+getHopTargets from board =
+    Hex.allDirections
+        ▷ List.filterMap λdir →
+            adjacent = Hex.neighbor dir from
+            landing = Hex.neighbor dir adjacent
+            -- Check if adjacent cell exists and is occupied
+            case Board.getCellByCoord adjacent board of
+                Nothing →
+                    Nothing
+
+                Just adjCell →
+                    if adjCell.occupant == Nothing then
+                        Nothing
+                    else
+                        -- Check if landing cell exists and is empty
+                        case Board.getCellByCoord landing board of
+                            Nothing →
+                                Nothing
+
+                            Just landCell →
+                                if landCell.occupant == Nothing then
+                                    Just landing
+                                else
+                                    Nothing
