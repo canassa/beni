@@ -3,6 +3,7 @@ import Ownership.Oracle
 import Ownership.Fixtures
 import Ownership.Report
 import Ownership.Falsify
+import Ownership.Enumerate
 
 open Ownership
 
@@ -12,7 +13,7 @@ def flagValue (args : List String) (name : String) : Option String :=
 def main (args : List String) : IO UInt32 := do
   let mode := args.head?.getD "all"
   let positional := args.filter (fun a => !a.startsWith "--" &&
-    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff", "falsify", "accepted"].contains a)
+    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff", "falsify", "accepted", "enumerate"].contains a)
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
   let version := (flagValue args "generator-version").bind String.toNat? |>.getD 5
@@ -41,6 +42,19 @@ def main (args : List String) : IO UInt32 := do
       a.naming == 0 && a.uncoveredAccepted == 0 && b.violations == 0 && vacuityOk
     IO.println s!"falsify count={count} seed={seed} clean={clean}"
     return (if clean then 0 else 1)
+  -- Every typed program of the enumeration grammar up to `bound` bindings
+  -- (Enumerate.lean); with `--mutant=`, succeed only if one is caught.
+  if mode == "enumerate" then
+    let bound := positional[0]?.bind String.toNat? |>.getD 2
+    let oldFreshRule := args.contains "--old-rule"
+    let dropTraversalEscapes := args.contains "--old-escape-rule"
+    let reinfer := args.contains "--reinfer"
+    let config : Config := { mutant, oldFreshRule, dropTraversalEscapes, reinfer }
+    if args.contains "--count-only" then
+      IO.println s!"enumerate bound={bound} programs={← Enumerate.countOnly bound}"
+      return 0
+    let (ok, _) ← Enumerate.run bound config (sourceMutant := args.contains "--mutant-source")
+    return (if ok then 0 else 1)
   if mode == "reasons" then
     Oracle.reasons count seed ((flagValue args "family").getD "general") version
     return 0
@@ -93,7 +107,12 @@ def main (args : List String) : IO UInt32 := do
     -- `--strict` is still accepted and changes nothing.
     let caught ← Oracle.controls budget seed version
     IO.println s!"generator catches every required control within {budget} trials: {caught}"
-    return (if caught then 0 else 1)
+    if !caught then return 1
+    -- Every program of the enumeration grammar up to the bound (Enumerate.lean):
+    -- no accepted one may disagree.
+    let bound := (flagValue args "enumerate-bound").bind String.toNat? |>.getD 3
+    let (ok, _) ← Enumerate.run bound
+    return (if ok then 0 else 1)
   if mode != "oracle" && mode != "--generator-only" then
     if !(← Fixtures.run) then return 1
   if mode == "fixtures" then return 0
