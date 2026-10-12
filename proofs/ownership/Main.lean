@@ -15,7 +15,7 @@ def main (args : List String) : IO UInt32 := do
     !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff", "falsify"].contains a)
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
-  let version := (flagValue args "generator-version").bind String.toNat? |>.getD 4
+  let version := (flagValue args "generator-version").bind String.toNat? |>.getD 5
   let mutant ← match flagValue args "mutant" with
     | none => pure none
     | some name => match Mutant.parse name with

@@ -438,7 +438,7 @@ def handedOver (callee : Var → Option Nat) : Expr → List Var
   | .prim (.literal (.list _)) args => args.filterMap atomRoot
   | .app f args =>
     let positions := match atomRoot f >>= callee with
-      | some d => handedArguments d
+      | some d => if d < decls.length then handedArguments d else List.range args.length
       | none => List.range args.length
     positions.filterMap fun i => args[i]? >>= atomRoot
   | .closure d caps => if d == capPush then caps.filterMap atomRoot else []
@@ -448,11 +448,14 @@ def handedOver (callee : Var → Option Nat) : Expr → List Var
 /-- After a move, each variable it handed over leaves the pool with probability
     3/4, so most generated programs use a written value linearly while a quarter
     of them reuse it. -/
-def retire (env : Env) (gone : List Var) : Gen Env := do
+def retire (env : Env) (gone : List Var) (protect := false) : Gen Env := do
   let mut out := env
   for x in gone do
     if (← draw 4) != 0 then
-      out := out.filter fun (a, _) => atomRoot a != some x
+      let rest := out.filter fun (a, _) => atomRoot a != some x
+      -- v5: never retire the last list, so a list operand always exists
+      -- (in a declaration body variable 0 need not be a list).
+      if !protect || !(listsOf rest).isEmpty then out := rest
   pure out
 
 def bindAll (next : Nat) (env : Env) (bs : List (Expr × Ty))
@@ -483,10 +486,13 @@ def followUp (next : Nat) (env : Env) (bs : List (Expr × Ty)) : Gen (List (Expr
     else pure bs
   | none => pure bs
 
-def chain : Nat → Nat → Env → Gen (List String × Expr)
-  | 0, _, env => do return ([], ← finish env)
+
+/-- A chain of moves drawn from `ms`, ended by `fin`. -/
+def chainWith (ms : List (String × Move)) (protect : Bool) (fin : Nat → Env → Gen (List String × Expr)) :
+    Nat → Nat → Env → Gen (List String × Expr)
+  | 0, next, env => fin next env
   | fuel + 1, next, env => do
-    let (name, move) ← pick weighted ("literal", fun _ env => do pure [(← litList env, tL)])
+    let (name, move) ← pick ms ("literal", fun _ env => do pure [(← litList env, tL)])
     let bs ← move next env
     let bs ← followUp next env bs
     let callee := fun (x : Var) => match bs[x - next]? with
@@ -494,14 +500,276 @@ def chain : Nat → Nat → Env → Gen (List String × Expr)
       | _ => none
     let gone := bs.flatMap (fun (rhs, _) => handedOver callee rhs)
     let (names, e) ← bindAll next env bs fun next' env' => do
-      chain fuel next' (← retire env' gone)
+      chainWith ms protect fin fuel next' (← retire env' gone protect)
     return (name :: names, e)
 
-/-- A program of 1–12 moves after one fresh list. -/
+def chain : Nat → Nat → Env → Gen (List String × Expr) :=
+  chainWith weighted false (fun _ env => do return ([], ← finish env))
+
+/-- A program of 1–12 moves after one fresh list (generator v4). -/
 def general : Gen (List String × Program) := do
   let length ← draw 12
   let first ← litList []
   let (names, rest) ← chain (length + 1) 1 [(.var 0, tL)]
   return (names, { declarations := decls, main := .letE 0 first rest })
+
+/-! ## Generator v5: conditionals over moves, and declarations of its own
+
+Each program may carry a table of generated declarations after the fixed one:
+functions over lists, nested lists and records that return a fresh value, a
+parameter or a capture; higher-order functions that call their callback;
+self-recursive functions with a decreasing counter; factories that return a
+closure; rarely a mutually recursive pair (refused as a limit). Bodies are
+chains of the same moves, and may call earlier generated declarations. A
+conditional's arms are themselves chains of moves. -/
+
+abbrev Table := List (Nat × Decl)
+
+def fnTy (d : Decl) : Ty := .fn d.parameters d.result
+def firstOrder (t : Ty) : Bool := !containsFunction t
+
+/-- Bindings numbered from `next`, wrapped around `e`. -/
+def wrap (next : Nat) (bs : List (Expr × Ty)) (e : Expr) : Expr :=
+  bs.zipIdx.foldr (fun ((rhs, _), i) acc => .letE (next + i) rhs acc) e
+
+def atomsOf (env : Env) (t : Ty) : List Atom :=
+  if t == tL then listsOf env else ofTy env t
+
+def extend (next : Nat) (bs : List (Expr × Ty)) (env : Env) : Env :=
+  (bs.zipIdx.map fun ((_, u), i) => (Atom.var (next + i), u)).reverse ++ env
+
+/-- A value of a first-order type the generator builds (Int, list, nested
+    list, record of two lists): an existing one (2/3, preferring recent
+    ones) or a fresh one bound first. -/
+def valueOf (next : Nat) (env : Env) (t : Ty) : Gen (List (Expr × Ty) × Atom) := do
+  if t == .int then return ([], ← number env)
+  let xs := atomsOf env t
+  if !xs.isEmpty && (← draw 3) != 0 then return ([], ← pickRecent xs)
+  let bs ← if t == tN then nestedBindings next env
+    else if t == tR then do pure [(.prim .record [← anyList env, ← anyList env], tR)]
+    else do pure [(← litList env, tL)]
+  return (bs, .var (next + bs.length - 1))
+
+def firstOrderValues (next : Nat) (env : Env) : List Ty → Gen (List (Expr × Ty) × List Atom)
+  | [] => pure ([], [])
+  | t :: ts => do
+    let (bs, a) ← valueOf next env t
+    let (more, as) ← firstOrderValues (next + bs.length) (extend next bs env) ts
+    pure (bs ++ more, a :: as)
+
+/-- Closures of the fixed table of type `t`, capturing lists from `env`. -/
+def fixedCallbacks (env : Env) (t : Ty) : Gen (List Expr) := do
+  if t == fLL then pure [.closure identL [], .closure bump [], .closure publish [], .closure capAppend [← anyList env]]
+  else if t == fNN then pure [.closure identN [], .closure headBump []]
+  else if t == fIL then pure [.closure capPush [← anyList env], .closure capGet [← anyList env], .closure freshRow []]
+  else if t == fII then pure [.closure capLen [← anyList env]]
+  else if t == fLLL then pure [.closure borrowOrGrow [], .closure grow [],
+    .closure capStep [← anyList env], .closure capPick [← anyList env]]
+  else if t == fIN then pure [.closure pairShared [], .closure pairFresh []]
+  else pure []
+
+def generatedOfType (table : Table) (t : Ty) : Table :=
+  table.filter fun (_, d) => fnTy d == t && d.captures.all firstOrder
+
+def hasCallback (table : Table) (t : Ty) : Bool :=
+  [fLL, fNN, fIL, fII, fLLL, fIN].any (· == t) || !(generatedOfType table t).isEmpty
+
+/-- A closure of type `t`: a fixed one, or a generated declaration of that
+    type whose captures are chosen like arguments (often the same list the
+    call passes, so a callback may capture its own argument). -/
+def callbackOf (table : Table) (next : Nat) (env : Env) (t : Ty) : Gen (List (Expr × Ty) × Atom) := do
+  let fixed ← fixedCallbacks env t
+  let generated := generatedOfType table t
+  let k ← draw (fixed.length + generated.length)
+  match fixed[k]? with
+  | some e => return ([(e, t)], .var next)
+  | none =>
+    match generated[k - fixed.length]? with
+    | some (i, d) =>
+      let (bs, caps) ← firstOrderValues next env d.captures
+      return (bs ++ [(.closure i caps, t)], .var (next + bs.length))
+    | none => return ([(.closure identL [], fLL)], .var next)  -- unreachable: callers check hasCallback
+
+def valuesOf (table : Table) (next : Nat) (env : Env) : List Ty → Gen (List (Expr × Ty) × List Atom)
+  | [] => pure ([], [])
+  | t :: ts => do
+    let (bs, a) ← if firstOrder t then valueOf next env t else callbackOf table next env t
+    let (more, as) ← valuesOf table (next + bs.length) (extend next bs env) ts
+    pure (bs ++ more, a :: as)
+
+/-- Call `f : ps → r`, binding fresh arguments and callbacks first. A leading
+    Int parameter may be a recursion counter: it gets a literal 0–3. -/
+def callWith (table : Table) (next : Nat) (env : Env) (f : Atom) (ps : List Ty) (r : Ty) :
+    Gen (List (Expr × Ty)) := do
+  let (bs, args) ← valuesOf table next env ps
+  let args ← if ps.head? == some .int then do pure (Atom.int (Int.ofNat (← draw 4)) :: args.drop 1)
+    else pure args
+  pure (bs ++ [(.app f args, r)])
+
+/-- Close over a generated declaration and call it. -/
+def callGenerated (table : Table) : Move := fun next env => do
+  let (i, d) ← pick table (0, default)
+  let (bs, caps) ← firstOrderValues next env d.captures
+  let at_ := next + bs.length
+  let call ← callWith table (at_ + 1) (extend next bs env) (.var at_) d.parameters d.result
+  pure (bs ++ [(.closure i caps, fnTy d)] ++ call)
+
+/-- Call any function value in scope: a closure made earlier, one a
+    generated factory returned, or a function parameter of the body. -/
+def applyAny (table : Table) : Move := fun next env => do
+  let fs := env.filterMap fun (a, t) => match t with
+    | .fn ps r => if ps.all (fun p => firstOrder p || hasCallback table p) then some (a, ps, r) else none
+    | _ => none
+  if fs.isEmpty then return [(← litList env, tL)]
+  let (f, ps, r) ← pick fs (.int 0, [], .int)
+  callWith table next env f ps r
+
+/-- A list and its pushed version, then a conditional choosing between them:
+    the list written in place is read again only in one arm. -/
+def branchWritten : Move := fun next env => do
+  let a ← anyList env
+  let n ← number env
+  let other ← if (← draw 4) == 0 then anyList env else pure a
+  let c ← number env
+  let (yes, no) := if (← draw 2) == 0 then (Expr.atom other, Expr.atom (v next))
+    else (.atom (v next), .atom other)
+  pure [(.prim .push [a, n], tL), (.branch c yes no, tL)]
+
+def finTy (t : Ty) : Nat → Env → Gen (List String × Expr) := fun next env => do
+  let (bs, a) ← valueOf next env t
+  pure ([], wrap next bs (.atom a))
+
+/-- A chain of `fuel` moves from `next`, ending in a value of type `t`. -/
+def blockOf (ms : List (String × Move)) (fuel next : Nat) (env : Env) (t : Ty) : Gen Expr := do
+  pure (← chainWith ms true (finTy t) fuel next env).2
+
+/-- A conditional whose arms are chains of 0–2 moves. -/
+def branchBlock (ms : List (String × Move)) : Move := fun next env => do
+  let t ← pick [tL, tL, tN, .int] tL
+  let c ← number env
+  let yes ← blockOf ms (← draw 3) (next + 1) env t
+  let no ← blockOf ms (← draw 3) (next + 1) env t
+  pure [(.branch c yes no, t)]
+
+/-- The moves of a v5 chain: v4's, conditionals, calls of any function value
+    in scope, and (three times as often) calls of generated declarations. -/
+def movesFor (table : Table) : List (String × Move) :=
+  let gen := if table.isEmpty then [] else List.replicate 3 ("call-generated", callGenerated table)
+  weighted ++ [("branch-written", branchWritten), ("branch-block", branchBlock weighted),
+    ("apply-any", applyAny table)] ++ gen
+
+/-- The environment of a body: parameters and captures, and a fresh list
+    bound first at their count (so every list move has an operand). -/
+def bodyEnv (inputs : List Ty) : Env :=
+  (inputs.zipIdx.map fun (t, i) => (Atom.var i, t)).reverse ++ [(.var inputs.length, tL)]
+
+def plainDecl (table : Table) (name : String) : Gen Decl := do
+  let (ps, caps, r) ← if (← draw 2) == 0 then pure ([tL], [tL], tL)  -- a list callback with a capture
+    else do
+      let k := 1 + (← draw 3)
+      let mut ps := []
+      for _ in List.range k do ps := ps ++ [← pick [tL, tL, tN, tR, .int] tL]
+      let caps ← match ← draw 3 with | 0 => pure [tL] | 1 => pure [tN] | _ => pure []
+      pure (ps, caps, ← pick [tL, tL, tN, .int] tL)
+  let n := ps.length + caps.length
+  let env := bodyEnv (ps ++ caps)
+  let first ← litList env
+  let rest ← blockOf (movesFor table) (← draw 4) (n + 1) env r
+  return { name := name, parameters := ps, captures := caps, result := r, body := .letE n first rest }
+
+/-- Takes a list and a callback over it, and calls the callback first. -/
+def higherOrderDecl (table : Table) (name : String) : Gen Decl := do
+  let t := if (← draw 4) == 0 then tN else tL
+  let g : Ty := .fn [t] t
+  let env := bodyEnv [t, g]
+  let first ← litList env
+  let arg ← if (← draw 3) == 0 then pickRecent (atomsOf env t) else pure (Atom.var 0)
+  let r ← pick [t, t, .int] t
+  let rest ← blockOf (movesFor table) (← draw 3) 4 ((.var 3, t) :: env) r
+  return { name := name, parameters := [t, g], result := r,
+           body := .letE 2 first (.letE 3 (.app (.var 1) [arg]) rest) }
+
+/-- Self-recursion on a counter: `0 < k` selects the step, which recurs with
+    `k - 1` and the list parameters (permuted among equal types, one of them
+    possibly pushed first), then continues with the recursive result. -/
+def recursiveDecl (table : Table) (name : String) : Gen Decl := do
+  let k := 1 + (← draw 2)
+  let mut ts := []
+  for _ in List.range k do ts := ts ++ [← pick [tL, tL, tN] tL]
+  let ps := Ty.int :: ts
+  let caps ← if (← draw 4) == 0 then pure [tL] else pure []
+  let r ← pick [tL, .int] tL
+  let n := ps.length + caps.length
+  let env := bodyEnv (ps ++ caps)
+  let ms := movesFor table
+  let first ← litList env
+  let base ← blockOf ms (← draw 3) (n + 2) env r
+  let pushed ← draw (ts.length + 1)
+  let pushes : List (Expr × Ty) ← match ts[pushed]? with
+    | some t => if t == tL then do pure [(.prim .push [v (pushed + 1), ← number env], tL)]
+                else do pure [(.prim .push [v (pushed + 1), ← anyList env], tN)]
+    | none => pure []
+  let mut args : List Atom := [v (n + 2)]
+  for (t, j) in ts.zipIdx do
+    if j == pushed then args := args ++ [v (n + 3)]
+    else
+      let same := (ts.zipIdx.filter fun (u, _) => u == t).map fun (_, i) => v (i + 1)
+      args := args ++ [← if (← draw 3) == 0 then pick same (v (j + 1)) else pure (v (j + 1))]
+  let call := n + 3 + pushes.length
+  let stepEnv := (Atom.var call, r) :: extend (n + 3) pushes env
+  let rest ← blockOf ms (← draw 3) (call + 1) stepEnv r
+  let step : Expr := .letE (n + 2) (.prim .sub [v 0, .int 1]) <|
+    wrap (n + 3) pushes (.letE call (.recur args) rest)
+  return { name := name, parameters := ps, captures := caps, result := r,
+           body := .letE n first <| .letE (n + 1) (.prim .lt [.int 0, v 0]) <| .branch (v (n + 1)) base step }
+
+/-- Returns a closure over its list argument or a fresh list. -/
+def factoryDecl (table : Table) (name : String) : Gen Decl := do
+  let options : List (Nat × Ty) := [(capPush, fIL), (capGet, fIL), (capLen, fII), (capAppend, fLL)] ++
+    table.filterMap fun (i, d) =>
+      if d.captures == [tL] && d.parameters.all firstOrder && firstOrder d.result then some (i, fnTy d) else none
+  let (target, t) ← pick options (capGet, fIL)
+  let first ← litList (bodyEnv [tL])
+  let cap := if (← draw 2) == 0 then Atom.var 0 else Atom.var 1
+  return { name := name, parameters := [tL], result := t, body := .letE 1 first (.closure target [cap]) }
+
+/-- Two declarations that recurse through each other's closures. -/
+def mutualOne (name : String) (other : Nat) : Decl where
+  name := name
+  parameters := [.int, tL]
+  result := tL
+  body := .letE 2 (.prim .lt [.int 0, v 0]) <| .branch (v 2) (.atom (v 1)) <|
+    .letE 3 (.prim .sub [v 0, .int 1]) <| .letE 4 (.closure other []) <|
+    .letE 5 (.prim .push [v 1, v 0]) <| .app (v 4) [v 3, v 5]
+
+def mutualPair (i : Nat) : List Decl :=
+  [mutualOne s!"mutualA{i}" (i + 1), mutualOne s!"mutualB{i}" i]
+
+/-- One to three generated declarations (a mutual pair counts as one draw). -/
+def generatedTable : Gen Table := do
+  let count := 1 + (← draw 3)
+  let mut t : Table := []
+  for _ in List.range count do
+    let i := decls.length + t.length
+    let kind ← draw 16
+    if kind == 0 then
+      t := t ++ (mutualPair i).zipIdx.map fun (d, k) => (i + k, d)
+    else
+      let d ← if kind ≤ 3 then recursiveDecl t s!"rec{i}"
+        else if kind ≤ 7 then higherOrderDecl t s!"higher{i}"
+        else if kind ≤ 10 then factoryDecl t s!"factory{i}"
+        else plainDecl t s!"plain{i}"
+      t := t ++ [(i, d)]
+  pure t
+
+/-- Generator v5's general families: 1–12 moves, including conditionals over
+    moves; with `declarations`, after a generated table the moves may call. -/
+def generalV5 (declarations : Bool) : Gen (List String × Program) := do
+  let t ← if declarations then generatedTable else pure []
+  let length ← draw 12
+  let first ← litList []
+  let (names, rest) ← chainWith (movesFor t) true (fun _ env => do return ([], ← finish env))
+    (length + 1) 1 [(.var 0, tL)]
+  return (names, { declarations := decls ++ t.map Prod.snd, main := .letE 0 first rest })
 
 end Ownership.Generator

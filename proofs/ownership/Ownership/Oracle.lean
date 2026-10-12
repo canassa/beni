@@ -425,16 +425,44 @@ def generateV4 : Gen (String × Program) := do
     let (_, p) ← Generator.general
     return ("general", p)
 
+/-- Generator v5 (the default): the eleven template families together are
+    drawn a quarter of the time (11/44), so most programs come from the
+    general generator: 14/44 from its chains of moves (now with conditionals
+    whose arms are chains), 19/44 from programs that first generate a table
+    of declarations of their own. `--generator-version=4` reproduces v4. -/
+def generateV5 : Gen (String × Program) := do
+  let k ← draw 44
+  if k < 11 then
+    match k with
+    | 0 => return ("fresh-nested", ← nested)
+    | 1 => return ("captures", ← captureProgram)
+    | 2 => return ("identity-map", ← identityMap)
+    | 3 => return ("branch-traversal", ← loopProgram)
+    | 4 => return ("escape-traversal", ← escapedProgram)
+    | 5 => return ("recursion", ← recursiveProgram)
+    | 6 => return ("library-pipeline", ← pipeline)
+    | 7 => return ("indexed-chain", ← indexedProgram)
+    | 8 => return ("once-many-wrappers", ← onceProgram)
+    | 9 => return ("recursive-higher-order-limit", ← recursiveHigherOrder)
+    | _ => return ("fresh-tower", ← towerProgram)
+  else if k < 25 then
+    let (_, p) ← Generator.generalV5 false
+    return ("general", p)
+  else
+    let (_, p) ← Generator.generalV5 true
+    return ("declarations", p)
+
 def generateVersion (version : Nat) : Gen (String × Program) :=
   match version with
   | 1 => do return ("frozen-legacy", ← OracleLegacy.generate)
   | 3 => generateFamily
-  | _ => generateV4
+  | 4 => generateV4
+  | _ => generateV5
 
 structure Options where
   count : Nat
   seed : Nat
-  version : Nat := 4
+  version : Nat := 5
   config : Config := {}
   /-- Stop at the first accepted disagreement (negative controls). -/
   stopAtFirst : Bool := false
@@ -450,8 +478,8 @@ def Options.label (o : Options) : String :=
   let base := match o.config.mutant with
     | some m => s!"mutant-{m.name}"
     | none => if o.config.oldFreshRule then (if o.version == 1 then "legacy-old" else s!"old-v{o.version}")
-      else if o.config.dropTraversalEscapes then (if o.version == 4 then "old-escape-v4" else "old-escape")
-      else if o.version == 4 then "soundness-v4" else "soundness"
+      else if o.config.dropTraversalEscapes then (if o.version ≥ 4 then s!"old-escape-v{o.version}" else "old-escape")
+      else if o.version ≥ 4 then s!"soundness-v{o.version}" else "soundness"
   if o.config.reinfer then base ++ "-reinfer" else base
 
 structure RunResult where
@@ -566,7 +594,7 @@ def runWith (o : Options) : IO RunResult := do
 /-- How often a mutant changes a verdict at all: programs the mutated checker
     accepts and the corrected one rejects, and how many of those disagree when
     run. A mutant that changes no verdict on a campaign is inert there. -/
-def verdictDiff (count seed : Nat) (m : Mutant) (reinfer : Bool) (version := 4) (quiet := false) : IO (Nat × Nat) := do
+def verdictDiff (count seed : Nat) (m : Mutant) (reinfer : Bool) (version := 5) (quiet := false) : IO (Nat × Nat) := do
   let mut state := seed
   let mut onlyMutant := 0
   let mut disagreeing := 0
@@ -587,7 +615,7 @@ def verdictDiff (count seed : Nat) (m : Mutant) (reinfer : Bool) (version := 4) 
 
 /-- Rejection reasons and accepted-with-write counts of one family, for tuning
     and for reporting what a family actually exercises. -/
-def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
+def reasons (count seed : Nat) (family : String) (version := 5) : IO Unit := do
   let mut state := seed
   let mut table : List (String × Nat) := []
   for _ in List.range count do
@@ -608,7 +636,7 @@ def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
     `borrowed-supply` is reported under summaries (it changes verdicts but no
     disagreement has been seen; COVERAGE.md argues none can) and required
     against the per-call checker; generator-optional mutants are reported. -/
-def controls (count seed : Nat) (version := 4) (reinfer := false) : IO Bool := do
+def controls (count seed : Nat) (version := 5) (reinfer := false) : IO Bool := do
   let checkerName := if reinfer then "per-call" else "summaries"
   let named : List (String × Config) :=
     [("old-rule", { oldFreshRule := true, reinfer }), ("old-escape-rule", { dropTraversalEscapes := true, reinfer })] ++
