@@ -178,7 +178,7 @@ pub foreign impure setAt : Value, index, Value → ⊤
 
 
 --| `throw v`, a statement. Nothing after it runs.
-pub foreign impure throw : Value → a
+pub foreign impure throw : escaped Value → fresh a
 
 
 --| A mutable cell holding an `a`: `ref` makes one, `read` reads it and

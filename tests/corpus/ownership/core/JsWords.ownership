@@ -7,18 +7,20 @@ module JsWords
   55:12 construction xs: accepted param
   64:12 construction xs: accepted param
   75:12 construction xs: accepted param
-  82:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  84:14 construction ys: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  87:14 construction held: rejected unknown: the list came from JavaScript (approx)
+  88:12 construction xs: accepted call
+  95:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  97:14 construction ys: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  100:14 construction held: rejected unknown: the list came from JavaScript (approx)
   summary returns: π1 RW
   summary returnsFromFunctions: π1 RW, π2 RW, π3 Rw
   summary compares: π1 RW
   summary identity: π1 RW
   summary holds: π1 RW
   summary calls: π1 RW, π2 RE
+  summary throws: unused
   summary keeps: π1 REW, π2 REW
-  demands 11: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
-total 11: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+  demands 12: accepted 5 (fresh 0, call 1, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 12: accepted 5 (fresh 0, call 1, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
 cause unknown 1
 cause escaped 2
 cause alias 3
