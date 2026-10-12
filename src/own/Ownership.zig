@@ -1734,7 +1734,7 @@ const Walker = struct {
                 const rest = (try w.covers(e.cell, c.cell)) orelse continue;
                 const hit: Entry = .{ .path = try w.o.concat(e.path, rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else c.approx };
                 if (hit.approx == 0) return hit;
-                if (found == null) found = hit;
+                if (found == null or hit.approx < found.?.approx) found = hit;
             }
         }
         return found;
@@ -1824,7 +1824,7 @@ const Walker = struct {
         for (others) |av| {
             const hit = (try w.reaches(av, cells.items)) orelse continue;
             if (hit.approx != 0) {
-                if (approx_hit == 0) approx_hit = hit.approx;
+                if (approx_hit == 0 or hit.approx < approx_hit) approx_hit = hit.approx;
                 continue;
             }
             rec.prelim = .{ .cause = .disjoint, .detail = "another operand of the same operation reaches it" };
@@ -1957,7 +1957,7 @@ const Walker = struct {
                 if (best) |bst| {
                     const better_kind = cause.approximate() != bst.cause.approximate() and !cause.approximate();
                     const same_kind = cause.approximate() == bst.cause.approximate();
-                    if (!(better_kind or (same_kind and u.point < bst.use.point))) continue;
+                    if (!(better_kind or (same_kind and (u.point < bst.use.point or (u.point == bst.use.point and w.holderBefore(h, bst.holder)))))) continue;
                 }
                 best = .{ .cause = cause, .holder = h, .use = u };
             }
@@ -1982,6 +1982,22 @@ const Walker = struct {
             }
             try out_list.append(out, d);
         }
+    }
+
+    /// A tie-break between two holders read at one point that depends on the
+    /// text alone — the local, then the path as written, then the call —
+    /// never on an id, which other declarations' walks move.
+    fn holderBefore(w: *const Walker, a: Holder, b: Holder) bool {
+        if (a.local != b.local) return a.local < b.local;
+        var ba: [256]u8 = undefined;
+        var bb: [256]u8 = undefined;
+        var wa: std.Io.Writer = .fixed(&ba);
+        var wb: std.Io.Writer = .fixed(&bb);
+        w.o.writePath(&wa, a.path) catch {};
+        w.o.writePath(&wb, b.path) catch {};
+        const o = std.mem.order(u8, wa.buffered(), wb.buffered());
+        if (o != .eq) return o == .lt;
+        return a.approx < b.approx;
     }
 
     fn useOverlaps(w: *const Walker, u: Use, path: u32) bool {

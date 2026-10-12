@@ -173,7 +173,10 @@ call plus the last spread's operand or trailing literal; the base is the first s
 **A `++` chain on lists is one construction** whose base is its leftmost operand: `a ++ b ++ c` is
 `[ …a, …b, …c ]` (thesis §3.8, *Chains are flattened on purpose*). A `++` is on lists when the
 dispatch table's `appends` lists it. Its right operand, when it is itself a `++` on lists, is part of
-the chain.
+the chain. `++` is right-associative and BIR keeps no parentheses, so `a ++ (b ++ c)` written with
+them is the same tree as `a ++ b ++ c` and is read as the same one construction, whose base is `a`;
+`(a ++ b) ++ c` is two, the inner one's base `a` and the outer one's the inner result. The backend
+does not yet lower either way in place (slice 5 lowers the flattened chain, Change 1).
 
 **Not demands** (thesis §3.8): `[ …xs ]`, which lowering already writes as `xs`; a literal with no
 spread, which allocates; a pattern, which only reads; and a list re-built in the shape a pattern just
@@ -354,7 +357,14 @@ at the closure's creation but not ordered with the enclosing body's points. A us
 enclosing local is not a use in the enclosing frame; it is a **capture**, and the closure holds that
 local at that path for as long as the closure is live (thesis §4.3: "a captured path is live wherever
 the closure value is live"). The closure is live through the holders of its value: a local bound to
-it, a structure holding it, a pending argument, a call's result that may retain it (§6.1).
+it, a structure holding it, a pending argument, a call's result that may retain it (§6.1). So a use
+of a variable holding a closure is recorded where the variable is consumed — at the call it is passed
+to or called by — not where the lambda was written; a closure passed directly as a temporary is a use
+of each of its captures at that call.
+
+When two holders are first read at the same point, the report names the one with the lower local
+index, then the path that sorts first as written, so the line does not depend on ids that other
+declarations' walks assign.
 
 ### 7.4 Holders
 
