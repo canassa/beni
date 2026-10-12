@@ -452,6 +452,9 @@ groups: []?Groups = &.{},
 /// Per module: whether the run reports on it.
 report_for: []bool = &.{},
 builder_id: ?TypeId = null,
+/// §26.2: core `Result`'s type and its `Err` constructor's id, for `?`;
+/// `ty` is `none` when the run has no core `Result`.
+result_err: ?ResultErr = null,
 /// Per constructor id: its type's `(module, declaration)`, or none.
 ctor_type: std.ArrayList(u64) = .empty,
 /// Per constructor id: its `(module, index)`, for printing.
@@ -2258,6 +2261,36 @@ fn builderId(o: *Ownership) TypeId {
     return found;
 }
 
+const ResultErr = struct { ty: TypeId, ctor: u32 };
+
+/// §26.2: core `Result`'s type id and the id of its `Err` constructor,
+/// the payload a `?` returns from its definition.
+fn resultErr(o: *Ownership) Allocator.Error!ResultErr {
+    if (o.result_err) |r| return r;
+    var ty: TypeId = .none;
+    for (o.in.types.entries, 0..) |e, i| {
+        if (e.package != .core) continue;
+        if (!std.mem.eql(u8, o.in.interner.slice(e.module_name), "Result")) continue;
+        if (!std.mem.eql(u8, o.in.interner.slice(e.name), "Result")) continue;
+        ty = @fromBackingInt(@intCast(i));
+        break;
+    }
+    var ctor: u32 = none;
+    if (ty != .none) for (o.in.module_names, 0..) |name, m| {
+        if (m >= o.in.packages.len or o.in.packages[m] != .core or !std.mem.eql(u8, name, "Result")) continue;
+        const bir = o.in.birs[m];
+        for (bir.ctors, 0..) |c, i| {
+            if (!std.mem.eql(u8, o.in.interner.slice(bir.symbol(c.name)), "Err")) continue;
+            ctor = try o.ctorId(@intCast(m), @intCast(i));
+            break;
+        }
+        break;
+    };
+    if (ctor == none) ty = .none;
+    o.result_err = .{ .ty = ty, .ctor = ctor };
+    return o.result_err.?;
+}
+
 fn sameRepresentation(o: *Ownership, x: TypeId, y: TypeId) bool {
     if (x == y) return true;
     const list = o.in.types.well_known.list;
@@ -2620,6 +2653,9 @@ const Frame = struct {
     parent: u32,
     captures: std.ArrayList(Capture) = .empty,
     pending_base: usize,
+    /// §26.2: what the `?`s of this frame return from it — each `Err`
+    /// payload, under `Err` — joined into the frame's result.
+    early: std.ArrayList(Entry) = .empty,
 };
 
 const PatSite = struct { list: Inst.Index, index: u32, spread: bool, scrut: AV = &.{} };
@@ -2803,7 +2839,7 @@ const Walker = struct {
             if (w.patternType(p)) |v| w.fn_state.items[i].is_fn = isFunc(w.store, v);
             try w.bindParam(p, 0);
         }
-        const result = try w.eval(body);
+        const result = try w.withEarly(0, try w.eval(body));
         try w.consume(&.{body}, w.bir.insts.items(.main_token)[body.int()]);
         try w.sight(result, .{ .pending = "it is returned" }, w.token(body));
         w.result_av = result;
@@ -3621,6 +3657,13 @@ const Walker = struct {
 
     fn bindLocal(w: *Walker, l: u32, av: AV) void {
         if (l >= w.local_av.len) return;
+        // §26.1: a local index is bound once per walk. Lowering gives every
+        // binder — written or compiler-made — an index of its own, and BIR
+        // is a tree, so no binder is walked twice; a local function group's
+        // rounds restore `local_av` before walking again (`restore`). Were
+        // one bound twice, a holder found through the first binding could
+        // have its later reads resolved against the second.
+        if (std.debug.runtime_safety) std.debug.assert(w.local_av[l] == null);
         w.local_av[l] = av;
         w.local_frame[l] = w.frame;
         w.local_ctx[l] = w.ctx;
@@ -3921,6 +3964,7 @@ const Walker = struct {
             .@"try" => {
                 const s = try w.eval(@fromBackingInt(@intCast(data.lhs)));
                 try w.consume(&.{@fromBackingInt(@intCast(data.lhs))}, w.token(inst));
+                try w.earlyReturn(@fromBackingInt(@intCast(data.lhs)), s);
                 if (!try w.isTracked(inst)) return &.{};
                 const any = try w.o.child(eps, .any, 0);
                 const out = try w.a.alloc(Entry, s.len);
@@ -3934,6 +3978,37 @@ const Walker = struct {
             },
             else => return &.{},
         }
+    }
+
+    /// §26.2: `e?` on a `Result` returns `Err x` from the definition it
+    /// targets — the frame being walked, since a `?` under a lambda is
+    /// refused (`language.md` §6.6) — so `e`'s `Err` payload is part of that
+    /// frame's result, exactly. A `Maybe`'s `Nothing` holds nothing.
+    fn earlyReturn(w: *Walker, operand: Inst.Index, s: AV) Allocator.Error!void {
+        const v = w.instType(operand) orelse return;
+        const re = try w.o.resultErr();
+        if (re.ty == .none) return;
+        const app = switch (w.store.resolvedContent(v)) {
+            .structure => |st| switch (st) {
+                .app => |x| x,
+                else => return,
+            },
+            else => return,
+        };
+        if (app.type != re.ty) return;
+        const args = w.store.vars(app.args);
+        if (args.len == 0) return;
+        const step: Step = .{ .kind = .ctor, .arg = re.ctor *% 64 };
+        const payload = try w.proj(s, step, args[0]);
+        if (payload.len == 0) return;
+        try w.frames.items[w.frame].early.appendSlice(w.a, try w.shift(payload, step));
+    }
+
+    /// The frame's result: its body's value and what its `?`s return (§26.2).
+    fn withEarly(w: *Walker, frame: u32, result: AV) Allocator.Error!AV {
+        const early = w.frames.items[frame].early.items;
+        if (early.len == 0) return result;
+        return w.unionOf(&.{ result, early });
     }
 
     /// `tracked`, remembered per type variable (§18.11).
@@ -4073,7 +4148,7 @@ const Walker = struct {
         const escapes_from = w.escaped.items.len;
         const demands_from = w.demands.items.len;
         for (params) |p| try w.bindParam(p, 1);
-        const result = try w.eval(body);
+        const result = try w.withEarly(id, try w.eval(body));
         try w.consume(&.{body}, w.token(body));
         try w.sight(result, .{ .pending = "it is returned by a function value" }, w.token(body));
         // Captures of locals of this frame only: an inner capture of an
