@@ -1,0 +1,4 @@
+{
+  "name": "bike-wars",
+  "build": { "platform": "browser-tea", "paths": ["src"], "out": "out" }
+}

@@ -1,0 +1,50 @@
+-- Bike Wars, by Ossi Hanhinen (https://github.com/ohanhi/bike-wars, commit
+-- ed263780fb6262d652e70f72a937477aaa0f55f3), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Constants exposing (colors)
+import Html exposing (Html)
+import Math.Vector2 as Vec2 exposing (Vec2, getX, getY)
+import Types exposing (Explosion, Obstacle)
+
+
+pub forBike : Vec2 → Explosion
+forBike center = { center = center, size = 30.0, ticksLeft = 15 }
+
+
+pub toObstacle : Explosion → Obstacle
+toObstacle explosion =
+    { x, y } = Vec2.toRecord explosion.center
+    r = explosion.size / 2
+    { w = x - r
+    , e = x + r
+    , n = y - r
+    , s = y + r
+    }
+
+
+pub view : List Explosion → List (Html msg)
+view explosions = List.map (List.reverse explosions) explosionForm
+
+
+pub update : List Explosion → List Explosion
+update explosions = List.filter (List.map explosions updateOne) λexplosion → 0 ≠ explosion.ticksLeft
+
+
+pub updateOne : Explosion → Explosion
+updateOne explosion = { explosion | ticksLeft = explosion.ticksLeft - 1 }
+
+
+pub explosionForm : Explosion → Html msg
+explosionForm { size, ticksLeft, center } =
+    strokeW = toFloat (Int.mod ticksLeft 10) * 0.05 * size
+    <rect
+        stroke-width={String.fromFloat strokeW}
+        stroke={colors.red}
+        fill={colors.yellow}
+        height={String.fromFloat (size - strokeW)}
+        width={String.fromFloat (size - strokeW)}
+        x={String.fromFloat (getX center - size / 2 + strokeW / 2)}
+        y={String.fromFloat (getY center - size / 2 + strokeW / 2)}
+    />

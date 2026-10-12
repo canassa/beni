@@ -1,0 +1,235 @@
+-- Bike Wars, by Ossi Hanhinen (https://github.com/ohanhi/bike-wars, commit
+-- ed263780fb6262d652e70f72a937477aaa0f55f3), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Bike
+import Browser
+import Browser.Events
+import Cmd exposing (Cmd)
+import Constants exposing (bikeSize, colors, h, w)
+import Explosion
+import Html exposing (Html)
+import Keyboard exposing (ArrowLeft, ArrowRight, ArrowUp, Character, Key, Spacebar)
+import Keyboard.Arrows
+import Math.Vector2 exposing (vec2)
+import Sub exposing (Sub)
+import Types exposing (Bike, East, Explosion, West)
+import Weapon
+
+
+pub type Player
+    = PlayerRed
+    | PlayerGreen
+
+
+pub type EndState
+    = GameWon Player
+    | Draw
+
+
+pub type GameStatus
+    = NewGame
+    | Running
+    | GameOver EndState
+
+
+pub type alias Bikes =
+    red : Bike
+    green : Bike
+
+
+pub type alias Model =
+    bikes : Bikes
+    status : GameStatus
+    explosions : List Explosion
+
+
+pub type Msg
+    = TimeDiff Float
+    | KeyDown (Maybe Key)
+
+
+pub initBikes : Bikes
+initBikes =
+    { red =
+        Bike.initBike
+            { left = Character "a", right = Character "d", up = Character "w" }
+            colors.red
+            (vec2 20 (h / 5 * 2))
+            East
+            Weapon.initMegaBlaster
+    , green =
+        Bike.initBike { left = ArrowLeft, right = ArrowRight, up = ArrowUp }
+            colors.green
+            (vec2 (w - 20) (h / 5 * 3))
+            West
+            Weapon.initAssaultBazooka
+    }
+
+
+pub initModel : Model
+initModel =
+    { bikes = initBikes
+    , status = NewGame
+    , explosions = []
+    }
+
+
+pub init : Model × Cmd Msg
+init =
+    ( initModel
+    , Cmd.none
+    )
+
+
+pub subscriptions : Model → Sub Msg
+subscriptions model =
+    needsToAnimate =
+        case ( model.status, model.explosions == [] ) of
+            ( Running, _ ) →
+                True
+
+            ( GameOver _, False ) →
+                True
+
+            _ →
+                False
+    ticks =
+        if needsToAnimate then
+            [ Browser.Events.onAnimationFrameDelta TimeDiff ]
+        else
+            []
+    keyParser =
+        Keyboard.oneOf
+            [ Keyboard.Arrows.arrowKey
+            , Keyboard.whitespaceKey
+            ]
+            _
+    Sub.batch ([ Keyboard.downs λrawKey → KeyDown (keyParser rawKey) ] ++ ticks)
+
+
+pub update : Msg, Model → Model × Cmd Msg
+update msg model =
+    ( pureUpdate msg model
+    , Cmd.none
+    )
+
+
+pub pureUpdate : Msg, Model → Model
+pureUpdate msg model =
+    case msg of
+        TimeDiff diff →
+            stepGame model diff
+
+        KeyDown maybeKey →
+            maybeKey
+                ▷ Maybe.map (handleInput model _)
+                ▷ Maybe.withDefault model
+
+
+handleInput : Model, Key → Model
+handleInput model key =
+    case model.status of
+        Running →
+            { red, green } = model.bikes
+            ( redUpdated, redShot ) = Bike.shoot key { current = red, other = green }
+            ( greenUpdated, greenShot ) = Bike.shoot key { current = green, other = red }
+            shots =
+                [ redShot, greenShot ]
+                    ▷ List.filterMap identity
+            { model
+                | bikes = { red = Bike.turn key redUpdated, green = Bike.turn key greenUpdated }
+                , explosions = shots ++ model.explosions
+            }
+
+        _ →
+            if key == Spacebar then
+                { initModel | status = Running }
+            else
+                model
+
+
+pub stepGame : Model, Float → Model
+stepGame ({ bikes } as model) diff =
+    explosions =
+        model.explosions
+            ▷ Explosion.update
+    ( ( nextRed, expRed ), ( nextGreen, expGreen ) ) =
+        ( Bike.update diff explosions { current = bikes.red, other = bikes.green }
+        , Bike.update diff explosions { current = bikes.green, other = bikes.red }
+        )
+    nextExplosions = List.append (List.filterMap [ expRed, expGreen ] identity) explosions
+    allCollided = nextRed.collided && nextGreen.collided
+    status =
+        if allCollided then
+            GameOver Draw
+        else if nextRed.collided then
+            GameOver (GameWon PlayerGreen)
+        else if nextGreen.collided then
+            GameOver (GameWon PlayerRed)
+        else
+            Running
+    { model
+        | bikes = { red = nextRed, green = nextGreen }
+        , status = status
+        , explosions = nextExplosions
+    }
+
+
+pub view : Model → Html never
+view model =
+    <div style={[ ( "background-color", colors.grey ) ]}>
+        <svg
+            viewBox={[ 0, 0, w, h ] ▷ List.map String.fromFloat ▷ String.join " "}
+            style={[ ( "height", "100vh" ), ( "display", "block" ), ( "margin", "0 auto" ) ]}
+        >
+            {svgView model}
+        </svg>
+    </div>
+
+
+pub svgView : Model → List (Html never)
+svgView model =
+    translucentRect =
+        <rect width={String.fromFloat w} height={String.fromFloat h} fill="rgba(0,0,0,0.5)" />
+    makeOverlay string xOffset =
+        [ translucentRect
+        , <text
+              x={String.fromFloat (w / 2)}
+              y={String.fromFloat (h / 2)}
+              font-size="20"
+              font-family="monospace"
+              fill={colors.white}
+              transform={"translate(" ++ String.fromFloat xOffset ++ ", -10)"}
+          >
+              {Html.text string}
+          </text>
+        ]
+    endOverlay state =
+        case state of
+            GameWon PlayerRed →
+                makeOverlay "Red wins!" (-50)
+
+            GameWon PlayerGreen →
+                makeOverlay "Green wins!" (-70)
+
+            Draw →
+                makeOverlay "It's a draw." (-70)
+    overlay status =
+        case status of
+            Running →
+                []
+
+            NewGame →
+                makeOverlay "[SPACE], [⇦][⇨]" (-90)
+
+            GameOver endState →
+                endOverlay endState
+    [ <rect width={String.fromFloat w} height={String.fromFloat h} stroke={colors.grey} stroke-width={String.fromFloat bikeSize} fill={colors.blue} />
+    , <text x="10" y="30" font-size="20" font-family="monospace" fill={colors.white}>Bike Wars</text>
+    ]
+        ++ Bike.view model.bikes.red
+        ++ Bike.view model.bikes.green
+        ++ Explosion.view model.explosions
+        ++ overlay model.status

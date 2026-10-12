@@ -1,0 +1,48 @@
+--! The part of ohanhi/keyboard 1.0.0's `Keyboard.Arrows` that bike-wars
+--! uses, ported: `arrowKey`. Copyright (c) 2016, Ossi Hanhinen;
+--! BSD-3-Clause, `../../licenses/ohanhi-keyboard.txt`.
+
+import Keyboard exposing (Key, Character, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, KeyParser, RawKey)
+
+
+--| A key parser for just the Arrow keys and W, A, S, D.
+--|
+--| [ArrowLeft] -> `Just ArrowLeft`
+--|
+--| [A] -> `Character "a"`
+--|
+--| [B] -> `Nothing`
+pub arrowKey : KeyParser
+arrowKey rawKey =
+    case Keyboard.rawValue rawKey of
+        -- Navigation
+        "ArrowDown" →
+            Just ArrowDown
+
+        "ArrowLeft" →
+            Just ArrowLeft
+
+        "ArrowRight" →
+            Just ArrowRight
+
+        "ArrowUp" →
+            Just ArrowUp
+
+        "Down" →
+            Just ArrowDown
+
+        "Left" →
+            Just ArrowLeft
+
+        "Right" →
+            Just ArrowRight
+
+        "Up" →
+            Just ArrowUp
+
+        other →
+            lower = String.toLower other
+            if lower == "w" || lower == "a" || lower == "s" || lower == "d" then
+                Just (Character other)
+            else
+                Nothing

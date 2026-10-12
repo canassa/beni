@@ -1,0 +1,13 @@
+--! The two functions of elm/core 1.0.0's `Tuple` that bike-wars calls,
+--! ported: beni's core has no `Tuple` module (`docs/design/language.md`
+--! §0, a tuple's parts are `t.0` and `t.1`). Copyright (c) 2014-present,
+--! Evan Czaplicki; BSD-3-Clause, `../licenses/elm-core.txt`.
+
+--| Transform the first value in a tuple.
+pub mapFirst : (a → x), a × b → x × b
+mapFirst func ( x, y ) = ( func x, y )
+
+
+--| Transform the second value in a tuple.
+pub mapSecond : (b → y), a × b → a × y
+mapSecond func ( x, y ) = ( x, func y )

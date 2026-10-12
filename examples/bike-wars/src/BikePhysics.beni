@@ -1,0 +1,80 @@
+-- Bike Wars, by Ossi Hanhinen (https://github.com/ohanhi/bike-wars, commit
+-- ed263780fb6262d652e70f72a937477aaa0f55f3), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Constants exposing (speedC)
+import Direction exposing (turnLeft, turnRight)
+import Helpers exposing (horizontalOrthogonal, onlyHorizontal, onlyVertical, toLine, trailToLines, tryCollision, tryObstacleCollision, verticalOrthogonal)
+import Keyboard exposing (Key)
+import Math.Vector2 as Vec2 exposing (Vec2, vec2)
+import Types exposing (Controls, Direction, East, Horizontal, North, Obstacle, South, Trail, Vertical, West)
+
+
+pub computePosition : Direction, Vec2, Float → Vec2
+computePosition direction position diff =
+    c = speedC * diff
+    change =
+        case direction of
+            North →
+                vec2 0 (-c)
+
+            South →
+                vec2 0 c
+
+            East →
+                vec2 c 0
+
+            West →
+                vec2 (-c) 0
+    Vec2.add position change
+
+
+pub computeDirection : Controls, Direction, Key → Direction
+computeDirection controls direction key =
+    if key == controls.left then
+        turnLeft direction
+    else if key == controls.right then
+        turnRight direction
+    else
+        direction
+
+
+--| This function should find any sort of collision with the current walls or explosions.
+pub collision : { position : Vec2, nextPosition : Vec2 }, Trail, List Obstacle → Maybe Vec2
+collision { position, nextPosition } trail obstacles =
+    lines = trailToLines trail
+    moveLine = toLine position nextPosition
+    try : Maybe Vec2, Maybe Vec2 → Maybe Vec2
+    try maybeOne maybeTwo =
+        case maybeOne of
+            Just collision_ →
+                Just collision_
+
+            Nothing →
+                maybeTwo
+    case moveLine of
+        Just (Horizontal points) →
+            try
+                (obstacles
+                    ▷ List.filterMap (tryObstacleCollision points _)
+                    ▷ List.head
+                )
+                (tryCollision
+                    (horizontalOrthogonal points _)
+                    (lines ▷ List.filterMap onlyVertical)
+                )
+
+        Just (Vertical points) →
+            try
+                (obstacles
+                    ▷ List.filterMap (tryObstacleCollision points _)
+                    ▷ List.head
+                )
+                (tryCollision
+                    (verticalOrthogonal points _)
+                    (lines ▷ List.filterMap onlyHorizontal)
+                )
+
+        Nothing →
+            Nothing

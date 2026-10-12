@@ -1,0 +1,180 @@
+--! The part of ohanhi/keyboard 1.0.0's `Keyboard` that bike-wars uses,
+--! ported: `RawKey`, `KeyParser`, `rawValue`, `downs`, `oneOf`,
+--! `whitespaceKey` and the `Key` type, every constructor kept.
+--! Copyright (c) 2016, Ossi Hanhinen; BSD-3-Clause,
+--! `../licenses/ohanhi-keyboard.txt`.
+--!
+--! `downs` reads the event's `key` as the package's `Json.field "key"`
+--! decoder did, through `Browser.Events.onKeyDown` and `Html.key`.
+
+import Browser.Events
+import Html
+import Sub exposing (Sub)
+
+
+--| An unprocessed key value.
+--|
+--| Use a `KeyParser` to turn it into something useful.
+pub type RawKey
+    = RawKey String
+
+
+--| A key parser can turn `RawKey`s into meaningful `Key`s for your program.
+pub type alias KeyParser =
+    RawKey → Maybe Key
+
+
+--| Get the original string value of the `RawKey`.
+pub rawValue : RawKey → String
+rawValue (RawKey key) = key
+
+
+--| Subscription for key down events.
+--|
+--| **Note** When the user presses and holds a key, there may or may not be
+--| many of these messages before the corresponding key up message.
+pub downs : (RawKey → msg) → Sub msg
+downs toMsg = Browser.Events.onKeyDown λevent → toMsg (RawKey (Html.key event))
+
+
+--| Turn any `RawKey` into a `Key` using the processing functions
+--| (`modifierKey`, `whitespaceKey`, etc.) provided. If the key doesn't match
+--| any of the categories, `Nothing` is returned.
+pub oneOf : List KeyParser, RawKey → Maybe Key
+oneOf fns key =
+    case fns of
+        [] →
+            Nothing
+
+        [ fn, …rest ] →
+            case fn key of
+                Just a →
+                    Just a
+
+                Nothing →
+                    oneOf rest key
+
+
+--| Converts a `RawKey` if it is one of the whitespace keys.
+--|
+--| [Tab] -> `Just Tab`
+--|
+--| [Alt] -> `Nothing`
+pub whitespaceKey : KeyParser
+whitespaceKey (RawKey value) =
+    case value of
+        -- Whitespace
+        "Enter" →
+            Just Enter
+
+        "Tab" →
+            Just Tab
+
+        "Spacebar" →
+            Just Spacebar
+
+        " " →
+            Just Spacebar
+
+        _ →
+            Nothing
+
+
+--| These are all the keys that have names in `Keyboard`.
+pub type Key
+    = Character String
+    | Alt
+    | AltGraph
+    | CapsLock
+    | Control
+    | Fn
+    | FnLock
+    | Hyper
+    | Meta
+    | NumLock
+    | ScrollLock
+    | Shift
+    | Super
+    | Symbol
+    | SymbolLock
+    | Enter
+    | Tab
+    | Spacebar
+    | ArrowDown
+    | ArrowLeft
+    | ArrowRight
+    | ArrowUp
+    | End
+    | Home
+    | PageDown
+    | PageUp
+    | Backspace
+    | Clear
+    | Copy
+    | CrSel
+    | Cut
+    | Delete
+    | EraseEof
+    | ExSel
+    | Insert
+    | Paste
+    | Redo
+    | Undo
+    | F1
+    | F2
+    | F3
+    | F4
+    | F5
+    | F6
+    | F7
+    | F8
+    | F9
+    | F10
+    | F11
+    | F12
+    | F13
+    | F14
+    | F15
+    | F16
+    | F17
+    | F18
+    | F19
+    | F20
+    | Again
+    | Attn
+    | Cancel
+    | ContextMenu
+    | Escape
+    | Execute
+    | Find
+    | Finish
+    | Help
+    | Pause
+    | Play
+    | Props
+    | Select
+    | ZoomIn
+    | ZoomOut
+    | AppSwitch
+    | Call
+    | Camera
+    | CameraFocus
+    | EndCall
+    | GoBack
+    | GoHome
+    | HeadsetHook
+    | LastNumberRedial
+    | Notification
+    | MannerMode
+    | VoiceDial
+    | ChannelDown
+    | ChannelUp
+    | MediaFastForward
+    | MediaPause
+    | MediaPlay
+    | MediaPlayPause
+    | MediaRecord
+    | MediaRewind
+    | MediaStop
+    | MediaTrackNext
+    | MediaTrackPrevious

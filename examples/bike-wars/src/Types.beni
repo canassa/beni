@@ -1,0 +1,58 @@
+-- Bike Wars, by Ossi Hanhinen (https://github.com/ohanhi/bike-wars, commit
+-- ed263780fb6262d652e70f72a937477aaa0f55f3), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Keyboard exposing (Key)
+import Math.Vector2 exposing (Vec2)
+
+
+pub type Direction
+    = North
+    | East
+    | South
+    | West
+
+
+pub type Line
+    = Horizontal (Vec2 × Vec2)
+    | Vertical (Vec2 × Vec2)
+
+
+pub type alias Trail =
+    List (List Vec2)
+
+
+pub type alias Controls =
+    left : Key
+    right : Key
+    up : Key
+
+
+pub type alias Bike =
+    position : Vec2
+    trail : Trail
+    collided : Bool
+    direction : Direction
+    color : String
+    controls : Controls
+    weapon : Weapon
+
+
+pub type alias Explosion =
+    center : Vec2
+    size : Float
+    ticksLeft : Int
+
+
+pub type alias Obstacle =
+    n : Float
+    e : Float
+    s : Float
+    w : Float
+
+
+pub type Weapon
+    = MegaBlaster { used : Bool }
+    | AssaultBazooka { shotsLeft : Int }
+    | Afterburner { ticksLeft : Int }
