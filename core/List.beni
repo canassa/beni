@@ -501,6 +501,17 @@ offset xs = Js.pure λ⊤ →
 foreign pure at : List a, Int → a
 
 
+--| The traversal primitive (`ownership-checker.md` §18.5): element `i` of an
+--| array `base` returned, read as `at` reads it and written in place the
+--| same way, `a[i]`. What it adds is its ownership row, which is asserted:
+--| the element it hands out is separate from every other position of the
+--| array, so a loop may hand it to a callback that edits it in place when
+--| the list is unique, exclusive and dead after the loop. The obligation it
+--| carries, which every loop below meets: the body that calls it reads `a`
+--| only through it, once per index, at an index that moves one way.
+foreign pure traverseAt : List a, Int → a
+
+
 --| A builder with room for `n` elements: a loop that knows how many it will
 --| write fills them by index with `put`, which builds in a third of the
 --| time pushing takes at 100 000 elements, where an array grown by `push`
@@ -1018,7 +1029,7 @@ foldl xs acc func = foldlFrom (base xs) (offset xs) (offset xs + length xs) acc 
 foldlFrom : List a, Int, Int, b, (a, b → b) → b
 foldlFrom a i stop acc func =
     if i < stop then
-        foldlFrom a (i + 1) stop (func (at a i) acc) func
+        foldlFrom a (i + 1) stop (func (traverseAt a i) acc) func
     else
         acc
 
@@ -1041,7 +1052,7 @@ foldrFrom a o i acc func =
     if i < o then
         acc
     else
-        foldrFrom a o (i - 1) (func (at a i) acc) func
+        foldrFrom a o (i - 1) (func (traverseAt a i) acc) func
 
 
 --| Create a list with only one element.
@@ -1112,19 +1123,26 @@ initializeHelp i n func b =
 --| comparison per element, and a view showing the list skips it. O(n), and
 --| the result reads at O(1).
 pub map : List a, (a → b) → List b
-map xs func = mapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (length xs)) True
+map xs func =
+    a = base xs
+    r = mapHelp a (offset xs) 0 (length xs) func (builder (length xs)) True
+    kept (identical r a) xs r
 
 
 --| Every loop below reads element `i` of its list as `at a (o + i)`, `a`
---| and `o` being the list's `base` and `offset`.
-mapHelp : List a, List a, Int, Int, Int, (a → b), Builder b, Bool → List b
-mapHelp xs a o i n func b same =
+--| and `o` being the list's `base` and `offset`; a loop that hands the
+--| element to a callback reads it with `traverseAt`. When every result was
+--| the element it was given, `mapHelp` answers its array `a` itself, which
+--| is how `map` knows to answer `xs` (`ownership-checker.md` §18.5, the
+--| exempt comparison).
+mapHelp : List a, Int, Int, Int, (a → b), Builder b, Bool → List b
+mapHelp a o i n func b same =
     if i < n then
-        x = at a (o + i)
+        x = traverseAt a (o + i)
         y = func x
-        mapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
+        mapHelp a o (i + 1) n func (put b i y) (same && identical x y)
     else
-        kept same xs (done b n)
+        kept same a (done b n)
 
 
 --| Same as `map` but the function is also given the index of each element,
@@ -1134,17 +1152,19 @@ mapHelp xs a o i n func b same =
 --|     indexedMap [ "a", "b" ] (λi x → ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
 pub indexedMap : List a, (Int, a → b) → List b
 indexedMap xs func =
-    indexedMapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (length xs)) True
+    a = base xs
+    r = indexedMapHelp a (offset xs) 0 (length xs) func (builder (length xs)) True
+    kept (identical r a) xs r
 
 
-indexedMapHelp : List a, List a, Int, Int, Int, (Int, a → b), Builder b, Bool → List b
-indexedMapHelp xs a o i n func b same =
+indexedMapHelp : List a, Int, Int, Int, (Int, a → b), Builder b, Bool → List b
+indexedMapHelp a o i n func b same =
     if i < n then
-        x = at a (o + i)
+        x = traverseAt a (o + i)
         y = func i x
-        indexedMapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
+        indexedMapHelp a o (i + 1) n func (put b i y) (same && identical x y)
     else
-        kept same xs (done b n)
+        kept same a (done b n)
 
 
 --| Keep the elements that pass the test.
@@ -1198,7 +1218,7 @@ filterMap xs func = filterMapHelp (base xs) (offset xs) 0 (length xs) func (buil
 filterMapHelp : List a, Int, Int, Int, (a → Maybe b), Builder b, Int → List b
 filterMapHelp a o i n func b j =
     if i < n then
-        case func (at a (o + i)) of
+        case func (traverseAt a (o + i)) of
             Just y →
                 filterMapHelp a o (i + 1) n func (put b j y) (j + 1)
 
@@ -1783,7 +1803,16 @@ last xs = get xs (length xs - 1)
 --|
 --| The cost of `set`, and its identities.
 pub update : List a, Int, (a → a) → List a
-update xs i func =
+update xs i func = focus xs i func
+
+
+--| The focus primitive (`ownership-checker.md` §18.5): element `i` taken out
+--| of the list, handed to `func`, and the result put back where it was. Its
+--| ownership row is asserted: the element is handed out while no other
+--| position holds it, so `func` may edit it in place when the list is
+--| unique, exclusive and dead after the call. `update` is this.
+focus : List a, Int, (a → a) → List a
+focus xs i func =
     if 0 ≤ i && i < length xs then
         set xs i (func (unsafeGet xs i))
     else

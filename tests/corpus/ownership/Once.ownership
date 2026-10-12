@@ -1,0 +1,15 @@
+module Once
+  12:18 construction xs: accepted once
+  18:18 construction xs: rejected once: it may run more than once: add holds it and is read at 19:40
+  24:18 construction xs: rejected later-use: xs is read again at 25:5
+  29:36 construction xs: accepted once
+  33:35 construction xs: rejected once: it is handed to List.map, which may call it more than once
+  summary once: π1 AW; res π1
+  summary twice: π1 W
+  summary readAfter: π1 RW
+  summary viaMaybe: π1 RAW; res #Just.0 π1
+  summary viaMap: π1 RAW, π2 R, π2[*] RA; res [*] ~fresh2{lost} ~π1 ~π2[*], ~fresh1{lost}
+  demands 5: accepted 2 (fresh 0, call 0, param 0, callback-param 0, once 2; assumed 0), pending 0, rejected 3
+total 5: accepted 2 (fresh 0, call 0, param 0, callback-param 0, once 2; assumed 0), pending 0, rejected 3
+cause later-use 1
+cause once 2

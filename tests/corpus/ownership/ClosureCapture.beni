@@ -3,11 +3,10 @@
 -- closure is a live holder: rejected, `captured`, as the full checker does.
 -- Captures are per path: `label` reads only `model.name`, so extending
 -- `model.rows` while `label` lives is accepted (thesis §4.3's example).
--- `pusher` writes a list it captured. The full checker makes such a closure
--- *once* and accepts it where it is called at most once (thesis §3.6,
--- *Affinity*); neither slice 1 nor slice 2 builds once closures, so the
--- checker cannot tell how often the closure runs and rejects it as a limit,
--- `captured-edit` (`ownership-checker.md` §8.3, §16.1).
+-- `pusher` writes a list it captured, so the closure is *once* (thesis §3.6,
+-- *Affinity*; `ownership-checker.md` §18.8) and is accepted only where it is
+-- called at most once; it is returned, out of the walk's sight, so its write
+-- is `pending`. `Once.beni` has the forms the walk does see.
 type alias Model =
     rows : List Int
     name : String

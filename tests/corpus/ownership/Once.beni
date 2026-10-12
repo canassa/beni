@@ -1,0 +1,33 @@
+-- ownership: once closures (`ownership-checker.md` §18.8; thesis §3.6,
+-- *Affinity*). A lambda that extends a list it captured may run once: its
+-- creation demands the list, and each call of it demands the closure. So
+-- `once` (created, called once) is accepted, `once`; `twice` calls it
+-- twice, rejected `once`'s Dead at the first call; `readAfter` reads the
+-- captured list after the lambda is made, rejected at its creation;
+-- `viaMaybe` hands it to `Maybe.map`, which calls it at most once:
+-- accepted; `viaMap` hands it to `List.map`, which may call it many times:
+-- rejected `once`.
+pub once : List Int → List Int
+once xs =
+    add = λx → [ …xs, x ]
+    add 1
+
+
+pub twice : List Int → Int
+twice xs =
+    add = λx → [ …xs, x ]
+    List.length (add 1) + List.length (add 2)
+
+
+pub readAfter : List Int → Int
+readAfter xs =
+    add = λx → [ …xs, x ]
+    List.length xs + List.length (add 1)
+
+
+pub viaMaybe : List Int, Maybe Int → Maybe (List Int)
+viaMaybe xs m = Maybe.map m λx → [ …xs, x ]
+
+
+pub viaMap : List Int, List Int → List (List Int)
+viaMap xs ys = List.map ys λy → [ …xs, y ]

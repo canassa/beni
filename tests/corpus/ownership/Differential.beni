@@ -11,12 +11,14 @@
 -- the kept version rejected, the copied one accepted (Lean: the same).
 -- T52: the retained spine rejected, the copy accepted (Lean: the same).
 --
--- Disagreements, all of one kind: T40, T42 (distinct) and T57 (distinct)
--- edit an element in place through `List.update` or `List.map`, which the
--- Lean model accepts because it builds exclusive contents and its `update`
--- and `map` hand out an owned element. Slice 2 infers both from their
--- bodies, which hand the element out while the list waits, so the supply
--- is borrowed and the edit is rejected, `supply` (§16.8's finding).
+-- T40, T42 and T57 edit an element in place through `List.update` or
+-- `List.map`, whose summaries are inferred over the focus and traversal
+-- primitives (§18.5): the element is handed out owned, and the edit relies
+-- on the list being exclusive, which each function states as `xreq` and its
+-- callers discharge. As in the Lean model, the distinct forms are accepted
+-- (`t40Distinct`, `t42Distinct`, `t57Distinct`) and the repeated ones
+-- rejected, `exclusive` (`t42Repeated`, `t57Repeated`, `t57RepeatedRows`;
+-- T10 is the record-shape one). No program here disagrees with the model.
 type alias Row =
     id : Int
     tags : List Int
@@ -74,12 +76,26 @@ pub t40 : List Row, Int, Int → List Row
 t40 rows i t = List.update rows i λr → { r | tags = [ …r.tags, t ] }
 
 
+pub t40Distinct : ⊤ → Int
+t40Distinct ⊤ = List.length (t40 [ { id = 1, tags = [ 1 ] }, { id = 2, tags = [ 2 ] } ] 0 3)
+
+
 pub t42 : List Row, Int, Int → List Row
 t42 cards id t = List.map cards λc →
     if c.id == id then
         { c | tags = [ …c.tags, t ] }
     else
         c
+
+
+pub t42Distinct : ⊤ → Int
+t42Distinct ⊤ = List.length (t42 [ { id = 1, tags = [ 1 ] }, { id = 0, tags = [ 2 ] } ] 1 3)
+
+
+pub t42Repeated : ⊤ → Int
+t42Repeated ⊤ =
+    tags = [ 1 ]
+    List.length (t42 [ { id = 1, tags = tags }, { id = 0, tags = tags } ] 1 3)
 
 
 pub t52 : List Int, Int → Int
@@ -104,3 +120,19 @@ t57 rows i = List.update rows i λrow →
 
         [ r, …rest ] →
             [ [ …r, 0 ], …rest ]
+
+
+pub t57Distinct : ⊤ → Int
+t57Distinct ⊤ = List.length (t57 [ [ [ 1 ], [ 2 ] ] ] 0)
+
+
+pub t57Repeated : ⊤ → Int
+t57Repeated ⊤ =
+    r = [ 1 ]
+    List.length (t57 [ [ r, r ] ] 0)
+
+
+pub t57RepeatedRows : ⊤ → Int
+t57RepeatedRows ⊤ =
+    row = [ [ 1 ], [ 2 ] ]
+    List.length (t57 [ row, row ] 0)

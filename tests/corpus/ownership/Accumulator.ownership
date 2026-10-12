@@ -9,5 +9,5 @@ module Accumulator
   summary countdown: res fresh1
   summary squares: π1 R; res ~fresh1
   summary doubled: res fresh1
-  demands 6: accepted 6 (fresh 3, call 0, param 2, callback-param 1; assumed 0), pending 0, rejected 0
-total 6: accepted 6 (fresh 3, call 0, param 2, callback-param 1; assumed 0), pending 0, rejected 0
+  demands 6: accepted 6 (fresh 3, call 0, param 2, callback-param 1, once 0; assumed 0), pending 0, rejected 0
+total 6: accepted 6 (fresh 3, call 0, param 2, callback-param 1, once 0; assumed 0), pending 0, rejected 0

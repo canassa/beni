@@ -1,0 +1,29 @@
+-- ownership: a function parameter called inside a lambda
+-- (`ownership-checker.md` §18.9). `sumBy` hands `List.foldl` a lambda that
+-- calls `sumBy`'s own `step`: the call is made wherever the lambda runs, so
+-- `step` is supplied what `List.foldl` supplies the lambda — the accumulator,
+-- owned — and a caller's `step` that extends its accumulator is accepted.
+-- `Set.foldl` is written the same way over `Dict.foldl` (slice 2 left its
+-- callbacks `pending`). `stored` keeps the lambda in a record, out of
+-- sight: its caller's writing `step` is `pending`.
+import Set
+
+
+pub sumBy : List Int, List Int, (Int, List Int → List Int) → List Int
+sumBy xs start step = List.foldl xs start λx acc → step x acc
+
+
+pub collect : List Int → List Int
+collect xs = sumBy xs [] λx acc → [ …acc, x ]
+
+
+pub collectSet : List Int → List Int
+collectSet xs = Set.foldl (Set.fromList xs) [] λx acc → [ …acc, x ]
+
+
+pub stored : (Int, List Int → List Int) → { run : Int, List Int → List Int }
+stored step = { run = λx acc → step x acc }
+
+
+pub usesStored : ⊤ → { run : Int, List Int → List Int }
+usesStored ⊤ = stored λx acc → [ …acc, x ]

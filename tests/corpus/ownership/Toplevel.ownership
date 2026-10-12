@@ -9,10 +9,10 @@ module Toplevel
   summary addModel: res .todos shared(Toplevel.seed)
   summary init: res .todos fresh1
   summary addFresh: res .todos fresh1
-  summary reading: res [*] shared(Toplevel.seed)[*], fresh1
+  summary reading: res fresh1
   summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0#Node.1 ~π1#Dict.0#Node.1, #Dict.0#Node.2 ~fresh1 ~π1#Dict.0#Node.2, #Dict.0#Node.3 ~π1#Dict.0#Node.3 ~π1#Dict.0#Node.4, #Dict.0#Node.4 ~π1#Dict.0#Node.3 ~π1#Dict.0#Node.4
   summary fromEmpty: res #Dict.0#Node.2 ~fresh1
-  demands 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 3
-total 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0; assumed 0), pending 0, rejected 3
+  demands 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 3
+total 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 3
 cause top-level 2
 cause element 1

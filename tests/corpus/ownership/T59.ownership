@@ -1,12 +1,32 @@
 module T59
   17:15 List.update rows: accepted call
-  17:42 List.update pair: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
-  17:69 construction xs: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  17:15 List.update rows[*]: accepted call (<lambda> writes what List.update supplies it)
+  17:15 List.update rows[*][*]: accepted call (<lambda> writes what List.update supplies it)
+  17:42 List.update pair: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list
+  17:42 List.update pair[*]: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list
+  17:69 construction xs: accepted callback-param (List.update supplies it owned)
   24:15 List.update rows: accepted call
-  24:42 List.update pair: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
-  24:69 construction xs: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  24:15 List.update rows[*]: accepted call (<lambda> writes what List.update supplies it)
+  24:15 List.update rows[*][*]: accepted call (<lambda> writes what List.update supplies it)
+  24:42 List.update pair: accepted callback-param (List.update supplies it owned)
+  24:42 List.update pair[*]: accepted callback-param (List.update supplies it owned)
+  24:69 construction xs: accepted callback-param (List.update supplies it owned)
+  33:15 List.update rows: accepted call
+  33:15 List.update rows[*]: accepted call (<lambda> writes what List.update supplies it)
+  33:15 List.update rows[*][*]: accepted call (<lambda> writes what List.update supplies it)
+  33:42 List.update pair: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list
+  33:42 List.update pair[*]: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list
+  33:69 construction xs: accepted callback-param (List.update supplies it owned)
+  40:15 List.update rows: accepted call
+  40:15 List.update rows[*]: accepted call (<lambda> writes what List.update supplies it)
+  40:15 List.update rows[*][*]: accepted call (<lambda> writes what List.update supplies it)
+  40:42 List.update pair: accepted callback-param (List.update supplies it owned)
+  40:42 List.update pair[*]: accepted callback-param (List.update supplies it owned)
+  40:69 construction xs: accepted callback-param (List.update supplies it owned)
   summary t59: unused
   summary distinct: unused
-  demands 6: accepted 2 (fresh 0, call 2, param 0, callback-param 0; assumed 0), pending 0, rejected 4
-total 6: accepted 2 (fresh 0, call 2, param 0, callback-param 0; assumed 0), pending 0, rejected 4
-cause supply 4
+  summary mappedShared: unused
+  summary mapped: unused
+  demands 24: accepted 20 (fresh 0, call 12, param 0, callback-param 8, once 0; assumed 0), pending 0, rejected 4
+total 24: accepted 20 (fresh 0, call 12, param 0, callback-param 8, once 0; assumed 0), pending 0, rejected 4
+cause exclusive 4

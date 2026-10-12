@@ -4,6 +4,7 @@
 // is beni (research 50).
 export const length = (xs) => xs.length;
 export const at = (a, i) => a[i];
+export const traverseAt = (a, i) => a[i];
 export const put = (b, i, x) => {
   b[i] = x;
   return b;
