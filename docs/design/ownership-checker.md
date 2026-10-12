@@ -1998,6 +1998,8 @@ functions over `Js`" the same words. Its summary is its words, and its body is s
 lines (§24.5). *Decided 2026-10-12 (the manager):* this reading stands — thesis Change 5 lets "the core library
 and the platforms … assert a summary that a body cannot show" (its reasons A2, A6, A10), and the owner's 5(a) is
 "core and the platforms only", which is the package wall, not the `foreign` keyword (§24.11 item 3 answered).
+*Decided 2026-10-12 (the owner):* keep the words on the thirteen, with a change-detection guard: the code each
+worded declaration was justified by reading is pinned by a hash, and the build fails when it changes (§24.6).
 
 Refused, as `misplaced_ownership_word`, reported by lowering, and the word dropped (the declaration otherwise
 lowers as written):
@@ -2048,6 +2050,18 @@ fails unless every flip changes it — so the fixture's golden would fail were t
 words have no unsafer neighbour a verdict can see says `-` with the reason beside it: `unused` is the bottom of the
 order and `fresh exclusive` the top; `crossing` is the unsafe end already; a one-argument function's `borrowed` read
 happens at the call and is no later use, so `unused` is not observable there.
+
+*Amended 2026-10-12 (the owner's guard).* **The code a word was justified by is pinned.** `tests/corpus/ownership/word-bodies.txt`
+lists every worded declaration — the thirteen beni bodies over `Js` and the `foreign`s — with a hash of the code its
+words were read off: for a beni declaration its signature and definition as they stand in the `.beni` file, for a
+`foreign` its sibling's export (`export const name = …`, or the `const` an `export { x as name }` names, to its
+closing `;`), each folded to single spaces and hashed (Wyhash). `check_test.zig` fails when one changes, saying to
+read the code again, re-justify the words in §24.8 and update the pin; and fails when a worded declaration has no
+pin. *Why the source text and not the BIR*: the text is what the justification read, and nothing but an edit of
+that declaration moves it — not an edit elsewhere in the file, not a change to lowering or to the instruction set,
+which would move every BIR hash at once and train editors to update pins without reading; folding whitespace lets
+the formatter re-lay a body without a false alarm, while a changed comment inside it still alarms, on the safe
+side. A `crossing` type has no body and is not pinned.
 
 The tests pin that each row exists and that a verdict depends on it in both directions where one can; they do not
 prove it true. **A word on a
@@ -2183,3 +2197,4 @@ and `check_test.zig`'s four tests of `trusted-surface.txt` (§24.6).
    *Answered 2026-10-12 (the manager):* the words stay on all thirteen — thesis Change 5 lets the core library and
    the platforms assert a summary a body cannot show (A2, A6, A10), and 5(a) is "core and the platforms only"
    (§24.4). Item 1 goes to the owner (rule 10) and is not built.
+   *Decided 2026-10-12 (the owner):* the thirteen keep their words, guarded by the body hashes of §24.6.
