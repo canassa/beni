@@ -11,10 +11,12 @@ or the thesis.
 
 Current state ([RESULTS.md](RESULTS.md)): 76 fixed verdict fixtures, checked by
 both checkers; three 20 000-trial campaigns of generator v4 with no
-corrected-rule mismatch, 14 918 accepted programs, 9 892 of them with an
-in-place write; fourteen negative controls (two historical, seven from the
-review, five summary-row mutants), each caught by the generator alone on each
-of three seeds.
+corrected-rule mismatch, 14 777 accepted programs, 9 660 of them with an
+in-place write. Seventeen required negative controls (two historical, the
+review's seven, eight summary-row mutants) each have a fixed probe, and the
+generator alone catches each of them on each of three seeds (borrowed-supply
+only against the per-call checker). Two more are required through their probe
+only; three are known gaps (COVERAGE.md).
 
 ## Run
 
@@ -23,17 +25,19 @@ From the repository root:
 ```sh
 nix develop .#ownership
 cd proofs/ownership
-lake build                                   # executable and kernel-checked library
-lake exe ownership ci                        # fixtures, one campaign, every control
+lake build                                   # executable, kernel-checked library, axiom audit
+lake exe ownership ci                        # fixtures and probes, one campaign (≥ 30 % write), controls reported
+lake exe ownership ci --strict               # also require every generator catch
 lake exe ownership fixtures
 lake exe ownership oracle 20000 17           # one campaign (summary checker)
 lake exe ownership oracle 20000 17 --cross-check   # also run the per-call checker
 lake exe ownership oracle 20000 17 --reinfer       # the per-call checker alone
-lake exe ownership controls 20000 17         # every negative control
+lake exe ownership controls 20000 17         # every negative control, generator alone
+lake exe ownership verdict-diff 20000 17 --mutant=borrowed-supply   # verdicts a hole changes
 lake exe ownership oracle 20000 17 --mutant=supply-edge
 lake exe ownership summaries --fixture="T43" # print published summaries
 lake exe ownership reasons 20000 17 --family=general   # rejection reasons
-lake env lean Axioms.lean                    # axioms each theorem depends on
+lake env lean Axioms.lean                    # print the axiom audit again
 ```
 
 Counts and seeds are deterministic. `--generator-version=3` reproduces the v3
@@ -72,15 +76,18 @@ lists every theorem with its status and the thesis discrepancies found.
 ## Proof status
 
 Proved without `sorry`: the builder/close contracts against the executable
-primitives and the concrete heap lemmas (unchanged); the soundness of the
-checker's overlap and demand tests under a separating naming of origins; the
-abstract builder value describing the concrete allocation; the configuration
-invariant's base case; and the main theorem *from* the step lemma.
+primitives and the concrete heap lemmas (unchanged). Proved but **conditional
+on a naming** of origins that nothing yet constructs: the soundness of the
+checker's overlap and demand tests, and the abstract builder value describing
+the concrete allocation. Bookkeeping: the invariant's base case. The main
+theorem is proved only **conditionally** on the step lemma. All statements are
+about programs the corrected checker accepts (`check p = .ok _`).
 
 `sorry`: `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as repaired in
 round 5), `map_summary_sound`, `invariant_preserved` (the step case of the
 prefix induction). Lemma 6.7's clause 4 is not stated (the interpreters do not
-record callback invocations). No axiom is declared.
+record callback invocations). No axiom is declared; `lake build` fails if the
+set of `sorry`-dependent theorems changes (`Axioms.lean`).
 
 ## Limits
 

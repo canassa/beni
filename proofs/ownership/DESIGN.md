@@ -127,13 +127,19 @@ preceded it is frozen as `Reinfer.lean` (`--reinfer`, `--cross-check`).
 
 ## Negative controls
 
-`Config.mutant` names a deliberate hole; `ownership controls` runs one normal
-campaign (20000 trials) per hole and fails unless each finds an accepted
-disagreement that the unmutated checker rejects after shrinking. Seven are the
-review's missed mutants, five weaken a summary row. `borrowed-supply` is
-controlled against the per-call checker: under summaries its rule is subsumed
-(COVERAGE.md). `scripts/run-mutants.sh` re-applies source-level edits
-(`scripts/mutate.mjs`) and runs the unmodified generator on each build.
+`Config.mutant` names a deliberate hole: seven are the review's missed
+mutants, thirteen weaken a summary row. Each required one has a fixed probe in
+`Fixtures.lean` that disagrees under it and is rejected without it;
+`ownership ci` requires the probes and reports the generator's catches.
+`ownership controls` runs one normal campaign (20000 trials) per hole and
+fails unless each required hole is caught by the generator alone; holes whose
+generator catch is rare or absent (`callback-escapes`, `forward-guards`, and
+the three known gaps of COVERAGE.md) are reported, not required.
+`borrowed-supply` is reported under summaries (live but never seen to
+disagree; COVERAGE.md) and required against the per-call checker.
+`ownership verdict-diff --mutant=…` counts the verdicts a hole changes.
+`scripts/run-mutants.sh` re-applies source-level edits (`scripts/mutate.mjs`)
+and runs the unmodified generator on each build.
 
 ## Soundness statements
 

@@ -10,4 +10,15 @@ family=recursive-higher-order-limit depth=3..3 candidates=1665 distinct=6 typed=
 family=captures depth=5..5 candidates=1693 distinct=20 typed=1693 accepted=832 withWrites=0 rejected=861 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
 family=once-many-wrappers depth=6..9 candidates=1700 distinct=80 typed=1700 accepted=954 withWrites=103 rejected=746 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
 family=branch-traversal depth=5..5 candidates=1692 distinct=10 typed=1692 accepted=856 withWrites=499 rejected=836 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
-generator-version=3 seed=20261011 control=soundness candidates=20000 distinct=4789 typed=20000 accepted=6363 withWrites=4080 rejected=13637 limits=1665 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=15068 summaries-reused=280605 first-mismatch=none elapsed-ms=12132
+row-hits 409 W∈use(callback arg) yes
+row-hits 1254 callback arg∈res yes
+row-hits 2707 callback called through its class
+row-hits 103 calls of a once callback checked
+row-hits 409 edge W ⇒ owned supply checked
+row-hits 103 env∈res yes
+row-hits 1759 fresh∈res yes
+row-hits 346 summary reused after re-asking its guards
+row-hits 409 supply owned bit cleared at the caller
+row-hits 2707 supply resolved at a known callback
+row-hits 2707 xres yes
+generator-version=3 seed=20261011 control=soundness candidates=20000 distinct=4789 typed=20000 accepted=6363 withWrites=4080 rejected=13637 limits=1665 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=15068 summaries-reused=280605 first-mismatch=none elapsed-ms=7954

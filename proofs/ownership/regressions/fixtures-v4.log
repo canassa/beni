@@ -86,4 +86,9 @@ probe T59 map shared under mutant callback-xres: corrected=Except.error "exclusi
 probe callback writes a list read later under mutant supply-edge: corrected=Except.error "supply edge: a callback writes a supply that is not owned" disagrees=true
 probe fold reads its rows after the loop under mutant supply-recheck: corrected=Except.error "supply edge: a callback writes a supply that is not owned" disagrees=true
 probe once closure handed to map under mutant calls-edge: corrected=Except.error "calls edge: a once callback is called many times" disagrees=true
+probe callback edits inside its argument under mutant callback-writes: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=true
+probe wrapper returns its argument under mutant callback-aliases: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
+probe map over a captured list under mutant callback-env: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=true
+probe mapVia publishes a row, then the row is pushed under mutant callback-escapes: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=true
+probe mapVia forwards map's guards about its callback under mutant forward-guards: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=true
 fixtures=76 passed=true

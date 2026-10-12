@@ -549,7 +549,7 @@ def runWith (o : Options) : IO RunResult := do
       IO.println s!"row-hits {n} {row}"
   IO.println s!"{header} {counts.line} first-mismatch={found.map toString |>.getD "none"} elapsed-ms={elapsed}"
   if o.negative && found.isNone then
-    IO.println s!"NEGATIVE CONTROL FAILED: {o.label} found no generated accepted disagreement"
+    IO.println s!"no generated accepted disagreement under {o.label} (a failure unless the control is optional)"
     return { ok := false, counts, elapsed }
   pure { ok := counts.accepted > 0 && counts.typeErrors == 0 && counts.executionErrors == 0,
          counts, firstMismatch := found, elapsed }
@@ -593,11 +593,12 @@ def reasons (count seed : Nat) (family : String) (version := 4) : IO Unit := do
       | none => table ++ [(key, 1)]
   for (k, n) in table.mergeSort (fun a b => a.2 ≥ b.2) do IO.println s!"{n}\t{k}"
 
-/-- Every negative control must be caught by the generator alone within one
-    normal run's budget: each run stops at its first accepted disagreement.
-    Summary-row mutants exist only in the summary checker. `borrowed-supply`
-    is run against the per-call checker even here: under summaries its rule
-    is subsumed (COVERAGE.md, "Borrowed supply"), so no program can tell. -/
+/-- Every required negative control must be caught by the generator alone
+    within one normal run's budget: each run stops at its first accepted
+    disagreement. Summary-row mutants exist only in the summary checker.
+    `borrowed-supply` is reported under summaries (it changes verdicts but no
+    disagreement has been seen; COVERAGE.md argues none can) and required
+    against the per-call checker; generator-optional mutants are reported. -/
 def controls (count seed : Nat) (version := 4) (reinfer := false) : IO Bool := do
   let checkerName := if reinfer then "per-call" else "summaries"
   let named : List (String × Config) :=
