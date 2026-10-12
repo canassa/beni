@@ -1392,6 +1392,15 @@ Instantiation is §16.4 item 6's. update's `fresh_k` is the one cell `result(con
 fixpoint is over a finite set of cells; `esc_k` is that cell, escaped; `shared` and `⊤` are carried; a parameter
 cell's condition is lowered by its `xres` (§18.3). A fixpoint not reached in 8 rounds adds `⊤` (a backstop).
 
+*As built*: the rounds compute cells only, and the round that settles is taken once more with the conditions its
+instantiation lowers. The message carried round the loop is `msg` alone; the cells a view puts in messages
+(§20.5) are read once, from the settled model, because every demand they could reach is the payload rule's
+already — a model path where an arm stored a message holds `msg`, and a model cell a view message holds is
+rejected where it is written. Carrying them round the loop doubled Conduit's model at entry for no verdict.
+Two bounds keep a wide model cheap, neither of which accepts anything: a value of more than 256 entries is
+projected through an index by its first step, and one of more than 256 cells has the pessimistic deep
+condition (`lost`) rather than a pair-by-pair one.
+
 Then, at the call's point: **(a)** every cell update's summary escapes on π₂, its result's command half holds,
 `init`'s command half holds, `subscriptions`' result holds, and `view`'s or `subscriptions`' summary escapes on
 their model joins Esc; **(b)** the demands of §20.6, after (a), so that an escape at any dispatch is seen.
