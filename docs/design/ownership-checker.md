@@ -2037,21 +2037,117 @@ list does not name, or the list names a fixture that does not exist or does not 
 
 ### 24.7 The report
 
-A summary read from words prints `(words)` where an asserted row prints `(asserted)`. The note `(no summary:
-M.f)` (§16.11) no longer names a `foreign`: every `foreign` has a summary, from its words or the thesis's row.
+A summary read from words prints `(words)` where an asserted row prints `(asserted)`, and a `crossing foreign type`
+prints a line of its own, `crossing Event (words)`, after its module's demand lines. The note `(no summary: M.f)`
+(§16.11) no longer names a `foreign`: every `foreign` has a summary, from its words or the thesis's row.
+
+*As built*, two notes on what the report shows. A need rejection (§23.5) whose only failing provenance is a list
+the checker cannot place — `⊤`, from JavaScript, or an approximate step — is approximate and says so: "which may
+hold a list the checker cannot place — from JavaScript, or through a call it does not see into". A function slot
+prints as its parameter and path, `π1.expect#Expect.1 calls ≤1`, and what it returns as `cb(π1.expect#Expect.1)`; a
+lambda a result carries prints `λ` at its path (§24.9).
 
 ### 24.8 The annotated surface
 
-*Filled in as built.*
+Every annotated declaration, and the reading of the code that justifies each word. `tests/corpus/ownership/trusted-surface.txt`
+names the fixture that pins each (§24.6).
+
+| Declaration | Words | Why |
+|---|---|---|
+| `Js.from`, `Js.to` | `returned a → Value`, `returned Value → a` | `Js.js`: `(v) => v`, compiled to nothing |
+| `Js.same`, `isNull`, `isUndefined`, `isNullish` | `unused` arguments, `fresh` result | `a === b`, `v === null`, `v == null`: a reference compared, nothing dereferenced, a boolean made |
+| `Js.typeOf`, `Js.typeIs` | `unused Value` (`borrowed name`), `fresh` | `typeof v` reads the value's tag, not its contents |
+| `Js.fingerprint` | `unused k, unused order → fresh name` | the compiler writes the type's identity in place; `x` is evaluated and not read (its doc comment) |
+| `Js.array`, `Js.object` | `aliased … → fresh Value` | `args(xs)`, `Object.fromEntries(…)`: a new array or object holding the elements or field values |
+| `Js.each` | `escaped Value, many (Value → ⊤) → ⊤` | `for (const x of xs) f(x)`: the iteration protocol is the host's, so the iterable is taken to escape; `f` is called during the call, any number of times, and not kept |
+| `Js.throw` | `escaped Value → fresh a` | `throw v`: JavaScript keeps what is thrown; the call never returns, so what it returns is the call's own |
+| `Js.ref`, `Js.read`, `Js.write` | `escaped a → fresh Ref a`; `borrowed Ref a → unknown a`; `borrowed Ref a, escaped a → ⊤` | `{ v }`, `r.v`, `r.v = v`: what a cell holds can be read by anyone holding it, at any time later, so what goes in escapes and what comes out is unknown |
+| `Js.pure`, `Js.suspending` | `once returned sync (⊤ → a) → a` | `body()`, compiled to the lambda's body |
+| `Js.finally` | `once returned sync (⊤ → a), once sync (⊤ → ⊤) → a` | `try { return body() } finally { cleanup() }` |
+| `Js.catchIf` | `once returned` body, `once` test, `once returned` handler | `try { return body() } catch (e) { if (!test(e)) throw e; return handler(e) }`: each called at most once, the answer the body's or the handler's |
+| `String.join`, `String.fromList` | `borrowed List …` | `Array.prototype.join` on the list's array or its `$plain()`, which keeps nothing |
+| `String.split`, `words`, `lines`, `toList`, `indexes` | `→ fresh exclusive List …` | `split`, `Array.from`, `filter` and a `Js.array` the body fills make a new array of strings or numbers, which no cell is held twice in |
+| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`) |
+| `Schema.parse`, `parseWith` | `borrowed Schema e a, String → unknown Result …` | `JSON.parse` makes new values, but the answer holds what the schema's own mapping, injection and conversion functions return, which may be anything (thesis §6.5) |
+| `Debug.toString` | `borrowed a → String` | `toStringAs` walks the value; the set of objects being printed holds each only while it is printed |
+| `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value and returns the value |
+| `Hosted.keyOf` | `String, aliased k → fresh Key` | `Hosted.js`: `({ t: type, c: compare, v: value })`, a new object holding the value |
+| `Html.Event` | `crossing` | a DOM event, made by the host: no beni value is ever put in one |
+| `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.js`: `({ code, out })`, a new object of a number and a string |
+| `Node.printLines` | `borrowed List String → fresh Program` | `items.join("\n")` on the list's array |
+| `Ssr.render` | `borrowed Html msg → String` | `Ssr.js`: `html.t`, the markup's text |
+
+**Without words, by choice.** Each `foreign` that handles only values that cross — `Js`'s bit operations and `rem`
+(numbers), `regExp` (two string literals), `development`, `maySuspend` (read by the checker as a static bit, §23.3),
+the platforms' `Dom`, `Browser.Events` and `Html.targetValue`/`targetChecked` (strings, numbers and a `crossing`
+event) — has nothing a word could say. Each whose honest row is the thesis's — `Js.global`, `get`, `set`, `call`,
+`apply`, `construct`, `at`, `setAt`, `instanceOf`, `method` (a getter, a method or a constructor of the host may keep
+what it is handed), `Io.finish` and `Io.startRead` (kept by the runtime) — keeps the default, which is that row.
+`Hosted.compareKeys` only reads, but only the runtime's own key comparisons reach it, where every key has already
+escaped with its command (§20.4): no verdict depends on its row, so it keeps the default, which is the safe side. `core/List`'s primitives, `Dict.focus`, `Hosted`'s send positions and the program constructors
+keep their rows in the checker (§24.5).
 
 ### 24.9 The decoder in `Expect`
 
-*Filled in as built.*
+`Http.request r` calls the function `r.expect` holds — `transfer`'s pattern `(Expect accept read)` binds it and
+calls it on the answer — and a `Cmd.task` tagger is handed what that function returns. Two things the walk did not
+follow stood in the way: a function stored in a structure, and a lambda returned by a call (§16.5: no class). Both are
+built, for the declaration's own frame:
+
+- **Function slots.** A call of a function stored at a path `q` of the declaration's parameter `πᵢ` — `read` above,
+  `π7#Expect.1` — is a call of the *slot* `(i, q)`, recorded as a call of a function parameter is (§16.4 item 4):
+  its count, what each call is handed, what it returns (`cb`), and whether it is seen. The summary lists its slots
+  after its parameters; `funs`, `supply` and `cb` name a slot by number. At a call, the actual for a slot is the
+  argument's value at `q`; the caller's own parameter or slot there takes the callee's facts (`request`'s
+  `π1.expect#Expect.1` from `transfer`'s `π7#Expect.1`), and a function value there is called through its class.
+  Not in a recursive group, whose rounds would number the slots apart, and not inside a lambda.
+- **Carried lambdas.** A lambda the result holds keeps its class in the summary, with what each capture held in the
+  declaration's vocabulary, when calling it needs nothing but its result and its reads: its class writes nothing,
+  escapes nothing, relies on nothing (§18.4) and is not once, and no capture holds a function value. Where the call
+  is instantiated the lambda is a closure of the caller, its captures bound to what the caller passed; its calls of
+  the declaration's function parameters go to what the caller passed there, which leaves the caller's sight — the
+  checker does not see what the lambda hands it. A top-level value's lambda is carried when it captured nothing.
+
+Soundness rests where it did: a writing function stored in a structure was reported `pending` where it was stored
+(§16.5), so a slot needs only the result; a carried class that writes or escapes is not carried and its call stays
+§6.1's.
+
+*As built:* `Http.request`, `get` and `post` return `cb(π1.expect#Expect.1)`, and Conduit's `Api.send` returns
+`#Ok.0` what its parser returns and `#Err.0` fresh errors — but also, at `#Err.0#Failed.0#BadRequest.0`, a `⊤`:
+`expectStringResponse`'s decoders forward the request's `Problem` from the answer, and the answer comes back through
+`Task.callback`, from JavaScript, when the request fails in flight (`Http.wait`'s `Failed (Response String)`). So
+Conduit's 19 `need` lines and 2 `unknown` sends stand, with that cause, approximately (research 81). A decoder that
+does not forward a failure's list is followed to an owned payload (`HttpAnswer`). `Http.send`'s decoder is called
+inside the body `Cmd.task` runs, a lambda, where slots are not built: its tagger stays §6.1's.
 
 ### 24.10 Testing
 
-*Filled in as built.*
+| Fixture | Pins | Expected |
+|---|---|---|
+| `fmt/OwnershipWords` | §24.3 | the words kept in order, one space after each; `crossing`; a broken signature as it would be without them |
+| `check/bad/OwnershipWordOutsidePlatform` | §24.4, Change 5(b) | `misplaced_ownership_word` at the first word of a user's signature |
+| `check/bad/core/MisplacedOwnershipWord` | §24.4 | every reading: nested, on a value, not a function, a result word on a parameter and the reverse, each impossible pair |
+| `ownership/ForeignNoWords` (`tests/platforms/page`) | §24.5 | a list handed to a `foreign` without words, and one a handler handed to it captured: `escaped`; `String.join`'s read: accepted |
+| `ownership/Words` (node), `ownership/core/JsWords`, `ownership/JsPure`, `ownership/WordsBrowser` (browser-direct, browser-tea) | §24.8 | each annotated declaration's row, against what the default would give |
+| `ownership/HttpAnswer` (browser-direct) | §24.9 | a decoder whose answer is owned: no line; Conduit's forwarding decoder: `need`, approximately; a top-level answer: `need`; the model's list: `need` |
+
+and `check_test.zig`'s four tests of `trusted-surface.txt` (§24.6).
 
 ### 24.11 Open questions
 
-*Filled in as built.*
+1. **The HTTP failure.** `Http.wait` resumes its fiber with a `Step` whose `Failed` carries a whole `Response String`,
+   though only `Timeout_` and `NetworkError_` ever travel there; through `Task.callback` it is `⊤`. Measured on the
+   branch with a two-constructor failure in its place — no change of behaviour or API — every one of Conduit's 19
+   `need` lines and 2 `unknown` sends is accepted (research 81 §4). The other way is a row for the fiber runtime's
+   resume (thesis A2): `Task.callback`'s result is what its `Resume` is handed, given up. Neither is built: the first
+   reshapes platform code to clear a check, which is the owner's call (CLAUDE.md rule 10); the second is a slice of
+   the task runtime's rows.
+2. **Words on core's other functions over `Js`.** Only declarations whose rows some verdict depends on carry words.
+   `Ref`, `Deferred`, `Task` and the schema engine are inferred over the `Js` words; their summaries escape what they
+   hand to `Js.call`, honestly. A row per public function of those modules (thesis §6.5's "several dozen to a hundred
+   and fifty") is the trusted surface's next step, measured against what it clears.
+3. **Interpreting 5(a).** The words stand on core's and the platforms' functions over `Js` as well as on their
+   `foreign`s (§24.4), because the thesis gives those functions the same words and they are `foreign` in all but
+   form; the owner approved words on `foreign` declarations in core and the platforms. If that is read narrowly,
+   `String.join`, `Debug`'s two and `Schema`'s four lose their words and are inferred, escaping what they hand to
+   JavaScript.
