@@ -28,7 +28,7 @@ def main (args : List String) : IO UInt32 := do
   -- every call of the accepted programs of a campaign for Lemma 6.7.
   if mode == "falsify" then
     let a ← Falsify.invariantCampaign count seed (checker := { mutant })
-    let b ← Falsify.summaryCampaign count seed
+    let b ← Falsify.summaryCampaign count seed (checker := { mutant })
     let clean := a.hypothesisFalse == 0 && a.observational == 0 && a.errorClause == 0 &&
       a.naming == 0 && b.violations == 0
     IO.println s!"falsify count={count} seed={seed} clean={clean}"

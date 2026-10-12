@@ -648,14 +648,14 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option St
 
 /-- Every call of every accepted program of a campaign, against every summary
     of its declaration in the program's cache. -/
-def summaryCampaign (count seed : Nat) (limit : Nat := 5) : IO CallTally := do
+def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.Config := {}) : IO CallTally := do
   let mut state := seed
   let mut t : CallTally := {}
   let mut shown := 0
   for index in List.range count do
     let ((family, p), next) := (Oracle.generateVersion 4).run state
     state := next
-    let .ok acc := check p | continue
+    let .ok acc := check p checker | continue
     let run := ((evalLog p.declarations none [] p.main).run #[]).run { fuel := 100000 }
     let .ok ((_, log), _) := run | continue
     for cr in log do

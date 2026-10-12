@@ -404,7 +404,11 @@ calls of 100 000 generated programs per seed:
 The falsifier has teeth: under `--mutant=` holes the step-lemma check fails
 (20 000 configurations, seed 17): disjoint 2, once-through-call 161,
 keeps-shape 1, close-source 209 failures. It does not see copy-exclusive or
-many-calls at this size. A clean run is evidence, not proof; the
+many-calls at this size. The Lemma 6.7 check, over the summaries a mutated
+checker publishes (20 000 programs, seed 17), reports callback-writes 721,
+callback-aliases 466, callback-xres 323 and callback-escapes 69 violations,
+and none under guard-reuse (a reused summary is wrong at the call that reuses
+it, which the step lemma, not Lemma 6.7, sees). A clean run is evidence, not proof; the
 configurations are small and the summary check sees only calls the
 generator makes.
 
