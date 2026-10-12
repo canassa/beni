@@ -217,9 +217,9 @@ before the next fires. A page has settled once its microtasks have run and
 a turn of the event loop has passed with, under happy-dom, no `setImmediate`
 left to run: core's scheduler runs 64 tasks a turn and goes on in a
 `setImmediate`, so a step that starts more fibers than that shows them all
-run (`browser/tea/SettlesManyFibers`). A service a program waits on (`Http`, a search API)
-is faked with a record of functions that sleep on this clock
-(`boundary.md` §9.8.9).
+run (`browser/tea/SettlesManyFibers`). A service a program waits on
+(`Http`, a search API) is faked with a record of functions that sleep on
+this clock (`boundary.md` §9.8.9).
 
 **The page's `fetch` is scripted.** The driver replaces `fetch` before the
 program loads, as it replaces the clock. Each call is logged when it is

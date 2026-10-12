@@ -702,13 +702,21 @@ function step(s) {
 // a phase that starts more work than that is not over after one timer's
 // turn, and where the timer fell among those turns would be what a
 // transcript shows (`browser/tea/SettlesManyFibers`). A page that queues
-// one forever stops being waited for after 1 000 turns. Chrome's page has
-// no `process`, and its scheduler posts to a `MessageChannel` instead: it
+// one forever stops being waited for after 1 000 turns, and the
+// transcript says so in a line of its own. Chrome's page has no
+// `process`, and its scheduler posts to a `MessageChannel` instead: it
 // settles as before, one turn.
 async function settle() {
   const turn = () => new Promise((done) => globalThis.__beniHarness.clock.real(done, 0));
+  const busy = () => typeof process === "object" && process.getActiveResourcesInfo().includes("Immediate");
   await turn();
-  for (let k = 0; k < 1000 && typeof process === "object" && process.getActiveResourcesInfo().includes("Immediate"); k++) await turn();
+  for (let k = 0; busy(); k++) {
+    if (k === 1000) {
+      globalThis.__beniHarness.log.push("(the page still had a setImmediate to run after 1 000 turns)");
+      return;
+    }
+    await turn();
+  }
 }
 
 // A `--fiber-page`'s test hook, set before the program loads: a
