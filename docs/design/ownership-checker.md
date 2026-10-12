@@ -5,6 +5,10 @@ slices 2–5 are specified as a plan (§13) and are not built. Sections are neve
 (CLAUDE.md rule 2): a later amendment appends text to the section it changes, dated, or a new
 section after the last.*
 
+*Amended 2026-10-12: slice 2 — summaries, the caller's side of a written parameter, the recursion
+fixpoint and the library's asserted primitive rows — is specified in §16 and built; §15 records the
+manager's answers to §14.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -316,7 +320,13 @@ function of that type: it may return any argument it was given, and it makes its
 top-level or escaped list: those are facts only a summary can supply (§13.1), and §8.2 marks every
 acceptance that rests on them.
 
+*Amended 2026-10-12: from slice 2, this is the rule for a callee with no summary only; a callee with
+one is applied by §16.4.*
+
 ### 6.2 The rows slice 1 has
+
+*Amended 2026-10-12: slice 2 replaces these rows with §16.8's asserted primitive rows and the
+summaries inferred for `update` and `swap`; constructions keep §3.2.*
 
 | Callee | Row |
 |---|---|
@@ -549,6 +559,10 @@ write-set contract changing.
 
 ### 13.1 Slice 2 — summaries in interfaces
 
+*Superseded 2026-10-12 by §16, the slice-2 contract as built: classes and the library rows are narrower
+there (§16.1, §16.8), and the interface block is specified but published only once the pass runs in
+every build (§16.10). The plan below is kept as written.*
+
 - **Summaries** (thesis §3.7, §4.4): `use` (R, A, E, W) per tracked parameter path, `res` per result
   path with provenances `πᵢ.q`, `fresh_k`, `esc_k`, `◇.q`, `shared`, `⊤`, and `xres`/`xreq`, `fun`. Read
   off after the walk; a demand on a parameter path adds W, and the call site discharges it.
@@ -613,3 +627,395 @@ thesis §12.1 — the differential test against the oracle.
    by default) for slice 1 only. Slice 2's Change 5 words must replace it: this question stays open
    until every `foreign pure` that handles a cell in core and the platforms has its ownership words,
    and §6.1 is then amended to the thesis's row.
+
+*Answered 2026-10-12: §15.*
+
+---
+
+## 15. The manager's decisions on §14 (2026-10-12)
+
+1. **`List.copy` stays** in core: Change 2 is decided, and the function is a language feature, not a
+   report-mode convenience.
+2. **Call results come from callee summaries** (§16). Where a callee has none — a `foreign` without
+   Change 5's ownership words, a `Js` operation, evidence received as a parameter, a function value whose
+   class the checker cannot see — §6.1's conservative rule is kept, and the report line says so
+   (`(no summary: M.f)`, §16.11).
+3. **Caller-side checks of parameters are slice 2's** (§16.4): a call whose callee's summary writes a
+   parameter path is a demand at the call.
+4. **A named `Basics.append` call is a construction exactly like `++`**, consuming its base: §3.2 as
+   written.
+5. **A totals-only output for scripts**: the hidden `--ownership-totals` (§16.11).
+6. **`foreign pure` as a plain call stays open** until Change 5's words exist: §6.1 item 2 is kept, and
+   §16.14 flags what it costs in slice 2 (a `Js.pure` lambda's escapes do not reach the cells it
+   captured).
+
+---
+
+## 16. Slice 2 — summaries (normative from 2026-10-12)
+
+*Amends §1.2's table, §6, §8 and §9, and replaces §13.1 as the slice-2 contract. §1–§12 keep their
+numbers and their slice-1 text; where slice 2 changes a rule, the rule here wins.*
+
+### 16.1 What slice 2 builds
+
+| Thesis piece | Slice 2 |
+|---|---|
+| Summaries and their read-off (§3.7, §4.4) | **built** (§16.2–§16.3), for every top-level value with parameters, and as a *class* for every lambda and local function of a body (§16.5) |
+| Applying a summary at a call, and the caller's side of a written parameter (§3.10) | **built** (§16.4) |
+| Recursion fixpoint (§4.5, §4.6) | **built** (§16.6): optimistic, joined, validated |
+| The library's rows (§3.8, §6.5) | inferred from every beni body; **asserted only for primitives** (§16.8) |
+| Width cap (§4.6, §4.9) | **built** (§16.7) |
+| Folding of recursive types (§3.1) | **built** for constructor steps (§16.7); representatives' exclusivity is not |
+| Ownership classes of function values (§3.6, §4.7) | built for function values whose origin the walk sees — a lambda written in the body, a local function, a top-level function, a function parameter passed on — and **not** carried through types: a function value read out of a structure or a call result has no class (§16.5) |
+| Once closures (§3.6) | not built: `captured-edit` stays (§8.3) |
+| Exclusive contents (§3.11) | not built: every `xres` is `no` and no `xreq` is `yes` (§16.2); an edit that needs it is rejected (`element`, `supply`) |
+| Local-function groups (§3.6, *Local functions*) | not built: a local function that calls itself and writes a parameter is `pending` (§16.5) |
+| Interfaces and cache keys (§4.10) | **specified** (§16.10); slice 2 publishes nothing, because the pass still runs only in `dump` |
+| TEA entry protocol (§7) | not built: a writing function the runtime calls is `pending` (§16.5) |
+
+### 16.2 The summary
+
+For a declaration `f` with parameters π₁ … πₙ (thesis §3.7; numbered from 1 in print and here):
+
+- **`use`**, a set of entries `(i, q, U)` with `U ⊆ {R, A, E, W}` for a tracked path `q` of πᵢ (§4.1's
+  paths, cut at k). A path that no entry names, and that no entry is a prefix or an extension of, is
+  `unused`. A demand on `π₁.todos` gives `(1, .todos, W)`; `{ model | todos = … }` gives `A` at each
+  other tracked field of `model` and nothing at `.todos` (§5's split).
+- **`res`**, a set of entries `(q′, p, d)`: the result may hold at its path `q′` a cell of provenance `p`
+  (thesis §3.7's `Prov`), with a derivation `d`, exact or approximate (§16.4 item 7). The provenances:
+  `πᵢ.q`; `fresh_k`, a cell made during the call that nothing else holds when it returns, numbered in the
+  body's instruction order so that two result paths naming one `k` may be one cell; `esc_k`, the same but
+  escaped; `shared(M.v)`, a cell of the top-level value `M.v`; `⊤`; **`cb_j`**, whatever the
+  function-typed parameter πⱼ returned (thesis §4.7's `g.res`); and, in a lambda's class only, `◇x.q`, a
+  cell the lambda captured from the local `x`.
+- **`xres`** and **`xreq`** are part of the format (thesis §3.11) and constant in slice 2: no exclusive
+  flag is built, so every `xres(q′)` is `no` and every `xreq(i, q)` is `no`. `xres = no` is the
+  pessimistic end of a must fact; `xreq = no` is sound only because no acceptance in slice 2 rests on an
+  exclusive container — an edit that would need one is rejected.
+- **`fun(j)`**, for each function-typed parameter πⱼ:
+  - `calls ∈ {0, ≤1, many}`: the direct calls of πⱼ in the body, summed over arms (conservative), `many`
+    if one is in a recursive group, joined with what each callee it is passed on to says. Published;
+    nothing reads it until once closures are built.
+  - `supply`, a set of entries `(k, q, p, owned)`: at some call of πⱼ, its `k`th argument held at `q` a
+    cell of provenance `p`; `owned` when that cell passed Known, Unescaped, Disjoint and Dead at that call
+    (§16.4 item 4), so that πⱼ may write it. An entry whose `p` is `cb_j′` is owned only when, in
+    addition, the actual for πⱼ′ *returns owned* (§16.4 item 5) — the one guard atom slice 2 has.
+  - `need ∈ {nothing, owned}`: `owned` when the body writes in place a cell of provenance `cb_j`, so the
+    actual must return owned.
+  - `seen`: whether every use of πⱼ in the body is a direct call or a pass to a function-typed position
+    of a callee with a summary that is itself `seen` there. When it is not — πⱼ is stored, returned,
+    captured by a lambda, or handed to a callee with no summary — the body has lost sight of its calls,
+    and an actual that writes a parameter is `pending` at the call (§16.5).
+- **`limit`**: absent, or why the summary is the pessimistic one (§16.7): every parameter `RAEW` at ε,
+  `res ε = ⊤`, every `fun(j)` not seen, with `calls many`, `need owned` and no supply.
+
+The lattice is thesis §4.6's restricted to these fields: `use` bits by inclusion; `res` and `supply` entry
+sets by inclusion (the lower order: a set is stored by its elements, and `⊤` among them means "any cell");
+`owned ⊑ borrowed`; `calls` `0 ⊑ ≤1 ⊑ many`; `need` `nothing ⊑ owned`; `seen` `yes ⊑ no`; a `limit` above
+everything. The join is pointwise.
+
+### 16.3 Reading a summary off a body
+
+After the walk (§5, §7) and the resolution of its demands (§8):
+
+- **W** at `(i, q)` when some demand's cells — a construction's base, a writer's operand, a call-site
+  demand (§16.4 item 3) — include the parameter cell `param(πᵢ, q)` (thesis §4.4: the local holders were
+  discharged by Dead, the caller discharges the rest). A demand's verdict does not matter: a rejected one
+  still writes.
+- **E** when `param(πᵢ, q)` is in Esc at the end of the body (§4.3), which now includes the escapes a
+  callee's summary reports (§16.4 item 4).
+- **A** when the result's abstract value holds `param(πᵢ, q)` at any path.
+- **R** when a use (§7.1) reads a local whose value holds `param(πᵢ, q)` at a path the use reads.
+- `res` from the result's abstract value, closures expanded, by thesis §4.4's rule: a `site` or a
+  callee's fresh result is `fresh_k`, or `esc_k` if it is in Esc, numbered in instruction order; the result
+  of calling πⱼ is `cb_j`; an entry that came through an approximate step (a conservative call's `⋆`, an
+  identity promise) stays approximate.
+- `fun(j)` from the calls of πⱼ the walk met (§16.4 item 4), the supply entries' `owned` bits once their
+  probes are resolved.
+
+A lambda's class is read off its frame the same way, over its own parameters, with `◇x.q` for its captured
+cells.
+
+### 16.4 Applying a summary at a call
+
+A call `f a₁ … aₙ` — of a top-level value, of a method the dispatch table resolves to one, of a local whose
+value holds closures or top-level functions, or of a function parameter — whose callee has a summary `S`:
+
+1. **Uses.** An argument that is a variable path `x.p` is used at the call at `x.p.q` for each entry
+   `(i, q, U ≠ ∅)` of `S.use`, and not at all when πᵢ is `unused`. A temporary argument's closures have
+   their captures used, as in slice 1. This is what accepts thesis I5, TodoMVC's
+   `changed { model | draft = "" } (model.todos ++ [ new ])`: `changed` never reads its first argument
+   at `.todos`.
+2. **Pending operands** (§7.4). An argument evaluated before a demand and waiting for this call holds the
+   demanded cell only at paths the call touches: a pending argument that reaches the cell only at paths
+   `S.use` leaves `unused` is no holder, and one the call touches is a `held-operand` holder — exact, where
+   slice 1 said `call`.
+3. **W: the caller's side of a written parameter.** For each entry `(i, q, U ∋ W)`, the cells of `aᵢ` at
+   `q` (§8.1's base cells) are a **call-site demand** at the call's point, checked exactly as §8.1 checks a
+   demand, with Disjoint against every other argument *and every other path of `aᵢ`* (thesis §3.10,
+   "including Disjoint against the caller's other paths of the same argument"; T48). It is a line of the
+   report (§16.11). When a cell is the caller's own parameter, the caller's summary gains W in turn.
+   A W carries its derivation: it is *exact* when every step from the demand to the parameter is exact,
+   and *approximate* when the demand's cells reached the parameter only through an approximate entry
+   (a conservative call's `⋆`, an identity promise) — printed `w`. A call-site demand whose W is
+   approximate and that fails an exact condition is reported as the `call` cause, approximate: the
+   callee may not write at all.
+4. **E** — for each `(i, q, U ∋ E)` the cells of `aᵢ` at `q`, closures expanded, join Esc at the call —
+   and **callbacks**. For each function-typed parameter πⱼ, the actual `aⱼ` is resolved to the classes its
+   value may have (a lambda's, a local function's, a top-level function's), to the caller's own function
+   parameter, or to nothing (§16.5):
+   - *the supply edge* (thesis §4.7): for every `(k, q, U ∋ W)` of the actual's class, every `S.supply`
+     entry `(k, q′, p, owned)` with `q′` overlapping `q` must be owned; a borrowed one rejects the
+     actual's demand, cause `supply`. An owned entry whose provenance is `πᵢ.q″` of `f` is a call-site
+     demand on `aᵢ` at `q″`, as in item 3; one whose provenance is `cb_j′` asks that the actual for πⱼ′
+     return owned (item 5);
+   - an actual whose class escapes its `k`th parameter escapes the cells supplied there;
+   - `S.fun(j).need = owned` asks that the actual return owned (cause `need`);
+   - when the actual is the caller's own function parameter πⱼ″, the caller's `fun(j″)` gains `S.fun(j)`
+     translated: its `calls`, its `need`, its `seen`, and its supply entries, each provenance instantiated
+     through this call (item 6) and each `owned` kept only if the cells it now names pass the four
+     conditions at this call — a *probe*, a demand that is resolved but not printed;
+   - when `S.fun(j)` is not `seen`, an actual that writes a parameter is `pending` (§16.5).
+5. **Returns owned** (thesis §3.7, *A callback's result is owned only when the rules show it*): the
+   actual's class returns owned when every provenance of its `res` is some `fresh_k`, a parameter path
+   `π_k.q` that `S` supplies owned at every overlapping entry and that the class does not escape, or `cb_j`
+   itself (the guard being established), and no provenance appears at two distinct result paths. `◇`,
+   `shared`, `esc_k`, `⊤` and a borrowed parameter are not owned (T46).
+6. **The result** is `S.res` instantiated: `πᵢ.q` becomes `aᵢ`'s cells at `q`; `fresh_k` a fresh cell
+   `result(ι, k)` of this call (a demand on it is accepted as `call`); `esc_k` the same cell, joined to Esc;
+   `shared(M.v)` a cell of `M.v`; `⊤` the unknown cell; `cb_j` the actual's own `res` instantiated, its
+   `π_k` replaced by `S.supply`'s provenances for `k` and its `◇x.q` by the captured local's cells — or,
+   for the caller's own function parameter, the caller's `cb_j″` cell, or, for an actual with no class,
+   §6.1's conservative result. A result whose type crosses is `∅`. A callee that hands a callback its own
+   earlier result (a fold's accumulator) makes `cb_j` a least fixpoint, iterated from nothing; one that
+   does not settle in four rounds adds `⊤`.
+   **The type filter** (§6.1, thesis §3.8): an approximate entry at the result's ε whose provenance is
+   an argument the result's type cannot be — by the argument's type, or by the cell's — is dropped, so
+   `List.map xs String.fromInt` is never `xs`. A `List` and `core/List`'s `Builder` are one run-time
+   object (`done` hands the one over as the other), so the filter never separates them.
+7. **Derivations** (thesis §8.4): an instantiated entry is exact when its `res` path names one provenance;
+   when it names two or more — the two outcomes of an identity promise, `List.filter`'s `{fresh, π₁}`,
+   arms joined path-insensitively — every entry instantiated from it is approximate, tagged with the call,
+   and a rejection through it is the `call` cause.
+
+A call whose callee has no summary is §6.1's conservative call, unchanged (§15 decision 2).
+
+### 16.5 Function values
+
+A **class** is what a summary is for a function value: a lambda's or local function's, read off its frame at
+its creation; a top-level function's, its summary. A function value is *checked* where the walk sees its
+calls: as the callee of a call (its class applied as in §16.4, `◇x.q` instantiated from the captured local
+`x`), or as the actual of a function-typed parameter of a callee whose `fun(j)` is `seen`. A lambda's
+demands on its own parameters (`callback-param`) are decided there: accepted when every supply is owned, or
+when every call is local and the call-site demands carry the obligation; rejected `supply` when a supply is
+borrowed.
+
+A function value whose class writes a parameter is **`pending`** wherever it leaves the walk's sight: stored
+in a structure, returned, captured by a lambda, passed as evidence, passed to a callee whose `fun(j)` is not
+`seen`. The report gets a `value` line there (§16.11), and the lambda's own demands on that parameter are
+`pending` too. A TEA program's `update` goes there: the runtime calls it, and the entry protocol (thesis §7)
+that would check those calls is not built. A writing function value passed to a callee with no summary —
+a `foreign` without ownership words — keeps slice 1's rule: the lambda's demand on its parameter is
+accepted `callback-param`, and the line says `(no summary: M.f)` (§15 decision 2).
+
+A function value read out of a structure, out of a call's result or out of a parameter's field has no
+class, and calling it is §6.1's conservative call, which assumes no write. That is sound only with the rule
+above: every writing function that reached such a place was reported `pending` where it got there.
+
+A local function that calls itself is walked once, its own calls conservative; if its class then writes a
+parameter, its demands on that parameter are `pending` — the group fixpoint of thesis §3.6 is not built.
+
+### 16.6 Recursion
+
+Thesis §4.5–§4.6, as the Lean model does it (`proofs/ownership/`, `Checker.lean`'s `inferFunction`): a
+module's top-level declarations are split into strongly connected groups by their references to each other
+(`check/Scc.zig`'s `sccGroups`), dependencies first. A group of one declaration that does not name itself is
+walked once. A recursive group starts from the bottom summary for every member (every path `unused`, `res`
+empty, every `fun` seen with no supply, `need nothing`); each round walks every member against the current
+assumptions and **joins** what it reads off into them, `xᵢ₊₁ = xᵢ ⊔ F(xᵢ)`, until nothing changes.
+Termination comes from the join, not from monotonicity: the owned bit of a supply is not monotone in the
+callback's class (thesis §4.6, as revised in round 5), but each round that changes anything adds a fact to a
+finite lattice. A cap of 32 rounds is a backstop a correct lattice does not reach; reaching it gives every
+member the pessimistic summary with `limit rounds` (§16.7). **Validation**: the members are walked once more
+against the final assumptions, what that walk reads off must be below them, and that walk is the one whose
+demands the report prints.
+
+A self tail call is a call through the group's summary like any other recursive call; rebinding the
+parameters at the jump (thesis §3.9) changes no verdict a summary gives and is not built.
+
+Within a group being solved, a call of a member makes **one** fresh cell per call however many
+`fresh_k` the member's assumption names: the numbering of §16.2 counts the cells a body's
+instructions make, and a recursive call's fresh results would otherwise be numbered anew in every
+round, so the chain would never settle. Merging them is sound (two cells taken for one only adds
+aliasing) and loses nothing the group's callers see, since a caller outside the group instantiates the
+final summary.
+
+### 16.7 The width cap
+
+A summary's width is the number of entries in its largest component (`use`, `res`, `supply`). Above **64**
+— thesis §4.9's "say 64" — the summary is the pessimistic one of §16.2 with `limit width`, and a rejection
+it causes is reported with the `limit` cause, approximate — a call-site demand it makes, and a `⊤` it
+returns, carry the mark however far they travel (`⊤limit` in a summary line). A recursive group that
+reaches the round cap gets `limit rounds`.
+
+**Recursive types are folded** (thesis §3.1, which slice 1 did not need, §1.2): a constructor step into a
+value of a type the path has already entered goes on from where the path first entered that type, so
+`t#Node.3#Node.1` is `t#Node.1`, and a summary over a `Dict` or a tree names a few paths instead of every
+level to the cut. Folding only merges places, so it adds aliasing and never removes a holder; a demand
+on a folded path is checked against every level it stands for. Without it every `Dict` function's summary
+exceeded the cap. The guard atoms are bounded by the function-typed parameters: a summary whose `owned` bits
+would depend on more than **8** `returns owned` atoms treats the entries past the eighth as borrowed. A cap
+never accepts: each turns facts pessimistic.
+
+### 16.8 The library
+
+Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
+
+- **Inferred** — every beni body, in `core/` and the platforms as in application code: the folds, `map` and
+  its family, `initialize`, `update`, `swap`, `filter`, `slice`, `close`, `Dict`, `Set`, `Debug.log`. Their
+  rows in thesis §3.8 and §4.7 are *derived contracts*, and slice 2 asserts none of them.
+- **Asserted primitive rows** — `core/List`'s functions whose bodies are `Js` or `foreign` and handle a
+  list's array: what connects beni's semantics to JavaScript. Each row replaces the body's summary, is pinned
+  by a fixture under `tests/corpus/ownership/`, and is a correctness bug in privileged code if wrong.
+- **Slice 1's rule** for every other `foreign` and `Js` operation (§6.1 item 2; §15 decision 6).
+
+| Function | Row | Thesis |
+|---|---|---|
+| `cons x xs` | π₁ `A`; π₂ `RAW`; `res ε = π₂`, `[*] = π₂[*], π₁` | §3.8, the writers |
+| `append xs ys` | π₁ `RAW`; π₂ `R`, π₂`[*]` `A`; `res ε = π₁`, `[*] = π₁[*], π₂[*]` | §3.8, with its decided change: `[] ++ ys` is the base, not `ys` |
+| `set xs i v`, `insertAt xs i v` | π₁ `RAW`; π₃ `A`; `res ε = π₁`, `[*] = π₁[*], π₃` | §3.8 |
+| `push xs v` | π₁ `RAW`; π₂ `A`; `res ε = π₁`, `[*] = π₁[*], π₂` | §3.8 |
+| `pop xs`, `removeAt xs i` | π₁ `RAW`; `res ε = π₁`, `[*] = π₁[*]` | §3.8 |
+| `copy xs` | π₁ `R`, π₁`[*]` `A`; `res ε = fresh₁`, `[*] = π₁[*]` | §3.8, Change 2 |
+| `length xs` | π₁ `R` | §3.8 |
+| `at xs i`, `unsafeGet xs i` | π₁ `R`, π₁`[*]` `A`; `res ε = π₁[*]` | §3.8's `at`; §6.5, the element read |
+| `sliceOf xs a b` | π₁ `R`, π₁`[*]` `A`; `res ε = fresh₁`, `[*] = π₁[*]` | §6.5, a fresh copy of a range |
+| `view xs k` | π₁ `RA`; `res ε = π₁, fresh₁`, `[*] = π₁[*]` | §6.5, the view representation (thesis §7, *Views*): a view is its base's array |
+| `base xs` | π₁ `RA`; `res ε = π₁`, `[*] = π₁[*]` | §6.5: the array a list is a suffix of — its own, a view's, or the plain copy its trie keeps |
+| `offset xs` | π₁ `R` | §6.5 |
+| `builder n` | `res ε = fresh₁` | §6.5, the builder |
+| `put b i x` | π₁ `RAW`; π₃ `A`; `res ε = π₁`, `[*] = π₁[*], π₃` | §6.5, the builder's fill: a write in place, so a demand on the builder |
+| `done b n` | π₁ `RAW`; `res ε = π₁`, `[*] = π₁[*]` | §6.5, the hand-over, which sets the array's length |
+| `identical x y` | nothing | §6.5, the identity primitives: compares references, dereferences neither |
+| `kept same xs ys` | π₂ `A`, π₃ `A`; `res ε = π₂, π₃`, `[*] = π₂[*], π₃[*]` | §6.5, `map`'s return of its input |
+
+`swap`, `update`, `close`, `slice`, `take`, `drop`, `map` and the rest are inferred over these. Two
+consequences are findings, not rows:
+
+- **A destructive read is not inferable.** `update`'s body is `set xs i (func (unsafeGet xs i))`: the element
+  is handed to `func` while `xs` waits for `set`, so the inferred supply is *borrowed*; `map`'s and the folds'
+  loops hand out `at a i` while `a` is read by the next iteration, so theirs is borrowed too. The thesis
+  asserts these rows (§3.8, §3.11), and they need exclusive contents as well, which slice 2 does not build.
+  So a callback that edits its element — T40's `List.update rows i (λr → { r | tags = … })`, T42's edit by
+  id through `map` — is rejected `supply` in slice 2, an approximate limit.
+- **T59 is rejected** by the same edge, and its round-5 fix holds by construction: no asserted row takes a
+  callback, so none can hand out a callback's result as exclusive, and every inferred `res` that holds a
+  callback's result says `cb_j`, never `fresh`, so a `[ cell, cell ]` initializer's results are never
+  supplied owned. T59's accepted variant, two literals, is rejected too — the price of not building
+  exclusive contents.
+
+### 16.9 Order of computation
+
+**In a build** (from the slice that runs the pass there): module m's summaries are computed by the worker that
+checked m, right after its check, from m's BIR and solved types and its imports' summary blocks, which the DAG
+has already produced (`fast-compiler.md` §10). A summary is a function of m's source and its imports'
+interfaces, so per-module parallelism cannot change one.
+
+**In the dump** (slice 2): summaries are computed on demand on one thread. A call of a declaration whose summary
+is missing first computes the group holding it, recursively — imports before importers, since the module graph
+is acyclic, and groups in dependency order within a module. The result is the same function of the program as
+the per-module order, because a group's summary depends only on its bodies and its dependencies' summaries.
+Every line is printed in source order and every fact in text order, never by an id the walk assigned (§10).
+
+A summary is read off solved types, which only a module the run checks keeps (§2.3), so the dump checks every
+module itself: it reads nothing from the checked core embedded in the binary (`fast-compiler.md` §8, *The
+checked core, embedded*), and core is checked in the dump's process. `check` and `build` keep reading it.
+
+### 16.10 Interfaces and cache keys
+
+*Specified now; published from the slice that runs the pass in every build. Slice 2 runs only in `dump`, so
+publishing would change every interface and every `check/good` golden for nothing that reads them.*
+
+- **The summary block.** The interface record of each `pub` value gains a block after its effect facts (thesis
+  §4.10): the `use`, `res`, `fun` and `limit` of §16.2, paths written as steps — a field by name, a tuple index,
+  a constructor by its index in its type, `[*]`, `◇`, `⋆` — and provenances by parameter index, fresh or esc
+  number, shared value by module and name, `cb_j` by parameter index. The block names no id of the session
+  that produced it, and no crossing path.
+- **Change 9's slots.** For each exported opaque type the interface publishes its slots — the tracked paths
+  inside its definition, numbered in the definition's order — and a summary over the type names `⟨T⟩.k` instead
+  of the steps, so an importer checks Disjoint between two slots (T48) without seeing the definition. A type
+  with no slot crosses. Slice 2 still reads imported definitions from the session's BIR, as slice 1 did (§4.4).
+- **Version and hash.** The block is versioned with the rule set (thesis §8.5) and hashed with the interface.
+  A body edit that changes a summary changes the interface hash and re-checks the importers: the interface
+  firewall treats it as a signature edit (thesis §4.10). The cache key needs nothing new — a module's key
+  already covers its own source and its imports' interfaces, and a summary is a function of exactly those.
+  The interface version moves when the block is first written.
+
+### 16.11 The report
+
+Each module's demand lines (§9.1) gain:
+
+- **call-site demands** (§16.4 item 3): operation `call M.f` — or `List.<writer>` for the named writers, as
+  before — base the argument as written, with the parameter path when it is not ε (`p#.a`);
+- **value lines** (§16.5): operation `value`, base the function's name or `<lambda>`, for a writing function
+  value where it is checked or leaves the walk's sight;
+- a **`pending`** verdict beside accepted and rejected: `pending value: <why>`, an obligation slice 2 does not
+  discharge;
+- the causes **`supply`** (a callback writes what its caller supplies borrowed), **`need`** (a callback's
+  result is edited and the callback may return a list it does not own) and **`limit`** (§16.7), after `call` in
+  §8.3's order — `supply` approximate when the borrowed bit comes from a limit (an element: §16.8), `need`
+  exact, `limit` approximate;
+- the summary that decided it, in parentheses: `(Main.addOne writes π1)`, `(List.update supplies π1[*]
+  borrowed)`, `(no summary: Js.pure)`.
+
+After a module's demand lines, a **summary line** for each top-level value with parameters, in source order:
+`summary f: <facts>` — each parameter path's bits (`π2.todos RAW`, `w` for an approximate write), the result
+grouped by path (`res π1 fresh1, [*] π1[*]`, an approximate provenance prefixed `~`), each function parameter
+(`π3 calls many, need owned, unseen, supply 2 π2 owned`), `limit <why>`, and `(asserted)` for §16.8's rows —
+omitting what is empty, `unused` when nothing is left. A constructor step prints as `#Name.i`. The `demands`
+and `total` lines count `pending` beside accepted and rejected, and say how many acceptances rest on no
+summary (`assumed`): `demands 6: accepted 4 (fresh 1, call 0, param 2, callback-param 1; assumed 0),
+pending 1, rejected 1`.
+
+A writing top-level function gets one `value` line in a declaration, where it first leaves the walk's sight.
+
+**`--ownership-totals`**, hidden like the stage, prints only the `total` and `cause` lines.
+
+### 16.12 What does not change
+
+The pass still runs only under `dump --stage=ownership`: emitted JavaScript, interfaces, cache keys, run
+hashes, and the work `check` and `build` do are byte for byte slice 1's. The one change outside the pass is
+that the ownership dump checks core itself (§16.9). The determinism test runs the slice-2 dump at `--jobs=1`
+and `--jobs=8`.
+
+### 16.13 Testing
+
+New fixtures in `tests/corpus/ownership/`, each citing its thesis section or T-number:
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `ReturnsArg` | §16.4 item 6; T12's shape | a helper that returns its argument: editing the result while the argument is read later is rejected, exact |
+| `ReturnsFresh` | §16.3, `fresh_k` | a helper that builds its result: the edit is accepted, `call` |
+| `CallerSide` | §16.4 item 3; thesis §3.10 | a helper that writes its parameter: rejected at a caller that reads the argument later, accepted at one that does not |
+| `Callbacks` | §16.4 items 4–5; T15, T46, I2 | `foldl`'s accumulator supplied owned (accepted); a callback that may return a top-level list (rejected); a callback that consumes its element (rejected `supply`); one that reads it (accepted) |
+| `T59` | T59, §16.8 | the `[ cell, cell ]` initializer edited through `update`: rejected |
+| `Recursion` | §16.6; T12 | a building loop that consumes its argument, and mutual recursion |
+| `CrossModule` (project) | §16.9–§16.10 | a summary used across a module boundary |
+| `OpaqueSlots` (project) | T48, Change 9 | a write to one slot of an opaque value whose two slots hold one list: rejected `disjoint`; distinct lists accepted |
+| `Changed` | I5, thesis §5.2 | TodoMVC's `changed`: accepted |
+| `Differential` | Table 6.2 against `proofs/ownership/`'s fixtures | T1, T2, T3, T10, T14, T33, T52 agree with the Lean model; T40, T42 and T57 (the distinct variants) disagree, by §16.8's finding |
+
+The slice-1 fixtures' goldens move where slice 2 decides what slice 1 left pending.
+
+### 16.14 Open questions
+
+1. **`foreign pure` and `Js.pure`** (§15 decision 6). A `Js.pure` lambda that hands a captured list to
+   `Js.call` escapes it in the lambda's frame, and slice 2 does not carry that escape to the captured cell,
+   because `Js.pure` has no summary and §6.1 item 2 calls it with no escape. Change 5's words, or an asserted
+   row for `Js.pure` (`calls ≤1`, its callback's escapes and result passed through), would close it.
+2. **The derived rows.** Whether `update`, `map`, `indexedMap`, `filterMap` and the folds should get asserted
+   destructive-read rows (thesis §3.8, §3.11) together with exclusive contents, which would turn slice 2's
+   `supply` rejections of element edits into acceptances; or whether the analysis should learn to tell one
+   iteration's element from the next, so that they are derived.
+3. **Local-function groups and once closures** (thesis §3.6): the `pending` and `captured-edit` counts are what
+   they would recover.
