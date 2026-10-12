@@ -8857,3 +8857,10 @@ programs, nested, under a user's click and a burst).
   being replaced unacceptable. Only step 1, event property names built once per name, remains,
   being both faster and smaller. The text above stays as the measured record. The runtime is
   step 1 on top of the controlled-input runtime.
+
+*Amended 2026-10-12 (`boundary.md` §9.8.16 (a)):* **`init` is a function the mount calls.** A
+program's `init` is `⊤ → model` on every platform, so the mount runs `view(init())` where this
+section says `view init`: `Rt`'s `mount` calls `program.init()`, and a hosted mount's record has an
+`init` that answers `null`. The two `emit/release/split/` pages pin the shape: the empty page's
+release bundle, which reads no model, drops the call with the record (444 brotli bytes against 443),
+and `HolesPage` writes `init:()=>({…})` and `a.init()` (+6 raw bytes).
