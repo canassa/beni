@@ -53,6 +53,13 @@ markup: ?*Markup = null,
 /// inference solves after P5 (transparent-effects-proposal.md §14,
 /// checker-v2.md §26); null in a unit test that builds no module.
 effects: ?*Effects = null,
+/// Per `Bir.insts` index, the variable each expression instruction was
+/// constrained against — its type once solved — for
+/// `dump --stage=ownership` (`ownership-checker.md` §2.3). Empty unless the
+/// run keeps the stores. Written by the generator and read by nothing in
+/// the checker, so §6.2's rule that the solver reads no generation-time
+/// context holds.
+inst_type: []Var.Optional = &.{},
 /// Where the generator records each `_ = e` — a `let_pattern` whose
 /// pattern is `_` — and the variable of its value, for `unit_discarded`
 /// (checker-v2.md §34); null when that warning is off.

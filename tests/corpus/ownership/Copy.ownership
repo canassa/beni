@@ -1,0 +1,8 @@
+module Copy
+  10:20 construction history: rejected later-use: history is read again at 10:16
+  14:27 construction <call List.copy>: accepted fresh
+  22:27 construction first: rejected element: rows[*] holds it and is read at 22:41 (approx)
+  demands 3: accepted 1 (fresh 1, call 0, param 0, callback-param 0), rejected 2
+total 3: accepted 1 (fresh 1, call 0, param 0, callback-param 0), rejected 2
+cause later-use 1
+cause element 1

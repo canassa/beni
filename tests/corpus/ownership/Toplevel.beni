@@ -1,0 +1,38 @@
+-- ownership: a top-level list is shared (Change 4, thesis §3.10, *Top-level
+-- values are shared*; T3, T21, T53). Extending `seed` — directly, or through
+-- a record `initialModel` returns — is rejected, `top-level`, whoever reads
+-- it afterwards. Building the list in a function (`init`) makes it fresh at
+-- every call, and the reading form `[ x ] ++ seed` builds a new list from a
+-- literal base and only reads `seed`: both accepted.
+type alias Model =
+    todos : List String
+
+
+seed : List String
+seed = [ "milk" ]
+
+
+initialModel : Model
+initialModel = { todos = seed }
+
+
+pub addSeed : String → List String
+addSeed t = [ …seed, t ]
+
+
+pub addModel : String → Model
+addModel t = { initialModel | todos = [ …initialModel.todos, t ] }
+
+
+pub init : ⊤ → Model
+init ⊤ = { todos = [ "milk" ] }
+
+
+pub addFresh : String → Model
+addFresh t =
+    model = init ⊤
+    { model | todos = [ …model.todos, t ] }
+
+
+pub reading : String → List String
+reading t = [ t ] ++ seed

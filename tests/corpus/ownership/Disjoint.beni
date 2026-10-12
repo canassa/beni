@@ -1,0 +1,25 @@
+-- ownership: nothing may reach the list during the write (thesis §3.10,
+-- Disjoint; T1). `List.update xs 0 f` writes `xs` while its callback reads
+-- `xs` through its capture: rejected, `disjoint`. A temporary evaluated
+-- before the write and still held until its consumer runs is a holder too
+-- (thesis Table 3.1, the pending row): the literal `[ xs ]` holds `xs`, so
+-- pushing onto `xs` while the tuple waits for it is rejected,
+-- `held-operand`. When the temporary waits for a call instead, it is a
+-- holder only because a call with no summary is assumed to read every
+-- argument — and here only because `List.reverse xs` may be `xs`: rejected
+-- as a limit, `call` (TodoMVC's `changed`, thesis I5, is the case a
+-- summary would accept: it never reads the old list).
+pub capture : List Int → List Int
+capture xs = List.update xs 0 λ_ → List.length xs
+
+
+pub pending : List Int → List (List Int) × List Int
+pending xs = ( [ xs ], List.push xs 1 )
+
+
+pub forCall : List Int → Int
+forCall xs = sizes (List.reverse xs) (List.push xs 1)
+
+
+sizes : List Int, List Int → Int
+sizes a b = List.length a + List.length b

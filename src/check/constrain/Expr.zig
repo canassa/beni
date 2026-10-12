@@ -57,6 +57,8 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         return g.equal(expected, try g.fresh(.err), inst, category);
     }
 
+    // For `dump --stage=ownership` only (`ownership-checker.md` §2.3).
+    if (inst.int() < g.cx.inst_type.len) g.cx.inst_type[inst.int()] = expected.toOptional();
     const bir = g.cx.bir;
     const wk = g.cx.types.well_known;
     const data = bir.instData(inst);

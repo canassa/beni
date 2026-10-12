@@ -1,0 +1,29 @@
+-- ownership: a later read of the old list (thesis §3.3, the second
+-- consequence; T17). `ys = [ …xs, 1 ]` writes `xs`'s array, and the next
+-- line reads `xs`: under value semantics it sees the old list, in place
+-- the new one, so the demand is rejected, `later-use`. A read that
+-- completes before the write is not sharing (the first consequence):
+-- `[ …zs, List.length zs ]` evaluates its items first and is accepted. A
+-- dead alias is harmless (the third): `saved` is never read again.
+pub stale : List Int → Int
+stale xs =
+    ys = [ …xs, 1 ]
+    List.length ys + List.length xs
+
+
+pub before : Int → List Int
+before n =
+    zs = [ n ]
+    [ …zs, List.length zs ]
+
+
+pub deadAlias : Int → List Int
+deadAlias n =
+    xs = [ n ]
+    saved = xs
+    [ …xs, 1 ]
+
+
+-- T17: `xs` is evaluated first but used at the tuple, after the push.
+pub held : List Int → List Int × List Int
+held xs = ( xs, List.push xs 1 )

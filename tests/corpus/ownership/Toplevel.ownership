@@ -1,0 +1,8 @@
+module Toplevel
+  20:15 construction Toplevel.seed: rejected top-level: Toplevel.seed is a top-level value
+  24:41 construction Toplevel.initialModel.todos: rejected top-level: Toplevel.initialModel is a top-level value
+  34:25 construction model.todos: accepted call
+  38:19 ++ <literal>: accepted fresh
+  demands 4: accepted 2 (fresh 1, call 1, param 0, callback-param 0), rejected 2
+total 4: accepted 2 (fresh 1, call 1, param 0, callback-param 0), rejected 2
+cause top-level 2

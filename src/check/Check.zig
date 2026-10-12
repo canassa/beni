@@ -90,6 +90,10 @@ pub const Module = struct {
     decl_display: []Var.Optional,
     /// Type per local, indexed exactly like `Bir.locals`.
     local_type: []Var.Optional,
+    /// Type per expression instruction, indexed like `Bir.insts`
+    /// (`ownership-checker.md` §2.3): `.none` where the generator
+    /// constrained none.
+    inst_type: []Var.Optional = &.{},
     /// What effect inference solved over `store`, for the dump's classes
     /// (transparent-effects-proposal.md §14.7); null for a module the run
     /// did not check.
@@ -101,6 +105,7 @@ pub const Module = struct {
         gpa.free(m.decl_scheme);
         gpa.free(m.decl_display);
         gpa.free(m.local_type);
+        gpa.free(m.inst_type);
     }
 };
 

@@ -1,0 +1,28 @@
+-- ownership: idiom I1, an accumulator in a loop (thesis §5.2). The
+-- tail-recursive `[ …acc, n ]` extends its accumulator parameter: slice 1
+-- accepts it with `param`, the caller's side being slice 2's
+-- (`ownership-checker.md` §8.2). `countdown` passes a fresh `[]`, so the
+-- whole loop would be in place. The fold's callback writes its own
+-- accumulator parameter: `callback-param`, which `foldl`'s row decides in
+-- slice 2 (thesis I2). `doubled` builds into a local list it then owns:
+-- `fresh`.
+pub upTo : Int, List Int → List Int
+upTo n acc =
+    if n == 0 then
+        acc
+    else
+        upTo (n - 1) [ …acc, n ]
+
+
+pub countdown : Int → List Int
+countdown n = upTo n []
+
+
+pub squares : List Int → List Int
+squares xs = List.foldl xs [] λx acc → [ …acc, x * x ]
+
+
+pub doubled : Int → List Int
+doubled x =
+    start = [ x ]
+    [ …start, x ]

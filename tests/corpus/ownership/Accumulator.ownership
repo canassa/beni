@@ -1,0 +1,6 @@
+module Accumulator
+  14:24 construction acc: accepted param
+  22:42 construction acc: accepted callback-param
+  28:7 construction start: accepted fresh
+  demands 3: accepted 3 (fresh 1, call 0, param 1, callback-param 1), rejected 0
+total 3: accepted 3 (fresh 1, call 0, param 1, callback-param 1), rejected 0

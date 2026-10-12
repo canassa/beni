@@ -92,7 +92,9 @@ pub const DiagnosticsFormat = enum { text, json };
 /// see a difference in the bytes `fast-compiler.md` §8.1 hashes.
 /// It exists so a test can assert "the same at every `--jobs`" about the
 /// record and not about a printer.
-pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes };
+/// `ownership` is hidden — parsed, but in no usage text — until the checker
+/// it reports leaves report mode (`ownership-checker.md` §2.4).
+pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership };
 
 /// Options every subcommand accepts.
 pub const Common = struct {
@@ -1132,7 +1134,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
 pub fn stageResolvesImports(stage: Stage) bool {
     return switch (stage) {
         .tokens, .ast, .bir => false,
-        .interface, .raw, .types, .graph, .dispatch, .writes => true,
+        .interface, .raw, .types, .graph, .dispatch, .writes, .ownership => true,
     };
 }
 
@@ -1243,6 +1245,8 @@ test "dump: stage, positions, exactly one file" {
         .file = "src/Main.beni",
     } }, &.{ "dump", "src/Main.beni", "--positions", "--core", "--root=src", "--stage=tokens" });
     try expectCommand(.{ .dump = .{ .stage = .bir, .file = "M.beni" } }, &.{ "dump", "--stage=bir", "M.beni" });
+    // Hidden (ownership-checker.md §2.4): parsed, but in no usage text.
+    try expectCommand(.{ .dump = .{ .stage = .ownership, .file = "src" } }, &.{ "dump", "--stage=ownership", "src" });
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .graph, .file = "src" } }, &.{ "dump", "--stage=graph", "src" });

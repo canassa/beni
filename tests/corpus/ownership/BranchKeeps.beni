@@ -1,0 +1,24 @@
+-- ownership: a branch where one arm keeps the old list (thesis §7,
+-- *Branches that keep the old value*; liveness is per arm, §3.9). In
+-- `choose`, the `True` arm extends `xs` and nothing in that arm reads it
+-- again: accepted. The `False` arm extends it and returns the old list
+-- beside the new one: rejected, `later-use`. A read in the other arm is not
+-- after the write (`ownership-checker.md` §7.2). In `after`, the read
+-- follows the whole `if`, so it is after the write on the arm that writes:
+-- rejected.
+pub choose : Bool, List Int → List Int × List Int
+choose keep xs =
+    if keep then
+        ( [ …xs, 1 ], [] )
+    else
+        ( [ …xs, 2 ], xs )
+
+
+pub after : Bool, List Int → Int
+after grow xs =
+    ys =
+        if grow then
+            [ …xs, 1 ]
+        else
+            [ 0 ]
+    List.length ys + List.length xs

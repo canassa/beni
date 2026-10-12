@@ -1,0 +1,8 @@
+module LaterRead
+  10:12 construction xs: rejected later-use: xs is read again at 11:22
+  17:7 construction zs: accepted fresh
+  24:7 construction xs: accepted fresh
+  29:17 List.push xs: rejected later-use: xs is read again at 29:11
+  demands 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0), rejected 2
+total 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0), rejected 2
+cause later-use 2

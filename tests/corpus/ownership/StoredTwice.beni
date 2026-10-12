@@ -1,0 +1,33 @@
+-- ownership: one list stored twice, then edited (thesis §3.2's holders;
+-- T10's shape, one list at two fields). `pair` puts `xs` at `.a` and `.b`;
+-- extending `pair.a` writes the array `pair.b` still shows, and `pair.b`
+-- is read after: rejected, `alias`. `copied` stores a `List.copy` at
+-- `.b` (Change 2), so the two fields are two arrays and the edit is
+-- accepted. `twoNames` keeps the list under a second name and reads it
+-- after: `alias` again (thesis §8.2's first example, `saved`).
+type alias Pair =
+    a : List Int
+    b : List Int
+
+
+pub both : Int → Int
+both n =
+    xs = [ n ]
+    pair = { a = xs, b = xs }
+    grown = [ …pair.a, 1 ]
+    List.length grown + List.length pair.b
+
+
+pub copied : Int → Int
+copied n =
+    xs = [ n ]
+    pair = { a = xs, b = List.copy xs }
+    grown = [ …pair.a, 1 ]
+    List.length grown + List.length pair.b
+
+
+pub twoNames : List Int → Int
+twoNames todos =
+    saved = todos
+    next = [ …todos, 0 ]
+    List.length next + List.length saved
