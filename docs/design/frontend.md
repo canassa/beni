@@ -1891,3 +1891,37 @@ package, `--explain` adding every other. The renderer, the call-style hints, the
 and every message that quotes code write `⊤` and `⊥`, and `Debug.toString` writes `⊤`
 (`core/Debug.beni`); a type identity's text and the type-body digest keep `()`. The frontend
 artifact's format version is 21.
+
+### 11.10 `--migrate-init`: `init` a function of `⊤`
+
+*Added 2026-10-12; built the same day.* How a program moves to `boundary.md` §9.8.16 (a)'s `init`, a
+function the platform calls once per mount. **`beni fmt --migrate-init`** is an edit in §11.4's
+family: it keeps the layout, may run on every `.beni` file, reaches its fixed point in one run, leaves
+a file with a syntax error alone, re-parses its output, and leaves untouched — naming it, with the
+re-parse's first diagnostic — a file that no longer parses. Its one edit: the value of the `init` field
+of a **program record**, unless it is already a lambda, gains `λ⊤ → ` in front of its first token, so
+`{ init = ( model, Cmd.none ), … }` becomes `{ init = λ⊤ → ( model, Cmd.none ), … }`; plain `beni
+fmt` then lays out what no longer fits.
+
+**A program record** is the record literal a program constructor is called with, or the body of a
+top-level value with no parameters that such a call names (`main = Tea.sandbox app`, `app = { init = …
+}`), parentheses looked through. **A program constructor** is told by its name alone, since a file has
+no types: `Tea.sandbox`, `Tea.element`, `Tea.document`, `Browser.program` and the test platform's
+`Page.sandbox`, written with the qualifier the file's import gives the module (its alias, or its name)
+or unqualified when that import exposes it. `Tea.application`'s `init` already was a function and is
+not touched; nor is any other record, so a record a helper returns (`Tea.sandbox (app ⊤)`) or a list of
+records mapped to a constructor is left to the type checker, whose error names the field ("The `init`
+field of this record is not what I expect … `⊤ → model`").
+
+The edit wraps; it does not restructure. `init = initialModel`, a top-level value, becomes `init = λ⊤ →
+initialModel`, which compiles and runs as before, and which the ownership checker still rejects at the
+first in-place edit of its list (T53, `ownership-checker.md` §22.2) until the program writes
+`initialModel ⊤ = …` itself: a per-file edit cannot see whether the value's other uses (a `Reset` arm)
+want it as a function too.
+
+*As built (2026-10-12):* `Format.migrateInit`, `--migrate-init` beside the other hidden flags and, like
+them, exclusive of them. Over every tracked `.beni` file it rewrote 277 files and left none for the
+re-parse; the rest of the migration was by hand — two fixture records the edit does not reach
+(`writes/B3HelperRecord`'s helper and `build/bad/direct/ConstructorAsValue`'s mapped list), the beni
+programs in Zig tests and in the benchmarks' generators, the design documents' code, and TodoMVC's four
+variants, whose top-level `init` became `init ⊤ = …`.

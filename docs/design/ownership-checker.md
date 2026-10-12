@@ -16,6 +16,9 @@ the manager's answers to §16.14.*
 *Amended 2026-10-12: slice 3b — the entry protocol of the functions a platform calls, per platform, and the
 dictionary's focus primitive — is specified in §20 and built; §19 records the manager's answers to §18.13.*
 
+*Amended 2026-10-12: slice 3c — `init` a function on every platform, commands that take values, and `swap`'s row
+— is specified in §22 and built; §21 records the owner's decisions on §20.11.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -1512,3 +1515,128 @@ and the applications (Conduit, TodoMVC, the table app) are measured per platform
 3. **View-event payloads** are aliased with the model at every arm (P6). A summary of `update` split by its
    message's constructor would confine them to the arm that receives them; research 78 counts how often the
    coarse rule fires.
+
+---
+
+## 21. The owner's decisions on §20.11 (2026-10-12)
+
+1. **Owned sends** (§20.11 question 1, Change 7): accepted, and built by slice 3d, not 3c. Until then
+   every payload is borrowed, as §20.5 says, and research 79 counts the `payload` rejections that
+   leaves.
+2. **`init` on the template platforms** (question 2): **`init` is a function on every platform** —
+   `browser-tea`'s `Tea.sandbox`, `element`, `document`, `browser`'s `Browser.program` and
+   `browser-direct`'s constructors all take `init : ⊤ → …`, called once per mount; `Tea.application`'s
+   already was a function of its address and key. One API everywhere (`boundary.md` §9.8.16 (a)).
+3. **Platform commands take values, not closures that read the model later** (thesis O5): every platform
+   command that persists or sends data takes the value already computed — `Storage.save`, an HTTP body as
+   encoded text, the log line — and a body that genuinely needs the list later says `List.copy`
+   (`boundary.md` §9.8.16 (b)).
+4. **View-event payloads** (question 3) are not decided: the coarse rule of §20.5 stays, and research 79
+   counts it again.
+
+The manager adds one: **`List.swap` keeps exclusive contents**, as the thesis's row says (`swap … excl
+if π₁ excl`), and the other writers' rows are checked against the thesis the same way (§22.5).
+
+---
+
+## 22. Slice 3c — `init` a function, value commands, permutations (normative from 2026-10-12)
+
+*Amends §20.3 and §20.9. Sections 1–21 keep their numbers and text; where this section changes a rule,
+it wins. Research 79 measures it.*
+
+### 22.1 What slice 3c builds
+
+| Thesis piece | Slice 3c |
+|---|---|
+| `init` is a function (Change 4) | **built on every platform** (§22.2; `boundary.md` §9.8.16 (a)), with `beni fmt --migrate-init` |
+| Command constructors that take values (O5) | **built**: `Storage.save`, `Http.send`, `Log.write` (§22.3; `boundary.md` §9.8.16 (b)) |
+| The writers' rows (thesis §3.11) | `swap` **asserted** with `pop`'s row; the others checked (§22.5) |
+| Owned sends (Change 7) | not built: slice 3d (§21 item 1) |
+
+### 22.2 `init` at the entry
+
+§20.3's first bullet is replaced. On every row `init` is one of the record's functions, like `update`:
+its classes are read off as §20.4 reads `update`'s, and the model at entry starts from its result
+applied to `⊤`, which holds no cell —
+
+    M₀ = init's result, instantiated with π₁ = ∅      (Tea.application: π₁ = ∅, π₂ = ⊤, as §20.3 had)
+
+— its model half for `element`, `document` and `application`. A function the walk cannot place makes
+a model it cannot know: `M₀` is `⊤`. The runtime calls `init` once per mount (`boundary.md` §9.8.16), so
+the cells its body makes — literals, its callees' fresh results — are fresh at entry, on every
+platform, whether `init` is a lambda written in the record (`init = λ⊤ → { todos = [] }`) or a named
+function (`init = initialModelOf`); a top-level value it returns is shared (T53), and that is rejected
+`top-level` at the first in-place edit through either spelling — `init = λ⊤ → initialModel` and
+`init ⊤ = initialModel` alike. The template rows keep their `platform` rejection (§20.2); a `top-level`
+or any other cause is the same line on every platform.
+
+`init` is in sight at a constructor with a row, as §20.6 says of the other fields: a lambda's demands on
+its own parameters are decided at the entry, and no `value … pending` line is printed for it.
+
+### 22.3 Commands that take values
+
+Nothing in the checker changes for them: what a command holds escapes at the constructor's call (§20.4
+(a)), and a value command holds only what it was handed. `Storage.save area key text failed` captures
+three strings, which cross, and a function of the error; `Http.send request tag` a record whose body is a
+`Body` (text, or parts of text) and whose `expect` is a function of the response; `Log.write level line`
+a string. So a model list reaches none of them unless the program puts it there, and an arm that saves
+or sends the model's text leaves the model's lists unescaped. The three are beni over the direct forms,
+their summaries inferred; none is asserted.
+
+What a value command does **not** remove is the encoder's own escape. A text computed by a core function
+over `Js` — `String.join`, a schema's `print`, `Debug.toString` — hands the list to a `Js.pure` lambda,
+which §18.6 takes to keep it, so the list escapes in the arm that encodes it whichever way the command is
+built. That is Change 5's (ownership words on those functions), not this slice's; research 79 counts it.
+
+### 22.4 The closures that stay
+
+Every constructor that takes a function stays (`boundary.md` §9.8.16 (c)): a body, the work of
+`Cmd.task` and `Cmd.do`, a tag, a subscription's listener are effects or message maps, not data. A body
+that captures a model list holds it, the list is escaped at every dispatch after the one that made the
+command (§20.4 (a)), and an in-place edit of it is rejected `escaped` (`EntryCommand`,
+`EntryValueCommand`) — never accepted unnoticed. The program that means the command to keep the list
+writes `List.copy`.
+
+### 22.5 Permutations, and the writers' rows against the thesis
+
+Thesis §3.11's rows, against what slice 3b had:
+
+| Writer | Thesis | Slice 3b | Slice 3c |
+|---|---|---|---|
+| `set`, `insertAt` | `excl if π₁ excl and π₃ stored exclusively` | asserted, the same | the same |
+| `push` | the same, for π₂ | asserted, the same | the same |
+| `pop`, `removeAt` | `excl if π₁ excl` | asserted, the same | the same |
+| `swap` | `excl if π₁ excl` | **inferred** from `set (set xs i y) j x`, which stores two of the list's own elements back into it: `{lost}` | **asserted** with `pop`'s row |
+| `update` | `excl if π₁ excl and g keeps shape` | `focus` (§18.5) | the same |
+| `cons`, `append` | as written | asserted, the same | the same |
+
+`swap`'s body is a permutation: the element at `i` goes to `j` and the one at `j` to `i`, so distinct
+positions still hold distinct cells, which no inference over two `set`s can see (each `set` stores a cell
+the list already holds at another position). The row is asserted, and the trusted surface (§20.9) gains
+it: **`List.swap` only permutes**. `insertAt`'s row was already the thesis's; `Permutations` pins all five.
+
+### 22.6 Testing
+
+New and changed fixtures in `tests/corpus/ownership/`:
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `EntryInit` (rewritten; browser-direct and browser-tea) | Change 4, T53, T14, T21 | `init = λ⊤ → initialModel` and `init = initTop` with `initTop ⊤ = initialModel`: `top-level` on both; a named function and a lambda that build the list: `entry` on browser-direct, `platform` on browser-tea; a top-level seed: `top-level` |
+| `EntryInitProgram` (browser) | `Browser.program`'s `init` | `top-level` for a top-level list, `platform` for a fresh one |
+| `EntryValueCommand` (browser-direct and browser-tea) | O5, §22.3–§22.4 | `Storage.save`, `Http.send` and `Log.write` of the model's text, then a push: `entry`; the same save through `Cmd.do` capturing `model`: `escaped` |
+| `Permutations` | §22.5 | an element edit after `swap`, `pop`, `removeAt` and `insertAt` of a literal: accepted with `xreq excl π1`; one list inserted twice, and `[ row, row ]` swapped: `exclusive` |
+
+and on the pages: `browser/tea/ValueCommands` (the three commands' effects), `StorageFaults` (`save`'s two
+failures as its tag), `browser/direct/InitThrows` (one golden on both platforms).
+
+### 22.7 Open questions
+
+1. **Navigation as commands.** Elm's `Browser.Navigation.pushUrl` is a command that takes values; beni's
+   is a direct form, so a page writes `Cmd.do λ⊤ → Navigation.pushUrl key url`, and Conduit's one capture
+   of the whole model (research 78 §5) was such a body computing its key inside. It is fixed by computing
+   the key first; command forms of the navigation calls would make that the only spelling, at the cost of
+   names beside the direct forms that already took Elm's.
+2. **The encoders** (§22.3): `String.join` and `Schema.print` escape what they read until Change 5's words
+   say they only read; research 79 counts the lines that cause.
+3. **`Http.send` has no tracker and no `riskySend`**: a page that needs either writes a body. To be added
+   when a program needs one.

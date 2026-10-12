@@ -1794,7 +1794,9 @@ consume them, each as a minor version of its own.
   tree), `function` (one whose body is anything else), `other_module`, or `computed` (a call, a
   local, a value). A module that calls a constructor and writes no markup of its own is handed an
   empty tree; `module` is not run for it.
-- **`cx.programInit(block) Expr`**: the program's `init`, evaluated into `block` and bound to a
+- **`cx.programInit(block) Expr`** (*amended 2026-10-12, §9.8.16: what it evaluates is `init ⊤`; a
+  lambda of `⊤` in the record is lowered as its body, any other function is called, and on every
+  platform `init` now runs at mount*): the program's `init`, evaluated into `block` and bound to a
   name that `--release` keeps when `init` may have an effect (`backend.md` §9's rule for any such
   binding), and that name. At most once per program. So `init` is evaluated where the lowering
   places it — for `browser-direct`, inside the mount, which runs inside the dispatch guard — and
@@ -2144,6 +2146,10 @@ the pieces below. `browser-tea` re-exports `Cmd`, `Sub`, `Time`, `Dom`, `Http` a
 | `Time`, `Dom`, `Http`, `Browser.Events` | `browser` | the first primitives (§9.8.8) |
 | `Tea` | `browser-tea`, beni | `sandbox`, and `element { init : ( model, Cmd msg ), update, view, subscriptions }` |
 
+*Amended 2026-10-12 (§9.8.16):* `init` is a function the platform calls once per mount — `init :
+⊤ → ( model, Cmd msg )` — on every program constructor, and `Storage`, `Http` and `Log` gain the
+commands `save`, `send` and `write`, which take the value they store, send or log.
+
 `Tea.sandbox` stays `Browser.program`, and a page built on it reaches no byte of `Task` (R45 §7).
 
 #### 9.8.2 The command API and the four policies
@@ -2163,6 +2169,10 @@ pub afterRender : (Send msg → ⊤) → Cmd msg                     -- §9.8.6
 pub task : (⊤ → a), (a → msg) → Cmd msg                       -- perform λsend -> send (tag (work ()))
 pub do : (⊤ → ⊤) → Cmd msg                                    -- perform λ_ -> work ()
 ```
+
+*Amended 2026-10-12 (§9.8.16 (b)):* beside these, `Storage.save`, `Http.send` and `Log.write` are
+commands that take the value they store, send or log; every constructor above stays, and §9.8.16 (c)
+says why each that takes a function does.
 
 A keyed body arriving at a key path under which bodies still run (the architecture keeps, per path,
 the fibers not yet ended):
@@ -3950,6 +3960,112 @@ process alive. A page is not affected: it is alive while it is open.
 **Nothing else moves.** `Tea`'s command table and policies, `Sub.listen`, `Dom.rendered` and the
 teardown of §9.8.14 are unchanged; the combinators of §17.7 cancel and wait exactly as
 `closeScope` does, so they inherit §9.8.14 (e)'s order and its deadline.
+
+#### 9.8.16 Programs start from `init ⊤`, and commands take values (2026-10-12)
+
+*Added 2026-10-12*, the owner's decisions on [`ownership-checker.md`](ownership-checker.md) §20.11
+(thesis Change 4 and proposal O5; `ownership-checker.md` §21). This section is normative for every
+program constructor of `browser`, `browser-tea` and `browser-direct`, and for the command
+constructors of `browser`'s `Cmd`, `Storage`, `Http` and `Log`. It amends §9.8.1's table, §9.8.2's
+API, §9.4.6's `cx.programInit` and §9.8.13's `Tea.application` only where it says so.
+
+**(a) `init` is a function, on every platform.** A program's `init` is a function the platform calls
+**once per mount**, when that program mounts, and never where `main` is evaluated:
+
+| Constructor | Package | `init` |
+|---|---|---|
+| `Browser.program` | `browser` | `sync (⊤ → model)` |
+| `Tea.sandbox` | `browser-tea` | `⊤ → model` |
+| `Tea.element`, `Tea.document` | `browser-tea` | `⊤ → model × Cmd msg` |
+| `Tea.sandbox` | `browser-direct` | `sync (⊤ → model)` |
+| `Tea.element`, `Tea.document` | `browser-direct` | `sync (⊤ → model × Cmd msg)` |
+| `Tea.application` | both | `Url, Navigation.Key → model × Cmd msg`, unchanged: it already was one |
+
+*Why.* A value `init` puts the same arrays in every mount and every `Reset` arm that returns it, so a
+platform that edits a list in place would change what the next mount or reset starts from; a function
+builds the model anew each time (thesis Change 4). The checker needs one meaning of `init` on all
+three platforms so that one source has one verdict (`ownership-checker.md` §20.2), and the owner took
+the API change on the template platforms too, where nothing is written in place yet, rather than let
+one source's `init` mean two things. `init` is `sync` where the record's other functions already
+were, and `browser-tea`'s `element` calls it inside `Browser.hosted`'s `sync` `init`, so an `init`
+that may suspend is refused where it is written (`sync_boundary`, "`Tea.sandbox` hands it to the
+platform, which calls it synchronously"), not at `main`.
+
+*What changes for a page.* `Rt`'s mount calls `program.init()` where it read `program.init`, and
+`Browser.hosted`'s mount record has an `init` that answers `null` (a hosted program's model is its
+architecture's, made in its own `init`). `browser-tea`'s `element` hands `start` the value of
+`app.init ⊤`. On `browser-direct`, `cx.programInit` (§9.4.6) evaluates `init ⊤`: a lambda of `⊤`
+written in the record, `init = λ⊤ → e`, is lowered as its body `e` in the mount, byte for byte what
+the mount wrote for the old `init = e`, so `emit/direct/` does not move; any other function is called,
+`init()`, and the binding is kept by `--release` as one that may have an effect (`backend.md` §9).
+So **`init` runs at mount on every platform**: a throw in it is a defect of the mount everywhere
+(`browser/direct/InitThrows` has one golden now, where it had a `.tea-expected`), and a `Debug.log`
+in it prints at mount. `Tea.document`, which hands its record to `element`, passes `app.init` on.
+
+*Migration.* `beni fmt --migrate-init` (`frontend.md` §11.10) writes the `init = e` of every program
+record `init = λ⊤ → e`; plain `beni fmt` lays the lambdas out after it. A program that keeps its first
+model in a top-level value compiles once migrated, and stays rejected by the ownership checker at its
+first in-place edit (T53) until it writes `init ⊤ = …`. Without the migration a value `init` is a type
+error naming the field: "The `init` field of this record is not what I expect … it needs to be
+`⊤ → model`".
+
+**(b) Commands that persist or send data take the value** (thesis O5). A command constructor that
+stores, sends or logs data takes the data — text, a request whose body is already text — computed by
+`update` when it makes the command, never a function whose body reads the model when the command runs.
+Three are added, each a thin wrapper over the direct form §9.8.11 (a) gives first:
+
+```elm
+-- Storage
+pub save : Area, String, String, (Error → msg) → Cmd msg
+    -- `set` when the command runs; `failed error` is sent only when the write did not happen
+-- Http
+pub send :
+      { method : String, headers : List Header, url : String, body : Body
+      , expect : Expect x a, timeout : Maybe Duration }
+    , (Result x a → msg)
+    → Cmd msg
+    -- `Cmd.task` over `request`, `same-origin`, no tracker; elm/http 1.0's `send`
+-- Log
+pub type Level = Info | Warn | Error
+pub write : Level, String → Cmd msg
+    -- `info`, `warn` or `error` of the line when the command runs
+```
+
+`Storage.save` sends its tag only on failure, by the same `Error` constructors `set` returns: a save
+that worked needs no message and costs no dispatch, and one that did not is never silent — the program
+names what it does with `QuotaExceeded` and `Unavailable`. `Http.send` has no `tracker`: progress is a
+callback that runs while the request does, so a body that tracks progress calls `request` itself; its
+`credentials` are `request`'s, and a `riskySend` waits for a program that needs one. `Log.write` lives in
+`browser`'s `Log` beside the three direct forms; §9.8.15 (b)'s move of the direct forms into core is
+not built, and a command stays a `browser` module's either way, since `Cmd` is one. Each body is a
+function of its arguments that never waits, so each command is `Now` (§9.8.11 (b)) but `Http.send`'s,
+which is `Perform`. Elm has no storage or log commands — a port is its answer — so there is no name to
+mirror but elm/http's.
+
+**(c) The inventory: every constructor that takes a function, and why it stays.** Each constructor of
+`browser`, `browser-tea`, `browser-direct` and core that makes a `Cmd`, a `Sub` or a body:
+
+| Constructor | Takes | Verdict |
+|---|---|---|
+| `Cmd.perform`, `Cmd.keyed`, `Cmd.afterRender` | a body `Send msg → ⊤` | **stays**: a body is effects run later — a request, a timer, a focus — and effects are not data. It is the direct-forms-first form every wrapper is written over (§9.8.11 (a)) |
+| `Cmd.task`, `Cmd.do` | work `⊤ → a` | **stays**, for the same reason; the data a body needs is computed before it and captured as a value |
+| `Cmd.map`, `Sub.map` | a tag `a → msg` | **stays**: it maps messages; it reads no model |
+| `Cmd.none`, `batch`, `cancel`, `cancelAll` | values | already values |
+| `Random.generate` | a `Generator` and a tag | **stays**: the generator is a value built at the call (`Random.uniform x model.items` holds the list it was given, as a value does) |
+| `Sub.listen`, `Sub.on`, `Time.every`, `Browser.Events.on…`, `Navigation.onUrlRequest`, `onUrlChange` | a body or a listener and a tag | **stays**: a subscription is an effect that runs while its key is live |
+| `Storage.set`, `Http.request`, `Http.get`, `Http.post`, `Log.info`, `warn`, `error`, `Navigation.pushUrl`, … | values | direct forms, called in a body; they already take values |
+| `Storage.save`, `Http.send`, `Log.write` | values | **new**, (b) |
+| `core/Task`'s `spawn`, `scope`, `bracket`, … | functions | not commands: the fiber runtime a body uses |
+
+No capability is removed: every closure-taking constructor stays, and the three new ones are wrappers a
+program could have written as a body. **A closure that stays cannot keep a model list unnoticed**: the
+ownership checker treats everything a command holds as escaped at the program constructor's call — a
+body that captured `model.items` makes that list escaped at every later dispatch, and an in-place edit
+of it is rejected `escaped` (`ownership-checker.md` §20.4 (a), §22.3); a function handed to a `foreign`
+escapes what it captured (§18.6). A body that genuinely needs the list later says so with `List.copy`.
+
+**(d) What does not move.** `Browser.hosted`'s `init : sync (Host msg → model)`, `Tea.application`'s
+`init`, the command table, the four policies, the dispatch order of §9.8.4 and every direct form.
 
 ## Appendix — what is deliberately not done
 

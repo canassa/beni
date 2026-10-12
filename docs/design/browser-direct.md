@@ -2351,3 +2351,17 @@ queues a send made while a dispatch runs, on every page, as S1 specified (§4.3)
 `Direct.reentrant`. The fixtures that exercise a send mid-dispatch (`BlurBetweenHandlers`,
 `RowBlur`, `RemoveFocusedRow`) stay. **The short release errors at the mount are approved**:
 `mounted twice` and `cannot mount at <id>` under `--release`, the prose in development.
+
+### *Amended 2026-10-12 (`boundary.md` §9.8.16):* `init` is a function of `⊤`, on both platforms
+
+The program record's `init` is `sync (⊤ → model)` (`sync (⊤ → model × Cmd msg)` for `element` and
+`document`), the owner's decision for every platform (thesis Change 4). §11.1's "it needs `init` as a
+value" now reads: it needs `init`, a function, and the hook evaluates `init ⊤` in the mount. A lambda
+of `⊤` written in the record, `init = λ⊤ → e`, is lowered as its body `e`, in the mount, so every page
+whose `init` was `e` is byte for byte what it was (`emit/direct/` did not move); a named function is
+called. The write-set pass reads `init`'s literals the same way: a lambda's body evaluated where the
+record is, any other function applied (`write-sets.md` §3.5's literals are unchanged on every
+`writes/` fixture). §12.1's *`init`'s evaluation is a specified difference between the platforms* is
+withdrawn: `browser-tea` calls `init` at mount too, so a throw in it is a defect of the mount on both
+platforms and `browser/direct/InitThrows` has one golden. A program built by a function,
+`counter start = Tea.sandbox { init = λ⊤ → start, … }`, is what `program_mounted_twice` now suggests.
