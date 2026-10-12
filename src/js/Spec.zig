@@ -1741,6 +1741,9 @@ const Spec = struct {
                 // Fact 5's second case is decided by this evaluation alone:
                 // one an earlier sweep made, from facts that have grown
                 // since, is taken back unless this one makes it again. A
+                // walk evaluates every node of its statement — both arms of
+                // a conditional or an `if`, both operands of `&&` and `||`,
+                // every function body (`eval`, `evalStmt`) — and a
                 // statement's last walk saw the final facts (`sweeps`), so
                 // what stays is decided by them, as `memo` is.
                 const key: NodeRef = .{ .module = m.index, .node = node.int() };
