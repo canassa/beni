@@ -105,9 +105,14 @@ believed true, and what `ownership falsify` (random configurations for the
 step lemma, every call of generated programs for Lemma 6.7) found — including
 two checker defects, now fixed. Lemma 6.7's clause 4 is not stated (the
 interpreters do not record callback invocations). No axiom is declared;
-`lake build` fails if the set of `sorry`-dependent constants changes, or if any
-`sorry`, `admit`, `native_decide` or `axiom` appears in the sources beyond the
-three statements (`Axioms.lean`).
+`lake build` fails if the set of `sorry`-dependent constants changes, if the
+kernel rejects any constant on replay, or if any `sorry` beyond the three
+statements, `admit`, `native_decide`, `axiom`, `skipKernelTC`, `addDecl`,
+`run_cmd`, `implemented_by` or `extern` appears in the sources
+(`Axioms.lean`). The third review found two more ways the step lemma was
+false (shadowing, which both checkers mishandled and the core now refuses;
+an abstract environment that does not cover the live uses) and both are
+fixed in the statement or the checker.
 
 ## Limits
 
