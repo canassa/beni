@@ -4748,6 +4748,53 @@ test "the dispatch table is byte-identical at --jobs=1 and --jobs=8" {
     try testing.expect(std.mem.indexOf(u8, out[0], "    requirement 0 ") != null);
 }
 
+test "the ownership report is byte-identical at --jobs=1 and --jobs=8" {
+    // ownership-checker.md §10: the pass runs after the parallel check, and
+    // its ids — paths, cells, points — are assigned in its walk; nothing
+    // printed is one. Two modules, so the checker has work to share, and
+    // demands of every verdict kind.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lists.beni",
+        \\pub grow : List Int, Int → List Int
+        \\grow acc n = [ …acc, n ]
+        \\
+        \\
+        \\pub keep : List Int → List Int × List Int
+        \\keep xs = ( [ …xs, 1 ], xs )
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Lists
+        \\
+        \\
+        \\seed : List Int
+        \\seed = [ 1 ]
+        \\
+        \\
+        \\pub both : Int → Int
+        \\both n =
+        \\    xs = Lists.grow [ n ] n
+        \\    ys = [ …xs, 2 ]
+        \\    zs = [ …seed, 3 ]
+        \\    List.length ys + List.length xs + List.length zs
+        \\
+    );
+    const runs = [4][]const u8{ "--jobs=1", "--jobs=8", "--jobs=1", "--jobs=8" };
+    var out: [4][]const u8 = undefined;
+    for (&out, runs) |*slot, jobs| {
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", jobs, "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        slot.* = r.stdout;
+    }
+    for (out[1..]) |other| try testing.expectEqualStrings(out[0], other);
+    // The report really does hold both verdicts and both modules.
+    try testing.expect(std.mem.indexOf(u8, out[0], "module Lists\n") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0], "rejected later-use") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0], "rejected top-level") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0], "accepted param") != null);
+}
+
 test "a constraint that rode out on an inferred interface is reported without --explain, and does not fail the build" {
     // static-dispatch-spike.md §10.9 and §6.4: an unannotated `pub`
     // declaration's inferred scheme carries the constraints its body raised,

@@ -119,6 +119,7 @@ const Kind = enum {
     bir,
     dispatch,
     writes,
+    ownership,
     check_good,
     check_bad,
     check_args,
@@ -139,6 +140,7 @@ const Kind = enum {
             .bir => "bir",
             .dispatch => "dispatch",
             .writes => "writes",
+            .ownership => "ownership",
             .check_good => "check/good",
             .check_bad => "check/bad",
             .check_args => "check/args",
@@ -163,6 +165,7 @@ const Kind = enum {
             .bir => "bir",
             .dispatch => "dispatch",
             .writes => "writes",
+            .ownership => "ownership",
             .check_good => "iface",
             .emit => "js",
             .check_depth, .regress => null,
@@ -178,7 +181,7 @@ const Kind = enum {
     /// Whether a subdirectory of the kind is a PROJECT fixture rather than
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .writes or
+        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .writes or kind == .ownership or
             kind == .build_bad or kind == .build_bad_release or kind == .run or kind == .browser;
     }
 
@@ -200,7 +203,7 @@ const Kind = enum {
     fn partOf(kind: Kind, pass: RunPass) Part {
         return switch (kind) {
             .parse_good, .parse_bad, .fmt, .bir, .regress => .parse,
-            .check_good, .check_bad, .check_args, .check_depth, .dispatch, .writes => .check,
+            .check_good, .check_bad, .check_args, .check_depth, .dispatch, .writes, .ownership => .check,
             .build_bad, .build_bad_release, .emit => .build,
             .run => switch (pass) {
                 .dev, .dev_library, .dev_fiber, .tea_dev => .run_dev,
@@ -252,6 +255,13 @@ test "corpus: dispatch" {
 // read. Every fixture is built for `browser-tea`, whose programs it reads.
 test "corpus: writes" {
     try walk(.writes);
+}
+
+// The ownership checker's report (`ownership-checker.md` §9, §11): one line per
+// demand with its verdict. Its own kind for `dispatch/`'s reason: an output of
+// a pass, printed with no ids, which only people and tests read.
+test "corpus: ownership" {
+    try walk(.ownership);
 }
 
 test "corpus: check/good" {
@@ -1315,6 +1325,7 @@ const Case = struct {
             .bir => try c.lowering(),
             .dispatch => try c.dispatching(),
             .writes => try c.writeSets(),
+            .ownership => try c.ownershipReport(),
             .check_good => try c.checkGood(),
             .check_bad, .check_args => try c.bad(),
             .check_depth => try c.depth(),
@@ -2661,6 +2672,23 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=dispatch", path });
         try expectExit(0, r);
         try c.expectGolden("dispatch", r.stdout);
+    }
+
+    /// The ownership report of a module or a project (`ownership-checker.md`
+    /// §9, §11): the fixture must check clean, and `dump --stage=ownership`
+    /// is the golden. It prints verdicts, never diagnostics, so its exit is
+    /// 0 whatever it rejects.
+    fn ownershipReport(c: Case) !void {
+        const path = try c.fixturePath();
+        const checked = try c.compiler(&.{ "check", path });
+        try expectExit(0, checked);
+        if (!try c.warningsAccounted(checked.stderr)) {
+            detail("{s}: an ownership fixture must produce no diagnostics but those of its .diag\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+        const r = try c.compiler(&.{ "dump", "--stage=ownership", path });
+        try expectExit(0, r);
+        try c.expectGolden("ownership", r.stdout);
     }
 
     /// The write sets of a program (`write-sets.md` §8.1): the fixture must

@@ -1,0 +1,26 @@
+-- ownership: idiom I5, an `update` that extends or edits a model list
+-- (thesis §5.2). `{ model | items = List.push model.items x }` writes
+-- `model.items`; the record update uses `model` at every path but
+-- `.items` (`ownership-checker.md` §7.1, thesis §3.9: field-sensitive
+-- deadness), so the old list has no later reader and the demand is
+-- accepted, `param` — the entry protocol that hands `update` its model is
+-- slice 2's. `rename` reads `model.name` after the push: another path, not
+-- a use of the list. `keepOld` returns the old list beside the new one:
+-- rejected, `later-use` (T17's record form).
+type alias Model =
+    items : List String
+    name : String
+
+
+pub add : Model, String → Model
+add model x = { model | items = List.push model.items x }
+
+
+pub rename : Model, String → Model
+rename model x =
+    next = { model | items = [ …model.items, x ] }
+    { next | name = model.name ++ "!" }
+
+
+pub keepOld : Model, String → List String × List String
+keepOld model x = ( [ …model.items, x ], model.items )

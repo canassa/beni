@@ -1,0 +1,43 @@
+-- ownership: a spread consumes its base, and only its base (Change 1;
+-- thesis §3.8, *Construction consumes its base*). The base is the operand
+-- of the first spread: in `[ x, …acc, y, …ys ]` it is `acc`, and `ys` is
+-- only read, so reading `ys` afterwards is fine while reading `acc` is
+-- not. A chain `a ++ b ++ c` is one construction whose base is `a`
+-- (*Chains are flattened on purpose*). `[ …xs ]` is `xs` itself and
+-- writes nothing; re-building `[ h, …t ]` right after matching it is the
+-- matched list, an alias and not a demand. `[ …xs, …xs ]` reads its base
+-- while writing it: rejected, `disjoint` (T1's construction form).
+pub firstSpread : Int, List Int, List Int → Int
+firstSpread x acc ys =
+    zs = [ x, …acc, x, …ys ]
+    List.length zs + List.length ys
+
+
+pub baseRead : Int, List Int, List Int → Int
+baseRead x acc ys =
+    zs = [ x, …acc, x, …ys ]
+    List.length zs + List.length acc
+
+
+pub chain : List Int, List Int, List Int → Int
+chain a b c =
+    d = a ++ b ++ c
+    List.length d + List.length b + List.length c
+
+
+pub whole : List Int → List Int
+whole xs = [ …xs ]
+
+
+pub recons : List Int → List Int
+recons xs =
+    case xs of
+        [ h, …t ] →
+            [ h, …t ]
+
+        [] →
+            []
+
+
+pub twice : List Int → List Int
+twice xs = [ …xs, …xs ]

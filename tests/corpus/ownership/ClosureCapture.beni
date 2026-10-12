@@ -1,0 +1,30 @@
+-- ownership: closures (thesis §3.6, §4.3, §7 *Closures*). T7: `g` captures
+-- `xs` and is called after the construction writes `xs`'s array, so the
+-- closure is a live holder: rejected, `captured`, as the full checker does.
+-- Captures are per path: `label` reads only `model.name`, so extending
+-- `model.rows` while `label` lives is accepted (thesis §4.3's example).
+-- `pusher` writes a list it captured. The full checker makes such a closure
+-- *once* and accepts it where it is called at most once (thesis §3.6,
+-- *Affinity*); slice 1 has no ownership classes, so it cannot tell how
+-- often the closure runs and rejects it as a limit, `captured-edit`
+-- (`ownership-checker.md` §8.3) — a rejection slice 2 removes.
+type alias Model =
+    rows : List Int
+    name : String
+
+
+pub t7 : List Int → Int
+t7 xs =
+    g = λ⊤ → List.length xs
+    ys = [ …xs, 4 ]
+    g ⊤ + List.length ys
+
+
+pub perPath : Model → Model
+perPath model =
+    label = λ⊤ → model.name
+    { model | rows = [ …model.rows, 1 ], name = label ⊤ }
+
+
+pub pusher : List Int → (Int → List Int)
+pusher acc = λx → [ …acc, x ]

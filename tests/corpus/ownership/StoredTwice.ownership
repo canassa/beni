@@ -1,0 +1,7 @@
+module StoredTwice
+  17:15 construction pair.a: rejected alias: pair.b holds it and is read at 18:25
+  25:15 construction pair.a: accepted fresh
+  32:14 construction todos: rejected alias: saved holds it and is read at 33:24
+  demands 3: accepted 1 (fresh 1, call 0, param 0, callback-param 0), rejected 2
+total 3: accepted 1 (fresh 1, call 0, param 0, callback-param 0), rejected 2
+cause alias 2

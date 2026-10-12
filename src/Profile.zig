@@ -153,6 +153,9 @@ pub const Phase = enum {
     /// The write-set pass (`write-sets.md` §6.2), once per run that asks
     /// for it, after checking: its cost is a number beside `check`.
     writes,
+    /// The ownership report (`ownership-checker.md` §9), once per run of
+    /// `dump --stage=ownership`, after checking.
+    ownership,
 };
 
 pub const Counter = enum {

@@ -1,0 +1,33 @@
+-- ownership: calls in slice 1 (`ownership-checker.md` §6.1). With no
+-- summaries, a call's result is a fresh list plus every argument list its
+-- type could hold. `List.filter xs p : List Int` may be `xs` itself — the
+-- identity promise of thesis §3.8 falls out of the rule — so extending it
+-- while `xs` is read later is rejected, `call`, as the full checker would
+-- (T52's shape). `List.map xs String.fromInt : List String` cannot be `xs`,
+-- a `List Int`: the extension is accepted, `call`, pending the callee's
+-- summary. `List.length` returns an `Int`, which crosses and holds nothing.
+-- `[ …xs, …List.reverse xs ]` reads a temporary that may be `xs` while
+-- writing `xs`: Disjoint fails only through the call, so it is rejected as
+-- `call` (thesis §8.4: the identity promise is an approximate tag).
+pub filtered : List Int → Int
+filtered xs =
+    kept = List.filter xs λx → x > 0
+    grown = [ …kept, 0 ]
+    List.length grown + List.length xs
+
+
+pub mapped : List Int → Int
+mapped xs =
+    labels = List.map xs String.fromInt
+    grown = [ …labels, "end" ]
+    List.length grown + List.length xs
+
+
+pub counted : List Int → List Int
+counted xs =
+    n = List.length xs
+    [ …xs, n ]
+
+
+pub mirrored : List Int → List Int
+mirrored xs = [ …xs, …List.reverse xs ]

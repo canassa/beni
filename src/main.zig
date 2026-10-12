@@ -182,7 +182,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // `--stage=types` prints local bindings' types, and a `Var` means
     // nothing once its store is gone (checker.md §5).
     // `--msg-types` reads the checker's scheme of each program's `update`.
-    options.keep_type_stores = dump.stage == .types or dump.msg_types;
+    options.keep_type_stores = dump.stage == .types or dump.stage == .ownership or dump.msg_types;
     // The chain is read before any source, as `check` and `build` read it
     // (platform.zig): a `--platform` that names nothing is the same exit 2
     // and the same line.
@@ -202,7 +202,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     const phases: Session.Phases = switch (dump.stage) {
         .tokens, .ast => Session.parse_phases,
         .bir => Session.lower_phases,
-        .interface, .raw, .types, .dispatch, .writes => Session.check_phases,
+        .interface, .raw, .types, .dispatch, .writes, .ownership => Session.check_phases,
         // The graph is what `resolve_phases` builds first, and nothing
         // after it changes an edge (`static-dispatch-spike.md` §6.8), so
         // this dump stops before a single module is checked.
@@ -224,6 +224,12 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     if (dump.stage == .writes) {
         if (summary.errors > 0) return dumpExit(summary, 0);
         return dumpExit(summary, dumpWrites(gpa, &session, stdout, stderr, dump));
+    }
+    // `--stage=ownership` (ownership-checker.md §9): every module under the
+    // path, a file or a directory, one line per demand.
+    if (dump.stage == .ownership) {
+        if (summary.errors > 0) return dumpExit(summary, 0);
+        return dumpExit(summary, dumpOwnership(gpa, &session, stdout, stderr, dump));
     }
     // `--stage=interface` takes a directory as well as a file: a project's
     // interfaces in path order are exactly what a `check/good` corpus
@@ -310,7 +316,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
                 &session.interner,
             ) catch return 2;
         },
-        .graph, .writes => unreachable, // handled above: neither is one file's
+        .graph, .writes, .ownership => unreachable, // handled above: none is one file's
         .types => {
             const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
             if (m.int() >= session.checked.modules.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});
@@ -484,6 +490,80 @@ fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, std
         }
     };
     beni.dump.writes.write(stdout, gpa, a, result, .{ .ctx = session, .get = Pos.get }) catch return 2;
+    if (dump.common.self_profile) |path| session.writeProfile(path) catch {};
+    return 0;
+}
+
+/// The ownership report over every module whose file is the path or under
+/// it (ownership-checker.md §9.1). An embedded core or platform module is
+/// included when the path names its directory, and never under `.`.
+fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
+    const Ownership = beni.own.Ownership;
+    const n = session.graph.count();
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    const target = storePath(&buffer, dump.file);
+    const birs = gpa.alloc(*const beni.Bir, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(birs);
+    const names = gpa.alloc([]const u8, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(names);
+    const packages = gpa.alloc(SourceStore.Package, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(packages);
+    const spans = gpa.alloc(beni.lex.Token.Spans, n) catch return fail(stderr, "beni: out of memory", .{});
+    defer gpa.free(spans);
+    for (0..n) |i| {
+        const m: beni.resolve.Graph.Index = @fromBackingInt(@intCast(i));
+        const f = session.graph.moduleFile(m);
+        birs[i] = session.artifacts.bir(f);
+        names[i] = session.store.moduleName(f);
+        packages[i] = session.graph.modulePackage(m);
+        spans[i] = session.artifacts.spans(f);
+    }
+    // The targets, in path order (fast-compiler.md §10).
+    var targets: std.ArrayList(u32) = .empty;
+    defer targets.deinit(gpa);
+    for (session.store.byPath()) |f| {
+        const p = session.store.path(f);
+        if (!(std.mem.eql(u8, p, target) or underDir(p, target))) continue;
+        if (session.store.isEmbedded(f) and std.mem.eql(u8, target, ".")) continue;
+        const m = moduleOf(session, f) orelse continue;
+        targets.append(gpa, @intCast(m.int())) catch return fail(stderr, "beni: out of memory", .{});
+    }
+    if (targets.items.len == 0) return fail(stderr, "beni: dump needs at least one module", .{});
+    const Pos = struct {
+        fn get(ctx: *const anyopaque, module: u32, tok: u32) Ownership.Position {
+            const s: *const Session = @ptrCast(@alignCast(ctx));
+            const f = s.graph.moduleFile(@fromBackingInt(@intCast(module)));
+            const line_starts = s.store.lineStarts(f);
+            const sp = s.artifacts.spans(f);
+            if (line_starts.len == 0 or tok >= sp.len()) return .{ .line = 1, .col = 1 };
+            const pos = @import("diagnostic").position(line_starts, s.store.bytes(f), sp.starts[tok]);
+            return .{ .line = pos.line, .col = pos.col };
+        }
+    };
+    const token = session.profile.begin();
+    var o = Ownership.init(.{
+        .gpa = gpa,
+        .graph = &session.graph,
+        .birs = birs,
+        .provenance = session.resolution.provenance,
+        .dispatch = session.checked.dispatch,
+        .modules = session.checked.modules,
+        .types = &session.checked.types,
+        .interner = &session.interner,
+        .module_names = names,
+        .packages = packages,
+        .spans = spans,
+        .positions = .{ .ctx = session, .get = Pos.get },
+    });
+    defer o.deinit();
+    const reports = onBigStackResult(struct {
+        fn go(own: *Ownership, ts: []const u32) std.mem.Allocator.Error![]const Ownership.ModuleReport {
+            return own.run(ts);
+        }
+    }.go, .{ &o, targets.items }) catch
+        return fail(stderr, "beni: out of memory", .{});
+    session.profile.end(0, token, .ownership, beni.Profile.Event.no_file, 0);
+    beni.dump.ownership.write(stdout, reports, names) catch return 2;
     if (dump.common.self_profile) |path| session.writeProfile(path) catch {};
     return 0;
 }

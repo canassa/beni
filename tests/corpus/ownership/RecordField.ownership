@@ -1,0 +1,7 @@
+module RecordField
+  16:33 List.push model.items: accepted param
+  21:32 construction model.items: accepted param
+  26:23 construction model.items: rejected later-use: model.items is read again at 26:19
+  demands 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0), rejected 1
+total 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0), rejected 1
+cause later-use 1

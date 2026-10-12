@@ -148,6 +148,10 @@ pub fn check(in: Input) Error!Check.Counters {
     defer if (!tables_kept) gpa.free(decl_display);
     const local_type = try newTable(gpa, bir.locals.len);
     defer if (!tables_kept) gpa.free(local_type);
+    // Only a run that keeps the stores reads instruction types
+    // (`ownership-checker.md` §2.3); a build allocates nothing here.
+    const inst_type: []Var.Optional = if (in.keep != null) try newTable(gpa, bir.insts.len) else &.{};
+    defer if (!tables_kept) gpa.free(inst_type);
 
     var schemas = try Schema.State.init(scratch, store, in.types, in.graph, in.artifacts, in.interfaces, in.interner, in.module, bir);
     defer schemas.deinit();
@@ -168,6 +172,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .schemas = &schemas,
         .too_deep = &too_deep,
         .keep_display = in.keep != null,
+        .inst_type = inst_type,
     };
     // Effect inference records beside every phase and solves after P5
     // (transparent-effects-proposal.md §14, checker-v2.md §26).
@@ -432,6 +437,7 @@ pub fn check(in: Input) Error!Check.Counters {
         k.decl_scheme = decl_scheme;
         k.decl_display = decl_display;
         k.local_type = local_type;
+        k.inst_type = inst_type;
         tables_kept = true;
         k.effects = effects;
         effects_kept = true;

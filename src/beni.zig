@@ -169,6 +169,9 @@ pub const writes = struct {
     pub const Writes = @import("writes/Writes.zig");
     pub const Core = @import("writes/Core.zig");
 };
+pub const own = struct {
+    pub const Ownership = @import("own/Ownership.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
     pub const ast = @import("dump/ast.zig");
@@ -179,6 +182,7 @@ pub const dump = struct {
     pub const dispatch = @import("dump/dispatch.zig");
     pub const writes = @import("dump/writes.zig");
     pub const msg_types = @import("dump/msg_types.zig");
+    pub const ownership = @import("dump/ownership.zig");
 };
 pub const render = struct {
     pub const text = @import("render/text.zig");
@@ -198,6 +202,7 @@ test {
     std.testing.refAllDecls(check);
     std.testing.refAllDecls(dump);
     std.testing.refAllDecls(writes);
+    std.testing.refAllDecls(own);
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(js);
     std.testing.refAllDecls(build);
