@@ -3120,6 +3120,17 @@ rejection is. An engine may reject a body read cut off by an abort with a `TypeE
 the reason — Chrome does for a body that is a stream — and that rejection is the abort's
 consequence, not the network's.
 
+*Amended 2026-10-12 (the owner's decision):* **the step a waiting fiber is resumed with names
+exactly the failures this table can produce.** `Http`'s private `wait` resumes its fiber, through
+`Task.callback`, with a `Step`: the promise's value, a failure, or a defect. Its failure is a type
+of its own with one constructor per row that answers — `TimedOut` for the first, `Unreachable` for
+the third — and not a `Response String`, of which only `Timeout_` and `NetworkError_` ever travelled
+there. Where the answer is read the failure becomes `Timeout_` or `NetworkError_`, so `Response`,
+`Error` and every `Expect` see what they saw before: no behaviour, API or output changes. The
+reason is rule 9's: a type that admitted any `Response` let a value from JavaScript stand, to the
+ownership checker, for a response whose body or `Problem` reaches the program's decoders
+(`ownership-checker.md` §24.11 item 1).
+
 Before the fetch: `new URL`'s `TypeError` is `BadUrl` (step 1), every `BadRequest` is a test of a
 value (steps 2–4). After it: a non-2xx status is `BadStatus` (`expectString`, `expectJson`,
 `expectWhatever`) or `BadStatus_` with its body (`expectStringResponse`), and a body the schema

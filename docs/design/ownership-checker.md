@@ -2187,6 +2187,19 @@ and `check_test.zig`'s four tests of `trusted-surface.txt` (§24.6).
    resume (thesis A2): `Task.callback`'s result is what its `Resume` is handed, given up. Neither is built: the first
    reshapes platform code to clear a check, which is the owner's call (CLAUDE.md rule 10); the second is a slice of
    the task runtime's rows.
+   *Answered 2026-10-12 (the owner):* the first. Rule 9 wants each failure typed precisely, and the loose type was
+   what let the checker — correctly — assume a response from JavaScript could reach the decoders. `wait`'s `Step` is
+   `Failed Failure` with `type Failure = TimedOut | Unreachable`, read back as `Timeout_` and `NetworkError_` where
+   the answer is read (`boundary.md` §9.8.12 (c), as amended); no behaviour, API or transcript changes. Measured:
+   Conduit is 29 lines, 24 accepted, 5 rejected, all `payload` (O6), on both TEA platforms — its 19 `need` lines
+   are gone and its 2 `unknown` sends are accepted `call`. In the corpus, `ApiLogin`'s `GotName` and
+   `HttpMultipart`'s `Got` lose their `need` line, and `HttpCancel`'s and `HttpProgress`'s sends go from `unknown`
+   to accepted `call`, on both platforms; nothing else moves. `HttpAnswerEdited` pins Conduit's shape. The other
+   `need` lines on TEA targets stay, each for a cause of its own: a request made inside the work's own lambda
+   (`ApiItems`, `ApiLogin`'s `GotToken`, `HttpAnswer`'s `Fetched`), requests run inside a lambda handed to `Task`'s
+   combinators (`RaceTwoServices`, `TimeoutAroundRequest`), `Http.send`'s decoder (`ValueCommands`) and
+   `Random.generate` — the slots-inside-a-lambda limit of §24.9 and research 81 §4's rows. A row for
+   `Task.callback`'s `Resume` is still the general answer for other callbacks.
 2. **Words on core's other functions over `Js`.** Only declarations whose rows some verdict depends on carry words.
    `Ref`, `Deferred`, `Task` and the schema engine are inferred over the `Js` words; their summaries escape what they
    hand to `Js.call`, honestly. A row per public function of those modules (thesis §6.5's "several dozen to a hundred
