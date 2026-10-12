@@ -58,6 +58,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsIr = @import("JsIr.zig");
+const lists = @import("../lists.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -334,7 +335,9 @@ pub const Stats = struct {
     /// Sweeps of facts 1, 2, 4 and 5 (`sweeps`), over every analysis.
     sweeps: u64 = 0,
     /// Fact 3's fixpoints (`Pts.fixpoint`: one per analysis, and one more
-    /// each time definite initialisation finds keys) and their sweeps.
+    /// each time definite initialisation finds keys) and their sweeps: the
+    /// first walk, then each pass over the constraints waiting
+    /// (`Pts.byConstraints`).
     points_to_runs: u64 = 0,
     points_to_sweeps: u64 = 0,
     /// Passes of the structural loop in `run` that changed the program.
@@ -716,10 +719,12 @@ const Spec = struct {
     assigns_in: KeyMap(NodeRef, KeptNames) = .empty,
     preorders: KeyMap(NodeRef, KeptNodes) = .empty,
     /// `countTop`'s record of each top-level statement's count, and while
-    /// it counts (`logging`), the names `count` touched and the
-    /// whole-program names it marked escaped or assigned.
+    /// it counts (`logging`), the names `count` touched, the whole-program
+    /// names it read (each read once), and those it marked escaped or
+    /// assigned.
     count_logs: KeyMap(NodeRef, CountLog) = .empty,
     log_names: std.ArrayList(u32) = .empty,
+    log_reads: std.ArrayList(u32) = .empty,
     log_escaped: std.ArrayList(u32) = .empty,
     log_assigned: std.ArrayList(u32) = .empty,
     logging: bool = false,
@@ -743,7 +748,7 @@ const Spec = struct {
     site_seen: []u32 = &.{},
 
     const KeptScan = struct { version: u32, scan: ?*const BodyScan };
-    const CountLog = struct { version: u32, names: []const NameCount, escaped: []const u32, assigned: []const u32 };
+    const CountLog = struct { version: u32, names: []const NameCount, reads: []const u32, escaped: []const u32, assigned: []const u32 };
     const NameCount = struct { name: u32, decls: u32, uses: u32, assigned: bool };
     const KeptNames = struct { version: u32, names: []const u32 };
     const KeptNodes = struct { version: u32, nodes: []const Index };
@@ -1377,12 +1382,13 @@ const Spec = struct {
 
     /// `count` of top-level statement `stmt`, on a fresh `current`: what a
     /// count of it did is kept while its module's version stands, and done
-    /// again without the walk — the sweeps after a round's first, and its
-    /// rewrite, count every statement they walk, and the counts cannot
-    /// differ. Not while `counting`, whose reads are counted once each.
+    /// again without the walk — every sweep, and the rewrite, count every
+    /// statement they walk, and the counts cannot differ. While `counting`
+    /// (a round's first sweep), the reads of whole-program names it made
+    /// are counted again from the record, once each (`reads`).
     fn countTop(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!void {
         const key: NodeRef = .{ .module = m.index, .node = stmt.int() };
-        if (!s.counting) if (s.count_logs.get(key)) |log| if (log.version == m.version) {
+        if (s.count_logs.get(key)) |log| if (log.version == m.version) {
             for (log.names) |c| {
                 m.stamp[c.name] = s.current;
                 m.decls[c.name] = c.decls;
@@ -1391,11 +1397,15 @@ const Spec = struct {
                 m.value[c.name] = .top;
                 m.param[c.name] = none;
             }
+            if (s.counting) for (log.reads) |g| {
+                s.reads[g] +|= 1;
+            };
             for (log.escaped) |g| s.setEscaped(g);
             for (log.assigned) |g| s.setAssigned(g);
             return;
         };
         s.log_names.clearRetainingCapacity();
+        s.log_reads.clearRetainingCapacity();
         s.log_escaped.clearRetainingCapacity();
         s.log_assigned.clearRetainingCapacity();
         s.log_failed = false;
@@ -1409,6 +1419,7 @@ const Spec = struct {
         try s.count_logs.put(s.arena, key, .{
             .version = m.version,
             .names = names,
+            .reads = try s.arena.dupe(u32, s.log_reads.items),
             .escaped = try s.arena.dupe(u32, s.log_escaped.items),
             .assigned = try s.arena.dupe(u32, s.log_assigned.items),
         });
@@ -1459,6 +1470,7 @@ const Spec = struct {
     fn read(s: *Spec, m: *Mod, n: NameIndex, callee: bool) Allocator.Error!void {
         if (m.globalOf(n)) |g| {
             if (s.counting) s.reads[g] +|= 1;
+            if (s.logging) try lists.push(u32, &s.log_reads, s.arena, g);
             if (!callee) s.setEscaped(g);
             return;
         }
@@ -2429,8 +2441,24 @@ const Spec = struct {
         // by walking it again rather than from the analysis's list: a folded
         // conditional may have become a copy of a call, and the copy is the
         // one that is reached.
-        // None when no parameter went: the walk would change nothing.
-        if (std.mem.indexOfScalar(bool, drop, true) != null) for (s.mods) |*m| try s.rewriteCalls(m, drop);
+        // None when no parameter went: the walk would change nothing. Nor
+        // in a module that names none of the functions that lost one: a
+        // call of one names it.
+        if (std.mem.indexOfScalar(bool, drop, true) != null) {
+            const lost = try s.arena.alloc(bool, s.globals);
+            @memset(lost, false);
+            for (s.decl, 0..) |maybe, g| {
+                const decl = maybe orelse continue;
+                if (decl.func == null) continue;
+                if (std.mem.indexOfScalar(bool, drop[decl.params..][0..decl.arity], true) != null) lost[g] = true;
+            }
+            for (s.mods) |*m| {
+                const names = for (m.global) |g| {
+                    if (g != none and g < lost.len and lost[g]) break true;
+                } else false;
+                if (names) try s.rewriteCalls(m, drop);
+            }
+        }
         return any;
     }
 
@@ -6297,30 +6325,57 @@ const Pts = struct {
     /// Per call node the initialiser of a `const` or `let`: the list it
     /// stands in and where (`writesAfter`).
     decl_call: KeyMap(NodeKey, DeclAt) = .empty,
-    /// The worklist (`fixpoint`). Its units are the top-level statements,
-    /// in module order, and the function bodies, by site, after them. The
-    /// unit being walked (`none` outside a walk) and that walk's number;
-    /// the dependency lists of vars and sites, in one pool; per unit,
-    /// whether it or a unit inside it read something that changed since it
-    /// was last walked, and the unit it is directly inside (`none` for a
-    /// statement).
+    /// The top-level statements, in module order. The constraint being
+    /// evaluated (`none` outside one, when a read registers nothing) and
+    /// that evaluation's number; the dependency lists of vars and sites,
+    /// in one pool, of constraints (`byConstraints`).
     stmts: std.ArrayList(StmtRef) = .empty,
     cur: u32 = none,
     walk: u32 = 0,
     next_walk: u32 = 0,
     deps: std.ArrayList(Dep) = .empty,
-    pending: std.DynamicBitSetUnmanaged = .{},
-    parent: []u32 = &.{},
     /// How many sweeps the fixpoint took.
     sweeps: u32 = 0,
     /// Every site number, so that a value of one site is a slice of it.
     ones: []u32 = &.{},
-    /// This sweep walks every unit: the fixpoint's first.
+    /// This sweep walks every statement: a sweep of `byUnits`, or the
+    /// first of `byConstraints`.
     full: bool = false,
     /// The order a sweep walks the top-level statements in, by their index
     /// in `stmts`; empty for program order. Only a safety build's check
     /// sets one (`fixpoint`).
     order: []const u32 = &.{},
+    /// The fixpoint by constraints (backend.md §9, *Amended 2026-10-12 —
+    /// fact 3 by its constraints*). A constraint is one evaluation the
+    /// first walk of a fixpoint made (`recording`) — of an expression node,
+    /// or of a statement's own transfer (`effect`) — numbered in walk
+    /// order; a node lowering shares between two expressions (`a.b` in
+    /// `a.b.c` and `a.b.d`) is two. After the walk a change wakes the
+    /// constraints that read what changed, each evaluated again alone
+    /// (`evaluating`).
+    recording: bool = false,
+    evaluating: bool = false,
+    /// Per constraint: its node and context, its value, the constraints
+    /// whose values it reads (`inputs[span]`), the head of those that read
+    /// its value (`links`) and of the guards a read is narrowed by
+    /// (`narrows`).
+    cons: std.ArrayList(Cons) = .empty,
+    inputs: std.ArrayList(Read) = .empty,
+    links: std.ArrayList(Link) = .empty,
+    narrows: std.ArrayList(Narrow) = .empty,
+    kills: std.ArrayList(u32) = .empty,
+    /// Per module, the first of its nodes in `last`; per node, the last
+    /// constraint that evaluated it in the first walk (`none`: none did),
+    /// whose value the node keeps once the fixpoint is reached.
+    base: []u32 = &.{},
+    last: []u32 = &.{},
+    /// The constraints of the reads walked since the function the walk is
+    /// in began, while a guard was in view, each one's object's: each
+    /// kills the guards before it once its object is `top` (`Guard.reads`).
+    reads: std.ArrayList(u32) = .empty,
+    /// The constraints waiting to be evaluated again, and how many.
+    waiting: std.DynamicBitSetUnmanaged = .{},
+    waiting_count: u32 = 0,
 
     const StmtRef = struct { module: u32, top: Index };
     const Dep = struct { stmt: u32, next: u32 };
@@ -6333,7 +6388,47 @@ const Pts = struct {
         nul: bool,
         undef: bool,
         live: bool = true,
+        /// Killed by something that kills whatever the values are: a call,
+        /// an assignment, a declaration, a loop's next turn (`kill`). A
+        /// guard killed only by a read through a value that was `top` when
+        /// it was walked (`killRead`) is dead for that walk alone.
+        dead: bool = false,
+        /// Where `reads` stood when the guard was pushed: the reads after
+        /// it that kill it once their object is `top`.
+        reads: u32 = 0,
     };
+
+    /// One guard a read may be narrowed by, as the first walk found it
+    /// (`narrowed`): what it says, and the reads after its push, before the
+    /// read, each of which kills it once its object is `top` — their object
+    /// nodes, `kills[start..end]`. The next of the read's guards is `next`.
+    const Narrow = struct { nul: bool, undef: bool, start: u32, end: u32, next: u32 };
+
+    /// A constraint: the node it evaluates, in module `module`; the
+    /// top-level statement the walk was in (locals are keyed by it); for a
+    /// statement, the function site its `return` goes to; its value; its
+    /// inputs, `inputs[start..end]`; the heads of its readers in `links`
+    /// and of its guards in `narrows`.
+    const Cons = struct {
+        module: u32,
+        node: Index,
+        top: Index,
+        func: u32,
+        val: Val = .{},
+        start: u32,
+        end: u32,
+        readers: u32 = none,
+        narrow: u32 = none,
+        /// Something it read changed after the first walk evaluated it.
+        woken: bool = false,
+    };
+
+    /// A node whose value a constraint reads, and the constraint that made
+    /// that value.
+    const Read = struct { node: Index, cons: u32 };
+
+    /// A constraint that reads another's value.
+    const Link = struct { cons: u32, next: u32 };
 
     /// What `combine` makes of each leaf but `ident`: its tag alone says.
     const literal_vals: [@typeInfo(Node.Tag).@"enum".field_names.len]Val = blk: {
@@ -6370,7 +6465,7 @@ const Pts = struct {
         nul: bool = false,
         undef: bool = false,
         sites: []const u32 = &.{},
-        /// The units that read the var (`view`), and the walk that last
+        /// The constraints that read the var (`view`), and the walk that last
         /// added one.
         deps: u32 = none,
         seen: u32 = 0,
@@ -6435,11 +6530,11 @@ const Pts = struct {
         /// keys, and whether under a key it does not know (slice 9's tag).
         prog_props: std.ArrayList(u32) = .empty,
         prog_any: bool = false,
-        /// The units that read whether the site escaped or is written under
+        /// The constraints that read whether the site escaped or is written under
         /// an unknown key (`seeSite`), and the walk that last added one.
         deps: u32 = none,
         seen: u32 = 0,
-        /// The units that read which properties it has (`seeProps`).
+        /// The constraints that read which properties it has (`seeProps`).
         prop_deps: u32 = none,
         prop_seen: u32 = 0,
     };
@@ -6464,7 +6559,7 @@ const Pts = struct {
         return id;
     }
 
-    /// What var `v` holds now; a read the unit being walked depends on.
+    /// What var `v` holds now; a read the constraint being evaluated depends on.
     inline fn view(p: *Pts, v: VarId) Allocator.Error!Val {
         const set = &p.vars.items[v];
         if (p.cur != none and set.seen != p.walk) {
@@ -6474,7 +6569,7 @@ const Pts = struct {
         return .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites };
     }
 
-    /// The unit being walked depends on whether site `site` escaped and
+    /// The constraint being evaluated depends on whether site `site` escaped and
     /// whether it is written under an unknown key.
     inline fn seeSite(p: *Pts, site: u32) Allocator.Error!void {
         const st = &p.sites.items[site];
@@ -6483,7 +6578,7 @@ const Pts = struct {
         st.deps = try p.addDep(st.deps);
     }
 
-    /// The unit being walked depends on which properties site `site` has.
+    /// The constraint being evaluated depends on which properties site `site` has.
     inline fn seeProps(p: *Pts, site: u32) Allocator.Error!void {
         const st = &p.sites.items[site];
         if (p.cur == none or st.prop_seen == p.walk) return;
@@ -6491,7 +6586,7 @@ const Pts = struct {
         st.prop_deps = try p.addDep(st.prop_deps);
     }
 
-    /// A dependency of the unit being walked, pushed on list `head`.
+    /// A dependency of the constraint being evaluated, pushed on list `head`.
     fn addDep(p: *Pts, head: u32) Allocator.Error!u32 {
         const at = p.deps.items.len;
         // `append`, written out: Zig's own backend inlines none of its calls.
@@ -6501,16 +6596,28 @@ const Pts = struct {
         return @intCast(at);
     }
 
-    /// Every unit on dependency list `head` is walked again.
+    /// Every constraint on dependency list `head` is evaluated again.
     fn wake(p: *Pts, head: u32) void {
         var d = head;
         while (d != none) {
             const dep = p.deps.items[d];
-            // It, and every unit it is inside, to reach it.
-            var u = dep.stmt;
-            while (u != none) : (u = p.parent[u]) p.pending.set(u);
+            // The first walk evaluates it again once it is done.
+            if (p.recording) p.cons.items[dep.stmt].woken = true else p.reevaluate(dep.stmt);
             d = dep.next;
         }
+    }
+
+    /// Constraint `c` is evaluated again.
+    inline fn reevaluate(p: *Pts, c: u32) void {
+        if (p.waiting.isSet(c)) return;
+        p.waiting.set(c);
+        p.waiting_count += 1;
+    }
+
+    /// The last constraint that evaluated node `node` of module `mi`, or
+    /// `none`: the one whose value a read of the node's value gets.
+    inline fn lastOf(p: *const Pts, mi: u32, node: Index) u32 {
+        return p.last[p.base[mi] + node.int()];
     }
 
     /// Var `v` changed: what read it is walked again, and re-reads it.
@@ -6914,12 +7021,13 @@ const Pts = struct {
 
     /// Fact 3 to its fixpoint. In a safety build a small program's fixpoint
     /// is computed twice: first walking every unit every sweep, the
-    /// top-level statements in a shuffled order, then by the worklist in
-    /// program order. Every transfer function is monotone (`Val.top_val`),
-    /// so both reach the one least fixpoint (research 52 §2.3), and the two
-    /// must agree on every fact, up to the numbering of sites, which
-    /// follows the walk. That checks the order does not matter, and that
-    /// the worklist skips only walks that would change nothing.
+    /// top-level statements in a shuffled order (`byUnits`), then by
+    /// constraints in program order (`byConstraints`). Every transfer
+    /// function is monotone (`Val.top_val`), so both reach the one least
+    /// fixpoint (research 52 §2.3), and the two must agree on every fact,
+    /// up to the numbering of sites, which follows the walk. That checks
+    /// the order does not matter, and that a constraint is evaluated again
+    /// whenever anything it read changed.
     fn fixpoint(p: *Pts) Allocator.Error!void {
         if (std.debug.runtime_safety) {
             var nodes: usize = 0;
@@ -7039,6 +7147,12 @@ const Pts = struct {
     }
 
     fn fixpointWith(p: *Pts, reference: bool) Allocator.Error!void {
+        try p.reset();
+        if (reference) try p.byUnits() else try p.byConstraints();
+    }
+
+    /// Everything a fixpoint computes, back to ⊥.
+    fn reset(p: *Pts) Allocator.Error!void {
         const s = p.s;
         p.ok = false;
         p.vars = .empty;
@@ -7073,41 +7187,33 @@ const Pts = struct {
             p.node_var[m.index] = ns[0..nodes];
             p.node_top[m.index] = ns[nodes..];
         }
-        // The worklist (backend.md §9, *As built — the worklist*): a sweep
-        // walks only the units that read something that changed since they
-        // were last walked, and those they are inside (`body`). Walking any
-        // other would read what it read before and change nothing, so each
-        // sweep leaves exactly what a walk of everything would — and the
-        // sweeps, their count and the facts are those of sweeping the whole
-        // program each time, as `reference` does.
         p.stmts = .empty;
         for (s.mods, 0..) |*m, mi| {
             for (m.ir.extraSlice(m.ir.body, Index)) |top| try p.stmts.append(p.arena(), .{ .module = @intCast(mi), .top = top });
         }
-        // Units: each top-level statement, then each function body by its
-        // site's number (a site is a node, so there are fewer than nodes).
         var nodes: usize = 0;
         for (s.mods) |*m| nodes += m.ir.nodes.len;
-        const units = p.stmts.items.len + nodes;
         p.ones = try p.arena().alloc(u32, nodes);
         for (p.ones, 0..) |*o, i| o.* = @intCast(i);
-        p.pending = try .initEmpty(p.arena(), units);
-        p.parent = try p.arena().alloc(u32, units);
-        @memset(p.parent, none);
         p.deps = .empty;
         p.walk = 0;
         p.next_walk = 0;
+        p.guards.clearRetainingCapacity();
+        p.guard_base = 0;
         _ = p.tmp.reset(.retain_capacity);
-        // The first sweep walks everything; every later one only what a
-        // change woke. `tmp` is kept across them: a node's value stays what
-        // its unit's last walk made it, which is what a walk now would make.
+    }
+
+    /// The fixpoint by sweeps of everything: a safety build's reference
+    /// (`fixpoint`), every unit walked every sweep.
+    fn byUnits(p: *Pts) Allocator.Error!void {
+        const s = p.s;
         p.full = true;
+        defer p.full = false;
         var sweep: u32 = 0;
         while (sweep < max_pts_sweeps) : (sweep += 1) {
             p.changed = false;
             p.sweeps = sweep + 1;
             try p.walkStatements();
-            if (!reference) p.full = false;
             // What files the pass cannot see read.
             for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(try p.view(p.globals[g]));
             if (s.in.entry) |e| try p.entryCall(e);
@@ -7119,22 +7225,234 @@ const Pts = struct {
         }
     }
 
-    /// One sweep's units: every one in the first sweep, else those a change
-    /// woke (`wake`), in the order a walk of everything reaches them — or,
-    /// for a safety build's check, in `order`.
+    /// The fixpoint by constraints (backend.md §9, *Amended 2026-10-12 —
+    /// fact 3 by its constraints*). The first sweep walks everything, as
+    /// a sweep of `byUnits` does, and notes each evaluation it makes — of
+    /// an expression node, or of a statement's own transfer (`effect`) — as
+    /// a constraint: its context, the constraints whose values it read, and
+    /// for a read, the guards it may be narrowed by with the reads that
+    /// kill each. Every read of a var, a site or a property registers the
+    /// constraint making it, as it registered the unit. After the walk, a
+    /// change wakes the constraints that read what changed, each evaluated
+    /// again alone, and one whose value changed wakes those that read it —
+    /// so nothing the walk of a unit evaluated again without a change is
+    /// asked. Every transfer function is the walk's own and monotone, so
+    /// the fixpoint is the one least fixpoint `byUnits` reaches. A sweep
+    /// here is the constraints that wait, in the order the walk made them,
+    /// then what files the pass cannot see read, the entry's call and
+    /// `propagate`; at most `max_pts_sweeps`, as before.
+    fn byConstraints(p: *Pts) Allocator.Error!void {
+        const s = p.s;
+        const a = p.tmp.allocator();
+        p.base = try a.alloc(u32, s.mods.len);
+        var count: u32 = 0;
+        for (s.mods, p.base) |*m, *b| {
+            b.* = count;
+            count += @intCast(m.ir.nodes.len);
+        }
+        p.last = try a.alloc(u32, count);
+        @memset(p.last, none);
+        // Most nodes are evaluated once, and read by one other.
+        p.cons = .empty;
+        try p.cons.ensureTotalCapacity(a, count);
+        p.inputs = .empty;
+        try p.inputs.ensureTotalCapacity(a, count);
+        p.links = .empty;
+        try p.links.ensureTotalCapacity(a, count);
+        p.narrows = .empty;
+        p.kills = .empty;
+        p.reads = .empty;
+        p.waiting_count = 0;
+        defer {
+            p.recording = false;
+            p.evaluating = false;
+            // A node's value is its last evaluation's, as a walk leaves it.
+            for (s.mods, p.base, p.vals) |*m, b, vals| {
+                for (p.last[b..][0..m.ir.nodes.len], 0..) |c, node| {
+                    if (c != none) vals[node] = p.cons.items[c].val;
+                }
+            }
+        }
+        p.recording = true;
+        p.full = true;
+        var sweep: u32 = 0;
+        while (sweep < max_pts_sweeps) : (sweep += 1) {
+            p.sweeps = sweep + 1;
+            if (sweep == 0) {
+                try p.walkStatements();
+                p.recording = false;
+                p.full = false;
+                p.evaluating = true;
+                p.waiting = try .initEmpty(a, p.cons.items.len);
+                for (p.cons.items, 0..) |c, i| if (c.woken) p.reevaluate(@intCast(i));
+            } else try p.evaluateWaiting();
+            p.changed = false;
+            // What files the pass cannot see read.
+            for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(try p.view(p.globals[g]));
+            if (s.in.entry) |e| try p.entryCall(e);
+            try p.propagate();
+            if (!p.changed and p.waiting_count == 0) {
+                p.ok = true;
+                return;
+            }
+        }
+    }
+
+    /// Every constraint that waits, in their order; one woken behind the
+    /// one in hand waits for the next sweep.
+    fn evaluateWaiting(p: *Pts) Allocator.Error!void {
+        defer p.cur = none;
+        const words = (p.waiting.bit_length + @bitSizeOf(usize) - 1) / @bitSizeOf(usize);
+        const masks = p.waiting.masks;
+        var w: usize = 0;
+        while (w < words) : (w += 1) {
+            while (masks[w] != 0) {
+                const bit = @ctz(masks[w]);
+                masks[w] &= masks[w] - 1;
+                p.waiting_count -= 1;
+                try p.evaluate(@intCast(w * @bitSizeOf(usize) + bit));
+            }
+        }
+    }
+
+    /// Constraint `c` evaluated again, alone, in the context the walk made
+    /// it in, its inputs' values where it reads them: a statement does what
+    /// it does with them; a node's value is made again, and when it
+    /// changed, what reads it waits.
+    fn evaluate(p: *Pts, c: u32) Allocator.Error!void {
+        const k = p.cons.items[c];
+        const vals = p.vals[k.module];
+        p.top = k.top;
+        p.cur = c;
+        p.next_walk += 1;
+        p.walk = p.next_walk;
+        for (p.inputs.items[k.start..k.end]) |in| vals[in.node.int()] = p.cons.items[in.cons].val;
+        if (p.s.mods[k.module].ir.tag(k.node).isStatement()) return p.effect(k.module, k.node, if (k.func == none) null else k.func);
+        const v = try p.combine(k.module, k.node);
+        const old = &p.cons.items[c].val;
+        if (old.top == v.top and old.prim == v.prim and old.nul == v.nul and old.undef == v.undef and
+            std.mem.eql(u32, old.sites, v.sites)) return;
+        old.* = v;
+        var l = p.cons.items[c].readers;
+        while (l != none) : (l = p.links.items[l].next) p.reevaluate(p.links.items[l].cons);
+    }
+
+    /// The first walk is about to evaluate node `node` of module `mi` (a
+    /// statement's transfer, for a statement): a new constraint, the one
+    /// the reads it makes are for, reading the last evaluation of each
+    /// node whose value it reads (`inputsOf`).
+    fn begin(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!u32 {
+        const a = p.tmp.allocator();
+        const c: u32 = @intCast(p.cons.items.len);
+        const start: u32 = @intCast(p.inputs.items.len);
+        var buf: [3]Index = undefined;
+        const ir = p.s.mods[mi].ir;
+        const fixed = inputsOf(ir, node, &buf);
+        for (fixed) |in| try p.input(mi, in, c);
+        // An object reads its properties' values, and a call its
+        // arguments'.
+        switch (ir.tag(node)) {
+            .object => for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| {
+                const cd = ir.data(child);
+                try p.input(mi, @fromBackingInt(@intCast(if (ir.tag(child) == .property) cd.rhs else cd.lhs)), c);
+            },
+            .array => for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| try p.input(mi, child, c),
+            .call, .new_call => for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(node).rhs))), Index)) |arg| try p.input(mi, arg, c),
+            else => {},
+        }
+        try lists.push(Cons, &p.cons, a, .{
+            .module = mi,
+            .node = node,
+            .top = p.top,
+            .func = func orelse none,
+            .start = start,
+            .end = @intCast(p.inputs.items.len),
+        });
+        p.cur = c;
+        p.next_walk += 1;
+        p.walk = p.next_walk;
+        return c;
+    }
+
+    /// Constraint `c` reads the value of node `node`, as its last
+    /// evaluation left it; a node no constraint evaluates (a literal, an
+    /// arrow) has the one value.
+    fn input(p: *Pts, mi: u32, node: Index, c: u32) Allocator.Error!void {
+        const from = p.lastOf(mi, node);
+        if (from == none) return;
+        const a = p.tmp.allocator();
+        try lists.push(Read, &p.inputs, a, .{ .node = node, .cons = from });
+        try p.link(from, c);
+    }
+
+    /// Constraint `to` reads constraint `from`'s value.
+    fn link(p: *Pts, from: u32, to: u32) Allocator.Error!void {
+        try lists.push(Link, &p.links, p.tmp.allocator(), .{ .cons = to, .next = p.cons.items[from].readers });
+        p.cons.items[from].readers = @intCast(p.links.items.len - 1);
+    }
+
+    /// The first walk evaluated constraint `c`, of node `node`: its value,
+    /// and the node's last evaluation.
+    fn end(p: *Pts, c: u32, mi: u32, node: Index) void {
+        p.cons.items[c].val = p.vals[mi][node.int()];
+        p.last[p.base[mi] + node.int()] = c;
+    }
+
+    /// Statement `node`'s own transfer, once its operands are walked: what
+    /// it does with their values.
+    fn effectOf(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!void {
+        if (p.recording) _ = try p.begin(mi, node, func);
+        try p.effect(mi, node, func);
+    }
+
+    fn effect(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!void {
+        const ir = p.s.mods[mi].ir;
+        const d = ir.data(node);
+        const vals = p.vals[mi];
+        switch (ir.tag(node)) {
+            .const_decl, .let_decl => {
+                const v: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
+                const val = if (v.unwrap()) |value| vals[value.int()] else Val.undef_val;
+                try p.join(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), val);
+            },
+            .assign_stmt => {
+                const value = vals[d.rhs];
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                const td = ir.data(target);
+                switch (ir.tag(target)) {
+                    .ident => try p.join(try p.nodeVar(mi, target, @fromBackingInt(@intCast(td.lhs))), value),
+                    .member => try p.write(vals[td.lhs], p.propId(mi, @fromBackingInt(@intCast(td.rhs))), value),
+                    .index_get => try p.writeAny(vals[td.lhs], value),
+                    else => try p.escape(value),
+                }
+            },
+            .return_stmt => {
+                const value: ?Index = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap();
+                const val = if (value) |v| vals[v.int()] else Val.undef_val;
+                if (func) |site| try p.join(p.sites.items[site].ret, val) else try p.escape(val);
+            },
+            .for_of => {
+                const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                const items = try p.readAll(vals[f.iterable.int()]);
+                try p.join(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), items);
+            },
+            .throw_stmt => try p.escape(vals[d.lhs]),
+            else => {},
+        }
+    }
+
+    /// A walk of every top-level statement, in program order — or, for a
+    /// safety build's check, in `order`. Outside a constraint (`begin`) a
+    /// read registers nothing: a sweep of everything needs no reader.
     fn walkStatements(p: *Pts) Allocator.Error!void {
         defer p.cur = none;
-        const full = p.full;
         for (0..p.stmts.items.len) |k| {
             const t = if (p.order.len == p.stmts.items.len) p.order[k] else k;
             const st = p.stmts.items[t];
-            if (!full and !p.pending.isSet(t)) continue;
-            p.pending.unset(t);
-            p.cur = @intCast(t);
-            p.next_walk += 1;
-            p.walk = p.next_walk;
+            p.cur = none;
             p.top = st.top;
             p.once_ctx = true;
+            p.reads.clearRetainingCapacity();
             try p.stmt(st.module, st.top, null);
         }
     }
@@ -7151,8 +7469,8 @@ const Pts = struct {
                 p.changed = true;
             }
             // A walk reads `any_written` (a spread copies it), so the
-            // units that saw it unset are walked again, as `writeAnyOne`
-            // wakes them: setting it here alone left a unit walked earlier
+            // constraints that saw it unset are evaluated again, as `writeAnyOne`
+            // wakes them: setting it here alone left a constraint evaluated earlier
             // in the sweep the site escaped in never to see it.
             if (!st.any_written) {
                 st.any_written = true;
@@ -7174,8 +7492,8 @@ const Pts = struct {
             .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
             .const_decl, .let_decl => {
                 const v: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
-                const val = if (v.unwrap()) |value| try p.expr(mi, value, func) else Val.undef_val;
-                try p.join(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), val);
+                if (v.unwrap()) |value| _ = try p.expr(mi, value, func);
+                try p.effectOf(mi, node, func);
                 // A name declared in a guarded branch may shadow the chain.
                 p.kill();
             },
@@ -7188,26 +7506,24 @@ const Pts = struct {
             },
             .assign_stmt => {
                 defer p.kill();
-                const value = try p.expr(mi, @fromBackingInt(@intCast(d.rhs)), func);
+                _ = try p.expr(mi, @fromBackingInt(@intCast(d.rhs)), func);
                 const target: Index = @fromBackingInt(@intCast(d.lhs));
                 const td = ir.data(target);
                 switch (ir.tag(target)) {
-                    .ident => try p.join(try p.nodeVar(mi, target, @fromBackingInt(@intCast(td.lhs))), value),
-                    .member => try p.write(try p.expr(mi, @fromBackingInt(@intCast(td.lhs)), func), p.propId(mi, @fromBackingInt(@intCast(td.rhs))), value),
+                    .ident => {},
+                    .member => _ = try p.expr(mi, @fromBackingInt(@intCast(td.lhs)), func),
                     .index_get => {
                         _ = try p.expr(mi, @fromBackingInt(@intCast(td.rhs)), func);
-                        try p.writeAny(try p.expr(mi, @fromBackingInt(@intCast(td.lhs)), func), value);
+                        _ = try p.expr(mi, @fromBackingInt(@intCast(td.lhs)), func);
                     },
-                    else => {
-                        _ = try p.expr(mi, target, func);
-                        try p.escape(value);
-                    },
+                    else => _ = try p.expr(mi, target, func),
                 }
+                try p.effectOf(mi, node, func);
             },
             .return_stmt => {
                 const value: ?Index = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap();
-                const val = if (value) |v| try p.expr(mi, v, func) else Val.undef_val;
-                if (func) |site| try p.join(p.sites.items[site].ret, val) else try p.escape(val);
+                if (value) |v| _ = try p.expr(mi, v, func);
+                try p.effectOf(mi, node, func);
                 // An object literal returned as it is made leaves its
                 // function by the call alone (definite initialisation).
                 if (func) |site| if (value) |v| if (ir.tag(v) == .object) {
@@ -7232,10 +7548,10 @@ const Pts = struct {
             },
             .for_of => {
                 const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
-                const items = try p.readAll(try p.expr(mi, f.iterable, func));
+                _ = try p.expr(mi, f.iterable, func);
+                try p.effectOf(mi, node, func);
                 // Iterating calls the iterator.
                 p.kill();
-                try p.join(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), items);
                 const saved = p.once_ctx;
                 defer p.once_ctx = saved;
                 p.once_ctx = false;
@@ -7250,7 +7566,10 @@ const Pts = struct {
                 try p.list(mi, ir.subRange(@fromBackingInt(@intCast(d.rhs))), func);
             },
             .expr_stmt => _ = try p.expr(mi, @fromBackingInt(@intCast(d.lhs)), func),
-            .throw_stmt => try p.escape(try p.expr(mi, @fromBackingInt(@intCast(d.lhs)), func)),
+            .throw_stmt => {
+                _ = try p.expr(mi, @fromBackingInt(@intCast(d.lhs)), func);
+                try p.effectOf(mi, node, func);
+            },
             // The body, then the cleanup, which may begin after any
             // statement of the body: a guard dies at the first statement
             // that kills it and never comes back, so walking the body
@@ -7389,25 +7708,75 @@ const Pts = struct {
     fn branch(p: *Pts, mi: u32, range: JsIr.SubRange, func: ?u32, guard: ?Guard) Allocator.Error!void {
         const base = p.guards.items.len;
         defer p.guards.shrinkRetainingCapacity(base);
-        if (guard) |g| try p.guards.append(p.arena(), g);
+        if (guard) |g| {
+            var pushed = g;
+            pushed.reads = @intCast(p.reads.items.len);
+            try p.guards.append(p.arena(), pushed);
+        }
         try p.list(mi, range, func);
     }
 
     /// Every guard in view dies: something ran that may change what a
-    /// chain reads.
+    /// chain reads, whatever the values are.
     fn kill(p: *Pts) void {
-        for (p.guards.items[p.guard_base..]) |*g| g.live = false;
+        for (p.guards.items[p.guard_base..]) |*g| {
+            g.live = false;
+            g.dead = true;
+        }
+    }
+
+    /// A read through object node `obj`: when its object is a host value it
+    /// may run a getter, and every guard in view dies. The first walk of a
+    /// fixpoint by constraints notes the read wherever a guard is in view,
+    /// `top` or not yet: the guards before it die when it is.
+    fn killRead(p: *Pts, mi: u32, obj: Index) Allocator.Error!void {
+        if (p.guards.items.len == p.guard_base) return;
+        // An object no constraint makes (a literal, an arrow, `this`, an
+        // operator) has its one value: `top` for good, or never.
+        const constant = p.recording and p.lastOf(mi, obj) == none;
+        if (p.recording and !constant) try lists.push(u32, &p.reads, p.tmp.allocator(), p.lastOf(mi, obj));
+        if (p.vals[mi][obj.int()].top) for (p.guards.items[p.guard_base..]) |*g| {
+            g.live = false;
+            if (constant) g.dead = true;
+        };
     }
 
     /// `v`, what chain `node` read, less what a live guard in view says
     /// it cannot be. A member read through a host value may run a getter,
     /// which a guard cannot vouch for.
-    fn narrowed(p: *Pts, mi: u32, node: Index, v: Val) Val {
+    ///
+    /// Evaluated alone (`evaluating`), the guards are the ones the first
+    /// walk noted for the read: each live while none of the reads between
+    /// its push and this one is through a `top` object (`Narrow`). A guard a
+    /// call, an assignment or a declaration killed was never noted.
+    fn narrowed(p: *Pts, mi: u32, node: Index, v: Val) Allocator.Error!Val {
         var out = v;
         const ir = p.s.mods[mi].ir;
         if (ir.tag(node) == .member and p.vals[mi][ir.data(node).lhs].top) return out;
+        if (p.evaluating) {
+            var k = p.cons.items[p.cur].narrow;
+            each: while (k != none) : (k = p.narrows.items[k].next) {
+                const n = p.narrows.items[k];
+                for (p.kills.items[n.start..n.end]) |killer| if (p.cons.items[killer].val.top) continue :each;
+                if (n.nul) out.nul = false;
+                if (n.undef) out.undef = false;
+            }
+            return out;
+        }
         for (p.guards.items[p.guard_base..]) |g| {
-            if (!g.live or g.module != mi or !sameChain(ir, g.chain, node)) continue;
+            if (g.module != mi or !sameChain(ir, g.chain, node)) continue;
+            if (p.recording and !g.dead) {
+                // Noted whether a read before this one was `top` yet or
+                // not: one that is stays so, and the guard stays dead.
+                const a = p.tmp.allocator();
+                const c = p.cur;
+                const start: u32 = @intCast(p.kills.items.len);
+                try p.kills.appendSlice(a, p.reads.items[g.reads..]);
+                for (p.reads.items[g.reads..]) |killer| try p.link(killer, c);
+                try p.narrows.append(a, .{ .nul = g.nul, .undef = g.undef, .start = start, .end = @intCast(p.kills.items.len), .next = p.cons.items[c].narrow });
+                p.cons.items[c].narrow = @intCast(p.narrows.items.len - 1);
+            }
+            if (!g.live) continue;
             if (g.nul) out.nul = false;
             if (g.undef) out.undef = false;
         }
@@ -7417,36 +7786,14 @@ const Pts = struct {
     /// A function's body: walked as what may run many times, and when it
     /// may run off its end, `undefined` is among what it returns. No guard
     /// outside it is in view: it runs later.
-    ///
-    /// A body is a unit of the worklist of its own, walked only when
-    /// something it or a body inside it read changed (`wake`), and always
-    /// where the walk of what it is in reaches it: so a sweep walks the
-    /// units a walk of everything would, in that order, less those whose
-    /// walk — and whose every inner unit's — would change nothing.
     fn body(p: *Pts, mi: u32, record: ExtraIndex, site: u32) Allocator.Error!void {
-        const u = p.unitOf(site);
-        if (p.parent[u] == none) p.parent[u] = p.cur;
-        if (!p.full and !p.pending.isSet(u)) return;
-        p.pending.unset(u);
-        try p.walkBody(mi, record, site);
-    }
-
-    /// The unit of function site `site`.
-    inline fn unitOf(p: *const Pts, site: u32) u32 {
-        return @as(u32, @intCast(p.stmts.items.len)) + site;
-    }
-
-    /// Walk a function's body as the unit it is.
-    fn walkBody(p: *Pts, mi: u32, record: ExtraIndex, site: u32) Allocator.Error!void {
         const saved_cur = p.cur;
         const saved_walk = p.walk;
         defer {
             p.cur = saved_cur;
             p.walk = saved_walk;
         }
-        p.cur = p.unitOf(site);
-        p.next_walk += 1;
-        p.walk = p.next_walk;
+        p.cur = none;
         const ir = p.s.mods[mi].ir;
         const saved = p.once_ctx;
         defer p.once_ctx = saved;
@@ -7454,6 +7801,9 @@ const Pts = struct {
         const saved_base = p.guard_base;
         defer p.guard_base = saved_base;
         p.guard_base = p.guards.items.len;
+        // The body's reads kill no guard outside it.
+        const saved_reads = p.reads.items.len;
+        defer p.reads.shrinkRetainingCapacity(saved_reads);
         const f = ir.extraData(record, JsIr.Func);
         try p.list(mi, f.body(), site);
         if (fallsThrough(ir, f.body())) try p.join(p.sites.items[site].ret, Val.undef_val);
@@ -7470,7 +7820,11 @@ const Pts = struct {
         const vals = p.vals[mi];
         // A leaf, the most common expression, without the stack.
         if (isValueLeaf(ir.tag(root))) {
-            vals[root.int()] = try p.combine(mi, root);
+            if (p.recording and ir.tag(root) == .ident) {
+                const c = try p.begin(mi, root, null);
+                vals[root.int()] = try p.combine(mi, root);
+                p.end(c, mi, root);
+            } else vals[root.int()] = try p.combine(mi, root);
             return vals[root.int()];
         }
         // A node to evaluate, or, with `post_bit` set, one whose operands
@@ -7495,7 +7849,13 @@ const Pts = struct {
                 // A leaf has no operands to wait for.
                 if (isValueLeaf(t)) {
                     // A literal's value is its tag's (`combine`), without the call.
-                    vals[raw] = if (t == .ident) try p.combine(mi, node) else literal_vals[@backingInt(t)];
+                    if (t != .ident) {
+                        vals[raw] = literal_vals[@backingInt(t)];
+                    } else if (p.recording) {
+                        const c = try p.begin(mi, node, null);
+                        vals[raw] = try p.combine(mi, node);
+                        p.end(c, mi, node);
+                    } else vals[raw] = try p.combine(mi, node);
                     continue;
                 }
                 try JsIr.pushOperand(p.arena(), stack, @fromBackingInt(@intCast(raw | post_bit)));
@@ -7503,7 +7863,11 @@ const Pts = struct {
                 continue;
             }
             const node: Index = @fromBackingInt(@intCast(raw & ~post_bit));
-            vals[node.int()] = try p.combine(mi, node);
+            if (p.recording and !constantValue(ir, node)) {
+                const c = try p.begin(mi, node, null);
+                vals[node.int()] = try p.combine(mi, node);
+                p.end(c, mi, node);
+            } else vals[node.int()] = try p.combine(mi, node);
         }
         return vals[root.int()];
     }
@@ -7517,18 +7881,18 @@ const Pts = struct {
             .null_lit => Val.nul_val,
             .undefined_lit => Val.undef_val,
             .global_this, .this_lit => Val.top_val,
-            .ident => p.narrowed(mi, node, try p.view(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))))),
+            .ident => try p.narrowed(mi, node, try p.view(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))))),
             .member => blk: {
-                const v = p.narrowed(mi, node, try p.read(vals[d.lhs], p.propId(mi, @fromBackingInt(@intCast(d.rhs))), true));
+                const v = try p.narrowed(mi, node, try p.read(vals[d.lhs], p.propId(mi, @fromBackingInt(@intCast(d.rhs))), true));
                 // A read through a host value may run a getter.
-                if (vals[d.lhs].top) p.kill();
+                try p.killRead(mi, @fromBackingInt(@intCast(d.lhs)));
                 break :blk v;
             },
             // An index past the end is `undefined`.
             .index_get => blk: {
                 var v = try p.readAll(vals[d.lhs]);
                 if (vals[d.lhs].sites.len != 0) v.undef = true;
-                if (vals[d.lhs].top) p.kill();
+                try p.killRead(mi, @fromBackingInt(@intCast(d.lhs)));
                 break :blk v;
             },
             .property => vals[d.rhs],
@@ -7947,6 +8311,92 @@ fn declCount(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!u32 {
 }
 
 /// The expression operands of any node, statements' included.
+/// Whether `Pts.combine` makes `node`'s value from its tag alone, reading
+/// nothing and joining nothing: a unary operator, an operator but `&&` and
+/// `||`, a template. The first walk's value is its value for good, and no
+/// constraint is made of it (`Pts.byConstraints`).
+fn constantValue(ir: *const JsIr, node: Index) bool {
+    return switch (ir.tag(node)) {
+        .unary, .template => true,
+        .binary => switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(ir.data(node).rhs)))) {
+            .logical_and, .logical_or => false,
+            else => true,
+        },
+        else => false,
+    };
+}
+
+/// The nodes whose values `Pts.combine` (or, for a statement, `Pts.effect`)
+/// reads when it evaluates `node`, but a call's arguments and an array's or
+/// an object's elements, which `Pts.begin` adds: at most three, in `buf`.
+fn inputsOf(ir: *const JsIr, node: Index, buf: *[3]Index) []const Index {
+    const d = ir.data(node);
+    const at = struct {
+        fn idx(x: u32) Index {
+            return @fromBackingInt(@intCast(x));
+        }
+    }.idx;
+    switch (ir.tag(node)) {
+        .const_decl, .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| {
+            buf[0] = v;
+            return buf[0..1];
+        },
+        .assign_stmt => {
+            buf[0] = at(d.rhs);
+            const target = at(d.lhs);
+            switch (ir.tag(target)) {
+                .member, .index_get => {
+                    buf[1] = at(ir.data(target).lhs);
+                    return buf[0..2];
+                },
+                else => return buf[0..1],
+            }
+        },
+        .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| {
+            buf[0] = v;
+            return buf[0..1];
+        },
+        .for_of => {
+            buf[0] = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf).iterable;
+            return buf[0..1];
+        },
+        .throw_stmt, .member, .index_get, .spread_property => {
+            buf[0] = at(d.lhs);
+            return buf[0..1];
+        },
+        .property => {
+            buf[0] = at(d.rhs);
+            return buf[0..1];
+        },
+        .cond => {
+            const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+            buf[0] = c.consequent;
+            buf[1] = c.alternate;
+            return buf[0..2];
+        },
+        .binary => {
+            const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+            buf[0] = b.left;
+            buf[1] = b.right;
+            return buf[0..2];
+        },
+        // The callee, and the object whose method it is: it escapes with
+        // the arguments when the callee may be code the pass cannot see.
+        .call => {
+            buf[0] = at(d.lhs);
+            if (ir.tag(buf[0]) != .member) return buf[0..1];
+            buf[1] = at(ir.data(buf[0]).lhs);
+            return buf[0..2];
+        },
+        .new_call => {
+            buf[0] = at(d.lhs);
+            return buf[0..1];
+        },
+        else => {},
+    }
+    return buf[0..0];
+}
+
 fn operandsOf(gpa: Allocator, ir: *const JsIr, node: Index, out: *std.ArrayList(Index)) Allocator.Error!void {
     const d = ir.data(node);
     switch (ir.tag(node)) {
