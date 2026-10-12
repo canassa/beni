@@ -7286,6 +7286,8 @@ const Pts = struct {
                 p.waiting = try .initEmpty(a, p.cons.items.len);
                 for (p.cons.items, 0..) |c, i| if (c.woken) p.reevaluate(@intCast(i));
             } else try p.evaluateWaiting();
+            // A change the constraints made woke what reads it, so it is in
+            // `waiting_count`; `changed` is what the rest of the sweep does.
             p.changed = false;
             // What files the pass cannot see read.
             for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(try p.view(p.globals[g]));
@@ -7298,8 +7300,9 @@ const Pts = struct {
         }
     }
 
-    /// Every constraint that waits, in their order; one woken behind the
-    /// one in hand waits for the next sweep.
+    /// Every constraint that waits, a word of the set at a time from the
+    /// first: one woken in a word already passed waits for the next sweep.
+    /// The order changes no fact, every transfer function being monotone.
     fn evaluateWaiting(p: *Pts) Allocator.Error!void {
         defer p.cur = none;
         const words = (p.waiting.bit_length + @bitSizeOf(usize) - 1) / @bitSizeOf(usize);
@@ -8310,7 +8313,6 @@ fn declCount(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!u32 {
     return count;
 }
 
-/// The expression operands of any node, statements' included.
 /// Whether `Pts.combine` makes `node`'s value from its tag alone, reading
 /// nothing and joining nothing: a unary operator, an operator but `&&` and
 /// `||`, a template. The first walk's value is its value for good, and no
@@ -8397,6 +8399,7 @@ fn inputsOf(ir: *const JsIr, node: Index, buf: *[3]Index) []const Index {
     return buf[0..0];
 }
 
+/// The expression operands of any node, statements' included.
 fn operandsOf(gpa: Allocator, ir: *const JsIr, node: Index, out: *std.ArrayList(Index)) Allocator.Error!void {
     const d = ir.data(node);
     switch (ir.tag(node)) {
