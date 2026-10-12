@@ -60,6 +60,15 @@ export const mutants = {
   // A recursive call's writes are ignored at the call.
   recwrites: ["Checker.lean", "applyCall ctx ctx.recursiveSummary site actuals ctx.recursiveCaptures later",
     "applyCall ctx { ctx.recursiveSummary with writes := [], consumes := [] } site actuals ctx.recursiveCaptures later"],
+  // recwrites is masked by the entry-ownership rule of a recursive call (a
+  // recursive write to an entry-owned path needs that path owned again, i.e.
+  // the same Known/Unescaped/Dead/Disjoint test; COVERAGE.md). With both
+  // removed, a recursive call's writes go unchecked: shows the generator
+  // reaches the shape.
+  recwritesown: [
+    ["Checker.lean", "applyCall ctx ctx.recursiveSummary site actuals ctx.recursiveCaptures later",
+      "applyCall ctx { ctx.recursiveSummary with writes := [], consumes := [] } site actuals ctx.recursiveCaptures later"],
+    ["Checker.lean", 'throw "recursive call does not preserve entry ownership assumptions"', "pure ()"]],
   // keeps-shape accepts any parameter path.
   keepsany: ["Checker.lean", "      | .parameter i q => i == parameter && p == q", "      | .parameter _ _ => true"],
   // A callback's own environment is not another operand of its arguments.
@@ -81,10 +90,12 @@ if (name === "--list") {
 } else if (name) {
   const entry = mutants[name];
   if (!entry) { console.error(`unknown mutant ${name}`); process.exit(2); }
-  const [file, from, to] = entry;
-  const path = `${dir}/Ownership/${file}`;
-  const source = fs.readFileSync(path, "utf8");
-  const count = source.split(from).length - 1;
-  if (count !== 1) { console.error(`${name}: pattern found ${count} times in ${file}`); process.exit(1); }
-  fs.writeFileSync(path, source.replace(from, () => to));
+  // An entry is one edit [file, from, to] or a list of edits.
+  for (const [file, from, to] of Array.isArray(entry[0]) ? entry : [entry]) {
+    const path = `${dir}/Ownership/${file}`;
+    const source = fs.readFileSync(path, "utf8");
+    const count = source.split(from).length - 1;
+    if (count !== 1) { console.error(`${name}: pattern found ${count} times in ${file}`); process.exit(1); }
+    fs.writeFileSync(path, source.replace(from, () => to));
+  }
 }

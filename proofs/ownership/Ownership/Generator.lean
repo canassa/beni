@@ -557,20 +557,20 @@ def extend (next : Nat) (bs : List (Expr × Ty)) (env : Env) : Env :=
 /-- A value of a first-order type the generator builds (Int, list, nested
     list, record of two lists): an existing one (2/3, preferring recent
     ones) or a fresh one bound first. -/
-def valueOf (next : Nat) (env : Env) (t : Ty) : Gen (List (Expr × Ty) × Atom) := do
+def valueOf (fresh : Bool) (next : Nat) (env : Env) (t : Ty) : Gen (List (Expr × Ty) × Atom) := do
   if t == .int then return ([], ← number env)
   let xs := atomsOf env t
-  if !xs.isEmpty && (← draw 3) != 0 then return ([], ← pickRecent xs)
+  if !fresh && !xs.isEmpty && (← draw 3) != 0 then return ([], ← pickRecent xs)
   let bs ← if t == tN then nestedBindings next env
     else if t == tR then do pure [(.prim .record [← anyList env, ← anyList env], tR)]
     else do pure [(← litList env, tL)]
   return (bs, .var (next + bs.length - 1))
 
-def firstOrderValues (next : Nat) (env : Env) : List Ty → Gen (List (Expr × Ty) × List Atom)
+def firstOrderValues (fresh : Bool) (next : Nat) (env : Env) : List Ty → Gen (List (Expr × Ty) × List Atom)
   | [] => pure ([], [])
   | t :: ts => do
-    let (bs, a) ← valueOf next env t
-    let (more, as) ← firstOrderValues (next + bs.length) (extend next bs env) ts
+    let (bs, a) ← valueOf fresh next env t
+    let (more, as) ← firstOrderValues fresh (next + bs.length) (extend next bs env) ts
     pure (bs ++ more, a :: as)
 
 /-- Closures of the fixed table of type `t`, capturing lists from `env`. -/
@@ -602,37 +602,43 @@ def callbackOf (table : Table) (next : Nat) (env : Env) (t : Ty) : Gen (List (Ex
   | none =>
     match generated[k - fixed.length]? with
     | some (i, d) =>
-      let (bs, caps) ← firstOrderValues next env d.captures
+      let (bs, caps) ← firstOrderValues false next env d.captures
       return (bs ++ [(.closure i caps, t)], .var (next + bs.length))
     | none => return ([(.closure identL [], fLL)], .var next)  -- unreachable: callers check hasCallback
 
-def valuesOf (table : Table) (next : Nat) (env : Env) : List Ty → Gen (List (Expr × Ty) × List Atom)
+def valuesOf (table : Table) (fresh : Bool) (next : Nat) (env : Env) : List Ty → Gen (List (Expr × Ty) × List Atom)
   | [] => pure ([], [])
   | t :: ts => do
-    let (bs, a) ← if firstOrder t then valueOf next env t else callbackOf table next env t
-    let (more, as) ← valuesOf table (next + bs.length) (extend next bs env) ts
+    let (bs, a) ← if firstOrder t then valueOf fresh next env t else callbackOf table next env t
+    let (more, as) ← valuesOf table fresh (next + bs.length) (extend next bs env) ts
     pure (bs ++ more, a :: as)
 
 /-- Call `f : ps → r`, binding fresh arguments and callbacks first. A leading
     Int parameter may be a recursion counter: it gets a literal 0–3. -/
-def callWith (table : Table) (next : Nat) (env : Env) (f : Atom) (ps : List Ty) (r : Ty) :
+def callWith (table : Table) (fresh : Bool) (next : Nat) (env : Env) (f : Atom) (ps : List Ty) (r : Ty) :
     Gen (List (Expr × Ty)) := do
-  let (bs, args) ← valuesOf table next env ps
+  let (bs, args) ← valuesOf table fresh next env ps
   let args ← if ps.head? == some .int then do pure (Atom.int (Int.ofNat (← draw 4)) :: args.drop 1)
     else pure args
   pure (bs ++ [(.app f args, r)])
 
 /-- Close over generated declaration `i` and call it. -/
-def callDecl (table : Table) (next : Nat) (env : Env) (i : Nat) (d : Decl) : Gen (List (Expr × Ty)) := do
-  let (bs, caps) ← firstOrderValues next env d.captures
+def callDecl (table : Table) (fresh : Bool) (next : Nat) (env : Env) (i : Nat) (d : Decl) : Gen (List (Expr × Ty)) := do
+  let (bs, caps) ← firstOrderValues fresh next env d.captures
   let at_ := next + bs.length
-  let call ← callWith table (at_ + 1) (extend next bs env) (.var at_) d.parameters d.result
+  let call ← callWith table fresh (at_ + 1) (extend next bs env) (.var at_) d.parameters d.result
   pure (bs ++ [(.closure i caps, fnTy d)] ++ call)
 
 /-- Close over a generated declaration and call it. -/
 def callGenerated (table : Table) : Move := fun next env => do
   let (i, d) ← pick table (0, default)
-  callDecl table next env i d
+  callDecl table false next env i d
+
+/-- The same with fresh arguments and captures: no live holder outside the
+    call, so a generated declaration's own rows decide the verdict. -/
+def callGeneratedFresh (table : Table) : Move := fun next env => do
+  let (i, d) ← pick table (0, default)
+  callDecl table true next env i d
 
 /-- A fresh list first (the most recent list, so a callback built for the
     call often captures it), then a call of a generated declaration or a
@@ -647,10 +653,10 @@ def higherCall (table : Table) : Move := fun next env => do
     | _ => none
   if !gens.isEmpty && (fs.isEmpty || (← draw 2) == 0) then
     let (i, d) ← pick gens (0, default)
-    return first :: (← callDecl table (next + 1) env' i d)
+    return first :: (← callDecl table false (next + 1) env' i d)
   if fs.isEmpty then return [first]
   let (f, ps, r) ← pick fs (.int 0, [], .int)
-  return first :: (← callWith table (next + 1) env' f ps r)
+  return first :: (← callWith table false (next + 1) env' f ps r)
 
 /-- Call any function value in scope: a closure made earlier, one a
     generated factory returned, or a function parameter of the body. -/
@@ -660,7 +666,7 @@ def applyAny (table : Table) : Move := fun next env => do
     | _ => none
   if fs.isEmpty then return [(← litList env, tL)]
   let (f, ps, r) ← pick fs (.int 0, [], .int)
-  callWith table next env f ps r
+  callWith table false next env f ps r
 
 /-- A list and its pushed version, then a conditional choosing between them:
     the list written in place is read again only in one arm. -/
@@ -674,7 +680,7 @@ def branchWritten : Move := fun next env => do
   pure [(.prim .push [a, n], tL), (.branch c yes no, tL)]
 
 def finTy (t : Ty) : Nat → Env → Gen (List String × Expr) := fun next env => do
-  let (bs, a) ← valueOf next env t
+  let (bs, a) ← valueOf false next env t
   pure ([], wrap next bs (.atom a))
 
 /-- A chain of `fuel` moves from `next`, ending in a value of type `t`. -/
@@ -692,7 +698,8 @@ def branchBlock (ms : List (String × Move)) : Move := fun next env => do
 /-- The moves of a v5 chain: v4's, conditionals, calls of any function value
     in scope, and (three times as often) calls of generated declarations. -/
 def movesFor (table : Table) : List (String × Move) :=
-  let gen := if table.isEmpty then [] else List.replicate 3 ("call-generated", callGenerated table)
+  let gen := if table.isEmpty then [] else List.replicate 3 ("call-generated", callGenerated table) ++
+    List.replicate 2 ("call-generated-fresh", callGeneratedFresh table)
   weighted ++ [("branch-written", branchWritten), ("branch-block", branchBlock weighted),
     ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table)] ++ gen
 
@@ -758,7 +765,12 @@ def recursiveDecl (table : Table) (name : String) : Gen Decl := do
       args := args ++ [← if (← draw 3) == 0 then pick same (v (j + 1)) else pure (v (j + 1))]
   let call := n + 3 + pushes.length
   let stepEnv := (Atom.var call, r) :: extend (n + 3) pushes env
-  let rest ← blockOf ms (← draw 3) (call + 1) stepEnv r
+  -- Half the time the step reads the lists it passed to the recursive call
+  -- after it returns, then returns the recursive result.
+  let rest ← if (← draw 2) == 0 then
+      let lists := (args.drop 1).zip ts |>.filter (fun (_, t) => t == tL) |>.map Prod.fst
+      pure (wrap (call + 1) (lists.map fun a => (.prim .length [a], .int)) (.atom (v call)))
+    else blockOf ms (← draw 3) (call + 1) stepEnv r
   let step : Expr := .letE (n + 2) (.prim .sub [v 0, .int 1]) <|
     wrap (n + 3) pushes (.letE call (.recur args) rest)
   return { name := name, parameters := ps, captures := caps, result := r,
