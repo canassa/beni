@@ -2,8 +2,8 @@
 
 All runs: Lean 4.29.1, from `proofs/ownership`, logs in `regressions/`
 (`scripts/campaigns.sh` regenerates them). Elapsed time is the oracle's
-monotonic clock (generation, checking, both interpreters, shrinking), measured
-while other campaigns ran on the same machine, so it is an upper bound.
+monotonic clock (generation, both checkers under `--cross-check`, both
+interpreters, shrinking), measured while other work ran on the machine.
 
 ## What changed since the review
 
@@ -13,132 +13,144 @@ every program with a record of all its variables, so **0** of its accepted
 programs wrote in place; and that the checker re-inferred each callee per
 call, so the oracle never exercised the thesis's summary rows.
 
-* Generator v4 replaces `anf-chain` by a general family (`Generator.lean`).
+* Generator v4 replaces `anf-chain` by a general family (`Generator.lean`),
+  including higher-order wrappers that pass their callback on.
 * The checker publishes per-function summaries and uses them at call sites
   (`Checker.lean`); the per-call checker is kept as `Reinfer.lean`.
-* Twelve mutants are `--mutant=` flags and required controls; each has a
-  fixture that disagrees under it.
+* Twenty mutants are `--mutant=` flags; fifteen are required controls with a
+  fixed probe each, five are reported (two through a probe, three known gaps).
 
 ## Accepted programs that write in place
 
 Corrected checker (summaries), 20 000 trials per seed. "With write" counts
 accepted programs whose in-place run executed at least one `set`, `push` or
 focus write-back (builder `put` excluded). Every accepted program ran in both
-interpreters with identical traces.
+interpreters with identical traces. `ownership ci` fails below 30 %.
 
 | Family | Accepted (3 seeds) | With write | Before (v3) |
 |---|---:|---:|---|
-| general (v4, replaces anf-chain) | 4918 | **3173** | anf-chain: 522 accepted, **0** with write (review: 0 of 166 on one seed; 0 of 186 here on seed 20261011) |
-| identity-map | 1413 | 1413 | |
-| fresh-tower | 1308 | 1308 | |
-| once-many-wrappers | 1502 | 176 | |
-| branch-traversal | 1345 | 839 | |
-| fresh-nested | 911 | 911 | |
-| indexed-chain | 833 | 833 | |
-| library-pipeline | 666 | 666 | |
-| recursion | 665 | 573 | |
-| captures | 1357 | 0 | |
+| general (v4, replaces anf-chain) | 4781 | **3018** | anf-chain: 522 accepted, **0** with write (review: 0 of 166 on one seed; 0 of 186 on seed 20261011) |
+| once-many-wrappers | 1544 | 178 | |
+| fresh-tower | 1372 | 1372 | |
+| identity-map | 1365 | 1365 | |
+| branch-traversal | 1361 | 815 | |
+| captures | 1341 | 0 | |
+| fresh-nested | 897 | 897 | |
+| indexed-chain | 765 | 765 | |
+| recursion | 698 | 597 | |
+| library-pipeline | 653 | 653 | |
 | escape-traversal, recursive-higher-order-limit | 0 | 0 | |
 
-| Seed | Typed | Distinct ASTs | Accepted | With write | Limits | Mismatches | Elapsed |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 20000 | 12166 | 4889 | 3202 | 933 | 0 | 72 s |
-| 17 | 20000 | 12171 | 4995 | 3325 | 882 | 0 | 40 s |
-| 271828 | 20000 | 12262 | 5034 | 3365 | 959 | 0 | 48 s |
+| Seed | Typed | Distinct ASTs | Accepted | With write | Limits | Mismatches |
+|---|---:|---:|---:|---:|---:|---:|
+| 20261011 | 20000 | 12160 | 4901 | 3203 (65 %) | 913 | 0 |
+| 17 | 20000 | 12193 | 5001 | 3314 (66 %) | 880 | 0 |
+| 271828 | 20000 | 12239 | 4875 | 3143 (64 %) | 930 | 0 |
 
-Generator v3 on seed 20261011 is reproduced unchanged by
-`--generator-version=3` (6363 accepted, 4080 with write, 0 mismatches) under
-the summary checker, the same acceptance as the per-call checker gave.
+`--generator-version=3` on seed 20261011 reproduces v3 unchanged (6363
+accepted, 4080 with write, 0 mismatches) under the summary checker.
+
+## Rows exercised
+
+Accepted programs that write and exercised each checker row (three seeds):
+
+| Row | Programs |
+|---|---:|
+| callback called through its class; supply resolved at a known callback | 5868 |
+| xres yes / xres no | 5862 / 46 |
+| fresh in a callback's res | 3327 |
+| a callback's argument in its res | 2994 |
+| W on a callback argument; edge W ⇒ owned checked | 1251 |
+| supply owned bit cleared at the caller | 981 |
+| summary reused after re-asking its guards | 881 |
+| env in a callback's res | 316 |
+| supply owned bit cleared where a step ends | 236 |
+| once callback's calls checked | 178 |
+| guard forwarded / supply transferred to the caller's own input | 134 / 134 |
+| xreq on a callback argument; edge xreq ⇒ exclusive checked | 99 |
+| E on a callback argument; shared in its res | 95 |
+| ⊤ in a callback's res; E on a callback's environment | 0 |
 
 ## Summary layer
 
 * **No corrected-rule mismatch** in the 60 000 trials above, nor in the 76
-  fixtures (both checkers agree with every intended verdict).
-* **Computed once.** Per seed about 9 700 summaries were computed and about
-  183 000 call sites (including class queries) were served from the cache
-  after re-asking their guards.
-* **Cross-check** (`--cross-check`): the summary and per-call checkers differ
-  on 2 of 60 000 programs (seed 17 index 9380, seed 271828 index 4830), both
-  accepted only by the summaries and both with equal traces; the per-call
-  checker rejected them with "exclusive contents". No program is accepted by
-  the per-call checker alone.
+  fixtures; both checkers agree with every intended verdict.
+* **Computed once.** Per seed about 10 000 summaries were computed and about
+  200 000 call sites (including class queries) served from the cache after
+  re-asking their guards.
+* **Cross-check** (`--cross-check`): the two checkers differ on 68 of 60 000
+  programs. In 65 only the summary checker accepts (the per-call checker
+  says Disjoint or "exclusive contents"), in 3 only the per-call checker
+  accepts (summaries say Disjoint). Every program either one accepts ran with
+  equal traces.
 * `ownership summaries` prints the published rows of the accepted fixtures
-  (`regressions/summaries-fixtures.log`). For T43's construction fold, foldl
-  publishes `use π1 = RAW`, `res ε = {π1} excl`, `calls slot 2 = many` and a
-  supply `arg1 = {π1} owned excl`, under 14 class facts per argument state.
+  (`regressions/summaries-fixtures.log`).
 
 ## Negative controls
 
-`ownership controls 20000 <seed>`: one campaign per control, stopped at the
-first accepted disagreement, which is shrunk and must be rejected by the
-unmutated checker. First index caught (0-based), generator alone:
+Every required control has a fixed probe in `Fixtures.lean`, required by
+`ownership ci` and `ownership fixtures`. Separately, `ownership controls
+20000 <seed>` reports the first index (0-based) at which the generator alone
+finds an accepted disagreement that the corrected checker rejects:
 
-| Control | 20261011 | 17 | 271828 |
-|---|---:|---:|---:|
-| `--old-rule` (T59 freshness only) | 13 | 4 | 18 |
-| `--old-escape-rule` | 33 | 42 | 5 |
-| disjoint | 368 | 591 | 267 |
-| borrowed-supply (per-call checker; COVERAGE.md) | 131 | 1809 | 2555 |
-| traversal-exclusive | 1340 | 2159 | 1126 |
-| many-calls | 424 | 1595 | 723 |
-| copy-exclusive | 997 | 7568 | 11288 |
-| close-source | 2417 | 311 | 759 |
-| keeps-shape | 1099 | 19351 | 484 |
-| guard-reuse | 1825 | 135 | 2499 |
-| callback-xres | 13 | 4 | 18 |
-| supply-edge | 458 | 202 | 664 |
-| supply-recheck | 458 | 295 | 5432 |
-| calls-edge | 55 | 9 | 136 |
+| Control | 20261011 | 17 | 271828 | Required |
+|---|---:|---:|---:|---|
+| `--old-rule` (T59 freshness only) | 23 | 10 | 7 | yes |
+| `--old-escape-rule` | 14 | 20 | 3 | yes |
+| disjoint | 99 | 70 | 191 | yes |
+| borrowed-supply, per-call checker | 249 | 1056 | 1692 | yes |
+| borrowed-supply, summaries | not observable: 21 / 28 / 17 verdicts changed, 0 disagree | | | reported |
+| traversal-exclusive | 236 | 688 | 2301 | yes |
+| many-calls | 366 | 2232 | 366 | yes |
+| copy-exclusive | 231 | 688 | 1548 | yes |
+| close-source | 3315 | 179 | 379 | yes |
+| keeps-shape | 3757 | 1228 | 2336 | yes |
+| guard-reuse | 1649 | 471 | 5841 | yes |
+| callback-xres | 23 | 10 | 7 | yes |
+| supply-edge | 583 | 97 | 353 | yes |
+| supply-recheck | 4741 | 537 | 353 | yes |
+| calls-edge | 45 | 105 | 21 | yes |
+| callback-writes | 400 | 34 | 1960 | yes |
+| callback-aliases | 249 | 460 | 353 | yes |
+| callback-env | 119 | 22 | 172 | yes |
+| callback-escapes | — | 471 | 13816 | probe only |
+| forward-guards | — | 471 | — | probe only |
+| callback-requires, requires-edge, transfer-supplies | — | — | — | known gaps |
 
-Against the per-call checker (`--reinfer`, seed 20261011) the review's seven
-are caught at 368, 131, 1340, 424, 997, 2417, 1099. `keeps-shape` on seed 17
-(19 351 of 20 000) is the thinnest margin. The fixtures check each control's
-probe: rejected by the checker, accepted under the mutant, traces differ.
+`callback-xres` and `old-rule` are caught at the same indices: the same
+fresh-nested/fresh-tower program, not the callback families. Against the
+per-call checker (`--reinfer`, seed 20261011) the review's seven are caught at
+99, 249, 236, 366, 231, 3315, 3757.
 
 ## Source-level mutants
 
 `scripts/run-mutants.sh` applies each edit of `scripts/mutate.mjs` to a copy
-of the sources, builds it and runs the unmodified `oracle 20000 <seed>` for
-the three seeds (generator only, no fixtures). Results are in
-`regressions/source-mutants-v4.log`. First index caught per seed
-(20261011 / 17 / 271828); "—" means not caught in 20 000 trials.
+of the sources, builds it, and runs the unmodified `oracle 20000 <seed>` for
+the three seeds (generator only). Results in `regressions/source-mutants-v4.log`
+(the first 25 before the higher-order family, the callback ones and the
+review's other seven re-run after it). First index per seed
+(20261011 / 17 / 271828):
 
-| Mutant (source edit) | First index | Seeds |
+| Mutant | First index | Seeds |
 |---|---|---:|
-| disjoint | 368 / 591 / 267 | 3/3 |
-| borrowedsupply | — / — / — | 0/3 (subsumed under summaries; caught by the per-call checker, see controls) |
-| travexcl | 1340 / 2159 / 1126 | 3/3 |
-| manycap | 424 / 1595 / 723 | 3/3 |
-| copyexcl | 997 / 7568 / 11288 | 3/3 |
-| closesrc | 2417 / 311 / 759 | 3/3 |
-| keepsshape | 1099 / 19351 / 484 | 3/3 |
+| disjoint, travexcl, manycap, copyexcl, closesrc, keepsshape | in the log (run before the higher-order family) | 3/3 |
+| borrowedsupply | — | 0/3 (summaries; caught against the per-call checker) |
 | separated | 13 / 4 / 18 | 3/3 |
 | dead | 3 / 11 / 8 | 3/3 |
 | escape | 33 / 42 / 5 | 3/3 |
 | focusexcl | 13 / 4 / 18 | 3/3 |
 | writeout | 125 / 219 / 88 | 3/3 |
+| guardreuse, callbackxres, supplyedge, supplyrecheck, callsedge | in the log (run before the higher-order family) | 3/3 |
+| callbackwrites | 400 / 34 / 1960 | 3/3 |
+| callbackaliases | 249 / 460 / 353 | 3/3 |
+| callbackenv | 119 / 22 / 172 | 3/3 |
+| callbackescapes | — / 471 / 13816 | 2/3 |
+| forwardguards | — / 471 / — | 1/3 |
+| requiresedge, callbackrequires, transfersupplies | — | 0/3 |
 | xres, once, nestedsep, reqexcloutside, recvalidate, tsupplyexcl, escapeowned | — | 0/3 |
-| guardreuse | 1825 / 135 / 2499 | 3/3 |
-| callbackxres | 13 / 4 / 18 | 3/3 |
-| supplyedge | 458 / 202 / 664 | 3/3 |
-| supplyrecheck | 458 / 295 / 5432 | 3/3 |
-| callsedge | 55 / 9 / 136 | 3/3 |
-| callbackaliases | 59 / 77 / 336 | 3/3 |
-| callbackenv | 125 / 8 / 17 | 3/3 |
-| callbackwrites | 1763 / — / 3040 | 2/3 |
-| requiresedge, callbackrequires, callbackescapes, forwardguards, transfersupplies | — | 0/3 |
 
-The seven the review required are all caught in summary mode except
-`borrowedsupply`, which is caught against the per-call checker (COVERAGE.md
-argues it cannot be observed under summaries). The flag versions of the
-first seven and the summary rows give identical first indices, so the flags
-are the same edits. Not caught, and not claimed equivalent: the review's other
-seven that it also reported missed (`once` and `xres` among them), the `xreq`
-edge and the `xreq`/`E` guards of callbacks (no callback in the tables
-requires its argument exclusive or publishes it), and the two forwarding
-mechanisms (`forwardguards`, `transfersupplies`): no generated declaration
-passes its own function-typed input to another declaration, so forwarding a
-guard or a supply to the caller is untested.
+Flag and source versions run on the same generator give identical first indices. COVERAGE.md lists the
+uncaught ones as known gaps with what would reach them.
 
 ## Findings
 
@@ -154,11 +166,12 @@ guard or a supply to the caller is untested.
 ```sh
 nix develop .#ownership
 cd proofs/ownership
-lake build
-.lake/build/bin/ownership ci                      # fixtures, one campaign, every control
+lake build                                        # includes the AxiomCheck audit
+.lake/build/bin/ownership ci                      # fixtures and probes, one campaign, controls reported
+.lake/build/bin/ownership ci --strict             # also require every generator catch
 .lake/build/bin/ownership oracle 20000 17 --cross-check
 .lake/build/bin/ownership controls 20000 271828
+.lake/build/bin/ownership verdict-diff 20000 17 --mutant=borrowed-supply
 scripts/campaigns.sh                              # all logs above
 scripts/run-mutants.sh /tmp/mutants 20000 20261011 17 271828
-lake env lean Axioms.lean                         # axioms of each theorem
 ```

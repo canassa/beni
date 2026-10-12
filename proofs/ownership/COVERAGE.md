@@ -125,41 +125,68 @@ focus that keeps or breaks shape; shallow and nested copies; literals with
 repeated elements; spine writes after `map`; two calls of one library function
 with different callback classes (summary reuse); callbacks handed a list that
 is read again (`applyThenRead`) and folds that read their rows after the loop
-(`foldKeep`). Every one of the twelve mutants below and the two historical
-controls is caught **by the generator alone** in one 20000-trial campaign on
-each of seeds 20261011, 17 and 271828.
+(`foldKeep`); wrappers that pass their callback on (`mapVia`, `twiceVia`,
+`applyN`), callbacks that escape (`publish`) or require (`headBump`) their
+argument, a once list callback, and initialize over shared and distinct pairs.
+
+**Controls.** Every required control has a fixed probe program that
+disagrees under its mutant and is rejected without it; `ownership ci`
+requires those, so it does not depend on the generator's random stream.
+Separately, the generator alone catches, in one 20000-trial campaign on each
+of seeds 20261011, 17 and 271828: the two historical controls and fifteen
+mutants (disjoint, traversal-exclusive, many-calls, copy-exclusive,
+close-source, keeps-shape, guard-reuse, callback-xres, supply-edge,
+supply-recheck, calls-edge, callback-writes, callback-aliases, callback-env;
+borrowed-supply only against the per-call checker). It catches
+callback-escapes on 2 seeds of 3 and forward-guards on 1; both are required
+through their probe only. RESULTS.md has the indices.
+
+**Rows exercised.** `withWrites` counts executions, not which rows a write
+depends on. The checker records the rows each check exercised; over the
+accepted programs that write (three seeds, RESULTS.md): callback W 1251,
+callback argument in res 2994, env in res 316, fresh in res 3327, xres yes
+5862 / no 46, E on a callback argument 95, xreq on one 99 and its edge 99,
+guards forwarded and supplies transferred to the caller's input 134 each,
+supply owned bit cleared at a step end 236 and at the caller 981, a summary
+reused after re-asking its guards 881. Never hit: ⊤ in a callback's res, E on
+a callback's environment.
 
 **Tested only by fixtures or not at all:**
 * recursion inside a traversal or focus step — one hand-written fixture; the
   generator never produces it (both checkers now refuse it as a limit);
 * higher-order recursion, function values below an input path, callbacks with
   function-typed parameters or results — explicit limits, never accepted;
-* the `need` row, as a separate fact (DESIGN.md: subsumed by guarded `xres`);
-* summary-row edge `xreq ⇒ exclusive supply`, and the `xreq` and `E` guards
-  of callbacks: no callback in the tables requires its argument exclusive or
-  publishes it, so their source mutants (`requiresedge`, `callbackrequires`,
-  `callbackescapes`) are not caught;
-* forwarding: no generated declaration passes its own function-typed input
-  to another declaration, so forwarding a guard or a supply to the caller
-  (`forwardguards`, `transfersupplies`) is untested; `callbackwrites` is
-  caught on two seeds of three;
-* the review's other seven missed source mutants (`xres`, `once`,
-  `nestedsep`, `reqexcloutside`, `recvalidate`, `tsupplyexcl`,
-  `escapeowned`) remain uncaught; none is claimed equivalent;
+* the `need` row, as a separate fact (DESIGN.md: argued, not checked, to be
+  carried by guarded `xres`);
 * everything outside the core listed in the table above.
+
+## Known gaps
+
+Mutants no program has yet distinguished. None is claimed equivalent; each
+names the generator change that would be needed to reach it.
+
+| Mutant | What it weakens | Evidence | What would reach it |
+|---|---|---|---|
+| `callback-requires` (flag) | a callback's xreq not published as the caller's xreq | changed no verdict in 20000 trials (seed 20261011) | the xreq edge and the callee's own exclusivity check reject the same programs; a callback that requires exclusivity of an argument whose outside holders only the caller sees, with the edge also weakened |
+| `requires-edge` (flag) | xreq ⇒ exclusive supply unchecked | changed no verdict | as above: published xreq covers it; programs where a step's supply loses exclusivity between the call and the caller |
+| `transfer-supplies` (flag) | a callee's supplies to our own input dropped | changed no verdict | a wrapper whose callee supplies a borrowed cell to the forwarded callback, observable only through the edge (the forwarded W guards already cover the callee's writes) |
+| source `xres`, `once`, `nestedsep`, `reqexcloutside`, `recvalidate`, `tsupplyexcl`, `escapeowned` | the review's other seven | not caught on 3 seeds (`regressions/source-mutants-v4.log`) | `xres`/`nestedsep`: storing a non-exclusive nested value into a three-level container and consuming two levels down; `once`: a once closure called twice where the creation demand does not already reject; `recvalidate`: recursion whose candidate changes in the last round; the rest: not analysed |
 
 ## Summary layer: rows and their controls
 
 | Row (§3.7) | Implementation | Required control | Caught by |
 |---|---|---|---|
-| use W through a callback | `consumes` from `W∈use_g(k,p)` guards | source `callbackwrites` | generator, 2 of 3 seeds |
-| res, A | result built from `π_k.p∈res(q)`, `env∈res(q)`, fresh, shared, ⊤ guards | source `callbackaliases`, `callbackenv` | generator |
-| xres | `xres(q)` guards | `--mutant=callback-xres` | generator + fixture |
-| supply owned | demand test at the call, re-checked where the scope ends and at the caller | `--mutant=supply-recheck` | generator + fixture |
-| edge W ⇒ owned | at a call that knows the callback | `--mutant=supply-edge` | generator + fixture |
-| calls, edge once ⇒ ≤1 | counted per slot, many in a step or recursion | `--mutant=calls-edge` | generator + fixture |
-| guards | cache reused only where every guard answers the same | `--mutant=guard-reuse` | generator + fixture |
-| edge xreq ⇒ exclusive | at a call that knows the callback | none (source `requiresedge` reported) | not reached |
+| use W through a callback | `consumes` from `W∈use_g(k,p)` guards | `--mutant=callback-writes` | probe; generator 3/3 |
+| use E through a callback | escapes from `E∈use_g(k,p)` | `--mutant=callback-escapes` | probe; generator 2/3 |
+| res, A | result built from `π_k.p∈res(q)`, `env∈res(q)`, fresh, shared, ⊤ guards | `--mutant=callback-aliases`, `--mutant=callback-env` | probe; generator 3/3 |
+| forwarding | a callee's guards on our input re-asked as ours | `--mutant=forward-guards` | probe; generator 1/3 |
+| xres | `xres(q)` guards | `--mutant=callback-xres` | probe; generator 3/3 (from the fresh-nested/fresh-tower families, not the callback families) |
+| supply owned | demand test at the call, re-checked where the scope ends and at the caller | `--mutant=supply-recheck` | probe; generator 3/3 |
+| edge W ⇒ owned | at a call that knows the callback | `--mutant=supply-edge` | probe; generator 3/3 |
+| calls, edge once ⇒ ≤1 | counted per slot, many in a step or recursion | `--mutant=calls-edge` | probe; generator 3/3 |
+| guards | cache reused only where every guard answers the same | `--mutant=guard-reuse` | probe; generator 3/3 |
+| xreq, edge xreq ⇒ exclusive | published xreq, and checked at a call that knows the callback | `callback-requires`, `requires-edge` | known gaps (hit 99 times, no verdict change) |
+| supply transfer | a callee's supplies to our input become ours | `transfer-supplies` | known gap (hit 134 times, no verdict change) |
 | need | not a separate row | — | — |
 
 ## Borrowed supply under summaries
@@ -167,8 +194,13 @@ each of seeds 20261011, 17 and 271828.
 The review's `borrowed-supply` mutant drops the borrowed source's elements
 from the holders a non-consuming traversal re-checks its step's writes and
 supplies against. In the per-call checker it is load-bearing, and the
-generator catches it (first indices 131–2555). Under summaries no generated or
-hand-written program distinguishes it, and we argue none can in this core: a
+generator catches it (first indices 249–1692). Under summaries the line is
+**live**: `ownership verdict-diff --mutant=borrowed-supply` shows it rejects
+21, 28 and 17 programs per 20000 trials (seeds 20261011, 17, 271828) that its
+removal would accept, and none of those disagree when run. A typical one folds
+`borrowOrGrow` over three fresh rows: the borrowed row is written once and
+never read again. The line is kept. That no program can distinguish it is
+**argued, not checked**: a
 written cell that was an element of the borrowed source is observed only
 through (a) a holder live after the traversal, which is in `later`; (b) the
 source itself at a later position, which for a non-exclusive source is the
@@ -176,18 +208,19 @@ same origin as the current element parameter, so the re-demand's Disjoint
 against the other step inputs fails, and for an exclusive source is a
 different array; or (c) the caller, where the summary's writes and supplies
 are re-checked against the caller's live holders. The per-call checker lacked
-(c) because it dropped position-tagged writes at the caller. The control is
-therefore run against the per-call checker (`ownership controls` labels it),
-and its fixture is T46 two rows.
+(c) because it dropped position-tagged writes at the caller. `ownership
+controls` prints both rows: NOT OBSERVABLE under summaries (with the
+verdict-change counts) and the required catch against the per-call checker;
+its fixed probe is T46 two rows, run against the per-call checker.
 
 ## Theorems (Soundness.lean, BuilderProof.lean, HeapProof.lean, KernelChecks.lean)
 
 | Theorem | Status |
 |---|---|
-| `cellOverlap_sound`, `demandProblem_sound` — the overlap and demand tests exclude shared arrays under a separating naming | proved |
-| `builder_alloc_describes` — abstract builder value describes the concrete allocation | proved |
-| `invariant_initial`, `invariant_observations` — the configuration invariant at the start, and what it fixes | proved |
-| `accepted_traces_agree` — main theorem: accepted ⇒ same final value, reads and external reads, for every fuel bound | proved **from** `invariant_preserved`; inherits its `sorry` |
+| `cellOverlap_sound`, `demandProblem_sound` — the overlap and demand tests exclude shared arrays | proved, **conditional on a separating naming** (`Separating γ`), which nothing yet constructs; the first conjunct of `demandProblem_sound` only restates checker booleans |
+| `builder_alloc_describes` — abstract builder value describes the concrete allocation | proved, **conditional on the naming naming the new array** (`hsite`) |
+| `invariant_initial`, `invariant_observations`, `check_accepts_main`, `corrected_default` | proved; bookkeeping (`invariant_initial` is instantiated with the empty naming) |
+| `accepted_traces_agree` — main theorem: for `check p = .ok _` (corrected config), same final value, reads and external reads, for every fuel bound | proved **conditionally** on `invariant_preserved`: about twenty lines of unfolding, no assurance beyond that lemma |
 | `invariant_preserved` — the step case of the prefix induction over the whole configuration | **sorry** |
 | `summary_sound` — Lemma 6.7 clauses 1–3, clause 2 as repaired in round 5 | **sorry** |
 | `map_summary_sound` — map's derived summary, including its certificate | **sorry** |
@@ -195,9 +228,11 @@ and its fixture is T46 two rows.
 | builder/close contracts, footprint framing, close identity (`BuilderProof`, `HeapProof`) | proved (unchanged) |
 | kernel checks of `storeExclusive` and permanent escapes | proved (unchanged) |
 
-`Axioms.lean` prints the axioms of each: the proved ones use only `propext`,
-`Classical.choice` and `Quot.sound`; the three above and the main theorem use
-`sorryAx`. No axiom is declared.
+`Axioms.lean` is the `AxiomCheck` target of `lake build`: it prints the
+axioms of all 335 theorems and fails unless exactly the three `sorry`s above
+and the main theorem depend on `sorryAx`, and nothing uses an axiom beyond
+`propext`, `Classical.choice` and `Quot.sound`. No axiom is declared. All
+statements take `check p = .ok _` under the default (corrected) config.
 
 ## Thesis discrepancies found (the thesis is not edited)
 
@@ -210,8 +245,9 @@ and its fixture is T46 two rows.
    caller; `supply-recheck` shows the re-check is load-bearing (fixture
    "fold reads its rows after the loop"). The thesis's text does not say where
    the bit is established for an accumulator that is a step input.
-2. **`need` is not needed as a separate row** in this core: guarding the
-   declaration's own `xres` on the callback's `res`/`xres` carries it.
+2. **`need` appears unnecessary as a separate row** in this core (argued,
+   not checked): guarding the declaration's own `xres` on the callback's
+   `res`/`xres` carries it in every fixture and generated program.
 3. **Guard count.** §4.6 proposes capping a summary at about eight atoms. With
    atoms at the granularity the rows need (one per argument path and result
    path), foldl's summary asks 14 distinct facts per argument state and the
