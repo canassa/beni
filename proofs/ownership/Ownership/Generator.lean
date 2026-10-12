@@ -135,7 +135,22 @@ def decls : List Decl := [
   -- accumulator onto its capture and returns the capture's length.
   Library.foldl tL .int,
   { name := "capCount", parameters := [tL, .int], captures := [tL], result := .int,
-    body := .letE 3 (.prim .push [v 2, v 1]) (.prim .length [v 3]) }]
+    body := .letE 3 (.prim .push [v 2, v 1]) (.prim .length [v 3]) },
+  -- Fifth review: a closure over a closure, one over a list beside a
+  -- (possibly once) closure, a factory of nested closures, and a
+  -- declaration returning either a closure it makes or its function input.
+  { name := "capApply", parameters := [.int], captures := [fIL], result := tL, body := .app (v 1) [v 0] },
+  { name := "readCall", parameters := [.int], captures := [tL, fIL], result := .int,
+    body := .letE 3 (.app (v 2) [v 0]) (.prim .length [v 1]) },
+  { name := "mkNested", parameters := [tL], result := fIL,
+    body := .letE 1 (.closure capGet [v 0]) (.closure 32 [v 1]) },
+  { name := "choose", parameters := [.int, tL, fIL], result := fIL,
+    body := .branch (v 0) (.closure capGet [v 1]) (.atom (v 2)) }]
+
+def capApply := 32
+def readCall := 33
+def mkNested := 34
+def chooseFn := 35
 
 abbrev Env := List (Atom × Ty)
 
@@ -846,6 +861,65 @@ def publishVia : Move := fun next env => do
     (.closure publish [], fLL), (.app (v (next + 2)) [v (next + 4), v (next + 5)], tN),
     (.prim .push [v next, ← number env], tL)]
 
+/-- Two fresh rows in a nested list, one list `set` into both slots (or two
+    different lists), then `map bump` or `map identL` over it: if both slots
+    hold one array, map pushes it twice (fifth review, P4). -/
+def setBoth : Move := fun next env => do
+  let i ← draw 2
+  let same := (← draw 4) != 0
+  let cb ← pick [bump, bump, identL] bump
+  pure [(← litList env, tL), (← litList env, tL), (.prim (.literal tL) [v next, v (next + 1)], tN),
+    (← litList env, tL), (← litList env, tL),
+    (.prim .set [v (next + 2), .int (Int.ofNat i), v (next + 3)], tN),
+    (.prim .set [v (next + 5), .int (Int.ofNat (1 - i)), v (if same then next + 3 else next + 4)], tN),
+    (.closure cb [], fLL), (.closure mapLL [], .fn [tN, fLL] tN),
+    (.app (v (next + 8)) [v (next + 6), v (next + 7)], tN)]
+
+/-- A closure over a list beside a closure over a fresh list (a once one
+    that pushes onto it, or one that only reads it); one of the lists is
+    pushed, then the outer closure is called, reading the first list (fifth
+    review, P5). -/
+def onceBeside : Move := fun next env => do
+  let a ← anyList env
+  let inner ← pick [capPush, capPush, capGet] capPush
+  let pushOuter := (← draw 3) != 0
+  let pushed : Atom := if pushOuter then a else v next
+  pure [(← litList env, tL), (.closure inner [v next], fIL), (.closure readCall [a, v (next + 1)], fII),
+    (.prim .push [pushed, ← number env], tL), (.app (v (next + 2)) [.int 0], .int)]
+
+/-- A closure over a closure over a list (`capApply` over `capGet` or
+    `capPush`), the list sometimes pushed, then the outer closure called. -/
+def nestedClosure : Move := fun next env => do
+  let a ← anyList env
+  let inner ← pick [capGet, capPush] capGet
+  let push := (← draw 2) == 0
+  let bs : List (Expr × Ty) := [(.closure inner [a], fIL), (.closure capApply [v next], fIL)]
+  if push then
+    pure (bs ++ [(.prim .push [a, ← number env], tL), (.app (v (next + 1)) [← number env], tL)])
+  else pure (bs ++ [(.app (v (next + 1)) [← number env], tL)])
+
+/-- A factory of nested closures (`mkNested`): its result captures a closure
+    over the list it is given; the list sometimes pushed before the call. -/
+def factoryNested : Move := fun next env => do
+  let a ← anyList env
+  let push := (← draw 2) == 0
+  let bs : List (Expr × Ty) := [(.closure mkNested [], .fn [tL] fIL), (.app (v next) [a], fIL)]
+  if push then
+    pure (bs ++ [(.prim .push [a, ← number env], tL), (.app (v (next + 1)) [.int 0], tL)])
+  else pure (bs ++ [(.app (v (next + 1)) [.int 0], tL)])
+
+/-- `choose c xs f`: either a closure over `xs` or the function input `f`
+    (a closure over another list); then a list pushed, and the result kept
+    or called. -/
+def chooseClosure : Move := fun next env => do
+  let a ← anyList env
+  let b ← anyList env
+  let c ← number env
+  let pushed ← pick [a, b] a
+  pure [(.closure capGet [b], fIL), (.closure chooseFn [], .fn [.int, tL, fIL] fIL),
+    (.app (v (next + 1)) [c, a, v next], fIL), (.prim .push [pushed, ← number env], tL),
+    (.app (v (next + 2)) [.int 0], tL)]
+
 def finTy (t : Ty) : Nat → Env → Gen (List String × Expr) := fun next env => do
   let (bs, a) ← valueOf false next env t
   pure ([], wrap next bs (.atom a))
@@ -873,7 +947,9 @@ def movesFor (table : Table) : List (String × Move) :=
     ("branch-closure", branchClosure), ("double-push", doublePush), ("close-alias-callee", closeAliasCallee),
     ("copy-then-edit", copyThenEdit), ("copy-repeat-edit", copyRepeatEdit),
     ("once-in-loop", onceInLoop), ("shared-closure-record", sharedClosureRecord),
-    ("loop-picks-element", loopPicksElement), ("publish-via", publishVia)] ++ gen
+    ("loop-picks-element", loopPicksElement), ("publish-via", publishVia),
+    ("set-both", setBoth), ("once-beside", onceBeside), ("nested-closure", nestedClosure),
+    ("factory-nested", factoryNested), ("choose-closure", chooseClosure)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/

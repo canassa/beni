@@ -241,6 +241,17 @@ def keepsShape (a : Abstract) (parameter := 0) : Bool :=
       | .fresh _ => true
       | _ => false
 
+/-- `liveCells`, or the `once-live` control's weakened one: the capture
+    paths of a once closure hold nothing. -/
+def liveCellsWith (cfg : Config) (env : Env Abstract) (l : Live) : List Origin :=
+  if !cfg.has .onceLive then liveCells env l else
+  l.foldl (fun cs (v, p) =>
+    match env.lookup v with
+    | none => union cs [.unknown]
+    | some a => (a.paths.filter fun (q, _) => a.roots.isEmpty ||
+          !(match q with | .capture _ :: _ => true | _ => false)).foldl (fun cs (q, ds) =>
+        if isPrefix p q || isPrefix q p then union cs ds else cs) cs) []
+
 /-- `uses`, or the `branch-live` control's weakened liveness. -/
 def usesWith (cfg : Config) (e : Expr) : Live :=
   usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) e
@@ -377,6 +388,7 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   | .put, [.list cs elem ex, v] => do
     demand ctx.config cs later (union elem.cells v.cells)
     let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)
+    let exclusive := exclusive || (ctx.config.has .setExclusive && op == .set && ex)
     let stored := if exclusive && op == .put && ctx.config.oldFreshRule then v.grantExclusive else v
     pure (.list cs (elem.join stored) exclusive)
   | .copy, [.list cs elem _] => do
@@ -427,7 +439,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
     let f := fuel - 1
     let ctx := { ctx with escaped := union ctx.escaped (← getFacts).escapes }
     if !ctx.config.has .noScope then liveScope env after
-    let later := union (liveCells env after) ctx.pinned
+    let later := union (liveCellsWith ctx.config env after) ctx.pinned
     match e with
     | .atom a => abstractAtom env a
     | .letE v rhs rest =>
@@ -439,7 +451,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       if ctx.config.has .shadowing || outer.isEmpty then
         inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
       else
-        inferExpr f { ctx with pinned := union ctx.pinned (liveCells env outer) } ((v, a) :: env) rest
+        inferExpr f { ctx with pinned := union ctx.pinned (liveCellsWith ctx.config env outer) } ((v, a) :: env) rest
           (removeVars [v] after) (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .branch c yes no =>

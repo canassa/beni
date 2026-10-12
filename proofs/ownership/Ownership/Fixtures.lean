@@ -518,6 +518,32 @@ def loopPicksElement : Program := {
     .letE 4 (.traverse .list (v 2) (v 3) 10 11 12 (.atom (v 11))) <|
     .focus (v 4) (.int 0) 5 (.prim .push [v 5, .int 9]) }
 
+/-- Fifth review, P4: one list is `set` into both slots of a nested list,
+    and `map bump` then pushes onto each row. The rows are one array, so the
+    nested list is not exclusive; a `set` that keeps exclusivity whatever it
+    stores (`set-exclusive`) lets map push the array twice. -/
+def setBothSlots : Program := {
+  declarations := [Library.map (.list .int) (.list .int),
+    { name := "bump", parameters := [.list .int], result := .list .int, body := .prim .push [v 0, .int 9] }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal .int) [.int 2]) <|
+    .letE 2 (.prim (.literal (.list .int)) [v 0, v 1]) <| .letE 3 (.prim (.literal .int) [.int 7]) <|
+    .letE 4 (.prim .set [v 2, .int 0, v 3]) <| .letE 5 (.prim .set [v 4, .int 1, v 3]) <|
+    .letE 6 (.closure 1 []) <| .letE 7 (.closure 0 []) (.app (v 7) [v 5, v 6]) }
+
+/-- Fifth review, P5: a closure captures a list `xs` beside a once closure
+    (it pushes onto its own capture); `xs` is pushed, then the closure is
+    called and reads `xs`. The once closure's capture paths still hold `xs`;
+    liveness that drops them (`once-live`) lets the push through. -/
+def onceCapturedBeside : Program := {
+  declarations := [
+    { name := "capPush", parameters := [.int], captures := [.list .int], result := .list .int,
+      body := .prim .push [v 1, v 0] },
+    { name := "readCall", parameters := [.int], captures := [.list .int, .fn [.int] (.list .int)], result := .int,
+      body := .letE 3 (.app (v 2) [v 0]) (.prim .length [v 1]) }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal .int) [.int 5]) <|
+    .letE 2 (.closure 0 [v 1]) <| .letE 3 (.closure 1 [v 0, v 2]) <|
+    .letE 4 (.prim .push [v 0, .int 9]) <| .letE 5 (.app (v 3) [.int 0]) (.prim .record [v 5, v 4]) }
+
 /-- A declaration returns either a closure over its list argument or its
     function argument (fifth review, P6). The checker joined the two shapes
     to an unknown value holding no cells, so the list stayed writable while
@@ -535,6 +561,8 @@ def closureJoinedWithInput : Program := {
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
+  ("one list set into both slots, then map bump", setBothSlots, .setExclusive, false),
+  ("a list captured beside a once closure, pushed, then the closure called", onceCapturedBeside, .onceLive, false),
   ("disjoint", probeDisjoint, .disjoint, false),
   ("focus body pushes its own container", focusStale, .disjoint, false),
   ("read only in the nonzero arm after a push", probeBranchLive, .branchLive, false),
@@ -726,7 +754,9 @@ def all : List Fixture := [
   ⟨"foldl calls a once closure on two rows",onceThroughFold,false⟩,
   ⟨"shared on a record holding a closure over a list",sharedClosureInRecord,false⟩,
   ⟨"a loop over a non-exclusive source returns an element, then edited",loopPicksElement,false⟩,
-  ⟨"a closure joined with a function input stays live",closureJoinedWithInput,false⟩ ]
+  ⟨"a closure joined with a function input stays live",closureJoinedWithInput,false⟩,
+  ⟨"one list set into both slots, then map bump",setBothSlots,false⟩,
+  ⟨"a list captured beside a once closure, pushed, then the closure called",onceCapturedBeside,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true

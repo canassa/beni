@@ -39,6 +39,9 @@ inductive Mutant where
   | manyOff             -- a traversal step that calls a callback once is not counted as many calls
   -- Scope (probe only: no typed program has an unbound live variable).
   | noScope             -- an unbound live variable is read as dead instead of refused
+  -- Fifth review.
+  | setExclusive        -- `set` keeps a list exclusive whatever it stores
+  | onceLive            -- liveness drops the capture paths of once closures
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
@@ -46,7 +49,7 @@ def Mutant.all : List Mutant :=
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
-   .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff, .noScope]
+   .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff, .noScope, .setExclusive, .onceLive]
 
 def Mutant.name : Mutant → String
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
@@ -63,6 +66,7 @@ def Mutant.name : Mutant → String
   | .branchLive => "branch-live" | .branchClosure => "branch-closure"
   | .shadowing => "shadowing" | .sharedRoots => "shared-roots"
   | .sharedFn => "shared-fn" | .manyOff => "many-off" | .noScope => "no-scope"
+  | .setExclusive => "set-exclusive" | .onceLive => "once-live"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
@@ -82,7 +86,7 @@ def Mutant.summaryRow : Mutant → Bool
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
   | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive | .branchClosure
-  | .shadowing | .sharedRoots | .sharedFn | .manyOff | .noScope => true
+  | .shadowing | .sharedRoots | .sharedFn | .manyOff | .noScope | .setExclusive | .onceLive => true
   | _ => false
 
 structure Config where

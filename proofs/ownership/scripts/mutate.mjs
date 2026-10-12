@@ -115,6 +115,25 @@ export const mutants = {
     "      let out"],
   // An indexed read's result forgets the element cells.
   atelem: ["Checker.lean", "pure (elem.join fallback)", "pure (fallback.join (elem.mapOrigins fun _ _ => []))"],
+  // The fifth review's holes. A `set` keeps its list exclusive whatever it
+  // stores (also `--mutant=set-exclusive`).
+  setexcl: ["Checker.lean", "    let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)",
+    "    let exclusive := if op == .set then ex else ex && storeExclusive ctx [v] later elem.cells (op == .put)"],
+  // Liveness drops the capture paths of once closures (also `--mutant=once-live`).
+  oncelive: ["Domain.lean", "    | some a => a.paths.foldl (fun cs (q, ds) =>",
+    "    | some a => (a.paths.filter fun (q, _) => a.roots.isEmpty || !(match q with | .capture _ :: _ => true | _ => false)).foldl (fun cs (q, ds) =>"],
+  // A function input's environment instantiates to nothing at a call.
+  envinst: ["Checker.lean", "  | .parameter i (.env :: _) => (args[i]?.getD .bottom).envCells", "  | .parameter i (.env :: _) => []"],
+  // keeps-shape forgets that the result's paths must stay separated.
+  keepsep: ["Checker.lean", "  a.deepExclusive && separatedPaths a.paths && a.paths.all fun (p, cs) =>", "  a.deepExclusive && a.paths.all fun (p, cs) =>"],
+  // An owned input path ignores the other input paths that hold its cells.
+  ownedothers: ["Checker.lean", "      if individuallyOwned ctx cs && !cellOverlap cs (union later others) then",
+    "      if individuallyOwned ctx cs && !cellOverlap cs later then"],
+  // The join of two shapes forgets both sides' cells (the defect the fifth
+  // review's P6 exposed, fixed in Domain.lean).
+  joindrops: [
+    ["Domain.lean", "else .list (union [.unknown] (union a.cells b.cells)) .bottom false", "else .list [.unknown] .bottom false"],
+    ["Domain.lean", "  | _, _ => .list (union [.unknown] (union a.cells b.cells)) .bottom false", "  | _, _ => .list [.unknown] .bottom false"]],
 };
 
 const [name, dir] = process.argv.slice(2);
