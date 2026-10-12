@@ -4069,7 +4069,9 @@ const Walker = struct {
     }
 
     /// Every cell of `av`, closures expanded, at `⋆`: what a value built
-    /// from them may hold anywhere.
+    /// from them may hold anywhere. A closure's own cell is no list; what it
+    /// captured is expanded into the result, so a message holding a handler
+    /// that captured a model list still names that list.
     fn anywhere(w: *Walker, av: AV, inst: Inst.Index) Allocator.Error!AV {
         const any = try w.o.child(eps, .any, 0);
         var out: std.ArrayList(Entry) = .empty;
@@ -4128,6 +4130,8 @@ const Walker = struct {
         while (true) : (round += 1) {
             res = try w.entryResWith(inst, upd, &.{ payload, model }, 0, false);
             const half = if (whole) res else try w.proj(res, tuple0, null);
+            // The union is sorted and deduplicated, and contains `model`: the
+            // same length is the same set, so it has settled.
             const next = try w.unionOf(&.{ model, half });
             if (next.len == model.len) break;
             model = next;
@@ -4156,33 +4160,48 @@ const Walker = struct {
         // (b) The demands.
         const arena = w.o.out.allocator();
         const op = if (w.mode == .report) try std.fmt.allocPrint(arena, "entry {s}", .{try w.entryName(upd, "update")}) else "entry";
-        var done: std.ArrayList(u64) = .empty;
+        // One demand per path written, its derivation and exclusivity the
+        // worst any of update's classes gives (an exact write beats an
+        // approximate one, a failed `xreq` beats a held one).
+        const Written = struct { param: u32, path: u32, origin: Origin, xfail: ?Rely };
+        var written: std.ArrayList(Written) = .empty;
         for (upd.classes, upd.sums) |cls, s| for (s.uses) |u| {
             if (u.bits & bit_w == 0 or u.param > 1) continue;
-            const key = (@as(u64, u.param) << 32) | u.path;
-            if (std.mem.indexOfScalar(u64, done.items, key) != null) continue;
-            try done.append(w.a, key);
             const origin: Origin = if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact;
-            if (u.param == 0) {
-                // §20.5: update writes its message in place.
-                try w.entryDemand(tok, op, try w.pathName("msg", u.path), try w.projPath(msg, u.path, null), &.{}, &.{}, row, origin, null);
-                continue;
-            }
             // update's xreq on the model, at this path (§18.4 item 3).
             var xfail: ?Rely = null;
-            const ci: u32 = if (cls == .closure) cls.closure else none;
-            for (s.xreq) |x| {
-                const p = xreqParam(x) orelse continue;
-                if (p != 1) continue;
-                const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
-                const r = try w.rely(k, w.frame);
-                if (r == .ok) continue;
-                if (xfail == null or r == .exact) xfail = r;
+            if (u.param == 1) {
+                const ci: u32 = if (cls == .closure) cls.closure else none;
+                for (s.xreq) |x| {
+                    const p = xreqParam(x) orelse continue;
+                    if (p != 1) continue;
+                    const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
+                    const r = try w.rely(k, w.frame);
+                    if (r == .ok) continue;
+                    if (xfail == null or r == .exact) xfail = r;
+                }
+            }
+            var found = false;
+            for (written.items) |*x| {
+                if (x.param != u.param or x.path != u.path) continue;
+                found = true;
+                if (origin == .exact or (origin == .approx and x.origin == .limit)) x.origin = origin;
+                if (xfail) |r| if (x.xfail == null or r == .exact) {
+                    x.xfail = r;
+                };
+            }
+            if (!found) try written.append(w.a, .{ .param = u.param, .path = u.path, .origin = origin, .xfail = xfail });
+        };
+        for (written.items) |x| {
+            if (x.param == 0) {
+                // §20.5: update writes its message in place.
+                try w.entryDemand(tok, op, try w.pathName("msg", x.path), try w.projPath(msg, x.path, null), &.{}, &.{}, row, x.origin, null);
+                continue;
             }
             var rest: std.ArrayList(Entry) = .empty;
-            for (model) |e| if (!w.o.overlap(e.path, u.path)) try rest.append(w.a, e);
-            try w.entryDemand(tok, op, try w.pathName("model", u.path), try w.projPath(model, u.path, null), &.{ rest.items, payload }, view_msgs, row, origin, xfail);
-        };
+            for (model) |e| if (!w.o.overlap(e.path, x.path)) try rest.append(w.a, e);
+            try w.entryDemand(tok, op, try w.pathName("model", x.path), try w.projPath(model, x.path, null), &.{ rest.items, payload }, view_msgs, row, x.origin, x.xfail);
+        }
         // §20.3: view and subscriptions receive the model to read only.
         for ([_]struct { f: EntryFn, n: []const u8 }{ .{ .f = view, .n = "view" }, .{ .f = subs, .n = "subscriptions" } }) |x| {
             const vop = if (w.mode == .report) try std.fmt.allocPrint(arena, "entry {s}", .{try w.entryName(x.f, x.n)}) else "entry";
@@ -4749,6 +4768,8 @@ const Walker = struct {
 
     /// `s.res` instantiated at the call (§16.4 item 6).
     fn instRes(w: *Walker, s: *const Summary, ctx: InstCtx) Allocator.Error!AV {
+        // `several` below reads neighbours: `normalize` sorts `res` by path.
+        if (std.debug.runtime_safety and s.res.len > 1) for (s.res[1..], 0..) |r, i| std.debug.assert(s.res[i].path <= r.path);
         var out: std.ArrayList(Entry) = .empty;
         for (s.res, 0..) |r, i| {
             // `res` is sorted by path: another entry at this path is a neighbour.
@@ -5422,6 +5443,11 @@ const Walker = struct {
     /// stored at a representative shares no cell with what is there. One cell
     /// met twice is one arrival's positions, which its own condition covers.
     fn storedBeside(w: *Walker, parts: []const AV) Allocator.Error!void {
+        var filled: usize = 0;
+        for (parts) |p| if (p.len > 0) {
+            filled += 1;
+        };
+        if (filled < 2) return;
         for (parts, 0..) |p, i| for (parts[i + 1 ..]) |q| for (p) |e| for (q) |f| {
             if (e.path != f.path or e.cell == f.cell) continue;
             const ke = w.cells.items[e.cell].kind;

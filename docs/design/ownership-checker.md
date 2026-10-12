@@ -1396,7 +1396,10 @@ cell's condition is lowered by its `xres` (§18.3). A fixpoint not reached in 8 
 instantiation lowers. The message carried round the loop is `msg` alone; the cells a view puts in messages
 (§20.5) are read once, from the settled model, because every demand they could reach is the payload rule's
 already — a model path where an arm stored a message holds `msg`, and a model cell a view message holds is
-rejected where it is written. Carrying them round the loop doubled Conduit's model at entry for no verdict.
+rejected where it is written. Carrying them round the loop doubled Conduit's model at entry for no verdict. A view message's cells are its
+value's with closures expanded: a handler that captured a model list names that list, so no cell a message can
+reach is missing from them. Where `update` has several classes, a path's line takes the worst derivation and
+exclusivity any of them gives (PR #63's review).
 Two bounds keep a wide model cheap, neither of which accepts anything: a value of more than 256 entries is
 projected through an index by its first step, and one of more than 256 cells has the pessimistic deep
 condition (`lost`) rather than a pair-by-pair one.

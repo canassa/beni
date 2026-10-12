@@ -399,6 +399,10 @@ update dict targetKey alter = focus dict targetKey alter
 --| the value is handed out while no other position holds it, so `alter`
 --| may edit it in place when the dictionary is unique, exclusive and dead
 --| after the call. `update` is this.
+--|
+--| That rests on an obligation every function of this module meets, which
+--| the checker takes on trust (`ownership-checker.md` §20.9): no function
+--| here places one value at two positions of a tree.
 focus : Dict k v, k, (Maybe v → Maybe v) → Dict k v
     where k.compare : k, k → Order
 focus dict targetKey alter =
