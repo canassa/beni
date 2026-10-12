@@ -21,5 +21,5 @@ row-hits 346 summary reused after re-asking its guards
 row-hits 409 supply owned bit cleared at the caller
 row-hits 2707 supply resolved at a known callback
 row-hits 2707 xres yes
-generator-version=3 seed=20261011 control=soundness candidates=20000 distinct=4789 typed=20000 accepted=6363 distinctAccepted=1532 withWrites=4080 distinctWithWrites=1313 aliasedWrites=4080 agreeing=9686 agreeingAccepted=6363 rejected=13637 limits=1665 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=15068 summaries-reused=280708 first-mismatch=none elapsed-ms=16633
-summary seed=20261011 accepted=6363 distinct-accepted=1532 with-write=4080 distinct-with-write=1313 aliased-write=4080 (64.1 % of accepted) agreeing=9686 accepted-of-agreeing=6363 precision=65.6 %
+generator-version=3 seed=20261011 control=soundness candidates=20000 distinct=4789 typed=20000 accepted=6363 distinctAccepted=1532 withWrites=4080 distinctWithWrites=1313 aliasedWrites=4080 agreeing=9686 agreeingAccepted=6363 rejected=13637 limits=1665 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=15068 summaries-reused=280708 first-mismatch=none elapsed-ms=19205
+summary seed=20261011 accepted=6363 distinct-accepted=1532 with-write=4080 distinct-with-write=1313 aliased-write=4080 (64.1 % of accepted) agreeing=9686 accepted-of-agreeing=6363 precision=65.6 % declarations-accepted=0 run-generated=0 (-) generated-call-writes-input=0 (-) generated-calls=0 same-array-twice=0 (-) rejected-shadowing=0

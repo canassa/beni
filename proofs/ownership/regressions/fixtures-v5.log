@@ -80,9 +80,17 @@ focus body pushes its own container: expected=false actual=false Except.error "D
 once closure called by a callee, then observed: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
 close returns a once closure's capture, a callee calls it: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
 read only in the nonzero arm after a push: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+a let shadows a variable its continuation uses: expected=false actual=false Except.error "shadowing: variable 0 is bound twice"
+the same in a declaration body: expected=false actual=false Except.error "shadowing: variable 0 is bound twice"
+shared on a nested list, then an element pushed: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
+a closure in a conditional arm captures a pushed list: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
 probe disjoint under mutant disjoint: corrected=Except.error "Disjoint: another operand path holds the written cell" disagrees=true
 probe focus body pushes its own container under mutant disjoint: corrected=Except.error "Disjoint: another operand path holds the written cell" disagrees=true
 probe read only in the nonzero arm after a push under mutant branch-live: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
+probe a let shadows a variable its continuation uses under mutant shadowing: corrected=Except.error "shadowing: variable 0 is bound twice" disagrees=true
+probe the same in a declaration body under mutant shadowing: corrected=Except.error "shadowing: variable 0 is bound twice" disagrees=true
+probe shared on a nested list, then an element pushed under mutant shared-roots: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=true
+probe a closure in a conditional arm captures a pushed list under mutant branch-closure: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
 probe T46 two rows under mutant borrowed-supply (per-call checker): corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
 probe traversal over [c, c] under mutant traversal-exclusive: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=true
 probe captured push per iteration under mutant many-calls: corrected=Except.error "many calls: traversal step consumes a capture or once closure" disagrees=true
@@ -101,4 +109,4 @@ probe mapVia publishes a row, then the row is pushed under mutant callback-escap
 probe mapVia forwards map's guards about its callback under mutant forward-guards: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=true
 probe once closure called by a callee, then observed under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
 probe close returns a once closure's capture, a callee calls it under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=true
-fixtures=82 passed=true
+fixtures=86 passed=true

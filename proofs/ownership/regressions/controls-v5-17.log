@@ -1,54 +1,83 @@
-generator-version=5 seed=17 control=old-v5 candidates=36 distinct=36 typed=36 accepted=13 distinctAccepted=13 withWrites=6 distinctWithWrites=6 aliasedWrites=0 agreeing=12 agreeingAccepted=12 rejected=23 limits=1 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=42 summaries-reused=762 first-mismatch=35 elapsed-ms=66
-generator-version=5 seed=17 control=old-escape-v5 candidates=51 distinct=51 typed=51 accepted=14 distinctAccepted=14 withWrites=6 distinctWithWrites=6 aliasedWrites=0 agreeing=13 agreeingAccepted=13 rejected=37 limits=2 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=42 summaries-reused=732 first-mismatch=50 elapsed-ms=92
-generator-version=5 seed=17 control=mutant-disjoint candidates=14 distinct=14 typed=14 accepted=5 distinctAccepted=5 withWrites=2 distinctWithWrites=2 aliasedWrites=0 agreeing=4 agreeingAccepted=4 rejected=9 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=13 summaries-reused=116 first-mismatch=13 elapsed-ms=57
-generator-version=5 seed=17 control=mutant-borrowed-supply-reinfer candidates=831 distinct=778 typed=831 accepted=164 distinctAccepted=147 withWrites=103 distinctWithWrites=97 aliasedWrites=0 agreeing=163 agreeingAccepted=163 rejected=667 limits=25 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=830 elapsed-ms=2369
-generator-version=5 seed=17 control=mutant-traversal-exclusive candidates=890 distinct=831 typed=890 accepted=175 distinctAccepted=156 withWrites=110 distinctWithWrites=103 aliasedWrites=0 agreeing=174 agreeingAccepted=174 rejected=715 limits=27 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=387 summaries-reused=6760 first-mismatch=889 elapsed-ms=2522
-generator-version=5 seed=17 control=mutant-many-calls candidates=350 distinct=335 typed=350 accepted=73 distinctAccepted=68 withWrites=45 distinctWithWrites=44 aliasedWrites=0 agreeing=72 agreeingAccepted=72 rejected=277 limits=8 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=185 summaries-reused=3597 first-mismatch=349 elapsed-ms=986
-generator-version=5 seed=17 control=mutant-copy-exclusive candidates=3140 distinct=2783 typed=3140 accepted=626 distinctAccepted=522 withWrites=403 distinctWithWrites=356 aliasedWrites=0 agreeing=625 agreeingAccepted=625 rejected=2514 limits=94 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1161 summaries-reused=22448 first-mismatch=3139 elapsed-ms=10822
-generator-version=5 seed=17 control=mutant-close-source candidates=3519 distinct=3105 typed=3519 accepted=682 distinctAccepted=556 withWrites=435 distinctWithWrites=377 aliasedWrites=0 agreeing=681 agreeingAccepted=681 rejected=2837 limits=104 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1277 summaries-reused=24779 first-mismatch=3518 elapsed-ms=10422
-generator-version=5 seed=17 control=mutant-keeps-shape candidates=3028 distinct=2690 typed=3028 accepted=598 distinctAccepted=501 withWrites=382 distinctWithWrites=339 aliasedWrites=0 agreeing=597 agreeingAccepted=597 rejected=2430 limits=91 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1113 summaries-reused=21713 first-mismatch=3027 elapsed-ms=9358
-generator-version=5 seed=17 control=mutant-guard-reuse candidates=1700 distinct=1552 typed=1700 accepted=321 distinctAccepted=279 withWrites=200 distinctWithWrites=184 aliasedWrites=0 agreeing=320 agreeingAccepted=320 rejected=1379 limits=51 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=649 summaries-reused=11462 first-mismatch=1699 elapsed-ms=5784
-generator-version=5 seed=17 control=mutant-callback-xres candidates=36 distinct=36 typed=36 accepted=13 distinctAccepted=13 withWrites=6 distinctWithWrites=6 aliasedWrites=0 agreeing=12 agreeingAccepted=12 rejected=23 limits=1 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=42 summaries-reused=762 first-mismatch=35 elapsed-ms=136
-generator-version=5 seed=17 control=mutant-supply-edge candidates=176 distinct=168 typed=176 accepted=35 distinctAccepted=33 withWrites=19 distinctWithWrites=19 aliasedWrites=0 agreeing=34 agreeingAccepted=34 rejected=141 limits=5 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=102 summaries-reused=1872 first-mismatch=175 elapsed-ms=599
-generator-version=5 seed=17 control=mutant-supply-recheck candidates=1565 distinct=1434 typed=1565 accepted=296 distinctAccepted=257 withWrites=183 distinctWithWrites=167 aliasedWrites=0 agreeing=295 agreeingAccepted=295 rejected=1269 limits=43 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=624 summaries-reused=11701 first-mismatch=1564 elapsed-ms=4899
-generator-version=5 seed=17 control=mutant-calls-edge candidates=137 distinct=134 typed=137 accepted=31 distinctAccepted=29 withWrites=17 distinctWithWrites=17 aliasedWrites=0 agreeing=30 agreeingAccepted=30 rejected=106 limits=4 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=101 summaries-reused=2070 first-mismatch=136 elapsed-ms=430
-generator-version=5 seed=17 control=mutant-callback-writes candidates=61 distinct=61 typed=61 accepted=16 distinctAccepted=16 withWrites=8 distinctWithWrites=8 aliasedWrites=0 agreeing=15 agreeingAccepted=15 rejected=45 limits=2 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=48 summaries-reused=904 first-mismatch=60 elapsed-ms=310
-generator-version=5 seed=17 control=mutant-callback-aliases candidates=434 distinct=414 typed=434 accepted=93 distinctAccepted=87 withWrites=62 distinctWithWrites=61 aliasedWrites=0 agreeing=92 agreeingAccepted=92 rejected=341 limits=12 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=263 summaries-reused=5134 first-mismatch=433 elapsed-ms=1627
-generator-version=5 seed=17 control=mutant-callback-env candidates=85 distinct=84 typed=85 accepted=22 distinctAccepted=21 withWrites=10 distinctWithWrites=10 aliasedWrites=0 agreeing=21 agreeingAccepted=21 rejected=63 limits=4 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=69 summaries-reused=1259 first-mismatch=84 elapsed-ms=721
-generator-version=5 seed=17 control=mutant-callback-escapes candidates=3185 distinct=2823 typed=3185 accepted=622 distinctAccepted=516 withWrites=396 distinctWithWrites=348 aliasedWrites=0 agreeing=621 agreeingAccepted=621 rejected=2563 limits=97 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1157 summaries-reused=22333 first-mismatch=3184 elapsed-ms=9573
-generator-version=5 seed=17 control=mutant-callback-requires candidates=20000 distinct=16469 typed=20000 accepted=3965 distinctAccepted=2860 withWrites=2504 distinctWithWrites=1950 aliasedWrites=0 agreeing=3965 agreeingAccepted=3965 rejected=16035 limits=641 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=7404 summaries-reused=145365 first-mismatch=none elapsed-ms=44646
+generator-version=5 seed=17 control=old-v5 mismatch index=9 family=fresh-nested (shrinking)
+generator-version=5 seed=17 control=old-v5 candidates=10 distinct=10 typed=10 accepted=5 distinctAccepted=5 withWrites=4 distinctWithWrites=4 aliasedWrites=0 agreeing=4 agreeingAccepted=4 rejected=5 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=7 summaries-reused=162 first-mismatch=9 elapsed-ms=24
+generator-version=5 seed=17 control=old-escape-v5 mismatch index=60 family=escape-traversal (shrinking)
+generator-version=5 seed=17 control=old-escape-v5 candidates=61 distinct=61 typed=61 accepted=14 distinctAccepted=14 withWrites=12 distinctWithWrites=12 aliasedWrites=0 agreeing=13 agreeingAccepted=13 rejected=47 limits=3 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=28 summaries-reused=419 first-mismatch=60 elapsed-ms=123
+generator-version=5 seed=17 control=mutant-disjoint mismatch index=8 family=declarations (shrinking)
+generator-version=5 seed=17 control=mutant-disjoint candidates=9 distinct=9 typed=9 accepted=5 distinctAccepted=5 withWrites=4 distinctWithWrites=4 aliasedWrites=0 agreeing=4 agreeingAccepted=4 rejected=4 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=11 summaries-reused=182 first-mismatch=8 elapsed-ms=408
+generator-version=5 seed=17 control=mutant-borrowed-supply-reinfer mismatch index=1499 family=declarations (shrinking)
+generator-version=5 seed=17 control=mutant-borrowed-supply-reinfer candidates=1500 distinct=1357 typed=1500 accepted=277 distinctAccepted=237 withWrites=190 distinctWithWrites=168 aliasedWrites=0 agreeing=276 agreeingAccepted=276 rejected=1223 limits=54 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=0 summaries-reused=0 first-mismatch=1499 elapsed-ms=4958
+generator-version=5 seed=17 control=mutant-traversal-exclusive mismatch index=22 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-traversal-exclusive candidates=23 distinct=23 typed=23 accepted=7 distinctAccepted=7 withWrites=5 distinctWithWrites=5 aliasedWrites=0 agreeing=6 agreeingAccepted=6 rejected=16 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=11 summaries-reused=115 first-mismatch=22 elapsed-ms=138
+generator-version=5 seed=17 control=mutant-many-calls mismatch index=2214 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-many-calls candidates=2215 distinct=1977 typed=2215 accepted=392 distinctAccepted=331 withWrites=267 distinctWithWrites=237 aliasedWrites=0 agreeing=391 agreeingAccepted=391 rejected=1823 limits=76 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=916 summaries-reused=15787 first-mismatch=2214 elapsed-ms=6978
+generator-version=5 seed=17 control=mutant-copy-exclusive mismatch index=4438 family=declarations (shrinking)
+generator-version=5 seed=17 control=mutant-copy-exclusive candidates=4439 distinct=3866 typed=4439 accepted=807 distinctAccepted=636 withWrites=523 distinctWithWrites=455 aliasedWrites=0 agreeing=806 agreeingAccepted=806 rejected=3632 limits=145 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1902 summaries-reused=31453 first-mismatch=4438 elapsed-ms=14769
+generator-version=5 seed=17 control=mutant-close-source mismatch index=543 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-close-source candidates=544 distinct=510 typed=544 accepted=111 distinctAccepted=102 withWrites=79 distinctWithWrites=74 aliasedWrites=0 agreeing=110 agreeingAccepted=110 rejected=433 limits=23 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=276 summaries-reused=3913 first-mismatch=543 elapsed-ms=1881
+generator-version=5 seed=17 control=mutant-keeps-shape mismatch index=548 family=declarations (shrinking)
+generator-version=5 seed=17 control=mutant-keeps-shape candidates=549 distinct=515 typed=549 accepted=111 distinctAccepted=102 withWrites=79 distinctWithWrites=74 aliasedWrites=0 agreeing=110 agreeingAccepted=110 rejected=438 limits=22 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=267 summaries-reused=3782 first-mismatch=548 elapsed-ms=1993
+generator-version=5 seed=17 control=mutant-guard-reuse mismatch index=1251 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-guard-reuse candidates=1252 distinct=1141 typed=1252 accepted=243 distinctAccepted=211 withWrites=165 distinctWithWrites=148 aliasedWrites=0 agreeing=242 agreeingAccepted=242 rejected=1009 limits=39 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=555 summaries-reused=8140 first-mismatch=1251 elapsed-ms=4871
+generator-version=5 seed=17 control=mutant-callback-xres mismatch index=9 family=fresh-nested (shrinking)
+generator-version=5 seed=17 control=mutant-callback-xres candidates=10 distinct=10 typed=10 accepted=5 distinctAccepted=5 withWrites=4 distinctWithWrites=4 aliasedWrites=0 agreeing=4 agreeingAccepted=4 rejected=5 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=7 summaries-reused=162 first-mismatch=9 elapsed-ms=46
+generator-version=5 seed=17 control=mutant-supply-edge mismatch index=153 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-supply-edge candidates=154 distinct=149 typed=154 accepted=35 distinctAccepted=34 withWrites=28 distinctWithWrites=27 aliasedWrites=0 agreeing=34 agreeingAccepted=34 rejected=119 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=80 summaries-reused=1548 first-mismatch=153 elapsed-ms=535
+generator-version=5 seed=17 control=mutant-supply-recheck mismatch index=1070 family=declarations (shrinking)
+generator-version=5 seed=17 control=mutant-supply-recheck candidates=1071 distinct=983 typed=1071 accepted=203 distinctAccepted=177 withWrites=140 distinctWithWrites=124 aliasedWrites=0 agreeing=202 agreeingAccepted=202 rejected=868 limits=34 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=504 summaries-reused=8269 first-mismatch=1070 elapsed-ms=4230
+generator-version=5 seed=17 control=mutant-calls-edge mismatch index=67 family=once-many-wrappers (shrinking)
+generator-version=5 seed=17 control=mutant-calls-edge candidates=68 distinct=68 typed=68 accepted=14 distinctAccepted=14 withWrites=12 distinctWithWrites=12 aliasedWrites=0 agreeing=13 agreeingAccepted=13 rejected=54 limits=3 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=34 summaries-reused=715 first-mismatch=67 elapsed-ms=256
+generator-version=5 seed=17 control=mutant-callback-writes mismatch index=3674 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-callback-writes candidates=3675 distinct=3220 typed=3675 accepted=656 distinctAccepted=525 withWrites=437 distinctWithWrites=383 aliasedWrites=0 agreeing=655 agreeingAccepted=655 rejected=3019 limits=124 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=1589 summaries-reused=26580 first-mismatch=3674 elapsed-ms=13433
+generator-version=5 seed=17 control=mutant-callback-aliases mismatch index=160 family=declarations (shrinking)
+generator-version=5 seed=17 control=mutant-callback-aliases candidates=161 distinct=156 typed=161 accepted=37 distinctAccepted=36 withWrites=30 distinctWithWrites=29 aliasedWrites=0 agreeing=36 agreeingAccepted=36 rejected=124 limits=9 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=85 summaries-reused=1596 first-mismatch=160 elapsed-ms=681
+generator-version=5 seed=17 control=mutant-callback-env mismatch index=8 family=declarations (shrinking)
+generator-version=5 seed=17 control=mutant-callback-env candidates=9 distinct=9 typed=9 accepted=5 distinctAccepted=5 withWrites=4 distinctWithWrites=4 aliasedWrites=0 agreeing=4 agreeingAccepted=4 rejected=4 limits=0 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=11 summaries-reused=182 first-mismatch=8 elapsed-ms=512
+generator-version=5 seed=17 control=mutant-callback-escapes candidates=20000 distinct=16529 typed=20000 accepted=3521 distinctAccepted=2447 withWrites=2294 distinctWithWrites=1747 aliasedWrites=0 agreeing=3521 agreeingAccepted=3521 rejected=16479 limits=643 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=8002 summaries-reused=134172 first-mismatch=none elapsed-ms=53363
+no generated accepted disagreement under mutant-callback-escapes (a failure unless the control is optional)
+generator-version=5 seed=17 control=mutant-callback-requires candidates=20000 distinct=16529 typed=20000 accepted=3520 distinctAccepted=2446 withWrites=2293 distinctWithWrites=1746 aliasedWrites=0 agreeing=3520 agreeingAccepted=3520 rejected=16480 limits=643 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=7997 summaries-reused=134039 first-mismatch=none elapsed-ms=42863
 no generated accepted disagreement under mutant-callback-requires (a failure unless the control is optional)
-generator-version=5 seed=17 control=mutant-requires-edge candidates=20000 distinct=16469 typed=20000 accepted=3965 distinctAccepted=2860 withWrites=2504 distinctWithWrites=1950 aliasedWrites=0 agreeing=3965 agreeingAccepted=3965 rejected=16035 limits=641 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=7404 summaries-reused=145365 first-mismatch=none elapsed-ms=38861
+generator-version=5 seed=17 control=mutant-requires-edge candidates=20000 distinct=16529 typed=20000 accepted=3520 distinctAccepted=2446 withWrites=2293 distinctWithWrites=1746 aliasedWrites=0 agreeing=3520 agreeingAccepted=3520 rejected=16480 limits=643 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=7997 summaries-reused=134039 first-mismatch=none elapsed-ms=41101
 no generated accepted disagreement under mutant-requires-edge (a failure unless the control is optional)
-generator-version=5 seed=17 control=mutant-forward-guards candidates=20000 distinct=16469 typed=20000 accepted=3965 distinctAccepted=2860 withWrites=2504 distinctWithWrites=1950 aliasedWrites=0 agreeing=3965 agreeingAccepted=3965 rejected=16035 limits=641 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=7402 summaries-reused=142330 first-mismatch=none elapsed-ms=35267
+generator-version=5 seed=17 control=mutant-forward-guards candidates=20000 distinct=16529 typed=20000 accepted=3520 distinctAccepted=2446 withWrites=2293 distinctWithWrites=1746 aliasedWrites=0 agreeing=3520 agreeingAccepted=3520 rejected=16480 limits=643 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=7995 summaries-reused=132012 first-mismatch=none elapsed-ms=38296
 no generated accepted disagreement under mutant-forward-guards (a failure unless the control is optional)
-generator-version=5 seed=17 control=mutant-transfer-supplies candidates=20000 distinct=16469 typed=20000 accepted=3965 distinctAccepted=2860 withWrites=2504 distinctWithWrites=1950 aliasedWrites=0 agreeing=3965 agreeingAccepted=3965 rejected=16035 limits=641 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=7404 summaries-reused=145245 first-mismatch=none elapsed-ms=34538
+generator-version=5 seed=17 control=mutant-transfer-supplies candidates=20000 distinct=16529 typed=20000 accepted=3520 distinctAccepted=2446 withWrites=2293 distinctWithWrites=1746 aliasedWrites=0 agreeing=3520 agreeingAccepted=3520 rejected=16480 limits=643 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=7997 summaries-reused=133948 first-mismatch=none elapsed-ms=47638
 no generated accepted disagreement under mutant-transfer-supplies (a failure unless the control is optional)
-generator-version=5 seed=17 control=mutant-once-through-call candidates=1842 distinct=1672 typed=1842 accepted=345 distinctAccepted=297 withWrites=216 distinctWithWrites=197 aliasedWrites=0 agreeing=344 agreeingAccepted=344 rejected=1497 limits=55 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=683 summaries-reused=12537 first-mismatch=1841 elapsed-ms=3582
-generator-version=5 seed=17 control=mutant-branch-live candidates=220 distinct=211 typed=220 accepted=41 distinctAccepted=38 withWrites=24 distinctWithWrites=24 aliasedWrites=0 agreeing=40 agreeingAccepted=40 rejected=179 limits=6 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=115 summaries-reused=2053 first-mismatch=219 elapsed-ms=400
-CONTROL old-rule [summaries]: caught=true first-index=35 elapsed-ms=66
-CONTROL old-escape-rule [summaries]: caught=true first-index=50 elapsed-ms=92
-CONTROL mutant=disjoint [summaries]: caught=true first-index=13 elapsed-ms=57
-CONTROL mutant=borrowed-supply [summaries]: NOT OBSERVABLE (not required) verdicts-changed=40 disagreeing=0
-CONTROL mutant=borrowed-supply [per-call]: caught=true first-index=830 elapsed-ms=2369
-CONTROL mutant=traversal-exclusive [summaries]: caught=true first-index=889 elapsed-ms=2522
-CONTROL mutant=many-calls [summaries]: caught=true first-index=349 elapsed-ms=986
-CONTROL mutant=copy-exclusive [summaries]: caught=true first-index=3139 elapsed-ms=10822
-CONTROL mutant=close-source [summaries]: caught=true first-index=3518 elapsed-ms=10422
-CONTROL mutant=keeps-shape [summaries]: caught=true first-index=3027 elapsed-ms=9358
-CONTROL mutant=guard-reuse [summaries]: caught=true first-index=1699 elapsed-ms=5784
-CONTROL mutant=callback-xres [summaries]: caught=true first-index=35 elapsed-ms=136
-CONTROL mutant=supply-edge [summaries]: caught=true first-index=175 elapsed-ms=599
-CONTROL mutant=supply-recheck [summaries]: caught=true first-index=1564 elapsed-ms=4899
-CONTROL mutant=calls-edge [summaries]: caught=true first-index=136 elapsed-ms=430
-CONTROL mutant=callback-writes [summaries]: caught=true first-index=60 elapsed-ms=310
-CONTROL mutant=callback-aliases [summaries]: caught=true first-index=433 elapsed-ms=1627
-CONTROL mutant=callback-env [summaries]: caught=true first-index=84 elapsed-ms=721
-CONTROL mutant=callback-escapes [summaries] generator catch reported, not required: caught=true first-index=3184 elapsed-ms=9573
-CONTROL mutant=callback-requires [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=44646
-CONTROL mutant=requires-edge [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=38861
-CONTROL mutant=forward-guards [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=35267
-CONTROL mutant=transfer-supplies [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=34538
-CONTROL mutant=once-through-call [summaries]: caught=true first-index=1841 elapsed-ms=3582
-CONTROL mutant=branch-live [summaries]: caught=true first-index=219 elapsed-ms=400
+generator-version=5 seed=17 control=mutant-once-through-call mismatch index=390 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-once-through-call candidates=391 distinct=371 typed=391 accepted=80 distinctAccepted=73 withWrites=58 distinctWithWrites=54 aliasedWrites=0 agreeing=79 agreeingAccepted=79 rejected=311 limits=19 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=191 summaries-reused=2604 first-mismatch=390 elapsed-ms=788
+generator-version=5 seed=17 control=mutant-branch-live mismatch index=891 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-branch-live candidates=892 distinct=824 typed=892 accepted=167 distinctAccepted=148 withWrites=117 distinctWithWrites=106 aliasedWrites=0 agreeing=166 agreeingAccepted=166 rejected=725 limits=28 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=416 summaries-reused=6595 first-mismatch=891 elapsed-ms=1756
+generator-version=5 seed=17 control=mutant-branch-closure mismatch index=41 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-branch-closure candidates=42 distinct=42 typed=42 accepted=9 distinctAccepted=9 withWrites=7 distinctWithWrites=7 aliasedWrites=0 agreeing=8 agreeingAccepted=8 rejected=33 limits=2 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=15 summaries-reused=117 first-mismatch=41 elapsed-ms=103
+generator-version=5 seed=17 control=mutant-shadowing mismatch index=673 family=declarations (shrinking)
+generator-version=5 seed=17 control=mutant-shadowing candidates=674 distinct=634 typed=674 accepted=134 distinctAccepted=123 withWrites=93 distinctWithWrites=86 aliasedWrites=0 agreeing=133 agreeingAccepted=133 rejected=540 limits=23 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=315 summaries-reused=4456 first-mismatch=673 elapsed-ms=1251
+generator-version=5 seed=17 control=mutant-shared-roots mismatch index=106 family=general (shrinking)
+generator-version=5 seed=17 control=mutant-shared-roots candidates=107 distinct=107 typed=107 accepted=21 distinctAccepted=21 withWrites=17 distinctWithWrites=17 aliasedWrites=0 agreeing=20 agreeingAccepted=20 rejected=86 limits=5 typeErrors=0 executionErrors=0 mismatches=1 summaries-computed=46 summaries-reused=818 first-mismatch=106 elapsed-ms=218
+CONTROL old-rule [summaries]: caught=true first-index=9 elapsed-ms=24
+CONTROL old-escape-rule [summaries]: caught=true first-index=60 elapsed-ms=123
+CONTROL mutant=disjoint [summaries]: caught=true first-index=8 elapsed-ms=408
+CONTROL mutant=borrowed-supply [summaries]: NOT OBSERVABLE (not required) verdicts-changed=34 disagreeing=0
+CONTROL mutant=borrowed-supply [per-call]: caught=true first-index=1499 elapsed-ms=4958
+CONTROL mutant=traversal-exclusive [summaries]: caught=true first-index=22 elapsed-ms=138
+CONTROL mutant=many-calls [summaries]: caught=true first-index=2214 elapsed-ms=6978
+CONTROL mutant=copy-exclusive [summaries]: caught=true first-index=4438 elapsed-ms=14769
+CONTROL mutant=close-source [summaries]: caught=true first-index=543 elapsed-ms=1881
+CONTROL mutant=keeps-shape [summaries]: caught=true first-index=548 elapsed-ms=1993
+CONTROL mutant=guard-reuse [summaries]: caught=true first-index=1251 elapsed-ms=4871
+CONTROL mutant=callback-xres [summaries]: caught=true first-index=9 elapsed-ms=46
+CONTROL mutant=supply-edge [summaries]: caught=true first-index=153 elapsed-ms=535
+CONTROL mutant=supply-recheck [summaries]: caught=true first-index=1070 elapsed-ms=4230
+CONTROL mutant=calls-edge [summaries]: caught=true first-index=67 elapsed-ms=256
+CONTROL mutant=callback-writes [summaries]: caught=true first-index=3674 elapsed-ms=13433
+CONTROL mutant=callback-aliases [summaries]: caught=true first-index=160 elapsed-ms=681
+CONTROL mutant=callback-env [summaries]: caught=true first-index=8 elapsed-ms=512
+CONTROL mutant=callback-escapes [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=53363
+CONTROL mutant=callback-requires [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=42863
+CONTROL mutant=requires-edge [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=41101
+CONTROL mutant=forward-guards [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=38296
+CONTROL mutant=transfer-supplies [summaries] generator catch reported, not required: caught=false first-index=none elapsed-ms=47638
+CONTROL mutant=once-through-call [summaries]: caught=true first-index=390 elapsed-ms=788
+CONTROL mutant=branch-live [summaries]: caught=true first-index=891 elapsed-ms=1756
+CONTROL mutant=branch-closure [summaries]: caught=true first-index=41 elapsed-ms=103
+CONTROL mutant=shadowing [summaries]: caught=true first-index=673 elapsed-ms=1251
+CONTROL mutant=shared-roots [summaries]: caught=true first-index=106 elapsed-ms=218
 controls budget=20000 seed=17 generator-version=5 checker=summaries passed=true

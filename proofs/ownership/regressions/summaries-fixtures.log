@@ -246,3 +246,7 @@ summary of applyThenRead
 == once closure called by a callee, then observed: rejected (Dead: an old holder is live after the demand)
 == close returns a once closure's capture, a callee calls it: rejected (Dead: an old holder is live after the demand)
 == read only in the nonzero arm after a push: rejected (Dead: an old holder is live after the demand)
+== a let shadows a variable its continuation uses: rejected (shadowing: variable 0 is bound twice)
+== the same in a declaration body: rejected (shadowing: variable 0 is bound twice)
+== shared on a nested list, then an element pushed: rejected (Unescaped: program-lifetime holder)
+== a closure in a conditional arm captures a pushed list: rejected (Dead: an old holder is live after the demand)
