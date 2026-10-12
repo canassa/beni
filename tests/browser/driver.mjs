@@ -695,10 +695,20 @@ function step(s) {
   return `unknown command \`${s.command}\``;
 }
 
-// Let everything the last phase queued run: its microtasks, then one turn
-// of the event loop.
-function settle() {
-  return new Promise((done) => globalThis.__beniHarness.clock.real(done, 0));
+// Let everything the last phase queued run: its microtasks, then a turn
+// of the event loop — and under happy-dom, more turns while a
+// `setImmediate` is still to run. Core's scheduler runs 64 tasks a turn
+// and escapes to a `setImmediate` for the rest where the host has one, so
+// a phase that starts more work than that is not over after one timer's
+// turn, and where the timer fell among those turns would be what a
+// transcript shows (`browser/tea/SettlesManyFibers`). A page that queues
+// one forever stops being waited for after 1 000 turns. Chrome's page has
+// no `process`, and its scheduler posts to a `MessageChannel` instead: it
+// settles as before, one turn.
+async function settle() {
+  const turn = () => new Promise((done) => globalThis.__beniHarness.clock.real(done, 0));
+  await turn();
+  for (let k = 0; k < 1000 && typeof process === "object" && process.getActiveResourcesInfo().includes("Immediate"); k++) await turn();
 }
 
 // A `--fiber-page`'s test hook, set before the program loads: a
@@ -1065,12 +1075,26 @@ async function happyDomPage(domPath) {
       await window.happyDOM.abort();
       globalThis.setTimeout = nodeTimers.setTimeout;
       globalThis.clearTimeout = nodeTimers.clearTimeout;
+      // Every page shares Node's global object, and a browser gives each
+      // page a fresh one: so every global the page's own code set there —
+      // a `--fuzz` build's `__beniFuzzSend` — goes with it. A program that
+      // installs a global once, when it finds none, would otherwise find
+      // the previous page's and use that page. Node's names and the
+      // window's stay: the next page defines the window's again.
+      for (const key of Reflect.ownKeys(globalThis)) {
+        if (nodeGlobals.has(key) || Object.hasOwn(window, key)) continue;
+        if (Object.getOwnPropertyDescriptor(globalThis, key)?.configurable) delete globalThis[key];
+      }
     },
   };
 }
 
 // Node's timers, which the prelude replaces with the page's virtual clock.
 const nodeTimers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+
+// The names Node's global object has before any page: what a closing page
+// leaves (`happyDomPage`'s `close`).
+const nodeGlobals = new Set(Reflect.ownKeys(globalThis));
 
 async function chromePage(endpoint) {
   const server = await serve();
