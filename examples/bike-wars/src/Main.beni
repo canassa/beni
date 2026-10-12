@@ -1,0 +1,21 @@
+-- Bike Wars, by Ossi Hanhinen (https://github.com/ohanhi/bike-wars, commit
+-- ed263780fb6262d652e70f72a937477aaa0f55f3), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Game exposing (Model, Msg, init, subscriptions, update, view)
+import Tea
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = λ⊤ → init
+        , update = update
+        , view =
+            λmodel →
+                { title = "Bike Wars"
+                , body = view model
+                }
+        , subscriptions = subscriptions
+        }

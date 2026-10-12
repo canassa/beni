@@ -1,0 +1,51 @@
+-- Bike Wars, by Ossi Hanhinen (https://github.com/ohanhi/bike-wars, commit
+-- ed263780fb6262d652e70f72a937477aaa0f55f3), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Math.Vector2 exposing (Vec2, vec2)
+
+
+pub bikeSize : Float
+bikeSize = 4
+
+
+pub trailSize : Float
+trailSize = 1.0
+
+
+pub speedC : Float
+speedC = 0.1
+
+
+pub w : Float
+w = 400
+
+
+pub h : Float
+h = 300
+
+
+pub ticksPerSecond : Int
+ticksPerSecond = 60
+
+
+pub gameBounds : List (List Vec2)
+gameBounds =
+    [ [ vec2 0 0
+      , vec2 w 0
+      , vec2 w h
+      , vec2 0 h
+      , vec2 0 0
+      ]
+    ]
+
+
+pub colors =
+    { blue = "#0009a9"
+    , red = "#fe5555"
+    , green = "#4eee5b"
+    , grey = "#222"
+    , white = "white"
+    , yellow = "yellow"
+    }

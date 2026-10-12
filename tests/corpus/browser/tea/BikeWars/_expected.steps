@@ -1,0 +1,30 @@
+# Bike Wars, the external port (examples/bike-wars), played on the driver's
+# virtual frames. A new game asks for no frame until the space bar; the
+# driver cannot type " ", so `Spacebar`, which ohanhi/keyboard's
+# `whitespaceKey` reads as the same `Spacebar` key, starts it.
+frames
+key body Spacebar
+frames
+# Each frame is 100 ms: a bike moves 0.1 px a millisecond, 10 px a frame,
+# and its trail is drawn to where it was a frame before.
+frame 2 100
+# Red steers with a, d and w, which `Keyboard.Arrows.arrowKey` reads as
+# `Character`s with their case kept, so a shifted A turns nothing.
+key body a
+key body A
+key body ArrowRight
+frame 2 100
+# Red fires its MegaBlaster north, green its AssaultBazooka north: each
+# explosion lands at the arena's border.
+key body w
+key body ArrowUp
+frame 3 100
+# Red rides into its own blast before it fades: green wins.
+frame 5 100
+# The frames go on while an explosion burns, and so does green, which
+# reaches the border: the game the original declares won becomes a draw.
+frame 10 100
+frames
+# The space bar starts a new game.
+key body Spacebar
+frame 1 100

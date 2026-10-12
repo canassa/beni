@@ -1,0 +1,26 @@
+-- Bike Wars, by Ossi Hanhinen (https://github.com/ohanhi/bike-wars, commit
+-- ed263780fb6262d652e70f72a937477aaa0f55f3), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Types exposing (Direction, North, East, South, West)
+
+
+pub turnRight : Direction → Direction
+turnRight dir =
+    case dir of
+        North →
+            East
+
+        East →
+            South
+
+        South →
+            West
+
+        West →
+            North
+
+
+pub turnLeft : Direction → Direction
+turnLeft dir = turnRight (turnRight (turnRight dir))

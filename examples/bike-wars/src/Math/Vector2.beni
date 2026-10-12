@@ -1,0 +1,48 @@
+--! The part of elm-explorations/linear-algebra 1.0.3's `Math.Vector2` that
+--! bike-wars uses, ported. The package's kernel keeps a vector in a
+--! two-element `Float64Array`; here it is two `Float`s in a constructor,
+--! the same doubles, compared component by component as Elm's `==`
+--! compares the array. Copyright (c) 2014, John P Mayer, Jr (BSD-3-Clause,
+--! `../../licenses/elm-explorations-linear-algebra.txt`); the kernel's
+--! arithmetic, Copyright (c) 2010 Mozilla Corporation, 2010 Vladimir
+--! Vukicevic, 2013 John Mayer, 2018 Andrey Kuzmin (MIT,
+--! `../../licenses/elm-explorations-linear-algebra-kernel.txt`).
+
+--| Two dimensional vector type
+pub type Vec2
+    = Vec2 Float Float
+
+
+--| Creates a new 2-element vector with the given values.
+pub vec2 : Float, Float → Vec2
+vec2 x y = Vec2 x y
+
+
+--| Extract the x component of a vector.
+pub getX : Vec2 → Float
+getX (Vec2 x _) = x
+
+
+--| Extract the y component of a vector.
+pub getY : Vec2 → Float
+getY (Vec2 _ y) = y
+
+
+--| Update the x component of a vector, returning a new vector.
+pub setX : Float, Vec2 → Vec2
+setX x (Vec2 _ y) = Vec2 x y
+
+
+--| Update the y component of a vector, returning a new vector.
+pub setY : Float, Vec2 → Vec2
+setY y (Vec2 x _) = Vec2 x y
+
+
+--| Convert a vector to a record.
+pub toRecord : Vec2 → { x : Float, y : Float }
+toRecord (Vec2 x y) = { x = x, y = y }
+
+
+--| Vector addition: a + b
+pub add : Vec2, Vec2 → Vec2
+add (Vec2 ax ay) (Vec2 bx by) = Vec2 (ax + bx) (ay + by)
