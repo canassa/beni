@@ -3325,6 +3325,11 @@ back the segments it was built from. `custom`'s fragment is written as given.
 
 **(c) `Browser.Navigation`: the page's address, changed on purpose.**
 
+*Amended 2026-10-12 (§9.8.17 (b)): elm/browser's names are commands that take values — `pushUrl`,
+`replaceUrl`, `back`, `forward`, `load` with a tagger for a refusal, and `reload` — and the direct forms below
+are renamed `push`, `replace`, `goBack`, `goForward`, `loadPage` and `reloadPage`. Every rule below is the
+direct form's.*
+
 ```elm
 -- module Browser.Navigation (browser), re-exported by browser-tea
 pub type Key                                                    -- opaque, equatable: a model may hold it
@@ -3470,21 +3475,21 @@ the render that renders the body, so the title and the body never disagree after
   through `update`, and a program's own `onUrlChange` shares their fiber (§9.8.5).
 
 `application` reaches no fiber beyond what `element` with two subscriptions does. Mounted with
-`Browser.mountAt` it still follows the whole document's links, as (c) says.
+`Browser.mountAt` it still follows the whole document's links, as (c) says. *Amended 2026-10-12*: the example uses the commands of §9.8.17 (b).
 
 ```elm
 update msg model =
     case msg of
         ClickedLink (Browser.Internal url) →
-            ( model, Cmd.task (λ⊤ → Navigation.pushUrl model.key (Url.toString url)) Pushed )
+            ( model, Navigation.pushUrl model.key (Url.toString url) Refused )
 
         ClickedLink (Browser.External href) →
-            ( model, Cmd.task (λ⊤ → Navigation.load href) Pushed )
+            ( model, Navigation.load href Refused )
 
         UrlChanged url →
             ( { model | route = toRoute url }, Cmd.none )
 
-        Pushed _ →
+        Refused _ →
             ( model, Cmd.none )
 ```
 
@@ -3515,7 +3520,8 @@ from it. A static host in production needs the same fallback configured; the use
   at the announcement, so the direct form can do what `Tea.application` does.
 - **`pushUrl`, `replaceUrl`, `back`, `forward` and `load` return `Result Error ()`** where Elm's
   were `Cmd msg` that crashed on a throttled or cross-origin push. The command form is
-  `Cmd.task`/`Cmd.do` over them (H10 asks whether to add command-returning helpers).
+  `Cmd.task`/`Cmd.do` over them (H10 asks whether to add command-returning helpers). *Amended 2026-10-12*: the commands are added under Elm's names, each with a
+  tagger for its refusal, and these direct forms renamed (§9.8.17 (b)).
 - **`back` and `forward` send nothing at the call** (Elm's sent the old address), **`reloadAndSkipCache`
   is not provided**, **`load` refuses `javascript:`**, and **the link guard adds `altKey`, `_self` and
   an already-prevented default**.
@@ -4053,7 +4059,8 @@ mirror but elm/http's.
 | `Cmd.none`, `batch`, `cancel`, `cancelAll` | values | already values |
 | `Random.generate` | a `Generator` and a tag | **stays**: the generator is a value built at the call (`Random.uniform x model.items` holds the list it was given, as a value does) |
 | `Sub.listen`, `Sub.on`, `Time.every`, `Browser.Events.on…`, `Navigation.onUrlRequest`, `onUrlChange` | a body or a listener and a tag | **stays**: a subscription is an effect that runs while its key is live |
-| `Storage.set`, `Http.request`, `Http.get`, `Http.post`, `Log.info`, `warn`, `error`, `Navigation.pushUrl`, … | values | direct forms, called in a body; they already take values |
+| `Storage.set`, `Http.request`, `Http.get`, `Http.post`, `Log.info`, `warn`, `error`, `Navigation.push`, … | values | direct forms, called in a body; they already take values (`Navigation.push` was `pushUrl` until §9.8.17) |
+| `Navigation.pushUrl`, `replaceUrl`, `back`, `forward`, `load`, `reload` | values | **new**, §9.8.17 (b): commands over the direct forms |
 | `Storage.save`, `Http.send`, `Log.write` | values | **new**, (b) |
 | `core/Task`'s `spawn`, `scope`, `bracket`, … | functions | not commands: the fiber runtime a body uses |
 
@@ -4066,6 +4073,86 @@ escapes what it captured (§18.6). A body that genuinely needs the list later sa
 
 **(d) What does not move.** `Browser.hosted`'s `init : sync (Host msg → model)`, `Tea.application`'s
 `init`, the command table, the four policies, the dispatch order of §9.8.4 and every direct form.
+
+#### 9.8.17 A send hands its payload over, and navigation is commands (2026-10-12)
+
+*Added 2026-10-12*, the owner's decision on owned sends (thesis Change 7; `ownership-checker.md` §23.1) and the
+manager's answer to `ownership-checker.md` §22.7 item 1. Normative for what a send means, for
+`Browser.Navigation`, and for every program that changes the page's address. It amends §9.8.13 (c)'s API and its
+*Where this departs* list, and §9.8.16 (c)'s inventory, only where it says so.
+
+**(a) What a send means.** A body's `send`, a subscription's tagged value, a tagger's result: each **hands its
+payload to `update`**, and the sender gives it up. Nothing changes at run time — no message is copied, the
+dispatch order of §9.8.4 is unchanged, a body's send is still dispatched at once (T29) — but the ownership
+checker holds the sender to it: a sender that reads a list after sending it, or sends a list the model or
+another live value still holds, is rejected at the send (`ownership-checker.md` §23.2), so that `update` may
+write any payload it is handed in place. A view event is not a send: its message is built by the runtime from
+the markup, and may hold the model's lists (§23.6). What the runtime does with a send — `Hosted.emit`, an
+architecture's `send`, the direct platform's dispatch queue — forwards the payload to `update` once and keeps
+nothing of it: an obligation on the runtimes, on the checker's trusted surface (§23.9).
+
+**(b) `Browser.Navigation`'s commands.** elm/browser's names are commands that take values; the functions that
+change the address at once, which §9.8.13 (c) gave those names, are renamed:
+
+```elm
+-- module Browser.Navigation (browser), re-exported by browser-tea
+pub pushUrl : Key, String, (Error → msg) → Cmd msg      -- push, when the command runs
+pub replaceUrl : Key, String, (Error → msg) → Cmd msg   -- replace
+pub back : Key, Int, (Error → msg) → Cmd msg            -- goBack
+pub forward : Key, Int, (Error → msg) → Cmd msg         -- goForward
+pub load : String, (Error → msg) → Cmd msg              -- loadPage
+pub reload : Cmd msg                                    -- reloadPage
+
+-- the direct forms (§9.8.11), as §9.8.13 (c) specified them
+pub push : Key, String → Result Error ⊤                 -- impure
+pub replace : Key, String → Result Error ⊤              -- impure
+pub goBack : Key, Int → Result Error ⊤                  -- impure
+pub goForward : Key, Int → Result Error ⊤               -- impure
+pub loadPage : String → Result Error ⊤                  -- impure
+pub reloadPage : ⊤ → ⊤                                  -- impure
+```
+
+Each command is `Cmd.perform` over its direct form, made when the command runs, which never waits (a `Now`
+body, §9.8.11 (b)); it sends `refused error` only when the change was refused, as `Storage.save` sends its tag
+only on failure (§9.8.16 (b)), and nothing when it was made — `onUrlChange` hears a change, from either form.
+`reload` documents no failure and takes no tagger. Every rule of §9.8.13 (c) — resolution against the page, the
+announcement to followers, each failure and how it is found — is the direct form's and so the command's.
+
+```elm
+update msg model =
+    case msg of
+        ClickedLink (Browser.Internal url) →
+            ( model, Navigation.pushUrl model.key (Url.toString url) Refused )
+
+        ClickedLink (Browser.External href) →
+            ( model, Navigation.load href Refused )
+
+        UrlChanged url →
+            ( { model | route = toRoute url }, Cmd.none )
+
+        Refused _ →
+            ( model, Cmd.none )
+```
+
+*Why commands.* An `update` that changed the address wrote `Cmd.task (λ⊤ → Navigation.pushUrl model.key …)`,
+a body that reads the model when it runs — Conduit's one capture of its whole model (research 78 §5). The
+ownership checker takes everything a command holds to be kept (`ownership-checker.md` §20.4 (a)), so such a body
+made every model list unwritable in place. A command that takes the key and the address holds two values and no
+list (§23.8). It is thesis O5 (§9.8.16 (b)) applied to the address.
+
+*Where this departs from elm/browser.* **Each command but `reload` takes a tagger for its refusal**, where Elm's
+`pushUrl : Key -> String -> Cmd msg` has none: Elm's push crashed on a cross-origin or throttled address, and
+beni returns each documented failure as a typed value (CLAUDE.md rule 9) — a command with no tagger would have
+nowhere to send it but a crash or silence (`plans/http-and-routing.md` H10's two choices), and a throttled push is
+an event of a working page, not a defect. A program that means to ignore a refusal says so with an arm that does
+nothing. **The direct forms are renamed**: §9.8.11 keeps Elm's name for the wrapper and gives the direct form
+its own (`Random.generate` and `Random.value`), and Elm's names are the commands. `reloadAndSkipCache` stays
+unprovided (§9.8.13 (c)).
+
+*Migration.* Conduit, the `browser/tea` pages that route, and `bench/size-apps/ApiAndRoutes` use the commands;
+`browser/tea/NavigatePush`, `NavigateErrors` and `ListenerOrder` test the direct forms under their new names, and
+`browser/tea/NavigateCommands` the commands. §9.8.16 (c)'s inventory row for the direct forms names `push`,
+`replace`, `goBack`, `goForward`, `loadPage` and `reloadPage`; the commands are values (b).
 
 ## Appendix — what is deliberately not done
 
