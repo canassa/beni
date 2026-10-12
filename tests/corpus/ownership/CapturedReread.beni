@@ -1,0 +1,27 @@
+-- ownership: a closure that writes what it captured and reads it again
+-- (`ownership-checker.md` §18.8, §23.7). A read inside a lambda of a local it
+-- captured is a use in the lambda's frame, so `rereads`' push of `xs`,
+-- followed by its own `List.length xs`, is rejected `later-use`, as the
+-- same two lines are outside a lambda. `once` writes `xs` and reads only
+-- the result: accepted `once`. `holder`: the creation of a lambda that
+-- pushes `xs` while `xs` is read after it is rejected there, naming the
+-- holder, not the closure's other uses.
+rereads : ⊤ → Maybe Int
+rereads ⊤ =
+    xs = [ 1, 2 ]
+    Maybe.map (Just 0) λn →
+        ys = List.push xs n
+        List.length ys + List.length xs
+
+
+once : ⊤ → Maybe Int
+once ⊤ =
+    xs = [ 1, 2 ]
+    Maybe.map (Just 0) λn → List.length (List.push xs n)
+
+
+holder : ⊤ → Maybe Int
+holder ⊤ =
+    xs = [ 1, 2 ]
+    r = Maybe.map (Just 0) λn → List.length (List.push xs n)
+    Maybe.map r λm → m + List.length xs

@@ -178,6 +178,12 @@ pub foreign type Tap msg
 --| The body a subscription runs in a fiber, and its tagger. The body is
 --| handed a function that sends values of type `a`. `[ b, t ]`: the body
 --| or the listener, and the tagger of what it sends.
+--|
+--| The ownership checker trusts what this and `hook` do (`ownership-checker.md`
+--| §23.3, §23.9): a value the body sends goes through the tagger of every
+--| current subscription of its key (`through`), so a tagger is handed it
+--| borrowed. A runtime that handed each tagger a value of its own would
+--| change that row.
 pub tap : (Browser.Send a → ⊤), sync (a → msg) → Tap msg
 tap body tag = guest (Js.array [ host body, host tag ])
 

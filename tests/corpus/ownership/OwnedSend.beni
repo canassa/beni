@@ -20,6 +20,11 @@
 -- holds: rejected at the tagger, `need`, exactly. A body that sends
 -- `model.rows` while the arm keeps `model` is rejected at the send: the
 -- model, returned, still holds the list.
+--
+-- `owned`'s subscription sends a list its body built through
+-- `Sub.listen`, whose tagger the runtime hands every value its key's
+-- subscriptions send (`Hosted.tap`'s row, §23.3): `Loaded` returns what it is
+-- handed borrowed, so it is rejected `need` at the tagger.
 import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)
@@ -30,6 +35,10 @@ import Tea
 type alias Model =
     rows : List Int
     total : Int
+
+
+type Feed
+    = Feed
 
 
 type Msg
@@ -107,7 +116,7 @@ owned =
         { init = λ⊤ → ( initial ⊤, Cmd.batch [ fresh ⊤, reused ⊤ ] )
         , update = loads
         , view = view
-        , subscriptions = λ_ → Sub.none
+        , subscriptions = λ_ → Sub.listen Feed (λsend → send (List.range 1 3)) Loaded
         }
 
 
