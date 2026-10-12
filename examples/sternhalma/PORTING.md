@@ -174,7 +174,9 @@ whatever node it is given, and so does `Tea.document`. beni has no CSS
 pipeline, so `index.html` here is the original's head — its `lang`, meta
 tags and title — with the program's entry (`{{entry}}`, `boundary.md` §5)
 and Tailwind's own browser build of the same version, which writes the same
-classes' CSS in the page. It is named by `beni.json`'s `"html"`. Without it
+classes' CSS in the page, pinned by its SHA-384 (`integrity`). The page
+therefore needs the network to be styled; the play script below does not
+load the shell, so it does not. It is named by `beni.json`'s `"html"`. Without it
 the game still plays, but every class, `absolute` (which places each cell)
 among them, is unstyled. `main.js`, `styles.css`, `vite.config.js`,
 `package.json` and `bun.lock` are not ported.
@@ -209,6 +211,12 @@ splitting it multiplies the builds. The case moves into
 `tests/corpus/browser/tea/Sternhalma/` (`_expected.sources` holding
 `examples/sternhalma/src`) when the owner grants it a budget of its own, as
 Conduit's cases have, or when the cost falls under the budget.
+
+Until then nothing in the gates replays it, so the transcript records what
+the frozen port did on the commit that added it. A change to this directory,
+to the page driver, or to the `dom` lowering or the `browser` runtime that
+reaches this page replays it with the command above, in the same change, and
+re-records the transcript only when the difference is explained.
 
 ## Not ported
 
