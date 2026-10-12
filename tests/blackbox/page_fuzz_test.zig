@@ -552,6 +552,57 @@ test "a missed title write is caught though the body is the same" {
     );
 }
 
+test "a page that stopped hands nothing to the next: a message that throws in update replays" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // Every page of one run shares Node's global object, where a `--fuzz`
+    // build installs its guarded send once. The first seed's page stops at
+    // `Boom`; its replay, and build `b`'s page, must each send through
+    // their own runtime, never through the stopped one that set it.
+    try setUp(&w,
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Inc
+        \\    | Boom
+        \\
+        \\
+        \\update : Msg, Int → Int
+        \\update msg n =
+        \\    case msg of
+        \\        Inc →
+        \\            n + 1
+        \\
+        \\        Boom →
+        \\            Debug.todo "update threw"
+        \\
+        \\
+        \\view : Int → Html Msg
+        \\view n = <button onClick={Inc}>{n}</button>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main =
+        \\    Tea.sandbox { init = 0, update = update, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectFuzz(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "again", .types = "types.jsonl" }, 0,
+        \\the program: 2 constructors sent
+        \\seed 1: both threw at step 6, message Boom, so 6 of 15 steps ran (2 view events, 2 messages, 2 host steps): Error: TODO: update threw
+        \\seed 2: both threw at step 5, message Boom, so 5 of 15 steps ran (3 view events, 2 messages, 0 host steps): Error: TODO: update threw
+        \\
+    );
+}
+
 // ---- The verify mode, on a broken build ------------------------------------
 //
 // A `browser-direct` development build checks its page against its model

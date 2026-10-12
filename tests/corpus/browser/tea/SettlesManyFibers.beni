@@ -1,0 +1,39 @@
+-- A step's page is the page once everything the step set going has run
+-- (tests/corpus/README.md, *The page's clock is virtual*): here a click
+-- starts 2 000 fibers, more than core's scheduler runs in one turn (it
+-- yields after 64), and each sends a message. The transcript after the
+-- click shows every message applied, on every run: the driver settles
+-- until no turn of the scheduler is left, not for one timer's turn.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Done
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n, Cmd.batch (List.map (List.range 1 2000) λ_ → Cmd.perform λsend → send Done) )
+
+        Done →
+            ( n + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="done">{n}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
