@@ -10,7 +10,8 @@ breadth-first search over hop chains with a `Set`. The port is `examples/sternha
 every change beni forced); it is 1 050 lines of beni after `beni fmt`. The frozen raw port is the commit
 that adds `examples/sternhalma/PORTING.md` (`3a7c465e1` on its branch), and every count below is taken on
 it. The checker is master's at `9a5276a06`, which includes slice 3f (research 85: a prepend copies, `map`
-across records, the default read). Every figure is **[measured]** with the commands in §6. The probes of §4
+across records, the default read). Re-run on master at `228681b94`, after slice 3g (research 86), both dumps
+and every probe step of §4 are byte-for-byte the same. Every figure is **[measured]** with the commands in §6. The probes of §4
 are hypothetical edits made in a scratch copy, and none of them is applied.*
 
 ---
@@ -196,8 +197,8 @@ thesis counts (§12.5) is three edits, two of them a `⊤` each and one `List.co
 
 ## 5. What this says for the evaluation
 
-- **The rate.** Two applications now: Bike Wars 6 of 19 rejected after slice 3f (research 85), Sternhalma 4
-  of 12. Pooled, 10 of 31 (32 %). The decision needs at least 500 sites from at least ten applications
+- **The rate.** Two applications now: Bike Wars 4 of 15 rejected after slice 3g (research 86), Sternhalma 4
+  of 12. Pooled, 8 of 27 (30 %). The decision needs at least 500 sites from at least ten applications
   (§12.8), so this is a second point, not a verdict. The denominator is small because slice 3f made prepends
   no demand and the program's other list operations are reads.
 - **Top-level values are the commonest cause here.** Elm programs write constants at the top level as a
