@@ -3,7 +3,13 @@
 -- a record `initialModel` returns — is rejected, `top-level`, whoever reads
 -- it afterwards. Building the list in a function (`init`) makes it fresh at
 -- every call, and the reading form `[ x ] ++ seed` builds a new list from a
--- literal base and only reads `seed`: both accepted.
+-- literal base and only reads `seed`: both accepted. What is shared is the
+-- cells a definition makes and nothing else: `Dict.empty` makes none, so a
+-- write `bump` makes inside a dictionary started from it is nobody's
+-- top-level list (T51; `ownership-checker.md` §16.3).
+import Dict
+
+
 type alias Model =
     todos : List String
 
@@ -36,3 +42,17 @@ addFresh t =
 
 pub reading : String → List String
 reading t = [ t ] ++ seed
+
+
+bump : Dict.Dict Int (List Int), Int → Dict.Dict Int (List Int)
+bump d k =
+    case Dict.get d k of
+        Just xs →
+            Dict.insert d k [ …xs, 1 ]
+
+        Nothing →
+            Dict.insert d k [ 1 ]
+
+
+pub fromEmpty : Int → Dict.Dict Int (List Int)
+fromEmpty k = bump Dict.empty k
