@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
-# Build each source-level checker mutant in a scratch copy and run the normal
-# oracle campaign (generator only, no fixtures) on it. A mutant is caught when
-# the campaign stops on an accepted disagreement. Run inside `nix develop
+# Build each source-level checker mutant in a scratch copy and run, on it,
+# the normal oracle campaign (generator only, no fixtures) on each seed, and
+# the bounded-exhaustive enumeration (`ownership enumerate`, bound
+# $ENUMERATE_BOUND, default 3; 0 skips it). Run inside `nix develop
 # .#ownership` from proofs/ownership; node must be on PATH.
 #   scripts/run-mutants.sh <scratch-dir> [count] [seeds...] [-- mutants...]
+#
+# Each seed is reported as one of
+#   caught                 an accepted disagreement the corrected checker rejects
+#   CRASH-after-mismatch   a disagreement was found, then the run crashed
+#                          (status >= 128, e.g. while shrinking); not a catch
+#   CRASH                  the run crashed before finding anything
+#   miss                   the campaign finished without a disagreement
+# and the scratch copy's logs and unshrunk programs of every run that is not
+# a plain miss are kept in regressions/mutant-evidence/<mutant>-<seed>/.
 set -u
 # Shrinking a deep program can exhaust the default stack.
 ulimit -s unlimited
@@ -15,6 +25,8 @@ while [ $# -gt 0 ] && [ "$1" != "--" ]; do seeds+=("$1"); shift; done
 [ "${1:-}" = "--" ] && shift
 names=("$@")
 [ ${#names[@]} -eq 0 ] && read -r -a names <<< "$(node scripts/mutate.mjs --list)"
+bound=${ENUMERATE_BOUND:-3}
+cores=${MUTANT_CORES:-0-23}
 here=$(pwd)
 mkdir -p "$scratch"
 # One snapshot of the sources at the start, so later edits do not leak in.
@@ -23,6 +35,14 @@ rm -rf "$base"; mkdir -p "$base"
 cp -r "$here/Ownership" "$here/Main.lean" "$here/Ownership.lean" "$here/lakefile.toml" \
   "$here/lean-toolchain" "$here/lake-manifest.json" "$base/"
 [ -d "$here/.lake" ] && cp -r "$here/.lake" "$base/"
+keep() {  # keep <dir> <mutant> <tag> <log files...>
+  local d=$1 m=$2 tag=$3; shift 3
+  local out="$here/regressions/mutant-evidence/$m-$tag"
+  mkdir -p "$out"
+  cp "$@" "$out/" 2>/dev/null
+  cp "$d"/regressions/*unshrunk* "$out/" 2>/dev/null
+  true
+}
 for m in "${names[@]}"; do
   d="$scratch/m-$m"
   rm -rf "$d"; cp -r "$base" "$d"
@@ -32,24 +52,37 @@ for m in "${names[@]}"; do
   # breaks them). The campaign needs neither: drop the mode from the copy.
   sed -i -e '/^import Ownership.Falsify$/d' \
     -e '/^  if mode == "falsify" then$/,/^    return (if clean then 0 else 1)$/d' "$d/Main.lean"
-  if ! (cd "$d" && lake build ownership > build.log 2>&1); then echo "$m: BUILD FAILED"; continue; fi
+  if ! (cd "$d" && taskset -c "$cores" lake build ownership > build.log 2>&1); then echo "$m: BUILD FAILED"; continue; fi
   line="$m:"
   caught=0
   # The seeds run side by side; each records its exit status.
   for s in "${seeds[@]}"; do
-    (cd "$d" && ./.lake/build/bin/ownership oracle "$count" "$s" > "oracle-$s.log" 2>&1; echo $? > "status-$s") &
+    (cd "$d" && taskset -c "$cores" ./.lake/build/bin/ownership oracle "$count" "$s" > "oracle-$s.log" 2>&1; echo $? > "status-$s") &
   done
   wait
   for s in "${seeds[@]}"; do
     status=$(cat "$d/status-$s")
-    index=$(grep -o "index=[0-9]*" "$d/oracle-$s.log" | head -1 | sed 's/index=//')
+    index=$(grep -o "mismatch index=[0-9]*" "$d/oracle-$s.log" | head -1 | sed 's/.*index=//')
     family=""; [ -n "$index" ] && family=$(grep -o "family=[a-z-]*" "$d/oracle-$s.log" | head -1 | sed "s/family=//")
-    [ $status -ne 0 ] && [ -n "$index" ] && caught=$((caught + 1))
-    # A crash (abort, kill, segfault) is never a miss: flag it.
-    crash=""; [ $status -ge 128 ] && crash=" CRASH"
-    line="$line seed=$s exit=$status${crash} first-index=${index:-none}${family:+ family=$family}"
+    if [ "$status" -ge 128 ] && [ -n "$index" ]; then kind="CRASH-after-mismatch"
+    elif [ "$status" -ge 128 ]; then kind="CRASH"
+    elif [ "$status" -ne 0 ] && [ -n "$index" ]; then kind="caught"; caught=$((caught + 1))
+    elif [ "$status" -ne 0 ]; then kind="FAILED"
+    else kind="miss"; fi
+    [ "$kind" != "miss" ] && keep "$d" "$m" "$s" "$d/oracle-$s.log"
+    line="$line seed=$s $kind exit=$status first-index=${index:-none}${family:+ family=$family}"
   done
-  echo "$line caught-seeds=$caught/${#seeds[@]}"
+  line="$line caught-seeds=$caught/${#seeds[@]}"
+  if [ "$bound" -gt 0 ]; then
+    (cd "$d" && taskset -c "$cores" ./.lake/build/bin/ownership enumerate "$bound" --mutant-source > "enumerate.log" 2>&1; echo $? > "status-enumerate")
+    status=$(cat "$d/status-enumerate")
+    if [ "$status" -ge 128 ]; then kind="CRASH"
+    elif grep -q "caught=true" "$d/enumerate.log"; then kind="caught"
+    else kind="miss"; fi
+    [ "$kind" != "miss" ] && keep "$d" "$m" "enumerate" "$d/enumerate.log"
+    line="$line enumerate=$kind"
+  fi
+  echo "$line"
   rm -rf "$d"
 done
 rm -rf "$base"
