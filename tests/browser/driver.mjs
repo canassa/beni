@@ -88,7 +88,10 @@
 //                               `requestAnimationFrame` was asked for before
 //                               the frame began run in one task, in order,
 //                               each handed the frame's time; the frame is
-//                               logged `(frame at <t> ms: <k> callbacks)`;
+//                               logged `(frame at <t> ms: <k> callbacks)`
+//                               before they run, `k` those asked for before
+//                               it began (one an earlier callback cancels is
+//                               counted, and does not run);
 //                               with `tasks`, `(the frame's task ended)` as
 //                               its callbacks return
 //   frames                      log `(frames: <n>)`, the callbacks asked
@@ -896,7 +899,7 @@ if (stepsPath !== undefined) {
       s.ms = Number(selector);
       s.tasks = argument === "tasks";
     } else if (command === "frame") {
-      const f = (argument ?? "").match(/^(?:([0-9]+))?\s*(tasks)?$/);
+      const f = (argument ?? "").match(/^([0-9]+)?(?:(?:^|\s+)(tasks))?$/);
       if (!/^[1-9][0-9]*$/.test(selector) || f === null) {
         usage(`${where}: \`frame\` takes a number of frames, at most a number of milliseconds between two, and at most \`tasks\``);
       }

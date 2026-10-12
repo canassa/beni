@@ -159,7 +159,10 @@ project) against it, one step per line, `#` for a comment:
                                 order asked, each handed the frame's time;
                                 one asked for while they run is the next
                                 frame's. Each frame logs `(frame at <t> ms:
-                                <k> callbacks)`; with `tasks`, `(the frame's
+                                <k> callbacks)` before they run, `k` those
+                                asked for before it began (one an earlier
+                                callback cancels is counted, and does not
+                                run); with `tasks`, `(the frame's
                                 task ended)` is logged as its callbacks
                                 return, before any microtask they queued
     frames                      log `(frames: <n>)`, the frame callbacks

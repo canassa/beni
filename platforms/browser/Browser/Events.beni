@@ -213,22 +213,27 @@ ask ⊤ =
         (Js.apply (Js.global "requestAnimationFrame") [ Js.from λ_ → tick ⊤ ])
 
 
--- A frame: the next is asked for, then each listener is handed the time,
--- under `Task.fromHost`, so the messages they send are applied and
--- rendered before the callback returns — before the frame is drawn.
+-- A frame: the next is asked for, then each listener added before the
+-- frame began is handed the time — a copy of the set is walked, so one
+-- added while the frame runs waits for the next — under `Task.fromHost`,
+-- so the messages they send are applied and rendered before the callback
+-- returns: before the frame is drawn.
 tick : ⊤ → ⊤
 tick ⊤ = Task.fromHost λ⊤ →
     now = Js.from (wall ⊤)
     last = Js.at frameClock 2
     ask ⊤
     Js.setAt frameClock 2 now
-    Js.each (Js.at frameClock 0) λf → Js.to (Js.apply f [ now, last ])
+    Js.each (Js.call (Js.global "Array") "from" [ Js.at frameClock 0 ]) λf →
+        Js.to (Js.apply f [ now, last ])
 
 
 -- The listener of every frame subscription and direct form: `read` makes
 -- the value sent from a frame's time and the time before it. The first
--- listener added while no frame is asked for starts the clock; the last
--- one removed cancels the frame asked for, so an idle page asks for none.
+-- listener added while no frame is asked for starts the clock: it asks
+-- for a frame and sets the last time to the wall clock's, which is what
+-- the first delta counts from. The last one removed cancels the frame
+-- asked for, so an idle page asks for none.
 frames : sync (Int, Int → a), sync (a → ⊤) → (⊤ → ⊤)
 frames read send =
     listeners = Js.at frameClock 0

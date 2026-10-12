@@ -4202,7 +4202,11 @@ sends `Time.fromMillis now`, `onAnimationFrameDelta` sends `toFloat (now − las
 is the last frame's, or, before the clock's first frame, **the time the clock started** — when its
 first listener was added — so the first delta of a fresh start is the time from the subscription's
 arrival to its first frame, Elm's `oldTime` from `now` at `onEffects`. Each listener sends in the
-order the listeners were added, and its declarations' taggers in declaration order (§9.8.5).
+order the listeners were added, and its declarations' taggers in declaration order (§9.8.5). A frame
+hands its time to the listeners added **before it began**: it walks a copy of the set, so a listener
+added while the frame's callback runs gets its first frame next time, never this one with the
+previous frame's time. One removed while the frame runs may still be handed this frame's time, which
+its closed relay drops (§9.8.5 point 3).
 
 **(d) The render loop.** Elm renders on `requestAnimationFrame`; beni renders on a microtask after the
 messages of a task (`backend.md` §15.11), so the question is only whether a frame's message can miss
@@ -4225,7 +4229,10 @@ clock had just asked for, so an animation that ends leaves nothing pending.
   `onAnimationFrame` for `onAnimationFrameDelta` in one message removes the one listener (cancelling
   the frame) before the other is added, so the new delta counts from the swap, where Elm's manager,
   which sees one list, keeps its `oldTime`. Keeping the frame pending until the next frame instead
-  would leave a page that stopped animating with one callback still asked for, against (b).
+  would leave a page that stopped animating with one callback still asked for, against (b); and the
+  diff cannot add first, because a key that left is removed in the render (§9.8.5 point 3) while one
+  that arrived is added by work queued where its fiber would first run (point 1) — the order that
+  keeps the two subscription kinds indistinguishable. A swap loses at most one frame's delta.
 - **No fallback to `setTimeout`.** Elm's kernel uses `setTimeout(…, 1000 / 60)` where
   `requestAnimationFrame` is missing. Every host `browser` targets has it; where it is missing the
   call throws, a defect at the first frame listener's start (§9.8.10 (c)), never a timer pretending
