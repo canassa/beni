@@ -81,6 +81,24 @@ export const mutants = {
   branchclosure: ["Checker.lean", "usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) e", "usesArms (!cfg.has .branchLive) false e"],
   // `shared` escapes only its operand's spine (also `--mutant=shared-roots`).
   sharedroots: ["Checker.lean", "union s.escapes (if ctx.config.has .sharedRoots then a.roots else a.cells)", "union s.escapes a.roots"],
+  // The third review's other holes, re-anchored to the current sources.
+  // A call's result forgets the provenance of its second parameter.
+  resprov: ["Checker.lean", "  pure (instantiateValue site args caps true s.result)\ntermination_by (0, 1)",
+    "  pure (instantiateValue site args caps true (s.result.mapOrigins fun _ cs => cs.filter fun c => match c with | .parameter 1 _ => false | _ => true))\ntermination_by (0, 1)"],
+  // A call does not demand the writes its summary makes to its second parameter.
+  argrecheck2: ["Checker.lean", "    (later : List Origin) : CheckM Abstract := do\n  for w in s.writes ++ s.consumes do\n    demand ctx.config",
+    "    (later : List Origin) : CheckM Abstract := do\n  for w in s.writes ++ s.consumes do\n    if (match w with | .parameter 1 _ => true | _ => false) then continue\n    demand ctx.config"],
+  // A push keeps its list exclusive whatever it stores.
+  pushexcl: ["Checker.lean", "    let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)",
+    "    let exclusive := if op == .push then ex else ex && storeExclusive ctx [v] later elem.cells (op == .put)"],
+  // Undo the once-through-call fixes: both demands (nofix1, as oncethroughcall),
+  // or only the written-captures demand (nofix2).
+  nofix1: ["Checker.lean", "        if count ≥ 1 && !roots.isEmpty && !ctx.config.has .onceThroughCall then", "        if false then"],
+  nofix2: ["Checker.lean", "              if let .capture .. := w then\n                demand ctx.config (instantiateOrigin site [] fcaps w)",
+    "              if let .capture .. := w then\n                if false then demand ctx.config (instantiateOrigin site [] fcaps w)"],
+  // An interpreter hole: the in-place interpreter copies where it should
+  // write (it allocates a new array for every set, push and focus write-back).
+  hiddencopy: ["Semantics.lean", "  if !(old == xs) then countWrite\n  write c xs", "  if !(old == xs) then countWrite\n  alloc xs"],
   // focus drops the demand on its container.
   focuscontainer: ["Checker.lean", "      demand ctx.config cs later (capValues.flatMap Abstract.cells)\n      let out",
     "      let out"],
