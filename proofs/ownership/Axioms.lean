@@ -3,7 +3,7 @@ import Lean
 
 /-! Axiom audit, built by `lake build` (target `AxiomCheck`).
 
-Two checks, and **the build fails** unless both pass.
+Three checks, and **the build fails** unless all pass.
 
 1. Every constant declared in an `Ownership` module — theorems, definitions,
    instances, structures, recursors and the auxiliary declarations Lean
@@ -12,11 +12,16 @@ Two checks, and **the build fails** unless both pass.
    constants that depend on `sorryAx` must be exactly the pinned list below. A
    `def x : 1 + 1 = 3 := sorry` therefore fails the build, as does a proof that
    silently starts depending on a `sorry` or a declared `axiom`.
-2. An `example` adds no constant to the environment, so (1) cannot see it.
-   The source of every module is therefore scanned, outside comments and
-   string literals, for the tokens `sorry`, `admit`, `native_decide` and
-   `axiom`: `sorry` may occur exactly as often as there are pinned unproved
-   statements, the others never.
+2. Every such constant is sent to the kernel again (`Lean.Environment.replay`,
+   what lean4checker does), in a fresh environment holding only what the
+   modules import: a declaration added with `debug.skipKernelTC` or by a raw
+   `addDecl` is checked after all, and a false one fails the build.
+3. An `example` adds no constant to the environment, so (1) cannot see it.
+   The source of every `.lean` file under the package (every subdirectory,
+   `.lake` excepted) is therefore scanned, outside comments and string and
+   character literals, for tokens: `sorry` may occur exactly as often as there
+   are pinned unproved statements; `admit`, `native_decide`, `axiom`,
+   `skipKernelTC`, `addDecl`, `run_cmd`, `implemented_by` and `extern` never.
 
 Removing a `sorry` requires shrinking the list on purpose. -/
 
@@ -34,13 +39,20 @@ def pinnedSorries : List Name := unproved ++ [`Ownership.Soundness.accepted_trac
 
 def allowedAxioms : List Name := [``propext, ``Classical.choice, ``Quot.sound, ``sorryAx]
 
-/-- The source files the scan reads, relative to the package root: every
-    `.lean` file of `Ownership/`, the library root, `Main.lean` and this file. -/
+/-- The source files the scan reads: every `.lean` file under the package
+    root, in every subdirectory, except the build directory `.lake`. -/
 def sources : IO (List System.FilePath) := do
-  let entries ← System.FilePath.readDir "Ownership"
-  let modules := entries.toList.filterMap fun e =>
-    if e.fileName.endsWith ".lean" then some e.path else none
-  pure ((["Main.lean", "Ownership.lean", "Axioms.lean"] : List System.FilePath) ++ modules.mergeSort (·.toString < ·.toString))
+  let all ← System.FilePath.walkDir "." (enter := fun d => pure (d.fileName != some ".lake"))
+  let files := all.toList.filter fun p => p.extension == some "lean"
+  pure (files.mergeSort (·.toString < ·.toString))
+
+/-- Tokens no source may contain: what proves without proof (`admit`,
+    `native_decide`, a declared `axiom`), and what reaches past the kernel or
+    the elaborator (`debug.skipKernelTC`, a raw `addDecl` from `run_cmd`, an
+    implementation swapped in by `implemented_by` or `extern`). -/
+def banned : List String :=
+  ["admit", "native_decide", "axiom", "skipKernelTC", "debug.skipKernelTC", "addDecl", "run_cmd",
+   "implemented_by", "extern"]
 
 /-- The identifier-like tokens of Lean source outside comments (`--`, nested
     `/- -/`) and string and character literals. -/
@@ -129,16 +141,32 @@ partial def tokens (s : String) : List String := Id.run do
   for n in pinnedSorries do
     unless withSorry.contains n do
       throwError "{n} is pinned but no longer depends on sorryAx: shrink the list"
+  -- Kernel replay: every Ownership constant is sent to the kernel again, in a
+  -- fresh environment holding only what the Ownership modules import (Std),
+  -- as lean4checker does; `debug.skipKernelTC` cannot have let one through.
+  let base ← importModules #[{ module := `Std }] {}
+  let mut fresh : Std.HashMap Name ConstantInfo := {}
+  for n in sorted do
+    -- The auxiliary recursors of nested inductives (`rec_1`, …) are not
+    -- replayed: the kernel generates them again when it accepts the
+    -- inductive, and every constant that uses them is checked against those.
+    let aux := match n with
+      | .str _ s => s.startsWith "rec_"
+      | _ => false
+    if aux then continue
+    if let some ci := env.find? n then fresh := fresh.insert n ci
+  let _ ← Lean.Environment.replay fresh base
+  IO.println s!"kernel replay: {fresh.size} constants re-checked"
   -- The source scan, for what adds no constant (an `example`).
   let mut sorries := 0
   let files ← sources
   for path in files do
     let ts := tokens (← IO.FS.readFile path)
-    for t in ["admit", "native_decide", "axiom"] do
+    for t in banned do
       if ts.contains t then throwError "{path} uses `{t}`"
     let n := (ts.filter (· == "sorry")).length
     if n > 0 then IO.println s!"{path}: {n} sorry"
     sorries := sorries + n
   if sorries != unproved.length then
     throwError "{sorries} `sorry` in the sources; exactly {unproved.length} (one per unproved statement) are allowed"
-  IO.println s!"source scan: {files.length} files, {sorries} sorry, no admit, native_decide or axiom"
+  IO.println s!"source scan: {files.length} files, {sorries} sorry, no banned token ({banned})"
