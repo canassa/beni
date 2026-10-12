@@ -31,6 +31,11 @@ HTTP decoders followed through `Expect` — is specified in §24 and built.*
 copies), `map`'s identity promise read with the record types, and `Maybe.withDefault (Maybe.map m f) d` walked as
 the two arms it means — is specified in §25 and built.*
 
+*Amended 2026-10-12: slice 3g — the argument that no compiler-made binding can make a later read resolve to the
+wrong binding, the early return of `?` (a defect that argument's review found), a prepend whose front item is a
+list made after its base, and `Result.withDefault (Result.map m f) d` — is specified in §26 and built, with the
+rules not yet modelled in the Lean oracle listed in §26.7.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -310,6 +315,9 @@ Thesis Table 3.2, as slice 1 computes them. `A(e)` is the abstract value of `e`.
 | markup | a conservative call over its value instructions (§6.1), result type `Html` | its values |
 | interpolation, arithmetic, comparison | conservative calls; a crossing result has `∅` | their operands |
 
+*Amended 2026-10-12 (slice 3g, §26.2):* `e?` on a `Result` also returns: `A(e)`'s `Err` payload, under `Err`, joins
+the result of the definition the `?` targets.
+
 ## 6. Calls in slice 1
 
 ### 6.1 The conservative call — exactly
@@ -393,6 +401,8 @@ is *after* a demand when its point is greater and the two are not in different a
 
 *Amended 2026-10-12 (slice 3f, §25.4):* so is `Maybe.withDefault (Maybe.map m f) d` with `m` and `d` variable
 paths and `f` a lambda or a top-level value: the call of `Maybe.map` is one arm, the read of `d` the other.
+
+*Amended 2026-10-12 (slice 3g, §26.4):* and `Result.withDefault (Result.map m f) d`, under the same restrictions.
 
 ### 7.3 Frames
 
@@ -2275,6 +2285,9 @@ A **prepend** is a construction (§3.2) whose items all precede its one spread, 
 `[*] = π₂[*], π₁`, with `fresh₁`'s condition `excl π₁, excl π₂, sep π₁ π₂[*]`. Its two provenances at `ε` make
 a demand through it approximate, as item 2 says of the construction.
 
+*Amended 2026-10-12 (slice 3g, §26.3):* item 2's base cells are left out when the front item is a list made after
+the base.
+
 **The backend agrees** (checked for slice 3f, research 85 §2). Every prepend is emitted as a call of
 `List.cons`, which is `pushFrom` onto a new `[ x ]`, one `concat` into a new array, or a re-cons that answers a
 header over the base's array and writes nothing (`core/List.beni`). A function's result `[ f x, …go rest ]` is
@@ -2351,3 +2364,180 @@ approximate step (`… may hold it through the call at L:C`), as a call with an 
    `Bike.update`'s `[ frontWall other, …omitLastSections current.trail ] ++ …` and the line it causes in
    `Game.stepGame` (research 85 §3). The domain has no notion of "made after"; not built.
 2. **`Maybe.andThen` and `Result`.** §25.4's argument covers them; they wait for a program that needs them.
+
+*Amended 2026-10-12 (slice 3g, §26.8):* item 1 is built for a front item that is a list made after the base
+(§26.3). Item 2 is half built: `Result.map` with `Result.withDefault` is §26.4's; `andThen`, of either module, is
+**refused** — §25.4's argument does not cover it, because its `f` may answer `Nothing` or `Err` after it ran.
+
+---
+
+## 26. Slice 3g — binders, `?`'s early return, a prepend of fresh items, `Result`'s default (normative from 2026-10-12)
+
+*Amends §5 (the `e?` row), §7.2, §25.2 item 2 and §25.7. Sections 1–25 keep their numbers and text; where this
+section changes a rule, it wins. Research 86 measures it.*
+
+### 26.1 A later read resolves to the binding it reads
+
+The Lean reference model found a soundness defect in its own checker (PR #65): with shadowing, a `let` handed the
+outer continuation's live set to the inner scope, so liveness took a later read of the outer name for a read of
+the inner binding, and the Dead check passed. beni's source refuses shadowing (`language.md` §7), but the
+compiler makes bindings of its own. This section is the argument that none of them can make a later read resolve
+to the wrong binding in `src/own/`.
+
+**How the checker names a variable.** Never by name. BIR's `local` instruction carries a **local index**,
+declaration-relative, which lowering resolved lexically (`Lower.lookupLocal`) when it wrote the instruction.
+Every binder — written or compiler-made — gets its index from `Lower.bindLocal`, which appends to the
+declaration's `locals` table: the index is the binder's position in it, so **no two binders of a declaration
+share an index**, whatever their names. The walk keys every fact about a variable by that index: its value
+(`local_av`), its frame and branch context (`local_frame`, `local_ctx`), every read (`Use.local`), every holder
+of a demand (`Holder.local`), every capture (`Capture.local`) and the `env` cell of a capture (`Cell.a`). The Dead
+check (§8.1 item 5) compares a holder's index with a read's index, in the same frame, at a later point, in a
+compatible branch. Liveness is not computed backwards from continuations, so there is no live set for an inner
+scope to inherit.
+
+**Why one index is one binding.** BIR is a tree, and the walk evaluates each instruction once per walk of its
+frame, so each binder binds its index once. The one re-walk is a local-function group's fixpoint rounds
+(§18.7), and `restore` returns `local_av`, `local_frame` and `local_ctx` to the snapshot taken before the first
+round. A lambda's or local function's body is a frame of its own, walked once (§7.3); its locals are bound in it
+and nowhere else. `Walker.bindLocal` asserts the property under `std.debug.runtime_safety`, the build every test
+runs: binding an index already bound in the walk traps. A run of `dump --stage=ownership` over core, every corpus
+`.beni` file under each platform, and the applications (research 86 §2) never trips it.
+
+**Every binder kind**, and what lowering makes of it:
+
+| Binder | Lowered to | Indices |
+|---|---|---|
+| `x = e`, `f a = e` in a block or `let` | `let_def` | one, `bindVar` |
+| a pattern in a block or `let` | `let_pattern` | one per variable |
+| a statement | `let_stmt` | none |
+| `case` arms: `pat_var`, `pat_as`, `pat_record`, `pat_ctor`, `pat_tuple`, `[ x, …rest ]` | patterns | one per variable; a spread's binds a view (§5) |
+| lambda and local-function parameters | patterns | one per variable |
+| the `_` placeholder (`f a _`) | a lambda over a `fresh` local | one, `freshLocal` |
+| `.field` | `λr → r.field` over a `fresh` local | one |
+| `(==)` and its relatives | `λa b → a == b` over two `fresh` locals | two |
+| `x ← f a` | `f a (λx → rest)` | the written `x`'s, inside the lambda |
+| `▷`, `◁` | the call, its arguments lowered in source order | none |
+| `{ r \| f = y }` | `record_update` over the resolved `r` | none |
+| `[ x, …xs ]`, `++` | nested `List.cons` / `List.append` calls | none |
+| `if` without `else` | a `case` on `Bool` | none |
+| `e?` | one `try` instruction | none — but it returns from its definition (§26.2) |
+
+Inlining, decision trees for patterns and every other rewrite happen after BIR, on JsIr (`backend.md` §3), and
+the checker never sees them. **Slice 5's obligation**: a rewrite of JsIr that duplicates, reorders or renames a
+binding the checker reasoned about must keep each read in its order relative to the in-place write it was
+checked against.
+
+`ownership/Binders` puts each binder kind between a write and a later read of the original binding — the Lean
+probe itself is `nested` — and each is rejected, naming the original.
+
+### 26.2 `?` returns its `Err` payload
+
+Reviewing the binders found a real defect, the last row of the table above. `e?` on a `Result` means "the `Ok`
+payload, or return `Err x` from the definition the `?` targets" (`language.md` §6.6). §5 gave `A(e?)` and nothing
+else: the early return was dropped, so a definition's summary did not say that its result may hold its
+argument's `Err` payload. `pick r = n = r?; Ok (n + 1)` had an empty `res`, and a caller that wrote `xs` while
+reading the `Err xs` that `pick (Err xs)` returned was **accepted**: in place on `browser-direct`, the read would
+have seen the write.
+
+**The rule.** At `e?` where `e`'s solved type is core's `Result x a`, the walk adds `A(e)` projected on `Err`'s
+payload and placed back under `Err` to the result of the frame being walked. That frame is the definition the
+`?` targets: a `?` under a lambda is refused (`question_in_lambda`), and a `let` constant is not a frame. The
+entries are exact — on that path the payload is what is returned. A `Maybe`'s `Nothing` holds nothing, and a
+payload type that crosses (§4.4) adds nothing. Nothing else changes: on the path that continues the payload is
+not returned, and on the path that returns nothing after the `?` runs, so the early return adds no read inside
+the frame.
+
+`ownership/Question` pins it: `keepsErr`, a local function's `?` (`local`) and a statement `?` (`statement`) are
+rejected `alias`. Before, `keepsErr` and `statement` were accepted, and `local` was rejected only because its
+result held `xs` at a `⋆` under `Ok`. A `Maybe` and a `String` error stay accepted.
+
+### 26.3 A prepend of a list made after its base
+
+§25.2 item 2 gave a prepend's result the base's own cells, approximately, because core's `cons` may re-cons: it
+answers a value over the base's array when the item put in front is `Js.same` as the element stored just before
+the base's view (`b[o − 1]`), or as the one in a trie head's slack slot (`reconsed`, `core/List.beni`). Either
+element was stored in an array the base shares before the base existed as that view: it is an element of a list
+whose array the base's cells name, and the domain names it at the base's cells' `[*]` (a view is its scrutinee's
+cells, §5; a callee's view result names its argument, as `List.drop`'s and `tail`'s rows do).
+
+**The rule.** In a prepend `[ x₁, …, xₖ, …b ]`, the result holds its new cell and not the base's when the front
+item `xₖ`, the one put directly before the base:
+
+1. has a `List` type — a list is compared by identity, unlike an `Int` or a `String`, which `Js.same` compares by
+   value;
+2. has at least one entry at `ε`, and each is **exact** and is a `site` (a list literal's new array) or a callee's
+   fresh `result` (a summary's `fresh`, never §6.1's assumed one), not escaped (§4.3);
+3. is not reached by `A(b)` — closures expanded, approximate and `⋆` entries included.
+
+The base's elements are still the result's elements, exactly, and the new cell's condition is §25.2's.
+
+*Soundness.* By 1 and 2 the item is a new array, made by a literal or a callee, which only its own holders can
+name; by 3 no cell of the base holds it, at any path. The element a re-cons compares with is held by the base's
+cells, so it is not the item: the innermost `cons` builds a new plain array at offset 0, and each outer `cons` —
+a construction's other items — copies too, since a re-cons needs a view past offset 0 or a trie. The rule rests on
+`cons`'s body and on `Js.same` being identity on arrays; `cons` is on the trusted surface (§20.9) through §25.2,
+and a change to its re-cons conditions must revisit this rule. `List.cons x xs` written as a call keeps its
+asserted row (§25.2); only the construction is narrowed.
+
+*Not "made after" in general.* The domain still has no time. An item that is a parameter, a capture, a taken
+element, a top-level value or a callback's result may be stored before the view, and so may a fresh list the
+base's computation was handed (`ownership/PrependFresh`: `storedBefore`, where the re-cons really happens, and
+`baseHolds`).
+
+### 26.4 `Result.withDefault (Result.map m f) d`
+
+§25.4's shape, for core's `Result`: `Result.map` (`core/Result.beni`) calls `f` exactly when `m` is `Ok` and
+answers `Err x` when it is not; `Result.withDefault` answers `d` exactly when its argument is `Err`. The same
+restrictions hold — `m` and `d` variable paths, `f` a lambda or a top-level value — and the two calls must be one
+module's. Both bodies join the trusted surface beside `Maybe`'s.
+
+**`andThen` is refused, in both modules.** `Maybe.andThen m f` calls `f` when `m` is `Just` and answers whatever
+`f` answers, which may be `Nothing`; `withDefault` then reads `d` on a run where `f` ran. The same holds for
+`Result.andThen` and `Err`. §25.7 item 2 said §25.4's argument covers them; it does not. Accepting them would read
+the old model after an edit whenever `f` edits and then fails. `ownership/ResultDefault` pins both, with an `f`
+that edits and answers `Nothing` or `Err`, as `later-use`.
+
+### 26.5 The report
+
+Unchanged in form. A definition whose `?` returns a payload prints it in its summary (`res #Err.0 π1#Err.0`); a
+prepend whose front item was made after its base names no approximate step.
+
+### 26.6 Testing
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `ownership/Binders` | §26.1 | every binder kind between a write and a later read of the original: rejected, naming the original; `distinct`: accepted |
+| `ownership/Question` | §26.2 | `keepsErr`, `local`, `statement`: `alias` (the first and last accepted before); `maybeOk`, `stringOk`: accepted |
+| `ownership/PrependFresh` | §26.3; research 82 `Bike` 56 | a literal, a callee's fresh list, and the Bike Wars line in front: accepted; an item stored in the base first (`storedBefore`), handed to the base's call (`baseHolds`), taken from the base (`elementFront`), an `Int` (`intFront`): `call`, approximate |
+| `ownership/ResultDefault` | §26.4 | the pipeline and the lambda: accepted; `andThen` of either module with an `f` that edits and fails, a read after, a default that is an expression, a `Maybe.map` converted first: `later-use` |
+
+### 26.7 Not yet modelled in the Lean oracle
+
+The owner's process rule (2026-10-12): every checker rule a slice adds or changes is modelled in the Lean oracle
+(`proofs/ownership/`) or listed here, with the soundness risk of leaving it unmodelled. The oracle's language has
+`let`, primitives, closures, calls, recursion, a branch on an integer, traversals and focus (`Syntax.lean`); it
+has no list patterns, no constructors or sum types, no records, no early return and no prepend. No rule below is
+modelled. A later sync round consumes this list.
+
+| Rule | Where | What is unsound if the rule is wrong |
+|---|---|---|
+| A binding resolves by its local index (§26.1) | `Walker.bindLocal`, `resolveRaw` | a later read taken for another binding's, the oracle's own defect. Argued from lowering and asserted at run time; the oracle's fix is the same discipline, a distinct name per binder |
+| `?` returns its `Err` payload (§26.2) | `earlyReturn`, `withEarly` | a caller writes a list a returned `Err` holds |
+| A prepend of a list made after its base (§26.3) | `madeAfter` | a write onto the prepend's result reaches the base through a re-cons the rule took to be impossible |
+| `Result.withDefault (Result.map …)` as two arms (§26.4) | `isMaybeJoin` | the default read on a run where `f` edited it |
+| A prepend reads its base, and its result may share the base's array (§25.2) | `prepended` | slice 5 writing a prepend's base, or a write onto the result reaching a base still read |
+| `Maybe.withDefault (Maybe.map …)` as two arms (§25.4) | `isMaybeJoin`, `joinArm` | as §26.4 |
+| `map` across closed record types (§25.3) | `recordsMayShare` | an identity promise dropped where the result may be its input |
+| Ownership words on `foreign` signatures, and the thesis row for a `foreign` with none (§24) | `wordsRow` | a word claiming less than the JavaScript does: a write or an escape the checker does not see |
+| The decoder followed through `Expect` (§24.9) | `carry`, `carriedEnv` | a decoder's captures held past the call that runs it |
+| The entry protocol, its rows and `init` (§20, §22) | `entryCall` | the runtime keeping or reading the model the direct row hands over |
+| Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload read after the send gave it up |
+| `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written |
+
+### 26.8 Open questions
+
+1. **`List.cons` written as a call** keeps its approximate row; only the construction is narrowed (§26.3). No
+   measured program writes the call with a fresh front item.
+2. **Fresh items that are not lists.** A record or a constructor value made after the base cannot be `Js.same` as
+   a stored element either, but the domain gives a record no cell of its own, so §26.3 cannot see that it is new.
+   No measured program needs it.
