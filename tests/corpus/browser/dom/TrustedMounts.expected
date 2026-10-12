@@ -29,7 +29,7 @@ console.log: outer renders: "bumps 0, taps 1, frames 1"
     <div id="frame">
       <section id="inner">
         <div>
-          <button id="inc">"inc"</button>
+          <button id="inc" :focus>"inc"</button>
           <p>"1"</p>
         </div>
       </section>
@@ -42,7 +42,7 @@ console.log: outer renders: "bumps 1, taps 1, frames 1"
 (a later listener ran)
 <body>
   <main>
-    <button id="bump">"bump"</button>
+    <button id="bump" :focus>"bump"</button>
     <p>"bumps 1, taps 1, frames 1"</p>
     <div id="frame">
       <section id="inner">
@@ -69,7 +69,7 @@ console.log: inner renders: 4
 console.log: outer renders: "bumps 1, taps 4, frames 4"
 <body>
   <main>
-    <button id="bump">"bump"</button>
+    <button id="bump" :focus>"bump"</button>
     <p>"bumps 1, taps 4, frames 4"</p>
     <div id="frame">
       <section id="inner">

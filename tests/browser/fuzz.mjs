@@ -870,8 +870,7 @@ export async function fuzz(spec, host) {
             fault = await p.run(inPage(fuzzSend), action.message);
           } else {
             const why = await p.run(host.step, action.s);
-            if (why !== null && typeof why === "object") await p.click(why.x, why.y);
-            else fault = why;
+            fault = why !== null && typeof why === "object" ? await host.released(p, action.s, why) : why;
           }
         }
         shown.push(await look(fault));

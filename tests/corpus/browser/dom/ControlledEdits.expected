@@ -76,25 +76,6 @@
     </select>
   </main>
 </body>
--- focus #box
-<body>
-  <main>
-    <button id="tick">"1"</button>
-    <input id="text" .value="xy">
-    <input id="free" .value="xy">
-    <div>
-      <input id="box" type="checkbox" .value="on" .checked=false :focus>
-    </div>
-    <input id="ra" type="radio" name="g" .value="on" .checked=true>
-    <input id="rb" type="radio" name="g" .value="on" .checked=false>
-    <input id="rc" type="radio" name="g" .value="on" .checked=false>
-    <select id="sel" .value="a">
-      <option value="a">"a"</option>
-      <option value="b">"b"</option>
-      <option value="c">"c"</option>
-    </select>
-  </main>
-</body>
 -- press #box
 (a later listener ran)
 <body>
