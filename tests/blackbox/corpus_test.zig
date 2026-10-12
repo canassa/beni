@@ -1822,7 +1822,7 @@ const Case = struct {
         // Pending mode reads the codes of a refused build, to classify why a
         // red fixture is red (`classify`); the corpus keeps the rendered form.
         if (c.cfg.mode == .pending) try dev.append(c.arena, "--diagnostics=json");
-        try dev.appendSlice(c.arena, sources);
+        try dev.appendSlice(c.arena, try buildPaths(c.arena, sources));
         // The fixture's run hashes (`run_hash.zig`): read to skip a build
         // already verified, or — recording — rewritten below with the
         // builds that verify now.
@@ -1853,7 +1853,7 @@ const Case = struct {
             var forced: std.ArrayList([]const u8) = .empty;
             try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--schema-library", "--out=out-library" });
             if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
-            try forced.appendSlice(c.arena, sources);
+            try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
             verified[2] = c.runOnce("out-library", .dev_library, forced.items, "expected", false, record) catch |err| blk: {
                 if (!recording) return err;
                 RunCounts.add(&run_counts.refused);
@@ -1870,7 +1870,7 @@ const Case = struct {
             var release: std.ArrayList([]const u8) = .empty;
             try release.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--out=release" });
             if (c.cfg.mode == .pending) try release.append(c.arena, "--diagnostics=json");
-            try release.appendSlice(c.arena, sources);
+            try release.appendSlice(c.arena, try buildPaths(c.arena, sources));
             verified[1] = c.runOnce(
                 "release",
                 .release,
@@ -1890,7 +1890,7 @@ const Case = struct {
             var forced: std.ArrayList([]const u8) = .empty;
             try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--schema-library", "--out=release-library" });
             if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
-            try forced.appendSlice(c.arena, sources);
+            try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
             verified[3] = c.runOnce(
                 "release-library",
                 .release_library,
@@ -1936,6 +1936,21 @@ const Case = struct {
         return stat.kind == .directory;
     }
 
+    /// The paths a build of `sources` takes: the names themselves, after
+    /// `--root=.` when one is in a subdirectory, so that `Math/Vector2.beni`
+    /// is the module `Math.Vector2` and not `Vector2` (`frontend.md` §1: a
+    /// file argument's own directory is its root without `--root`).
+    fn buildPaths(arena: std.mem.Allocator, sources: []const []const u8) ![]const []const u8 {
+        for (sources) |name| {
+            if (std.mem.indexOfScalar(u8, name, '/') == null) continue;
+            const paths = try arena.alloc([]const u8, sources.len + 1);
+            paths[0] = "--root=.";
+            @memcpy(paths[1..], sources);
+            return paths;
+        }
+        return sources;
+    }
+
     /// Copy the fixture's modules into the world's project: the file, or
     /// every `.beni` directly in a project fixture. Returns their names,
     /// sorted, as a build takes them.
@@ -1946,19 +1961,38 @@ const Case = struct {
             // `_expected.sources` holds that directory's repo-relative path, so
             // several scripts can drive one program kept outside the corpus
             // (`examples/conduit/src`; `tests/corpus/README.md`).
-            const dir_path = if (c.goldenExists("sources"))
+            // Such a program may keep modules in subdirectories (an external
+            // port's `Math/Vector2.beni`, `examples/bike-wars/src`): they are
+            // copied at the same relative path, and `buildPaths` names the
+            // world the source root. A fixture's own directory is read flat,
+            // since its `platform/` holds `.beni` files that are not the
+            // program's.
+            const external = c.goldenExists("sources");
+            const dir_path = if (external)
                 std.mem.trim(u8, try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("sources"), c.arena, .limited(4096)), " \t\r\n")
             else
                 try c.fixturePath();
             var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
             defer dir.close(testing.io);
-            var it = dir.iterate();
-            while (try it.next(testing.io)) |entry| {
-                if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
-                const name = try c.arena.dupe(u8, entry.name);
-                const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
-                try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
-                try sources.append(c.arena, name);
+            if (external) {
+                var walker = try dir.walk(c.arena);
+                defer walker.deinit();
+                while (try walker.next(testing.io)) |entry| {
+                    if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, ".beni")) continue;
+                    const name = try c.arena.dupe(u8, entry.path);
+                    const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
+                    try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
+                    try sources.append(c.arena, name);
+                }
+            } else {
+                var it = dir.iterate();
+                while (try it.next(testing.io)) |entry| {
+                    if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+                    const name = try c.arena.dupe(u8, entry.name);
+                    const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
+                    try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
+                    try sources.append(c.arena, name);
+                }
             }
             std.mem.sort([]const u8, sources.items, {}, struct {
                 fn lessThan(_: void, a: []const u8, b: []const u8) bool {
@@ -2043,7 +2077,7 @@ const Case = struct {
             try args.appendSlice(c.arena, &.{ "build", if (tea) tea_arg else platform_arg });
             if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
-            try args.appendSlice(c.arena, sources);
+            try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
             pages[slot] = c.pagePlan(pass, args.items, h, script, record) catch |err| blk: {
                 if (!recording) {
                     if (pass == .dev) return err;
@@ -2280,7 +2314,7 @@ const Case = struct {
             try args.appendSlice(c.arena, side);
             if (flag) try args.append(c.arena, "--fuzz");
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{out}));
-            try args.appendSlice(c.arena, sources);
+            try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
             const built = try c.inProject(args.items);
             if (built.exit_code != 0) {
                 detail("{s} [fuzz]: the fuzz build failed\n{s}\n", .{ c.fixture.name, built.stderr });
