@@ -11,7 +11,7 @@ def flagValue (args : List String) (name : String) : Option String :=
 def main (args : List String) : IO UInt32 := do
   let mode := args.head?.getD "all"
   let positional := args.filter (fun a => !a.startsWith "--" &&
-    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries"].contains a)
+    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff"].contains a)
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
   let version := (flagValue args "generator-version").bind String.toNat? |>.getD 4
@@ -36,6 +36,11 @@ def main (args : List String) : IO UInt32 := do
           IO.println s!"== {f.id}: {a.computed} summaries computed, {a.reused} reused"
           for e in a.cache do IO.println (Report.entryS f.program.declarations e)
         | .error e => IO.println s!"== {f.id}: rejected ({e})"
+    return 0
+  if mode == "verdict-diff" then
+    match mutant with
+    | some m => let _ ← Oracle.verdictDiff count seed m (args.contains "--reinfer") version
+    | none => IO.println "verdict-diff needs --mutant="
     return 0
   if mode == "controls" then
     return (if ← Oracle.controls count seed version (args.contains "--reinfer") then 0 else 1)
