@@ -1,0 +1,8 @@
+# A click on an SVG element: the hole in `x` is written again, and the
+# class list puts `moved` on the `<svg>`.
+click #mover
+# A click and a delegated `mouseover` on a row of the keyed list.
+click #bar2
+mouse #bar1 mouseover
+# A row added at the front, and the two that were there moved.
+click #grow

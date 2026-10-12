@@ -257,6 +257,11 @@ pub const Body = struct {
     /// A single top-level element: its name and namespace, for the SVG
     /// wrapper.
     root_element: ?struct { name: []const u8, namespace: m.ElementFacts.Namespace } = null,
+    /// Whether the top level holds an SVG element other than `<svg>`, and
+    /// an HTML element: the first makes several top-level nodes wrapped
+    /// too, and the two together are refused (`element`).
+    top_foreign: bool = false,
+    top_html: bool = false,
     /// What `Gen.bake` and `Gen.bake_item` baked into the template: the
     /// text holes, and the attributes by their index in `Tree.items`, each
     /// with its template node — the text node, the element — which a
@@ -1154,6 +1159,14 @@ pub const Gen = struct {
                 b.flags |= 2;
             };
         };
+        // Several top-level nodes among which an SVG element stands are
+        // wrapped as one is, and the runtime gathers the wrapper's children
+        // into a fragment (flags 2 and 4; boundary.md §9.9).
+        if (b.flags & 4 != 0 and b.top_foreign) {
+            const wrapped = try g.print("<svg>{s}</svg>", .{b.html.items});
+            b.html = .fromOwnedSlice(@constCast(wrapped));
+            b.flags |= 2;
+        }
         // What the functions read: every op's nodes, and the top level's
         // first and last when there are several.
         for (b.ops.items) |op| switch (op.what) {
@@ -1416,7 +1429,24 @@ pub const Gen = struct {
         const e = g.tree.element(n);
         const facts = g.tree.elementFacts(e.row);
         const name = g.tree.string(facts.name);
-        if (parser.misnested(scope, name)) |why| return g.restructured(n, scope.parent orelse "", why);
+        // An SVG element at the top level is parsed inside the `<svg>` the
+        // template wraps it in (`plan`), so it is written in that scope.
+        const here = if (parent == null and facts.namespace == .svg) parser.Scope.svg_root else scope;
+        if (parser.misnested(here, name)) |why| return g.restructured(n, here.parent orelse "", why);
+        if (parser.misplaced(here, name, facts.namespace == .svg)) |why| return g.restructured(n, here.parent orelse "", why);
+        if (parent == null) {
+            // One template is parsed in one namespace: an SVG element
+            // beside an HTML one at the top level would be the wrong element
+            // whichever the template were wrapped in (boundary.md §9.9).
+            const foreign = facts.namespace == .svg and !std.mem.eql(u8, name, "svg");
+            if (foreign) {
+                if (b.top_html) return g.restructured(n, "", "an SVG element beside an HTML element at the top of one markup value would be parsed in one namespace with it; write each in a markup value of its own");
+                b.top_foreign = true;
+            } else if (facts.namespace == .html) {
+                if (b.top_foreign) return g.restructured(n, "", "an HTML element beside an SVG element at the top of one markup value would be parsed in one namespace with it; write each in a markup value of its own");
+                b.top_html = true;
+            }
+        }
         const t = try b.tnode(g.a(), parent, index, .element);
         if (parent == null) b.root_element = if (b.top == 1) .{ .name = name, .namespace = facts.namespace } else null;
         // A custom element, a customised built-in and a lazy image or
@@ -1445,7 +1475,7 @@ pub const Gen = struct {
         // With scripting on, the parser reads `<noscript>`'s content as
         // text, and the page never shows it: dom-expressions writes none.
         if (!std.mem.eql(u8, name, "noscript")) {
-            try g.childNodes(b, t, kids, scope.enter(name), child_close, parser.content(name));
+            try g.childNodes(b, t, kids, here.enter(name), child_close, parser.contentIn(here, name));
         }
         if (g.close_all or shouldClose(name, close)) {
             try b.write(g.a(), "</");

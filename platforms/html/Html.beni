@@ -3,6 +3,13 @@
 --! markup may write, the markup type `Html msg`, and the markup primitives
 --! `text` and `map`.
 --!
+--! It is also the SVG vocabulary (`boundary.md` §9.9): elm/svg's `Svg`,
+--! `Svg.Attributes` and `Svg.Events` folded into this one module, as
+--! elm/html's three modules are, since a tag resolves in one vocabulary
+--! with no import. SVG markup is `Html msg`, as Elm's `Svg msg` is its
+--! `Html msg`; an element, attribute or event is written with its SVG name
+--! (`<text>`, `stroke-width`, `viewBox`).
+--!
 --! `html` is a platform that is only depended on: it declares no `program`
 --! and no markup lowering. `node` and `browser` depend on it and re-export
 --! this module, so a view module is checked against ONE vocabulary and ONE
@@ -452,6 +459,184 @@ pub element "wbr" void
 pub element "*-*"
 
 
+-- SVG elements (boundary.md §9.9): elm/svg's, but for those SVG 2 removed.
+-- `a`, `title` and `style` are the HTML declarations above: inside an `<svg>`,
+-- the page's parser makes the SVG element of that name.
+
+pub element "svg" svg
+
+
+pub element "foreignObject" svg
+
+
+pub element "circle" svg
+
+
+pub element "ellipse" svg
+
+
+pub element "image" svg
+
+
+pub element "line" svg
+
+
+pub element "path" svg
+
+
+pub element "polygon" svg
+
+
+pub element "polyline" svg
+
+
+pub element "rect" svg
+
+
+pub element "use" svg
+
+
+pub element "animate" svg
+
+
+pub element "animateMotion" svg
+
+
+pub element "animateTransform" svg
+
+
+pub element "mpath" svg
+
+
+pub element "set" svg
+
+
+pub element "desc" svg
+
+
+pub element "metadata" svg
+
+
+pub element "defs" svg
+
+
+pub element "g" svg
+
+
+pub element "marker" svg
+
+
+pub element "mask" svg
+
+
+pub element "pattern" svg
+
+
+pub element "switch" svg
+
+
+pub element "symbol" svg
+
+
+pub element "textPath" svg
+
+
+pub element "text" svg
+
+
+pub element "tspan" svg
+
+
+pub element "linearGradient" svg
+
+
+pub element "radialGradient" svg
+
+
+pub element "stop" svg
+
+
+pub element "feBlend" svg
+
+
+pub element "feColorMatrix" svg
+
+
+pub element "feComponentTransfer" svg
+
+
+pub element "feComposite" svg
+
+
+pub element "feConvolveMatrix" svg
+
+
+pub element "feDiffuseLighting" svg
+
+
+pub element "feDisplacementMap" svg
+
+
+pub element "feDistantLight" svg
+
+
+pub element "feFlood" svg
+
+
+pub element "feFuncA" svg
+
+
+pub element "feFuncB" svg
+
+
+pub element "feFuncG" svg
+
+
+pub element "feFuncR" svg
+
+
+pub element "feGaussianBlur" svg
+
+
+pub element "feImage" svg
+
+
+pub element "feMerge" svg
+
+
+pub element "feMergeNode" svg
+
+
+pub element "feMorphology" svg
+
+
+pub element "feOffset" svg
+
+
+pub element "fePointLight" svg
+
+
+pub element "feSpecularLighting" svg
+
+
+pub element "feSpotLight" svg
+
+
+pub element "feTile" svg
+
+
+pub element "feTurbulence" svg
+
+
+pub element "clipPath" svg
+
+
+pub element "filter" svg
+
+
+pub element "view" svg
+
+
 -- Attributes of every element.
 
 pub attribute "accesskey" : String
@@ -613,6 +798,540 @@ pub attribute "value" on "button" "data" "option" "output" : String
 pub attribute "width" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
 
 
+-- SVG's presentation attributes (boundary.md §9.9): of every element, as
+-- elm/svg's attributes are. Every SVG attribute is a `String`, as in elm/svg,
+-- since a length may carry a unit (`"50%"`, `"2px"`).
+
+pub attribute "alignment-baseline" : String
+
+
+pub attribute "baseline-shift" : String
+
+
+pub attribute "clip-path" : String
+
+
+pub attribute "clip-rule" : String
+
+
+pub attribute "color" : String
+
+
+pub attribute "color-interpolation" : String
+
+
+pub attribute "color-interpolation-filters" : String
+
+
+pub attribute "cursor" : String
+
+
+pub attribute "direction" : String
+
+
+pub attribute "display" : String
+
+
+pub attribute "dominant-baseline" : String
+
+
+pub attribute "fill" : String
+
+
+pub attribute "fill-opacity" : String
+
+
+pub attribute "fill-rule" : String
+
+
+pub attribute "filter" : String
+
+
+pub attribute "flood-color" : String
+
+
+pub attribute "flood-opacity" : String
+
+
+pub attribute "font-family" : String
+
+
+pub attribute "font-size" : String
+
+
+pub attribute "font-size-adjust" : String
+
+
+pub attribute "font-stretch" : String
+
+
+pub attribute "font-style" : String
+
+
+pub attribute "font-variant" : String
+
+
+pub attribute "font-weight" : String
+
+
+pub attribute "image-rendering" : String
+
+
+pub attribute "letter-spacing" : String
+
+
+pub attribute "lighting-color" : String
+
+
+pub attribute "marker-end" : String
+
+
+pub attribute "marker-mid" : String
+
+
+pub attribute "marker-start" : String
+
+
+pub attribute "mask" : String
+
+
+pub attribute "opacity" : String
+
+
+pub attribute "overflow" : String
+
+
+pub attribute "paint-order" : String
+
+
+pub attribute "pointer-events" : String
+
+
+pub attribute "shape-rendering" : String
+
+
+pub attribute "stop-color" : String
+
+
+pub attribute "stop-opacity" : String
+
+
+pub attribute "stroke" : String
+
+
+pub attribute "stroke-dasharray" : String
+
+
+pub attribute "stroke-dashoffset" : String
+
+
+pub attribute "stroke-linecap" : String
+
+
+pub attribute "stroke-linejoin" : String
+
+
+pub attribute "stroke-miterlimit" : String
+
+
+pub attribute "stroke-opacity" : String
+
+
+pub attribute "stroke-width" : String
+
+
+pub attribute "text-anchor" : String
+
+
+pub attribute "text-decoration" : String
+
+
+pub attribute "text-rendering" : String
+
+
+pub attribute "transform" : String
+
+
+pub attribute "transform-origin" : String
+
+
+pub attribute "unicode-bidi" : String
+
+
+pub attribute "vector-effect" : String
+
+
+pub attribute "visibility" : String
+
+
+pub attribute "word-spacing" : String
+
+
+pub attribute "writing-mode" : String
+
+
+-- SVG attributes of some elements: geometry.
+
+pub attribute "x" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
+    String
+
+
+pub attribute "y" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
+    String
+
+
+pub attribute "z" on "fePointLight" "feSpotLight" : String
+
+
+pub attribute "width" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+    String
+
+
+pub attribute "height" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+    String
+
+
+pub attribute "cx" on "circle" "ellipse" "radialGradient" : String
+
+
+pub attribute "cy" on "circle" "ellipse" "radialGradient" : String
+
+
+pub attribute "r" on "circle" "radialGradient" : String
+
+
+pub attribute "rx" on "ellipse" "rect" : String
+
+
+pub attribute "ry" on "ellipse" "rect" : String
+
+
+pub attribute "fx" on "radialGradient" : String
+
+
+pub attribute "fy" on "radialGradient" : String
+
+
+pub attribute "fr" on "radialGradient" : String
+
+
+pub attribute "x1" on "line" "linearGradient" : String
+
+
+pub attribute "y1" on "line" "linearGradient" : String
+
+
+pub attribute "x2" on "line" "linearGradient" : String
+
+
+pub attribute "y2" on "line" "linearGradient" : String
+
+
+pub attribute "d" on "path" : String
+
+
+pub attribute "points" on "polygon" "polyline" : String
+
+
+pub attribute "pathLength" on "circle" "ellipse" "line" "path" "polygon" "polyline" "rect" : String
+
+
+pub attribute "viewBox" on "svg" "symbol" "marker" "pattern" "view" : String
+
+
+pub attribute "preserveAspectRatio" on "svg" "symbol" "image" "marker" "pattern" "view" "feImage" :
+    String
+
+
+-- SVG attributes of some elements: text.
+
+pub attribute "dx" on "text" "tspan" : String
+
+
+pub attribute "dy" on "text" "tspan" : String
+
+
+pub attribute "rotate" on "text" "tspan" "animateMotion" : String
+
+
+pub attribute "textLength" on "text" "tspan" "textPath" : String
+
+
+pub attribute "lengthAdjust" on "text" "tspan" "textPath" : String
+
+
+pub attribute "startOffset" on "textPath" : String
+
+
+pub attribute "method" on "textPath" : String
+
+
+pub attribute "spacing" on "textPath" : String
+
+
+pub attribute "path" on "textPath" "animateMotion" : String
+
+
+-- SVG attributes of some elements: references, each a URL.
+
+pub attribute "href" url on "use" "image" "pattern" "linearGradient" "radialGradient" "textPath" "mpath" "feImage" "filter" "animate" "animateMotion" "animateTransform" "set" :
+    String
+
+
+pub attribute "xlink:href" url on "a" "use" "image" "pattern" "linearGradient" "radialGradient" "textPath" "mpath" "feImage" "filter" "animate" "animateMotion" "animateTransform" "set" :
+    String
+
+
+-- SVG attributes of some elements: markers, gradients, patterns, clips and masks.
+
+pub attribute "markerWidth" on "marker" : String
+
+
+pub attribute "markerHeight" on "marker" : String
+
+
+pub attribute "markerUnits" on "marker" : String
+
+
+pub attribute "orient" on "marker" : String
+
+
+pub attribute "refX" on "marker" "symbol" : String
+
+
+pub attribute "refY" on "marker" "symbol" : String
+
+
+pub attribute "gradientUnits" on "linearGradient" "radialGradient" : String
+
+
+pub attribute "gradientTransform" on "linearGradient" "radialGradient" : String
+
+
+pub attribute "spreadMethod" on "linearGradient" "radialGradient" : String
+
+
+pub attribute "offset" on "stop" "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
+
+
+pub attribute "patternUnits" on "pattern" : String
+
+
+pub attribute "patternContentUnits" on "pattern" : String
+
+
+pub attribute "patternTransform" on "pattern" : String
+
+
+pub attribute "clipPathUnits" on "clipPath" : String
+
+
+pub attribute "maskUnits" on "mask" : String
+
+
+pub attribute "maskContentUnits" on "mask" : String
+
+
+pub attribute "filterUnits" on "filter" : String
+
+
+pub attribute "primitiveUnits" on "filter" : String
+
+
+-- SVG attributes of some elements: filter primitives.
+
+pub attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" :
+    String
+
+
+pub attribute "in2" on "feBlend" "feComposite" "feDisplacementMap" : String
+
+
+pub attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+    String
+
+
+pub attribute "mode" on "feBlend" : String
+
+
+pub attribute "operator" on "feComposite" "feMorphology" : String
+
+
+pub attribute "k1" on "feComposite" : String
+
+
+pub attribute "k2" on "feComposite" : String
+
+
+pub attribute "k3" on "feComposite" : String
+
+
+pub attribute "k4" on "feComposite" : String
+
+
+pub attribute "values" on "feColorMatrix" "animate" "animateMotion" "animateTransform" : String
+
+
+pub attribute "type" on "feColorMatrix" "feTurbulence" "animateTransform" "feFuncA" "feFuncB" "feFuncG" "feFuncR" :
+    String
+
+
+pub attribute "tableValues" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
+
+
+pub attribute "slope" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
+
+
+pub attribute "intercept" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
+
+
+pub attribute "amplitude" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
+
+
+pub attribute "exponent" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
+
+
+pub attribute "stdDeviation" on "feGaussianBlur" : String
+
+
+pub attribute "edgeMode" on "feGaussianBlur" "feConvolveMatrix" : String
+
+
+pub attribute "baseFrequency" on "feTurbulence" : String
+
+
+pub attribute "numOctaves" on "feTurbulence" : String
+
+
+pub attribute "seed" on "feTurbulence" : String
+
+
+pub attribute "stitchTiles" on "feTurbulence" : String
+
+
+pub attribute "scale" on "feDisplacementMap" : String
+
+
+pub attribute "xChannelSelector" on "feDisplacementMap" : String
+
+
+pub attribute "yChannelSelector" on "feDisplacementMap" : String
+
+
+pub attribute "radius" on "feMorphology" : String
+
+
+pub attribute "order" on "feConvolveMatrix" : String
+
+
+pub attribute "kernelMatrix" on "feConvolveMatrix" : String
+
+
+pub attribute "divisor" on "feConvolveMatrix" : String
+
+
+pub attribute "bias" on "feConvolveMatrix" : String
+
+
+pub attribute "targetX" on "feConvolveMatrix" : String
+
+
+pub attribute "targetY" on "feConvolveMatrix" : String
+
+
+pub attribute "preserveAlpha" on "feConvolveMatrix" : String
+
+
+pub attribute "kernelUnitLength" on "feConvolveMatrix" "feDiffuseLighting" "feSpecularLighting" :
+    String
+
+
+pub attribute "surfaceScale" on "feDiffuseLighting" "feSpecularLighting" : String
+
+
+pub attribute "diffuseConstant" on "feDiffuseLighting" : String
+
+
+pub attribute "specularConstant" on "feSpecularLighting" : String
+
+
+pub attribute "specularExponent" on "feSpecularLighting" "feSpotLight" : String
+
+
+pub attribute "azimuth" on "feDistantLight" : String
+
+
+pub attribute "elevation" on "feDistantLight" : String
+
+
+pub attribute "pointsAtX" on "feSpotLight" : String
+
+
+pub attribute "pointsAtY" on "feSpotLight" : String
+
+
+pub attribute "pointsAtZ" on "feSpotLight" : String
+
+
+pub attribute "limitingConeAngle" on "feSpotLight" : String
+
+
+-- SVG attributes of some elements: animation.
+
+pub attribute "attributeName" on "animate" "animateTransform" "set" : String
+
+
+pub attribute "begin" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "dur" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "end" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "min" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "max" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "restart" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "repeatCount" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "repeatDur" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "calcMode" on "animate" "animateMotion" "animateTransform" : String
+
+
+pub attribute "keyTimes" on "animate" "animateMotion" "animateTransform" : String
+
+
+pub attribute "keySplines" on "animate" "animateMotion" "animateTransform" : String
+
+
+pub attribute "keyPoints" on "animateMotion" : String
+
+
+pub attribute "from" on "animate" "animateMotion" "animateTransform" : String
+
+
+pub attribute "to" on "animate" "animateMotion" "animateTransform" "set" : String
+
+
+pub attribute "by" on "animate" "animateMotion" "animateTransform" : String
+
+
+pub attribute "additive" on "animate" "animateMotion" "animateTransform" : String
+
+
+pub attribute "accumulate" on "animate" "animateMotion" "animateTransform" : String
+
+
 -- Events. A `delegated` event bubbles, so a lowering may listen for it once.
 
 pub event "onBlur" : Event
@@ -649,6 +1368,15 @@ pub event "onMouseEnter" : Event
 
 
 pub event "onMouseLeave" : Event
+
+
+pub event "onMouseMove" delegated : Event
+
+
+pub event "onMouseOut" delegated : Event
+
+
+pub event "onMouseOver" delegated : Event
 
 
 pub event "onMouseUp" delegated : Event

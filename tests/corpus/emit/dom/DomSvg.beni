@@ -1,0 +1,36 @@
+-- SVG under `html`'s vocabulary (boundary.md §9.9, backend.md §15.3). The
+-- template writes SVG as written, its names' case kept (`viewBox`,
+-- `linearGradient`), and the page's parser gives everything inside the
+-- `<svg>` its namespace. A dynamic attribute of an SVG element is
+-- `setAttribute` with the name as declared, never a property, and
+-- `xlink:href` is `attrNS` in the XLink namespace, through `safeUrl`. A
+-- value whose top level is one SVG element other than `<svg>` is wrapped in
+-- an `<svg>` for its parser (flag 2), and one of several nodes among which
+-- an SVG element stands is wrapped too and its nodes returned in a
+-- fragment (flags 2 and 4). A row of a `For` whose root is a `<rect>` is
+-- wrapped as such a value is.
+import Html exposing (Html)
+
+
+pub picture : String, String → Html msg
+picture box link =
+    <svg viewBox={box}>
+        <linearGradient id="fade"><stop offset="0" stop-color="white" /></linearGradient>
+        <use xlink:href={link} />
+    </svg>
+
+
+pub dot : String → Html msg
+dot x = <circle cx={x} r="2" />
+
+
+pub pair : Html msg
+pair =
+    <>
+        <line x2="10" y2="10" />
+        <text font-size="3">pair</text>
+    </>
+
+
+pub bars : List Int → Html msg
+bars ns = <g><For each={ns} keyed={λn → n}>{λn → <rect height={String.fromInt n} />}</For></g>

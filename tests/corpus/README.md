@@ -134,6 +134,9 @@ project) against it, one step per line, `#` for a comment:
                                 `(keydown's default prevented)` (or `keyup's`)
     dblclick <selector>         a bubbling `dblclick` (`detail` 2), with no
                                 `click`s before it
+    mouse <selector> <name>     a bubbling `MouseEvent` of that name
+                                (`mouseover`, `mouseout`, `mousemove`, …),
+                                button 0
     press <selector>            a user's click: trusted (below); a listener
                                 the driver added on the window, after every
                                 listener of the page, logs `(a later
@@ -303,7 +306,9 @@ difference carries a `<name>.chrome-expected`, which `test-browser`
 compares instead of `.expected`. The differences known today:
 
 - the HTML parser: after a misnested `</p>` (`<p><div></div></p>`),
-  Chrome makes an empty `<p></p>` and happy-dom does not;
+  Chrome makes an empty `<p></p>` and happy-dom does not; and inside an
+  SVG `<foreignObject>`, an HTML integration point, Chrome makes HTML
+  elements and happy-dom SVG ones (`browser/dom/SvgDrawing`);
 - event loop order: the page runs on Node's event loop, so the order of
   timers, `MessageChannel` messages and I/O against each other is Node's,
   and there is no `requestAnimationFrame` frame clock; a fixture about

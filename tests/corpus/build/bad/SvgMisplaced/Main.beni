@@ -1,0 +1,21 @@
+-- `markup_restructured` from the `ssr` lowering for an element in the
+-- wrong namespace's place (boundary.md §9.9), by the parser table `dom`
+-- shares: an SVG element inside an HTML one, which the page's parser would
+-- make an HTML element that draws nothing (11:15), and an HTML element
+-- inside an `<svg>`, which it would move out of the drawing (15:16).
+import Html exposing (Html)
+import Node
+
+
+outside : Html msg
+outside = <p><circle r="1" /></p>
+
+
+inside : Html msg
+inside = <svg><span>x</span></svg>
+
+
+main : Node.Program
+main =
+    _ = [ outside, inside ]
+    Node.print "unreachable"

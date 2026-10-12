@@ -58,11 +58,34 @@ pub const Scope = struct {
     in_p: bool = false,
     in_a: bool = false,
     in_form: bool = false,
+    /// Inside an `<svg>` and not inside one of its HTML integration points:
+    /// the parser reads what is written here as foreign content, where no
+    /// rule of HTML's below applies and every element it makes is an SVG
+    /// element (boundary.md §9.9).
+    svg: bool = false,
+
+    /// The scope of an element in the SVG namespace written at a root: a
+    /// template wraps it in an `<svg>` for its parser (backend.md §15.3),
+    /// and a server render places it inside one.
+    pub const svg_root: Scope = .{ .svg = true };
 
     /// The scope of the children of `name`, written in `outer`.
     pub fn enter(outer: Scope, name: []const u8) Scope {
         var s = outer;
         s.parent = name;
+        if (outer.svg) {
+            // An HTML integration point: its children are HTML again, and
+            // it bounds the scope a `<p>` is closed in.
+            if (isIntegrationPoint(name)) {
+                s.svg = false;
+                s.in_p = false;
+            }
+            return s;
+        }
+        if (std.mem.eql(u8, name, "svg")) {
+            s.svg = true;
+            return s;
+        }
         if (std.mem.eql(u8, name, "p")) s.in_p = true;
         // A table or a button starts a new scope for `<p>`'s closing.
         if (among(name, &.{ "table", "button", "td", "th", "caption", "marquee", "object", "template" })) s.in_p = false;
@@ -75,6 +98,9 @@ pub const Scope = struct {
 /// Why the parser would rebuild an element `child` written in `scope`, or
 /// null when it keeps it where it is written.
 pub fn misnested(scope: Scope, child: []const u8) ?[]const u8 {
+    // Foreign content: none of HTML's rules below apply. Which elements may
+    // be written there is `misplaced`'s.
+    if (scope.svg) return null;
     if (scope.parent) |parent| {
         if (isVoid(parent)) return "a void element has no end tag, so the parser makes its children its siblings";
         if (content(parent) != .normal) return "the parser reads this element's content as text, so a child element would be text";
@@ -95,6 +121,35 @@ pub fn misnested(scope: Scope, child: []const u8) ?[]const u8 {
     if (scope.in_a and std.mem.eql(u8, child, "a")) return "the parser closes an open `<a>` before it opens another";
     if (scope.in_form and std.mem.eql(u8, child, "form")) return "the parser ignores a `<form>` inside another";
     return null;
+}
+
+/// Why an element the vocabulary declares in the SVG namespace (`svg`) or
+/// in HTML's would not be that element where it is written, or null when it
+/// would (boundary.md §9.9). The parser decides an element's namespace by
+/// where it stands, not by its name: outside an `<svg>` it makes an HTML
+/// element of an SVG name, which draws nothing, and inside one it makes an
+/// SVG element of an HTML name — or, for most of HTML's phrasing and block
+/// elements, ends the `<svg>` before it. `a`, `title`, `style` and `script`
+/// are names of both, and are the SVG element inside one.
+pub fn misplaced(scope: Scope, child: []const u8, svg: bool) ?[]const u8 {
+    if (svg and !scope.svg and !std.mem.eql(u8, child, "svg"))
+        return "an SVG element is one only inside an `<svg>`, and not in the HTML its `<foreignObject>` holds; elsewhere the parser makes an HTML element of its name, which draws nothing";
+    if (!svg and scope.svg and !among(child, &.{ "a", "title", "style", "script" }))
+        return "inside an `<svg>`, the parser makes an SVG element of an HTML element's name, or ends the `<svg>` before it; HTML inside a drawing is written in a `<foreignObject>`";
+    return null;
+}
+
+/// How the parser reads the content of `name` written in `scope`: inside
+/// an `<svg>`, a `<style>` or a `<title>` is the SVG element, whose content
+/// is ordinary.
+pub fn contentIn(scope: Scope, name: []const u8) Content {
+    return if (scope.svg) .normal else content(name);
+}
+
+/// `foreignObject`, `desc` and `title`: the SVG elements whose content the
+/// parser reads as HTML.
+fn isIntegrationPoint(name: []const u8) bool {
+    return among(name, &.{ "foreignObject", "desc", "title" });
 }
 
 /// Whether text written directly inside `parent` would be moved out of it
@@ -146,4 +201,20 @@ test "a block element closes an open paragraph, and table parts need their table
     try t.expect(misnested(Scope.enter(Scope.enter(.{}, "table"), "tbody"), "tr") == null);
     try t.expect(misnested(Scope.enter(.{}, "div"), "td") != null);
     try t.expect(misnested(Scope.enter(.{}, "a"), "a") != null);
+}
+
+test "inside an svg, HTML's rules give way to the namespace's" {
+    const t = std.testing;
+    const svg = Scope.enter(Scope.enter(.{}, "p"), "svg");
+    try t.expect(misnested(svg, "div") == null);
+    try t.expect(misplaced(svg, "div", false) != null);
+    try t.expect(misplaced(svg, "rect", true) == null);
+    try t.expect(misplaced(svg, "title", false) == null);
+    try t.expectEqual(Content.normal, contentIn(svg, "style"));
+    const html = Scope.enter(svg, "foreignObject");
+    try t.expect(misplaced(html, "div", false) == null);
+    try t.expect(misplaced(html, "rect", true) != null);
+    try t.expect(misnested(html, "div") == null);
+    try t.expect(misplaced(.{}, "rect", true) != null);
+    try t.expect(misplaced(Scope.svg_root, "rect", true) == null);
 }
