@@ -527,7 +527,8 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
         platform_names[i] = "";
         if (packages[i] != .platform) continue;
         const chain = session.options.chain orelse continue;
-        const layer = if (f.int() < session.file_layers.len) session.file_layers[f.int()] else 0;
+        if (f.int() >= session.file_layers.len) continue;
+        const layer = session.file_layers[f.int()];
         if (layer < chain.layers.len) platform_names[i] = chain.layers[layer].name;
     }
     // The targets, in path order (fast-compiler.md §10).
