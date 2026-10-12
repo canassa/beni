@@ -2392,3 +2392,165 @@ record is, any other function applied (`write-sets.md` §3.5's literals are unch
 withdrawn: `browser-tea` calls `init` at mount too, so a throw in it is a defect of the mount on both
 platforms and `browser/direct/InitThrows` has one golden. A program built by a function,
 `counter start = Tea.sandbox { init = λ⊤ → start, … }`, is what `program_mounted_twice` now suggests.
+
+### *Amended 2026-10-13 (slice S4, as specified):* guarantees and the rest of rendering
+
+§5, §8, §9 and §14 name S4's pieces; this fixes what they leave open, before a line of it is
+written, as S2's and S3's amendments did. The interface additions are `boundary.md` §9.4.6's
+version 1.10, written there as they are built. S4 is built in this order, each step on its own
+commit with its fixtures: **the value path**, **controlled inputs**, **branches and `Show`**,
+**derived values**, then **programs, defects and the SVG root**, then the measurement.
+
+**Q3, and what moves to S5.** Q3 is answered (the owner, 2026-10-09): `Browser.flush` does nothing
+on this platform and `Dom.rendered` resolves at the end of the dispatch. A `Tea.sandbox` has no
+command, so neither `Dom.rendered`, nor after-render work, nor a send from it can be reached before
+`Tea.element` is compiled: `end()` in S4 is the edited set's reconcile (item 2) and nothing else,
+and **`RenderedSends` and `DefectInAfterRender` move to S5** with `Tea.element`, as `tea/LatestTagger`
+moved from S3 (§14 lists them under S4, whose subject cannot hold them). So does the fibers'
+teardown (`Task.shutdown`, §8.2): a page reaches `Task` only through commands.
+
+**1. The value path (§5.2, §16).** What it is: `dom`'s kinds and blocks, `backend.md` §15.3–§15.5,
+unchanged. The `direct` lowering's `root` is `dom`'s, so a markup root that is a value evaluates to
+a block `{ t, v }` whose kind `{ m, p }` is hoisted once per site; `Lowering.no_markup_values` is
+no longer set, and `Html.text` and `Html.map` are `Direct`'s exports of those names. What runs a
+kind is `Direct`'s: the functions of `browser`'s `Rt` that touch only the DOM — `template`,
+`slot`, `unit`, `patch`, `place`, `put`, `drop`, `swap`, `childHtml`, `childMaybe`, `childList`,
+`forKeyed`, `forPosition`, `show`, `hide`, `restate`, `text`, `map` — taken as they are (imported
+from `Rt` where the module system allows it, copied otherwise; they keep no page-wide state), and
+its own for what enters program code or keeps state for the page: the events, the controlled
+inputs (item 2), the fuzz hook.
+
+- **What is on it.** Every markup the platform does not write in place: a hole — `html`, `Maybe
+  Html` or `List Html` — whose value is not a call S3 writes in place and not a branch item 3
+  compiles; so markup of another module, a helper that calls itself, a helper whose body computes
+  its markup (an `if`, a `case`: the branch is then the kind's, inside the helper), a component
+  with children between its tags, markup held in a `let`, a record or an argument, `Html.text`,
+  and an `Html.map` of any of these. And a **whole `For`** whose row is not one element written
+  in place (several nodes, text, an `if`, a `case` or a `let` around the row's markup) or that has
+  a `fallback`: such a `For` is planned by `dom` as a markup value of its own — its rows `dom`'s,
+  `forKeyed` or `forPosition` — and placed through a value slot like any other. §6's scripts move
+  one element per row; a row of another shape is the value path's, at today's cost.
+- **A value slot.** In a site this platform writes (the view's root, a row, an arm, a shared
+  site) each such hole is a slot `Direct.slot(parent, marker, null)`, made at mount where the hole
+  stands, and an op of a group of its own read set (§5.3): the group evaluates the value and hands
+  it to `childHtml`, `childMaybe` or `childList`, which patches the instance shown when the block
+  is of its kind and mounts a new one in its place otherwise (`backend.md` §15.4). The compare is
+  the kind's, per hole, inside `p` — a structure is never compared by its identity (§5.3). A key
+  whose writes do not conflict with the hole's read set leaves the slot as it is; a value that is
+  made on every render (`Tree.everyRender`) makes the group every handler's (§5.3).
+- **Events.** A kind's handler node listens on itself, for every event — `dom`'s form for an
+  event that is not delegated, `Direct.listen(el, name, flags)` — so the DOM's bubbling orders it
+  against this platform's own listeners as Elm orders handlers (§4.2), and no document listener
+  exists. The declaration's flags run in the DOM listener; the body — the message the node holds,
+  or makes of the event's payload, passed through each `Html.map` context it is inside, innermost
+  first (`$$cx`, `Rt.map`'s) — runs inside `send`, and the message goes to the **dispatcher**
+  (§4.4) of the program whose mount node is nearest above the node: a program with a value slot
+  writes its dispatcher on its mount node as `$$root`, where `run` writes `true` (§8.2's mark,
+  which the row walk's discard of another program's nodes reads, unchanged). A program with a
+  value slot therefore has a carrier and a dispatcher, whether or not its kinds hold a handler.
+- **The verify mode** (§8.3) checks a value slot by its block: the value is computed again and
+  compared with the block the slot's instance shows (`i.b`) — its kind by identity and its values
+  structurally, by `same` (a function is not compared). What a kind writes inside itself is
+  `dom`'s and is not walked: a known limit of the check, in §16's terms.
+- **The dump** (§11) already counts these roots (`site … value`, `markup_value_roots`); S0's kill
+  criterion 1 bounded their number.
+
+**2. Controlled inputs (§8.1).** A `stateful` attribute is compiled: its write is
+`Direct.control(el, prop, v)` — `backend.md` §15.3's write: the value kept on the element as
+`$$s[prop]` and written when the page's differs — in a group compared by its slot as any
+attribute. The **edited set** is `browser`'s, in `Direct` (it keeps state for the page): the
+first `control` installs the four capture listeners (`input`, `change`, `click`, `reset`) and
+`pageshow`, which mark the controls an edit may have changed, and `edited(el)` marks one a write
+of the runtime's may have changed (`dom`'s kinds call it); **`end()`** — called by `send` after the
+queue drains and before the verify mode — puts every marked control back to its kept value and
+clears the marks; a `reset`'s and a prevented checkable click's controls are put back in a task,
+which does nothing once the page has stopped. The marks are the page's, one set, since every
+dispatch ends with `end()`. And the **no-op send** (§8.1): the first `control` also adds a
+bubble-phase listener on the document for the four names, `send(noop, e)`, so `end()` runs after
+every user edit, handled or not. A page with no `stateful` attribute ships none of it. Pinned by
+the `browser/dom/Controlled*` pages, rebuilt for this platform where their subject is a sandbox,
+and `ControlledNoHandler`.
+
+**3. Branches and `Show` (§5.5).** What is compiled: an `html` hole, in markup this platform writes
+in place, whose value is an `if` or a `case` (its `let`s allowed, as a helper's), each of whose
+arms' results is markup written in place or a call S3 writes in place — an arm whose result is
+anything else holds one value slot (item 1); and a `Show`, keyed or by identity, its body an arm
+whose item is the `Just`'s payload and its fallback, when it has one, a second arm (markup written
+in place, or a value slot).
+
+- **An arm's state is an instance**, `{ …nodes, …slots, …lists, …branches }`, made at its mount as
+  a row's is (§6.1), and a branch is `{ k, i }` — the live arm's number (`-1`: nothing shown) and
+  its instance — a name of the mount for a branch of the view's root, a field of the instance it
+  is in otherwise. **Teardown drops the instance**: its nodes are removed, and nothing reads its
+  slots again; the arm mounted next is a new instance, every slot `unset`. That is §5.5's reset by
+  construction rather than by writing the sentinel back (amending "module-level", as S1's
+  amendment did for §5.2): an `A → B → A` with the same values writes every hole of the new `A`.
+- **An arm's markup** is a site of any shape — several nodes, text, holes — placed before the
+  branch's marker; its instance keeps its top-level nodes, which teardown removes.
+- **The handler** (§4.1 step 3): a branch whose scrutinee's reads conflict with the key's writes
+  computes its arm again — the same arm is **visited**, another is torn down and the new one
+  **mounted** from the current model, and an arm mounted in this dispatch is not visited again; a
+  branch whose scrutinee does not conflict visits its live arm only if some group, list or
+  branch of that arm is called. Every visit is under the arm's liveness, `if (b.k === 1) { … }`.
+  The scrutinee's read set is the hole's own facts (`write-sets.md` §3.6: an `Alt` reads its
+  scrutinee and every arm), which over-calls the arm computation by the arms' reads and never
+  misses a switch.
+- **A `case` arm's variables** are bound again from the scrutinee wherever the arm's code
+  evaluates a value — a group, a list's items, a nested branch — the scrutinee evaluated again
+  where the arm's values are (a path read, as §5.3's groups read), through `cx` (version 1.10); a
+  `Show` body's item is the `Just`'s payload, read the same way.
+- **`Show`.** A keyed `Show` keeps its arm while the key is the same (SameValueZero, as a rekey
+  compares, S2's review) and visits its body with the new payload; another key, or `Nothing`,
+  tears it down. A `Show` by identity keeps it while the payload is `===` the one shown.
+- **The verify mode** checks each branch's `k` against the arm computed again, and the live arm
+  as a site.
+- **A branch inside a row** is a field of the row's instance and compiled; a branch at a row's
+  root makes the row not one element, so its `For` is on the value path (item 1).
+
+**4. Derived values (§5.4).** A constant `let` of `view`'s body, or of an arm's, that only markup
+reads is a **derived value**: a slot, and a function that computes it again, called by every key
+whose writes conflict with the `let`'s read set — anchored as a hole's (`write-sets.md` §3.6), by
+version 1.10 — in step 2 for the view's own `let`s and first in the arm's visit, under its
+liveness, for an arm's (§4.1 (a)), before anything that reads it; and at the mount of its arm (or
+of the page) before the arm's groups. The groups that read it read its slot. A `let` that reads an
+earlier one reads that one's slot and its read set includes that one's (§5.4); a `let` no markup
+reads runs where its markup is made, as S3's rule says (§8.4). The verify mode computes each
+derived value again and compares it structurally (§8.3). The `let`s of a helper written in place
+keep S3's rule (evaluated with the values that read them).
+
+**5. Nested updates (§7.3).** Nothing new is compiled: a nested key's handler runs the arm S1
+writes, with the sub-message made as a value (§4.1); the release specialiser that would remove it
+is §4.1's `--release` work and is not built in S4. The depth sweep measures what it costs.
+
+**6. Programs, defects, the SVG root.** **Programs**: a program built by a function has its
+state per mount since S1 (the mount's own scope); S4 pins it (`ProgramsByFunction`), pins an
+outer list's walk discarding an inner program's handlers (`NestedPrograms`), and rebuilds
+`TwoPrograms` and `MountedPrograms` where their subject is a sandbox. **Defects**: the guard, the
+crash screen and the stop are S0's and S1's; S4 rebuilds the `browser/dom/Defect*` pages and
+adds a defect in a value-path handler and in a derived value. **The SVG root** (`boundary.md`
+§9.9 (f)): a `view` whose root is an SVG element other than `<svg>` is compiled — its template
+parsed inside the `<svg>` wrapper and taken from inside it, as a row's is since 2026-10-12 — and
+mounted into the mount node it is given; mounted at an `<svg>` (`Browser.mountAt`), it draws.
+`browser/direct/SvgRoot` mounts one at an `<svg>` in the page. A MathML root other than `<math>`
+stays refused (no vocabulary declares MathML).
+
+**7. The fixtures and the oracles.** Every fixture of §14's S4 list whose subject a sandbox can
+hold is built for both platforms against one golden (§12.3); each `browser/dom/` page S4 reaches is
+rebuilt on `browser-direct` with `Browser.program` written `Tea.sandbox`, as S3 rebuilt its own,
+keeping what is another slice's out and naming it. New: `ValuePath` (another module's markup, a
+helper that calls itself, a `List Html` hole, `Html.text`, an `Html.map` over a lambda, a
+component with children, each with a handler), `ValuePathEvents` (a value-path handler inside a
+direct handler's element, and the reverse, with `stopPropagation`: Elm's order), `WholeFor` (a
+`For` whose row is an `if`, and one with a `fallback`), `ControlledNoHandler`, `BranchReturn`,
+`LateResponse` (as a sandbox: a message for an arm no longer shown, and for a `Show` that closed),
+`LetInArm`, `SwapAndShow`, `ProgramsByFunction`, `NestedPrograms`, `SvgRoot`, and
+`EventReadsModel`'s removed-focused-input half (§4.2, the S1 note). `emit/direct/` pins a value
+slot, a branch with its liveness test, a derived value's slot and a `control` write. The value
+fuzz runs on each, within the budget alone (S2's amendment).
+
+**8. What S4 is judged by** (§13; `plans/compile-away.md` §7's S4 row): live rows 10 000 ≤ 1.15×
+vanilla, derived 100 000 flat and ≤ 1.15×, depth 128 ≤ 1.3× (S7 owns 1.15×), each untraced, in one
+batch with vanilla, Solid 1, Solid 2, `browser-tea`, P3 where it has a page, and the table app
+again; research 84's protocol for an operation under a millisecond. Kill criterion 8 at every
+step. §13 names no kill criterion of S4's own; a target missed is reported, not tuned around
+(rule 10).
