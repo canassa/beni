@@ -59,10 +59,8 @@ pub type Cmd msg
 --| program that never builds `Perform` or `Keyed` reaches no fiber. A
 --| program never needs to build or read one.
 --|
---| A key path is held innermost segment first: `map` adds the segment of
---| the component it wraps at the end, where a list grows, and the
---| architecture reverses the path once when it reads the item, so its key
---| is the outermost segment first.
+--| A key path is held outermost segment first, as the architecture reads
+--| it: `map` puts the segment of the component it wraps in front.
 pub type Item msg
     = Perform (Job msg)
     | Now (Job msg)
@@ -160,19 +158,28 @@ mapItem item segment tag =
             Now (Hosted.mapJob job tag)
 
         Keyed path policy job →
-            Keyed [ …path, segment ] policy (Hosted.mapJob job tag)
+            Keyed (extended path segment) policy (Hosted.mapJob job tag)
 
         KeyedNow path policy job →
-            KeyedNow [ …path, segment ] policy (Hosted.mapJob job tag)
+            KeyedNow (extended path segment) policy (Hosted.mapJob job tag)
 
         Cancel path →
-            Cancel [ …path, segment ]
+            Cancel (extended path segment)
 
         CancelAll path →
-            CancelAll [ …path, segment ]
+            CancelAll (extended path segment)
 
         After work →
             After (Hosted.mapLater work tag)
+
+
+-- A key path with `segment` in front, as a list of its own. The item it
+-- came from is the caller's and may be held elsewhere, so `path` is never
+-- the base a construction writes (`ownership-checker.md` §19 item 1), as
+-- it would be in `[ segment, …path ]`: the base is the new one-segment
+-- list, and `path` is read into it.
+extended : List Key, Key → List Key
+extended path segment = [ …[ segment ], …path ]
 
 
 --| Run `body` in the after-render phase of the flush that renders this

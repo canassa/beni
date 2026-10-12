@@ -49,8 +49,11 @@ both sub rest =
                 None →
                     Listen list
 
+                -- `list` is the caller's, so it is read into a list of
+                -- its own, never the base a construction writes
+                -- (`ownership-checker.md` §19 item 1).
                 Listen more →
-                    Listen (List.append list more)
+                    Listen [ …[], …list, …more ]
 
 
 --| Every declaration, in order: its key and its work. What the
