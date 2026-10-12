@@ -236,6 +236,14 @@ abbrev M := StateT State (Except String)
 
 def countWrite : M Unit := modify fun s => { s with writes := s.writes + 1 }
 
+/-- Record a finished call of declaration `id` in the call log, when the run
+    asked for one (`pre` is the state before the call). Calls are recorded as
+    they return, so nested calls come before the call that made them. -/
+def logCall (pre : State) (id : Nat) (actuals caps : List Value) (r : Value) : M Unit :=
+  if pre.logCalls then
+    modify fun s => { s with calls := s.calls.push (CallRecord.mk id actuals caps pre.heap pre.kept s.heap s.kept r) }
+  else pure ()
+
 def tick : M Unit := do
   let s ← get
   if s.fuel == 0 then throw "in-place execution exhausted fuel"
@@ -343,8 +351,7 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         let d ← ds[id]?.toExcept "in-place missing declaration"
         let pre ← get
         let r ← eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
-        if pre.logCalls then
-          modify fun s => { s with calls := s.calls.push (CallRecord.mk id actuals caps pre.heap pre.kept s.heap s.kept r) }
+        logCall pre id actuals caps r
         pure r
       | .recur args =>
         let some (id, caps) := self | throw "recursion outside function"
@@ -352,8 +359,7 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         let d ← ds[id]?.toExcept "in-place missing declaration"
         let pre ← get
         let r ← eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
-        if pre.logCalls then
-          modify fun s => { s with calls := s.calls.push (CallRecord.mk id actuals caps pre.heap pre.kept s.heap s.kept r) }
+        logCall pre id actuals caps r
         pure r
       | .branch a yes no =>
         let .int n ← atom env a | throw "in-place condition"

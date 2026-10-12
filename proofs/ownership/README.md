@@ -27,7 +27,11 @@ and the generator alone catches each of them on each of three seeds
 Two more are required through their probe only; three are known gaps. The
 third review's planted holes are re-run on the final generator; the other
 source-level edits were last run on an earlier v5 generator (RESULTS.md says
-which); the misses are analysed in COVERAGE.md.
+which) and are not current until re-run; the misses are analysed in
+COVERAGE.md. One planted hole, `hiddencopy`, is in the in-place interpreter,
+not the checker: an interpreter that copies on every write computes the value
+semantics, so no generated program can disagree under it, and only the
+fixtures' runs catch it.
 
 ## Run
 
