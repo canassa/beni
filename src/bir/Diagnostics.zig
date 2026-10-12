@@ -89,6 +89,14 @@ pub const Item = struct {
         sync_not_function,
         sync_handed_back,
         sync_outside_platform,
+        /// `misplaced_ownership_word` (ownership-checker.md §24.4): why the
+        /// word was refused.
+        own_outside_platform,
+        own_nested,
+        own_not_function,
+        own_result_word,
+        own_parameter_word,
+        own_impossible,
     };
 };
 
@@ -175,6 +183,55 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\`sync (String → msg)`: the mark belongs to that one arrow. An alias of a
             \\function type is not enough, because the mark must be where the arrow is.
         ),
+        .misplaced_ownership_word => switch (item.markup) {
+            .own_outside_platform => try w.print(
+                \\Only core and a platform package may write the ownership word `{s}`.
+                \\
+                \\Ownership words say what a function does with the lists it is handed — read
+                \\them, keep them, return them, write them — for code the checker cannot see
+                \\into: a `foreign`, or a function written over `Js`. Everywhere else the checker
+                \\reads that from the function's body, so a word here could only repeat it or
+                \\contradict it. Remove the word; the signature means the same without it.
+            , .{text}),
+            .own_nested => try w.print(
+                \\The ownership word `{s}` is inside a type.
+                \\
+                \\A word describes a whole parameter or the whole result, so it stands in front
+                \\of a parameter of the signature's arrow or in front of its result:
+                \\`join : borrowed List String, String → String`. Move it there, or remove it.
+            , .{text}),
+            .own_not_function => try w.print(
+                \\`{s}` describes a function parameter, and this parameter's type is not a
+                \\function written out.
+                \\
+                \\`once`, `many` and `owned` say how often a function parameter is called and
+                \\what it is handed. Write the function type in the signature, as in
+                \\`once (⊤ → a)`, or use a word for a value: `borrowed`, `aliased`, `returned`,
+                \\`escaped`, `consumed` or `unused`.
+            , .{text}),
+            .own_result_word => try w.print(
+                \\`{s}` describes a result, and this is a parameter.
+                \\
+                \\`fresh`, `exclusive` and `unknown` say what a call returns, so they stand in
+                \\front of the type after the last `→`. A parameter takes `unused`, `borrowed`,
+                \\`aliased`, `returned`, `escaped` or `consumed`.
+            , .{text}),
+            .own_parameter_word => try w.print(
+                \\`{s}` describes a parameter, and this is the result.
+                \\
+                \\A result takes `fresh` (with `exclusive`), `escaped` or `unknown`. To say that
+                \\the result is one of the parameters, write `returned` in front of that
+                \\parameter.
+            , .{text}),
+            else => try w.print(
+                \\The ownership word `{s}` cannot hold together with another word written here.
+                \\
+                \\A position takes each word once; `unused` and `borrowed` stand alone; a value
+                \\is `aliased` or `returned`, not both; a function is called `once` or `many`,
+                \\and `owned` needs one of them; a result is one of `fresh`, `escaped` and
+                \\`unknown`, and `exclusive` needs `fresh`; a function is never `consumed`.
+            , .{text}),
+        },
         .foreign_outside_platform => try w.writeAll(
             \\This `foreign` declaration is outside a platform package.
             \\

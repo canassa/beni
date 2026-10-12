@@ -39,28 +39,28 @@ pub foreign pure undefined : Value
 
 
 --| The value itself, seen as a JavaScript value. Compiled to nothing.
-pub foreign pure from : a → Value
+pub foreign pure from : returned a → Value
 
 
 --| The JavaScript value read back as whatever the caller says it is.
 --| Compiled to nothing, and unchecked: the caller answers for the type.
-pub foreign pure to : Value → a
+pub foreign pure to : returned Value → a
 
 
 --| `a === b`.
-pub foreign pure same : a, a → bool
+pub foreign pure same : unused a, unused a → fresh bool
 
 
 --| `v === null`.
-pub foreign pure isNull : Value → bool
+pub foreign pure isNull : unused Value → fresh bool
 
 
 --| `v === undefined`.
-pub foreign pure isUndefined : Value → bool
+pub foreign pure isUndefined : unused Value → fresh bool
 
 
 --| `v == null`: null or undefined.
-pub foreign pure isNullish : Value → bool
+pub foreign pure isNullish : unused Value → fresh bool
 
 
 --| `a & b`.
@@ -93,13 +93,13 @@ pub foreign pure rem : int, int → int
 
 --| `typeof v`: `"string"`, `"number"`, `"object"` and the rest, as a
 --| `Value` to compare with `same`.
-pub foreign pure typeOf : Value → Value
+pub foreign pure typeOf : unused Value → fresh Value
 
 
 --| `typeof v === "name"`, the name a string literal: `Js.typeIs v
 --| "string"`. What a module below `String` asks instead of comparing
 --| `typeOf` with a string it may not write (`boundary.md` §4.2).
-pub foreign pure typeIs : Value, name → bool
+pub foreign pure typeIs : unused Value, borrowed name → fresh bool
 
 
 --| `v instanceof C`: what a `catchIf` test asks of what was thrown,
@@ -145,7 +145,7 @@ pub foreign impure construct : Value, args → Value
 
 --| `[a, b]`: a new JavaScript array, its elements written as a list
 --| literal.
-pub foreign impure array : elements → Value
+pub foreign impure array : aliased elements → fresh Value
 
 
 --| `{k1: v1, k2: v2}`: a new JavaScript object, its fields written as a
@@ -153,7 +153,7 @@ pub foreign impure array : elements → Value
 --| The keys are written in the order given and never renamed, so every
 --| object one call makes has one shape; the values are made in the order
 --| given, each of any type.
-pub foreign pure object : fields → Value
+pub foreign pure object : aliased fields → fresh Value
 
 
 --| `function () { const self = this; … }`: a function JavaScript calls as
@@ -166,7 +166,7 @@ pub foreign pure method : sync (Value → a) → Value
 --| `for (const x of xs) f(x)`: `f` for each element of an iterable, in
 --| order. Written with a lambda, `Js.each xs λx → …`, the lambda's body
 --| is the loop's body.
-pub foreign impure each : Value, (Value → ⊤) → ⊤
+pub foreign impure each : escaped Value, many (Value → ⊤) → ⊤
 
 
 --| `o[k]`: an element of an array, or of anything indexed by number.
@@ -191,15 +191,15 @@ pub foreign type Ref a
 
 
 --| A new cell holding `v`.
-pub foreign pure ref : a → Ref a
+pub foreign pure ref : escaped a → fresh Ref a
 
 
 --| What the cell holds now.
-pub foreign impure read : Ref a → a
+pub foreign impure read : borrowed Ref a → unknown a
 
 
 --| Make the cell hold `v`, a statement.
-pub foreign impure write : Ref a, a → ⊤
+pub foreign impure write : borrowed Ref a, escaped a → ⊤
 
 
 --| `try { body() } finally { cleanup() }`: the body's value, and the
@@ -209,7 +209,7 @@ pub foreign impure write : Ref a, a → ⊤
 --| no function is made. Both are `sync`: a body that suspended would leave
 --| the guard before its rest ran (`backend.md` §4, *`Js.finally` is `try …
 --| finally`*).
-pub foreign impure finally : sync (⊤ → a), sync (⊤ → ⊤) → a
+pub foreign impure finally : once returned sync (⊤ → a), once sync (⊤ → ⊤) → a
 
 
 --| `try { return body() } catch (e) { if (!test(e)) throw e; return
@@ -222,7 +222,11 @@ pub foreign impure finally : sync (⊤ → a), sync (⊤ → ⊤) → a
 --| handler are the `catch` block, and no function is made. All three are
 --| `sync`, as `finally`'s arguments are (`backend.md` §4, *`Js.catchIf`
 --| is `try … catch`*).
-pub foreign impure catchIf : sync (⊤ → a), sync (Value → bool), sync (Value → a) → a
+pub foreign impure catchIf :
+      once returned sync (⊤ → a)
+    , once sync (Value → bool)
+    , once returned sync (Value → a)
+    → a
 
 
 --| The body's value, and a promise: that computing it is total, throws
@@ -233,7 +237,7 @@ pub foreign impure catchIf : sync (⊤ → a), sync (Value → bool), sync (Valu
 --| `Js` declaration: the caller answers for it. Written with a lambda,
 --| `Js.pure λ⊤ → …` is the lambda's body and no function is made
 --| (`backend.md` §4, *`Js.pure` is its body*).
-pub foreign pure pure : sync (⊤ → a) → a
+pub foreign pure pure : once returned sync (⊤ → a) → a
 
 
 --| `True` in a development build and `False` under `--release`. An `if`
@@ -266,7 +270,7 @@ pub foreign pure maySuspend : f → bool
 --| names the type `compare` answers, since this module names no core type.
 --| What `Hosted.key` tells the types of two keys apart with (`boundary.md`
 --| §9.8.3; `static-dispatch-spike.md` §8.6).
-pub foreign pure fingerprint : k, order → name
+pub foreign pure fingerprint : unused k, unused order → fresh name
     where k.compare : k, k → order
 
 
@@ -277,4 +281,4 @@ pub foreign pure fingerprint : k, order → name
 --| `Js.suspending λ⊤ → …` is the lambda's body and a suspension point
 --| where it is not in tail position (`backend.md` §4, *`Js.suspending` is
 --| its body*).
-pub foreign suspends suspending : sync (⊤ → a) → a
+pub foreign suspends suspending : once returned sync (⊤ → a) → a

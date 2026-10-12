@@ -3,8 +3,8 @@ module EntryCommand
   41:33 List.push model.items: accepted param
   58:5 entry EntryCommand.captures model.items: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
   68:5 entry EntryCommand.counts model.items: accepted entry
-  summary captures: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 fresh5{lost}, .1#Cmd.0[*]#Now.0⋆ ~fresh4{lost}, .1#Cmd.0[*]#Perform.0 fresh2{lost}, .1#Cmd.0[*]#Perform.0⋆ ~fresh1{lost} ~π2.items
-  summary counts: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 fresh5{lost}, .1#Cmd.0[*]#Now.0⋆ ~fresh4{lost}, .1#Cmd.0[*]#Perform.0 fresh2{lost}, .1#Cmd.0[*]#Perform.0⋆ ~fresh1{lost}
+  summary captures: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇ π2.items
+  summary counts: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
   summary view: π1.items R; res fresh1{lost}
   demands 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
 total 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1

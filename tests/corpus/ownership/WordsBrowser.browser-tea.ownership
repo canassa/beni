@@ -1,0 +1,10 @@
+module WordsBrowser
+  32:37 List.push model.items: accepted param
+  56:14 construction rows: accepted fresh
+  62:5 entry WordsBrowser.update model.items: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  summary update: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 shared(Cmd.none)#Cmd.0
+  summary view: π1.items RA; res fresh1{lost}, ⋆ ~π1.items
+  summary keys: unused
+  demands 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause platform 1

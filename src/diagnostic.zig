@@ -407,6 +407,11 @@ pub const Code = enum {
     /// putting elements in front of an accumulator a loop carries. A
     /// `warning`, the checker's (checker-v2.md §35).
     prepend_in_loop,
+    /// Appended on 2026-10-12 with ownership words (ownership-checker.md
+    /// §24.4): a word outside core and the platforms (Change 5(b) is not
+    /// approved), where no position takes it, or with one it cannot hold.
+    /// Lowering's.
+    misplaced_ownership_word,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -583,6 +588,7 @@ pub fn title(code: Code) []const u8 {
         .view_not_compiled => "VIEW NOT COMPILED",
         .program_mounted_twice => "PROGRAM MOUNTED TWICE",
         .prepend_in_loop => "PREPEND IN LOOP",
+        .misplaced_ownership_word => "MISPLACED OWNERSHIP WORD",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

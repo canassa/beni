@@ -115,7 +115,11 @@ pub const magic = "BENIFE\x00\x00";
 /// which shifted every later tag; the parser and lowering have new codes.
 /// 21 (2026-10-02): the parser reports `unit_spelling_removed` and lowering
 /// `never_spelling_removed` (language.md §12.10).
-pub const format_version: u32 = 21;
+/// 22 (2026-10-12): ownership words (ownership-checker.md §24) — a
+/// declaration row carries `own_start`/`own_end`, `Ast.Node.Tag` gained
+/// `type_own`, which shifted every later tag, and lowering has a new code,
+/// `misplaced_ownership_word`.
+pub const format_version: u32 = 22;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -865,7 +869,8 @@ test "the row encoder's widths are the structures', with the padding gone" {
     // three of the rows it counted, and §11 reports what the bytes actually
     // came to.
     // 93 since a declaration carries a `foreign` value's rung, one byte.
-    try testing.expectEqual(@as(u32, 93), rowBytes(Bir.Decl));
+    // 101 since it carries its ownership words' range, two words.
+    try testing.expectEqual(@as(u32, 101), rowBytes(Bir.Decl));
     try testing.expectEqual(@as(u32, 20), rowBytes(Bir.Ctor));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Local));

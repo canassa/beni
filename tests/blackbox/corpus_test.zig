@@ -2734,7 +2734,9 @@ const Case = struct {
                 }
                 const r = try c.compiler(&.{ "dump", "--stage=ownership", flag, path });
                 try expectExit(0, r);
-                try c.expectGolden(try std.fmt.allocPrint(c.arena, "{s}.ownership", .{name}), r.stdout);
+                // A test platform is named by its directory
+                // (`tests/platforms/page`); its golden by the last part.
+                try c.expectGolden(try std.fmt.allocPrint(c.arena, "{s}.ownership", .{std.fs.path.basename(name)}), r.stdout);
             }
             if (!any) return error.PlatformFileEmpty;
             return;

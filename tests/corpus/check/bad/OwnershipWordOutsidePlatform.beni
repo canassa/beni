@@ -1,0 +1,8 @@
+-- check/bad: `misplaced_ownership_word` (ownership-checker.md §24.4),
+-- lowering's: a package that may not write `foreign` may not write ownership
+-- words either — thesis Change 5(b) is not approved, and the checker reads a
+-- user's declaration from its body. One message per signature, at its first
+-- word (7:14), and the signature is read without its words, so the body
+-- still checks.
+pub joined : borrowed List String, String → fresh String
+joined parts separator = String.join parts separator

@@ -339,6 +339,8 @@ pub const Summary = struct {
     xreq: []const XAtom = &.{},
     /// §18.8, a class only: it writes what it captured, so it runs once.
     once: bool = false,
+    /// §24: read from the declaration's ownership words, not off a body.
+    words: bool = false,
 
     fn funOf(s: *const Summary, j: u32) ?FunFacts {
         for (s.funs) |f| if (f.param == j) return f;
@@ -466,6 +468,10 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         r.demands = try dedupe(demands.items);
         var lines: std.ArrayList(SummaryLine) = .empty;
         for (bir.decls, 0..) |d, di| {
+            // A `crossing foreign type` (§24.2), on the trusted surface.
+            if (d.kind == .foreign_type) for (bir.ownSlots(d)) |s| if (s[0] == Bir.own_type) {
+                try lines.append(arena, .{ .text = try std.fmt.allocPrint(arena, "crossing {s} (words)", .{o.in.interner.slice(bir.symbol(d.name))}) });
+            };
             if (d.params == 0) continue;
             if (d.kind != .value and d.kind != .foreign_value) continue;
             const s = (try o.ensureSummary(m, @intCast(di))) orelse continue;
@@ -544,6 +550,12 @@ fn ensureSummary(o: *Ownership, m: u32, d: u32) Allocator.Error!?*const Summary 
     }
     if (try o.assertedRow(m, d)) |row| {
         slot.sum = row;
+        slot.state = .done;
+        return &slot.sum;
+    }
+    // A `foreign` has its words' summary, or the thesis's row (§24.5).
+    if (decl.kind == .foreign_value) {
+        slot.sum = (try o.wordsRow(m, d)).?;
         slot.state = .done;
         return &slot.sum;
     }
@@ -639,6 +651,12 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
         if (dx.kind != .value or dx.body == .none) continue;
         if (slots[x].state != .none) continue;
         if (try o.assertedRow(m, x)) |row| {
+            slots[x] = .{ .state = .done, .sum = row };
+            continue;
+        }
+        // A beni declaration with words has their summary (§24.5); a report
+        // walks its body for its lines alone (`run`).
+        if (try o.wordsRow(m, x)) |row| {
             slots[x] = .{ .state = .done, .sum = row };
             continue;
         }
@@ -1115,6 +1133,112 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Ownership words (§24)
+// ---------------------------------------------------------------------------
+
+/// The summary a declaration's ownership words give (§24.2), or the
+/// thesis's row for a `foreign` that carries none (§24.5). Null for a beni
+/// declaration with no words: its summary is read off its body.
+fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
+    const bir = o.in.birs[m];
+    const decl = bir.decls[d];
+    const slots = bir.ownSlots(decl);
+    if (slots.len == 0 and decl.kind != .foreign_value) return null;
+    const n = decl.params;
+    const keep = o.keep.allocator();
+    const W = @import("../parse/Ast.zig").OwnWord;
+    // The annotation's parameter types: which are functions written out,
+    // and how many parameters each such function takes.
+    var fn_arity = try keep.alloc(?u32, n);
+    @memset(fn_arity, null);
+    if (decl.annotation.unwrap()) |ann| if (bir.instTag(ann) == .type_fn) {
+        const ps = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(ann).lhs))), Inst.Index);
+        for (ps, 0..) |p, i| {
+            if (i >= n or bir.instTag(p) != .type_fn) continue;
+            fn_arity[i] = @intCast(bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(p).lhs))), Inst.Index).len);
+        }
+    };
+    var uses: std.ArrayList(UseEntry) = .empty;
+    var res: std.ArrayList(ResEntry) = .empty;
+    var supply: std.ArrayList(SupplyEntry) = .empty;
+    var funs: std.ArrayList(FunFacts) = .empty;
+    const any = try o.child(eps, .any, 0);
+    var returned = false;
+    var result_words: u32 = 0;
+    for (slots) |s| if (s[0] == Bir.own_result) {
+        result_words = s[1];
+    };
+    for (0..n) |iu| {
+        const i: u32 = @intCast(iu);
+        var words: u32 = 0;
+        for (slots) |s| if (s[0] == i) {
+            words = s[1];
+        };
+        const has = struct {
+            fn f(x: u32, w: W) bool {
+                return x & w.bit() != 0;
+            }
+        }.f;
+        // What is not written is the worst case (§24.2).
+        if (words == 0) words = W.escaped.bit();
+        if (fn_arity[i]) |arity| {
+            // A function parameter: how often it is called, what it is
+            // handed, and whether JavaScript keeps it.
+            const kept = has(words, .escaped);
+            const calls: Calls = if (has(words, .unused)) .zero else if (has(words, .once)) .once else .many;
+            try funs.append(keep, .{ .param = i, .calls = calls, .seen = !kept });
+            if (calls != .zero) {
+                for (0..arity) |k| try supply.append(keep, if (has(words, .owned))
+                    .{ .fun = i, .k = @intCast(k), .path = eps, .prov = .{ .kind = .fresh }, .owned = true }
+                else
+                    .{ .fun = i, .k = @intCast(k), .path = eps, .prov = .{ .kind = .top }, .owned = false });
+            }
+            // A function kept by JavaScript escapes what it captured (§18.6).
+            if (kept) try uses.append(keep, .{ .param = i, .path = eps, .bits = bit_r | bit_j }) else if (calls != .zero) try uses.append(keep, .{ .param = i, .path = eps, .bits = bit_r });
+            if (has(words, .returned)) {
+                returned = true;
+                try res.append(keep, .{ .path = eps, .prov = .{ .kind = .cb, .a = i } });
+            }
+            if (has(words, .aliased)) try res.append(keep, .{ .path = any, .prov = .{ .kind = .cb, .a = i }, .approx = true });
+            continue;
+        }
+        var bits: u8 = 0;
+        if (!has(words, .unused)) bits |= bit_r;
+        if (has(words, .aliased) or has(words, .returned)) bits |= bit_a;
+        if (has(words, .escaped)) bits |= bit_e;
+        if (has(words, .consumed)) bits |= bit_w | bit_x | bit_d;
+        if (bits != 0) try uses.append(keep, .{ .param = i, .path = eps, .bits = bits });
+        const p: Prov = .{ .kind = .param, .a = i, .path = eps };
+        if (has(words, .returned)) {
+            returned = true;
+            try res.append(keep, .{ .path = eps, .prov = p });
+        }
+        if (has(words, .aliased)) try res.append(keep, .{ .path = any, .prov = p, .approx = true });
+    }
+    const lost: XSum = .{ .no = 1 };
+    if (result_words & W.fresh.bit() != 0) {
+        try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = if (result_words & W.exclusive.bit() != 0) .{} else lost });
+    } else if (result_words & W.escaped.bit() != 0) {
+        try res.append(keep, .{ .path = eps, .prov = .{ .kind = .esc, .a = 1 }, .xc = lost });
+    } else if (result_words & W.unknown.bit() != 0 or !returned) {
+        try res.append(keep, .{ .path = eps, .prov = .{ .kind = .top }, .xc = lost });
+    }
+    var out = try o.normalize(.{
+        .params = n,
+        .uses = uses.items,
+        .res = res.items,
+        .supply = supply.items,
+        .funs = funs.items,
+        .asserted = true,
+    });
+    out.words = slots.len != 0;
+    // The thesis's row for a `foreign` without words is a default, not an
+    // assertion anyone made (§24.5).
+    out.asserted = out.words;
+    return out;
+}
+
 /// core/Dict's `focus` (§20.8), whose row is its body's with one fact asserted.
 fn isDictFocus(o: *const Ownership, m: u32, d: u32) bool {
     if (o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Dict")) return false;
@@ -1359,7 +1483,7 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
     if (s.coarse) try parts.append(arena, "coarse");
     const facts = if (parts.items.len == 0) "unused" else try std.mem.join(arena, "; ", parts.items);
     const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
-    return std.fmt.allocPrint(arena, "summary {s}: {s}{s}", .{ name, facts, if (s.asserted) " (asserted)" else "" });
+    return std.fmt.allocPrint(arena, "summary {s}: {s}{s}", .{ name, facts, if (s.words) " (words)" else if (s.asserted) " (asserted)" else "" });
 }
 
 /// A condition as a summary line prints it (§18.3): nothing when it holds
@@ -1787,6 +1911,13 @@ fn nominalFacts(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
         .foreign => {
             facts.own = id == o.in.types.well_known.list or !o.isPrimitive(id);
             facts.list = id == o.in.types.well_known.list;
+            // `crossing foreign type` (§24.2): it holds no cell.
+            if (e.module.int() < o.in.birs.len) {
+                const bir = o.in.birs[e.module.int()];
+                for (bir.ownSlots(bir.decl(e.decl))) |s| if (s[0] == Bir.own_type) {
+                    facts.own = false;
+                };
+            }
         },
         .alias, .adt => {
             const m = e.module.int();

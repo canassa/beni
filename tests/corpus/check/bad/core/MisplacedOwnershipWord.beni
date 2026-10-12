@@ -1,0 +1,60 @@
+-- check/bad (core): `misplaced_ownership_word` (ownership-checker.md §24.4),
+-- lowering's, at the word, and the word dropped. A word stands in front of a
+-- parameter of the signature's arrow or its result: not inside a type
+-- (16:25), not on a value that is not a function (19:27). `once`, `many`
+-- and `owned` describe a function written out, not an alias of one (22:28)
+-- or a list (25:27). A result word on a parameter (28:27), a parameter word
+-- on the result (31:34). Words that cannot both hold: a word twice (34:36),
+-- `borrowed` with another (37:36), `aliased` with `returned` (40:36),
+-- `consumed` on a function (43:31), `once` with `many` (46:32), `owned`
+-- alone (49:27), two results (52:44), `exclusive` without `fresh` (55:34).
+-- Outside a signature a word is an ordinary type variable, so `keep` means
+-- what it always meant.
+type alias Handler =
+    Int → Int
+
+
+pub foreign pure one : List (borrowed Int) → Int
+
+
+pub foreign pure two : fresh Int
+
+
+pub foreign pure three : once Handler → Int
+
+
+pub foreign pure four : many List Int → Int
+
+
+pub foreign pure five : fresh List Int → Int
+
+
+pub foreign pure six : Int → borrowed List Int
+
+
+pub foreign pure seven : borrowed borrowed List Int → Int
+
+
+pub foreign pure eight : escaped borrowed List Int → Int
+
+
+pub foreign pure nine : aliased returned List Int → List Int
+
+
+pub foreign pure ten : consumed (Int → Int) → Int
+
+
+pub foreign pure eleven : once many (Int → Int) → Int
+
+
+pub foreign pure twelve : owned (Int → Int) → Int
+
+
+pub foreign pure thirteen : List Int → fresh unknown List Int
+
+
+pub foreign pure fourteen : Int → exclusive List Int
+
+
+keep : fresh → List fresh
+keep x = [ x ]

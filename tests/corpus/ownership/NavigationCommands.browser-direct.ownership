@@ -4,8 +4,8 @@ module NavigationCommands
   83:5 entry NavigationCommands.commands model.visits: accepted entry
   95:5 entry NavigationCommands.bodies model.visits: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
   summary keyOf: π1.key R
-  summary commands: π2 RA, π2.key R, π2.visits RAW, π2.visits[*] A; res .0 π2, .0.visits π2.visits, .0.visits[*] ~π2.visits[*], .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 fresh5{lost}, .1#Cmd.0[*]#Now.0⋆ ~fresh4{lost}, .1#Cmd.0[*]#Perform.0 fresh2{lost}, .1#Cmd.0[*]#Perform.0⋆ ~fresh1{lost}
-  summary bodies: π2 RA, π2.visits RAW, π2.visits[*] A; res .0 π2, .0.visits π2.visits, .0.visits[*] ~π2.visits[*], .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 fresh5{lost}, .1#Cmd.0[*]#Now.0⋆ ~fresh4{lost}, .1#Cmd.0[*]#Perform.0 fresh2{lost}, .1#Cmd.0[*]#Perform.0⋆ ~fresh1{lost} ~π2
+  summary commands: π2 RA, π2.key R, π2.visits RAW, π2.visits[*] A; res .0 π2, .0.visits π2.visits, .0.visits[*] ~π2.visits[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
+  summary bodies: π2 RA, π2.visits RAW, π2.visits[*] A; res .0 π2, .0.visits π2.visits, .0.visits[*] ~π2.visits[*], .1#Cmd.0 fresh1{excl π2} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇ π2
   summary refusedOrNot: unused
   summary view: π1.visits R; res .body fresh1{lost}
   summary start: res .0.visits fresh1, .1#Cmd.0 shared(Cmd.none)#Cmd.0
