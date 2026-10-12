@@ -1,0 +1,87 @@
+-- ownership: `e?` returns `e`'s `Err` payload from the definition it targets
+-- (`ownership-checker.md` §26.2, `language.md` §6.6). The `?` is a binding
+-- the compiler makes — `x = e?` means "`x` is the `Ok` payload, or return the
+-- `Err`" — and the walk once read only its first half: `pick`'s summary said
+-- its result held nothing of its argument, so `keepsErr` wrote `xs` in place
+-- while the `Err xs` that `pick` returned was read afterwards, and was
+-- accepted. Now `pick` returns `π1#Err.0`, and `keepsErr` is rejected.
+--
+-- The same through a statement `?` (`statement`, accepted before too), and
+-- through a local function's `?` (`local`, rejected before only through an
+-- approximate entry under `Ok`). A `Maybe`'s `Nothing` holds nothing, and a
+-- `String` error holds no list: `maybeOk` and `stringOk` are accepted.
+pick : Result (List Int) Int → Result (List Int) Int
+pick r =
+    n = r?
+    Ok (n + 1)
+
+
+pub keepsErr : List Int → Int
+keepsErr xs =
+    r = pick (Err xs)
+    ys = List.push xs 4
+    case r of
+        Err err →
+            List.length err + List.length ys
+
+        Ok _ →
+            List.length ys
+
+
+pub local : List Int → Int
+local xs =
+    unwrap res =
+        n = res?
+        Ok n
+    r = unwrap (Err xs)
+    ys = List.push xs 5
+    case r of
+        Err err →
+            List.length err + List.length ys
+
+        Ok n →
+            n + List.length ys
+
+
+check : Result (List Int) ⊤ → Result (List Int) Int
+check r =
+    r?
+    Ok 0
+
+
+pub statement : List Int → Int
+statement xs =
+    r = check (Err xs)
+    ys = List.push xs 6
+    case r of
+        Err err →
+            List.length err + List.length ys
+
+        Ok n →
+            n + List.length ys
+
+
+first : Maybe (List Int) → Maybe Int
+first m =
+    xs = m?
+    Just (List.length xs)
+
+
+pub maybeOk : List Int → Int
+maybeOk xs =
+    r = first (Just xs)
+    ys = List.push xs 7
+    Maybe.withDefault r 0 + List.length ys
+
+
+parse : Result String (List Int) → Result String Int
+parse r =
+    xs = r?
+    Ok (List.length xs)
+
+
+pub stringOk : List Int → Int
+stringOk xs =
+    r = parse (Ok xs)
+    ys = List.push xs 8
+    Result.withDefault r 0 + List.length ys

@@ -1,0 +1,103 @@
+-- ownership: a later read resolves to the binding it reads, whatever binders
+-- the compiler put between (`ownership-checker.md` §26.1). The Lean model's
+-- shadowing defect — an inner `let` handed the outer continuation's live set,
+-- so a later read was taken for the inner binding's — has no counterpart
+-- here: lowering gives every binder, written or compiler-made, a local index
+-- of its own, and the checker keys every holder and every read by that index.
+--
+-- Each function writes a list through a binding some binder introduced and
+-- reads the original afterwards, so each is rejected, naming the original:
+-- the Lean probe itself (`nested`: an inner block aliases the outer list and
+-- writes it), a statement block (`statement`), a `case` arm and its `…rest`
+-- (`spreadArm`), the `_` placeholder's lambda (`placeholder`), the `.field`
+-- accessor and an operator section (`accessor`, `section`), a local recursive
+-- function's group, walked once per round (`localGroup`), a pipeline
+-- (`pipeline`), a record update (`update`) and a `←` bind's lambda (`bind`).
+-- `distinct` is the control: two lists, one written, the other read: accepted.
+type alias Model =
+    items : List Int
+    other : List Int
+
+
+pub nested : List Int → Int
+nested xs =
+    kept = xs
+    n =
+        inner = kept
+        fresh = []
+        List.length (List.push inner 1) + List.length fresh
+    n + List.length kept
+
+
+sink : List Int → ⊤
+sink xs = if List.length (List.push xs 2) > 0 then ⊤
+
+
+pub statement : List Int → Int
+statement xs =
+    held = xs
+    sink held
+    List.length xs
+
+
+pub spreadArm : List Int → Int
+spreadArm xs =
+    case xs of
+        [ x, …rest ] →
+            List.length (List.push rest x) + List.length xs
+
+        [] →
+            0
+
+
+pub placeholder : List Int → Int
+placeholder xs =
+    push = List.push xs _
+    List.length (push 3) + List.length xs
+
+
+pub accessor : Model → Int
+accessor model =
+    items = model ▷ .items
+    List.length (List.push items 4) + List.length model.items
+
+
+pub section : List Int → Bool
+section xs =
+    same = (==)
+    grown = List.push xs 5
+    same grown xs
+
+
+pub localGroup : List Int → Int
+localGroup xs =
+    go acc n =
+        if n == 0 then
+            acc
+        else
+            go [ …acc, n ] (n - 1)
+    List.length (go xs 3) + List.length xs
+
+
+pub pipeline : List Int → Int
+pipeline xs =
+    grown = xs ▷ List.push 6
+    List.length grown + List.length xs
+
+
+pub update : Model → Int
+update model =
+    next = { model | items = List.push model.items 7 }
+    List.length next.items + List.length model.items
+
+
+pub bind : Maybe Int, List Int → Maybe Int
+bind m xs =
+    k ← Maybe.andThen m
+    Just (List.length (List.push xs k) + List.length xs)
+
+
+pub distinct : List Int, List Int → Int
+distinct xs ys =
+    kept = ys
+    List.length (List.push xs 8) + List.length kept
