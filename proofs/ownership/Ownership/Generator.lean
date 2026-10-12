@@ -69,6 +69,8 @@ def initN := 26
 def identN := 27
 def capAppend := 28
 def apply1 := 29
+def foldLI := 30
+def capCount := 31
 
 def decls : List Decl := [
   Library.map tL tL,
@@ -128,7 +130,12 @@ def decls : List Decl := [
   { name := "capAppend", parameters := [tL], captures := [tL], result := tL,
     body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) },
   -- Calls its callback and nothing else.
-  { name := "apply1", parameters := [tL, fLL], result := tL, body := .app (v 1) [v 0] }]
+  { name := "apply1", parameters := [tL, fLL], result := tL, body := .app (v 1) [v 0] },
+  -- foldl over lists to an Int, and a once step for it: it pushes the
+  -- accumulator onto its capture and returns the capture's length.
+  Library.foldl tL .int,
+  { name := "capCount", parameters := [tL, .int], captures := [tL], result := .int,
+    body := .letE 3 (.prim .push [v 2, v 1]) (.prim .length [v 3]) }]
 
 abbrev Env := List (Atom × Ty)
 
@@ -766,6 +773,36 @@ def branchWritten : Move := fun next env => do
     else (.atom (v next), .atom other)
   pure [(.prim .push [a, n], tL), (.branch c yes no, tL)]
 
+/-- Two fresh rows (sometimes one row twice), bound before `k`'s bindings. -/
+def twoRows (next : Nat) (env : Env) : Gen (List (Expr × Ty)) := do
+  let same := (← draw 4) == 0
+  pure [(← litList env, tL), (← litList env, tL),
+    (.prim (.literal tL) [v next, if same then v next else v (next + 1)], tN)]
+
+/-- A once closure (it pushes onto a fresh capture) handed to foldl or map
+    over two rows: the traversal step calls it once, on every row, so the
+    loop calls it many times. -/
+def onceInLoop : Move := fun next env => do
+  let rows ← twoRows next env
+  let r := next + 2
+  let c := next + 3
+  if (← draw 2) == 0 then
+    pure (rows ++ [(← litList env, tL), (.closure capCount [v c], .fn [tL, .int] .int),
+      (.closure foldLI [], .fn [tL, .int, .fn [tL, .int] .int] .int),
+      (.app (v (next + 5)) [v r, .int 0, v (next + 4)], .int)])
+  else
+    pure (rows ++ [(← litList env, tL), (.closure capAppend [v c], fLL),
+      (.closure mapLL [], .fn [tN, fLL] tN), (.app (v (next + 5)) [v r, v (next + 4)], tN)])
+
+/-- A closure over a list stored in a record field, the record published
+    with `shared`, then the list written: the closure in the record still
+    reads it. -/
+def sharedClosureRecord : Move := fun next env => do
+  let a ← anyList env
+  let (id, t) ← pick [(capLen, fII), (capGet, fIL)] (capLen, fII)
+  pure [(.closure id [a], t), (.prim .record [v next, ← number env], .record [t, .int]),
+    (.prim .shared [v (next + 1)], .record [t, .int]), (.prim .push [a, ← number env], tL)]
+
 def finTy (t : Ty) : Nat → Env → Gen (List String × Expr) := fun next env => do
   let (bs, a) ← valueOf false next env t
   pure ([], wrap next bs (.atom a))
@@ -791,7 +828,7 @@ def movesFor (table : Table) : List (String × Move) :=
     ("apply-any", applyAny table), ("higher-call", higherCall table), ("higher-call", higherCall table),
     ("shadow-write", shadowWrite), ("shared-nested", sharedNested), ("shared-record", sharedRecord),
     ("branch-closure", branchClosure), ("double-push", doublePush), ("close-alias-callee", closeAliasCallee),
-    ("copy-then-edit", copyThenEdit)] ++ gen
+    ("copy-then-edit", copyThenEdit), ("once-in-loop", onceInLoop), ("shared-closure-record", sharedClosureRecord)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/

@@ -468,6 +468,26 @@ def branchArmCapture : Program := {
     .letE 2 (.branch (.int 0) (.closure Generator.capLen [v 0]) (.closure Generator.capLen [v 0])) <|
     .app (v 2) [.int 0] }
 
+/-- foldl over two rows calls a once closure (it pushes onto its capture)
+    once per step (fourth review, p9c): the step's single call is many calls. -/
+def onceThroughFold : Program := {
+  declarations := [Library.foldl (.list .int) .int,
+    { name := "pushCap2", parameters := [.list .int, .int], captures := [.list .int], result := .int,
+      body := .letE 3 (.prim .push [v 2, v 1]) (.prim .length [v 3]) }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal .int) [.int 5]) <|
+    .letE 3 (.prim (.literal (.list .int)) [v 1, v 1]) <| .letE 4 (.closure 1 [v 0]) <|
+    .letE 5 (.closure 0 []) (.app (v 5) [v 3, .int 0, v 4]) }
+
+/-- `shared` on a record holding a closure over a list must escape the list
+    (fourth review, p9d); the list is then pushed. -/
+def sharedClosureInRecord : Program := {
+  declarations := [{
+      name := "capLen", parameters := [.int], captures := [.list .int], result := .int,
+      body := .prim .length [v 1] }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.prim .record [v 1, .int 0]) <| .letE 3 (.prim .shared [v 2]) <|
+    .letE 4 (.prim .push [v 0, .int 9]) (.prim .length [v 4]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -495,7 +515,9 @@ def probes : List (String × Program × Mutant × Bool) := [
   ("mapVia publishes a row, then the row is pushed", probePublishVia, .callbackEscapes, false),
   ("mapVia forwards map's guards about its callback", probePublishVia, .forwardGuards, false),
   ("once closure called by a callee, then observed", onceThroughCallee, .onceThroughCall, false),
-  ("close returns a once closure's capture, a callee calls it", closeThenOnceThroughCallee, .onceThroughCall, false)]
+  ("close returns a once closure's capture, a callee calls it", closeThenOnceThroughCallee, .onceThroughCall, false),
+  ("foldl calls a once closure on two rows", onceThroughFold, .manyOff, false),
+  ("shared on a record holding a closure over a list", sharedClosureInRecord, .sharedFn, false)]
 
 def scalarIndexOrder : Program := {
   main := .letE 0 list <| .letE 1 (.prim .at [v 0,.int 0,.int 0]) <|
@@ -656,7 +678,9 @@ def all : List Fixture := [
   ⟨"a let shadows a variable its continuation uses",shadowedLive,false⟩,
   ⟨"the same in a declaration body",shadowedLiveInDecl,false⟩,
   ⟨"shared on a nested list, then an element pushed",sharedNested,false⟩,
-  ⟨"a closure in a conditional arm captures a pushed list",branchArmCapture,false⟩ ]
+  ⟨"a closure in a conditional arm captures a pushed list",branchArmCapture,false⟩,
+  ⟨"foldl calls a once closure on two rows",onceThroughFold,false⟩,
+  ⟨"shared on a record holding a closure over a list",sharedClosureInRecord,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true

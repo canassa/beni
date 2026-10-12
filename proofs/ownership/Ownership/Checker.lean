@@ -359,7 +359,14 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
     pure (.list [fresh] (xs.foldl Abstract.join .bottom) (storeExclusive ctx xs later []))
   | .builder _, [] => pure (.list [fresh] .bottom true)
   | .shared, [a] => do
-    modifyFacts fun s => { s with escapes := union s.escapes (if ctx.config.has .sharedRoots then a.roots else a.cells) }
+    let escaped := if ctx.config.has .sharedRoots then a.roots
+      else if ctx.config.has .sharedFn then
+        -- The `shared-fn` control: forget cells under a capture below a field.
+        (a.paths.filter fun (p, _) => !(match p with
+          | .field _ :: q => q.any fun st => match st with | .capture _ => true | _ => false
+          | _ => false)).foldl (fun cs (_, xs) => union cs xs) []
+      else a.cells
+    modifyFacts fun s => { s with escapes := union s.escapes escaped }
     pure (a.mapOrigins fun _ cs => if cs.isEmpty then [] else union cs [.shared])
   | .length, [a] => do noteRead a.roots; pure .scalar
   | .at, [.list cs elem _, _, fallback] => do
@@ -607,7 +614,7 @@ def transfer (ctx : Context) (s : Summary) (site : List Nat) (args caps : List A
   modifyFacts fun facts => { facts with
     supplies := union facts.supplies supplies
     consumes := union facts.consumes consumed
-    calls := mergeCalls (· + ·) facts.calls (s.calls.map fun (j, n) => (j, if many && n > 0 then 2 else n))
+    calls := mergeCalls (· + ·) facts.calls (s.calls.map fun (j, n) => (j, if many && n > (if ctx.config.has .manyOff then 1 else 0) then 2 else n))
     guards := union facts.guards s.guards }
 termination_by (0, 0)
 decreasing_by all_goals simp_wf

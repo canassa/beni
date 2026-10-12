@@ -80,7 +80,16 @@ export const mutants = {
   // Liveness ignores the captures of closures a conditional arm creates (also `--mutant=branch-closure`).
   branchclosure: ["Checker.lean", "usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) e", "usesArms (!cfg.has .branchLive) false e"],
   // `shared` escapes only its operand's spine (also `--mutant=shared-roots`).
-  sharedroots: ["Checker.lean", "union s.escapes (if ctx.config.has .sharedRoots then a.roots else a.cells)", "union s.escapes a.roots"],
+  sharedroots: ["Checker.lean", "let escaped := if ctx.config.has .sharedRoots then a.roots", "let escaped := if true then a.roots"],
+  // The fourth review's holes. `shared` forgets cells under a closure held in
+  // a record field (also `--mutant=shared-fn`).
+  sharedfn: ["Checker.lean", "      else if ctx.config.has .sharedFn then", "      else if true then"],
+  // A traversal step's single call of a callback counts as one (also `--mutant=many-off`).
+  manyoff: ["Checker.lean", "(j, if many && n > (if ctx.config.has .manyOff then 1 else 0) then 2 else n)",
+    "(j, if many && n > 1 then 2 else n)"],
+  // Joining an exclusive list with a non-exclusive one stays exclusive.
+  joinexcl: ["Domain.lean", "| .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex && ey)",
+    "| .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex || ey)"],
   // The third review's other holes, re-anchored to the current sources.
   // A call's result forgets the provenance of its second parameter.
   resprov: ["Checker.lean", "  pure (instantiateValue site args caps true s.result)\ntermination_by (0, 1)",

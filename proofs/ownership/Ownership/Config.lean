@@ -34,6 +34,9 @@ inductive Mutant where
   | shadowing           -- shadowing is allowed and a let resolves its continuation's uses inside
   -- Escapes.
   | sharedRoots         -- `shared` escapes only the spine of its operand, not what it contains
+  | sharedFn            -- `shared` does not escape cells captured by a closure held in a record field
+  -- Counting.
+  | manyOff             -- a traversal step that calls a callback once is not counted as many calls
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
@@ -41,7 +44,7 @@ def Mutant.all : List Mutant :=
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
-   .branchClosure, .shadowing, .sharedRoots]
+   .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff]
 
 def Mutant.name : Mutant → String
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
@@ -57,6 +60,7 @@ def Mutant.name : Mutant → String
   | .onceThroughCall => "once-through-call"
   | .branchLive => "branch-live" | .branchClosure => "branch-closure"
   | .shadowing => "shadowing" | .sharedRoots => "shared-roots"
+  | .sharedFn => "shared-fn" | .manyOff => "many-off"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
@@ -75,7 +79,7 @@ def Mutant.summaryRow : Mutant → Bool
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
   | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive | .branchClosure
-  | .shadowing | .sharedRoots => true
+  | .shadowing | .sharedRoots | .sharedFn | .manyOff => true
   | _ => false
 
 structure Config where
