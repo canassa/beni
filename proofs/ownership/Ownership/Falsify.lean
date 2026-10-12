@@ -107,6 +107,7 @@ def shallowB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option St
 def closuresB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option String :=
   match (closuresAt heap depthFuel v []).find? (fun (q, w) => match a.atPath q, w with
       | .symbolic .., .closure _ _ => false
+      | .list cs _ _, .closure _ _ => !cs.contains .unknown
       | .function _ alts, .closure id caps => !alts.any fun (i, cs) =>
           i == id && cs.length == caps.length && (cs.zip caps).all fun (ca, cv) => (shallowB γ heap ca cv).isNone
       | _, _ => true) with
@@ -225,7 +226,15 @@ def decls : List Decl := [
     body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) },
   { name := "apply1", parameters := [tL, .fn [tL] tL], result := tL, body := .app (v 1) [v 0] },
   { name := "capAppend", parameters := [tL], captures := [tL], result := tL,
-    body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) }]
+    body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) },
+  -- 11: a closure over a closure (nested), 12: a factory of such closures,
+  -- 13: a conditional that returns a closure or its function argument.
+  { name := "capApply", parameters := [.int], captures := [.fn [.int] tL], result := tL,
+    body := .app (v 1) [v 0] },
+  { name := "mk", parameters := [tL], result := .fn [.int] tL,
+    body := .letE 1 (.closure 5 [v 0]) (.closure 11 [v 1]) },
+  { name := "choose", parameters := [.int, tL, .fn [.int] tL], result := .fn [.int] tL,
+    body := .branch (v 0) (.closure 5 [v 1]) (.atom (v 2)) }]
 
 def fIL : Ty := .fn [.int] tL
 def fII : Ty := .fn [.int] .int
@@ -287,7 +296,7 @@ def config (distinct : Bool := false) : Generator.Gen Setup := do
   let mut types : List (Var × Ty) := []
   let mut kept : List Value := []
   for x in List.range vars do
-    let kind ← draw 6
+    let kind ← draw 7
     let (w, a, t) ← (show Generator.Gen (Value × Abstract × Ty) from match kind with
       | 0 => do pure (Value.int (Int.ofNat (← draw 3)), Abstract.scalar, Ty.int)
       | 1 => do let c ← leafFor x 0; pure (.ref c, ← leafAbs c, tL)
@@ -297,6 +306,14 @@ def config (distinct : Bool := false) : Generator.Gen Setup := do
           let c ← leafFor x 0
           let d ← leafFor x 1
           pure (.record [.ref c, .ref d], .record [← leafAbs c, ← leafAbs d], tR)
+      | 4 => do
+          -- A closure over a closure over a list (`capApply` over `capGet`
+          -- or `capPush`), described through both levels.
+          let c ← leafFor x 0
+          let inner ← pick [3, 5] 5
+          let roots := if inner == 3 then [Origin.site [2000 + x] 0] else []
+          let innerAbs := Abstract.function roots [(inner, [← leafAbs c])]
+          pure (.closure 11 [.closure inner [.ref c]], .function roots [(11, [innerAbs])], fIL)
       | _ => do
           let c ← leafFor x 0
           let id ← pick [3, 4, 5, 10] 4
@@ -340,7 +357,7 @@ def expr (types : List (Var × Ty)) (next : Nat) : Nat → Generator.Gen (Expr �
     let idx := Atom.int ((Int.ofNat (← draw 3)) - 1)
     let hasL := !ls.isEmpty
     let hasN := !ns.isEmpty
-    match ← draw 20 with
+    match ← draw 22 with
     | 0 => if hasL then pure (.prim .push [l, num], tL) else pure (.prim (.literal .int) [num], tL)
     | 1 => if hasL then pure (.prim .set [l, idx, num], tL) else pure (.atom num, .int)
     | 2 => if hasL then pure (.prim .at [l, idx, .int 0], .int) else pure (.atom num, .int)
@@ -397,6 +414,18 @@ def expr (types : List (Var × Ty)) (next : Nat) : Nat → Generator.Gen (Expr �
         | none => pure (v (next + 5))
       let call : Expr := .letE next (.closure 9 []) (.app (v next) [l, g])
       if gs.isEmpty then pure (.letE (next + 5) (.closure 10 [l']) call, tL) else pure (call, tL)
+    | 19 =>
+      -- A factory returns a closure over a closure over the list.
+      if !hasL then pure (.atom num, .int) else
+      pure (.letE next (.closure 12 []) (.letE (next + 1) (.app (v next) [l])
+        (.app (v (next + 1)) [num])), tL)
+    | 20 =>
+      -- A conditional returns a closure over the list or a function argument.
+      match (atomsOf types fIL).head? with
+      | some f =>
+        if !hasL then pure (.atom num, .int) else
+        pure (.letE next (.closure 13 []) (.app (v next) [num, l, f]), fIL)
+      | none => pure (.atom num, .int)
     | 18 =>
       let (a, t) ← expr types (next + 10) depth
       let (b, u) ← expr ((next, t) :: types) (next + 20) depth
@@ -485,6 +514,8 @@ structure Tally where
   lowFuelBothFail : Nat := 0
   aliased : Nat := 0
   aliasedAccepted : Nat := 0
+  nested : Nat := 0
+  nestedAccepted : Nat := 0
   accepted : Nat := 0
   valueOk : Nat := 0
   withWrite : Nat := 0
@@ -492,6 +523,13 @@ structure Tally where
   naming : Nat := 0
   errorClause : Nat := 0
   deriving Repr
+
+/-- The expression creates a closure of one of the declarations `ids`. -/
+def mentionsDecl (ids : List Nat) : Expr → Bool
+  | .closure d _ => ids.contains d
+  | .letE _ a b | .branch _ a b => mentionsDecl ids a || mentionsDecl ids b
+  | .traverse _ _ _ _ _ _ body | .focus _ _ _ body => mentionsDecl ids body
+  | _ => false
 
 def writeOps : Expr → Bool
   | .prim .push _ | .prim .set _ | .focus .. => true
@@ -506,7 +544,10 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
   -- A quarter of the samples run with fuel 1–8: the error clause (both runs
   -- fail, or neither) is exercised, not only the success clause.
   let fuel := if seed % 4 == 0 then 1 + (seed / 4) % 8 else 5000
-  let mut t := { t with tried := t.tried + 1, lowFuel := t.lowFuel + (if fuel < 5000 then 1 else 0), aliased := t.aliased + (if aliased then 1 else 0) }
+  let nested := mentionsDecl [11, 12, 13] e || cfg.env.any fun (_, _, w) => match w with
+    | .closure 11 _ => true
+    | _ => false
+  let mut t := { t with tried := t.tried + 1, lowFuel := t.lowFuel + (if fuel < 5000 then 1 else 0), aliased := t.aliased + (if aliased then 1 else 0), nested := t.nested + (if nested then 1 else 0) }
   let vs : ValueSemantics.State := { fuel, kept := cfg.keptObs.toArray }
   let hs : InPlaceSemantics.State := { fuel, heap := cfg.heap, kept := cfg.kept.toArray }
   -- `covered` false: the statement does not speak about the sample; the
@@ -537,7 +578,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
   match (inferExpr ctx.config.inferenceFuel ctx cfg.aenv e after [7]).run st with
   | .error _ => return (t, none)
   | .ok (r, st') =>
-    t := { t with accepted := t.accepted + 1, aliasedAccepted := t.aliasedAccepted + (if aliased then 1 else 0) }
+    t := { t with accepted := t.accepted + 1, aliasedAccepted := t.aliasedAccepted + (if aliased then 1 else 0), nestedAccepted := t.nestedAccepted + (if nested then 1 else 0) }
     let ve := (ValueSemantics.eval fuel decls none (valueEnv cfg.env) e).run vs
     let he := (InPlaceSemantics.eval fuel decls none (heapEnv cfg.env) e).run hs
     match ve, he with
@@ -635,6 +676,10 @@ structure CallTally where
   guardsDiffer : Nat := 0
   violations : Nat := 0
   mapChecked : Nat := 0
+  vacuousSeparating : Nat := 0
+  vacuousDescribed : Nat := 0
+  vacuousUnique : Nat := 0
+  vacuousOther : Nat := 0
   deriving Repr
 
 def holders (s : InPlaceSemantics.State) (c : Nat) : List Holder :=
@@ -642,22 +687,14 @@ def holders (s : InPlaceSemantics.State) (c : Nat) : List Holder :=
   (if s.kept.toList.any fun x => (valueRefs x).contains c then [.kept] else [])
 
 /-- Check one call against one cache entry: `none` if fine or vacuous. -/
-def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option String × Bool × Bool := Id.run do
+def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option String × Bool × Bool × String := Id.run do
   let inputs := cr.args ++ cr.caps
   let nargs := cr.args.length
   let heap := cr.preHeap
   let γ := canonicalNaming heap e.inputs inputs nargs
-  if !separatingB γ then return (none, false, false)
+  if !separatingB γ then return (none, false, false, "separating")
   for (w, i) in inputs.zipIdx do
-    if let some _ := describesB γ heap (e.inputs[i]?.getD .bottom) w then return (none, false, false)
-  -- unique: the owned origins' arrays are held only by input arrays.
-  let inputArrays := inputs.flatMap (reachArrays heap depthFuel)
-  for (c, os) in γ do
-    if os.any e.owned.contains then
-      for h in holders (preOf cr) c do
-        match h with
-        | .array d => if !inputArrays.contains d then return (none, false, false)
-        | .kept => return (none, false, false)
+    if let some _ := describesB γ heap (e.inputs[i]?.getD .bottom) w then return (none, false, false, "described")
   -- classes: closures at the symbolic slots resolve the guards as recorded.
   let mut fs : List (Nat × Abstract) := []
   for (a, j) in e.inputs.zipIdx do
@@ -666,21 +703,22 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option St
       fs := fs ++ [(j, (closureAbs heap (inputs[j]?.getD (.int 0)) once).1)]
   for g in e.summary.guards do
     match (answer ({} : Config).inferenceFuel decls {} [{ actuals := fs }] g.query).run {} with
-    | .ok (ans, _) => if ans != g.answer then return (none, false, true)
-    | .error _ => return (none, false, true)
+    | .ok (ans, _) => if ans != g.answer then return (none, false, true, "guards")
+    | .error _ => return (none, false, true, "guards")
   -- Clause 1.
   for (w, i) in inputs.zipIdx do
     let a := e.inputs[i]?.getD .bottom
     for (q, c) in pathsOf heap depthFuel w [] do
       if (a.paths.map Prod.fst).contains q then
         if !((cr.postHeap[c]?) == (heap[c]?)) &&
-            !rowHas (e.summary.writes ++ e.summary.consumes) (inputOrigin nargs i q) then
-          return (some s!"clause 1: input {i} array {c} at {repr q} written, no W row", true, false)
+            !rowHas (e.summary.writes ++ e.summary.consumes) (inputOrigin nargs i q) &&
+            !(q == [.env] && (e.summary.calls.lookup i).getD 0 ≥ 1) then
+          return (some s!"clause 1: input {i} array {c} at {repr q} written, no W row", true, false, "")
         if !rowHas e.summary.escapes (inputOrigin nargs i q) then
           let after := cr.postKept.toList.any fun k => (reachArrays cr.postHeap depthFuel k).contains c
           let before := cr.preKept.toList.any fun k => (reachArrays heap depthFuel k).contains c
           if after && !before then
-            return (some s!"clause 2: input {i} array {c} at {repr q} newly observed, no E row", true, false)
+            return (some s!"clause 2: input {i} array {c} at {repr q} newly observed, no E row", true, false, "")
   -- Clause 3.
   for (q, c) in pathsOf cr.postHeap depthFuel cr.result [] do
     if c < heap.size then
@@ -691,12 +729,12 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option St
           (pathsOf heap depthFuel w []).any fun (p, d) =>
             d == c && (a.paths.map Prod.fst).contains p && cells.any (·.base == inputOrigin nargs i p)
       if !ok then
-        return (some s!"clause 3: result array {c} at {repr q} is old and res({repr q}) = {repr cells} names no input path holding it", true, false)
+        return (some s!"clause 3: result array {c} at {repr q} is old and res({repr q}) = {repr cells} names no input path holding it", true, false, "")
   -- map: the certificate of the result.
   if decls[e.decl]?.map (·.name) == some "map" then
     if let some why := certifiedB cr.postHeap e.summary.result cr.result then
-      return (some s!"map certificate: {why}", true, false)
-  pure (none, true, false)
+      return (some s!"map certificate: {why}", true, false, "")
+  pure (none, true, false, "")
 
 /-- Every call of every accepted program of a campaign, against every summary
     of its declaration in the program's cache. -/
@@ -704,6 +742,7 @@ def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.C
   let mut state := seed
   let mut t : CallTally := {}
   let mut shown := 0
+  let mut shownVacuous := 0
   for index in List.range count do
     let ((family, p), next) := (Oracle.generateVersion 5).run state
     state := next
@@ -712,19 +751,35 @@ def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.C
     let .ok log := run | continue
     for cr in log do
       t := { t with calls := t.calls + 1 }
+      -- A call is checked if at least one summary of its declaration meets
+      -- the hypotheses; otherwise it is vacuous, filed under the reason the
+      -- first candidate summary gave (the others' inputs or guards differ).
+      let mut anyChecked := false
+      let mut reason := "no summary"
       for e in acc.cache.toList do
         if e.decl != cr.decl || e.inputs.length != cr.args.length + cr.caps.length then continue
-        let (bad, checked, differ) := checkCall p.declarations cr e
+        let (bad, checked, differ, why) := checkCall p.declarations cr e
         if differ then t := { t with guardsDiffer := t.guardsDiffer + 1 }
         if checked then
+          anyChecked := true
           t := { t with checked := t.checked + 1,
                         mapChecked := t.mapChecked + (if (p.declarations[e.decl]?.map (·.name)) == some "map" then 1 else 0) }
-        else if !differ then t := { t with vacuous := t.vacuous + 1 }
+        else if reason == "no summary" || reason == "guards" then reason := why
         if let some why := bad then
           t := { t with violations := t.violations + 1 }
           if shown < limit then
             shown := shown + 1
             IO.println s!"FALSIFY summary_sound program {index} family={family} decl={(p.declarations[cr.decl]?.map (·.name)).getD "?"}: {why}\n  args={repr cr.args} caps={repr cr.caps} result={repr cr.result}\n  inputs={repr e.inputs}\n  summary={repr e.summary.result} writes={repr e.summary.writes} escapes={repr e.summary.escapes}\n  main={repr p.main}"
+      if !anyChecked then
+        t := { t with vacuous := t.vacuous + 1 }
+        t := match reason with
+          | "separating" => { t with vacuousSeparating := t.vacuousSeparating + 1 }
+          | "described" => { t with vacuousDescribed := t.vacuousDescribed + 1 }
+          | "unique" => { t with vacuousUnique := t.vacuousUnique + 1 }
+          | _ => { t with vacuousOther := t.vacuousOther + 1 }
+        if reason == "described" && shownVacuous < limit then
+          shownVacuous := shownVacuous + 1
+          IO.println s!"VACUOUS summary_sound program {index} decl={(p.declarations[cr.decl]?.map (·.name)).getD "?"}: no summary describes args={repr cr.args} caps={repr cr.caps}"
   IO.println s!"summary_sound: {repr t}"
   pure t
 

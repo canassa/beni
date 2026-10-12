@@ -327,8 +327,17 @@ restatement found").
    (does not) satisfied every hypothesis, the checker accepted a call of it
    with the captured list live, and the step lemma's conclusion failed. A
    symbolic input describes any closure; its class is `GuardsHold`'s
-   business. Closures captured inside closures are not tied (their abstract
-   values are merged across alternatives); stated as a limit;
+   business. Closures captured inside closures are not tied to their
+   declaration (stated as a limit), but since the fifth review their arrays
+   are named: `namesAt` walks the abstract value itself, so a capture step
+   of a known function value goes into its alternatives' captures (before, it
+   used `atPath`, which merges a capture step into a plain list, and a
+   closure captured by a closure — accepted by the checker — could never be
+   Covered: the review's `nested_not_covered`); a capture or `env` step of a
+   symbolic input names its `env` row; and anything below the unknown value
+   of mismatched shapes (`Abstract.join`'s fallback, which since the fifth
+   round keeps every cell of both sides — a checker defect, below) names all
+   its cells, and that value describes any closure (it cannot be called);
 5. **every binding, live or dead, keeps its arrays at immutable paths (root,
    fields, captures) named by its abstract value**: `close b xs` reads `xs`
    without using it (`uses` omits a close's source), so `xs`'s naming must
@@ -387,7 +396,19 @@ Besides `Invariant`, the step lemma now assumes, and concludes for its result:
   input has `[]` and `[env]`), and `[env]` reaches every array the
   environment reaches (`AtPath.env`), as `π_i.env` stands for;
 * description is path by path, as for the invariant; `pathCells`' fixed fuel
-  of 64 is replaced by the relational `AtPath`, so no claim stops at a depth.
+  of 64 is replaced by the relational `AtPath`, so no claim stops at a depth;
+* **fifth review**: a symbolic input had only `[]` and `[env]` paths, so no
+  closure capturing an array was ever described by one and the statement
+  was vacuous for every such callback (the review's `symbolic_not_covers`);
+  its capture paths now name its `env` row. A closure factory's result
+  (a closure over a closure over the argument) is named through both levels
+  (the review's P3). Clause 1 now admits a write to the environment of a
+  function input the call calls (`calls` row ≥ 1): a once callback writes its
+  own captures, which the summary does not record and the caller demands
+  dead where it hands the callback over (`once-through-call`); the falsifier
+  found this the moment such calls stopped being vacuous. And the `unique`
+  hypothesis is gone: no clause needs it, and it counted garbage arrays as
+  holders, which made most calls vacuous.
 
 ### Why each remaining sorry is believed true
 
@@ -473,14 +494,21 @@ function values (`namesAt`), and, on the corrected statement, **the second
 checker defect below**. After the fixes, on 100 000 configurations and the
 calls of 100 000 generated programs (the final generator, with its own declarations) per seed:
 
-| Seed | Step configurations | Not covered (all refused) | Accepted | Accepted with a write | Failures | Calls checked against a summary | of which map | Vacuous | Failures |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 100 000 | 10 643 | 66 444 | 23 226 | 0 | 43 771 | 2 962 | 17 710 | 0 |
-| 17 | 100 000 | 10 481 | 66 611 | 23 501 | 0 | 44 611 | 2 989 | 18 521 | 0 |
-| 271828 | 100 000 | 10 569 | 66 675 | 23 354 | 0 | 44 086 | 2 951 | 18 333 | 0 |
+| Seed | Step configurations | Not covered (all refused) | Accepted | of which nested closure, factory or join | Accepted with a write | Failures | Calls | Calls with no summary describing them (one array at two paths / other) | Checks against a summary | Failures |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20261011 | 100 000 | 10 425 | 69 048 | 25 700 | 22 179 | 0 | 45 065 | 1 482 / 6 | 58 994 | 0 |
+| 17 | 100 000 | 10 489 | 69 021 | 25 457 | 21 956 | 0 | 46 281 | 1 397 / 2 | 60 757 | 0 |
+| 271828 | 100 000 | 10 426 | 69 164 | 25 785 | 21 977 | 0 | 46 023 | 1 387 / 5 | 60 022 | 0 |
 
-(Fewer accepted than before the fourth review: the mislabelled closures are
-excluded and the low-fuel quarter ends early.)
+Vacuity is now a failure past a stated bound, not a count: a run fails if
+more than 0.5 % of calls are described by no summary for any reason other
+than one array at two input paths (the statement's documented exception),
+or more than 5 % for that exception. It is ≈3 % and ≤ 0.02 %. (Before the
+fifth round "vacuous" counted summary/call pairs, most of them summaries
+for other inputs, and hid that every call with a capturing callback was
+vacuous; it now counts calls.) The step samples include closures over
+closures, a closure factory and a conditional returning a closure or its
+function argument (≈25 000 accepted per seed).
 
 The falsifier has teeth: under `--mutant=` holes the step-lemma check fails
 (20 000 configurations, seed 17): once-through-call 22 on the current mix

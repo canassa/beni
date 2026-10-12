@@ -29,8 +29,16 @@ def main (args : List String) : IO UInt32 := do
   if mode == "falsify" then
     let a ← Falsify.invariantCampaign count seed (checker := { mutant })
     let b ← Falsify.summaryCampaign count seed (checker := { mutant })
+    -- Vacuity is a failure past a stated bound: a call no summary describes
+    -- for a reason other than one array at two input paths (the statement's
+    -- documented exception) may be at most 0.5 % of calls, and that
+    -- exception at most 5 %.
+    let otherVacuous := b.vacuousDescribed + b.vacuousUnique + b.vacuousOther
+    let vacuityOk := otherVacuous * 200 ≤ b.calls && b.vacuousSeparating * 20 ≤ b.calls
+    if !vacuityOk then
+      IO.println s!"FALSIFY summary_sound vacuous on too many calls: {otherVacuous} not described, {b.vacuousSeparating} one array at two paths, of {b.calls}"
     let clean := a.hypothesisFalse == 0 && a.observational == 0 && a.errorClause == 0 &&
-      a.naming == 0 && a.uncoveredAccepted == 0 && b.violations == 0
+      a.naming == 0 && a.uncoveredAccepted == 0 && b.violations == 0 && vacuityOk
     IO.println s!"falsify count={count} seed={seed} clean={clean}"
     return (if clean then 0 else 1)
   if mode == "reasons" then
