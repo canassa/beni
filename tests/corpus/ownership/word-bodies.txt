@@ -1,46 +1,52 @@
 # The code each declaration's ownership words were justified by reading
 # (docs/design/ownership-checker.md §24.6, §24.8; the owner's guard of
 # 2026-10-12): a beni body's signature and definition, or a `foreign`'s
-# sibling export, folded to single spaces and hashed (Wyhash, seed 0).
+# sibling export and the helpers it calls, folded to single spaces and
+# hashed with SHA-256.
 # `check_test.zig` fails when one changes: read it again, re-justify the
 # words in §24.8, then put the new hash here.
 #
 # file                          declaration         hash
-core/String.beni                String.join         a4c5252506c48f9e
-core/String.beni                String.fromList     2314036c27c6ce4d
-core/String.beni                String.split        dbdc45997aec8e2e
-core/String.beni                String.words        cdb8ccae3a82ff4c
-core/String.beni                String.lines        32ee860cae60f4cd
-core/String.beni                String.toList       ac77873f17883eb5
-core/String.beni                String.indexes      41976950e278c371
-core/Debug.beni                 Debug.log           b6f30ef763bad18e
-core/Debug.beni                 Debug.toString      ba4a7a1279f9ae0a
-core/Schema.beni                Schema.parse        f4dfce1a9029494e
-core/Schema.beni                Schema.parseWith    073b4743f88664ed
-core/Schema.beni                Schema.print        bc1e0a2f31781887
-core/Schema.beni                Schema.printWith    57a7157d1c09137f
-core/Js.js                      Js.from             a7b67bcf25707474
-core/Js.js                      Js.to               ee3360159da0400b
-core/Js.js                      Js.same             6ff266bbec3147d0
-core/Js.js                      Js.isNull           3015125653531934
-core/Js.js                      Js.isUndefined      a5736fe77ed46c7c
-core/Js.js                      Js.isNullish        2f379d7a7d5a6529
-core/Js.js                      Js.typeOf           4db3a3884de35b6c
-core/Js.js                      Js.typeIs           497d5087c548810e
-core/Js.js                      Js.array            02b419ed4a78c150
-core/Js.js                      Js.object           e1afa26a8dc59945
-core/Js.js                      Js.each             d958761dd24f4046
-core/Js.js                      Js.ref              8c961c783f376da4
-core/Js.js                      Js.read             313d21e5f6b23512
-core/Js.js                      Js.write            5acadbdd1c9ddb03
-core/Js.js                      Js.throw            21a9a2031876589f
-core/Js.js                      Js.finally          fbc20bfbcd8b2c14
-core/Js.js                      Js.catchIf          0ef3721ddf2dbb63
-core/Js.js                      Js.pure             6d890db8e4efec43
-core/Js.js                      Js.fingerprint      310671ecbd1d6f09
-core/Js.js                      Js.suspending       8e04ac759a36a771
-platforms/browser/Hosted.js     Hosted.keyOf        5b43377005cf45c8
-platforms/node/Node.js          Node.print          795fd93faf33ae33
-platforms/node/Node.js          Node.printLines     acf18cabb8185c61
-platforms/node/Node.js          Node.exitWith       f878d0acd91ed068
-platforms/node/Ssr.js           Ssr.render          7711f0fe03ad3e89
+core/String.beni                String.elements     6ad40d933dcc45ccd143441617d827639d23233570859550df3d6c04fdab5588
+core/String.beni                String.join         a40d289d336a29616aa70c7be46d2f71a461897b018014bd284a6293ad31c2fd
+core/String.beni                String.fromList     85f80127cea0c75675397231606be3001003c9e5690e7c4d073688d2c853c08f
+core/String.beni                String.split        6e9739ff7e758ab7c017a903f78c1546a2f1fc8f6eac81e1b442b9864a58487d
+core/String.beni                String.words        4500c2288ae517c963a515563db65bfd8ccaa6d4e5ad2dafe06a67159ca378bc
+core/String.beni                String.lines        a4aebc6e58b8e3107034d191ae5aa760f2c46306db26fc946a565f5b27380f3b
+core/String.beni                String.toList       96a3f56091778683e9ac974c406c881c5c6c255094354768726a0517dbca501c
+core/String.beni                String.indexes      aa46b881c0a809e0f63c2f5a324fb2ca74fc3a1b5f23bbc492c34cbed74a838e
+core/Debug.beni                 Debug.logAs         e87fb512372356e1b97c15d30c96fbf70000c1827ed811ed821c10942e6fdf46
+core/Debug.beni                 Debug.toStringAs    9721dfa272bf1c15a90c9d9df0fc1278047c7eab4b78fe87c5dcf6c7192c1ab2
+core/Debug.beni                 Debug.log           0027a590612d84d0bdfb13861c3da3ab82a9540fe90baa88c54e2c84c5cd3df9
+core/Debug.beni                 Debug.toString      613ca54abbe8d10944bf759e0d7f2f89f955126744e02ec1e82d30efddd339a3
+core/Schema.beni                Schema.parse        ba5e8dae48e05043591f568e30057ed74c37bf35bc64e84e6839c4abf9783be7
+core/Schema.beni                Schema.parseWith    508dac1871e8afa9fb684b9b4dfd5d7d64e67645dbd8eff93597d21ca192adef
+core/Schema.beni                Schema.print        aa88b5dda46701321f9ccd3b471e7fb2fb5892f2673005aaee0ef4b650bbbec7
+core/Schema.beni                Schema.printWith    f19cf67121f36c26865d4ba240508500c37e0e8e5cee18b1b907c28a3a1cb991
+core/Js.js                      Js.args             60918ef47c38583496832acc4a33a2c2c7421ae9ff7d3e1668f6bebfe1632360
+core/Js.js                      Js.from             58f75c4409ebd100b249820fbd069e46ce5f285b91b4f581c8c67a66b44dc204
+core/Js.js                      Js.to               5163adb42e6582f154935f9dd82bef550a96e02b87002fcdb9d38fc2f81d072a
+core/Js.js                      Js.same             0e175ad684f7ebbaf06564a9fa8e9a6ef1a3ff0c56c4b59c6328e6acc01bfea0
+core/Js.js                      Js.isNull           4c7ffbb2bba536432f3bb842a6c98ccf27ddcebf263000f091ed9e36c6a16b2d
+core/Js.js                      Js.isUndefined      fd2093d2055eccc2443acc27d8f8da409d665a3e18ba0d47b4eb3a7018b830e2
+core/Js.js                      Js.isNullish        b583c74aa98b558c4f7dfff78c8d8a4fe11deb6715c7efcd45a0699928cab6c4
+core/Js.js                      Js.typeOf           26a54a7f5bd7a4c319163144c07a20c2d91212a09d02b1afa28c597f6021ba8b
+core/Js.js                      Js.typeIs           e75a2c0052c03d548fb3e64ab086d4ebeb31174fd721d4beae889aa0ead892dc
+core/Js.js                      Js.array            aea16879d2fb8c2094e09433a3e83a0f135caa56a643b887abfde07cc191c5e8
+core/Js.js                      Js.object           26439083cc74fdebbd368949200f307d5333370f4dabb6966066a0f156af0488
+core/Js.js                      Js.each             29bcff32c565d0d30585d21fd32ea2b499019c901be4527bb683439f9f727b2d
+core/Js.js                      Js.ref              63bbd25263b49e6ee7d261a4cc65b816a57f693bdf2b449a958944428339f38f
+core/Js.js                      Js.read             77d880dddfc4b9528f23c0c1da0459b1716cdd54a85c36b3e9561ff24168483a
+core/Js.js                      Js.write            a906cb99b93ea7cb525e268db3181563dca63210541667ef2f793d25e8bdeee2
+core/Js.js                      Js.throw            628e1f05cb228941c7205949f7301f0a65c18538d6e4a9ca30e4ff3163b32457
+core/Js.js                      Js.finally          1a6f2d1ad7df3202bf878f7f7f6c6ddec0fc75b191e103682c147c58cf0a9394
+core/Js.js                      Js.catchIf          761a837beb982dc19efa35c98a944c5829628e843713484a85cee4cf735477d6
+core/Js.js                      Js.pure             d26c91d0e718d417966b583cd06490d4165ec975b74b76eaa30594b47366893d
+core/Js.js                      Js.fingerprint      30a526a5dfc14aa239d4e5a546c481c08b8010d51d0ec3c7dae88921f03e9288
+core/Js.js                      Js.suspending       4ec46a146eac3d0f1f029df6b311ffddbab73f54789897f67340ca12b7564c09
+platforms/browser/Hosted.js     Hosted.keyOf        02fe44a29c74a774ed38492ad5b42731a0eaea6857a103cbaebd90a25c7d1bb0
+platforms/node/Node.js          Node.spine          fd1ebdf431275a32ad587ffd29f818d512b258bcf6572ecf1e1cad0a8eada4a4
+platforms/node/Node.js          Node.print          a10b7db6541292679a3e959151c1bae95eab61202c4f4a8d45b5361f83573911
+platforms/node/Node.js          Node.printLines     6e0c6a75d11138ad964ed9579e8e5d2dd0f41685106561b7e5ba69baa51cb8e1
+platforms/node/Node.js          Node.exitWith       6a610ffef02442fae778d2d281e7de08500c2a0c8d56d72862e66eab7c3b99ba
+platforms/node/Ssr.js           Ssr.render          37ee0eae3d16ff93948d7a631bf45c19de7beb0c31893d6a0f2abc47665d02df

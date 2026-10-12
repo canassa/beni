@@ -5798,9 +5798,17 @@ const Walker = struct {
         if (w.frame == 0) if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
         if (!ff.need) return;
         const classes = try w.classesOf(actual);
+        // A slot has no argument of its own to name: the line's base is the
+        // function value at the slot's path.
         if (classes.len == 0) return w.needUnknown(inst, "<function value>", callee);
+        var reported = false;
         for (classes) |cls| {
-            const c = (try w.classSummary(cls)) orelse return w.needUnknown(inst, "<function value>", callee);
+            const c = (try w.classSummary(cls)) orelse {
+                // One line per call, however many classes it cannot place.
+                if (!reported) try w.needUnknown(inst, "<function value>", callee);
+                reported = true;
+                continue;
+            };
             if (try w.returnsOwned(c, s, avs, j, 0, none)) continue;
             const name: []const u8 = switch (cls) {
                 .closure => "<lambda>",
@@ -5902,9 +5910,12 @@ const Walker = struct {
                 });
             }
         } else if (ff.need) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
+        var reported = false;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse {
-                if (ff.need) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
+                // One line per call, however many classes it cannot place.
+                if (ff.need and !reported) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
+                reported = true;
                 continue;
             };
             const name: []const u8 = switch (cls) {
