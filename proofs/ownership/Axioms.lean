@@ -15,13 +15,18 @@ Three checks, and **the build fails** unless all pass.
 2. Every such constant is sent to the kernel again (`Lean.Environment.replay`,
    what lean4checker does), in a fresh environment holding only what the
    modules import: a declaration added with `debug.skipKernelTC` or by a raw
-   `addDecl` is checked after all, and a false one fails the build.
+   `addDecl` is checked after all, and a false one fails the build. Every
+   constant's compiler attributes are read from the environment too: none may
+   be `implemented_by` another constant, `extern`, `csimp` or an initialiser
+   (the kernel never sees compiled code, so a swapped implementation would
+   make `#guard`s and campaigns disagree with what is proved).
 3. An `example` adds no constant to the environment, so (1) cannot see it.
    The source of every `.lean` file under the package (every subdirectory,
    `.lake` excepted) is therefore scanned, outside comments and string and
-   character literals, for tokens: `sorry` may occur exactly as often as there
-   are pinned unproved statements; `admit`, `native_decide`, `axiom`,
-   `skipKernelTC`, `addDecl`, `run_cmd`, `implemented_by` and `extern` never.
+   character literals: `sorry` may occur exactly as often as there are pinned
+   unproved statements, and the words and names of `banned` never (names in
+   any dot-separated part of a token); only this file may use `#eval` and
+   import `Lean`.
 
 Removing a `sorry` requires shrinking the list on purpose. -/
 
@@ -46,13 +51,36 @@ def sources : IO (List System.FilePath) := do
   let files := all.toList.filter fun p => p.extension == some "lean"
   pure (files.mergeSort (·.toString < ·.toString))
 
-/-- Tokens no source may contain: what proves without proof (`admit`,
-    `native_decide`, a declared `axiom`), and what reaches past the kernel or
-    the elaborator (`debug.skipKernelTC`, a raw `addDecl` from `run_cmd`, an
-    implementation swapped in by `implemented_by` or `extern`). -/
-def banned : List String :=
-  ["admit", "native_decide", "axiom", "skipKernelTC", "debug.skipKernelTC", "addDecl", "run_cmd",
-   "implemented_by", "extern"]
+/-- Names no source may mention, as a whole token or as any dot-separated
+    part of one (so `Lean.addDecl` and `Lean.Compiler.implementedByAttr.setParam`
+    are caught): what proves without proof (`admit`, `native_decide`, a
+    declared `axiom`); what reaches past the kernel or the elaborator
+    (`skipKernelTC`, `addDecl`, `addAndCompile`, `setEnv`, `modifyEnv`); what
+    runs code at elaboration time (`run_cmd`, `run_elab`, `run_meta`, `elab`,
+    `elab_rules`, `macro`, `macro_rules`, `syntax`, `initialize`,
+    `builtin_initialize`, `#eval` — `#guard` evaluates a closed `Bool` and is
+    allowed); and what swaps in another implementation (`implemented_by`,
+    `implementedByAttr`, `extern`, `externAttr`, `setParam`, `unsafe`). Only
+    this audit file may use `#eval` and `import Lean`; every other file imports
+    only `Std` and its own modules. -/
+def banned : List String := bannedWords ++ bannedNames
+where
+  /-- Keywords, banned as whole tokens (an identifier spelled `«initialize»`,
+      like `Library.«initialize»`, is not the command). -/
+  bannedWords : List String :=
+    ["admit", "axiom", "run_cmd", "run_elab", "run_meta", "elab", "elab_rules", "macro",
+     "macro_rules", "syntax", "initialize", "builtin_initialize", "#eval", "unsafe"]
+  /-- Names, banned as any dot-separated part of a token, guillemets or not. -/
+  bannedNames : List String :=
+    ["native_decide", "skipKernelTC", "addDecl", "addAndCompile", "setEnv", "modifyEnv",
+     "implemented_by", "implementedByAttr", "extern", "externAttr", "setParam"]
+
+/-- The banned word or name a token is or contains, if any. -/
+def bannedIn (token : String) : Option String :=
+  let strip := fun (s : String) => (s.replace "«" "").replace "»" ""
+  let parts := (token.splitOn ".").map strip
+  (banned.bannedWords.find? (· == token)).orElse fun _ =>
+    banned.bannedNames.find? fun b => parts.contains b || strip token == b
 
 /-- The identifier-like tokens of Lean source outside comments (`--`, nested
     `/- -/`) and string and character literals. -/
@@ -91,16 +119,18 @@ partial def tokens (s : String) : List String := Id.run do
         else i := i + 1
       word := ""
       continue
-    -- A guillemet name `«sorry»` is the token it spells.
+    -- A guillemet name stays marked: `«initialize»` is an identifier, not
+    -- the command; `bannedIn` still sees the names it spells.
     if c == '«' then
       if !word.isEmpty then out := out.push word; word := ""
       i := i + 1
       let mut inner := ""
       while i < cs.size && cs[i]! != '»' do inner := inner.push cs[i]!; i := i + 1
-      out := out.push inner
+      out := out.push ("«" ++ inner ++ "»")
       i := i + 1
       continue
-    let isWord := c.isAlphanum || c == '_' || c == '.' || c == '\''
+    -- `#` starts a command keyword (`#eval`, `#guard`) when it opens a token.
+    let isWord := c.isAlphanum || c == '_' || c == '.' || c == '\'' || (c == '#' && word.isEmpty && next.isAlpha)
     if isWord then word := word.push c; i := i + 1; continue
     if !word.isEmpty then out := out.push word; word := ""
     if c == '/' && next == '-' then depth := 1; i := i + 2
@@ -156,14 +186,36 @@ partial def tokens (s : String) : List String := Id.run do
     if aux then continue
     if let some ci := env.find? n then fresh := fresh.insert n ci
   let _ ← Lean.Environment.replay fresh base
+  -- Compiler attributes, read from the environment rather than the text: no
+  -- constant may have another implementation swapped in (`implemented_by`,
+  -- `extern`, `csimp`) or run at initialisation. A `partial def` is compiled
+  -- through its own `_unsafe_rec` implementation, which Lean generates; that
+  -- one is allowed and nothing else.
+  let mut partials := 0
+  for n in sorted do
+    if let some impl := Lean.Compiler.getImplementedBy? env n then
+      if impl == n ++ `_unsafe_rec || impl == Name.str n "_unsafe_rec" then partials := partials + 1
+      else throwError "{n} is implemented by {impl}"
+    if Lean.isExtern env n then throwError "{n} is extern"
+    if Lean.Compiler.hasCSimpAttribute env n then throwError "{n} has @[csimp]"
+    if Lean.hasInitAttr env n then throwError "{n} runs at initialisation"
+  IO.println s!"compiler attributes: none swapped in ({partials} partial definitions through their own _unsafe_rec)"
   IO.println s!"kernel replay: {fresh.size} constants re-checked"
   -- The source scan, for what adds no constant (an `example`).
   let mut sorries := 0
   let files ← sources
   for path in files do
     let ts := tokens (← IO.FS.readFile path)
-    for t in banned do
-      if ts.contains t then throwError "{path} uses `{t}`"
+    let audit := path.fileName == some "Axioms.lean"
+    for t in ts do
+      if let some b := bannedIn t then
+        unless audit && b == "#eval" do throwError "{path} uses `{t}` (`{b}`)"
+    -- Imports: `Std` and this package's own modules; `Lean` only here.
+    for (t, i) in ts.zipIdx do
+      if t == "import" then
+        let m := ts[i + 1]?.getD ""
+        unless m == "Std" || m == "Ownership" || m.startsWith "Ownership." || (audit && m == "Lean") do
+          throwError "{path} imports `{m}`"
     let n := (ts.filter (· == "sorry")).length
     if n > 0 then IO.println s!"{path}: {n} sorry"
     sorries := sorries + n
