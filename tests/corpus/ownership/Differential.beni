@@ -1,0 +1,106 @@
+-- ownership: the programs of thesis Table 6.2 that the Lean reference model
+-- (`proofs/ownership/Ownership/Fixtures.lean`) also runs, beside its
+-- verdicts (`ownership-checker.md` §16.13; research 76 §6). Where the two
+-- disagree, the line says why.
+--
+-- T1 fold alias: rejected (Lean: rejected) — the accumulator and the list
+-- are one array. T2: accepted (Lean: accepted) — the length is read before
+-- the write. T3: rejected (Lean: rejected) — a top-level list. T10:
+-- rejected (Lean: rejected) — one list at two fields of one element. T14:
+-- accepted (Lean: accepted) — each call of `init` makes its lists. T33:
+-- the kept version rejected, the copied one accepted (Lean: the same).
+-- T52: the retained spine rejected, the copy accepted (Lean: the same).
+--
+-- Disagreements, all of one kind: T40, T42 (distinct) and T57 (distinct)
+-- edit an element in place through `List.update` or `List.map`, which the
+-- Lean model accepts because it builds exclusive contents and its `update`
+-- and `map` hand out an owned element. Slice 2 infers both from their
+-- bodies, which hand the element out while the list waits, so the supply
+-- is borrowed and the edit is rejected, `supply` (§16.8's finding).
+type alias Row =
+    id : Int
+    tags : List Int
+
+
+empty : List Int
+empty = []
+
+
+addOne : List Int → List Int
+addOne l = [ …l, 1 ]
+
+
+init : ⊤ → { todos : List Int }
+init ⊤ = { todos = [] }
+
+
+pub t1 : List Int → List Int
+t1 xs = List.foldl xs xs λx acc → List.insertAt acc 0 x
+
+
+pub t2 : List Int → Int
+t2 xs =
+    n = List.length xs
+    List.length [ …xs, 1 ] + n
+
+
+pub t3 : ⊤ → List Int × List Int
+t3 ⊤ = ( addOne empty, addOne empty )
+
+
+pub t10 : List Int → List { a : List Int, b : List Int }
+t10 xs =
+    rows = [ { a = xs, b = xs } ]
+    List.update rows 0 λr → { r | a = [ …r.a, 2 ] }
+
+
+pub t14 : ⊤ → Int
+t14 ⊤ =
+    a = init ⊤
+    b = init ⊤
+    List.length [ …a.todos, 1 ] + List.length b.todos
+
+
+pub t33 : List Int → Int
+t33 s =
+    kept = s
+    top = [ 0, …s ]
+    copied = List.copy s
+    top2 = [ 0, …copied ]
+    List.length top + List.length top2 + List.length kept
+
+
+pub t40 : List Row, Int, Int → List Row
+t40 rows i t = List.update rows i λr → { r | tags = [ …r.tags, t ] }
+
+
+pub t42 : List Row, Int, Int → List Row
+t42 cards id t = List.map cards λc →
+    if c.id == id then
+        { c | tags = [ …c.tags, t ] }
+    else
+        c
+
+
+pub t52 : List Int, Int → Int
+t52 all x =
+    visible = List.filter all λy → y > 0
+    grown = [ …all, x ]
+    List.length grown + List.length visible
+
+
+pub t52Copied : List Int, Int → Int
+t52Copied all x =
+    visible = List.copy (List.filter all λy → y > 0)
+    grown = [ …all, x ]
+    List.length grown + List.length visible
+
+
+pub t57 : List (List (List Int)), Int → List (List (List Int))
+t57 rows i = List.update rows i λrow →
+    case row of
+        [] →
+            []
+
+        [ r, …rest ] →
+            [ [ …r, 0 ], …rest ]

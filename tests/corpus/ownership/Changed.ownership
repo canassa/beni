@@ -1,0 +1,13 @@
+module Changed
+  20:42 construction todos: accepted param
+  24:59 ++ model.todos: accepted param
+  28:21 call Changed.logged <++>: rejected disjoint: another operand of the same operation reaches it (Changed.logged writes π2)
+  28:64 ++ model.todos: rejected held-operand: the value at 28:28, evaluated before it, holds it until its consumer runs
+  summary changed: π2 RA; res .todos π2
+  summary logged: π1.todos R, π2 RAW; res .todos π2
+  summary add: π1.todos RAW; res .todos π1.todos
+  summary addLogged: π1.todos RAW; res .todos π1.todos
+  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0; assumed 0), pending 0, rejected 2
+cause disjoint 1
+cause held-operand 1

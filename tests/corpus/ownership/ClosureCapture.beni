@@ -5,9 +5,9 @@
 -- `model.rows` while `label` lives is accepted (thesis §4.3's example).
 -- `pusher` writes a list it captured. The full checker makes such a closure
 -- *once* and accepts it where it is called at most once (thesis §3.6,
--- *Affinity*); slice 1 has no ownership classes, so it cannot tell how
--- often the closure runs and rejects it as a limit, `captured-edit`
--- (`ownership-checker.md` §8.3) — a rejection slice 2 removes.
+-- *Affinity*); neither slice 1 nor slice 2 builds once closures, so the
+-- checker cannot tell how often the closure runs and rejects it as a limit,
+-- `captured-edit` (`ownership-checker.md` §8.3, §16.1).
 type alias Model =
     rows : List Int
     name : String

@@ -1,0 +1,41 @@
+module Differential
+  30:14 construction l: accepted param
+  38:9 call List.foldl xs: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what List.foldl supplies it)
+  38:35 List.insertAt acc: accepted callback-param (List.foldl supplies it owned)
+  44:19 construction xs: accepted param
+  48:10 call Differential.addOne Differential.empty: rejected top-level: Differential.empty is a top-level value (Differential.addOne writes π1)
+  48:24 call Differential.addOne Differential.empty: rejected top-level: Differential.empty is a top-level value (Differential.addOne writes π1)
+  54:5 List.update rows: accepted fresh
+  54:41 construction r.a: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  61:19 construction a.todos: accepted call
+  67:16 construction s: rejected later-use: s is read again at 68:14
+  69:17 construction copied: accepted call
+  74:16 List.update rows: accepted param
+  74:55 construction r.tags: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  80:24 construction c.tags: rejected supply: List.map supplies its parameter 1 borrowed (π1[*]) (approx)
+  88:15 construction all: rejected call: visible may hold it through the call at 87:15, and is read at 89:25 (approx)
+  95:15 construction all: accepted param
+  100:14 List.update rows: accepted param
+  106:17 construction r: rejected element: rest[*] holds it and is read at 106:26 (approx)
+  106:26 construction rest: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  summary addOne: π1 RAW; res π1
+  summary init: res .todos fresh1
+  summary t1: π1 RAW, π1[*] A; res [*] ~π1[*], ~π1
+  summary t2: π1 RW
+  summary t3: res .0 shared(Differential.empty), .1 shared(Differential.empty)
+  summary t10: π1 RA; res [*].a π1, [*].b π1, fresh1
+  summary t14: unused
+  summary t33: π1 RW, π1[*] R
+  summary t40: π1 RAW, π1[*] RA, π1[*].tags A; res [*] ~π1[*], [*].tags ~π1[*].tags, π1
+  summary t42: π1 RA, π1[*] RA, π1[*].tags A; res [*] ~fresh2 ~π1[*], [*].tags ~π1[*].tags, ~fresh1 ~π1
+  summary t52: π1 RW, π1[*] R
+  summary t52Copied: π1 RW, π1[*] R
+  summary t57: π1 RAW, π1[*] RA, π1[*][*] A; res [*] ~fresh1 ~π1[*], [*][*] ~π1[*][*], π1
+  demands 19: accepted 9 (fresh 1, call 2, param 5, callback-param 1; assumed 0), pending 0, rejected 10
+total 19: accepted 9 (fresh 1, call 2, param 5, callback-param 1; assumed 0), pending 0, rejected 10
+cause top-level 2
+cause disjoint 1
+cause later-use 1
+cause element 1
+cause call 1
+cause supply 4

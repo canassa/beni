@@ -1,8 +1,12 @@
 module Conservative
-  15:15 construction kept: rejected call: xs may hold it through the call at 14:12, and is read at 16:25 (approx)
-  22:15 construction labels: accepted call
-  29:7 construction xs: accepted param
-  33:17 construction xs: rejected call: another operand may be it, through the call at 33:23 (approx)
-  demands 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0), rejected 2
-total 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0), rejected 2
+  17:15 construction kept: rejected call: xs may hold it through the call at 16:12, and is read at 18:25 (approx)
+  24:15 construction labels: accepted call
+  31:7 construction xs: accepted param
+  35:17 construction xs: rejected call: another operand may be it, through the call at 35:23 (approx)
+  summary filtered: π1 Rw, π1[*] R
+  summary mapped: π1 R, π1[*] R
+  summary counted: π1 RAW; res π1
+  summary mirrored: π1 RAW, π1[*] RA; res [*] ~fresh1 ~fresh2 ~π1[*], π1
+  demands 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0; assumed 0), pending 0, rejected 2
 cause call 2

@@ -1,10 +1,12 @@
 -- ownership: idiom I1, an accumulator in a loop (thesis §5.2). The
--- tail-recursive `[ …acc, n ]` extends its accumulator parameter: slice 1
--- accepts it with `param`, the caller's side being slice 2's
--- (`ownership-checker.md` §8.2). `countdown` passes a fresh `[]`, so the
--- whole loop would be in place. The fold's callback writes its own
--- accumulator parameter: `callback-param`, which `foldl`'s row decides in
--- slice 2 (thesis I2). `doubled` builds into a local list it then owns:
+-- tail-recursive `[ …acc, n ]` extends its accumulator parameter: accepted
+-- with `param`, and since slice 2 the caller's side is checked at each call
+-- (`ownership-checker.md` §16.4 item 3): the recursive call passes the
+-- construction, `countdown` a fresh `[]`, both accepted, so the whole loop
+-- would be in place. The fold's callback writes its own accumulator
+-- parameter: `callback-param`, decided by `foldl`'s inferred summary, which
+-- supplies it owned (thesis I2, §16.4 item 4); the initial `[]` is the
+-- caller-side demand. `doubled` builds into a local list it then owns:
 -- `fresh`.
 pub upTo : Int, List Int → List Int
 upTo n acc =

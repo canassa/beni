@@ -1,0 +1,13 @@
+-- ownership (project): the summaries `Main` reads across the module boundary
+-- (`ownership-checker.md` §16.9–§16.10). `grow` writes its accumulator,
+-- `same` returns its argument, `fresh` builds its result.
+pub grow : List Int, Int → List Int
+grow acc n = [ …acc, n ]
+
+
+pub same : List Int → List Int
+same xs = xs
+
+
+pub fresh : Int → List Int
+fresh n = [ n ]

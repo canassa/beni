@@ -1,0 +1,12 @@
+module T59
+  17:15 List.update rows: accepted call
+  17:42 List.update pair: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  17:69 construction xs: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  24:15 List.update rows: accepted call
+  24:42 List.update pair: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  24:69 construction xs: rejected supply: List.update supplies its parameter 1 borrowed (π1[*]) (approx)
+  summary t59: unused
+  summary distinct: unused
+  demands 6: accepted 2 (fresh 0, call 2, param 0, callback-param 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 0, call 2, param 0, callback-param 0; assumed 0), pending 0, rejected 4
+cause supply 4

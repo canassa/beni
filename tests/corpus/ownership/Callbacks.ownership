@@ -1,0 +1,25 @@
+module Callbacks
+  26:10 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  26:38 construction acc: accepted callback-param (List.foldl supplies it owned)
+  30:10 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  34:11 construction acc: rejected supply: List.foldl hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  40:15 construction picked: rejected call: rows[*] may hold it through the call at 39:14, and is read at 41:25 (approx)
+  45:38 construction r: rejected supply: List.map supplies its parameter 1 borrowed (π1[*]) (approx)
+  49:39 ++ <literal>: accepted fresh
+  53:13 call Callbacks.apply <literal>: accepted fresh (<lambda> writes what Callbacks.apply supplies it)
+  53:33 construction ys: accepted callback-param (Callbacks.apply supplies it owned)
+  57:31 call Callbacks.apply xs: rejected later-use: xs is read again at 57:60 (<lambda> writes what Callbacks.apply supplies it)
+  57:48 construction ys: accepted callback-param (Callbacks.apply supplies it owned)
+  summary apply: π1 R, π2 R; res cb2; π2 calls ≤1, supply 1 π1 owned
+  summary sum: π1 R; res ~fresh1
+  summary t46: π1 R; res ~fresh1 ~shared(Callbacks.defaults)
+  summary t15: π1 R, π1[*] Rw
+  summary consumes: π1 RA, π1[*] RA; res [*] ~fresh2 ~π1[*], ~fresh1 ~π1
+  summary reads: π1 RA, π1[*] RA, π1[*][*] A; res [*] ~fresh2 ~fresh3 ~π1[*], [*][*] ~π1[*][*], ~fresh1 ~π1
+  summary applied: res fresh1
+  summary appliedRead: π1 RW
+  demands 11: accepted 7 (fresh 4, call 0, param 0, callback-param 3; assumed 0), pending 0, rejected 4
+total 11: accepted 7 (fresh 4, call 0, param 0, callback-param 3; assumed 0), pending 0, rejected 4
+cause later-use 1
+cause call 1
+cause supply 2

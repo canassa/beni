@@ -1,0 +1,47 @@
+-- ownership: the caller's side of a written parameter (`ownership-checker.md`
+-- §16.4 item 3; thesis §3.10, "discharged at its callers"). `addOne` writes
+-- its parameter (`π1 RAW`), so every call of it is a demand on its argument:
+-- rejected in `reads`, whose `xs` is read after the call, accepted in
+-- `chained`, where each argument is dead. The obligation travels: `twice`
+-- writes its own parameter through `addOne`, and `twiceRead`'s call of it
+-- is rejected in turn. `pushA` writes `p.a` only, so Disjoint at its call
+-- holds against the argument's other paths (§16.4 item 3): `twin` passes
+-- one list as both fields and is rejected, `disjoint`; `apart` passes two
+-- and is accepted.
+type alias Pair =
+    a : List Int
+    b : List Int
+
+
+addOne : List Int → List Int
+addOne xs = [ …xs, 1 ]
+
+
+twice : List Int → List Int
+twice xs = addOne (addOne xs)
+
+
+pushA : Pair → Pair
+pushA p = { p | a = [ …p.a, 1 ] }
+
+
+pub reads : List Int → Int
+reads xs =
+    ys = addOne xs
+    List.length ys + List.length xs
+
+
+pub chained : ⊤ → List Int
+chained ⊤ = addOne (addOne [ 0 ])
+
+
+pub twiceRead : List Int → Int
+twiceRead xs = List.length (twice xs) + List.length xs
+
+
+pub twin : List Int → Pair
+twin xs = pushA { a = xs, b = xs }
+
+
+pub apart : ⊤ → Pair
+apart ⊤ = pushA { a = [ 1 ], b = [ 2 ] }

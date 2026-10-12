@@ -1,0 +1,25 @@
+-- ownership: T59, fresh results that share inside one result
+-- (`ownership-checker.md` §16.8; thesis Table 6.2). The initializer returns
+-- `[ cell, cell ]`, two positions of one new array. Editing one position's
+-- inner list through two `List.update`s would be seen at the other, so the
+-- program must be rejected: `update`'s summary, inferred from
+-- `set xs i (func (unsafeGet xs i))`, supplies its element borrowed, and
+-- both lambdas write what they are supplied — rejected, `supply`. The
+-- round-5 fix holds by construction: no asserted row hands out a callback's
+-- result as exclusive. The thesis accepts `distinct`, two literals being
+-- two cells; slice 2, which builds no exclusive contents, rejects it the
+-- same way — a finding, not a rule.
+pub t59 : Int → Int
+t59 n =
+    rows = List.initialize 1 λ_ →
+        cell = [ 0 ]
+        [ cell, cell ]
+    changed = List.update rows 0 λpair → List.update pair 0 λxs → [ …xs, 9 ]
+    List.length changed + n
+
+
+pub distinct : Int → Int
+distinct n =
+    rows = List.initialize 1 λ_ → [ [ 0 ], [ 0 ] ]
+    changed = List.update rows 0 λpair → List.update pair 0 λxs → [ …xs, 9 ]
+    List.length changed + n

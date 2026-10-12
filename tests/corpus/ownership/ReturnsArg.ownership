@@ -1,0 +1,13 @@
+module ReturnsArg
+  25:12 construction ys: rejected alias: xs holds it and is read at 26:22
+  32:7 construction ys: accepted param
+  38:12 construction ys: rejected call: xs may hold it through the call at 37:10, and is read at 39:22 (approx)
+  summary same: π1 RA; res π1
+  summary either: π2 A; res fresh1 π2
+  summary aliased: π1 RW
+  summary aliasedDead: π1 RAW; res π1
+  summary promised: π1 Rw
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0; assumed 0), pending 0, rejected 2
+cause alias 1
+cause call 1

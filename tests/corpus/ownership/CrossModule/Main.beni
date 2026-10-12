@@ -1,0 +1,24 @@
+-- ownership (project): a summary used across a module boundary
+-- (`ownership-checker.md` §16.9). Each verdict below rests on a summary of
+-- `Lists`, which the interface block of §16.10 is what would carry: the
+-- call of `Lists.grow` on a list read afterwards is rejected at the call;
+-- the result of `Lists.same` is the argument's cell, so extending it while
+-- the argument lives is rejected; `Lists.fresh`'s result is a new cell, so
+-- extending it is accepted.
+import Lists
+
+
+pub grown : List Int → Int
+grown xs =
+    ys = Lists.grow xs 1
+    List.length ys + List.length xs
+
+
+pub aliased : List Int → Int
+aliased xs =
+    ys = [ …Lists.same xs, 1 ]
+    List.length ys + List.length xs
+
+
+pub built : Int → List Int
+built n = [ …Lists.fresh n, n ]

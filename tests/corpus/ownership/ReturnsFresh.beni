@@ -1,0 +1,38 @@
+-- ownership: a helper that returns a list it built (`ownership-checker.md`
+-- §16.3, `fresh_k`). `pair n` makes its result with a literal, so its
+-- summary says `res fresh1`, and a call's result is a cell nothing else
+-- holds: extending it is accepted, `call`, though the argument is read
+-- afterwards. `copied` returns `List.copy`'s fresh list (Change 2, §16.8's
+-- asserted row), and `copiedThenRead` extends it while the original is read
+-- later — accepted too: the copy is a cell of its own. `twoFields` names
+-- two literals, `fresh1` and `fresh2`, so a caller knows the fields are two
+-- cells (thesis §3.7).
+pair : Int → List Int
+pair n = [ n, n ]
+
+
+copied : List Int → List Int
+copied xs = List.copy xs
+
+
+twoFields : ⊤ → { a : List Int, b : List Int }
+twoFields ⊤ = { a = [ 1 ], b = [ 2 ] }
+
+
+pub built : List Int → Int
+built xs =
+    zs = [ …pair (List.length xs), 1 ]
+    List.length zs + List.length xs
+
+
+pub copiedThenRead : List Int → Int
+copiedThenRead xs =
+    zs = [ …copied xs, 1 ]
+    List.length zs + List.length xs
+
+
+pub fields : ⊤ → Int
+fields ⊤ =
+    r = twoFields ⊤
+    a = [ …r.a, 3 ]
+    List.length a + List.length r.b

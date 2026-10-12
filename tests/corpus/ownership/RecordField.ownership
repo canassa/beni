@@ -2,6 +2,9 @@ module RecordField
   16:33 List.push model.items: accepted param
   21:32 construction model.items: accepted param
   26:23 construction model.items: rejected later-use: model.items is read again at 26:19
-  demands 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0), rejected 1
-total 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0), rejected 1
+  summary add: π1.items RAW, π1.items[*] A; res .items π1.items, .items[*] ~π1.items[*]
+  summary rename: π1.items RAW, π1.name R; res .items π1.items
+  summary keepOld: π1.items RAW; res .0 π1.items, .1 π1.items
+  demands 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0; assumed 0), pending 0, rejected 1
+total 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0; assumed 0), pending 0, rejected 1
 cause later-use 1

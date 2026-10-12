@@ -1,0 +1,39 @@
+-- ownership: a helper that returns its argument (`ownership-checker.md`
+-- §16.4 item 6; T12's shape). `same xs = xs` has `res = π1` and nothing
+-- else, so `same xs` is `xs`'s own cell: extending it while `xs` is read
+-- afterwards is rejected, `alias`, exact — the text shows the sharing. When
+-- `xs` is dead the extension is accepted, `param`: the cell is the
+-- parameter's, and `aliasedDead`'s callers must pass it unique.
+-- `either`'s result path names two provenances, its argument and a fresh
+-- list (an identity promise, thesis §3.8), so a rejection through it is the
+-- approximate `call` cause (§16.4 item 7).
+same : List Int → List Int
+same xs = xs
+
+
+either : Bool, List Int → List Int
+either keep xs =
+    if keep then
+        xs
+    else
+        []
+
+
+pub aliased : List Int → Int
+aliased xs =
+    ys = same xs
+    zs = [ …ys, 1 ]
+    List.length zs + List.length xs
+
+
+pub aliasedDead : List Int → List Int
+aliasedDead xs =
+    ys = same xs
+    [ …ys, 1 ]
+
+
+pub promised : List Int → Int
+promised xs =
+    ys = either True xs
+    zs = [ …ys, 1 ]
+    List.length zs + List.length xs

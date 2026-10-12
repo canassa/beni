@@ -2,7 +2,10 @@ module ClosureCapture
   19:12 construction xs: rejected captured: g, a closure holding it, is used at 20:5
   26:24 construction model.rows: accepted param
   30:21 construction acc: rejected captured-edit: acc is captured, and how often the closure runs is not known (approx)
-  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0), rejected 2
-total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0), rejected 2
+  summary t7: π1 RW
+  summary perPath: π1.rows RAW; res .rows π1.rows
+  summary pusher: π1 AW; res ◇ π1
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0; assumed 0), pending 0, rejected 2
 cause captured-edit 1
 cause captured 1

@@ -183,6 +183,9 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // nothing once its store is gone (checker.md §5).
     // `--msg-types` reads the checker's scheme of each program's `update`.
     options.keep_type_stores = dump.stage == .types or dump.stage == .ownership or dump.msg_types;
+    // A summary is read off solved types, which only a module this run
+    // checks keeps: the ownership report checks core too (§16.9).
+    options.no_pack = dump.stage == .ownership;
     // The chain is read before any source, as `check` and `build` read it
     // (platform.zig): a `--platform` that names nothing is the same exit 2
     // and the same line.
@@ -564,7 +567,7 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
     }.go, .{ &o, targets.items }) catch
         return fail(stderr, "beni: out of memory", .{});
     session.profile.end(0, token, .ownership, beni.Profile.Event.no_file, 0);
-    beni.dump.ownership.write(stdout, reports, names) catch return 2;
+    beni.dump.ownership.write(stdout, reports, names, .{ .totals_only = dump.ownership_totals }) catch return 2;
     if (dump.common.self_profile) |path| session.writeProfile(path) catch {};
     return 0;
 }

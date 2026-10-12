@@ -4793,6 +4793,10 @@ test "the ownership report is byte-identical at --jobs=1 and --jobs=8" {
     try testing.expect(std.mem.indexOf(u8, out[0], "rejected later-use") != null);
     try testing.expect(std.mem.indexOf(u8, out[0], "rejected top-level") != null);
     try testing.expect(std.mem.indexOf(u8, out[0], "accepted param") != null);
+    // Slice 2 (§16.9): `Main`'s call is checked through `Lists.grow`'s
+    // summary, which the report prints, computed in the same single pass.
+    try testing.expect(std.mem.indexOf(u8, out[0], "call Lists.grow <literal>: accepted fresh") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0], "summary grow: π1 RAW; res π1") != null);
 }
 
 test "a constraint that rode out on an inferred interface is reported without --explain, and does not fail the build" {
