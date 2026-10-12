@@ -18,4 +18,4 @@ view _ =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = {}, update = λ_ m → m, view = view }
+main = Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }

@@ -58,4 +58,6 @@ view model = <p>{model.count}</p>
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { nest = Leaf, other = Leaf, count = 0 }, update = update, view = view }
+main =
+    Tea.sandbox
+        { init = λ⊤ → { nest = Leaf, other = Leaf, count = 0 }, update = update, view = view }

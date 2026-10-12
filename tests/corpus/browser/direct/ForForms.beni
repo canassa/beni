@@ -91,4 +91,4 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { rows = [ 0, 1 ], tail = [], selected = -1 }, update = update, view = view }
+        { init = λ⊤ → { rows = [ 0, 1 ], tail = [], selected = -1 }, update = update, view = view }

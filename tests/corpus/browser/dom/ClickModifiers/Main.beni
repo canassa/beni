@@ -50,7 +50,7 @@ view lines =
 main : Browser.Program
 main =
     Browser.program
-        { init = []
+        { init = λ⊤ → []
         , update = λ(Clicked line) lines → lines ++ [ line ]
         , view = view
         }

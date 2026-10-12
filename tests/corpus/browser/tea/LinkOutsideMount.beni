@@ -13,7 +13,7 @@ import Tea
 shell : Tea.Program
 shell =
     Tea.sandbox
-        { init = ⊤
+        { init = λ⊤ → ⊤
         , update = λ_ m → m
         , view =
             λ_ →
@@ -27,7 +27,7 @@ shell =
 mounted : Tea.Program
 mounted =
     Tea.element
-        { init = ( [], Cmd.none )
+        { init = λ⊤ → ( [], Cmd.none )
         , update = λr lines → ( lines ++ [ describe r ], Cmd.none )
         , view =
             λlines →

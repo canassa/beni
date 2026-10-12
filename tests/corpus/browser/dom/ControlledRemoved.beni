@@ -54,4 +54,4 @@ view m =
 main : Browser.Program
 main =
     Browser.program
-        { init = { rows = [ 1, 2, 3 ], open = True, n = 0 }, update = update, view = view }
+        { init = λ⊤ → { rows = [ 1, 2, 3 ], open = True, n = 0 }, update = update, view = view }

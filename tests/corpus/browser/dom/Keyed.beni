@@ -84,10 +84,14 @@ main : Browser.Program
 main =
     Browser.program
         { init =
-            { rows =
-                [ { id = 1, label = "one" }, { id = 2, label = "2" }, { id = 3, label = "three" } ]
-            , tags = [ "a", "b", "a" ]
-            }
+            λ⊤ →
+                { rows =
+                    [ { id = 1, label = "one" }
+                    , { id = 2, label = "2" }
+                    , { id = 3, label = "three" }
+                    ]
+                , tags = [ "a", "b", "a" ]
+                }
         , update = update
         , view = view
         }

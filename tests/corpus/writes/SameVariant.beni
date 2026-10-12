@@ -98,4 +98,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { status = Loading, box = Box 0 0, phase = Draft }, update = update, view = view }
+        { init = λ⊤ → { status = Loading, box = Box 0 0, phase = Draft }
+        , update = update
+        , view = view
+        }

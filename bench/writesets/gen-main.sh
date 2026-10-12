@@ -16,7 +16,7 @@ ids=$(ls Gen/Data | sed -n 's/^Store\([0-9]*\)\.beni$/\1/p' | sort -n)
   echo ""
   for i in $ids; do
     echo "p$i : Browser.Program"
-    echo "p$i = Tea.sandbox { init = Gen.Data.Store$i.init$i, update = Gen.Data.Store$i.update$i, view = λm → <p>{m.count}</p> }"
+    echo "p$i = Tea.sandbox { init = λ⊤ → Gen.Data.Store$i.init$i, update = Gen.Data.Store$i.update$i, view = λm → <p>{m.count}</p> }"
     echo ""
     echo ""
   done

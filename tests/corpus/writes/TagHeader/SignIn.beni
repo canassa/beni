@@ -34,4 +34,4 @@ update msg model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = Shared.start, update = update, view = Shared.view }
+main = Tea.sandbox { init = λ⊤ → Shared.start, update = update, view = Shared.view }

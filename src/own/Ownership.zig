@@ -4107,13 +4107,18 @@ const Walker = struct {
         };
         const view = (try w.entryFn(try w.fieldOf(app, "view"))) orelse EntryFn{};
         const subs = (try w.entryFn(try w.fieldOf(app, "subscriptions"))) orelse EntryFn{};
-        var init_av = try w.fieldOf(app, "init");
-        if (std.mem.eql(u8, name, "application")) {
-            // A function of the address, which crosses, and the navigation
-            // key, a foreign type (§20.3).
-            const f = (try w.entryFn(init_av)) orelse EntryFn{};
-            init_av = try w.entryRes(inst, f, &.{ &.{}, try w.single(.{ .kind = .top, .a = 0 }) }, 100_000);
-        }
+        // `init` is a function the runtime calls once per mount (§22.2): of
+        // `⊤`, which holds no cell, or for an application of the address,
+        // which crosses, and the navigation key, a foreign type (§20.3).
+        // A function the walk cannot place makes a model it cannot know.
+        const init_args: []const AV = if (std.mem.eql(u8, name, "application"))
+            &.{ &.{}, try w.single(.{ .kind = .top, .a = 0 }) }
+        else
+            &.{&.{}};
+        const init_av = if (try w.entryFn(try w.fieldOf(app, "init"))) |f|
+            try w.entryRes(inst, f, init_args, 100_000)
+        else
+            try w.single(.{ .kind = .top, .a = 0 });
         const m0 = if (whole) init_av else try w.proj(init_av, tuple0, null);
         // A message type that holds no cell brings none (§20.5).
         const msg_tracked = try w.messageTracked(arg);

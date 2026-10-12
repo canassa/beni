@@ -246,7 +246,7 @@ view count =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = 0, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
 ```
 
 The `browser` platform compiles a view into HTML templates that are cloned once

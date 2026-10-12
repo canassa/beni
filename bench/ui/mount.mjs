@@ -48,7 +48,7 @@ const sizes = {
 const wantedSizes = arg("sizes", Object.keys(sizes).join(",")).split(",");
 
 const source = (markup) =>
-  `import Html exposing (Html)\nimport Tea\n\n\nview : {} → Html {}\nview _ =\n    ${markup}\n\n\nmain : Tea.Program\nmain =\n    Tea.sandbox { init = {}, update = λ_ m → m, view = view }\n`;
+  `import Html exposing (Html)\nimport Tea\n\n\nview : {} → Html {}\nview _ =\n    ${markup}\n\n\nmain : Tea.Program\nmain =\n    Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }\n`;
 
 const builds = [
   { name: "beni", platform: "browser-tea", release: false, runtime: "_platform/_browser/Rt.mjs", run: "Rt$run" },

@@ -569,7 +569,7 @@ test "a --fuzz build of a browser-direct page registers its dispatcher, in devel
         \\
         \\
         \\main : Tea.Program
-        \\main = Tea.sandbox { init = 0, update = update, view = view }
+        \\main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
         \\
     );
 
@@ -3418,7 +3418,7 @@ test "a release page ships the browser runtime's map only when it maps" {
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = [ 1, 2 ], update = λmsg model → model, view = view }
+        \\    Browser.program { init = λ⊤ → [ 1, 2 ], update = λmsg model → model, view = view }
         \\
     ;
     try w.write("plain/Main.beni", page);
@@ -3434,7 +3434,7 @@ test "a release page ships the browser runtime's map only when it maps" {
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = [ 1, 2 ], update = λmsg model → model, view = view }
+        \\    Browser.program { init = λ⊤ → [ 1, 2 ], update = λmsg model → model, view = view }
         \\
     );
 
@@ -3481,7 +3481,7 @@ test "a release page ships the hosted program's loop only when it mounts one" {
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = 0, update = λmsg model → model, view = view }
+        \\    Browser.program { init = λ⊤ → 0, update = λmsg model → model, view = view }
         \\
     );
     try w.write("hosted/Main.beni",
@@ -3549,7 +3549,7 @@ test "a page with no delegated event calls no start and ships no listener" {
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = 0, update = λmsg model → model + 1, view = view }
+        \\    Browser.program { init = λ⊤ → 0, update = λmsg model → model + 1, view = view }
         \\
     ;
     try w.write("quiet/Main.beni", head ++ "    <p>still</p>" ++ tail);
@@ -3590,7 +3590,7 @@ fn elementPage(comptime cmd: []const u8) []const u8 {
     \\
     \\main : Browser.Program
     \\main =
-    \\    Tea.element { init = ( 0, Cmd.none ), update = λmsg model → ( model,
+    \\    Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λmsg model → ( model,
     ++ cmd ++
         \\ ), view = view, subscriptions = λ_ → Sub.none }
         \\
@@ -3675,7 +3675,7 @@ fn taskPage(comptime cmd: []const u8) []const u8 {
     \\
     \\main : Browser.Program
     \\main =
-    \\    Tea.element { init = ( 0, Cmd.none ), update = λmsg model → ( model,
+    \\    Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λmsg model → ( model,
     ++ cmd ++
         \\ ), view = view, subscriptions = λ_ → Sub.none }
         \\

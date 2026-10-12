@@ -451,26 +451,26 @@ const pageImports = "import Browser\nimport Html exposing (Html)\n";
 const teaImports = `${pageImports}import Tea\n`;
 const helloBody = '<main><h1 class="title">Hello</h1><p>A static page.</p></main>';
 const pages = [
-  { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = {}, update = λ_ m → m, view = view }" },
-  { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }" },
+  { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
+  { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
   // `browser-direct` (docs/design/browser-direct.md §12.2, §13's kill
   // criterion 2): the same source as `browser-tea`'s, and a static page on
   // both, whose `view` is one string the direct page writes once.
-  { name: "browser-direct", platform: "browser-direct", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }" },
-  { name: "browser-tea hello", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }", body: helloBody },
-  { name: "browser-direct hello", platform: "browser-direct", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }", body: helloBody },
+  { name: "browser-direct", platform: "browser-direct", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
+  { name: "browser-tea hello", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }", body: helloBody },
+  { name: "browser-direct hello", platform: "browser-direct", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }", body: helloBody },
   {
     name: "browser-tea element",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Sub\n`,
-    main: "Tea.element { init = ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }",
+    main: "Tea.element { init = λ⊤ → ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }",
   },
   {
     name: "browser-tea effects",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Http\nimport Sub\nimport Time\n`,
     main:
-      "Tea.element { init = ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.keyed ⊤ Cmd.Restart (λsend → send (Http.get { url = \"/x\", expect = Http.expectString })) ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → Ok \"tick\") }",
+      "Tea.element { init = λ⊤ → ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.keyed ⊤ Cmd.Restart (λsend → send (Http.get { url = \"/x\", expect = Http.expectString })) ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → Ok \"tick\") }",
     view: "view : {} → Html (Result Http.Error String)",
   },
   {
@@ -478,7 +478,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Http\nimport Sub\n`,
     main:
-      "Tea.element { init = ( Nothing, Cmd.task (λ⊤ → Http.get { url = \"/x\", expect = Http.expectString }) (λr → r) ), update = λr _ → ( Just r, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }",
+      "Tea.element { init = λ⊤ → ( Nothing, Cmd.task (λ⊤ → Http.get { url = \"/x\", expect = Http.expectString }) (λr → r) ), update = λr _ → ( Just r, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }",
     view: "view : Maybe (Result Http.Error String) → Html (Result Http.Error String)",
   },
   {
@@ -486,7 +486,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Sub\nimport Time\n`,
     main:
-      "Tea.element { init = ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → 1) }",
+      "Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → 1) }",
     view: "view : Int → Html Int",
   },
   {
@@ -494,14 +494,14 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Random\nimport Sub\n`,
     main:
-      "Tea.element { init = ( 0, Cmd.none ), update = λn _ → ( n, Random.generate (Random.int 1 6) (λk → k) ), view = view, subscriptions = λ_ → Sub.none }",
+      "Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λn _ → ( n, Random.generate (Random.int 1 6) (λk → k) ), view = view, subscriptions = λ_ → Sub.none }",
     view: "view : Int → Html Int",
   },
   {
     name: "browser-tea url",
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation\nimport Url exposing (Url)\n`,
-    main: "Tea.sandbox { init = Browser.Navigation.currentUrl ⊤, update = λ_ m → m, view = view }",
+    main: "Tea.sandbox { init = λ⊤ → Browser.Navigation.currentUrl ⊤, update = λ_ m → m, view = view }",
     view: "view : Maybe Url → Html {}",
   },
   {
@@ -509,7 +509,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation as Navigation\nimport Cmd\nimport Sub\nimport Url exposing (Url)\n`,
     main:
-      "Tea.element { init = ( \"\", Cmd.none ), update = λm _ → ( m, Cmd.task (λ⊤ → Navigation.pushUrl (Navigation.key ⊤) m) (λ_ → \"\") ), view = view, subscriptions = λ_ → Navigation.onUrlChange Url.toString }",
+      "Tea.element { init = λ⊤ → ( \"\", Cmd.none ), update = λm _ → ( m, Cmd.task (λ⊤ → Navigation.pushUrl (Navigation.key ⊤) m) (λ_ → \"\") ), view = view, subscriptions = λ_ → Navigation.onUrlChange Url.toString }",
     view: "view : String → Html String",
   },
   {
@@ -517,7 +517,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation as Navigation\nimport Cmd\nimport Sub\n`,
     main:
-      "Tea.element { init = ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = view, subscriptions = λ_ → Navigation.onUrlRequest λ_ → 1 }",
+      "Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = view, subscriptions = λ_ → Navigation.onUrlRequest λ_ → 1 }",
     view: "view : Int → Html Int",
   },
   {

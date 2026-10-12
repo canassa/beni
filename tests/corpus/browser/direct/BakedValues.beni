@@ -54,16 +54,17 @@ main : Tea.Program
 main =
     Tea.sandbox
         { init =
-            { n = 0
-            , count = 7
-            , below = -42
-            , huge = 9007199254740993
-            , ratio = 1.5
-            , special = "a<b & \"c\" 'd' >"
-            , empty = ""
-            , tab = 3
-            , link = "javascript:alert(1)"
-            }
+            λ⊤ →
+                { n = 0
+                , count = 7
+                , below = -42
+                , huge = 9007199254740993
+                , ratio = 1.5
+                , special = "a<b & \"c\" 'd' >"
+                , empty = ""
+                , tab = 3
+                , link = "javascript:alert(1)"
+                }
         , update = update
         , view = view
         }

@@ -55,4 +55,5 @@ view model =
 
 main : Browser.Program
 main =
-    Tea.sandbox { init = { count = 0, items = [], label = "fixed" }, update = update, view = view }
+    Tea.sandbox
+        { init = λ⊤ → { count = 0, items = [], label = "fixed" }, update = update, view = view }

@@ -79,7 +79,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { query = "", results = [] }, Cmd.none )
+        { init = λ⊤ → ( { query = "", results = [] }, Cmd.none )
         , update = λmsg model → update fakeApi msg model
         , view = view
         , subscriptions = λ_ → Sub.none

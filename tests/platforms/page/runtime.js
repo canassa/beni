@@ -69,7 +69,7 @@ const patch = (document, parent, nodes, send) => {
 export const run = (program) => {
   const document = globalThis.document;
   const root = document.body;
-  let model = program.init;
+  let model = program.init();
   let queued = false;
   const render = () => patch(document, root, [program.view(model)], send);
   const send = (msg) => {

@@ -41,4 +41,4 @@ view model =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = { u = Just ⊤ }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { u = Just ⊤ }, update = update, view = view }

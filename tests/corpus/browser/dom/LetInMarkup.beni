@@ -52,4 +52,5 @@ view model =
 
 
 main : Browser.Program
-main = Browser.program { init = { items = [ 3, 1, 2 ], ticks = 2 }, update = update, view = view }
+main =
+    Browser.program { init = λ⊤ → { items = [ 3, 1, 2 ], ticks = 2 }, update = update, view = view }

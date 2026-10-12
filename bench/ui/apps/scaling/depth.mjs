@@ -69,7 +69,7 @@ view model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { root = init1 }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { root = init1 }, update = update, view = view }
 `;
 };
 

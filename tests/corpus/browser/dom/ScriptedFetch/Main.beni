@@ -26,4 +26,4 @@ view _ =
 
 
 main : Browser.Program
-main = Browser.program { init = ⊤, update = λname _ → Requests.go name, view = view }
+main = Browser.program { init = λ⊤ → ⊤, update = λname _ → Requests.go name, view = view }

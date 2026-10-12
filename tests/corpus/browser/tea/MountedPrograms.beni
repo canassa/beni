@@ -20,7 +20,7 @@ type ShellMsg
 shell : Tea.Program
 shell =
     Tea.sandbox
-        { init = 0
+        { init = λ⊤ → 0
         , update = λPoke n → n + 1
         , view =
             λn →
@@ -40,7 +40,7 @@ type CountMsg
 counter : Tea.Program
 counter =
     Tea.element
-        { init = ( 0, Cmd.none )
+        { init = λ⊤ → ( 0, Cmd.none )
         , update = λUp n → ( n + 10, Cmd.none )
         , view = λn → <button id="up" onClick={Up}>up {n}</button>
         , subscriptions = λ_ → Sub.none
@@ -54,7 +54,7 @@ type NameMsg
 namer : Tea.Program
 namer =
     Tea.sandbox
-        { init = "x"
+        { init = λ⊤ → "x"
         , update = λRename s → s ++ "y"
         , view = λs → <button id="rename" onClick={Rename}>{s}</button>
         }

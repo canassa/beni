@@ -108,4 +108,4 @@ view model =
 
 
 main : Browser.Program
-main = Browser.program { init = { rows = rows, mark = 0 }, update = update, view = view }
+main = Browser.program { init = λ⊤ → { rows = rows, mark = 0 }, update = update, view = view }

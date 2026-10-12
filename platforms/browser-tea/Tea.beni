@@ -35,25 +35,28 @@ pub type alias Program =
     Browser.Program
 
 
---| A page with a model and no effects: `init` is rendered first, and each
---| message a handler sends goes through `update`. Several messages in one
---| task are rendered once, after the task.
+--| A page with a model and no effects: `init ⊤` is called when the page
+--| mounts and rendered first, and each message a handler sends goes
+--| through `update`. Several messages in one task are rendered once, after
+--| the task. `init` is a function on every platform, so that each mount
+--| starts from a model of its own (`boundary.md` §9.8.16).
 pub sandbox :
-      { init : model, update : msg, model → model, view : model → Html msg }
+      { init : ⊤ → model, update : msg, model → model, view : model → Html msg }
     → Program
 sandbox app = Browser.program app
 
 
---| A page with a model and effects. `init` is the first model and the
---| work it asks for; each message goes through `update`, which returns the
---| next model and the work that message asks for; and `subscriptions`
---| says, from the model, what should keep running. Commands that may wait
+--| A page with a model and effects. `init ⊤`, called when the page mounts,
+--| is the first model and the work it asks for; each message goes through
+--| `update`, which returns the next model and the work that message asks
+--| for; and `subscriptions` says, from the model, what should keep
+--| running. Commands that may wait
 --| and subscriptions run in fibers in the program's scope, which the
 --| program owns: none outlives it, and none belongs to the body whose
 --| message started it. A command that never waits runs where its fiber
 --| would have started, with none.
 pub element :
-      { init : model × Cmd msg
+      { init : ⊤ → model × Cmd msg
       , update : msg, model → model × Cmd msg
       , view : model → Html msg
       , subscriptions : model → Sub msg
@@ -61,7 +64,7 @@ pub element :
     → Program
 element app =
     Browser.hosted
-        { init = λhost → start host app.init
+        { init = λhost → start host (app.init ⊤)
         , update = λhost msg state → step host (app.update msg state.model) state
         , settle = λhost state → settle host (app.subscriptions state.model) state
         , view = λstate → app.view state.model
@@ -79,7 +82,7 @@ pub type alias Document msg =
 --| and the render that renders the body writes the title when it differs
 --| from the page's, so the two never disagree.
 pub document :
-      { init : model × Cmd msg
+      { init : ⊤ → model × Cmd msg
       , update : msg, model → model × Cmd msg
       , view : model → Document msg
       , subscriptions : model → Sub msg

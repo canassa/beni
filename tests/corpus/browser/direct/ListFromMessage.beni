@@ -54,4 +54,4 @@ view rows =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = [ row 1 "a", row 2 "b", row 3 "c" ], update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → [ row 1 "a", row 2 "b", row 3 "c" ], update = update, view = view }

@@ -43,7 +43,7 @@ view model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { label = "leaf", tick = 0 }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { label = "leaf", tick = 0 }, update = update, view = view }
 `;
 
 export const solid = (v, d) => `${solidHeader(v, `helper tree, ${d} levels`, ["createSignal", "Show"])}

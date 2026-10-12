@@ -75,4 +75,4 @@ view model =
 
 
 main : Browser.Program
-main = Browser.program { init = { count = 0, other = 0 }, update = update, view = view }
+main = Browser.program { init = λ⊤ → { count = 0, other = 0 }, update = update, view = view }

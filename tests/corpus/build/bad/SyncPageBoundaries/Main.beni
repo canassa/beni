@@ -46,7 +46,7 @@ view model =
 main : Browser.Program
 main =
     Browser.program
-        { init = { draft = "", keys = [] }
+        { init = λ⊤ → { draft = "", keys = [] }
         , update = update
         , view = view
         }

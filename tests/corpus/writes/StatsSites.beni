@@ -70,7 +70,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { title = "t", count = 0, tags = [], tree = Node "root" [] }
+        { init = λ⊤ → { title = "t", count = 0, tags = [], tree = Node "root" [] }
         , update = update
         , view = view
         }

@@ -86,16 +86,17 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { rows =
-                [ { id = 1, label = "one" }
-                , { id = 2, label = "two" }
-                , { id = 3, label = "three" }
-                , { id = 4, label = "four" }
-                , { id = 5, label = "five" }
-                ]
-            , selected = Nothing
-            , next = 10
-            }
+            λ⊤ →
+                { rows =
+                    [ { id = 1, label = "one" }
+                    , { id = 2, label = "two" }
+                    , { id = 3, label = "three" }
+                    , { id = 4, label = "four" }
+                    , { id = 5, label = "five" }
+                    ]
+                , selected = Nothing
+                , next = 10
+                }
         , update = update
         , view = view
         }

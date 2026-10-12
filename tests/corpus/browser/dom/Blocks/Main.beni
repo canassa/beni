@@ -73,4 +73,4 @@ view model =
 main : Browser.Program
 main =
     Browser.program
-        { init = { on = False, status = Idle, items = [] }, update = update, view = view }
+        { init = λ⊤ → { on = False, status = Idle, items = [] }, update = update, view = view }

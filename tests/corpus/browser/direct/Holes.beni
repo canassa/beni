@@ -71,7 +71,7 @@ view model =
 main : Tea.Program
 main =
     Tea.sandbox
-        { init = { on = False, count = 0, label = "Holes", fixed = 7 }
+        { init = λ⊤ → { on = False, count = 0, label = "Holes", fixed = 7 }
         , update = update
         , view = view
         }

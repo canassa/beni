@@ -56,13 +56,14 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { menu =
-                [ { id = 1, label = "Home", href = "#home" }
-                , { id = 22, label = "Q&A <faq>", href = "#faq" }
-                , { id = -3, label = "\"Quoted\"", href = "javascript:alert(1)" }
-                ]
-            , opened = []
-            }
+            λ⊤ →
+                { menu =
+                    [ { id = 1, label = "Home", href = "#home" }
+                    , { id = 22, label = "Q&A <faq>", href = "#faq" }
+                    , { id = -3, label = "\"Quoted\"", href = "javascript:alert(1)" }
+                    ]
+                , opened = []
+                }
         , update = update
         , view = view
         }

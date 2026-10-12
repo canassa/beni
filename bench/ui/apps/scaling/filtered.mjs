@@ -87,7 +87,7 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { todos = List.initialize ${n} λi → { id = i + 1, title = "todo \${i + 1}", done = Int.mod i 2 == 1 }
+            λ⊤ → { todos = List.initialize ${n} λi → { id = i + 1, title = "todo \${i + 1}", done = Int.mod i 2 == 1 }
             , filter = All
             }
         , update = update

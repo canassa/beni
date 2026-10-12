@@ -90,12 +90,13 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { groups =
-                [ { id = 1, title = "first", kids = [ "a", "b" ] }
-                , { id = 2, title = "second", kids = [ "c" ] }
-                ]
-            , log = ""
-            }
+            λ⊤ →
+                { groups =
+                    [ { id = 1, title = "first", kids = [ "a", "b" ] }
+                    , { id = 2, title = "second", kids = [ "c" ] }
+                    ]
+                , log = ""
+                }
         , update = update
         , view = view
         }

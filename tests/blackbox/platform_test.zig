@@ -557,7 +557,7 @@ test "a platform whose runtime module is its whole runtime writes no runtime fil
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = {}, update = λ_ m → m, view = view }
+        \\    Browser.program { init = λ⊤ → {}, update = λ_ m → m, view = view }
         \\
     );
 

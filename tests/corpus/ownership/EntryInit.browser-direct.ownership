@@ -1,15 +1,20 @@
 module EntryInit
-  39:31 List.push model.todos: accepted param
-  46:23 call EntryInit.resetTo model.todos: accepted param (EntryInit.resetTo writes π3.todos)
-  53:31 List.push model.todos: accepted param
-  69:11 entry EntryInit.updateTop model.todos: rejected top-level: EntryInit.initialModel is a top-level value
-  73:16 entry EntryInit.updateFresh model.todos: accepted entry
-  77:10 entry EntryInit.updateFresh model.todos: rejected top-level: EntryInit.seed is a top-level value
+  47:31 List.push model.todos: accepted param
+  54:23 call EntryInit.resetTo model.todos: accepted param (EntryInit.resetTo writes π3.todos)
+  61:31 List.push model.todos: accepted param
+  71:31 List.push model.todos: accepted param
+  87:11 entry EntryInit.updateTop model.todos: rejected top-level: EntryInit.initialModel is a top-level value
+  91:19 entry EntryInit.updateAdd model.todos: rejected top-level: EntryInit.initialModel is a top-level value
+  95:16 entry EntryInit.updateFresh model.todos: accepted entry
+  99:14 entry EntryInit.updateAdd model.todos: accepted entry
+  103:10 entry EntryInit.updateFresh model.todos: rejected top-level: EntryInit.seed is a top-level value
   summary initialModelOf: res .todos fresh1
+  summary initTop: res .todos shared(EntryInit.initialModel).todos
   summary resetTo: π1 A, π3.todos RAW, π3.todos[*] A; res .todos π3.todos, .todos[*] ~π3.todos[*], π1
   summary updateTop: π2.todos RAW, π2.todos[*] RA; res .todos shared(EntryInit.initialModel).todos π2.todos, .todos[*] ~π2.todos[*]
   summary updateFresh: π2.todos RAW, π2.todos[*] A; res .todos fresh1 π2.todos, .todos[*] ~π2.todos[*]
+  summary updateAdd: π2 A, π2.todos RAW, π2.todos[*] A; res .todos π2.todos, .todos[*] ~π2.todos[*], π2
   summary view: π1.todos R; res fresh1{lost}
-  demands 6: accepted 4 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
-total 6: accepted 4 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
-cause top-level 2
+  demands 9: accepted 6 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 3
+total 9: accepted 6 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 3
+cause top-level 3

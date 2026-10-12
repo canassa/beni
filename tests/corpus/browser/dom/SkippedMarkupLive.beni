@@ -97,7 +97,8 @@ main : Browser.Program
 main =
     Browser.program
         { init =
-            { text = "ab", open = True, shown = Just "sh", rows = [ { id = 0, label = "r0" } ] }
+            λ⊤ →
+                { text = "ab", open = True, shown = Just "sh", rows = [ { id = 0, label = "r0" } ] }
         , update = update
         , view = view
         }

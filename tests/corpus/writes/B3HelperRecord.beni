@@ -18,14 +18,14 @@ type Msg
 
 
 type alias App =
-    init : Model
+    init : ⊤ → Model
     update : Msg, Model → Model
     view : Model → Html Msg
 
 
 app : ⊤ → App
 app _ =
-    { init = { count = 0 }
+    { init = λ⊤ → { count = 0 }
     , update = λ_ model → { model | count = model.count + 1 }
     , view = λmodel → <p>{model.count}</p>
     }

@@ -17,4 +17,4 @@ pick _ = plain
 
 
 main : Tea.Program
-main = Tea.sandbox { init = {}, update = λ_ m → m, view = pick True }
+main = Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = pick True }

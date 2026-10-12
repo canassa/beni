@@ -67,4 +67,5 @@ view model =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = { draft = "", items = [], last = "" }, update = update, view = view }
+main =
+    Tea.sandbox { init = λ⊤ → { draft = "", items = [], last = "" }, update = update, view = view }

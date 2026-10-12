@@ -37,7 +37,7 @@ view model = <p>{model.b}</p>
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = start (List.foldl [ 1, 2, 3, 4, 5, 6, 7, 8 ] 0 λx n → x + n)
+        { init = λ⊤ → start (List.foldl [ 1, 2, 3, 4, 5, 6, 7, 8 ] 0 λx n → x + n)
         , update = update
         , view = view
         }

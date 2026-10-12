@@ -21,6 +21,6 @@ export const onInput = (toMsg) => ({ kind: "on", name: "input", handler: (event)
 
 export const onKeyDown = (toMsg) => ({ kind: "on", name: "keydown", handler: (event) => toMsg(event.key) });
 
-export const show = (view) => ({ init: null, update: null, view: () => view });
+export const show = (view) => ({ init: () => null, update: null, view: () => view });
 
 export const sandbox = (program) => ({ init: program.init, update: program.update, view: program.view });

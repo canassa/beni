@@ -103,4 +103,4 @@ view model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = fresh, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → fresh, update = update, view = view }

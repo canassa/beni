@@ -20,7 +20,9 @@ page _ = <p>first</p>
 main : Tea.Program
 main =
     Browser.programs
-        [ Tea.sandbox { init = "a", update = λ_ m → m, view = page }
-        , Browser.mountAt (Tea.sandbox { init = "b", update = λ_ m → m, view = page }) "nowhere"
-        , Tea.sandbox { init = "c", update = λ_ m → m, view = page }
+        [ Tea.sandbox { init = λ⊤ → "a", update = λ_ m → m, view = page }
+        , Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → "b", update = λ_ m → m, view = page })
+            "nowhere"
+        , Tea.sandbox { init = λ⊤ → "c", update = λ_ m → m, view = page }
         ]

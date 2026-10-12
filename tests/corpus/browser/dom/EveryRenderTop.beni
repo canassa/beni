@@ -25,4 +25,4 @@ view _ =
 
 
 main : Browser.Program
-main = Browser.program { init = 0, update = update, view = view }
+main = Browser.program { init = λ⊤ → 0, update = update, view = view }

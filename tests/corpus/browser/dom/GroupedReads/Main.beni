@@ -140,15 +140,16 @@ main : Browser.Program
 main =
     Browser.program
         { init =
-            { a = 0
-            , b = 1
-            , c = 2
-            , nested = { x = 0, y = 0 }
-            , pick = Nothing
-            , name = "card"
-            , items = [ 0 ]
-            , set = 0
-            }
+            λ⊤ →
+                { a = 0
+                , b = 1
+                , c = 2
+                , nested = { x = 0, y = 0 }
+                , pick = Nothing
+                , name = "card"
+                , items = [ 0 ]
+                , set = 0
+                }
         , update = update
         , view = view
         }

@@ -122,7 +122,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { count = 0, heard = [] }, Cmd.none )
+        { init = λ⊤ → ( { count = 0, heard = [] }, Cmd.none )
         , update = update
         , view = view
         , subscriptions = subscriptions

@@ -65,7 +65,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { send = Nothing, echoes = 0 }, Cmd.perform λsend → send (Captured send) )
+        { init = λ⊤ → ( { send = Nothing, echoes = 0 }, Cmd.perform λsend → send (Captured send) )
         , update = update
         , view = view
         , subscriptions = λ_ → Sub.none

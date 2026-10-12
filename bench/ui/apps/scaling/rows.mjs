@@ -60,7 +60,7 @@ view model =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = { rows = List.initialize ${n} λi → { id = i + 1, label = "row \${i + 1}" }, version = 0 }
+        { init = λ⊤ → { rows = List.initialize ${n} λi → { id = i + 1, label = "row \${i + 1}" }, version = 0 }
         , update = update
         , view = view
         }

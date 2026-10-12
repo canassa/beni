@@ -56,4 +56,4 @@ view log =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], listen ), update = update, view = view, subscriptions = λ_ → Sub.none }
+        { init = λ⊤ → ( [], listen ), update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -50,7 +50,7 @@ view rows =
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = [ { k = nan, label = "nan" }, { k = 2.0, label = "two" } ]
+        { init = λ⊤ → [ { k = nan, label = "nan" }, { k = 2.0, label = "two" } ]
         , update = update
         , view = view
         }

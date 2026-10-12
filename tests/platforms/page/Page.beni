@@ -55,9 +55,12 @@ pub foreign pure onKeyDown : sync (String → msg) → Attribute msg
 pub foreign pure show : Node msg → Program
 
 
---| A page with a model: `init` is rendered first, and every message a
+--| A page with a model: `init ⊤` is rendered first, and every message a
 --| handler sends goes through `update` before the next render.
 --| `update` and `view` are `sync`: neither may suspend.
 pub foreign pure sandbox :
-      { init : model, update : sync (msg, model → model), view : sync (model → Node msg) }
+      { init : sync (⊤ → model)
+      , update : sync (msg, model → model)
+      , view : sync (model → Node msg)
+      }
     → Program

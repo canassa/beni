@@ -77,6 +77,11 @@ main : Tea.Program
 main =
     Browser.programs
         [ Tea.sandbox
-            { init = { bumps = 0, taps = 0, frames = 0 }, update = updateOuter, view = viewOuter }
-        , Browser.mountAt (Tea.sandbox { init = 0, update = updateInner, view = viewInner }) "inner"
+            { init = λ⊤ → { bumps = 0, taps = 0, frames = 0 }
+            , update = updateOuter
+            , view = viewOuter
+            }
+        , Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → 0, update = updateInner, view = viewInner })
+            "inner"
         ]

@@ -35,4 +35,6 @@ view model =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = { tick = 0, title = "Holes", fixed = 7 }, update = update, view = view }
+main =
+    Tea.sandbox
+        { init = λ⊤ → { tick = 0, title = "Holes", fixed = 7 }, update = update, view = view }

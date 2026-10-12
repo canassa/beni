@@ -38,4 +38,4 @@ view model =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = { clicks = 0, submitted = [] }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { clicks = 0, submitted = [] }, update = update, view = view }

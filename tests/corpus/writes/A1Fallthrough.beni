@@ -59,4 +59,4 @@ view model = <p>{model.warning}</p>
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { page = Other, warning = "" }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { page = Other, warning = "" }, update = update, view = view }

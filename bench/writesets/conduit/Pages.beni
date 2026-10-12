@@ -28,7 +28,7 @@ guest = Session.Guest (Navigation.key ⊤)
 home : Tea.Program
 home =
     Tea.element
-        { init = Home.init guest
+        { init = λ⊤ → Home.init guest
         , update = Home.update
         , view = λmodel → (Home.view model).content
         , subscriptions = λ_ → Sub.none
@@ -38,7 +38,7 @@ home =
 feed : Tea.Program
 feed =
     Tea.element
-        { init = ( Feed.init guest 1 { articles = [], total = 0 }, Cmd.none )
+        { init = λ⊤ → ( Feed.init guest 1 { articles = [], total = 0 }, Cmd.none )
         , update = Feed.update
         , view = Feed.viewArticles
         , subscriptions = λ_ → Sub.none
@@ -48,7 +48,7 @@ feed =
 article : Tea.Program
 article =
     Tea.element
-        { init = ArticlePage.init guest "a-slug"
+        { init = λ⊤ → ArticlePage.init guest "a-slug"
         , update = ArticlePage.update
         , view = λmodel → (ArticlePage.view model).content
         , subscriptions = λ_ → Sub.none
@@ -58,7 +58,7 @@ article =
 editor : Tea.Program
 editor =
     Tea.element
-        { init = Editor.initNew guest
+        { init = λ⊤ → Editor.initNew guest
         , update = Editor.update
         , view = λmodel → (Editor.view model).content
         , subscriptions = λ_ → Sub.none
@@ -68,7 +68,7 @@ editor =
 login : Tea.Program
 login =
     Tea.element
-        { init = Login.init guest
+        { init = λ⊤ → Login.init guest
         , update = Login.update
         , view = λmodel → (Login.view model).content
         , subscriptions = λ_ → Sub.none
@@ -78,7 +78,7 @@ login =
 register : Tea.Program
 register =
     Tea.element
-        { init = Register.init guest
+        { init = λ⊤ → Register.init guest
         , update = Register.update
         , view = λmodel → (Register.view model).content
         , subscriptions = λ_ → Sub.none
@@ -88,7 +88,7 @@ register =
 settings : Tea.Program
 settings =
     Tea.element
-        { init = Settings.init guest
+        { init = λ⊤ → Settings.init guest
         , update = Settings.update
         , view = λmodel → (Settings.view model).content
         , subscriptions = λ_ → Sub.none
@@ -98,7 +98,7 @@ settings =
 profile : Tea.Program
 profile =
     Tea.element
-        { init = ProfilePage.init guest "a-user" ProfilePage.MyArticles
+        { init = λ⊤ → ProfilePage.init guest "a-user" ProfilePage.MyArticles
         , update = ProfilePage.update
         , view = λmodel → (ProfilePage.view model).content
         , subscriptions = λ_ → Sub.none

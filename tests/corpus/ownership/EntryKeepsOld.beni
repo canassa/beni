@@ -54,11 +54,11 @@ view model =
 
 
 kept : Tea.Program
-kept = Tea.sandbox { init = { items = [], saved = [] }, update = keepOld, view = view }
+kept = Tea.sandbox { init = λ⊤ → { items = [], saved = [] }, update = keepOld, view = view }
 
 
 copied : Tea.Program
-copied = Tea.sandbox { init = { items = [], saved = [] }, update = saveCopy, view = view }
+copied = Tea.sandbox { init = λ⊤ → { items = [], saved = [] }, update = saveCopy, view = view }
 
 
 main : Tea.Program

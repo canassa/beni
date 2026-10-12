@@ -71,7 +71,7 @@ view m =
 main : Browser.Program
 main =
     Browser.program
-        { init = { rows = [ { id = 0, label = "a" }, { id = 1, label = "b" } ], n = 0 }
+        { init = λ⊤ → { rows = [ { id = 0, label = "a" }, { id = 1, label = "b" } ], n = 0 }
         , update = update
         , view = view
         }

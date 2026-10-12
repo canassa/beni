@@ -37,12 +37,12 @@ concatenates model =
 
 
 extended : Tea.Program
-extended = Tea.sandbox { init = { pinned = [], recent = [] }, update = update, view = extends }
+extended = Tea.sandbox { init = λ⊤ → { pinned = [], recent = [] }, update = update, view = extends }
 
 
 concatenated : Tea.Program
 concatenated =
-    Tea.sandbox { init = { pinned = [], recent = [] }, update = update, view = concatenates }
+    Tea.sandbox { init = λ⊤ → { pinned = [], recent = [] }, update = update, view = concatenates }
 
 
 main : Tea.Program

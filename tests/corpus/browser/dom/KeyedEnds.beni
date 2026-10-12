@@ -151,7 +151,7 @@ view rows =
 main : Browser.Program
 main =
     Browser.program
-        { init = [ row 1 "a", row 2 "b", row 3 "c", row 4 "d", row 5 "e", row 6 "f" ]
+        { init = λ⊤ → [ row 1 "a", row 2 "b", row 3 "c", row 4 "d", row 5 "e", row 6 "f" ]
         , update = update
         , view = view
         }

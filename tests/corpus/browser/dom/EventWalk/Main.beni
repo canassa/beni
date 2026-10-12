@@ -57,4 +57,4 @@ view log =
 
 
 main : Browser.Program
-main = Browser.program { init = [], update = update, view = view }
+main = Browser.program { init = λ⊤ → [], update = update, view = view }

@@ -28,4 +28,4 @@ view model = <p>{model.count}</p>
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { count = 0, flag = False }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { count = 0, flag = False }, update = update, view = view }

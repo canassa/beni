@@ -85,25 +85,26 @@ main : Browser.Program
 main =
     Tea.sandbox
         { init =
-            { removed =
-                [ { id = 1, label = "one" }
-                , { id = 2, label = "two a" }
-                , { id = 2, label = "two b" }
-                , { id = 2, label = "two c" }
-                ]
-            , inserted =
-                [ { id = 1, label = "one" }
-                , { id = 2, label = "two a" }
-                , { id = 2, label = "two b" }
-                ]
-            , prepended = [ { id = 2, label = "two a" }, { id = 2, label = "two b" } ]
-            , swapped =
-                [ { id = 2, label = "two a" }
-                , { id = 1, label = "one" }
-                , { id = 2, label = "two b" }
-                ]
-            , rekeyed = [ { id = 2, label = "two a" }, { id = 2, label = "two b" } ]
-            }
+            λ⊤ →
+                { removed =
+                    [ { id = 1, label = "one" }
+                    , { id = 2, label = "two a" }
+                    , { id = 2, label = "two b" }
+                    , { id = 2, label = "two c" }
+                    ]
+                , inserted =
+                    [ { id = 1, label = "one" }
+                    , { id = 2, label = "two a" }
+                    , { id = 2, label = "two b" }
+                    ]
+                , prepended = [ { id = 2, label = "two a" }, { id = 2, label = "two b" } ]
+                , swapped =
+                    [ { id = 2, label = "two a" }
+                    , { id = 1, label = "one" }
+                    , { id = 2, label = "two b" }
+                    ]
+                , rekeyed = [ { id = 2, label = "two a" }, { id = 2, label = "two b" } ]
+                }
         , update = update
         , view = view
         }

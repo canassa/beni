@@ -14,7 +14,7 @@ view _ = <p>effects</p>
 main : Tea.Program
 main =
     Tea.element
-        { init = ( {}, Cmd.none )
+        { init = λ⊤ → ( {}, Cmd.none )
         , update = λ_ m → ( m, Cmd.none )
         , view = view
         , subscriptions = λ_ → Sub.none

@@ -86,4 +86,8 @@ view lines =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -3,7 +3,7 @@
 --! view into templates the page clones and patches.
 --!
 --! `Program` is data: the programs a page runs and where each mounts, read
---! only by the platform's runtime. Each renders `view init` into its mount
+--! only by the platform's runtime. Each renders `view (init ⊤)` into its mount
 --! node — `document.body` unless it was given another — and every message
 --! a handler sends goes through its own `update`; the page renders the new
 --! model once, on one microtask after the messages of a task, writing only
@@ -28,13 +28,18 @@ pub type UrlRequest
     | External String
 
 
---| A page with a model: `init` is rendered first, and every message a
---| handler sends goes through `update` before the next render. It mounts
---| at `document.body` unless `mountAt` gives it another node.
---| `update` and `view` are `sync`: the page calls them while it handles an
---| event or renders, so neither may suspend.
+--| A page with a model: `init ⊤` is called when the program mounts and
+--| rendered first, and every message a handler sends goes through `update`
+--| before the next render. It mounts at `document.body` unless `mountAt`
+--| gives it another node. `init` is a function so that each mount starts
+--| from a model of its own (`boundary.md` §9.8.16). All three are `sync`:
+--| the page calls them while it mounts, handles an event or renders, so
+--| none may suspend.
 pub program :
-      { init : model, update : sync (msg, model → model), view : sync (model → Html msg) }
+      { init : sync (⊤ → model)
+      , update : sync (msg, model → model)
+      , view : sync (model → Html msg)
+      }
     → Program
 program p =
     -- One mount, `{ a, n }`: the record, and no element id. Written in beni
@@ -302,7 +307,7 @@ host p root flushing phase stop =
             Js.write dirty True
             Js.write model (p.update self (Js.to msg) (Js.read model))
     Js.from
-        { init = Js.null
+        { init = λ⊤ → Js.null
         , update =
             λmsg →
                 if Js.same msg skip then

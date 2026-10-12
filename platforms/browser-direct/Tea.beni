@@ -25,20 +25,23 @@ pub type alias Program =
     Browser.Program
 
 
---| A page with a model and no effects: `init` is the first model, and
---| each message a handler sends goes through `update`, which the page
---| writes as it runs.
+--| A page with a model and no effects: `init ⊤`, called at mount, is the
+--| first model, and each message a handler sends goes through `update`,
+--| which the page writes as it runs.
 pub foreign pure sandbox :
-      { init : model, update : sync (msg, model → model), view : sync (model → Html msg) }
+      { init : sync (⊤ → model)
+      , update : sync (msg, model → model)
+      , view : sync (model → Html msg)
+      }
     → Program
 
 
---| A page with a model and effects: `init` is the first model and the
---| work it asks for; each message goes through `update`, which returns the
---| next model and the work that message asks for; and `subscriptions`
---| says, from the model, what should keep running.
+--| A page with a model and effects: `init ⊤`, called at mount, is the
+--| first model and the work it asks for; each message goes through
+--| `update`, which returns the next model and the work that message asks
+--| for; and `subscriptions` says, from the model, what should keep running.
 pub foreign pure element :
-      { init : model × Cmd msg
+      { init : sync (⊤ → model × Cmd msg)
       , update : sync (msg, model → model × Cmd msg)
       , view : sync (model → Html msg)
       , subscriptions : sync (model → Sub msg)
@@ -55,7 +58,7 @@ pub type alias Document msg =
 
 --| An `element` that owns the page's title: its `view` makes a `Document`.
 pub foreign pure document :
-      { init : model × Cmd msg
+      { init : sync (⊤ → model × Cmd msg)
       , update : sync (msg, model → model × Cmd msg)
       , view : sync (model → Document msg)
       , subscriptions : sync (model → Sub msg)

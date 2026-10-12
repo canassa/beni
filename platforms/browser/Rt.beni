@@ -635,12 +635,13 @@ setPhase f =
     Js.from (Js.read scheduled)
 
 
--- Render `view init` after the children of `root`, and mark `root` with the
--- program's `send`.
+-- Render `view (init ⊤)` after the children of `root`, and mark `root` with
+-- the program's `send`. `init` is called here, once per mount
+-- (`boundary.md` §9.8.16).
 mount : V, V → ⊤
 mount program root =
     s = slot root Js.null Js.null
-    model = Js.ref (Js.get program "init")
+    model = Js.ref (Js.call program "init" [])
     waiting = Js.ref False
 
     render =

@@ -37,4 +37,4 @@ view m =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = { fixed = [ 1, 2 ], items = [] }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { fixed = [ 1, 2 ], items = [] }, update = update, view = view }

@@ -58,7 +58,7 @@ ${beniTop}
 const beniMain = (n) => `main : Browser.Program
 main =
     Tea.sandbox
-        { init = { items = List.initialize ${n} makeItem, tick = 0 }
+        { init = λ⊤ → { items = List.initialize ${n} makeItem, tick = 0 }
         , update = update
         , view = view
         }

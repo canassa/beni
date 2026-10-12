@@ -361,7 +361,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = init
+        { init = λ⊤ → init
         , update = update
         , view = view
         , subscriptions = λ_ → Browser.Navigation.onUrlChange UrlChanged
