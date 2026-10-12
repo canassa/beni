@@ -1,0 +1,40 @@
+-- ownership: a callee that writes what a function hands it back (`need`,
+-- §16.2) is checked against that function's class; when no class is known —
+-- a function read out of a `Ref`, out of JavaScript — nothing shows that the
+-- function returns a list it owns, so the write is rejected `need`,
+-- approximately (§24.9), never accepted. `fromSlot` hands the function in a
+-- constructor (a function slot of `build`), `fromParam` hands it directly (a
+-- function parameter of `build2`); in both the function returns `xs`, which
+-- is read after `build` pushes onto it.
+import Ref
+
+
+type Maker
+    = Mk (⊤ → List Int)
+
+
+build : Maker → List Int
+build m =
+    case m of
+        Mk g →
+            List.push (g ⊤) 1
+
+
+build2 : (⊤ → List Int) → List Int
+build2 g = List.push (g ⊤) 1
+
+
+pub fromSlot : Int → Int
+fromSlot n =
+    xs = [ n ]
+    r = Ref.make (Mk λ⊤ → xs)
+    ys = build (Ref.get r)
+    List.length xs + List.length ys
+
+
+pub fromParam : Int → Int
+fromParam n =
+    xs = [ n ]
+    r = Ref.make λ⊤ → xs
+    ys = build2 (Ref.get r)
+    List.length xs + List.length ys

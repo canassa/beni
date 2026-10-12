@@ -5704,7 +5704,7 @@ const Walker = struct {
         const actual = (try w.actualOf(s, avs, j)) orelse return;
         // A function slot (§24.9) has no argument of its own: what the
         // checks below read off an argument's text or type, they skip.
-        if (j >= args.len or j >= s.params) return w.checkSlot(inst, s, avs, j, ff, actual);
+        if (j >= args.len or j >= s.params) return w.checkSlot(inst, s, avs, j, ff, actual, callee.name);
         // The caller's own function parameter, passed on.
         if (w.fnParamOf(actual)) |jj| {
             if (w.frame != 0) {
@@ -5723,20 +5723,46 @@ const Walker = struct {
     /// passed on; a function value the caller wrote went through `sight`
     /// where it was stored, so what remains is what the callee does with
     /// what it returns (`need`).
-    fn checkSlot(w: *Walker, inst: Inst.Index, s: *const Summary, avs: []const AV, j: u32, ff: FunFacts, actual: AV) Allocator.Error!void {
+    fn checkSlot(w: *Walker, inst: Inst.Index, s: *const Summary, avs: []const AV, j: u32, ff: FunFacts, actual: AV, callee: []const u8) Allocator.Error!void {
         if (w.frame == 0) if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
         if (!ff.need) return;
         const classes = try w.classesOf(actual);
+        if (classes.len == 0) return w.needUnknown(inst, "<function value>", callee);
         for (classes) |cls| {
-            const c = (try w.classSummary(cls)) orelse continue;
+            const c = (try w.classSummary(cls)) orelse return w.needUnknown(inst, "<function value>", callee);
             if (try w.returnsOwned(c, s, avs, j, 0, none)) continue;
             const name: []const u8 = switch (cls) {
                 .closure => "<lambda>",
                 .func => |t| try w.qualified(t),
                 .send => "send",
             };
-            try w.valueLine(w.token(inst), name, .{ .rejected = .need }, try std.fmt.allocPrint(w.o.out.allocator(), "the callee edits what it returns, which may be a list it does not own", .{}), "", false);
+            try w.valueLine(w.token(inst), name, .{ .rejected = .need }, try std.fmt.allocPrint(w.o.out.allocator(), "{s} edits what it returns, which may be a list it does not own", .{callee}), "", false);
         }
+    }
+
+    /// A callee that edits what a function it is handed returns (`need`),
+    /// handed a function whose class the checker does not know — read out of
+    /// a `Ref`, from JavaScript, out of a structure: nothing shows it returns
+    /// a list it owns, so the edit is rejected, approximately — the limit is
+    /// the checker's, not sharing the text shows.
+    fn needUnknown(w: *Walker, inst: Inst.Index, base: []const u8, callee: []const u8) Allocator.Error!void {
+        const why = try std.fmt.allocPrint(w.o.out.allocator(), "{s} edits what it returns, and the checker does not know which function it is, so not that it returns a list it owns", .{callee});
+        try w.demands.append(w.a, .{
+            .kind = .value,
+            .token = w.token(inst),
+            .op = "value",
+            .base = base,
+            .base_local = none,
+            .base_path = eps,
+            .point = w.point,
+            .frame = w.frame,
+            .ctx = w.ctx,
+            .element = false,
+            .accept = .callback_param,
+            .holders = &.{},
+            .fixed = .{ .verdict = .{ .rejected = .need }, .detail = why },
+            .prelim = .{ .cause = .need, .detail = why, .approx = true },
+        });
     }
 
     /// The caller's own function parameter or slot `jj`, handed to the
@@ -5804,9 +5830,12 @@ const Walker = struct {
                     .prelim = .{ .cause = .need, .detail = why, .approx = approx },
                 });
             }
-        };
+        } else if (ff.need) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
         for (classes) |cls| {
-            const c = (try w.classSummary(cls)) orelse continue;
+            const c = (try w.classSummary(cls)) orelse {
+                if (ff.need) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
+                continue;
+            };
             const name: []const u8 = switch (cls) {
                 .closure => "<lambda>",
                 .func => |t| try w.qualified(t),
