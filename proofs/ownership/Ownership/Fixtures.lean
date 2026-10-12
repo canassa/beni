@@ -417,6 +417,19 @@ def onceThroughCallee : Program := {
     .letE 2 (.prim (.literal .int) [.int 7]) <| .letE 3 (.closure 1 []) <|
     .letE 4 (.app (v 3) [v 2, v 1]) (.prim .record [v 4, v 1]) }
 
+/-- `close b xs` with an empty builder returns `xs`'s own array (equal
+    contents); `xs` is the written capture of a once closure, which a callee
+    then calls. `close`'s source is not a use, so creating the closure did not
+    keep `xs` from being named again; demanding the closure's roots at the
+    callee's call is not enough, its written captures must be demanded too,
+    as a direct call demands them (value: `[]`, in place: `[1]`). -/
+def closeThenOnceThroughCallee : Program := {
+  declarations := onceThroughCallee.declarations
+  main := .letE 0 (.prim (.literal .int) []) <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.prim (.builder .int) []) <| .letE 3 (.prim .close [v 2, v 0]) <|
+    .letE 4 (.prim (.literal .int) [.int 7]) <| .letE 5 (.closure 1 []) <|
+    .letE 6 (.app (v 5) [v 4, v 1]) (.prim .record [v 3, v 6]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -438,7 +451,8 @@ def probes : List (String × Program × Mutant × Bool) := [
   ("map over a captured list", probeCallbackEnv, .callbackEnv, false),
   ("mapVia publishes a row, then the row is pushed", probePublishVia, .callbackEscapes, false),
   ("mapVia forwards map's guards about its callback", probePublishVia, .forwardGuards, false),
-  ("once closure called by a callee, then observed", onceThroughCallee, .onceThroughCall, false)]
+  ("once closure called by a callee, then observed", onceThroughCallee, .onceThroughCall, false),
+  ("close returns a once closure's capture, a callee calls it", closeThenOnceThroughCallee, .onceThroughCall, false)]
 
 def scalarIndexOrder : Program := {
   main := .letE 0 list <| .letE 1 (.prim .at [v 0,.int 0,.int 0]) <|
@@ -593,7 +607,8 @@ def all : List Fixture := [
   ⟨"wrapper writes its callback's returned capture",envThroughWrapper,true⟩,
   ⟨"write through a callback's environment, then call it again",envWriteThenCall,false⟩,
   ⟨"focus body pushes its own container",focusStale,false⟩,
-  ⟨"once closure called by a callee, then observed",onceThroughCallee,false⟩ ]
+  ⟨"once closure called by a callee, then observed",onceThroughCallee,false⟩,
+  ⟨"close returns a once closure's capture, a callee calls it",closeThenOnceThroughCallee,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true

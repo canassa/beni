@@ -673,7 +673,7 @@ def callKnown (fuel : Nat) (ctx : Context) (id : Nat) (actuals caps : List Abstr
     for (slot, count) in s.calls do
       match frame.actuals.lookup slot with
       | some (.symbolic j ..) => recordCall j count
-      | some (.function roots _) =>
+      | some (.function roots alts) =>
         if !roots.isEmpty then hit "calls of a once callback checked"
         if count ≥ 2 && !roots.isEmpty && !ctx.config.has .callsEdge then
           throw "calls edge: a once callback is called many times"
@@ -683,6 +683,19 @@ def callKnown (fuel : Nat) (ctx : Context) (id : Nat) (actuals caps : List Abstr
         if count ≥ 1 && !roots.isEmpty && !ctx.config.has .onceThroughCall then
           let self := if slot < n then Origin.parameter slot [] else .capture (slot - n) []
           demand ctx.config roots later (otherPaths actuals caps self)
+          -- The callee's summary does not show the callback writing its own
+          -- environment, so the captures the closure's calls write are
+          -- demanded here, as `applyCall` demands them at a direct call:
+          -- creation made them dead, but a value built later may name them
+          -- (a `close` returns its source, which is not a use).
+          for (id, fcaps) in alts do
+            let fd ← ctx.declarations[id]?.toExcept "summary declaration"
+            let fps := fd.parameters.zipIdx.map fun (t, i) => canonical Origin.parameter i (typeShape t)
+            let cs ← classOf f ctx.declarations ctx.config ctx.frames id fcaps fps
+              (canonicalOwned ctx (fd.parameters.map typeShape) fcaps [])
+            for w in cs.writes ++ cs.consumes do
+              if let .capture .. := w then
+                demand ctx.config (instantiateOrigin site [] fcaps w) later (otherPaths [] fcaps w)
       | _ => pure ()
     applyCall ctx s site actuals caps later
 termination_by (fuel, 2)
