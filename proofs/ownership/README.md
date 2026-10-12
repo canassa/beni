@@ -5,8 +5,9 @@ a typed ANF language, a value interpreter and an in-place interpreter, an
 ownership checker built on the thesis's per-function summaries, a differential
 oracle that runs every accepted generated program in both interpreters, and
 proofs about the builder primitives plus the statements of the soundness
-argument. This is **not a certified ownership checker**: the soundness theorems
-are stated and three of them are `sorry`. It does not change the beni compiler
+argument. This is **not a certified ownership checker**: of the soundness
+statements three are `sorry` and the main theorem is proved only from one of
+them. It does not change the beni compiler
 or the thesis.
 
 Current state ([RESULTS.md](RESULTS.md)): 78 fixed verdict fixtures, checked by
@@ -38,6 +39,7 @@ lake exe ownership oracle 20000 17 --mutant=supply-edge
 lake exe ownership summaries --fixture="T43" # print published summaries
 lake exe ownership reasons 20000 17 --family=general   # rejection reasons
 lake env lean Axioms.lean                    # print the axiom audit again
+lake exe ownership falsify 100000 17         # try to falsify the unproved statements
 ```
 
 Counts and seeds are deterministic. `--generator-version=3` reproduces the v3
@@ -67,6 +69,7 @@ no network, no paid service. The project is outside the Zig gates.
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
 | `Soundness.lean` | the bridge to concrete heaps and the soundness statements |
+| `Falsify.lean` | executes the unproved statements on concrete configurations (`ownership falsify`) |
 | `Report.lean` | printing summaries |
 
 [DESIGN.md](DESIGN.md) specifies the boundary and the summary layer;
@@ -79,15 +82,23 @@ Proved without `sorry`: the builder/close contracts against the executable
 primitives and the concrete heap lemmas (unchanged). Proved but **conditional
 on a naming** of origins that nothing yet constructs: the soundness of the
 checker's overlap and demand tests, and the abstract builder value describing
-the concrete allocation. Bookkeeping: the invariant's base case. The main
-theorem is proved only **conditionally** on the step lemma. All statements are
-about programs the corrected checker accepts (`check p = .ok _`).
+the concrete allocation. Bookkeeping: the invariant's base case, and that the
+review's counterexample to the earlier invariant is excluded by the restated
+one. The main theorem is proved only **conditionally** on the step lemma. All
+statements are about programs the corrected checker accepts
+(`check p = .ok _`).
 
 `sorry`: `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as repaired in
 round 5), `map_summary_sound`, `invariant_preserved` (the step case of the
-prefix induction). Lemma 6.7's clause 4 is not stated (the interpreters do not
-record callback invocations). No axiom is declared; `lake build` fails if the
-set of `sorry`-dependent theorems changes (`Axioms.lean`).
+prefix induction). All three were restated after the second review showed the
+step lemma false as stated; COVERAGE.md says what each now claims, why it is
+believed true, and what `ownership falsify` (random configurations for the
+step lemma, every call of generated programs for Lemma 6.7) found — including
+two checker defects, now fixed. Lemma 6.7's clause 4 is not stated (the
+interpreters do not record callback invocations). No axiom is declared;
+`lake build` fails if the set of `sorry`-dependent constants changes, or if any
+`sorry`, `admit`, `native_decide` or `axiom` appears in the sources beyond the
+three statements (`Axioms.lean`).
 
 ## Limits
 

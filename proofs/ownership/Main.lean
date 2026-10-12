@@ -2,6 +2,7 @@ import Ownership.Smoke
 import Ownership.Oracle
 import Ownership.Fixtures
 import Ownership.Report
+import Ownership.Falsify
 
 open Ownership
 
@@ -11,7 +12,7 @@ def flagValue (args : List String) (name : String) : Option String :=
 def main (args : List String) : IO UInt32 := do
   let mode := args.head?.getD "all"
   let positional := args.filter (fun a => !a.startsWith "--" &&
-    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff"].contains a)
+    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff", "falsify"].contains a)
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
   let version := (flagValue args "generator-version").bind String.toNat? |>.getD 4
@@ -22,6 +23,16 @@ def main (args : List String) : IO UInt32 := do
       | none =>
         IO.println s!"unknown mutant {name}; known: {Mutant.all.map Mutant.name}"
         return 2
+  -- Execute the unproved statements of Soundness.lean on concrete
+  -- configurations (Falsify.lean): random states for the step lemma, and
+  -- every call of the accepted programs of a campaign for Lemma 6.7.
+  if mode == "falsify" then
+    let a ← Falsify.invariantCampaign count seed (checker := { mutant })
+    let b ← Falsify.summaryCampaign count seed
+    let clean := a.hypothesisFalse == 0 && a.observational == 0 && a.errorClause == 0 &&
+      a.naming == 0 && b.violations == 0
+    IO.println s!"falsify count={count} seed={seed} clean={clean}"
+    return (if clean then 0 else 1)
   if mode == "reasons" then
     Oracle.reasons count seed ((flagValue args "family").getD "general") version
     return 0

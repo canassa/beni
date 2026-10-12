@@ -1,0 +1,10 @@
+invariant_preserved: { tried := 100000,
+  hypothesisFalse := 0,
+  accepted := 83649,
+  valueOk := 83649,
+  withWrite := 5255,
+  observational := 0,
+  naming := 0,
+  errorClause := 0 }
+summary_sound: { calls := 69540, checked := 65031, vacuous := 28862, guardsDiffer := 127, violations := 0, mapChecked := 5096 }
+falsify count=100000 seed=271828 clean=true

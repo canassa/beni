@@ -30,6 +30,24 @@ decreasing_by
 
 instance : BEq Observation := ⟨Observation.equal⟩
 
+/-- The nesting depth of an observation: exactly the fuel the in-place
+    `snapshot` needs to produce it (an integer needs 1, a container one more
+    than its deepest item). -/
+def Observation.depth : Observation → Nat
+  | .int _ => 1
+  | .record xs | .list xs | .closure _ xs => 1 + (xs.attach.map fun x => x.val.depth).foldl max 0
+termination_by o => sizeOf o
+decreasing_by
+  all_goals simp_wf
+  all_goals have := List.sizeOf_lt_of_mem x.property
+  all_goals omega
+
+/-- Both interpreters observe values only up to this depth and fail beyond
+    it: the in-place `snapshot` runs out of fuel, and the value interpreter
+    checks the same bound, so a deep value is an explicit failure of both runs
+    rather than a disagreement (or a step the invariant could not relate). -/
+def observationDepth : Nat := 256
+
 structure Trace where
   reads : List Observation
   finalValue : Observation
@@ -51,12 +69,18 @@ def tick : M Unit := do
   if s.fuel == 0 then throw "value execution exhausted fuel"
   set { s with fuel := s.fuel - 1 }
 
-def read (v : Value) : M Unit := modify fun s => { s with reads := s.reads.push v }
+def observable (v : Value) : Except String Unit :=
+  if v.depth > observationDepth then throw "snapshot exhausted depth" else pure ()
+
+def read (v : Value) : M Unit := do
+  observable v
+  modify fun s => { s with reads := s.reads.push v }
 
 /-- A permanent outside reader observes every completed expression. -/
 def observeKept : M Unit := do
   let s ← get
   if !s.kept.isEmpty then
+    s.kept.toList.forM (m := Except String) observable
     set { s with externalReads := s.externalReads.push s.kept.toList }
 
 def atom (env : Env Value) : Atom → Except String Value
@@ -148,6 +172,7 @@ decreasing_by all_goals simp_wf; omega
 
 def run (p : Program) (fuel := 100000) : Except String Trace := do
   let (v, s) ← (eval fuel p.declarations none [] p.main).run { fuel }
+  observable v
   pure { reads := s.reads.toList, finalValue := v, externalReads := s.externalReads.toList }
 
 end ValueSemantics
@@ -222,14 +247,14 @@ def snapshot (heap : Array (List Value)) : Nat → Value → Except String Obser
       return .list (← xs.mapM (snapshot heap n))
 
 def read (v : Value) : M Unit := do
-  let o ← snapshot (← get).heap 256 v
+  let o ← snapshot (← get).heap observationDepth v
   modify fun s => { s with reads := s.reads.push o }
 
 /-- Keep actual references, not snapshots made when a holder was registered. -/
 def observeKept : M Unit := do
   let s ← get
   if !s.kept.isEmpty then
-    let observations ← s.kept.toList.mapM (m := Except String) (snapshot s.heap 256)
+    let observations ← s.kept.toList.mapM (m := Except String) (snapshot s.heap observationDepth)
     set { s with externalReads := s.externalReads.push observations }
 
 def atom (env : Env Value) : Atom → Except String Value
@@ -350,7 +375,7 @@ decreasing_by all_goals simp_wf; omega
 
 def run (p : Program) (fuel := 100000) : Except String Trace := do
   let (v, s) ← (eval fuel p.declarations none [] p.main).run { fuel }
-  let finalValue ← snapshot s.heap 256 v
+  let finalValue ← snapshot s.heap observationDepth v
   pure { reads := s.reads.toList, finalValue, externalReads := s.externalReads.toList }
 
 /-- Number of program-level in-place writes an execution performs. -/

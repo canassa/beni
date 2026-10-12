@@ -144,8 +144,16 @@ and runs the unmodified generator on each build.
 ## Soundness statements
 
 `Soundness.lean` names origins by arrays (`Naming`), calls a naming separating
-when origins the checker calls non-aliasing name disjoint arrays, relates an
-abstract value to a concrete one (`Describes`: footprint named, certificate
-nodup), states Lemma 6.7 (`CallSound`, clause 2 as repaired) and the main
-theorem over every fuel bound with an explicit `Invariant`. What is proved and
-what is `sorry` is listed in COVERAGE.md.
+when origins the checker calls non-aliasing name disjoint arrays, finds values
+in a heap by path relationally (`AtPath`, `Reaches`; no fuel), relates an
+abstract value to a concrete one path by path (`Describes`: the arrays at each
+path named by the cells at that path, each exclusive list's value repeating no
+array), states Lemma 6.7 (`CallSound`, clause 2 as repaired: the holders that
+outlive a call are its result and the permanent observers) and the main
+theorem over every fuel bound with an explicit `Invariant` that also relates
+the permanent observers of the two runs and the checker's recorded escapes.
+Both interpreters fail on observing a value deeper than `observationDepth`, so
+correspondence itself has no depth bound. `Falsify.lean` executes the unproved
+statements on concrete configurations. What is proved and what is `sorry`,
+why each `sorry` is believed true and what the falsifier found is in
+COVERAGE.md.

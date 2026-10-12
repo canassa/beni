@@ -218,18 +218,197 @@ its fixed probe is T46 two rows, run against the per-call checker.
 | Theorem | Status |
 |---|---|
 | `cellOverlap_sound`, `demandProblem_sound` — the overlap and demand tests exclude shared arrays | proved, **conditional on a separating naming** (`Separating γ`), which nothing yet constructs; the first conjunct of `demandProblem_sound` only restates checker booleans |
-| `builder_alloc_describes` — abstract builder value describes the concrete allocation | proved, **conditional on the naming naming the new array** (`hsite`) |
-| `invariant_initial`, `invariant_observations`, `check_accepts_main`, `corrected_default` | proved; bookkeeping (`invariant_initial` is instantiated with the empty naming) |
-| `accepted_traces_agree` — main theorem: for `check p = .ok _` (corrected config), same final value, reads and external reads, for every fuel bound | proved **conditionally** on `invariant_preserved`: about twenty lines of unfolding, no assurance beyond that lemma |
-| `invariant_preserved` — the step case of the prefix induction over the whole configuration | **sorry** |
-| `summary_sound` — Lemma 6.7 clauses 1–3, clause 2 as repaired in round 5 | **sorry** |
-| `map_summary_sound` — map's derived summary, including its certificate | **sorry** |
+| `builder_alloc_describes` — abstract builder value describes the concrete allocation | proved, **conditional on the naming naming the new array** (`hsite`); re-proved for the path-wise `Describes` |
+| `invariant_initial`, `invariant_observations`, `check_accepts_main`, `check_typed`, `typecheck_main`, `corrected_default` | proved; bookkeeping (`invariant_initial` is instantiated with the empty naming) |
+| `old_invariant_counterexample` — the review's counterexample to the earlier invariant is excluded by the restated one | proved; `#guard`s beside it run both interpreters and show that the earlier statement's conclusion failed on it |
+| `accepted_traces_agree` — main theorem: for `check p = .ok _` (corrected config), same final value, reads and external reads, for every fuel bound | proved **conditionally** on `invariant_preserved`: unfolding, plus the value run's depth check |
+| `invariant_preserved` — the step case of the prefix induction over the whole configuration | **sorry**; restated (below) |
+| `summary_sound` — Lemma 6.7 clauses 1–3, clause 2 as repaired in round 5 | **sorry**; restated (below) |
+| `map_summary_sound` — map's derived summary, including its certificate | **sorry**; restated with `summary_sound` |
 | Lemma 6.7 clause 4 (calls, supply) | **not stated**: the interpreters do not record callback invocations |
 | builder/close contracts, footprint framing, close identity (`BuilderProof`, `HeapProof`) | proved (unchanged) |
 | kernel checks of `storeExclusive` and permanent escapes | proved (unchanged) |
 
+### The invariant, restated
+
+The second review showed `invariant_preserved` false as stated: `Invariant`
+related reads, external reads, fuel and live bindings, and nothing about the
+permanent observers, so a pre-state whose in-place side had registered an
+observer (`hs.kept = #[.ref 0]`) that the value side had not (`vs.kept =
+#[]`) met every hypothesis and broke the conclusion at the next
+`observeKept`. Working through the statements again, by hand and with the
+falsifier below, found eleven more ways they were false or vacuous, listed
+below; all are fixed in the statements, and two turned out to be defects of
+the checker, not of the statement (below, "Defects the
+restatement found").
+
+`Invariant vs hs env live aenv escapes γ` now says, in words:
+
+1. the reads, the external reads and the fuel left are equal;
+2. **the observers are the same on both sides** — as many, each pair
+   corresponding — and **every array an observer reaches is named only by
+   origins the checker treats as escaped** (`shared`, ⊤, or overlapping the
+   escapes the checker has recorded, `st.facts.escapes`), so no demand the
+   checker passes can write one; the step lemma's hypothesis uses the escapes
+   recorded before the expression and its conclusion those after it;
+3. every **live use** — a variable and a field path, as `uses` produces them,
+   not just a variable — corresponds, and is described by its abstract value
+   at that path (a write to `r.1` while only `r.0` is live legitimately makes
+   `r`'s value copy differ);
+4. **description is path by path**: the arrays at each path of a value are
+   named by the abstract value's cells at that path (`Covers`), and an
+   exclusive list certifies the value at its path (`CertifiedExclusive`). A
+   whole-footprint naming was too weak: an array named only by an element
+   origin could be written through a root demand;
+5. **every binding, live or dead, keeps its arrays at immutable paths (root,
+   fields, captures) named by its abstract value**: `close b xs` reads `xs`
+   without using it (`uses` omits a close's source), so `xs`'s naming must
+   survive while `xs` is dead;
+6. the naming is separating.
+
+Besides `Invariant`, the step lemma now assumes, and concludes for its result:
+
+* `Corresponds` is unbounded (`∀ n ≥ o.depth, snapshot heap n w = .ok o`).
+  With the earlier fixed depth 256, `literal [x]` over an `x` of depth 256
+  made the result uncorrespondable although both runs succeed. The value
+  interpreter now fails explicitly on observing a value deeper than
+  `observationDepth` (256), exactly where the in-place `snapshot` runs out of
+  fuel, so a deep value is a failure of both runs (`Observation.depth` is
+  checked against `snapshot` by a `#guard`);
+* `WellTyped`: the expression is ordinarily typed in a typing of the
+  environment its values have. Without it a branch whose arms have different
+  shapes joins to an unknown list with no element cells, which describes
+  nothing (the falsifier found this through a mistyped generator);
+* `HonestClosures`: a function value described as not once (no roots) is one
+  the checker itself would create as not once (re-creating it from its
+  abstract captures gives no roots). A writing closure described as not once
+  is one no program builds, and with it the statement is false (falsifier).
+
+`summary_sound` (and `map_summary_sound`) were restated too:
+
+* **clause 3 named only parameters**, so a declaration returning a captured
+  list (`capGet`) or its argument published as shared (`publish`) broke it:
+  it now covers captures (`inputOrigin`) and admits `shared`/⊤ in `res(q)`;
+* **clause 2 listed every array holding an argument cell** as a holder,
+  including garbage and arrays the call writes; it was false for `map` with
+  the identity callback (the new result array holds the rows). It now says
+  what the repair means: the holders that outlive the call are the result
+  (clause 3 names every array of it) and the permanent observers, which reach
+  an input array only if they did before or the path escapes;
+* **guards**: a summary speaks about the callbacks whose class its guards
+  recorded; a call with other callbacks is outside it. The hypothesis
+  `classes` asks for abstract closures resolving every guard as recorded and
+  describing the actual closures;
+* **paths**: clauses 1–3 range over the canonical input paths (a function
+  input has `[]` and `[env]`), and `[env]` reaches every array the
+  environment reaches (`AtPath.env`), as `π_i.env` stands for;
+* description is path by path, as for the invariant; `pathCells`' fixed fuel
+  of 64 is replaced by the relational `AtPath`, so no claim stops at a depth.
+
+### Why each remaining sorry is believed true
+
+* **`invariant_preserved`.** It is the checker's soundness for one
+  main-context expression, from any related configuration. The demand test
+  is sound under a separating naming (`demandProblem_sound`, proved): a
+  written array is named by known, unescaped cells that no live use and no
+  other operand names, so by (3)–(4) no live use and no other operand reaches
+  it and by (2) no observer does; what the expression reads is live, hence
+  corresponds; fresh arrays get fresh names, and the result's naming follows
+  the abstract result the checker computed. Calls are `summary_sound`
+  instantiated at the call; traversals and focus steps are the same argument
+  over the step's summary with the position tags separating past and current
+  elements. What is not argued: that every primitive's abstract transfer
+  function names the arrays it returns (the falsifier checks it on every
+  primitive and form it generates), and the inductive bookkeeping of nested
+  scopes.
+* **`summary_sound`.** The summary is the fixpoint of the body's inference
+  over canonical inputs, validated once more with the final assignment. A
+  write in the body is a demand on canonical cells, recorded as `W` on the
+  input path (clause 1); a `shared` records its operand's cells in the escapes
+  and normalisation keeps the input ones as `E` (clause 2); the result's
+  cells are the instantiated abstract result, normalised to input origins,
+  `fresh`, `shared` or ⊤ (clause 3). Callback effects enter through guarded
+  facts, which `classes` makes the actual callbacks' facts. The statement is
+  vacuous for calls that pass one array at two input paths (the canonical
+  origins of distinct paths do not alias, so no separating naming describes
+  such a call): there the caller's Disjoint test, not this lemma, is what
+  makes a write safe, and a proof of the step lemma needs a coarser naming
+  for read-only aliasing.
+* **`map_summary_sound`.** `summary_sound` at `Library.map`, plus: where the
+  published result is exclusive at a path, the concrete value there repeats
+  no array. The builder's `put` stores only values certified exclusive and
+  separated from each other and from outside holders (T59's premise,
+  `builder_put_contract` proves the heap side), and `close` either returns the
+  builder or, when contents are equal, the source, whose provenance the
+  result includes.
+
+### Falsification attempts (`ownership falsify <count> <seed>`, `Falsify.lean`)
+
+Each unproved statement is executed on concrete configurations, its
+hypotheses checked rather than assumed:
+
+* **`invariant_preserved`**: random configurations (1–4 int lists, 0–2 nested
+  lists, 1–5 variables bound to ints, lists, nested lists, records of lists
+  and closures over lists; a random naming in which arrays sometimes share an
+  origin; abstract values derived from it, sometimes with an extra origin or
+  without an exclusivity flag; random observers and the escapes they imply;
+  random continuation uses including field paths) and a random typed
+  expression of depth 1–3 over them (push, set, indexed read, length, copy,
+  literals, records, `shared`, spine push, element read, focus, list
+  traversals reading or consuming, calls of closures, map, update, foldl,
+  builder/close, a higher-order callee calling a list callback, lets,
+  branches). When the checker accepts, both interpreters run and every part
+  of the conclusion is checked; for the naming, one is constructed (each
+  array named by every origin of a single base that every requirement
+  mentions) and checked against every clause.
+* **`summary_sound` / `map_summary_sound`**: every call made while running the
+  accepted programs of a generated campaign, against every published summary
+  of the called declaration whose hypotheses the call meets under the
+  canonical naming (each canonical origin names the arrays at its path),
+  guards resolved with abstract closures built from the actual ones.
+
+What it found, in order: the review's counterexample (on the earlier
+statement), dishonest closures, ill-typed expressions, `env` paths of known
+function values (`namesAt`), and, on the corrected statement, **the second
+checker defect below**. After the fixes, on 100 000 configurations and the
+calls of 100 000 generated programs per seed:
+
+| Seed | Step configurations | Accepted | Accepted with a write | Failures | Calls checked against a summary | of which map | Vacuous | Failures |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20261011 | 100 000 | 83 577 | 5 155 | 0 | 64 827 | 5 055 | 28 875 | 0 |
+| 17 | 100 000 | 83 539 | 4 993 | 0 | 65 001 | 5 182 | 28 715 | 0 |
+| 271828 | 100 000 | 83 649 | 5 255 | 0 | 65 031 | 5 096 | 28 862 | 0 |
+
+The falsifier has teeth: under `--mutant=` holes the step-lemma check fails
+(20 000 configurations, seed 17): disjoint 2, once-through-call 161,
+keeps-shape 1, close-source 209 failures. It does not see copy-exclusive or
+many-calls at this size. A clean run is evidence, not proof; the
+configurations are small and the summary check sees only calls the
+generator makes.
+
+### Defects the restatement found (both fixed, both fixtures)
+
+1. **A once callback called by a callee was not consumed.** Handing a closure
+   that pushes onto its capture to a one-line wrapper that calls it, then
+   returning the closure, was accepted by the summary checker; the runs
+   disagree on the capture. The per-call checker rejects it. A callee's call
+   count of at least one now demands the once closure's roots
+   (`once-through-call`, fixture "once closure called by a callee, then
+   observed"). Found while restating the invariant.
+2. **…and its written captures were not demanded.** A callee's summary does
+   not see the callback write its own environment; creation had made the
+   capture dead, but `close` can return its (unused) source array, naming the
+   capture again. The call now demands the captures the closure's class
+   writes, as a direct call does (fixture "close returns a once closure's
+   capture, a callee calls it"). Found by the falsifier on the restated step
+   lemma.
+
+The generator never built either shape; the `once-through-call` control is
+reported, and required once the generator reaches it.
+
+
 `Axioms.lean` is the `AxiomCheck` target of `lake build`. It collects the
-axioms of **every constant** declared in an `Ownership` module (2 512 at the
+axioms of **every constant** declared in an `Ownership` module (2 644 at the
 time of writing: theorems, definitions, instances, structures and their
 generated auxiliaries, not only the theorems) and fails unless exactly the
 three `sorry`s above and the main theorem depend on `sorryAx` and nothing uses
