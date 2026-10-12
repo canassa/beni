@@ -18,8 +18,8 @@ module ElementEdits
   summary readAfter: π1 R, π1[*] RW; xreq excl π1
   summary repeated: unused
   summary heldOutside: unused
-  demands 13: accepted 10 (fresh 4, call 0, param 3, callback-param 3, once 0; assumed 0), pending 0, rejected 3
-total 13: accepted 10 (fresh 4, call 0, param 3, callback-param 3, once 0; assumed 0), pending 0, rejected 3
+  demands 13: accepted 10 (fresh 4, call 0, param 3, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 13: accepted 10 (fresh 4, call 0, param 3, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause later-use 1
 cause alias 1
 cause exclusive 1

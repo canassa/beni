@@ -1,0 +1,10 @@
+module EntryView
+  29:15 construction model.pinned: accepted param
+  40:12 entry EntryView.extends model.pinned: rejected read-only: the runtime hands view the model to read only (§20.3)
+  summary update: π2.pinned RA; res .pinned π2.pinned, .recent fresh1
+  summary row: res fresh1{lost}
+  summary extends: π1.pinned RW, π1.pinned[*] RA, π1.recent R, π1.recent[*] RA; res fresh2{lost}, ⋆ ~fresh1{lost} ~π1.pinned[*] ~π1.recent[*]
+  summary concatenates: π1.pinned R, π1.pinned[*] RA, π1.recent R, π1.recent[*] RA; res fresh2{lost}, ⋆ ~fresh1{lost} ~π1.pinned[*] ~π1.recent[*]
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause read-only 1

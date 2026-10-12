@@ -6,8 +6,8 @@ module Disjoint
   summary pending: π1 RAW, π1[*] A; res .0 fresh1{excl π1}, .0[*] π1, .1 π1, .1[*] ~π1[*]
   summary forCall: π1 RW, π1[*] R
   summary sizes: π1 R, π2 R
-  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 3
-total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 3
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause disjoint 1
 cause held-operand 1
 cause call 1

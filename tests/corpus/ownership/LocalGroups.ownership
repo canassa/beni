@@ -12,6 +12,6 @@ module LocalGroups
   summary reverse: π1 R, π1[*] RA; res [*] π1[*]{excl π1}, fresh1{excl π1}
   summary keeps: π1 RW, π2 R, π2[*] R
   summary split: π1 R, π1[*] RA; res [*] π1[*]{excl π1}, fresh1{excl π1}
-  demands 10: accepted 9 (fresh 2, call 0, param 0, callback-param 7, once 0; assumed 0), pending 0, rejected 1
-total 10: accepted 9 (fresh 2, call 0, param 0, callback-param 7, once 0; assumed 0), pending 0, rejected 1
+  demands 10: accepted 9 (fresh 2, call 0, param 0, callback-param 7, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 10: accepted 9 (fresh 2, call 0, param 0, callback-param 7, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause later-use 1

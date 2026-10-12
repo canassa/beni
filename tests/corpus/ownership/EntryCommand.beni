@@ -1,0 +1,77 @@
+-- ownership: a command that captures a model list (thesis §7, *Fibers and
+-- commands that capture values*, T20, T45; `ownership-checker.md` §20.3,
+-- §20.4 (a)). `Report` returns a command whose body reads `model.items`
+-- when it runs, after `update` has returned; the runtime keeps the body, so
+-- every list it captured is escaped at every later dispatch, and `Add`'s
+-- push onto `model.items` is rejected `escaped`. `counted` computes the
+-- value the command needs before it makes the command — the shape the
+-- thesis recommends — so the body captures a number and the push is
+-- accepted on browser-direct.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type alias Model =
+    items : List Int
+
+
+type Msg
+    = Add Int
+    | Report
+
+
+captures : Msg, Model → Model × Cmd Msg
+captures msg model =
+    case msg of
+        Add n →
+            ( { model | items = List.push model.items n }, Cmd.none )
+
+        Report →
+            ( model, Cmd.do λ⊤ → Log.info (String.fromInt (List.length model.items)) )
+
+
+counts : Msg, Model → Model × Cmd Msg
+counts msg model =
+    case msg of
+        Add n →
+            ( { model | items = List.push model.items n }, Cmd.none )
+
+        Report →
+            n = List.length model.items
+            ( model, Cmd.do λ⊤ → Log.info (String.fromInt n) )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Add (List.length model.items)}>add</button>
+        <button onClick={Report}>report</button>
+    </main>
+
+
+captured : Tea.Program
+captured =
+    Tea.element
+        { init = ( { items = [] }, Cmd.none )
+        , update = captures
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+counted : Tea.Program
+counted =
+    Tea.element
+        { init = ( { items = [] }, Cmd.none )
+        , update = counts
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ captured, counted ]

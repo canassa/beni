@@ -1,0 +1,142 @@
+-- ownership: messages, and what their payloads reach (thesis P6, Change 7,
+-- T34, T38, T50; `ownership-checker.md` §20.5). Every payload is supplied
+-- borrowed in slice 3b: the owned bit a send would carry is not built.
+--
+-- `pinned`: a view event carries `model.rows` (`onClick={Pin model.rows}`),
+-- and `Pin rows` stores it at `model.pinned`, which `Grow` extends in place:
+-- the message may hold the model's own list, at every arm (P6, *View
+-- events*), so the push is rejected `payload`, approximately. `stored`: a
+-- command's payload is stored at `model.rows` (T38's shape), which `Add`
+-- extends in place: rejected `payload`. `edited`: `update` extends its
+-- message's list itself (T50): rejected `payload`. `counted`: the payload
+-- reaches no list written in place (T34): `Add` is accepted on
+-- browser-direct.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    rows : List Int
+    pinned : List Int
+    total : Int
+
+
+type Msg
+    = Pin (List Int)
+    | Grow
+    | Loaded (List Int)
+    | Add Int
+
+
+pins : Msg, Model → Model
+pins msg model =
+    case msg of
+        Pin rows →
+            { model | pinned = rows }
+
+        Grow →
+            { model | pinned = List.push model.pinned 0 }
+
+        Loaded _ →
+            model
+
+        Add n →
+            { model | rows = [ n ] }
+
+
+stores : Msg, Model → Model × Cmd Msg
+stores msg model =
+    case msg of
+        Loaded rows →
+            ( { model | rows = rows }, Cmd.none )
+
+        Add n →
+            ( { model | rows = List.push model.rows n }, Cmd.none )
+
+        _ →
+            ( model, Cmd.task (λ⊤ → [ 1, 2, 3 ]) Loaded )
+
+
+edits : Msg, Model → Model × Cmd Msg
+edits msg model =
+    case msg of
+        Loaded rows →
+            ( { model | total = List.length (List.push rows 0) }, Cmd.none )
+
+        _ →
+            ( model, Cmd.task (λ⊤ → [ 1, 2, 3 ]) Loaded )
+
+
+counts : Msg, Model → Model × Cmd Msg
+counts msg model =
+    case msg of
+        Loaded rows →
+            ( { model | total = List.length rows }, Cmd.none )
+
+        Add n →
+            ( { model | rows = List.push model.rows n }, Cmd.none )
+
+        _ →
+            ( model, Cmd.task (λ⊤ → [ 1, 2, 3 ]) Loaded )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Pin model.rows}>pin</button>
+        <button onClick={Grow}>grow</button>
+        <p>{String.fromInt model.total}</p>
+    </main>
+
+
+plain : Model → Html Msg
+plain model =
+    <main>
+        <button onClick={Add model.total}>add</button>
+        <p>{String.fromInt model.total}</p>
+    </main>
+
+
+initial : ⊤ → Model
+initial ⊤ = { rows = [], pinned = [], total = 0 }
+
+
+pinned : Tea.Program
+pinned = Tea.sandbox { init = initial ⊤, update = pins, view = view }
+
+
+stored : Tea.Program
+stored =
+    Tea.element
+        { init = ( initial ⊤, Cmd.none )
+        , update = stores
+        , view = plain
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+edited : Tea.Program
+edited =
+    Tea.element
+        { init = ( initial ⊤, Cmd.none )
+        , update = edits
+        , view = plain
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+counted : Tea.Program
+counted =
+    Tea.element
+        { init = ( initial ⊤, Cmd.none )
+        , update = counts
+        , view = plain
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ pinned, stored, edited, counted ]

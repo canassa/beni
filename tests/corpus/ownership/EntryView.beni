@@ -1,0 +1,49 @@
+-- ownership: `view` receives the model to read only (thesis Table 7.1, T13;
+-- `ownership-checker.md` §20.3, §20.6). `view` shows the pinned rows before
+-- the recent ones with `[ …model.pinned, …model.recent ]`, a construction
+-- whose base is `model.pinned`: inside `view` it is accepted `param`, a
+-- write its caller must allow, and the runtime that calls `view` allows
+-- none — rejected `read-only` at the program, on every platform.
+-- `concatenated` writes `List.concat [ model.pinned, model.recent ]`, which
+-- builds a list of its own, and nothing is written.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    pinned : List String
+    recent : List String
+
+
+update : String, Model → Model
+update s model = { model | recent = [ s ] }
+
+
+row : String → Html String
+row s = <li onClick={s}>{s}</li>
+
+
+extends : Model → Html String
+extends model =
+    shown = [ …model.pinned, …model.recent ]
+    <ul>{List.map shown row}</ul>
+
+
+concatenates : Model → Html String
+concatenates model =
+    shown = List.concat [ model.pinned, model.recent ]
+    <ul>{List.map shown row}</ul>
+
+
+extended : Tea.Program
+extended = Tea.sandbox { init = { pinned = [], recent = [] }, update = update, view = extends }
+
+
+concatenated : Tea.Program
+concatenated =
+    Tea.sandbox { init = { pinned = [], recent = [] }, update = update, view = concatenates }
+
+
+main : Tea.Program
+main = Browser.programs [ extended, concatenated ]

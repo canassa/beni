@@ -7,6 +7,6 @@ module LaterRead
   summary before: res fresh1
   summary deadAlias: res fresh1
   summary held: π1 RAW, π1[*] A; res .0 π1, .1 π1, .1[*] ~π1[*]
-  demands 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 2
-total 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0; assumed 0), pending 0, rejected 2
+  demands 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause later-use 2

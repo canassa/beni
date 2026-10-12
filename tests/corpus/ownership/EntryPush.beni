@@ -1,0 +1,42 @@
+-- ownership: the entry protocol's hand-over (thesis §7, P1, Table 7.1;
+-- `ownership-checker.md` §20.2–§20.6). `update` pushes onto `model.items`,
+-- a list `init` builds, and the program constructor's entry row decides
+-- whether the runtime hands it the model owned. On browser-direct it does:
+-- `model.items` is accepted `entry`. On browser-tea the runtime keeps the
+-- model it hands `update` and skips by identity, so the same edit is
+-- rejected `platform` there (Change 8). No `value … pending` line is left:
+-- the record's functions are in sight at the constructor.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    items : List Int
+    count : Int
+
+
+type Msg
+    = Add Int
+    | Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add n →
+            { model | items = List.push model.items n, count = model.count + 1 }
+
+        Reset →
+            { items = [], count = 0 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Add model.count}>add</button>
+        <p>{String.fromInt (List.length model.items)}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = { items = [], count = 0 }, update = update, view = view }

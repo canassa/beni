@@ -5,6 +5,6 @@ module ClosureCapture
   summary t7: π1 RW
   summary perPath: π1.rows RAW; res .rows π1.rows
   summary pusher: π1 AW; res ◇ π1
-  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0; assumed 0), pending 1, rejected 1
-total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0; assumed 0), pending 1, rejected 1
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
 cause captured 1
