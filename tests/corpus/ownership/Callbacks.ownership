@@ -15,7 +15,7 @@ module Callbacks
   summary t46: π1 R; res ~fresh1 ~shared(Callbacks.defaults)
   summary t15: π1 R, π1[*] Rw
   summary consumes: π1 RA, π1[*] RA; res [*] ~fresh2 ~π1[*], ~fresh1 ~π1
-  summary reads: π1 RA, π1[*] RA, π1[*][*] A; res [*] ~fresh2 ~fresh3 ~π1[*], [*][*] ~π1[*][*], ~fresh1 ~π1
+  summary reads: π1 RA, π1[*] RA, π1[*][*] A; res [*] ~fresh2 ~π1[*], [*][*] ~π1[*][*], ~fresh1 ~π1
   summary applied: res fresh1
   summary appliedRead: π1 RW
   demands 11: accepted 7 (fresh 4, call 0, param 0, callback-param 3; assumed 0), pending 0, rejected 4

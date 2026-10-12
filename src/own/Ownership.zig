@@ -240,6 +240,9 @@ pub const Summary = struct {
     funs: []const FunFacts = &.{},
     limit: Limit = .none,
     asserted: bool = false,
+    /// Too wide for the cap, it was coarsened (§16.7): some parameters are
+    /// tracked whole and some result paths cut, each such fact approximate.
+    coarse: bool = false,
 
     fn funOf(s: *const Summary, j: u32) ?FunFacts {
         for (s.funs) |f| if (f.param == j) return f;
@@ -554,7 +557,7 @@ fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!S
 // ---------------------------------------------------------------------------
 
 fn summaryEql(x: Summary, y: Summary) bool {
-    if (x.limit != y.limit or x.params != y.params) return false;
+    if (x.limit != y.limit or x.params != y.params or x.coarse != y.coarse) return false;
     if (x.uses.len != y.uses.len or x.res.len != y.res.len or x.supply.len != y.supply.len or x.funs.len != y.funs.len) return false;
     for (x.uses, y.uses) |a, b| if (!std.meta.eql(a, b)) return false;
     for (x.res, y.res) |a, b| if (a.path != b.path or !a.prov.eql(b.prov) or a.approx != b.approx) return false;
@@ -590,6 +593,18 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
 
 /// Sorted, merged, and capped (§16.7).
 fn normalize(o: *Ownership, s: Summary) Allocator.Error!Summary {
+    const out = try o.normalizeRaw(s);
+    if (out.limit != .none or out.coarse or o.widthOf(out) <= width_cap) return out;
+    // Too wide (§16.7): track the widest parameters whole and cut the
+    // result's and the supplies' paths, each step approximate; only a
+    // summary still too wide is the pessimistic one.
+    const coarse = try o.coarsen(out);
+    if (o.widthOf(coarse) <= width_cap) return coarse;
+    return o.pessimistic(out, .width);
+}
+
+/// Sorted and merged.
+fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
     const keep = o.keep.allocator();
     const uses = try keep.dupe(UseEntry, s.uses);
     std.mem.sort(UseEntry, uses, {}, struct {
@@ -671,8 +686,87 @@ fn normalize(o: *Ownership, s: Summary) Allocator.Error!Summary {
         .funs = funs[0..nf],
         .limit = s.limit,
         .asserted = s.asserted,
+        .coarse = s.coarse,
     };
-    if (nu > width_cap or nr > width_cap or ns > width_cap) return o.pessimistic(out, .width);
+    return out;
+}
+
+/// The number of distinct paths in a summary's widest component.
+fn widthOf(o: *const Ownership, s: Summary) usize {
+    _ = o;
+    var res_paths: usize = 0;
+    for (s.res, 0..) |r, i| {
+        if (i == 0 or s.res[i - 1].path != r.path) res_paths += 1;
+    }
+    var supply_paths: usize = 0;
+    for (s.supply, 0..) |e, i| {
+        if (i == 0) {
+            supply_paths += 1;
+            continue;
+        }
+        const p = s.supply[i - 1];
+        if (p.fun != e.fun or p.k != e.k or p.path != e.path) supply_paths += 1;
+    }
+    return @max(s.uses.len, @max(res_paths, supply_paths));
+}
+
+/// `p` cut to its first `d` steps, then `⋆`.
+fn truncate(o: *Ownership, p: u32, d: usize) Allocator.Error!u32 {
+    var buf: [k_limit + 1]Step = undefined;
+    const s = o.steps(p, &buf);
+    if (s.len <= d) return p;
+    var at: u32 = eps;
+    for (s[0..d]) |st| at = try o.child(at, st.kind, st.arg);
+    return o.child(at, .any, 0);
+}
+
+fn coarsen(o: *Ownership, s: Summary) Allocator.Error!Summary {
+    const keep = o.keep.allocator();
+    // Parameters tracked whole, the widest first, until the uses fit.
+    var uses: std.ArrayList(UseEntry) = .empty;
+    try uses.appendSlice(keep, s.uses);
+    while (uses.items.len > width_cap) {
+        var widest: u32 = 0;
+        var most: usize = 0;
+        var p: u32 = 0;
+        while (p < s.params) : (p += 1) {
+            var n: usize = 0;
+            for (uses.items) |u| if (u.param == p) {
+                n += 1;
+            };
+            if (n > most) {
+                most = n;
+                widest = p;
+            }
+        }
+        if (most <= 1) break;
+        var bits: u8 = 0;
+        var kept: std.ArrayList(UseEntry) = .empty;
+        for (uses.items) |u| {
+            if (u.param == widest) bits |= u.bits else try kept.append(keep, u);
+        }
+        try kept.append(keep, .{ .param = widest, .path = eps, .bits = bits & ~bit_x });
+        uses = kept;
+    }
+    // The result's and the supplies' paths, cut shallower until they fit.
+    const res = try keep.dupe(ResEntry, s.res);
+    const supply = try keep.dupe(SupplyEntry, s.supply);
+    var depth: usize = k_limit;
+    while (depth > 0) {
+        const trial = try o.normalizeRaw(.{ .params = s.params, .uses = uses.items, .res = res, .supply = supply, .funs = s.funs });
+        if (o.widthOf(trial) <= width_cap) break;
+        depth -= 1;
+        for (res) |*r| {
+            const t = try o.truncate(r.path, depth);
+            if (t != r.path) {
+                r.path = t;
+                r.approx = true;
+            }
+        }
+        for (supply) |*e| e.path = try o.truncate(e.path, depth);
+    }
+    var out = try o.normalizeRaw(.{ .params = s.params, .uses = uses.items, .res = res, .supply = supply, .funs = s.funs, .asserted = s.asserted });
+    out.coarse = true;
     return out;
 }
 
@@ -827,6 +921,7 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
         try parts.append(arena, try buf.toOwnedSlice());
     }
     if (s.limit != .none) try parts.append(arena, if (s.limit == .width) "limit width" else "limit rounds");
+    if (s.coarse) try parts.append(arena, "coarse");
     const facts = if (parts.items.len == 0) "unused" else try std.mem.join(arena, "; ", parts.items);
     const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
     return std.fmt.allocPrint(arena, "summary {s}: {s}{s}", .{ name, facts, if (s.asserted) " (asserted)" else "" });
@@ -3855,11 +3950,39 @@ const Walker = struct {
                 return cx.path < cy.path;
             }
         }.less);
+        // A fresh number only says which result paths may hold one new
+        // cell (thesis §3.7, §4.6: `k ≤ |Q|`), so cells that appear at the
+        // same paths share a number; the numbering stays a function of the
+        // result's shape, not of how many literals the body has.
+        const renum = try w.a.alloc(u32, fresh_cells.items.len);
+        var groups: std.ArrayList([]const u32) = .empty;
+        for (fresh_cells.items, renum) |fc, *num| {
+            var ps: std.ArrayList(u32) = .empty;
+            for (expanded) |e| {
+                if (e.cell != fc) continue;
+                const key = e.path *% 2 +% @intFromBool(e.approx != 0);
+                if (std.mem.indexOfScalar(u32, ps.items, key) == null) try ps.append(w.a, key);
+            }
+            std.mem.sort(u32, ps.items, {}, std.sort.asc(u32));
+            const esc_bit: u32 = if (try w.isEscaped(fc)) 1 else 0;
+            try ps.append(w.a, esc_bit);
+            var found: ?usize = null;
+            for (groups.items, 0..) |g, gi| if (std.mem.eql(u32, g, ps.items)) {
+                found = gi;
+                break;
+            };
+            const gi = found orelse blk: {
+                try groups.append(w.a, ps.items);
+                break :blk groups.items.len - 1;
+            };
+            num.* = @intCast(gi + 1);
+        }
         var res: std.ArrayList(ResEntry) = .empty;
         for (expanded) |e| {
             const c = w.cells.items[e.cell];
             if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = bit_a });
-            const prov = (try w.provOf(e.cell, frame, params, fresh_cells.items)) orelse continue;
+            var prov = (try w.provOf(e.cell, frame, params, fresh_cells.items)) orelse continue;
+            if ((prov.kind == .fresh or prov.kind == .esc) and prov.a > 0) prov.a = renum[prov.a - 1];
             try res.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0 });
         }
         // Function parameters.
