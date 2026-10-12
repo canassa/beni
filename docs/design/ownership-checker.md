@@ -1942,7 +1942,8 @@ Without `owned`, what a call of it is handed is borrowed (`supply ⊤ borrowed`)
 | `unknown` | anything | `res ε ⊤` |
 
 **On a `foreign type`**: `crossing` — a value of the type holds no list and no function, so it carries no cell
-(§4.4, thesis §3.1's mode crossing). `pub crossing foreign type Event`.
+(§4.4, thesis §3.1's mode crossing). `pub crossing foreign type Event`. With `equatable` it comes first,
+`pub crossing equatable foreign type T`, never after (`check/bad/core/CrossingAfterEquatable`).
 
 **What is not written.** A declaration that carries a word anywhere is read entirely from its words: a parameter
 with none is `escaped` (a function-typed one is kept and called later), and a result with none is `unknown` —

@@ -44,6 +44,7 @@ tests/corpus/check/bad/ExposingSameNameConstructor/Main.beni -- its expected_tok
 tests/corpus/check/bad/SchemaParseErrorRecovered/Sch.beni -- a schema parse error the checker must not report twice
 tests/corpus/check/bad/WhereAnnotationAfterDefinition.beni -- an annotation without a definition, which the formatter refuses
 tests/corpus/check/bad/WhereAnnotationRepeated.beni -- an annotation without a definition, which the formatter refuses
+tests/corpus/check/bad/core/CrossingAfterEquatable.beni -- `crossing` after `equatable` does not parse, which is the point
 tests/corpus/check/depth/ParserDeep.beni -- nesting one level past the parser's limit
 tests/corpus/check/depth/TypeParensDeep.beni -- a type nested one level past the parser's limit
 
