@@ -2284,6 +2284,7 @@ the tail. A prepend onto a loop's accumulator is `List.cons` at each step, and a
 walk over scalar views is an offset (`list - 1`), which writes nothing. So no prepend writes an array that
 existed before it, on any platform, today. **Slice 5 must keep it so**: a prepend lowered in place on
 `browser-direct` would be a correctness bug, since this rule accepts programs that read the base afterwards.
+`emit/PrependShapes` pins the shapes.
 
 ### 25.3 `map` across types
 
@@ -2341,6 +2342,7 @@ approximate step (`… may hold it through the call at L:C`), as a call with an 
 | `ownership/MaybeDefault` | §25.4; research 82 R5 (`Game` 127) | the pipeline, the lambda and the `case`: accepted; the old model read after the expression, an eager handler, a default that is not a variable, an edit while computing `m`, `Maybe.andThen`: `later-use` |
 | `ownership/Differential` | T33 against the Lean model | the prepend form accepted, with no Lean counterpart (the model has no prepend); `t33Pushed`, the model's projection onto a push: kept rejected, copied accepted, as in the model |
 | `ownership/Recursion`, `ownership/Split` | §25.2 through a recursion and a split | `appendTo` reads `ys` and may return it; `bumpHead` writes its rows, not its spine |
+| `emit/PrependShapes` | §25.2, *The backend agrees* | every prepend shape emitted as `List.cons`, the tail-modulo-cons loop ending in `List.close`, or a scalar-view offset: a golden change there must be checked against §25.2 before it is blessed |
 
 ### 25.7 Open questions
 

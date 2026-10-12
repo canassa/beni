@@ -1,0 +1,89 @@
+-- emit: every shape a prepend is emitted in, the backend's half of the
+-- ownership checker's rule that a prepend copies (`ownership-checker.md`
+-- §25.2; `language.md` §6.8, *`[ x, …xs ]` copies*). The checker accepts a
+-- program that reads a list after prepending onto it, so no shape here may
+-- write the array its base already had: a change to this golden must be
+-- checked against §25.2 before it is blessed.
+--
+-- The golden pins: `[ x, …xs ]`, `List.cons` and several items as calls of
+-- `List.cons`, which copies or re-conses (`backend.md` §4); a function's
+-- result `[ x, …go rest ys ]` as the tail-modulo-cons loop, which pushes
+-- onto its own `$root` and ends in `List.close`, copying `ys` after it or
+-- handing `ys` back (§8); an accumulator and a fold's callback as
+-- `List.cons` at each step; the suffix `[ b, …tail ]` re-built after
+-- matching `[ a, b, …tail ]` as a `List.cons` onto a view, and in a walk
+-- over scalar views as an offset; and `[ h, …t ]` after `[ h, …t ]`.
+import Node exposing (Program)
+
+
+pub plain : Int, List Int → List Int
+plain x xs = [ x, …xs ]
+
+
+pub viaCons : Int, List Int → List Int
+viaCons x xs = List.cons x xs
+
+
+pub twoItems : Int, Int, List Int → List Int
+twoItems a b xs = [ a, b, …xs ]
+
+
+pub appendTo : List Int, List Int → List Int
+appendTo xs ys =
+    case xs of
+        [] →
+            ys
+
+        [ x, …rest ] →
+            [ x, …appendTo rest ys ]
+
+
+pub reverseInto : List Int, List Int → List Int
+reverseInto xs acc =
+    case xs of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            next = [ x, …acc ]
+            reverseInto rest next
+
+
+pub foldPrepend : List Int → List Int
+foldPrepend xs = List.foldl xs [] λx acc →
+    next = [ x, …acc ]
+    next
+
+
+pub suffix : List Int → List Int
+suffix list =
+    case list of
+        [ _, b, …tail ] →
+            [ b, …tail ]
+
+        _ →
+            list
+
+
+pub sums : List Int, List Int → List Int
+sums acc list =
+    case list of
+        [ a, b, …tail ] →
+            sums [ …acc, a + b ] [ b, …tail ]
+
+        _ →
+            acc
+
+
+pub reconsed : List Int → List Int
+reconsed list =
+    case list of
+        [ h, …t ] →
+            [ h, …t ]
+
+        [] →
+            []
+
+
+main : Program
+main = Node.printLines []

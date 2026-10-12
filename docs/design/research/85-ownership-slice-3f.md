@@ -102,7 +102,7 @@ ten shapes; the emitted JavaScript, function by function:
 | `[ h, …t ] → [ h, …t ]` | `List$cons(h, List$view(list, 1))` | no: answers `list` |
 
 The re-cons answers alias the base, which §25.2 item 2 models. `close` answering `ys` is why `Recursion.appendTo`'s
-summary keeps `res π₂`. Slice 5 must keep every row of this table a copy (§25.2).
+summary keeps `res π₂`. Slice 5 must keep every row of this table a copy (§25.2); `emit/PrependShapes` pins them, so a change shows as a golden diff.
 
 ## 3. Bike Wars, line by line
 
