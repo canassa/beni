@@ -436,12 +436,32 @@ def closeThenOnceThroughCallee : Program := {
     .letE 4 (.prim (.literal .int) [.int 7]) <| .letE 5 (.closure 1 []) <|
     .letE 6 (.app (v 5) [v 4, v 1]) (.prim .record [v 3, v 6]) }
 
+/-- Shadowing (third review): `let 0 = [1]; let 6 = (let 5 = 0; let 0 = [];
+    push 5 1); length 0`. The continuation's `0` is the outer list, but the
+    checker resolved it inside the inner `let`, where `0` is the new empty
+    list, so the push's Dead test passed (value reads 1, in place 2). Refused
+    as shadowing; liveness also resolves it against the outer binding now. -/
+def shadowedLive : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 6 (.letE 5 (.atom (v 0)) (.letE 0 (.prim (.literal .int) []) (.prim .push [v 5, .int 1])))
+      (.prim .length [v 0]) }
+
+/-- The same inside a declaration body, over its parameter `0`. -/
+def shadowedLiveInDecl : Program := {
+  declarations := [{
+      name := "f", parameters := [.list .int], result := .int,
+      body := .letE 6 (.letE 5 (.atom (v 0)) (.letE 0 (.prim (.literal .int) []) (.prim .push [v 5, .int 1])))
+        (.prim .length [v 0]) }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) (.letE 1 (.closure 0 []) (.app (v 1) [v 0])) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
   ("disjoint", probeDisjoint, .disjoint, false),
   ("focus body pushes its own container", focusStale, .disjoint, false),
   ("read only in the nonzero arm after a push", probeBranchLive, .branchLive, false),
+  ("a let shadows a variable its continuation uses", shadowedLive, .shadowing, false),
+  ("the same in a declaration body", shadowedLiveInDecl, .shadowing, false),
   ("T46 two rows", borrowedAccumulator, .borrowedSupply, true),
   ("traversal over [c, c]", probeTraversalExclusive, .traversalExclusive, false),
   ("captured push per iteration", probeManyCalls, .manyCalls, false),
@@ -616,12 +636,14 @@ def all : List Fixture := [
   ⟨"focus body pushes its own container",focusStale,false⟩,
   ⟨"once closure called by a callee, then observed",onceThroughCallee,false⟩,
   ⟨"close returns a once closure's capture, a callee calls it",closeThenOnceThroughCallee,false⟩,
-  ⟨"read only in the nonzero arm after a push",probeBranchLive,false⟩ ]
+  ⟨"read only in the nonzero arm after a push",probeBranchLive,false⟩,
+  ⟨"a let shadows a variable its continuation uses",shadowedLive,false⟩,
+  ⟨"the same in a declaration body",shadowedLiveInDecl,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true
   for f in all do
-    let typed := typecheck f.program
+    let typed := typesOf f.program
     let verdict := check f.program
     IO.println s!"{f.id}: expected={f.accepted} actual={verdict.isOk} {if verdict.isOk then "" else toString (repr verdict)}"
     if !typed.isOk || verdict.isOk != f.accepted then

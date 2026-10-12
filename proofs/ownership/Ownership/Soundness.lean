@@ -488,13 +488,27 @@ def WellTyped (ds : List Decl) (env : List (Var × Observation × Value)) (e : E
   ∃ tenv t, exprType ds (mainDecl e) tenv e = .ok t ∧
     ∀ x o w u, env.lookup x = some (o, w) → tenv.lookup x = some u → obsTyped ds o u = true
 
+theorem typesOf_of_typecheck (p : Program) (h : typecheck p = .ok t) : typesOf p = .ok t := by
+  unfold typecheck at h
+  cases ht : typesOf p with
+  | error e => simp [ht, bind, Except.bind] at h
+  | ok t' =>
+    simp only [ht, bind, Except.bind] at h
+    cases hn : noShadowing p with
+    | error e => simp [hn] at h
+    | ok u => simp [hn, pure, Except.pure] at h; rw [h]
+
 theorem typecheck_main (p : Program) (h : typecheck p = .ok t) :
     exprType p.declarations (mainDecl p.main) [] p.main = .ok t := by
-  unfold typecheck at h
+  have h := typesOf_of_typecheck p h
+  unfold typesOf at h
   simp only [bind, Except.bind] at h
   split at h
   · contradiction
   · exact h
+
+/-- The corrected checker refuses shadowing (`check` runs `typecheck`). -/
+theorem default_refuses_shadowing : ({} : Config).has .shadowing = false := rfl
 
 /-- The context of the main expression of a program the corrected checker
     accepted: the equation fixes every other field of `Context` to its default
@@ -542,6 +556,7 @@ theorem check_accepts_main (p : Program) (a : Accepted) (ok : check p = .ok a) :
     ∃ r st', (inferExpr ({} : Config).inferenceFuel { declarations := p.declarations, config := {} }
       [] p.main [] []).run {} = .ok (r, st') ∧ st'.cache = a.cache := by
   unfold check at ok
+  simp only [default_refuses_shadowing, Bool.false_eq_true, if_false] at ok
   cases ht : typecheck p with
   | error msg => simp [ht, bind, Except.bind] at ok
   | ok _ =>
@@ -556,6 +571,7 @@ theorem check_accepts_main (p : Program) (a : Accepted) (ok : check p = .ok a) :
 theorem check_typed (p : Program) (a : Accepted) (ok : check p = .ok a) :
     WellTyped p.declarations [] p.main := by
   unfold check at ok
+  simp only [default_refuses_shadowing, Bool.false_eq_true, if_false] at ok
   cases ht : typecheck p with
   | error msg => simp [ht, bind, Except.bind] at ok
   | ok t => exact ⟨[], t, typecheck_main p ht, by intro x o w u h; simp at h⟩

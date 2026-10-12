@@ -328,7 +328,7 @@ def verdictOf (p : Program) (config : Config := {}) : Except String Unit :=
   (verdictStats p config).map (fun _ => ())
 
 def disagrees (p : Program) (config : Config) : Bool :=
-  (typecheck p).isOk && (verdictOf p config).isOk &&
+  (typesOf p).isOk && (verdictOf p config).isOk &&
     (compare p).disagrees
 
 def atomReductions : Atom → List Atom
@@ -536,7 +536,7 @@ def runWith (o : Options) : IO RunResult := do
     families := families.filter (fun x => x.1 != family) ++ [(family, {fc with candidates := fc.candidates+1, distinct := fc.distinct+(if isNew then 1 else 0)}, min d (prior.map (fun x => x.2.2.1) |>.getD d), max d (prior.map (fun x => x.2.2.2) |>.getD d))]
     state := next
     counts := { counts with candidates := counts.candidates + 1, distinct := counts.distinct+(if isNew then 1 else 0) }
-    match typecheck p with
+    match typesOf p with
     | .error msg =>
       counts := { counts with typeErrors := counts.typeErrors + 1 }
       IO.println s!"TYPE GENERATION ERROR seed={o.seed} index={index}: {msg}\n{repr p}"

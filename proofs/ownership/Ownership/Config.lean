@@ -30,13 +30,15 @@ inductive Mutant where
   | onceThroughCall     -- a once callback called by a callee is not consumed at the call
   -- Liveness (summary checker only).
   | branchLive          -- liveness ignores the nonzero arm of a conditional
+  | shadowing           -- shadowing is allowed and a let resolves its continuation's uses inside
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
   [.disjoint, .borrowedSupply, .traversalExclusive, .manyCalls, .copyExclusive,
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
-   .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive]
+   .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
+   .shadowing]
 
 def Mutant.name : Mutant → String
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
@@ -51,6 +53,7 @@ def Mutant.name : Mutant → String
   | .forwardGuards => "forward-guards" | .transferSupplies => "transfer-supplies"
   | .onceThroughCall => "once-through-call"
   | .branchLive => "branch-live"
+  | .shadowing => "shadowing"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
@@ -68,7 +71,8 @@ def Mutant.generatorOptional : Mutant → Bool
 def Mutant.summaryRow : Mutant → Bool
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
-  | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive => true
+  | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive
+  | .shadowing => true
   | _ => false
 
 structure Config where

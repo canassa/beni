@@ -31,6 +31,10 @@ structure Context where
   /-- Innermost first: the actual function values of the declarations being
       summarised. Only `answer` reads them. -/
   frames : List Frame := []
+  /-- Cells of the continuation's uses of outer variables that an inner `let`
+      has since rebound: live after the current expression whatever the
+      name now means (shadowing is refused, this keeps liveness right anyway). -/
+  pinned : List Origin := []
   deriving Inhabited
 
 structure CacheEntry where
@@ -415,12 +419,20 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
   else
     let f := fuel - 1
     let ctx := { ctx with escaped := union ctx.escaped (← getFacts).escapes }
-    let later := liveCells env after
+    let later := union (liveCells env after) ctx.pinned
     match e with
     | .atom a => abstractAtom env a
     | .letE v rhs rest =>
       let a ← inferExpr f ctx env rhs (union after (removeVars [v] (usesWith ctx.config rest))) (site ++ [0])
-      inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
+      -- The continuation's uses of `v` name the outer binding. Inside `rest`
+      -- `v` is the new one, so their cells are pinned here, resolved
+      -- against the outer environment (the `shadowing` control does not).
+      let outer := after.filter (·.1 == v)
+      if ctx.config.has .shadowing || outer.isEmpty then
+        inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
+      else
+        inferExpr f { ctx with pinned := union ctx.pinned (liveCells env outer) } ((v, a) :: env) rest
+          (removeVars [v] after) (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .branch c yes no =>
       let _ ← abstractAtom env c
@@ -576,7 +588,8 @@ def inferScope (fuel : Nat) (parent : Context) (args caps : List (Var × Abstrac
   let es := caps.zipIdx.map fun ((v, a), i) => (v, canonical Origin.capture i a)
   let own := canonicalOwned parent av cv later
   let ctx := { parent with
-    owned := own, recursiveSummary := {}, recursiveCaptures := es.map Prod.snd, inScope := true }
+    owned := own, recursiveSummary := {}, recursiveCaptures := es.map Prod.snd, inScope := true,
+    pinned := [] }
   let (result, facts) ← isolated (inferExpr fuel ctx (ps ++ es) body [] [])
   pure (normalized { facts with result })
 termination_by (fuel, 1)
@@ -902,7 +915,7 @@ structure Accepted where
   deriving Repr, Inhabited
 
 def check (p : Program) (config : Config := {}) : Except String Accepted := do
-  let _ ← typecheck p
+  let _ ← (if config.has .shadowing then typesOf p else typecheck p)
   let ctx : Context := { declarations := p.declarations, config }
   let (result, st) ← (inferExpr config.inferenceFuel ctx [] p.main [] []).run {}
   pure { result, facts := st.facts, computed := st.computed, reused := st.reused, cache := st.cache, hits := st.hits }
