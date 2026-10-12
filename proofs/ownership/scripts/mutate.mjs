@@ -75,8 +75,8 @@ export const mutants = {
   symenv: ["Checker.lean", "let others := fun (k : Nat) => union envCells (args.zipIdx.flatMap",
     "let others := fun (k : Nat) => union [] (args.zipIdx.flatMap"],
   // Liveness ignores a conditional's nonzero arm (also `--mutant=branch-live`).
-  branchlive: ["Domain.lean", "| .branch c a b => union (atomUses c) (union (uses a) (uses b))",
-    "| .branch c a b => union (atomUses c) (uses a)"],
+  branchlive: ["Domain.lean", "(union (usesArms nonzero a) (if nonzero then usesArms nonzero b else []))",
+    "(usesArms nonzero a)"],
   // focus drops the demand on its container.
   focuscontainer: ["Checker.lean", "      demand ctx.config cs later (capValues.flatMap Abstract.cells)\n      let out",
     "      let out"],

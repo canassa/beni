@@ -237,22 +237,9 @@ def keepsShape (a : Abstract) (parameter := 0) : Bool :=
       | .fresh _ => true
       | _ => false
 
-/-- Liveness of residual syntax, as `uses`, except that a conditional's
-    nonzero arm contributes no uses: the `branch-live` control's hole. -/
-def usesDroppingNonzero : Expr → Live
-  | .atom a => atomUses a
-  | .letE v rhs rest => union (usesDroppingNonzero rhs) (removeVars [v] (usesDroppingNonzero rest))
-  | .prim .close (x :: _) => atomUses x
-  | .prim _ xs | .closure _ xs | .recur xs => atomsUses xs
-  | .app f xs => union (atomUses f) (atomsUses xs)
-  | .branch c a _ => union (atomUses c) (usesDroppingNonzero a)
-  | .traverse _ src init i x acc body =>
-    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesDroppingNonzero body))
-  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesDroppingNonzero body))
-
 /-- `uses`, or the `branch-live` control's weakened liveness. -/
 def usesWith (cfg : Config) (e : Expr) : Live :=
-  if cfg.has .branchLive then usesDroppingNonzero e else uses e
+  usesArms (!cfg.has .branchLive) e
 
 def closureCaps (cfg : Config) (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
   let names := (removeVars bound (usesWith cfg body)).map Prod.fst |>.foldl (fun xs x => union xs [x]) []

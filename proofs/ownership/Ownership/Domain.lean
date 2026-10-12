@@ -238,16 +238,21 @@ def atomsUses (xs : List Atom) : Live := xs.flatMap atomUses
 
 def removeVars (xs : List Var) (l : Live) : Live := l.filter fun (v, _) => !xs.contains v
 
-def uses : Expr → Live
+/-- The uses of an expression. `nonzero := false` is the `branch-live`
+    control's weakened liveness, which ignores a conditional's nonzero arm;
+    one definition, so the control cannot drift from the rule it weakens. -/
+def usesArms (nonzero : Bool) : Expr → Live
   | .atom a => atomUses a
-  | .letE v rhs rest => union (uses rhs) (removeVars [v] (uses rest))
+  | .letE v rhs rest => union (usesArms nonzero rhs) (removeVars [v] (usesArms nonzero rest))
   | .prim .close (x :: _) => atomUses x
   | .prim _ xs | .closure _ xs | .recur xs => atomsUses xs
   | .app f xs => union (atomUses f) (atomsUses xs)
-  | .branch c a b => union (atomUses c) (union (uses a) (uses b))
+  | .branch c a b => union (atomUses c) (union (usesArms nonzero a) (if nonzero then usesArms nonzero b else []))
   | .traverse _ src init i x acc body =>
-    union (atomsUses [src, init]) (removeVars [i, x, acc] (uses body))
-  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (uses body))
+    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero body))
+  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero body))
+
+def uses (e : Expr) : Live := usesArms true e
 
 def isPrefix (a b : Path) : Bool := a == b.take a.length
 

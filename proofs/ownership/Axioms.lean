@@ -58,6 +58,36 @@ partial def tokens (s : String) : List String := Id.run do
       else if c == '-' && next == '/' then depth := depth - 1; i := i + 2
       else i := i + 1
       continue
+    -- A prime inside a word is part of the name (`h'`); one that starts a
+    -- token opens a character literal, skipped whole (`'"'`, `'\n'`).
+    if c == '\'' && word.isEmpty then
+      if next == '\\' then
+        i := i + 3
+        while i < cs.size && cs[i]! != '\'' do i := i + 1
+        i := i + 1
+      else i := i + 3
+      continue
+    -- A raw string `r"…"` or `r#"…"#`, skipped whole.
+    if word == "r" && (c == '"' || c == '#') then
+      let mut hashes := 0
+      while i < cs.size && cs[i]! == '#' do hashes := hashes + 1; i := i + 1
+      i := i + 1
+      let mut closed := false
+      while i < cs.size && !closed do
+        if cs[i]! == '"' && (List.range hashes).all (fun k => cs[i + 1 + k]? == some '#') then
+          closed := true; i := i + 1 + hashes
+        else i := i + 1
+      word := ""
+      continue
+    -- A guillemet name `«sorry»` is the token it spells.
+    if c == '«' then
+      if !word.isEmpty then out := out.push word; word := ""
+      i := i + 1
+      let mut inner := ""
+      while i < cs.size && cs[i]! != '»' do inner := inner.push cs[i]!; i := i + 1
+      out := out.push inner
+      i := i + 1
+      continue
     let isWord := c.isAlphanum || c == '_' || c == '.' || c == '\''
     if isWord then word := word.push c; i := i + 1; continue
     if !word.isEmpty then out := out.push word; word := ""

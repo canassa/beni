@@ -344,6 +344,8 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
             | .ref c => do pure (decide (j < (← array c).length))
             | _ => pure (decide (j < n))
           if !more then break
+          -- Every step that does not break ticks first: that, not the bound
+          -- above, is what ends a loop over a source that keeps growing.
           tick
           let v ← match input with
             | .ref c => do
