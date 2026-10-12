@@ -325,6 +325,45 @@ def probeCallsEdge : Program := {
     .letE 2 (.closure mapIL []) <| .letE 3 (.closure capPush [v 0]) <|
     .app (v 2) [v 1, v 3] }
 
+open Generator in
+/-- `applyN [e] headBump`, then `e` pushed onto the result: the callback
+    writes the row inside its argument, so applyN must publish W there and the
+    caller's `e` must be dead. Shrunk from the generator (seed 17, index 34). -/
+def probeCallbackWrites : Program := {
+  declarations := decls
+  main := .letE 1 (.prim (.literal .int) []) <| .letE 2 (.prim (.literal tL) [v 1]) <|
+    .letE 3 (.closure applyN []) <| .letE 4 (.closure headBump []) <|
+    .letE 5 (.app (v 3) [v 2, v 4]) (.prim .push [v 5, v 1]) }
+
+open Generator in
+/-- `twiceVia xs identL` returns xs itself; pushing onto the result while xs
+    is live must be refused. -/
+def probeCallbackAliases : Program := {
+  declarations := decls
+  main := .letE 0 list <| .letE 1 (.closure twiceVia []) <| .letE 2 (.closure identL []) <|
+    .letE 3 (.app (v 1) [v 0, v 2]) <| .letE 4 (.prim .push [v 3, .int 3]) (.prim .record [v 4, v 0]) }
+
+open Generator in
+/-- `map [0, 1] (capGet c)`: both elements are the captured c, so consuming
+    one position reaches the other. -/
+def probeCallbackEnv : Program := {
+  declarations := decls
+  main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 0, .int 1]) <|
+    .letE 2 (.closure mapIL []) <| .letE 3 (.closure capGet [v 0]) <|
+    .letE 4 (.app (v 2) [v 1, v 3]) <| .focus (v 4) (.int 0) 5 (push (v 5)) }
+
+open Generator in
+/-- `mapVia (mapVia [e] identL) publish`, then `e` pushed: `publish` escapes
+    its argument, so `e` is shared. mapVia only reaches `publish` through map,
+    so the E guard must be forwarded to mapVia's own input. Shrunk from the
+    generator (seed 17, index 471). -/
+def probePublishVia : Program := {
+  declarations := decls
+  main := .letE 0 (.prim (.literal .int) [.int 0]) <| .letE 1 (.prim (.literal tL) [v 0]) <|
+    .letE 2 (.closure mapVia []) <| .letE 3 (.closure identL []) <|
+    .letE 4 (.app (v 2) [v 1, v 3]) <| .letE 5 (.closure mapVia []) <|
+    .letE 6 (.closure publish []) <| .letE 7 (.app (v 5) [v 4, v 6]) (.prim .push [v 0, .int 0]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
@@ -339,7 +378,12 @@ def probes : List (String × Program × Mutant × Bool) := [
   ("T59 map shared", nestedMap true, .callbackXres, false),
   ("callback writes a list read later", probeSupplyEdge, .supplyEdge, false),
   ("fold reads its rows after the loop", probeSupplyRecheck, .supplyRecheck, false),
-  ("once closure handed to map", probeCallsEdge, .callsEdge, false)]
+  ("once closure handed to map", probeCallsEdge, .callsEdge, false),
+  ("callback edits inside its argument", probeCallbackWrites, .callbackWrites, false),
+  ("wrapper returns its argument", probeCallbackAliases, .callbackAliases, false),
+  ("map over a captured list", probeCallbackEnv, .callbackEnv, false),
+  ("mapVia publishes a row, then the row is pushed", probePublishVia, .callbackEscapes, false),
+  ("mapVia forwards map's guards about its callback", probePublishVia, .forwardGuards, false)]
 
 def scalarIndexOrder : Program := {
   main := .letE 0 list <| .letE 1 (.prim .at [v 0,.int 0,.int 0]) <|

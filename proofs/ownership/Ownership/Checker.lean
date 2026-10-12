@@ -46,6 +46,8 @@ structure St where
   /-- Summaries computed, and call sites served from the cache. -/
   computed : Nat := 0
   reused : Nat := 0
+  /-- Which checker rows this check exercised (for per-row hit counts). -/
+  hits : List String := []
   deriving Inhabited
 
 abbrev CheckM := StateT St (Except String)
@@ -315,6 +317,16 @@ def combineFact (f : Fact) (a b : List Nat) : List Nat :=
   | .xres _ => if a.isEmpty || b.isEmpty then [] else [1]
   | _ => union a b
 
+/-- Note that a checker row was exercised. -/
+def hit (row : String) : CheckM Unit :=
+  modify fun s => if s.hits.contains row then s else { s with hits := s.hits ++ [row] }
+
+def factKind : Fact → String
+  | .writes .. => "W∈use(callback arg)" | .escapes .. => "E∈use(callback arg)"
+  | .requires .. => "xreq(callback arg)" | .aliases .. => "callback arg∈res"
+  | .env _ => "env∈res" | .fresh _ => "fresh∈res" | .shared _ => "shared∈res"
+  | .top _ => "⊤∈res" | .xres _ => "xres" | .escapesEnv => "E∈use(env)" | .once => "once"
+
 def recordCall (slot n : Nat) : CheckM Unit :=
   modifyFacts fun s => { s with calls := mergeCalls (· + ·) s.calls [(slot, n)] }
 
@@ -563,6 +575,8 @@ decreasing_by all_goals simp_wf; omega
 def transfer (ctx : Context) (s : Summary) (site : List Nat) (args caps : List Abstract)
     (outsideFor : Origin → List Origin) (many : Bool) : CheckM Unit := do
   let supplies ← recheckSupplies ctx s site args caps false outsideFor
+  if (supplies.zip s.supplies).any (fun (a, b) => a.owned.length < b.owned.length) then
+    hit "supply owned bit cleared where a step ends"
   let consumed := s.consumes.flatMap (instantiateOrigin site args caps)
   modifyFacts fun facts => { facts with
     supplies := union facts.supplies supplies
@@ -631,19 +645,28 @@ def callKnown (fuel : Nat) (ctx : Context) (id : Nat) (actuals caps : List Abstr
     for g in s.guards do
       match frame.actuals.lookup g.query.slot with
       | some (.symbolic j ..) =>
-        let _ ← ask f ctx { g.query with slot := j }
+        hit "guard forwarded to the caller's own input"
+        if !ctx.config.has .forwardGuards then
+          let _ ← ask f ctx { g.query with slot := j }
       | _ => pure ()
     let supplies ← recheckSupplies ctx s site actuals caps true (fun _ => later)
+    if (supplies.zip s.supplies).any (fun (a, b) => a.owned.length < b.owned.length) then
+      hit "supply owned bit cleared at the caller"
     for sp in supplies do
       match frame.actuals.lookup sp.slot with
       | some (.symbolic j ..) =>
-        modifyFacts fun facts => { facts with supplies := union facts.supplies [{ sp with slot := j }] }
-      | some (.function _ alts) => checkEdges f ctx sp alts
+        hit "supply transferred to the caller's own input"
+        if !ctx.config.has .transferSupplies then
+          modifyFacts fun facts => { facts with supplies := union facts.supplies [{ sp with slot := j }] }
+      | some (.function _ alts) =>
+        hit "supply resolved at a known callback"
+        checkEdges f ctx sp alts
       | _ => pure ()
     for (slot, count) in s.calls do
       match frame.actuals.lookup slot with
       | some (.symbolic j ..) => recordCall j count
       | some (.function roots _) =>
+        if !roots.isEmpty then hit "calls of a once callback checked"
         if count ≥ 2 && !roots.isEmpty && !ctx.config.has .callsEdge then
           throw "calls edge: a once callback is called many times"
       | _ => pure ()
@@ -662,11 +685,13 @@ def checkEdges (fuel : Nat) (ctx : Context) (sp : Supply) (alts : List (Nat × L
       let s ← classOf (fuel - 1) ctx.declarations ctx.config ctx.frames id caps sp.state.1 sp.state.2
       for w in s.writes ++ s.consumes do
         if let .parameter k p := w.base then
+          hit "edge W ⇒ owned supply checked"
           if k < sp.args.length && !sp.owned.contains (k, p) && !ctx.config.has .supplyEdge then
             throw "supply edge: a callback writes a supply that is not owned"
       for x in s.requiresExclusive do
         if let .parameter k p := x.base then
-          if k < sp.args.length && !sp.exclusive.contains (k, p) then
+          hit "edge xreq ⇒ exclusive supply checked"
+          if k < sp.args.length && !sp.exclusive.contains (k, p) && !ctx.config.has .requiresEdge then
             throw "supply edge: a callback needs a supply exclusive that is not"
 termination_by (fuel, 3)
 decreasing_by all_goals simp_wf; omega
@@ -717,6 +742,8 @@ def ask (fuel : Nat) (ctx : Context) (q : Query) : CheckM (List Nat) := do
   else
     let a ← answer (fuel - 1) ctx.declarations ctx.config ctx.frames q
     modifyFacts fun s => { s with guards := union s.guards [{ query := q, answer := a }] }
+    if !a.isEmpty then hit s!"{factKind q.fact} yes"
+    else if q.fact matches .xres _ then hit "xres no"
     pure a
 termination_by (fuel, 6)
 decreasing_by all_goals simp_wf; omega
@@ -750,11 +777,11 @@ def callSymbolic (fuel : Nat) (ctx : Context) (g : Abstract) (args : List Abstra
           ownedPaths := ownedPaths ++ [(k, p)]
         if (exclusiveProblem escapes (a.atPath p) later (others k)).isNone then
           exclusivePaths := exclusivePaths ++ [(k, p)]
-        if !(← ask f ctx (query (.writes k p))).isEmpty then
+        if !(← ask f ctx (query (.writes k p))).isEmpty && !ctx.config.has .callbackWrites then
           modifyFacts fun s => { s with consumes := union s.consumes (cs.filter external) }
-        if !(← ask f ctx (query (.escapes k p))).isEmpty then
+        if !(← ask f ctx (query (.escapes k p))).isEmpty && !ctx.config.has .callbackEscapes then
           modifyFacts fun s => { s with escapes := union s.escapes cs }
-        if !(← ask f ctx (query (.requires k p))).isEmpty then
+        if !(← ask f ctx (query (.requires k p))).isEmpty && !ctx.config.has .callbackRequires then
           modifyFacts fun s => { s with requiresExclusive := union s.requiresExclusive ((a.atPath p).roots.filter external) }
     if !(← ask f ctx (query .escapesEnv)).isEmpty then
       modifyFacts fun s => { s with escapes := union s.escapes envCells }
@@ -763,15 +790,16 @@ def callSymbolic (fuel : Nat) (ctx : Context) (g : Abstract) (args : List Abstra
       slot, site, state := (state, owned), args, env := envCells,
       owned := ownedPaths, exclusive := exclusivePaths }] }
     recordCall slot 1
+    hit "callback called through its class"
     let mut cells : List (Path × List Origin) := []
     let mut exclusive : List Path := []
     for q in tyPaths r do
       let mut cs : List Origin := []
       for (t, k) in ps.zipIdx do
         for p in tyPaths t do
-          if !(← ask f ctx (query (.aliases k p q))).isEmpty then
+          if !(← ask f ctx (query (.aliases k p q))).isEmpty && !ctx.config.has .callbackAliases then
             cs := union cs ((args[k]?.getD .bottom).cellsAt p)
-      if !(← ask f ctx (query (.env q))).isEmpty then cs := union cs envCells
+      if !(← ask f ctx (query (.env q))).isEmpty && !ctx.config.has .callbackEnv then cs := union cs envCells
       for n in ← ask f ctx (query (.fresh q)) do cs := union cs [.site site n]
       if !(← ask f ctx (query (.shared q))).isEmpty then cs := union cs [.shared]
       if !(← ask f ctx (query (.top q))).isEmpty then cs := union cs [.unknown]
@@ -803,6 +831,7 @@ def summarise (fuel : Nat) (parent : Context) (id : Nat) (inputs : List Abstract
                 same := false
         if same then
           modify fun s => { s with reused := s.reused + 1 }
+          if !entry.summary.guards.isEmpty then hit "summary reused after re-asking its guards"
           return entry.summary
     let ps := inputs.take n
     let es := inputs.drop n
@@ -838,12 +867,13 @@ structure Accepted where
   computed : Nat
   reused : Nat
   cache : Array CacheEntry
+  hits : List String
   deriving Repr, Inhabited
 
 def check (p : Program) (config : Config := {}) : Except String Accepted := do
   let _ ← typecheck p
   let ctx : Context := { declarations := p.declarations, config }
   let (result, st) ← (inferExpr config.inferenceFuel ctx [] p.main [] []).run {}
-  pure { result, facts := st.facts, computed := st.computed, reused := st.reused, cache := st.cache }
+  pure { result, facts := st.facts, computed := st.computed, reused := st.reused, cache := st.cache, hits := st.hits }
 
 end Ownership
