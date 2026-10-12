@@ -2036,6 +2036,114 @@ test "fmt --migrate-top writes ⊤ and ⊥ in code only, drops else (), and rest
     , try w.read("Other.beni"));
 }
 
+test "fmt --migrate-init writes init as a function of ⊤ in program records only" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §11.10: an edit, so the record's spacing stays as written.
+    // A program record is the record a program constructor is called with —
+    // under the module's alias (`T.element`) or exposed (`sandbox`) — or the
+    // top-level value such a call names (`app`); an `init` that is already a
+    // lambda (`done`), `Tea.application`'s, and a record no constructor is
+    // handed (`other`) are left alone, so a second run changes nothing. The
+    // result checks against browser-tea, where the value `init`s did not.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Cmd
+        \\import Html exposing (Html)
+        \\import Sub
+        \\import Tea as T exposing (sandbox)
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <p>{String.fromInt n}</p>
+        \\
+        \\
+        \\app : { init : ⊤ → Int, update : Int, Int → Int, view : Int → Html Int }
+        \\app = { init =  1, update = λm _ → m, view = view }
+        \\
+        \\
+        \\other : { init : Int }
+        \\other = { init = 2 }
+        \\
+        \\
+        \\done : T.Program
+        \\done = sandbox { init = λ⊤ → 3, update = λm _ → m, view = view }
+        \\
+        \\
+        \\main : T.Program
+        \\main =
+        \\    Browser.programs
+        \\        [ sandbox app
+        \\        , sandbox { init = other.init, update = λm _ → m, view = view }
+        \\        , T.element { init = ( 4, Cmd.none ), update = λm _ → ( m, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }
+        \\        , done
+        \\        ]
+        \\
+    );
+    const before = try w.run(&.{ "check", "--platform=browser-tea", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-init", "Main.beni" });
+    const once = try w.read("Main.beni");
+    const again = try w.run(&.{ "fmt", "--migrate-init", "Main.beni" });
+    const after = try w.run(&.{ "check", "--platform=browser-tea", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), before.exit_code);
+    try testing.expect(std.mem.indexOf(u8, before.stderr, "The `init` field of this record is not what I expect") != null);
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqual(@as(u8, 0), again.exit_code);
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\import Browser
+        \\import Cmd
+        \\import Html exposing (Html)
+        \\import Sub
+        \\import Tea as T exposing (sandbox)
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <p>{String.fromInt n}</p>
+        \\
+        \\
+        \\app : { init : ⊤ → Int, update : Int, Int → Int, view : Int → Html Int }
+        \\app = { init =  λ⊤ → 1, update = λm _ → m, view = view }
+        \\
+        \\
+        \\other : { init : Int }
+        \\other = { init = 2 }
+        \\
+        \\
+        \\done : T.Program
+        \\done = sandbox { init = λ⊤ → 3, update = λm _ → m, view = view }
+        \\
+        \\
+        \\main : T.Program
+        \\main =
+        \\    Browser.programs
+        \\        [ sandbox app
+        \\        , sandbox { init = λ⊤ → other.init, update = λm _ → m, view = view }
+        \\        , T.element { init = λ⊤ → ( 4, Cmd.none ), update = λm _ → ( m, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }
+        \\        , done
+        \\        ]
+        \\
+    , once);
+    try testing.expectEqualStrings(once, try w.read("Main.beni"));
+}
+
 test "check names each _ = in front of a ⊤, and fmt --migrate-top --discards deletes them" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
