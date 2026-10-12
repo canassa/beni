@@ -2021,12 +2021,12 @@ parseWith s o text =
 
 
 --| A Type value printed as JSON text.
-pub print : borrowed Schema e a, borrowed a → fresh Result (List Issue) String
+pub print : borrowed Schema e a, aliased a → fresh Result (List Issue) String
 print schema input = printWith schema defaultOptions input
 
 
 --| `print` with options.
-pub printWith : borrowed Schema e a, Options, borrowed a → fresh Result (List Issue) String
+pub printWith : borrowed Schema e a, Options, aliased a → fresh Result (List Issue) String
 printWith s o v =
     case rootProblem s o Encoding typeSide False encodedSide True of
         Just issues →

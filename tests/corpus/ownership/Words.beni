@@ -1,12 +1,14 @@
 -- ownership: the ownership words of core and the `node` platform
 -- (`ownership-checker.md` §24.8), each pinned by a verdict that depends on
--- it. `String.join`, `String.fromList`, `Schema.print` and
--- `Node.printLines` only read (`borrowed`): the list is written afterwards,
--- accepted. `String.split`, `words`, `lines`, `toList` and `indexes` make a
--- new array nobody else holds (`fresh exclusive`): an edit of their result
--- is accepted, `call`. `Schema.parse` may return what the schema's own
--- functions return (`unknown`): an edit of its answer is rejected
--- `unknown`.
+-- it. `String.join`, `String.fromList` and `Node.printLines` only read
+-- (`borrowed`): the list is written afterwards, accepted. `Schema.print`
+-- keeps the value it was handed in an issue it answers (`aliased`): written
+-- once the answer is read, accepted (`printed`); written while the answer is
+-- still to be read, rejected (`printedLate`). `String.split`, `words`,
+-- `lines`, `toList` and `indexes` make a new array nobody else holds
+-- (`fresh exclusive`): an edit of their result is accepted, `call`.
+-- `Schema.parse` may return what the schema's own functions return
+-- (`unknown`): an edit of its answer is rejected `unknown`.
 import Node exposing (Program)
 import Schema
 import Ssr
@@ -25,6 +27,19 @@ joined label =
 
 pub printed : List Int → Int
 printed xs =
+    n =
+        case Schema.print (Schema.list Schema.int) xs of
+            Ok t →
+                String.length t
+
+            Err _ →
+                0
+    ys = [ …xs, 1 ]
+    n + List.length ys
+
+
+pub printedLate : List Int → Int
+printedLate xs =
     text = Schema.print (Schema.list Schema.int) xs
     ys = [ …xs, 1 ]
     case text of
@@ -57,14 +72,15 @@ parsed text =
 
 pub printedWith : List Int → Int
 printedWith xs =
-    text = Schema.printWith (Schema.list Schema.int) Schema.defaultOptions xs
-    ys = [ …xs, 1 ]
-    case text of
-        Ok t →
-            String.length t + List.length ys
+    n =
+        case Schema.printWith (Schema.list Schema.int) Schema.defaultOptions xs of
+            Ok t →
+                String.length t
 
-        Err _ →
-            0
+            Err _ →
+                0
+    ys = [ …xs, 1 ]
+    n + List.length ys
 
 
 pub parsedWith : String → Int
