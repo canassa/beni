@@ -70,10 +70,13 @@
 //   press <selector>            a user's click: trusted, as the browser
 //                               dispatches one with nothing of the page's
 //                               beneath it (Chrome: `Input.dispatchMouseEvent`
-//                               at the element's centre); a listener the
+//                               at the element's centre, which nothing may
+//                               cover) — the button pressed, which focuses
+//                               the nearest focusable element, the page
+//                               settled, then released; a listener the
 //                               driver added on the window, after every
 //                               listener of the page, logs `(a later listener
-//                               ran)`
+//                               ran)` from the `click`
 //   focus <selector>            `.focus()`
 //   blur <selector>             `.blur()`
 //   advance <ms> [tasks]        move the page's virtual clock on by `ms`,
@@ -718,18 +721,51 @@ function step(s) {
     case "mouse":
       target.dispatchEvent(new MouseEvent(s.name, { ...init, button: 0 }));
       return null;
-    // A user's click, trusted. Chrome's is the driver's to send, at the
-    // element's centre: this answers where that is. happy-dom's is
-    // dispatched here, `isTrusted` as the prelude reads it.
+    // A user's click, trusted, in two tasks: the button pressed, then
+    // released. Chrome's is the driver's to send, at the element's
+    // centre: this answers where that is, and refuses an element a user
+    // cannot reach there because something covers it. happy-dom's is
+    // dispatched here, `isTrusted` as the prelude reads it, as Chrome
+    // makes it: `pointerdown` and `mousedown`, whose default focuses the
+    // nearest focusable element the press is in (or, when there is none,
+    // takes focus from the element that has it), then — `up`, a task of
+    // its own — `pointerup`, `mouseup` and `click`. A prevented
+    // `pointerdown` suppresses the two mouse events, not the focus or the
+    // click (Pointer Events §11.1, HTML's focusing steps on mousedown).
     case "press": {
-      addEventListener("click", () => globalThis.__beniHarness.log.push("(a later listener ran)"), { once: true });
       const trust = globalThis.__beniHarness.trust;
       if (trust === null) {
+        addEventListener("click", () => globalThis.__beniHarness.log.push("(a later listener ran)"), { once: true });
         const r = target.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        if (hit === null || !target.contains(hit)) {
+          const name = hit === null ? "nothing" : `<${hit.localName}${hit.id ? `#${hit.id}` : ""}>`;
+          return `\`${s.selector}\` cannot be pressed: at its centre a user presses ${name}, which covers it`;
+        }
+        return { x, y };
       }
-      target.dispatchEvent(trust(new MouseEvent("click", { ...init, button: 0, detail: 1 })));
-      return null;
+      const pointer = { ...init, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true };
+      if (s.up) {
+        target.dispatchEvent(trust(new PointerEvent("pointerup", { ...pointer, buttons: 0 })));
+        if (!globalThis.__beniHarness.pressPrevented) target.dispatchEvent(trust(new MouseEvent("mouseup", { ...init, button: 0, buttons: 0, detail: 1 })));
+        target.dispatchEvent(trust(new MouseEvent("click", { ...init, button: 0, detail: 1 })));
+        return null;
+      }
+      addEventListener("click", () => globalThis.__beniHarness.log.push("(a later listener ran)"), { once: true });
+      const mouse = target.dispatchEvent(trust(new PointerEvent("pointerdown", { ...pointer, buttons: 1 })));
+      globalThis.__beniHarness.pressPrevented = !mouse;
+      if (!mouse || target.dispatchEvent(trust(new MouseEvent("mousedown", { ...init, button: 0, buttons: 1, detail: 1 })))) {
+        const focusable = "button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex],[contenteditable]";
+        const into = target.closest(focusable);
+        if (into !== null) {
+          if (document.activeElement !== into) into.focus();
+        } else if (document.activeElement !== null && document.activeElement !== document.body) {
+          document.activeElement.blur();
+        }
+      }
+      return { up: true };
     }
     case "focus":
       target.focus();
@@ -1211,12 +1247,11 @@ async function chromePage(endpoint) {
       if (r.exceptionDetails) throw new Error(`${fn.name} failed in Chrome: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
       return r.result.value;
     },
-    // A trusted click at a point of the page, as a user's: pressed and
-    // released, each resolved once the renderer has handled it.
-    click: async (x, y) => {
-      for (const type of ["mousePressed", "mouseReleased"]) {
-        await send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: 1 }, sessionId);
-      }
+    // Half of a trusted click at a point of the page, as a user's: the
+    // button pressed or released, resolved once the renderer has handled
+    // it.
+    mouse: async (type, x, y) => {
+      await send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: 1 }, sessionId);
     },
     close: async () => {
       await send("Target.closeTarget", { targetId });
@@ -1224,6 +1259,21 @@ async function chromePage(endpoint) {
       server.close();
     },
   };
+}
+
+// The rest of a `press` whose first half `step` ran, `why` what it
+// answered: the page settles and the button comes up — in Chrome at the
+// point `step` named, as a user's would, under happy-dom as `step`
+// dispatches it. Resolves to why the press failed, or null.
+async function released(page, s, why) {
+  if (why.up) {
+    await page.run(settle);
+    return page.run(step, { ...s, up: true });
+  }
+  await page.mouse("mousePressed", why.x, why.y);
+  await page.run(settle);
+  await page.mouse("mouseReleased", why.x, why.y);
+  return null;
 }
 
 // One page: load `entry` into a fresh page, run the steps, and resolve to
@@ -1318,10 +1368,12 @@ async function runPage(entry, fiber) {
         const tasks = s.command === "type" ? [...s.text].map((ch) => ({ ...s, text: ch })) : [s];
         for (const [i, t] of tasks.entries()) {
           if (i !== 0) await page.run(settle);
-          const why = await page.run(step, t);
-          // A `press` in Chrome: the click goes in as a user's would.
-          if (why !== null && typeof why === "object") await page.click(why.x, why.y);
-          else if (why !== null) return `${s.where}: ${s.line}: ${why}`;
+          let why = await page.run(step, t);
+          // A `press`: the button goes down, the page settles, and it comes
+          // up — in Chrome as a user's would, under happy-dom as the step
+          // dispatches it.
+          if (why !== null && typeof why === "object") why = await released(page, t, why);
+          if (why !== null) return `${s.where}: ${s.line}: ${why}`;
         }
         return null;
       }, s.throws);
@@ -1361,10 +1413,10 @@ async function runFuzz(specPath) {
       const page = await happyDomPage(options.dom);
       // A function of the fuzzer's own is `{name, own}` (`fuzz.mjs`'s
       // `inPage`): happy-dom's page calls `own`, Chrome's reads `name`.
-      return { run: (fn, arg) => page.run(fn.own ?? fn, arg), click: async () => {}, close: page.close, url: entryUrl };
+      return { run: (fn, arg) => page.run(fn.own ?? fn, arg), close: page.close, url: entryUrl };
     }
     const page = await chromePage(options.chrome);
-    return { run: page.run, click: page.click, close: page.close, url: entryUrl };
+    return { run: page.run, mouse: page.mouse, close: page.close, url: entryUrl };
   };
-  return fuzz(JSON.parse(readFileSync(specPath, "utf8")), { open, load, step, settle, drain, serialise });
+  return fuzz(JSON.parse(readFileSync(specPath, "utf8")), { open, load, step, released, settle, drain, serialise });
 }

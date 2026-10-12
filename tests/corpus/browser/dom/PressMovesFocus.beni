@@ -1,0 +1,56 @@
+-- A user's click moves the focus before it clicks: the button goes down,
+-- and its default focuses the nearest focusable element the press is in,
+-- or takes the focus from the one that has it when there is none; the
+-- `click` comes when the button comes up. The page's handlers see that
+-- order — `focus` and `blur` before `tap` — and the focused element is
+-- marked, in Chrome and under happy-dom alike, which the driver's `press`
+-- makes as Chrome does (a press that left the focus where it was showed a
+-- page no user ever saw). A second press of a focused button moves
+-- nothing.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Focused String
+    | Blurred String
+    | Tapped String
+
+
+update : Msg, String → String
+update msg log =
+    case msg of
+        Focused name →
+            "${log} focus:${name}"
+
+        Blurred name →
+            "${log} blur:${name}"
+
+        Tapped name →
+            "${log} tap:${name}"
+
+
+view : String → Html Msg
+view log =
+    <main>
+        <input
+            id="field"
+            onFocus={λ_ → Focused "field"}
+            onBlur={λ_ → Blurred "field"}
+            onClick={Tapped "field"}
+        />
+        <p id="para" onClick={Tapped "para"}>para</p>
+        <button
+            id="go"
+            onFocus={λ_ → Focused "go"}
+            onBlur={λ_ → Blurred "go"}
+            onClick={Tapped "go"}
+        >
+            <span id="label">go</span>
+        </button>
+        <p id="log">{log}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → "", update = update, view = view }

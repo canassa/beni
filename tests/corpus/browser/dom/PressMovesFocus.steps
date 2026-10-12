@@ -1,0 +1,8 @@
+# The input takes the focus as it is pressed.
+press #field
+# Nothing focusable is pressed: the input loses the focus.
+press #para
+# The button's label: the button, which holds it, takes the focus.
+press #label
+# Pressed again, the focused button keeps it and fires nothing else.
+press #go

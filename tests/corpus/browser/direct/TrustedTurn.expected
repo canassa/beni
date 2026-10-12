@@ -12,7 +12,7 @@ console.log: view: 11
 (a later listener ran)
 <body>
   <section>
-    <button id="go">"go"</button>
+    <button id="go" :focus>"go"</button>
     <p>"11"</p>
   </section>
 </body>
@@ -22,7 +22,7 @@ console.log: view: 22
 (the step's task ended)
 <body>
   <section>
-    <button id="go">"go"</button>
+    <button id="go" :focus>"go"</button>
     <p>"22"</p>
   </section>
 </body>
@@ -36,7 +36,7 @@ console.log: view: 55
 (the step's task ended)
 <body>
   <section>
-    <button id="go">"go"</button>
+    <button id="go" :focus>"go"</button>
     <p>"55"</p>
   </section>
 </body>

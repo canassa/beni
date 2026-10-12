@@ -5,9 +5,7 @@ input #text "xy"
 input #free "zzzz"
 click #tick
 # A user's click on the box renders (its parent's handler) before the
-# box's `input`: the box goes back to the model all the same. (Focused
-# first: Chrome's own click focuses it, happy-dom's does not.)
-focus #box
+# box's `input`: the box goes back to the model all the same.
 press #box
 # A radio `update` refuses: the one it unchecked is checked again.
 click #rc

@@ -1,0 +1,59 @@
+-- load
+<body>
+  <main>
+    <input id="field" .value="">
+    <p id="para">"para"</p>
+    <button id="go">
+      <span id="label">"go"</span>
+    </button>
+    <p id="log">""</p>
+  </main>
+</body>
+-- press #field
+(a later listener ran)
+<body>
+  <main>
+    <input id="field" .value="" :focus>
+    <p id="para">"para"</p>
+    <button id="go">
+      <span id="label">"go"</span>
+    </button>
+    <p id="log">" focus:field tap:field"</p>
+  </main>
+</body>
+-- press #para
+(a later listener ran)
+<body>
+  <main>
+    <input id="field" .value="">
+    <p id="para">"para"</p>
+    <button id="go">
+      <span id="label">"go"</span>
+    </button>
+    <p id="log">" focus:field tap:field blur:field tap:para"</p>
+  </main>
+</body>
+-- press #label
+(a later listener ran)
+<body>
+  <main>
+    <input id="field" .value="">
+    <p id="para">"para"</p>
+    <button id="go" :focus>
+      <span id="label">"go"</span>
+    </button>
+    <p id="log">" focus:field tap:field blur:field tap:para focus:go tap:go"</p>
+  </main>
+</body>
+-- press #go
+(a later listener ran)
+<body>
+  <main>
+    <input id="field" .value="">
+    <p id="para">"para"</p>
+    <button id="go" :focus>
+      <span id="label">"go"</span>
+    </button>
+    <p id="log">" focus:field tap:field blur:field tap:para focus:go tap:go tap:go"</p>
+  </main>
+</body>
