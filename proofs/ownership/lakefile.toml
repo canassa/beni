@@ -1,9 +1,14 @@
 name = "ownership"
 version = "0.1.0"
-defaultTargets = ["Ownership", "ownership"]
+defaultTargets = ["Ownership", "ownership", "AxiomCheck"]
 
 [[lean_lib]]
 name = "Ownership"
+
+# The axiom audit: fails the build if the set of sorry-dependent theorems changes.
+[[lean_lib]]
+name = "AxiomCheck"
+roots = ["Axioms"]
 
 [[lean_exe]]
 name = "ownership"
