@@ -1,16 +1,18 @@
 --! The page's own events (`docs/design/boundary.md` §9.8.5, §9.8.8,
---! §9.8.10, §9.8.11): the window's size, whether the page is visible, and
---! the keyboard. Each is a listener first, and has two forms over it: a
---! direct form — `eachResize f` calls `f` with every new size for as long
---! as the calling fiber runs — and a subscription, a `Sub.on` over the same
---! listener, which adds it when its key arrives and removes it when the key
---! leaves, with no fiber. Every event is delivered, in order, read as it
---! is dispatched.
+--! §9.8.10, §9.8.11, §9.8.18): the window's size, whether the page is
+--! visible, the keyboard, and the display's frames. Each is a listener
+--! first, and has two forms over it: a direct form — `eachResize f` calls
+--! `f` with every new size for as long as the calling fiber runs — and a
+--! subscription, a `Sub.on` over the same listener, which adds it when its
+--! key arrives and removes it when the key leaves, with no fiber. Every
+--! event is delivered, in order, read as it is dispatched.
 
 import Html
 import Js
 import Listen
 import Sub exposing (Sub)
+import Task
+import Time
 
 
 --| The window's inner size, in CSS pixels.
@@ -31,6 +33,13 @@ type Key
     | KeyDown
     | KeyUp
     | KeyPress
+
+
+-- The frame subscriptions' keys: a type of their own, so a page that
+-- subscribes to no frame ships no tag of theirs in `Key`'s table.
+type FrameKey
+    = AnimationFrame
+    | AnimationFrameDelta
 
 
 --| The window's inner size, now.
@@ -136,3 +145,101 @@ onKeyPress tag = Sub.on KeyPress (keys "keypress" _) tag
 
 event : Js.Value → Html.Event
 event v = Js.to v
+
+
+-- ---- Animation frames (`boundary.md` §9.8.18) -----------------------------
+
+--| A message just before each frame the browser draws, carrying the moment
+--| the frame began (the host's `Date.now()`): Elm's `onAnimationFrame`. A
+--| message it sends is rendered before that frame is drawn. Every frame
+--| subscription of the page, of either kind, shares one
+--| `requestAnimationFrame` per frame, and while none is live the page asks
+--| for no frame. A hidden page draws no frames, and so sends nothing until
+--| it is shown again.
+pub onAnimationFrame : (Time.Posix → msg) → Sub msg
+onAnimationFrame tag = Sub.on AnimationFrame (frames posix _) tag
+
+
+--| A message just before each frame the browser draws, carrying the
+--| milliseconds since the frame before it — for the first, since the
+--| page's frame subscriptions started: Elm's `onAnimationFrameDelta`.
+--| After a hidden spell, the first delta spans it.
+--|
+--|     Browser.Events.onAnimationFrameDelta Tick
+pub onAnimationFrameDelta : (Float → msg) → Sub msg
+onAnimationFrameDelta tag = Sub.on AnimationFrameDelta (frames delta _) tag
+
+
+--| Call `f` with the moment each frame began, before the browser draws it,
+--| for as long as the calling fiber runs.
+pub eachAnimationFrame : (Time.Posix → ⊤) → ⊤
+eachAnimationFrame f = Listen.each (frames posix _) f
+
+
+--| Call `f` with the milliseconds since the frame before, before each
+--| frame the browser draws, for as long as the calling fiber runs.
+pub eachAnimationFrameDelta : (Float → ⊤) → ⊤
+eachAnimationFrameDelta f = Listen.each (frames delta _) f
+
+
+posix : Int, Int → Time.Posix
+posix now _ = Time.fromMillis now
+
+
+delta : Int, Int → Float
+delta now last = toFloat (now - last)
+
+
+-- The page's frame clock, `[ listeners, asked, last ]`: the frame
+-- listeners added, each a function of a frame's time and the time before
+-- it, in the order they were added; the id of the frame asked for, null
+-- while none is; and the time of the last frame, or, before the first, of
+-- the first listener's arrival.
+frameClock : Js.Value
+frameClock = Js.array [ Js.construct (Js.global "Set") [], Js.null, Js.from 0 ]
+
+
+wall : ⊤ → Int
+wall ⊤ = Js.to (Js.call (Js.global "Date") "now" [])
+
+
+-- Ask the host for the next frame. Nothing is caught: a host with no
+-- `requestAnimationFrame` throws, a defect (`CLAUDE.md` rule 9).
+ask : ⊤ → ⊤
+ask ⊤ =
+    Js.setAt
+        frameClock
+        1
+        (Js.apply (Js.global "requestAnimationFrame") [ Js.from λ_ → tick ⊤ ])
+
+
+-- A frame: the next is asked for, then each listener is handed the time,
+-- under `Task.fromHost`, so the messages they send are applied and
+-- rendered before the callback returns — before the frame is drawn.
+tick : ⊤ → ⊤
+tick ⊤ = Task.fromHost λ⊤ →
+    now = Js.from (wall ⊤)
+    last = Js.at frameClock 2
+    ask ⊤
+    Js.setAt frameClock 2 now
+    Js.each (Js.at frameClock 0) λf → Js.to (Js.apply f [ now, last ])
+
+
+-- The listener of every frame subscription and direct form: `read` makes
+-- the value sent from a frame's time and the time before it. The first
+-- listener added while no frame is asked for starts the clock; the last
+-- one removed cancels the frame asked for, so an idle page asks for none.
+frames : sync (Int, Int → a), sync (a → ⊤) → (⊤ → ⊤)
+frames read send =
+    listeners = Js.at frameClock 0
+    if Js.isNull (Js.at frameClock 1) then
+        Js.setAt frameClock 2 (Js.from (wall ⊤))
+        ask ⊤
+    f = Js.from λnow last → send (read (Js.to now) (Js.to last))
+    _ = Js.call listeners "add" [ f ]
+
+    λ⊤ →
+        _ = Js.call listeners "delete" [ f ]
+        if Js.to (Js.get listeners "size") == 0 then
+            _ = Js.apply (Js.global "cancelAnimationFrame") [ Js.at frameClock 1 ]
+            Js.setAt frameClock 1 Js.null

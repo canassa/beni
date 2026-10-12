@@ -82,6 +82,17 @@
 //                               `tasks`, `(the timer's task ended)` is logged
 //                               as each timer's callback returns, before any
 //                               microtask it queued
+//   frame <n> [<ms>] [tasks]    draw `n` virtual frames, each `ms` (default
+//                               16) after the one before: the clock moves on
+//                               as `advance` moves it, then the callbacks
+//                               `requestAnimationFrame` was asked for before
+//                               the frame began run in one task, in order,
+//                               each handed the frame's time; the frame is
+//                               logged `(frame at <t> ms: <k> callbacks)`;
+//                               with `tasks`, `(the frame's task ended)` as
+//                               its callbacks return
+//   frames                      log `(frames: <n>)`, the callbacks asked
+//                               for and neither run nor cancelled
 //   event <window|document|selector> <name> [<n>]
 //                               `n` (default 1) plain `Event`s of that name
 //                               on the window, the document or the element,
@@ -129,8 +140,9 @@
 //                               end of the run, and none is a failure
 //
 // The page's clock is virtual from the start: `Date.now()` is 0 until an
-// `advance` step moves it, and a `setTimeout` callback runs only when an
-// `advance` step reaches its time.
+// `advance` or `frame` step moves it, a `setTimeout` callback runs only when
+// such a step reaches its time, and a `requestAnimationFrame` callback only
+// when a `frame` step draws a frame — in Chrome as in happy-dom.
 //
 // The page's `fetch` is scripted from the start: each call is logged as it
 // is made, `(fetch <n>: <METHOD> <path> <headers> [<body>]
@@ -220,6 +232,24 @@ function prelude() {
     clock.timers = clock.timers.filter((t) => t.id !== id);
   };
   Date.now = () => clock.now;
+  // The page's frames are virtual too: a `requestAnimationFrame` callback
+  // runs only when a `frame` step draws a frame, in both DOMs, so how many
+  // frames a page asks for, and what each sends, is the script's and not
+  // the host's display. Their ids are the timers'.
+  // `drawing` holds the callbacks of the frame being drawn, so one that an
+  // earlier callback of that frame cancels does not run, as the host's
+  // does not.
+  clock.frames = [];
+  clock.drawing = [];
+  globalThis.requestAnimationFrame = (fn) => {
+    const id = clock.next++;
+    clock.frames.push({ id, fn, cancelled: false });
+    return id;
+  };
+  globalThis.cancelAnimationFrame = (id) => {
+    for (const f of clock.drawing) if (f.id === id) f.cancelled = true;
+    clock.frames = clock.frames.filter((f) => f.id !== id);
+  };
   // The page's `fetch` is scripted: each request is numbered and logged as
   // it is made, and stays pending until a `respond` or `fail` step answers
   // it. The request and the answer are the DOM's own `Request` and
@@ -410,36 +440,72 @@ async function load({ url, runtime }) {
 // Run one step. Returns null, or why the step could not run — or, for
 // `advance`, a promise of one.
 function step(s) {
-  if (s.command === "advance") {
-    // Fire every timer due by the target time, earliest first (by when it
-    // was set, among timers due at once), with the clock at its time, and
-    // let the page settle after each, so the work a timer resumed runs —
-    // and may set the next timer — before the next one fires.
+  // Fire every timer due by `target`, earliest first (by when it was set,
+  // among timers due at once), with the clock at its time, and let the
+  // page settle after each, so the work a timer resumed runs — and may set
+  // the next timer — before the next one fires. Then the clock is at
+  // `target`.
+  const advanceTo = async (target, tasks) => {
     const clock = globalThis.__beniHarness.clock;
-    const target = clock.now + s.ms;
+    for (;;) {
+      let t = null;
+      for (const c of clock.timers) {
+        if (c.due <= target && (t === null || c.due < t.due || (c.due === t.due && c.id < t.id))) t = c;
+      }
+      if (t === null) break;
+      clock.timers = clock.timers.filter((c) => c !== t);
+      clock.now = t.due;
+      // A timer's callback runs as a task of its own: what it throws is
+      // reported to the window's `error` listeners, as a host reports it,
+      // and the clock goes on.
+      try {
+        t.fn(...t.args);
+      } catch (error) {
+        dispatchEvent(new ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) }));
+      }
+      if (tasks) globalThis.__beniHarness.log.push("(the timer's task ended)");
+      await new Promise((done) => clock.real(done, 0));
+    }
+    clock.now = target;
+  };
+  if (s.command === "advance") {
+    return advanceTo(globalThis.__beniHarness.clock.now + s.ms, s.tasks).then(() => null);
+  }
+  if (s.command === "frame") {
+    // `count` frames, each `ms` after the one before: the clock moves on as
+    // `advance` moves it, then the frame is drawn — the callbacks asked for
+    // before it began run in one task, in the order they were asked for,
+    // each handed the frame's time; one asked for while they run is the
+    // next frame's. Each frame is logged with its time and the number of
+    // callbacks it ran.
+    const clock = globalThis.__beniHarness.clock;
     return (async () => {
-      for (;;) {
-        let t = null;
-        for (const c of clock.timers) {
-          if (c.due <= target && (t === null || c.due < t.due || (c.due === t.due && c.id < t.id))) t = c;
+      for (let n = 0; n < s.count; n++) {
+        await advanceTo(clock.now + s.ms, false);
+        clock.drawing = clock.frames;
+        clock.frames = [];
+        const ran = clock.drawing.length;
+        globalThis.__beniHarness.log.push(`(frame at ${clock.now} ms: ${ran} callback${ran === 1 ? "" : "s"})`);
+        for (const f of clock.drawing) {
+          if (f.cancelled) continue;
+          // What a callback throws is reported as a timer's is, and the
+          // frame's other callbacks still run, as the host's do.
+          try {
+            f.fn(clock.now);
+          } catch (error) {
+            dispatchEvent(new ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) }));
+          }
         }
-        if (t === null) break;
-        clock.timers = clock.timers.filter((c) => c !== t);
-        clock.now = t.due;
-        // A timer's callback runs as a task of its own: what it throws is
-        // reported to the window's `error` listeners, as a host reports it,
-        // and the clock goes on.
-        try {
-          t.fn(...t.args);
-        } catch (error) {
-          dispatchEvent(new ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) }));
-        }
-        if (s.tasks) globalThis.__beniHarness.log.push("(the timer's task ended)");
+        clock.drawing = [];
+        if (s.tasks) globalThis.__beniHarness.log.push("(the frame's task ended)");
         await new Promise((done) => clock.real(done, 0));
       }
-      clock.now = target;
       return null;
     })();
+  }
+  if (s.command === "frames") {
+    globalThis.__beniHarness.log.push(`(frames: ${globalThis.__beniHarness.clock.frames.length})`);
+    return null;
   }
   if (s.command === "url") {
     history.replaceState(null, "", s.text);
@@ -810,6 +876,7 @@ if (stepsPath !== undefined) {
     const throws = written.startsWith("throws ");
     const line = throws ? written.slice("throws ".length).trim() : written;
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
+    if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
     if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store"))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
@@ -828,6 +895,16 @@ if (stepsPath !== undefined) {
       }
       s.ms = Number(selector);
       s.tasks = argument === "tasks";
+    } else if (command === "frame") {
+      const f = (argument ?? "").match(/^(?:([0-9]+))?\s*(tasks)?$/);
+      if (!/^[1-9][0-9]*$/.test(selector) || f === null) {
+        usage(`${where}: \`frame\` takes a number of frames, at most a number of milliseconds between two, and at most \`tasks\``);
+      }
+      s.count = Number(selector);
+      s.ms = f[1] === undefined ? 16 : Number(f[1]);
+      s.tasks = f[2] === "tasks";
+    } else if (command === "frames") {
+      usage(`${where}: \`frames\` takes nothing`);
     } else if (command === "url" || command === "hash") {
       try {
         s.text = JSON.parse(argument === undefined ? selector : "");
