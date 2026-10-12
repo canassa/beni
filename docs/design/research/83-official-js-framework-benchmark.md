@@ -365,15 +365,16 @@ As a ratio to vanillajs's median, pass 1 / pass 2:
 These are pass 1's medians. Pass 2's are within 0.3 ms of them, except on the sub-millisecond
 `select` and `swap` cells, whose quartiles span the throttler's two modes (§3, *The swap*).
 
-| framework | ready MB | run 1k MB | 5× create/clear MB | geomean (p1 / p2) | uncompressed kB | brotli kB | first paint ms (p1 / p2) |
+| framework | ready MB | run 1k MB | 5× create/clear MB | geomean (p1 / p2) | uncompressed kB | brotli kB | first paint ms, one run (p1 / p2) |
 |---|--:|--:|--:|--:|--:|--:|--:|
 | vanillajs | 0.53 | 1.87 | 0.62 | 1.00 / 1.01 | 11.3 | 2.5 | 86.5 / 86.8 |
 | beni-direct | 0.60 | 2.08 | 0.75 | 1.15 / 1.08 | 11.1 | 4.4 | 44.0 / 62.9 |
 | beni-tea | 0.62 | 2.13 | 0.79 | 1.19 / 1.13 | 13.5 | 5.5 | 51.2 / 61.9 |
 | Solid 1 | 0.59 | 2.69 | 0.77 | 1.26 / 1.21 | 11.5 | 4.5 | 85.0 / 75.7 |
 
-Memory and size are pass 1's. First paint is one run per pass. vanillajs reads 86 ms in both
-passes here and 50.6 on dagon, so the figure is not read as a ranking.
+Memory and size are pass 1's. **First paint is a single run per pass and is not comparable**:
+beni-direct reads 44.0 and 62.9 ms in the two passes, and vanillajs 86 ms here against 50.6 on
+dagon. It is listed because the table shows it, not as a ranking.
 
 ### 7.4 Pass to pass
 
@@ -393,14 +394,14 @@ Solid 1**. Most IQRs are under ±1 % of the median, against ±5–30 % on dagon 
   shows it was load.
 - **"Within 10 % of vanillajs in `total`" (§0 item 2) held, and is tighter.** beni-direct is
   between 4 % ahead of vanillajs and 6 % behind it on every operation in both passes, the extremes
-  being `clear` and `swap`. beni-tea is 0–11 % behind, and its widest gap is `swap` (+9–11 %), which is
+  being `clear` and `swap`. beni-tea is between 2 % ahead and 11 % behind, and its widest gap is `swap` (+9–11 %), which is
   §4's known `browser-tea` cost. Over the table's metric the two are 2 % and 3 % behind vanillajs.
 - **"Ahead of every framework" held for the one framework this run measured.** Both beni entries
   have a lower median than Solid 1.9.3 on every operation in both passes, and a lower weighted
-  geomean (1.02–1.03 against 1.09). On `remove` (24.4 against 24.9–25.0) and beni-tea's `swap`
-  (30.0–30.2 against 30.6–30.7) the margin is about one IQR, and pass 2's quartiles overlap on
-  `swap`, so those two are level. On `select` and
-  `clear`, Solid is 16–31 % behind vanillajs and 15–30 % behind beni.
+  geomean (1.02–1.03 against 1.09). The narrowest margin is `remove`, 2 % (24.4 against
+  24.9–25.0), with IQRs that do not overlap in either pass. beni-tea's `swap` (30.0–30.2 against
+  30.6–30.7) is the one cell where pass 2's quartiles overlap, so it is level. On `select` and
+  `clear`, Solid is 16–31 % behind vanillajs and 16–31 % behind beni.
 - **`create10k`: dagon had beni level with Solid and Svelte. Here beni is ahead of Solid 1 by
   2–5 % and 5 % behind vanillajs.** In `script`, beni is 17 % behind vanillajs on it (41.3 ms
   against 35.2), where dagon's loaded pass 3 put beni ahead (53.4 against 67.0†). The quiet figure
@@ -427,8 +428,8 @@ default counts and two passes that agree to within 4 %:
 - by the official weighted geometric mean of `total`, **vanillajs 1.00, beni-direct 1.02, beni-tea
   1.03, Solid 1.9.3 1.09**;
 - per operation, beni-direct is between 4 % ahead of vanillajs and 6 % behind it, and beni-tea
-  between 2 % ahead and 11 % behind. Both are ahead of Solid 1.9.3 on seven of nine operations
-  and level with it on `remove`; beni-tea is also level on `swap`;
+  between 2 % ahead and 11 % behind. beni-direct is ahead of Solid 1.9.3 on all nine operations,
+  by 2 % or more; beni-tea on eight, and level with it on `swap`;
 - by memory, beni is between vanillajs and Solid; by brotli size, beni-direct is level with Solid.
 
 What cannot be claimed:
@@ -457,6 +458,7 @@ node bench/jfb/run.mjs --frameworks=vanillajs,solid,beni-tea,beni-direct --chrom
     --taskset=1-5,7-11 --skip-install --skip-build \
     --out=bench/jfb/results/2026-10-13-azathoth/pass1        # 31 min
 node bench/jfb/summary.mjs bench/jfb/results/2026-10-13-azathoth/pass1
+node bench/jfb/run.mjs --report-only --out=bench/jfb/results/2026-10-13-azathoth/pass1   # their table, from raw/
 ```
 
 Setup on a fresh NixOS machine took about 15 minutes: the clone with only the
