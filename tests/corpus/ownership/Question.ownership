@@ -1,9 +1,10 @@
 module Question
-  22:10 List.push xs: rejected alias: r#Err.0 holds it and is read at 23:5
-  37:10 List.push xs: rejected alias: r#Err.0 holds it and is read at 38:5
-  55:10 List.push xs: rejected alias: r#Err.0 holds it and is read at 56:5
-  73:10 List.push xs: accepted param
-  86:10 List.push xs: accepted param
+  25:10 List.push xs: rejected alias: r#Err.0 holds it and is read at 26:5
+  40:10 List.push xs: rejected alias: r#Err.0 holds it and is read at 41:5
+  58:10 List.push xs: rejected alias: r#Err.0 holds it and is read at 59:5
+  76:10 List.push xs: accepted param
+  89:10 List.push xs: accepted param
+  100:10 List.push xs: rejected alias: got#Err.0 holds it and is read at 101:5
   summary pick: π1 R, π1#Err.0 A; res #Err.0 π1#Err.0
   summary keepsErr: π1 RW, π1[*] R
   summary local: π1 RW, π1[*] R
@@ -13,6 +14,7 @@ module Question
   summary maybeOk: π1 RW, π1[*] R
   summary parse: π1 R
   summary stringOk: π1 RW, π1[*] R
-  demands 5: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-total 5: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-cause alias 3
+  summary twoFrames: π2 RW, π2[*] R
+  demands 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 4

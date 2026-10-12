@@ -2507,7 +2507,7 @@ prepend whose front item was made after its base names no approximate step.
 | Fixture | Pins | Expected |
 |---|---|---|
 | `ownership/Binders` | §26.1 | every binder kind between a write and a later read of the original: rejected, naming the original; `distinct`: accepted |
-| `ownership/Question` | §26.2 | `keepsErr`, `local`, `statement`: `alias` (the first and last accepted before); `maybeOk`, `stringOk`: accepted |
+| `ownership/Question` | §26.2 | `keepsErr`, `local`, `statement`: `alias` (the first and last accepted before); `maybeOk`, `stringOk`: accepted; `twoFrames`: each `?` returns from its own definition |
 | `ownership/PrependFresh` | §26.3; research 82 `Bike` 56 | a literal, a callee's fresh list, and the Bike Wars line in front: accepted; an item stored in the base first (`storedBefore`), handed to the base's call (`baseHolds`), taken from the base (`elementFront`), an `Int` (`intFront`): `call`, approximate |
 | `ownership/ResultDefault` | §26.4 | the pipeline and the lambda: accepted; `andThen` of either module with an `f` that edits and fails, a read after, a default that is an expression, a `Maybe.map` converted first: `later-use` |
 
@@ -2517,7 +2517,8 @@ The owner's process rule (2026-10-12): every checker rule a slice adds or change
 (`proofs/ownership/`) or listed here, with the soundness risk of leaving it unmodelled. The oracle's language has
 `let`, primitives, closures, calls, recursion, a branch on an integer, traversals and focus (`Syntax.lean`); it
 has no list patterns, no constructors or sum types, no records, no early return and no prepend. No rule below is
-modelled. A later sync round consumes this list.
+modelled. A later sync round consumes this list, §26.2 first: it is the one rule here that closes a soundness
+hole rather than adding precision.
 
 | Rule | Where | What is unsound if the rule is wrong |
 |---|---|---|
