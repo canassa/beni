@@ -327,9 +327,9 @@ def verdictStats (p : Program) (config : Config := {}) : Except String (Nat × N
 def verdictOf (p : Program) (config : Config := {}) : Except String Unit :=
   (verdictStats p config).map (fun _ => ())
 
-def disagrees (p : Program) (config : Config) : Bool :=
+def disagrees (p : Program) (config : Config) (fuel := 100000) : Bool :=
   (typesOf p).isOk && (verdictOf p config).isOk &&
-    (compare p).disagrees
+    (compare p fuel).disagrees
 
 def atomReductions : Atom → List Atom
   | .int n => if n == 0 then [] else
@@ -369,7 +369,10 @@ def shrinkFuel : Nat → Program → Config → Program
     let mains := (reductions p.main).map (fun e => { p with main := e })
     let bodies := p.declarations.zipIdx.flatMap fun (d,i) =>
       (reductions d.body).map fun e => { p with declarations := p.declarations.set i { d with body := e } }
-    match (mains ++ bodies).find? (fun q => q != p && disagrees q config) with
+    -- Candidates run with fuel 5 000: removing a recursive declaration's base
+    -- case makes the interpreters recurse until fuel runs out, as deep as the
+    -- fuel, which overflowed the stack at the campaign's 100 000.
+    match (mains ++ bodies).find? (fun q => q != p && disagrees q config 5000) with
     | none => p
     | some q => shrinkFuel fuel q config
 
@@ -648,6 +651,13 @@ def runWith (o : Options) : IO RunResult := do
         if o.negative && found.isSome then continue
         -- Recorded before shrinking, which may exhaust the stack on a deep program.
         IO.println s!"{header} mismatch index={index} family={family} (shrinking)"
+        -- The unshrunk program and the line above reach the disk before
+        -- shrinking starts, so a crash while shrinking loses no evidence.
+        (← IO.getStdout).flush
+        if !o.quiet then
+          IO.FS.createDirAll "regressions"
+          IO.FS.writeFile s!"regressions/{o.label}-{o.seed}-{index}-unshrunk.txt"
+            s!"{header} index={index} family={family}\nAST:\n{repr p}\n"
         let minimal := shrink p config
         let report := s!"{header} index={index} family={family}\nAST:\n{repr minimal}\n{repr (compare minimal)}\ncorrected checker: {repr (verdictOf minimal { reinfer := config.reinfer })}\n"
         if !o.quiet then

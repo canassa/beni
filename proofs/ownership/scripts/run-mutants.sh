@@ -41,7 +41,9 @@ for m in "${names[@]}"; do
     index=$(grep -o "index=[0-9]*" "$d/oracle-$s.log" | head -1 | sed 's/index=//')
     family=""; [ -n "$index" ] && family=$(grep -o "family=[a-z-]*" "$d/oracle-$s.log" | head -1 | sed "s/family=//")
     [ $status -ne 0 ] && [ -n "$index" ] && caught=$((caught + 1))
-    line="$line seed=$s exit=$status first-index=${index:-none}${family:+ family=$family}"
+    # A crash (abort, kill, segfault) is never a miss: flag it.
+    crash=""; [ $status -ge 128 ] && crash=" CRASH"
+    line="$line seed=$s exit=$status${crash} first-index=${index:-none}${family:+ family=$family}"
   done
   echo "$line caught-seeds=$caught/${#seeds[@]}"
   rm -rf "$d"
