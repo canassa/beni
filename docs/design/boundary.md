@@ -782,6 +782,14 @@ module's output. A chain that names neither is refused before a source is read, 
 with no `"program"` asks the module for no `run`. `browser` is such a platform since this
 amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, and is deleted.
 
+**Whether the platform edits lists in place is part of that shape, and it is `"lists"`** (*added
+2026-10-13*, [`ownership-checker.md`](ownership-checker.md) §28.2). `"lists": "in-place"` says that the
+code the chain emits may write a list's array where the ownership checker accepted the edit, so
+`check` and `build` run the checker on every program built for it, and every edit it cannot prove
+safe is an error; no other value is accepted, and a chain that does not say it edits nothing in place
+and runs no checker at all. Inherited first-found down the chain like every field (§9.1).
+`browser-direct` declares it; no other platform the binary carries does.
+
 ### 5.3 One project, several platforms
 
 The full-stack case is a first-class requirement, not an afterthought: a browser client and a server
