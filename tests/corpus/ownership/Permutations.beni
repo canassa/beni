@@ -1,0 +1,42 @@
+-- ownership: the writers that store nothing new keep exclusive contents
+-- (thesis §3.11's rows, `ownership-checker.md` §22.5). `swap` permutes two
+-- elements, `pop` and `removeAt` drop one: what was at distinct positions
+-- stays at distinct positions, so an element edit after each relies on the
+-- argument's own exclusivity (`xreq`) and is accepted. `insertAt` stores
+-- its element, so the list stays exclusive only when the element was stored
+-- exclusively: a fresh literal is, and one list inserted at two positions
+-- is not, which is rejected `exclusive`. `swap`'s row was inferred from its
+-- body, `set (set xs i y) j x`, which stores two of the list's own elements
+-- back into it and so lost exclusivity (research 78's `NestedFor`).
+bump : List Int → List Int
+bump row = List.push row 9
+
+
+swapThenEdit : List (List Int) → List (List Int)
+swapThenEdit rows = List.update (List.swap rows 0 1) 0 bump
+
+
+popThenEdit : List (List Int) → List (List Int)
+popThenEdit rows = List.update (List.pop rows) 0 bump
+
+
+removeThenEdit : List (List Int) → List (List Int)
+removeThenEdit rows = List.update (List.removeAt rows 0) 0 bump
+
+
+insertThenEdit : List (List Int) → List (List Int)
+insertThenEdit rows = List.update (List.insertAt rows 0 [ 1 ]) 0 bump
+
+
+insertTwiceThenEdit : List (List Int), List Int → List (List Int)
+insertTwiceThenEdit rows row = List.update (List.insertAt (List.insertAt rows 0 row) 1 row) 0 bump
+
+
+distinct : ⊤ → List (List Int)
+distinct ⊤ = swapThenEdit [ [ 1 ], [ 2 ] ]
+
+
+shared : ⊤ → List (List Int)
+shared ⊤ =
+    row = [ 1 ]
+    swapThenEdit [ row, row ]

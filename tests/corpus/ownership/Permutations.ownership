@@ -1,0 +1,38 @@
+module Permutations
+  12:12 List.push row: accepted param
+  16:21 List.update <call List.swap>: accepted param
+  16:21 List.update <call List.swap>[*]: accepted param (Permutations.bump writes what List.update supplies it)
+  16:21 value Permutations.bump: accepted callback-param (List.update supplies it owned)
+  16:34 List.swap rows: accepted param
+  20:20 List.update <call List.pop>: accepted param
+  20:20 List.update <call List.pop>[*]: accepted param (Permutations.bump writes what List.update supplies it)
+  20:20 value Permutations.bump: accepted callback-param (List.update supplies it owned)
+  20:33 List.pop rows: accepted param
+  24:23 List.update <call List.removeAt>: accepted param
+  24:23 List.update <call List.removeAt>[*]: accepted param (Permutations.bump writes what List.update supplies it)
+  24:23 value Permutations.bump: accepted callback-param (List.update supplies it owned)
+  24:36 List.removeAt rows: accepted param
+  28:23 List.update <call List.insertAt>: accepted param
+  28:23 List.update <call List.insertAt>[*]: accepted param (Permutations.bump writes what List.update supplies it)
+  28:23 value Permutations.bump: accepted callback-param (List.update supplies it owned)
+  28:36 List.insertAt rows: accepted param
+  32:32 List.update <call List.insertAt>: accepted param
+  32:32 List.update <call List.insertAt>[*]: accepted param (Permutations.bump writes what List.update supplies it)
+  32:32 value Permutations.bump: rejected exclusive: List.update hands its parameter 1 an element of <call List.insertAt>, whose elements may share one list (approx)
+  32:45 List.insertAt <call List.insertAt>: accepted param
+  32:60 List.insertAt rows: accepted param
+  36:14 call Permutations.swapThenEdit <literal>: accepted fresh (Permutations.swapThenEdit writes π1)
+  36:14 call Permutations.swapThenEdit <literal>[*]: accepted fresh (Permutations.swapThenEdit writes π1[*])
+  42:5 call Permutations.swapThenEdit <literal>: rejected exclusive: the callee needs the list's elements not to share, and they may (Permutations.swapThenEdit writes π1)
+  42:5 call Permutations.swapThenEdit <literal>[*]: accepted fresh (Permutations.swapThenEdit writes π1[*])
+  summary bump: π1 RAW, π1[*] A; res [*] ~π1[*], π1
+  summary swapThenEdit: π1 RAW, π1[*] AW, π1[*][*] A; res [*] π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq excl π1
+  summary popThenEdit: π1 RAW, π1[*] AW, π1[*][*] A; res [*] π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq excl π1
+  summary removeThenEdit: π1 RAW, π1[*] AW, π1[*][*] A; res [*] π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq excl π1
+  summary insertThenEdit: π1 RAW, π1[*] AW, π1[*][*] A; res [*] ~fresh1 ~π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq excl π1
+  summary insertTwiceThenEdit: π1 RAW, π1[*] AW, π1[*][*] A, π2 RAw, π2[*] A; res [*] ~π1[*] ~π2, [*][*] ~π1[*][*] ~π2[*], π1{lost}
+  summary distinct: res [*] fresh1, fresh2
+  summary shared: res [*] fresh1, fresh2{shared}
+  demands 26: accepted 24 (fresh 3, call 0, param 17, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 26: accepted 24 (fresh 3, call 0, param 17, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause exclusive 2
