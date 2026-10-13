@@ -373,6 +373,9 @@ pub fn run(
     // before finding out would leave an `out/` that looks fresh and is not.
     // Nothing is emitted until the whole project is known to emit.
     try e.emitModules(entry);
+    // A module the lowering refused (`not_implemented`) roots none of the
+    // runtime the entry would import, so a release build cannot spell it.
+    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
     // A scope-hoisted build wrote the hand-written files and the entry into
     // its one file already (§9, *One scope-hoisted file under `--release`*).
     if (!e.hoisted) {

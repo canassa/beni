@@ -1707,6 +1707,25 @@ const Case = struct {
                 return error.TeaBuildFailed;
             }
         };
+
+        // A `browser-direct` refusal is the lowering's, met while modules
+        // are lowered; under `--release` the build must stop there too, with
+        // the same report, and never go on to spell a runtime nothing
+        // rooted (it panicked doing so for a refused `Tea.element`).
+        if (!c.kind.isRelease() and std.mem.indexOf(u8, dir_path, "/bad/direct/") != null) {
+            var rel: std.ArrayList([]const u8) = .empty;
+            try rel.appendSlice(c.arena, args.items[0..3]);
+            try rel.appendSlice(c.arena, &.{ "--out=out", "--release" });
+            try rel.appendSlice(c.arena, sources.items);
+            const r = try w.runWith(try c.argv(rel.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
+            if (r.exit_code != 1 or !std.mem.eql(u8, r.stderr, built.stderr) or w.exists("out")) {
+                detail(
+                    "{s}: under --release a browser-direct refusal must be the same refusal, nothing written; it exited {d}\n--- stderr ---\n{s}\n",
+                    .{ c.fixture.name, r.exit_code, r.stderr },
+                );
+                return error.ReleaseRefusalDiffers;
+            }
+        }
     }
 
     /// Whether a JSON diagnostic list names the ownership checker's codes
