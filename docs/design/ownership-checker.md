@@ -36,6 +36,10 @@ wrong binding, the early return of `?` (a defect that argument's review found), 
 list made after its base, and `Result.withDefault (Result.map m f) d` — is specified in §26 and built, with the
 rules not yet modelled in the Lean oracle listed in §26.7.*
 
+*Amended 2026-10-13: the owner dropped the identity promises of `core/List`'s functions that build, reversing
+thesis O2 — `map`, `filter` and their kin return a fresh list, their summaries say so, and `identical`, `kept`,
+the exempt comparison and §25.3 are gone — in §27.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -350,6 +354,8 @@ one of §6.2's rows:
    So `List.length xs` holds nothing; `List.map xs String.fromInt : List String` is a fresh list that
    cannot be `xs : List Int`; `List.filter xs p` may be `xs` (thesis §3.8's identity promise falls out
    of the rule); and `List.map xs (λ_ → ys)` may hold `ys` at `⋆`.
+   *Amended 2026-10-13 (§27):* `filter`'s promise is gone, and its summary says `res ε = fresh₁`; the
+   rule still says "may be `xs`" of a callee with no summary, which is what it is for.
 
 Read the other way, slice 1 assumes of every callee what a summary would say of the worst pure
 function of that type: it may return any argument it was given, and it makes its result. It does
@@ -851,10 +857,13 @@ value holds closures or top-level functions, or of a function parameter — whos
    object (`done` hands the one over as the other), so the filter never separates them.
    *Amended 2026-10-12 (slice 3f, §25.3):* two closed record types are one object only when they name the
    same fields, each pair of which may be one object; `List.map explosions toObstacle` is never `explosions`.
+   *Withdrawn 2026-10-13 (§27.4):* `map` is fresh, and the record rule went with its promise.
 7. **Derivations** (thesis §8.4): an instantiated entry is exact when its `res` path names one provenance;
    when it names two or more — the two outcomes of an identity promise, `List.filter`'s `{fresh, π₁}`,
    arms joined path-insensitively — every entry instantiated from it is approximate, tagged with the call,
    and a rejection through it is the `call` cause.
+   *Amended 2026-10-13 (§27):* no core function has an identity promise now, and `filter`'s result is
+   `{fresh₁}`; arms joined path-insensitively — `if c then [ 0 ] else xs` — are what still names two.
 
 A call whose callee has no summary is §6.1's conservative call, unchanged (§15 decision 2).
 
@@ -963,8 +972,8 @@ Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2
 | `builder n` | `res ε = fresh₁` | §6.5, the builder |
 | `put b i x` | π₁ `RAW`; π₃ `A`; `res ε = π₁`, `[*] = π₁[*], π₃` | §6.5, the builder's fill: a write in place, so a demand on the builder |
 | `done b n` | π₁ `RAW`; `res ε = π₁`, `[*] = π₁[*]` | §6.5, the hand-over, which sets the array's length |
-| `identical x y` | nothing | §6.5, the identity primitives: compares references, dereferences neither |
-| `kept same xs ys` | π₂ `A`, π₃ `A`; `res ε = π₂, π₃`, `[*] = π₂[*], π₃[*]` | §6.5, `map`'s return of its input |
+| `identical x y` | nothing | §6.5, the identity primitives: compares references, dereferences neither. *Removed 2026-10-13 with the primitive (§27)* |
+| `kept same xs ys` | π₂ `A`, π₃ `A`; `res ε = π₂, π₃`, `[*] = π₂[*], π₃[*]` | §6.5, `map`'s return of its input. *Removed 2026-10-13 with the primitive (§27)* |
 
 `swap`, `update`, `close`, `slice`, `take`, `drop`, `map` and the rest are inferred over these. Two
 consequences are findings, not rows:
@@ -1240,6 +1249,8 @@ result is the element it was given. Their loops now answer the array `a` they tr
 result, never read, and no use at the call. It is the one exempt site — it chooses between two results that
 hold the same elements at every position when it chooses the first; no other row has `K`, and `K` is never
 inferred.
+*Withdrawn 2026-10-13 (§27):* `map` and `indexedMap` return a fresh list always. `identical`, `kept`, their rows
+and the `K` bit are gone, so there is no exempt comparison; `mapHelp` and `indexedMapHelp` answer their builder.
 
 **The rewrite.** `foldl`, `foldr`, `map`, `indexedMap` and `filterMap` read their element with `traverseAt`
 where they read it with `at`; `mapHelp` and `indexedMapHelp` no longer take `xs`; `update` is `focus`;
@@ -2301,6 +2312,9 @@ existed before it, on any platform, today. **Slice 5 must keep it so**: a prepen
 
 ### 25.3 `map` across types
 
+*Withdrawn 2026-10-13 (§27.4): `map` returns a fresh list, so nothing here is needed; the text is kept as the
+record.*
+
 §6.1 item 3's "may be one object" decides the type filter of §16.4 item 6. A record value is one run-time
 object of one type, so **two closed records** — their extension chains end in the empty record — **may share
 only when they name the same fields, each pair of which may share**. A record with an open row may be any
@@ -2351,7 +2365,7 @@ approximate step (`… may hold it through the call at L:C`), as a call with an 
 | Fixture | Pins | Expected |
 |---|---|---|
 | `ownership/Prepend` | §25.2; research 82 R1 (`Helpers` 51), R4 (`Bike` 60); T33 | a prepend and `List.cons` onto a list read afterwards: no line; the suffix re-built after `[ a, b, …tail ]`: its walk writes nothing; a prepend onto `map`'s result: no line; T33's stack: accepted; `[ …s, 0 ]` and `[ x, …s, x ]` with `s` read afterwards: `later-use`; extending a prepend's result with its base read afterwards: `call`, approximate; with the base dead: accepted |
-| `ownership/MapAcrossTypes` | §25.3; research 82 R4 | an append onto a map between two closed records: accepted; onto a map from a record type to itself, and from a one-field wrapper to its field: `call`, approximate |
+| `ownership/MapAcrossTypes` | §25.3; research 82 R4 | an append onto a map between two closed records: accepted; onto a map from a record type to itself, and from a one-field wrapper to its field: `call`, approximate. *Amended 2026-10-13 (§27):* all three accepted, `map` being fresh |
 | `ownership/MaybeDefault` | §25.4; research 82 R5 (`Game` 127) | the pipeline, the lambda and the `case`: accepted; the old model read after the expression, an eager handler, a default that is not a variable, an edit while computing `m`, `Maybe.andThen`: `later-use` |
 | `ownership/Differential` | T33 against the Lean model | the prepend form accepted, with no Lean counterpart (the model has no prepend); `t33Pushed`, the model's projection onto a push: kept rejected, copied accepted, as in the model |
 | `ownership/Recursion`, `ownership/Split` | §25.2 through a recursion and a split | `appendTo` reads `ys` and may return it; `bumpHead` writes its rows, not its spine |
@@ -2528,7 +2542,7 @@ hole rather than adding precision.
 | `Result.withDefault (Result.map …)` as two arms (§26.4) | `isMaybeJoin` | the default read on a run where `f` edited it |
 | A prepend reads its base, and its result may share the base's array (§25.2) | `prepended` | slice 5 writing a prepend's base, or a write onto the result reaching a base still read |
 | `Maybe.withDefault (Maybe.map …)` as two arms (§25.4) | `isMaybeJoin`, `joinArm` | as §26.4 |
-| `map` across closed record types (§25.3) | `recordsMayShare` | an identity promise dropped where the result may be its input |
+| `map` across closed record types (§25.3) | `recordsMayShare` | an identity promise dropped where the result may be its input. *Removed 2026-10-13 with §25.3 (§27.4)* |
 | Ownership words on `foreign` signatures, and the thesis row for a `foreign` with none (§24) | `wordsRow` | a word claiming less than the JavaScript does: a write or an escape the checker does not see |
 | The decoder followed through `Expect` (§24.9) | `carry`, `carriedEnv` | a decoder's captures held past the call that runs it |
 | The entry protocol, its rows and `init` (§20, §22) | `entryCall` | the runtime keeping or reading the model the direct row hands over |
@@ -2542,3 +2556,99 @@ hole rather than adding precision.
 2. **Fresh items that are not lists.** A record or a constructor value made after the base cannot be `Js.same` as
    a stored element either, but the domain gives a record no cell of its own, so §26.3 cannot see that it is new.
    No measured program needs it.
+
+---
+
+## 27. The identity promises dropped (the owner, 2026-10-13; normative from 2026-10-13)
+
+*Amends §6.1 item 3, §16.4 items 6–7, §16.8, §18.5, §25.1, §25.3 and §25.6. Sections 1–26 keep their numbers and
+text; where this section changes a rule, it wins. It supersedes thesis O2 (`docs/thesis/ownership/ch-changes.tex`,
+"O2: decided—the identity promises are kept"), whose text is not edited: the thesis records the decision as it
+was taken, and this section records its reversal. Research 90 measures it.*
+
+### 27.1 The decision
+
+The owner, 2026-10-13: **drop the list identity promises now.** Until then `List.filter` that kept every element,
+`List.map` and `indexedMap` whose every result was `===` its element, `slice` and `take` of everything, `xs ++ []`
+and `[] ++ ys`, `concat` and `concatMap` of one non-empty list, and `reverse`, `sort`, `sortBy` and `sortWith` of
+fewer than two elements returned **their input itself**. From now on they return a **fresh list**, each at the
+cost it had (`language.md` §6.8, *What an operation returns unchanged*; `backend.md` §4, *Identity*, both
+amended). The reason: the promises served one consumer, `browser-tea`'s renderer, which skips a `For` whose list
+is the same object as at the last render; `browser-tea` is to be deleted once `browser-direct` — which re-renders
+from compile-time write sets, not from identity — proves out, and the owner accepts that `browser-tea` skips less
+meanwhile. beni has no users, so nothing else is owed.
+
+What the promises cost here is thesis O2's own list: a result that may be its input aliases it (`res ε = {fresh₁,
+π₁}`), so an edit of the result's spine while the source is read later — the splices of thesis Table 6.3, a
+filtered copy kept beside its source and extended (T52), research 88's S3 — was rejected, approximately, through
+the call (§16.4 item 7).
+
+### 27.2 What the checker infers now
+
+Nothing in `src/own/` was added for the change: the bodies changed, and the summaries are read off the bodies
+(§16.8: `map` and its family, `filter`, `slice` are inferred). `beni dump --stage=ownership core/List.beni`
+before and after:
+
+| Function | `res ε` before | after |
+|---|---|---|
+| `map`, `indexedMap` | `~fresh₁ ~π₁` | `fresh₁` |
+| `filter` | `~fresh₁ ~π₁` | `fresh₁` |
+| `slice` | `fresh₁ π₁` | `fresh₁` |
+| `take` | `fresh₁ ~fresh₂ ~π₁` | `fresh₁` |
+| `reverse` | `fresh₁ π₁` | `fresh₁` |
+| `sort` | `~fresh₁ ~fresh₂ ~π₁` | `fresh₁` |
+| `sortWith` | `~fresh₁ ~fresh₂ π₁` | `fresh₁` |
+| `sortBy` | `~fresh₂ π₁` | `fresh₂` |
+| `concat` | `fresh₁ π₁[*]` | `fresh₁` |
+| `concatMap` | `~cb₂ ~fresh₁ ~π₁[*]` | `fresh₂` |
+
+Each also loses its `A` on π₁ (and on π₁`[*]` where the result held the input's elements only through the
+promise): the parameter is read, not kept. `map`'s and `indexedMap`'s result elements are still `cb₂`, and
+`filter`'s, `slice`'s and the sorts' still `π₁[*]` — element identity (`backend.md` §4, invariant 6) is not a
+promise this section drops, so an edit *inside* an element of a filtered list still demands the source's element,
+as thesis O2 says it must.
+
+`append`'s row is asserted (§16.8) and does not change: π₁ `RAW`; `res ε = π₁`. Its body now copies `xs` when
+`ys` is empty and `ys` when `xs` is, so the row's "`[] ++ ys` is the base, not `ys`" (§16.8, *with its decided
+change*) is what the body does: before this section the body returned `ys` itself there, which the row did not
+name. No in-place write existed for that to break.
+
+### 27.3 What is removed
+
+- **`identical` and `kept`**, `core/List`'s two core-private `foreign`s that carried `map`'s promise, with their
+  sibling exports, their two `Operator` entries (`backend.md` §4, *`List.beni`'s loops read and write in place*)
+  and their asserted rows (§16.8's table).
+- **The exempt comparison** (§18.5) and the **`K`** bit it introduced: no row has `K`, so `noUse` is "no bits".
+- `filterFirst`, the loop that walked `filter`'s input without building until the first rejected element, and
+  `firstFrom`, which found `concat`'s one non-empty list.
+
+### 27.4 What stays, and why
+
+- **The writers' rows.** `set`, `update`, `swap`, `insertAt`, `removeAt`, `pop` and `push` still return their
+  input when they have nothing to write. A writer's result is its input — `res ε = π₁` — whether it wrote in place
+  or not; that is the meaning of the row, and making a no-op copy would not change it.
+- **Views.** `drop`, `tail`, `view` and a pattern's `rest` share their base's array by representation, O(1)
+  (§16.8's `view` row: `res ε = π₁, fresh₁`). `drop xs 0` is `xs` for the same reason.
+- **§16.4 item 6's type filter.** It was written with the identity promises as its example, and with none left
+  in core it decides no line of any program research 90 measured: a binary with the filter disabled gives the same
+  verdict on every line of the 1 299 units of research 90 §2. It stays, as thesis §3.8 states it, because it is a
+  sound statement about types and still decides a summary whose result is a coercion through `Js`; it is
+  `instRes` and `applySummary`'s tail, which slice 4 is changing, so removing it is left to a later change.
+- **§25.3 is withdrawn.** Two closed records with different fields are no longer told apart by §6.1's "may be one
+  object": the rule existed for `map`'s promise (§25.1: "`map`'s identity promise is named only where it can
+  fire"), and a binary without it gives the same verdict on every line research 90 measured, as research 85
+  §1.2 found of every line but `map`'s. `recordsMayShare` and `closedFields` are removed, and a record against a
+  record may share, as before slice 3f — coarser, and sound.
+- **Element identity**, at `[*]`, as above.
+
+### 27.5 Testing
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `run/ListIndexedIdentity` | §27.1, `backend.md` §4 | the builders' lines `copied` (slice and take of everything, filter of all, reverse and the sorts of fewer than two, map and indexedMap of the identity); the writers' and `drop 0` lines `same` |
+| `run/ListIdentity` | §27.1 | the elements passed through `same`; `append xs []`, `append [] ys`, `concat` of one, `concatMap` alone, `sort` of one `copied` |
+| `run/ListScalarView` | `backend.md` §8 | `whole at the start` still `same`: the probe returns the list a walk was given without `append`, which copies now |
+| `ownership/Conservative` | §27.2 | T52's shape (`filtered`) and `mirrored`'s `reverse` accepted |
+| `ownership/Disjoint` | §16.4, thesis Table 3.1's pending row | the held call temporary through a helper of two arms (`forCall`): `call`, approximate; through `List.reverse` (`forFresh`): accepted |
+| `ownership/Differential` | T52 against the Lean model | `t52` accepted, the model's copied projection |
+| `ownership/MapAcrossTypes` | §25.3, §27.2 | all three appends accepted |
