@@ -61,7 +61,7 @@ pub const magic = "BENIOWN\x00";
 
 /// Bumped with the rule set (thesis §8.5): a block of another version is
 /// absent, never misread.
-pub const version: u32 = 2;
+pub const version: u32 = 3;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -170,6 +170,7 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
             try c.path(r.path);
             try c.prov(r.prov);
             try c.xsum(r.xc);
+            try c.xsum(r.sc);
         }
 
         fn summary(c: *@This(), s: *const Summary) Allocator.Error!void {
@@ -378,6 +379,7 @@ fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) A
         try writeProv(w, r.prov);
         try w.byte(@intFromBool(r.approx));
         try writeXSum(w, arena, r.xc);
+        try writeXSum(w, arena, r.sc);
     }
 }
 
@@ -638,13 +640,13 @@ fn readXSum(r: *Reader) Error!XSum {
 }
 
 fn readRes(r: *Reader) Error![]const ResEntry {
-    const n = try r.count(4 + 14 + 1 + 5);
+    const n = try r.count(4 + 14 + 1 + 10);
     const out = try r.arena.alloc(ResEntry, n);
     for (out) |*e| {
         const path = try r.path();
         const prov = try readProv(r);
         const approx = try r.bool_();
-        e.* = .{ .path = path, .prov = prov, .approx = approx, .xc = try readXSum(r) };
+        e.* = .{ .path = path, .prov = prov, .approx = approx, .xc = try readXSum(r), .sc = try readXSum(r) };
     }
     return out;
 }

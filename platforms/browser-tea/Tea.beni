@@ -504,9 +504,9 @@ diff host scope declared live =
 
 
 want : Key, Kind, Tap msg, Wanted msg → Wanted msg
-want k kind t d =
-    ( first, taps ) = Maybe.withDefault (Dict.get d k) ( kind, [] )
-    Dict.insert d k ( first, List.append taps [ t ] )
+want k kind t d = Dict.update d k λcurrent →
+    ( first, taps ) = Maybe.withDefault current ( kind, [] )
+    Just ( first, List.append taps [ t ] )
 
 
 keep : Scope, Wanted msg, Key, Live msg, Dict Key (Live msg) → Dict Key (Live msg)

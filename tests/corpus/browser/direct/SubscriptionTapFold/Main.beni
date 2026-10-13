@@ -1,5 +1,5 @@
--- CK-224: the focused subscription fold cannot prove its fresh accumulator
--- exclusive. The real builder starts empty and only threads replacements.
+-- The focused subscription fold proves its fresh accumulator containers
+-- owned at each step. The builder starts empty and threads replacements.
 -- Opaque taps may share captures; the freshly built tap-list containers do not.
 -- The browser-tea twin renders two declarations under one key.
 import Dict

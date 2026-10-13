@@ -345,8 +345,11 @@ pub const Prov = struct {
 /// `keep a b` (`focus`'s row only): the callback `a`, handed an element of
 /// `b` destructively, returns what keeps `b` exclusive (the thesis's "keeps
 /// shape").
+/// `spine`, `sep_spine` and `keep_spine` state the corresponding conditions
+/// for the containers at the named paths, without owning their contents
+/// (the dated fold-invariant amendment).
 pub const XAtom = struct {
-    kind: enum(u8) { excl, sep, keep },
+    kind: enum(u8) { excl, sep, keep, spine, keep_spine, sep_spine },
     a: Prov,
     b: Prov = .{ .kind = .top },
 
@@ -374,7 +377,7 @@ pub const XSum = struct {
     }
 };
 
-pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{} };
+pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{} };
 
 pub const SupplyEntry = struct {
     fun: u32,
@@ -896,7 +899,7 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
 }
 
 fn resEql(a: ResEntry, b: ResEntry) bool {
-    return a.path == b.path and a.prov.eql(b.prov) and a.approx == b.approx and a.xc.eql(b.xc);
+    return a.path == b.path and a.prov.eql(b.prov) and a.approx == b.approx and a.xc.eql(b.xc) and a.sc.eql(b.sc);
 }
 
 /// The module's top-level declarations as strongly connected groups by
@@ -1082,12 +1085,20 @@ fn summaryEql(x: Summary, y: Summary) bool {
     if (x.limit != y.limit or x.params != y.params or x.coarse != y.coarse or x.once != y.once) return false;
     if (x.uses.len != y.uses.len or x.res.len != y.res.len or x.supply.len != y.supply.len or x.funs.len != y.funs.len) return false;
     for (x.uses, y.uses) |a, b| if (!std.meta.eql(a, b)) return false;
-    for (x.res, y.res) |a, b| if (a.path != b.path or !a.prov.eql(b.prov) or a.approx != b.approx or !a.xc.eql(b.xc)) return false;
+    for (x.res, y.res) |a, b| if (!resEql(a, b)) return false;
     for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc)) return false;
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
     if (x.xreq.len != y.xreq.len) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
     return true;
+}
+
+test "recursive summaries keep iterating when only container ownership changes" {
+    const before: Summary = .{ .params = 0, .res = &.{.{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 } }} };
+    const after: Summary = .{ .params = 0, .res = &.{.{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 }, .sc = .{ .no = 1 } }} };
+    try std.testing.expect(!summaryEql(before, after));
+    try std.testing.expect(!summaryEql(after, before));
+    try std.testing.expect(summaryEql(after, after));
 }
 
 /// The conjunction of two conditions (§18.2): failing exactly beats failing
@@ -1191,6 +1202,7 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
         if (nr > 0 and res[nr - 1].path == r.path and res[nr - 1].prov.eql(r.prov)) {
             res[nr - 1].approx = res[nr - 1].approx or r.approx;
             res[nr - 1].xc = try xsumAnd(keep, res[nr - 1].xc, r.xc);
+            res[nr - 1].sc = try xsumAnd(keep, res[nr - 1].sc, r.sc);
             continue;
         }
         res[nr] = r;
@@ -1631,6 +1643,19 @@ fn assertDictFocus(o: *Ownership, s: Summary) Allocator.Error!Summary {
         if (r.prov.kind == .param) try atoms.append(keep, keep_atom);
         r.xc = .{ .no = r.xc.no, .atoms = sortAtoms(atoms.items) };
     }
+    for (res) |*r| {
+        if (r.prov.kind != .param or r.prov.a != 0) continue;
+        for (supply) |e| {
+            if (e.fun != 2 or e.prov.kind != .param or !e.prov.taken or !o.isPrefix(e.prov.path, r.prov.path)) continue;
+            const tail = (try o.suffix(e.prov.path, r.prov.path)) orelse continue;
+            const selected = try o.concat(e.path, tail);
+            r.sc = .{ .atoms = try keep.dupe(XAtom, &.{
+                .{ .kind = .spine, .a = r.prov },
+                .{ .kind = .keep_spine, .a = .{ .kind = .cb, .a = 2, .path = selected }, .b = r.prov },
+            }) };
+            break;
+        }
+    }
     var out = s;
     out.supply = supply;
     out.res = res;
@@ -1861,6 +1886,9 @@ fn atomText(o: *Ownership, x: XAtom) Allocator.Error![]const u8 {
     const arena = o.out.allocator();
     return switch (x.kind) {
         .excl => std.fmt.allocPrint(arena, "excl {s}", .{try o.provText(x.a)}),
+        .spine => std.fmt.allocPrint(arena, "spine {s}", .{try o.provText(x.a)}),
+        .sep_spine => std.fmt.allocPrint(arena, "sep-spine {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
+        .keep_spine => std.fmt.allocPrint(arena, "keep-spine {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
         .sep => std.fmt.allocPrint(arena, "sep {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
         .keep => std.fmt.allocPrint(arena, "keep {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
     };
@@ -2651,11 +2679,13 @@ const WAtom = struct {
     kind: @FieldType(XAtom, "kind"),
     a: u32,
     b: u32 = none,
+    path: u32 = eps,
 
     fn less(x: WAtom, y: WAtom) bool {
         if (x.kind != y.kind) return @backingInt(x.kind) < @backingInt(y.kind);
         if (x.a != y.a) return x.a < y.a;
-        return x.b < y.b;
+        if (x.b != y.b) return x.b < y.b;
+        return x.path < y.path;
     }
 };
 
@@ -2989,6 +3019,7 @@ const Walker = struct {
     /// one other than its kind's.
     conds: std.ArrayList(WCond) = .empty,
     cell_cond: std.ArrayList(u32) = .empty,
+    cell_spine: std.ArrayList(u32) = .empty,
     /// §18.4: every atom relied on.
     reqs: std.ArrayList(Req) = .empty,
     /// Per call of a function parameter: its arguments, so that a cell made
@@ -3102,6 +3133,7 @@ const Walker = struct {
         gop.value_ptr.* = id;
         try w.cells.append(w.a, c);
         try w.cell_cond.append(w.a, none);
+        try w.cell_spine.append(w.a, none);
         return id;
     }
 
@@ -3373,6 +3405,85 @@ const Walker = struct {
         w.cell_cond.items[c] = if (cur != none) try w.condAnd(cur, k) else k;
     }
 
+    /// Exclusivity of the represented containers, not of their contents.
+    /// A list may hold shared read-only values without sharing its own array.
+    fn cellSpine(w: *Walker, c: u32) Allocator.Error!u32 {
+        if (w.cell_spine.items[c] != none) return w.cell_spine.items[c];
+        const x = w.cells.items[c];
+        const k: u32 = switch (x.kind) {
+            .site, .closure, .func => cond_yes,
+            .top, .payload, .shared => cond_lost,
+            .result => if (x.path != eps) blk: {
+                var root = x;
+                root.path = eps;
+                root.ty = .none;
+                break :blk try w.cellSpine(try w.cell(root));
+            } else cond_lost,
+            .param, .env, .cbres => try w.atomCond(.{ .kind = .spine, .a = c }),
+            .taken => try w.cellSpine(try w.takenBase(c)),
+        };
+        w.cell_spine.items[c] = k;
+        return k;
+    }
+
+    fn initSpine(w: *Walker, c: u32, k: u32) Allocator.Error!void {
+        const cur = w.cell_spine.items[c];
+        w.cell_spine.items[c] = if (cur == none) k else try w.condAnd(cur, k);
+    }
+
+    fn lowerSpine(w: *Walker, c: u32, k: u32) Allocator.Error!void {
+        if (k == cond_yes) return;
+        w.cell_spine.items[c] = try w.condAnd(try w.cellSpine(c), k);
+    }
+
+    fn spineCond(w: *Walker, av: AV) Allocator.Error!u32 {
+        var k = cond_yes;
+        for (av) |e| if (e.path == eps) {
+            k = try w.condAnd(k, try w.cellSpine(e.cell));
+        };
+        return k;
+    }
+
+    /// A returned container cannot also appear at another result position.
+    fn spineAt(w: *Walker, av: AV, target: Entry) Allocator.Error!u32 {
+        var k = try w.cellSpine(target.cell);
+        for (av) |other| {
+            if (other.path == target.path) continue;
+            if (other.cell == target.cell) return cond_lost;
+            if (w.o.isPrefix(other.path, target.path) or w.o.isPrefix(target.path, other.path)) continue;
+            k = try w.condAnd(k, try w.sepSpines(target.cell, other.cell, target.approx == 0 and other.approx == 0));
+        }
+        return k;
+    }
+
+    fn sepSpines(w: *Walker, x: u32, y: u32, exact: bool) Allocator.Error!u32 {
+        const cx = w.cells.items[x];
+        if (x == y and w.inCoreDict()) switch (cx.kind) {
+            .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellSpine(x),
+            else => {},
+        };
+        const k = try w.sepCells(x, y, exact);
+        if (k <= cond_shared) return k;
+        const atoms = try w.a.dupe(WAtom, w.conds.items[k].atoms);
+        for (atoms) |*a| switch (a.kind) {
+            .sep => a.kind = .sep_spine,
+            .excl => a.kind = .spine,
+            else => {},
+        };
+        return w.mkCond(atoms);
+    }
+
+    fn sepSpineValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
+        var k = cond_yes;
+        for (x) |e| {
+            if (e.path != eps) continue;
+            for (y) |f| if (f.path == eps) {
+                k = try w.condAnd(k, try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0));
+            };
+        }
+        return k;
+    }
+
     /// The element cell a taken cell stands for, at its path.
     fn takenBase(w: *Walker, c: u32) Allocator.Error!u32 {
         const t = w.cells.items[c];
@@ -3526,9 +3637,9 @@ const Walker = struct {
 
     fn ownedBy(w: *Walker, t: WAtom, frame: u32) bool {
         return switch (t.kind) {
-            .excl => w.atomCellIn(t.a, frame),
-            .sep => w.atomCellIn(t.a, frame) and w.atomCellIn(t.b, frame),
-            .keep => frame == 0 and w.atomCellIn(t.b, frame),
+            .excl, .spine => w.atomCellIn(t.a, frame),
+            .sep, .sep_spine => w.atomCellIn(t.a, frame) and w.atomCellIn(t.b, frame),
+            .keep, .keep_spine => frame == 0 and w.atomCellIn(t.b, frame),
         };
     }
 
@@ -3554,7 +3665,7 @@ const Walker = struct {
         const keep = w.o.keep.allocator();
         var out: std.ArrayList(XAtom) = .empty;
         for (w.conds.items[k].atoms) |t| {
-            if (t.kind == .excl and t.a == self) continue;
+            if ((t.kind == .excl or t.kind == .spine) and t.a == self) continue;
             const x = (try w.xatomOf(t, frame, params)) orelse return .{ .no = 1 };
             try out.append(keep, x);
         }
@@ -3562,15 +3673,19 @@ const Walker = struct {
     }
 
     fn xatomOf(w: *Walker, t: WAtom, frame: u32, params: []const Inst.Index) Allocator.Error!?XAtom {
-        if (t.kind == .keep) {
+        if (t.kind == .keep or t.kind == .keep_spine) {
             if (frame != 0) return null;
-            return .{ .kind = .keep, .a = .{ .kind = .cb, .a = t.a }, .b = (try w.atomProv(t.b, frame, params)) orelse return null };
+            return .{ .kind = t.kind, .a = .{ .kind = .cb, .a = t.a, .path = t.path }, .b = (try w.atomProv(t.b, frame, params)) orelse return null };
         }
         const a = (try w.atomProv(t.a, frame, params)) orelse return null;
         return switch (t.kind) {
-            .excl => .{ .kind = .excl, .a = a },
-            .sep => sepAtom(a, (try w.atomProv(t.b, frame, params)) orelse return null),
-            .keep => unreachable,
+            .excl, .spine => .{ .kind = t.kind, .a = a },
+            .sep, .sep_spine => blk: {
+                var atom = sepAtom(a, (try w.atomProv(t.b, frame, params)) orelse return null);
+                atom.kind = t.kind;
+                break :blk atom;
+            },
+            .keep, .keep_spine => unreachable,
         };
     }
 
@@ -3593,6 +3708,9 @@ const Walker = struct {
         for (x.atoms) |t| {
             const c = switch (t.kind) {
                 .excl => try w.deepCond(try w.instProv(t.a, ctx)),
+                .spine => try w.spineCond(try w.instProv(t.a, ctx)),
+                .sep_spine => try w.sepSpineValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
+                .keep_spine => try w.keepSpine(t.a.a, t.a.path, t.b, ctx),
                 .sep => if (t.a.eql(t.b) and t.a.kind == .cb)
                     try w.freshAcross(t.a.a, ctx)
                 else
@@ -3679,6 +3797,55 @@ const Walker = struct {
         }
         // And exclusive inside: the result as the call instantiates it.
         return w.condAnd(k, try w.deepCond(try w.instProv(.{ .kind = .cb, .a = j }, ctx)));
+    }
+
+    /// Focus restores one selected container. Its contents need not be owned,
+    /// but its root must be fresh or the root taken at that same result path.
+    fn keepSpine(w: *Walker, j: u32, path: u32, container: Prov, ctx: InstCtx) Allocator.Error!u32 {
+        const actual = (try w.actualOf(ctx.s, ctx.avs, j)) orelse return cond_lost;
+        if (w.fnParamOf(actual)) |jj| {
+            if (w.frame != 0) return cond_lost;
+            var k = cond_yes;
+            for (try w.instProv(container, ctx)) |e| if (e.path == eps) {
+                k = try w.condAnd(k, try w.atomCond(.{ .kind = .keep_spine, .a = jj, .b = e.cell, .path = path }));
+            };
+            return k;
+        }
+        const classes = try w.classesOf(actual);
+        if (classes.len == 0) return cond_lost;
+        var k = cond_yes;
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse return cond_lost;
+            if (c.coarse or c.limit != .none) return cond_lost;
+            for (c.res) |r| {
+                if (r.path != path) {
+                    if (w.o.isPrefix(r.path, path)) return cond_lost;
+                    continue;
+                }
+                switch (r.prov.kind) {
+                    .fresh => {},
+                    .param => {
+                        if (r.prov.path != path) return cond_lost;
+                        for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j) != 0 and w.o.overlap(u.path, r.prov.path)) return cond_lost;
+                        var found = false;
+                        for (ctx.s.supply) |e| {
+                            if (e.fun != j or e.k != r.prov.a or !e.owned or !e.prov.taken or !w.o.isPrefix(e.path, path)) continue;
+                            found = true;
+                            const tail = (try w.o.suffix(e.path, path)) orelse return cond_lost;
+                            var p = e.prov;
+                            p.path = try w.o.concat(p.path, tail);
+                            k = try w.condAnd(k, try w.spineCond(try w.instProv(p, ctx)));
+                        }
+                        if (!found) return cond_lost;
+                    },
+                    else => return cond_lost,
+                }
+                // A replacement also stored at another position is not a transfer.
+                for (c.res) |other| if (other.path != path and other.prov.eql(r.prov)) return cond_lost;
+            }
+        }
+        const cb = Prov{ .kind = .cb, .a = j, .path = path };
+        return w.condAnd(k, try w.spineCond(try w.instProv(cb, ctx)));
     }
 
     // ---- uses, pending, escape -------------------------------------------
@@ -4677,6 +4844,7 @@ const Walker = struct {
         fn_state: []const FnState,
         unseen: std.AutoHashMapUnmanaged(u64, void),
         cell_cond: []const u32,
+        cell_spine: []const u32,
         esc_index: std.AutoHashMapUnmanaged([4]u32, EscAt),
         esc_heads: std.AutoHashMapUnmanaged([4]u32, u32),
         local_av: []const ?AV,
@@ -4714,6 +4882,7 @@ const Walker = struct {
             .fn_state = try w.a.dupe(FnState, w.fn_state.items),
             .unseen = try w.unseen_funcs.clone(w.a),
             .cell_cond = try w.a.dupe(u32, w.cell_cond.items),
+            .cell_spine = try w.a.dupe(u32, w.cell_spine.items),
             .esc_index = try w.esc_index.clone(w.a),
             .esc_heads = try w.esc_heads.clone(w.a),
             .local_av = try w.a.dupe(?AV, w.local_av),
@@ -4748,6 +4917,8 @@ const Walker = struct {
         w.unseen_funcs = try s.unseen.clone(w.a);
         @memcpy(w.cell_cond.items[0..s.cell_cond.len], s.cell_cond);
         @memset(w.cell_cond.items[s.cell_cond.len..], none);
+        @memcpy(w.cell_spine.items[0..s.cell_spine.len], s.cell_spine);
+        @memset(w.cell_spine.items[s.cell_spine.len..], none);
         w.esc_index = try s.esc_index.clone(w.a);
         w.esc_heads = try s.esc_heads.clone(w.a);
         @memcpy(w.local_av, s.local_av);
@@ -5823,6 +5994,8 @@ const Walker = struct {
         };
     }
 
+    const callback_ns_stride: u32 = 1000;
+
     const InstCtx = struct {
         inst: Inst.Index,
         s: *const Summary,
@@ -5874,13 +6047,19 @@ const Walker = struct {
             if (ctx.conds) switch (r.prov.kind) {
                 .fresh, .esc => {
                     const k = try w.instXSum(r.xc, ctx);
-                    for (cells) |e| if (e.path == eps) try w.initCond(e.cell, k);
+                    for (cells) |e| if (e.path == eps) {
+                        try w.initCond(e.cell, k);
+                        try w.initSpine(e.cell, try w.instXSum(r.sc, ctx));
+                    };
                 },
                 .param => if (r.xc.no != 0 or r.xc.atoms.len != 0) {
                     const k = try w.instXSum(r.xc, ctx);
                     for (cells) |e| if (e.path == eps) try w.lowerCond(e.cell, k);
                 },
                 else => {},
+            };
+            if (ctx.conds and r.prov.kind == .param) for (cells) |e| if (e.path == eps) {
+                try w.lowerSpine(e.cell, try w.instXSum(r.sc, ctx));
             };
             var av = try w.under(cells, r.path);
             if (several or r.approx) av = try w.approxAll(av, ctx.inst);
@@ -5910,7 +6089,7 @@ const Walker = struct {
             },
             .fresh, .esc => {
                 const base_k = if (ctx.merge_fresh) 1 else p.a;
-                const k = (if (ctx.depth == 0) base_k else base_k + 1000 * ctx.depth) + ctx.fresh_ns;
+                const k = (if (ctx.depth == 0) base_k else base_k + callback_ns_stride * ctx.depth) + ctx.fresh_ns;
                 const ty: Var.Optional = if (ctx.depth == 0) w.instTypeOpt(ctx.inst) else .none;
                 const av = try w.single(.{ .kind = .result, .a = ctx.inst.int(), .b = @max(k, 1), .ty = ty });
                 if (p.kind == .esc and ctx.effects) try w.escape(av, w.point);
@@ -5959,6 +6138,7 @@ const Walker = struct {
         }
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return w.unknownCb(j, ctx);
+        if (try w.foldAccumulator(j, classes, ctx)) |k| return w.instFold(j, k, classes, ctx);
         var x: AV = &.{};
         var rounds: u32 = 0;
         while (rounds < 4) : (rounds += 1) {
@@ -5971,6 +6151,120 @@ const Walker = struct {
             x = next;
         }
         return w.unionOf(&.{ x, try w.single(.{ .kind = .top, .a = 0 }) });
+    }
+
+    /// A linear feedback edge: one owned initial parameter and the callback's
+    /// previous whole result are supplied at the same accumulator position.
+    fn foldAccumulator(w: *Walker, j: u32, classes: []const Class, ctx: InstCtx) Allocator.Error!?u32 {
+        const s = ctx.s;
+        if (s.coarse or s.limit != .none) return null;
+        if (!(s.funOf(j) orelse return null).seen) return null;
+        var acc: ?u32 = null;
+        for (s.supply) |e| {
+            if (e.fun == j and e.prov.kind == .cb and e.prov.a == j and e.path == eps and e.prov.path == eps and e.owned) {
+                if (acc != null and acc.? != e.k) return null;
+                acc = e.k;
+            }
+        }
+        const k = acc orelse return null;
+        var start: ?u32 = null;
+        for (s.supply) |e| {
+            if (e.fun != j or e.k != k) continue;
+            if (!e.owned or e.path != eps or e.prov.path != eps) return null;
+            switch (e.prov.kind) {
+                .cb => if (e.prov.a != j) return null,
+                .param => {
+                    if (start != null and start.? != e.prov.a) return null;
+                    start = e.prov.a;
+                },
+                else => return null,
+            }
+        }
+        const initial = start orelse return null;
+        for (s.uses) |u| if (u.param == initial and u.bits & (bit_e | bit_j) != 0) return null;
+        for (s.res) |r| {
+            if ((r.prov.kind == .param and r.prov.a == initial) or (r.prov.kind == .cb and r.prov.a == j)) {
+                if (r.path != eps or r.prov.path != eps) return null;
+            }
+        }
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse return null;
+            if (c.coarse or c.limit != .none or k >= c.params) return null;
+            for (c.uses) |u| {
+                if (u.param != k) continue;
+                if (u.bits & (bit_e | bit_j) != 0) return null;
+                if (u.bits & bit_w == 0) continue;
+                for (c.res) |r| {
+                    if (!w.o.isPrefix(r.path, u.path)) continue;
+                    switch (r.prov.kind) {
+                        .fresh => {},
+                        .param => if (r.prov.a != k or r.prov.path != r.path) return null,
+                        else => return null,
+                    }
+                }
+            }
+        }
+        return k;
+    }
+
+    /// Cells use the usual least fixpoint; container conditions use the
+    /// greatest must-invariant. Initial/shared cells are never reseeded.
+    fn instFold(w: *Walker, j: u32, acc: u32, classes: []const Class, ctx: InstCtx) Allocator.Error!AV {
+        _ = acc;
+        var shape: AV = &.{};
+        var inner = ctx;
+        inner.self_j = j;
+        inner.conds = ctx.conds;
+        inner.effects = ctx.effects;
+        var stable = false;
+        for (0..4) |_| {
+            inner.self_av = shape;
+            const next = try w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
+            if (next.len == shape.len) {
+                stable = true;
+                break;
+            }
+            shape = next;
+        }
+        if (!stable) return w.unionOf(&.{ shape, try w.single(.{ .kind = .top, .a = 0 }) });
+        if (!ctx.conds) return shape;
+        var future: std.ArrayList(u32) = .empty;
+        for (shape) |e| {
+            const c = w.cells.items[e.cell];
+            if (c.kind != .result or c.a != ctx.inst.int() or c.b == 0 or c.b < callback_ns_stride * (ctx.depth + 1) or try w.isEscaped(e.cell)) continue;
+            // Fresh cells of the initial arguments keep their established facts.
+            var initial = false;
+            for (ctx.avs) |av| if ((try w.reaches(av, &.{e})) != null) {
+                initial = true;
+                break;
+            };
+            if (initial or std.mem.indexOfScalar(u32, future.items, e.cell) != null) continue;
+            try future.append(w.a, e.cell);
+            w.cell_spine.items[e.cell] = cond_yes;
+        }
+        inner.self_av = shape;
+        inner.conds = true;
+        inner.effects = false;
+        var settled = false;
+        for (0..round_cap) |_| {
+            const before = try w.a.dupe(u32, w.cell_spine.items);
+            const escapes_before = w.escaped.items.len;
+            const uses = w.uses.items.len;
+            const demands = w.demands.items.len;
+            _ = try w.instCbOnce(j, classes, inner);
+            if (std.debug.runtime_safety) {
+                std.debug.assert(escapes_before == w.escaped.items.len);
+                std.debug.assert(uses == w.uses.items.len);
+                std.debug.assert(demands == w.demands.items.len);
+            }
+            if (std.mem.eql(u32, before, w.cell_spine.items)) {
+                settled = true;
+                break;
+            }
+        }
+        if (!settled) for (future.items) |c| try w.lowerSpine(c, cond_lost);
+        inner.effects = ctx.effects;
+        return w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
     }
 
     fn instCbOnce(w: *Walker, j: u32, classes: []const Class, ctx: InstCtx) Allocator.Error!AV {
@@ -5989,7 +6283,7 @@ const Walker = struct {
                 }
                 pa.* = try w.unionOf(parts.items);
             }
-            const sub: InstCtx = .{ .inst = ctx.inst, .s = c, .avs = params, .closure = if (cls == .closure) cls.closure else none, .depth = ctx.depth + 1, .effects = ctx.effects };
+            const sub: InstCtx = .{ .inst = ctx.inst, .s = c, .avs = params, .closure = if (cls == .closure) cls.closure else none, .depth = ctx.depth + 1, .conds = ctx.conds, .effects = ctx.effects };
             try out.appendSlice(w.a, try w.instRes(c, sub));
         }
         return w.norm(out.items);
@@ -6552,7 +6846,22 @@ const Walker = struct {
                     // A destructive supply written: its container must be
                     // exclusive, so that no other position sees the write
                     // (§18.5).
-                    if (e.prov.taken) switch (try w.rely(try w.instXSum(e.xc, ictx), w.frame)) {
+                    var supply_cond = try w.instXSum(e.xc, ictx);
+                    // A dictionary focus may require only the written array's
+                    // own exclusivity. This does not authorise a deep write.
+                    if (!s.coarse and !c.coarse and s.limit == .none and c.limit == .none and e.prov.taken and u.bits & bit_d == 0 and e.prov.kind == .param and try w.o.dictTreePath(e.prov.path)) {
+                        const tail = (try w.o.suffix(e.path, u.path)) orelse eps;
+                        var p = e.prov;
+                        p.path = try w.o.concat(p.path, tail);
+                        const scoped = try w.spineCond(try w.instProv(p, ictx));
+                        if (scoped != cond_lost and scoped != cond_shared) {
+                            const usable = for (w.conds.items[scoped].atoms) |atom| {
+                                if (!w.ownedBy(atom, w.frame)) break false;
+                            } else true;
+                            if (usable) supply_cond = scoped;
+                        }
+                    }
+                    if (e.prov.taken) switch (try w.rely(supply_cond, w.frame)) {
                         .ok => {},
                         else => |r| if (bad[u.param] == null) {
                             bad[u.param] = try w.sharesText(callee.name, u.param, e, args);
@@ -6743,8 +7052,10 @@ const Walker = struct {
     fn classReq(w: *Walker, x: XAtom, s: *const Summary, j: u32, cls: Class, ctx: InstCtx) Allocator.Error!u32 {
         return switch (x.kind) {
             .excl => w.deepCond(try w.classSide(x.a, s, j, cls, ctx)),
+            .spine => w.spineCond(try w.classSide(x.a, s, j, cls, ctx)),
+            .sep_spine => w.sepSpineValues(try w.classSide(x.a, s, j, cls, ctx), try w.classSide(x.b, s, j, cls, ctx)),
             .sep => w.sepValues(try w.classSide(x.a, s, j, cls, ctx), try w.classSide(x.b, s, j, cls, ctx)),
-            .keep => cond_lost,
+            .keep, .keep_spine => cond_lost,
         };
     }
 
@@ -6788,15 +7099,14 @@ const Walker = struct {
 
     /// §16.4 item 5: whether class `c`, called by `s` as its parameter `j`,
     /// returns owned.
-    /// Only the result paths `written` is under matter: the cell a write
-    /// changes is the array at `written`, not the elements below it (`none`:
-    /// every path).
+    /// Ownership is required at the written roots, not at their contents
+    /// (`none`: every path). Aliases of those roots at any result path count.
     fn returnsOwned(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, j: u32, depth: u32, written: u32) Allocator.Error!bool {
         if (c.limit != .none) return false;
         // A coarsened or pessimistic callee's supply rows no longer say
         // where each parameter is supplied: nothing it hands back is owned.
         if (s.coarse or s.limit != .none) return false;
-        for (c.res, 0..) |r, i| {
+        for (c.res) |r| {
             if (written != none and !w.o.isPrefix(r.path, written)) continue;
             // A list from JavaScript is a limit of the analysis, not sharing
             // the text shows (§8.3, `unknown`).
@@ -6814,8 +7124,7 @@ const Walker = struct {
                 else => return false,
             }
             // One provenance at two distinct result paths is not owned.
-            for (c.res[i + 1 ..]) |x| {
-                if (written != none and !w.o.isPrefix(x.path, written)) continue;
+            for (c.res) |x| {
                 if (x.path != r.path and x.prov.eql(r.prov)) return false;
             }
         }
@@ -7034,6 +7343,9 @@ const Walker = struct {
             const k = try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
             try w.lowerCond(e.cell, k);
             try w.lowerCond(f.cell, k);
+            const sk = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+            try w.lowerSpine(e.cell, sk);
+            try w.lowerSpine(f.cell, sk);
         };
     }
 
@@ -7968,7 +8280,8 @@ const Walker = struct {
             // §18.3: the cell's condition, a parameter's own `excl` left to
             // instantiation.
             const xc = try w.xsumOf(try w.cellCond(e.cell), frame, params, if (own and w.cells.items[e.cell].kind != .taken) e.cell else none);
-            try res.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .xc = xc });
+            const sc = try w.xsumOf(try w.spineAt(expanded, e), frame, params, if (own and w.cells.items[e.cell].kind != .taken) e.cell else none);
+            try res.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .xc = xc, .sc = sc });
         }
         // Function parameters.
         var funs: std.ArrayList(FunFacts) = .empty;
