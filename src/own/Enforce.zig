@@ -98,6 +98,9 @@ pub fn inputs(gpa: Allocator, session: *const Session, cached: []const ?CacheEnt
         };
         if (out.packages[i] != .platform) continue;
         const chain = session.options.chain orelse continue;
+        // Every platform file has a layer once the store is numbered; a
+        // missing one would quietly drop a constructor's entry row.
+        if (std.debug.runtime_safety) std.debug.assert(f.int() < session.file_layers.len and session.file_layers[f.int()] < chain.layers.len);
         if (f.int() >= session.file_layers.len) continue;
         const layer = session.file_layers[f.int()];
         if (layer >= chain.layers.len) continue;
@@ -160,6 +163,8 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
     // The errors (§28.5), one per root cause.
     var items: std.ArrayList(CheckDiagnostics.Item) = .empty;
     defer items.deinit(gpa);
+    // The messages are `items`' until they move into the check's list.
+    errdefer for (items.items) |item| gpa.free(item.message);
     var scratch: std.heap.ArenaAllocator = .init(gpa);
     defer scratch.deinit();
     var src_ctx: SrcCtx = .{ .session = session, .arena = scratch.allocator() };
@@ -180,12 +185,15 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
                 try group.append(scratch.allocator(), line);
             }
             const text = try Message.build(scratch.allocator(), src, r.module, group.items);
+            try items.ensureUnusedCapacity(gpa, 1);
             const message = try gpa.dupe(u8, text);
-            errdefer gpa.free(message);
             const span = group.items[0].span;
-            try items.append(gpa, .{
+            items.appendAssumeCapacity(.{
                 .code = Message.code(d),
                 .module = @fromBackingInt(r.module),
+                // No instruction: the span is `token` to `last_token`, the
+                // edit (§28.6), which `Session.reportCheckDiagnostics` reads
+                // before `region`. Never cached: a module with an error is not.
                 .region = @fromBackingInt(0),
                 .token = if (span[0] != none) span[0] else d.token,
                 .last_token = if (span[1] != none) span[1] else null,
@@ -222,7 +230,10 @@ fn onBigStack(o: *Ownership, targets: []const u32) Allocator.Error![]const Owner
         }
     };
     var runner: Runner = .{ .o = o, .targets = targets };
-    // The pass walks expression trees by recursion, as the checker does.
+    // The pass walks expression trees by recursion, as the checker does. With
+    // no thread to be had it runs here, as `main.onBigStack` does: the stack
+    // is then the caller's, which every supported target makes large enough
+    // for ordinary programs — only the pathological depths need the room.
     const thread = std.Thread.spawn(.{ .stack_size = Session.check_stack_size }, Runner.go, .{&runner}) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {
