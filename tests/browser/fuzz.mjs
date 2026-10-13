@@ -174,48 +174,10 @@ function fuzzSend({ program, value }) {
   return null;
 }
 
-// What the page offers the next action: the elements an event may go to,
-// in document order, each with a selector the driver accepts (no spaces: a
-// `>` chain of `:nth-child`s from the body); the requests still pending;
-// and the ints and strings the page shows, for messages to name. A
-// `<template>`'s content is not in the document and is left out.
-function fuzzOffer() {
-  const targets = [];
-  const strings = new Set();
-  const ints = new Set();
-  const take = (text) => {
-    const t = text.trim();
-    if (t === "" || t.length > 40 || strings.size >= 40) return;
-    strings.add(t);
-    for (const m of t.matchAll(/-?\d+/g)) if (ints.size < 40) ints.add(Number(m[0]));
-  };
-  const walk = (node, path) => {
-    let k = 0;
-    for (const child of node.childNodes) {
-      if (child.nodeType === 3) take(child.data);
-      if (child.nodeType !== 1) continue;
-      k += 1;
-      const html = child.namespaceURI === "http://www.w3.org/1999/xhtml" && /^[a-z][a-z0-9-]*$/.test(child.localName);
-      const selector = `${path}>${html ? child.localName : "*"}:nth-child(${k})`;
-      const tag = child.localName;
-      for (const a of child.attributes) if (a.name === "id" || a.name === "value" || a.name === "href" || a.name.startsWith("data-")) take(a.value);
-      targets.push({
-        selector,
-        text: tag === "textarea" || (tag === "input" && !["checkbox", "radio", "button", "submit", "reset", "file"].includes(child.type)),
-        control: ["input", "textarea", "select", "button", "a"].includes(tag) || child.tabIndex >= 0,
-      });
-      if (tag !== "template") walk(child, selector);
-    }
-  };
-  if (document.body !== null) walk(document.body, "body");
-  const pending = globalThis.__beniHarness.requests.filter((r) => !r.settled && !r.aborted).map((r) => r.n);
-  return { targets, pending, strings: [...strings], ints: [...ints] };
-}
-
-// What the page shows besides the body's markup: the title, the address,
-// both storages, and the state of every element the driver's `serialise`
-// does not print — each line the element's selector and its properties
-// that are not their defaults.
+// What the page shows besides the body, and the requests still pending,
+// which the next action may answer. The body — its markup, the state of
+// its elements the markup does not print, and what it offers the next
+// action — is the driver's `serialise`, in one walk.
 function fuzzState() {
   const area = (s) => {
     const out = {};
@@ -224,27 +186,6 @@ function fuzzState() {
     for (const k of keys.sort()) out[k] = s.getItem(k);
     return JSON.stringify(out);
   };
-  const props = [];
-  const walk = (node, path) => {
-    let k = 0;
-    for (const child of node.children) {
-      k += 1;
-      const selector = `${path}>${child.localName}:nth-child(${k})`;
-      const set = [];
-      if (child.localName === "option") set.push(`selected=${child.selected}`);
-      for (const p of ["disabled", "hidden", "indeterminate", "open", "readOnly"]) if (child[p] === true) set.push(`${p}=true`);
-      if ((child.localName === "input" || child.localName === "textarea") && typeof child.selectionStart === "number") {
-        let start = null;
-        try {
-          start = child.selectionStart;
-        } catch {}
-        if (start !== null) set.push(`selection=${child.selectionStart}-${child.selectionEnd}`);
-      }
-      if (set.length !== 0) props.push(`${selector} ${set.join(" ")}`);
-      if (child.localName !== "template") walk(child, selector);
-    }
-  };
-  if (document.body !== null) walk(document.body, "body");
   // A storage a page made unreadable is compared by what reading it threw.
   const read = (name) => {
     try {
@@ -253,7 +194,8 @@ function fuzzState() {
       return `unreadable (${error?.name})`;
     }
   };
-  return { title: document.title, href: location.href.startsWith(location.origin) ? location.href.slice(location.origin.length) : location.href, storage: `local ${read("localStorage")} session ${read("sessionStorage")}`, props: props.join("\n") };
+  const pending = globalThis.__beniHarness.requests.filter((r) => !r.settled && !r.aborted).map((r) => r.n);
+  return { title: document.title, href: location.href.startsWith(location.origin) ? location.href.slice(location.origin.length) : location.href, storage: `local ${read("localStorage")} session ${read("sessionStorage")}`, pending };
 }
 
 // ---------------------------------------------------------------------------
@@ -822,7 +764,10 @@ export async function fuzz(spec, host) {
     const p = await host.open(pagePath(entry));
     const shown = [];
     const taken = [];
-    const look = async (fault) => {
+    // What the page shows, and — with `offer`, when an action is still to
+    // be drawn — what it offers that action, from the same walk.
+    let offered = null;
+    const look = async (fault, offer) => {
       await p.run(host.settle);
       const { log, errors } = await p.run(host.drain);
       // A step that threw ends the sequence, so what the stopping page
@@ -836,11 +781,13 @@ export async function fuzz(spec, host) {
         log.push(...more.log);
         errors.push(...more.errors);
       }
-      const dom = await p.run(host.serialise);
-      const state = await p.run(inPage(fuzzState));
+      const body = await p.run(host.serialise, { offer });
+      const { pending, ...state } = await p.run(inPage(fuzzState));
+      offered = offer ? { ...body.offer, pending } : null;
       return {
         ...state,
-        dom,
+        dom: body.dom,
+        props: body.props,
         log: log.filter((l) => !ignore.some((r) => r.test(l))).join("\n"),
         threw: errors.map((e) => e.split("\n")[0]).join("\n"),
         fault: fault ?? "",
@@ -849,7 +796,7 @@ export async function fuzz(spec, host) {
     try {
       await p.run(inPage(fuzzInstall));
       await p.run(host.load, { url: p.url, runtime: null });
-      shown.push(await look(null));
+      shown.push(await look(null, draw !== null && steps !== 0));
       if (draw !== null && sent.some((t) => t !== null)) {
         // A message goes to a program by its place among the mounts.
         const mounts = await p.run(inPage(fuzzMounts));
@@ -858,7 +805,7 @@ export async function fuzz(spec, host) {
         }
       }
       for (let i = 0; i < steps && shown[shown.length - 1].threw === ""; i++) {
-        const action = draw === null ? given[i] : draw(await p.run(inPage(fuzzOffer)));
+        const action = draw === null ? given[i] : draw(offered);
         taken.push(action);
         let fault = null;
         // A burst is the action again and again, each its own task, as a
@@ -873,7 +820,7 @@ export async function fuzz(spec, host) {
             fault = why !== null && typeof why === "object" ? await host.released(p, action.s, why) : why;
           }
         }
-        shown.push(await look(fault));
+        shown.push(await look(fault, draw !== null && i + 1 < steps));
       }
     } finally {
       await p.close();

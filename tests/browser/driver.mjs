@@ -864,36 +864,126 @@ function drain() {
 // With `--no-comments` a comment is left out: a renderer's own marker,
 // which no beni program can make or read, so two platforms' pages may hold
 // them in different places (browser-direct.md §12.3, as amended for S3).
+//
+// With an argument it is the page fuzzer's look (`fuzz.mjs`), and the same
+// walk gathers what the fuzzer reads of the body besides its markup, so a
+// check walks the page once: `{dom, props, offer}`, `dom` the text above.
+// `props` is the state of every element the text does not print, a line
+// each — the element's selector, a `>` chain of `localName:nth-child`s from
+// the body, and its properties that are not their defaults: an option's
+// `selected`, `disabled`, `hidden`, `indeterminate`, `open`, `readOnly`, a
+// text control's selection. With `{offer: true}`, `offer` is what the page
+// offers the next action, null otherwise: the elements an event may go to,
+// in document order, each with a selector the driver accepts (no spaces:
+// `*` for a name that is not plain HTML), whether it takes text and whether
+// it is a control; and the strings and ints the page shows — its text and
+// its `id`, `value`, `href` and `data-` attributes, forty of each at most,
+// for messages to name. Neither looks inside a `<template>`.
 let comments = true;
-function serialise() {
+function serialise(also) {
   const quote = (s) => JSON.stringify(s);
   const prefixes = { "http://www.w3.org/2000/svg": "svg:", "http://www.w3.org/1998/Math/MathML": "math:" };
   const voids = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"];
   const lines = [];
-  const walk = (node, depth) => {
-    const pad = "  ".repeat(depth);
-    if (node.nodeType === 3) return void lines.push(pad + quote(node.data));
-    if (node.nodeType === 8) return void (comments && lines.push(`${pad}<!--${node.data}-->`));
-    if (node.nodeType !== 1) return void lines.push(`${pad}<?node type ${node.nodeType}?>`);
-    const name = (prefixes[node.namespaceURI] ?? "") + node.localName;
+  // Read once: nothing in the walk moves the focus.
+  const active = document.activeElement;
+  const fuzzing = also !== undefined;
+  const offering = fuzzing && also.offer === true;
+  const props = [];
+  const targets = [];
+  const strings = new Set();
+  const ints = new Set();
+  const take = (text) => {
+    const t = text.trim();
+    if (t === "" || t.length > 40 || strings.size >= 40) return;
+    strings.add(t);
+    for (const m of t.matchAll(/-?\d+/g)) if (ints.size < 40) ints.add(Number(m[0]));
+  };
+  // The fuzzer's part for element `node`, whose selectors are `state` and
+  // `target`, and whose element children's are made from them.
+  const gather = (node, state, target) => {
+    const tag = node.localName;
+    const set = [];
+    if (tag === "option") set.push(`selected=${node.selected}`);
+    if (node.disabled === true) set.push("disabled=true");
+    if (node.hidden === true) set.push("hidden=true");
+    if (node.indeterminate === true) set.push("indeterminate=true");
+    if (node.open === true) set.push("open=true");
+    if (node.readOnly === true) set.push("readOnly=true");
+    if ((tag === "input" || tag === "textarea") && typeof node.selectionStart === "number") {
+      let start = null;
+      try {
+        start = node.selectionStart;
+      } catch {}
+      if (start !== null) set.push(`selection=${node.selectionStart}-${node.selectionEnd}`);
+    }
+    if (set.length !== 0) props.push(`${state} ${set.join(" ")}`);
+    if (!offering) return;
+    targets.push({
+      selector: target,
+      text: tag === "textarea" || (tag === "input" && !["checkbox", "radio", "button", "submit", "reset", "file"].includes(node.type)),
+      control: ["input", "textarea", "select", "button", "a"].includes(tag) || node.tabIndex >= 0,
+    });
+  };
+  // `node` at `depth`; `state` and `target` its selectors when the fuzzer
+  // reads it ("body" for the body itself, which is neither a target nor a
+  // line of `props`), null inside a template or when it reads nothing.
+  const pads = [""];
+  const walk = (node, depth, state, target) => {
+    const pad = (pads[depth] ??= "  ".repeat(depth));
+    const type = node.nodeType;
+    if (type === 3) {
+      const data = node.data;
+      if (offering && state !== null) take(data);
+      return void lines.push(pad + quote(data));
+    }
+    if (type === 8) return void (comments && lines.push(`${pad}<!--${node.data}-->`));
+    if (type !== 1) return void lines.push(`${pad}<?node type ${type}?>`);
+    const tag = node.localName;
+    const gathered = state !== null && depth !== 0;
+    if (gathered) gather(node, state, target);
+    const name = (prefixes[node.namespaceURI] ?? "") + tag;
     let open = `<${name}`;
-    for (const a of node.attributes) open += ` ${a.name}=${quote(a.value)}`;
-    if (node.localName === "input" || node.localName === "textarea" || node.localName === "select") {
+    for (const a of node.attributes) {
+      const value = a.value;
+      open += ` ${a.name}=${quote(value)}`;
+      if (gathered && offering && (a.name === "id" || a.name === "value" || a.name === "href" || a.name.startsWith("data-"))) take(value);
+    }
+    if (tag === "input" || tag === "textarea" || tag === "select") {
       open += ` .value=${quote(node.value)}`;
       if (node.type === "checkbox" || node.type === "radio") open += ` .checked=${node.checked}`;
     }
-    if (node === document.activeElement && node !== document.body) open += " :focus";
+    if (node === active && node !== document.body) open += " :focus";
     open += ">";
-    const children = [...(node.localName === "template" ? node.content.childNodes : node.childNodes)].filter((c) => comments || c.nodeType !== 8);
+    const template = tag === "template";
+    const children = [];
+    for (let c = (template ? node.content : node).firstChild; c !== null; c = c.nextSibling) if (comments || c.nodeType !== 8) children.push(c);
     const close = `</${name}>`;
     if (children.length === 0) return void lines.push(pad + open + (voids.includes(name) ? "" : close));
-    if (children.length === 1 && children[0].nodeType === 3) return void lines.push(pad + open + quote(children[0].data) + close);
+    if (children.length === 1 && children[0].nodeType === 3) {
+      const data = children[0].data;
+      if (offering && state !== null && !template) take(data);
+      return void lines.push(pad + open + quote(data) + close);
+    }
     lines.push(pad + open);
-    for (const child of children) walk(child, depth + 1);
+    let k = 0;
+    for (const child of children) {
+      if (state === null || template || child.nodeType !== 1) {
+        walk(child, depth + 1, template ? null : state, null);
+        continue;
+      }
+      k += 1;
+      const tag = child.localName;
+      const html = child.namespaceURI === "http://www.w3.org/1999/xhtml" && /^[a-z][a-z0-9-]*$/.test(tag);
+      const nth = `:nth-child(${k})`;
+      walk(child, depth + 1, `${state}>${tag}${nth}`, `${target}>${html ? tag : "*"}${nth}`);
+    }
     lines.push(pad + close);
   };
-  walk(document.body, 0);
-  return lines.join("\n");
+  walk(document.body, 0, fuzzing ? "body" : null, "body");
+  const dom = lines.join("\n");
+  if (!fuzzing) return dom;
+  return { dom, props: props.join("\n"), offer: offering ? { targets, strings: [...strings], ints: [...ints] } : null };
 }
 
 // ---------------------------------------------------------------------------
