@@ -46,3 +46,20 @@ repeat hold xs =
         repeat False xs
     else
         [ …xs, 2 ]
+
+
+-- A caller cannot discard an escape in either arm of its callee.
+pub fork : Policy, List Int → Fiber Int
+fork policy xs =
+    case policy of
+        Restart →
+            Task.spawn λ⊤ → List.length xs
+        Concurrent →
+            Task.spawn λ⊤ → 0
+
+
+pub afterCall : Policy, List Int → List Int × Fiber Int
+afterCall policy runs =
+    old = List.filter runs λ_ → True
+    fiber = fork policy old
+    ( [ …old, 2 ], fiber )
