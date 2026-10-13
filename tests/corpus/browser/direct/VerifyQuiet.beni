@@ -5,7 +5,9 @@
 -- tuples, is equal and not identical — and it never evaluates a value twice
 -- that would act differently the second time: an every-message value
 -- (`Random.value`), a `Debug.log` in a hole, and a hole whose helper logs
--- two calls deep. The transcript is the release build's, which has no
+-- two calls deep, and a `Show`'s fallback that is a markup value and logs
+-- (S4's review: the branch's check skipped only a `when` that logs). The
+-- transcript is the release build's, which has no
 -- verify mode, and `browser-tea`'s: each value logs once per run.
 import Html exposing (Html)
 import Random
@@ -49,6 +51,13 @@ view model =
     <main>
         <button id="inc" onClick={Inc}>inc</button>
         <button id="other" onClick={Other}>other</button>
+        <Show
+            when={if model.n > 99 then Just model.n else Nothing}
+            keyed
+            fallback={Html.text (Debug.log "fallback" (String.fromInt model.n))}
+        >
+            {λk → <b>{k}</b>}
+        </Show>
         <p id="log">{Debug.log "n" model.n}</p>
         <p id="deep">{deep model.n}</p>
         <p id="list" class={classesOf model.n}>

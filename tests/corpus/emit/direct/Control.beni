@@ -1,0 +1,45 @@
+-- A `control` write (browser-direct.md §8.1; its S4 amendment, item 2): a
+-- `stateful` attribute is `Direct.control(el, prop, v)` in a group
+-- compared by its slot as any attribute, so a rejected edit is put back by
+-- the edited set, not by the group. A write of another attribute that can
+-- change a control's value (`type`) marks it, `Direct.edited(el)`. A page
+-- with no `stateful` attribute calls neither and ships none of the edited
+-- set.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Typed String
+    | Toggle
+
+
+type alias Model =
+    text : String
+    secret : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Typed s →
+            if String.length s > 3 then model else { model | text = s }
+
+        Toggle →
+            { model | secret = not model.secret }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Toggle}>toggle</button>
+        <input
+            type={if model.secret then "password" else "text"}
+            value={model.text}
+            onInput={Typed}
+        />
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { text = "ab", secret = False }, update = update, view = view }

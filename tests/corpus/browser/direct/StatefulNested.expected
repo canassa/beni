@@ -1,0 +1,26 @@
+-- load
+<body>
+  <main>
+    <input id="top" .value="ab">
+    <input id="nested" .value="ab">
+    <input id="listed" .value="ab">
+    <input id="locked" .value="locked">
+  </main>
+</body>
+-- input #top "abcdef"
+(the DOM did not change)
+-- input #nested "abcdef"
+(the DOM did not change)
+-- input #listed "abcdef"
+(the DOM did not change)
+-- input #locked "hello"
+(the DOM did not change)
+-- input #nested "abc"
+<body>
+  <main>
+    <input id="top" .value="abc">
+    <input id="nested" .value="abc">
+    <input id="listed" .value="abc">
+    <input id="locked" .value="locked">
+  </main>
+</body>

@@ -128,9 +128,9 @@ page_fuzz_test.test.a missed title write is caught though the body is the same #
 page_fuzz_test.test.a missed write of a controlled input's value is caught #0 e75104369f71d02bcbe91630ece2ca7b7400afce171921bdc0c7e6051e36aac7
 page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 84102aa6f51356a21d068ca43bf67e0bcaf10dbbb2732b2c35bd4cb309280c83
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 a942ed482b4bb71077f780fc69f5711104bd2cbfcb180d14e9ad26576683ea86
-page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 7ba82671d2a9208fae5aebfeccd250e3ba2d5dc4d4b23905bf8e977b6a9e1221
-page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 882968c62c2fa5891af407201095901ab71fe4dd9c131123c0cdafb252b113b6
-page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 4b854b11862a8b7d9fda45f02cc00a8aa549abca1dcd9c8837654e35ad38c742
-page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 3c50a22275b8ebda0cccbc0c40e0867df21e39adb16cc9057543f627eb35c374
+page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 b2e5c97153ddf7f09b830400bcc870df7b1a9637b169b4330bac4e855b5d1acc
+page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 c1783bd83e5a3ec6424e54b4ba8e25bc442aeeb8738ad3f1b4fb2b635ff789cc
+page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 a720ca4d56a71d5e7607fe8331f42aa4c169f8cd92c8d68e57d3bfc3e034ab67
+page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 5d1a7748902b04d089573b8d58a612fd0e585090525b594aa14392d60732de41
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 9e7318a6c5c67cc9db1050189ccdd3de2ec78fbe1916de2297dd7eec951e9f37
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb

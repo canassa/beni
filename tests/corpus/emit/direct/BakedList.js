@@ -69,45 +69,45 @@ const BakedList$main = Tea$sandbox(($root$1, $t$2) => {
     Direct$adopt($L$39, $w$11, $xs$49);
   }
   $root$1.append($r$8);
-  const $check$56 = ($r$50) => {
-    const $it$51 = $r$50.it;
-    const $t$52 = $it$51.id;
-    const $t$53 = $it$51.href;
-    const $t$54 = $it$51.label;
-    const $t$55 = $it$51.label;
-    if ($r$50.w2.data !== `${$t$52}`) {
-      Direct$wrong("the text BakedList.beni:41:28 baked into the page", $r$50.w2.data, `${$t$52}`);
+  const $check$57 = ($r$50) => {
+    const $it$52 = $r$50.it;
+    const $t$53 = $it$52.id;
+    const $t$54 = $it$52.href;
+    const $t$55 = $it$52.label;
+    const $t$56 = $it$52.label;
+    if ($r$50.w2.data !== `${$t$53}`) {
+      Direct$wrong("the text BakedList.beni:41:28 baked into the page", $r$50.w2.data, `${$t$53}`);
     }
-    if ($r$50.w4.data !== `${$t$55}`) {
-      Direct$wrong("the text BakedList.beni:43:29 baked into the page", $r$50.w4.data, `${$t$55}`);
+    if ($r$50.w4.data !== `${$t$56}`) {
+      Direct$wrong("the text BakedList.beni:43:29 baked into the page", $r$50.w4.data, `${$t$56}`);
     }
-    if ($r$50.w3.getAttribute("href") !== Direct$safeUrl($t$53)) {
-      Direct$wrong("the attribute `href` at BakedList.beni:42:28 baked into the page", $r$50.w3.getAttribute("href"), Direct$safeUrl($t$53));
+    if ($r$50.w3.getAttribute("href") !== Direct$safeUrl($t$54)) {
+      Direct$wrong("the attribute `href` at BakedList.beni:42:28 baked into the page", $r$50.w3.getAttribute("href"), Direct$safeUrl($t$54));
     }
-    if ($r$50.w3.getAttribute("title") !== `${$t$54}`) {
-      Direct$wrong("the attribute `title` at BakedList.beni:42:45 baked into the page", $r$50.w3.getAttribute("title"), `${$t$54}`);
+    if ($r$50.w3.getAttribute("title") !== `${$t$55}`) {
+      Direct$wrong("the attribute `title` at BakedList.beni:42:45 baked into the page", $r$50.w3.getAttribute("title"), `${$t$55}`);
     }
   };
-  const $check$60 = ($r$57) => {
-    const $it$58 = $r$57.it;
-    const $t$59 = String$fromInt($it$58);
-    if (!Direct$same($t$59, $r$57.s0)) {
-      Direct$wrong("the text hole at BakedList.beni:50:63", $r$57.s0, $t$59);
+  const $check$62 = ($r$58) => {
+    const $it$60 = $r$58.it;
+    const $t$61 = String$fromInt($it$60);
+    if (!Direct$same($t$61, $r$58.s0)) {
+      Direct$wrong("the text hole at BakedList.beni:50:63", $r$58.s0, $t$61);
     }
-    if ($r$57.w1.data !== `${$t$59}`) {
-      Direct$wrong("the text hole at BakedList.beni:50:63 in the document", $r$57.w1.data, `${$t$59}`);
+    if ($r$58.w1.data !== `${$t$61}`) {
+      Direct$wrong("the text hole at BakedList.beni:50:63 in the document", $r$58.w1.data, `${$t$61}`);
     }
   };
   Direct$verify(() => {
     {
-      const $t$61 = $model$6.opened;
-      const $xs$62 = $t$61;
-      Direct$verifyList($L$38, $xs$62, $check$60, "the `For` at BakedList.beni:50:14", false);
+      const $t$63 = $model$6.opened;
+      const $xs$64 = $t$63;
+      Direct$verifyList($L$38, $xs$64, $check$62, "the `For` at BakedList.beni:50:14", false);
     }
     {
-      const $t$63 = $model$6.menu;
-      const $xs$64 = $t$63;
-      Direct$verifyList($L$39, $xs$64, $check$56, "the `For` at BakedList.beni:38:14", false);
+      const $t$65 = $model$6.menu;
+      const $xs$66 = $t$65;
+      Direct$verifyList($L$39, $xs$66, $check$57, "the `For` at BakedList.beni:38:14", false);
     }
   });
 });

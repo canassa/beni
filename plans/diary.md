@@ -5345,3 +5345,21 @@ sealing per declaration costs nothing and still checks the codec on every summar
 sharing the checker can only call a limit, because the entry's fixpoint joins `update`'s arms. Two practical traps:
 a shared `~/.cache/zig` lock stalled builds for minutes (a private `ZIG_GLOBAL_CACHE_DIR` fixed it), and a BIR
 `let_def` carries whatever token lowering met last, so a binder's name has to be found from its `=`.
+
+## 2026-10-13 20:13 CEST — Resume browser-direct S4 on macOS
+
+**What I did.** Fetched the pushed S4 branch into a separate worktree and rebased its 12 commits onto current master. Kept master's ownership fixture check and S4's release-refusal check in the corpus harness; kept master's conflicting generated hashes pending a full re-record. Read the S4 amendments and added the specified `Blocks` page as a direct-platform fixture, pending validation.
+
+**What I learned.** This host has 12 logical CPUs and no Linux `taskset`, so it cannot run heavy jobs pinned to cores 8–23 as the session requires. The required zorg builds, hashes, measurements and gates await access to the Linux runner or a changed CPU constraint. The direct `Blocks` fixture was missing despite its place in S4's explicit corpus list.
+
+## 2026-10-13 20:20 CEST — S4 validation stops at an ownership limit
+
+**What I did.** Validated the missing direct `Blocks` fixture with zorg and Node 24; its development, release and value-fuzz cases pass on both platforms with one golden. Ran `test-run-hashes` after rebasing. Fixed `ControlledOptions`'s real unsafe edit with `List.copy` and verified its filtered corpus case. Kept all build caches under `~/.cache` and skipped benchmarks as requested.
+
+**What I learned.** The new ownership enforcement refuses `browser/direct/ValuePath` at `Tea.sandbox`: the checker says it cannot prove the recursive tree's child list unshared. This is its stated `list_may_be_shared` limit, not evidence of an unsafe edit, so rule 10 calls for reporting the limit instead of changing the fixture's design. The full hash recording also fails two unrelated case-folding black-box tests on this macOS filesystem. The run hashes it did record remain in the worktree for a later complete run; no gates or PR are possible from this result.
+
+## 2026-10-13 20:29 CEST — Keep the tree page gated on tea
+
+**What I did.** Moved the direct ValuePath page into `tests/pending/`, where the pending walker pins `dev: exit=1 codes=list_may_be_shared×1`. Kept the same source and steps as a gated browser-tea page, with its own transcript and run hash. Added the missing direct Blocks fixture, fixed ControlledOptions' unsafe in-place edit with `List.copy`, and recorded hashes with zorg. Benchmarks were skipped as requested.
+
+**What I learned.** The pending page harness needed JSON diagnostics and a build-failure signature to distinguish this checker limit from another refusal. The unfiltered macOS gate had four failures: two existing case-folding tests and two browser-driver cases over the 999 ms CPU fallback budget; the corpus and formatting checks passed. The user explicitly asked to leave the case-folding failures alone and commit this work.

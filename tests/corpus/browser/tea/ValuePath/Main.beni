@@ -1,0 +1,156 @@
+-- The value path (browser-direct.md's S4 amendment, item 1): markup this
+-- platform does not write in place is `dom`'s kinds and blocks, each placed
+-- through a value slot that its group writes when a key may change what
+-- the hole reads; their events listen on their own nodes and reach the
+-- program's dispatcher. Each of these with a handler that changes the
+-- model:
+--
+--   - another module's markup (`Card.counter`);
+--   - a component with children written between its tags (`<Panel>`);
+--   - a helper that calls itself, its rows a `List Html` hole (`tree`);
+--   - a `List Html` hole (`List.map model.items row`);
+--   - `Html.text` in a hole;
+--   - an `Html.map` over a lambda, of another module's markup;
+--   - the component again in each row of a `For`, reading a field beside
+--     the row's item: no read set the pass records covers a component's
+--     call, so every key visits every row for it.
+--
+-- `Tick` writes a field none of them reads: no value slot is written.
+import Card
+import Html exposing (Html)
+import Panel
+import Tea
+
+
+type Tree
+    = Tree String (List Tree)
+
+
+type Msg
+    = IncA
+    | Grow String
+    | Remove Int
+    | Relabel
+    | Step Int
+    | Open
+    | Tick
+
+
+type alias Model =
+    a : Int
+    root : Tree
+    items : List Int
+    label : String
+    steps : Int
+    opened : Int
+    ticks : Int
+
+
+labelOf : Tree → String
+labelOf t =
+    case t of
+        Tree label _ →
+            label
+
+
+kidsOf : Tree → List Tree
+kidsOf t =
+    case t of
+        Tree _ kids →
+            kids
+
+
+-- A child for the node with this label, wherever it is.
+grow : String, Tree → Tree
+grow at t =
+    case t of
+        Tree label kids →
+            if label == at then
+                Tree label [ …kids, Tree "${label}${String.fromInt (List.length kids)}" [] ]
+            else
+                Tree label (List.map kids λk → grow at k)
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        IncA →
+            { model | a = model.a + 1 }
+
+        Grow at →
+            { model | root = grow at model.root }
+
+        Remove i →
+            { model | items = List.filter model.items λx → x ≠ i }
+
+        Relabel →
+            { model | label = "${model.label}!" }
+
+        Step d →
+            { model | steps = model.steps + d }
+
+        Open →
+            { model | opened = model.opened + 1 }
+
+        Tick →
+            { model | ticks = model.ticks + 1 }
+
+
+-- Its own rows through `List.map`: the helper calls itself.
+tree : Tree → Html Msg
+tree t =
+    <li>
+        <button id="t-${labelOf t}" onClick={Grow (labelOf t)}>{labelOf t}</button>
+        <ul>{List.map (kidsOf t) tree}</ul>
+    </li>
+
+
+row : Int → Html Msg
+row i = <li><button id="rm-${String.fromInt i}" onClick={Remove i}>remove {i}</button></li>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="ticks">{model.ticks}</p>
+        <button id="tick" onClick={Tick}>tick</button>
+        {Card.counter "a" model.a IncA}
+        <ul id="tree">{tree model.root}</ul>
+        <ol>{List.map model.items row}</ol>
+        <p id="label">{Html.text model.label}</p>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <p id="steps">{model.steps}</p>
+        {Html.map (Card.step 2) λd → Step d}
+        <Panel title="opened ${String.fromInt model.opened}">
+            <button id="open" onClick={Open}>open</button>
+        </Panel>
+        <ul id="cards">
+            <For each={model.items} keyed={λi → i}>
+                {λi →
+                    <li>
+                        <Panel title="card ${String.fromInt i} of ${String.fromInt model.opened}">
+                            <button id="open${String.fromInt i}" onClick={Open}>open</button>
+                        </Panel>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { a = 0
+                , root = Tree "r" [ Tree "x" [] ]
+                , items = [ 1, 2, 3 ]
+                , label = "label"
+                , steps = 0
+                , opened = 0
+                , ticks = 0
+                }
+        , update = update
+        , view = view
+        }

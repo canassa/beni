@@ -1,0 +1,26 @@
+-- load
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="send">"send"</button>
+    <p id="sent">""</p>
+  </main>
+</body>
+-- click #send
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="send">"send"</button>
+    <p id="sent">"0"</p>
+  </main>
+</body>
+-- click #bump
+(the DOM did not change)
+-- click #send
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="send">"send"</button>
+    <p id="sent">"0,1"</p>
+  </main>
+</body>

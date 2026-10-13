@@ -1,0 +1,43 @@
+-- `browser/dom/StatefulNested`, rebuilt for `browser-direct` (its S4
+-- amendment, items 1 and 2): a controlled input inside markup that is
+-- itself a value, on the value path — in a `Maybe Html` hole, in a `List
+-- Html` hole, or nested with a constant `value` — is put back after a
+-- dispatch as one this platform writes at the top of the view is: the
+-- edit marks it, and the dispatch ends by putting marked controls back. An
+-- edit `update` rejects returns the model it was given, so nothing the
+-- view reads has changed; each input's value is put back all the same.
+-- The original's `if` holes are branches, item 3's, and its `let` of
+-- markup is item 4's, later steps: here the same inputs stand in holes
+-- that are values.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Typed String
+
+
+type alias Model =
+    text : String
+    open : Bool
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Typed s →
+            if String.length s > 3 then m else { m | text = s }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <input id="top" value={m.text} onInput={Typed} />
+        {if m.open then Just (<input id="nested" value={m.text} onInput={Typed} />) else Nothing}
+        {[ <input id="listed" value={m.text} onInput={Typed} /> ]}
+        {if m.open then Just (<input id="locked" value="locked" onInput={Typed} />) else Nothing}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { text = "ab", open = True }, update = update, view = view }

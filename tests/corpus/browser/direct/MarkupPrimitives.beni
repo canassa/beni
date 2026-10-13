@@ -1,0 +1,35 @@
+-- `browser/dom/MarkupPrimitives`, rebuilt for `browser-direct` (its S4
+-- amendment, item 1): the markup primitives `Html.text` and `Html.map`,
+-- called by name, in a page: `Direct` supplies both, as `browser`'s `Rt`
+-- does, and the value path places their blocks. The mapped button, a
+-- markup constant, sends its message through `Html.map` to the program's
+-- dispatcher.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Clicked String
+
+
+leaf : Html String
+leaf = <button id="leaf" onClick={"leaf"}>{Html.text "press"}</button>
+
+
+view : String → Html Msg
+view last =
+    <main>
+        <p>{Html.text last}</p>
+        {Html.map leaf Clicked}
+    </main>
+
+
+update : Msg, String → String
+update msg _ =
+    case msg of
+        Clicked s →
+            s
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → "none", update = update, view = view }

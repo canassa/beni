@@ -1,0 +1,4 @@
+# The inner program row button: the inner program, then the outer row.
+click #pick-b
+# The outer row alone.
+click #row2

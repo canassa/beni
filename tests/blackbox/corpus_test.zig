@@ -1707,6 +1707,25 @@ const Case = struct {
                 return error.TeaBuildFailed;
             }
         };
+
+        // A `browser-direct` refusal is the lowering's, met while modules
+        // are lowered; under `--release` the build must stop there too, with
+        // the same report, and never go on to spell a runtime nothing
+        // rooted (it panicked doing so for a refused `Tea.element`).
+        if (!c.kind.isRelease() and std.mem.indexOf(u8, dir_path, "/bad/direct/") != null) {
+            var rel: std.ArrayList([]const u8) = .empty;
+            try rel.appendSlice(c.arena, args.items[0..3]);
+            try rel.appendSlice(c.arena, &.{ "--out=out", "--release" });
+            try rel.appendSlice(c.arena, sources.items);
+            const r = try w.runWith(try c.argv(rel.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
+            if (r.exit_code != 1 or !std.mem.eql(u8, r.stderr, built.stderr) or w.exists("out")) {
+                detail(
+                    "{s}: under --release a browser-direct refusal must be the same refusal, nothing written; it exited {d}\n--- stderr ---\n{s}\n",
+                    .{ c.fixture.name, r.exit_code, r.stderr },
+                );
+                return error.ReleaseRefusalDiffers;
+            }
+        }
     }
 
     /// Whether a JSON diagnostic list names the ownership checker's codes
@@ -2113,6 +2132,7 @@ const Case = struct {
             const release = pass == .release or pass == .tea_release;
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{ "build", if (tea) tea_arg else platform_arg });
+            if (c.cfg.mode == .pending) try args.append(c.arena, "--diagnostics=json");
             if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
             try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
@@ -2214,6 +2234,7 @@ const Case = struct {
         const pass_name = @tagName(pass);
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
+            if (c.cfg.mode == .pending) classify("{s}: {s}", .{ pass_name, failSignature(c.arena, built) });
             detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass_name, built.stdout, built.stderr });
             because("[{s}] build exit {d}: {s}: {s}", .{ pass_name, built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
             return error.BuildFailed;
@@ -2367,12 +2388,13 @@ const Case = struct {
         // One path: a project's directory, whose modules import each other,
         // or the one file.
         try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) tea_arg else platform_arg });
-        // A project with a platform of its own names its modules: `.`
-        // would take the platform's files for the project's.
+        // A project with a platform of its own and one module names it:
+        // `.` would take the platform's files for the project's.
         // Any other project's modules are dumped from a directory holding
         // only them: the world is the worker's, shared by every case it
-        // runs, so `.` would also take the modules earlier cases left.
-        if (c.fixture.project and hasPlatformDir(try c.fixturePath())) {
+        // runs, so `.` would also take the modules earlier cases left (and
+        // `dump` takes one path).
+        if (c.fixture.project and sources.len == 1 and hasPlatformDir(try c.fixturePath())) {
             try dump.appendSlice(c.arena, sources);
         } else if (c.fixture.project) {
             const dir = "_msg-types";
