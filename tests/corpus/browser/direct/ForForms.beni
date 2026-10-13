@@ -54,7 +54,9 @@ update msg model =
                 | tail =
                     case model.rows of
                         [ _, …rest ] →
-                            rest
+                            -- a copy: `rows` is changed in place on `browser-direct`
+                            -- while `tail` keeps showing it (ownership-checker.md §27.5)
+                            List.copy rest
 
                         [] →
                             []
