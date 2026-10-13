@@ -36,7 +36,7 @@ update msg m =
 
         -- A new option, chosen in the same message.
         Add →
-            { m | options = List.push m.options (fresh m), choice = fresh m }
+            { m | options = List.push (List.copy m.options) (fresh m), choice = fresh m }
 
         Tick →
             { m | n = m.n + 1 }

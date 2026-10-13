@@ -2132,6 +2132,7 @@ const Case = struct {
             const release = pass == .release or pass == .tea_release;
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{ "build", if (tea) tea_arg else platform_arg });
+            if (c.cfg.mode == .pending) try args.append(c.arena, "--diagnostics=json");
             if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
             try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
@@ -2233,6 +2234,7 @@ const Case = struct {
         const pass_name = @tagName(pass);
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
+            if (c.cfg.mode == .pending) classify("{s}: {s}", .{ pass_name, failSignature(c.arena, built) });
             detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass_name, built.stdout, built.stderr });
             because("[{s}] build exit {d}: {s}: {s}", .{ pass_name, built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
             return error.BuildFailed;

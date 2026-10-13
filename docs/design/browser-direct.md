@@ -2851,3 +2851,14 @@ settled:
 - **Chrome**: every `browser/direct/` page and its value fuzz pass in Chrome (`zig build
   test-browser -Dchrome=…` with the host's Chrome; the flake's `nix develop .#browser` Chromium
   does not start on this host, a glibc mismatch).
+
+### *Amended 2026-10-13 (ownership enforcement after S4's rebase):* the recursive value path
+
+The ownership checker now refuses `browser-direct`'s `ValuePath`: its recursive `Tree` holds a
+list of children, and the checker cannot prove that list unshared where `update` may edit it in
+place (`list_may_be_shared`). The direct case is red under
+`tests/pending/browser/direct/ValuePath` with the diagnostic code pinned; the same page remains
+gated for `browser-tea` under `tests/corpus/browser/tea/ValuePath`. This is a checker limit, not a
+verified unsafe edit. `browser/direct/Blocks` pins the other value-path shapes this slice reaches.
+`browser/direct/ControlledOptions` copies its options before `List.push`: the old source changed
+that list in place and then read it again in the same record update.
