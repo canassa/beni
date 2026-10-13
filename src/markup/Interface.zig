@@ -283,6 +283,12 @@ pub const Program = struct {
         /// `programInlineEnter` with `made` evaluates.
         statements: bool = false,
         refusal: Refusal = .none,
+        /// 1.10: a component's function may call `Debug`, directly or
+        /// through what it calls — what the development verify mode asks
+        /// before it makes a component's markup again (`browser-direct.md`
+        /// §8.3). True when not known, and for a hole's call, whose callee
+        /// is a value `reachesDebug` answers for.
+        debug: bool = true,
 
         pub const Refusal = enum(u8) {
             none,

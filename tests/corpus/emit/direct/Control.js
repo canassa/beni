@@ -17,8 +17,8 @@ const Control$main = Tea$sandbox(($root$1, $t$2) => {
     if ($t$12 !== $s$9) {
       $w$8.setAttribute("type", $t$12);
       $s$9 = $t$12;
+      Direct$edited($w$8);
     }
-    Direct$edited($w$8);
   };
   const $g$13 = () => {
     const $t$14 = $model$4.text;

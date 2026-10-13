@@ -713,6 +713,9 @@ const Page = struct {
     /// the gate's answers (true: shared), the shared helpers, and what is
     /// being planned.
     call_nodes: std.AutoHashMapUnmanaged(m.Root.Index, std.ArrayList(m.Node.Index)) = .empty,
+    /// Each count `call_nodes` took, in order, so a walk can take back
+    /// those of markup that turned out to be on the value path.
+    call_log: std.ArrayList(m.Root.Index) = .empty,
     gate: std.AutoHashMapUnmanaged(m.Root.Index, bool) = .empty,
     shareds: std.ArrayList(*Shared) = .empty,
     in_row: u32 = 0,
@@ -927,6 +930,15 @@ const Page = struct {
         return holds;
     }
 
+    /// The size gate's counts of the calls met since the log held `len`,
+    /// taken back: markup that turned out to be on the value path.
+    fn uncount(pg: *Page, len: usize) void {
+        while (pg.call_log.items.len > len) {
+            const r = pg.call_log.pop().?;
+            _ = pg.call_nodes.getPtr(r).?.pop();
+        }
+    }
+
     /// `n` is on the value path.
     fn valueAt(pg: *Page, n: m.Node.Index) m.Error!bool {
         try pg.value_calls.put(pg.a(), n, {});
@@ -946,17 +958,23 @@ const Page = struct {
         const r = callee.root orelse return pg.valueAt(n);
         for (stack.items) |x| if (x == r) return pg.valueAt(n);
         try stack.append(pg.a(), r);
+        const counted = pg.call_log.items.len;
         const holds = try pg.supported(pg.tree.root(r).node, stack);
         _ = stack.pop();
         // An `Html.map` written in place composes its messages at compile
         // time, which markup on the value path inside it could not: the
-        // whole call is then on the value path, its maps `dom`'s.
-        if (holds and callee.maps > 0) return pg.valueAt(n);
+        // whole call is then on the value path, its maps `dom`'s — and the
+        // calls in it are no calls of the view's root site.
+        if (holds and callee.maps > 0) {
+            pg.uncount(counted);
+            return pg.valueAt(n);
+        }
         // The size gate counts a helper's calls in the view's root site.
         if (pg.in_row == 0) {
             const gop = try pg.call_nodes.getOrPut(pg.a(), r);
             if (!gop.found_existing) gop.value_ptr.* = .empty;
             try gop.value_ptr.append(pg.a(), n);
+            try pg.call_log.append(pg.a(), r);
         }
         return holds;
     }
@@ -2626,6 +2644,9 @@ const Page = struct {
         const js = pg.jsb();
         try pg.enterOp(blk, s, gr.ctx, inst, null, null, try pg.groupValues(s, gr), null);
         defer pg.leave();
+        // A value slot's write may change what it shows whatever it was
+        // handed: the controls over it are marked whenever it runs.
+        var always: std.ArrayList(u32) = .empty;
         for (gr.ops.items) |k| {
             const op = s.ops()[k];
             if (op.node != .none) cx.at(op.node);
@@ -2633,6 +2654,7 @@ const Page = struct {
             // inside the kind (S4's amendment, item 1).
             if (pg.isValue(op)) {
                 try pg.writeValue(blk, s, op, k, inst);
+                try always.append(pg.a(), k);
                 continue;
             }
             const slot = s.slots[k];
@@ -2648,6 +2670,7 @@ const Page = struct {
                         const then = try js.block();
                         try js.assign(then, try pg.ref(slot.?, inst), try js.literal(.true));
                         try pg.writeConstant(then, el, x.item, v);
+                        try pg.writeMarks(then, s, &.{k}, inst);
                         try js.@"if"(blk, try js.binary(.strict_eq, try pg.ref(slot.?, inst), try js.name(try cx.runtime("unset"))), then, null);
                     }
                     continue;
@@ -2664,11 +2687,14 @@ const Page = struct {
             const then = try js.block();
             try pg.write(then, s, op, k, v, slot, inst);
             try js.assign(then, try pg.ref(slot.?, inst), try pg.leafOf(op, v));
+            // The controls a write may change, marked where it writes
+            // (§8.1, the runtime's marks): a group that writes nothing
+            // marks nothing and queues no reconcile (S4's review).
+            try pg.writeMarks(then, s, &.{k}, inst);
             try js.@"if"(blk, try js.binary(.strict_ne, leaf, try pg.ref(slot.?, inst)), then, null);
         }
-        // The controls the group's writes may change, marked (§8.1, the
-        // runtime's marks).
-        try pg.writeMarks(blk, s, gr.ops.items, inst);
+        // Every write of a group run once was made.
+        try pg.writeMarks(blk, s, if (once) gr.ops.items else always.items, inst);
     }
 
     /// A constant attribute that needs code: a `stateful` one kept on its
@@ -3889,6 +3915,10 @@ const Page = struct {
             } else false;
             if (debug) continue;
             if (op.what == .html or op.what == .helper) if (cx.reachesDebug(pg.tree.hole(op.node).value)) continue;
+            // A component's call runs its function, which is none of the
+            // slot's values: made again only when it cannot print (S4's
+            // review).
+            if (op.what == .component) if (cx.programCallee(op.node)) |callee| if (callee.debug) continue;
             try values_checked.append(pg.a(), @intCast(k));
         }
         if (values_checked.items.len != 0) lists = true;

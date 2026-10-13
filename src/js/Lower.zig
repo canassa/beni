@@ -11876,6 +11876,33 @@ pub const Lowerer = struct {
             },
             else => return false,
         };
+        return l.instReachesDebug(start);
+    }
+
+    /// The function of each component in the markup under `n`, onto `stack`;
+    /// a component's children are markup it is handed, walked too.
+    fn pushComponentCallees(l: *Lowerer, n: beni_markup.Node.Index, stack: *std.ArrayList(Inst.Index)) Allocator.Error!void {
+        const st = l.mk.?;
+        const tree = &st.built.tree;
+        if (n == .none) return;
+        switch (tree.kind(n)) {
+            .element => for (tree.childrenOf(tree.element(n).children)) |c| try l.pushComponentCallees(c, stack),
+            .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| try l.pushComponentCallees(c, stack),
+            .component => {
+                const at = tree.nodes[@backingInt(n)].payload;
+                try stack.append(l.scratch, st.built.components[at].callee);
+                for (tree.childrenOf(tree.component(n).children_nodes)) |c| try l.pushComponentCallees(c, stack);
+            },
+            else => {},
+        }
+    }
+
+    /// Whether evaluating instruction `start` may call `Debug`, through the
+    /// `let`s it reads and the markup it makes (`directReachesDebug`).
+    fn instReachesDebug(l: *Lowerer, start: Inst.Index) bool {
+        const st = l.mk orelse return true;
+        const d = l.in.direct orelse return true;
+        if (d.debug_decls.len == 0) return true;
         var stack: std.ArrayList(Inst.Index) = .empty;
         stack.append(l.scratch, start) catch return true;
         const module = l.in.module.int();
@@ -11898,6 +11925,9 @@ pub const Lowerer = struct {
                         else => {},
                     };
                     for (root.lets.start..root.lets.start + root.lets.len) |vi| stack.append(l.scratch, st.built.values[vi].let_value.inst) catch return true;
+                    // A component the markup calls: its function, which is
+                    // none of the root's values (S4's review).
+                    l.pushComponentCallees(root.node, &stack) catch return true;
                 },
                 .local => if (l.letValueOf(inst)) |rhs| {
                     if (l.debug_free.isSet(rhs.int()) or in_walk.isSet(rhs.int())) continue;
@@ -11950,6 +11980,8 @@ pub const Lowerer = struct {
         /// The body has `let`s the markup does not read.
         statements: bool = false,
         refusal: beni_markup.Program.Callee.Refusal = .none,
+        /// A component's callee, as the call names it (`Callee.debug`).
+        callee: ?Inst.Index = null,
     };
 
     /// One call entered (`cx.programInlineEnter`): its chain, the context
@@ -11993,6 +12025,7 @@ pub const Lowerer = struct {
                 const source = st.built.components[at];
                 var chain = l.chainOfRef(source.callee, &.{}, &.{}, true);
                 chain.component = node;
+                chain.callee = source.callee;
                 if (c.children_nodes.len != 0 or c.children != null or c.spread != null) {
                     chain.refusal = .children;
                     chain.root = null;
@@ -14073,8 +14106,10 @@ const markup_vtable: beni_markup.VTable = struct {
     }
 
     fn programCallee(impl: *anyopaque, n: M.Node.Index) ?M.Program.Callee {
-        const chain = lowerer(impl).directChain(n) orelse return null;
-        return .{ .root = chain.root, .maps = @intCast(chain.maps.len), .composed = chain.composed, .statements = chain.statements, .refusal = chain.refusal };
+        const l = lowerer(impl);
+        const chain = l.directChain(n) orelse return null;
+        const debug = if (chain.callee) |c| l.instReachesDebug(c) else true;
+        return .{ .root = chain.root, .maps = @intCast(chain.maps.len), .composed = chain.composed, .statements = chain.statements, .refusal = chain.refusal, .debug = debug };
     }
 
     fn programInlineArgs(impl: *anyopaque, into: M.Block, n: M.Node.Index) E![]const M.Expr {

@@ -1626,39 +1626,51 @@ listen el name flags =
         (Js.call el "addEventListener"
             [ Js.from name
             , Js.from λevent →
-                if Js.isUndefined (Js.get el key) then
+                -- A stopped page runs nothing of a handler, its flags
+                -- included, as `browser`'s `Rt.fire` does.
+                if Js.read dead || Js.isUndefined (Js.get el key) then
                     ⊤
                 else
                     if Js.bitAnd flags 1 ≠ 0 then
                         Js.to (Js.call event "preventDefault" [])
                     if Js.bitAnd flags 2 ≠ 0 then
                         Js.to (Js.call event "stopPropagation" [])
-                    send (Js.from λev → deliver el ev key payload) event
+                    -- What the node holds is read now, as the event fires:
+                    -- its program's mount, its handler, its payload's
+                    -- extractor and its maps. A body queued behind a running
+                    -- dispatch (a blur a handler's removal fires) runs after
+                    -- the dispatch may have patched the node or taken it off
+                    -- the page, and is delivered where the browser fired it
+                    -- (the 2026-10-10 amendment); only the message is
+                    -- queued, made inside the guard.
+                    root = mountAbove (Js.get el "parentNode")
+                    h = Js.get el key
+                    x = Js.get el payload
+                    cx = Js.get el "$$cx"
+
+                    if Js.isNull root then
+                        ⊤
+                    else
+                        send (Js.from λev → deliver root h x cx ev) event
             ]
         )
 
 
--- The message `node` holds, or makes of the event's payload, through every
--- `Html.map` it is inside, sent to its program's dispatcher (`$$root`).
-deliver : V, V, String, String → ⊤
-deliver node event key payload =
-    x = Js.get node payload
-
+-- The message handler `h` is, or makes of the event's payload by `x`, through
+-- every `Html.map` context from `cx` out, sent to the dispatcher of the mount
+-- node `root` (`$$root`).
+deliver : V, V, V, V, V → ⊤
+deliver root h x cx event =
     msg =
         through
-            (Js.get node "$$cx")
+            cx
             (if Js.isUndefined x then
-                Js.get node key
+                h
              else
-                Js.call node key [ Js.apply x [ event ] ]
+                Js.apply h [ Js.apply x [ event ] ]
             )
 
-    root = mountAbove (Js.get node "parentNode")
-
-    if Js.isNull root then
-        ⊤
-    else
-        Js.to (Js.call root "$$root" [ msg ])
+    Js.to (Js.call root "$$root" [ msg ])
 
 
 -- `msg` through each context from `c` out. (`isNullish`: a node outside
@@ -1837,6 +1849,11 @@ noop _ = ⊤
 -- its `elements` iterated.)
 edits : V → ⊤
 edits event =
+    -- Controls held for the task are marked again by every later edit:
+    -- the dispatch it ends in puts them back before the task does, as a
+    -- render does on `browser-tea` (S4's review: in Chrome the reset's own
+    -- reconcile ran before the reset, and took their marks).
+    Js.each heldBack markEdit
     target = Js.get event "target"
     type_ : String
     type_ = Js.to (Js.get event "type")
@@ -2106,9 +2123,168 @@ verifyShown s i b what =
         ⊤
     else
         fresh = Rt.unit b (Js.get s "cx")
-        page = written (Rt.first i) (Rt.last i) ""
-        model = written (Rt.first fresh) (Rt.last fresh) ""
-        if page ≠ model then wrong what (Js.from page) (Js.from model)
+
+        if not (samePage (Rt.first i) (Rt.last i) (Rt.first fresh) (Rt.last fresh)) then
+            page = written (Rt.first i) (Rt.last i) ""
+            model = written (Rt.first fresh) (Rt.last fresh) ""
+            wrong what (Js.from page) (Js.from model)
+
+
+-- Whether the nodes from `a` to `aEnd` show what those from `b` to `bEnd`
+-- do — the page's against a fresh mount's (S4's review): node by node, each
+-- element by `sameElement`.
+samePage : V, V, V, V → Bool
+samePage a aEnd b bEnd =
+    if not (sameNode a b) then
+        False
+    else if Js.same a aEnd || Js.same b bEnd then
+        Js.same a aEnd && Js.same b bEnd
+    else
+        samePage (Js.get a "nextSibling") aEnd (Js.get b "nextSibling") bEnd
+
+
+-- A text's or a comment's data; an element by `sameElement`.
+sameNode : V, V → Bool
+sameNode a b =
+    if Js.isNull a || Js.isNull b then
+        Js.isNull a && Js.isNull b
+    else
+        kind : Int
+        kind = Js.to (Js.get a "nodeType")
+
+        if kind ≠ Js.to (Js.get b "nodeType") then
+            False
+        else if kind == 1 then
+            sameElement a b
+        else
+            Js.same (Js.get a "data") (Js.get b "data")
+
+
+-- An element of the page against the fresh mount's `b`: the same name and
+-- namespace; every attribute `b` has, the page's equal — a class list and
+-- a style's declarations as sets, since a patch appends a class switched
+-- on and a property set again, and adds an attribute that turns on after
+-- the others; and the same children. Not compared: an attribute only the
+-- page has — the host's or an extension's, or one a missed removal left,
+-- which is a limit of the check (its opposite, an attribute missed, is
+-- caught); `open` on `details` and `dialog`, which the user changes and the
+-- program keeps nowhere but its model (§8.1); and the children of an
+-- element the user edits (`contenteditable`).
+sameElement : V, V → Bool
+sameElement a b =
+    if
+        not (Js.same (Js.get a "localName") (Js.get b "localName"))
+            || not (Js.same (Js.get a "namespaceURI") (Js.get b "namespaceURI"))
+    then
+        False
+    else
+        name : String
+        name = Js.to (Js.get b "localName")
+        attrs = Js.get b "attributes"
+
+        if
+            not (sameAttributes a b attrs (name == "details" || name == "dialog") 0 (count attrs))
+        then
+            False
+        else if editable b then
+            True
+        else
+            sameChildren (Js.get a "firstChild") (Js.get b "firstChild")
+
+
+sameChildren : V, V → Bool
+sameChildren a b =
+    if Js.isNull a || Js.isNull b then
+        Js.isNull a && Js.isNull b
+    else if not (sameNode a b) then
+        False
+    else
+        sameChildren (Js.get a "nextSibling") (Js.get b "nextSibling")
+
+
+-- An element whose content the user edits.
+editable : V → Bool
+editable el =
+    v = Js.call el "getAttribute" [ Js.from "contenteditable" ]
+    not (Js.isNull v) && not (Js.same v (Js.from "false"))
+
+
+sameAttributes : V, V, V, Bool, Int, Int → Bool
+sameAttributes a b attrs openable i n =
+    if i ≥ n then
+        True
+    else
+        one = Js.at attrs i
+        key : String
+        key = Js.to (Js.get one "name")
+        mine = Js.call a "getAttribute" [ Js.from key ]
+        theirs = Js.get one "value"
+
+        agrees =
+            if openable && key == "open" then
+                True
+            else if Js.isNull mine then
+                False
+            else if key == "class" then
+                sameTokens mine theirs
+            else if key == "style" then
+                sameStyle (Js.get a "style") (Js.get b "style")
+            else
+                Js.same mine theirs
+
+        agrees && sameAttributes a b attrs openable (i + 1) n
+
+
+-- Two class lists as sets of names.
+sameTokens : V, V → Bool
+sameTokens x y =
+    xs = tokens x
+    ys = tokens y
+    n : Int
+    n = Js.to (Js.get xs "size")
+    m : Int
+    m = Js.to (Js.get ys "size")
+    n == m
+        && Js.to
+            (Js.call (Js.call (Js.global "Array") "from" [ xs ]) "every"
+                [ Js.from λt → Js.call ys "has" [ t ] ]
+            )
+
+
+tokens : V → V
+tokens s =
+    names = Js.construct (Js.global "Set") []
+
+    Js.each (Js.call s "split" [ spaces ]) λname →
+        if Js.same name (Js.from "") then
+            ⊤
+        else
+            Js.to (Js.call names "add" [ name ])
+    names
+
+
+-- Two styles' declarations as sets: each property's value and priority.
+sameStyle : V, V → Bool
+sameStyle x y =
+    n : Int
+    n = Js.to (Js.get x "length")
+    m : Int
+    m = Js.to (Js.get y "length")
+    n == m && sameDeclarations x y 0 n
+
+
+sameDeclarations : V, V, Int, Int → Bool
+sameDeclarations x y i n =
+    if i ≥ n then
+        True
+    else
+        prop = Js.at y i
+
+        Js.same (Js.call x "getPropertyValue" [ prop ]) (Js.call y "getPropertyValue" [ prop ])
+            && Js.same
+                (Js.call x "getPropertyPriority" [ prop ])
+                (Js.call y "getPropertyPriority" [ prop ])
+            && sameDeclarations x y (i + 1) n
 
 
 -- The nodes from `node` to `end`, as text: an element's markup, a text
