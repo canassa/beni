@@ -2567,6 +2567,7 @@ hole rather than adding precision.
 | The entry protocol, its rows and `init` (§20, §22) | `entryCall` | the runtime keeping or reading the model the direct row hands over |
 | Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload read after the send gave it up |
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written |
+| Fold accumulator container invariant (2026-10-14 amendment) | callback result instantiation and container conditions | a shared start, escaped accumulator or duplicated result position incorrectly treated as owned across iterations; confusing a container proof with deep ownership of opaque descendants would permit nested alias writes |
 
 ### 26.8 Open questions
 
@@ -3078,3 +3079,83 @@ The unknown-tree-result twin installs an opaque callback's result into the model
 then grows it: it stays rejected. The recursive escape twin spawns a reader in one
 arm and tail-calls into the appending arm; the call remains rejected through the
 function's joined E/W summary, even though the append alone in its arm is accepted.
+
+### *Amended 2026-10-14 (fold invariants):* owned accumulator edits
+
+A fold supplies one accumulator to its callback and uses that callback's result
+as the next accumulator. This applies to `List.foldl`, `List.foldr`, `Dict.foldl`
+and `Dict.foldr`; iteration order does not change the ownership argument.
+The initial accumulator establishes the invariant: `Dict.empty`, an empty list,
+a literal or a proven fresh call result establishes ownership only for the
+containers it actually makes, not for shared values stored inside it.
+
+The callback must preserve the ownership of every container it writes. Each
+such result container is either freshly allocated or the owned container it
+received, with separation from the other result positions. No callback arm may
+escape that container, capture it in a retained closure, store it at a second
+position, or replace it with a borrowed/shared/unknown container. Its existing
+Known, Unescaped, Disjoint and Dead obligations still apply. Unknown callback
+classes, coarsened summaries and exhausted solvers establish no invariant.
+A fresh outer dictionary alone proves nothing about its stored lists.
+
+**The written footprint.** Exclusivity of a list's container is distinguished
+from deep exclusivity of everything it holds. Appending a tap changes the list
+container, not the opaque tap's captures. A result/supply condition may therefore
+state container exclusivity at a path, retaining separation between the different
+positions represented by that path. This fact never licenses a write below that
+path. Destructive focus may use it only for the callback's actual write footprint;
+a callback that writes a nested child requires that child's own condition.
+Deep conditions retain their existing meaning. Dictionary focus still removes
+one selected value before its callback runs, and its replacement must preserve
+separation from the retained entries. Shared captures of taps do not establish
+sharing of their enclosing list containers, nor are those captures asserted owned.
+
+The fold first computes the finite shape of its callback results. It then solves
+container conditions as a greatest must-invariant: future fresh allocations start
+at the holding condition, while the initial accumulator's established constraints,
+shared/unknown arrivals and escapes are never optimistically reseeded. Callback
+result conditions are instantiated and conjoined until stable. The proof rounds
+record neither escapes nor diagnostics; final checking records those effects normally. Exhaustion loses
+the candidate facts. The invariant is used for callback demands and retained in
+the result's container conditions, never as an unconditional deep-exclusive row.
+
+**Soundness.** Induct on the number of callback invocations. The initial value
+establishes the base. Given owned written containers, destructive edits transfer
+those containers once, and a fresh replacement has no earlier holder. Separation
+of result positions and the callback's non-escape obligations establish the next
+step. Duplicate placement, retained closures and escaped containers refute that
+step; a shared initial value refutes the base. The greatest must-fixpoint checks
+all callback classes and result arms rather than trusting the loop's syntax.
+Unwritten opaque descendants are not mutated by this proof; a later nested write
+must separately establish ownership of its target. Dictionary representative
+separation remains load-bearing, including when two keys share the same list.
+
+The subscription fold previously left pending is promoted only after this proof
+accepts its copy-free `Dict.update` builder. Rejected twins pin escaped, captured,
+duplicated and shared-start accumulators for both fold directions and families.
+Ownership summary blocks change version when the container conditions are added;
+old cached summaries cannot supply the new proof.
+
+**Summary representation.** Ownership blocks are version 3. Each result entry
+stores both its existing deep condition and its container condition. The latter
+uses path-qualified `spine`, `sep_spine` and `keep_spine` atoms; they are collected,
+joined and serialized canonically like deep conditions. The path of a focus's
+`keep_spine` atom selects its replacement's root. A parent provenance that only
+stands for that root is insufficient to certify the replacement. Coarsened or
+limited callback/supply rows cannot use the narrower focus proof. Existing deep
+proofs remain available when the narrower proof cannot establish separation.
+Recursive summary convergence compares both conditions: an unchanged deep
+condition cannot hide a container condition that is still weakening.
+
+A scoped `returns owned` check examines aliases at **every** other result position,
+including an earlier position and one outside the written footprint. Restricting
+that comparison to the written paths misses a closure stored beside the written
+list: its first construction may pass, but the retained closure sees a later fold
+step mutate what it captured. The capture-after-append twin pins this boundary.
+
+This amendment resolves the earlier dated subscription-fold limit. The library's
+`Tea.want` now uses `Dict.update`, with no copy. Existing ownership corpus verdicts
+remain unchanged; new container facts do not replace the existing deep proofs.
+The new capture-after-append rejection closes an existing unsound acceptance:
+master accepted that retained-closure twin. Its negative regression fails with
+the fix set aside; no pre-existing golden is changed.
