@@ -5363,3 +5363,61 @@ a shared `~/.cache/zig` lock stalled builds for minutes (a private `ZIG_GLOBAL_C
 **What I did.** Moved the direct ValuePath page into `tests/pending/`, where the pending walker pins `dev: exit=1 codes=list_may_be_shared×1`. Kept the same source and steps as a gated browser-tea page, with its own transcript and run hash. Added the missing direct Blocks fixture, fixed ControlledOptions' unsafe in-place edit with `List.copy`, and recorded hashes with zorg. Benchmarks were skipped as requested.
 
 **What I learned.** The pending page harness needed JSON diagnostics and a build-failure signature to distinguish this checker limit from another refusal. The unfiltered macOS gate had four failures: two existing case-folding tests and two browser-driver cases over the 999 ms CPU fallback budget; the corpus and formatting checks passed. The user explicitly asked to leave the case-folding failures alone and commit this work.
+
+## 2026-10-13 23:33 CEST — ownership proofs for direct browser lists
+
+**What I did**
+
+Started ownership-browser-direct from freshly fetched origin/master; fetched the
+browser-direct-s5 reproduction without moving its unfinished effects implementation.
+Specified two checker refinements as dated ownership-contract amendments. Escape
+checks now ignore mutually exclusive earlier arms, while summaries still join all
+escapes. The model entry solves fresh update-result conditions as an inductive must
+invariant instead of letting an uninitialised result poison its own preservation
+condition. Bumped ownership blocks to version 2 to invalidate the old rules.
+
+Promoted ValuePath from pending and imported/promoted the tap reproduction from the
+S5 branch. Added accepted pages and rejected twins for fiber/queued escapes, child
+lists duplicated at init and by update, and dictionary tap lists shared at two keys
+and in an old snapshot. The dictionary helper preserves its borrowed tap container
+with an explicit shallow copy; tap and tagger identities remain intact. Dict.update
+alone was investigated: the complete driver still could not prove its deep
+exclusivity requirement over opaque keys/taps, so no such assertion was added.
+
+Verified all previous ownership goldens unchanged. The copied complete driver failed
+at three sites before the changes, only want after the branch refinement, and none
+with the borrowed-container fix. Stashing the two checker files proved ConcurrentJobs
+and ValuePath fail before the checker fixes; both now pass their browser-tea/direct
+pages and value fuzz. Full run-hash recording updated corpus records, but the step
+ended at the two known macOS case-folding failures. Full gates and LLVM validation
+follow; the owner's four known macOS failures are left untouched.
+
+**What I learned**
+
+A sibling arm's escape is not a holder in the arm that writes, but its summary must
+remain escaped for callers that cannot choose an arm. Recursive list exclusivity
+is a preservation invariant and must start future fresh allocations optimistically,
+then monotonically lower their conditions; unknown and escaped inputs cannot inherit
+that proof. A borrowed dictionary value is a different issue: the generic helper
+permits aliased entries and retained old dictionaries, so intentional persistence
+requires a new outer tap list. The accepted alias twin observes 2:1:1 for the changed
+entry, untouched entry and old dictionary; the uncopied twin remains rejected.
+
+## 2026-10-13 23:43 CEST — ownership validation completed on both code generators
+
+**What I did**
+
+Completed unfiltered zorg build gates and zorg build gates -Dllvm. Each has exactly
+the four owner-acknowledged macOS failures, with 1 292 tests passing and 15 skipped;
+no additional failure appeared. The case-folding and CPU-budget tests are unchanged.
+The pending suite passes with the resolved cases promoted. Existing ownership
+goldens and runtime transcripts remain unchanged; refreshed browser-tea development
+and differential hashes include its changed source map. Prepared the PR with the
+per-case classification, explicit borrow-preserving copy, soundness arguments and
+before/after evidence. S5's work stays on browser-direct-s5.
+
+**What I learned**
+
+The exception the owner supplied permits this PR while preserving the four known
+Mac failures. Both code generators agree on the new acceptances and the rejected
+sharing twins; the whole copied driver can now be checked for the direct platform.

@@ -61,7 +61,7 @@ pub const magic = "BENIOWN\x00";
 
 /// Bumped with the rule set (thesis §8.5): a block of another version is
 /// absent, never misread.
-pub const version: u32 = 1;
+pub const version: u32 = 2;
 
 pub const Error = error{Bad} || Allocator.Error;
 
