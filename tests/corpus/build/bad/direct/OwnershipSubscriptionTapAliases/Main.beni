@@ -1,17 +1,13 @@
--- The borrowed tap list is held at a second key and in an old snapshot.
--- The subscription tap builder preserves its borrowed dictionary value.
--- Copying the outer tap list keeps other entries and old dictionaries
--- unchanged when the input has aliases (ownership-checker.md, the dated
--- subscription tap builder amendment).
+-- A generic helper given aliased lists must reject destructive focus.
 import Dict exposing (Dict)
 import Html exposing (Html)
 import Tea
 
 
 want : Int, Int, Dict Int (Int × List Int) → Dict Int (Int × List Int)
-want k t d =
-    ( first, taps ) = Maybe.withDefault (Dict.get d k) ( 0, [] )
-    Dict.insert d k ( first, List.append taps [ t ] )
+want k t d = Dict.update d k λcurrent →
+    ( first, taps ) = Maybe.withDefault current ( 0, [] )
+    Just ( first, List.append taps [ t ] )
 
 
 main : Tea.Program

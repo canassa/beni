@@ -3028,31 +3028,30 @@ positions, retained elsewhere in the model, introduced by a sharing update arm o
 obtained from an unknown source still fail the existing separation/exclusivity tests.
 No recursive type is trusted exclusive merely because of its declaration.
 
-### *Amended 2026-10-13 (the subscription tap builder):* borrowed dictionary values
+### *Amended 2026-10-14 (the subscription tap builder):* fresh folds remain a limit
 
-`Tea.want` used `Dict.get` to borrow a tap list, appended to that list, and only then
-called `Dict.insert` with the dictionary still holding it. This helper does not have
-a destructive-focus contract. Its input type permits the same tap list at two keys,
-or a caller keeping the old dictionary; mutating the borrowed list would change an
-entry the operation did not replace, or change the old dictionary. The aliasing twin
-stores one list at two keys and keeps the old dictionary: this is real sharing, not
-an ownership fact the checker may discard.
+The runtime's `wanted` dictionary starts at `Dict.empty` each render. Each fold
+iteration consumes the previous accumulator and returns its replacement; the
+builder does not retain dictionary snapshots or reuse one tap-list container at
+different keys. A generic aliased-input twin does not establish sharing in this
+runtime builder. The earlier classification as real sharing was incorrect.
 
-The private builder's usual fresh accumulator is narrower than the helper's input
-contract. Rewriting the helper through `Dict.update` expresses destructive focus,
-but the full driver still cannot discharge its deep-exclusivity requirement: keys
-and taps are opaque host values and may intentionally share captured values. No
-assertion of deep exclusivity is added for them.
+`Dict.update`, implemented through `Dict.focus`, is the intended expression of
+ownership transfer: remove the selected entry, hand its value to the callback,
+and restore the replacement. The isolated `want` helper checks without a copy.
+The complete driver's `List.foldl` still rejects the call to `want`, because it
+cannot establish the supplied accumulator's deep exclusivity. Opaque taps and
+keys can share captured values; this does not imply that the freshly allocated
+tap-list containers share. The current proof domain fails to separate those facts.
 
-The platform therefore preserves the borrowed value explicitly: copy the outer tap
-list, append to that copy and replace the selected dictionary entry. The tap values
-and their taggers retain their identities; only the borrowed list's container is
-copied. This is intentional persistence across the get/insert operation, including
-aliased input dictionaries, rather than a generic copy added to a proven-unique list
-to bypass a checker limit. The accepted aliased-input twin checks that the replaced
-entry grows, the other entry stays unchanged and the old dictionary stays unchanged.
-The uncopied twin stays rejected. The two Concurrent lists remain un-copied: their
-separate branch proof is the precision fix above.
+This is an unresolved checker limit, pinned by the focused subscription fold in
+`tests/pending/browser/direct/SubscriptionTapFold`. No `List.copy` is added to the
+platform to bypass it. The platform's original get/append/insert implementation
+is retained until the focused builder can be checked; the dependent direct
+subscription implementation remains blocked. A future precision change must
+prove ownership of the actual written containers while preserving rejection of
+aliased containers, retained accumulators and escaping callbacks. Freshness of
+the outer dictionary alone is insufficient to assert deep exclusivity.
 
 ### *Amended 2026-10-13 (summary blocks):* invalidate the old precision rules
 
@@ -3061,6 +3060,21 @@ unchanged; the rule set changed, so cached blocks from the previous checker are 
 reused. The existing ownership corpus keeps every prior golden. New accepted and
 rejected twins pin alternative-arm escapes, real escapes before a write, duplicated
 recursive children at init and through update, and intentionally shared dictionary
-tap lists. The full copied driver is also checked through the embedded-platform
+tap lists (a rejected generic helper, not evidence of runtime sharing). The full copied driver is also checked through the embedded-platform
 maker: three refusals before the changes, only the borrowed tap refusal after the
-branch fix, and none after preserving that borrowed container explicitly.
+branch fix, and the focused rewrite still rejects the fold
+accumulator. The third driver refusal remains pending; no platform copy is retained.
+
+### *Amended 2026-10-14 (review of enforcement precision):* condition-only rounds
+
+Condition rounds instantiate summaries without recording escapes or function-value
+boundary diagnostics; only the final ordinary evaluation records those effects.
+Runtime-safety assertions require the demand, use and escape lists to stay unchanged
+through a condition round. Callback-result instantiation propagates this mode.
+Unknown callback results (fresh number zero) and any cell already reachable at init
+are excluded from optimistic seeding, also when a callback uses a lower namespace.
+The entry namespaces have named constants shared by the shape and condition passes.
+The unknown-tree-result twin installs an opaque callback's result into the model and
+then grows it: it stays rejected. The recursive escape twin spawns a reader in one
+arm and tail-calls into the appending arm; the call remains rejected through the
+function's joined E/W summary, even though the append alone in its arm is accepted.
