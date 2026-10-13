@@ -5577,3 +5577,70 @@ supplied cells, makes id collisions conservative. Existing order-sensitive
 black-box coverage is preferable to duplicating it in an ownership regression.
 The two namespace tests prove the supplied-cell boundary, not every possible
 callback condition; the broader oracle proof remains an acknowledged risk.
+
+## 2026-10-13 21:09 CEST — direct browser effects blocked by ownership
+
+**What I did**
+
+Read CLAUDE.md and the browser-direct effects contract and dated amendments. Started
+`browser-direct-s5` from freshly fetched origin/master. Specified and attempted the
+compiled host, copying browser-tea's beni command/subscription driver as required.
+Checking the embedded direct platform rejected the Concurrent appends in keyed and
+keyedNow and the tap append in want, all as list_may_be_shared checker limits. Kept
+the attempted implementation outside the working tree at
+`/tmp/beni-browser-direct-s5-blocked.patch`; no incomplete runtime changes are in this
+branch. Added the reduced subscription-tap page under tests/pending with its error
+signature pinned, and an identical gated browser-tea oracle and transcript. Recorded
+its run hashes with Node 24.19.0, using zorg for builds and tests. The PR records a
+blocker, not a completed effects slice; no merge is requested.
+
+**What I learned**
+
+The copied driver itself must pass ownership checking before the embedded direct
+platform can build. This prevents independently shipping element, document,
+subscriptions or after-render work through the required host. Q5 was already decided;
+subscription fiber policy is not the blocker. A platform-only reproduction can miss
+this failure because its unused driver is trusted or unreachable in the application
+ownership walk; the app-level want reproduction reaches the same diagnostic directly.
+No List.copy, list-mode change or JavaScript rewrite was used to bypass it.
+
+## 2026-10-13 21:12 CEST — gate result prevents opening the effects blocker PR
+
+**What I did**
+
+Ran the full unfiltered `direnv exec . /opt/homebrew/bin/zorg build gates`.
+It ended with four failures: two existing stale-output path tests assume a
+case-sensitive filesystem (PathAlreadyExists creating Zz.mjs/ZZ.mjs hard links,
+and a directory spelling mismatch), and two existing cache-pruning tests exceeded
+the macOS 999 ms CPU fallback budget (1 092 and 1 117 ms). Compiler, platform
+and black-box harness sources are identical to origin/master. The focused pending
+fixture reported its pinned list_may_be_shared; the browser-tea oracle recorded
+three successful Node 24 runs. Prepared the blocker PR body, but did not commit,
+push or open a PR because the gate is not green. This corrects the preceding
+entry's prospective wording about the PR: no PR exists and no review was requested.
+The staged changes remain on browser-direct-s5; unrelated untracked work was left
+alone. Gate log: /tmp/beni-s5-gates.log.
+
+**What I learned**
+
+This host cannot supply the required green gate with the unchanged test harness:
+its case-insensitive APFS and CPU-budget fallback expose two separate test limits.
+They need handling before the requested PR workflow can run. The ownership blocker
+still prevents shipping the specified effects driver; neither blocker was bypassed.
+
+## 2026-10-13 23:05 CEST — preserve the direct browser effects attempt remotely
+
+**What I did**
+
+The owner explicitly requested pushing browser-direct-s5 as work in progress,
+including the pending reproduction and attempted implementation. Copied the
+attempted implementation patch into plans/wip/browser-direct-effects.patch and
+added its base commit, known compilation failures and application instructions.
+Committed the blocker fixtures, oracle hashes, dated amendment, diary and WIP
+artifact together for the branch push. Left unrelated untracked work alone.
+
+**What I learned**
+
+The WIP authorization permits saving this unfinished work despite the previously
+recorded red gate. Preserving the patch against its exact base keeps the attempted
+implementation recoverable without pretending the current runtime supports effects.
