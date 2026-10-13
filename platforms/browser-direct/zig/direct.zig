@@ -3810,10 +3810,10 @@ const Page = struct {
     /// print, or be another value on every evaluation, is not evaluated
     /// again.
     fn verifyBranch(pg: *Page, blk: m.Block, br: *Branch, inst: ?Path) m.Error!void {
-        const cx = pg.cx;
         const js = pg.jsb();
         const scrutinee = if (br.show) pg.tree.show(br.node).when else pg.tree.hole(br.node).value;
-        if (cx.reachesDebug(scrutinee) or pg.tree.everyRender(scrutinee)) return;
+        if (!pg.quiet(scrutinee)) return;
+        if (br.show) if (pg.tree.show(br.node).key) |k| if (!pg.quiet(k)) return;
         const inner = try js.block();
         const ch = try pg.chooseArm(inner, br, inst);
         const b = try pg.ref(br.ref, inst);
@@ -3827,6 +3827,25 @@ const Page = struct {
                 .dead => continue,
                 .site => try js.expression(then, try js.call(try pg.ident(br.checks[j].?), &.{try js.member(try pg.ref(br.ref, inst), "i")})),
                 .value => {
+                    // What the arm's markup is made of, evaluated again only
+                    // when it can neither print nor be another value (S4's
+                    // review: a `Show`'s body and fallback are not its
+                    // `when`; an `if`'s or a `case`'s arms are the hole's
+                    // value, checked above).
+                    if (br.show) {
+                        const sh = pg.tree.show(br.node);
+                        if (j == 1) {
+                            if (!pg.quiet(sh.fallback.?)) continue;
+                        } else if (pg.tree.row(sh.body).function) |f| {
+                            if (!pg.quiet(f)) continue;
+                        } else {
+                            const body = pg.tree.root(pg.tree.row(sh.body).body);
+                            const loud = for (0..body.values.len) |vi| {
+                                if (!pg.quiet(@fromBackingInt(@intCast(body.values.start + @as(u32, @intCast(vi)))))) break true;
+                            } else false;
+                            if (loud) continue;
+                        }
+                    }
                     const v = try pg.valueArm(then, br, @intCast(j), inst);
                     try js.expression(then, try pg.rt("verifySlot", &.{ try js.member(try js.member(try pg.ref(br.ref, inst), "i"), "c"), v, try pg.num(0), try js.string(try pg.print("the markup of {s}", .{what})) }));
                 },
@@ -3835,6 +3854,12 @@ const Page = struct {
         }
         try js.@"if"(inner, try js.binary(.strict_ne, try pg.ident(ch.n), try js.member(try pg.ref(br.ref, inst), "k")), wrong_, arms);
         try js.nested(blk, inner);
+    }
+
+    /// Whether the verify mode may evaluate `v` again: it reaches no
+    /// `Debug` and is not made on every evaluation (§8.3).
+    fn quiet(pg: *Page, v: m.Value.Index) bool {
+        return !pg.cx.reachesDebug(v) and !pg.tree.everyRender(v);
     }
 
     // ---- The development verify mode (§8.3) --------------------------------

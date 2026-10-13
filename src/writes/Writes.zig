@@ -3488,8 +3488,12 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
                 const item = b.extraData(at, Bir.MarkupItem);
                 const v = item.value.unwrap() orelse continue;
                 const t = try a.eval(f, v, g);
-                if (a.isEvent(f.m, @backingInt(at))) continue;
                 d.* = try a.depsUnion(d.*, try a.deps(t));
+                // A handler is no hole, but markup that is a value holds
+                // it: what it reads is the markup's (write-sets.md, *a
+                // handler's reads*), so a `let` or a value slot holding it
+                // is made again when they change.
+                if (a.isEvent(f.m, @backingInt(at))) continue;
                 try a.recordHole(f, item.token, .attribute, v, t, false);
             }
             const children = b.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex);
@@ -3560,7 +3564,14 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
                 const form: Form = if (b.markupKind(node) == .show) .show else if (fm.mode == .literal_false) .for_positional else .for_keyed;
                 try a.noteEach(f, fm.token, form, list);
             }
-            if (fm.fallback.unwrap()) |fb| d.* = try a.depsUnion(d.*, try a.deps(try a.eval(f, fb, g)));
+            const is_show = b.markupKind(node) == .show;
+            if (fm.fallback.unwrap()) |fb| {
+                const ft = try a.eval(f, fb, g);
+                d.* = try a.depsUnion(d.*, try a.deps(ft));
+                // A `Show`'s fallback is one of its arms: what it reads is
+                // the `Show`'s too (write-sets.md, *a `Show`'s arms*).
+                if (is_show and fm.list.unwrap() != null) try a.recordHole(f, fm.token, .each, fm.list.unwrap().?, ft, false);
+            }
             if (fm.row == Bir.none_extra) return;
             const row = b.extraData(@fromBackingInt(fm.row), Bir.MarkupRow);
             const fun = try a.eval(f, row.function, g);
@@ -3625,6 +3636,8 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
             };
             const r = try a.apply(fun, args[0..@min(arity, 2)], g);
             d.* = try a.depsUnion(d.*, try a.deps(r));
+            // A `Show`'s body is its other arm (*a `Show`'s arms*).
+            if (is_show and fm.list.unwrap() != null) try a.recordHole(f, fm.token, .each, fm.list.unwrap().?, r, false);
         },
     }
 }
