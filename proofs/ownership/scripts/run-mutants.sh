@@ -26,7 +26,7 @@ while [ $# -gt 0 ] && [ "$1" != "--" ]; do seeds+=("$1"); shift; done
 names=("$@")
 [ ${#names[@]} -eq 0 ] && read -r -a names <<< "$(node scripts/mutate.mjs --list)"
 bound=${ENUMERATE_BOUND:-3}
-cores=${MUTANT_CORES:-0-23}
+cores=${MUTANT_CORES:-0-7}
 here=$(pwd)
 mkdir -p "$scratch"
 # One snapshot of the sources at the start, so later edits do not leak in.
