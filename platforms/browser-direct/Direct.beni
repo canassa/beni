@@ -1464,18 +1464,19 @@ branch parent marker makes =
         ]
 
 
---| `(b, n, u)`: arm `n` shown — the arm shown torn down, its nodes taken
---| out and its instance dropped, and arm `n` made, from the instance `u`
---| the branch is in, and put where the arms go; -1 shows nothing.
-pub arm : V, Int, V → ⊤
-arm b n u =
+--| `(b, n, u, a)`: arm `n` shown — the arm shown torn down, its nodes
+--| taken out and its instance dropped, and arm `n` made, from the instance
+--| `u` the branch is in and `a`, what the branch's value made of the arm's
+--| values, and put where the arms go; -1 shows nothing.
+pub arm : V, Int, V, V → ⊤
+arm b n u a =
     k : Int
     k = Js.to (Js.get b "k")
     if k ≥ 0 then clearAfter (Js.get b "s") (Js.get b "n")
     if n < 0 then
         Js.set b "i" Js.null
     else
-        i = Js.apply (Js.at (Js.get b "m") n) [ u, b ]
+        i = Js.apply (Js.at (Js.get b "m") n) [ u, b, a ]
         Js.set i "b" b
         clone = Js.get i "e"
 

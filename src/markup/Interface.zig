@@ -1158,6 +1158,34 @@ pub const Context = struct {
         return cx.vtable.program_branch_value(cx.impl, block, node, k);
     }
 
+    /// 1.10 (S4's review): branch `node`'s value evaluated once into
+    /// `block` — its scrutinee, the decision and the taken arm's `let`s but
+    /// its statements — as an array `[j, …]`: the number of the arm taken,
+    /// then what binds that arm's values (its markup root's inputs, or its
+    /// call's arguments), or, for an arm that is a value (`Arm.What.value`),
+    /// that markup value. A lowering keeps it, so that nothing of the
+    /// hole's value runs twice for one choice.
+    pub fn programBranchChoose(cx: *Context, block: Block, node: Node.Index) Error!Expr {
+        return cx.vtable.program_branch_choose(cx.impl, block, node);
+    }
+
+    /// 1.10 (S4's review): arm `k` of branch `node` entered as
+    /// `programBranchEnter` enters it, its values' locals bound from `from`
+    /// — what `programBranchChoose` returned when it took arm `k` — with
+    /// nothing evaluated again; with `made`, a call arm's callee's `let`s
+    /// its markup does not read run too. Leave with `programInlineLeave`.
+    pub fn programBranchBind(cx: *Context, block: Block, node: Node.Index, k: u32, from: Expr, made: bool) Error!void {
+        return cx.vtable.program_branch_bind(cx.impl, block, node, k, from, made);
+    }
+
+    /// 1.10 (S4's review): arm `k`'s `let`s that are statements, where its
+    /// markup is made (§8.4): the hole's value is evaluated again for them,
+    /// arm `k`'s other `let`s left out but those a statement reads. Nothing
+    /// runs when the value takes another arm.
+    pub fn programBranchStatements(cx: *Context, block: Block, node: Node.Index, k: u32) Error!void {
+        return cx.vtable.program_branch_statements(cx.impl, block, node, k);
+    }
+
     /// 1.10: the markup root a `Show`'s fallback is, when it is markup
     /// written there whose values can be evaluated apart; null otherwise.
     pub fn programShowFallback(cx: *Context, node: Node.Index) ?Root.Index {
@@ -1364,6 +1392,9 @@ pub const VTable = struct {
     program_branch_arm: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
     program_branch_enter: *const fn (impl: *anyopaque, block: ?Block, node: Node.Index, k: u32, made: bool, held: ?Expr) Error!?Expr,
     program_branch_value: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!Expr,
+    program_branch_choose: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
+    program_branch_bind: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32, from: Expr, made: bool) Error!void,
+    program_branch_statements: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!void,
     program_show_fallback: *const fn (impl: *anyopaque, node: Node.Index) ?Root.Index,
     program_nested_enter: *const fn (impl: *anyopaque, r: Root.Index) Error!void,
     program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,

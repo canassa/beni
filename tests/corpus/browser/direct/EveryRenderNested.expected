@@ -4,6 +4,7 @@
     <button id="other">"other"</button>
     <p id="o">"0"</p>
     <i id="nested">"530269"</i>
+    <p id="helper">"306532"</p>
   </main>
 </body>
 -- click #other
@@ -11,7 +12,8 @@
   <main>
     <button id="other">"other"</button>
     <p id="o">"1"</p>
-    <i id="nested">"306532"</i>
+    <i id="nested">"526478"</i>
+    <p id="helper">"463182"</p>
   </main>
 </body>
 -- click #other
@@ -19,6 +21,7 @@
   <main>
     <button id="other">"other"</button>
     <p id="o">"2"</p>
-    <i id="nested">"526478"</i>
+    <i id="nested">"937408"</i>
+    <p id="helper">"172872"</p>
   </main>
 </body>

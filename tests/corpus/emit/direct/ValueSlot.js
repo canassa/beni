@@ -136,29 +136,29 @@ const ValueSlot$main = Tea$sandbox(($root$1, $t$2) => {
     Direct$append($L$51, $xs$63);
   }
   $root$1.append($r$9);
-  const $check$67 = ($r$64) => {
+  const $check$68 = ($r$64) => {
     {
-      const $it$65 = $r$64.it;
-      const $t$66 = Maybe$map($it$65.note, (s$44) => ({ t: ValueSlot$k84, v: [$it$65, s$44] }));
-      Direct$verifySlot($r$64.c0, $t$66.a, 1, "the markup at ValueSlot.beni:53:27");
+      const $it$66 = $r$64.it;
+      const $t$67 = Maybe$map($it$66.note, (s$44) => ({ t: ValueSlot$k84, v: [$it$66, s$44] }));
+      Direct$verifySlot($r$64.c0, $t$67.a, 1, "the markup at ValueSlot.beni:53:27");
     }
   };
   Direct$verify(() => {
-    const $t$68 = $model$7.ticks;
-    if (!Direct$same($t$68, $s$16)) {
-      Direct$wrong("the text hole at ValueSlot.beni:49:32", $s$16, $t$68);
+    const $t$69 = $model$7.ticks;
+    if (!Direct$same($t$69, $s$16)) {
+      Direct$wrong("the text hole at ValueSlot.beni:49:32", $s$16, $t$69);
     }
-    if ($w$12.data !== `${$t$68}`) {
-      Direct$wrong("the text hole at ValueSlot.beni:49:32 in the document", $w$12.data, `${$t$68}`);
-    }
-    {
-      const $t$69 = List$map($model$7.names, (n$56) => ({ t: ValueSlot$k65, v: [n$56] }));
-      Direct$verifySlot($c$15, $t$69, 2, "the markup at ValueSlot.beni:50:13");
+    if ($w$12.data !== `${$t$69}`) {
+      Direct$wrong("the text hole at ValueSlot.beni:49:32 in the document", $w$12.data, `${$t$69}`);
     }
     {
-      const $t$70 = $model$7.rows;
-      const $xs$71 = $t$70;
-      Direct$verifyList($L$51, $xs$71, $check$67, "the `For` at ValueSlot.beni:52:14", false);
+      const $t$70 = List$map($model$7.names, (n$56) => ({ t: ValueSlot$k65, v: [n$56] }));
+      Direct$verifySlot($c$15, $t$70, 2, "the markup at ValueSlot.beni:50:13");
+    }
+    {
+      const $t$71 = $model$7.rows;
+      const $xs$72 = $t$71;
+      Direct$verifyList($L$51, $xs$72, $check$68, "the `For` at ValueSlot.beni:52:14", false);
     }
   });
 });

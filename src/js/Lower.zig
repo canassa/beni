@@ -12071,6 +12071,14 @@ pub const Lowerer = struct {
             bind: u32,
             /// Arm `k`'s result as it is; every other arm's body: `null`.
             value: u32,
+            /// Every arm's result `j`: `[j, …]`, what binds its values — its
+            /// markup root's inputs, its call's arguments — or, for an arm
+            /// that is a value, `[j, value]`: the arm taken and its values,
+            /// from one evaluation (S4's review).
+            choose,
+            /// Arm `k`'s result: `null`, its `let`s that are statements run
+            /// on the way; every other arm's body: `null`.
+            statements: u32,
         };
     };
 
@@ -12192,7 +12200,8 @@ pub const Lowerer = struct {
             if (b != inst) continue;
             return switch (ov.mode) {
                 .index => true,
-                .bind, .value => |k| j != k,
+                .bind, .value, .statements => |k| j != k,
+                .choose => false,
             };
         }
         return false;
@@ -12214,10 +12223,37 @@ pub const Lowerer = struct {
                     var buf: [12]u8 = undefined;
                     return try l.numberNode(std.fmt.bufPrint(&buf, "{d}", .{j}) catch unreachable, p);
                 },
-                .bind, .value => |k| if (j != k) return try l.nullNode(p),
+                .bind, .value, .statements => |k| if (j != k) return try l.nullNode(p),
+                .choose => {},
             }
         }
         switch (ov.mode) {
+            .statements => |k| if (inst == ov.arms.results[k]) return try l.nullNode(p),
+            .choose => for (ov.arms.results, 0..) |r, j| {
+                if (inst != r) continue;
+                l.arm_override = null;
+                defer l.arm_override = ov;
+                var cells: std.ArrayList(Node.Index) = .empty;
+                try cells.append(l.scratch, try l.numberOf(@intCast(j), p));
+                switch (l.armWhat(inst)) {
+                    .markup => |root_index| {
+                        const st = l.mk.?;
+                        const root = st.built.tree.root(root_index);
+                        for (0..root.inputs.len) |x| {
+                            const local = st.built.values[root.inputs.start + x].capture;
+                            try cells.append(l.scratch, try l.ident(try l.localName(local), p));
+                        }
+                    },
+                    .call => {
+                        const d = l.bir.instData(inst);
+                        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
+                            try cells.append(l.scratch, try l.expr(out, arg));
+                        }
+                    },
+                    .value => try cells.append(l.scratch, try l.expr(out, inst)),
+                }
+                return try l.arrayNode(cells.items, p);
+            },
             .bind => |k| if (inst == ov.arms.results[k]) {
                 // The override is off while what it binds is lowered: the
                 // arguments of a call hold no arm.
@@ -12381,6 +12417,129 @@ pub const Lowerer = struct {
             else => {},
         }
         return try l.ident(a, p);
+    }
+
+    /// `cx.programBranchChoose`: the hole's value evaluated once — its
+    /// scrutinee, the decision and the taken arm's `let`s but those that are
+    /// statements — as `[j, …]`: the arm taken and what binds its values
+    /// (`ArmOverride.Mode.choose`).
+    fn directBranchChoose(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index) Allocator.Error!Node.Index {
+        const p = l.mk.?.pos;
+        const arms = try l.branchArms(node) orelse return l.nullNode(p);
+        const ov: ArmOverride = .{ .arms = arms, .mode = .choose };
+        var skip: std.ArrayList(Inst.Index) = .empty;
+        for (arms.bodies) |b| try skip.appendSlice(l.scratch, l.armStatements(b));
+        return l.ident(try l.lowerBranch(block, &ov, skip.items, null), p);
+    }
+
+    /// `cx.programBranchBind`: arm `k` entered, as `directBranchEnter` enters
+    /// it, its values' locals bound from `from` — what `programBranchChoose`
+    /// made of the hole's value when it took arm `k` — and nothing evaluated
+    /// again. The caller leaves with `programInlineLeave`.
+    fn directBranchBind(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index, k: u32, from: Node.Index, made: bool) Allocator.Error!void {
+        const st = l.mk.?;
+        const p = st.pos;
+        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx() };
+        defer l.inline_frames.append(l.scratch, frame) catch {};
+        const arms = try l.branchArms(node) orelse return;
+        if (k >= arms.bodies.len) return;
+        var stmts: StmtList = .empty;
+        defer st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items) catch {};
+        const a = try l.fresh(l.well.temp);
+        try l.constDecl(&stmts, a, from, p);
+        const cell = struct {
+            fn at(lo: *Lowerer, arr: JsIr.NameIndex, j: usize, pp: u32) Allocator.Error!Node.Index {
+                return lo.add(.index_get, pp, (try lo.ident(arr, pp)).int(), (try lo.numberOf(@intCast(j + 1), pp)).int());
+            }
+        }.at;
+        switch (l.armWhat(arms.results[k])) {
+            .markup => |root_index| {
+                const root = st.built.tree.root(root_index);
+                const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
+                for (names, 0..) |*n, j| {
+                    const x = try l.fresh(l.well.temp);
+                    try l.constDecl(&stmts, x, try cell(l, a, j, p), p);
+                    n.* = @fromBackingInt(@intCast(x.int()));
+                }
+                try l.markupBindInputs(root_index, names);
+                frame.chain.root = root_index;
+                frame.bound = true;
+            },
+            .call => |root_index| {
+                var chain = l.chainOfExpr(arms.results[k], &.{}, true) orelse return;
+                const decl = chain.decl orelse return;
+                _ = try l.enterDecl(decl);
+                frame.entered = true;
+                for (chain.params, 0..) |param, j| {
+                    if (j >= chain.args.len) break;
+                    try l.bindParam(&stmts, param, try cell(l, a, j, p));
+                }
+                // The callee's `let`s its markup does not read, where the
+                // arm is made (version 1.9's `made`).
+                if (made) {
+                    var body = l.bodyOf(decl);
+                    while (l.bir.instTag(body) == .let) {
+                        try l.letBindings(&stmts, l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(body).lhs))));
+                        body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
+                    }
+                }
+                const root = st.built.tree.root(root_index);
+                const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
+                for (names, 0..) |*n, j| {
+                    const local = st.built.values[root.inputs.start + j].capture;
+                    n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+                }
+                try l.markupBindInputs(root_index, names);
+                chain.args = &.{};
+                chain.hole_args = null;
+                frame.chain = chain;
+                frame.bound = true;
+            },
+            .value => {},
+        }
+    }
+
+    /// `cx.programBranchStatements`: arm `k`'s `let`s that are statements,
+    /// and a call arm's callee's, run where the hole's value takes arm `k`
+    /// — the hole's value evaluated for them — at the arm's mount (§8.4).
+    fn directBranchStatements(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index, k: u32) Allocator.Error!void {
+        const arms = try l.branchArms(node) orelse return;
+        if (k >= arms.bodies.len) return;
+        // Every `let` of the arm its result needs is left out: the
+        // statements read only what is bound before them that they need.
+        var skip: std.ArrayList(Inst.Index) = .empty;
+        const statements = l.armStatements(arms.bodies[k]);
+        if (statements.len == 0) return;
+        var defs: std.ArrayList(Inst.Index) = .empty;
+        var at = arms.bodies[k];
+        while (l.bir.instTag(at) == .let) {
+            try defs.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(at).lhs))), Inst.Index));
+            at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+        }
+        // What the statements read, transitively: a `let` reads only those
+        // before it, so one pass from the last finds them all.
+        var needed: std.ArrayList(Inst.Index) = .empty;
+        try needed.appendSlice(l.scratch, statements);
+        var i = defs.items.len;
+        while (i > 0) {
+            i -= 1;
+            const def = defs.items[i];
+            if (std.mem.indexOfScalar(Inst.Index, needed.items, def) != null) continue;
+            if (l.statementNeeds(needed.items, def)) try needed.append(l.scratch, def) else try skip.append(l.scratch, def);
+        }
+        for (arms.bodies, 0..) |b, j| if (j != k) try skip.appendSlice(l.scratch, l.armStatements(b));
+        const ov: ArmOverride = .{ .arms = arms, .mode = .{ .statements = k } };
+        _ = try l.lowerBranch(block, &ov, skip.items, null);
+    }
+
+    /// Whether a statement among `statements` reads the local `def` binds.
+    fn statementNeeds(l: *Lowerer, statements: []const Inst.Index, def: Inst.Index) bool {
+        if (l.bir.instTag(def) != .let_def) return true;
+        const d = l.bir.instData(def);
+        const local = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef).local;
+        for (statements) |s| if (l.subtreeReadsLocal(s, local)) return true;
+        return false;
     }
 
     /// `cx.programNestedEnter`: the inputs of markup root `r`, nested in a
@@ -14141,6 +14300,18 @@ const markup_vtable: beni_markup.VTable = struct {
         return expr(try lowerer(impl).directBranchValue(into, n, k));
     }
 
+    fn programBranchChoose(impl: *anyopaque, into: M.Block, n: M.Node.Index) E!M.Expr {
+        return expr(try lowerer(impl).directBranchChoose(into, n));
+    }
+
+    fn programBranchBind(impl: *anyopaque, into: M.Block, n: M.Node.Index, k: u32, from: M.Expr, made: bool) E!void {
+        return lowerer(impl).directBranchBind(into, n, k, node(from), made);
+    }
+
+    fn programBranchStatements(impl: *anyopaque, into: M.Block, n: M.Node.Index, k: u32) E!void {
+        return lowerer(impl).directBranchStatements(into, n, k);
+    }
+
     fn programShowFallback(impl: *anyopaque, n: M.Node.Index) ?M.Root.Index {
         return lowerer(impl).directShowFallback(n);
     }
@@ -14336,6 +14507,9 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_branch_arm = programBranchArm,
         .program_branch_enter = programBranchEnter,
         .program_branch_value = programBranchValue,
+        .program_branch_choose = programBranchChoose,
+        .program_branch_bind = programBranchBind,
+        .program_branch_statements = programBranchStatements,
         .program_show_fallback = programShowFallback,
         .program_nested_enter = programNestedEnter,
         .program_view_statements = programViewStatements,

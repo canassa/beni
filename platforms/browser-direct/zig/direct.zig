@@ -175,7 +175,7 @@ pub const lowering: m.Lowering = .{
         // `(t, flags)`, an arm's template taken from the parsed content;
         // `(a, b)`, a keyed `Show`'s keys compared (SameValueZero).
         .{ .name = "branch", .arity = 3 },
-        .{ .name = "arm", .arity = 3 },
+        .{ .name = "arm", .arity = 4 },
         .{ .name = "armTemplate", .arity = 2 },
         .{ .name = "sameKey", .arity = 2 },
     },
@@ -513,10 +513,6 @@ const Site = struct {
     arm_k: u32 = 0,
     /// S4: per op, the branch a branch op is.
     branches: []?*Branch = &.{},
-    /// S4: an arm site whose instance keeps the values that bound its
-    /// variables (`a`), for a handler node under it whose event arrives
-    /// once the arm is torn down.
-    held: bool = false,
 
     fn ops(s: *const Site) []const dom.Op {
         return s.b.ops.items;
@@ -578,6 +574,10 @@ const Branch = struct {
     /// Per arm: it has `let`s its result does not need, run at its mount.
     statements: []bool,
     where: []const u8 = "",
+    /// Its value is made on every evaluation (`Random.value` in its
+    /// scrutinee): every key chooses its arm again, as every key calls an
+    /// every-render group (§5.3).
+    every: bool = false,
 
     const Kind = enum { site, value, dead };
 };
@@ -738,11 +738,12 @@ const Page = struct {
     no_bake: bool = false,
     /// Every site, outermost first.
     sites: std.ArrayList(*Site) = .empty,
-    /// A listener body is being written: an arm's instance may be one its
-    /// branch no longer shows (`bindArm`).
-    listening: bool = false,
     /// `view`'s body is `let`s around its markup (`Program.view_lets`).
     view_lets: bool = false,
+    /// An arm site's check being written: its arm binds from the name the
+    /// check is handed — what its branch's value makes now — not from what
+    /// its instance keeps.
+    arm_source: ?struct { site: *const Site, name: m.Name } = null,
     /// S4 (the amendment's item 4): per `let` of the view's root
     /// (`Root.lets`), its slot and the read set it is computed again for.
     let_slots: []m.Name = &.{},
@@ -1561,20 +1562,6 @@ const Page = struct {
             inner.patch = true;
             inner.whole = true;
         };
-        // An arm whose instance a listener body may reach after its branch
-        // tore it down keeps what bound its variables (S4): each arm a
-        // handler node is under, through rows and arms.
-        for (pg.sites.items) |s| {
-            const events = for (s.ops()) |op| {
-                if (op.what == .event) break true;
-            } else false;
-            if (!events) continue;
-            var at: ?*Site = s;
-            while (at) |x| : (at = x.outer()) if (x.arm != null) {
-                x.held = true;
-            };
-        }
-
         // `--fuzz` (§8.3, the contract's item 3): this program's
         // dispatcher registered first, so the programs are numbered in
         // mount order and a message value reaches this one.
@@ -1667,7 +1654,7 @@ const Page = struct {
                 if (pg.unknownValue(op)) list.unknown = true;
                 if (k < s.facts.len and s.facts[k].group == std.math.maxInt(u32) and !s.facts[k].static) list.unknown = true;
             }
-            for (s.branches) |maybe| if (maybe) |br| if (br.facts.group == std.math.maxInt(u32)) {
+            for (s.branches) |maybe| if (maybe) |br| if (br.facts.group == std.math.maxInt(u32) or br.every) {
                 list.unknown = true;
             };
         }
@@ -2038,6 +2025,7 @@ const Page = struct {
             .checks = try pg.a().alloc(?m.Name, count),
             .statements = try pg.a().alloc(bool, count),
             .where = facts.where,
+            .every = pg.tree.everyRender(if (found == null) tree.show(op.node).when else tree.hole(op.node).value),
         };
         @memset(br.arms, null);
         @memset(br.makes, null);
@@ -2558,35 +2546,33 @@ const Page = struct {
         return entered;
     }
 
-    /// Arm `s`'s variables bound (S4's amendment, item 3) — the branch's
-    /// value evaluated again where it is, the decision up to the arm, or a
-    /// `Show`'s payload — and `values` of its root evaluated, the sites
-    /// around it entered first; how many calls were entered. In a listener
-    /// body (`listening`), an instance its branch no longer shows binds
-    /// them from what it kept (`a`) instead.
+    /// Arm `s`'s variables bound (S4's amendment, item 3, as amended by its
+    /// review) from what its instance keeps (`a`): what the branch's value
+    /// made of them the one time it was evaluated for the choice of this
+    /// arm (`cx.programBranchChoose`), or a `Show`'s payload — never the
+    /// branch's value evaluated again, so a scrutinee made on every
+    /// evaluation, or one that prints, runs once per choice. Then `values`
+    /// of its root evaluated, the sites around it entered first; how many
+    /// calls were entered. An instance its branch no longer shows binds the
+    /// same way (a listener's event reaching a torn-down arm). `made`: the
+    /// arm is being made, and its statements run first.
     fn bindArm(pg: *Page, blk: m.Block, s: *const Site, inst: ?Path, up: ?Path, values: []const m.Value.Index, made: bool) m.Error!u32 {
         const cx = pg.cx;
         const js = pg.jsb();
         const br = s.arm.?;
         const frames = try pg.framesOf(br.ctx);
-        const own = try pg.branchValues(br);
-        const first = if (frames.len > 0) try pg.callValues(frames[0]) else own;
+        const first = if (frames.len > 0) try pg.callValues(frames[0]) else &.{};
         const outer_inst: ?Path = up orelse if (s.hasUp()) try pg.dot(inst.?, "u") else null;
         var entered = try pg.bindSite(blk, br.site, outer_inst, null, null, first, false);
-        entered += try pg.enterFrames(blk, frames, own, null);
-        // Whether the instance is the one its branch shows.
-        const live: ?m.Expr = if (pg.listening and s.held and inst != null)
-            try js.binary(.strict_eq, try js.member(try js.member(try pg.path(inst.?), "b"), "i"), try pg.path(inst.?))
-        else
-            null;
+        entered += try pg.enterFrames(blk, frames, &.{}, null);
+        // What binds the arm: the check's own (`arm_source`) while the
+        // verify mode checks it against its value made again.
+        const from: m.Expr = if (pg.arm_source) |src| (if (src.site == s) try pg.ident(src.name) else try js.member(try pg.path(inst.?), "a")) else try js.member(try pg.path(inst.?), "a");
         if (br.show) {
             const sh = pg.tree.show(br.node);
             if (s.arm_k == 0) {
-                var payload = try cx.maybe(try cx.value(sh.when));
-                if (live) |l| payload = try js.cond(l, payload, try js.member(try pg.path(inst.?), "a"));
                 const it = try cx.fresh("$it");
-                try js.constant(blk, it, payload);
-                if (s.held) if (inst) |i| try js.assign(blk, try js.member(try pg.path(i), "a"), try pg.ident(it));
+                try js.constant(blk, it, from);
                 try cx.rowValuesOf(blk, sh.body, it, null, values);
             } else {
                 try cx.programNestedEnter(s.index);
@@ -2595,10 +2581,9 @@ const Page = struct {
             }
             return entered;
         }
-        const held: ?m.Expr = if (live) |l| try js.cond(l, try js.literal(.null), try js.member(try pg.path(inst.?), "a")) else null;
-        const bound = try cx.programBranchEnter(blk, br.node, s.arm_k, made, held);
+        if (made and br.statements[s.arm_k]) try cx.programBranchStatements(blk, br.node, s.arm_k);
+        try cx.programBranchBind(blk, br.node, s.arm_k, from, made);
         entered += 1;
-        if (s.held) if (inst) |i| if (bound) |x| try js.assign(blk, try js.member(try pg.path(i), "a"), x);
         try cx.rootValues(blk, s.index, try pg.withLets(s.index, values));
         return entered;
     }
@@ -3044,10 +3029,7 @@ const Page = struct {
         }
         switch (s.b.operands.items[x.handler]) {
             .value => |v| {
-                const saved = pg.listening;
-                pg.listening = true;
                 try pg.enterOp(blk, s, ctx, inst, null, null, &.{}, null);
-                pg.listening = saved;
                 const message = try cx.programMessage(blk, v, payload);
                 pg.leave();
                 switch (message) {
@@ -3560,8 +3542,11 @@ const Page = struct {
     /// is: its number (`-1`, nothing) — and, for a `Show`, whether its
     /// value is a `Just` and the key it is shown by (the payload, or the
     /// key function's result).
-    const Chosen = struct { n: m.Name, just: ?m.Name = null, key: ?m.Name = null };
+    const Chosen = struct { n: m.Name, a: m.Name, just: ?m.Name = null, key: ?m.Name = null };
 
+    /// The branch's value evaluated once (S4's review): the arm it takes
+    /// (`n`) and what binds that arm (`a`, `cx.programBranchChoose`'s
+    /// array, or a `Show`'s payload).
     fn chooseArm(pg: *Page, blk: m.Block, br: *Branch, inst: ?Path) m.Error!Chosen {
         const cx = pg.cx;
         const js = pg.jsb();
@@ -3569,21 +3554,24 @@ const Page = struct {
         try pg.enterOp(blk, br.site, br.ctx, inst, null, null, try pg.branchValues(br), null);
         defer pg.leave();
         const n = try cx.fresh("$n");
+        const av = try cx.fresh("$a");
         if (!br.show) {
-            try js.constant(blk, n, try cx.programBranchArm(blk, br.node));
-            return .{ .n = n };
+            try js.constant(blk, av, try cx.programBranchChoose(blk, br.node));
+            try js.constant(blk, n, try js.index(try pg.ident(av), try pg.num(0)));
+            return .{ .n = n, .a = av };
         }
         const sh = pg.tree.show(br.node);
         const just = try cx.fresh("$j");
         try js.constant(blk, just, try cx.isJust(try cx.value(sh.when)));
-        const payload = try cx.maybe(try cx.value(sh.when));
+        try js.constant(blk, av, try cx.maybe(try cx.value(sh.when)));
+        const payload = try pg.ident(av);
         const key = try cx.fresh("$y");
         try js.constant(blk, key, if (sh.key) |k|
             try js.cond(try pg.ident(just), try js.call(try cx.value(k), &.{payload}), try js.literal(.null))
         else
             payload);
         try js.constant(blk, n, try js.cond(try pg.ident(just), try pg.num(0), if (br.kinds[1] == .dead) try js.number("-1") else try pg.num(1)));
-        return .{ .n = n, .just = just, .key = key };
+        return .{ .n = n, .a = av, .just = just, .key = key };
     }
 
     /// A branch's first arm, made where its op stands (§5.5's mount).
@@ -3592,7 +3580,7 @@ const Page = struct {
         const inner = try js.block();
         const ch = try pg.chooseArm(inner, br, inst);
         if (ch.key) |y| try js.assign(inner, try js.member(try pg.ref(br.ref, inst), "y"), try pg.ident(y));
-        try js.expression(inner, try pg.rt("arm", &.{ try pg.ref(br.ref, inst), try pg.ident(ch.n), try pg.upExpr(inst) }));
+        try js.expression(inner, try pg.rt("arm", &.{ try pg.ref(br.ref, inst), try pg.ident(ch.n), try pg.upExpr(inst), try pg.ident(ch.a) }));
         try pg.writeMarks(inner, br.site, &.{br.op}, inst);
         try js.nested(blk, inner);
     }
@@ -3614,7 +3602,7 @@ const Page = struct {
             try js.@"if"(kept, live, x, null);
             any = true;
         };
-        if (!pg.calledSet(v, br.facts.group)) {
+        if (!br.every and !pg.calledSet(v, br.facts.group)) {
             if (any) try js.nested(blk, kept);
             return any;
         }
@@ -3623,8 +3611,15 @@ const Page = struct {
         const b = try pg.ref(br.ref, inst);
         const switched = try js.block();
         if (ch.key) |y| try js.assign(switched, try js.member(try pg.ref(br.ref, inst), "y"), try pg.ident(y));
-        try js.expression(switched, try pg.rt("arm", &.{ try pg.ref(br.ref, inst), try pg.ident(ch.n), try pg.upExpr(inst) }));
+        try js.expression(switched, try pg.rt("arm", &.{ try pg.ref(br.ref, inst), try pg.ident(ch.n), try pg.upExpr(inst), try pg.ident(ch.a) }));
         try pg.writeMarks(switched, br.site, &.{br.op}, inst);
+        // The same arm: what binds it made again, kept on its instance
+        // before anything of it is visited.
+        const same_arm = try js.block();
+        const shown = try js.block();
+        try js.assign(shown, try js.member(try js.member(try pg.ref(br.ref, inst), "i"), "a"), try pg.ident(ch.a));
+        try js.@"if"(same_arm, try js.binary(.strict_ne, try js.member(try pg.ref(br.ref, inst), "i"), try js.literal(.null)), shown, null);
+        if (any) try js.nested(same_arm, kept);
         var other = try js.binary(.strict_ne, try pg.ident(ch.n), try js.member(b, "k"));
         if (br.show) {
             // A `Show` keeps its arm while its key is the same: by
@@ -3635,7 +3630,7 @@ const Page = struct {
                 try js.binary(.strict_eq, try js.member(try pg.ref(br.ref, inst), "y"), try pg.ident(ch.key.?));
             other = try js.binary(.logical_or, other, try js.binary(.logical_and, try pg.ident(ch.just.?), try js.unary(.not, same)));
         }
-        try js.@"if"(inner, other, switched, if (any) kept else null);
+        try js.@"if"(inner, other, switched, same_arm);
         try js.nested(blk, inner);
         return true;
     }
@@ -3648,9 +3643,9 @@ const Page = struct {
         switch (br.kinds[j]) {
             .dead => return null,
             .value => {
-                if (!pg.calledSet(v, br.facts.group)) return null;
+                if (!br.every and !pg.calledSet(v, br.facts.group)) return null;
                 const blk = try js.block();
-                try pg.writeValueArm(blk, br, j, inst, try js.member(try js.member(try pg.ref(br.ref, inst), "i"), "c"));
+                try pg.writeValueArm(blk, br, j, inst, try js.member(try js.member(try pg.ref(br.ref, inst), "i"), "c"), try js.member(try js.member(try pg.ref(br.ref, inst), "i"), "a"));
                 return blk;
             },
             .site => {
@@ -3693,28 +3688,28 @@ const Page = struct {
     /// A value arm's markup (S4's amendment, items 1 and 3), evaluated
     /// where its branch is — the arm's result, a `Show`'s body applied to
     /// its payload, its fallback — and handed to `slot`.
-    fn writeValueArm(pg: *Page, blk: m.Block, br: *Branch, j: u32, inst: ?Path, slot: m.Expr) m.Error!void {
-        const value = try pg.valueArm(blk, br, j, inst);
+    fn writeValueArm(pg: *Page, blk: m.Block, br: *Branch, j: u32, inst: ?Path, slot: m.Expr, from: m.Expr) m.Error!void {
+        const value = try pg.valueArm(blk, br, j, inst, from);
         try pg.jsb().expression(blk, try pg.rt("childHtml", &.{ slot, value }));
     }
 
-    fn valueArm(pg: *Page, blk: m.Block, br: *Branch, j: u32, inst: ?Path) m.Error!m.Expr {
+    /// A value arm's markup from `from`, what the branch's one evaluation
+    /// made of it (S4's review): an `if`'s or a `case`'s arm is `from[1]`; a
+    /// `Show`'s body is applied to the payload `from`; a fallback, which is
+    /// no part of the `Show`'s value, is evaluated where it stands.
+    fn valueArm(pg: *Page, blk: m.Block, br: *Branch, j: u32, inst: ?Path, from: m.Expr) m.Error!m.Expr {
         const cx = pg.cx;
         const js = pg.jsb();
         cx.at(br.node);
+        if (!br.show) return js.index(from, try pg.num(1));
         var values: std.ArrayList(m.Value.Index) = .empty;
-        try values.appendSlice(pg.a(), try pg.branchValues(br));
-        if (br.show) {
-            const sh = pg.tree.show(br.node);
-            if (j == 1) try values.append(pg.a(), sh.fallback.?) else if (pg.tree.row(sh.body).function) |f| try values.append(pg.a(), f);
-        }
+        const sh = pg.tree.show(br.node);
+        if (j == 1) try values.append(pg.a(), sh.fallback.?) else if (pg.tree.row(sh.body).function) |f| try values.append(pg.a(), f);
         try pg.enterOp(blk, br.site, br.ctx, inst, null, null, values.items, null);
         defer pg.leave();
-        if (!br.show) return cx.programBranchValue(blk, br.node, j);
-        const sh = pg.tree.show(br.node);
         if (j == 1) return cx.value(sh.fallback.?);
         const it = try cx.fresh("$it");
-        try js.constant(blk, it, try cx.maybe(try cx.value(sh.when)));
+        try js.constant(blk, it, from);
         const row = pg.tree.row(sh.body);
         if (row.function) |f| return js.call(try cx.value(f), &.{try pg.ident(it)});
         return (try cx.rowValues(blk, sh.body, it, null, &.{})) orelse js.literal(.null);
@@ -3731,6 +3726,8 @@ const Page = struct {
         const br = s.arm.?;
         const blk = try js.block();
         const u = try cx.fresh("$u");
+        const bs = try cx.fresh("$b");
+        const av = try cx.fresh("$a");
         const e = try cx.fresh("$e");
         cx.at(br.node);
         const template = try pg.ident(s.template.?);
@@ -3744,7 +3741,9 @@ const Page = struct {
         var props: std.ArrayList(m.Property) = .empty;
         try props.append(pg.a(), .{ .key = "e", .value = try pg.ident(e) });
         if (s.hasUp()) try props.append(pg.a(), .{ .key = "u", .value = try pg.ident(u) });
-        if (s.held) try props.append(pg.a(), .{ .key = "a", .value = try js.literal(.null) });
+        // What binds its values, from the branch's one evaluation (S4's
+        // review), made again with it while the arm stays.
+        try props.append(pg.a(), .{ .key = "a", .value = try pg.ident(av) });
         for (s.walks, 0..) |w, t| if (w) |field| try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.walks[t].?) });
         for (s.texts, 0..) |x, k| if (x) |field| try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.texts[k].?) });
         for (s.vslots, 0..) |x, k| if (x) |field| try props.append(pg.a(), .{ .key = field.field, .value = try pg.ident(walked.slots[k].?) });
@@ -3773,17 +3772,10 @@ const Page = struct {
         for (s.branches) |maybe| if (maybe) |inner| {
             try js.assign(blk, try js.member(try pg.ident(r), inner.ref.field), try pg.branchObject(inner, walked.walks));
         };
-        // What binds its variables, kept from its mount on (`a`).
-        if (s.held) {
-            const keep = try js.block();
-            try pg.enterOp(keep, s, 0, ri, null, null, &.{}, null);
-            pg.leave();
-            try js.nested(blk, keep);
-        }
         try pg.mountSite(blk, s, ri);
         try js.@"return"(blk, try pg.ident(r));
         s.make = br.makes[s.arm_k].?;
-        try js.constant(pg.body, s.make.?, try js.arrow(&.{u}, blk));
+        try js.constant(pg.body, s.make.?, try js.arrow(&.{ u, bs, av }, blk));
     }
 
     /// `make(u, b)` of a value arm: a slot where its branch's arms go, and
@@ -3794,14 +3786,15 @@ const Page = struct {
         const blk = try js.block();
         const u = try cx.fresh("$u");
         const b = try cx.fresh("$b");
+        const av = try cx.fresh("$a");
         const r = try cx.fresh("$r");
         const slot = try pg.rt("slot", &.{ try js.member(try pg.ident(b), "p"), try js.member(try pg.ident(b), "n"), try js.literal(.null) });
-        try js.constant(blk, r, try js.object(&.{.{ .key = "c", .value = slot }}));
+        try js.constant(blk, r, try js.object(&.{ .{ .key = "c", .value = slot }, .{ .key = "a", .value = try pg.ident(av) } }));
         const up: ?Path = if (br.site.instanced()) .{ .base = u } else null;
-        try pg.writeValueArm(blk, br, j, up, try js.member(try pg.ident(r), "c"));
+        try pg.writeValueArm(blk, br, j, up, try js.member(try pg.ident(r), "c"), try pg.ident(av));
         try js.@"return"(blk, try pg.ident(r));
         const name = br.makes[j].?;
-        try js.constant(pg.body, name, try js.arrow(&.{ u, b }, blk));
+        try js.constant(pg.body, name, try js.arrow(&.{ u, b, av }, blk));
     }
 
     /// The verify mode's check of a branch (§8.3; S4's amendment, item 3):
@@ -3825,7 +3818,9 @@ const Page = struct {
             const then = try js.block();
             switch (kind) {
                 .dead => continue,
-                .site => try js.expression(then, try js.call(try pg.ident(br.checks[j].?), &.{try js.member(try pg.ref(br.ref, inst), "i")})),
+                // The arm checked against its values made again now, not
+                // those its instance keeps.
+                .site => try js.expression(then, try js.call(try pg.ident(br.checks[j].?), &.{ try js.member(try pg.ref(br.ref, inst), "i"), try pg.ident(ch.a) })),
                 .value => {
                     // What the arm's markup is made of, evaluated again only
                     // when it can neither print nor be another value (S4's
@@ -3846,7 +3841,7 @@ const Page = struct {
                             if (loud) continue;
                         }
                     }
-                    const v = try pg.valueArm(then, br, @intCast(j), inst);
+                    const v = try pg.valueArm(then, br, @intCast(j), inst, try pg.ident(ch.a));
                     try js.expression(then, try pg.rt("verifySlot", &.{ try js.member(try js.member(try pg.ref(br.ref, inst), "i"), "c"), v, try pg.num(0), try js.string(try pg.print("the markup of {s}", .{what})) }));
                 },
             }
@@ -3881,10 +3876,16 @@ const Page = struct {
             if (!s.instanced()) continue;
             const r = try pg.cx.fresh("$r");
             const blk = try js.block();
+            // An arm's check binds it from what its branch's value makes
+            // now, handed as `a` (S4's review).
+            const av = try pg.cx.fresh("$a");
+            const saved = pg.arm_source;
+            if (s.arm != null) pg.arm_source = .{ .site = s, .name = av };
             _ = try pg.verifySite(blk, s, .{ .base = r });
+            pg.arm_source = saved;
             s.check = try pg.cx.fresh("$check");
             if (s.arm) |br| br.checks[s.arm_k] = s.check;
-            try js.constant(pg.body, s.check.?, try js.arrow(&.{r}, blk));
+            try js.constant(pg.body, s.check.?, try js.arrow(if (s.arm != null) &.{ r, av } else &.{r}, blk));
         }
         const blk = try js.block();
         var any = try pg.verifyLets(blk);
