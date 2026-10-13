@@ -293,15 +293,16 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     g.close_all = try page.anyBaked(r.node);
     var b = try g.plan(&.{r.node}, r.site.inst);
     page.root_calls_hi = @intCast(page.ctxs.items.len);
-    // A root element in the SVG or MathML namespace that is not that
-    // namespace's own root is parsed inside a wrapper the mount would take
-    // off (`dom`'s flag 2). Mounted into the page's HTML mount node it
-    // would draw nothing, so it waits for S4 and a mount node that may be
-    // an `<svg>` (boundary.md §9.9 (f)).
-    if (b.flags & 2 != 0) return cx.notImplemented(r.node,
-        \\`browser-direct` does not compile a `view` whose root is an SVG or MathML element
-        \\other than `<svg>` or `<math>` yet: it arrives with slice S4
-        \\(`docs/design/browser-direct.md` §14).
+    // A root element in the SVG namespace that is not `<svg>` is parsed
+    // inside the `<svg>` wrapper (`dom`'s flag 2) and taken from inside it,
+    // as a row's and an arm's are, and mounted into the mount node it is
+    // given — an `<svg>` the page holds, `Browser.mountAt` (S4's amendment,
+    // item 6; boundary.md §9.9 (f)). No vocabulary declares MathML, so a
+    // MathML root other than `<math>` stays refused.
+    if (b.flags & 2 != 0) if (b.root_element) |e| if (e.namespace != .svg) return cx.notImplemented(r.node,
+        \\`browser-direct` does not compile a `view` whose root is a MathML element other
+        \\than `<math>`: no vocabulary declares MathML (`docs/design/browser-direct.md` §14,
+        \\S4's amendment, item 6).
     ++ " " ++ until_then);
     // Rows written into the template need their instances only for a
     // handler in them, or for the development verify mode (K3).
@@ -396,6 +397,9 @@ fn staticMount(cx: *m.Context, tree: *const m.Tree, node: m.Node.Index, html: []
 /// it, so the page upgrades or loads them.
 fn content(cx: *m.Context, t: m.Name, flags: u8) m.Error!m.Expr {
     const js = cx.js;
+    // An SVG root other than `<svg>`, parsed in the `<svg>` wrapper: the
+    // wrapper's children, out of it (`Direct.armTemplate`).
+    if (flags & 2 != 0) return js.call(try js.name(try cx.runtime("armTemplate")), &.{ try js.name(t), try js.number("2") });
     const c = try js.member(try js.name(t), "content");
     if (flags & 1 == 0) return c;
     return js.call(try js.member(try js.member(try js.name(t), "ownerDocument"), "importNode"), &.{ c, try js.literal(.true) });

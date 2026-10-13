@@ -1371,7 +1371,16 @@ walk list key event top node buffer =
 
         r = Js.get node "$r"
 
-        if not (Js.isUndefined r) && not (Js.same (Js.get r "l") list) then
+        -- A row of another list: one whose number is not this list's, or a
+        -- row of the list of that number in another program mounted below
+        -- this list's parent — a list's number is its program's, and two
+        -- programs number theirs alike — which a mount node between the row
+        -- and this list's parent tells (S4's review, `NestedPrograms`).
+        if
+            not (Js.isUndefined r)
+                && (not (Js.same (Js.get r "l") list) || mountBetween (Js.get node "parentNode") top
+                   )
+        then
             Js.set buffer "length" (Js.from 0)
             walk list key event top (Js.get node "parentNode") buffer
         else
@@ -1385,6 +1394,19 @@ walk list key event top node buffer =
                 walk list key event top (Js.get node "parentNode") buffer
             else
                 fire buffer r event 0
+
+
+-- Whether a program's mount node stands from `node` up to `top`, `top`
+-- left out: a row's parent is its list's parent, or an arm's nodes or the
+-- mount node between, so the walk is a step or two.
+mountBetween : V, V → Bool
+mountBetween node top =
+    if Js.isNullish node || Js.same node top then
+        False
+    else if not (Js.isUndefined (Js.get node "$$root")) then
+        True
+    else
+        mountBetween (Js.get node "parentNode") top
 
 
 -- Run the collected bodies, innermost first: each one's `preventDefault`
