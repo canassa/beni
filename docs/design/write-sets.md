@@ -2014,3 +2014,21 @@ sets with the holes' (`boundary.md` §9.4.6, version 1.10's `programLet`); a vie
 ρ for them as for every hole. Soundness is a hole's: a value that reads the `let` reads its term, so
 its anchors are in the hole's read set too, and a key that changes the `let`'s value conflicts with
 both.
+
+
+### *Amended 2026-10-13 (the direct platform's S4 review):* a `Show`'s arms, and a handler's reads
+
+Two read sets the pass under-recorded, each found by a page that went stale on `browser-direct`:
+
+- **A `Show`'s arms.** The `Show`'s `each` hole (its `when`) is the direct platform's branch facts
+  for the `Show`: what chooses its arm again. Its fallback and its body are its arms, and a body or
+  fallback that is a markup value (a lambda computing markup, `Html.text model.status`) is redrawn
+  only when the `Show`'s facts conflict. The pass now folds the fallback's term and the body's
+  result into that hole too (`browser/direct/ShowValueArms`). It over-calls the arm computation by
+  the arms' reads, as an `Alt`'s facts do (§3.6).
+- **A handler's reads.** An event item's value is no hole: the direct platform reads a handler's
+  arguments when the event fires. But markup that is a value — a `let` holding a button, a value
+  slot — holds its handlers' values, made when it is made. The handler's term now joins the markup's
+  dependencies (`d`), so a derived value or a value slot holding it is made again when what its
+  handler sends changes (`browser/direct/LetMarkupHandler`); no hole is recorded for it. Conduit's
+  `writes/` golden widened by exactly those reads.

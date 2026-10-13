@@ -2726,3 +2726,128 @@ wrong:
   `LetChain`, `EveryRenderTop`, `EveryRenderNested`; `emit/direct/Branch` and `DerivedValue`. The
   refusals `build/bad/direct/MarkupHole` and `ForRowBranch` are pages now (`BranchReturn`,
   `RowBranch`) and are gone; `ViewLetEffect` and `ViewBranch` pin what is still refused.
+
+### *Amended 2026-10-13 (slice S4, review fixes, programs, defects and the SVG root, as built)*
+
+The review of the two as-built steps above, and S4's items 6 and 7 left open there, are built
+(`boundary.md` §9.4.6, version 1.10, *amended for S4's review*; `platforms/browser-direct/zig/direct.zig`,
+`Direct.beni`, `src/js/Lower.zig`, `src/writes/Writes.zig`, `write-sets.md`, *the direct platform's
+S4 review*). Each finding has a page or a golden that failed before its fix, unless said. What it
+settled:
+
+- **The verify mode reads a value slot's page as sets** (`Direct.samePage`, `sameElement`).
+  Comparing the slot's `outerHTML` with a fresh mount's reported a correct page: a class switched
+  on is appended, a style property set again goes last, an attribute that turns on is added after
+  the others. Each element is now its name and namespace, then every attribute the fresh mount has,
+  equal on the page — a class list and a style's declarations as sets — then its children. Not
+  compared: an attribute only the page has (the host's or an extension's; one a missed removal
+  left is a limit of the check, whose opposite, an attribute missed, it catches), `open` on
+  `details` and `dialog` (the user's, §8.1), and the children of a `contenteditable` element. No
+  step can edit a `contenteditable`, so that rule has no page (`browser/direct/VerifyAttributeOrder`,
+  Chrome too).
+- **A kind's event is resolved as it fires** (`Direct.listen`): the mount node above the node, its
+  handler, its extractor and its maps are read in the DOM listener, and only the message — the
+  extractor applied, the handler called, the maps — is made in the body `send` may queue, inside
+  the guard, as §4.2 says of a payload read. A blur the handler's own removal fires is delivered
+  (the 2026-10-10 amendment); it was dropped, its node having no parent by then
+  (`browser/direct/ValueBlurOnRemoval`, a `.chrome-expected`: happy-dom fires no blur on a
+  removal). No happy-dom page reaches the queued path: happy-dom fires nothing synchronously from a
+  write that a value-path node could hear. A stopped page's `listen` applies no flag, as
+  `browser`'s `Rt.fire` does.
+- **A component's call is not made again by the check when its function may print**
+  (`Program.Callee.debug`; `reachesDebug` follows the components of markup a value makes). The
+  review's case did not reproduce: a component is another module's, and the markup tree marks a
+  call of one that reaches `Debug` impure, so its slot was every-render and unchecked already. The
+  rule is now the check's own; `browser/direct/VerifyQuietComponent` pins it, and passed before.
+- **`ControlledReset` is rebuilt**, with a golden per DOM: happy-dom resets before it dispatches
+  `reset`, so on this platform the no-op send puts the controls back at once (`.expected`), and
+  `browser-tea` in the task (`.tea-expected`); Chrome dispatches first, and both platforms put them
+  back in the task (`.chrome-expected`). It found a defect in Chrome: the reset's own reconcile ran
+  before the reset and took the held controls' marks, so a message before the task left the
+  defaults on the page. Every later edit's capture listener marks the held controls again
+  (`edits`): the dispatch it ends in puts them back, as `browser-tea`'s render does. A message
+  that is not an `input`, `change`, `click` or `reset` before the task does not: a known limit.
+  `browser/direct/ControlledHeldStopped` pins the task finding the page stopped (red without the
+  `dead` test of `putBackHeld`).
+- **`ControlledOptions` with duplicate options**: Chrome shows the two platforms alike — the
+  transcript and the value fuzz both pass in Chrome with two options of one value. happy-dom
+  reports both options `selected` in a single select, which no browser does; the page keeps its
+  distinct values, and the difference is happy-dom's.
+- **Small ones**: the size gate takes back the counts of calls inside an `Html.map` that turned
+  out to be on the value path (`emit/direct/GateUnderMap`); a `For` rejected after its row was
+  walked counted nothing, its row being walked with `in_row` above zero. A group marks the controls
+  a write may change inside that write's compare, so a group that writes nothing queues no
+  reconcile (`emit/direct/Control`).
+- **A branch's value is evaluated once per choice of its arm** (`cx.programBranchChoose`): its
+  scrutinee, the `let`s around it and the taken arm's `let`s give `[j, …]`, the arm and what binds
+  it, which the arm's instance keeps (`a`) and every group, list, nested branch, listener and
+  check of the arm binds from (`programBranchBind`) — the review's H1. Lowering the hole's value
+  again in each of them let a scrutinee made on every evaluation choose one arm and then bind
+  another's variables (`null[0]`), and an arm `let` that drew show two values
+  (`browser/direct/BranchOnce`). A kept arm's `a` is replaced before it is visited, so a keyed
+  `Show` visits its body with the new payload. A torn-down arm's listener binds from its own `a`,
+  so `held` is gone. The check binds an arm from what the value makes now, not from what it kept.
+  An arm's statements run at its mount through `programBranchStatements`, which evaluates the
+  hole's value again for them: a known limit, since a scrutinee made on every evaluation may take
+  another arm there (the statements then do not run), and one that prints prints again at the
+  mount of an arm with statements. A branch whose value is made on every evaluation is chosen again
+  by every key, as an every-render group is called.
+- **Item 4's arm-level derived values, as built**: an arm `let` its markup reads is computed once
+  per choice of the arm, with the branch's value, and kept with the arm (`a`) — not in a slot of
+  its own computed by the keys that conflict with its own read set. The branch's facts hold the
+  arm's reads, so the `let` is current wherever it is read; a message that writes what the
+  branch reads but not the `let` computes it again, which over-calls it (`browser/direct/ArmLetOnce`,
+  both platforms on one golden).
+- **A `Show`'s arms are its read set too** (`write-sets.md`): a body or fallback that is a value
+  was redrawn only where `when`'s reads conflicted, and went stale (`browser/direct/ShowValueArms`).
+- **The check evaluates a `Show`'s body and fallback again only when they can neither print nor be
+  another value** (the review's M3; `VerifyQuiet` gains a fallback that logs).
+- **`same` compares a markup value by its kind** (the review's L5), kept and justified: `same` is
+  the verify mode's alone, and a markup value reaches it only inside a derived value or a derived
+  list's items, whose values are whole locals a correct page keeps from when it was made; what it
+  shows is checked where it is shown, by `verifySlot`.
+- **A handler's reads are a markup value's** (`write-sets.md`): a derived `let` holding a button
+  was made again only when its text changed, and the button sent the count it was made with
+  (`browser/direct/LetMarkupHandler`).
+- **`LetChain` stays a hundred `let`s long, measured.** The page's own case costs 2 150, 2 470,
+  2 868, 3 272 and 3 761 million instructions at 50, 100, 150, 200 and 250 `let`s, and its value
+  fuzz case 3 043, 3 796, 4 742, 5 651 and 6 595 million: both linear, about 8 and 18 million per
+  `let`. At 250 the page fits the 4 300 million budget and the value fuzz does not, by half. Which
+  to change — a budget the owner grants the case, or a cheaper fuzz build of a page — is the
+  owner's; the fixture is not lengthened over the budget (rule 10).
+- **`EveryRenderNested` keeps its second draw**, the helper's after the arm's, with a
+  `.tea-expected`: the two platforms make the two draws in each other's order, at the mount as on
+  each message, and both orders are functions of the model. A finding for the owner: making this
+  platform's order `dom`'s would change §4.1 step 3's order of an arm's visit and its site's
+  groups. The original's `let` that calls the helper stays out (`ViewLetEffect`).
+- **Shapes the binding must hold**: an `else if` chain, `case` arms of nested patterns, literals
+  and tuples, and a branch nested in an arm whose handler reads both arms' variables
+  (`browser/direct/BranchShapes`).
+- **A `view` whose body is an `if` or a `case`** (item 7; `Program.view_branch`): a branch at the
+  page's root, with no markup node — the page's one site holds it alone, a body with no template
+  and one op, and its arms go at the mount's end. The pass records no read set for a value no hole
+  holds, so every key chooses its arm again; its `let`s are bound wherever its arms' values are,
+  and one that may have an effect is refused (`build/bad/direct/ViewBranchLetEffect`).
+  `browser/direct/ViewBranch` is the page the refusal was; `build/bad/direct/ViewHelperBody` pins
+  the one refusal left, a body that calls a helper.
+- **Programs** (item 6): `ProgramsByFunction` (two mounts of `counter`, each with its own state),
+  `NestedPrograms` and `TwoPrograms`. `NestedPrograms` found a defect: a list's number is its
+  program's, so two programs number theirs alike, and the outer list's walk took the inner
+  program's row for its own — it ran the inner handler a second time and never reached the outer
+  row. A row of the list's number below a mount node between it and the list's parent is now
+  another list's (`Direct.mountBetween`), about 100 B raw on a page with a delegated list.
+  `browser/tea/MountedPrograms` is not rebuilt: its subject holds a `Tea.element` (S5).
+- **Defects** (item 6): `DefectInRender` is rebuilt with its throw in a hole — the original's is a
+  statement of `view`, which this platform runs only where the page is made (§8.4) — and
+  `DefectInTurnRender` is not, since this platform renders in no turn. New: `DefectInValueHandler`
+  (a throw in a kind's handler) and `DefectInDerived` (in a derived value), each stopping the page
+  with the crash screen on both platforms. The other `browser/tea/Defect*` pages hold commands
+  (S5).
+- **The SVG root** (item 6): a `view` whose root is an SVG element other than `<svg>` is parsed in
+  the wrapper and taken from inside it (`armTemplate`), and mounted into the mount node it is
+  given; `browser/direct/SvgRoot` mounts a `<g>` at an `<svg>` another program renders, and draws in
+  both DOMs. A MathML root stays refused, and no page reaches the refusal: no vocabulary declares
+  MathML, so the checker refuses the element first.
+- **Chrome**: every `browser/direct/` page and its value fuzz pass in Chrome (`zig build
+  test-browser -Dchrome=…` with the host's Chrome; the flake's `nix develop .#browser` Chromium
+  does not start on this host, a glibc mismatch).

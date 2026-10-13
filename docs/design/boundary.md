@@ -2043,6 +2043,37 @@ With `Lowering.no_markup_values` left unset, a program lowering is handed markup
 values (`Lowering.root`) as any lowering is, and its markup runtime is held to the vocabulary's
 primitives (§9.4.5). `direct` targets 1.10, and no longer sets `no_markup_values`.
 
+*Amended 2026-10-13 (S4's review; `browser-direct.md`, *slice S4, review fixes, programs, defects
+and the SVG root, as built*)*, additive within 1.10:
+
+- **`cx.programBranchChoose(block, node) Expr`**: the branch's value evaluated **once** — the
+  scrutinee, the decision and the taken arm's `let`s but those that are statements — as an array
+  `[j, …]`: the arm taken, then what binds that arm's values (its markup root's inputs, or its
+  call's arguments), or, for an arm that is a value (`Arm.What.value`), that markup value. A
+  lowering keeps it, so nothing of the hole's value runs twice for one choice of arm.
+- **`cx.programBranchBind(block, node, k, from, made)`**, left with `programInlineLeave`: arm `k`
+  entered as `programBranchEnter` enters it, its locals bound from `from` — what
+  `programBranchChoose` returned when it took arm `k` — and nothing evaluated again; with `made`, a
+  call arm's callee's `let`s its markup does not read run too.
+- **`cx.programBranchStatements(block, node, k)`**: arm `k`'s `let`s that are statements, where its
+  markup is made (`browser-direct.md` §8.4) — the hole's value evaluated for them, the arm's other
+  `let`s left out but those a statement reads; nothing runs when the value takes another arm.
+  `programBranchArm`, `programBranchValue` and `programBranchEnter` with a block stay, unused by
+  `direct`.
+- **`Program.view_branch`**: `view` is a function whose body past its `let`s is an `if` or a
+  `case`. The branch has no markup node: `programBranch` and the calls above take
+  `Node.Index.none` for it, `programBranchEnter`/`Bind` extend no call path for it (the pass walked
+  its arms on the root's), and `programViewEnter` binds `view`'s parameter and `let`s with no root.
+  A `let` of such a `view` that may have an effect is refused (`not_implemented`), as one a root
+  does not take is.
+- **`Program.Branch.debug`, `.effect`**: whether evaluating the branch's value may call `Debug`,
+  or may have another effect — what a branch with no hole value answers in place of
+  `reachesDebug` and `Tree.everyRender`.
+- **`Program.Callee.debug`**: a component's function may call `Debug`, directly or through what it
+  calls — what a verify mode asks before it makes a component's markup again. `true` when not
+  known and for a hole's call. `cx.reachesDebug` now also follows the function of each component
+  in markup a value makes.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
