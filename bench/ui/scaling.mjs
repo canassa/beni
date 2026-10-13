@@ -47,7 +47,10 @@
 // `--variants=A=../../a/beni,B=…` adds one subject per other beni binary,
 // `beni-<name>`: each program's development build by that binary, made
 // again on every run, measured in the same batch as the rest — how two
-// builds of the compiler are compared under the same noise.
+// builds of the compiler are compared under the same noise. Its release
+// build and its `browser-direct` builds are `beni-<name>-release`,
+// `beni-<name>-direct` and `beni-<name>-direct-release`, made when named
+// in `--subjects=`.
 
 import { execSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -140,6 +143,7 @@ const sweeps = [
     ops: [
       { id: "toggle", target: "go", done: (k, n) => `document.querySelector("ul").children[${filtered.target(n)}].className === ${JSON.stringify(filtered.classAfter(k, n))}` },
       { id: "filter", target: "filter", done: (k, n) => `document.querySelector("ul").children.length === ${k % 2 === 1 ? filtered.active(n) : n}` },
+      { id: "tick", target: "tick", done: (k) => textIs(byId("ticks"), k) },
     ],
   },
   {
@@ -296,6 +300,20 @@ function buildAll() {
       const outDir = `${dir}/beni-${v.name}-dev`;
       rmSync(join(root, outDir), { recursive: true, force: true });
       run(v.path, ["build", "--platform=browser-tea", "--no-cache", `--out=${outDir}`, `${dir}/src/Main.beni`]);
+      const more = [
+        ["release", "rel", "browser-tea", ["--release"]],
+        ["direct", "direct-dev", "browser-direct", []],
+        ["direct-release", "direct-rel", "browser-direct", ["--release"]],
+      ].filter(([suffix]) => wants(`beni-${v.name}-${suffix}`));
+      for (const [, out, platform, flags] of more) {
+        const moreDir = `${dir}/beni-${v.name}-${out}`;
+        rmSync(join(root, moreDir), { recursive: true, force: true });
+        const r = spawnSync(v.path, ["build", `--platform=${platform}`, ...flags, "--no-cache", `--out=${moreDir}`, `${dir}/src/Main.beni`], { cwd: root, encoding: "utf8" });
+        if (r.status !== 0) {
+          mkdirSync(join(root, moreDir), { recursive: true });
+          writeFileSync(join(root, moreDir, ".skipped"), (r.stderr || r.stdout || "").trim().split("\n")[0]);
+        }
+      }
     }
     for (const v of [1, 2].filter((v) => wants(`solid${v}`))) {
       const src = `apps/solid${v}/gen/${tag}.jsx`;
@@ -331,7 +349,14 @@ const subjectsOf = (sweep, dir) => {
           { name: "beni-helper-release", kind: "beni", dir: `scaling/${dir.slice(12)}/beni-helper-rel` },
         ]
       : []),
-    ...variants.map((v) => ({ name: `beni-${v.name}`, kind: "beni", dir: `scaling/${dir.slice(12)}/beni-${v.name}-dev` })),
+    ...variants.flatMap((v) =>
+      [
+        ["", "dev"],
+        ["-release", "rel"],
+        ["-direct", "direct-dev"],
+        ["-direct-release", "direct-rel"],
+      ].map(([suffix, out]) => ({ name: `beni-${v.name}${suffix}`, kind: "beni", dir: `scaling/${dir.slice(12)}/beni-${v.name}-${out}` })),
+    ),
     { name: "beni-direct", kind: "beni", dir: `scaling/${dir.slice(12)}/beni-direct-dev` },
     { name: "beni-direct-release", kind: "beni", dir: `scaling/${dir.slice(12)}/beni-direct-rel` },
     { name: "solid2", kind: "solid", src: `/${dir}/solid2.js` },
