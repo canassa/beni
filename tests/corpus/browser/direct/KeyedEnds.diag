@@ -1,4 +1,4 @@
--- PREPEND IN LOOP --------------------------------------- KeyedEnds.beni:109:72
+-- PREPEND IN LOOP --------------------------------------- KeyedEnds.beni:111:72
 
 This puts elements in front of `kept`, the accumulator this `List.foldr` hands
 back to its callback, so it happens at every step:
@@ -17,5 +17,5 @@ the loop as `List.foldl`, which hands over the first element first.
 If the prepend is meant — the list stays short — give the new list a name
 first, and this warning goes.
 
-109|                if List.any kept λk → k.id == r.id then kept else [ r, …kept ]
+111|                if List.any kept λk → k.id == r.id then kept else [ r, …kept ]
                                                                            ^^^^^
