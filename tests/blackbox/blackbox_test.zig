@@ -4908,7 +4908,7 @@ test "the ownership report is byte-identical at --jobs=1 and --jobs=8" {
 }
 
 test "ownership errors on an in-place platform are byte-identical at --jobs=1 and --jobs=8" {
-    // ownership-checker.md §27.9: `check --platform=browser-direct` runs the
+    // ownership-checker.md §28.9: `check --platform=browser-direct` runs the
     // pass after the parallel check, on one thread, in graph order; its
     // messages, which hold their own excerpts, are a function of the text.
     var w = try World.init(testing.allocator, testing.io);

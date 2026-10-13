@@ -1,4 +1,4 @@
--- `list_still_used` (ownership-checker.md §27.5–§27.6; thesis §3.3, the
+-- `list_still_used` (ownership-checker.md §28.5–§28.6; thesis §3.3, the
 -- second consequence): `List.push xs n` writes `xs`'s array on
 -- `browser-direct`, and the next line reads `xs` — in place it would read
 -- the pushed list. Real sharing, so the message names the read and writes

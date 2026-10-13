@@ -93,7 +93,7 @@ pub const DiagnosticsFormat = enum { text, json };
 /// It exists so a test can assert "the same at every `--jobs`" about the
 /// record and not about a printer.
 /// `ownership` was hidden until the checker it reports became `check`'s and
-/// `build`'s on an in-place platform (`ownership-checker.md` §2.4, §27.3).
+/// `build`'s on an in-place platform (`ownership-checker.md` §2.4, §28.3).
 pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership };
 
 /// Options every subcommand accepts.
@@ -1283,7 +1283,7 @@ test "dump: stage, positions, exactly one file" {
         .file = "src/Main.beni",
     } }, &.{ "dump", "src/Main.beni", "--positions", "--core", "--root=src", "--stage=tokens" });
     try expectCommand(.{ .dump = .{ .stage = .bir, .file = "M.beni" } }, &.{ "dump", "--stage=bir", "M.beni" });
-    // Listed since slice 4 (ownership-checker.md §2.4, §27.3).
+    // Listed since slice 4 (ownership-checker.md §2.4, §28.3).
     try expectCommand(.{ .dump = .{ .stage = .ownership, .file = "src" } }, &.{ "dump", "--stage=ownership", "src" });
     // Hidden too (§16.11): the totals alone, and only for that stage.
     try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_totals = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-totals", "src" });

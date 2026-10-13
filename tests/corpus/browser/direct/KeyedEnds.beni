@@ -60,10 +60,8 @@ swapAt rows i j =
             rows
 
 
--- `List.copy`: `List.take` may answer `rows` itself, and on `browser-direct`
--- `++` adds to the end of it in place (ownership-checker.md §27.5).
 insertAt : List Row, Int, Row → List Row
-insertAt rows k r = List.copy (List.take rows k) ++ [ r, …List.drop rows k ]
+insertAt rows k r = List.take rows k ++ [ r, …List.drop rows k ]
 
 
 lastOf : List Row → Row

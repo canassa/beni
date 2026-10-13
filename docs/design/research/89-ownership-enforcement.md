@@ -1,8 +1,8 @@
 # 89 — The ownership checker's slice 4: enforcement
 
-*2026-10-13. What changes when the ownership checker's rejections become errors (`ownership-checker.md` §27): which
+*2026-10-13. What changes when the ownership checker's rejections become errors (`ownership-checker.md` §28): which
 platforms enforce, what is an error, what the messages say, what the summaries shipped in the checked core buy, what
-it costs, and which corpus programs now fail. The baseline is `origin/master` at `228681b94`; the branch is that plus
+it costs, and which corpus programs now fail. The baseline is `origin/master` at `228681b94` (§3's figures were measured there, before the branch was rebased onto the identity promises' removal); the branch is that plus
 this slice. Instruction counts are user-space instructions of the whole process (`bench/list-in-beni/icount.c`), the
 minimum of three runs of `check --no-cache --jobs=1` on ReleaseFast LLVM builds of both.*
 
@@ -30,21 +30,22 @@ minimum of three runs of `check --no-cache --jobs=1` on ReleaseFast LLVM builds 
    removed that — but the entry protocol's fixpoint over Conduit's model in `Main` (slice 3b, §20.4): the pass on
    `Main` is 77 % of the pass, and `entryCall` alone 22 % of the whole process. The 100 000-line check is
    unchanged (−0.006 %). §3.
-6. **Four corpus pages now fail on `browser-direct`**, every one with a real reason: two start their model with a
-   top-level list, one stores a view of the rows it edits later, one appends to what `List.take` may answer as its
-   argument. Each now takes the `List.copy` its error asks for; their transcripts do not change. §4.
+6. **Three corpus pages now fail on `browser-direct`**, every one with a real reason: two start their model with a
+   top-level list, one stores a view of the rows it edits later. Each now takes the `List.copy` its error asks for;
+   their transcripts do not change. A fourth, `KeyedEnds`, failed until the identity promises were dropped on
+   master the same day (`ownership-checker.md` §27): `List.take` is a fresh list now. §4.
 7. **The applications** on `browser-direct`: TodoMVC (four programs) and the table app check clean; Conduit fails
    with one error (four model paths a view event may carry, a limit); Bike Wars with three (two real, one position).
 
 ## 1. What is enforced, and where
 
-The pass runs after the module check, on one thread, when the run's own check found no error (§27.3). It walks the
+The pass runs after the module check, on one thread, when the run's own check found no error (§28.3). It walks the
 modules the run checked and reads every other module's summaries from its block: core and the platforms from the
-checked core, an app module from its cache entry. Two rules keep a cache hit sound (§27.4): an enforcing run reads
+checked core, an app module from its cache entry. Two rules keep a cache hit sound (§28.4): an enforcing run reads
 no entry without a block, and a module not from the checked core publishes its interface hash folded with its own
 key, so an importer's key moves with any block it can read. `tests/blackbox/cache_test.zig` pins both: a body edit
 that makes a leaf write its argument fails its warm importer, and an in-place build after a `browser-tea` build
-checks both modules again. The price is the interface firewall on in-place builds (§27.11 item 1).
+checks both modules again. The price is the interface firewall on in-place builds (§28.11 item 1).
 
 The pack maker reports core in the run that checks core, and a platform when its chain is in-place: core and
 `browser-direct`'s chain have no rejected or pending line (117 and 5 lines, all accepted), so the pack builds. The
@@ -110,22 +111,26 @@ reads the list.
 A limit (`OwnershipLimit`):
 
 ```
--- LIST MAY BE SHARED ------------------------------------------ Main.beni:13:21
+-- LIST MAY BE SHARED ------------------------------------------ Main.beni:23:12
 
-`List.take rows k ++ [ r, …List.drop rows k ]` adds to the end of
-`List.take rows k` itself, and the checker cannot show that nothing else still
-holds the list.
+`[ …picked, 9 ]` adds to the end of `picked` itself, and the checker cannot show
+that nothing else still holds the list.
 
-13|insertAt rows k r = List.take rows k ++ [ r, …List.drop rows k ]
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
-                                                 ^^^^^^^^^ this call may answer the same list
+21|shown rows =
+         ^^^^ `rows` keeps the list here
+22|    picked = orFallback rows
+                ^^^^^^^^^^ `rows` may hold the list through this call
+23|    more = [ …picked, 9 ]
+              ^^^^^^^^^^^^^^ the list is changed in place here
+24|    List.length more + List.length rows
+                                      ^^^^ and `rows` is read here, after the change
 
 To be safe, change a copy:
 
-13|insertAt rows k r = List.copy (List.take rows k) ++ [ r, …List.drop rows k ]
+23|    more = [ …List.copy picked, 9 ]
 
-This is a limit of the checker, not proof of sharing: another operand may be it,
-through the call at 13:47.
+This is a limit of the checker, not proof of sharing: rows may hold it through
+the call at 22:14, and is read at 24:24.
 ```
 
 The other seven fixtures are a later read of the base itself, a function that holds the list, a value computed
@@ -168,12 +173,12 @@ split anyway), or memoise the instantiation of a class at a model it has already
 | `KeyedInPlace` | `top_level_list_changed` | `init` returns the top-level `rows`; `update` edits `model.rows` in place | the language's rule (T53) |
 | `KeyedInPlaceMap` | `top_level_list_changed` | the same | the language's rule |
 | `ForForms` | `list_may_be_shared` | `Tail` stores `rest`, a view of `model.rows`'s array, in `model.tail`; `Swap` and `Edit` then change `model.rows` in place, and the page would show `tail` changed | real sharing, reported as a limit: the entry's fixpoint joins `update`'s arms (§20.4) |
-| `KeyedEnds` | `list_may_be_shared` | `insertAt` appends to `List.take rows k`, which is `rows` itself when `k` covers it, while `List.drop rows k` reads `rows` | a limit: when the take is the whole list the drop is empty |
-
-Each takes the fix its message writes: `List.copy rows` in `init`, `List.copy rest`, and
-`List.copy (List.take rows k)`. The transcripts are unchanged, the run hashes of the four re-recorded. `ForForms`
-is worth a second look: it is real sharing the checker reports only as a limit, because the fact that settles it —
-which arm stored what — is joined away at the entry.
+Each takes the fix its message writes: `List.copy rows` in `init`, and `List.copy rest`. The transcripts are
+unchanged, the run hashes of the three re-recorded. `ForForms` is worth a second look: it is real sharing the
+checker reports only as a limit, because the fact that settles it — which arm stored what — is joined away at the
+entry. Before this branch was rebased onto the identity promises' removal (§27), `KeyedEnds` failed too, as a limit:
+its `insertAt` appended to `List.take rows k`, which was then `rows` itself when `k` covered it. `List.take` builds
+a fresh list now, and the page is accepted as written.
 
 No other `browser/direct/` page, `emit/direct/` application or `build/bad/direct/` project produces an ownership
 error, and the `browser-tea` pages run nothing new.
@@ -191,7 +196,7 @@ Conduit and Bike Wars do not build on `browser-direct` yet for other reasons (S4
 
 ## 6. Open questions
 
-1. **The pass on the DAG and the block in the interface** (§27.11 item 1): it restores the firewall on in-place
+1. **The pass on the DAG and the block in the interface** (§28.11 item 1): it restores the firewall on in-place
    builds and makes the pass parallel.
 2. **Conduit's entry fixpoint** (§3): the cost target needs it.
 3. **Paths in messages.** A model path is printed as the report prints it, `model#Article.0.errors`; a reader needs

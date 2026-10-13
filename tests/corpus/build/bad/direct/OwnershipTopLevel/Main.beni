@@ -1,4 +1,4 @@
--- `top_level_list_changed` (ownership-checker.md §27.6; thesis §8.2, *A
+-- `top_level_list_changed` (ownership-checker.md §28.6; thesis §8.2, *A
 -- top-level list*, T53): the model starts with `Seeds.seed`, a top-level
 -- value of another module, and `update` adds to the end of `model.todos`
 -- in place — which would change the top-level list for every part of the

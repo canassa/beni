@@ -1,5 +1,5 @@
 //! A module's ownership summaries as bytes: the *summary block*
-//! (`docs/design/ownership-checker.md` §27.4).
+//! (`docs/design/ownership-checker.md` §28.4).
 //!
 //! A build on an in-place platform reads the summaries of every module it
 //! did not walk — core and the platforms from the checked core, a project's

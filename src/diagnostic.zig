@@ -413,7 +413,7 @@ pub const Code = enum {
     /// Lowering's.
     misplaced_ownership_word,
     /// Appended on 2026-10-13 with the ownership checker's enforcement
-    /// (ownership-checker.md §27): only on a platform that edits lists in
+    /// (ownership-checker.md §28): only on a platform that edits lists in
     /// place. A list changed in place while something the text shows still
     /// reads it; a top-level value's list changed; `view` changing the model
     /// it is handed to read only; an edit the checker could not prove safe.

@@ -84,7 +84,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     else
         null;
     if (chain) |*c| options.chain = c;
-    // `ownership-checker.md` §27.3: the pass runs when the chain edits
+    // `ownership-checker.md` §28.3: the pass runs when the chain edits
     // lists in place, and not otherwise.
     options.ownership = true;
 

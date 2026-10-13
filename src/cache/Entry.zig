@@ -62,7 +62,7 @@ pub const Loaded = struct {
     plan: SchemaPlan,
     /// Borrowed from `bytes`.
     diagnostics: []const entry_bytes.Diagnostic,
-    /// Owned: the summary block (`ownership-checker.md` §27.4), copied out
+    /// Owned: the summary block (`ownership-checker.md` §28.4), copied out
     /// of `bytes`; empty when the entry has none.
     ownership: []u8 = &.{},
 

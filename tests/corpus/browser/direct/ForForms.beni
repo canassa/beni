@@ -55,7 +55,7 @@ update msg model =
                     case model.rows of
                         [ _, …rest ] →
                             -- a copy: `rows` is changed in place on `browser-direct`
-                            -- while `tail` keeps showing it (ownership-checker.md §27.5)
+                            -- while `tail` keeps showing it (ownership-checker.md §28.5)
                             List.copy rest
 
                         [] →

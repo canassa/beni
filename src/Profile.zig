@@ -155,11 +155,11 @@ pub const Phase = enum {
     writes,
     /// The ownership report (`ownership-checker.md` §9), once per run of
     /// `dump --stage=ownership`, after checking; and the enforcing pass of
-    /// `check` and `build` on an in-place platform (§27.3).
+    /// `check` and `build` on an in-place platform (§28.3).
     ownership,
-    /// Inside `ownership`: one reported module's walk (§27.3), and the
+    /// Inside `ownership`: one reported module's walk (§28.3), and the
     /// summary blocks read for the modules the run did not check, summed
-    /// (§27.4).
+    /// (§28.4).
     ownership_module,
     ownership_blocks,
 };

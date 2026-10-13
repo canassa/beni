@@ -74,7 +74,7 @@ pub const Chain = struct {
     }
 
     /// Whether the chain edits lists in place (`boundary.md` §5.2,
-    /// `ownership-checker.md` §27.2): its first `"lists"`, down the chain.
+    /// `ownership-checker.md` §28.2): its first `"lists"`, down the chain.
     pub fn inPlace(chain: *const Chain) bool {
         for (chain.layers) |layer| {
             if (layer.manifest.lists) |l| return l == .@"in-place";

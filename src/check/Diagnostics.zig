@@ -60,7 +60,7 @@ pub const Item = struct {
     severity: diagnostic.Severity = .@"error",
     /// The token to underline, when it is not `region`'s, through
     /// `last_token` (an ownership error's edit, `ownership-checker.md`
-    /// §27.6). A message ABOUT a declaration points at its NAME.
+    /// §28.6). A message ABOUT a declaration points at its NAME.
     token: ?u32 = null,
     last_token: ?u32 = null,
     /// Owned by the session allocator.
