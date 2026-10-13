@@ -43,6 +43,16 @@ keep() {  # keep <dir> <mutant> <tag> <log files...>
   cp "$d"/regressions/*unshrunk* "$out/" 2>/dev/null
   true
 }
+# The programs of the enumeration the unmutated build accepts (none of
+# which may disagree): a mutant's enumeration runs only the others, and
+# reports how many verdicts it changed.
+if [ "$bound" -gt 0 ]; then
+  if ! (cd "$base" && taskset -c "$cores" ./.lake/build/bin/ownership enumerate "$bound" \
+      --accepted-out="$scratch/accepted.txt" > "$scratch/enumerate-base.log" 2>&1); then
+    echo "unmutated enumeration FAILED:"; cat "$scratch/enumerate-base.log"; exit 1
+  fi
+  echo "unmutated: $(tail -1 "$scratch/enumerate-base.log")"
+fi
 for m in "${names[@]}"; do
   d="$scratch/m-$m"
   rm -rf "$d"; cp -r "$base" "$d"
@@ -74,15 +84,16 @@ for m in "${names[@]}"; do
   done
   line="$line caught-seeds=$caught/${#seeds[@]}"
   if [ "$bound" -gt 0 ]; then
-    (cd "$d" && taskset -c "$cores" ./.lake/build/bin/ownership enumerate "$bound" --mutant-source > "enumerate.log" 2>&1; echo $? > "status-enumerate")
+    (cd "$d" && taskset -c "$cores" ./.lake/build/bin/ownership enumerate "$bound" --skip-accepted="$scratch/accepted.txt" > "enumerate.log" 2>&1; echo $? > "status-enumerate")
     status=$(cat "$d/status-enumerate")
     if [ "$status" -ge 128 ]; then kind="CRASH"
     elif grep -q "caught=true" "$d/enumerate.log"; then kind="caught"
     else kind="miss"; fi
     [ "$kind" != "miss" ] && keep "$d" "$m" "enumerate" "$d/enumerate.log"
-    line="$line enumerate=$kind"
+    changed=$(grep -o "changed-verdicts=[0-9]*" "$d/enumerate.log" | sed "s/.*=//")
+    line="$line enumerate=$kind changed-verdicts=${changed:-?}"
   fi
   echo "$line"
   rm -rf "$d"
 done
-rm -rf "$base"
+rm -rf "$base" "$scratch/accepted.txt"

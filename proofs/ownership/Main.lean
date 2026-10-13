@@ -53,7 +53,13 @@ def main (args : List String) : IO UInt32 := do
     if args.contains "--count-only" then
       IO.println s!"enumerate bound={bound} programs={← Enumerate.countOnly bound}"
       return 0
-    let (ok, _) ← Enumerate.run bound config (sourceMutant := args.contains "--mutant-source")
+    -- `--skip-accepted=<file>`: this is a source-level mutant's build, and
+    -- the file lists what the corrected build accepts (`--accepted-out=`).
+    let mode ← match flagValue args "skip-accepted" with
+      | some path => pure (Enumerate.Mode.skipping (← Enumerate.readKeys path))
+      | none => pure (if mutant.isSome || oldFreshRule || dropTraversalEscapes then .control else .full)
+    let acceptedOut := (flagValue args "accepted-out").map System.FilePath.mk
+    let (ok, _) ← Enumerate.run bound config mode (acceptedOut := acceptedOut)
     return (if ok then 0 else 1)
   if mode == "reasons" then
     Oracle.reasons count seed ((flagValue args "family").getD "general") version

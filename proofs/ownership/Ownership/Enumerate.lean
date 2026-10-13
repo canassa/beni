@@ -130,6 +130,8 @@ structure Counts where
   accepted : Nat := 0
   withWrite : Nat := 0
   mismatches : Nat := 0
+  /-- Under a control: programs it accepts that the corrected checker rejects. -/
+  changed : Nat := 0
   deriving Repr
 
 /-- Two flat lists, a nested list holding both (rows a program may edit
@@ -165,22 +167,50 @@ def countOnly (bound : Nat) : IO Nat := do
 def Counts.add (a b : Counts) : Counts :=
   { enumerated := a.enumerated + b.enumerated, typed := a.typed + b.typed,
     accepted := a.accepted + b.accepted, withWrite := a.withWrite + b.withWrite,
-    mismatches := a.mismatches + b.mismatches }
+    mismatches := a.mismatches + b.mismatches, changed := a.changed + b.changed }
+
+/-- Where a program sits in the enumeration: its first binding's position
+    among the root choices (0 for the prelude alone) and its position in
+    that subtree's visit order. The same in every build of one grammar. -/
+def key (task index : Nat) : UInt64 := (task.toUInt64 <<< 32) ||| index.toUInt64
+
+/-- How a run treats each accepted program.
+    * `full`: run both interpreters (the corrected checker; `ci`).
+    * `control`: a flag control; run only programs the corrected checker
+      rejects (a disagreement it accepts is `ci`'s to find, on the same
+      space), counted as `changed`.
+    * `skipping keys`: a source-level mutant's build, whose own checker is
+      the mutated one; `keys` are the programs the corrected build accepts
+      (`--accepted-out`), and only the others run. -/
+inductive Mode where
+  | full | control | skipping (keys : Std.HashSet UInt64)
 
 /-- Check and run one subtree of the enumeration (`walk` from `wrapE`), with
-    its own counters; stop when `stop` is set or a disagreement is found. -/
-def subtree (config : Config) (stop : IO.Ref Bool) (bound : Nat) (env : List (Var × Ty)) (vars : List Var)
-    (next : Nat) (wrapE : Expr → Expr) : IO (Counts × Option Program) := do
+    its own counters; stop when `stop` is set or a disagreement is found.
+    Returns the keys of the accepted programs when `collect`. -/
+def subtree (config : Config) (mode : Mode) (collect : Bool) (stop : IO.Ref Bool) (task bound : Nat)
+    (env : List (Var × Ty)) (vars : List Var) (next : Nat) (wrapE : Expr → Expr) :
+    IO (Counts × Option Program × Array UInt64) := do
   let counts ← IO.mkRef ({} : Counts)
   let found ← IO.mkRef (none : Option Program)
+  let keys ← IO.mkRef (#[] : Array UInt64)
+  let index ← IO.mkRef 0
   let visit := fun (main : Expr) => do
     if ← stop.get then return false
+    let i ← index.modifyGet fun i => (i, i + 1)
     let p : Program := { declarations := Generator.decls, main }
     counts.modify fun c => { c with enumerated := c.enumerated + 1 }
     if !(typesOf p).isOk then return true
     counts.modify fun c => { c with typed := c.typed + 1 }
     if !(Oracle.verdictOf p config).isOk then return true
     counts.modify fun c => { c with accepted := c.accepted + 1 }
+    if collect then keys.modify (·.push (key task i))
+    let runIt := match mode with
+      | .full => true
+      | .control => !(Oracle.verdictOf p { reinfer := config.reinfer }).isOk
+      | .skipping ks => !ks.contains (key task i)
+    if !runIt then return true
+    if !(mode matches .full) then counts.modify fun c => { c with changed := c.changed + 1 }
     match Oracle.compare p 20000 with
     | .equal =>
       if InPlaceSemantics.writeCount p 20000 > 0 then counts.modify fun c => { c with withWrite := c.withWrite + 1 }
@@ -192,43 +222,52 @@ def subtree (config : Config) (stop : IO.Ref Bool) (bound : Nat) (env : List (Va
       stop.set true
       return false
   let _ ← walk bound env vars next wrapE visit
-  pure (← counts.get, ← found.get)
+  pure (← counts.get, ← found.get, ← keys.get)
 
-/-- Enumerate, check and run, one task per first binding. Under a negative
-    control (`config` with a mutant or an old rule) the run succeeds only on
-    an accepted disagreement that the corrected checker rejects; otherwise
-    any accepted disagreement fails. -/
-def run (bound : Nat) (config : Config := {}) (quiet := false) (sourceMutant := false) : IO (Bool × Counts) := do
-  -- In a source-mutant build the binary's own checker is the mutated one,
-  -- so a disagreement cannot be re-checked here: it is the catch.
-  let negative := sourceMutant || config.mutant.isSome || config.oldFreshRule || config.dropTraversalEscapes
+/-- Enumerate, check and run, one task per first binding. With the
+    corrected checker (`.full`) any accepted disagreement fails; under a
+    control or a source-level mutant the run succeeds only on an accepted
+    disagreement (a catch). `acceptedOut` writes the keys of the accepted
+    programs, one per line, for a mutant build's `.skipping`. -/
+def run (bound : Nat) (config : Config := {}) (mode : Mode := .full) (quiet := false)
+    (acceptedOut : Option System.FilePath := none) : IO (Bool × Counts) := do
   let start ← IO.monoMsNow
   let stop ← IO.mkRef false
+  let collect := acceptedOut.isSome
   -- The programs with no binding after the prelude, here; every first
   -- binding's subtree in its own task.
-  let (c0, f0) ← subtree config stop 0 preludeEnv [] preludeSize prelude
+  let (c0, f0, k0) ← subtree config mode collect stop 0 0 preludeEnv [] preludeSize prelude
   let mut total := c0
   let mut found := f0
+  let mut keys := k0
   if bound > 0 && found.isNone then
-    let tasks ← (choices preludeEnv (1000 + 10 * preludeSize)).mapM fun (rhs, t) =>
+    let tasks ← (choices preludeEnv (1000 + 10 * preludeSize)).zipIdx.mapM fun ((rhs, t), j) =>
       IO.asTask (prio := .dedicated) <|
-        subtree config stop (bound - 1) ((preludeSize, t) :: preludeEnv) [preludeSize] (preludeSize + 1)
-          (fun rest => prelude (.letE preludeSize rhs rest))
+        subtree config mode collect stop (j + 1) (bound - 1) ((preludeSize, t) :: preludeEnv) [preludeSize]
+          (preludeSize + 1) (fun rest => prelude (.letE preludeSize rhs rest))
     for task in tasks do
       match ← IO.wait task with
-      | .ok (c, f) =>
+      | .ok (c, f, k) =>
         total := total.add c
+        keys := keys ++ k
         if found.isNone then found := f
       | .error e => throw e
+  if let some path := acceptedOut then
+    IO.FS.writeFile path (String.intercalate "\n" (keys.toList.map toString) ++ "\n")
   let elapsed := (← IO.monoMsNow) - start
-  let corrected := match found with
-    | some p => !sourceMutant && (Oracle.verdictOf p { reinfer := config.reinfer }).isOk
-    | none => false
   if let some p := found then
-    IO.println s!"enumerate: accepted disagreement ({if sourceMutant then "source-mutant build, not re-checked" else if corrected then "the corrected checker ACCEPTS it too" else "the corrected checker rejects it"}):\n{repr p.main}"
-  let ok := if negative then found.isSome && !corrected else found.isNone
+    IO.println s!"enumerate: accepted disagreement:\n{repr p.main}"
+  let ok := if mode matches .full then found.isNone else found.isSome
   if !quiet || !ok then
-    IO.println s!"enumerate bound={bound} enumerated={total.enumerated} typed={total.typed} accepted={total.accepted} with-write={total.withWrite} mismatches={total.mismatches} caught={found.isSome} elapsed-ms={elapsed}"
+    let changed := if mode matches .full then "" else s!" changed-verdicts={total.changed}"
+    IO.println s!"enumerate bound={bound} enumerated={total.enumerated} typed={total.typed} accepted={total.accepted}{changed} with-write={total.withWrite} mismatches={total.mismatches} caught={found.isSome} elapsed-ms={elapsed}"
   pure (ok, total)
+
+/-- The keys `run` wrote with `acceptedOut`. -/
+def readKeys (path : System.FilePath) : IO (Std.HashSet UInt64) := do
+  let text ← IO.FS.readFile path
+  pure <| text.splitOn "\n" |>.foldl (fun s l => match l.toNat? with
+    | some n => s.insert n.toUInt64
+    | none => s) {}
 
 end Ownership.Enumerate
