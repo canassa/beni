@@ -1689,6 +1689,44 @@ const Case = struct {
             return error.MissingDiagGolden;
         }
         try c.expectGolden("diag", built.stderr);
+
+        // `ownership-checker.md` §27.10: a `browser-direct` fixture whose
+        // golden holds only the ownership checker's codes fails because
+        // lists are edited in place there; on `browser-tea`, where nothing
+        // is, the same project must build with no diagnostic at all.
+        if (c.fixture.platform) |name| if (std.mem.eql(u8, name, "browser-direct") and ownershipOnly(built.stderr)) {
+            var tea: std.ArrayList([]const u8) = .empty;
+            try tea.appendSlice(c.arena, &.{ "build", "--diagnostics=json", "--platform=browser-tea", "--out=tea" });
+            try tea.appendSlice(c.arena, sources.items);
+            const ok = try w.runWith(try c.argv(tea.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
+            if (ok.exit_code != 0 or ok.stderr.len != 0) {
+                detail(
+                    "{s}: an ownership fixture must build CLEAN on browser-tea, where nothing is edited in place; it exited {d}\n--- stderr ---\n{s}\n",
+                    .{ c.fixture.name, ok.exit_code, ok.stderr },
+                );
+                return error.TeaBuildFailed;
+            }
+        };
+    }
+
+    /// Whether a JSON diagnostic list names the ownership checker's codes
+    /// and no others (`ownership-checker.md` §27.6).
+    fn ownershipOnly(stderr: []const u8) bool {
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared" };
+        var any = false;
+        var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
+        _ = it.next();
+        while (it.next()) |rest| {
+            const end = std.mem.indexOfScalar(u8, rest, '"') orelse return false;
+            const code = rest[0..end];
+            var known = false;
+            for (codes) |k| if (std.mem.eql(u8, k, code)) {
+                known = true;
+            };
+            if (!known) return false;
+            any = true;
+        }
+        return any;
     }
 
     fn format(c: Case) !void {
@@ -2726,14 +2764,29 @@ const Case = struct {
             while (names.next()) |name| {
                 any = true;
                 const flag = try std.fmt.allocPrint(c.arena, "--platform={s}", .{name});
-                const checked = try c.compiler(&.{ "check", flag, path });
-                try expectExit(0, checked);
-                if (checked.stderr.len != 0) {
-                    detail("{s}: an ownership fixture must check clean under {s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, name, checked.stderr });
-                    return error.GoodFixtureHasDiagnostics;
-                }
+                const checked = try c.compiler(&.{ "check", "--diagnostics=json", flag, path });
                 const r = try c.compiler(&.{ "dump", "--stage=ownership", flag, path });
                 try expectExit(0, r);
+                // `ownership-checker.md` §27.10, the dump against the build:
+                // on a platform that edits lists in place `check` fails
+                // exactly when the report has a rejected or pending line,
+                // with the ownership checker's codes and no others, and
+                // elsewhere it is silent whatever the report says.
+                const enforces = std.mem.eql(u8, name, "browser-direct");
+                const refused = enforces and (std.mem.indexOf(u8, r.stdout, ": rejected ") != null or std.mem.indexOf(u8, r.stdout, ": pending") != null);
+                if (refused) {
+                    try expectExit(1, checked);
+                    if (!ownershipOnly(checked.stderr)) {
+                        detail("{s}: under {s}, the report's rejections must be the check's only errors\n--- stderr ---\n{s}\n", .{ c.fixture.name, name, checked.stderr });
+                        return error.OwnershipErrorsDisagree;
+                    }
+                } else {
+                    try expectExit(0, checked);
+                    if (!std.mem.eql(u8, std.mem.trim(u8, checked.stderr, " \r\n"), "[]") and checked.stderr.len != 0) {
+                        detail("{s}: an ownership fixture must check clean under {s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, name, checked.stderr });
+                        return error.GoodFixtureHasDiagnostics;
+                    }
+                }
                 // A test platform is named by its directory
                 // (`tests/platforms/page`); its golden by the last part.
                 try c.expectGolden(try std.fmt.allocPrint(c.arena, "{s}.ownership", .{std.fs.path.basename(name)}), r.stdout);

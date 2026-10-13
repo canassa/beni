@@ -1462,6 +1462,105 @@ test "a body edit that flips an effect bit crosses the firewall, and the warm im
     try expectMoved("a flipped effect bit", hashes_before, hashes_after, &.{ "app:App", "app:Lib" });
 }
 
+/// `ownership-checker.md` §27.4: a leaf whose body may or may not write its
+/// parameter in place, under one annotation, and an importer that reads
+/// what it handed it.
+const own_lib_copies =
+    \\pub grow : List Int, Int → List Int
+    \\grow acc n = [ …List.copy acc, n ]
+    \\
+;
+const own_lib_writes =
+    \\pub grow : List Int, Int → List Int
+    \\grow acc n = [ …acc, n ]
+    \\
+;
+const own_app =
+    \\import Lib
+    \\
+    \\
+    \\pub both : List Int → Int
+    \\both xs =
+    \\    ys = Lib.grow xs 1
+    \\    List.length ys + List.length xs
+    \\
+;
+
+test "on an in-place platform a body edit that makes a leaf write its argument fails its warm importer" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-checker.md` §27.4, rule 2. `Lib`'s edit moves no type and
+    // no effect bit, so its interface hash does not move; what moves is its
+    // summary block, which says it now writes `acc` in place. `App` reads
+    // `xs` after handing it over, so `App` must now fail. On an in-place
+    // build a module publishes its interface hash folded with its own key,
+    // so `App`'s key moves with `Lib`'s source and `App` is checked again.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lib.beni", own_lib_copies);
+    try w.write("src/App.beni", own_app);
+    const args = [_][]const u8{ "check", "--jobs=1", "--platform=browser-direct", "--diagnostics=json", "--cache-dir=cache", "src" };
+    const cold = try runCounted(&w, arena, &args, "own-cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Lib.beni", own_lib_writes);
+    const warm = try runCounted(&w, arena, &args, "own-warm.json");
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-direct", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), plain.exit_code);
+    try testing.expect(std.mem.indexOf(u8, plain.stderr, "\"code\":\"list_still_used\"") != null);
+    try testing.expectEqual(@as(u8, 1), warm.result.exit_code);
+    try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
+    // Both checked: the edited leaf, and the importer whose key it moved.
+    try testing.expectEqual(@as(u64, 2), warm.counters.checked);
+}
+
+test "an in-place build after a build elsewhere reads no entry that lacks a summary block" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-checker.md` §27.4, rule 1. A `browser-tea` check writes
+    // entries with no summary block — nothing is summarised there — under
+    // keys an in-place check computes too, since nothing in a module's own
+    // terms says whether the run enforces. Read as hits, `Lib` would have no
+    // summary, its call would be taken to write nothing, and `App`'s error
+    // would be missed.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lib.beni", own_lib_writes);
+    try w.write("src/App.beni", own_app);
+    const tea = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--platform=browser-tea", "--diagnostics=json", "--cache-dir=cache", "src" }, "own-tea.json");
+    // The checker is silent where nothing is edited in place.
+    try testing.expectEqual(@as(u8, 0), tea.result.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const direct = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--platform=browser-direct", "--diagnostics=json", "--cache-dir=cache", "src" }, "own-direct.json");
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-direct", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), plain.exit_code);
+    try testing.expectEqual(@as(u8, 1), direct.result.exit_code);
+    try testing.expectEqualStrings(plain.stderr, direct.result.stderr);
+    try testing.expectEqual(@as(u64, 2), direct.counters.checked);
+}
+
 test "a dependency that comes to suspend makes its importer's sync error appear warm, and go again" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

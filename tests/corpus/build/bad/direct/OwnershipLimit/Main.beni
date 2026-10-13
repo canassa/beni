@@ -1,0 +1,21 @@
+-- `list_may_be_shared`, a limit of the checker (ownership-checker.md §27.5–
+-- §27.6; thesis §8.4): `List.take rows k ++ …` adds to the end of what
+-- `List.take` answers, which may be `rows` itself (its identity promise),
+-- while `List.drop rows k` reads `rows` in the same operation. When `k`
+-- covers all of `rows` the drop is empty and nothing is shared, but the
+-- checker does not tell the two cases apart, so the message says it is a
+-- limit, not proof, and writes the copy that makes it safe.
+import Html exposing (Html)
+import Tea
+
+
+insertAt : List Int, Int, Int → List Int
+insertAt rows k r = List.take rows k ++ [ r, …List.drop rows k ]
+
+
+view : List Int → Html Int
+view rows = <p onClick={0}>{String.fromInt (List.length rows)}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → [ 1, 2 ], update = λn rows → insertAt rows n n, view = view }

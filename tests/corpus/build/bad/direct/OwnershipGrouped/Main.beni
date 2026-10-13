@@ -1,0 +1,28 @@
+-- One diagnostic per root cause (ownership-checker.md §27.5): the model's
+-- `done` and `open` both start as the top-level `seed`, and `update` adds
+-- to the end of both in place. The checker has a line for each model path;
+-- the build has one error naming both.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    done : List Int
+    open : List Int
+
+
+seed : List Int
+seed = [ 1 ]
+
+
+update : Int, Model → Model
+update n model = { model | done = List.push model.done n, open = List.push model.open n }
+
+
+view : Model → Html Int
+view model =
+    <button onClick={List.length model.open}>{String.fromInt (List.length model.done)}</button>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { done = seed, open = seed }, update = update, view = view }
