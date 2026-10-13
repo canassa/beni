@@ -596,6 +596,16 @@ becomes the positional pass (patch `min(n, m)` rows, append or remove the rest).
 `browser/direct/NoOpEdits` (an update out of range, a swap of a row with itself, an empty
 append, a clear of an empty list: no row touched, which `Debug.log` in the row shows).
 
+*Amended 2026-10-13:* the owner dropped the identity promises of the functions that build
+(`language.md` §6.8; `backend.md` §4, *Identity*): `map`, `filter`, `slice`, `take`, `reverse`, the
+sorts, `concat` and `append` with an empty side return a fresh list now. Nothing above relied on
+them. The identity walk compares *elements*, which `map` still passes through `===` where `f`
+returned its element; the merge compares items; every guard is a tag's own condition; and the
+writers' no-op returns, which this section's guards were written for, are unchanged. A derived
+`each` (TodoMVC's `List.filter`, below) is recomputed only by a key whose write set conflicts with
+its reads (§5.4) and then reaches the rows as `replaced`, so the identity of the list it computes
+was never consulted.
+
 **How tags compose.** One list, one key, one script: the write set carries one tag per list
 path, joined by `write-sets.md` §2.4 — equal tags stay, `kept` under another tag is the other
 tag, two different tags are `replaced`, and element writes survive every join — so an arm that

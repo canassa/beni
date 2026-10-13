@@ -87,6 +87,9 @@ ships it; nothing in slices 0 and 1 changes.
 *Decided 2026-10-01 (W35's second amendment):* **O1 and O2 are withdrawn** — with `::` gone there is
 no `::` to warn about or to keep a rewrite for; the rewrite itself stays under its new spelling
 (§1.2). **O3, O4 and O5 are taken as recommended**, reversibly. The table is kept as the record.
+*Reversed 2026-10-13 (the owner):* **O4 is withdrawn**, with every other identity promise of a
+function that builds (`language.md` §6.8; `backend.md` §4, *Identity*; `ownership-checker.md` §27;
+research 90): `map` and `indexedMap` always build a fresh list.
 
 | | Question | Recommendation |
 |---|---|---|

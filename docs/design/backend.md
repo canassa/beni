@@ -850,13 +850,13 @@ exports, each a `foreign` of `List.beni`, are the runtime every other part of th
 | Export | Visibility | What it does | Cost |
 |---|---|---|---|
 | `cons(h, t)` | `pub` (`::` desugars to it, `language.md` §6) | a fresh plain array `[h, …t]`. *E1tp:* the list `h` then `t` by *The claimable head*'s table: plain only onto fewer than 32 elements; `t`'s wider view, or its backing array, on a runtime re-cons | O(n). *E1tp:* amortised O(1) onto the newest version, at most 31 copied onto an older one, O(n) once per plain list converted. *Amended 2026-10-11:* a fresh plain array onto every form, O(n), but for the two runtime re-conses (O(1)); never a trie |
-| `append(xs, ys)` | `pub`; *added 2026-10-01 (E1tp)*: `List.append`, what `[ ...xs, … ]` lowers to (`language.md` §6.8), becomes `foreign` | `xs` when `ys` is empty and `ys` when `xs` is; when `xs` is a trie, or has 32 elements or more while `ys` has fewer than 32, each element of `ys` **pushed** onto `xs` (a plain `xs` converted first, as `push` converts it); otherwise a fresh plain concatenation. *Amended 2026-10-02:* a trie `xs` is concatenated too when `ys` is at least as long (the copy is within twice the elements appended, and a plain result is what a `For` reads without a copy), and `ys` is pushed a leaf at a time — one header, the tail filled as `push` claims it, each further 32 a slice of `ys` — not an element at a time | O(m) amortised when it pushes — so `[ ...xs, x ]` costs what `push xs x` does — and O(n + m) otherwise |
+| `append(xs, ys)` | `pub`; *added 2026-10-01 (E1tp)*: `List.append`, what `[ ...xs, … ]` lowers to (`language.md` §6.8), becomes `foreign` | `xs` when `ys` is empty and `ys` when `xs` is (*amended 2026-10-13:* a plain copy of the other side, *Identity* below); when `xs` is a trie, or has 32 elements or more while `ys` has fewer than 32, each element of `ys` **pushed** onto `xs` (a plain `xs` converted first, as `push` converts it); otherwise a fresh plain concatenation. *Amended 2026-10-02:* a trie `xs` is concatenated too when `ys` is at least as long (the copy is within twice the elements appended, and a plain result is what a `For` reads without a copy), and `ys` is pushed a leaf at a time — one header, the tail filled as `push` claims it, each further 32 a slice of `ys` — not an element at a time | O(m) amortised when it pushes — so `[ ...xs, x ]` costs what `push xs x` does — and O(n + m) otherwise |
 | `length(xs)` | `pub` | `xs.length`; *amended 2026-10-02:* a call is written in place as `xs.length` (*`List.beni`'s loops read and write in place*, below) | O(1) |
-| `concat(ls)` | `pub`; *added 2026-10-02*: `List.concat` becomes `foreign` | the one non-empty list itself, `[]` when none is, otherwise a fresh plain array made its final size | O(total) |
+| `concat(ls)` | `pub`; *added 2026-10-02*: `List.concat` becomes `foreign` | the one non-empty list itself, `[]` when none is, otherwise a fresh plain array made its final size. *Amended 2026-10-13:* a fresh plain array made its final size always (*Identity*, below) | O(total) |
 | `set(xs, i, v)` | `pub` | the list with element `i` replaced; `xs` itself when `i` is out of range or `v` is `===` the element there | a copy ≤ 256, else O(log₃₂ n) after one conversion |
 | `push(xs, v)` | `pub` | the list with `v` added at the end | a copy < 32, else amortised O(1): one header, at most a 31-element tail copy when this version was pushed onto before, and a path copy every 32nd push |
 | `pop(xs)` | `pub` | the list without its last element; `xs` when empty | a copy ≤ 256, else O(1) sharing the tail, O(log₃₂ n) every 32nd |
-| `slice(xs, from, to)` | `pub` | Elm's `Array.slice`: negative indexes count from the end, both clamped; `xs` itself when the range is all of it; `[]` when `from ≥ to` | O(k) for a result of k, plain |
+| `slice(xs, from, to)` | `pub` | Elm's `Array.slice`: negative indexes count from the end, both clamped; `xs` itself when the range is all of it; `[]` when `from ≥ to`. *Amended 2026-10-13:* a copy when the range is all of it (*Identity*, below) | O(k) for a result of k, plain |
 | `insertAt(xs, i, v)`, `removeAt(xs, i)` | `pub` | insert before `i` (`0 ≤ i ≤ length`), remove at `i`; `xs` when out of range | O(n), plain |
 | `swap(xs, i, j)` | `pub` | exchange two elements; `xs` when either is out of range or `i === j` | two `set`s |
 | `eq(m0, xs, ys)`, `compare(m0, xs, ys)` | `pub`, `where` evidence first (§4 check 4) | element by element, index loops over all three forms; `xs === ys` is `True`/`EQ` at once; the shorter list is `LT` against a longer one that starts the same | O(n) |
@@ -869,7 +869,8 @@ exports, each a `foreign` of `List.beni`, are the runtime every other part of th
 `core/Basics.js`'s `append` — what `++` lowers to — keeps its string half and gets a new list half,
 written against the protocol and not the forms: `ys.length === 0 ? xs : xs.length === 0 ? ys :
 plain(xs).concat(plain(ys))`. It is O(n + m) and returns a fresh plain array unless one side is
-empty, in which case it returns the other side itself. A sibling cannot import another file (§2),
+empty, in which case it returns the other side itself. *Amended 2026-10-13:* a fresh plain array
+always, `plain(xs).concat(plain(ys))` (*Identity*, below). A sibling cannot import another file (§2),
 which is why the list half is written against the protocol rather than calling `core/List.js`.
 *Amended 2026-10-01 (E1tp):* that is why `++` stays O(n + m) while `[ ...xs, ...ys ]`, which lowers
 to `core/List`'s own `append` (the row above) and so can reach the trie, pushes when it can. The two
@@ -945,6 +946,22 @@ guarantees on each function:
   list is non-empty (that list). The last replaces the cons list's sharing of a tail, which an
   array cannot do: `append` no longer shares its second list, and `concat` no longer shares its
   last non-empty list unless it is the only one.
+
+  *Amended 2026-10-13 (the owner's decision, `language.md` §6.8, *What an operation returns
+  unchanged*): the functions that build no longer return their input.* `slice` and `take` covering
+  the whole list, `xs ++ []` and `[] ++ ys` (`append`, both spellings), `filter` keeping every
+  element, `map` and `indexedMap` when every result is `===` its element, `reverse`, `sort`,
+  `sortBy` and `sortWith` of fewer than two elements, and `concat` and `concatMap` when exactly one
+  list is non-empty **return a fresh list**, each at the cost its row states; `append` with an empty
+  side is a plain copy of the other, O(its length), and never converts a plain list to a trie.
+  `map` and `indexedMap` lose their per-element comparison and the core-private `identical` and
+  `kept` that carried it (`ownership-checker.md` §27). The rest of the first bullet stands: the
+  writers out of range or writing the identical value, `swap xs i i`, `pop []`, and `drop xs 0` and
+  `view xs 0`, which return their input as a writer and a view do. The reason is the ownership
+  checker's: a result that may be its input aliases it, and the only consumer of the promises was
+  `browser-tea`'s `For` skip (§15.5), which now fires only where the list is not rebuilt —
+  `browser-direct` never relied on them (`browser-direct.md` §6.2: its guards are tags, its walks
+  compare elements).
 - **Element identity** always (invariant 6).
 - **A view is the same list as another view of the same backing array at the same offset.** Two
   matches of `x :: rest` against one list bind two view objects, and `===` tells them apart where
@@ -991,7 +1008,7 @@ gone and the backend never sees a spread.** Lowering has already written a liter
 calls (`language.md` §8): `[ e, ...t ]` is `List.cons(e, t)` — the `e :: t` row above, folding
 included, since `[ e1, …, ek, ...[ l1, … ] ]` is only ever written `[ e1, …, ek, l1, … ]` — and
 `[ ...a, b1, … ]` is `List.append(a, [b1, …])`, which the flip implements like `++` (its row above;
-a fresh plain array, `a` itself when the rest is empty). So the table stands with each `::` read as
+a fresh plain array, `a` itself when the rest is empty — *amended 2026-10-13:* a copy of `a`). So the table stands with each `::` read as
 its bracket spelling, and on today's cons cells nothing is emitted that `::` and `++` did not emit
 before: the corpus's run outputs, migrated from `::`, are the differential test that it is so.
 *Amended 2026-10-01 (E1tp):* the flip implements `List.append` not like `++` but as its own row
@@ -8252,6 +8269,13 @@ unchanged; only how a runtime walks the items changes.
   the same offset — wherever it compares an item, an input or a list that may be a list; `same` runs
   only when `===` has already failed, so an unchanged value costs what it costs today. `refEq` in
   the test platform (§15.8) stays `===`, because it tests the promise and not the runtime.
+  *Amended 2026-10-13:* the skip stays, and fires less: a list the program does not rebuild is
+  still the same object, but a `For` over a list a function builds in `view` — `List.filter
+  model.todos …` that keeps everything, a `List.map` that changes nothing — is a fresh list at every
+  render since the identity promises of the functions that build were dropped (§4, *Identity*), so
+  it reconciles its rows instead of skipping them. Each row is still skipped on its item and inputs
+  (element identity holds). The owner accepted that cost for `browser-tea` until `browser-direct`,
+  which renders from write sets, replaces it (research 90).
 - **Class and style lists** (`language.md` §11.19) that the lowering writes as literals are array
   literals now (`src/js/Lower.zig`'s entries list, built today with `consNode`).
 

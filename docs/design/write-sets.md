@@ -663,6 +663,20 @@ skips work on `===` (§15.4), long before this analysis; the rows restate them a
 A reader who finds a row the sibling does not honour has found a defect in the sibling, not in
 the row.
 
+*Amended 2026-10-13 (the owner's decision to drop the identity promises of the functions that
+build, `language.md` §6.8; `backend.md` §4, *Identity*):* `map`, `indexedMap`, `filter`, `slice`,
+`take`, `reverse`, the sorts, `concat` and `append` with an empty side return a fresh list now. **No
+row changes, and none was wrong**: a term is a fact about a *value* — what the new model holds at a
+path, in terms of what the old one held — and a fresh list with the same elements, `===` one by
+one and in the same order, is the same value. `List.map xs f` with `f` the identity is still
+`Same(p)`, and `xs ++ []` still `Lst(p, append)` with nothing appended, which the append script's
+guard (`browser-direct.md` §6.2) leaves alone. What the rows rest on is element identity
+(`backend.md` §4, invariant 6), which stays, and no `browser-direct` script or guard compares a
+list with the one it replaced (§6.2, *A script is guarded by its tag's own condition*). The
+"rests on" column's sentences about a list returned itself (`map` returning `xs`, `xs ++ []`
+being `xs`) now read as "is equal element for element"; `run/ListIndexedIdentity` and
+`run/ListIdentity` pin the new behaviour, `run/WriteRowsIdentity` the element identities.
+
 ## 4. Functions, recursion and nested dispatch
 
 ### 4.1 Summaries
