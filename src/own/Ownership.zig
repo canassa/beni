@@ -4992,12 +4992,12 @@ const Walker = struct {
         return .{ .classes = classes, .sums = sums };
     }
 
-    /// `f`'s result for these arguments: each class's `res`, instantiated
-    /// at the constructor's call (§16.4 item 6).
     const entry_init_ns: u32 = 100_000;
     const entry_view_ns: u32 = 200_000;
     const entry_subs_ns: u32 = 300_000;
 
+    /// `f`'s result for these arguments: each class's `res`, instantiated
+    /// at the constructor's call (§16.4 item 6).
     fn entryRes(w: *Walker, inst: Inst.Index, f: EntryFn, avs: []const AV, ns: u32) Allocator.Error!AV {
         return w.entryResWith(inst, f, avs, ns, true);
     }

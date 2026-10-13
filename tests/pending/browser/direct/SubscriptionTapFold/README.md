@@ -16,3 +16,8 @@ tests/corpus/browser/tea/SubscriptionTapFold.beni, with the same expected page.
 The isolated focused helper is accepted in
 tests/corpus/browser/direct/SubscriptionTapAppend. The aliased-input helper in
 tests/corpus/build/bad/direct/OwnershipSubscriptionTapAliases stays rejected.
+
+The original runtime want uses get/append/insert; get still leaves the list held
+by the dictionary while it is appended. The intended Dict.update rewrite removes
+that holder, but fails at the fold call instead. S5 cannot use either builder on
+direct until the checker proves ownership of those freshly built list containers.
