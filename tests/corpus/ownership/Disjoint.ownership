@@ -1,13 +1,16 @@
 module Disjoint
-  13:14 List.update xs: rejected disjoint: another operand of the same operation reaches it
-  17:24 List.push xs: rejected held-operand: the value at 17:16, evaluated before it, holds it until its consumer runs
-  21:39 List.push xs: rejected call: the argument at 21:21, evaluated before it, holds it, and the call it waits for may read it (approx)
+  16:14 List.update xs: rejected disjoint: another operand of the same operation reaches it
+  20:24 List.push xs: rejected held-operand: the value at 20:16, evaluated before it, holds it until its consumer runs
+  24:33 List.push xs: rejected call: the argument at 24:21, evaluated before it, holds it, and the call it waits for may read it (approx)
+  28:40 List.push xs: accepted param
   summary capture: π1 RAW, π1[*] RA; res [*] ~π1[*], π1
   summary pending: π1 RAW, π1[*] A; res .0 fresh1{excl π1}, .0[*] π1, .1 π1, .1[*] ~π1[*]
-  summary forCall: π1 RW, π1[*] R
+  summary forCall: π1 RW
+  summary forFresh: π1 RW, π1[*] R
+  summary orZero: π1 RA; res fresh1 π1
   summary sizes: π1 R, π2 R
-  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+  demands 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause disjoint 1
 cause held-operand 1
 cause call 1

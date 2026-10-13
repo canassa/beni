@@ -1,7 +1,7 @@
 module ReturnsArg
-  25:12 construction ys: rejected alias: xs holds it and is read at 26:22
-  32:7 construction ys: accepted param
-  38:12 construction ys: rejected call: xs may hold it through the call at 37:10, and is read at 39:22 (approx)
+  26:12 construction ys: rejected alias: xs holds it and is read at 27:22
+  33:7 construction ys: accepted param
+  39:12 construction ys: rejected call: xs may hold it through the call at 38:10, and is read at 40:22 (approx)
   summary same: π1 RA; res π1
   summary either: π2 A; res fresh1 π2
   summary aliased: π1 RW

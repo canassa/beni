@@ -9,6 +9,4 @@ export const put = (b, i, x) => {
   b[i] = x;
   return b;
 };
-export const identical = (x, y) => x === y;
-export const kept = (same, xs, ys) => (same ? xs : ys);
 export const half = (n) => n >>> 1;

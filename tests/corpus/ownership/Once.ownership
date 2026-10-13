@@ -8,7 +8,7 @@ module Once
   summary twice: π1 W
   summary readAfter: π1 RW
   summary viaMaybe: π1 RAW; res #Just.0 π1
-  summary viaMap: π1 RAW, π2 R, π2[*] RA; res [*] ~fresh2{lost} ~π1 ~π2[*], ~fresh1{lost}
+  summary viaMap: π1 RAW, π2 R; res [*] ~fresh2{lost} ~π1, fresh1{lost}
   demands 5: accepted 2 (fresh 0, call 0, param 0, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 3
 total 5: accepted 2 (fresh 0, call 0, param 0, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 3
 cause later-use 1

@@ -3,11 +3,11 @@ take element same
 partition element same
 append element same
 concat element same
-append xs [] same
-append [] ys same
+append xs [] copied
+append [] ys copied
 xs ++ ys tail copied
-concat one same
+concat one copied
 concat last copied
-concatMap alone same
+concatMap alone copied
 concatMap last copied
-sort one same
+sort one copied

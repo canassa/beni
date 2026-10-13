@@ -244,8 +244,8 @@ pub append : appendable, appendable → appendable
 append a b =
     -- A `++` the checker knows to be on lists calls `List.append` instead
     -- (`backend.md` §4), so the list half serves code generic over
-    -- `appendable`: a fresh plain array, unless one side is empty, which
-    -- answers the other itself.
+    -- `appendable`: a fresh plain array, even when one side is empty
+    -- (`backend.md` §4, *Identity*, amended 2026-10-13).
     Js.pure λ⊤ →
         if Js.typeIs (Js.from a) "string" then
             -- Strings, read as numbers only so that `+` can be written:
@@ -256,10 +256,6 @@ append a b =
             t : Int
             t = Js.to (Js.from b)
             Js.to (Js.from (s + t))
-        else if Js.same (Js.get (Js.from b) "length") (Js.from 0) then
-            a
-        else if Js.same (Js.get (Js.from a) "length") (Js.from 0) then
-            b
         else
             Js.to (Js.call (plain (Js.from a)) "concat" [ plain (Js.from b) ])
 

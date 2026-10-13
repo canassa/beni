@@ -12,7 +12,11 @@
 -- and the copied one are both accepted; the Lean model has no prepend and
 -- runs T33 projected onto a push (`retained`), which `t33Pushed` is: the
 -- kept version rejected, the copied one accepted (Lean: the same).
--- T52: the retained spine rejected, the copy accepted (Lean: the same).
+-- T52: both accepted. The model runs T52 projected onto `filter`'s
+-- identity promise ("T52 spine identity projection", rejected) and onto a
+-- copy (accepted); the owner dropped the promise on 2026-10-13
+-- (`ownership-checker.md` §27), so `filter` is a fresh list and `t52` is
+-- now the copy's projection, which the model accepts too.
 --
 -- T40, T42 and T57 edit an element in place through `List.update` or
 -- `List.map`, whose summaries are inferred over the focus and traversal
