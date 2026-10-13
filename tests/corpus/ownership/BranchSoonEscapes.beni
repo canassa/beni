@@ -1,0 +1,24 @@
+-- The same branch proof for a body queued with no fiber.
+import Task
+
+
+type Policy
+    = Restart
+    | Concurrent
+
+
+pub choose : Policy, List Int → List Int × Task.Soon
+choose policy runs =
+    old = List.filter runs λ_ → True
+    case policy of
+        Restart →
+            ( [], Task.soon λ⊤ → Debug.log "old ${String.fromInt (List.length old)}" ⊤ )
+        Concurrent →
+            ( [ …old, 2 ], Task.soon λ⊤ → ⊤ )
+
+
+pub unsafe : List Int → List Int × Task.Soon
+unsafe runs =
+    old = List.filter runs λ_ → True
+    fiber = Task.soon λ⊤ → Debug.log "old ${String.fromInt (List.length old)}" ⊤
+    ( [ …old, 2 ], fiber )

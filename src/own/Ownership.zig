@@ -2949,9 +2949,12 @@ const Walker = struct {
     pending: std.ArrayList(Pending) = .empty,
     uses: std.ArrayList(Use) = .empty,
     demands: std.ArrayList(DemandRec) = .empty,
-    escaped: std.ArrayList([3]u32) = .empty,
+    /// cell, point, reason, branch context, previous event for the cell.
+    /// cell, point, reason, branch context, previous event for the cell.
+    escaped: std.ArrayList([5]u32) = .empty,
     /// Esc by cell: the earliest point each cell escaped (§18.11).
     esc_index: std.AutoHashMapUnmanaged([4]u32, EscAt) = .empty,
+    esc_heads: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
     closures: std.ArrayList(Closure) = .empty,
     /// Per instruction of the declaration: a lambda parameter's pattern's
     /// closure and position, `none` elsewhere.
@@ -3813,7 +3816,12 @@ const Walker = struct {
     /// Join `c` to Esc at `at` (§4.3), in the list and in the index by cell
     /// that `escapedBefore` reads.
     fn noteEscape(w: *Walker, c: u32, at: u32, why: u32) Allocator.Error!void {
-        try w.escaped.append(w.a, .{ c, at, why });
+        const key = escKey(w.cells.items[c], w.cells.items[c].path);
+        const head = try w.esc_heads.getOrPut(w.a, key);
+        const previous = if (head.found_existing) head.value_ptr.* else none;
+        const event: u32 = @intCast(w.escaped.items.len);
+        try w.escaped.append(w.a, .{ c, at, why, w.ctx, previous });
+        head.value_ptr.* = event;
         const gop = try w.esc_index.getOrPut(w.a, escKey(w.cells.items[c], w.cells.items[c].path));
         if (!gop.found_existing) gop.value_ptr.* = .{};
         const e = gop.value_ptr;
@@ -3846,6 +3854,38 @@ const Walker = struct {
                 }
                 if (!symbolic or at == eps) break;
                 at = w.o.paths.parent.items[at];
+            }
+        }
+        return out;
+    }
+
+    /// Unescaped at a demand: an alternative arm cannot retain its cell.
+    /// Summary read-off deliberately keeps escapeOf's union of every arm.
+    fn escapeBefore(w: *Walker, c: u32) Allocator.Error!EscAt {
+        var out: EscAt = .{};
+        for ([_]u32{ c, try w.takenBase(c) }) |cc| {
+            const x = w.cells.items[cc];
+            const symbolic = switch (x.kind) {
+                .param, .result, .env, .shared, .cbres, .taken, .payload => true,
+                else => false,
+            };
+            var path = x.path;
+            while (true) {
+                var event = w.esc_heads.get(escKey(x, path)) orelse none;
+                while (event != none) {
+                    const e = w.escaped.items[event];
+                    if (e[1] < w.point and w.compatible(e[3], w.ctx)) {
+                        if (e[2] == 0) {
+                            out.gen = @min(out.gen, e[1]);
+                        } else if (e[1] < out.js) {
+                            out.js = e[1];
+                            out.why = e[2];
+                        }
+                    }
+                    event = e[4];
+                }
+                if (!symbolic or path == eps) break;
+                path = w.o.paths.parent.items[path];
             }
         }
         return out;
@@ -4638,6 +4678,7 @@ const Walker = struct {
         unseen: std.AutoHashMapUnmanaged(u64, void),
         cell_cond: []const u32,
         esc_index: std.AutoHashMapUnmanaged([4]u32, EscAt),
+        esc_heads: std.AutoHashMapUnmanaged([4]u32, u32),
         local_av: []const ?AV,
         local_frame: []const u32,
         local_ctx: []const u32,
@@ -4674,6 +4715,7 @@ const Walker = struct {
             .unseen = try w.unseen_funcs.clone(w.a),
             .cell_cond = try w.a.dupe(u32, w.cell_cond.items),
             .esc_index = try w.esc_index.clone(w.a),
+            .esc_heads = try w.esc_heads.clone(w.a),
             .local_av = try w.a.dupe(?AV, w.local_av),
             .local_frame = try w.a.dupe(u32, w.local_frame),
             .local_ctx = try w.a.dupe(u32, w.local_ctx),
@@ -4707,6 +4749,7 @@ const Walker = struct {
         @memcpy(w.cell_cond.items[0..s.cell_cond.len], s.cell_cond);
         @memset(w.cell_cond.items[s.cell_cond.len..], none);
         w.esc_index = try s.esc_index.clone(w.a);
+        w.esc_heads = try s.esc_heads.clone(w.a);
         @memcpy(w.local_av, s.local_av);
         @memcpy(w.local_frame, s.local_frame);
         @memcpy(w.local_ctx, s.local_ctx);
@@ -4964,6 +5007,27 @@ const Walker = struct {
         return w.unionOf(parts.items);
     }
 
+    fn entryConditions(w: *Walker, inst: Inst.Index, update: EntryFn, payload: AV, model: AV) Allocator.Error!void {
+        var fresh: std.ArrayList(u32) = .empty;
+        for (model) |e| {
+            const c = w.cells.items[e.cell];
+            // The entry namespaces update below 100000, init from 100000,
+            // view from 200000 and subscriptions from 300000 (§20.4).
+            if (c.kind != .result or c.a != inst.int() or c.b >= 100_000 or try w.isEscaped(e.cell)) continue;
+            if (std.mem.indexOfScalar(u32, fresh.items, e.cell) != null) continue;
+            try fresh.append(w.a, e.cell);
+            w.cell_cond.items[e.cell] = cond_yes;
+        }
+        if (fresh.items.len == 0) return;
+        for (0..round_cap) |_| {
+            const before = try w.a.dupe(u32, w.cell_cond.items);
+            _ = try w.entryRes(inst, update, &.{ payload, model }, 0);
+            if (std.mem.eql(u32, before, w.cell_cond.items)) return;
+        }
+        // A backstop loses the invariant; never use an unfinished proof.
+        for (fresh.items) |c| try w.lowerCond(c, cond_lost);
+    }
+
     /// Every cell of `av`, closures expanded, at `⋆`: what a value built
     /// from them may hold anywhere. A closure's own cell is no list; what it
     /// captured is expanded into the result, so a message holding a handler
@@ -5045,6 +5109,9 @@ const Walker = struct {
                 break;
             }
         }
+        // Fresh update results participate in the model's inductive
+        // exclusivity invariant. Init's established conditions stay fixed.
+        try w.entryConditions(inst, upd, payload, model);
         const view_msgs: AV = if (msg_tracked) try w.viewMessages(inst, view, model, true) else &.{};
         const msg = try w.unionOf(&.{ payload, view_msgs });
         res = try w.entryRes(inst, upd, &.{ msg, model }, 0);
@@ -7144,7 +7211,7 @@ const Walker = struct {
                 else => {},
             }
             // A real escape names itself before §18.6's conservative one.
-            const esc = try w.escapeOf(e.cell);
+            const esc = try w.escapeBefore(e.cell);
             if (esc.gen < w.point or esc.js < w.point) if (cause == null or @backingInt(Cause.escaped) < @backingInt(cause.?)) {
                 cause = .escaped;
                 detail = if (spec.entry != null and esc.gen >= w.point)

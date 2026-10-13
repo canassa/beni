@@ -505,8 +505,11 @@ diff host scope declared live =
 
 want : Key, Kind, Tap msg, Wanted msg → Wanted msg
 want k kind t d =
+    -- get borrows this list from a dictionary that still holds it. Keep
+    -- other keys and retained dictionary snapshots unchanged; the taps
+    -- themselves keep their identities.
     ( first, taps ) = Maybe.withDefault (Dict.get d k) ( kind, [] )
-    Dict.insert d k ( first, List.append taps [ t ] )
+    Dict.insert d k ( first, List.append (List.copy taps) [ t ] )
 
 
 keep : Scope, Wanted msg, Key, Live msg, Dict Key (Live msg) → Dict Key (Live msg)

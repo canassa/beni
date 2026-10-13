@@ -2984,3 +2984,83 @@ of the module's source and its imports' blocks; the determinism test runs `check
    golden on its own.
 5. **Model paths in messages** are printed as the report prints them (`model#Article.0.errors`); a rendering for
    people is a message-only change.
+
+### *Amended 2026-10-13 (enforcement precision):* escapes in alternative arms
+
+The Unescaped check at a demand uses only earlier escapes whose branch context is
+compatible with that demand's context (§7.2). An escape in `Restart` cannot reject a
+write in the sibling `Concurrent` arm of the same `case`. An escape before the case,
+in an enclosing compatible arm, or in an arm whose case has already joined still
+rejects the write. Nested cases use the same context-compatibility relation as Dead.
+The escape index keeps the events' contexts; summary read-off still joins every arm's
+E/J bits and classifies a returned cell escaped if any arm escapes it. Nothing changes
+the conservative contract a caller sees.
+
+**Soundness.** Two distinct arms of one case cannot execute in one invocation. Removing
+an escape from an incompatible arm therefore removes no runtime holder at the demand.
+The rule does not infer mutual exclusion between unrelated cases, test values across
+calls, or an asynchronous body's choices: those remain compatible or are joined by a
+callee's summary. The unsafe twin starts a fiber holding the list and then appends in
+the same execution; it remains rejected. The accepted twin places that escape and the
+append in different arms. This resolves the command driver's two Concurrent-arm limits
+without dropping an escape from the driver's published summary.
+
+### *Amended 2026-10-13 (enforcement precision):* the model's exclusivity invariant
+
+The entry protocol's shape fixpoint (§20.4) is followed by a must-fact fixpoint for
+the conditions of update's fresh result cells. Init's cells keep their established
+conditions. Update's own fresh cells start at the holding condition, then every
+reachable update result's summary condition is instantiated and conjoined, repeatedly,
+until no cell's condition changes. An unknown result, escaped cell or explicit loss
+in a summary is never seeded as a proven exclusive input. On exhaustion of the
+32-round backstop, update's fresh conditions become lost; a partial proof accepts
+nothing. The conditions are then used by the ordinary entry demands.
+
+**Soundness.** Exclusivity at entry is an inductive invariant: init establishes it,
+and every update arm must preserve it. Fresh allocations of a future update are not
+unknown external cells. Starting those allocations at the holding end of the must
+lattice and monotonically lowering them computes the greatest invariant satisfying
+all reachable summary constraints, including the constraints coming from init and
+from aliasing paths. The previous single evaluation fed an uninitialised fresh cell's
+lost condition into its own preservation constraint, and rejected a recursive tree
+whose grow operation preserves exclusive child lists. Lists duplicated at two
+positions, retained elsewhere in the model, introduced by a sharing update arm or
+obtained from an unknown source still fail the existing separation/exclusivity tests.
+No recursive type is trusted exclusive merely because of its declaration.
+
+### *Amended 2026-10-13 (the subscription tap builder):* borrowed dictionary values
+
+`Tea.want` used `Dict.get` to borrow a tap list, appended to that list, and only then
+called `Dict.insert` with the dictionary still holding it. This helper does not have
+a destructive-focus contract. Its input type permits the same tap list at two keys,
+or a caller keeping the old dictionary; mutating the borrowed list would change an
+entry the operation did not replace, or change the old dictionary. The aliasing twin
+stores one list at two keys and keeps the old dictionary: this is real sharing, not
+an ownership fact the checker may discard.
+
+The private builder's usual fresh accumulator is narrower than the helper's input
+contract. Rewriting the helper through `Dict.update` expresses destructive focus,
+but the full driver still cannot discharge its deep-exclusivity requirement: keys
+and taps are opaque host values and may intentionally share captured values. No
+assertion of deep exclusivity is added for them.
+
+The platform therefore preserves the borrowed value explicitly: copy the outer tap
+list, append to that copy and replace the selected dictionary entry. The tap values
+and their taggers retain their identities; only the borrowed list's container is
+copied. This is intentional persistence across the get/insert operation, including
+aliased input dictionaries, rather than a generic copy added to a proven-unique list
+to bypass a checker limit. The accepted aliased-input twin checks that the replaced
+entry grows, the other entry stays unchanged and the old dictionary stays unchanged.
+The uncopied twin stays rejected. The two Concurrent lists remain un-copied: their
+separate branch proof is the precision fix above.
+
+### *Amended 2026-10-13 (summary blocks):* invalidate the old precision rules
+
+The ownership block version (§28.4) advances from 1 to 2. Its binary layout stays
+unchanged; the rule set changed, so cached blocks from the previous checker are not
+reused. The existing ownership corpus keeps every prior golden. New accepted and
+rejected twins pin alternative-arm escapes, real escapes before a write, duplicated
+recursive children at init and through update, and intentionally shared dictionary
+tap lists. The full copied driver is also checked through the embedded-platform
+maker: three refusals before the changes, only the borrowed tap refusal after the
+branch fix, and none after preserving that borrowed container explicitly.
