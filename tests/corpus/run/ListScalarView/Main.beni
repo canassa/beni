@@ -139,9 +139,15 @@ whole xs acc =
     case xs of
         [ x, …rest ] →
             if x == 3 then
+                -- `all` itself when nothing came before it: `List.append`
+                -- copies even onto `[]` (`backend.md` §4, *Identity*,
+                -- amended 2026-10-13), so it cannot show what `all` is.
                 case xs of
                     all →
-                        List.append acc all
+                        if List.isEmpty acc then
+                            all
+                        else
+                            List.append acc all
             else
                 whole rest (List.push acc x)
 

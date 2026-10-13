@@ -1,16 +1,17 @@
 -- ownership: calls (`ownership-checker.md` §6.1, and since slice 2 §16.4).
 -- Slice 1 had no summaries and made a call's result a fresh list plus every
 -- argument list its type could hold; slice 2 reads the same verdicts off
--- the callees' inferred summaries. `List.filter xs p : List Int` returns
--- `xs` itself when it keeps everything — the identity promise of thesis
--- §3.8, `res fresh, π1` — so extending it while `xs` is read later is
--- rejected, `call`, as the full checker does (T52's shape).
--- `List.map xs String.fromInt : List String` cannot be `xs`, a `List Int`
--- (§16.4's type filter on an identity promise): the extension is accepted,
--- `call`. `List.length` returns an `Int`, which crosses and holds nothing.
--- `[ …xs, …List.reverse xs ]` reads a temporary that may be `xs` while
--- writing `xs`: Disjoint fails only through the call's identity promise, so
--- it is rejected as `call` (thesis §8.4: an approximate tag).
+-- the callees' inferred summaries. `List.filter xs p : List Int` is a
+-- fresh list, `res fresh` — since the owner dropped the identity promises
+-- on 2026-10-13 (`ownership-checker.md` §27) it never returns `xs` itself —
+-- so extending it while `xs` is read later is accepted, `call` (T52's
+-- shape, rejected until then through `res fresh, π1`).
+-- `List.map xs String.fromInt : List String` is fresh too: the extension
+-- is accepted, `call`. `List.length` returns an `Int`, which crosses and
+-- holds nothing. `[ …xs, …List.reverse xs ]` reads a fresh temporary while
+-- writing `xs`, so Disjoint holds and it is accepted, `param` (it was
+-- rejected as `call`, through `reverse`'s promise for fewer than two
+-- elements).
 pub filtered : List Int → Int
 filtered xs =
     kept = List.filter xs λx → x > 0

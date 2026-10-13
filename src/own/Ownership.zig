@@ -260,9 +260,6 @@ pub const bit_w: u8 = 8;
 /// With `bit_w`: some demand writes the path through exact steps only; a
 /// W without it was derived through an approximate one (thesis §8.4).
 pub const bit_x: u8 = 16;
-/// `kept`'s second parameter only (§18.5, the exempt comparison): aliased by
-/// the result, never read, and no use at the call.
-pub const bit_k: u8 = 32;
 /// §18.6: escaped, and only by a function value handed to JavaScript that
 /// captured it — Change 5's words would decide it; printed `J`.
 pub const bit_j: u8 = 64;
@@ -1201,12 +1198,6 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps) }, .{ .path = elem, .prov = p(0, elem) } });
     } else if (std.mem.eql(u8, name, "builder")) {
         res = try keep.dupe(ResEntry, &.{.{ .path = eps, .prov = fresh }});
-    } else if (std.mem.eql(u8, name, "identical")) {
-        // Compares references and dereferences neither: no use (§16.8).
-    } else if (std.mem.eql(u8, name, "kept")) {
-        // §18.5, the exempt comparison: the original is aliased, not read.
-        uses = &.{ .{ .param = 1, .path = eps, .bits = A | bit_k }, .{ .param = 2, .path = eps, .bits = A } };
-        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(1, eps) }, .{ .path = eps, .prov = p(2, eps) }, .{ .path = elem, .prov = p(1, elem) }, .{ .path = elem, .prov = p(2, elem) } });
     } else return null;
     return try o.normalize(.{
         .params = o.in.birs[m].decls[d].params,
@@ -1528,7 +1519,7 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
         wr.print("π{d}", .{u.param + 1}) catch return error.OutOfMemory;
         o.writePath(wr, u.path) catch return error.OutOfMemory;
         wr.writeByte(' ') catch return error.OutOfMemory;
-        inline for (.{ .{ bit_r, "R" }, .{ bit_a, "A" }, .{ bit_e, "E" }, .{ bit_j, "J" }, .{ bit_k, "K" } }) |b| {
+        inline for (.{ .{ bit_r, "R" }, .{ bit_a, "A" }, .{ bit_e, "E" }, .{ bit_j, "J" } }) |b| {
             if (u.bits & b[0] != 0) wr.writeAll(b[1]) catch return error.OutOfMemory;
         }
         // `w`: written only through an approximate step.
@@ -2332,57 +2323,13 @@ fn mayShare(o: *Ownership, store: *TypeStore, a: Var, b: Var, depth: u32) Alloca
             }
         },
         .func => return sb == .func or (sb == .app and try o.unboxed(sb.app.type)),
-        .record => |x| switch (sb) {
-            // §6.1 as amended for slice 3f: two closed records are one
-            // object only when they have the same fields, each of which may
-            // be one value — an `Explosion → Obstacle` callback never
-            // returns what it was handed (thesis §3.8).
-            .record => |y| return o.recordsMayShare(store, x, y, depth),
-            .app => |y| return o.unboxed(y.type),
-            else => return false,
-        },
+        // Slice 3f's rule that two closed records with different fields
+        // are never one object served only `map`'s identity promise, and
+        // went with it (§27.4).
+        .record => return sb == .record or (sb == .app and try o.unboxed(sb.app.type)),
         .tuple => return sb == .tuple or (sb == .app and try o.unboxed(sb.app.type)),
         .unit, .empty_record => return false,
     }
-}
-
-/// The fields of a record type with its extension chain followed, into
-/// `buf`; null when the row is open, or wider than `buf`.
-fn closedFields(store: *TypeStore, r: TypeStore.Structure.Record, buf: []TypeStore.Field) ?[]const TypeStore.Field {
-    var n: usize = 0;
-    var at = r;
-    while (true) {
-        const fs = store.fields(at.fields);
-        if (n + fs.len > buf.len) return null;
-        @memcpy(buf[n..][0..fs.len], fs);
-        n += fs.len;
-        switch (store.resolvedContent(at.ext)) {
-            .structure => |s| switch (s) {
-                .empty_record => return buf[0..n],
-                .record => |next| at = next,
-                else => return null,
-            },
-            else => return null,
-        }
-    }
-}
-
-/// Whether a value of record type `x` may be one of record type `y`: two
-/// closed rows only when they name the same fields, each pair of which may
-/// be one value (§6.1, amended for slice 3f).
-fn recordsMayShare(o: *Ownership, store: *TypeStore, x: TypeStore.Structure.Record, y: TypeStore.Structure.Record, depth: u32) Allocator.Error!bool {
-    var bx: [64]TypeStore.Field = undefined;
-    var by: [64]TypeStore.Field = undefined;
-    const fx = closedFields(store, x, &bx) orelse return true;
-    const fy = closedFields(store, y, &by) orelse return true;
-    if (fx.len != fy.len) return false;
-    for (fx) |f| {
-        const g = for (fy) |g| {
-            if (g.name == f.name) break g;
-        } else return false;
-        if (!try o.mayShare(store, f.value, g.value, depth + 1)) return false;
-    }
-    return true;
 }
 
 /// Whether a value of type `r`, or a part of it, may be the same object
@@ -5275,9 +5222,9 @@ const Walker = struct {
         return false;
     }
 
-    /// No bits, or `kept`'s exempt alias (§18.5): no use at the call.
+    /// No bits: no use at the call.
     fn noUse(bits: u8) bool {
-        return bits == 0 or (bits & bit_k != 0 and bits & (bit_r | bit_e | bit_j | bit_w) == 0);
+        return bits == 0;
     }
 
     /// §16.4: a call whose callee has a summary.
@@ -5408,9 +5355,9 @@ const Walker = struct {
         const arg_types = try w.a.alloc(?Var, args.len);
         for (args, arg_types) |arg, *t| t.* = w.instType(arg);
         const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted });
-        // An identity promise names an argument the result's type cannot
-        // be (§6.1's type filter, thesis §3.8): `List.map xs String.fromInt`
-        // is never `xs`.
+        // An approximate entry may name an argument the result's type
+        // cannot be (§6.1's type filter, thesis §3.8): a `Js` coercion's
+        // result is never its argument at another type.
         const rt = ty orelse return res;
         var kept: std.ArrayList(Entry) = .empty;
         for (res) |e| {
@@ -5509,9 +5456,9 @@ const Walker = struct {
         for (s.res, 0..) |r, i| {
             // `res` is sorted by path: another entry at this path is a neighbour.
             const several = (i > 0 and s.res[i - 1].path == r.path) or (i + 1 < s.res.len and s.res[i + 1].path == r.path);
-            // An identity promise names an argument the result's type
-            // cannot be (§16.4 item 6): `List.map xs String.fromInt` is
-            // never `xs`, whatever `xs`'s cells are.
+            // An approximate entry may name an argument the result's type
+            // cannot be (§16.4 item 6): such an argument is never the
+            // result, whatever its cells are.
             if ((several or r.approx) and r.path == eps and r.prov.kind == .param and r.prov.path == eps and r.prov.a < ctx.arg_types.len) {
                 if (ctx.result_ty) |rt| if (ctx.arg_types[r.prov.a]) |at| if (!try w.o.mayShare(w.store, rt, at, 0)) continue;
             }

@@ -8,10 +8,10 @@ module Prepend
   78:15 construction top: rejected call: s may hold it through the call at 77:16, and is read at 79:25 (approx)
   85:7 construction top: accepted param
   summary keepsBase: π2 R, π2[*] R
-  summary suffix: π1 R, π1[*] RA; res [*] ~fresh2 ~π1[*], ~fresh1
+  summary suffix: π1 R; res [*] ~fresh2, fresh1
   summary recurse: π1 RAW, π2 R; res π1
   summary suffixRead: π1 R
-  summary mapped: π1 R, π1[*] R
+  summary mapped: π1 R
   summary stack: π1 R
   summary pushed: π1 RW
   summary between: π2 RW

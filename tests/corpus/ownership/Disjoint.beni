@@ -6,9 +6,12 @@
 -- pushing onto `xs` while the tuple waits for it is rejected,
 -- `held-operand`. When the temporary waits for a call instead, it is a
 -- holder where that call's summary reads it — here `sizes` reads both
--- arguments, and `List.reverse xs` may be `xs` by its identity promise:
--- rejected as a limit, `call` (TodoMVC's `changed`, thesis I5, is the
--- case a summary accepts because it never reads the old list: `Changed`).
+-- arguments, and `orZero xs` may be `xs` on one branch: rejected as a
+-- limit, `call` (TodoMVC's `changed`, thesis I5, is the case a summary
+-- accepts because it never reads the old list: `Changed`). `List.reverse
+-- xs` is a fresh list (the identity promises were dropped on 2026-10-13,
+-- `ownership-checker.md` §27), so the same shape over it is accepted
+-- (`forFresh`); until then it was this fixture's rejected case.
 pub capture : List Int → List Int
 capture xs = List.update xs 0 λ_ → List.length xs
 
@@ -18,7 +21,19 @@ pending xs = ( [ xs ], List.push xs 1 )
 
 
 pub forCall : List Int → Int
-forCall xs = sizes (List.reverse xs) (List.push xs 1)
+forCall xs = sizes (orZero xs) (List.push xs 1)
+
+
+pub forFresh : List Int → Int
+forFresh xs = sizes (List.reverse xs) (List.push xs 1)
+
+
+orZero : List Int → List Int
+orZero ys =
+    if List.isEmpty ys then
+        [ 0 ]
+    else
+        ys
 
 
 sizes : List Int, List Int → Int
