@@ -36,3 +36,13 @@ joined policy runs =
             Concurrent →
                 Task.spawn λ⊤ → 0
     ( [ …old, 2 ], fiber )
+
+
+-- A tail call can run the other arm later; the summary's E/W is not local.
+pub repeat : Bool, List Int → List Int
+repeat hold xs =
+    if hold then
+        _ = Task.spawn λ⊤ → List.length xs
+        repeat False xs
+    else
+        [ …xs, 2 ]

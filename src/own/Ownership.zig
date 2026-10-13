@@ -2681,6 +2681,8 @@ const Req = struct { frame: u32, atom: WAtom };
 /// by §18.6's rule only (`js`, with the call as `why`).
 const EscAt = struct { gen: u32 = none, js: u32 = none, why: u32 = 0 };
 
+const Escape = struct { cell: u32, point: u32, why: u32, ctx: u32, prev: u32 };
+
 const Entry = struct {
     path: u32,
     cell: u32,
@@ -2949,9 +2951,7 @@ const Walker = struct {
     pending: std.ArrayList(Pending) = .empty,
     uses: std.ArrayList(Use) = .empty,
     demands: std.ArrayList(DemandRec) = .empty,
-    /// cell, point, reason, branch context, previous event for the cell.
-    /// cell, point, reason, branch context, previous event for the cell.
-    escaped: std.ArrayList([5]u32) = .empty,
+    escaped: std.ArrayList(Escape) = .empty,
     /// Esc by cell: the earliest point each cell escaped (§18.11).
     esc_index: std.AutoHashMapUnmanaged([4]u32, EscAt) = .empty,
     esc_heads: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
@@ -3820,7 +3820,7 @@ const Walker = struct {
         const head = try w.esc_heads.getOrPut(w.a, key);
         const previous = if (head.found_existing) head.value_ptr.* else none;
         const event: u32 = @intCast(w.escaped.items.len);
-        try w.escaped.append(w.a, .{ c, at, why, w.ctx, previous });
+        try w.escaped.append(w.a, .{ .cell = c, .point = at, .why = why, .ctx = w.ctx, .prev = previous });
         head.value_ptr.* = event;
         const gop = try w.esc_index.getOrPut(w.a, escKey(w.cells.items[c], w.cells.items[c].path));
         if (!gop.found_existing) gop.value_ptr.* = .{};
@@ -3874,15 +3874,15 @@ const Walker = struct {
                 var event = w.esc_heads.get(escKey(x, path)) orelse none;
                 while (event != none) {
                     const e = w.escaped.items[event];
-                    if (e[1] < w.point and w.compatible(e[3], w.ctx)) {
-                        if (e[2] == 0) {
-                            out.gen = @min(out.gen, e[1]);
-                        } else if (e[1] < out.js) {
-                            out.js = e[1];
-                            out.why = e[2];
+                    if (e.point < w.point and w.compatible(e.ctx, w.ctx)) {
+                        if (e.why == 0) {
+                            out.gen = @min(out.gen, e.point);
+                        } else if (e.point < out.js) {
+                            out.js = e.point;
+                            out.why = e.why;
                         }
                     }
-                    event = e[4];
+                    event = e.prev;
                 }
                 if (!symbolic or path == eps) break;
                 path = w.o.paths.parent.items[path];
@@ -4461,7 +4461,7 @@ const Walker = struct {
         w.closures.items[ci].captures = try caps.toOwnedSlice(w.a);
         var env_escapes: std.ArrayList(Capture) = .empty;
         for (w.escaped.items[escapes_from..]) |x| {
-            const c = w.cells.items[x[0]];
+            const c = w.cells.items[x.cell];
             if (c.kind != .env or c.a >= w.local_frame.len) continue;
             if (w.local_av[c.a] != null and w.local_frame[c.a] == id) continue;
             try env_escapes.append(w.a, .{ .local = c.a, .path = c.path });
@@ -4994,26 +4994,41 @@ const Walker = struct {
 
     /// `f`'s result for these arguments: each class's `res`, instantiated
     /// at the constructor's call (§16.4 item 6).
+    const entry_init_ns: u32 = 100_000;
+    const entry_view_ns: u32 = 200_000;
+    const entry_subs_ns: u32 = 300_000;
+
     fn entryRes(w: *Walker, inst: Inst.Index, f: EntryFn, avs: []const AV, ns: u32) Allocator.Error!AV {
         return w.entryResWith(inst, f, avs, ns, true);
     }
 
     fn entryResWith(w: *Walker, inst: Inst.Index, f: EntryFn, avs: []const AV, ns: u32, conds: bool) Allocator.Error!AV {
+        return w.entryResMode(inst, f, avs, ns, conds, true);
+    }
+
+    fn entryResMode(w: *Walker, inst: Inst.Index, f: EntryFn, avs: []const AV, ns: u32, conds: bool, effects: bool) Allocator.Error!AV {
         var parts: std.ArrayList(AV) = .empty;
         for (f.classes, f.sums) |cls, s| {
             const ci: u32 = if (cls == .closure) cls.closure else none;
-            try parts.append(w.a, try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = ci, .depth = 0, .fresh_ns = ns, .conds = conds }));
+            try parts.append(w.a, try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = ci, .depth = 0, .fresh_ns = ns, .conds = conds, .effects = effects }));
         }
         return w.unionOf(parts.items);
     }
 
-    fn entryConditions(w: *Walker, inst: Inst.Index, update: EntryFn, payload: AV, model: AV) Allocator.Error!void {
+    fn entryConditions(w: *Walker, inst: Inst.Index, update: EntryFn, payload: AV, initial: AV, model: AV) Allocator.Error!void {
         var fresh: std.ArrayList(u32) = .empty;
+        const made_initially = try w.expand(initial);
         for (model) |e| {
             const c = w.cells.items[e.cell];
             // The entry namespaces update below 100000, init from 100000,
             // view from 200000 and subscriptions from 300000 (§20.4).
-            if (c.kind != .result or c.a != inst.int() or c.b >= 100_000 or try w.isEscaped(e.cell)) continue;
+            if (c.kind != .result or c.a != inst.int() or c.b == 0 or c.b >= entry_init_ns or try w.isEscaped(e.cell)) continue;
+            // A callback's cells may use the lower namespace too. Anything
+            // present at init keeps its established condition, never a guess.
+            const initial_cell = for (made_initially) |i| {
+                if ((try w.covers(i.cell, e.cell)) != null) break true;
+            } else false;
+            if (initial_cell) continue;
             if (std.mem.indexOfScalar(u32, fresh.items, e.cell) != null) continue;
             try fresh.append(w.a, e.cell);
             w.cell_cond.items[e.cell] = cond_yes;
@@ -5021,7 +5036,15 @@ const Walker = struct {
         if (fresh.items.len == 0) return;
         for (0..round_cap) |_| {
             const before = try w.a.dupe(u32, w.cell_cond.items);
-            _ = try w.entryRes(inst, update, &.{ payload, model }, 0);
+            const demands_before = w.demands.items.len;
+            const uses_before = w.uses.items.len;
+            const escapes_before = w.escaped.items.len;
+            _ = try w.entryResMode(inst, update, &.{ payload, model }, 0, true, false);
+            if (std.debug.runtime_safety) {
+                std.debug.assert(w.demands.items.len == demands_before);
+                std.debug.assert(w.uses.items.len == uses_before);
+                std.debug.assert(w.escaped.items.len == escapes_before);
+            }
             if (std.mem.eql(u32, before, w.cell_cond.items)) return;
         }
         // A backstop loses the invariant; never use an unfinished proof.
@@ -5076,7 +5099,7 @@ const Walker = struct {
         else
             &.{&.{}};
         const init_av = if (try w.entryFn(try w.fieldOf(app, "init"))) |f|
-            try w.entryRes(inst, f, init_args, 100_000)
+            try w.entryRes(inst, f, init_args, entry_init_ns)
         else
             try w.single(.{ .kind = .top, .a = 0 });
         const m0 = if (whole) init_av else try w.proj(init_av, tuple0, null);
@@ -5110,8 +5133,8 @@ const Walker = struct {
             }
         }
         // Fresh update results participate in the model's inductive
-        // exclusivity invariant. Init's established conditions stay fixed.
-        try w.entryConditions(inst, upd, payload, model);
+        // exclusivity invariant. Init's conditions are never reseeded.
+        try w.entryConditions(inst, upd, payload, m0, model);
         const view_msgs: AV = if (msg_tracked) try w.viewMessages(inst, view, model, true) else &.{};
         const msg = try w.unionOf(&.{ payload, view_msgs });
         res = try w.entryRes(inst, upd, &.{ msg, model }, 0);
@@ -5126,7 +5149,7 @@ const Walker = struct {
         for ([_]EntryFn{ view, subs }) |f| for (f.sums) |s| for (s.uses) |u| {
             if (u.param == 0) try w.entryEscape(inst, try w.projPath(model, u.path, null), u.bits);
         };
-        try w.escape(try w.entryRes(inst, subs, &.{model}, 300_000), w.point);
+        try w.escape(try w.entryRes(inst, subs, &.{model}, entry_subs_ns), w.point);
         w.point += 1;
         // (b) The demands.
         const arena = w.o.out.allocator();
@@ -5245,7 +5268,7 @@ const Walker = struct {
         // handler's message holds may be handed over twice. The markup's own
         // node — what the view returns at its root — is no message.
         var held: std.ArrayList(Entry) = .empty;
-        for (try w.entryResWith(inst, view, &.{model}, 200_000, conds)) |e| {
+        for (try w.entryResWith(inst, view, &.{model}, entry_view_ns, conds)) |e| {
             if (e.path == eps and (try w.reaches(model, &.{e})) == null) continue;
             try held.append(w.a, e);
         }
@@ -5820,6 +5843,8 @@ const Walker = struct {
         /// §20.4: the fixpoint's rounds compute cells only; the round that
         /// settles lowers their conditions once.
         conds: bool = true,
+        /// Condition rounds cannot record speculative escapes or diagnostics.
+        effects: bool = true,
         /// At the call itself: the arguments' types and the result's.
         arg_types: []const ?Var = &.{},
         result_ty: ?Var = null,
@@ -5888,7 +5913,7 @@ const Walker = struct {
                 const k = (if (ctx.depth == 0) base_k else base_k + 1000 * ctx.depth) + ctx.fresh_ns;
                 const ty: Var.Optional = if (ctx.depth == 0) w.instTypeOpt(ctx.inst) else .none;
                 const av = try w.single(.{ .kind = .result, .a = ctx.inst.int(), .b = @max(k, 1), .ty = ty });
-                if (p.kind == .esc) try w.escape(av, w.point);
+                if (p.kind == .esc and ctx.effects) try w.escape(av, w.point);
                 return av;
             },
             .shared => return w.single(.{ .kind = .shared, .a = p.a, .b = p.b, .path = p.path }),
@@ -5964,7 +5989,7 @@ const Walker = struct {
                 }
                 pa.* = try w.unionOf(parts.items);
             }
-            const sub: InstCtx = .{ .inst = ctx.inst, .s = c, .avs = params, .closure = if (cls == .closure) cls.closure else none, .depth = ctx.depth + 1 };
+            const sub: InstCtx = .{ .inst = ctx.inst, .s = c, .avs = params, .closure = if (cls == .closure) cls.closure else none, .depth = ctx.depth + 1, .effects = ctx.effects };
             try out.appendSlice(w.a, try w.instRes(c, sub));
         }
         return w.norm(out.items);
@@ -5980,7 +6005,7 @@ const Walker = struct {
         var from: std.ArrayList(AV) = .empty;
         for (ctx.s.supply) |e| {
             if (e.fun != j) continue;
-            try from.append(w.a, try w.instProv(e.prov, .{ .inst = ctx.inst, .s = ctx.s, .avs = ctx.avs, .closure = ctx.closure, .depth = ctx.depth + 1 }));
+            try from.append(w.a, try w.instProv(e.prov, .{ .inst = ctx.inst, .s = ctx.s, .avs = ctx.avs, .closure = ctx.closure, .depth = ctx.depth + 1, .effects = ctx.effects }));
         }
         if (try w.actualOf(ctx.s, ctx.avs, j)) |actual| try from.append(w.a, actual);
         for (from.items) |av| for (try w.expand(av)) |e| {
@@ -6246,7 +6271,7 @@ const Walker = struct {
         const cbs = try w.a.alloc(Closure.SynCall, k.cb_js.len);
         for (cbs, k.cb_js) |*c, j| {
             c.* = .{ .j = j, .av = try w.instProv(.{ .kind = .param, .a = j }, inner) };
-            try w.sight(c.av, .{ .pending = "a function value a callee returned calls it" }, w.token(ctx.inst));
+            if (ctx.effects) try w.sight(c.av, .{ .pending = "a function value a callee returned calls it" }, w.token(ctx.inst));
         }
         try w.closures.append(w.a, .{ .captures = &.{}, .class = k.sum, .binds = binds, .cb_avs = cbs, .carried = true });
         return w.single(.{ .kind = .closure, .a = @intCast(w.closures.items.len - 1) });
@@ -7874,8 +7899,8 @@ const Walker = struct {
         }
         // E: a parameter cell in Esc.
         for (w.escaped.items) |x| {
-            const c = w.cells.items[try w.takenBase(x[0])];
-            if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = if (x[2] != 0) bit_j else bit_e });
+            const c = w.cells.items[try w.takenBase(x.cell)];
+            if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = if (x.why != 0) bit_j else bit_e });
         }
         // A and the result.
         const expanded = try w.expand(result);

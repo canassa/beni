@@ -1,16 +1,14 @@
--- The subscription tap builder preserves its borrowed dictionary value.
--- Copying the outer tap list keeps other entries and old dictionaries
--- unchanged when the input has aliases (ownership-checker.md, the dated
--- subscription tap builder amendment).
+-- Destructive focus transfers the selected list to the callback.
+-- The isolated helper passes; its opaque-tap fold remains pending.
 import Dict exposing (Dict)
 import Html exposing (Html)
 import Tea
 
 
 want : Int, Int, Dict Int (Int × List Int) → Dict Int (Int × List Int)
-want k t d =
-    ( first, taps ) = Maybe.withDefault (Dict.get d k) ( 0, [] )
-    Dict.insert d k ( first, List.append (List.copy taps) [ t ] )
+want k t d = Dict.update d k λcurrent →
+    ( first, taps ) = Maybe.withDefault current ( 0, [] )
+    Just ( first, List.append taps [ t ] )
 
 
 main : Tea.Program
