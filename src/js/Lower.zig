@@ -847,7 +847,7 @@ pub const Lowerer = struct {
     program_now: ?*ProgramCall = null,
     /// Inside `cx.programViewEnter` (version 1.7): the `view` root whose
     /// inputs are bound, and the declaration context to return to.
-    program_view: ?struct { root: beni_markup.Root.Index, saved: DeclCtx } = null,
+    program_view: ?struct { root: ?beni_markup.Root.Index, saved: DeclCtx } = null,
     /// Inside `cx.programInlineEnter` (version 1.9): the calls entered,
     /// innermost last, and their call path (`Direct.Hole.path`).
     inline_frames: std.ArrayList(InlineFrame) = .empty,
@@ -11164,6 +11164,22 @@ pub const Lowerer = struct {
         return .{ if (at == body) .markup else .function, root };
     }
 
+    /// The first `let` of a `view` body that is a branch that may have an
+    /// effect, a statement left out (it runs where the page is made).
+    fn effectfulBranchViewLet(l: *Lowerer, pc: *const ProgramCall) Allocator.Error!?Inst.Index {
+        const function = l.fieldFunction(pc, pc.view) orelse return null;
+        const saved = try l.enterDecl(function.decl);
+        defer l.leaveDecl(saved);
+        var at = function.body;
+        while (l.bir.instTag(at) == .let) : (at = @fromBackingInt(@intCast(l.bir.instData(at).rhs))) {
+            for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(at).lhs))), Inst.Index)) |def| {
+                if (l.bir.instTag(def) != .let_def) continue;
+                if (l.mayHaveEffect(@fromBackingInt(@intCast(l.bir.instData(def).rhs)))) return def;
+            }
+        }
+        return null;
+    }
+
     /// The first `let` of `view`'s body that its root does not take, its
     /// markup reads, and may have an effect (version 1.10), or null.
     fn effectfulViewLet(l: *Lowerer, pc: *const ProgramCall) Allocator.Error!?Inst.Index {
@@ -11207,7 +11223,15 @@ pub const Lowerer = struct {
             .view = if (pc.record) view else .computed,
             .view_root = if (pc.record) view_root else null,
             .view_lets = pc.record and view == .function and view_root != null,
+            .view_branch = pc.record and view == .function and view_root == null and l.viewBranchOf(pc) != null,
             .update = if (pc.record) update else .computed,
+        };
+        // A `view` whose body is a branch evaluates its `let`s wherever the
+        // values of its arms are: one that may have an effect is refused, as
+        // above.
+        if (program.view_branch) if (try l.effectfulBranchViewLet(pc)) |def| {
+            try l.report(.not_implemented, def, "This `let` of `view` may have an effect: `{s}` evaluates the `let`s of a `view` whose body is an `if` or a `case` wherever the values of its arms are evaluated, which is not once per message (`docs/design/browser-direct.md` §5.4, §8.4). Write the call where the markup reads it, or build this program with `--platform=browser-tea`.", .{st.lowering.name});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         };
         // Version 1.10: a `let` of `view`'s body its markup reads that the
         // root does not take — one that may have an effect — is evaluated
@@ -12085,12 +12109,16 @@ pub const Lowerer = struct {
     fn branchArms(l: *Lowerer, node: beni_markup.Node.Index) Allocator.Error!?BranchArms {
         const st = l.mk orelse return null;
         const tree = &st.built.tree;
-        if (tree.kind(node) != .hole) return null;
-        const h = tree.hole(node);
-        if (h.kind != .html) return null;
-        const value = switch (st.built.values[@backingInt(h.value)]) {
-            .inst => |x| x,
-            else => return null,
+        // `Node.Index.none`: the `view`'s body past its `let`s, a branch at
+        // the page's root (`Program.view_branch`).
+        const value = if (node == .none) l.viewBranchValue() orelse return null else blk: {
+            if (tree.kind(node) != .hole) return null;
+            const h = tree.hole(node);
+            if (h.kind != .html) return null;
+            break :blk switch (st.built.values[@backingInt(h.value)]) {
+                .inst => |x| x,
+                else => return null,
+            };
         };
         var i = value;
         while (l.bir.instTag(i) == .let) i = @fromBackingInt(@intCast(l.bir.instData(i).rhs));
@@ -12103,6 +12131,21 @@ pub const Lowerer = struct {
             while (l.bir.instTag(r.*) == .let) r.* = @fromBackingInt(@intCast(l.bir.instData(r.*).rhs));
         }
         return .{ .value = value, .bodies = bodies.items, .results = results };
+    }
+
+    /// The program's `view`'s body past its `let`s, when it is a `case` —
+    /// which an `if` is too — and no markup (`Program.view_branch`).
+    fn viewBranchValue(l: *Lowerer) ?Inst.Index {
+        return l.viewBranchOf(l.program_now orelse return null);
+    }
+
+    fn viewBranchOf(l: *Lowerer, pc: *const ProgramCall) ?Inst.Index {
+        _, const root = l.programShape(pc.view);
+        if (root != null) return null;
+        const function = l.fieldFunction(pc, pc.view) orelse return null;
+        var at = function.body;
+        while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+        return if (l.bir.instTag(at) == .case) at else null;
     }
 
     fn flattenArms(l: *Lowerer, case: Inst.Index, out: *std.ArrayList(Inst.Index)) Allocator.Error!void {
@@ -12144,7 +12187,7 @@ pub const Lowerer = struct {
             const callee = what == .call and (l.chainOfExpr(r, &.{}, true) orelse Chain{}).statements;
             o.* = .{ .what = what, .dead = l.deadArm(b), .statements = callee or l.armStatements(b).len != 0 };
         }
-        return .{ .arms = out };
+        return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value) };
     }
 
     /// The `let`s of an arm's body its result does not need — a statement,
@@ -12354,8 +12397,10 @@ pub const Lowerer = struct {
     fn directBranchEnter(l: *Lowerer, block: ?beni_markup.Block, node: beni_markup.Node.Index, k: u32, made: bool, held: ?Node.Index) Allocator.Error!?Node.Index {
         const st = l.mk.?;
         const p = st.pos;
-        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
-        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx() };
+        // A `view`'s body (`Node.Index.none`): its arms were walked on the
+        // root's call path, which no token extends.
+        if (node != .none) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = node != .none };
         defer l.inline_frames.append(l.scratch, frame) catch {};
         const b = block orelse return null;
         const arms = try l.branchArms(node) orelse return null;
@@ -12439,8 +12484,10 @@ pub const Lowerer = struct {
     fn directBranchBind(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index, k: u32, from: Node.Index, made: bool) Allocator.Error!void {
         const st = l.mk.?;
         const p = st.pos;
-        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
-        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx() };
+        // A `view`'s body (`Node.Index.none`): its arms were walked on the
+        // root's call path, which no token extends.
+        if (node != .none) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = node != .none };
         defer l.inline_frames.append(l.scratch, frame) catch {};
         const arms = try l.branchArms(node) orelse return;
         if (k >= arms.bodies.len) return;
@@ -13041,7 +13088,9 @@ pub const Lowerer = struct {
         const view, const root_index = l.programShape(pc.view);
         const function = l.fieldFunction(pc, pc.view) orelse return;
         if ((view != .markup and view != .function) or function.params.len != 1) return;
-        const index = root_index orelse return;
+        // A body that is a branch (`Program.view_branch`) has no root: its
+        // parameter and `let`s are bound, and its arms bind the rest.
+        if (root_index == null and l.viewBranchValue() == null) return;
         const saved = try l.enterDecl(function.decl);
         var stmts: StmtList = .empty;
         try l.bindParam(&stmts, function.params[0], model);
@@ -13055,6 +13104,10 @@ pub const Lowerer = struct {
             for (lets.groups) |g| try l.letBindings(&stmts, g);
         }
         try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        const index = root_index orelse {
+            l.program_view = .{ .root = null, .saved = saved };
+            return;
+        };
         const root = st.built.tree.root(index);
         const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
         for (names, 0..) |*n, k| {
@@ -13130,7 +13183,7 @@ pub const Lowerer = struct {
 
     fn directViewLeave(l: *Lowerer) void {
         const v = l.program_view orelse return;
-        l.markupUnbindInputs(v.root);
+        if (v.root) |r| l.markupUnbindInputs(r);
         l.leaveDecl(v.saved);
         l.program_view = null;
     }

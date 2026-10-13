@@ -156,6 +156,12 @@ pub const Program = struct {
     /// others run where `programViewEnter` binds the root's inputs. A
     /// lowering before 1.10 sees `.function`, as before.
     view_lets: bool = false,
+    /// 1.10 (S4's review): `view` is a function whose body, past its
+    /// `let`s, is an `if` or a `case` — a branch at the page's root, with no
+    /// markup node: `programBranch` and the calls after it take
+    /// `Node.Index.none` for it, and `programViewEnter` binds `view`'s
+    /// parameter and its `let`s with no root. `view_root` is null.
+    view_branch: bool = false,
     /// What `update` is: `markup` and `function` alike are functions this
     /// module declares or the record writes; `other_module` or `computed`.
     update: Shape,
@@ -310,6 +316,12 @@ pub const Program = struct {
     /// `case` replaced by that `case`'s arms (`else if`).
     pub const Branch = struct {
         arms: []const Arm,
+        /// (S4's review) Evaluating the branch's value may call `Debug`, or
+        /// may have another effect: what a branch with no hole value — a
+        /// `view`'s body, `Node.Index.none` — says in place of
+        /// `reachesDebug` and `Tree.everyRender`.
+        debug: bool = true,
+        effect: bool = true,
     };
 
     /// 1.10: one arm of a branch: what its result is, past the arm's

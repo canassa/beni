@@ -249,13 +249,15 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     switch (p.view) {
         .markup => {},
         // `let`s around markup written in place (S4's amendment, item 4).
-        .function => if (!p.view_lets or p.view_root == null) return cx.programReport(.view, .not_implemented,
-            \\`browser-direct` compiles a `view` whose body is markup written in place, after
-            \\any `let`s, and this one's is not: its body computes its markup — an `if`, a
-            \\`case`, a helper's call — which no slice of `docs/design/browser-direct.md` §14
-            \\compiles as a `view`'s body. Write the body as markup that holds it, `<>{…}</>`,
-            \\where §5.5 compiles a branch and §9.2 a helper written in place; or build this program
-            \\with `--platform=browser-tea`, which renders any `view`.
+        .function => if (p.view_branch) {
+            return branchView(cx, tree);
+        } else if (!p.view_lets or p.view_root == null) return cx.programReport(.view, .not_implemented,
+            \\`browser-direct` compiles a `view` whose body is markup written in place, or an
+            \\`if` or a `case`, after any `let`s, and this one's is neither: its body computes
+            \\its markup otherwise — a helper's call — which no slice of
+            \\`docs/design/browser-direct.md` §14 compiles as a `view`'s body. Write the body as
+            \\markup that holds it, `<>{…}</>`, where §9.2 compiles a helper written in place;
+            \\or build this program with `--platform=browser-tea`, which renders any `view`.
         ),
         .other_module => return cx.programReport(.view, .not_implemented,
             \\`browser-direct` compiles a `view` declared in the module that calls `Tea.sandbox`,
@@ -312,6 +314,33 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     }
     if (b.ops.items.len == 0 and !cx.build.fuzz and b.baked_holes.items.len == 0 and b.baked_items.items.len == 0 and !adopt and !p.view_lets) return staticMount(cx, tree, r.node, b.html.items, b.flags);
     return page.mount(&b, index, r.node);
+}
+
+/// A `view` whose body, past its `let`s, is an `if` or a `case`
+/// (`Program.view_branch`; S4's amendment, item 3, as amended by its review,
+/// item 7): a branch at the page's root, its marker the mount's end. The
+/// view's site is the branch alone — a body with no template and one op,
+/// the branch, which has no markup node (`Node.Index.none`) — and each arm
+/// is a site, or a value slot, as in a hole.
+fn branchView(cx: *m.Context, tree: *const m.Tree) m.Error!m.Expr {
+    const found = cx.programBranch(.none) orelse return cx.programReport(.view, .not_implemented,
+        \\`browser-direct` compiles a `view` whose body computes its markup only when it is
+        \\an `if` or a `case` (`docs/design/browser-direct.md` §5.5). Write the body as markup
+        \\that holds it, `<>{…}</>`, or build this program with `--platform=browser-tea`.
+    );
+    var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .bake = bakeOf, .bake_item = bakeItemOf, .bake_list = bakeListOf, .inline_call = Page.inlineOf };
+    var vg: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .own_listeners = true };
+    var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .vg = &vg, .view_lets = true, .no_root = true };
+    g.user = &page;
+    const placeholder: m.Root.Index = @fromBackingInt(@intCast(0));
+    try page.ctxs.append(cx.arena, .{ .parent = 0, .node = .none, .root = placeholder });
+    var stack: std.ArrayList(m.Root.Index) = .empty;
+    _ = try page.supportedBranch(.none, found, &stack);
+    const b = try cx.arena.create(dom.Body);
+    b.* = .{ .site = 0 };
+    try b.ops.append(cx.arena, .{ .node = .none, .what = .{ .html = .{ .at = .{ .parent = null, .marker = .none }, .kind = .html, .value = 0 } } });
+    page.root_calls_hi = 1;
+    return page.mount(b, placeholder, .none);
 }
 
 /// The text a hole is baked as (§5.1, as amended: O8 widened): a text hole
@@ -582,6 +611,9 @@ const Branch = struct {
     /// scrutinee): every key chooses its arm again, as every key calls an
     /// every-render group (§5.3).
     every: bool = false,
+    /// A `view`'s body (no hole value): it may print or have an effect, so
+    /// the verify mode does not evaluate it again.
+    loud: bool = false,
 
     const Kind = enum { site, value, dead };
 };
@@ -744,6 +776,10 @@ const Page = struct {
     sites: std.ArrayList(*Site) = .empty,
     /// `view`'s body is `let`s around its markup (`Program.view_lets`).
     view_lets: bool = false,
+    /// `view`'s body is a branch (`Program.view_branch`): the view has no
+    /// root, its site holds the branch alone, and its `let`s are no
+    /// derived values.
+    no_root: bool = false,
     /// An arm site's check being written: its arm binds from the name the
     /// check is handed — what its branch's value makes now — not from what
     /// its instance keeps.
@@ -759,6 +795,12 @@ const Page = struct {
 
     fn jsb(pg: *Page) m.Js {
         return pg.cx.js;
+    }
+
+    /// `cx.at(n)`, but for `Node.Index.none` — a `view` whose body is a
+    /// branch has no markup node — which positions nothing.
+    fn atNode(pg: *Page, n: m.Node.Index) void {
+        if (n != .none) pg.cx.at(n);
     }
 
     fn ident(pg: *Page, n: m.Name) m.Error!m.Expr {
@@ -1604,7 +1646,7 @@ const Page = struct {
         // several nodes, text — and out of the `<svg>` an SVG root is
         // parsed in (`Direct.armTemplate`).
         for (pg.sites.items) |s| if (s.arm) |br| {
-            cx.at(br.node);
+            pg.atNode(br.node);
             try js.assign(pg.body, try js.member(try pg.ident(pg.t), "innerHTML"), try js.string(s.b.html.items));
             s.template = try cx.fresh("$T");
             try js.constant(pg.body, s.template.?, try pg.rt("armTemplate", &.{ try pg.ident(pg.t), try pg.num(s.b.flags) }));
@@ -1619,7 +1661,7 @@ const Page = struct {
         }
 
         // The page, parsed once, and its dynamic nodes reached once (§5.1).
-        cx.at(pg.node);
+        pg.atNode(pg.node);
         try js.assign(pg.body, try js.member(try pg.ident(pg.t), "innerHTML"), try js.string(b.html.items));
         pg.frag = try cx.fresh("$r");
         try js.constant(pg.body, pg.frag, try content(cx, pg.t, b.flags));
@@ -2015,7 +2057,15 @@ const Page = struct {
         const tree = pg.tree;
         const count: usize = if (found) |arms| arms.len else 2;
         const br = try pg.a().create(Branch);
-        const facts = try pg.holeFacts(s, op.ctx, .{ .node = op.node });
+        // A `view` whose body is the branch (`Node.Index.none`): no hole
+        // holds its value, so the pass records no read set for it — every
+        // key chooses its arm again — and the compiler says whether it may
+        // print or have an effect (S4's review, item 7).
+        const at_root: ?m.Program.Branch = if (op.node == .none) pg.cx.programBranch(.none) else null;
+        const facts: m.Program.HoleFacts = if (at_root != null)
+            .{ .group = std.math.maxInt(u32), .static = false, .bake = null }
+        else
+            try pg.holeFacts(s, op.ctx, .{ .node = op.node });
         br.* = .{
             .node = op.node,
             .site = s,
@@ -2029,7 +2079,8 @@ const Page = struct {
             .checks = try pg.a().alloc(?m.Name, count),
             .statements = try pg.a().alloc(bool, count),
             .where = facts.where,
-            .every = pg.tree.everyRender(if (found == null) tree.show(op.node).when else tree.hole(op.node).value),
+            .every = if (at_root) |x| x.effect else pg.tree.everyRender(if (found == null) tree.show(op.node).when else tree.hole(op.node).value),
+            .loud = if (at_root) |x| x.debug or x.effect else false,
         };
         @memset(br.arms, null);
         @memset(br.makes, null);
@@ -2037,7 +2088,7 @@ const Page = struct {
         for (br.statements, 0..) |*x, j| x.* = if (found) |arms| arms[j].statements else false;
         s.branches[k] = br;
         try pg.branches.append(pg.a(), br);
-        const prefix = if (found != null)
+        const prefix = if (found != null and op.node != .none)
             try std.mem.concat(pg.a(), m.Node.Index, &.{ s.prefix, try pg.ctxNodes(op.ctx), &.{op.node} })
         else
             try std.mem.concat(pg.a(), m.Node.Index, &.{ s.prefix, try pg.ctxNodes(op.ctx) });
@@ -2067,7 +2118,7 @@ const Page = struct {
     fn planArm(pg: *Page, br: *Branch, k: u32, index: m.Root.Index, prefix: []const m.Node.Index, depth: u32) m.Error!*Site {
         const body = pg.tree.root(index);
         const ab = try pg.a().create(dom.Body);
-        pg.cx.at(br.node);
+        pg.atNode(br.node);
         const saved = .{ pg.plan_prefix, pg.g.ctx, pg.planning_arm, pg.no_bake, pg.planning_row };
         defer {
             pg.plan_prefix = saved[0];
@@ -3411,6 +3462,7 @@ const Page = struct {
     /// for (`programLet`).
     fn planLets(pg: *Page) m.Error!void {
         const cx = pg.cx;
+        if (pg.no_root) return;
         const lets = pg.tree.root(pg.index).lets;
         pg.let_slots = try pg.a().alloc(m.Name, lets.len);
         pg.let_facts = try pg.a().alloc(m.Program.HoleFacts, lets.len);
@@ -3429,6 +3481,7 @@ const Page = struct {
     fn deriveLets(pg: *Page, blk: m.Block, key: ?u32) m.Error!void {
         const cx = pg.cx;
         const js = pg.jsb();
+        if (pg.no_root) return;
         const lets = pg.tree.root(pg.index).lets;
         if (lets.len == 0) return;
         var which: std.ArrayList(u32) = .empty;
@@ -3456,6 +3509,7 @@ const Page = struct {
     fn verifyLets(pg: *Page, blk: m.Block) m.Error!bool {
         const cx = pg.cx;
         const js = pg.jsb();
+        if (pg.no_root) return false;
         const lets = pg.tree.root(pg.index).lets;
         var any = false;
         const inner = try js.block();
@@ -3521,7 +3575,8 @@ const Page = struct {
                 return p.ref(s.walks[t].?, null);
             }
         }.get;
-        const parent: m.Expr = if (at.parent) |t| try nodeAt(pg, br.site, walk, t) else try js.literal(.null);
+        // A `view`'s body: its arms go at the end of the mount node.
+        const parent: m.Expr = if (at.parent) |t| try nodeAt(pg, br.site, walk, t) else if (br.node == .none) try pg.ident(pg.at_root) else try js.literal(.null);
         const marker: m.Expr = switch (at.marker) {
             .node => |t| try nodeAt(pg, br.site, walk, t),
             else => try js.literal(.null),
@@ -3554,7 +3609,7 @@ const Page = struct {
     fn chooseArm(pg: *Page, blk: m.Block, br: *Branch, inst: ?Path) m.Error!Chosen {
         const cx = pg.cx;
         const js = pg.jsb();
-        cx.at(br.node);
+        pg.atNode(br.node);
         try pg.enterOp(blk, br.site, br.ctx, inst, null, null, try pg.branchValues(br), null);
         defer pg.leave();
         const n = try cx.fresh("$n");
@@ -3704,7 +3759,7 @@ const Page = struct {
     fn valueArm(pg: *Page, blk: m.Block, br: *Branch, j: u32, inst: ?Path, from: m.Expr) m.Error!m.Expr {
         const cx = pg.cx;
         const js = pg.jsb();
-        cx.at(br.node);
+        pg.atNode(br.node);
         if (!br.show) return js.index(from, try pg.num(1));
         var values: std.ArrayList(m.Value.Index) = .empty;
         const sh = pg.tree.show(br.node);
@@ -3733,7 +3788,7 @@ const Page = struct {
         const bs = try cx.fresh("$b");
         const av = try cx.fresh("$a");
         const e = try cx.fresh("$e");
-        cx.at(br.node);
+        pg.atNode(br.node);
         const template = try pg.ident(s.template.?);
         const clone = if (s.b.flags & 1 != 0)
             try js.call(try js.member(try js.member(try pg.ident(pg.t), "ownerDocument"), "importNode"), &.{ template, try js.literal(.true) })
@@ -3808,8 +3863,11 @@ const Page = struct {
     /// again.
     fn verifyBranch(pg: *Page, blk: m.Block, br: *Branch, inst: ?Path) m.Error!void {
         const js = pg.jsb();
-        const scrutinee = if (br.show) pg.tree.show(br.node).when else pg.tree.hole(br.node).value;
-        if (!pg.quiet(scrutinee)) return;
+        if (br.loud) return;
+        if (br.node != .none) {
+            const scrutinee = if (br.show) pg.tree.show(br.node).when else pg.tree.hole(br.node).value;
+            if (!pg.quiet(scrutinee)) return;
+        }
         if (br.show) if (pg.tree.show(br.node).key) |k| if (!pg.quiet(k)) return;
         const inner = try js.block();
         const ch = try pg.chooseArm(inner, br, inst);
