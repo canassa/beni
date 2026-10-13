@@ -1,0 +1,26 @@
+-- `top_level_list_changed` (ownership-checker.md §27.6; thesis §8.2, *A
+-- top-level list*, T53): the model starts with `Seeds.seed`, a top-level
+-- value of another module, and `update` adds to the end of `model.todos`
+-- in place — which would change the top-level list for every part of the
+-- program that reads it. The message shows where the runtime hands
+-- `update` the model and where, in `Seeds.beni`, the list is defined, and
+-- writes the fix, `List.copy Seeds.seed`.
+import Html exposing (Html)
+import Seeds
+import Tea
+
+
+type alias Model =
+    todos : List String
+
+
+update : String, Model → Model
+update t model = { model | todos = List.push model.todos t }
+
+
+view : Model → Html String
+view model = <button onClick={"bread"}>{String.fromInt (List.length model.todos)}</button>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { todos = Seeds.seed }, update = update, view = view }

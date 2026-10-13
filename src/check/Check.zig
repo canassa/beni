@@ -282,6 +282,11 @@ pub const Cutoff = struct {
     /// keys, computed at the same barrier as `core_surface` so the two recipes
     /// see the same moment.
     core_epoch: Key.Key = Key.none,
+    /// The run enforces ownership (`ownership-checker.md` §27.4): an entry
+    /// without a summary block is a miss, and a module not installed from
+    /// `pack` publishes its interface hash folded with its own key, so an
+    /// importer's key covers every block it can read.
+    ownership: bool = false,
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.

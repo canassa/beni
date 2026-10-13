@@ -129,6 +129,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
                 cutoff.interner,
                 &d.interfaces[m.int()],
             );
+            dropWithoutBlock(d, cutoff, m);
             if (d.options.cached[m.int()] != null) {
                 cutoff.hit[m.int()] = true;
                 if (m.int() < cutoff.embedded.len) cutoff.embedded[m.int()] = true;
@@ -144,7 +145,20 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
         cutoff.interner,
         &d.interfaces[m.int()],
     );
+    dropWithoutBlock(d, cutoff, m);
     cutoff.hit[m.int()] = d.options.cached[m.int()] != null;
+}
+
+/// `ownership-checker.md` §27.4, rule 1: in a run that enforces ownership,
+/// an entry a run that did not wrote — no summary block — is a miss, and
+/// the module is checked again.
+fn dropWithoutBlock(d: *Driver, cutoff: *Check.Cutoff, m: Graph.Index) void {
+    if (!cutoff.ownership) return;
+    if (d.options.cached[m.int()]) |*loaded| {
+        if (loaded.ownership.len != 0) return;
+        loaded.deinit(d.gpa);
+        d.options.cached[m.int()] = null;
+    }
 }
 
 /// `--cutoff-compare`: `m`'s key under the older TRANSITIVE recipe, beside
@@ -189,6 +203,19 @@ pub fn publish(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void
     };
     const record = try iface_bytes.write(scratch.allocator(), &d.interfaces[m.int()], d.interner);
     cutoff.iface_hash[m.int()] = iface_bytes.hash(record);
+    // `ownership-checker.md` §27.4, rule 2: in a run that enforces
+    // ownership the interface does not cover the summary block an importer
+    // reads, so a module not from the checked core hands its importers its
+    // interface hash folded with its own key — which covers its source and,
+    // by induction, every block it read. The checked core's blocks are fixed
+    // by the build id, and its keys must stay the ones the pack was made with.
+    const from_pack = m.int() < cutoff.embedded.len and cutoff.embedded[m.int()];
+    if (cutoff.ownership and !from_pack) {
+        var folded: [32]u8 = undefined;
+        @memcpy(folded[0..16], &cutoff.iface_hash[m.int()]);
+        @memcpy(folded[16..32], &cutoff.keys.of(m));
+        cutoff.iface_hash[m.int()] = iface_bytes.hash(&folded);
+    }
 
     var imports: std.ArrayList(Digest.Import) = .empty;
     defer imports.deinit(scratch.allocator());

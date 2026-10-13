@@ -1192,7 +1192,7 @@ test "dump without a stage is a usage error and does nothing" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
-    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes\n", dump_bad.stderr);
+    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership\n", dump_bad.stderr);
     try testing.expectEqualStrings("", dump_bad.stdout);
 
     // ┌─────────────────────────────────────────┐
@@ -4905,6 +4905,44 @@ test "the ownership report is byte-identical at --jobs=1 and --jobs=8" {
     // summary, which the report prints, computed in the same single pass.
     try testing.expect(std.mem.indexOf(u8, out[0], "call Lists.grow <literal>: accepted fresh") != null);
     try testing.expect(std.mem.indexOf(u8, out[0], "summary grow: π1 RAW; res π1") != null);
+}
+
+test "ownership errors on an in-place platform are byte-identical at --jobs=1 and --jobs=8" {
+    // ownership-checker.md §27.9: `check --platform=browser-direct` runs the
+    // pass after the parallel check, on one thread, in graph order; its
+    // messages, which hold their own excerpts, are a function of the text.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lists.beni",
+        \\pub grow : List Int, Int → List Int
+        \\grow acc n = [ …acc, n ]
+        \\
+        \\
+        \\pub seed : List Int
+        \\seed = [ 1 ]
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Lists
+        \\
+        \\
+        \\pub both : List Int → Int
+        \\both xs =
+        \\    ys = Lists.grow xs 2
+        \\    zs = List.push Lists.seed 3
+        \\    List.length ys + List.length xs + List.length zs
+        \\
+    );
+    const runs = [4][]const u8{ "--jobs=1", "--jobs=8", "--jobs=1", "--jobs=8" };
+    var out: [4][]const u8 = undefined;
+    for (&out, runs) |*slot, jobs| {
+        const r = try w.runWith(&.{ "check", "--no-cache", "--platform=browser-direct", jobs, "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        slot.* = r.stderr;
+    }
+    for (out[1..]) |other| try testing.expectEqualStrings(out[0], other);
+    try testing.expect(std.mem.indexOf(u8, out[0], "-- LIST CHANGED WHILE STILL IN USE") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0], "-- TOP-LEVEL LIST CHANGED") != null);
 }
 
 test "a constraint that rode out on an inferred interface is reported without --explain, and does not fail the build" {
