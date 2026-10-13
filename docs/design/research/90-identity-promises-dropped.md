@@ -100,8 +100,10 @@ The units that move:
 **The rules that existed for the promises.** Two binaries were swept against the branch's: one without §25.3's
 record rule, one without §16.4 item 6's type filter. Neither changed any line of the 1 299 units, and the
 `ownership/` goldens do not move without the record rule. The record rule is removed (§25.3 was written for
-`map`'s promise and research 85 §1.2 found it decided nothing else); the type filter stays, as `ownership-checker.md`
-§27.4 says, because it is thesis §3.8's general statement and its code is the walk slice 4 is changing.
+`map`'s promise and research 85 §1.2 found it decided nothing else). The type filter is unreached too: the whole
+of `zig build test-blackbox` passes with it disabled, and a program cannot import `Js` to make a coercion that
+would reach it. It stays for now only because its code is the walk slice 4 is changing (`ownership-checker.md`
+§27.4 records it as debt, to go after slice 4 lands).
 
 ## 3. Fixtures
 

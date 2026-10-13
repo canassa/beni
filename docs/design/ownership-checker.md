@@ -2631,9 +2631,12 @@ name. No in-place write existed for that to break.
   (§16.8's `view` row: `res ε = π₁, fresh₁`). `drop xs 0` is `xs` for the same reason.
 - **§16.4 item 6's type filter.** It was written with the identity promises as its example, and with none left
   in core it decides no line of any program research 90 measured: a binary with the filter disabled gives the same
-  verdict on every line of the 1 299 units of research 90 §2. It stays, as thesis §3.8 states it, because it is a
-  sound statement about types and still decides a summary whose result is a coercion through `Js`; it is
-  `instRes` and `applySummary`'s tail, which slice 4 is changing, so removing it is left to a later change.
+  verdict on every line of the 1 299 units of research 90 §2, and the whole of `zig build test-blackbox` passes
+  without it: **no test reaches it now.** Only a summary whose result is a coercion through `Js` could make it
+  fire, and only core and the platforms may import `Js`, so no fixture can be written for it from a program.
+  It is known debt, kept for one reason: it is `instRes` and `applySummary`'s tail, the walk slice 4 is
+  changing, and removing it there now would collide with that work. It goes in the first change after slice 4
+  lands, unless a platform summary gives it a fixture first.
 - **§25.3 is withdrawn.** Two closed records with different fields are no longer told apart by §6.1's "may be one
   object": the rule existed for `map`'s promise (§25.1: "`map`'s identity promise is named only where it can
   fire"), and a binary without it gives the same verdict on every line research 90 measured, as research 85
