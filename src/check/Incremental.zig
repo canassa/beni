@@ -149,7 +149,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     cutoff.hit[m.int()] = d.options.cached[m.int()] != null;
 }
 
-/// `ownership-checker.md` §27.4, rule 1: in a run that enforces ownership,
+/// `ownership-checker.md` §28.4, rule 1: in a run that enforces ownership,
 /// an entry a run that did not wrote — no summary block — is a miss, and
 /// the module is checked again.
 fn dropWithoutBlock(d: *Driver, cutoff: *Check.Cutoff, m: Graph.Index) void {
@@ -203,7 +203,7 @@ pub fn publish(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void
     };
     const record = try iface_bytes.write(scratch.allocator(), &d.interfaces[m.int()], d.interner);
     cutoff.iface_hash[m.int()] = iface_bytes.hash(record);
-    // `ownership-checker.md` §27.4, rule 2: in a run that enforces
+    // `ownership-checker.md` §28.4, rule 2: in a run that enforces
     // ownership the interface does not cover the summary block an importer
     // reads, so a module not from the checked core hands its importers its
     // interface hash folded with its own key — which covers its source and,

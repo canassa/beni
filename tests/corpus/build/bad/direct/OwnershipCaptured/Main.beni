@@ -1,5 +1,5 @@
 -- `list_still_used` through a function that holds the list
--- (ownership-checker.md §27.6; thesis §8.2, *A closure that keeps the
+-- (ownership-checker.md §28.6; thesis §8.2, *A closure that keeps the
 -- list*, T7): `count` captures `rows`, `rows` is extended, and `count` is
 -- called afterwards — in place it would count the new row too.
 import Html exposing (Html)

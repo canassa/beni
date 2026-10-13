@@ -1,4 +1,4 @@
--- `list_still_used` through another name (ownership-checker.md §27.6, the
+-- `list_still_used` through another name (ownership-checker.md §28.6, the
 -- thesis's first example in §8.2): `saved` keeps `model.todos`, the arm
 -- adds to the end of `model.todos` itself, and `saved` is read after the
 -- change. The message shows the three places — where `saved` keeps the

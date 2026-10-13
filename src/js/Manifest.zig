@@ -52,7 +52,7 @@
 //!   `{{entry}}` stands for the entry file, written as `index.html`. Inherited
 //!   down the chain like every output key; an APP manifest's replaces it.
 //! - `lists` — `"in-place"`, since 2026-10-13 (`boundary.md` §5.2,
-//!   `ownership-checker.md` §27.2): the chain's code may write a list's
+//!   `ownership-checker.md` §28.2): the chain's code may write a list's
 //!   array in place, so `check` and `build` run the ownership checker and
 //!   its rejections are errors. No other value; inherited first-found.
 //! - `build` — an app's defaults for `build` and `serve` (`frontend.md`

@@ -1462,7 +1462,7 @@ test "a body edit that flips an effect bit crosses the firewall, and the warm im
     try expectMoved("a flipped effect bit", hashes_before, hashes_after, &.{ "app:App", "app:Lib" });
 }
 
-/// `ownership-checker.md` §27.4: a leaf whose body may or may not write its
+/// `ownership-checker.md` §28.4: a leaf whose body may or may not write its
 /// parameter in place, under one annotation, and an importer that reads
 /// what it handed it.
 const own_lib_copies =
@@ -1490,7 +1490,7 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `ownership-checker.md` §27.4, rule 2. `Lib`'s edit moves no type and
+    // `ownership-checker.md` §28.4, rule 2. `Lib`'s edit moves no type and
     // no effect bit, so its interface hash does not move; what moves is its
     // summary block, which says it now writes `acc` in place. `App` reads
     // `xs` after handing it over, so `App` must now fail. On an in-place
@@ -1529,7 +1529,7 @@ test "an in-place build after a build elsewhere reads no entry that lacks a summ
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `ownership-checker.md` §27.4, rule 1. A `browser-tea` check writes
+    // `ownership-checker.md` §28.4, rule 1. A `browser-tea` check writes
     // entries with no summary block — nothing is summarised there — under
     // keys an in-place check computes too, since nothing in a module's own
     // terms says whether the run enforces. Read as hits, `Lib` would have no

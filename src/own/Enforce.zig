@@ -1,5 +1,5 @@
 //! The ownership checker in `check` and `build` (`docs/design/
-//! ownership-checker.md` §27): on a platform that edits lists in place, the
+//! ownership-checker.md` §28): on a platform that edits lists in place, the
 //! pass runs after the module check, and every rejected or pending line of a
 //! module the run reports on is an error; in every run that summarises, each
 //! module the run checked gets its summary block, which its cache entry —
@@ -118,7 +118,7 @@ fn position(ctx: *const anyopaque, module: u32, tok: u32) Ownership.Position {
     return .{ .line = pos.line, .col = pos.col };
 }
 
-/// The pass, after the module check (§27.3). `cached` holds every module
+/// The pass, after the module check (§28.3). `cached` holds every module
 /// the run installed; the others it checked, keeping their type stores.
 pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Error!void {
     const gpa = session.gpa;
@@ -136,7 +136,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
         if (i < cached.len and cached[i] != null) continue;
         const report = switch (ins.packages[i]) {
             .app => session.enforce_ownership,
-            // §27.7: core must have no rejected or pending line, and an
+            // §28.7: core must have no rejected or pending line, and an
             // in-place chain's platforms neither.
             .core => making_pack,
             .platform => making_pack and chain_in_place,
@@ -145,7 +145,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
     }
     const reports = try onBigStack(&o, targets.items);
 
-    // The blocks the run's entries carry (§27.4).
+    // The blocks the run's entries carry (§28.4).
     if (session.options.cache != null or making_pack) {
         session.freeOwnershipBlocks();
         session.ownership_blocks = try gpa.alloc(?[]u8, n);
@@ -157,7 +157,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
         }
     }
 
-    // The errors (§27.5), one per root cause.
+    // The errors (§28.5), one per root cause.
     var items: std.ArrayList(CheckDiagnostics.Item) = .empty;
     defer items.deinit(gpa);
     var scratch: std.heap.ArenaAllocator = .init(gpa);
@@ -203,7 +203,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
     session.checked.diagnostics = all;
 }
 
-/// Two lines of one root cause (§27.5): the same place, verdict, cause and
+/// Two lines of one root cause (§28.5): the same place, verdict, cause and
 /// reason.
 fn sameCause(a: Ownership.Demand, b: Ownership.Demand) bool {
     return a.position.line == b.position.line and a.position.col == b.position.col and
@@ -234,7 +234,7 @@ fn onBigStack(o: *Ownership, targets: []const u32) Allocator.Error![]const Owner
     return runner.result;
 }
 
-/// The tokens a message underlines for an edit (§27.6): the walk's span,
+/// The tokens a message underlines for an edit (§28.6): the walk's span,
 /// grown to the brackets it opens or closes — a construction from its `[`
 /// to its `]`.
 fn editSpan(session: *const Session, module: u32, d: Ownership.Demand) [2]u32 {

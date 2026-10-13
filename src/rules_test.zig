@@ -83,7 +83,7 @@ const allowlist = [_]Allowed{
 };
 
 /// `own/summary_bytes.zig` writes one block per sealed declaration
-/// (`ownership-checker.md` §27.3): the handful of paths, modules and field
+/// (`ownership-checker.md` §28.3): the handful of paths, modules and field
 /// names one summary names, out of session-wide id spaces a column would
 /// have to span on every write.
 const own_block = "a summary block's few paths, modules and field names, from session-wide id spaces, once per block written";

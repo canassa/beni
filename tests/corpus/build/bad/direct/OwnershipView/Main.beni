@@ -1,4 +1,4 @@
--- `view_changes_model` (ownership-checker.md §27.6; thesis Table 7.1, T13):
+-- `view_changes_model` (ownership-checker.md §28.6; thesis Table 7.1, T13):
 -- `view` shows the pinned rows before the recent ones with
 -- `[ …model.pinned, …model.recent ]`, which adds to the end of
 -- `model.pinned` itself — and the runtime hands `view` the model to read

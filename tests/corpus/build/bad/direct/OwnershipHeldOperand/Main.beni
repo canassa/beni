@@ -1,4 +1,4 @@
--- `list_still_used` by a value computed first (ownership-checker.md §27.6;
+-- `list_still_used` by a value computed first (ownership-checker.md §28.6;
 -- thesis Table 3.1's pending row, T1): `[ xs ]` is evaluated before the
 -- push and holds `xs` until the tuple is built, so in place the tuple's
 -- first item would hold the pushed list.

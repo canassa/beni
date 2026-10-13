@@ -1,5 +1,5 @@
 -- `list_may_be_shared` for a list a command keeps (ownership-checker.md
--- §27.6; thesis §8.2, *A command that captured the list*, T20): `Report`'s
+-- §28.6; thesis §8.2, *A command that captured the list*, T20): `Report`'s
 -- command reads `model.items` when it runs, after `update` returns and
 -- maybe after later messages, so `Add`'s push onto `model.items` cannot be
 -- shown safe. The fix computes what the command needs first.

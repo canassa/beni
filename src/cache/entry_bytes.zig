@@ -16,7 +16,7 @@
 //!
 //! Five sections, in this order and no other: `interface`, `dispatch`,
 //! `schema_plan`, `diagnostics`, `ownership`. The last is the module's
-//! ownership summary block (`ownership-checker.md` §27.4,
+//! ownership summary block (`ownership-checker.md` §28.4,
 //! `own/summary_bytes.zig`), empty when the run that wrote the entry did
 //! not summarise the module.
 //!
@@ -72,7 +72,7 @@ pub const magic = "BENICAC\x00";
 /// `sensitive` bit, and the `dispatch` section `dispatch_bytes` format 7,
 /// the effect lowering columns (§16.2).
 /// 10: a fifth section, `ownership`, the module's summary block
-/// (`ownership-checker.md` §27.4).
+/// (`ownership-checker.md` §28.4).
 pub const format_version: u32 = 10;
 
 /// The five sections, in this order and no other.

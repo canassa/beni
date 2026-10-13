@@ -2886,22 +2886,26 @@ change.
 A limit of the checker (`build/bad/direct/OwnershipLimit`):
 
 ```
--- LIST MAY BE SHARED ------------------------------------------ Main.beni:13:21
+-- LIST MAY BE SHARED ------------------------------------------ Main.beni:23:12
 
-`List.take rows k ++ [ r, …List.drop rows k ]` adds to the end of
-`List.take rows k` itself, and the checker cannot show that nothing else still
-holds the list.
+`[ …picked, 9 ]` adds to the end of `picked` itself, and the checker cannot show
+that nothing else still holds the list.
 
-13|insertAt rows k r = List.take rows k ++ [ r, …List.drop rows k ]
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
-                                                 ^^^^^^^^^ this call may answer the same list
+21|shown rows =
+         ^^^^ `rows` keeps the list here
+22|    picked = orFallback rows
+                ^^^^^^^^^^ `rows` may hold the list through this call
+23|    more = [ …picked, 9 ]
+              ^^^^^^^^^^^^^^ the list is changed in place here
+24|    List.length more + List.length rows
+                                      ^^^^ and `rows` is read here, after the change
 
 To be safe, change a copy:
 
-13|insertAt rows k r = List.copy (List.take rows k) ++ [ r, …List.drop rows k ]
+23|    more = [ …List.copy picked, 9 ]
 
-This is a limit of the checker, not proof of sharing: another operand may be it,
-through the call at 13:47.
+This is a limit of the checker, not proof of sharing: rows may hold it through
+the call at 22:14, and is read at 24:24.
 ```
 
 ### 28.7 Core and the platforms

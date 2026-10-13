@@ -1690,7 +1690,7 @@ const Case = struct {
         }
         try c.expectGolden("diag", built.stderr);
 
-        // `ownership-checker.md` §27.10: a `browser-direct` fixture whose
+        // `ownership-checker.md` §28.10: a `browser-direct` fixture whose
         // golden holds only the ownership checker's codes fails because
         // lists are edited in place there; on `browser-tea`, where nothing
         // is, the same project must build with no diagnostic at all.
@@ -1710,7 +1710,7 @@ const Case = struct {
     }
 
     /// Whether a JSON diagnostic list names the ownership checker's codes
-    /// and no others (`ownership-checker.md` §27.6).
+    /// and no others (`ownership-checker.md` §28.6).
     fn ownershipOnly(stderr: []const u8) bool {
         const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared" };
         var any = false;
@@ -2767,7 +2767,7 @@ const Case = struct {
                 const checked = try c.compiler(&.{ "check", "--diagnostics=json", flag, path });
                 const r = try c.compiler(&.{ "dump", "--stage=ownership", flag, path });
                 try expectExit(0, r);
-                // `ownership-checker.md` §27.10, the dump against the build:
+                // `ownership-checker.md` §28.10, the dump against the build:
                 // on a platform that edits lists in place `check` fails
                 // exactly when the report has a rejected or pending line,
                 // with the ownership checker's codes and no others, and

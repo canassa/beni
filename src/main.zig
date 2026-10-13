@@ -506,7 +506,7 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     const target = storePath(&buffer, dump.file);
     // The per-module tables `check` and `build` hand the pass, from the same
-    // function (ownership-checker.md §27.3): the dump reads nothing from the
+    // function (ownership-checker.md §28.3): the dump reads nothing from the
     // checked core, so no module has a block.
     var ins = beni.own.Enforce.inputs(gpa, session, &.{}) catch return fail(stderr, "beni: out of memory", .{});
     defer ins.deinit(gpa);

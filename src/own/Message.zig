@@ -1,5 +1,5 @@
 //! The ownership checker's error messages (`docs/design/ownership-checker.md`
-//! §27.6; thesis Chapter 8, *Error Reporting*).
+//! §28.6; thesis Chapter 8, *Error Reporting*).
 //!
 //! Every message has the thesis's fixed shape: one sentence naming the
 //! operation, the list and why it is a problem here; the places — what keeps
@@ -22,7 +22,7 @@ const Demand = Ownership.Demand;
 const Cause = Ownership.Cause;
 const none = Ownership.none;
 
-/// The four codes (§27.6), by a line's verdict.
+/// The four codes (§28.6), by a line's verdict.
 pub fn code(d: Demand) diagnostic.Code {
     return switch (d.verdict) {
         .accepted => unreachable,
@@ -139,7 +139,7 @@ fn before(src: Src, m: u32, x: u32, y: u32) bool {
     return src.start(m, x).order(src.start(m, y)) == .lt;
 }
 
-/// The message for a group of lines that share one root cause (§27.5): the
+/// The message for a group of lines that share one root cause (§28.5): the
 /// same position, verdict, cause and detail; `lines[0]` speaks for them.
 pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Error![]const u8 {
     const d = lines[0];
@@ -397,7 +397,7 @@ fn padLeft(a: Allocator, out: *std.ArrayList(u8), n: u32, width: usize) Allocato
     try out.print(a, "{d}", .{n});
 }
 
-/// The edit's line with its base wrapped in `List.copy` (§27.6), as an
+/// The edit's line with its base wrapped in `List.copy` (§28.6), as an
 /// excerpt line; `NoBase` when the base is not written on one line.
 fn copyLine(a: Allocator, src: Src, m: u32, d: Demand) error{ NoBase, OutOfMemory }![]const u8 {
     if (d.base_span[0] == none) return error.NoBase;

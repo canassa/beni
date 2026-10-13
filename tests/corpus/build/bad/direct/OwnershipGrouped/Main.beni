@@ -1,4 +1,4 @@
--- One diagnostic per root cause (ownership-checker.md §27.5): the model's
+-- One diagnostic per root cause (ownership-checker.md §28.5): the model's
 -- `done` and `open` both start as the top-level `seed`, and `update` adds
 -- to the end of both in place. The checker has a line for each model path;
 -- the build has one error naming both.
