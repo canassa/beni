@@ -56,6 +56,13 @@ const Ownership = @This();
 
 pub const none: u32 = std.math.maxInt(u32);
 
+pub var prof_ns: [16]u64 = @splat(0);
+pub fn profNow() u64 {
+    var ts: std.os.linux.timespec = undefined;
+    _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
+    return @as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec));
+}
+
 /// k: the path cut (§4.1, thesis §3.1).
 pub const k_limit: u32 = 8;
 /// Depth of a walk over a type before it answers conservatively.
@@ -569,6 +576,8 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         const token = if (o.in.profile) |p| p.begin() else null;
         defer if (o.in.profile) |p| p.end(0, token.?, .ownership_module, @backingInt(o.in.graph.moduleFile(@fromBackingInt(m))), 0);
         const bir = o.in.birs[m];
+        const pm0 = profNow();
+        defer std.debug.print("PROF module {s} {d}us\n", .{ o.in.module_names[m], (profNow() - pm0) / 1000 });
         // Every summary first (§16.9): a report walk reads them all.
         for (bir.decls, 0..) |_, di| _ = try o.ensureSummary(m, @intCast(di));
         var demands: std.ArrayList(Demand) = .empty;
@@ -1067,11 +1076,20 @@ fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!S
     const report = m < o.report_for.len and o.report_for[m];
     var w = o.walker(m, d, scratch.allocator(), if (report) .report else .summary);
     w.recursive = recursive;
+    const t0 = profNow();
     try w.walkDecl(w.decl.body.unwrap().?);
+    const t1 = profNow();
     var lines: std.ArrayList(Demand) = .empty;
     try w.resolve(&lines);
+    const t2 = profNow();
     if (report) o.slots[m].?[d].lines = try lines.toOwnedSlice(o.out.allocator());
-    return w.readOff();
+    const r = try w.readOff();
+    if (depth == 0) {
+        prof_ns[7] += t1 - t0;
+        prof_ns[8] += t2 - t1;
+        prof_ns[9] += profNow() - t2;
+    }
+    return r;
 }
 
 // ---------------------------------------------------------------------------
@@ -4983,6 +5001,8 @@ const Walker = struct {
     /// model at entry as the fixpoint of `init` and `update`, what the
     /// runtime's calls escape, and a demand for each path `update` writes.
     fn entryCall(w: *Walker, inst: Inst.Index, t: Target, arg: Inst.Index, row: EntryRow) Allocator.Error!AV {
+        const pe0 = profNow();
+        defer prof_ns[0] += profNow() - pe0;
         const saved = w.entry_arg;
         w.entry_arg = arg.int();
         const app = try w.eval(arg);
@@ -5030,6 +5050,7 @@ const Walker = struct {
         // view-event rule's (P6). So the view is read once, on the settled
         // model.
         var model = m0;
+        const pf0 = profNow();
         var res: AV = &.{};
         var round: u32 = 0;
         while (true) : (round += 1) {
@@ -5045,13 +5066,24 @@ const Walker = struct {
                 break;
             }
         }
+        prof_ns[1] += profNow() - pf0;
+        prof_ns[5] += round;
+        prof_ns[6] = @max(prof_ns[6], model.len);
+        const pv0 = profNow();
         const view_msgs: AV = if (msg_tracked) try w.viewMessages(inst, view, model, true) else &.{};
+        prof_ns[2] += profNow() - pv0;
+        const pr0 = profNow();
         const msg = try w.unionOf(&.{ payload, view_msgs });
         res = try w.entryRes(inst, upd, &.{ msg, model }, 0);
+        prof_ns[10] += profNow() - pr0;
+        prof_ns[13] = msg.len;
+        prof_ns[14] = res.len;
+        const pa0 = profNow();
         // (a) What every call the runtime makes escapes.
         for (upd.sums) |s| for (s.uses) |u| {
             if (u.param == 1) try w.entryEscape(inst, try w.projPath(model, u.path, null), u.bits);
         };
+        prof_ns[11] += profNow() - pa0;
         if (!whole) {
             try w.escape(try w.proj(res, tuple1, null), w.point);
             try w.escape(try w.proj(init_av, tuple1, null), w.point);
@@ -5061,6 +5093,9 @@ const Walker = struct {
         };
         try w.escape(try w.entryRes(inst, subs, &.{model}, 300_000), w.point);
         w.point += 1;
+        prof_ns[3] += profNow() - pr0;
+        const pd0 = profNow();
+        defer prof_ns[4] += profNow() - pd0;
         // (b) The demands.
         const arena = w.o.out.allocator();
         const op = if (w.mode == .report) try std.fmt.allocPrint(arena, "entry {s}", .{try w.entryName(upd, "update")}) else "entry";
@@ -5666,21 +5701,7 @@ const Walker = struct {
         // 5. The result.
         const ty = w.instType(inst);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
-        const arg_types = try w.a.alloc(?Var, args.len);
-        for (args, arg_types) |arg, *t| t.* = w.instType(arg);
-        const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted });
-        // An approximate entry may name an argument the result's type
-        // cannot be (§6.1's type filter, thesis §3.8): a `Js` coercion's
-        // result is never its argument at another type.
-        const rt = ty orelse return res;
-        var kept: std.ArrayList(Entry) = .empty;
-        for (res) |e| {
-            if (e.path == eps and e.approx != 0) {
-                if (w.cells.items[e.cell].ty.unwrap()) |ct| if (!try w.o.mayShare(w.store, rt, ct, 0)) continue;
-            }
-            try kept.append(w.a, e);
-        }
-        return kept.items;
+        return w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .take = s.asserted });
     }
 
     /// The argument an `xreq` atom names first: a parameter's or a callback's.
@@ -5753,9 +5774,6 @@ const Walker = struct {
         /// §20.4: the fixpoint's rounds compute cells only; the round that
         /// settles lowers their conditions once.
         conds: bool = true,
-        /// At the call itself: the arguments' types and the result's.
-        arg_types: []const ?Var = &.{},
-        result_ty: ?Var = null,
         /// The traversal primitive's own result: a taken element stays
         /// taken (§18.5). Anywhere else a supply or result that names one
         /// instantiates to the element itself.
@@ -5770,13 +5788,9 @@ const Walker = struct {
         for (s.res, 0..) |r, i| {
             // `res` is sorted by path: another entry at this path is a neighbour.
             const several = (i > 0 and s.res[i - 1].path == r.path) or (i + 1 < s.res.len and s.res[i + 1].path == r.path);
-            // An approximate entry may name an argument the result's type
-            // cannot be (§16.4 item 6): such an argument is never the
-            // result, whatever its cells are.
-            if ((several or r.approx) and r.path == eps and r.prov.kind == .param and r.prov.path == eps and r.prov.a < ctx.arg_types.len) {
-                if (ctx.result_ty) |rt| if (ctx.arg_types[r.prov.a]) |at| if (!try w.o.mayShare(w.store, rt, at, 0)) continue;
-            }
             const cells = try w.instProv(r.prov, ctx);
+            const pc0 = profNow();
+            defer prof_ns[15] += profNow() - pc0;
             // §18.3: a fresh cell starts at the summary's condition, and a
             // parameter's is lowered by it.
             if (ctx.conds) switch (r.prov.kind) {

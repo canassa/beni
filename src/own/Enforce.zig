@@ -146,7 +146,14 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
         };
         if (report) try targets.append(gpa, @intCast(i));
     }
+    const pr0 = Ownership.profNow();
     const reports = try onBigStack(&o, targets.items);
+    Ownership.prof_ns[12] += Ownership.profNow() - pr0;
+    const pw0 = Ownership.profNow();
+    defer {
+        const p = &Ownership.prof_ns;
+        std.debug.print("PROF run {d} blocks {d} | entry {d} fix {d} rounds {d} maxmodel {d} view {d} final {d} demands {d} [finalres {d} escU {d} msg {d} res {d}] conds+under {d} | walk {d} resolve {d} readoff {d} (us)\n", .{ p[12] / 1000, (Ownership.profNow() - pw0) / 1000, p[0] / 1000, p[1] / 1000, p[5], p[6], p[2] / 1000, p[3] / 1000, p[4] / 1000, p[10] / 1000, p[11] / 1000, p[13], p[14], p[15] / 1000, p[7] / 1000, p[8] / 1000, p[9] / 1000 });
+    }
 
     // The blocks the run's entries carry (§28.4).
     if (session.options.cache != null or making_pack) {
