@@ -2735,11 +2735,17 @@ design; §28.11 says why this slice does not.
 
 **What it walks.** The run keeps every checked module's type store (§2.3). Each module the run checked is walked
 from its BIR; every module the run installed — from the checked core, or from the cache directory — is read from
-its summary block (§28.4). **A module sees another only through that other's block**, also when both were checked
-in this run: before a declaration of module *m* is summarised for a caller in another module, every summary of
-*m* is computed and *m* is **sealed** — its summaries written as its block and read back. So a verdict never
-depends on whether an import was checked or installed, which is what lets a block stand in for a walk, and the
-dump (§9.1), which seals the same way, prints exactly the verdicts a build enforces.
+its summary block (§28.4). **A module sees another only through a block**, also when both were checked in this
+run: the first time a caller in another module asks for a declaration's summary, that summary is **sealed** —
+written as a one-row block and read back in place of what the walk gave — and under runtime safety, the build every
+test runs, the two must be equal field by field or the compiler stops. So the block loses nothing, a verdict does
+not depend on whether an import was checked or installed, and the dump (§9.1), which seals the same way, prints the
+verdicts a build enforces: every `tests/corpus/ownership/` golden is unchanged by the slice. Sealing is per
+declaration, not per module, because a report that summarised the whole of every module it touches went over the
+test budget on `EntryValueCommand` (4 651 million instructions); per declaration it summarises no more of the
+library than before. *One known way a block and a walk could still differ*: the cap on guard atoms (§16.7) keeps
+the first eight in an order by id, and a session that computed the summary itself assigns other ids than one that
+read it; no measured summary reaches the cap.
 
 **What it reports.** The modules of the app's packages that the run checked: an installed app module was cached
 clean, which by §28.5 means without an ownership error. Core and the platforms are not reported — their verdicts
@@ -2852,45 +2858,50 @@ carries the same message.
 Example, a later read through another name (`build/bad/direct/OwnershipAlias`):
 
 ```
--- LIST CHANGED WHILE STILL IN USE ------------------------------------ src/Main.beni:15:12
+-- LIST CHANGED WHILE STILL IN USE ----------------------------- Main.beni:25:20
 
-`[ …model.todos, todo ]` adds to the end of `model.todos` itself, but `saved`
-still holds the old list and is read afterwards.
+`[ …model.todos, n ]` adds to the end of `model.todos` itself, but `saved` still
+holds the old list and is read afterwards.
 
-12|     saved = model.todos
-        ^^^^^ `saved` keeps the list here
-15|     next = [ …model.todos, todo ]
-               ^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
-19|     List.length saved
-                    ^^^^^ and `saved` is read here, after the change
+24|            saved = model.todos
+               ^^^^^ `saved` keeps the list here
+25|            next = [ …model.todos, n ]
+                      ^^^^^^^^^^^^^^^^^^^ the list is changed in place here
+26|            { model | todos = next, before = List.length saved }
+                                                            ^^^^^ and `saved` is read here, after the change
 
 If the list were changed in place, `saved` would see the change when it is read
-on line 19.
+on line 26.
 
 To change a copy and leave `model.todos` as it was, copy it there:
 
-15|     next = [ …List.copy model.todos, todo ]
+25|            next = [ …List.copy model.todos, n ]
 
-This is sharing the checker can see: `saved` is read on line 19, after the change.
+Or, if `saved` only needs the list as it was, read it before line 25.
+
+This is sharing the checker can see: `saved` is read on line 26, after the
+change.
 ```
 
 A limit of the checker (`build/bad/direct/OwnershipLimit`):
 
 ```
--- LIST MAY BE SHARED -------------------------------------------------- src/Main.beni:9:5
+-- LIST MAY BE SHARED ------------------------------------------ Main.beni:13:21
 
-`List.take rows k ++ [ r, …List.drop rows k ]` adds to the end of `List.take
-rows k` itself, and the checker cannot show that nothing else holds that list.
+`List.take rows k ++ [ r, …List.drop rows k ]` adds to the end of
+`List.take rows k` itself, and the checker cannot show that nothing else still
+holds the list.
 
-9|     List.take rows k ++ [ r, …List.drop rows k ]
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
+13|insertAt rows k r = List.take rows k ++ [ r, …List.drop rows k ]
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here
+                                                 ^^^^^^^^^ this call may answer the same list
 
 To be safe, change a copy:
 
-9|     List.copy (List.take rows k) ++ [ r, …List.drop rows k ]
+13|insertAt rows k r = List.copy (List.take rows k) ++ [ r, …List.drop rows k ]
 
-This is a limit of the checker, not proof of sharing: another operand may be the
-same list, through the call on line 9.
+This is a limit of the checker, not proof of sharing: another operand may be it,
+through the call at 13:47.
 ```
 
 ### 28.7 Core and the platforms
@@ -2901,9 +2912,11 @@ carries its block, and a build reads them instead of summarising the library aga
 item 4 measured, two thirds of the pass on Conduit. Core's blocks are computed in the run that checks core alone; a
 platform's in the run for its chain, over core's rows.
 
-**An in-place chain must have no rejected or pending line** in core or in any of its platforms' modules: they are
+**Core must have no rejected or pending line, and an in-place chain's platform modules neither**: they are
 privileged code (CLAUDE.md rule 6), shipped in the binary, which no program can repair with a `List.copy`. The maker
-fails the build of beni with the lines, as it does for a core that does not check. On 2026-10-13 core and
+reports core's modules in the run that checks core, and a platform's in the run for its chain when the chain is
+in-place, so a line there is one of the run's errors, and fails the build of beni with its message, as a core that
+does not check does. On 2026-10-13 core and
 `browser-direct`'s chain have none: 117 and 5 lines, all accepted.
 
 ### 28.8 Cost
@@ -2911,6 +2924,12 @@ fails the build of beni with the lines, as it does for a core that does not chec
 The target: the pass adds at most 10 % to `check` on Conduit and the corpus pages, on `browser-direct`, and leaves
 the 100 000-line benchmark's check throughput where it was. The benchmark has no platform, so it runs no pass and
 keeps no store. Research 89 gives the figures.
+
+*As built (research 89 §3):* met on the corpus pages (+2.6 %), TodoMVC (+6.0 %) and the table app (+5.6 %); the
+100 000-line check moves −0.006 %; a `browser-tea` check +0.04 %. **Missed on Bike Wars (+18 %) and Conduit
+(+112 %)**: what dominates there is not the library, which the blocks removed, but the entry protocol's fixpoint
+(§20.4) over a wide model — on Conduit `entryCall` is 22 % of the process. Reported, not worked around (CLAUDE.md
+rule 10); §28.11 item 4.
 
 ### 28.9 What does not change
 
@@ -2932,14 +2951,16 @@ of the module's source and its imports' blocks; the determinism test runs `check
 - **Every `browser/direct/` page still builds**: they are built for `browser-direct` already. A page that a rule
   rejects is either a real unsafe edit, reported and fixed with the message's own fix, or a checker limit (research
   89 §3).
-- **The dump against the build**: `tests/blackbox/ownership_test.zig` builds the `browser-direct` fixtures of
-  `tests/corpus/ownership/` and checks that a module fails exactly when its golden has a rejected or pending line.
-- **The block**: `summary_bytes`'s unit tests round-trip every summary core and the platforms produce, byte for
-  byte; the corpus's ownership goldens, unchanged by sealing, are the semantic check.
-- **The cache**: an enforcing run after a non-enforcing one re-checks (rule 1 of §28.4); a body edit of an import
-  that changes its block re-checks the importer (rule 2) — `tests/blackbox/cache_test.zig`.
-- **The checked core**: the pack maker's refusal is exercised by a unit test of the rule, not by building a broken
-  core.
+- **The dump against the build**: the `ownership/` corpus kind checks each `browser-direct` fixture with `check`
+  as well as dumping it, and the check must fail, with the four codes and no others, exactly when the dump has a
+  rejected or pending line (`tests/blackbox/corpus_test.zig`, `ownershipReport`).
+- **The block**: every summary a report reads across a module boundary is sealed (§28.3), and under runtime safety
+  the read-back must equal the walk's; the corpus's ownership goldens, unchanged by sealing, are the semantic check.
+- **The cache**: an enforcing run after a run on another platform checks again (rule 1 of §28.4); a body edit that
+  makes a leaf write its argument fails its warm importer (rule 2) — `tests/blackbox/cache_test.zig`.
+- **Determinism**: `blackbox_test.zig`'s ownership errors at `--jobs=1` and `--jobs=8`, twice each.
+- **The checked core**: its refusal is a core or platform module with an error, which the maker already refuses
+  with the diagnostics; core and `browser-direct`'s chain have no rejected line to refuse today.
 
 ### 28.11 Open questions
 
@@ -2953,3 +2974,9 @@ of the module's source and its imports' blocks; the determinism test runs `check
    corpus is this repository's, whose goldens already pin every verdict.
 3. **Machine-applicable fixes.** The `List.copy` line is written for a person; a `--fix` that inserts it is the
    formatter's, not this slice's.
+4. **The entry fixpoint's cost** (§28.8): instantiating `update`'s whole result each round over a wide model. A
+   result split by the message's constructor (O6) or a memo of a class's instantiation at a model already seen would
+   bring Conduit toward the 10 % target; either changes verdict-making code and is measured against every entry
+   golden on its own.
+5. **Model paths in messages** are printed as the report prints them (`model#Article.0.errors`); a rendering for
+   people is a message-only change.
