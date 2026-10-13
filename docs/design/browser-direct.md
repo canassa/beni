@@ -2862,3 +2862,29 @@ gated for `browser-tea` under `tests/corpus/browser/tea/ValuePath`. This is a ch
 verified unsafe edit. `browser/direct/Blocks` pins the other value-path shapes this slice reaches.
 `browser/direct/ControlledOptions` copies its options before `List.push`: the old source changed
 that list in place and then read it again in the same record update.
+
+### *Amended 2026-10-13 (effects, blocked by ownership checking):* the unchanged driver
+
+The first effects implementation copied `browser-tea`'s command/subscription driver into
+`browser-direct/Tea.beni`, as §10.1 specifies. Checking the embedded platform rejected three
+appends with `list_may_be_shared`: the `Concurrent` arms of `keyed` and `keyedNow`, and `want`'s
+`List.append taps [ t ]`. Each diagnostic explicitly says this is a checker limit, not proof
+of sharing. The compiler cannot build while the embedded platform is rejected, so no effectful
+constructor can be shipped from that attempt. No `List.copy`, persistent-list substitution or
+JavaScript driver was added to make the check pass (CLAUDE.md rule 10).
+
+`tests/pending/browser/direct/SubscriptionTapAppend` isolates `want`: read the old tap list
+from a dictionary entry, append one tap, and replace the same entry. Its expected transcript
+is the correct result; `tests/pending/RED` pins the direct build's single
+`list_may_be_shared`. The identical browser-tea source is gated under
+`tests/corpus/browser/tea/SubscriptionTapAppend` against that transcript. The two Concurrent
+refusals were observed in the full copied driver; the reduced tap fixture pins the blocker
+needed even by a program with no keyed commands.
+
+**Stopped:** `Tea.element`, `Tea.document`, `Tea.application`, subscriptions and after-render
+work all need the blocked driver. Owned sends, value-taking/navigation commands and command
+policies cannot be exercised through direct until it checks. The TodoMVC effectful parity,
+value-fuzz coverage and the byte/timing measurements remain owed. Q5 is already answered by
+the owner on 2026-10-09 and implemented by browser-tea's listener path (§10.1); no new owner
+choice about subscription fibers is needed. Resuming effects requires fixing the ownership
+checker limits rather than changing the specified driver.
