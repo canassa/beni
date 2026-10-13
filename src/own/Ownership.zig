@@ -45,6 +45,7 @@ const SourceStore = @import("../SourceStore.zig");
 const Token = @import("../lex/Token.zig");
 const Ast = @import("../parse/Ast.zig");
 const summary_bytes = @import("summary_bytes.zig");
+const Profile = @import("../Profile.zig");
 
 const Inst = Bir.Inst;
 const Symbol = InternPool.Symbol;
@@ -104,6 +105,9 @@ pub const Input = struct {
     packages: []const SourceStore.Package,
     /// Per module index: the file's token tags.
     spans: []const Token.Spans,
+    /// Per module index: the file's bytes, for a message's places (§27.6);
+    /// shorter when the caller has none.
+    sources: []const []const u8 = &.{},
     positions: Positions,
     /// Per module index: the name of the platform package it belongs to
     /// (the chain layer's manifest `"name"`), empty for any other; what
@@ -122,6 +126,10 @@ pub const Input = struct {
     /// are the ones a build that installed it would give, and the block's
     /// format is exercised by every report.
     seal: bool = true,
+    /// Where each reported module's walk and the blocks' reading are timed
+    /// (`ownership_module`, `ownership_blocks`), on thread 0: the pass is
+    /// serial.
+    profile: ?*Profile = null,
     /// Test-only (`--ownership-flips`, §24.6): one declaration's words read
     /// with some flipped, to show that the fixture pinning them depends on
     /// them.
@@ -267,8 +275,9 @@ pub const Demand = struct {
     /// The call an approximate holder holds it through, or the operand a
     /// `held-operand` failure waits on.
     via_token: u32 = none,
-    /// `top-level`: the top-level value, `(module, declaration)`.
-    top: ?[2]u32 = null,
+    /// `top-level`: the top-level value, `(module, declaration, 1 when the
+    /// list is the value itself)`.
+    top: ?[3]u32 = null,
 };
 
 /// One summary line (§16.11).
@@ -512,6 +521,8 @@ block_state: []u8 = &.{},
 /// The module of the walk under way, outermost first: a summary another
 /// module asks for is read through the block (§27.3).
 walking: u32 = none,
+/// Nanoseconds spent reading blocks, for `ownership_blocks`.
+block_ns: u64 = 0,
 /// `(package, dotted name)` → module index, for reading a block.
 module_by_name: std.StringHashMapUnmanaged(u32) = .empty,
 
@@ -550,10 +561,13 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         o.report_for[m] = true;
     };
     const reports = try arena.alloc(ModuleReport, targets.len);
+    defer if (o.in.profile) |p| p.record(0, .ownership_blocks, Profile.Event.no_file, 0, o.block_ns);
     for (targets, reports) |m, *r| {
         r.* = .{ .module = m, .checked = false, .demands = &.{} };
         if (!o.isChecked(m)) continue;
         r.checked = true;
+        const token = if (o.in.profile) |p| p.begin() else null;
+        defer if (o.in.profile) |p| p.end(0, token.?, .ownership_module, @backingInt(o.in.graph.moduleFile(@fromBackingInt(m))), 0);
         const bir = o.in.birs[m];
         // Every summary first (§16.9): a report walk reads them all.
         for (bir.decls, 0..) |_, di| _ = try o.ensureSummary(m, @intCast(di));
@@ -736,6 +750,10 @@ fn blockOf(o: *Ownership, m: u32) Allocator.Error!?*const summary_bytes.Block {
         return null;
     };
     try o.seedPaths();
+    const token = if (o.in.profile) |p| p.begin() else null;
+    defer if (o.in.profile) |p| {
+        o.block_ns += p.since(token.?);
+    };
     o.decoded[m] = summary_bytes.read(o, o.keep.allocator(), bytes, m) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Bad => {
@@ -2798,7 +2816,7 @@ const DemandRec = struct {
     /// `held-operand` one does.
     span: [2]u32 = .{ none, none },
     base_span: [2]u32 = .{ none, none },
-    top: ?[2]u32 = null,
+    top: ?[3]u32 = null,
     via: u32 = none,
 };
 
@@ -7072,7 +7090,7 @@ const Walker = struct {
         var worst: ?Cause = null;
         var worst_detail: []const u8 = "";
         var worst_approx: ?bool = null;
-        var worst_top: ?[2]u32 = null;
+        var worst_top: ?[3]u32 = null;
         for (cells.items) |e| {
             // A taken element is classified as the element it stands for
             // (§18.5); writing it relies on its container being exclusive.
@@ -7142,7 +7160,7 @@ const Walker = struct {
                 worst = cs;
                 worst_detail = detail;
                 worst_approx = null;
-                worst_top = if (cs == .top_level) .{ c.a, c.b } else null;
+                worst_top = if (cs == .top_level) .{ c.a, c.b, @intFromBool(c.path == eps) } else null;
             };
         }
         rec.top = worst_top;
@@ -7290,7 +7308,24 @@ const Walker = struct {
         if (at >= w.bir.locals.len) return none;
         const local = w.bir.locals[at];
         if (local.name.unwrap() == null) return none;
-        if (w.bir.instTag(local.inst) != .let_def) return w.token(local.inst);
+        if (w.bir.instTag(local.inst) != .let_def) {
+            // A record pattern's binding carries the pattern's `{`: the
+            // name is one of the identifiers after it.
+            const tok = w.token(local.inst);
+            const name = w.localName(l);
+            const src = if (w.m < w.o.in.sources.len) w.o.in.sources[w.m] else return tok;
+            const sp = w.o.in.spans[w.m];
+            var k = tok;
+            while (k < sp.tags.len and k < tok + 64) : (k += 1) {
+                if (sp.tags[k] != .lower_ident) continue;
+                const from = sp.starts[k];
+                if (from + name.len > src.len or !std.mem.eql(u8, src[from..][0..name.len], name)) continue;
+                const after = from + name.len;
+                if (after < src.len and (std.ascii.isAlphanumeric(src[after]) or src[after] == '_')) continue;
+                return k;
+            }
+            return tok;
+        }
         // A `let_def` carries whatever token lowering met last; in a block
         // its name begins the line its `=` is on, before the value.
         const value: Inst.Index = @fromBackingInt(@intCast(w.bir.instData(local.inst).rhs));

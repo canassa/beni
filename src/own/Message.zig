@@ -302,7 +302,11 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         }
     }
     if (cause == .top_level) {
-        try w(&out, a, "Build the list where the program starts, or copy it there:\n\n    List.copy {s}\n\n", .{top});
+        const whole = if (d.top) |t| t[2] == 1 else false;
+        if (whole)
+            try w(&out, a, "Build the list where the program starts, or copy it there:\n\n    List.copy {s}\n\n", .{top})
+        else
+            try w(&out, a, "Build `{s}` where the program starts, so that its lists are new ones, or copy each list it holds there with `List.copy`.\n\n", .{top});
         fixed = true;
     } else if (cause == .read_only) {
         try w(&out, a, "Let `{s}` build a new list instead, or change a copy: `List.copy {s}`.\n\n", .{ entry_fn, d.base });
@@ -313,6 +317,8 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
     if (!fixed) {
         if (d.verdict == .pending)
             try w(&out, a, "Call it where it is written, or have it change a copy, made with `List.copy`.\n\n", .{})
+        else if (cause == .payload)
+            try w(&out, a, "Build the messages the page sends from values that are not the model's lists, or have `update` change a copy of what a message carries, made with `List.copy`.\n\n", .{})
         else if (entry and cause == .escaped)
             try w(&out, a, "Compute what a command or a subscription needs from the list before it is made, so that it keeps that value and not the list; or hand it a copy, made with `List.copy`.\n\n", .{})
         else if (entry)
@@ -344,6 +350,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
 /// A top-level value's name: bare in its own module, qualified in another.
 fn topName(a: Allocator, src: Src, m: u32, d: Demand) Allocator.Error![]const u8 {
     const t = d.top orelse return "a top-level value";
+    if (t[0] == none) return "a top-level value";
     const name = src.vtable.decl_name(src.ctx, t[0], t[1]);
     if (t[0] == m) return name;
     return std.fmt.allocPrint(a, "{s}.{s}", .{ src.vtable.module_name(src.ctx, t[0]), name });

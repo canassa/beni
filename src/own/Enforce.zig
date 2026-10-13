@@ -29,6 +29,7 @@ pub const Inputs = struct {
     names: [][]const u8,
     packages: []SourceStore.Package,
     spans: []Token.Spans,
+    sources: [][]const u8,
     platform_names: [][]const u8,
     in_place: []bool,
     blocks: []?[]const u8,
@@ -38,6 +39,7 @@ pub const Inputs = struct {
         gpa.free(i.names);
         gpa.free(i.packages);
         gpa.free(i.spans);
+        gpa.free(i.sources);
         gpa.free(i.platform_names);
         gpa.free(i.in_place);
         gpa.free(i.blocks);
@@ -56,10 +58,12 @@ pub const Inputs = struct {
             .module_names = i.names,
             .packages = i.packages,
             .spans = i.spans,
+            .sources = i.sources,
             .positions = .{ .ctx = session, .get = position },
             .platform_names = i.platform_names,
             .in_place = i.in_place,
             .blocks = i.blocks,
+            .profile = &session.profile,
         };
     }
 };
@@ -73,6 +77,7 @@ pub fn inputs(gpa: Allocator, session: *const Session, cached: []const ?CacheEnt
         .names = try gpa.alloc([]const u8, n),
         .packages = try gpa.alloc(SourceStore.Package, n),
         .spans = try gpa.alloc(Token.Spans, n),
+        .sources = try gpa.alloc([]const u8, n),
         .platform_names = try gpa.alloc([]const u8, n),
         .in_place = try gpa.alloc(bool, n),
         .blocks = try gpa.alloc(?[]const u8, n),
@@ -84,6 +89,7 @@ pub fn inputs(gpa: Allocator, session: *const Session, cached: []const ?CacheEnt
         out.names[i] = session.store.moduleName(f);
         out.packages[i] = session.graph.modulePackage(m);
         out.spans[i] = session.artifacts.spans(f);
+        out.sources[i] = session.store.bytes(f);
         out.platform_names[i] = "";
         out.in_place[i] = false;
         out.blocks[i] = null;
