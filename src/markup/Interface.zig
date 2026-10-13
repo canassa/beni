@@ -32,7 +32,11 @@ const std = @import("std");
 /// with (`programList`, `programEdits`, `programIndex`, `rowValuesOf`,
 /// `programRowBake`), 1.9 the calls that write helpers, components and
 /// `Html.map` in place (`programCallee`, `programInlineArgs`,
-/// `programInlineEnter`), 1.10 `programBranch`.
+/// `programInlineEnter`), 1.10 the calls that compile branches, `Show` and
+/// a `view`'s `let`s (`programBranch`, `programBranchArm`,
+/// `programBranchEnter`, `programBranchValue`, `programShowFallback`,
+/// `programNestedEnter`, `programViewStatements`, `programLet`,
+/// `Program.view_lets`).
 pub const version: Version = .{ .major = 1, .minor = 10 };
 
 /// The newest version whose gated feature a tree can use. No minor version
@@ -143,8 +147,15 @@ pub const Program = struct {
     /// What `view` is.
     view: Shape,
     /// `view == .markup`: the root of this module's tree that is the
-    /// function's body.
+    /// function's body. 1.10: also `view == .function` with `view_lets`,
+    /// the root that is the body past its `let`s.
     view_root: ?Root.Index,
+    /// 1.10: `view` is a function whose body is `let`s around markup
+    /// written in place, `view_root` (`browser-direct.md` §5.4): its
+    /// `let`s only the root reads are the root's (`Root.lets`), and the
+    /// others run where `programViewEnter` binds the root's inputs. A
+    /// lowering before 1.10 sees `.function`, as before.
+    view_lets: bool = false,
     /// What `update` is: `markup` and `function` alike are functions this
     /// module declares or the record writes; `other_module` or `computed`.
     update: Shape,
@@ -284,6 +295,39 @@ pub const Program = struct {
             /// A function whose body computes its markup, or a value.
             not_markup,
             _,
+        };
+    };
+
+    /// 1.10: what `Context.programBranch` says of an `html` hole whose
+    /// value is an `if` or a `case` (`browser-direct.md` §5.5, S4's
+    /// amendment, item 3): its arms in order, an arm whose body is itself a
+    /// `case` replaced by that `case`'s arms (`else if`).
+    pub const Branch = struct {
+        arms: []const Arm,
+    };
+
+    /// 1.10: one arm of a branch: what its result is, past the arm's
+    /// `let`s.
+    pub const Arm = struct {
+        what: What,
+        /// No value takes the arm — its pattern names a constructor nothing
+        /// builds (`backend.md` §9) — so it is never shown.
+        dead: bool = false,
+        /// The arm has `let`s its result does not need, which
+        /// `programBranchEnter` with `made` evaluates.
+        statements: bool = false,
+
+        pub const What = union(enum) {
+            /// Markup written in place: this root, whose values are
+            /// evaluated once `programBranchEnter` binds its inputs.
+            markup: Root.Index,
+            /// A call of a function of this module whose body after its
+            /// `let`s is markup, under no `Html.map`: the callee's root, its
+            /// parameters bound by `programBranchEnter` as a call written in
+            /// place is (1.9).
+            call: Root.Index,
+            /// Anything else: a markup value, `programBranchValue`.
+            value,
         };
     };
 
@@ -1068,11 +1112,73 @@ pub const Context = struct {
         cx.vtable.program_inline_leave(cx.impl);
     }
 
-    /// 1.10: whether an `html` hole's value is an `if` or a `case` — its
+    /// 1.10: when an `html` hole's value is an `if` or a `case` — its
     /// `let`s peeled — which `browser-direct.md`'s S4 amendment compiles as
-    /// a branch (item 3) rather than as markup on the value path (item 1).
-    pub fn programBranch(cx: *Context, node: Node.Index) bool {
+    /// a branch (item 3) rather than as markup on the value path (item 1),
+    /// its arms; null otherwise.
+    pub fn programBranch(cx: *Context, node: Node.Index) ?Program.Branch {
         return cx.vtable.program_branch(cx.impl, node);
+    }
+
+    /// 1.10: the number of the arm branch `node`'s value takes, its
+    /// scrutinee and the `let`s around it evaluated into `block` where the
+    /// hole's root's values may be (the arms' own `let`s are not).
+    pub fn programBranchArm(cx: *Context, block: Block, node: Node.Index) Error!Expr {
+        return cx.vtable.program_branch_arm(cx.impl, block, node);
+    }
+
+    /// 1.10: enter arm `k` of branch `node`, where its value takes that
+    /// arm: the facts (`programHole`, `programList`, `programEdits`) then
+    /// answer for the arm's holes, on the call path the pass walked them
+    /// by, and — with a block — the arm's values may be evaluated: the
+    /// hole's value is evaluated into `block` again, its scrutinee and the
+    /// decision up to the arm, and binds the inputs of the arm's markup
+    /// root (`Arm.What.markup`) or the parameters of its callee
+    /// (`Arm.What.call`), as `programInlineEnter` does. With `made`, the
+    /// arm's `let`s its result does not need are evaluated too. Returns
+    /// what binds them — an array, the inputs' values or the call's
+    /// arguments — which a lowering may keep and hand back as `held`: when
+    /// `held` is not `null` at run time, it binds them instead, and the
+    /// hole's value is not evaluated (an arm torn down, whose variables
+    /// its value no longer gives). Null without a block. Leave with
+    /// `programInlineLeave`.
+    pub fn programBranchEnter(cx: *Context, block: ?Block, node: Node.Index, k: u32, made: bool, held: ?Expr) Error!?Expr {
+        return cx.vtable.program_branch_enter(cx.impl, block, node, k, made, held);
+    }
+
+    /// 1.10: arm `k`'s result of branch `node`, where its value takes that
+    /// arm, evaluated into `block` as a markup value.
+    pub fn programBranchValue(cx: *Context, block: Block, node: Node.Index, k: u32) Error!Expr {
+        return cx.vtable.program_branch_value(cx.impl, block, node, k);
+    }
+
+    /// 1.10: the markup root a `Show`'s fallback is, when it is markup
+    /// written there whose values can be evaluated apart; null otherwise.
+    pub fn programShowFallback(cx: *Context, node: Node.Index) ?Root.Index {
+        return cx.vtable.program_show_fallback(cx.impl, node);
+    }
+
+    /// 1.10: the inputs of root `r`, markup nested in a value of the root
+    /// whose values are being evaluated (`programShowFallback`'s), read
+    /// under the names their locals have there. Leave with
+    /// `programInlineLeave`.
+    pub fn programNestedEnter(cx: *Context, r: Root.Index) Error!void {
+        return cx.vtable.program_nested_enter(cx.impl, r);
+    }
+
+    /// 1.10, inside `programViewEnter` of a `view` with `view_lets`: the
+    /// `let`s of its body nothing reads — statements, `_ =` — evaluated
+    /// into `block`, where the page is made (§8.4); whether it has any.
+    pub fn programViewStatements(cx: *Context, block: Block) Error!bool {
+        return cx.vtable.program_view_statements(cx.impl, block);
+    }
+
+    /// 1.10, inside `Lowering.program` only: the read set of root `r`'s
+    /// `k`-th `let` (`Root.lets`) on the current call path, as a hole's
+    /// (`HoleFacts.group`, `programCalls`): what a derived value is
+    /// computed again for (`browser-direct.md` §5.4).
+    pub fn programLet(cx: *Context, r: Root.Index, k: u32) Program.HoleFacts {
+        return cx.vtable.program_let(cx.impl, r, k);
     }
 };
 
@@ -1248,7 +1354,14 @@ pub const VTable = struct {
     program_inline_args: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error![]const Expr,
     program_inline_enter: *const fn (impl: *anyopaque, block: ?Block, node: Node.Index, args: ?[]const Expr, made: bool) Error!void,
     program_inline_leave: *const fn (impl: *anyopaque) void,
-    program_branch: *const fn (impl: *anyopaque, node: Node.Index) bool,
+    program_branch: *const fn (impl: *anyopaque, node: Node.Index) ?Program.Branch,
+    program_branch_arm: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
+    program_branch_enter: *const fn (impl: *anyopaque, block: ?Block, node: Node.Index, k: u32, made: bool, held: ?Expr) Error!?Expr,
+    program_branch_value: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!Expr,
+    program_show_fallback: *const fn (impl: *anyopaque, node: Node.Index) ?Root.Index,
+    program_nested_enter: *const fn (impl: *anyopaque, r: Root.Index) Error!void,
+    program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,
+    program_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32) Program.HoleFacts,
 
     literal: *const fn (impl: *anyopaque, which: Literal, text: []const u8) Error!Expr,
     template: *const fn (impl: *anyopaque, parts: []const TemplatePart) Error!Expr,

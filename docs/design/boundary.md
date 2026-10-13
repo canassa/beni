@@ -1981,13 +1981,57 @@ two more facts of an edit. Valid inside `Lowering.program` only.
 `direct` targets 1.9.
 
 **Version 1.10** (*amended 2026-10-13*, additive and gated on nothing; `browser-direct.md`'s S4
-amendment, as built for its value path and controlled inputs): one call, valid inside
-`Lowering.program` only, and one change to what a program lowering's hook leaves unwritten.
+amendment, as built for its value path and controlled inputs, then for its branches and derived
+values): the calls a program lowering compiles branches, `Show` and a `view`'s `let`s with,
+valid inside `Lowering.program` only, one field of `Program`, one change to what a program
+lowering's hook leaves unwritten, and one to `rootValues`.
 
-- **`cx.programBranch(node) bool`**, for an `html` hole of markup the program writes: whether
-  its value, its `let`s peeled, is an `if` or a `case` — a branch, which `browser-direct.md`'s S4
-  amendment (item 3) compiles in place — rather than markup on the value path (item 1). False
-  for any other node.
+- **`cx.programBranch(node) ?Program.Branch`**, for an `html` hole of markup the program
+  writes: when its value, its `let`s peeled, is an `if` or a `case` — a branch, which
+  `browser-direct.md`'s S4 amendment (item 3) compiles in place — rather than markup on the value
+  path (item 1), its arms in order, an arm whose body is itself a `case` replaced by that
+  `case`'s arms (`else if`). Each `Program.Arm` says what its result is past the arm's `let`s —
+  `markup` (a root written in place), `call` (a function of this module whose body after its
+  `let`s is markup, under no `Html.map`: the callee's root) or `value` (anything else) — whether
+  no value takes it (`dead`: a constructor nothing builds) and whether it has `let`s its result
+  does not need (`statements`). Null for any other node. *(Built for item 3, 2026-10-13: this
+  entry first said `bool`.)*
+- **`cx.programBranchArm(block, node) Expr`**: the number of the arm the branch's value takes
+  now — its scrutinee, the decision and the `let`s around it evaluated into `block` where the
+  hole's root's values may be, the arms' own `let`s not.
+- **`cx.programBranchEnter(block, node, k, made, held) ?Expr`**, left with
+  `programInlineLeave`: arm `k` entered. Without a block, only the facts change: `programHole`,
+  `programList`, `programEdits` answer for the arm's holes, on the call path the pass walked them
+  by (the hole's token added). With one, the hole's value is evaluated into `block` again — the
+  scrutinee and the decision up to the arm — with the arm's result made the array of what binds
+  its values: the inputs of its markup root, then read under names of their own, or the
+  arguments of its call, then bound to the callee's parameters as a call written in place is
+  (1.9); with `made`, the arm's `let`s its result does not need run too. It returns that array,
+  which a lowering may keep and hand back as `held`: when `held` is not `null` at run time it
+  binds them instead and the value is not evaluated — an arm its branch tore down, whose
+  variables the value no longer gives.
+- **`cx.programBranchValue(block, node, k) Expr`**: arm `k`'s result evaluated into `block` as a
+  markup value, where the branch's value takes that arm.
+- **`cx.programShowFallback(node) ?Root.Index`**: the markup root a `Show`'s fallback is, when it
+  is markup written there whose values can be evaluated apart; and **`cx.programNestedEnter(r)`**,
+  left with `programInlineLeave`: the inputs of root `r`, markup nested in a value of the root
+  being evaluated, read under the names their locals have there.
+- **`Program.view_lets`**: `view` is a function whose body is `let`s around markup written in
+  place; `Program.view_root` then names that markup's root, and `view` stays `.function`, so a
+  lowering before 1.10 sees what it saw. The `let`s the root takes are its own (`Root.lets`);
+  `cx.programViewEnter` evaluates the others but the statements, and
+  **`cx.programViewStatements(block) bool`**, inside it, evaluates those — a `let_stmt`, a `_ =` —
+  where the page is made, and says whether there were any.
+- **`cx.programLet(r, k) Program.HoleFacts`**: the read set of root `r`'s `k`-th `let`, on the
+  current call path, numbered as a hole's (`programCalls`): what a derived value is computed
+  again for (`browser-direct.md` §5.4). The write-set pass records it for every constant `let`
+  the view walk evaluates, once per call path (`write-sets.md` §3.6, as amended for S4).
+- **`cx.rootValues` binds a `let` it evaluates.** A `let` of root `r` among `values`
+  (`Root.lets`) is read under the name its value was bound to by the values evaluated after it,
+  until `r`'s inputs are unbound, as `cx.bindLet` binds one — when `r` is the root whose inputs
+  were bound last. Before, a lowering that evaluated a root's `let`s through `rootValues` and
+  bound none read an unbound name (`browser/direct/HelperLet`: a helper written in place whose
+  markup reads its own `let`).
 - **A consumed declaration the hook's code names is written after all.** Version 1.9's rule
   leaves a markup helper that only consumed declarations name unwritten, since the hook writes
   each of its calls in place. A program lowering that puts markup on the value path calls such

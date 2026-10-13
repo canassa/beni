@@ -1,0 +1,106 @@
+-- load
+<body>
+  <main>
+    <button id="loaded">"loaded"</button>
+    <button id="article">"article"</button>
+    <button id="home">"home"</button>
+    <button id="rename">"rename"</button>
+    <button id="unselect">"unselect"</button>
+    <button id="select">"select"</button>
+    <p id="home-page">"0"</p>
+    <b>"item"</b>
+  </main>
+</body>
+-- click #loaded
+<body>
+  <main>
+    <button id="loaded">"loaded"</button>
+    <button id="article">"article"</button>
+    <button id="home">"home"</button>
+    <button id="rename">"rename"</button>
+    <button id="unselect">"unselect"</button>
+    <button id="select">"select"</button>
+    <p id="home-page">"7"</p>
+    <b>"item"</b>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="loaded">"loaded"</button>
+    <button id="article">"article"</button>
+    <button id="home">"home"</button>
+    <button id="rename">"rename"</button>
+    <button id="unselect">"unselect"</button>
+    <button id="select">"select"</button>
+    <p id="home-page">"7"</p>
+    <b>"item!"</b>
+  </main>
+</body>
+-- click #article
+<body>
+  <main>
+    <button id="loaded">"loaded"</button>
+    <button id="article">"article"</button>
+    <button id="home">"home"</button>
+    <button id="rename">"rename"</button>
+    <button id="unselect">"unselect"</button>
+    <button id="select">"select"</button>
+    <p id="article-page">"article"</p>
+    <b>"item!"</b>
+  </main>
+</body>
+-- click #loaded
+(the DOM did not change)
+-- click #unselect
+<body>
+  <main>
+    <button id="loaded">"loaded"</button>
+    <button id="article">"article"</button>
+    <button id="home">"home"</button>
+    <button id="rename">"rename"</button>
+    <button id="unselect">"unselect"</button>
+    <button id="select">"select"</button>
+    <p id="article-page">"article"</p>
+  </main>
+</body>
+-- click #rename
+(the DOM did not change)
+-- click #home
+<body>
+  <main>
+    <button id="loaded">"loaded"</button>
+    <button id="article">"article"</button>
+    <button id="home">"home"</button>
+    <button id="rename">"rename"</button>
+    <button id="unselect">"unselect"</button>
+    <button id="select">"select"</button>
+    <p id="home-page">"0"</p>
+  </main>
+</body>
+-- click #select
+<body>
+  <main>
+    <button id="loaded">"loaded"</button>
+    <button id="article">"article"</button>
+    <button id="home">"home"</button>
+    <button id="rename">"rename"</button>
+    <button id="unselect">"unselect"</button>
+    <button id="select">"select"</button>
+    <p id="home-page">"0"</p>
+    <b>"item"</b>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="loaded">"loaded"</button>
+    <button id="article">"article"</button>
+    <button id="home">"home"</button>
+    <button id="rename">"rename"</button>
+    <button id="unselect">"unselect"</button>
+    <button id="select">"select"</button>
+    <p id="home-page">"0"</p>
+    <b>"item!"</b>
+  </main>
+</body>

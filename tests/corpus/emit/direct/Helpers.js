@@ -148,41 +148,41 @@ const Helpers$main = Tea$sandbox(($root$1, $t$2) => {
       }
     }
     {
-      const id$35 = "run";
-      const text$36 = "Create 1,000 rows";
-      if ($w$13.data !== `${text$36}`) {
-        Direct$wrong("the text Helpers.beni:40:48 baked into the page", $w$13.data, `${text$36}`);
+      const id$36 = "run";
+      const text$37 = "Create 1,000 rows";
+      if ($w$13.data !== `${text$37}`) {
+        Direct$wrong("the text Helpers.beni:40:48 baked into the page", $w$13.data, `${text$37}`);
       }
-      if ($w$12.getAttribute("id") !== `${id$35}`) {
-        Direct$wrong("the attribute `id` at Helpers.beni:40:26 baked into the page", $w$12.getAttribute("id"), `${id$35}`);
+      if ($w$12.getAttribute("id") !== `${id$36}`) {
+        Direct$wrong("the attribute `id` at Helpers.beni:40:26 baked into the page", $w$12.getAttribute("id"), `${id$36}`);
       }
     }
     {
-      const id$38 = "add";
-      const text$39 = "Append 1,000 rows";
-      if ($w$15.data !== `${text$39}`) {
-        Direct$wrong("the text Helpers.beni:40:48 baked into the page", $w$15.data, `${text$39}`);
+      const id$39 = "add";
+      const text$40 = "Append 1,000 rows";
+      if ($w$15.data !== `${text$40}`) {
+        Direct$wrong("the text Helpers.beni:40:48 baked into the page", $w$15.data, `${text$40}`);
       }
-      if ($w$14.getAttribute("id") !== `${id$38}`) {
-        Direct$wrong("the attribute `id` at Helpers.beni:40:26 baked into the page", $w$14.getAttribute("id"), `${id$38}`);
+      if ($w$14.getAttribute("id") !== `${id$39}`) {
+        Direct$wrong("the attribute `id` at Helpers.beni:40:26 baked into the page", $w$14.getAttribute("id"), `${id$39}`);
       }
     }
     const $a$69 = $I$3.c();
-    const title$41 = $a$69[0];
-    const n$42 = $a$69[1];
-    const msg$43 = $a$69[2];
-    const $t$70 = n$42 + 1;
-    if (!Direct$same(title$41, $I$3.s1)) {
-      Direct$wrong("the text hole at Helpers.beni:50:15", $I$3.s1, title$41);
+    const title$42 = $a$69[0];
+    const n$43 = $a$69[1];
+    const msg$44 = $a$69[2];
+    const $t$70 = n$43 + 1;
+    if (!Direct$same(title$42, $I$3.s1)) {
+      Direct$wrong("the text hole at Helpers.beni:50:15", $I$3.s1, title$42);
     }
-    if ($I$3.w2.data !== `${title$41}`) {
-      Direct$wrong("the text hole at Helpers.beni:50:15 in the document", $I$3.w2.data, `${title$41}`);
+    if ($I$3.w2.data !== `${title$42}`) {
+      Direct$wrong("the text hole at Helpers.beni:50:15 in the document", $I$3.w2.data, `${title$42}`);
     }
-    if (!Direct$same(n$42, $I$3.s2)) {
-      Direct$wrong("the text hole at Helpers.beni:51:12", $I$3.s2, n$42);
+    if (!Direct$same(n$43, $I$3.s2)) {
+      Direct$wrong("the text hole at Helpers.beni:51:12", $I$3.s2, n$43);
     }
-    if ($I$3.w4.data !== `${n$42}`) {
-      Direct$wrong("the text hole at Helpers.beni:51:12 in the document", $I$3.w4.data, `${n$42}`);
+    if ($I$3.w4.data !== `${n$43}`) {
+      Direct$wrong("the text hole at Helpers.beni:51:12 in the document", $I$3.w4.data, `${n$43}`);
     }
     if (!Direct$same($t$70, $I$3.s3)) {
       Direct$wrong("the text hole at Helpers.beni:52:12", $I$3.s3, $t$70);
@@ -191,21 +191,21 @@ const Helpers$main = Tea$sandbox(($root$1, $t$2) => {
       Direct$wrong("the text hole at Helpers.beni:52:12 in the document", $I$3.w6.data, `${$t$70}`);
     }
     const $a$71 = $I$4.c();
-    const title$45 = $a$71[0];
-    const n$46 = $a$71[1];
-    const msg$47 = $a$71[2];
-    const $t$72 = n$46 + 1;
-    if (!Direct$same(title$45, $I$4.s1)) {
-      Direct$wrong("the text hole at Helpers.beni:50:15", $I$4.s1, title$45);
+    const title$46 = $a$71[0];
+    const n$47 = $a$71[1];
+    const msg$48 = $a$71[2];
+    const $t$72 = n$47 + 1;
+    if (!Direct$same(title$46, $I$4.s1)) {
+      Direct$wrong("the text hole at Helpers.beni:50:15", $I$4.s1, title$46);
     }
-    if ($I$4.w2.data !== `${title$45}`) {
-      Direct$wrong("the text hole at Helpers.beni:50:15 in the document", $I$4.w2.data, `${title$45}`);
+    if ($I$4.w2.data !== `${title$46}`) {
+      Direct$wrong("the text hole at Helpers.beni:50:15 in the document", $I$4.w2.data, `${title$46}`);
     }
-    if (!Direct$same(n$46, $I$4.s2)) {
-      Direct$wrong("the text hole at Helpers.beni:51:12", $I$4.s2, n$46);
+    if (!Direct$same(n$47, $I$4.s2)) {
+      Direct$wrong("the text hole at Helpers.beni:51:12", $I$4.s2, n$47);
     }
-    if ($I$4.w4.data !== `${n$46}`) {
-      Direct$wrong("the text hole at Helpers.beni:51:12 in the document", $I$4.w4.data, `${n$46}`);
+    if ($I$4.w4.data !== `${n$47}`) {
+      Direct$wrong("the text hole at Helpers.beni:51:12 in the document", $I$4.w4.data, `${n$47}`);
     }
     if (!Direct$same($t$72, $I$4.s3)) {
       Direct$wrong("the text hole at Helpers.beni:52:12", $I$4.s3, $t$72);
@@ -214,21 +214,21 @@ const Helpers$main = Tea$sandbox(($root$1, $t$2) => {
       Direct$wrong("the text hole at Helpers.beni:52:12 in the document", $I$4.w6.data, `${$t$72}`);
     }
     const $a$73 = $I$5.c();
-    const title$49 = $a$73[0];
-    const n$50 = $a$73[1];
-    const msg$51 = $a$73[2];
-    const $t$74 = n$50 + 1;
-    if (!Direct$same(title$49, $I$5.s1)) {
-      Direct$wrong("the text hole at Helpers.beni:50:15", $I$5.s1, title$49);
+    const title$50 = $a$73[0];
+    const n$51 = $a$73[1];
+    const msg$52 = $a$73[2];
+    const $t$74 = n$51 + 1;
+    if (!Direct$same(title$50, $I$5.s1)) {
+      Direct$wrong("the text hole at Helpers.beni:50:15", $I$5.s1, title$50);
     }
-    if ($I$5.w2.data !== `${title$49}`) {
-      Direct$wrong("the text hole at Helpers.beni:50:15 in the document", $I$5.w2.data, `${title$49}`);
+    if ($I$5.w2.data !== `${title$50}`) {
+      Direct$wrong("the text hole at Helpers.beni:50:15 in the document", $I$5.w2.data, `${title$50}`);
     }
-    if (!Direct$same(n$50, $I$5.s2)) {
-      Direct$wrong("the text hole at Helpers.beni:51:12", $I$5.s2, n$50);
+    if (!Direct$same(n$51, $I$5.s2)) {
+      Direct$wrong("the text hole at Helpers.beni:51:12", $I$5.s2, n$51);
     }
-    if ($I$5.w4.data !== `${n$50}`) {
-      Direct$wrong("the text hole at Helpers.beni:51:12 in the document", $I$5.w4.data, `${n$50}`);
+    if ($I$5.w4.data !== `${n$51}`) {
+      Direct$wrong("the text hole at Helpers.beni:51:12 in the document", $I$5.w4.data, `${n$51}`);
     }
     if (!Direct$same($t$74, $I$5.s3)) {
       Direct$wrong("the text hole at Helpers.beni:52:12", $I$5.s3, $t$74);

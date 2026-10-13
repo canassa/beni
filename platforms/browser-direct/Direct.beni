@@ -1435,6 +1435,108 @@ pub on : V, V, V → ⊤
 on el name h = Js.to (Js.call el "addEventListener" [ name, Js.from λevent → send h event ])
 
 
+-- ---- Branches and `Show` (§5.5; S4's amendment, item 3) -----------------
+--
+-- A branch's state is `{ k, i, s, p, n, m, y }`: the number of the arm it
+-- shows (-1: nothing), that arm's instance, the comment its arms are
+-- written after, the parent and the marker they are written before (as a
+-- slot's: a null parent is the marker's), each arm's `make`, and a
+-- `Show`'s key. An arm's instance holds the clone of its template (`e`),
+-- which is put on the page once, and its branch (`b`). A page with no
+-- branch ships none of this.
+
+--| `(parent, marker, makes)`: a branch's state, its comment put where its
+--| arms go.
+pub branch : V, V, V → V
+branch parent marker makes =
+    start = Js.call (Js.global "document") "createComment" [ Js.from "" ]
+    host = if Js.isNull parent then Js.get marker "parentNode" else parent
+    _ = Js.call host "insertBefore" [ start, marker ]
+
+    Js.object
+        [ ( "k", Js.from (0 - 1) )
+        , ( "i", Js.null )
+        , ( "s", start )
+        , ( "p", parent )
+        , ( "n", marker )
+        , ( "m", makes )
+        , ( "y", unset )
+        ]
+
+
+--| `(b, n, u)`: arm `n` shown — the arm shown torn down, its nodes taken
+--| out and its instance dropped, and arm `n` made, from the instance `u`
+--| the branch is in, and put where the arms go; -1 shows nothing.
+pub arm : V, Int, V → ⊤
+arm b n u =
+    k : Int
+    k = Js.to (Js.get b "k")
+    if k ≥ 0 then clearAfter (Js.get b "s") (Js.get b "n")
+    if n < 0 then
+        Js.set b "i" Js.null
+    else
+        i = Js.apply (Js.at (Js.get b "m") n) [ u, b ]
+        Js.set i "b" b
+        clone = Js.get i "e"
+
+        if not (Js.isNullish clone) then
+            Js.to
+                (Js.call (Js.get (Js.get b "s") "parentNode") "insertBefore" [ clone, Js.get b "n" ]
+                )
+        Js.set b "i" i
+    Js.set b "k" (Js.from n)
+
+
+-- Every node after `start` up to `end` (the parent's last, for null) taken
+-- out of the page.
+clearAfter : V, V → ⊤
+clearAfter start end =
+    next = Js.get start "nextSibling"
+
+    if Js.isNull next || Js.same next end then
+        ⊤
+    else
+        _ = Js.call next "remove" []
+        clearAfter start end
+
+
+--| `(t, flags)`: an arm's template — the template element `t`'s parsed
+--| content, copied out of it (the next parse replaces it), and out of the
+--| `<svg>` an SVG root other than `<svg>` is parsed in (`dom`'s flag 2).
+pub armTemplate : V, Int → V
+armTemplate t flags =
+    f = Js.call (Js.get t "content") "cloneNode" [ Js.from True ]
+
+    if Js.bitAnd flags 2 ≠ 0 then
+        w = Js.get f "firstChild"
+        unwrap f w
+        Js.to (Js.call w "remove" [])
+    f
+
+
+unwrap : V, V → ⊤
+unwrap f w =
+    c = Js.get w "firstChild"
+
+    if Js.isNull c then
+        ⊤
+    else
+        _ = Js.call f "insertBefore" [ c, w ]
+        unwrap f w
+
+
+--| `(a, b)`: whether a keyed `Show`'s key is the one it shows: by
+--| SameValueZero, as a rekey compares keys (`NaN` is itself).
+pub sameKey : V, V → Bool
+sameKey a b =
+    Js.same a b
+        || (Js.typeIs a "number"
+               && Js.typeIs b "number"
+               && not (Js.same a a)
+               && not (Js.same b b)
+           )
+
+
 -- ---- The value path (S4's amendment, item 1) ----------------------------
 --
 -- Markup this platform does not write in place is `dom`'s kinds and blocks
@@ -1809,6 +1911,13 @@ same a b =
         False
     else if isList a || isList b then
         isList a && isList b && sameElements (elements a) (elements b)
+    else if isBlock a || isBlock b then
+        -- A markup value, `dom`'s block `{ t, v }`, by its kind: its values
+        -- are its root's inputs, whole locals, which a derived value that
+        -- reads only some of their paths keeps from when it was computed,
+        -- rightly (S4's amendment, items 1 and 4, as built). What it shows
+        -- is the page's, which the check reads where it is shown.
+        isBlock a && isBlock b && Js.same (Js.get a "t") (Js.get b "t")
     else
         keys = Js.call (Js.global "Object") "keys" [ a ]
         n : Int
@@ -1816,6 +1925,16 @@ same a b =
         other : Int
         other = Js.to (Js.get (Js.call (Js.global "Object") "keys" [ b ]) "length")
         n == other && sameFields keys a b 0 n
+
+
+-- A markup value: `dom`'s block, whose kind `t` has its `m` and its `p`.
+isBlock : V → Bool
+isBlock v =
+    t = Js.get v "t"
+    Js.typeIs t "object"
+        && not (Js.isNull t)
+        && Js.typeIs (Js.get t "m") "function"
+        && Js.typeIs (Js.get t "p") "function"
 
 
 -- A list by `backend.md` §4's protocol: an array, or a view or a trie.

@@ -2001,3 +2001,16 @@ same path), its row path, its key paths, an `each` hole's path and K3's rows.
   its path's visit computed. A path is never shared by two calls: each entry is a node of one
   module's markup, and the walk enters each call once per visit of its node.
 
+
+### *Amended 2026-10-13 (the direct platform's S4):* a `let`'s facts per call
+
+The direct platform computes a constant `let` of `view` that only markup reads once per key whose
+writes conflict with what it reads (`browser-direct.md` §5.4), so the pass records that read set,
+as it records a hole's (§3.6) and once per call path (*a hole's facts per call*): in view mode, for
+the app's modules, every `let_def` with no parameters the walk evaluates adds the anchors of its
+value's term to an entry keyed by its module, its value's instruction and the call path, kept apart
+from the holes (`Program.vlets`) so that nothing printed moves. The consumer numbers their read
+sets with the holes' (`boundary.md` §9.4.6, version 1.10's `programLet`); a view cut short reads
+ρ for them as for every hole. Soundness is a hole's: a value that reads the `let` reads its term, so
+its anchors are in the hole's read set too, and a key that changes the `let`'s value conflicts with
+both.

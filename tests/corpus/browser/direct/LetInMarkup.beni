@@ -1,0 +1,59 @@
+-- `browser/dom/LetInMarkup` on `browser-direct` (§5.4; S4's amendment,
+-- item 4), its `if` written in a hole of the markup, which a `view` must
+-- be: a `let` read only by markup is a derived value, computed again by a
+-- message that writes what it reads and by no other. `shown`, the items
+-- sorted, is computed when a message writes `model.items`: a tick logs no
+-- "sorted", an added item does, and the list's rows change only then.
+-- `label` chooses between the two arms, so it is computed when a message
+-- writes the ticks: the first tick switches to the arm that shows the
+-- list. `Debug.log` shows each computation; both platforms log the same,
+-- since every message here changes what it writes.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Tick
+    | Add
+
+
+type alias Model =
+    items : List Int
+    ticks : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Tick →
+            { model | ticks = model.ticks + 1 }
+
+        Add →
+            { model | items = List.push model.items (10 - List.length model.items) }
+
+
+view : Model → Html Msg
+view model =
+    shown = Debug.log "sorted" (List.sort model.items)
+    label = Debug.log "label" (if model.ticks > 1 then "many" else "few")
+
+    <>
+        {if label == "many" then
+            <main>
+                <button id="tick" onClick={Tick}>tick</button>
+                <button id="add" onClick={Add}>add</button>
+                <p>{model.ticks}</p>
+                <ul><For each={shown} keyed={False}>{λi → <li>{i}</li>}</For></ul>
+            </main>
+         else
+            <main>
+                <button id="tick" onClick={Tick}>tick</button>
+                <button id="add" onClick={Add}>add</button>
+                <p>{label}</p>
+            </main>
+        }
+    </>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { items = [ 3, 1, 2 ], ticks = 1 }, update = update, view = view }

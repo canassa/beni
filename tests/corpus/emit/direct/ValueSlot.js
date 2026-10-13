@@ -152,7 +152,7 @@ const ValueSlot$main = Tea$sandbox(($root$1, $t$2) => {
       Direct$wrong("the text hole at ValueSlot.beni:49:32 in the document", $w$12.data, `${$t$68}`);
     }
     {
-      const $t$69 = List$map($model$7.names, (n$51) => ({ t: ValueSlot$k65, v: [n$51] }));
+      const $t$69 = List$map($model$7.names, (n$56) => ({ t: ValueSlot$k65, v: [n$56] }));
       Direct$verifySlot($c$15, $t$69, 2, "the markup at ValueSlot.beni:50:13");
     }
     {

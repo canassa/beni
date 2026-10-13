@@ -1,0 +1,44 @@
+-- `browser/dom/EveryRenderNested` on `browser-direct` (§5.3; S4's
+-- amendment, item 3): a value that may have an effect is evaluated on
+-- every message wherever it stands — here in an `if` hole's arm —
+-- whatever the fields it reads: its group is every handler's, and the arm
+-- shown is visited for it. `Random.value` draws anew on each message, so
+-- the line changes on a message that touches none of the fields it reads.
+-- The original's other two draws are left out: one is a `let` that may
+-- have an effect, which this platform refuses
+-- (`build/bad/direct/ViewLetEffect`), and two draws in one message are
+-- made in the order each platform visits them — an arm's before the
+-- groups (§4.1 step 3) on this one, `dom`'s order of first writes on
+-- `browser-tea` — so the two pages would show them swapped.
+import Html exposing (Html)
+import Random
+import Tea
+
+
+type Msg
+    = Other
+
+
+type alias Model =
+    n : Int
+    o : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Other →
+            { m | o = m.o + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="other" onClick={Other}>other</button>
+        <p id="o">{m.o}</p>
+        {if m.n > 100 then <b>x</b> else <i id="nested">{Random.value (Random.int 1 1000000)}</i>}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 0, o = 0 }, update = update, view = view }

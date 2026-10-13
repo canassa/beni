@@ -1,0 +1,5 @@
+# The button closes the page; its section's handler still runs, with ada.
+click #close
+# Opened again with another name, and closed again: grace.
+click #reopen
+click #close

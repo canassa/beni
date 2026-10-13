@@ -2626,3 +2626,103 @@ refused naming S4. What building them settled, each a place the amendment left o
 - **The value fuzz** of a project that has a platform of its own and several modules dumps its
   message types from a directory of its modules, as a project without a platform does
   (`tests/blackbox/corpus_test.zig`): `dump` takes one path.
+
+### *Amended 2026-10-13 (slice S4, branches and derived values, as built)*
+
+Items 3 and 4 of the S4 amendment are built (`boundary.md` §9.4.6, version 1.10;
+`platforms/browser-direct/zig/direct.zig`, `Direct.beni`, `src/js/Lower.zig`); item 6 is not, and
+still refused naming S4. What building them settled, each a place the amendment left open or got
+wrong:
+
+- **An arm is a site of its own.** Every `markup` instruction is a root of the tree, so an arm's
+  markup is a root whose inputs are every local its values read bound outside it — the `case`'s
+  pattern variables, the arm's `let`s, the `let`s around the `case`, `view`'s parameter. It is
+  planned as a row's markup is (its holes, lists, value slots and branches), with nothing baked,
+  and made by `make(u)`, which clones its template whole (several nodes, text), walks to its
+  nodes, builds its instance `{ e, u, a, …nodes, …slots, …lists, …branches }` and makes its first
+  writes, rows and arms. A branch's state is `Direct.branch(parent, marker, makes)`: `{ k, i, s,
+  p, n, m, y }`, where `s` is a comment the branch puts where its arms go, once, so that tearing
+  an arm down is removing the nodes between `s` and the op's marker — whatever an arm's top-level
+  slots, lists and branches have put there since — and `Direct.arm(b, n, u)` tears the shown arm
+  down and makes arm `n`. An arm whose result is a call of a helper written in place (S3) is the
+  helper's markup entered with the call's arguments; any other result is a **value arm**, one value
+  slot made where the arms go.
+- **The scrutinee is not a path read.** It is any expression, so it is evaluated again — the
+  `let`s around the `case`, the scrutinee, the decision up to the arm — wherever the arm's values
+  are: `cx.programBranchEnter` lowers the hole's value again with each arm's result replaced, arm
+  `k`'s by the array of what binds its values (its root's inputs, or its call's arguments) and every
+  other arm's by `null`, then binds the arm's root to the array's entries. `programBranchArm`
+  lowers it with every arm replaced by its number. Each lowering is in a JavaScript block of its
+  own, since two in one function would bind the same names twice. An arm's `let`s its result does
+  not need run only where it is made (`made`), as a helper's do (S3, §8.4).
+- **Arm `let`s are not `Root.lets`.** A root inside another root's value takes no `let` (one owner
+  per `let`, `MarkupTree`), and an arm's root is inside the hole's value, so an arm's `let`s are
+  evaluated with its values, where they are bound — every time a group, a list or a nested branch
+  of the arm evaluates them — not kept in a slot of the arm: item 4's arm-level derived values are
+  not built. The `let`s of `view`'s own body are: a `view` whose body is `let`s around markup is
+  compiled (`Program.view_lets`), each `let` its root takes is a slot of the mount, computed at
+  mount and again in step 2 by a key whose writes conflict with its read set, which the write-set
+  pass now records per `let` (`write-sets.md`, *a `let`'s facts per call*), and every group reads
+  the slot (`cx.bindLet` after `programViewEnter`). A `let` of `view` that its root does not take
+  and its markup reads — one that may have an effect — would run wherever the root's values do, so
+  it is refused (`build/bad/direct/ViewLetEffect`). A `view` whose body past its `let`s is not
+  markup is refused, naming `<>{…}</>` (`build/bad/direct/ViewBranch`).
+- **A `Show`'s fallback** is not a root the tree maps for a lowering: `cx.programShowFallback`
+  gives the markup root a fallback written in place is, and `programNestedEnter` binds its inputs
+  where it stands, so it is an arm site; a fallback that is any other value, and a body that is a
+  function or a lambda whose body is not markup, are value arms. A keyed `Show` keeps its arm while
+  its key is SameValueZero to the one shown (`Direct.sameKey`) and one by identity while the
+  payload is `===`; its key and payload are evaluated where it is.
+- **Facts per arm.** The pass walks an arm's markup on the branch's call path plus the hole's
+  token, and a `Show`'s body and fallback on the branch's own path; a call arm's helper is walked on
+  the branch's path with no second token. `programBranchEnter` with no block extends the path the
+  same way. Two arms calling one helper therefore share one fact entry, which is sound and
+  over-calls. A branch's own facts — the hole's `Alt`, its scrutinee's reads and every arm's — are
+  what a key recomputes the arm for.
+- **The handler.** Step 3 visits, per site, its branches, then its lists, then its groups (a row
+  keeps S2's order, its groups before its lists). A branch whose facts conflict computes its arm;
+  another arm (or, for a `Show`, another key) is torn down and the new one made, and is not
+  visited; the same arm is visited. Otherwise the live arm is visited only where some branch, list
+  or group of it is called. Every visit is `if (b.k === j) { const a = b.i; … }`. A branch in a row
+  is visited with the row's visit — its groups, `whole` — and a row patched whole visits its
+  branches whole. A hole of an arm in a row with no facts makes its list's every row visited by
+  every key, as an unknown value slot does.
+- **An arm torn down still delivers its events.** A handler node's event can reach an arm the
+  same dispatch tore down (a click whose own handler closes the arm, bubbling to the arm's next
+  handler; a blur a removal fires). Its listener body reads the instance's branch: when the
+  instance is no longer shown (`b.i !== r`), the arm's variables are bound from what the instance
+  kept (`a`, `programBranchEnter`'s `held`), the array of what bound them when the arm's values
+  were last evaluated — as a row's event is delivered with the item it showed (§4.2,
+  `browser/direct/DetachedArmEvent`). An arm keeps `a` only when a handler node is in it, in a row
+  of it or in an arm inside it.
+- **The verify mode** computes each branch's arm again and compares it with `k`, then checks the
+  live arm as a site, or a value arm's slot as a value slot; a branch whose scrutinee reaches
+  `Debug` or is made on every evaluation is not checked. Each derived value is computed again and
+  compared by `Direct.same`, which compares a markup value — `dom`'s block — by its kind only: its
+  values are its root's inputs, whole locals, which a derived value that reads only some of their
+  paths keeps from when it was computed, rightly (the value path's note above); the page it shows
+  is checked where it is shown. `cx.reachesDebug` now follows a `let` a value reads and markup a
+  value makes, so a slot whose markup prints is not mounted again by the check.
+- **`cx.rootValues` binds the `let`s it evaluates.** A helper written in place whose markup read
+  its own `let` read an unbound name, since S3 evaluated `Root.lets` through `rootValues` and
+  bound none (`browser/direct/HelperLet`, red before this slice).
+- **Two values made on every message are drawn in each platform's order.** Step 3 visits a
+  site's branches before its groups, where `dom` evaluates a grouped root's values in the order
+  of each group's first write, so two `Random.value`s of one message — one in an arm, one in a
+  hole after it — draw in the opposite order on the two platforms, and one golden cannot hold
+  both. Both orders are a function of the model; `browser/direct/EveryRenderNested` keeps one
+  draw, and leaves out the original's `let` that calls a helper that draws, which is the refused
+  shape above.
+- **The rebuilt `LetChain` is a hundred `let`s long**, not 250: a `browser/direct/` page is built
+  for both platforms, each twice, and the original's length put the case over its instruction
+  budget with the code it reaches unchanged. Building it found a quadratic walk in
+  `cx.reachesDebug` once it followed `let`s, which now remembers the `let`s it found free of
+  `Debug`.
+- **Not built**: item 6 (programs, defects, the SVG root) and item 4's arm-level slots, above;
+  `EventReadsModel`'s removed-focused-input half, whose blur happy-dom does not fire (the page
+  pinned here is `DetachedArmEvent`'s bubbling, the same path). New pages: `BranchReturn`,
+  `LateResponse`, `LetInArm`, `SwapAndShow`, `ShowAndBranches`, `RowBranch`, `DetachedArmEvent`,
+  `HelperLet`, and the rebuilt `LetInMarkup` (its `if` written in a hole), `LetOneOwner`,
+  `LetChain`, `EveryRenderTop`, `EveryRenderNested`; `emit/direct/Branch` and `DerivedValue`. The
+  refusals `build/bad/direct/MarkupHole` and `ForRowBranch` are pages now (`BranchReturn`,
+  `RowBranch`) and are gone; `ViewLetEffect` and `ViewBranch` pin what is still refused.
