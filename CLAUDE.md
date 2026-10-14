@@ -339,9 +339,10 @@ fails. Instructions, not time, so load does not move it. A test over budget is
 fixed by the smallest input that reaches its branch, a small-stack unit test
 for a "does not recurse" claim, one test per branch, or deletion when another
 test reaches the branch — never an exemption the owner has not granted. Corpus cases are budgeted
-one by one; the owner may grant a large program its own budget, a `.budget` file beside the case
+one by one; the owner may grant a large program its own budget, or a case whose cost comes from
+a compiler defect with an open issue, until the case fits 4 300M: a `.budget` file beside the case
 with its limit and reason (`tests/corpus/README.md`, *Budgets*). Conduit's three cases (2026-10-08)
-and `browser/direct/HttpJson` and `HttpJsonBody` (2026-10-14, issues #101 and #105) are the only
+and `browser/direct/HttpJson` and `HttpJsonBody` (2026-10-14, compiler defect #105) are the only
 ones.
 
 **Node runs only on unverified JavaScript.** Each program a test runs has a
