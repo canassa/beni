@@ -359,7 +359,12 @@ a DOM, driven by a `.steps` script of clicks, input and keys, and compared as
 a transcript of the page after each step. The gates run it under happy-dom
 in Node — one vendored, checksummed file, `tests/browser/happy-dom.mjs`, no
 network — with run hashes like `run/`'s; `zig build test-browser` runs the
-same fixtures in headless Chrome. `tests/corpus/README.md` has the script
+same fixtures in headless Chrome. On Linux, run it as `nix develop .#browser
+-c zig build test-browser`: the shell's Chromium is the flake's own and
+ignores the caller's `LD_LIBRARY_PATH` and `LD_PRELOAD`, so a host library
+built for a newer glibc cannot stop it; `nix build
+.#checks.x86_64-linux.browser-chromium` checks that. Use `-Dchrome=` only
+where nixpkgs has no Chromium. `tests/corpus/README.md` has the script
 language and the known differences between the two DOMs.
 
 **Coverage** (`zig build coverage`, x86-64 Linux, about 4 s plus a two-minute
