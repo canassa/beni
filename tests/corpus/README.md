@@ -352,6 +352,10 @@ compares instead of `.expected`. The differences known today:
   not among the differences: both DOMs draw only the driver's virtual
   frames (`frame`);
 - layout: happy-dom lays nothing out, so sizes and positions are zero;
+- CSS values: a property the page sets through `style.setProperty`
+  goes back into the `style` attribute as CSSOM serialises it in
+  Chrome, a colour as `rgb(…)`, and as the page wrote it in happy-dom
+  (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome);
 - steps dispatch untrusted events in both DOMs, and `key` types nothing —
   except `press` and the focus events a `focus()` or `blur()` call fires,
   which are trusted as Chrome makes them: Chrome's `press` is its own
