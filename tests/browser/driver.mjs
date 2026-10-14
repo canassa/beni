@@ -157,6 +157,13 @@
 // such a step reaches its time, and a `requestAnimationFrame` callback only
 // when a `frame` step draws a frame — in Chrome as in happy-dom.
 //
+// A step's page is the page once everything the step set going has run, in
+// both DOMs: its microtasks, then turns of the event loop while core's
+// scheduler has a continuation queued — a `setImmediate` under happy-dom, a
+// message to a `MessagePort` in Chrome, which has no `setImmediate` and
+// whose messages the prelude counts from the post to the delivery. After
+// 1 000 such turns the driver stops waiting, and logs a line that says so.
+//
 // The page's `fetch` is scripted from the start: each call is logged as it
 // is made, `(fetch <n>: <METHOD> <path> <headers> [<body>]
 // [credentials:<mode>])` — the headers as JSON, by lower-cased name, a
@@ -277,6 +284,34 @@ function prelude() {
     for (const f of clock.drawing) if (f.id === id) f.cancelled = true;
     clock.frames = clock.frames.filter((f) => f.id !== id);
   };
+  // Where the host has no `setImmediate` — Chrome — core's scheduler goes on
+  // in a message to a `MessagePort`, so the messages the page posted and
+  // that were not yet delivered are counted, for `settle`: a post that did
+  // not throw adds one, and every port of a channel the page makes takes one
+  // away when a message, or its `messageerror`, arrives.
+  const ports = { pending: 0 };
+  record.ports = ports;
+  if (typeof process !== "object") {
+    const Channel = globalThis.MessageChannel;
+    const delivered = () => {
+      ports.pending -= 1;
+    };
+    globalThis.MessageChannel = class MessageChannel extends Channel {
+      constructor() {
+        super();
+        for (const port of [this.port1, this.port2]) {
+          port.addEventListener("message", delivered);
+          port.addEventListener("messageerror", delivered);
+        }
+      }
+    };
+    const post = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (...args) {
+      const sent = post.apply(this, args);
+      ports.pending += 1;
+      return sent;
+    };
+  }
   // The page's `fetch` is scripted: each request is numbered and logged as
   // it is made, and stays pending until a `respond` or `fail` step answers
   // it. The request and the answer are the DOM's own `Request` and
@@ -862,24 +897,26 @@ function step(s) {
   return `unknown command \`${s.command}\``;
 }
 
-// Let everything the last phase queued run: its microtasks, then a turn
-// of the event loop — and under happy-dom, more turns while a
-// `setImmediate` is still to run. Core's scheduler runs 64 tasks a turn
-// and escapes to a `setImmediate` for the rest where the host has one, so
-// a phase that starts more work than that is not over after one timer's
-// turn, and where the timer fell among those turns would be what a
-// transcript shows (`browser/tea/SettlesManyFibers`). A page that queues
-// one forever stops being waited for after 1 000 turns, and the
-// transcript says so in a line of its own. Chrome's page has no
-// `process`, and its scheduler posts to a `MessageChannel` instead: it
-// settles as before, one turn.
+// Let everything the last phase queued run: its microtasks, then turns of
+// the event loop while core's scheduler has a continuation queued. It runs
+// 64 tasks a turn and escapes for the rest to a `setImmediate` where the
+// host has one (happy-dom, in Node) and to a message to a `MessagePort`
+// where it has not (Chrome), so a phase that starts more work than that is
+// not over after one timer's turn, and where the timer fell among those
+// turns would be what a transcript shows (`browser/tea/SettlesManyFibers`,
+// `browser/direct/SettlesManyFibers`). Under happy-dom a pending
+// `setImmediate` is one Node lists; in Chrome a message is pending from its
+// post to its delivery (the prelude counts them). A page that queues one
+// forever stops being waited for after 1 000 turns, and the transcript says
+// so in a line of its own.
 async function settle() {
   const turn = () => new Promise((done) => globalThis.__beniHarness.clock.real(done, 0));
-  const busy = () => typeof process === "object" && process.getActiveResourcesInfo().includes("Immediate");
+  const node = typeof process === "object";
+  const busy = () => (node ? process.getActiveResourcesInfo().includes("Immediate") : globalThis.__beniHarness.ports.pending > 0);
   await turn();
   for (let k = 0; busy(); k++) {
     if (k === 1000) {
-      globalThis.__beniHarness.log.push("(the page still had a setImmediate to run after 1 000 turns)");
+      globalThis.__beniHarness.log.push(node ? "(the page still had a setImmediate to run after 1 000 turns)" : "(the page still had a message to deliver after 1 000 turns)");
       return;
     }
     await turn();
