@@ -1,6 +1,7 @@
 import Ownership.Oracle
 import Ownership.Smoke
 import Ownership.GeneratedRegressions
+import Ownership.Targeted
 
 namespace Ownership.Fixtures
 
@@ -700,6 +701,11 @@ structure Fixture where
 
 /-- Expected verdicts are transcribed from Table 6.2, never checker-generated. -/
 def all : List Fixture := [
+  ⟨"captured once callback called twice",Targeted.countBoundary 1 2,false⟩,
+  ⟨"captured once callback called once",Targeted.countBoundary 1 1,true⟩,
+  ⟨"captured writer consumes revived capture",Targeted.consumingCapture 1 Generator.bump,false⟩,
+  ⟨"captured reader shares revived capture",Targeted.consumingCapture 1 Generator.identL,true⟩,
+  ⟨"right-hand join capture kept as data",Targeted.shapeJoin 1 1 .eq 1,false⟩,
   ⟨"T11 ordinary concat contents",concatContents,false⟩,
   ⟨"T37 initialized grid set",initializedGridSet,true⟩,
   ⟨"generated v3 tower old-rule regression",GeneratedRegressions.oldTowerSeed20261011Index7,false⟩,
@@ -779,17 +785,22 @@ def all : List Fixture := [
 
 def run : IO Bool := do
   let mut ok := true
-  for f in all do
+  for (f, index) in all.zipIdx do
     let typed := typesOf f.program
     let verdict := check f.program
     IO.println s!"{f.id}: expected={f.accepted} actual={verdict.isOk} {if verdict.isOk then "" else toString (repr verdict)}"
     if !typed.isOk || verdict.isOk != f.accepted then
       IO.println s!"UNEXPECTED VERDICT; intended verdict retained. types={repr typed}"
+      IO.FS.createDirAll "regressions"
+      IO.FS.writeFile s!"regressions/fixture-{index}-failure.txt"
+        s!"{f.id}\nexpected={f.accepted}\nactual={repr verdict}\ntypes={repr typed}\n{repr f.program}\n"
       ok := false
     if verdict.isOk then
       match Oracle.compare f.program with
       | .equal => pure ()
       | result =>
+        IO.FS.createDirAll "regressions"
+        IO.FS.writeFile s!"regressions/fixture-{index}-failure.txt" s!"{f.id}\n{repr f.program}\n{repr result}\n"
         IO.println s!"STOP fixture observational failure {f.id}: {repr result}"
         return false
   for p in [GeneratedRegressions.oldSeed20261011Index8, GeneratedRegressions.oldSeed20261011Index10, GeneratedRegressions.oldTowerSeed20261011Index7] do

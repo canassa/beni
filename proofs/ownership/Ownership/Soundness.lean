@@ -410,6 +410,9 @@ def GuardsHold (decls : List Decl) (config : Config) (s : Summary) (fs : List (N
 theorem summary_sound (p : Program) (a : Accepted) (ok : check p = .ok a)
     (e : CacheEntry) (he : e ∈ a.cache.toList) (args caps : List Value) (pre post : State)
     (r : Value) (fuel : Nat) (γ : Naming) (hγ : Separating γ)
+    (argsLength : args.length = ((p.declarations[e.decl]?).map fun d => d.parameters.length).getD 0)
+    (capsLength : caps.length = ((p.declarations[e.decl]?).map fun d => d.captures.length).getD 0)
+    (inputsLength : e.inputs.length = args.length + caps.length)
     (described : ∀ i : Nat, Describes γ pre.heap (e.inputs[i]?.getD .bottom) ((args ++ caps)[i]?.getD (.int 0)))
     (fs : List (Nat × Abstract))
     (classes : GuardsHold p.declarations {} e.summary fs ∧
@@ -428,6 +431,9 @@ theorem map_summary_sound (a b : Ty) (p : Program) (acc : Accepted) (ok : check 
     (isMap : p.declarations[e.decl]? = some (Library.map a b))
     (args caps : List Value) (pre post : State) (r : Value) (fuel : Nat) (γ : Naming)
     (hγ : Separating γ)
+    (argsLength : args.length = ((p.declarations[e.decl]?).map fun d => d.parameters.length).getD 0)
+    (capsLength : caps.length = ((p.declarations[e.decl]?).map fun d => d.captures.length).getD 0)
+    (inputsLength : e.inputs.length = args.length + caps.length)
     (described : ∀ i : Nat, Describes γ pre.heap (e.inputs[i]?.getD .bottom) ((args ++ caps)[i]?.getD (.int 0)))
     (fs : List (Nat × Abstract))
     (classes : GuardsHold p.declarations {} e.summary fs ∧

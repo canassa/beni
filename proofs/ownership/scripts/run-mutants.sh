@@ -18,6 +18,8 @@ if [ ${#names[@]} -eq 0 ]; then
   listed=$(node scripts/mutate.mjs --list)
   read -r -a names <<< "$listed"
 fi
+listed=$(node scripts/mutate.mjs --canonical "${names[@]}")
+read -r -a names <<< "$listed"
 bound=${ENUMERATE_BOUND:-2}
 cores=${MUTANT_CORES:-0-7}
 node --input-type=module - "$cores" <<'JS'
@@ -48,6 +50,10 @@ for s in "${seeds[@]}"; do
   baseline_pids+=("$!")
 done
 for pid in "${baseline_pids[@]}"; do wait "$pid"; done
+(cd "$base" && taskset -c "$cores" ./.lake/build/bin/ownership enumerate-targeted \
+  --accepted-out="$scratch/targeted-accepted.txt" > "$scratch/targeted-base.log" 2>&1)
+cp "$scratch/targeted-base.log" "$evidence/"
+echo "unmutated targeted: $(tail -1 "$scratch/targeted-base.log")"
 if [ "$bound" -gt 0 ]; then
   (cd "$base" && taskset -c "$cores" ./.lake/build/bin/ownership enumerate "$bound" \
     --accepted-out="$scratch/enumerated-accepted.txt" > "$scratch/enumerate-base.log" 2>&1)
@@ -101,6 +107,19 @@ for m in "${names[@]}"; do
     cp "$d/enumerate.log" "$evidence/$m/"
     line="$line enumerate=$kind exit=$status [$(tail -1 "$d/enumerate.log")]"
   fi
+  set +e
+  (cd "$d" && taskset -c "$cores" ./.lake/build/bin/ownership enumerate-targeted \
+    --skip-accepted="$scratch/targeted-accepted.txt" > targeted.log 2>&1)
+  status=$?
+  set -e
+  if [ "$status" -eq 0 ] && grep -q 'caught=true' "$d/targeted.log"; then kind=caught
+  elif [ "$status" -eq 1 ] && grep -q 'caught=false' "$d/targeted.log" && grep -q 'inconclusive=0' "$d/targeted.log"; then kind=miss
+  else kind=FAILED; bad=1; fi
+  cp "$d/targeted.log" "$evidence/$m/"
+  mkdir -p "$evidence/$m/targeted"
+  [ ! -f "$d/regressions/targeted-current.txt" ] || cp "$d/regressions/targeted-current.txt" "$evidence/$m/targeted/"
+  for f in "$d"/regressions/targeted-*-unshrunk.txt; do [ ! -f "$f" ] || cp "$f" "$evidence/$m/targeted/"; done
+  line="$line targeted=$kind exit=$status [$(tail -1 "$d/targeted.log")]"
   echo "$line"
   rm -rf "$d"
 done

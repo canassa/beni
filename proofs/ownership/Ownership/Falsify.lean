@@ -691,6 +691,9 @@ def closureAbs (heap : Heap) (v : Value) (once : Bool) : Abstract × FNaming :=
   | _ => (.bottom, [])
 
 structure CallTally where
+  splitsTried : Nat := 0
+  splitsExcluded : Nat := 0
+  splitViolations : Nat := 0
   calls : Nat := 0
   checked : Nat := 0
   vacuous : Nat := 0
@@ -708,11 +711,17 @@ def holders (s : InPlaceSemantics.State) (c : Nat) : List Holder :=
   (if s.kept.toList.any fun x => (valueRefs x).contains c then [.kept] else [])
 
 /-- Check one call against one cache entry: `none` if fine or vacuous. -/
-def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Option String × Bool × Bool × String := Id.run do
+def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) (enforceArity := true) : Option String × Bool × Bool × String := Id.run do
+  let some d := decls[e.decl]? | return (none, false, false, "declaration")
+  if enforceArity && (cr.args.length != d.parameters.length || cr.caps.length != d.captures.length ||
+      e.inputs.length != cr.args.length + cr.caps.length) then
+    return (none, false, false, "arity")
   let inputs := cr.args ++ cr.caps
   let nargs := cr.args.length
   let heap := cr.preHeap
-  let γ := canonicalNaming heap e.inputs inputs nargs
+  -- The description's naming is independent of the concrete args/caps split.
+  -- Using `nargs` here hid the wrongly-split calls of the old statement.
+  let γ := canonicalNaming heap e.inputs inputs d.parameters.length
   if !separatingB γ then return (none, false, false, "separating")
   for (w, i) in inputs.zipIdx do
     if let some _ := describesB γ heap (e.inputs[i]?.getD .bottom) w then return (none, false, false, "described")
@@ -779,6 +788,16 @@ def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.C
       let mut reason := "no summary"
       for e in acc.cache.toList do
         if e.decl != cr.decl || e.inputs.length != cr.args.length + cr.caps.length then continue
+        let inputs := cr.args ++ cr.caps
+        for split in List.range (inputs.length + 1) do
+          if split == cr.args.length then continue
+          t := { t with splitsTried := t.splitsTried + 1 }
+          let alternate := { cr with args := inputs.take split, caps := inputs.drop split }
+          let (badSplit, splitChecked, _, splitReason) := checkCall p.declarations alternate e
+          if splitReason == "arity" then
+            t := { t with splitsExcluded := t.splitsExcluded + 1 }
+          else if splitChecked || badSplit.isSome then
+            t := { t with splitViolations := t.splitViolations + 1 }
         let (bad, checked, differ, why) := checkCall p.declarations cr e
         if differ then t := { t with guardsDiffer := t.guardsDiffer + 1 }
         if checked then
@@ -887,3 +906,28 @@ def expression : Expr := .letE 2 (.app (.var 0) [.int 9]) (.prim .record [.var 1
 #guard !honestB decls outer
 
 end Ownership.Falsify.NestedClassRegression
+
+namespace Ownership.Falsify.CallSplitRegression
+
+def decl : Decl := {
+  name := "bump", parameters := [Generator.tL], result := Generator.tL,
+  body := .prim .push [.var 0, .int 7] }
+def program : Program := {
+  declarations := [decl],
+  main := .letE 0 (.prim (.literal .int) [.int 1]) (.letE 1 (.closure 0 []) (.app (.var 1) [.var 0])) }
+def entry := (check program).toOption.bind (fun a => a.cache.toList.head?)
+def wronglySplit : Option InPlaceSemantics.CallRecord := do
+  let (r, post) ← (Soundness.callResult [decl] 0 [] [.ref 0] 100 { fuel := 100, heap := #[[.int 1]] }).toOption
+  return ({
+    decl := 0, args := [], caps := [.ref 0], preHeap := #[[.int 1]], preKept := #[],
+    postHeap := post.heap, postKept := post.kept, result := r } : InPlaceSemantics.CallRecord)
+#guard (check program).isOk
+#guard match entry, wronglySplit with
+  | some e, some cr => let (bad, checked, _, _) := checkCall [decl] cr e false
+                      checked && bad.isSome
+  | _, _ => false
+#guard match entry, wronglySplit with
+  | some e, some cr => (checkCall [decl] cr e).2.2.2 == "arity"
+  | _, _ => false
+
+end Ownership.Falsify.CallSplitRegression

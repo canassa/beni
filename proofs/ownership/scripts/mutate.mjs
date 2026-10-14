@@ -104,7 +104,6 @@ export const mutants = {
     "    let exclusive := if op == .push then ex else ex && storeExclusive ctx [v] later elem.cells (op == .put)"],
   // Undo the once-through-call fixes: both demands (nofix1, as oncethroughcall),
   // or only the written-captures demand (nofix2).
-  nofix1: ["Checker.lean", "        if count ≥ 1 && !roots.isEmpty && !ctx.config.has .onceThroughCall then", "        if false then"],
   nofix2: ["Checker.lean", "      if let .capture .. := w then\n        demand ctx.config (instantiateOrigin site [] caps w)",
     "      if let .capture .. := w then\n        if false then demand ctx.config (instantiateOrigin site [] caps w)"],
   // An interpreter hole: the in-place interpreter copies where it should
@@ -140,13 +139,25 @@ export const mutants = {
   joindrops: [
     ["Domain.lean", "else .list (union [.unknown] (union a.cells b.cells)) .bottom false", "else .list [.unknown] .bottom false"],
     ["Domain.lean", "  | _, _ => .list (union [.unknown] (union a.cells b.cells)) .bottom false", "  | _, _ => .list [.unknown] .bottom false"]],
+  capturerecurse: ["Checker.lean", "        for (child, nested) in alts do\n          demandCallbackCaptures f ctx child nested site later", "        pure ()"],
+  joinright: [
+    ["Domain.lean", "else .list (union [.unknown] (union a.cells b.cells)) .bottom false", "else .list (union [.unknown] a.cells) .bottom false"],
+    ["Domain.lean", "  | _, _ => .list (union [.unknown] (union a.cells b.cells)) .bottom false", "  | _, _ => .list (union [.unknown] a.cells) .bottom false"]],
+  capturecount: ["Checker.lean", "if !ctx.config.has .callsEdge && count ≥ 2 then", "if !ctx.config.has .callsEdge && count ≥ 3 then"],
+  captureconsume: ["Checker.lean", "    for w in cs.writes ++ cs.consumes do", "    for w in cs.writes do"],
 };
+
+export const aliases = { nofix1: "oncethroughcall" };
 
 const [name, dir] = process.argv.slice(2);
 if (name === "--list") {
   console.log(Object.keys(mutants).join(" "));
+} else if (name === "--canonical") {
+  const names = process.argv.slice(3).map(n => aliases[n] || n);
+  for (const n of names) if (!mutants[n]) { console.error(`unknown mutant ${n}`); process.exit(2); }
+  console.log([...new Set(names)].join(" "));
 } else if (name) {
-  const entry = mutants[name];
+  const entry = mutants[aliases[name] || name];
   if (!entry) { console.error(`unknown mutant ${name}`); process.exit(2); }
   // An entry is one edit [file, from, to] or a list of edits.
   for (const [file, from, to] of Array.isArray(entry[0]) ? entry : [entry]) {

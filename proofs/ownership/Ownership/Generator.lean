@@ -37,6 +37,7 @@ def fLLL : Ty := .fn [tL, tL] tL
 def tNN : Ty := .list tN
 def fNN : Ty := .fn [tN] tN
 def fIN : Ty := .fn [.int] tN
+def fIR : Ty := .fn [.int] tR
 
 /-- Declaration indices used by the moves below. -/
 def mapLL := 0
@@ -146,13 +147,21 @@ def decls : List Decl := [
     body := .letE 1 (.closure capGet [v 0]) (.closure 32 [v 1]) },
   { name := "choose", parameters := [.int, tL, fIL], result := fIL,
     body := .branch (v 0) (.closure capGet [v 1]) (.atom (v 2)) },
-  { name := "invokeIL", parameters := [fIL], result := tL, body := .app (v 0) [.int 9] }]
+  { name := "invokeIL", parameters := [fIL], result := tL, body := .app (v 0) [.int 9] },
+  { name := "capTwice", parameters := [.int], captures := [fIL], result := tR,
+    body := .letE 2 (.app (v 1) [v 0]) (.letE 3 (.app (v 1) [v 0]) (.prim .record [v 2, v 3])) },
+  { name := "invokePair", parameters := [fIR], result := tR, body := .app (v 0) [.int 1] },
+  { name := "capturedWriter", parameters := [.int], captures := [tL, fLL], result := tL,
+    body := .app (v 2) [v 1] }]
 
 def capApply := 32
 def readCall := 33
 def mkNested := 34
 def chooseFn := 35
 def invokeIL := 36
+def capTwice := 37
+def invokePair := 38
+def capturedWriter := 39
 
 abbrev Env := List (Atom × Ty)
 
@@ -874,6 +883,29 @@ def nestedOnceCallee : Move := fun next _ => do
     (.closure invokeIL [], .fn [fIL] tL), (.app (v (next + 6)) [v (next + 2)], tL),
     (.prim .length [v (next + 5)], .int)]
 
+def captureBoundary : Move := fun next _ => do
+  let n := Atom.int (Int.ofNat (1 + (← draw 4)))
+  pure [(.prim (.literal .int) [n], tL), (.closure capPush [v next], fIL),
+    (.closure capTwice [v (next + 1)], fIR), (.closure invokePair [], .fn [fIR] tR),
+    (.app (v (next + 3)) [v (next + 2)], tR)]
+
+def consumedCapture : Move := fun next _ => do
+  let n := Atom.int (Int.ofNat (1 + (← draw 4)))
+  pure [(.prim (.literal .int) [n], tL), (.closure bump [], fLL),
+    (.closure capturedWriter [v next, v (next + 1)], fIL),
+    (.prim (.builder .int) [], .builder .int), (.prim .put [v (next + 3), n], .builder .int),
+    (.prim .close [v (next + 4), v next], tL), (.closure invokeIL [], .fn [fIL] tL),
+    (.app (v (next + 6)) [v (next + 2)], tL),
+    (.prim .record [v (next + 5), v (next + 7)], tR)]
+
+def joinAsData : Move := fun next env => do
+  let a ← pick (listsOf env) (.int 0)
+  let c ← pick [.int 0, .int 1] (.int 0)
+  pure [(.prim (.literal .int) [.int 2], tL), (.closure capGet [v next], fIL),
+    (.closure chooseFn [], .fn [.int, tL, fIL] fIL),
+    (.app (v (next + 2)) [c, a, v (next + 1)], fIL), (.prim .push [v next, .int 3], tL),
+    (.prim .record [v (next + 3), v (next + 4)], .record [fIL, tL])]
+
 /-- Two fresh rows in a nested list, one list `set` into both slots (or two
     different lists), then `map bump` or `map identL` over it: if both slots
     hold one array, map pushes it twice (fifth review, P4). -/
@@ -963,7 +995,8 @@ def movesFor (table : Table) : List (String × Move) :=
     ("loop-picks-element", loopPicksElement), ("publish-via", publishVia),
     ("set-both", setBoth), ("once-beside", onceBeside), ("nested-closure", nestedClosure),
     ("factory-nested", factoryNested), ("choose-closure", chooseClosure),
-    ("nested-once-callee", nestedOnceCallee)] ++ gen
+    ("nested-once-callee", nestedOnceCallee), ("capture-count-boundary", captureBoundary),
+    ("consumed-capture", consumedCapture), ("join-as-data", joinAsData)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/

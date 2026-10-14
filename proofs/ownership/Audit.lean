@@ -45,6 +45,25 @@ def allowedCommands : List Name := [
   `Lean.Parser.Command.moduleDoc, `Lean.Parser.Command.in, `Lean.Parser.Command.guardCmd,
   `Lean.Parser.Command.set_option, `Lean.Parser.Command.eoi]
 
+/-- Declaration grammar nodes, not executable commands. All other Command
+    nodes, including commands underneath `in` or `mutual`, fail closed. -/
+def declarationNodes : List Name := [
+  `Lean.Parser.Command.whereStructInst, `Lean.Parser.Command.instance,
+  `Lean.Parser.Command.private, `Lean.Parser.Command.ctor, `Lean.Parser.Command.inductive,
+  `Lean.Parser.Command.derivingClass, `Lean.Parser.Command.declSig,
+  `Lean.Parser.Command.theorem, `Lean.Parser.Command.declValEqns,
+  `Lean.Parser.Command.abbrev, `Lean.Parser.Command.optDeriving,
+  `Lean.Parser.Command.structSimpleBinder, `Lean.Parser.Command.structFields,
+  `Lean.Parser.Command.structureTk, `Lean.Parser.Command.structure,
+  `Lean.Parser.Command.openOnly, `Lean.Parser.Command.partial,
+  `Lean.Parser.Command.docComment, `Lean.Parser.Command.declValSimple,
+  `Lean.Parser.Command.optDeclSig, `Lean.Parser.Command.declId,
+  `Lean.Parser.Command.definition, `Lean.Parser.Command.declModifiers,
+  `Lean.Parser.Command.openSimple]
+
+def executableTokens := ["run_cmd", "run_tac", "run_elab", "run_meta", "by_elab",
+  "elab", "elab_rules", "macro", "macro_rules", "initialize", "builtin_initialize"]
+
 /-- Names a part of an identifier may never be. -/
 def bannedNames : List String :=
   ["addDecl", "addAndCompile", "setEnv", "modifyEnv", "skipKernelTC", "implementedByAttr",
@@ -67,7 +86,7 @@ def checkSources : IO Unit := do
   let mut sorries : List String := []
   for path in files do
     let name := path.fileName.getD ""
-    let auditFile := name == "Axioms.lean" || name == "Audit.lean"
+    let auditFile := ["./Axioms.lean", "Axioms.lean", "./Audit.lean", "Audit.lean"].contains path.toString
     let src ← IO.FS.readFile path
     let stx ← Parser.testParseModule env path.toString src
     -- Imports.
@@ -82,6 +101,10 @@ def checkSources : IO Unit := do
       for n in nodes c #[] do
         match n with
         | .node _ k' _ =>
+          if k'.toString.startsWith "Lean.Parser.Command." then
+            unless allowedCommands.contains k' || declarationNodes.contains k' ||
+              (auditFile && name == "Axioms.lean" && k' == `Lean.Parser.Command.eval && n == c) do
+              throw <| IO.userError s!"{path}: nested command {k'} is not allowed"
           if k' == `Lean.Parser.Command.unsafe then throw <| IO.userError s!"{path}: unsafe"
           if k' == `Lean.Parser.Term.attrInstance then
             let attr := n[1].getKind
@@ -101,7 +124,8 @@ def checkSources : IO Unit := do
             if bannedNames.contains part.toString then
               throw <| IO.userError s!"{path}: identifier {val} names {part}"
         | .missing => throw <| IO.userError s!"{path}: unparsed syntax"
-        | .atom .. => pure ()
+        | .atom _ token =>
+          if executableTokens.contains token then throw <| IO.userError s!"{path}: executable syntax {token}"
   unless sorries.length == sorryCount && sorries.all (·.endsWith "Soundness.lean") do
     throw <| IO.userError s!"sorry in {sorries}; exactly {sorryCount} are allowed, in Soundness.lean"
   IO.println s!"audit sources: {files.length} files parsed, {sorries.length} sorry, every command and node allowed"
@@ -140,15 +164,23 @@ def checkEnv : IO Unit := do
     let some data := env.header.moduleData[i]? | continue
     let base ← importModules data.imports {}
     let mut fresh : Std.HashMap Name ConstantInfo := {}
+    let mut recursors : Array RecursorVal := #[]
     for n in names do
       unless (env.getModuleIdxFor? n).map (·.toNat) == some i do continue
-      let aux := match n with
-        | .str _ s => s.startsWith "rec_"
-        | _ => false
-      if aux then continue
-      if let some ci := env.find? n then fresh := fresh.insert n ci
-    let _ ← Environment.replay fresh base
-    replayed := replayed + fresh.size
+      if let some ci := env.find? n then
+        match ci with
+        | .recInfo r => recursors := recursors.push r
+        | _ => fresh := fresh.insert n ci
+    let rebuilt ← Environment.replay fresh base
+    -- Replay's metadata lookup omits nested auxiliary recursors. The kernel
+    -- did regenerate them: compare every complete RecursorVal directly in
+    -- its kernel environment. Ordinary rec_* names have no exemption.
+    for original in recursors do
+      match rebuilt.toKernelEnv.find? original.name with
+      | some (.recInfo regenerated) =>
+        unless regenerated == original do throw <| IO.userError s!"invalid regenerated recursor {original.name}"
+      | _ => throw <| IO.userError s!"missing regenerated recursor {original.name}"
+    replayed := replayed + fresh.size + recursors.size
   IO.println s!"audit env: {names.size} constants, {withSorry.size} on sorryAx (pinned), {replayed} replayed through the kernel module by module, no compiler attribute swapped in ({partials} partial definitions)"
 
 end Audit

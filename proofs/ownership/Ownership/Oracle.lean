@@ -512,6 +512,7 @@ def generateVersion (version : Nat) : Gen (String × Program) :=
   | _ => generateV5
 
 structure Options where
+  keepEvidence : Bool := false
   count : Nat
   seed : Nat
   version : Nat := 5
@@ -581,7 +582,7 @@ def runWith (o : Options) : IO RunResult := do
       if verdict.isOk != other.isOk then
         counts := if verdict.isOk then { counts with onlyThis := counts.onlyThis + 1 }
           else { counts with onlyOther := counts.onlyOther + 1 }
-        if !o.quiet then
+        if !o.quiet || o.keepEvidence then
           IO.println s!"CROSS-CHECK VERDICTS DIFFER index={index} family={family} this={repr verdict} other={repr other}"
         if other.isOk then
           if (compare p).disagrees then
@@ -643,6 +644,9 @@ def runWith (o : Options) : IO RunResult := do
       | .inconclusive msg =>
         counts := { counts with executionErrors := counts.executionErrors + 1 }
         IO.println s!"INCONCLUSIVE seed={o.seed} index={index}: {msg}"
+        if !o.quiet || o.keepEvidence then
+          IO.FS.createDirAll "regressions"
+          IO.FS.writeFile s!"regressions/{o.label}-{o.seed}-{index}-unshrunk.txt" s!"{repr p}\n{msg}\n"
         return { ok := false, counts }
       | .mismatch .. | .inPlaceFailed .. =>
         counts := { counts with mismatches := counts.mismatches + 1 }
@@ -654,7 +658,7 @@ def runWith (o : Options) : IO RunResult := do
         -- The unshrunk program and the line above reach the disk before
         -- shrinking starts, so a crash while shrinking loses no evidence.
         (← IO.getStdout).flush
-        if !o.quiet then
+        if !o.quiet || o.keepEvidence then
           IO.FS.createDirAll "regressions"
           IO.FS.writeFile s!"regressions/{o.label}-{o.seed}-{index}-unshrunk.txt"
             s!"{header} index={index} family={family}\nAST:\n{repr p}\n"

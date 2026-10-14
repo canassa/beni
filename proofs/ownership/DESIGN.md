@@ -189,3 +189,25 @@ correspondence itself has no depth bound. `Falsify.lean` executes the unproved
 statements on concrete configurations. What is proved and what is `sorry`,
 why each `sorry` is believed true and what the falsifier found is in
 COVERAGE.md.
+
+### Call shapes and verification failures
+
+Summary soundness requires the concrete argument count to match the declaration,
+the capture count to match its capture types, and the canonical input count to
+match their concatenation. A falsifier must vary the args/caps boundary independently
+of the naming, rather than assuming every configuration is a logged real call.
+
+Audit command restrictions apply recursively through command wrappers. Executable
+metaprogramming tactics are refused before elaboration; names do not exempt a
+constant from kernel replay. Failed audits retain their exported work and logs.
+CLI commands and options must be recognized and applicable to their mode; empty
+falsification and ignored mutation requests cannot produce success. CI preserves
+original and shrunk counterexamples. Campaign publication waits for every child
+and leaves prior logs unchanged on failure.
+
+Search includes a captured once callback called twice with both results retained,
+a captured list passed to a captured writing callback (its effect is a consumes
+row), and either arm of a function-shape join retained as data. CI's small complete
+grammar is supplemented by a bounded targeted grammar covering these shapes,
+set exclusivity, scalar comparisons, and first-order recursion. Source-mutant
+counts refer to unique edits; historical aliases do not add another hole.

@@ -69,7 +69,7 @@ where
   /-- Keywords, banned as whole tokens (an identifier spelled `«initialize»`,
       like `Library.«initialize»`, is not the command). -/
   bannedWords : List String :=
-    ["admit", "axiom", "run_cmd", "run_elab", "run_meta", "elab", "elab_rules", "macro",
+    ["admit", "axiom", "run_cmd", "run_tac", "run_elab", "run_meta", "elab", "elab_rules", "macro",
      "macro_rules", "syntax", "initialize", "builtin_initialize", "#eval", "unsafe", "notation",
      "infix", "infixl", "infixr", "prefix", "postfix", "declare_syntax_cat", "simproc", "dsimproc"]
   /-- Names, banned as any dot-separated part of a token, guillemets or not. -/
