@@ -13,7 +13,7 @@ def flagValue (args : List String) (name : String) : Option String :=
 def main (args : List String) : IO UInt32 := do
   let mode := args.head?.getD "all"
   let positional := args.filter (fun a => !a.startsWith "--" &&
-    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff", "falsify", "accepted", "enumerate"].contains a)
+    !["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries", "verdict-diff", "falsify", "accepted", "enumerate", "source-sweep"].contains a)
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
   let version := (flagValue args "generator-version").bind String.toNat? |>.getD 5
@@ -86,6 +86,47 @@ def main (args : List String) : IO UInt32 := do
       state := next
       if (check p).isOk then IO.println s!"{index}"
     return 0
+  -- Source mutants cannot call their own checker "corrected": it is the
+  -- edited checker. Compare against indices from the unedited executable,
+  -- using the identical generator, count and seed. Visit the whole stream
+  -- for verdict counts, running every newly accepted program at campaign
+  -- fuel; save each disagreement before any further work (no shrinking).
+  if mode == "source-sweep" then
+    let some baseline := flagValue args "baseline-accepted" | do
+      IO.println "source-sweep needs --baseline-accepted=<file>"
+      return 2
+    let text ← IO.FS.readFile baseline
+    let accepted : Std.HashSet Nat := text.splitOn "\n" |>.foldl (fun ks l =>
+      match l.toNat? with | some n => ks.insert n | none => ks) {}
+    let mut state := seed
+    let mut added := 0
+    let mut removed := 0
+    let mut mismatches := 0
+    let mut inconclusive := 0
+    let mut first : Option Nat := none
+    for index in List.range count do
+      let ((family, p), next) := (Oracle.generateVersion version).run state
+      state := next
+      let ok := (check p).isOk
+      if accepted.contains index && !ok then removed := removed + 1
+      if ok && !accepted.contains index then
+        added := added + 1
+        match Oracle.compare p with
+        | .equal => pure ()
+        | .inconclusive msg =>
+          inconclusive := inconclusive + 1
+          IO.println s!"source-sweep INCONCLUSIVE index={index}: {msg}"
+        | outcome =>
+          mismatches := mismatches + 1
+          if first.isNone then
+            first := some index
+            IO.FS.createDirAll "regressions"
+            IO.FS.writeFile s!"regressions/source-{seed}-{index}-unshrunk.txt"
+              s!"seed={seed} index={index} family={family}\nAST:\n{repr p}\n{repr outcome}\nbaseline checker: rejected\n"
+            IO.println s!"source-sweep mismatch index={index} family={family} baseline-rejected=true"
+            (← IO.getStdout).flush
+    IO.println s!"source-sweep count={count} seed={seed} mutant-only={added} corrected-only={removed} mismatches={mismatches} inconclusive={inconclusive} first-index={first.map toString |>.getD "none"}"
+    return (if inconclusive > 0 then 2 else if mismatches > 0 then 1 else 0)
   if mode == "verdict-diff" then
     match mutant with
     | some m => let _ ← Oracle.verdictDiff count seed m (args.contains "--reinfer") version
