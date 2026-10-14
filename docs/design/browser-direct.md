@@ -2888,3 +2888,77 @@ value-fuzz coverage and the byte/timing measurements remain owed. Q5 is already 
 the owner on 2026-10-09 and implemented by browser-tea's listener path (§10.1); no new owner
 choice about subscription fibers is needed. Resuming effects requires fixing the ownership
 checker limits rather than changing the specified driver.
+
+### *Amended 2026-10-14 (effects resumed, as specified):* the compiled host
+
+An effectful mount keeps its model and the command driver's state separately. The driver is
+`browser-tea`'s beni code, with its scope, keyed jobs, outlets and subscription relays unchanged;
+its model field is unit. The compiled handler binds its update result once, installs component 0,
+writes the page and title, performs component 1, then settles subscriptions if their anchored
+reads conflict with the key's writes. Mount writes the initial page before performing its command
+and settling the initial subscriptions. A computed subscriptions function or a capped analysis
+reads the whole model. Captures in subscription taggers count as reads, so kept relays receive
+the latest tagger when those captures change. An effectful program always has a value dispatcher.
+
+The direct host's `send` enters the page's existing guard, including sends from after-render
+work. Its `after` queues work for the dispatch's end. End snapshots the rendered waiters and
+work, resumes waiters in order, then runs work in order; messages they send drain before another
+end. Work queued outside a dispatch starts an otherwise empty guarded dispatch. Controlled
+inputs reconcile before end. `Browser.onRendered` delegates to this phase and `Browser.flush`
+stays a no-op. A defect sets dead before shutdown, drops queued work, removes listeners and
+closes root scopes using the browser platform's existing deadline and cleanup reporting.
+
+`Tea.document` compiles the `body` of a record returned by its view as markup, and its `title`
+as a value against the same model. It writes the title only when the document's title differs.
+There is no runtime view call. `Tea.application` additionally calls init with the current URL
+and navigation key and combines its declared subscriptions with the two navigation subscriptions,
+using the browser platform's existing link interception and navigation errors.
+
+The additive markup interface is version 1.11: `programStart(block, args)` evaluates init once
+with explicit arguments (the existing `programInit` remains the unit form);
+`programField(block, field, model)` evaluates subscriptions, navigation taggers or title in the
+program record's declaration context; `programSettles(key)` answers the subscription conflict.
+The existing init and arm results remain the complete declared result, a pair on effectful
+constructors. Document body extraction is reflected in the existing view shape/root facts.
+
+### *Amended 2026-10-14 (effects oracle boundaries):* dispatch and render phases
+
+S5 retains the instrumented browser-tea fixtures as phase oracles. Q2 and Q3
+make their render-loop instrumentation differ: `FlushLatched` and
+`SyncCommandOrder` have mount-time view statements; `FocusInFlush` writes its
+hole before the later host listener; `DefectQueuedDropped` can finish a direct
+send and its rendered waiter before the next command throws. These fixtures
+keep every assertion with explicit `.tea-expected` transcripts, as the existing
+S4 phase oracles do. Common command, policy, subscription and navigation
+fixtures continue to use one golden and differential value fuzz. The existing paired-page driver ignores renderer comment sentinels, so
+adjacent holes keep a common golden and their value fuzz.
+
+A compiled update's incoming model is bound before installing its result, so
+closures in that result retain the model they received. Shared dispatch evidence
+is scoped to the function that declares it, including sibling compiled handlers;
+a reused statement-list stack address is not evidence of a shared scope. The
+entry runtime exports its declared `flush`, including direct's no-op, through
+reachability elimination. Shutdown clears queued messages and after-render work
+before closing scopes, so cleanup cannot resume a stopped page.
+
+### *Amended 2026-10-14 (checkbox activation):* change follows click
+
+A checkbox or radio with a declared change handler must retain its native
+activation value through the preceding click, so the change handler can read
+it. The click capture listener holds its restoration until change or the
+fallback task; change marks it before the handler, and the dispatch reconciles
+against the model afterwards. A control with no change handler still restores
+at click end. This extends S4's controlled restoration contract without changing
+its no-handler or cancelled-click guarantees.
+
+### *Amended 2026-10-14 (effects measured):* kill criterion 6 fires
+
+Research 91 records the completed native-backend effects validation and the
+same-batch release sizes. The routing TodoMVC variant without editing is
+9,691 B brotli on direct and 8,258 B on browser-tea (+17.4%); sandbox is
+5,359 and 6,169 B respectively. Routing passes the existing parity runner,
+including toggle-all and clear-completed. The full editing page remains
+CK-223's ownership checker limit. The routing size alone triggers §13's kill
+criterion 6. The design stops here; S6/S7 and the remaining timing comparisons
+are not pursued. The effects implementation is preserved for review, without
+claiming the slice's acceptance criteria passed.
