@@ -21,13 +21,19 @@
 //!   -Dcorpus=<text>       run only the corpus fixtures whose path contains
 //!                         <text>, in `test-blackbox` and `test-pending`
 //!   zig build test-blackbox-<file>   one black-box test file (`--list-steps`)
-//! `gates` refuses the two filters: a gate runs everything.
+//! `gates` refuses the two filters: a gate runs everything. It also refuses
+//! `-Doptimize`, and the options below that change the budget's count.
 //!
 //! Every test of the gates' binaries, and every corpus case, is held to a
 //! budget (`tests/test_runner.zig`): one that retires more than 4 300
-//! million user-space instructions, its own and its children's, fails. For
-//! profiling only:
+//! million user-space instructions, its own and its children's, fails. The
+//! count is taken on x86-64 Linux, of binaries built for one reference CPU
+//! (`budgetHost`), so one test has one count on every machine; where it
+//! cannot be taken, no test is held to it and `gates` refuses to run. For
+//! profiling only, and `gates` refuses each:
 //!   -Dtest-budget=<millions> another budget; 0 enforces none
+//!   -Dtarget, -Dcpu          binaries for another CPU (the timing claims
+//!                            and `bench` are built for the host's own)
 //!
 //! And three that are NOT gates — the first two because their fixtures are red
 //! by design, the third because a timing claim is not a gate (rule 4):
@@ -44,9 +50,10 @@
 //!                                 (`tests/blackbox/run_hash.zig`); takes
 //!                                 -Dtest-filter, -Dcorpus and -Dllvm
 //! And where the test time goes, not a gate either:
-//!   zig build test-time-report    run `gates` (or `-Dtime-step=<step>`) with
-//!                                 every test process timed, and write the
-//!                                 tables into plans/test-time-report.md
+//!   zig build test-time-report    run the steps of `gates` (or
+//!                                 `-Dtime-step=<step>`) with every test
+//!                                 process timed, and write the tables
+//!                                 into plans/test-time-report.md
 //!                                 (`tests/time_report.zig`)
 //! And which lines the tests execute, not a gate either; x86-64 Linux only:
 //!   zig build coverage            run the black-box suites and the corpus
@@ -176,7 +183,15 @@ const core_dir = "core";
 const platforms_dir = "platforms";
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
+    // On a host that can count the budget, everything is built for the
+    // reference CPU unless `-Dtarget` or `-Dcpu` says otherwise, so a count
+    // does not depend on the features of the host's CPU (`budgetHost`).
+    const budget_host = budgetHost(b);
+    const target = b.standardTargetOptions(.{ .default_target = budget_host.default_target });
+    const target_given = b.user_input_options.contains("target") or b.user_input_options.contains("cpu");
+    // What the timing claims are measured on: the host's own CPU, as they
+    // always were, unless a target is given. The budget does not hold them.
+    const timing_target = if (target_given) target else b.graph.host;
     const optimize = b.standardOptimizeOption(.{});
     const llvm = b.option(bool, "llvm", "Build the ReleaseSafe compiler the black-box suites spawn with LLVM, the code users get, instead of Zig's self-hosted backend: about a minute's compile instead of seconds") orelse false;
     const test_filters = b.option([]const []const u8, "test-filter", "Compile only the tests whose name contains this text (repeatable); `gates` refuses it") orelse &.{};
@@ -185,8 +200,8 @@ pub fn build(b: *std.Build) void {
     // every run of a binary the gates run; the random sweeps of `fuzz`, the
     // pending and timing steps, the run-hash recording and coverage are not
     // held to it. Another value is for profiling a test locally.
-    const test_budget = b.option(u64, "test-budget", b.fmt("Fail a test or corpus case that retires more than this many million user-space instructions, its own and its children's (default {d}; 0 enforces none; for local profiling)", .{default_test_budget})) orelse default_test_budget;
-    const budget_env = testBudget(b, test_budget);
+    const test_budget = b.option(u64, "test-budget", b.fmt("Fail a test or corpus case that retires more than this many million user-space instructions, its own and its children's (default {d}; 0 enforces none; for local profiling; `gates` refuses it)", .{default_test_budget})) orelse default_test_budget;
+    const budget_env = testBudget(b, test_budget, budget_host);
 
     // `diagnostic` is a NAMED module because two roots need the same schema:
     // the compiler renders it and the black-box suite parses it back. A field
@@ -385,7 +400,7 @@ pub fn build(b: *std.Build) void {
     // not a number. The bench harness links its library, and the timing
     // scenarios of `test-perf` and `test-pending-perf` time its binary,
     // `zig-out/perf/bin/beni`.
-    const fast = compiler(b, target, .fast, .llvm, .default, shipped_core, platform_sources);
+    const fast = compiler(b, timing_target, .fast, .llvm, .default, shipped_core, platform_sources);
     const bench_beni = fast.beni;
     const perf_install = b.addInstallArtifact(fast.exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
     // ReleaseSafe for every black-box suite that is not a timing claim,
@@ -651,7 +666,7 @@ pub fn build(b: *std.Build) void {
         .name = "bench",
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/bench.zig"),
-            .target = target,
+            .target = timing_target,
             .optimize = .fast,
             .imports = &.{.{ .name = "beni", .module = bench_beni }},
         }),
@@ -746,8 +761,12 @@ pub fn build(b: *std.Build) void {
     // (`tests/timing.zig`), and renders the records into
     // `plans/test-time-report.md` between its markers. The options that pick
     // what runs are passed on to the child build; `-- <args>` reach the
-    // report tool (`--out=`, `--top=`, `--records=`).
+    // report tool (`--out=`, `--top=`, `--records=`). `gates` is timed as the
+    // steps it runs, named one by one: a report is a measurement, not a gate,
+    // so it takes the options `gates` refuses and runs where `gates` refuses
+    // to.
     const time_step_name = b.option([]const u8, "time-step", "The step `test-time-report` times (default: gates)") orelse "gates";
+    const time_steps: []const []const u8 = if (std.mem.eql(u8, time_step_name, "gates")) &gate_steps else &.{time_step_name};
     const time_report_exe = b.addExecutable(.{
         .name = "time-report",
         .root_module = b.createModule(.{
@@ -761,14 +780,15 @@ pub fn build(b: *std.Build) void {
         const run = b.addRunArtifact(time_report_exe);
         run.addArg("run");
         run.addPassthruArgs();
-        run.addArgs(&.{ "--", b.graph.zig_exe, "build", time_step_name });
+        run.addArgs(&.{ "--", b.graph.zig_exe, "build" });
+        run.addArgs(time_steps);
         run.addArgs(child_build_args);
         // `-Dtest-budget=0` measures every test to completion, for a report
         // on a suite that does not meet the budget.
         if (b.user_input_options.contains("test-budget")) run.addArg(b.fmt("-Dtest-budget={d}", .{test_budget}));
         run.setCwd(b.path("."));
         run.has_side_effects = true;
-        b.step("test-time-report", "Run `gates` (or -Dtime-step) with every test timed; write the tables into plans/test-time-report.md").dependOn(&run.step);
+        b.step("test-time-report", "Run the steps of `gates` (or -Dtime-step) with every test timed; write the tables into plans/test-time-report.md").dependOn(&run.step);
     }
     // The smoke test runs the report tool around the corpus walker on one
     // fixture, so it needs the tool and the walker installed.
@@ -783,6 +803,15 @@ pub fn build(b: *std.Build) void {
         run.step.dependOn(&corpus_tool_install.step);
         smoke_step.dependOn(&run.step);
         blackbox_step.dependOn(smoke_step);
+    }
+    // What `gates` refuses, asked of a child `zig build`.
+    {
+        const gates_test = bb.artifact("tests/blackbox/gates_test.zig");
+        const gates_test_step = bb.fileStep("tests/blackbox/gates_test.zig");
+        const run = bb.run(gates_test, .{ .root = "tests/corpus" });
+        run.setEnvironmentVariable("BENI_ZIG_EXE", b.graph.zig_exe);
+        gates_test_step.dependOn(&run.step);
+        blackbox_step.dependOn(gates_test_step);
     }
 
     // ---- Line coverage (`tests/coverage.zig`). ----
@@ -928,11 +957,11 @@ pub fn build(b: *std.Build) void {
     // and the formatting check run while the black-box suites do, and the
     // compilers they share are built once.
     //
-    // A filter would make a green gate say nothing about the tests it left
-    // out, so a filtered `gates` fails before it runs anything.
+    // A `gates` that could not say what CLAUDE.md says a green gate means
+    // fails before it runs anything (`gatesRefusal`).
     const gates_step = b.step("gates", "Run test, test-blackbox, fmt-check and beni-fmt-check concurrently");
-    if (test_filters.len != 0 or corpus_only.len != 0) {
-        gates_step.dependOn(&b.addFail("`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to `test`, `test-blackbox` or a `test-blackbox-<file>` step").step);
+    if (gatesRefusal(b, test_filters.len != 0 or corpus_only.len != 0, budget_host)) |why| {
+        gates_step.dependOn(&b.addFail(why).step);
         return;
     }
     gates_step.dependOn(test_step);
@@ -978,52 +1007,113 @@ fn childBuildArgs(
 /// (the median test 4.2).
 const default_test_budget = 4_300;
 
-/// The CPU time one million instructions of `default_test_budget` stands
-/// for, in nanoseconds, when a budget falls back to CPU time: 1 s spread
-/// over the default.
-const fallback_ns_per_million = 1_000_000_000 / default_test_budget;
+/// The steps `gates` runs, by name.
+const gate_steps = [_][]const u8{ "test", "test-blackbox", "fmt-check", "beni-fmt-check" };
 
-/// A test budget as the runner reads it: instructions, and the CPU time
-/// they correspond to where no instruction counter can be opened. Empty is
-/// none.
-const TestBudget = struct {
-    instructions: []const u8,
-    cpu_ms: []const u8,
+/// The CPU every binary is built for on a host that counts the budget, so
+/// that one test has one count on every such host (CLAUDE.md, *Every test
+/// has a budget*). Built for the host's own CPU, a count follows its
+/// features: built for a baseline CPU, six more corpus cases went over,
+/// most of it the run-hash check's SHA-256 computed in software. A
+/// Zen 2's own CPU counted what this one does.
+const reference_cpu = "x86_64_v3+sha";
 
-    const none: TestBudget = .{ .instructions = "", .cpu_ms = "" };
+/// The features of `reference_cpu` a host must have to run its code:
+/// x86-64-v3's instructions and the SHA extensions. The model's tuning
+/// flags are left out, because no CPU reports them.
+const reference_features = [_]std.Target.x86.Feature{
+    .avx,   .avx2,   .bmi,  .bmi2, .cx16,   .f16c,  .fma, .lzcnt,
+    .movbe, .popcnt, .sahf, .sha,  .sse4_2, .xsave,
 };
 
-/// `-Dtest-budget=<millions>` as the runner's variables. Counting another
-/// process's instructions from user space needs `perf_event_paranoid` of 2
-/// or less; above it, or off Linux, the budget is CPU time, which a loaded
-/// machine inflates, and the build says so once.
-fn testBudget(b: *std.Build, millions: u64) TestBudget {
-    if (millions == 0) return .none;
-    const cpu_ms = b.fmt("{d}", .{millions * fallback_ns_per_million / 1_000_000});
-    if (!perfCountersPermitted()) {
-        std.debug.print("note: perf_event_paranoid does not permit counting instructions; each test's budget is {s} ms of CPU instead\n", .{cpu_ms});
-        return .{ .instructions = "", .cpu_ms = cpu_ms };
-    }
-    return .{ .instructions = b.fmt("{d}", .{millions * 1_000_000}), .cpu_ms = cpu_ms };
+/// Whether this host can count the budget, and the target a build makes by
+/// default because of it.
+const BudgetHost = struct {
+    /// `reference_cpu` where the host can run its code, the host otherwise.
+    default_target: std.Target.Query,
+    /// Why this host cannot count the budget, or null when it can.
+    cannot_count: ?[]const u8,
+};
+
+/// The budget is a count of user-space instructions that the kernel's
+/// hardware counter takes on x86-64 Linux, of binaries built for
+/// `reference_cpu`. Another instruction set, another code generator or
+/// another CPU model counts another number, and CPU time follows the
+/// machine and its load, so a host that cannot take that count holds the
+/// tests to no budget, and `gates` refuses to run there (`gatesRefusal`).
+fn budgetHost(b: *std.Build) BudgetHost {
+    const host = b.graph.host.result;
+    if (comptime @import("builtin").os.tag != .linux or @import("builtin").cpu.arch != .x86_64) return .{
+        .default_target = .{},
+        .cannot_count = b.fmt("the budget counts x86-64 instructions on Linux, and this host is {t}-{t}", .{ host.cpu.arch, host.os.tag }),
+    };
+    for (reference_features) |feature| if (!host.cpu.has(.x86, feature)) return .{
+        .default_target = .{},
+        .cannot_count = b.fmt("this CPU lacks `{t}`, which the reference CPU ({s}) has", .{ feature, reference_cpu }),
+    };
+    const reference = std.Target.Query.parse(.{ .arch_os_abi = "native", .cpu_features = reference_cpu }) catch unreachable;
+    return .{ .default_target = reference, .cannot_count = instructionCounterMissing(b) };
 }
 
-fn perfCountersPermitted() bool {
-    if (@import("builtin").os.tag != .linux) return false;
+/// Why no counter of another process's user-space instructions can be
+/// opened here, or null: `perf_event_paranoid` must be 2 or less, and the
+/// CPU must expose a counter, which a virtual machine often does not
+/// (GitHub's hosted x86-64 runners: `ENOENT`).
+fn instructionCounterMissing(b: *std.Build) ?[]const u8 {
+    const linux = std.os.linux;
+    const level = perfEventParanoid() orelse return "/proc/sys/kernel/perf_event_paranoid cannot be read";
+    if (level > 2) return b.fmt("kernel.perf_event_paranoid is {d}, and counting the instructions of a test's processes needs 2 or less", .{level});
+    var attr: linux.perf_event_attr = .{
+        .type = .HARDWARE,
+        .config = @backingInt(linux.PERF.COUNT.HW.INSTRUCTIONS),
+        .flags = .{ .inherit = true, .exclude_kernel = true, .exclude_hv = true },
+    };
+    const rc = linux.perf_event_open(&attr, 0, -1, -1, linux.PERF.FLAG.FD_CLOEXEC);
+    if (linux.errno(rc) != .SUCCESS) return b.fmt("the kernel exposes no instruction counter (perf_event_open: {t})", .{linux.errno(rc)});
+    _ = linux.close(@intCast(rc));
+    return null;
+}
+
+fn perfEventParanoid() ?i32 {
     const linux = std.os.linux;
     const rc = linux.open("/proc/sys/kernel/perf_event_paranoid", .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
-    if (linux.errno(rc) != .SUCCESS) return false;
+    if (linux.errno(rc) != .SUCCESS) return null;
     const fd: i32 = @intCast(rc);
     defer _ = linux.close(fd);
     var buffer: [16]u8 = undefined;
     const n = linux.read(fd, &buffer, buffer.len);
-    if (linux.errno(n) != .SUCCESS) return false;
-    const level = std.fmt.parseInt(i32, std.mem.trim(u8, buffer[0..n], " \n"), 10) catch return false;
-    return level <= 2;
+    if (linux.errno(n) != .SUCCESS) return null;
+    return std.fmt.parseInt(i32, std.mem.trim(u8, buffer[0..n], " \n"), 10) catch null;
 }
 
-fn setBudget(run: *std.Build.Step.Run, budget: TestBudget) void {
-    run.setEnvironmentVariable("BENI_TEST_BUDGET_INSTRUCTIONS", budget.instructions);
-    run.setEnvironmentVariable("BENI_TEST_BUDGET_CPU_MS", budget.cpu_ms);
+/// `-Dtest-budget=<millions>` as the runner reads it, in instructions;
+/// empty is none. A host that cannot count holds the tests to none and says
+/// so once.
+fn testBudget(b: *std.Build, millions: u64, host: BudgetHost) []const u8 {
+    if (millions == 0) return "";
+    if (host.cannot_count) |why| {
+        std.debug.print("note: the test budget is not checked on this machine: {s}\n", .{why});
+        return "";
+    }
+    return b.fmt("{d}", .{millions * 1_000_000});
+}
+
+fn setBudget(run: *std.Build.Step.Run, instructions: []const u8) void {
+    run.setEnvironmentVariable("BENI_TEST_BUDGET_INSTRUCTIONS", instructions);
+}
+
+/// Why `gates` refuses to run, or null. A green gate means every test ran
+/// and every test met the budget as CLAUDE.md states it (*Every test has a
+/// budget*): a filter leaves tests out; another budget, or binaries built
+/// for another CPU or in another mode, hold the tests to another count; and
+/// a host that cannot count holds them to none.
+fn gatesRefusal(b: *std.Build, filtered: bool, host: BudgetHost) ?[]const u8 {
+    if (filtered) return "`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to `test`, `test-blackbox` or a `test-blackbox-<file>` step";
+    for ([_][]const u8{ "test-budget", "target", "cpu", "optimize" }) |name| {
+        if (b.user_input_options.contains(name)) return b.fmt("`gates` holds every test to the budget on the reference build: drop -D{s}, or give it to `test`, `test-blackbox` or a `test-blackbox-<file>` step", .{name});
+    }
+    if (host.cannot_count) |why| return b.fmt("`gates` cannot check the test budget here: {s}. Run the gates on an x86-64 Linux host that can count it (CLAUDE.md, *Every test has a budget*); `zig build test test-blackbox fmt-check beni-fmt-check` runs the same tests here, with no budget", .{why});
+    return null;
 }
 
 /// A run of a test binary. Marked as having side effects, which is true of
@@ -1991,8 +2081,9 @@ const Blackbox = struct {
     toy_install: *std.Build.Step,
     /// Install `variant_bin_dir/beni`, the beni with a variant core.
     variant_install: *std.Build.Step,
-    /// `-Dtest-budget`, for every run held to it.
-    budget: TestBudget,
+    /// `-Dtest-budget` in instructions, for every run held to it; empty
+    /// where the host cannot count (`testBudget`).
+    budget: []const u8,
     /// `-Dchrome`, pinned as `BENI_CHROME` on every run: the Chrome
     /// `test-browser` runs pages in, or empty to find one on `PATH`.
     chrome: []const u8,
@@ -2061,8 +2152,8 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_FUZZ_STEPS", env.fuzz_steps);
         // The gates' budget in instructions, for the pending scenarios whose
         // finding is that they do not fit it (`pending_test.zig`).
-        r.setEnvironmentVariable("BENI_PENDING_BUDGET_INSTRUCTIONS", bb.budget.instructions);
-        setBudget(r, if (env.budget) bb.budget else .none);
+        r.setEnvironmentVariable("BENI_PENDING_BUDGET_INSTRUCTIONS", bb.budget);
+        setBudget(r, if (env.budget) bb.budget else "");
         const exe_dir = switch (env.exe) {
             .safe => bb.safe_dir,
             .fast => perf_bin_dir,
