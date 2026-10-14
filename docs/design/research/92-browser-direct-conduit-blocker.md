@@ -82,14 +82,17 @@ That campaign and the app measurements remain open with the blocked slice.
 
 ## 4. Reproduction
 
+`zorg` is the owner-required native-backend toolchain executable. Put it on
+PATH; this machine uses `/opt/homebrew/bin/zorg`. Set `BENI_CHROME` to the
+installed Chrome executable (here, `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`).
 All compiler/test builds use `zorg` with its native backend. The baseline
 script uses that installed ReleaseSafe compiler, not an LLVM benchmark build.
 
 ```sh
-direnv exec . /opt/homebrew/bin/zorg build test-pending -Dcorpus=browser/direct/Conduit
-direnv exec . /opt/homebrew/bin/zorg build test-blackbox-corpus -Dcorpus=PageKeys
-direnv exec . /opt/homebrew/bin/zorg build test-browser -Dcorpus=PageKeys -Dchrome='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-direnv exec . /opt/homebrew/bin/zorg build test-run-hashes -Dcorpus=PageKeys
+direnv exec . zorg build test-pending -Dcorpus=browser/direct/Conduit
+direnv exec . zorg build test-blackbox-corpus -Dcorpus=PageKeys
+direnv exec . zorg build test-browser -Dcorpus=PageKeys -Dchrome="$BENI_CHROME"
+direnv exec . zorg build test-run-hashes -Dcorpus=PageKeys
 direnv exec . env BENI=zig-out/safe/bin/beni node bench/writesets/stats.mjs --json
 ```
 
