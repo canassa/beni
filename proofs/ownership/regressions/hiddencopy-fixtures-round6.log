@@ -1,0 +1,162 @@
+T11 ordinary concat contents: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T37 initialized grid set: expected=true actual=true
+generated v3 tower old-rule regression: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+generated v3 external escape regression: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
+T43 reverse consuming fold: expected=false actual=false Except.error "many calls: traversal step consumes a capture or once closure"
+T17 compare: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T17 model record: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T41 restored alias projection: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T41 restored copy projection: expected=true actual=true
+T43 accumulator construction fold: expected=true actual=true
+T43 consuming row fold projection: expected=false actual=false Except.error "supply edge: a callback writes a supply that is not owned"
+T1 fold alias: expected=false actual=false Except.error "supply edge: a callback writes a supply that is not owned"
+T1 callback alias: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T7 returned reader: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T8 A returned: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T8 B captured many: expected=false actual=false Except.error "calls edge: a once callback is called many times"
+T8 C stored: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T26 captured returned: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T12 recursive append: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T25 recursive capture: expected=false actual=false Except.error "once recursive closure"
+T14 fresh init: expected=true actual=true
+T30 independent init projection: expected=true actual=true
+T53 fresh init alternative: expected=true actual=true
+T42 distinct conditional map: expected=true actual=true
+T42 repeated conditional map: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T46 empty accumulator: expected=false actual=false Except.error "supply edge: a callback writes a supply that is not owned"
+T47 transparent wrapper projection: expected=true actual=true
+T57 distinct update calls: expected=true actual=true
+T57 repeated update calls: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T57 repeated outer rows update calls: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T58 scalar index order projection: expected=true actual=true
+T1 arguments: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T1 capture: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T2: expected=true actual=true
+T3: expected=false actual=false Except.error "Unescaped: shared cell"
+T5: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T7: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T8 A: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T8 C: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T10: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T11: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T12: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T15: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T17 record: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T17 operand: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T21: expected=false actual=false Except.error "Unescaped: shared cell"
+T23: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T24: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T31: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T32 key/value projection: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T33 kept version: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T33 copied version: expected=true actual=true
+T37 grid ownership: expected=true actual=true
+T40 record shape: expected=true actual=true
+T46 shared: expected=false actual=false Except.error "supply edge: a callback writes a supply that is not owned"
+T46 capture: expected=false actual=false Except.error "supply edge: a callback writes a supply that is not owned"
+T46 borrowed element: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T48 duplicate slots: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T48 distinct slots: expected=true actual=true
+T52 spine identity projection: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+T52 copied spine projection: expected=true actual=true
+T53 top-level: expected=false actual=false Except.error "Unescaped: shared cell"
+T55 explicit call projection: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+T56 mapping projection: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T57 distinct: expected=true actual=true
+T57 repeated: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T59 initialize shared: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T59 initialize distinct: expected=true actual=true
+T59 map shared: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+T59 map distinct: expected=true actual=true
+generated map old-rule regression: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+generated initialize old-rule regression: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+escape ordinary call: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
+escape traversal: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
+recursion inside a step (per-call checker accepted it): expected=false actual=false Except.error "limit: recursive call inside a traversal or focus step"
+T46 borrowed row read again: expected=false actual=false Except.error "supply edge: a callback writes a supply that is not owned"
+wrapper writes its callback's returned capture: expected=true actual=true
+write through a callback's environment, then call it again: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+focus body pushes its own container: expected=false actual=false Except.error "Disjoint: another operand path holds the written cell"
+once closure called by a callee, then observed: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+close returns a once closure's capture, a callee calls it: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+read only in the nonzero arm after a push: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+a let shadows a variable its continuation uses: expected=false actual=false Except.error "shadowing: variable 0 is bound twice"
+the same in a declaration body: expected=false actual=false Except.error "shadowing: variable 0 is bound twice"
+shared on a nested list, then an element pushed: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
+a closure in a conditional arm captures a pushed list: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+foldl calls a once closure on two rows: expected=false actual=false Except.error "calls edge: a once callback is called many times"
+shared on a record holding a closure over a list: expected=false actual=false Except.error "Unescaped: program-lifetime holder"
+a loop over a non-exclusive source returns an element, then edited: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+a closure joined with a function input stays live: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+a callee invokes a closure calling a captured once closure: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+one list set into both slots, then map bump: expected=false actual=false Except.error "exclusive contents: positions or nested paths may share"
+a list captured beside a once closure, pushed, then the closure called: expected=false actual=false Except.error "Dead: an old holder is live after the demand"
+FROZEN NEGATIVE CONTROL FAILED
+FROZEN NEGATIVE CONTROL FAILED
+FROZEN NEGATIVE CONTROL FAILED
+ESCAPE NEGATIVE CONTROL FAILED
+ESCAPE NEGATIVE CONTROL FAILED
+probe a callee invokes a closure calling a captured once closure under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: once-through-call
+probe one list set into both slots, then map bump under mutant set-exclusive: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: set-exclusive
+probe a list captured beside a once closure, pushed, then the closure called under mutant once-live: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: once-live
+probe disjoint under mutant disjoint: corrected=Except.error "Disjoint: another operand path holds the written cell" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: disjoint
+probe focus body pushes its own container under mutant disjoint: corrected=Except.error "Disjoint: another operand path holds the written cell" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: disjoint
+probe read only in the nonzero arm after a push under mutant branch-live: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: branch-live
+probe a let shadows a variable its continuation uses under mutant shadowing: corrected=Except.error "shadowing: variable 0 is bound twice" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: shadowing
+probe the same in a declaration body under mutant shadowing: corrected=Except.error "shadowing: variable 0 is bound twice" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: shadowing
+probe shared on a nested list, then an element pushed under mutant shared-roots: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: shared-roots
+probe a closure in a conditional arm captures a pushed list under mutant branch-closure: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: branch-closure
+probe T46 two rows under mutant borrowed-supply (per-call checker): corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: borrowed-supply
+probe traversal over [c, c] under mutant traversal-exclusive: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: traversal-exclusive
+probe captured push per iteration under mutant many-calls: corrected=Except.error "many calls: traversal step consumes a capture or once closure" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: many-calls
+probe copy of [c, c] under mutant copy-exclusive: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: copy-exclusive
+probe map identity then spine push under mutant close-source: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: close-source
+probe focus breaks shape under mutant keeps-shape: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: keeps-shape
+probe two folds of the same rows under mutant guard-reuse: corrected=Except.error "supply edge: a callback writes a supply that is not owned" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: guard-reuse
+probe T59 map shared under mutant callback-xres: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: callback-xres
+probe callback writes a list read later under mutant supply-edge: corrected=Except.error "supply edge: a callback writes a supply that is not owned" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: supply-edge
+probe fold reads its rows after the loop under mutant supply-recheck: corrected=Except.error "supply edge: a callback writes a supply that is not owned" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: supply-recheck
+probe once closure handed to map under mutant calls-edge: corrected=Except.error "calls edge: a once callback is called many times" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: calls-edge
+probe callback edits inside its argument under mutant callback-writes: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: callback-writes
+probe wrapper returns its argument under mutant callback-aliases: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: callback-aliases
+probe map over a captured list under mutant callback-env: corrected=Except.error "exclusive contents: positions or nested paths may share" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: callback-env
+probe mapVia publishes a row, then the row is pushed under mutant callback-escapes: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: callback-escapes
+probe mapVia forwards map's guards about its callback under mutant forward-guards: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: forward-guards
+probe once closure called by a callee, then observed under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: once-through-call
+probe close returns a once closure's capture, a callee calls it under mutant once-through-call: corrected=Except.error "Dead: an old holder is live after the demand" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: once-through-call
+probe foldl calls a once closure on two rows under mutant many-off: corrected=Except.error "calls edge: a once callback is called many times" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: many-off
+probe shared on a record holding a closure over a list under mutant shared-fn: corrected=Except.error "Unescaped: program-lifetime holder" disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: shared-fn
+probe unbound live variable under mutant no-scope: corrected accepts=false mutant accepts=true disagrees=false
+MUTANT NEGATIVE CONTROL FAILED: no-scope
+fixtures=93 passed=false
+exit=1

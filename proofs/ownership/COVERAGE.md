@@ -1,5 +1,11 @@
 # T1–T59 coverage audit
 
+Round 6 measurements are in [RESULTS.md](RESULTS.md) and its linked logs.
+Older numerical sensitivity measurements below are explicitly historical;
+they do not establish final-head coverage. The executable theorem statements
+still have three `sorry`s, including the step lemma on which the main theorem
+is conditional.
+
 The source is `docs/thesis/ownership/ch-soundness.tex`, Table 6.2, including
 all named variants, and fifth-review/response. **This is core coverage, not complete thesis coverage.** The applicable pending
 core examples from the previous audit are now implemented. Exclusions below
@@ -88,8 +94,8 @@ than new thesis rules (Ch. 3 demand/summary contracts; Ch. 4 inference; Ch. 6
 soundness/derived-contract obligations). No excluded runtime or language-boundary variant is reported as passed. The broadened campaigns reach higher-order-recursion `limit:` rejections,
 reported separately; this does not prove recursive contracts universally derivable.
 
-The fixed suite has 78 intended verdict tests (74 transcribed, plus the recursion-in-a-step finding, the three-row T46 variant, and the env-through-a-wrapper fixture with its rejected reverse), checked by both checkers. Each independently typechecks;
-accepted tests compare the complete Trace, including externally retained roots.
+The original transcribed suite had 78 intended verdict tests (74 transcribed, plus the recursion-in-a-step finding, the three-row T46 variant, and the env-through-a-wrapper fixture with its rejected reverse), checked by both checkers. The final fixed suite has 93 verdict fixtures (RESULTS.md); each independently typechecks.
+Accepted tests compare the complete Trace, including externally retained roots.
 The traversal escape defect is repaired. Frozen controls demonstrate both
 freshness-only and missing-transfer implementations accept an actual mismatch,
 while the corrected checker rejects. No verdict was changed to match a checker.
@@ -136,8 +142,7 @@ callback classes (summary reuse); the fixed table's wrappers and callbacks
 pairs. Since the third review: declarations that write one of their
 parameters first, and declarations that only read two lists of one type;
 the declaration family's programs end by calling their own declarations
-(96 % of its accepted programs run one, a third have such a call change an
-array the caller passed, 15 % of generated calls pass one array twice);
+(current counts are in RESULTS.md);
 shadowing lets, refused by `typecheck`; `shared` on nested lists and
 records; closures created in conditional arms; a list pushed twice onto a
 nested list then pushed through each element; a once closure over a list
@@ -148,36 +153,33 @@ over two rows; a record holding a closure over a list, published with
 that keeps a row as its accumulator and edits it; one wrapper (`mapVia`)
 called twice over the same rows, the second time with a callback that
 publishes its argument, then the row written; a shallow copy of a nested
-list repeating a row, edited inside and the original read back. About 55 %
-of the accepted programs write an array that two names reach.
+list repeating a row, edited inside and the original read back. Round 6 also
+revives an inner once closure's capture through `close`, then calls its outer
+closure through a higher-order callee. Aliased-write counts are in RESULTS.md.
 
 **Controls.** Every required control has a fixed probe that disagrees under
 its mutant and is rejected without it, and the generator alone catches it
 in one 20000-trial campaign on each of seeds 20261011, 17 and 271828;
 `ownership ci` requires both. Required: the two historical controls and
-twenty-four flags (disjoint, traversal-exclusive, many-calls, copy-exclusive,
+twenty-six flags (disjoint, traversal-exclusive, many-calls, copy-exclusive,
 close-source, keeps-shape, guard-reuse, callback-xres, supply-edge,
 supply-recheck, calls-edge, callback-writes, callback-aliases, callback-env,
 callback-escapes, forward-guards, once-through-call, branch-live,
 branch-closure, shared-roots, shadowing, and the fourth review's many-off
-and shared-fn; borrowed-supply against the per-call checker). `no-scope` is
+and shared-fn, plus set-exclusive and once-live; borrowed-supply against the per-call checker). `no-scope` is
 required through its checker-level probe only: no typed program has a live
 variable its environment does not bind, so no generated program can reach
 it, and the probe runs the checker on such a configuration directly.
-**Every** source-level edit of `scripts/mutate.mjs` (55) was run on the
-final generator: 41 caught on all three seeds, 14 on none; RESULTS.md has
-every index, and "Equivalent (argued)" and "Gaps" below account for each
-of the 14.
+All 62 source-level edits in `scripts/mutate.mjs` were tested against
+independent baseline verdicts, on all three seeded streams and by bounded
+enumeration. RESULTS.md gives the complete matrix, and the arguments and
+search gaps below account for uncaught edits.
 
 **Rows exercised.** `withWrites` counts executions, not which rows a write
-depends on. The checker records the rows each check exercised; over the
-accepted programs that write (three seeds, RESULTS.md): callback W 887,
-callback argument in res 1879, env in res 193, fresh in res 1720, xres yes
-3412 / no 50, E on a callback argument 119, xreq on one 106 and its edge
-106, guards forwarded and supplies transferred to the caller's input 86
-each, supply owned bit cleared at a step end 182 and at the caller 559, a
-summary reused after re-asking its guards 603. Never hit: ⊤ in a callback's
-res, E on a callback's environment.
+depends on. The checker records row hits in each current campaign log
+(`regressions/campaign-round6-*.log`). A row hit is evidence of execution,
+not that a test distinguishes dropping it; the source edits and masking
+arguments below are the sensitivity evidence.
 
 **Tested only by fixtures or not at all:**
 * recursion inside a traversal or focus step — one hand-written fixture; the
@@ -192,26 +194,25 @@ res, E on a callback's environment.
 
 ## Equivalent (argued)
 
-The source-level edits no generated program distinguishes on the final
-generator (3 × 20000, `regressions/source-mutants-round5.log`), for which we
-believe no program can: each argument is ours, not a proof, and each is
+The source-level edits not caught by the current generator or enumerator
+(3 × 20000 and bound 2, RESULTS.md), for which we have a masking argument: each argument is ours, not a proof, and each is
 backed by the edit's changed verdicts on the same programs
-(`regressions/verdicts-round5.log`: programs the edited checker accepts and
-the unmutated one rejects).
+(`regressions/source-mutants-round6.log`: both newly accepted and newly
+rejected programs, with newly accepted executions checked for disagreement).
 
-| Edit | What it weakens | Changed verdicts (3 seeds) | Why no program can tell |
+| Edit | What it weakens | Changed verdicts (+/−; seeds 20261011 / 17 / 271828) | Why no program can tell |
 |---|---|---|---|
-| `once` | a direct call does not demand a once closure's own roots | 0 | Every effect of calling a once closure is demanded anyway: its writes to its captures by `applyCall` at the call (a later holder of the closure names those captures through its capture paths), and a once value it captures and calls by the once-through-call demand at the same call (roots and written captures). So the closure stays usable only when calling it changed nothing anyone can observe. |
-| `nestedsep` | an exclusive-contents certificate does not require the element's paths separated | 0 | A list is exclusive only if every value stored in it passed `storeExclusive`, which requires its paths separated, or if it was granted by a focus or traversal from such a list. The one way abstract paths come to overlap with the flag still set is a join of two alternatives (a conditional), each separated on its own; concretely only one alternative is there, so the overlap is not an alias. |
-| `reqexcloutside` | an exclusive-contents certificate ignores outside live holders of the elements | 0 | A consuming focus or traversal also demands the element writes it makes, against the same live holders (`applyScope`, and a traversal's step writes re-demanded against `later`); a holder that the certificate check skips fails that Dead test, because a position-tagged element origin aliases the plain origin a holder names. |
-| `recvalidate` | a recursive summary is not validated against its final assignment | 0 | The fixpoint loop stops when a round's result, joined into the candidate, leaves it unchanged; that round's inference already ran with the final candidate. Validation reruns the same inference (same context, same candidate; the cache only adds summaries the round computed), so it cannot reach a different verdict. |
-| `escapeowned` | a cell recorded as escaped counts as individually owned | 2 (seed 20261011), both run equal | Individual ownership feeds exclusivity certificates, supply owned bits and recursion's entry-ownership test; every write is still a demand whose Unescaped test refuses an escaped cell. The two changed verdicts are recursion whose base case publishes a parameter: accepted, they never write the published array, so both runs agree. |
-| `requiresedge`, `callbackrequires` (flags `requires-edge`, `callback-requires`) | xreq ⇒ exclusive supply unchecked; a callback's xreq not published | 0 (`verdict-diff`) | A callback that requires exclusivity of an argument is checked twice: its own published xreq makes the caller require the actual exclusive, and the edge checks the supply. Each covers what the other drops: a program passing a non-exclusive argument fails whichever remains. |
-| `transfersupplies` (flag `transfer-supplies`) | a callee's supplies to our own input are dropped | 0 (`verdict-diff`) | A supply to our input matters only through its owned bit at the edge, and every write it licenses is already a forwarded W guard on our input, demanded at our own caller; dropping the supply loses an edge check that the forwarded W demand makes again. |
-| `keepsany` | focus keeps exclusivity when the result's paths name *any* parameter path | 0 | A focus scope has one parameter (the element), so the weakened test only admits a result whose paths hold the element's own arrays rearranged (fields swapped); `keepsShape` still requires the result deep-exclusive and path-separated, and the arrays all came from the replaced element, so none is shared with another position. |
-| `recwrites` | a recursive call's W rows are not demanded at the call | 0 | **Masked.** A recursive call re-checks that every input path owned at entry is still owned at the call (individually owned, not live later, not another operand's) — the same Unescaped/Dead/Disjoint test the W demand makes; a W on a path not owned at entry is demanded at the outermost caller. With the mask removed too (`recwritesown`) the generator catches it on all three seeds (826 / 310 / 2276). |
-| `symenv` | a callback's own environment is not an "other operand" of its arguments | 0 | **Masked.** Every supply is re-checked where its call is known (`recheckSupplies` at `callKnown`, against `otherPaths`, which include the callback's capture paths), so an argument the callback's environment also holds loses its owned bit there and the W ⇒ owned edge rejects; `supply-recheck` (required, 3/3) controls that re-check. |
-| `borrowedsupply` (flag `borrowed-supply`) | borrowed source elements dropped from a step's re-check | 28 / 23 / 31, none disagree | See "Borrowed supply under summaries": the line is live but not observable; its flag is a required control against the per-call checker. |
+| `once` | a direct call does not demand a once closure's own roots | 0/0; 0/0; 0/0 (no mismatch) | Every effect of calling a once closure is demanded anyway: its writes to its captures by `applyCall` at the call (a later holder of the closure names those captures through its capture paths), and a once value it captures and calls by the once-through-call demand at the same call (roots and written captures). So the closure stays usable only when calling it changed nothing anyone can observe. |
+| `nestedsep` | an exclusive-contents certificate does not require the element's paths separated | 0/0; 0/0; 0/0 (no mismatch) | A list is exclusive only if every value stored in it passed `storeExclusive`, which requires its paths separated, or if it was granted by a focus or traversal from such a list. The one way abstract paths come to overlap with the flag still set is a join of two alternatives (a conditional), each separated on its own; concretely only one alternative is there, so the overlap is not an alias. |
+| `reqexcloutside` | an exclusive-contents certificate ignores outside live holders of the elements | 0/0; 0/0; 0/0 (no mismatch) | A consuming focus or traversal also demands the element writes it makes, against the same live holders (`applyScope`, and a traversal's step writes re-demanded against `later`); a holder that the certificate check skips fails that Dead test, because a position-tagged element origin aliases the plain origin a holder names. |
+| `recvalidate` | a recursive summary is not validated against its final assignment | 0/0; 0/0; 0/0 (no mismatch) | The fixpoint loop stops when a round's result, joined into the candidate, leaves it unchanged; that round's inference already ran with the final candidate. Validation reruns the same inference (same context, same candidate; the cache only adds summaries the round computed), so it cannot reach a different verdict. |
+| `escapeowned` | a cell recorded as escaped counts as individually owned | 0/0; 0/0; 0/0 (no mismatch) | Individual ownership feeds exclusivity certificates, supply owned bits and recursion's entry-ownership test; every write is still a demand whose Unescaped test refuses an escaped cell. The earlier two changed verdicts were recursion whose base case publishes a parameter and never writes the published array. The final stream changes no verdict under this edit. |
+| `requiresedge`, `callbackrequires` (flags `requires-edge`, `callback-requires`) | xreq ⇒ exclusive supply unchecked; a callback's xreq not published | 0/0; 0/0; 0/0 (no mismatch) | A callback that requires exclusivity of an argument is checked twice: its own published xreq makes the caller require the actual exclusive, and the edge checks the supply. Each covers what the other drops: a program passing a non-exclusive argument fails whichever remains. |
+| `transfersupplies` (flag `transfer-supplies`) | a callee's supplies to our own input are dropped | 0/0; 0/0; 0/0 (no mismatch) | A supply to our input matters only through its owned bit at the edge, and every write it licenses is already a forwarded W guard on our input, demanded at our own caller; dropping the supply loses an edge check that the forwarded W demand makes again. |
+| `keepsany` | focus keeps exclusivity when the result's paths name *any* parameter path | 0/0; 0/0; 0/0 (no mismatch) | A focus scope has one parameter (the element), so the weakened test only admits a result whose paths hold the element's own arrays rearranged (fields swapped); `keepsShape` still requires the result deep-exclusive and path-separated, and the arrays all came from the replaced element, so none is shared with another position. |
+| `recwrites` | a recursive call's W rows are not demanded at the call | 0/0; 0/0; 0/0 (no mismatch) | **Masked.** A recursive call re-checks that every input path owned at entry is still owned at the call (individually owned, not live later, not another operand's) — the same Unescaped/Dead/Disjoint test the W demand makes; a W on a path not owned at entry is demanded at the outermost caller. With the mask removed too (`recwritesown`) the generator catches it on all three seeds (RESULTS.md). |
+| `symenv` | a callback's own environment is not an "other operand" of its arguments | 0/0; 0/0; 0/0 (no mismatch) | **Masked.** Every supply is re-checked where its call is known (`recheckSupplies` at `callKnown`, against `otherPaths`, which include the callback's capture paths), so an argument the callback's environment also holds loses its owned bit there and the W ⇒ owned edge rejects; `supply-recheck` (required, 3/3) controls that re-check. |
+| `borrowedsupply` (flag `borrowed-supply`) | borrowed source elements dropped from a step's re-check | 18/0; 15/0; 12/0 (no mismatch) | See "Borrowed supply under summaries": the line is live but not observable; its flag is a required control against the per-call checker. |
 
 ## Gaps
 
@@ -220,7 +221,8 @@ Holes the generator does not reach that are not equivalent:
 | Edit | What it weakens | Why the generator cannot reach it | What catches it |
 |---|---|---|---|
 | `noscope` (flag `no-scope`) | an unbound live variable is read as dead instead of refused | A program that typechecks binds every variable it uses, and liveness only names used variables, so no generated program has a live variable missing from the abstract environment. The step lemma's `covered` hypothesis is exactly this. | `ci`: the fixtures run the checker on the third review's configuration (a live variable the abstract environment does not bind) and require the refusal; under the edit the checker accepts and the push changes the array the live variable holds. |
-| `hiddencopy` | (interpreter) every in-place write allocates a new array instead | An interpreter that copies on every write computes the value semantics, so no program can make the two runs disagree: it is a hole in the oracle, not the checker. | The fixtures: their expected in-place observations (the aliasing probes) fail under it. |
+| `hiddencopy` | (interpreter) `writeCounted` allocates rather than mutating | Differential acceptance does not measure the promised in-place behaviour, and the source runner only executes changed verdicts; this interpreter-only edit changes no verdict. Builder put has its own implementation, so this is not a universal equivalence claim. | Fixed aliasing probes check the expected in-place observations directly. |
+| `keepsep` | focus result exclusivity ignores separated paths | Neither search grammar currently focuses over a list of records with two list fields and returns the same fresh list in both fields. | The written `keepsep-probe.txt` produces a duplicate concrete footprint labelled exclusive under the edit; add this type shape and certificate checking to campaigns to reach it automatically. |
 
 ## Summary layer: rows and their controls
 
@@ -254,10 +256,11 @@ probe, generator 3/3. The fourth review added `--mutant=shared-fn` (`shared` for
 The review's `borrowed-supply` mutant drops the borrowed source's elements
 from the holders a non-consuming traversal re-checks its step's writes and
 supplies against. In the per-call checker it is load-bearing, and the
-generator catches it (first indices 1556 / 413 / 1326 on the final generator). Under summaries the line is
-**live**: `ownership verdict-diff --mutant=borrowed-supply` shows it rejects
-28, 23 and 31 programs per 20000 trials on the final generator (seeds 20261011, 17, 271828) that its
-removal would accept, and none of those disagree when run. A typical one folds
+generator catches it on all three final seeded streams (control logs and CI).
+Under summaries the line is **live**: the independent source sweep shows
+18, 15 and 12 newly accepted programs per 20000 trials (seeds 20261011, 17,
+271828), with no newly rejected programs and no trace disagreement. Bound 2
+also has 98 newly accepted programs, all agreeing. A typical one folds
 `borrowOrGrow` over three fresh rows: the borrowed row is written once and
 never read again. The line is kept. That no program can distinguish it is
 **argued, not checked**: a
@@ -327,9 +330,13 @@ restatement found").
    (does not) satisfied every hypothesis, the checker accepted a call of it
    with the captured list live, and the step lemma's conclusion failed. A
    symbolic input describes any closure; its class is `GuardsHold`'s
-   business. Closures captured inside closures are not tied to their
-   declaration (stated as a limit), but since the fifth review their arrays
-   are named: `namesAt` walks the abstract value itself, so a capture step
+   business. Round 6 found the same mislabeling through an inner capture:
+   matching the outer declaration and the inner footprint was insufficient.
+   `ClosureAgreement` now follows records, array contents and captures
+   recursively, matching every known declaration and certifying its captures.
+   The falsifier deliberately mislabels inner closures, and a guarded fixed
+   configuration rejects the previously admitted case (both runs return,
+   with different observations). Since the fifth review their arrays are named: `namesAt` walks the abstract value itself, so a capture step
    of a known function value goes into its alternatives' captures (before, it
    used `atPath`, which merges a capture step into a plain list, and a
    closure captured by a closure — accepted by the checker — could never be
@@ -353,13 +360,20 @@ Besides `Invariant`, the step lemma now assumes, and concludes for its result:
   `observationDepth` (256), exactly where the in-place `snapshot` runs out of
   fuel, so a deep value is a failure of both runs (`Observation.depth` is
   checked against `snapshot` by a `#guard`);
-* `WellTyped`: the expression is ordinarily typed in a typing of the
-  environment its values have. Without it a branch whose arms have different
+* `WellTyped`: the expression is ordinarily typed, and every binding has
+  that type both as a value-side observation and as an actual heap value.
+  The latter uses an unbounded `Represents` witness (`ValueTyped`), not a
+  fixed snapshot fuel. A dead close source could otherwise be a list on the
+  value side and an int on the heap side: it met the old premises but one
+  run returned and the other failed. A fixed guard now excludes it. Without it a branch whose arms have different
   shapes joins to an unknown list with no element cells, which describes
   nothing (the falsifier found this through a mistyped generator);
 * `HonestClosures`: a function value described as not once (no roots) is one
   the checker itself would create as not once (re-creating it from its
-  abstract captures gives no roots). A writing closure described as not once
+  abstract captures gives no roots). `ContainsFunction` descends into
+  records, lists and closure captures: an accurately labelled inner writing
+  closure with falsely empty roots otherwise passed the old outer-only
+  premise. A fixed guard now excludes that case. A writing closure described as not once
   is one no program builds, and with it the statement is false (falsifier);
 * `covered` (third review, P1): every variable of the expression's and the
   continuation's uses that the environment binds has an abstract value.
@@ -470,17 +484,14 @@ hypotheses checked rather than assumed:
   origin of its own, certificates where they hold, and the expression writes
   one variable the continuation does not use (push, set, a record field, a
   consuming focus or traversal, `update` or `map` with a writing callback);
-  about 40 % of accepted samples execute an in-place write that changes an
-  array (5 % before). A sixth of all samples drop one variable from the
+  current accepted/write counts are in RESULTS.md. A sixth of all samples drop one variable from the
   abstract environment, so `covered` fails: the statement does not speak
   about them, and the checker must refuse them, which it did in every case.
-  Since the fourth review: a fifth of `capPush`/`capGet` closures are
-  described as the other declaration (`ClosuresDescribed` must exclude them,
-  and does, ≈4 300 per seed); a third of the write-heavy samples alias the
-  written variable with another one, live afterwards half the time (≈18 000
-  per seed, ≈6 600 accepted); and a quarter of all samples run with fuel 1–8,
-  so the error clause is exercised (≈1 150 per seed where both runs fail,
-  never one alone).
+  Since the fourth review: a fifth of `capPush`/`capGet` closures, including inner closures captured
+  by an outer closure, are described as the other declaration (`ClosuresDescribed` must exclude them,
+  and does; current counts are in RESULTS.md); a third of the write-heavy samples alias the
+  written variable with another one, live afterwards half the time (current counts are in RESULTS.md); and a quarter of all samples run with fuel 1–8,
+  so the error clause is exercised (counts are in RESULTS.md; no error-clause violation).
 * **`summary_sound` / `map_summary_sound`**: every call the real in-place
   interpreter makes (its call log: heap and observers before and after) while
   running the accepted programs of a generated campaign, against every published summary
@@ -491,27 +502,21 @@ hypotheses checked rather than assumed:
 What it found, in order: the review's counterexample (on the earlier
 statement), dishonest closures, ill-typed expressions, `env` paths of known
 function values (`namesAt`), and, on the corrected statement, **the second
-checker defect below**. After the fixes, on 100 000 configurations and the
-calls of 100 000 generated programs (the final generator, with its own declarations) per seed:
+checker defect below**. After the fixes, the current 100 000-configuration runs and every call of
+100 000 generated programs per seed are recorded in RESULTS.md and
+`regressions/falsify-round6-*.log`. Those logs, rather than previous rounds'
+counts, are the current evidence.
 
-| Seed | Step configurations | Not covered (all refused) | Accepted | of which nested closure, factory or join | Accepted with a write | Failures | Calls | Calls with no summary describing them (one array at two paths / other) | Checks against a summary | Failures |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 100 000 | 10 425 | 69 048 | 25 700 | 22 179 | 0 | 45 065 | 1 482 / 6 | 58 994 | 0 |
-| 17 | 100 000 | 10 489 | 69 021 | 25 457 | 21 956 | 0 | 46 281 | 1 397 / 2 | 60 757 | 0 |
-| 271828 | 100 000 | 10 426 | 69 164 | 25 785 | 21 977 | 0 | 46 023 | 1 387 / 5 | 60 022 | 0 |
+Vacuity fails a run if more than 0.5 % of calls are described by no summary
+for a reason other than one array at two input paths, or more than 5 % for
+that documented exception. It counts calls, not summary/call pairs. These
+budgets expose a loss of exercised hypotheses; they are not correctness
+criteria for the theorem. The step samples include closures over closures,
+a factory, and a conditional returning a closure or its function argument.
+The fixed inner-mislabel regression is checked by guards on every Lean build.
 
-Vacuity is now a failure past a stated bound, not a count: a run fails if
-more than 0.5 % of calls are described by no summary for any reason other
-than one array at two input paths (the statement's documented exception),
-or more than 5 % for that exception. It is ≈3 % and ≤ 0.02 %. (Before the
-fifth round "vacuous" counted summary/call pairs, most of them summaries
-for other inputs, and hid that every call with a capturing callback was
-vacuous; it now counts calls.) The step samples include closures over
-closures, a closure factory and a conditional returning a closure or its
-function argument (≈25 000 accepted per seed).
-
-The falsifier has teeth: under `--mutant=` holes the step-lemma check fails
-(20 000 configurations, seed 17): once-through-call 22 on the current mix
+Historical sensitivity runs (before the final round 6 head; not re-run): under `--mutant=` holes the step-lemma check failed
+(20 000 configurations, seed 17): once-through-call 22 on that mix
 (40 and close-source 442 before the fourth review's additions; disjoint 2,
 once-through-call 161, keeps-shape 1, close-source 209 with the all-random
 mix). The aliased samples alias whole variables, which Dead, not Disjoint,
@@ -527,7 +532,7 @@ it, which the step lemma, not Lemma 6.7, sees). A clean run is evidence, not pro
 configurations are small and the summary check sees only calls the
 generator makes.
 
-### Defects the restatement found (both fixed, both fixtures)
+### Defects the restatement found (fixed with fixtures)
 
 1. **A once callback called by a callee was not consumed.** Handing a closure
    that pushes onto its capture to a one-line wrapper that calls it, then
@@ -544,7 +549,16 @@ generator makes.
    capture, a callee calls it"). Found by the falsifier on the restated step
    lemma.
 
-Generator v4 never built either shape; v5 does, and `once-through-call` is a
+3. **Written captures of a captured once closure were still hidden.** An
+   outer closure captures a writing inner closure; `close` revives the inner
+   array; a higher-order callee calls the outer closure. The old checker
+   accepted and returned different observations. `demandCallbackCaptures`
+   now follows captured function calls recursively, demands their writes
+   and roots, forwards symbolic call counts, and checks multiplicity. The
+   fixture failed before this fix, then passed; generator v5 and enumeration
+   have the shape as well (`nested-once-callee-before.log`).
+
+Generator v4 never built the original two shapes; v5 does, and `once-through-call` is a
 required control caught by the generator on all three seeds (RESULTS.md).
 
 
@@ -569,12 +583,12 @@ constant replayed through the kernel module by module in a fresh
 environment of its imports (as lean4checker does), and no compiler
 attribute that swaps in an implementation. The review's payload is refused
 at `audit sources` ("command Lean.Parser.Command.eval is not allowed").
+Historical audit measurement (before the final round 6 additions):
 2 756 constants, 2 750 replayed (the auxiliary recursors of nested inductives
 are regenerated by the kernel), about a minute.
 
 `Axioms.lean` is the `AxiomCheck` target of `lake build`, kept as a first line inside the build. It collects the
-axioms of **every constant** declared in an `Ownership` module (2 723 at the
-time of writing: theorems, definitions, instances, structures and their
+axioms of **every constant** declared in an `Ownership` module (historically 2 723: theorems, definitions, instances, structures and their
 generated auxiliaries, not only the theorems) and fails unless exactly the
 three `sorry`s above and the main theorem depend on `sorryAx` and nothing uses
 an axiom beyond `propext`, `Classical.choice` and `Quot.sound`. It then sends

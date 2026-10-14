@@ -1,286 +1,267 @@
-# Results: generator v5, the summary layer, negative controls
+# Round 6 results
 
-All runs: Lean 4.29.1, from `proofs/ownership`, logs in `regressions/`
-(`scripts/campaigns.sh` regenerates the campaign and control logs,
-`scripts/run-mutants.sh` the source-level ones). Elapsed time is the oracle's
-monotonic clock, measured while other work ran on the machine (heavy jobs
-pinned to 24 of its 32 cores).
+The last Lean runtime change is `83b6dcf` (generator v5, checker, both interpreters,
+falsifier and enumeration). All measurements below use those final runtime
+sources; later commits contain reports and retained evidence. Lean 4.29.1 is
+pinned. Linux runs used the isolated worktree on `dagon` under
+`nix develop .#ownership`, with every descendant pinned to CPUs 0–7. The macOS
+compiler gates used `zorg`, with Node 24 from Nix. Previous rounds' numbers
+remain in git history and explicitly historical passages of COVERAGE.md.
 
-"Generator v5" below is the generator as of this branch's last generator
-commit (`d94b3dd0a`, after the fourth review); `--generator-version=5` names
-it. **Every number in this file was measured on it** — campaigns, flag
-controls, every source-level edit, and the verdict counts behind the
-equivalence arguments. Earlier rounds' numbers are in the git history.
+## Findings addressed
 
-## What changed since the fourth review
+1. **Nested closures and function-typed joins.** `namesAt` follows captures
+   recursively; symbolic captures use the environment row. A mismatched-shape
+   join retains every cell of both alternatives under unknown, so an unknown
+   result used as data cannot hide its captured array. Unknown functions are
+   still refused when called.
+2. **Closure factories and callback vacuity.** Result descriptions name arrays
+   through arbitrarily nested known captures and through symbolic environments.
+   Summary clause 1 admits a called callback's environment writes, demanded at
+   its caller. The unnecessary unique-holder premise is removed. Vacuity is
+   counted per call and fails above 0.5% for non-separation reasons or 5% for
+   separating-input aliasing; these are coverage budgets, not proofs.
+3. **Quote character audit bypass.** The authoritative audit uses Lean's parser,
+   builds its trusted executable before audited elaboration, checks a clean
+   committed export and unchanged source/binary hashes, then replays Ownership
+   and Main constants in the kernel. The ` '"' ` followed by a hidden sorry
+   probe is rejected as four sorries. The in-build audit remains an extra check.
+4. **Missed `setexcl` / `oncelive` holes.** Fixed probes and required controls
+   cover both; generator moves reach both. The source sweep below records their
+   independent baseline verdict differences and concrete disagreements.
+5. **Randomly missed shapes.** A seed-independent bounded grammar enumerates
+   syntax with typed operands, including joins returned as data, nested closures
+   and last-two-result observations. CI uses bound 2; bound 3 is measured below.
+   This is exhaustive only for that grammar, not for the ownership core.
+6. **Crash evidence.** Source sweeps check every newly accepted program without
+   shrinking, flush the first mismatch and save its original AST first. Every
+   seed retains counts, status and logs. A deliberate SIGSEGV after the first
+   mismatch was reported as `CRASH-after-mismatch` on all three seeds (indices
+   321 / 284 / 156, exit 139), retained all originals, and failed the runner.
+   This injection is separate from the source-mutant matrix; real sweeps did
+   not crash.
+7. **Additional defects found while finishing.** Recursive closure agreement
+   excludes mislabelled inner code; recursive closure honesty excludes a falsely
+   many-use inner closure; `WellTyped` checks actual heap values as well as
+   value-side observations (including dead close sources). These premise fixes
+   have build-time regression guards. A real accepted mismatch remained when
+   a higher-order callee called an outer once closure capturing an inner once
+   closure whose array had been revived by `close`. `demandCallbackCaptures`
+   now recursively demands capture writes and roots, forwards symbolic call
+   counts and checks multiplicity. The fixed verdict fixture failed before the
+   fix and passes after it; both search grammars now contain the shape.
 
-The fourth review planted four holes the generator did not catch
-(`manyoff`, `sharedfn`, `noscope`, and `joinexcl`, which the fixtures
-caught), found that a crash while shrinking (stack overflow) turned caught
-holes into misses or errors (`argrecheck2`, `recwritesown`), and listed
-sixteen source-level edits caught on no seed. Changes:
+## Differential campaigns
 
-* **Shrinking keeps its evidence** (parent work, `b613f3233`): candidates run
-  with fuel 5 000, stdout is flushed and the unshrunk program written before
-  shrinking, and `run-mutants.sh` flags a crashed run (`CRASH`) instead of
-  counting it a miss. No run below crashed.
-* **New controls**: `many-off` (a traversal step's single call of a once
-  callback counted as one call), `shared-fn` (`shared` not escaping a list
-  captured by a closure held in a record field), both reached by new moves
-  (a once closure handed to `foldl` or `map` over two rows; a record holding a
-  closure over a list, published, then the list pushed) and required;
-  `no-scope` (an unbound live variable read as dead), required through a
-  checker-level probe — no typed program has an unbound live variable, so no
-  generated program can reach it (COVERAGE.md).
-* **Moves for the 0/3 edits**: a loop over a nested list repeating a row that
-  keeps a row as its accumulator and edits it (catches the first review's
-  `xres` and `tsupplyexcl`); one wrapper called twice, the second time with a
-  callback that publishes its argument, then the row written (catches
-  `callback-escapes` and `forward-guards`, both now required); a shallow copy
-  of a nested list repeating a row, edited (the new moves had diluted
-  `copy-exclusive` and `copyelems` below one catch per seed).
-* `ownership accepted <count> <seed>` lists the programs a build accepts, so
-  a source-level edit's changed verdicts are counted against the unmutated
-  build (`regressions/verdicts-round5.log`).
+20,000 programs per seed, summary checker plus per-call cross-check. Every
+accepted program was executed in both interpreters. Cross-check verdict
+precision differences are reported, not counted as semantic disagreement.
 
-## Accepted programs
-
-Corrected checker (summaries), 20 000 trials per seed, summed over seeds
-20261011, 17 and 271828. "Distinct" counts each AST once per seed. "With
-write": the in-place run changed an array at least once (`set`, `push` or a
-focus write-back). "Aliased": accepted programs whose in-place run changes
-an array that two or more names reach (bindings of any frame, or `shared`
-roots). "Agreeing": typed programs (accepted or not) whose two runs give
-equal traces (rejected programs run with fuel 5 000; one that needs more is
-not counted). Every accepted program ran in both interpreters with
-identical traces.
-
-| Family | Drawn | Accepted | Distinct accepted | With write | Distinct with write | Aliased | Accepted / agreeing | Limits |
+| Seed | Typed | Accepted | Distinct accepted | With write | Aliased write | Limits | Cross-check verdict differences | Mismatches / execution errors |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| declarations (v5) | 25985 | 2797 | 2796 | 1960 | 1960 | 1485 | 2797 / 6013 | 436 |
-| general (v5) | 18943 | 2042 | 2011 | 1008 | 1008 | 644 | 2042 / 3085 | 0 |
-| once-many-wrappers | 1365 | 779 | 135 | 80 | 15 | 80 | 779 / 1107 | 0 |
-| fresh-tower | 1393 | 681 | 625 | 681 | 625 | 681 | 681 / 681 | 0 |
-| captures | 1359 | 666 | 30 | 0 | 0 | 0 | 666 / 666 | 0 |
-| identity-map | 1344 | 665 | 12 | 665 | 12 | 665 | 665 / 665 | 0 |
-| branch-traversal | 1313 | 637 | 15 | 367 | 9 | 367 | 637 / 916 | 0 |
-| fresh-nested | 1362 | 444 | 329 | 444 | 329 | 444 | 444 / 444 | 0 |
-| indexed-chain | 1339 | 375 | 306 | 375 | 306 | 375 | 375 / 444 | 0 |
-| recursion | 1423 | 345 | 102 | 285 | 87 | 285 | 345 / 452 | 0 |
-| library-pipeline | 1367 | 328 | 204 | 328 | 204 | 328 | 328 / 746 | 0 |
-| recursive-higher-order-limit | 1386 | 0 | 0 | 0 | 0 | 0 | 0 / 1386 | 1386 |
-| escape-traversal | 1421 | 0 | 0 | 0 | 0 | 0 | 0 / 0 | 0 |
+| 20261011 | 20000 | 3064 | 2019 | 1960 | 1701 | 582 | 18 / 0 | 0 / 0 |
+| 17 | 20000 | 3062 | 2001 | 1989 | 1765 | 601 | 16 / 0 | 0 / 0 |
+| 271828 | 20000 | 3123 | 1988 | 1960 | 1714 | 570 | 10 / 0 | 0 / 0 |
 
-| Seed | Accepted | Distinct | With write | Distinct with write | Aliased | Precision | Limits | Shadowing refused | Mismatches | Elapsed |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 3301 | 2243 | 2108 | 1574 | 1812 (54.8 %) | 3301 / 5581 = 59.1 % | 599 | 285 | 0 | 115 s |
-| 17 | 3209 | 2120 | 2041 | 1483 | 1773 (55.2 %) | 3209 / 5531 = 58.0 % | 651 | 282 | 0 | 116 s |
-| 271828 | 3249 | 2202 | 2044 | 1498 | 1769 (54.4 %) | 3249 / 5493 = 59.1 % | 572 | 294 | 0 | 111 s |
-| total | 9759 | 6565 | 6193 | 4555 | 5354 (54.9 %) | 9759 / 16605 = 58.8 % | 1822 | 861 | 0 | |
+Full family counts and summary reuse/hit counts are in
+`regressions/campaign-round6-{20261011,17,271828}.log`.
+`ownership ci` passes 93 verdict fixtures and all fixed control probes,
+one 20,000-program campaign, all required generator controls and bound 2.
+Standalone `controls 20000` passes on seeds 17 and 271828 as well. Optional
+or equivalent controls are reported without being falsely required.
 
-(Elapsed includes `--cross-check`.) After the third review's changes the
-same seeds gave 10 681 accepted and precision 58.1 %. The general family's
-acceptance fell (2 042 of 18 943): most of the new moves build programs the
-corrected checker must refuse — a list written after a closure over it was
-published, an element of a non-exclusive source edited, a once closure
-called on every row — which is what makes them reach the holes. The v4 and
-v3 baselines (seed 20261011) ran with no mismatch.
+## Source-mutant matrix
 
-**Precision** counts every typed program whose two runs agree, so the limit
-family (refused by design), the shadowing move (refused by design, and
-agreeing when it runs) and programs that write nothing anyone reads again
-are in the denominator: it is a lower bound on how often the checker
-accepts a program that is in fact safe, not a false-alarm rate on realistic
-code.
+All 62 planted source edits from the five reviews: 20,000 generated programs
+on each of seeds 20261011, 17 and 271828. The unedited executable supplies
+accepted indices; the mutated executable cannot supply its own baseline.
+Every newly accepted program runs at fuel 100,000. The three baseline
+accepted-index lists and runtime SHA-256 manifest are retained in regressions;
+enumeration baseline hashes are in `enum-baseline-round6.sha256` (the full
+90 MB bound-3 key list remains in the isolated Linux scratch checkout). There are no build failures,
+crashes, or inconclusive executions in this matrix.
 
-### Generated declarations exercised
+Generator cells are **mismatches; newly accepted / newly rejected** against
+that independent baseline. A positive mismatch count catches a hole. The full
+stream is visited even after its first mismatch. Enumeration cells are
+**caught or miss; newly accepted**, at bounds 2 and 3. Enumeration stops at its
+first witness, so a caught row is a prefix count, not a complete verdict total.
+It has no seed: the same deterministic result applies to all three seeded
+columns and is run once per edit, not three times under fictitious seeds.
+A dash means bound 3 was not run for that edit. Raw counts include visited
+programs and retained witness ASTs in `regressions/mutant-evidence/` and
+`regressions/mutant-evidence-bound3/`.
 
-Over the declaration family's accepted programs, from the in-place run's
-call log (calls of declarations past the fixed table):
+| Source edit | Generator 20261011 | Generator 17 | Generator 271828 | Enum 2 (all seeds) | Enum 3 (all seeds) | Verdict |
+|---|---:|---:|---:|---|---|---|
+| `disjoint` | 63; 109/0 | 64; 98/0 | 64; 115/0 | caught; 1 | — | caught |
+| `borrowedsupply` | 0; 18/0 | 0; 15/0 | 0; 12/0 | miss; 98 | — | argued equivalent |
+| `travexcl` | 31; 34/0 | 35; 37/0 | 29; 32/0 | caught; 5 | — | caught |
+| `manycap` | 5; 10/0 | 5; 17/0 | 6; 11/0 | miss; 0 | — | caught |
+| `copyexcl` | 9; 56/0 | 19; 60/0 | 14; 62/0 | miss; 4 | — | caught |
+| `closesrc` | 53; 76/0 | 53; 69/0 | 58; 90/0 | caught; 11 | — | caught |
+| `keepsshape` | 1; 12/0 | 3; 9/0 | 1; 15/0 | miss; 4 | — | caught |
+| `xres` | 33; 64/0 | 23; 47/0 | 29; 46/0 | miss; 0 | — | caught |
+| `separated` | 625; 709/0 | 595; 657/0 | 626; 685/0 | caught; 1 | — | caught |
+| `dead` | 1711; 2184/0 | 1709; 2155/0 | 1720; 2168/0 | caught; 1 | — | caught |
+| `escape` | 561; 561/0 | 517; 518/0 | 547; 547/0 | caught; 1 | — | caught |
+| `focusexcl` | 622; 813/0 | 612; 763/0 | 641; 812/0 | caught; 7 | — | caught |
+| `once` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `nestedsep` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `reqexcloutside` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `recvalidate` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `writeout` | 106; 174/0 | 108; 162/0 | 110; 158/0 | miss; 0 | — | caught |
+| `tsupplyexcl` | 33; 64/0 | 23; 47/0 | 29; 46/0 | miss; 0 | — | caught |
+| `escapeowned` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `guardreuse` | 26; 28/0 | 22; 23/0 | 14; 14/0 | miss; 0 | — | caught |
+| `callbackxres` | 555; 580/0 | 540; 561/0 | 571; 601/0 | miss; 0 | — | caught |
+| `supplyedge` | 30; 50/0 | 26; 46/0 | 19; 51/0 | caught; 66 | — | caught |
+| `supplyrecheck` | 8; 28/0 | 3; 21/0 | 7; 39/0 | miss; 175 | — | caught |
+| `callsedge` | 112; 160/0 | 125; 162/0 | 107; 147/0 | caught; 1 | — | caught |
+| `requiresedge` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `callbackwrites` | 9; 58/0 | 15; 54/0 | 8; 39/0 | caught; 1 | — | caught |
+| `callbackescapes` | 25; 25/0 | 21; 21/0 | 20; 20/0 | miss; 0 | — | caught |
+| `callbackaliases` | 87; 144/0 | 96; 128/0 | 99; 153/0 | miss; 439 | — | caught |
+| `callbackenv` | 131; 216/0 | 103; 194/0 | 117; 216/0 | caught; 1 | — | caught |
+| `callbackrequires` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `forwardguards` | 18; 18/0 | 16; 16/0 | 10; 10/0 | miss; 0 | — | caught |
+| `transfersupplies` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `oncethroughcall` | 100; 121/0 | 117; 133/0 | 105; 135/0 | caught; 1 | caught; 1 | caught |
+| `capturelive` | 101; 120/0 | 90; 103/0 | 90; 114/0 | caught; 1 | — | caught |
+| `copyelems` | 1; 3/0 | 1; 2/0 | 2; 3/0 | caught; 1 | — | caught |
+| `putexcl` | 83; 150/0 | 70; 123/0 | 78; 125/0 | miss; 0 | — | caught |
+| `recwrites` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `recwritesown` | 19; 79/0 | 16; 85/0 | 27; 94/0 | miss; 0 | — | caught |
+| `keepsany` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `symenv` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
+| `branchlive` | 6; 23/0 | 15; 32/0 | 18; 33/0 | caught; 7 | — | caught |
+| `branchclosure` | 36; 42/0 | 31; 37/0 | 38; 42/0 | caught; 1 | — | caught |
+| `sharedroots` | 49; 49/0 | 57; 57/0 | 52; 52/0 | caught; 1 | — | caught |
+| `sharedfn` | 3; 3/0 | 13; 13/0 | 13; 13/0 | miss; 0 | — | caught |
+| `manyoff` | 18; 18/0 | 15; 15/0 | 16; 16/0 | caught; 1 | — | caught |
+| `noscope` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | gap |
+| `joinexcl` | 116; 215/0 | 93; 170/0 | 107; 172/0 | miss; 0 | — | caught |
+| `resprov` | 113; 181/0 | 92; 154/0 | 100; 155/0 | caught; 1 | — | caught |
+| `argrecheck2` | 164; 208/0 | 160; 207/0 | 176; 225/0 | miss; 0 | — | caught |
+| `pushexcl` | 12; 12/0 | 19; 20/0 | 10; 11/0 | miss; 0 | — | caught |
+| `nofix1` | 100; 121/0 | 117; 133/0 | 105; 135/0 | caught; 2 | — | caught |
+| `nofix2` | 45; 66/0 | 48; 64/0 | 52; 82/0 | miss; 0 | caught; 17 | caught |
+| `hiddencopy` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | gap |
+| `focuscontainer` | 9; 25/0 | 6; 16/0 | 6; 16/0 | caught; 1 | — | caught |
+| `atelem` | 29; 31/0 | 23; 25/0 | 32; 34/0 | caught; 2 | — | caught |
+| `shadowing` | 25; 26/0 | 16; 18/0 | 17; 17/0 | miss; 0 | — | caught |
+| `setexcl` | 13; 14/0 | 21; 22/0 | 23; 26/0 | miss; 0 | caught; 51 | caught |
+| `oncelive` | 13; 13/0 | 9; 9/0 | 15; 15/0 | caught; 1 | — | caught |
+| `envinst` | 96; 160/0 | 78; 138/0 | 89; 139/0 | caught; 1 | — | caught |
+| `keepsep` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | gap |
+| `ownedothers` | 5; 15/4 | 2; 7/2 | 1; 11/1 | miss; 0 | — | caught |
+| `joindrops` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | caught; 1 | caught |
 
-| Seed | Accepted (family) | Run a generated declaration | A generated call changes an array its inputs reach | Generated calls | Pass one array at two argument positions |
-|---|---:|---:|---:|---:|---:|
-| 20261011 | 953 | 919 (96.4 %) | 315 (33.0 %) | 1459 | 231 (15.8 %) |
-| 17 | 886 | 846 (95.4 %) | 291 (32.8 %) | 1402 | 235 (16.7 %) |
-| 271828 | 958 | 931 (97.1 %) | 314 (32.7 %) | 1496 | 243 (16.2 %) |
+Generator: 46 edits caught; bound 2: 24 edits caught. Union: 47 caught, 12 argued equivalent, 3 gaps.
 
-The third review measured 18 % / 2.2 % / 11 of 377 calls on the generator
-before its round (seed 17, 1 500 programs). What moved them: the
-declaration family's chain ends by calling its own declarations; writer
-declarations are called on fresh arguments so that the call is accepted
-and its write is visible to the caller's later read; half of all generated
-calls repeat an argument, which writers skip (Disjoint would refuse them)
-and readers and higher-order declarations accept. The programs that run no
-generated declaration are those whose table is a mutual pair alone, which
-is always a limit.
+The 12 equivalence/masking arguments and their changed-verdict counts are
+written in [COVERAGE.md](COVERAGE.md#equivalent-argued). They are arguments,
+not Lean proofs. No unchanged verdict is presented as an argument by itself.
+The summary-checker `borrowedsupply` edit changes some verdicts without a
+trace mismatch; the per-call checker still has a required borrowed-supply
+control. `recwritesown` removes the second check masking `recwrites` and is
+caught. `supplyrecheck` removes the check masking `symenv` and is caught.
 
-## Cross-check
+Remaining gaps:
 
-The two checkers differ on 16 + 20 + 19 programs that only the summary
-checker accepts (each ran with equal traces) and on none that only the
-per-call checker accepts. The per-call checker alone (`--reinfer`) accepts
-3 285 / 3 189 / 3 230 programs with no mismatch.
+- **`noscope`:** typed programs cannot have an unbound live variable. CI's
+  checker-level configuration probe reaches it; generated syntax cannot.
+- **`hiddencopy`:** an interpreter-only edit changes no checker verdict, and
+  changed-verdict sweeps do not execute it. The source-mutated fixed probes
+  fail (`hiddencopy-fixtures-round6.log`). Add direct mutation/write-behaviour
+  checks to campaigns to expose it there; do not claim universal equivalence.
+- **`keepsep`:** the current grammars lack a focused list of two-list records
+  whose body duplicates a fresh list across fields. `keepsep-probe.txt` and
+  its corrected/mutated logs show the mutant returning an exclusive result
+  with a repeated physical footprint; the corrected checker drops that
+  certificate. Add that shape and concrete certificate checking to search.
+  This is a certificate counterexample, not a measured trace mismatch.
 
-## Rows exercised
+## Bounded enumeration
 
-Accepted programs that write and exercised each checker row (three seeds):
-
-| Row | Programs |
-|---|---:|
-| callback called through its class; supply resolved at a known callback | 3418 |
-| xres yes / xres no | 3412 / 50 |
-| a callback's argument in its res | 1879 |
-| fresh in a callback's res | 1720 |
-| W on a callback argument; edge W ⇒ owned checked | 887 |
-| summary reused after re-asking its guards | 603 |
-| supply owned bit cleared at the caller | 559 |
-| env in a callback's res | 193 |
-| supply owned bit cleared where a step ends | 182 |
-| E on a callback argument; shared in its res | 119 |
-| xreq on a callback argument; edge xreq ⇒ exclusive checked | 106 |
-| once callback's calls checked | 92 |
-| guard forwarded / supply transferred to the caller's own input | 86 / 86 |
-| ⊤ in a callback's res; E on a callback's environment | 0 |
-
-## Negative controls (flags)
-
-Every required control has a fixed probe in `Fixtures.lean` (89 verdict
-fixtures, 27 program probes and the checker-level `no-scope` probe), checked
-by `ownership fixtures` and `ci`. Separately, `ownership controls 20000
-<seed>` reports the first index (0-based) at which the generator alone finds
-an accepted disagreement that the corrected checker rejects
-(`regressions/controls-v5-*.log`):
-
-| Control | 20261011 | 17 | 271828 | Required |
-|---|---:|---:|---:|---|
-| `--old-rule` (T59 freshness only) | 20 | 43 | 11 | yes |
-| `--old-escape-rule` | 57 | 15 | 4 | yes |
-| disjoint | 229 | 121 | 150 | yes |
-| borrowed-supply, per-call checker | 1556 | 413 | 1326 | yes |
-| borrowed-supply, summaries | not observable: 28 / 23 / 31 verdicts changed, 0 disagree | | | reported |
-| traversal-exclusive | 411 | 68 | 514 | yes |
-| many-calls | 1447 | 5187 | 29 | yes |
-| copy-exclusive | 29 | 304 | 2790 | yes |
-| close-source | 2565 | 177 | 352 | yes |
-| keeps-shape | 9830 | 2286 | 7381 | yes |
-| guard-reuse | 499 | 267 | 236 | yes |
-| callback-xres | 20 | 43 | 11 | yes |
-| supply-edge | 2346 | 923 | 317 | yes |
-| supply-recheck | 4601 | 2492 | 4787 | yes |
-| calls-edge | 218 | 3 | 217 | yes |
-| callback-writes | 230 | 1316 | 225 | yes |
-| callback-aliases | 129 | 220 | 68 | yes |
-| callback-env | 579 | 472 | 47 | yes |
-| callback-escapes | 499 | 267 | 2728 | yes (new: was probe only) |
-| forward-guards | 499 | 267 | 2728 | yes (new: was probe only) |
-| once-through-call | 46 | 535 | 1034 | yes |
-| branch-live | 291 | 2936 | 558 | yes |
-| branch-closure | 56 | 109 | 1102 | yes |
-| shared-roots | 485 | 713 | 590 | yes |
-| shadowing | 347 | 2899 | 471 | yes |
-| many-off (new) | 1450 | 72 | 399 | yes |
-| shared-fn (new) | 822 | 5336 | 590 | yes |
-| no-scope (new) | — | — | — | probe only: unreachable by a typed program |
-| callback-requires, requires-edge, transfer-supplies | — | — | — | argued equivalent (COVERAGE.md) |
-
-Against the per-call checker (seed 20261011) the first review's seven are
-caught at 229, 1556, 411, 364, 29, 2565, 9830
-(`regressions/controls-v5-reinfer-20261011.log`). `ownership ci` (fixtures,
-probes, one campaign, every required control on seed 20261011) passed in
-5 min 20 s.
-
-## Source-level mutants
-
-`scripts/run-mutants.sh` applies each edit of `scripts/mutate.mjs` (55 of
-them: the first review's nineteen and the summary rows', the second,
-third and fourth reviews' holes, and the once-through-call fixes undone) to
-a copy of the sources, builds it, and runs the unmodified `oracle 20000
-<seed>` (generator only) on the three seeds side by side. All on the final
-generator, no crash (`regressions/source-mutants-round5.log`). First index
-per seed (20261011 / 17 / 271828):
-
-| Edit | First index | Seeds |
-|---|---|---:|
-| disjoint | 229 / 121 / 150 | 3/3 |
-| travexcl | 411 / 68 / 514 | 3/3 |
-| manycap | 1447 / 5187 / 29 | 3/3 |
-| copyexcl | 29 / 304 / 2790 | 3/3 |
-| closesrc | 2565 / 177 / 352 | 3/3 |
-| keepsshape | 9830 / 2286 / 7381 | 3/3 |
-| xres | 215 / 44 / 769 | 3/3 (new) |
-| separated | 20 / 43 / 11 | 3/3 |
-| dead | 7 / 39 / 28 | 3/3 |
-| escape | 21 / 15 / 4 | 3/3 |
-| focusexcl | 20 / 43 / 11 | 3/3 |
-| writeout | 411 / 68 / 47 | 3/3 |
-| tsupplyexcl | 215 / 44 / 769 | 3/3 (new) |
-| guardreuse | 499 / 267 / 236 | 3/3 |
-| callbackxres | 20 / 43 / 11 | 3/3 |
-| supplyedge | 2346 / 923 / 317 | 3/3 |
-| supplyrecheck | 4601 / 2492 / 4787 | 3/3 |
-| callsedge | 218 / 3 / 217 | 3/3 |
-| callbackwrites | 230 / 1316 / 225 | 3/3 |
-| callbackescapes | 499 / 267 / 2728 | 3/3 (new) |
-| callbackaliases | 129 / 220 / 68 | 3/3 |
-| callbackenv | 579 / 472 / 47 | 3/3 |
-| forwardguards | 499 / 267 / 2728 | 3/3 (new) |
-| oncethroughcall | 46 / 535 / 1034 | 3/3 |
-| capturelive | 1324 / 295 / 3361 | 3/3 |
-| copyelems | 16452 / 10046 / 8912 | 3/3 |
-| putexcl | 579 / 524 / 47 | 3/3 |
-| recwritesown | 826 / 310 / 2276 | 3/3 |
-| branchlive | 291 / 2936 / 558 | 3/3 |
-| branchclosure | 56 / 109 / 1102 | 3/3 |
-| sharedroots | 485 / 713 / 590 | 3/3 |
-| sharedfn | 822 / 5336 / 590 | 3/3 (new) |
-| manyoff | 1450 / 72 / 399 | 3/3 (new) |
-| joinexcl | 215 / 44 / 47 | 3/3 (new) |
-| resprov | 579 / 121 / 47 | 3/3 |
-| argrecheck2 | 75 / 203 / 357 | 3/3 (was a crash) |
-| pushexcl | 411 / 68 / 514 | 3/3 |
-| nofix1 | 46 / 535 / 1034 | 3/3 |
-| nofix2 | 2588 / 535 / 2312 | 3/3 |
-| focuscontainer | 1017 / 5137 / 3655 | 3/3 |
-| atelem | 2536 / 202 / 322 | 3/3 |
-| once, nestedsep, reqexcloutside, recvalidate, escapeowned | — | 0/3, argued equivalent |
-| requiresedge, callbackrequires, transfersupplies | — | 0/3, argued equivalent |
-| recwrites, symenv | — | 0/3, masked (equivalent given the masking rule) |
-| keepsany | — | 0/3, argued equivalent |
-| borrowedsupply | — | 0/3 under summaries; not observable (changes verdicts, none disagree) |
-| noscope | — | 0/3 by the generator, unreachable by a typed program; caught by `ci`'s checker-level probe |
-| hiddencopy (interpreter) | — | 0/3; no program can separate the runs; caught by the fixtures |
-
-`recwritesown` removes `recwrites` together with the rule that masks it,
-and is caught on all three seeds. `regressions/verdicts-round5.log` counts
-the verdicts each 0/3 checker edit changes on the final generator: none,
-except `escapeowned` (2 programs on seed 20261011, both running equal) and
-`borrowed-supply` (23–31 per seed, none disagreeing). COVERAGE.md
-("Equivalent (argued)" and "Gaps") gives the argument for each.
-
-## Findings
-
-* No corrected-rule mismatch in the 60 000 trials on the final generator,
-  the per-call checker's 60 000, the v4 and v3 baselines, or the 89
-  fixtures; no source-level run crashed.
-* **Earlier findings** (see git history): the third review's shadowing
-  defect (both checkers; refused in `typecheck`, liveness pinned to the
-  outer binding); two summary-checker defects for a once callback a callee
-  calls (second review, control `once-through-call`); the per-call
-  checker's recursion inside a step and a precision defect of the Disjoint
-  test through a callback's environment (first review).
-
-## Reproduction
-
-```sh
-nix develop .#ownership
-cd proofs/ownership
-lake build                                        # includes the AxiomCheck audit
-.lake/build/bin/ownership ci                      # fixtures, probes, one campaign, every required control
-.lake/build/bin/ownership oracle 20000 17 --cross-check
-.lake/build/bin/ownership controls 20000 271828
-.lake/build/bin/ownership verdict-diff 20000 17 --mutant=borrowed-supply
-.lake/build/bin/ownership accepted 20000 17       # programs this build accepts (compare two builds)
-scripts/campaigns.sh                              # all campaign and control logs above
-scripts/check-mutants.sh                          # every source edit still applies
-scripts/run-mutants.sh ~/.cache/mutants 20000 20261011 17 271828
+```text
+enumerate bound=2 enumerated=55966 typed=55966 accepted=31680 with-write=10468 mismatches=0 inconclusive=0 caught=false elapsed-ms=1262
 ```
+
+```text
+enumerate bound=3 enumerated=20965567 typed=20965567 accepted=7323438 with-write=2713330 mismatches=0 inconclusive=0 caught=false elapsed-ms=1218933
+```
+
+Bound 3 includes 20,965,567 programs. Its targeted edits are `joindrops`,
+`setexcl`, `oncethroughcall` and `nofix2`; table results above state what it
+actually catches. The generator's closure-join move calls the unknown join,
+which both checkers refuse; keeping the result as data is why enumeration
+can reach the lost-cells edit. Neither grammar is exhaustive over declarations,
+types, recursion or arbitrary expression depth.
+
+## Attempts to falsify the three unproved statements
+
+100,000 random configurations and calls of 100,000 generated programs per
+seed. Configuration hypotheses are tested; all uncovered configurations
+are refused. Nested and deliberately mislabelled captures are exercised.
+
+| Seed | Accepted configurations | With write | Nested accepted | Mislabelled closures excluded | Uncovered / accepted | Both runs fail at low fuel | Violations |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 20261011 | 66141 | 21248 | 22793 | 7377 | 10391 / 0 | 1290 | 0 |
+| 17 | 66143 | 21088 | 22579 | 7304 | 10489 / 0 | 1298 | 0 |
+| 271828 | 66247 | 21002 | 22868 | 7203 | 10413 / 0 | 1282 | 0 |
+
+`checked` below counts satisfying summary/call pairs; `calls` and vacuity
+count actual calls once. Separating vacuity means the same array occurs at
+non-aliasing canonical input origins. The guard/other count includes calls
+for which no cached summary's guards match, not a theorem violation.
+
+| Seed | Calls | Checked pairs | Map pairs | Vacuous: separating | Vacuous: description | Vacuous: other | Violations |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 20261011 | 44111 | 57832 | 4270 | 1315 | 0 | 13 | 0 |
+| 17 | 44328 | 57606 | 4237 | 1290 | 0 | 10 | 0 |
+| 271828 | 43910 | 57619 | 4200 | 1221 | 2 | 7 | 0 |
+
+There are no unique-holder exclusions. Two calls on seed 271828 are
+classified under description by their first candidate summary. Diagnostic
+replay (`vacuity-round6-described.log`) shows another candidate does describe
+each captured array, but no candidate satisfies all hypotheses. The reason
+counts classify the first non-guard exclusion, not every failing candidate. All non-separation exclusions
+remain below 0.5% and separating exclusions below 5%. This is explicitly
+incomplete coverage, not a claim that every accepted call meets the lemma's
+premises. The fixed symbolic-capture and nested-factory cases now have
+meaningful descriptions.
+
+## Proof status and validation
+
+Three `sorry`s remain in Soundness.lean:
+
+- **`invariant_preserved`:** believed true because separating names plus
+  Unescaped/Dead/Disjoint demands protect every live holder and observer;
+  actual values are typed on both sides and captured code and once classes
+  agree recursively. Calls need the summary lemma and scopes need an
+  induction maintaining names and certificates. That induction is unfinished.
+- **`summary_sound`:** believed true because inference computes a validated
+  fixed point of canonical W/E/result rows and rechecks callback guards at
+  calls. Called function environments and nested results are named. The
+  separating-input premise and clause 4's missing invocation model remain
+  explicit limitations; no universal proof is claimed.
+- **`map_summary_sound`:** believed true from summary soundness plus builder
+  put/close contracts: each stored row is exclusive and separated, and close
+  records source provenance. The derived certificate proof is unfinished.
+
+`accepted_traces_agree` is proved conditional on `invariant_preserved` and
+therefore still depends on `sorryAx`. The audit pins exactly those four
+dependent constants; it does not certify ownership soundness.
+
+The Lean build and CI pass on these sources. `scripts/audit.sh` and the four
+requested checks are rerun on the committed report head before push; the
+final immutable head and exit results are recorded in the PR review reply.
+`zorg build gates` has the four known macOS failures: both stale-path
+case-folding tests and both browser-driver cache-pruning CPU-budget tests.
+They are untouched; no gate success is claimed. No compiler/runtime code in
+beni was changed, so no emitted-output hash refresh is needed.
+
+Not completed: the three proofs, summary clause 4, the three search gaps above,
+and unbounded enumeration. The sixth independent review is requested after
+push; PR #65 is not merged.

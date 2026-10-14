@@ -10,27 +10,15 @@ statements three are `sorry` and the main theorem is proved only from one of
 them. It does not change the beni compiler
 or the thesis.
 
-Current state ([RESULTS.md](RESULTS.md)): 89 fixed verdict fixtures, checked by
-both checkers; three 20 000-trial campaigns of generator v5 (which generates
-declarations, recursion, closures and shadowing of its own) with no
-corrected-rule mismatch: 9 759 accepted programs, 6 565 of them distinct,
-6 193 with an in-place write that changes an array, 55 % writing an array
-two names reach; precision 59 % (accepted among programs whose two runs
-agree). In the declaration family 95–97 % of accepted programs run a
-generated declaration, a third have one change an array the caller passed,
-and 16 % of generated calls pass one array twice. Twenty-six required
-negative controls (two historical and twenty-four flags, among them the
-fourth review's `many-off` and `shared-fn`) each have a fixed probe, and the
-generator alone catches each of them on each of three seeds (borrowed-supply
-only against the per-call checker); `ci` requires both. `no-scope` is
-required through a checker-level probe, because no typed program can reach
-it. **Every** source-level edit (55) was run on the final generator: 41
-caught on all three seeds, 14 on none, each of those argued equivalent (with
-its changed verdicts counted) or listed as a gap with what catches it, in
-COVERAGE.md. One planted hole, `hiddencopy`, is in the in-place interpreter,
-not the checker: an interpreter that copies on every write computes the
-value semantics, so no generated program can disagree under it, and only the
-fixtures' runs catch it.
+Current results and the full source-mutant matrix are in [RESULTS.md](RESULTS.md).
+The oracle has 93 fixed verdict fixtures, generator v5, a bounded-exhaustive
+grammar, required negative controls (including `set-exclusive` and `once-live`),
+and a falsifier that fails when summary coverage is excessively vacuous.
+`no-scope` is a checker-level probe: typed programs cannot reach an unbound
+live variable. `hiddencopy` changes the interpreter to copy on every write;
+value and in-place results then agree, so fixtures checking the intended
+in-place observations, rather than differential campaigns, expose it.
+Finite campaigns and the small enumeration grammar are evidence, not proofs.
 
 ## Run
 
@@ -47,6 +35,8 @@ lake exe ownership oracle 20000 17 --cross-check   # also run the per-call check
 lake exe ownership oracle 20000 17 --reinfer       # the per-call checker alone
 lake exe ownership controls 20000 17         # every negative control, generator alone
 lake exe ownership verdict-diff 20000 17 --mutant=borrowed-supply   # verdicts a hole changes
+lake exe ownership enumerate 2                  # every program of the bounded grammar
+lake exe ownership enumerate 3 --count-only     # size of the next bound (does not check it)
 lake exe ownership oracle 20000 17 --mutant=supply-edge
 lake exe ownership summaries --fixture="T43" # print published summaries
 lake exe ownership reasons 20000 17 --family=general   # rejection reasons
@@ -64,7 +54,12 @@ accepted disagreement, ill-typed generated program or execution error fails a
 run and is shrunk into `regressions/`. A negative control succeeds only if it
 finds an accepted disagreement whose shrunk form the corrected checker
 rejects. `scripts/run-mutants.sh` applies source-level checker edits
-(`scripts/mutate.mjs`) and runs the unmodified generator on each.
+(`scripts/mutate.mjs`) and compares every verdict on each seeded stream with
+indices from the unedited build (`ownership source-sweep`). It also enumerates
+the seed-independent grammar (default bound 2), saving per-seed counts, logs
+and original counterexamples under `regressions/mutant-evidence/`. Run it on
+Linux inside the ownership shell with Node on PATH; `MUTANT_CORES` defaults to
+`0-7` and refuses more than eight CPUs. `ENUMERATE_BOUND` sets the bound.
 
 Lean **4.29.1** is pinned by `lean-toolchain` and locked nixpkgs; no Mathlib,
 no network, no paid service. The project is outside the Zig gates.
@@ -80,6 +75,7 @@ no network, no paid service. The project is outside the Zig gates.
 | `Checker.lean` | the summary-layer checker (default) |
 | `Reinfer.lean` | the frozen per-call re-inference checker (cross-check) |
 | `Library.lean` | map, initialize, foldl, update as ordinary declarations |
+| `Enumerate.lean` | every typed program of a bounded grammar; independent of random seeds |
 | `Generator.lean` | the general generator: v4's chains of moves, and v5's conditional arms and generated declaration tables |
 | `Oracle.lean`, `OracleLegacy.lean` | template families, generator versions 1–5, campaigns, shrinking, controls, distinct and precision counts |
 | `Aliasing.lean` | a campaign metric: does an accepted program write an array two names reach |
@@ -99,7 +95,8 @@ Proved without `sorry`: the builder/close contracts against the executable
 primitives and the concrete heap lemmas (unchanged). Proved but **conditional
 on a naming** of origins that nothing yet constructs: the soundness of the
 checker's overlap and demand tests, and the abstract builder value describing
-the concrete allocation. Bookkeeping: the invariant's base case, and that the
+the concrete allocation. Closure descriptions agree recursively on code and
+captures, including closures inside captured records and arrays. Bookkeeping: the invariant's base case, and that the
 review's counterexample to the earlier invariant is excluded by the restated
 one. The main theorem is proved only **conditionally** on the step lemma. All
 statements are about programs the corrected checker accepts
@@ -111,7 +108,7 @@ prefix induction). All three were restated after the second review showed the
 step lemma false as stated; COVERAGE.md says what each now claims, why it is
 believed true, and what `ownership falsify` (random configurations for the
 step lemma, every call of generated programs for Lemma 6.7) found — including
-two checker defects, now fixed. Lemma 6.7's clause 4 is not stated (the
+checker defects now fixed and the nested-capture regression. Lemma 6.7's clause 4 is not stated (the
 interpreters do not record callback invocations). No axiom is declared;
 `lake build` fails if the set of `sorry`-dependent constants changes, if the
 kernel rejects any constant on replay, or if any `sorry` beyond the three

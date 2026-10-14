@@ -1,0 +1,50 @@
+CROSS-CHECK VERDICTS DIFFER index=191 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=448 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=611 family=declarations this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
+CROSS-CHECK VERDICTS DIFFER index=877 family=declarations this=Except.ok () other=Except.error "limit: recursion changes a tracked shape or exclusivity assumption"
+CROSS-CHECK VERDICTS DIFFER index=5700 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=6119 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=7951 family=declarations this=Except.ok () other=Except.error "Dead: an old holder is live after the demand"
+CROSS-CHECK VERDICTS DIFFER index=9253 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=10070 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=10627 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=10657 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=11651 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=12606 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=12933 family=declarations this=Except.ok () other=Except.error "limit: recursion changes a tracked shape or exclusivity assumption"
+CROSS-CHECK VERDICTS DIFFER index=18498 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=19649 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+family=captures depth=5..5 candidates=446 distinct=20 typed=446 accepted=206 distinctAccepted=10 withWrites=0 distinctWithWrites=0 aliasedWrites=0 agreeing=206 agreeingAccepted=206 rejected=240 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=identity-map depth=8..8 candidates=465 distinct=8 typed=465 accepted=223 distinctAccepted=4 withWrites=223 distinctWithWrites=4 aliasedWrites=223 agreeing=223 agreeingAccepted=223 rejected=242 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=branch-traversal depth=5..5 candidates=449 distinct=10 typed=449 accepted=212 distinctAccepted=5 withWrites=138 distinctWithWrites=3 aliasedWrites=138 agreeing=301 agreeingAccepted=212 rejected=237 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=fresh-nested depth=6..6 candidates=427 distinct=267 typed=427 accepted=123 distinctAccepted=94 withWrites=123 distinctWithWrites=94 aliasedWrites=123 agreeing=123 agreeingAccepted=123 rejected=304 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=recursion depth=4..4 candidates=464 distinct=131 typed=464 accepted=138 distinctAccepted=35 withWrites=122 distinctWithWrites=30 aliasedWrites=122 agreeing=171 agreeingAccepted=138 rejected=326 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=escape-traversal depth=5..5 candidates=425 distinct=15 typed=425 accepted=0 distinctAccepted=0 withWrites=0 distinctWithWrites=0 aliasedWrites=0 agreeing=0 agreeingAccepted=0 rejected=425 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=library-pipeline depth=13..17 candidates=464 distinct=278 typed=464 accepted=111 distinctAccepted=73 withWrites=111 distinctWithWrites=73 aliasedWrites=111 agreeing=251 agreeingAccepted=111 rejected=353 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=once-many-wrappers depth=6..9 candidates=469 distinct=80 typed=469 accepted=255 distinctAccepted=45 withWrites=31 distinctWithWrites=5 aliasedWrites=31 agreeing=370 agreeingAccepted=255 rejected=214 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=recursive-higher-order-limit depth=3..3 candidates=472 distinct=6 typed=472 accepted=0 distinctAccepted=0 withWrites=0 distinctWithWrites=0 aliasedWrites=0 agreeing=472 agreeingAccepted=0 rejected=472 limits=472 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=general depth=3..73 candidates=6366 distinct=6347 typed=6366 accepted=576 distinctAccepted=558 withWrites=277 distinctWithWrites=275 aliasedWrites=182 agreeing=835 agreeingAccepted=576 rejected=5790 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=indexed-chain depth=6..19 candidates=443 distinct=394 typed=443 accepted=124 distinctAccepted=102 withWrites=124 distinctWithWrites=102 aliasedWrites=124 agreeing=145 agreeingAccepted=124 rejected=319 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=declarations depth=3..49 candidates=8624 distinct=8624 typed=8624 accepted=826 distinctAccepted=826 withWrites=572 distinctWithWrites=572 aliasedWrites=443 agreeing=1745 agreeingAccepted=826 rejected=7798 limits=129 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=fresh-tower depth=6..9 candidates=486 distinct=309 typed=486 accepted=268 distinctAccepted=249 withWrites=268 distinctWithWrites=249 aliasedWrites=268 agreeing=268 agreeingAccepted=268 rejected=218 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+row-hits 39 E∈use(callback arg) yes
+row-hits 266 W∈use(callback arg) yes
+row-hits 612 callback arg∈res yes
+row-hits 1144 callback called through its class
+row-hits 39 calls of a once callback checked
+row-hits 266 edge W ⇒ owned supply checked
+row-hits 27 edge xreq ⇒ exclusive supply checked
+row-hits 100 env∈res yes
+row-hits 584 fresh∈res yes
+row-hits 30 guard forwarded to the caller's own input
+row-hits 39 shared∈res yes
+row-hits 222 summary reused after re-asking its guards
+row-hits 200 supply owned bit cleared at the caller
+row-hits 60 supply owned bit cleared where a step ends
+row-hits 1144 supply resolved at a known callback
+row-hits 30 supply transferred to the caller's own input
+row-hits 27 xreq(callback arg) yes
+row-hits 17 xres no
+row-hits 1144 xres yes
+generator-version=5 seed=17 control=soundness-v5 candidates=20000 distinct=16489 typed=20000 accepted=3062 distinctAccepted=2001 withWrites=1989 distinctWithWrites=1407 aliasedWrites=1765 agreeing=5110 agreeingAccepted=3062 rejected=16938 limits=601 typeErrors=0 executionErrors=0 mismatches=0 cross-only-this=16 cross-only-other=0 cross-other-mismatches=0 summaries-computed=7140 summaries-reused=124791 first-mismatch=none elapsed-ms=45700
+summary seed=17 accepted=3062 distinct-accepted=2001 with-write=1989 distinct-with-write=1407 aliased-write=1765 (57.6 % of accepted) agreeing=5110 accepted-of-agreeing=3062 precision=59.9 % declarations-accepted=826 run-generated=788 (95.3 %) generated-call-writes-input=281 (34.0 %) generated-calls=1199 same-array-twice=190 (15.8 %) rejected-shadowing=323

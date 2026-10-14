@@ -1,0 +1,30 @@
+index=8065 decl=(some initialize)
+checkCall=(none, false, false, "described") inputs=[Ownership.Abstract.scalar,
+ Ownership.Abstract.symbolic 1 (Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))) [] []] naming=[(3, [Ownership.Origin.parameter 1 [Ownership.Step.env]])]
+input=0 error=none
+input=1 error=some "array 3 at [Ownership.Step.capture 0] not named by [] (it is named [Ownership.Origin.parameter 1 [Ownership.Step.env]])"
+checkCall=(none, false, true, "guards") inputs=[Ownership.Abstract.scalar,
+ Ownership.Abstract.symbolic
+   1
+   (Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int)))
+   []
+   [Ownership.Origin.parameter 1 [Ownership.Step.env]]] naming=[(3, [Ownership.Origin.parameter 1 [Ownership.Step.env]])]
+input=0 error=none
+input=1 error=none
+index=71754 decl=(some higher37)
+checkCall=(none, false, false, "described") inputs=[Ownership.Abstract.list [Ownership.Origin.parameter 0 []] (Ownership.Abstract.scalar) true,
+ Ownership.Abstract.symbolic
+   1
+   (Ownership.Ty.fn [Ownership.Ty.list (Ownership.Ty.int)] (Ownership.Ty.list (Ownership.Ty.int)))
+   []
+   []] naming=[(17, [Ownership.Origin.parameter 0 []]), (3, [Ownership.Origin.parameter 1 [Ownership.Step.env]])]
+input=0 error=none
+input=1 error=some "array 3 at [Ownership.Step.capture 0] not named by [] (it is named [Ownership.Origin.parameter 1 [Ownership.Step.env]])"
+checkCall=(none, false, true, "guards") inputs=[Ownership.Abstract.list [Ownership.Origin.parameter 0 []] (Ownership.Abstract.scalar) true,
+ Ownership.Abstract.symbolic
+   1
+   (Ownership.Ty.fn [Ownership.Ty.list (Ownership.Ty.int)] (Ownership.Ty.list (Ownership.Ty.int)))
+   [Ownership.Origin.parameter 1 []]
+   [Ownership.Origin.parameter 1 [Ownership.Step.env]]] naming=[(17, [Ownership.Origin.parameter 0 []]), (3, [Ownership.Origin.parameter 1 [Ownership.Step.env]])]
+input=0 error=none
+input=1 error=none

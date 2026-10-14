@@ -14,7 +14,10 @@ while [ $# -gt 0 ] && [ "$1" != "--" ]; do seeds+=("$1"); shift; done
 [ ${#seeds[@]} -gt 0 ] || seeds=(20261011 17 271828)
 [ "${1:-}" != "--" ] || shift
 names=("$@")
-[ ${#names[@]} -gt 0 ] || read -r -a names <<< "$(node scripts/mutate.mjs --list)"
+if [ ${#names[@]} -eq 0 ]; then
+  listed=$(node scripts/mutate.mjs --list)
+  read -r -a names <<< "$listed"
+fi
 bound=${ENUMERATE_BOUND:-2}
 cores=${MUTANT_CORES:-0-7}
 node --input-type=module - "$cores" <<'JS'
@@ -78,6 +81,8 @@ for m in "${names[@]}"; do
     elif [ "$status" -ne 0 ]; then kind=FAILED; bad=1
     else kind=miss; fi
     out="$evidence/$m/$s"; mkdir -p "$out"
+    # A rerun may find a different first witness; retain only this run's ASTs.
+    rm -f "$out"/source-"$s"-*-unshrunk.txt
     cp "$d/oracle-$s.log" "$d/status-$s" "$out/"
     for f in "$d"/regressions/source-"$s"-*-unshrunk.txt; do [ ! -f "$f" ] || cp "$f" "$out/"; done
     counts=$(tail -1 "$d/oracle-$s.log")

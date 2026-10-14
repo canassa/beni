@@ -1,0 +1,2 @@
+source-sweep mismatch index=4318 family=declarations baseline-rejected=true
+source-sweep count=20000 seed=17 mutant-only=46 corrected-only=0 mismatches=26 inconclusive=0 first-index=4318
