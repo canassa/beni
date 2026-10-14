@@ -265,9 +265,15 @@ while a `setImmediate` is pending, or while a message the page posted to a
 to the delivery. A step that starts more fibers than 64 therefore shows
 them all run (`browser/tea/SettlesManyFibers`,
 `browser/direct/SettlesManyFibers`). After 1 000 turns the driver stops
-waiting, and the transcript says so in a line of its own. A service a program waits on
-(`Http`, a search API) is faked with a record of functions that sleep on
-this clock (`boundary.md` §9.8.9).
+waiting, and the transcript says so in a line of its own. A message that is
+never delivered — posted to a port the page never starts, or dropped by its
+`close()` — keeps the count above zero, so every later step waits the 1 000
+turns, about 4 s in Chrome, which holds a nested timer to 4 ms, and logs
+the line. A message that arrives without a post the driver counted, from a
+port it did not see made, fails the step, since the count can no longer
+say when the page is done. A service a program waits on (`Http`, a search
+API) is faked with a record of functions that sleep on this clock
+(`boundary.md` §9.8.9).
 
 **The page's `fetch` is scripted.** The driver replaces `fetch` before the
 program loads, as it replaces the clock. Each call is logged when it is
