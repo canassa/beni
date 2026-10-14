@@ -9,7 +9,7 @@
 //   node bench/todomvc/parity.mjs        (after size.mjs has built out/)
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -23,6 +23,8 @@ const features = ["add", "counter", "toggle", "filter by hash", "filter at start
 if (process.argv[2] === "--page") {
   // One subject, in this process: print a JSON object of feature → bool.
   const [, , , bundle, seedHash] = process.argv;
+  const vanilla = process.argv.includes("--vanilla");
+  const sandbox = process.argv.includes("--sandbox");
   const { GlobalWindow } = await import(pathToFileURL(dom).href);
   const window = new GlobalWindow({ url: `http://localhost:8080/${seedHash}` });
   for (const [key, d] of Object.entries(Object.getOwnPropertyDescriptors(window))) {
@@ -33,13 +35,15 @@ if (process.argv[2] === "--page") {
     Object.defineProperty(globalThis, key, { ...d, configurable: true });
   }
   for (const m of ["addEventListener", "removeEventListener", "dispatchEvent"]) globalThis[m] = window[m].bind(window);
-  document.body.innerHTML = '<section class="todoapp"></section><div id="main"></div>';
+  document.body.innerHTML = vanilla ? readFileSync(join(dirname(bundle), "body.html"), "utf8") : '<section class="todoapp"></section><div id="main"></div>';
   const settle = () => new Promise((r) => setTimeout(r, 30));
   const result = {};
   const errors = [];
   process.on("uncaughtException", (e) => errors.push(String(e)));
   try {
     await import(pathToFileURL(bundle).href);
+    // The original vanilla script initializes at the page's load event.
+    if (vanilla) window.dispatchEvent(new Event("load"));
   } catch (e) {
     errors.push(String(e));
   }
@@ -49,16 +53,22 @@ if (process.argv[2] === "--page") {
   const rows = () => $$(".todo-list li");
   const count = () => ($(".todo-count")?.textContent ?? "").replace(/\s+/g, " ").trim();
   const key = (el, k, code) => {
-    for (const type of ["keydown", "keyup"]) el.dispatchEvent(new KeyboardEvent(type, { key: k, keyCode: code, bubbles: true, cancelable: true }));
+    for (const type of (vanilla ? ["keydown", "keypress", "keyup"] : ["keydown", "keyup"])) el.dispatchEvent(new KeyboardEvent(type, { key: k, keyCode: code, bubbles: true, cancelable: true }));
   };
   const add = async (text) => {
     const input = $(".new-todo");
     input.value = text;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     key(input, "Enter", 13);
+    if (vanilla) input.dispatchEvent(new Event("change", { bubbles: true }));
     await settle();
   };
   const go = async (hash) => {
+    if (sandbox) {
+      document.querySelector(`.filters a[href="${hash}"]`)?.click();
+      await settle();
+      return;
+    }
     history.replaceState(null, "", hash);
     window.dispatchEvent(new PopStateEvent("popstate"));
     window.dispatchEvent(new HashChangeEvent("hashchange"));

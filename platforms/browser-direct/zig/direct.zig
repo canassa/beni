@@ -1899,6 +1899,9 @@ const Page = struct {
 
         if (pg.constructor >= 2) try pg.title(pg.body);
         if (pg.constructor != 0) {
+            // The hosted page protocol publishes its optional flush hook.
+            // Inert sandbox pages do not instantiate that protocol.
+            _ = try cx.runtime("flush");
             try js.constant(pg.body, pg.host.?, try pg.rt("makeHost", &.{try pg.ident(pg.dispatch.?)}));
             try js.expression(pg.body, try pg.rt("commands", &.{ try pg.ident(pg.host.?), try js.member(init, "b") }));
             try pg.settle(pg.body);

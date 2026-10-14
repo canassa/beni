@@ -1,0 +1,25 @@
+-- A foreign consuming a callback result does not construct its variants.
+-- The Dropped arm and the module reachable only through it must disappear.
+import Carrier exposing (Choice, Dropped, Kept)
+import Ghost
+import Node
+
+
+choose : ⊤ → Choice
+choose ⊤ = Kept
+
+
+show : Choice → String
+show choice =
+    case choice of
+        Kept →
+            "kept"
+
+        Dropped →
+            Ghost.message ⊤
+
+
+main : Node.Program
+main =
+    Carrier.carry choose
+    Node.print (show (choose ⊤))

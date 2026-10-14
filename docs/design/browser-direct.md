@@ -2937,8 +2937,8 @@ A compiled update's incoming model is bound before installing its result, so
 closures in that result retain the model they received. Shared dispatch evidence
 is scoped to the function that declares it, including sibling compiled handlers;
 a reused statement-list stack address is not evidence of a shared scope. The
-entry runtime exports its declared `flush`, including direct's no-op, through
-reachability elimination. Shutdown clears queued messages and after-render work
+entry runtime exports `flush` only when the lowering reaches it for its active
+host protocol (backend.md §9's optional-runtime-export amendment). Shutdown clears queued messages and after-render work
 before closing scopes, so cleanup cannot resume a stopped page.
 
 ### *Amended 2026-10-14 (checkbox activation):* change follows click
@@ -2951,14 +2951,38 @@ against the model afterwards. A control with no change handler still restores
 at click end. This extends S4's controlled restoration contract without changing
 its no-handler or cancelled-click guarantees.
 
-### *Amended 2026-10-14 (effects measured):* kill criterion 6 fires
+### *Amended 2026-10-14 (effects measured, corrected):* size stop withdrawn; full timing verdict
 
-Research 91 records the completed native-backend effects validation and the
-same-batch release sizes. The routing TodoMVC variant without editing is
-9,691 B brotli on direct and 8,258 B on browser-tea (+17.4%); sandbox is
-5,359 and 6,169 B respectively. Routing passes the existing parity runner,
-including toggle-all and clear-completed. The full editing page remains
-CK-223's ownership checker limit. The routing size alone triggers §13's kill
-criterion 6. The design stops here; S6/S7 and the remaining timing comparisons
-are not pursued. The effects implementation is preserved for review, without
-claiming the slice's acceptance criteria passed.
+The earlier 9,691 B routing result included unreached command constructors
+solely because a foreign mount wrapper's annotation named `Cmd`. Backend §9
+now proves inert foreign forwarders generically, without a Tea exception.
+Routing is **7,026 B** versus tea's **8,258** (−14.9%); sandbox is **5,344**
+versus **6,169** (−13.4%). The size-only stop and the decision to omit the
+remaining comparisons are withdrawn. Research 91 and the checked-in raw
+results now report both builds, the pinned tastejs vanilla-es6 subject,
+feature parity, and all three operations at 100 and 1,000 todos, traced and
+untraced in one batch.
+
+The complete result still triggers §13 criterion 6 on timing at 1,000 todos:
+sandbox add is 0.365 versus 0.330 ms, sandbox clear 1.385 versus 1.320, and
+routing clear 1.465 versus 1.415 (direct versus tea). Traced orderings agree;
+the near-tied sandbox toggle is not a win/regression claim. All six
+100-todo comparisons improve. Derived filtered lists still invoke the
+general reconciler on add and clear, losing the original exact edit; the
+editing row keeps its helper/escaping-markup machinery. Routing's runtime
+subscription fiber test hook also retains a fiber path in release, explaining
+part of the remaining absolute byte-target miss. This is a measured
+remaining condition, not the removed constructor-reachability bug. S6/S7
+remain stopped, and the PR does not claim the acceptance bar passed.
+
+Coverage now explicitly builds BikeWars on direct and pins its diagnostics,
+restores a real parked-render-waiter cancellation case, and pairs the omitted
+`DefectAfterRender`. Empty direct has no flush export (327 B, versus 347
+before this correction and master's 316; the remaining 11 B buy queued
+sends). RandomValues' exact-sharing diagnostic was a checker bug: approximate
+supplies now yield `list_may_be_shared`, with no relaxed ownership verdict.
+Sixteen tea pages remain pinned for ownership, including full editing
+TodoMVC. The original `DefectInTurnRender` is explicitly pending with its
+unchanged throws script: it compiles but its mount-only unused statement
+does not repeat after a click, as S4's documented phase contract says. It
+is a phase-oracle boundary, not an ownership checker refusal.

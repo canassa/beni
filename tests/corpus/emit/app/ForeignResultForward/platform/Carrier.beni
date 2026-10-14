@@ -1,0 +1,6 @@
+pub type Choice
+    = Kept
+    | Dropped
+
+
+pub foreign pure carry : Choice → Choice

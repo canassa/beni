@@ -1,0 +1,35 @@
+-- A fresh list generator is still a summary limit; an approximate borrowed
+-- supply must say list_may_be_shared, not claim a proven surviving alias.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Random
+import Sub
+import Tea
+
+
+type Msg
+    = Roll
+    | Rolled (List Int)
+
+
+update : Msg, List Int → List Int × Cmd Msg
+update msg rolls =
+    case msg of
+        Roll →
+            ( rolls, Random.generate (Random.list (Random.int 1 6) 3) Rolled )
+        Rolled more →
+            ( rolls ++ more, Cmd.none )
+
+
+view : List Int → Html Msg
+view rolls = <button onClick={Roll}>{String.fromInt (List.length rolls)}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,22 @@
+-- A foreign tagged literal constructs Dropped, so its arm must survive.
+import Carrier exposing (Choice, Dropped, Kept)
+import Ghost
+import Node
+
+
+choose : ⊤ → Choice
+choose ⊤ = Kept ⊤
+
+
+show : Choice → String
+show choice =
+    case choice of
+        Kept _ →
+            "kept"
+
+        Dropped _ →
+            Ghost.message ⊤
+
+
+main : Node.Program
+main = Node.print (show (Carrier.carry choose))
