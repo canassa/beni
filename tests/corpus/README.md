@@ -261,35 +261,41 @@ page asks for, and an idle page's `frames` reads 0
 each frame `frame` draws, before the clock moves on or the next timer
 fires: the work a timer or a frame set going runs with the clock at its
 time, and may set the next timer (`browser/tea/AdvanceSettlesEachTimer`).
-Each of those settles has its own 1 000-turn cap, so a page that keeps
-work queued forever logs the cap line once per timer and per frame.
-**A step's page is the page once all the work core's
-scheduler queued for the step has run, in both DOMs.** The driver does not
-wait for work a page starts outside that scheduler: a `window.postMessage`,
-a `BroadcastChannel`, a worker's reply or a `requestIdleCallback`. A page
-has settled once its microtasks have run and a turn of the event loop has
-passed with no continuation of core's scheduler left to run. The scheduler runs 64 tasks a turn and goes
-on in a `setImmediate` under happy-dom, and in a message to a `MessagePort`
-in Chrome, which has no `setImmediate`; so the driver takes more turns
-while a `setImmediate` is pending, or while a message the page posted to a
-`MessagePort` is not yet delivered, which the driver counts from the post
-to the delivery. A step that starts more fibers than 64 therefore shows
-them all run (`browser/tea/SettlesManyFibers`,
-`browser/direct/SettlesManyFibers`). After 1 000 turns the driver stops
-waiting, and the transcript says so in a line of its own. A message that is
-never delivered keeps the count above zero, so every later step waits the
-1 000 turns — about 4 s in Chrome, which holds a nested timer to 4 ms — and
-logs the line. Five things leave a message undelivered: a port the page
-never starts, a port closed (`close()`) with a message still queued, a post
-on a closed port, a post after the other port closed, and a post to a port
-that was transferred, whose new object the driver does not listen on. The
-count holds only while the ports stay in the page, so a post that
-transfers a counted port — to a worker, a frame, another port or
-`structuredClone` — fails the step at once. A message event a script
-dispatches is not a delivery, and a message that arrives with nothing
-counted fails the step. A service a program waits on (`Http`, a search API)
-is faked with a record of functions that sleep on this clock (`boundary.md`
-§9.8.9).
+
+**A step's page is the page once all the work core's scheduler queued for
+the step has run, in both DOMs.** The driver does not wait for work a page
+starts outside that scheduler: a `window.postMessage`, a
+`BroadcastChannel`, a worker's reply or a `requestIdleCallback`. A page has
+settled once its microtasks have run and a turn of the event loop has
+passed with no continuation of core's scheduler left to run. The scheduler
+runs 64 tasks a turn and goes on in a `setImmediate` under happy-dom, and
+in a message to a `MessagePort` in Chrome, which has no `setImmediate`; so
+the driver takes more turns while a `setImmediate` is pending, or while a
+message the page posted to a `MessagePort` is not yet delivered, which the
+driver counts from the post to the delivery. A step that starts more
+fibers than 64 therefore shows them all run
+(`browser/tea/SettlesManyFibers`, `browser/direct/SettlesManyFibers`).
+
+After 1 000 turns the driver stops waiting and fails the step: `Error: the
+page still had a setImmediate to run after 1 000 turns` (`a message to
+deliver` in Chrome), `core's scheduler never ran dry`. The step fires no
+later timer or frame, and a later settle of that page waits one
+turn, so a page that keeps the scheduler busy forever costs one capped
+settle — about 4 s in Chrome, which holds a nested timer to 4 ms — and not
+one per timer. (Such a page also grows core's queue without end, and V8
+refuses the queue's array, `RangeError: Invalid array length`, after a few
+seconds of work.) A message that is never delivered keeps the count above
+zero, so the next settle reaches the cap. Five things leave a message
+undelivered: a port the page never starts, a port closed (`close()`) with
+a message still queued, a post on a closed port, a post after the other
+port closed, and a post to a port that was transferred, whose new object
+the driver does not listen on. The count holds only while the ports stay
+in the page, so a post that transfers a counted port — to a worker, a
+frame, another port or `structuredClone` — fails the step at once. A
+message event a script dispatches is not a delivery, and a message that
+arrives with nothing counted fails the step. A service a program waits on
+(`Http`, a search API) is faked with a record of functions that sleep on
+this clock (`boundary.md` §9.8.9).
 
 **The page's `fetch` is scripted.** The driver replaces `fetch` before the
 program loads, as it replaces the clock. Each call is logged when it is

@@ -166,8 +166,10 @@
 // loop while the scheduler has a continuation queued — a `setImmediate`
 // under happy-dom, a message to a `MessagePort` in Chrome, which has no
 // `setImmediate` and whose messages the prelude counts from the post to the
-// delivery. After 1 000 such turns the driver stops waiting, and logs a line
-// that says so. Work a page starts outside that scheduler — a
+// delivery. After 1 000 such turns the driver stops waiting and fails the
+// step with an error that says so; the step fires no later timer or frame,
+// and a later settle of that page waits one turn. Work a page starts
+// outside that scheduler — a
 // `window.postMessage`, a `BroadcastChannel`, a worker's reply, a
 // `requestIdleCallback` — is not waited for.
 //
@@ -587,7 +589,8 @@ function step(s) {
   // among timers due at once), with the clock at its time, and let the
   // page settle after each, so the work a timer resumed runs — and may set
   // the next timer — before the next one fires. Then the clock is at
-  // `target`.
+  // `target`. Resolves to false, with the clock at that timer, when the page
+  // did not settle after one (`settle`), since the step has failed.
   const advanceTo = async (target, tasks) => {
     const clock = globalThis.__beniHarness.clock;
     for (;;) {
@@ -607,9 +610,10 @@ function step(s) {
         dispatchEvent(new ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) }));
       }
       if (tasks) globalThis.__beniHarness.log.push("(the timer's task ended)");
-      await settle();
+      if (!(await settle())) return false;
     }
     clock.now = target;
+    return true;
   };
   if (s.command === "advance") {
     return advanceTo(globalThis.__beniHarness.clock.now + s.ms, s.tasks).then(() => null);
@@ -624,7 +628,7 @@ function step(s) {
     const clock = globalThis.__beniHarness.clock;
     return (async () => {
       for (let n = 0; n < s.count; n++) {
-        await advanceTo(clock.now + s.ms, false);
+        if (!(await advanceTo(clock.now + s.ms, false))) return null;
         clock.drawing = clock.frames;
         clock.frames = [];
         const ran = clock.drawing.length;
@@ -641,7 +645,7 @@ function step(s) {
         }
         clock.drawing = [];
         if (s.tasks) globalThis.__beniHarness.log.push("(the frame's task ended)");
-        await settle();
+        if (!(await settle())) return null;
       }
       return null;
     })();
@@ -940,7 +944,7 @@ function step(s) {
 // Let everything the last phase queued run: its microtasks, then turns of
 // the event loop while core's scheduler has a continuation queued. A phase
 // calls it at its end, `advance` after each timer it fires and `frame` after
-// each frame it draws. It runs
+// each frame it draws. The scheduler runs
 // 64 tasks a turn and escapes for the rest to a `setImmediate` where the
 // host has one (happy-dom, in Node) and to a message to a `MessagePort`
 // where it has not (Chrome), so a phase that starts more work than that is
@@ -949,20 +953,26 @@ function step(s) {
 // `browser/direct/SettlesManyFibers`). Under happy-dom a pending
 // `setImmediate` is one Node lists; in Chrome a message is pending from its
 // post to its delivery (the prelude counts them). A page that queues one
-// forever stops being waited for after 1 000 turns, and the transcript says
-// so in a line of its own.
+// forever is not waited for after 1 000 turns: the step fails, and every
+// later settle of the page waits one turn. Resolves to whether the page
+// settled.
 async function settle() {
-  const turn = () => new Promise((done) => globalThis.__beniHarness.clock.real(done, 0));
+  const record = globalThis.__beniHarness;
+  const turn = () => new Promise((done) => record.clock.real(done, 0));
   const node = typeof process === "object";
-  const busy = () => (node ? process.getActiveResourcesInfo().includes("Immediate") : globalThis.__beniHarness.ports.pending > 0);
+  const busy = () => (node ? process.getActiveResourcesInfo().includes("Immediate") : record.ports.pending > 0);
   await turn();
+  if (record.unsettled) return false;
   for (let k = 1; busy(); k++) {
     if (k === 1000) {
-      globalThis.__beniHarness.log.push(node ? "(the page still had a setImmediate to run after 1 000 turns)" : "(the page still had a message to deliver after 1 000 turns)");
-      return;
+      record.unsettled = true;
+      const what = node ? "a setImmediate to run" : "a message to deliver";
+      record.errors.push(`Error: the page still had ${what} after 1 000 turns: core's scheduler never ran dry, so the step cannot end`);
+      return false;
     }
     await turn();
   }
+  return true;
 }
 
 // A `--fiber-page`'s test hook, set before the program loads: a
