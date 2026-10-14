@@ -340,8 +340,9 @@ fixed by the smallest input that reaches its branch, a small-stack unit test
 for a "does not recurse" claim, one test per branch, or deletion when another
 test reaches the branch — never an exemption the owner has not granted. Corpus cases are budgeted
 one by one; the owner may grant a large program its own budget, a `.budget` file beside the case
-with its limit and reason (`tests/corpus/README.md`, *Budgets*). Conduit's three cases are the only
-ones (2026-10-08).
+with its limit and reason (`tests/corpus/README.md`, *Budgets*). Conduit's three cases (2026-10-08)
+and `browser/direct/HttpJson` and `HttpJsonBody` (2026-10-14, issues #101 and #105) are the only
+ones.
 
 **Node runs only on unverified JavaScript.** Each program a test runs has a
 recorded SHA-256 of its emitted output, its expected result and the Node

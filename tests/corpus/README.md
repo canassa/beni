@@ -474,7 +474,11 @@ removed. The owner may grant a **large program** its own budget, case by case: a
 whose rest says why and when it can go. A file without a reason fails the case. Granted so far:
 `browser/tea/ConduitReader`, `ConduitEditor` and `ConduitTour` (12 000M, 2026-10-08): the
 RealWorld app, whose release build alone is ~5 800M because of the release optimiser's
-`specialise` phase (research 62 §1.3).
+`specialise` phase (research 62 §1.3). `browser/direct/HttpJson` (8 500M) and `HttpJsonBody`
+(8 800M) (2026-10-14, issue #101): small pages, but a `browser/direct/` page is four builds in one
+case, and `Http.expectJson` and `Http.jsonBody` reach the `core/Schema` library interpreter, which
+`specialise` processes in both release builds (issue #105). Their limits are sized for a baseline
+x86-64 build with Node running the pages, and shrink once PR #104 counts on one reference CPU.
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds a
 repo-relative directory whose `.beni` files are the program, so several scripts can drive one
