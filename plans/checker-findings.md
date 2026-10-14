@@ -5753,3 +5753,23 @@ The common paired corpus still proves the defect-stop guarantee through
 `DefectInRender`, `DefectInValueHandler` and `DefectInDerived`, whose throw
 is in a value group. No throws assertion or production semantics was weakened
 to make this phase oracle pass.
+
+*Amended 2026-10-14 (Conduit, extending CK-223):* all four nested errors-list
+rejections are precision limits, now accepted through separate markup slots
+and exact constructor callback result paths. Six unchanged HTTP programs are
+promoted; ten ownership programs remain pending. ApiItems, ApiLogin and
+ValueCommands each lose one render-only rejection but retain their other limit.
+Every pre-existing ownership-corpus demand verdict is unchanged (research 93).
+
+## CK-225 — direct document branches do not compile helper-returned documents
+
+**Class:** missing-lowering. **Status:** open.
+
+The unchanged Conduit application now checks ownership, then fails to build
+with `not_implemented` at Main.beni:257:18. Its document view returns helpers
+in its branches rather than records with markup bodies written in place.
+Reader, Editor and Tour retain their original assets and budgets under
+`tests/pending/browser/direct/`, with that one diagnostic pinned in RED. The
+full application has a separate enforcing ownership case in the corpus.
+This belongs to the continuing Conduit lowering work, not an ownership waiver
+or a reason to wrap or inline the application by hand.

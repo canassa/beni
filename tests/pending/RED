@@ -93,21 +93,20 @@
 # branch; S3's reconciler owns the fix (browser-direct.md, S3 blocker).
 
 # Direct effects: safe wrappers and views whose ownership summaries remain too coarse.
-tests/pending/browser/direct/ApiItems.beni dev: exit=1 codes=list_may_be_shared×2
-tests/pending/browser/direct/ApiLogin.beni dev: exit=1 codes=list_may_be_shared×2
+tests/pending/browser/direct/ApiItems.beni dev: exit=1 codes=list_may_be_shared×1
+tests/pending/browser/direct/ApiLogin.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/DebouncedSearch.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/HttpCancel.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/HttpFailures.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/HttpMultipart.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/HttpProgress.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/HttpRequestShape.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/RaceTwoServices.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/RandomValues.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/ReentrantSend.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/TimeoutAroundRequest.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/TodoMVC.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/ValueCommands.beni dev: exit=1 codes=list_may_be_shared×2
-tests/pending/browser/direct/HttpDefect dev: exit=1 codes=list_may_be_shared×1
+tests/pending/browser/direct/ValueCommands.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/BikeWars dev: exit=1 codes=list_still_used×2,prepend_in_loop×2,top_level_list_changed×1
 # Direct executes an unused view statement at mount, not on every message (documented S4 oracle boundary).
 tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
+
+# Conduit ownership is accepted; direct document helper lowering is a separate gap.
+tests/pending/browser/direct/ConduitReader dev: exit=1 codes=not_implemented×1
+tests/pending/browser/direct/ConduitEditor dev: exit=1 codes=not_implemented×1
+tests/pending/browser/direct/ConduitTour dev: exit=1 codes=not_implemented×1

@@ -1,0 +1,37 @@
+# Signed in from an earlier visit: page through the feed and filter it by a
+# tag (the page's request is cancelled), open the profile and its favorites
+# tab, save a bio in the settings, sign out, and fail to sign up twice.
+url "/"
+store local "conduit" "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":null,\"image\":null}}"
+respond 1 200 "{\"articles\":[],\"articlesCount\":25}" Content-Type: "application/json"
+respond 2 200 "{\"tags\":[\"dragons\",\"beni\"]}" Content-Type: "application/json"
+click #page-3
+click #tag-beni
+respond 3 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+respond 4 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+click .nav-link[href="/profile/ada"]
+respond 5 200 "{\"profile\":{\"username\":\"ada\",\"bio\":\"hi\",\"image\":null,\"following\":false}}" Content-Type: "application/json"
+respond 6 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+click .articles-toggle>.feed-toggle>ul>li:nth-child(2)>a
+respond 7 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+location
+click .nav-link[href="/settings"]
+respond 8 200 "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":null,\"image\":null}}" Content-Type: "application/json"
+input #bio "Countess"
+click #settings-form>fieldset>button
+respond 9 200 "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":\"Countess\",\"image\":null}}" Content-Type: "application/json"
+location
+storage local
+respond 10 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+respond 11 200 "{\"tags\":[]}" Content-Type: "application/json"
+click .nav-link[href="/logout"]
+location
+storage local
+respond 12 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+respond 13 200 "{\"tags\":[]}" Content-Type: "application/json"
+click .nav-link[href="/register"]
+click #register-form>button
+input #username "bo"
+input #email "bo@example.com"
+input #password "abc"
+click #register-form>button

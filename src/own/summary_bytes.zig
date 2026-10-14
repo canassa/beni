@@ -61,7 +61,7 @@ pub const magic = "BENIOWN\x00";
 
 /// Bumped with the rule set (thesis §8.5): a block of another version is
 /// absent, never misread.
-pub const version: u32 = 3;
+pub const version: u32 = 4;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -287,7 +287,7 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
                 try appendInt(arena, &out, key.index);
                 try out.append(arena, @intCast(st.arg % 64));
             },
-            .elem, .env, .any => {},
+            .elem, .env, .any, .markup_render, .markup_event => {},
         }
     }
     return out.items;
@@ -579,7 +579,7 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
                     if (k >= 64 or !o.hasCtor(cm, ci)) return error.Bad;
                     break :blk (try o.ctorId(cm, ci)) *% 64 +% k;
                 },
-                .elem, .env, .any => 0,
+                .elem, .env, .any, .markup_render, .markup_event => 0,
             };
             at = try o.rawChild(at, kind, arg);
         }

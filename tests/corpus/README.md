@@ -540,3 +540,9 @@ reason this corpus does not rot the way Elm's did:
   cache flag at all and create no directory.
   `.beni-cache/` is in `.gitignore`: a cache is machine-local by policy and is
   never committed, and deleting it is always safe.
+
+Ownership-report projects may also use `_expected.sources` for an unchanged
+external application. The enforcing `check` and ownership dump use that same
+source directory and the project's `.platform` entries; the intent `.beni`
+file only lets the walker discover the project. Conduit pins its complete
+report this way, independently of its still-pending document helper lowering.

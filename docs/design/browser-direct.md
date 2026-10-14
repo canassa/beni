@@ -2988,3 +2988,14 @@ TodoMVC. The original `DefectInTurnRender` is explicitly pending with its
 unchanged throws script: it compiles but its mount-only unused statement
 does not repeat after a click, as S4's documented phase contract says. It
 is a phase-oracle boundary, not an ownership checker refusal.
+
+### *Amended 2026-10-14 (Conduit ownership resolved):* document helpers remain
+
+The four nested errors-list rejections are precision limits, resolved by the
+markup opaque slots and exact constructor callbacks in ownership-checker.md's
+dated amendment (research 93). The unchanged application has all 26 ownership
+demands accepted and an enforcing corpus case. Reader, Editor and Tour still
+cannot run on direct: the document view's branches return helper-computed
+documents, and the program hook reports `not_implemented` at Main.beni:257:18.
+Their unchanged scripts, sources, goldens and budgets remain pending with that
+lowering diagnostic. No source wrapping or copied list bypasses the gap.

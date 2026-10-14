@@ -15,7 +15,7 @@ module OwnedSend
   summary fresh: res #Cmd.0 fresh1, #Cmd.0[*]#Now.0 λ, #Cmd.0[*]#Perform.0 λ
   summary reused: res #Cmd.0 fresh1, #Cmd.0[*]#Now.0 λ, #Cmd.0[*]#Perform.0 λ
   summary shares: π1 R, π2 RA, π2.rows RAS, π2.rows[*] A; res .0 π2, .0.rows π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1{excl π2.rows} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇ π2.rows, .1#Cmd.0[*]#Perform.0◇◇ ~π2.rows
-  summary view: π1.total R; res fresh1{lost}
+  summary view: π1.total R; res ⟨render⟩ fresh1{lost}
   summary initial: res .rows fresh1
   demands 12: accepted 5 (fresh 0, call 2, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
 total 12: accepted 5 (fresh 0, call 2, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
