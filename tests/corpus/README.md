@@ -254,11 +254,18 @@ only when a `frame` step draws a frame — so a fixture counts the frames a
 page asks for, and an idle page's `frames` reads 0
 (`browser/tea/AnimationFrames`, `boundary.md` §9.8.18 (g)). After each timer the
 page settles — the fibers it resumed run, and may set the next timer —
-before the next fires. A page has settled once its microtasks have run and
-a turn of the event loop has passed with, under happy-dom, no `setImmediate`
-left to run: core's scheduler runs 64 tasks a turn and goes on in a
-`setImmediate`, so a step that starts more fibers than that shows them all
-run (`browser/tea/SettlesManyFibers`). A service a program waits on
+before the next fires. **A step's page is the page once everything the step
+set going has run, in both DOMs.** A page has settled once its microtasks
+have run and a turn of the event loop has passed with no continuation of
+core's scheduler left to run. The scheduler runs 64 tasks a turn and goes
+on in a `setImmediate` under happy-dom, and in a message to a `MessagePort`
+in Chrome, which has no `setImmediate`; so the driver takes more turns
+while a `setImmediate` is pending, or while a message the page posted to a
+`MessagePort` is not yet delivered, which the driver counts from the post
+to the delivery. A step that starts more fibers than 64 therefore shows
+them all run (`browser/tea/SettlesManyFibers`,
+`browser/direct/SettlesManyFibers`). After 1 000 turns the driver stops
+waiting, and the transcript says so in a line of its own. A service a program waits on
 (`Http`, a search API) is faked with a record of functions that sleep on
 this clock (`boundary.md` §9.8.9).
 
