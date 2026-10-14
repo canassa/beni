@@ -145,7 +145,8 @@
 //   respond <n> <status> chunks "<a>" "<b>"… [<name>: "<value>"]… [open]
 //                               the same, its body a stream that yields each
 //                               chunk in a task of its own, the page settling
-//                               between two; `open` leaves it unfinished. A
+//                               (`settle`) before each chunk and before the
+//                               end; `open` leaves it unfinished. A
 //                               request the page aborted is not answered and
 //                               logs `(fetch <n> was aborted: …)`
 //   fail <n>                    reject the `n`-th request with `new
@@ -167,8 +168,8 @@
 // under happy-dom, a message to a `MessagePort` in Chrome, which has no
 // `setImmediate` and whose messages the prelude counts from the post to the
 // delivery. After 1 000 such turns the driver stops waiting and fails the
-// step with an error that says so; the step fires no later timer or frame,
-// and a later settle of that page waits one turn. Work a page starts
+// step with an error that says so; the step fires no later timer, frame or
+// chunk, and a later settle of that page waits one turn. Work a page starts
 // outside that scheduler — a
 // `window.postMessage`, a `BroadcastChannel`, a worker's reply, a
 // `requestIdleCallback` — is not waited for.
@@ -740,16 +741,14 @@ function step(s) {
       { once: true },
     );
     answer(stream);
-    const clock = globalThis.__beniHarness.clock;
-    const turn = () => new Promise((done) => clock.real(done, 0));
     return (async () => {
       const encoder = new TextEncoder();
       for (const chunk of s.chunks) {
-        await turn();
+        if (!(await settle())) return null;
         if (ended) return null;
         controller.enqueue(encoder.encode(chunk));
       }
-      await turn();
+      if (!(await settle())) return null;
       // `open`: the body stays unfinished, as a server's that stalls.
       if (!ended && !s.open) {
         ended = true;
@@ -943,8 +942,9 @@ function step(s) {
 
 // Let everything the last phase queued run: its microtasks, then turns of
 // the event loop while core's scheduler has a continuation queued. A phase
-// calls it at its end, `advance` after each timer it fires and `frame` after
-// each frame it draws. The scheduler runs
+// calls it at its end, `advance` after each timer it fires, `frame` after
+// each frame it draws, and a streamed `respond` before each chunk and before
+// the end. The scheduler runs
 // 64 tasks a turn and escapes for the rest to a `setImmediate` where the
 // host has one (happy-dom, in Node) and to a message to a `MessagePort`
 // where it has not (Chrome), so a phase that starts more work than that is
