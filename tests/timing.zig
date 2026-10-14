@@ -142,11 +142,13 @@ var process_start: Io.Timestamp = undefined;
 ///
 /// The unit is retired user-space instructions, counted by the kernel for
 /// the thread and everything it creates (`Counter`): unlike CPU time, the
-/// count does not grow when other work shares the cores. There is no other
-/// unit. CPU time follows the machine as well as its load, so a budget in it
-/// gave one test a different verdict on each machine; where no counter can
-/// be opened, a budgeted process stops instead (`openThreadCounter`), and
-/// `build.zig` sets no budget on a host that cannot count.
+/// count does not grow when other work shares the cores. The budget has no
+/// other unit. CPU time follows the machine as well as its load, so a budget
+/// in it gave one test a different verdict on each machine; where no counter
+/// can be opened, a budgeted process stops instead (`openThreadCounter`),
+/// and `build.zig` sets no budget on a host that cannot count. The timing
+/// claims of `test-perf`, which are not a gate, keep a CPU-time fallback of
+/// their own (`tests/blackbox/perf_test.zig`).
 pub const Unit = enum { none, instructions };
 pub var budget_unit: Unit = .none;
 pub var budget_limit: u64 = 0;

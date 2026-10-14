@@ -29,9 +29,10 @@
 //! budget (`tests/test_runner.zig`): one that retires more than 4 300
 //! million user-space instructions, its own and its children's, fails. The
 //! count is taken on x86-64 Linux, of binaries built for one reference CPU
-//! (`budgetHost`), so one test has one count on every machine; where it
-//! cannot be taken, no test is held to it and `gates` refuses to run. For
-//! profiling only, and `gates` refuses each:
+//! (`budgetHost`), so it does not follow the features of the host's CPU;
+//! where it cannot be taken, no test is held to it and `gates` refuses to
+//! run. The reference is the self-hosted build: `-Dllvm` counts another
+//! number. For profiling only, and `gates` refuses each:
 //!   -Dtest-budget=<millions> another budget; 0 enforces none
 //!   -Dtarget, -Dcpu          binaries for another CPU (the timing claims
 //!                            and `bench` are built for the host's own)
@@ -965,6 +966,13 @@ pub fn build(b: *std.Build) void {
         gates_step.dependOn(&b.addFail(why).step);
         return;
     }
+    // `tests/blackbox/gates_test.zig` asks a child build for a refusal. If
+    // the refusal is gone, that child fails here instead of running a whole
+    // gate, which would run this test again inside it.
+    if (b.graph.environ_map.get("BENI_GATES_REFUSAL_TEST") != null) {
+        gates_step.dependOn(&b.addFail("`gates` was not refused (BENI_GATES_REFUSAL_TEST is set)").step);
+        return;
+    }
     gates_step.dependOn(test_step);
     gates_step.dependOn(blackbox_step);
     gates_step.dependOn(fmt_step);
@@ -1012,11 +1020,11 @@ const default_test_budget = 4_300;
 const gate_steps = [_][]const u8{ "test", "test-blackbox", "fmt-check", "beni-fmt-check" };
 
 /// The CPU every binary is built for on a host that counts the budget, so
-/// that one test has one count on every such host (CLAUDE.md, *Every test
-/// has a budget*). Built for the host's own CPU, a count follows its
-/// features: built for a baseline CPU, six more corpus cases went over,
-/// most of it the run-hash check's SHA-256 computed in software. A
-/// Zen 2's own CPU counted what this one does.
+/// that a count does not follow the features of the host's CPU (CLAUDE.md,
+/// *Every test has a budget*). Built for a baseline CPU, the compiler and
+/// the harness put seven more corpus cases over the budget, most of it the
+/// run-hash check's SHA-256 computed in software; built for this one, they
+/// counted within 0.13% of a Zen 2's own CPU.
 const reference_cpu = "x86_64_v3+sha";
 
 /// The features of `reference_cpu` a host must have to run its code:
@@ -1059,13 +1067,19 @@ fn budgetHost(b: *std.Build) BudgetHost {
 }
 
 /// Why no counter of another process's user-space instructions can be
-/// opened here, or null: `perf_event_paranoid` must be 2 or less, and the
-/// CPU must expose a counter, which a virtual machine often does not
-/// (GitHub's hosted x86-64 runners: `ENOENT`).
+/// opened here, or null: `perf_event_paranoid` must be 2 or less, the CPU
+/// must not be hybrid, and it must expose a counter, which a virtual
+/// machine often does not (GitHub's hosted x86-64 runners: `ENOENT`).
 fn instructionCounterMissing(b: *std.Build) ?[]const u8 {
     const linux = std.os.linux;
     const level = perfEventParanoid() orelse return "/proc/sys/kernel/perf_event_paranoid cannot be read";
-    if (level > 2) return b.fmt("kernel.perf_event_paranoid is {d}, and counting the instructions of a test's processes needs 2 or less", .{level});
+    if (level > 2) return b.fmt("kernel.perf_event_paranoid is {d}, and counting the instructions of a test's processes needs 2 or less (`sudo sysctl kernel.perf_event_paranoid=2`)", .{level});
+    // A hybrid Intel CPU has a PMU for its P-cores (`cpu_core`) and one for
+    // its E-cores (`cpu_atom`). A plain hardware event goes to the first, so
+    // what a thread runs on an E-core is not counted, and the count follows
+    // the scheduler.
+    if (linux.errno(linux.access("/sys/bus/event_source/devices/cpu_atom", linux.F_OK)) == .SUCCESS)
+        return "this CPU is hybrid (a `cpu_atom` PMU), and a plain instruction counter does not count what its E-cores run";
     var attr: linux.perf_event_attr = .{
         .type = .HARDWARE,
         .config = @backingInt(linux.PERF.COUNT.HW.INSTRUCTIONS),
@@ -2057,7 +2071,7 @@ const HarnessEnvironment = struct {
     /// fuzz longer than the gates' (`zig build fuzz`).
     fuzz_seeds: []const u8 = "",
     fuzz_steps: []const u8 = "",
-    /// Whether each test and corpus case is held to the CPU budget
+    /// Whether each test and corpus case is held to the instruction budget
     /// (`tests/test_runner.zig`): every run the gates make is.
     budget: bool = true,
 };
