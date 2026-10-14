@@ -288,12 +288,18 @@ function prelude() {
   // in a message to a `MessagePort`, so the messages the page posted and
   // that were not yet delivered are counted, for `settle`: a post that did
   // not throw adds one, and every port of a channel the page makes takes one
-  // away when a message, or its `messageerror`, arrives.
+  // away when a message, or its `messageerror`, arrives. One that arrives
+  // with nothing counted came from a port the prelude did not see made: it
+  // is an error of the page, since the count could hide a later message.
   const ports = { pending: 0 };
   record.ports = ports;
   if (typeof process !== "object") {
     const Channel = globalThis.MessageChannel;
     const delivered = () => {
+      if (ports.pending === 0) {
+        record.errors.push("Error: a MessagePort message arrived that the driver did not count as posted, so it cannot tell when the page has settled");
+        return;
+      }
       ports.pending -= 1;
     };
     globalThis.MessageChannel = class MessageChannel extends Channel {
@@ -914,7 +920,7 @@ async function settle() {
   const node = typeof process === "object";
   const busy = () => (node ? process.getActiveResourcesInfo().includes("Immediate") : globalThis.__beniHarness.ports.pending > 0);
   await turn();
-  for (let k = 0; busy(); k++) {
+  for (let k = 1; busy(); k++) {
     if (k === 1000) {
       globalThis.__beniHarness.log.push(node ? "(the page still had a setImmediate to run after 1 000 turns)" : "(the page still had a message to deliver after 1 000 turns)");
       return;
