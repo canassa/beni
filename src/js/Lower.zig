@@ -12211,6 +12211,9 @@ pub const Lowerer = struct {
         return if (l.bir.instTag(at) == .case) at else null;
     }
 
+    /// Whole-document choices only. A record whose body is a branch stays
+    /// on the existing per-arm site path; record-only body extraction formerly
+    /// refused a whole-document branch before this hook could compile it.
     fn documentBranchOf(l: *Lowerer, pc: *const ProgramCall) bool {
         if (pc.constructor < 2) return false;
         const function = l.fieldFunction(pc, pc.view) orelse return false;

@@ -20,7 +20,9 @@ frame groups whose reads the key did not change. A root branch has no hole
 read set and is visited on every key; its complete document computation now
 reaches these shared helpers. S0's analysis instead walks those helpers as
 sites and predicts selective visits from anchored reads. The emitted value
-path does not implement that selective shared-site protocol.
+path does not implement that selective shared-site protocol: browser-direct.md
+§4.1 step 3(d) and §5.2 require visits only where the key's writes conflict
+with the groups' anchored reads, which the empty Internal write set cannot.
 
 This is a disagreement between the implemented lowering and its analysis,
 not a new unknown message key or an ownership rejection. Renaming the value
@@ -144,7 +146,10 @@ Editor and Tour value fuzz hit the existing driver failure where a navigation
 leaves the document and the next generated send finds no fuzz mount. PR #103
 tracks the navigation stop; PR #109 tracks Chrome's settle phase. Neither
 unmerged harness change is incorporated here, and these two fuzz runs are
-not claimed green. The three helper regressions and their value fuzz pass in Chrome.
+not claimed green. The three helper regressions and their value fuzz pass in Chrome. Review
+clarifications preserve the existing record-with-body-case path. A dedicated
+`build/bad/direct/DocumentHelperSuspends` fixture pins the transitive `sync`
+view refusal; no suspendable document helper reaches lowering.
 
 The CPU fallback had lost the configured instruction limit, so existing
 owner grants became 999 ms rather than being scaled. The build graph now
