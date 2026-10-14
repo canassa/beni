@@ -114,9 +114,9 @@ separate 1.3× vanilla target.
 **Criterion 6 still fires on the complete timing result**, not on bytes.
 It requires the three messages to improve on today's platform at the two
 specified sizes; wins at 100 do not erase the 1,000-todo misses. The old
-size-only conclusion is withdrawn. S6/S7 remain stopped on this measured
-condition, and this PR remains an implementation/comparison for review,
-not an assertion that the slice's acceptance bar passed.
+size-only conclusion is withdrawn. *Amended 2026-10-14 (the owner):* the
+owner deferred the timing condition to S8 (browser-direct.md §13 criterion 6).
+S6 and S7 proceed; the misses remain recorded rather than claimed as wins.
 
 The remaining timing mechanism is visible in generated handlers. Both add
 and clear hand `List.filter(model.todos, visible)` to `Direct.reconcile`:

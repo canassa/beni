@@ -1276,6 +1276,7 @@ criterion 5's bars hold as written.
    constancy, which TodoMVC has none of (research 61), and the architecture buys nothing on a
    list-heavy app whose `For` reaches the reconciler on every list message: the Million failure
    again, seen from the other side.
+   *Amended 2026-10-14 (the owner):* the owner deferred the timing condition. Direct is smaller on both TodoMVC variants and faster at 100 todos; the 1 000-todo misses (3–10%, sub-1.5 ms) come from filtered lists going through the general reconciler, which S6 and S7 address. Re-judged at S8.
 7. **S6**: the S0 numbers re-measured on the built platform disagree with the analysis's — a
    handler calling more groups than its pairs, `patchAll` reached more often than the keys say.
 8. **At every slice**: a transcript that differs between the two platforms, a fuzz sequence that
@@ -2972,8 +2973,9 @@ general reconciler on add and clear, losing the original exact edit; the
 editing row keeps its helper/escaping-markup machinery. Routing's runtime
 subscription fiber test hook also retains a fiber path in release, explaining
 part of the remaining absolute byte-target miss. This is a measured
-remaining condition, not the removed constructor-reachability bug. S6/S7
-remain stopped, and the PR does not claim the acceptance bar passed.
+remaining condition, not the removed constructor-reachability bug. The owner
+deferred this timing condition to S8 (§13 criterion 6, amended 2026-10-14),
+authorizing S6 and S7 to proceed; the measurements remain recorded above.
 
 Coverage now explicitly builds BikeWars on direct and pins its diagnostics,
 restores a real parked-render-waiter cancellation case, and pairs the omitted
