@@ -121,16 +121,16 @@ iface_test.test.a build whose evidence crosses modules is byte-identical through
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 dfb2886e531e54098955dbd9b96903f87c76d012c3b4946a91bc390b04477028
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 2fa0d52adb5c5569326239b448fca866c22cb56b5b0f723dc935ca1d5376334b
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 9e900da9c467842f29912d50daa299a416023c8feb248b72c53d6c89977fd8c9
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 757e69a8859747385013ca0bd4e8a798b5d73b2145b67a6542024355bcec476d
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 d9eaabfc7beef23fd76cff809edadedbf7f7937f63fd0a87d930e63bddd38f2a
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 288e19c632dd239bf020e823c219bdcdd689b765e3be073c47afaa853eddb6a1
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 2f600b73f2124b93ca4acb8efad46a198bbb1a92c264d01b595b10d25bc17d9e
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 aeca0a2548d822d75ce66b89ba8985f39674b9e149828710a5e39253c40de2ce
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 543cd6ef62b0db3baff6a01adcd1429a1c0a01958a53c995a5cfd925d5855e29
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 d9b3781cf9567f5a5c1fea8596364490a48935909b15d0ce59473c6b890dba66
-page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 a0e28891b9de41188e0c45205651ae56f6a995d1478631f8b3139acf118f4f86
-page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 73f8bea0013ea2868f21f9f10b64e99ff5cc5cd5a5fd4b4db1c742307e015df2
-page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 85315bfd5ada8aa299a9bc34cfec8211e908a8e611927bf3b1a8554a28f00413
-page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 7b56d2fce1eb7e19bcfe16772c0abb2a1253510b4d01f8cc86492349f72233e2
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 14d68aab691d910d2e609180ac8c16311a710207f820f06b0e96368e831202b5
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 77b56243a2a7b40cd1467f72f1bb0fefce5a35c5d9f3115368312e535fb2d95a
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 7da02971af6cf05f42c747a119cbec0e57111d8eac8a3acc917abbe9e7f7c6ef
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 140d2452b2a33f7318a3536c03b0cda35d7c0b47bb8a808abcf4ca1e548a8214
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 66d798586a55974453bc45b6818fd4c4cb42abb90a94ec21c9026f7b3cc944a4
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 767a1bda1401d16d7340546fa9e74e21f1d38785c9be8b6850ddabe39c25ba30
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 7629f3ddf5b7cfa8fbac9c237b5692c2a272fce61dbb3b16cc7060690ecc0002
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 ea16259acfaad38de983c10c07bc7062b31511c7fd408f1afaa2bd0d78a287b5
+page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 d7d599ff6b4a8aa3b56534232cf77f8133787f5ec912119897d0cdf5b80705bf
+page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 e7190dc0e0da9e0b0d7164a36eb7695a660fb4580cdd6f68d92c9e2146c330cd
+page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 6e2c58b6d85b34f601609e8e5ab00b53fb2947be98d4ef67fbcdc874e7bd61e1
+page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 4fe88e37686498ed8883a3f3a0e8dae25ecd906922e28966e5e9d783539f6db9
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 79b00d399fcc1eb94c1428fdc5c4a87d03eaa69664a5e15bb48b7f9fc1c83e53
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb

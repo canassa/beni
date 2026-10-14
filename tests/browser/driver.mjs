@@ -89,7 +89,7 @@
 //   advance <ms> [tasks]        move the page's virtual clock on by `ms`,
 //                               firing each timer that comes due, in
 //                               order, the page settling after each as a
-//                               phase's page settles (`settle`), before the
+//                               step's page settles (`settle`), before the
 //                               next fires; with
 //                               `tasks`, `(the timer's task ended)` is logged
 //                               as each timer's callback returns, before any
@@ -938,7 +938,9 @@ function step(s) {
 }
 
 // Let everything the last phase queued run: its microtasks, then turns of
-// the event loop while core's scheduler has a continuation queued. It runs
+// the event loop while core's scheduler has a continuation queued. A phase
+// calls it at its end, `advance` after each timer it fires and `frame` after
+// each frame it draws. It runs
 // 64 tasks a turn and escapes for the rest to a `setImmediate` where the
 // host has one (happy-dom, in Node) and to a message to a `MessagePort`
 // where it has not (Chrome), so a phase that starts more work than that is
