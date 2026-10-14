@@ -1,0 +1,19 @@
+gates
++- test-blackbox
+   +- run exe run-hash-summary
+      +- run docs_test w
+doc examples: 411 found, 345 assertions checked, 60 prose, 6 skipped
+  SKIP core/Basics.beni:163  eq [ 1, 2 ] [ 1, 2 ] == True
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/Basics.beni:239  append "butter" "fly" == "butterfly"
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/Basics.beni:240  append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/Basics.beni:481  List.map [ 1, 2, 3 ] (always 0 _) == [ 0, 0, 0 ]
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/List.beni:1126  indexedMap [ "a", "b" ] (λi x → ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/List.beni:1341  intersperse [ "turtles", "turtles" ] "on" == [ "turtles", "on", "turtles" ]
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+doc-example gate: OK — everything above is informational.
+failed command: cd . && BENI_VARIANT_EXE= BENI_CORPUS_ROOT=tests/corpus BENI_CORPUS_MODE= BENI_CASE_TIMEOUT_MS= BENI_CORPUS_PART= BENI_CORPUS_ONLY= BENI_PENDING_SCENARIOS= BENI_PERF_SHARD= BENI_TEST_SHARD= BENI_RUN_HASHES= BENI_RUN_HASH_REPORT=/home/canassa/src/github.com/canassa/beni/zig-out/run-hash-counts/777951-all BENI_BROWSER= BENI_CHROME= BENI_FUZZ_SEEDS= BENI_FUZZ_STEPS= BENI_PENDING_BUDGET_INSTRUCTIONS=4300000000 BENI_TEST_BUDGET_INSTRUCTIONS=4300000000 BENI_TEST_BUDGET_CPU_MS=999 BENI_EXE=/home/canassa/src/github.com/canassa/beni/zig-out/safe/bin/beni ./.zig-cache/o/7d2c9328e356a9b8c3f2b9f93e27add3/docs_test --node-version=v24.19.0 --cache-dir=./.zig-cache --seed=0x6c9d0ed4 --listen=-

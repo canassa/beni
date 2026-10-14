@@ -1,0 +1,13 @@
+results/2026-10-15-azathoth-s4/bundles/table-tea.mjs: minified 12791 B, brotli 11 5206 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime: slots, templates, queue and mount | 1944 | 864 | 483 | 483 |
+| runtime: keyed list | 4100 | 1865 | 1482 | 1509 |
+| runtime: delegation | 611 | 339 | 208 | 257 |
+| core: modBy, Maybe and List | 2457 | 1102 | 746 | 800 |
+| program: templates and kinds | 2896 | 1049 | 816 | 852 |
+| program: data and row building | 830 | 495 | 356 | 361 |
+| program: update and mount | 673 | 365 | 197 | 286 |
+| what is left (start-up statements) | | | | 658 |
+| **sum** | | 6079 | 4288 | 5206 |

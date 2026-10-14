@@ -1,0 +1,2378 @@
+{
+  "table-update/vanillajs": {
+    "pages": 20,
+    "idleUs": 10016317,
+    "programUs": 490862,
+    "functions": [
+      {
+        "name": "update /out/jfb/Main.js:209:8",
+        "sampledUs": 4323,
+        "perPageUs": 216.15
+      },
+      {
+        "name": "updateData /out/jfb/Main.js:75:12",
+        "sampledUs": 252,
+        "perPageUs": 12.6
+      },
+      {
+        "name": "(anonymous) /out/jfb/Main.js:140:62",
+        "sampledUs": 199,
+        "perPageUs": 9.95
+      },
+      {
+        "name": "stopPropagation :0:-1",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "matches :0:-1",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      }
+    ]
+  },
+  "table-update/solid1": {
+    "pages": 20,
+    "idleUs": 10004738,
+    "programUs": 629537,
+    "functions": [
+      {
+        "name": "g.e /out/solid1/main.js:1:11107",
+        "sampledUs": 3710,
+        "perPageUs": 185.5
+      },
+      {
+        "name": "S /out/solid1/main.js:1:2125",
+        "sampledUs": 1346,
+        "perPageUs": 67.3
+      },
+      {
+        "name": "C /out/solid1/main.js:1:2462",
+        "sampledUs": 1006,
+        "perPageUs": 50.3
+      },
+      {
+        "name": "(anonymous) /out/solid1/main.js:1:10125",
+        "sampledUs": 861,
+        "perPageUs": 43.05
+      },
+      {
+        "name": "L /out/solid1/main.js:1:5278",
+        "sampledUs": 810,
+        "perPageUs": 40.5
+      },
+      {
+        "name": "(anonymous) /out/solid1/main.js:1:1610",
+        "sampledUs": 592,
+        "perPageUs": 29.6
+      },
+      {
+        "name": "(anonymous) /out/solid1/main.js:1:537",
+        "sampledUs": 511,
+        "perPageUs": 25.55
+      },
+      {
+        "name": "T /out/solid1/main.js:1:3046",
+        "sampledUs": 444,
+        "perPageUs": 22.2
+      },
+      {
+        "name": "o /out/solid1/main.js:1:5350",
+        "sampledUs": 411,
+        "perPageUs": 20.55
+      },
+      {
+        "name": "s /out/solid1/main.js:1:5415",
+        "sampledUs": 410,
+        "perPageUs": 20.5
+      },
+      {
+        "name": "y /out/solid1/main.js:1:799",
+        "sampledUs": 378,
+        "perPageUs": 18.9
+      },
+      {
+        "name": "(anonymous) /out/solid1/main.js:1:10199",
+        "sampledUs": 363,
+        "perPageUs": 18.15
+      },
+      {
+        "name": "w /out/solid1/main.js:1:1216",
+        "sampledUs": 310,
+        "perPageUs": 15.5
+      },
+      {
+        "name": "(anonymous) /out/solid1/main.js:1:1324",
+        "sampledUs": 186,
+        "perPageUs": 9.3
+      },
+      {
+        "name": "$ /out/solid1/main.js:1:2675",
+        "sampledUs": 162,
+        "perPageUs": 8.1
+      },
+      {
+        "name": "composedPath :0:-1",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      },
+      {
+        "name": "(anonymous) /out/solid1/main.js:1:2612",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "(anonymous) /out/solid1/main.js:1:2550",
+        "sampledUs": 68,
+        "perPageUs": 3.4
+      }
+    ]
+  },
+  "table-update/solid2": {
+    "pages": 20,
+    "idleUs": 10000423,
+    "programUs": 700377,
+    "functions": [
+      {
+        "name": "(anonymous) /out/solid2/bench.js:1:67624",
+        "sampledUs": 3326,
+        "perPageUs": 166.3
+      },
+      {
+        "name": "Le /out/solid2/bench.js:1:25853",
+        "sampledUs": 1835,
+        "perPageUs": 91.75
+      },
+      {
+        "name": "D.We /out/solid2/bench.js:1:17032",
+        "sampledUs": 1660,
+        "perPageUs": 83
+      },
+      {
+        "name": "(anonymous) /out/solid2/bench.js:1:57677",
+        "sampledUs": 1468,
+        "perPageUs": 73.4
+      },
+      {
+        "name": "Ge /out/solid2/bench.js:1:24482",
+        "sampledUs": 1142,
+        "perPageUs": 57.1
+      },
+      {
+        "name": "queueMicrotask :0:-1",
+        "sampledUs": 970,
+        "perPageUs": 48.5
+      },
+      {
+        "name": "sl.e /out/solid2/bench.js:1:67581",
+        "sampledUs": 899,
+        "perPageUs": 44.95
+      },
+      {
+        "name": "ne /out/solid2/bench.js:1:17181",
+        "sampledUs": 858,
+        "perPageUs": 42.9
+      },
+      {
+        "name": "get /out/solid2/bench.js:1:40566",
+        "sampledUs": 796,
+        "perPageUs": 39.8
+      },
+      {
+        "name": "Pe /out/solid2/bench.js:1:23017",
+        "sampledUs": 680,
+        "perPageUs": 34
+      },
+      {
+        "name": "a /out/solid2/bench.js:1:58167",
+        "sampledUs": 594,
+        "perPageUs": 29.7
+      },
+      {
+        "name": "(anonymous) /out/solid2/bench.js:1:67071",
+        "sampledUs": 504,
+        "perPageUs": 25.2
+      },
+      {
+        "name": "(anonymous) /out/solid2/bench.js:1:2339",
+        "sampledUs": 392,
+        "perPageUs": 19.6
+      },
+      {
+        "name": "o /out/solid2/bench.js:1:57666",
+        "sampledUs": 328,
+        "perPageUs": 16.4
+      },
+      {
+        "name": "enqueue /out/solid2/bench.js:1:2501",
+        "sampledUs": 241,
+        "perPageUs": 12.05
+      },
+      {
+        "name": "Z /out/solid2/bench.js:1:6558",
+        "sampledUs": 238,
+        "perPageUs": 11.9
+      },
+      {
+        "name": "flush /out/solid2/bench.js:1:3571",
+        "sampledUs": 160,
+        "perPageUs": 8
+      },
+      {
+        "name": "f /out/solid2/bench.js:1:58102",
+        "sampledUs": 159,
+        "perPageUs": 7.95
+      },
+      {
+        "name": "ft /out/solid2/bench.js:1:8587",
+        "sampledUs": 156,
+        "perPageUs": 7.8
+      },
+      {
+        "name": "G /out/solid2/bench.js:1:1673",
+        "sampledUs": 156,
+        "perPageUs": 7.8
+      },
+      {
+        "name": "I /out/solid2/bench.js:1:5841",
+        "sampledUs": 115,
+        "perPageUs": 5.75
+      },
+      {
+        "name": "at /out/solid2/bench.js:1:8621",
+        "sampledUs": 113,
+        "perPageUs": 5.65
+      },
+      {
+        "name": "lt /out/solid2/bench.js:1:7573",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "dt /out/solid2/bench.js:1:8681",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "run /out/solid2/bench.js:1:2266",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "F /out/solid2/bench.js:1:5922",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "ve /out/solid2/bench.js:1:21654",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "gt /out/solid2/bench.js:1:9404",
+        "sampledUs": 46,
+        "perPageUs": 2.3
+      },
+      {
+        "name": "ht /out/solid2/bench.js:1:8880",
+        "sampledUs": 34,
+        "perPageUs": 1.7
+      }
+    ]
+  },
+  "table-update/beni-release": {
+    "pages": 20,
+    "idleUs": 10009088,
+    "programUs": 597282,
+    "functions": [
+      {
+        "name": "p /out/beni-rel/_main.mjs:1:10698",
+        "sampledUs": 4322,
+        "perPageUs": 216.1
+      },
+      {
+        "name": "K /out/beni-rel/_main.mjs:1:4899",
+        "sampledUs": 1587,
+        "perPageUs": 79.35
+      },
+      {
+        "name": "J /out/beni-rel/_main.mjs:1:3241",
+        "sampledUs": 937,
+        "perPageUs": 46.85
+      },
+      {
+        "name": "(anonymous) /out/beni-rel/_main.mjs:1:6196",
+        "sampledUs": 868,
+        "perPageUs": 43.4
+      },
+      {
+        "name": "C /out/beni-rel/_main.mjs:1:2042",
+        "sampledUs": 715,
+        "perPageUs": 35.75
+      },
+      {
+        "name": "la /out/beni-rel/_main.mjs:1:8686",
+        "sampledUs": 465,
+        "perPageUs": 23.25
+      },
+      {
+        "name": "e /out/beni-rel/_main.mjs:1:10392",
+        "sampledUs": 237,
+        "perPageUs": 11.85
+      },
+      {
+        "name": "b.$$root /out/beni-rel/_main.mjs:1:1444",
+        "sampledUs": 163,
+        "perPageUs": 8.15
+      },
+      {
+        "name": "(anonymous) /out/beni-rel/_main.mjs:1:6179",
+        "sampledUs": 158,
+        "perPageUs": 7.9
+      },
+      {
+        "name": "u /out/beni-rel/_main.mjs:1:1254",
+        "sampledUs": 157,
+        "perPageUs": 7.85
+      },
+      {
+        "name": "Aa /out/beni-rel/_main.mjs:1:9715",
+        "sampledUs": 153,
+        "perPageUs": 7.65
+      },
+      {
+        "name": "t /out/beni-rel/_main.mjs:1:1138",
+        "sampledUs": 149,
+        "perPageUs": 7.45
+      },
+      {
+        "name": "w /out/beni-rel/_main.mjs:1:13303",
+        "sampledUs": 93,
+        "perPageUs": 4.65
+      },
+      {
+        "name": "ja /out/beni-rel/_main.mjs:1:8613",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "x /out/beni-rel/_main.mjs:1:12902",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "k /out/beni-rel/_main.mjs:1:733",
+        "sampledUs": 74,
+        "perPageUs": 3.7
+      },
+      {
+        "name": "D /out/beni-rel/_main.mjs:1:2073",
+        "sampledUs": 71,
+        "perPageUs": 3.55
+      }
+    ]
+  },
+  "table-update/beni-direct-release": {
+    "pages": 20,
+    "idleUs": 10014594,
+    "programUs": 560312,
+    "functions": [
+      {
+        "name": "F /out/beni-direct-rel/_main.mjs:1:10093",
+        "sampledUs": 3078,
+        "perPageUs": 153.9
+      },
+      {
+        "name": "da /out/beni-direct-rel/_main.mjs:1:5864",
+        "sampledUs": 2215,
+        "perPageUs": 110.75
+      },
+      {
+        "name": "y /out/beni-direct-rel/_main.mjs:1:1960",
+        "sampledUs": 390,
+        "perPageUs": 19.5
+      },
+      {
+        "name": "V /out/beni-direct-rel/_main.mjs:1:10690",
+        "sampledUs": 204,
+        "perPageUs": 10.2
+      },
+      {
+        "name": "(anonymous) /out/beni-direct-rel/_main.mjs:1:7211",
+        "sampledUs": 100,
+        "perPageUs": 5
+      },
+      {
+        "name": "G /out/beni-direct-rel/_main.mjs:1:2277",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "w /out/beni-direct-rel/_main.mjs:1:1889",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "z /out/beni-direct-rel/_main.mjs:1:2035",
+        "sampledUs": 82,
+        "perPageUs": 4.1
+      },
+      {
+        "name": "M /out/beni-direct-rel/_main.mjs:1:2906",
+        "sampledUs": 49,
+        "perPageUs": 2.45
+      }
+    ]
+  },
+  "table-update/p3": {
+    "pages": 20,
+    "idleUs": 10015103,
+    "programUs": 556710,
+    "functions": [
+      {
+        "name": "render /apps/p3/bench.js:339:15",
+        "sampledUs": 2322,
+        "perPageUs": 116.1
+      },
+      {
+        "name": "reconcile /apps/p3/bench.js:211:18",
+        "sampledUs": 656,
+        "perPageUs": 32.8
+      },
+      {
+        "name": "List$indexedMapHelp /out/beni-dev/_core/List.mjs:190:28",
+        "sampledUs": 591,
+        "perPageUs": 29.55
+      },
+      {
+        "name": "flush /apps/p3/bench.js:63:14",
+        "sampledUs": 380,
+        "perPageUs": 19
+      },
+      {
+        "name": "List$builder /out/beni-dev/_core/List.mjs:182:21",
+        "sampledUs": 249,
+        "perPageUs": 12.45
+      },
+      {
+        "name": "Update /apps/p3/bench.js:310:15",
+        "sampledUs": 242,
+        "perPageUs": 12.1
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 154,
+        "perPageUs": 7.7
+      },
+      {
+        "name": "send /apps/p3/bench.js:83:13",
+        "sampledUs": 102,
+        "perPageUs": 5.1
+      }
+    ]
+  },
+  "live/vanillajs": {
+    "pages": 20,
+    "idleUs": 5527649,
+    "programUs": 951189,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/live/10000/vanilla.js:16:56",
+        "sampledUs": 313,
+        "perPageUs": 15.65
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      }
+    ]
+  },
+  "live/solid1": {
+    "pages": 20,
+    "idleUs": 5935933,
+    "programUs": 754528,
+    "functions": [
+      {
+        "name": "L /out/scaling/live/10000/solid1.js:1:5256",
+        "sampledUs": 1565,
+        "perPageUs": 78.25
+      },
+      {
+        "name": "M /out/scaling/live/10000/solid1.js:1:5922",
+        "sampledUs": 772,
+        "perPageUs": 38.6
+      },
+      {
+        "name": "s /out/scaling/live/10000/solid1.js:1:5393",
+        "sampledUs": 290,
+        "perPageUs": 14.5
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/solid1.js:1:1233",
+        "sampledUs": 153,
+        "perPageUs": 7.65
+      },
+      {
+        "name": "v /out/scaling/live/10000/solid1.js:1:1125",
+        "sampledUs": 130,
+        "perPageUs": 6.5
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/solid1.js:1:533",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/solid1.js:1:1519",
+        "sampledUs": 72,
+        "perPageUs": 3.6
+      }
+    ]
+  },
+  "live/solid2": {
+    "pages": 20,
+    "idleUs": 5933958,
+    "programUs": 820698,
+    "functions": [
+      {
+        "name": "queueMicrotask :0:-1",
+        "sampledUs": 1199,
+        "perPageUs": 59.95
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/solid2.js:1:32198",
+        "sampledUs": 982,
+        "perPageUs": 49.1
+      },
+      {
+        "name": "c /out/scaling/live/10000/solid2.js:1:32626",
+        "sampledUs": 399,
+        "perPageUs": 19.95
+      },
+      {
+        "name": "flush /out/scaling/live/10000/solid2.js:1:3521",
+        "sampledUs": 198,
+        "perPageUs": 9.9
+      },
+      {
+        "name": "on /out/scaling/live/10000/solid2.js:1:34395",
+        "sampledUs": 168,
+        "perPageUs": 8.4
+      },
+      {
+        "name": "h /out/scaling/live/10000/solid2.js:1:32691",
+        "sampledUs": 153,
+        "perPageUs": 7.65
+      },
+      {
+        "name": "W /out/scaling/live/10000/solid2.js:1:6501",
+        "sampledUs": 108,
+        "perPageUs": 5.4
+      },
+      {
+        "name": "Se /out/scaling/live/10000/solid2.js:1:23851",
+        "sampledUs": 86,
+        "perPageUs": 4.3
+      },
+      {
+        "name": "composedPath :0:-1",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "o /out/scaling/live/10000/solid2.js:1:32187",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/solid2.js:1:33871",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "K /out/scaling/live/10000/solid2.js:1:5844",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "et /out/scaling/live/10000/solid2.js:1:7505",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/solid2.js:1:38636",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/solid2.js:1:2289",
+        "sampledUs": 58,
+        "perPageUs": 2.9
+      },
+      {
+        "name": "enqueue /out/scaling/live/10000/solid2.js:1:2451",
+        "sampledUs": 53,
+        "perPageUs": 2.65
+      },
+      {
+        "name": "P.We /out/scaling/live/10000/solid2.js:1:16904",
+        "sampledUs": 39,
+        "perPageUs": 1.95
+      },
+      {
+        "name": "at /out/scaling/live/10000/solid2.js:1:8958",
+        "sampledUs": 36,
+        "perPageUs": 1.8
+      }
+    ]
+  },
+  "live/beni-release": {
+    "pages": 20,
+    "idleUs": 5927003,
+    "programUs": 672404,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/live/10000/beni-rel/_main.mjs:1:7423",
+        "sampledUs": 762,
+        "perPageUs": 38.1
+      },
+      {
+        "name": "Y /out/scaling/live/10000/beni-rel/_main.mjs:1:6796",
+        "sampledUs": 425,
+        "perPageUs": 21.25
+      },
+      {
+        "name": "B /out/scaling/live/10000/beni-rel/_main.mjs:1:9637",
+        "sampledUs": 234,
+        "perPageUs": 11.7
+      },
+      {
+        "name": "C /out/scaling/live/10000/beni-rel/_main.mjs:1:9510",
+        "sampledUs": 165,
+        "perPageUs": 8.25
+      },
+      {
+        "name": "pa /out/scaling/live/10000/beni-rel/_main.mjs:1:8509",
+        "sampledUs": 152,
+        "perPageUs": 7.6
+      },
+      {
+        "name": "U /out/scaling/live/10000/beni-rel/_main.mjs:1:6494",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/beni-rel/_main.mjs:1:7406",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "k /out/scaling/live/10000/beni-rel/_main.mjs:1:734",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "x /out/scaling/live/10000/beni-rel/_main.mjs:1:1436",
+        "sampledUs": 74,
+        "perPageUs": 3.7
+      },
+      {
+        "name": "S /out/scaling/live/10000/beni-rel/_main.mjs:1:6149",
+        "sampledUs": 73,
+        "perPageUs": 3.65
+      }
+    ]
+  },
+  "live/beni-direct-release": {
+    "pages": 20,
+    "idleUs": 5931995,
+    "programUs": 613688,
+    "functions": [
+      {
+        "name": "q /out/scaling/live/10000/beni-direct-rel/_main.mjs:1:6252",
+        "sampledUs": 450,
+        "perPageUs": 22.5
+      },
+      {
+        "name": "X /out/scaling/live/10000/beni-direct-rel/_main.mjs:1:5100",
+        "sampledUs": 208,
+        "perPageUs": 10.4
+      },
+      {
+        "name": "A /out/scaling/live/10000/beni-direct-rel/_main.mjs:1:6677",
+        "sampledUs": 173,
+        "perPageUs": 8.65
+      },
+      {
+        "name": "q /out/scaling/live/10000/beni-direct-rel/_main.mjs:1:656",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      }
+    ]
+  },
+  "live/p3": {
+    "pages": 20,
+    "idleUs": 5931392,
+    "programUs": 597521,
+    "functions": [
+      {
+        "name": "render /out/scaling/live/10000/p3.js:117:15",
+        "sampledUs": 535,
+        "perPageUs": 26.75
+      },
+      {
+        "name": "send /out/scaling/live/10000/p3.js:27:13",
+        "sampledUs": 149,
+        "perPageUs": 7.45
+      },
+      {
+        "name": "Go /out/scaling/live/10000/p3.js:88:11",
+        "sampledUs": 86,
+        "perPageUs": 4.3
+      },
+      {
+        "name": "(anonymous) /out/scaling/live/10000/p3.js:143:29",
+        "sampledUs": 86,
+        "perPageUs": 4.3
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "schedule /out/scaling/live/10000/p3.js:17:17",
+        "sampledUs": 64,
+        "perPageUs": 3.2
+      }
+    ]
+  },
+  "helperRows/vanillajs": {
+    "pages": 20,
+    "idleUs": 5525656,
+    "programUs": 947983,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/helperRows/10000/vanilla.js:16:56",
+        "sampledUs": 478,
+        "perPageUs": 23.9
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 199,
+        "perPageUs": 9.95
+      }
+    ]
+  },
+  "helperRows/solid1": {
+    "pages": 20,
+    "idleUs": 5995437,
+    "programUs": 522658,
+    "functions": [
+      {
+        "name": "L /out/scaling/helperRows/10000/solid1.js:1:5256",
+        "sampledUs": 1688,
+        "perPageUs": 84.4
+      },
+      {
+        "name": "A /out/scaling/helperRows/10000/solid1.js:1:2034",
+        "sampledUs": 388,
+        "perPageUs": 19.4
+      },
+      {
+        "name": "M /out/scaling/helperRows/10000/solid1.js:1:5922",
+        "sampledUs": 345,
+        "perPageUs": 17.25
+      },
+      {
+        "name": "s /out/scaling/helperRows/10000/solid1.js:1:5393",
+        "sampledUs": 271,
+        "perPageUs": 13.55
+      },
+      {
+        "name": "(anonymous) /out/scaling/helperRows/10000/solid1.js:1:1233",
+        "sampledUs": 155,
+        "perPageUs": 7.75
+      },
+      {
+        "name": "m /out/scaling/helperRows/10000/solid1.js:1:2371",
+        "sampledUs": 90,
+        "perPageUs": 4.5
+      },
+      {
+        "name": "(anonymous) /out/scaling/helperRows/10000/solid1.js:1:2459",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "y /out/scaling/helperRows/10000/solid1.js:1:1475",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "v /out/scaling/helperRows/10000/solid1.js:1:1125",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "composedPath :0:-1",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "equals /out/scaling/helperRows/10000/solid1.js:1:52",
+        "sampledUs": 74,
+        "perPageUs": 3.7
+      },
+      {
+        "name": "l /out/scaling/helperRows/10000/solid1.js:1:5328",
+        "sampledUs": 41,
+        "perPageUs": 2.05
+      }
+    ]
+  },
+  "helperRows/solid2": {
+    "pages": 20,
+    "idleUs": 5993103,
+    "programUs": 559810,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/helperRows/10000/solid2.js:1:32198",
+        "sampledUs": 1066,
+        "perPageUs": 53.3
+      },
+      {
+        "name": "queueMicrotask :0:-1",
+        "sampledUs": 919,
+        "perPageUs": 45.95
+      },
+      {
+        "name": "h /out/scaling/helperRows/10000/solid2.js:1:32691",
+        "sampledUs": 460,
+        "perPageUs": 23
+      },
+      {
+        "name": "$.We /out/scaling/helperRows/10000/solid2.js:1:16904",
+        "sampledUs": 302,
+        "perPageUs": 15.1
+      },
+      {
+        "name": "o /out/scaling/helperRows/10000/solid2.js:1:32187",
+        "sampledUs": 246,
+        "perPageUs": 12.3
+      },
+      {
+        "name": "flush /out/scaling/helperRows/10000/solid2.js:1:3521",
+        "sampledUs": 162,
+        "perPageUs": 8.1
+      },
+      {
+        "name": "on /out/scaling/helperRows/10000/solid2.js:1:34395",
+        "sampledUs": 113,
+        "perPageUs": 5.65
+      },
+      {
+        "name": "q /out/scaling/helperRows/10000/solid2.js:1:5789",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      },
+      {
+        "name": "c /out/scaling/helperRows/10000/solid2.js:1:32626",
+        "sampledUs": 82,
+        "perPageUs": 4.1
+      },
+      {
+        "name": "(anonymous) /out/scaling/helperRows/10000/solid2.js:1:33871",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "ye /out/scaling/helperRows/10000/solid2.js:1:22116",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "Se /out/scaling/helperRows/10000/solid2.js:1:23851",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "(anonymous) /out/scaling/helperRows/10000/solid2.js:1:38629",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "run /out/scaling/helperRows/10000/solid2.js:1:2216",
+        "sampledUs": 47,
+        "perPageUs": 2.35
+      },
+      {
+        "name": "W /out/scaling/helperRows/10000/solid2.js:1:6501",
+        "sampledUs": 46,
+        "perPageUs": 2.3
+      },
+      {
+        "name": "et /out/scaling/helperRows/10000/solid2.js:1:7505",
+        "sampledUs": 43,
+        "perPageUs": 2.15
+      },
+      {
+        "name": "Yt /out/scaling/helperRows/10000/solid2.js:1:17029",
+        "sampledUs": 38,
+        "perPageUs": 1.9
+      },
+      {
+        "name": "vt /out/scaling/helperRows/10000/solid2.js:1:9334",
+        "sampledUs": 37,
+        "perPageUs": 1.85
+      }
+    ]
+  },
+  "helperRows/beni-release": {
+    "pages": 20,
+    "idleUs": 5991601,
+    "programUs": 376026,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/helperRows/10000/beni-rel/_main.mjs:1:6122",
+        "sampledUs": 594,
+        "perPageUs": 29.7
+      },
+      {
+        "name": "Y /out/scaling/helperRows/10000/beni-rel/_main.mjs:1:6974",
+        "sampledUs": 224,
+        "perPageUs": 11.2
+      },
+      {
+        "name": "x /out/scaling/helperRows/10000/beni-rel/_main.mjs:1:1436",
+        "sampledUs": 165,
+        "perPageUs": 8.25
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 156,
+        "perPageUs": 7.8
+      },
+      {
+        "name": "q /out/scaling/helperRows/10000/beni-rel/_main.mjs:1:1171",
+        "sampledUs": 141,
+        "perPageUs": 7.05
+      },
+      {
+        "name": "w /out/scaling/helperRows/10000/beni-rel/_main.mjs:1:1320",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "f /out/scaling/helperRows/10000/beni-rel/_main.mjs:1:1588",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      }
+    ]
+  },
+  "helperRows/beni-direct-release": {
+    "pages": 20,
+    "idleUs": 5993394,
+    "programUs": 315870,
+    "functions": [
+      {
+        "name": "p /out/scaling/helperRows/10000/beni-direct-rel/_main.mjs:1:4026",
+        "sampledUs": 508,
+        "perPageUs": 25.4
+      },
+      {
+        "name": "y /out/scaling/helperRows/10000/beni-direct-rel/_main.mjs:1:4379",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "(anonymous) /out/scaling/helperRows/10000/beni-direct-rel/_main.mjs:1:3623",
+        "sampledUs": 43,
+        "perPageUs": 2.15
+      }
+    ]
+  },
+  "derived/vanillajs": {
+    "pages": 20,
+    "idleUs": 6041469,
+    "programUs": 346362,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/vanilla.js:20:56",
+        "sampledUs": 181,
+        "perPageUs": 9.05
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 156,
+        "perPageUs": 7.8
+      }
+    ]
+  },
+  "derived/solid1": {
+    "pages": 20,
+    "idleUs": 6034420,
+    "programUs": 387379,
+    "functions": [
+      {
+        "name": "P /out/scaling/derived/100000/solid1.js:1:5254",
+        "sampledUs": 1439,
+        "perPageUs": 71.95
+      },
+      {
+        "name": "q /out/scaling/derived/100000/solid1.js:1:5920",
+        "sampledUs": 590,
+        "perPageUs": 29.5
+      },
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/solid1.js:1:1389",
+        "sampledUs": 238,
+        "perPageUs": 11.9
+      },
+      {
+        "name": "v /out/scaling/derived/100000/solid1.js:1:864",
+        "sampledUs": 230,
+        "perPageUs": 11.5
+      },
+      {
+        "name": "A /out/scaling/derived/100000/solid1.js:1:2190",
+        "sampledUs": 151,
+        "perPageUs": 7.55
+      },
+      {
+        "name": "l /out/scaling/derived/100000/solid1.js:1:5326",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/solid1.js:1:1675",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "w /out/scaling/derived/100000/solid1.js:1:1631",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "x /out/scaling/derived/100000/solid1.js:1:2740",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "y /out/scaling/derived/100000/solid1.js:1:1281",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/solid1.js:1:5225",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "S /out/scaling/derived/100000/solid1.js:1:2527",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "T /out/scaling/derived/100000/solid1.js:1:3111",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "I.l.$$click /out/scaling/derived/100000/solid1.js:1:8873",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/solid1.js:1:533",
+        "sampledUs": 73,
+        "perPageUs": 3.65
+      }
+    ]
+  },
+  "derived/solid2": {
+    "pages": 20,
+    "idleUs": 6034338,
+    "programUs": 440267,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/solid2.js:1:32254",
+        "sampledUs": 998,
+        "perPageUs": 49.9
+      },
+      {
+        "name": "queueMicrotask :0:-1",
+        "sampledUs": 766,
+        "perPageUs": 38.3
+      },
+      {
+        "name": "h /out/scaling/derived/100000/solid2.js:1:32747",
+        "sampledUs": 522,
+        "perPageUs": 26.1
+      },
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/solid2.js:1:33927",
+        "sampledUs": 334,
+        "perPageUs": 16.7
+      },
+      {
+        "name": "o /out/scaling/derived/100000/solid2.js:1:32243",
+        "sampledUs": 249,
+        "perPageUs": 12.45
+      },
+      {
+        "name": "flush /out/scaling/derived/100000/solid2.js:1:3521",
+        "sampledUs": 192,
+        "perPageUs": 9.6
+      },
+      {
+        "name": "Se /out/scaling/derived/100000/solid2.js:1:23851",
+        "sampledUs": 158,
+        "perPageUs": 7.9
+      },
+      {
+        "name": "rn /out/scaling/derived/100000/solid2.js:1:34451",
+        "sampledUs": 157,
+        "perPageUs": 7.85
+      },
+      {
+        "name": "W /out/scaling/derived/100000/solid2.js:1:6501",
+        "sampledUs": 128,
+        "perPageUs": 6.4
+      },
+      {
+        "name": "D /out/scaling/derived/100000/solid2.js:1:5869",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "q /out/scaling/derived/100000/solid2.js:1:5789",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      },
+      {
+        "name": "c /out/scaling/derived/100000/solid2.js:1:32682",
+        "sampledUs": 82,
+        "perPageUs": 4.1
+      },
+      {
+        "name": "Rt /out/scaling/derived/100000/solid2.js:1:11714",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "sn /out/scaling/derived/100000/solid2.js:1:36832",
+        "sampledUs": 38,
+        "perPageUs": 1.9
+      },
+      {
+        "name": "et /out/scaling/derived/100000/solid2.js:1:7505",
+        "sampledUs": 37,
+        "perPageUs": 1.85
+      }
+    ]
+  },
+  "derived/beni-release": {
+    "pages": 20,
+    "idleUs": 6036633,
+    "programUs": 376255,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/beni-rel/_main.mjs:1:5903",
+        "sampledUs": 595,
+        "perPageUs": 29.75
+      },
+      {
+        "name": "ga /out/scaling/derived/100000/beni-rel/_main.mjs:1:7677",
+        "sampledUs": 583,
+        "perPageUs": 29.15
+      },
+      {
+        "name": "w /out/scaling/derived/100000/beni-rel/_main.mjs:1:8725",
+        "sampledUs": 256,
+        "perPageUs": 12.8
+      },
+      {
+        "name": "b.$$root /out/scaling/derived/100000/beni-rel/_main.mjs:1:1440",
+        "sampledUs": 171,
+        "perPageUs": 8.55
+      },
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/beni-rel/_main.mjs:1:5886",
+        "sampledUs": 168,
+        "perPageUs": 8.4
+      }
+    ]
+  },
+  "derived/beni-direct-release": {
+    "pages": 20,
+    "idleUs": 6033888,
+    "programUs": 356456,
+    "functions": [
+      {
+        "name": "u /out/scaling/derived/100000/beni-direct-rel/_main.mjs:1:3182",
+        "sampledUs": 263,
+        "perPageUs": 13.15
+      },
+      {
+        "name": "p /out/scaling/derived/100000/beni-direct-rel/_main.mjs:1:2951",
+        "sampledUs": 183,
+        "perPageUs": 9.15
+      },
+      {
+        "name": "(anonymous) /out/scaling/derived/100000/beni-direct-rel/_main.mjs:1:2393",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "B /out/scaling/derived/100000/beni-direct-rel/_main.mjs:1:1479",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      }
+    ]
+  },
+  "depth/vanillajs": {
+    "pages": 20,
+    "idleUs": 6044712,
+    "programUs": 224546,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/depth/128/vanilla.js:29:56",
+        "sampledUs": 1415,
+        "perPageUs": 70.75
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      }
+    ]
+  },
+  "depth/solid1": {
+    "pages": 20,
+    "idleUs": 6029862,
+    "programUs": 431864,
+    "functions": [
+      {
+        "name": "Q /out/scaling/depth/128/solid1.js:1:9577",
+        "sampledUs": 1170,
+        "perPageUs": 58.5
+      },
+      {
+        "name": "k /out/scaling/depth/128/solid1.js:1:3569",
+        "sampledUs": 982,
+        "perPageUs": 49.1
+      },
+      {
+        "name": "T /out/scaling/depth/128/solid1.js:1:4235",
+        "sampledUs": 567,
+        "perPageUs": 28.35
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 393,
+        "perPageUs": 19.65
+      },
+      {
+        "name": "v /out/scaling/depth/128/solid1.js:1:593",
+        "sampledUs": 319,
+        "perPageUs": 15.95
+      },
+      {
+        "name": "i /out/scaling/depth/128/solid1.js:1:3641",
+        "sampledUs": 297,
+        "perPageUs": 14.85
+      },
+      {
+        "name": "y /out/scaling/depth/128/solid1.js:1:1690",
+        "sampledUs": 250,
+        "perPageUs": 12.5
+      },
+      {
+        "name": "j /out/scaling/depth/128/solid1.js:1:2611",
+        "sampledUs": 226,
+        "perPageUs": 11.3
+      },
+      {
+        "name": "(anonymous) /out/scaling/depth/128/solid1.js:1:1118",
+        "sampledUs": 216,
+        "perPageUs": 10.8
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid1.js:1:10933",
+        "sampledUs": 169,
+        "perPageUs": 8.45
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid1.js:1:18967",
+        "sampledUs": 109,
+        "perPageUs": 5.45
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid1.js:1:17010",
+        "sampledUs": 91,
+        "perPageUs": 4.55
+      },
+      {
+        "name": "get /out/scaling/depth/128/solid1.js:1:8334",
+        "sampledUs": 87,
+        "perPageUs": 4.35
+      },
+      {
+        "name": "Ar.firstChild.$$click /out/scaling/depth/128/solid1.js:1:24011",
+        "sampledUs": 86,
+        "perPageUs": 4.3
+      },
+      {
+        "name": "U /out/scaling/depth/128/solid1.js:1:9028",
+        "sampledUs": 82,
+        "perPageUs": 4.1
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid1.js:1:11654",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "p /out/scaling/depth/128/solid1.js:1:1360",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid1.js:1:11036",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "w /out/scaling/depth/128/solid1.js:1:2027",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid1.js:1:20718",
+        "sampledUs": 51,
+        "perPageUs": 2.55
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid1.js:1:21027",
+        "sampledUs": 51,
+        "perPageUs": 2.55
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid1.js:1:19070",
+        "sampledUs": 41,
+        "perPageUs": 2.05
+      }
+    ]
+  },
+  "depth/solid2": {
+    "pages": 20,
+    "idleUs": 6028052,
+    "programUs": 495634,
+    "functions": [
+      {
+        "name": "nl /out/scaling/depth/128/solid2.js:1:37120",
+        "sampledUs": 1136,
+        "perPageUs": 56.8
+      },
+      {
+        "name": "(anonymous) /out/scaling/depth/128/solid2.js:1:52010",
+        "sampledUs": 1050,
+        "perPageUs": 52.5
+      },
+      {
+        "name": "get /out/scaling/depth/128/solid2.js:1:39643",
+        "sampledUs": 988,
+        "perPageUs": 49.4
+      },
+      {
+        "name": "queueMicrotask :0:-1",
+        "sampledUs": 496,
+        "perPageUs": 24.8
+      },
+      {
+        "name": "d /out/scaling/depth/128/solid2.js:1:52503",
+        "sampledUs": 342,
+        "perPageUs": 17.1
+      },
+      {
+        "name": "f /out/scaling/depth/128/solid2.js:1:52438",
+        "sampledUs": 245,
+        "perPageUs": 12.25
+      },
+      {
+        "name": "Rt /out/scaling/depth/128/solid2.js:1:22381",
+        "sampledUs": 240,
+        "perPageUs": 12
+      },
+      {
+        "name": "de /out/scaling/depth/128/solid2.js:1:28108",
+        "sampledUs": 211,
+        "perPageUs": 10.55
+      },
+      {
+        "name": "bl /out/scaling/depth/128/solid2.js:1:38829",
+        "sampledUs": 179,
+        "perPageUs": 8.95
+      },
+      {
+        "name": "Yl /out/scaling/depth/128/solid2.js:1:54207",
+        "sampledUs": 167,
+        "perPageUs": 8.35
+      },
+      {
+        "name": "te /out/scaling/depth/128/solid2.js:1:26608",
+        "sampledUs": 157,
+        "perPageUs": 7.85
+      },
+      {
+        "name": "I.We /out/scaling/depth/128/solid2.js:1:17100",
+        "sampledUs": 155,
+        "perPageUs": 7.75
+      },
+      {
+        "name": "Z /out/scaling/depth/128/solid2.js:1:6558",
+        "sampledUs": 149,
+        "perPageUs": 7.45
+      },
+      {
+        "name": "_e /out/scaling/depth/128/solid2.js:1:31312",
+        "sampledUs": 113,
+        "perPageUs": 5.65
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:70518",
+        "sampledUs": 89,
+        "perPageUs": 4.45
+      },
+      {
+        "name": "run /out/scaling/depth/128/solid2.js:1:2266",
+        "sampledUs": 88,
+        "perPageUs": 4.4
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:65382",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      },
+      {
+        "name": "l /out/scaling/depth/128/solid2.js:1:51999",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:69662",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:70625",
+        "sampledUs": 82,
+        "perPageUs": 4.1
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:70090",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:61423",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "We /out/scaling/depth/128/solid2.js:1:34085",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:64954",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:63777",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "Ge /out/scaling/depth/128/solid2.js:1:32432",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "enqueue /out/scaling/depth/128/solid2.js:1:2501",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "wl /out/scaling/depth/128/solid2.js:1:44272",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "flush /out/scaling/depth/128/solid2.js:1:3571",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "Ne /out/scaling/depth/128/solid2.js:1:32324",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "(anonymous) /out/scaling/depth/128/solid2.js:1:72105",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "F /out/scaling/depth/128/solid2.js:1:5922",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "get n /out/scaling/depth/128/solid2.js:1:58534",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "hasAttribute :0:-1",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "(anonymous) /out/scaling/depth/128/solid2.js:1:50355",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "ul /out/scaling/depth/128/solid2.js:1:37525",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "Ie /out/scaling/depth/128/solid2.js:1:33055",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "tl /out/scaling/depth/128/solid2.js:1:37204",
+        "sampledUs": 56,
+        "perPageUs": 2.8
+      },
+      {
+        "name": "set /out/scaling/depth/128/solid2.js:1:43082",
+        "sampledUs": 46,
+        "perPageUs": 2.3
+      },
+      {
+        "name": "ll /out/scaling/depth/128/solid2.js:1:37340",
+        "sampledUs": 32,
+        "perPageUs": 1.6
+      },
+      {
+        "name": "cl /out/scaling/depth/128/solid2.js:1:37591",
+        "sampledUs": 30,
+        "perPageUs": 1.5
+      }
+    ]
+  },
+  "depth/beni-release": {
+    "pages": 20,
+    "idleUs": 6026506,
+    "programUs": 484290,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/depth/128/beni-rel/_main.mjs:1:2155",
+        "sampledUs": 547,
+        "perPageUs": 27.35
+      },
+      {
+        "name": "B /out/scaling/depth/128/beni-rel/_main.mjs:1:2634",
+        "sampledUs": 456,
+        "perPageUs": 22.8
+      },
+      {
+        "name": "yl /out/scaling/depth/128/beni-rel/_main.mjs:1:57401",
+        "sampledUs": 333,
+        "perPageUs": 16.65
+      },
+      {
+        "name": "j /out/scaling/depth/128/beni-rel/_main.mjs:1:734",
+        "sampledUs": 171,
+        "perPageUs": 8.55
+      },
+      {
+        "name": "xl /out/scaling/depth/128/beni-rel/_main.mjs:1:57372",
+        "sampledUs": 167,
+        "perPageUs": 8.35
+      },
+      {
+        "name": "u /out/scaling/depth/128/beni-rel/_main.mjs:1:1161",
+        "sampledUs": 153,
+        "perPageUs": 7.65
+      },
+      {
+        "name": "Ig /out/scaling/depth/128/beni-rel/_main.mjs:1:50753",
+        "sampledUs": 145,
+        "perPageUs": 7.25
+      },
+      {
+        "name": "b.$$root /out/scaling/depth/128/beni-rel/_main.mjs:1:1487",
+        "sampledUs": 142,
+        "perPageUs": 7.1
+      },
+      {
+        "name": "Hb /out/scaling/depth/128/beni-rel/_main.mjs:1:16823",
+        "sampledUs": 136,
+        "perPageUs": 6.8
+      },
+      {
+        "name": "nf /out/scaling/depth/128/beni-rel/_main.mjs:1:41328",
+        "sampledUs": 96,
+        "perPageUs": 4.8
+      },
+      {
+        "name": "jd /out/scaling/depth/128/beni-rel/_main.mjs:1:27379",
+        "sampledUs": 89,
+        "perPageUs": 4.45
+      },
+      {
+        "name": "nl /out/scaling/depth/128/beni-rel/_main.mjs:1:57122",
+        "sampledUs": 89,
+        "perPageUs": 4.45
+      },
+      {
+        "name": "qg /out/scaling/depth/128/beni-rel/_main.mjs:1:48491",
+        "sampledUs": 88,
+        "perPageUs": 4.4
+      },
+      {
+        "name": "pk /out/scaling/depth/128/beni-rel/_main.mjs:1:55822",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "gc /out/scaling/depth/128/beni-rel/_main.mjs:1:20216",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "v /out/scaling/depth/128/beni-rel/_main.mjs:1:1292",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "ad /out/scaling/depth/128/beni-rel/_main.mjs:1:26248",
+        "sampledUs": 82,
+        "perPageUs": 4.1
+      },
+      {
+        "name": "Ed /out/scaling/depth/128/beni-rel/_main.mjs:1:30018",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "zg /out/scaling/depth/128/beni-rel/_main.mjs:1:49622",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "jb /out/scaling/depth/128/beni-rel/_main.mjs:1:13807",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "ya /out/scaling/depth/128/beni-rel/_main.mjs:1:8906",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "je /out/scaling/depth/128/beni-rel/_main.mjs:1:34165",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "wg /out/scaling/depth/128/beni-rel/_main.mjs:1:49245",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "gf /out/scaling/depth/128/beni-rel/_main.mjs:1:40574",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "Ee /out/scaling/depth/128/beni-rel/_main.mjs:1:36804",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "jc /out/scaling/depth/128/beni-rel/_main.mjs:1:20593",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "Ne /out/scaling/depth/128/beni-rel/_main.mjs:1:37935",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "Uf /out/scaling/depth/128/beni-rel/_main.mjs:1:45475",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "Lf /out/scaling/depth/128/beni-rel/_main.mjs:1:44344",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "va /out/scaling/depth/128/beni-rel/_main.mjs:1:8529",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "Ke /out/scaling/depth/128/beni-rel/_main.mjs:1:37558",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "se /out/scaling/depth/128/beni-rel/_main.mjs:1:35296",
+        "sampledUs": 74,
+        "perPageUs": 3.7
+      },
+      {
+        "name": "Bc /out/scaling/depth/128/beni-rel/_main.mjs:1:22855",
+        "sampledUs": 74,
+        "perPageUs": 3.7
+      },
+      {
+        "name": "kf /out/scaling/depth/128/beni-rel/_main.mjs:1:40951",
+        "sampledUs": 73,
+        "perPageUs": 3.65
+      },
+      {
+        "name": "ve /out/scaling/depth/128/beni-rel/_main.mjs:1:35673",
+        "sampledUs": 36,
+        "perPageUs": 1.8
+      }
+    ]
+  },
+  "depth/beni-direct-release": {
+    "pages": 20,
+    "idleUs": 6029640,
+    "programUs": 433418,
+    "functions": [
+      {
+        "name": "Ik /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:39724",
+        "sampledUs": 319,
+        "perPageUs": 15.95
+      },
+      {
+        "name": "b /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:40714",
+        "sampledUs": 246,
+        "perPageUs": 12.3
+      },
+      {
+        "name": "Eb /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:3545",
+        "sampledUs": 184,
+        "perPageUs": 9.2
+      },
+      {
+        "name": "Jk /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:40077",
+        "sampledUs": 170,
+        "perPageUs": 8.5
+      },
+      {
+        "name": "Kj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:26360",
+        "sampledUs": 162,
+        "perPageUs": 8.1
+      },
+      {
+        "name": "Uj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:28510",
+        "sampledUs": 147,
+        "perPageUs": 7.35
+      },
+      {
+        "name": "pj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:22496",
+        "sampledUs": 146,
+        "perPageUs": 7.3
+      },
+      {
+        "name": "Fb /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:3568",
+        "sampledUs": 97,
+        "perPageUs": 4.85
+      },
+      {
+        "name": "Cc /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:4843",
+        "sampledUs": 94,
+        "perPageUs": 4.7
+      },
+      {
+        "name": "qc /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:4543",
+        "sampledUs": 92,
+        "perPageUs": 4.6
+      },
+      {
+        "name": "Ic /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:4993",
+        "sampledUs": 90,
+        "perPageUs": 4.5
+      },
+      {
+        "name": "tc /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:4618",
+        "sampledUs": 87,
+        "perPageUs": 4.35
+      },
+      {
+        "name": "cj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:20578",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "Dc /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:4868",
+        "sampledUs": 85,
+        "perPageUs": 4.25
+      },
+      {
+        "name": "yj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:24044",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      },
+      {
+        "name": "Qc /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:5193",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      },
+      {
+        "name": "Cj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:24784",
+        "sampledUs": 84,
+        "perPageUs": 4.2
+      },
+      {
+        "name": "Bk /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:37610",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "zk /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:37024",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "Dj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:24974",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      },
+      {
+        "name": "Ek /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:38504",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "Mj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:26774",
+        "sampledUs": 74,
+        "perPageUs": 3.7
+      },
+      {
+        "name": "Qj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:27626",
+        "sampledUs": 74,
+        "perPageUs": 3.7
+      },
+      {
+        "name": "Vj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:28736",
+        "sampledUs": 74,
+        "perPageUs": 3.7
+      },
+      {
+        "name": "Gk /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:39110",
+        "sampledUs": 73,
+        "perPageUs": 3.65
+      },
+      {
+        "name": "xk /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:36446",
+        "sampledUs": 72,
+        "perPageUs": 3.6
+      },
+      {
+        "name": "Ck /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:37906",
+        "sampledUs": 72,
+        "perPageUs": 3.6
+      },
+      {
+        "name": "kk /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:32884",
+        "sampledUs": 70,
+        "perPageUs": 3.5
+      },
+      {
+        "name": "Aj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:24410",
+        "sampledUs": 70,
+        "perPageUs": 3.5
+      },
+      {
+        "name": "Nj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:26984",
+        "sampledUs": 70,
+        "perPageUs": 3.5
+      },
+      {
+        "name": "uk /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:35594",
+        "sampledUs": 70,
+        "perPageUs": 3.5
+      },
+      {
+        "name": "vj /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:23510",
+        "sampledUs": 62,
+        "perPageUs": 3.1
+      },
+      {
+        "name": "_b /out/scaling/depth/128/beni-direct-rel/_main.mjs:1:4118",
+        "sampledUs": 44,
+        "perPageUs": 2.2
+      }
+    ]
+  },
+  "depth/p3": {
+    "pages": 20,
+    "idleUs": 6049983,
+    "programUs": 323451,
+    "functions": [
+      {
+        "name": "render /out/scaling/depth/128/p3.js:310:15",
+        "sampledUs": 747,
+        "perPageUs": 37.35
+      },
+      {
+        "name": "bump93 /out/scaling/depth/128/p3.js:204:15",
+        "sampledUs": 196,
+        "perPageUs": 9.8
+      },
+      {
+        "name": "(anonymous) /out/scaling/depth/128/p3.js:318:29",
+        "sampledUs": 195,
+        "perPageUs": 9.75
+      },
+      {
+        "name": "bump1 /out/scaling/depth/128/p3.js:296:14",
+        "sampledUs": 134,
+        "perPageUs": 6.7
+      },
+      {
+        "name": "bump98 /out/scaling/depth/128/p3.js:199:15",
+        "sampledUs": 115,
+        "perPageUs": 5.75
+      },
+      {
+        "name": "bump113 /out/scaling/depth/128/p3.js:184:16",
+        "sampledUs": 112,
+        "perPageUs": 5.6
+      },
+      {
+        "name": "bump114 /out/scaling/depth/128/p3.js:183:16",
+        "sampledUs": 108,
+        "perPageUs": 5.4
+      },
+      {
+        "name": "bump128 /out/scaling/depth/128/p3.js:169:16",
+        "sampledUs": 106,
+        "perPageUs": 5.3
+      },
+      {
+        "name": "bump57 /out/scaling/depth/128/p3.js:240:15",
+        "sampledUs": 103,
+        "perPageUs": 5.15
+      },
+      {
+        "name": "bump58 /out/scaling/depth/128/p3.js:239:15",
+        "sampledUs": 103,
+        "perPageUs": 5.15
+      },
+      {
+        "name": "bump83 /out/scaling/depth/128/p3.js:214:15",
+        "sampledUs": 102,
+        "perPageUs": 5.1
+      },
+      {
+        "name": "bump91 /out/scaling/depth/128/p3.js:206:15",
+        "sampledUs": 100,
+        "perPageUs": 5
+      },
+      {
+        "name": "bump21 /out/scaling/depth/128/p3.js:276:15",
+        "sampledUs": 96,
+        "perPageUs": 4.8
+      },
+      {
+        "name": "bump116 /out/scaling/depth/128/p3.js:181:16",
+        "sampledUs": 89,
+        "perPageUs": 4.45
+      },
+      {
+        "name": "bump73 /out/scaling/depth/128/p3.js:224:15",
+        "sampledUs": 86,
+        "perPageUs": 4.3
+      },
+      {
+        "name": "bump14 /out/scaling/depth/128/p3.js:283:15",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "bump28 /out/scaling/depth/128/p3.js:269:15",
+        "sampledUs": 80,
+        "perPageUs": 4
+      },
+      {
+        "name": "flush /out/scaling/depth/128/p3.js:6:14",
+        "sampledUs": 71,
+        "perPageUs": 3.55
+      },
+      {
+        "name": "bump79 /out/scaling/depth/128/p3.js:218:15",
+        "sampledUs": 67,
+        "perPageUs": 3.35
+      },
+      {
+        "name": "bump86 /out/scaling/depth/128/p3.js:211:15",
+        "sampledUs": 67,
+        "perPageUs": 3.35
+      },
+      {
+        "name": "send /out/scaling/depth/128/p3.js:26:13",
+        "sampledUs": 63,
+        "perPageUs": 3.15
+      }
+    ]
+  },
+  "width/vanillajs": {
+    "pages": 20,
+    "idleUs": 6056042,
+    "programUs": 239973,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/width/1024/vanilla.js:10:56",
+        "sampledUs": 1170,
+        "perPageUs": 58.5
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 154,
+        "perPageUs": 7.7
+      }
+    ]
+  },
+  "width/solid1": {
+    "pages": 20,
+    "idleUs": 6034023,
+    "programUs": 521937,
+    "functions": [
+      {
+        "name": "$ /out/scaling/width/1024/solid1.js:1:3530",
+        "sampledUs": 732,
+        "perPageUs": 36.6
+      },
+      {
+        "name": "J /out/scaling/width/1024/solid1.js:1:9538",
+        "sampledUs": 398,
+        "perPageUs": 19.9
+      },
+      {
+        "name": "k /out/scaling/width/1024/solid1.js:1:4196",
+        "sampledUs": 276,
+        "perPageUs": 13.8
+      },
+      {
+        "name": "e /out/scaling/width/1024/solid1.js:1:3602",
+        "sampledUs": 231,
+        "perPageUs": 11.55
+      },
+      {
+        "name": "C /out/scaling/width/1024/solid1.js:1:1690",
+        "sampledUs": 215,
+        "perPageUs": 10.75
+      },
+      {
+        "name": "h /out/scaling/width/1024/solid1.js:1:1010",
+        "sampledUs": 159,
+        "perPageUs": 7.95
+      },
+      {
+        "name": "(anonymous) /out/scaling/width/1024/solid1.js:1:56057",
+        "sampledUs": 151,
+        "perPageUs": 7.55
+      },
+      {
+        "name": "l /out/scaling/width/1024/solid1.js:1:3667",
+        "sampledUs": 122,
+        "perPageUs": 6.1
+      },
+      {
+        "name": "(anonymous) /out/scaling/width/1024/solid1.js:1:1118",
+        "sampledUs": 87,
+        "perPageUs": 4.35
+      },
+      {
+        "name": "v /out/scaling/width/1024/solid1.js:1:2240",
+        "sampledUs": 86,
+        "perPageUs": 4.3
+      },
+      {
+        "name": "K /out/scaling/width/1024/solid1.js:1:7454",
+        "sampledUs": 83,
+        "perPageUs": 4.15
+      },
+      {
+        "name": "(anonymous) /out/scaling/width/1024/solid1.js:1:10249",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 77,
+        "perPageUs": 3.85
+      },
+      {
+        "name": "a /out/scaling/width/1024/solid1.js:1:1360",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      }
+    ]
+  },
+  "width/solid2": {
+    "pages": 20,
+    "idleUs": 6035105,
+    "programUs": 547803,
+    "functions": [
+      {
+        "name": "(anonymous) /out/scaling/width/1024/solid2.js:1:51967",
+        "sampledUs": 958,
+        "perPageUs": 47.9
+      },
+      {
+        "name": "queueMicrotask :0:-1",
+        "sampledUs": 791,
+        "perPageUs": 39.55
+      },
+      {
+        "name": "c /out/scaling/width/1024/solid2.js:1:52460",
+        "sampledUs": 263,
+        "perPageUs": 13.15
+      },
+      {
+        "name": "Ai /out/scaling/width/1024/solid2.js:1:31312",
+        "sampledUs": 229,
+        "perPageUs": 11.45
+      },
+      {
+        "name": "F /out/scaling/width/1024/solid2.js:1:5922",
+        "sampledUs": 227,
+        "perPageUs": 11.35
+      },
+      {
+        "name": "u /out/scaling/width/1024/solid2.js:1:52395",
+        "sampledUs": 206,
+        "perPageUs": 10.3
+      },
+      {
+        "name": "flush /out/scaling/width/1024/solid2.js:1:3571",
+        "sampledUs": 193,
+        "perPageUs": 9.65
+      },
+      {
+        "name": "composedPath :0:-1",
+        "sampledUs": 166,
+        "perPageUs": 8.3
+      },
+      {
+        "name": "e /out/scaling/width/1024/solid2.js:1:51956",
+        "sampledUs": 165,
+        "perPageUs": 8.25
+      },
+      {
+        "name": "get /out/scaling/width/1024/solid2.js:1:39643",
+        "sampledUs": 157,
+        "perPageUs": 7.85
+      },
+      {
+        "name": "Ve /out/scaling/width/1024/solid2.js:1:54164",
+        "sampledUs": 156,
+        "perPageUs": 7.8
+      },
+      {
+        "name": "ye /out/scaling/width/1024/solid2.js:1:44272",
+        "sampledUs": 154,
+        "perPageUs": 7.7
+      },
+      {
+        "name": "(garbage collector) :0:-1",
+        "sampledUs": 150,
+        "perPageUs": 7.5
+      },
+      {
+        "name": "set /out/scaling/width/1024/solid2.js:1:43082",
+        "sampledUs": 149,
+        "perPageUs": 7.45
+      },
+      {
+        "name": "Z /out/scaling/width/1024/solid2.js:1:6558",
+        "sampledUs": 139,
+        "perPageUs": 6.95
+      },
+      {
+        "name": "I.We /out/scaling/width/1024/solid2.js:1:17100",
+        "sampledUs": 129,
+        "perPageUs": 6.45
+      },
+      {
+        "name": "Mi /out/scaling/width/1024/solid2.js:1:32867",
+        "sampledUs": 112,
+        "perPageUs": 5.6
+      },
+      {
+        "name": "bn /out/scaling/width/1024/solid2.js:1:8681",
+        "sampledUs": 81,
+        "perPageUs": 4.05
+      },
+      {
+        "name": "gn /out/scaling/width/1024/solid2.js:1:8621",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "jt /out/scaling/width/1024/solid2.js:1:22381",
+        "sampledUs": 76,
+        "perPageUs": 3.8
+      },
+      {
+        "name": "it /out/scaling/width/1024/solid2.js:1:17249",
+        "sampledUs": 75,
+        "perPageUs": 3.75
+      },
+      {
+        "name": "ln /out/scaling/width/1024/solid2.js:1:7573",
+        "sampledUs": 45,
+        "perPageUs": 2.25
+      },
+      {
+        "name": "W /out/scaling/width/1024/solid2.js:1:5841",
+        "sampledUs": 44,
+        "perPageUs": 2.2
+      },
+      {
+        "name": "R /out/scaling/width/1024/solid2.js:1:1404",
+        "sampledUs": 37,
+        "perPageUs": 1.85
+      },
+      {
+        "name": "Nt /out/scaling/width/1024/solid2.js:1:24063",
+        "sampledUs": 37,
+        "perPageUs": 1.85
+      },
+      {
+        "name": "hasAttribute :0:-1",
+        "sampledUs": 36,
+        "perPageUs": 1.8
+      },
+      {
+        "name": "Ii /out/scaling/width/1024/solid2.js:1:33055",
+        "sampledUs": 24,
+        "perPageUs": 1.2
+      }
+    ]
+  },
+  "width/beni-release": {
+    "pages": 20,
+    "idleUs": 6031343,
+    "programUs": 505701,
+    "functions": [
+      {
+        "name": "s /out/scaling/width/1024/beni-rel/_main.mjs:1:127517",
+        "sampledUs": 4792,
+        "perPageUs": 239.6
+      },
+      {
+        "name": "f /out/scaling/width/1024/beni-rel/_main.mjs:1:1781",
+        "sampledUs": 1184,
+        "perPageUs": 59.2
+      },
+      {
+        "name": "(anonymous) /out/scaling/width/1024/beni-rel/_main.mjs:1:1299",
+        "sampledUs": 738,
+        "perPageUs": 36.9
+      },
+      {
+        "name": "d.$$root /out/scaling/width/1024/beni-rel/_main.mjs:1:1026",
+        "sampledUs": 166,
+        "perPageUs": 8.3
+      },
+      {
+        "name": "n /out/scaling/width/1024/beni-rel/_main.mjs:1:520",
+        "sampledUs": 156,
+        "perPageUs": 7.8
+      },
+      {
+        "name": "(anonymous) /out/scaling/width/1024/beni-rel/_main.mjs:1:1282",
+        "sampledUs": 88,
+        "perPageUs": 4.4
+      },
+      {
+        "name": "o /out/scaling/width/1024/beni-rel/_main.mjs:1:993",
+        "sampledUs": 79,
+        "perPageUs": 3.95
+      },
+      {
+        "name": "r /out/scaling/width/1024/beni-rel/_main.mjs:1:127539",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      }
+    ]
+  },
+  "width/beni-direct-release": {
+    "pages": 20,
+    "idleUs": 6054693,
+    "programUs": 251655,
+    "functions": [
+      {
+        "name": "r /out/scaling/width/1024/beni-direct-rel/_main.mjs:1:20663",
+        "sampledUs": 11297,
+        "perPageUs": 564.85
+      },
+      {
+        "name": "q /out/scaling/width/1024/beni-direct-rel/_main.mjs:1:20621",
+        "sampledUs": 243,
+        "perPageUs": 12.15
+      },
+      {
+        "name": "e /out/scaling/width/1024/beni-direct-rel/_main.mjs:1:46",
+        "sampledUs": 180,
+        "perPageUs": 9
+      },
+      {
+        "name": "(anonymous) /out/scaling/width/1024/beni-direct-rel/_main.mjs:1:624",
+        "sampledUs": 93,
+        "perPageUs": 4.65
+      },
+      {
+        "name": "b /out/scaling/width/1024/beni-direct-rel/_main.mjs:1:20697",
+        "sampledUs": 78,
+        "perPageUs": 3.9
+      }
+    ]
+  }
+}

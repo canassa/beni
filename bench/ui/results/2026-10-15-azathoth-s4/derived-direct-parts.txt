@@ -1,0 +1,13 @@
+results/2026-10-15-azathoth-s4/bundles/derived-direct.mjs: minified 3094 B, brotli 11 1403 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core: List readers and array operations | 1018 | 501 | 249 | 249 |
+| core: sorting and take | 562 | 333 | 158 | 179 |
+| runtime: guard and mount | 617 | 336 | 215 | 234 |
+| runtime: row append and listener | 417 | 256 | 96 | 126 |
+| core: modBy | 48 | 52 | 3 | 14 |
+| runtime: sandbox | 41 | 45 | 5 | 5 |
+| program: item generation, derived value and page | 789 | 428 | 271 | 371 |
+| what is left (start-up statements) | | | | 225 |
+| **sum** | | 1951 | 997 | 1403 |

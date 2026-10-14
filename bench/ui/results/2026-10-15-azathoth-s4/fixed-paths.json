@@ -1,0 +1,26 @@
+{
+  "live-direct": [
+    {
+      "name": "A",
+      "body": "()=>{d={...d,d:d.d+1};q()}"
+    }
+  ],
+  "derived-direct": [
+    {
+      "name": "u",
+      "body": "()=>{d={...d,a:d.a+1};p()}"
+    }
+  ],
+  "helperRows-direct": [
+    {
+      "name": "y",
+      "body": "()=>{d={...d,b:d.b+1};p()}"
+    }
+  ],
+  "tree-direct": [
+    {
+      "name": "p",
+      "body": "()=>{d={...d,a:d.a+1};o()}"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+results/2026-10-15-azathoth-s4/bundles/table-tea.mjs: minified 12791 B, brotli 11 5206 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core | 2457 | 1102 | 746 | 746 |
+| runtime | 6622 | 2792 | 2249 | 2303 |
+| program | 4359 | 1735 | 1439 | 1499 |
+| what is left (start-up statements) | | | | 658 |
+| **sum** | | 5629 | 4434 | 5206 |

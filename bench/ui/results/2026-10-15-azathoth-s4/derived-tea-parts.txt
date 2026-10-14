@@ -1,0 +1,10 @@
+results/2026-10-15-azathoth-s4/bundles/derived-tea.mjs: minified 8378 B, brotli 11 3565 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime: slots, templates, queue and mount | 1939 | 863 | 482 | 482 |
+| runtime: keyed list and delegation | 4399 | 1995 | 1592 | 1646 |
+| core: List, sort and modBy | 1342 | 644 | 379 | 409 |
+| program: page, derived value and init | 1198 | 621 | 436 | 520 |
+| what is left (start-up statements) | | | | 508 |
+| **sum** | | 4123 | 2889 | 3565 |

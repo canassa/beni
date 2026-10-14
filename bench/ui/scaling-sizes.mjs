@@ -54,6 +54,7 @@ for (const sweep of readdirSync(scaling).filter((d) => statSync(join(scaling, d)
       // The same source built `--release` for `browser-direct`; a page its
       // slices cannot build yet holds only `.skipped`, and is left out.
       "beni-direct": existsSync(join(dir, "beni-direct-rel")) && !existsSync(join(dir, "beni-direct-rel", ".skipped")) ? walk(join(dir, "beni-direct-rel")) : null,
+      solid2: existsSync(join(dir, "solid2.js")) ? [join(dir, "solid2.js")] : null,
       solid1: existsSync(join(dir, "solid1.js")) ? [join(dir, "solid1.js")] : null,
       vanillajs: existsSync(join(dir, "vanilla.js")) ? [join(dir, "vanilla.js")] : null,
       p2: existsSync(join(dir, "p2.js")) ? [join(dir, "p2.js")] : null,
@@ -70,8 +71,8 @@ const out = arg("out", null);
 if (out !== null) writeFileSync(join(root, out), JSON.stringify(result, null, 1) + "\n");
 for (const [sweep, points] of Object.entries(result)) {
   console.log(`\n### ${sweep}: minified, then brotli 11 / gzip -9, bytes\n`);
-  console.log("| point | beni `--release` | beni-direct `--release` | Solid 1 | vanilla | P2 | P3 |");
-  console.log("|--:|--:|--:|--:|--:|--:|--:|");
+  console.log("| point | beni `--release` | beni-direct `--release` | Solid 1 | Solid 2 | vanilla | P2 | P3 |");
+  console.log("|--:|--:|--:|--:|--:|--:|--:|--:|");
   const cell = (m) => (m === undefined ? "—" : `${m.brotli} / ${m.gzip}`);
-  for (const [p, s] of Object.entries(points)) console.log(`| ${p} | ${cell(s.beni)} | ${cell(s["beni-direct"])} | ${cell(s.solid1)} | ${cell(s.vanillajs)} | ${cell(s.p2)} | ${cell(s.p3)} |`);
+  for (const [p, s] of Object.entries(points)) console.log(`| ${p} | ${cell(s.beni)} | ${cell(s["beni-direct"])} | ${cell(s.solid1)} | ${cell(s.solid2)} | ${cell(s.vanillajs)} | ${cell(s.p2)} | ${cell(s.p3)} |`);
 }

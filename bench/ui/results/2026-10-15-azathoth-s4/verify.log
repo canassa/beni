@@ -1,0 +1,9 @@
+beni-release: ok 1 000 rows, the first id 1, ok the row's shape, ok row 2 selected, alone, ok rows 2 and 999 swapped, ok and swapped back, ok every 10th label updated, ok row 4 removed, ok 1 000 appended, ok cleared, ok 10 000 created
+beni-direct-release: ok 1 000 rows, the first id 1, ok the row's shape, ok row 2 selected, alone, ok rows 2 and 999 swapped, ok and swapped back, ok every 10th label updated, ok row 4 removed, ok 1 000 appended, ok cleared, ok 10 000 created
+solid2: ok 1 000 rows, the first id 1, ok the row's shape, ok row 2 selected, alone, ok rows 2 and 999 swapped, ok and swapped back, ok every 10th label updated, ok row 4 removed, ok 1 000 appended, ok cleared, ok 10 000 created
+solid1: ok 1 000 rows, the first id 1, ok the row's shape, ok row 2 selected, alone, ok rows 2 and 999 swapped, ok and swapped back, ok every 10th label updated, ok row 4 removed, ok 1 000 appended, ok cleared, ok 10 000 created
+p3: ok 1 000 rows, the first id 1, ok the row's shape, ok row 2 selected, alone, ok rows 2 and 999 swapped, ok and swapped back, ok every 10th label updated, ok row 4 removed, ok 1 000 appended, ok cleared, ok 10 000 created
+vanillajs: ok 1 000 rows, the first id 1, ok the row's shape, ok row 2 selected, alone, ok rows 2 and 999 swapped, ok and swapped back, ok every 10th label updated, ok row 4 removed, ok 1 000 appended, ok cleared, ok 10 000 created
+Chrome/153.0.8010.36: all subjects pass
+table: ok, 19 steps equal
+Chrome/153.0.8010.36: every P3 page equals its beni page after every step

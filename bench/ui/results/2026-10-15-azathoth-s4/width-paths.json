@@ -1,0 +1,8 @@
+{
+  "fields": 1024,
+  "largestRecordLiteral": 1024,
+  "dataSetters": 1,
+  "handler": "r",
+  "body": "e={...e,a:e.a+1};q()",
+  "groupCalls": 1
+}

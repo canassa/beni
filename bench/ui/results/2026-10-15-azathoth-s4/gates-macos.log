@@ -1,0 +1,102 @@
+note: perf_event_paranoid does not permit counting instructions; each test's budget is 999 ms of CPU instead
+gates
++- test-blackbox
+   +- run exe run-hash-summary
+      +- run build_test shard 1/3 27 pass, 1 fail (28 total)
+error: 'build_test.test.a stale path that is the same file as a written one under case folding is not removed' failed:
+       build_test.test.a stale path that is the same file as a written one under case folding is not removed: FAIL (PathAlreadyExists)
+       /nix/store/7vqhdbzcmg0g9a70jqppcmjaw3pn0c60-zorg-0.17.1+zorg.1/lib/zorg/std/Io/Threaded.zig:1438:9: 0x100bd8db3 in fail__func_724 (build_test)
+               return err;
+               ^
+       /nix/store/7vqhdbzcmg0g9a70jqppcmjaw3pn0c60-zorg-0.17.1+zorg.1/lib/zorg/std/Io/Threaded.zig:7194:23: 0x100bd881b in linkat (build_test)
+                   .EXIST => return syscall.fail(error.PathAlreadyExists),
+                             ^
+       /nix/store/7vqhdbzcmg0g9a70jqppcmjaw3pn0c60-zorg-0.17.1+zorg.1/lib/zorg/std/Io/Threaded.zig:9885:5: 0x100bd7f73 in dirHardLink (build_test)
+           return linkat(old_dir.handle, old_sub_path_posix, new_dir.handle, new_sub_path_posix, flags);
+           ^
+       /nix/store/7vqhdbzcmg0g9a70jqppcmjaw3pn0c60-zorg-0.17.1+zorg.1/lib/zorg/std/Io/Dir.zig:1159:5: 0x100cd5f53 in hardLink (build_test)
+           return io.vtable.dirHardLink(io.userdata, old_dir, old_sub_path, new_dir, new_sub_path, options);
+           ^
+       /private/tmp/beni-direct-s4/tests/blackbox/world.zig:388:9: 0x100cd50a3 in hardLink (build_test)
+               try world.tmp.dir.hardLink(rel_path, world.tmp.dir, new_path, world.io, .{});
+               ^
+       /private/tmp/beni-direct-s4/tests/blackbox/build_test.zig:2753:5: 0x100cd57c7 in test.a stale path that is the same file as a written one under case folding is not removed (build_test)
+           try w.hardLink("out/Zz.mjs", "out/ZZ.mjs");
+           ^
+failed command: cd . && BENI_VARIANT_EXE= BENI_CORPUS_ROOT=tests/corpus BENI_CORPUS_MODE= BENI_CASE_TIMEOUT_MS= BENI_CORPUS_PART= BENI_CORPUS_ONLY= BENI_PENDING_SCENARIOS= BENI_PERF_SHARD= BENI_TEST_SHARD=1/3 BENI_RUN_HASHES= BENI_RUN_HASH_REPORT=/private/tmp/beni-direct-s4/zig-out/run-hash-counts/30726-all BENI_BROWSER= BENI_CHROME= BENI_FUZZ_SEEDS= BENI_FUZZ_STEPS= BENI_PENDING_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_CPU_MS=999 BENI_EXE=/private/tmp/beni-direct-s4/zig-out/safe/bin/beni ./.zig-cache/o/c657db44dcf87043a67d73f0046ea8c7/build_test --node-version=v24.19.0 --cache-dir=./.zig-cache --seed=0x1d8ded41 --listen=-
+
+gates
++- test-blackbox
+   +- run exe run-hash-summary
+      +- run build_test shard 2/3 27 pass, 1 fail (28 total)
+error: 'build_test.test.a stale path equal to a written one under case folding but another file is removed' failed:
+       ====== expected this output: =========
+       ZZ.mjs␃
+
+       ======== instead found this: =========
+       Zz.mjs␃
+
+       ======================================
+       First difference occurs on line 1:
+       expected:
+       ZZ.mjs
+        ^ ('\x5a')
+       found:
+       Zz.mjs
+        ^ ('\x7a')
+       build_test.test.a stale path equal to a written one under case folding but another file is removed: FAIL (TestExpectedEqual)
+       /nix/store/7vqhdbzcmg0g9a70jqppcmjaw3pn0c60-zorg-0.17.1+zorg.1/lib/zorg/std/testing.zig:696:9: 0x104ef546b in expectEqualStrings (build_test)
+               return error.TestExpectedEqual;
+               ^
+       /private/tmp/beni-direct-s4/tests/blackbox/build_test.zig:2809:28: 0x104f7ccfb in test.a stale path equal to a written one under case folding but another file is removed (build_test)
+           for (want, got) |a, b| try testing.expectEqualStrings(a, b);
+                                  ^
+failed command: cd . && BENI_VARIANT_EXE= BENI_CORPUS_ROOT=tests/corpus BENI_CORPUS_MODE= BENI_CASE_TIMEOUT_MS= BENI_CORPUS_PART= BENI_CORPUS_ONLY= BENI_PENDING_SCENARIOS= BENI_PERF_SHARD= BENI_TEST_SHARD=2/3 BENI_RUN_HASHES= BENI_RUN_HASH_REPORT=/private/tmp/beni-direct-s4/zig-out/run-hash-counts/30726-all BENI_BROWSER= BENI_CHROME= BENI_FUZZ_SEEDS= BENI_FUZZ_STEPS= BENI_PENDING_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_CPU_MS=999 BENI_EXE=/private/tmp/beni-direct-s4/zig-out/safe/bin/beni ./.zig-cache/o/c657db44dcf87043a67d73f0046ea8c7/build_test --node-version=v24.19.0 --cache-dir=./.zig-cache --seed=0x1d8ded41 --listen=-
+
+gates
++- test-blackbox
+   +- run exe run-hash-summary
+      +- run docs_test w
+doc examples: 411 found, 345 assertions checked, 60 prose, 6 skipped
+  SKIP core/Basics.beni:163  eq [ 1, 2 ] [ 1, 2 ] == True
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/Basics.beni:239  append "butter" "fly" == "butterfly"
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/Basics.beni:240  append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/Basics.beni:481  List.map [ 1, 2, 3 ] (always 0 _) == [ 0, 0, 0 ]
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/List.beni:1126  indexedMap [ "a", "b" ] (λi x → ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+  SKIP core/List.beni:1341  intersperse [ "turtles", "turtles" ] "on" == [ "turtles", "on", "turtles" ]
+    reason: a `String`/`List` literal here would make this module IMPORT `String`/`List`, which core's own module graph already has pointing the other way — so no module with this module's scope is allowed to hold the example
+doc-example gate: OK — everything above is informational.
+failed command: cd . && BENI_VARIANT_EXE= BENI_CORPUS_ROOT=tests/corpus BENI_CORPUS_MODE= BENI_CASE_TIMEOUT_MS= BENI_CORPUS_PART= BENI_CORPUS_ONLY= BENI_PENDING_SCENARIOS= BENI_PERF_SHARD= BENI_TEST_SHARD= BENI_RUN_HASHES= BENI_RUN_HASH_REPORT=/private/tmp/beni-direct-s4/zig-out/run-hash-counts/30726-all BENI_BROWSER= BENI_CHROME= BENI_FUZZ_SEEDS= BENI_FUZZ_STEPS= BENI_PENDING_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_CPU_MS=999 BENI_EXE=/private/tmp/beni-direct-s4/zig-out/safe/bin/beni ./.zig-cache/o/92994e60e7a9bf6095f99990653bd80b/docs_test --node-version=v24.19.0 --cache-dir=./.zig-cache --seed=0x1d8ded41 --listen=-
+
+gates
++- test-blackbox
+   +- test-blackbox-browser
+      +- run browser_test shard 2/3 2 pass, 1 fail (3 total)
+d however many entries a fuzz sweep left
+error: 'browser_test.test.the driver's cache pruning is bounded however many entries a fuzz sweep left' failed:
+       FAIL: 1582 ms of CPU, over the budget of 999 (its own and its children's): browser_test.test.the driver's cache pruning is bounde
+failed command: cd . && BENI_VARIANT_EXE= BENI_CORPUS_ROOT=tests/corpus BENI_CORPUS_MODE= BENI_CASE_TIMEOUT_MS= BENI_CORPUS_PART= BENI_CORPUS_ONLY= BENI_PENDING_SCENARIOS= BENI_PERF_SHARD= BENI_TEST_SHARD=2/3 BENI_RUN_HASHES= BENI_RUN_HASH_REPORT= BENI_BROWSER= BENI_CHROME= BENI_FUZZ_SEEDS= BENI_FUZZ_STEPS= BENI_PENDING_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_CPU_MS=999 BENI_EXE=/private/tmp/beni-direct-s4/zig-out/safe/bin/beni BENI_CORPUS_TEST_EXE=/private/tmp/beni-direct-s4/zig-out/tools/corpus_test ./.zig-cache/o/abe0d42bc05f5ec32975f915f3b13ec9/browser_test --node-version=v24.19.0 --cache-dir=./.zig-cache --seed=0x1d8ded41 --listen=-
+
+gates
++- test-blackbox
+   +- test-blackbox-browser
+      +- run browser_test shard 1/3 3 pass, 1 fail (4 total)
+ entries of the last hour
+error: 'browser_test.test.the driver's cache pruning keeps the entries of the last hour' failed:
+       FAIL: 1571 ms of CPU, over the budget of 999 (its own and its children's): browser_test.test.the driver's cache pruning keeps the
+failed command: cd . && BENI_VARIANT_EXE= BENI_CORPUS_ROOT=tests/corpus BENI_CORPUS_MODE= BENI_CASE_TIMEOUT_MS= BENI_CORPUS_PART= BENI_CORPUS_ONLY= BENI_PENDING_SCENARIOS= BENI_PERF_SHARD= BENI_TEST_SHARD=1/3 BENI_RUN_HASHES= BENI_RUN_HASH_REPORT= BENI_BROWSER= BENI_CHROME= BENI_FUZZ_SEEDS= BENI_FUZZ_STEPS= BENI_PENDING_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_CPU_MS=999 BENI_EXE=/private/tmp/beni-direct-s4/zig-out/safe/bin/beni BENI_CORPUS_TEST_EXE=/private/tmp/beni-direct-s4/zig-out/tools/corpus_test ./.zig-cache/o/abe0d42bc05f5ec32975f915f3b13ec9/browser_test --node-version=v24.19.0 --cache-dir=./.zig-cache --seed=0x1d8ded41 --listen=-
+
+Build Summary: 183/191 steps succeeded (4 failed); 1295/1314 tests passed (15 skipped, 4 failed)
+gates transitive failure
++- test-blackbox transitive failure
+   +- run exe run-hash-summary transitive failure
+   |  +- run build_test shard 1/3 27 pass, 1 fail (28 total)
+   |  +- run build_test shard 2/3 27 pass, 1 fail (28 total)
+   +- test-blackbox-browser transitive failure
+      +- run browser_test shard 1/3 3 pass, 1 fail (4 total)
+      +- run browser_test shard 2/3 2 pass, 1 fail (3 total)

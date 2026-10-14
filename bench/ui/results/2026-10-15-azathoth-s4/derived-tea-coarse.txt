@@ -1,0 +1,9 @@
+results/2026-10-15-azathoth-s4/bundles/derived-tea.mjs: minified 8378 B, brotli 11 3565 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core | 1342 | 644 | 379 | 379 |
+| runtime | 6319 | 2672 | 2128 | 2158 |
+| program | 1198 | 621 | 436 | 520 |
+| what is left (start-up statements) | | | | 508 |
+| **sum** | | 3937 | 2943 | 3565 |

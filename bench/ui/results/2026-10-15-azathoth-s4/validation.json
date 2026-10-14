@@ -1,0 +1,26 @@
+{
+  "measurementCommit": "e2aed9171507978edef58e1ee8cf601020f538e2",
+  "reviewBase": "6e041631fe01c4dad150ae100615858e0fa97a65",
+  "finalGate": {
+    "command": "zorg build gates",
+    "host": "azathoth",
+    "exit": 0,
+    "log": "final-gates.log"
+  },
+  "chrome": {
+    "command": "zorg build test-browser -Dcorpus=browser/direct",
+    "cases": 360,
+    "passed": 358,
+    "failures": [
+      "NavigateCommands [value fuzz]",
+      "Router [value fuzz]"
+    ],
+    "log": "chrome.log"
+  },
+  "macosGate": {
+    "passed": 1295,
+    "skipped": 15,
+    "failed": 4,
+    "log": "gates-macos.log"
+  }
+}

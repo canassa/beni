@@ -1,0 +1,10 @@
+results/2026-10-15-azathoth-s4/bundles/helperRows-tea.mjs: minified 7604 B, brotli 11 3231 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime: slots, templates, queue, mount and keyed list | 5948 | 2539 | 1950 | 1950 |
+| runtime: delegation | 611 | 340 | 179 | 251 |
+| core: array initialize | 166 | 133 | 30 | 54 |
+| program: helper, page and init | 1281 | 639 | 401 | 512 |
+| what is left (start-up statements) | | | | 464 |
+| **sum** | | 3651 | 2560 | 3231 |

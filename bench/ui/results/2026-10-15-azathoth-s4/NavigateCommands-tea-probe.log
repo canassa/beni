@@ -1,0 +1,9 @@
+
+{"entry":"/var/folders/01/3pz197x973sdtw6jlcqbpnr40000gp/T/beni-navigation-probe-kf0Tyc/NavigateCommands-tea/_main.mjs","action":"message Push \"1\"","message":{"program":0,"value":{"$":"Push","a":"1","b":null}},"hooks":{"url":"http://127.0.0.1:57267/_page.html#/","tea":"object","direct":"undefined"}}
+{"entry":"/var/folders/01/3pz197x973sdtw6jlcqbpnr40000gp/T/beni-navigation-probe-kf0Tyc/NavigateCommands-tea/_main.mjs","action":"message Replace \"ab\"","message":{"program":0,"value":{"$":"Replace","a":"ab","b":null}},"hooks":{"url":"http://127.0.0.1:57267/1","tea":"object","direct":"undefined"}}
+{"entry":"/var/folders/01/3pz197x973sdtw6jlcqbpnr40000gp/T/beni-navigation-probe-kf0Tyc/NavigateCommands-tea/_main.mjs","action":"message Back 1","message":{"program":0,"value":{"$":"Back","a":1,"b":null}},"hooks":{"url":"http://127.0.0.1:57267/ab","tea":"object","direct":"undefined"}}
+{"entry":"/var/folders/01/3pz197x973sdtw6jlcqbpnr40000gp/T/beni-navigation-probe-kf0Tyc/NavigateCommands-tea/_main.mjs","action":"message Forward -410","message":{"program":0,"value":{"$":"Forward","a":-410,"b":null}},"hooks":{"url":"http://127.0.0.1:57267/_page.html#/","tea":"object","direct":"undefined"}}
+{"entry":"/var/folders/01/3pz197x973sdtw6jlcqbpnr40000gp/T/beni-navigation-probe-kf0Tyc/NavigateCommands-tea/_main.mjs","action":"message Load (\"<b>\")","message":{"program":0,"value":{"$":"Load","a":"<b>","b":null}},"hooks":{"url":"http://127.0.0.1:57267/_page.html#/","tea":"object","direct":"undefined"}}
+{"entry":"/var/folders/01/3pz197x973sdtw6jlcqbpnr40000gp/T/beni-navigation-probe-kf0Tyc/NavigateCommands-tea/_main.mjs","action":"message Refused (\"<b>\") (CrossOrigin (\" \"))","message":{"program":0,"value":{"$":"Refused","a":"<b>","b":{"$":"CrossOrigin","a":" "}}},"hooks":{"url":"chrome-error://chromewebdata/","tea":"undefined","direct":"undefined"}}
+
+driver exit 0

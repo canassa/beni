@@ -1,0 +1,13 @@
+results/2026-10-15-azathoth-s4/bundles/live-tea.mjs: minified 9268 B, brotli 11 3867 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime: slots, templates, queue and mount | 2159 | 965 | 520 | 520 |
+| runtime: keyed list | 3848 | 1738 | 1389 | 1437 |
+| runtime: controlled inputs | 1285 | 587 | 386 | 392 |
+| runtime: delegation | 566 | 330 | 156 | 219 |
+| core: List and array operations | 421 | 260 | 86 | 142 |
+| runtime: event value | 42 | 45 | -3 | 6 |
+| program: page, update and init | 1501 | 738 | 494 | 609 |
+| what is left (start-up statements) | | | | 542 |
+| **sum** | | 4663 | 3028 | 3867 |

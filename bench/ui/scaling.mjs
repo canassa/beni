@@ -366,13 +366,14 @@ const subjectsOf = (sweep, dir) => {
     { name: "vanillajs", kind: "script", src: `/${dir}/vanilla.js` },
   ];
   return list
-    .filter((s) => wants(s.name) && skippedReason(s) === null)
+    .filter((s) => wants(s.name) && skippedReason(s, sweep) === null)
     .map((s) => ({ ...s, subject: s.name, name: `${key}.${s.name}` }));
 };
 
 // Why a subject's page was not built (`.skipped`, written by `buildAll`),
 // or null when it was.
-const skippedReason = (s) => {
+const skippedReason = (s, sweep) => {
+  if (["p2", "p3"].includes(s.name) && typeof sweep.program[s.name] !== "function") return "no generated subject for this sweep";
   if (s.dir === undefined) return null;
   const file = join(root, "out", s.dir, ".skipped");
   return existsSync(file) ? readFileSync(file, "utf8") : null;
@@ -385,9 +386,11 @@ const skippedPages = [];
 const noteSkipped = () => {
   for (const [dir, { sweep }] of programs) {
     const key = dir.replace(/^out\/scaling\//, "").replace("/", ".");
-    for (const name of ["beni-direct", "beni-direct-release"]) {
+    for (const name of ["beni-direct", "beni-direct-release", "p2", "p3"]) {
       if (!wants(name)) continue;
-      const reason = skippedReason({ dir: `scaling/${dir.slice(12)}/${name === "beni-direct" ? "beni-direct-dev" : "beni-direct-rel"}` });
+      const reason = skippedReason(name === "p2" || name === "p3"
+        ? { name }
+        : { name, dir: `scaling/${dir.slice(12)}/${name === "beni-direct" ? "beni-direct-dev" : "beni-direct-rel"}` }, sweep);
       if (reason === null) continue;
       skippedPages.push({ sweep: sweep.id, page: key, subject: name, reason });
       console.log(`skipped ${key} ${name}: ${reason}`);

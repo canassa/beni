@@ -1,0 +1,13 @@
+results/2026-10-15-azathoth-s4/bundles/live-direct.mjs: minified 6438 B, brotli 11 2681 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core: List readers and array operations | 681 | 374 | 178 | 178 |
+| runtime: guard and mount | 612 | 336 | 177 | 170 |
+| runtime: lists and reconciler | 2576 | 1147 | 841 | 861 |
+| runtime: delegation and listener | 628 | 317 | 190 | 204 |
+| runtime: controlled inputs | 1424 | 633 | 429 | 483 |
+| runtime: sandbox and event value | 68 | 64 | 11 | 7 |
+| program: page, handlers and init | 945 | 491 | 383 | 429 |
+| what is left (start-up statements) | | | | 349 |
+| **sum** | | 3362 | 2209 | 2681 |

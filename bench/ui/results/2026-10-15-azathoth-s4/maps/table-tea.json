@@ -1,0 +1,30 @@
+[
+  [
+    "runtime: slots, templates, queue and mount",
+    "a b c d e f g h i j k l m n o p q r s t u v y z"
+  ],
+  [
+    "runtime: keyed list",
+    "A B C D E F G H I J K"
+  ],
+  [
+    "runtime: delegation",
+    "L M N"
+  ],
+  [
+    "core: modBy, Maybe and List",
+    "O P Q R S T U V W X Y Z $ _ aa ba ca da ea fa ga ha ia ja ka la ma na oa"
+  ],
+  [
+    "program: templates and kinds",
+    "pa qa ra sa ta ua va wa xa ya za Aa Ca Da"
+  ],
+  [
+    "program: data and row building",
+    "Ea Fa Ga Ha Ia Ja Ka La"
+  ],
+  [
+    "program: update and mount",
+    "Ma x Ba w Na"
+  ]
+]

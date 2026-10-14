@@ -1,0 +1,30 @@
+[
+  [
+    "core: List readers and array operations",
+    "a b c d e f g h i j k l"
+  ],
+  [
+    "runtime: guard and mount",
+    "m n o p q r s t"
+  ],
+  [
+    "runtime: lists and reconciler",
+    "u v w x y z A B C D E F G H I J"
+  ],
+  [
+    "runtime: delegation and listener",
+    "K L M"
+  ],
+  [
+    "runtime: controlled inputs",
+    "N O P Q R S T U V W X Y Z"
+  ],
+  [
+    "runtime: sandbox and event value",
+    "$ _"
+  ],
+  [
+    "program: page, handlers and init",
+    "aa"
+  ]
+]
