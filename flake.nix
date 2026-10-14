@@ -30,6 +30,9 @@
       # LD_LIBRARY_PATH first, so a host library directory there cannot
       # stop it unless the directory holds glibc's own libraries: those
       # stop this script's bash, and `node`, before any wrapper runs.
+      # It also drops entries set on purpose, such as a GPU driver
+      # directory: `test-browser` starts Chrome with `--disable-gpu`
+      # (tests/blackbox/browser.zig), so it needs none.
       # `checks.browser-chromium` runs the shell's `chromium` against it.
       browserChromium = pkgs: pkgs.writeShellScriptBin "chromium" ''
         unset LD_LIBRARY_PATH
