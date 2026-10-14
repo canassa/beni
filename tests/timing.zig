@@ -205,7 +205,9 @@ pub fn openThreadCounter() void {
 
 /// A process told to hold its tests to a budget that cannot count one
 /// stops: a test that ran unmeasured would pass for a reason that is not
-/// true.
+/// true. `build.zig` asks the kernel for a counter when it configures the
+/// build, and sets no budget where it gets none; this is the check that
+/// holds, in the process that counts.
 fn noCounter() noreturn {
     std.debug.print("{s} is set, but no instruction counter can be opened here (perf_event_open), so no test can be held to it\n", .{budget_instructions_env_var});
     std.process.exit(1);

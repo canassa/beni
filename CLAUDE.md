@@ -357,7 +357,7 @@ there that cost 7% of it. So **`zig build gates` refuses to run where it
 cannot take the count** — another OS or architecture, `perf_event_paranoid`
 above 2, a virtual machine with no PMU (GitHub's hosted x86-64 runners), a
 CPU without the reference's features — and it refuses `-Dtest-budget`,
-`-Dtarget`, `-Dcpu` and `-Doptimize` as it refuses the filters. On such a
+`-Dtarget`, `-Dcpu`, `-Doptimize` and `--release` as it refuses the filters. On such a
 machine the other test steps hold no test to the budget and say so once; the
 gate of a change runs on an x86-64 Linux host. A case's count moves by under
 1% from run to run, with load and with the core count.
