@@ -1,0 +1,68 @@
+test-browser
++- run corpus_test part browser 16 pass, 1 fail (17 total)
+error: 'corpus_test.test.corpus: browser' failed:
+       NavigateCommands.beni: the page fuzzer (browser-tea against browser-direct) ended with 2
+       the program: 7 constructors sent
+       fuzz: Error: (function fuzzSend({ program, value }) {
+         let send;
+         const direct = globalThis.__beniFuzz;
+         if (direct !== undefined) {
+           send = () => direct.send(program, value);
+         } else {
+           const mount = globalThis.__beniFuzzMounts[program];
+           if (mount === undefined) return `the page mounted no program ${program}`;
+           if (globalThis.__beniFuzzSend === undefined) return "the page has no guarded send: build it with --fuzz";
+           send = () => globalThis.__beniFuzzSend(mount, value);
+         }
+         const carrier = document.createElement("span");
+         carrier.addEventListener("beni-fuzz-send", send);
+         carrier.dispatchEvent(new Event("beni-fuzz-send"));
+         return null;
+       }) failed in Chrome: TypeError: Cannot read properties of undefined (reading '0')
+           at fuzzSend (<anonymous>:504:46)
+           at <anonymous>:513:4
+           at <anonymous>:513:89
+           at Object.run (file:///home/canassa/src/github.com/canassa/beni/tests/browser/driver.mjs:1370:37)
+           at async play (file:///home/canassa/src/github.com/canassa/beni/tests/browser/fuzz.mjs:817:21)
+           at async fuzz (file:///home/canassa/src/github.com/canassa/beni/tests/browser/fuzz.mjs:885:17)
+           at async file:///home/canassa/src/github.com/canassa/beni/tests/browser/driver.mjs:1522:74
+       FAIL tests/corpus/browser/direct/NavigateCommands.beni [value fuzz]: FuzzDifference
+       Router.beni: the page fuzzer (browser-tea against browser-direct) ended with 2
+       the program: 3 constructors sent
+       fuzz: Error: (function fuzzSend({ program, value }) {
+         let send;
+         const direct = globalThis.__beniFuzz;
+         if (direct !== undefined) {
+           send = () => direct.send(program, value);
+         } else {
+           const mount = globalThis.__beniFuzzMounts[program];
+           if (mount === undefined) return `the page mounted no program ${program}`;
+           if (globalThis.__beniFuzzSend === undefined) return "the page has no guarded send: build it with --fuzz";
+           send = () => globalThis.__beniFuzzSend(mount, value);
+         }
+         const carrier = document.createElement("span");
+         carrier.addEventListener("beni-fuzz-send", send);
+         carrier.dispatchEvent(new Event("beni-fuzz-send"));
+         return null;
+       }) failed in Chrome: TypeError: Cannot read properties of undefined (reading '0')
+           at fuzzSend (<anonymous>:504:46)
+           at <anonymous>:513:4
+           at <anonymous>:513:210
+           at Object.run (file:///home/canassa/src/github.com/canassa/beni/tests/browser/driver.mjs:1370:37)
+           at async play (file:///home/canassa/src/github.com/canassa/beni/tests/browser/fuzz.mjs:817:21)
+           at async fuzz (file:///home/canassa/src/github.com/canassa/beni/tests/browser/fuzz.mjs:885:17)
+           at async file:///home/canassa/src/github.com/canassa/beni/tests/browser/driver.mjs:1522:74
+       FAIL tests/corpus/browser/direct/Router.beni [value fuzz]: FuzzDifference
+       corpus tests/corpus/browser: 360 cases, 2 failures
+       corpus_test.test.corpus: browser: FAIL (CorpusFailures)
+       /home/canassa/src/github.com/canassa/beni/tests/blackbox/corpus_test.zig:448:9: 0x12b606b in walk (corpus_test.zig)
+               return error.CorpusFailures;
+               ^
+       /home/canassa/src/github.com/canassa/beni/tests/blackbox/corpus_test.zig:339:5: 0x1462009 in test.corpus: browser (corpus_test.zig)
+           try walk(.browser);
+           ^
+failed command: cd . && BENI_VARIANT_EXE= BENI_CORPUS_ROOT=tests/corpus BENI_CORPUS_MODE= BENI_CASE_TIMEOUT_MS= BENI_CORPUS_PART=browser BENI_CORPUS_ONLY=browser/direct BENI_PENDING_SCENARIOS= BENI_PERF_SHARD= BENI_TEST_SHARD= BENI_RUN_HASHES= BENI_RUN_HASH_REPORT= BENI_BROWSER=chrome BENI_CHROME= BENI_FUZZ_SEEDS= BENI_FUZZ_STEPS= BENI_PENDING_BUDGET_INSTRUCTIONS=4300000000 BENI_TEST_BUDGET_INSTRUCTIONS= BENI_TEST_BUDGET_CPU_MS= BENI_EXE=/home/canassa/src/github.com/canassa/beni/zig-out/safe/bin/beni ./.zig-cache/o/abc789823848d27a1afee2725867739f/corpus_test --node-version=v24.19.0 --cache-dir=./.zig-cache --seed=0x6868339d --listen=-
+
+Build Summary: 32/34 steps succeeded (1 failed); 16/17 tests passed (1 failed)
+test-browser transitive failure
++- run corpus_test part browser 16 pass, 1 fail (17 total)

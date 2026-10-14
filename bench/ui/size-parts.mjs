@@ -13,7 +13,7 @@
 //           charged what its removal saved at that point; these sum to the
 //           whole, with the stubs' own bytes left in "what is left".
 //
-//   node size-parts.mjs [--file=out/beni-rel/_main.mjs] [--map=table|table-for|table-coarse]
+//   node size-parts.mjs [--file=out/beni-rel/_main.mjs] [--map=table|table-for|table-coarse] [--map-file=<JSON path>]
 //
 // A removed binding becomes a stub naming the bindings it used, so no other
 // part's code becomes dead and is dropped with it.
@@ -135,13 +135,17 @@ const coarseOf = (name) => {
 };
 for (const name of ["table", "table-s3", "direct-s3", "direct-lean"]) maps[`${name}-coarse`] = coarseOf(name);
 
-const map = maps[arg("map", "table")];
+const mapFile = arg("map-file", null);
+const map = mapFile === null ? maps[arg("map", "table")] : JSON.parse(readFileSync(join(root, mapFile), "utf8"));
 const src = readFileSync(file, "utf8");
 const ast = acorn.parse(src, { ecmaVersion: "latest", sourceType: "module" });
 
 // Every top-level declarator, by name; the other statements as they are.
 const partOf = new Map();
-for (const [label, names] of map) for (const n of names.split(" ")) partOf.set(n, label);
+for (const [label, names] of map) for (const n of names.split(" ").filter(Boolean)) {
+  if (partOf.has(n)) throw new Error(`two parts for ${n}`);
+  partOf.set(n, label);
+}
 const decls = [];
 for (const st of ast.body) {
   if (st.type === "VariableDeclaration") for (const d of st.declarations) decls.push({ name: d.id.name, kind: st.kind, text: src.slice(d.start, d.end) });

@@ -1,0 +1,20 @@
+results/2026-10-15-azathoth-s4/bundles/table-direct.mjs: minified 10636 B, brotli 11 4102 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core: List representation, append and indexed get | 2029 | 946 | 594 | 594 |
+| core: array allocation, indexedMap and filter | 393 | 219 | 72 | 88 |
+| runtime: guard, queue, mount and run | 617 | 336 | 184 | 199 |
+| runtime: list descriptor and row helpers | 414 | 242 | 47 | 78 |
+| runtime: append and clear | 267 | 188 | 44 | 52 |
+| runtime: reconciler and row patch | 2040 | 970 | 607 | 695 |
+| runtime: exact swap and walk | 533 | 317 | 126 | 154 |
+| runtime: filter merge and selection | 584 | 351 | 136 | 208 |
+| runtime: delegation and listener | 631 | 309 | 167 | 239 |
+| core: modBy and Nothing | 72 | 76 | 0 | 6 |
+| runtime: sandbox | 42 | 46 | 6 | 0 |
+| program: data and row building | 830 | 483 | 341 | 358 |
+| program: swap and rowClass | 242 | 173 | 62 | 86 |
+| program: page, handlers and init | 2713 | 899 | 712 | 823 |
+| what is left (start-up statements) | | | | 522 |
+| **sum** | | 5555 | 3098 | 4102 |

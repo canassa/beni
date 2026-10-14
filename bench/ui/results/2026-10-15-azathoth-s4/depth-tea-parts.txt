@@ -1,0 +1,8 @@
+results/2026-10-15-azathoth-s4/bundles/depth-tea.mjs: minified 54208 B, brotli 11 3110 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime: slots, templates, queue, mount and delegation | 2658 | 1154 | 731 | 731 |
+| program: page, nested model and updates | 57842 | 4268 | 935 | 1105 |
+| what is left (start-up statements) | | | | 1274 |
+| **sum** | | 5422 | 1666 | 3110 |

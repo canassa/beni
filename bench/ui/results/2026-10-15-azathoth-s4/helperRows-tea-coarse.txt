@@ -1,0 +1,9 @@
+results/2026-10-15-azathoth-s4/bundles/helperRows-tea.mjs: minified 7604 B, brotli 11 3231 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core | 166 | 133 | 30 | 30 |
+| runtime | 6550 | 2798 | 2201 | 2225 |
+| program | 1281 | 639 | 401 | 512 |
+| what is left (start-up statements) | | | | 464 |
+| **sum** | | 3570 | 2632 | 3231 |

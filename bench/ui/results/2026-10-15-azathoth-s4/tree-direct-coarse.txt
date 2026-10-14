@@ -1,0 +1,8 @@
+results/2026-10-15-azathoth-s4/bundles/tree-direct.mjs: minified 2717 B, brotli 11 1184 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime | 1873 | 825 | 522 | 522 |
+| program | 1093 | 534 | 355 | 417 |
+| what is left (start-up statements) | | | | 245 |
+| **sum** | | 1359 | 877 | 1184 |

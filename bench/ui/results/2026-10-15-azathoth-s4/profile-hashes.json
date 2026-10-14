@@ -1,0 +1,12 @@
+{
+  "profile-update": {
+    "rawBytes": 4283630,
+    "gzipBytes": 328936,
+    "sha256": "f8f7592269edd4f557d1839a23d5c2de11de988870bb787899ca979ca6f7d568"
+  },
+  "profile-rendering": {
+    "rawBytes": 13707443,
+    "gzipBytes": 996575,
+    "sha256": "3c18ae2b745fbdf4ee70360dc2c57f4e5564628c3f688a8c2da5f8cf276eee8c"
+  }
+}

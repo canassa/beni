@@ -1,0 +1,58 @@
+[
+  [
+    "core: List representation, append and indexed get",
+    "a b c d e f g h i j k l m n o p q r s t u v"
+  ],
+  [
+    "core: array allocation, indexedMap and filter",
+    "w x y z A B"
+  ],
+  [
+    "runtime: guard, queue, mount and run",
+    "C D E F G H I J"
+  ],
+  [
+    "runtime: list descriptor and row helpers",
+    "K L M N O P Q R S"
+  ],
+  [
+    "runtime: append and clear",
+    "T U"
+  ],
+  [
+    "runtime: reconciler and row patch",
+    "V W X Y Z $ _ aa"
+  ],
+  [
+    "runtime: exact swap and walk",
+    "ba ca da"
+  ],
+  [
+    "runtime: filter merge and selection",
+    "ea fa ga"
+  ],
+  [
+    "runtime: delegation and listener",
+    "ha ia ja"
+  ],
+  [
+    "core: modBy and Nothing",
+    "ka ma"
+  ],
+  [
+    "runtime: sandbox",
+    "la"
+  ],
+  [
+    "program: data and row building",
+    "na oa pa qa ra sa ta ua"
+  ],
+  [
+    "program: swap and rowClass",
+    "va wa"
+  ],
+  [
+    "program: page, handlers and init",
+    "xa"
+  ]
+]

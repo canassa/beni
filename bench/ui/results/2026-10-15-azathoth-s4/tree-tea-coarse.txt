@@ -1,0 +1,8 @@
+results/2026-10-15-azathoth-s4/bundles/tree-tea.mjs: minified 3587 B, brotli 11 1523 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime | 2462 | 1078 | 732 | 732 |
+| program | 1381 | 612 | 420 | 491 |
+| what is left (start-up statements) | | | | 300 |
+| **sum** | | 1690 | 1152 | 1523 |

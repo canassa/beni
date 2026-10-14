@@ -1,0 +1,8 @@
+results/2026-10-15-azathoth-s4/bundles/width-direct.mjs: minified 20664 B, brotli 11 2983 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime | 698 | 366 | 237 | 237 |
+| program | 20069 | 2685 | 2622 | 2644 |
+| what is left (start-up statements) | | | | 102 |
+| **sum** | | 3051 | 2859 | 2983 |

@@ -1,0 +1,190 @@
+{
+  "tableSamples": 1080,
+  "sweepSamples": 10188,
+  "loads": {
+    "min": 0.3,
+    "median": 0.725,
+    "max": 1.54
+  },
+  "failures": [],
+  "skipped": [
+    {
+      "sweep": "filtered",
+      "page": "filtered.100",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "filtered",
+      "page": "filtered.1000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.4",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.8",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.16",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.17",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.20",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.32",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.64",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.128",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.256",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "width",
+      "page": "width.1024",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "derived",
+      "page": "derived.100",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "derived",
+      "page": "derived.300",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "derived",
+      "page": "derived.1000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "derived",
+      "page": "derived.3000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "derived",
+      "page": "derived.10000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "derived",
+      "page": "derived.30000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "derived",
+      "page": "derived.100000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "helperRows",
+      "page": "helperRows.100",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "helperRows",
+      "page": "helperRows.300",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "helperRows",
+      "page": "helperRows.1000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "helperRows",
+      "page": "helperRows.3000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "helperRows",
+      "page": "helperRows.10000",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "tree",
+      "page": "tree.4",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "tree",
+      "page": "tree.6",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "tree",
+      "page": "tree.8",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "tree",
+      "page": "tree.10",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    },
+    {
+      "sweep": "tree",
+      "page": "tree.12",
+      "subject": "p3",
+      "reason": "no generated subject for this sweep"
+    }
+  ],
+  "tableStarted": "2026-10-14T22:07:42.313Z",
+  "tableFinished": "2026-10-14T22:36:38.089Z",
+  "sweepStarted": "2026-10-14T22:36:38.772Z",
+  "sweepFinished": "2026-10-14T23:04:01.988Z"
+}

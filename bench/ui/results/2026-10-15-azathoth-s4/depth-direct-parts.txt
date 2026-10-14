@@ -1,0 +1,10 @@
+results/2026-10-15-azathoth-s4/bundles/depth-direct.mjs: minified 39743 B, brotli 11 2671 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime: guard, mount, listener and sandbox | 698 | 366 | 307 | 307 |
+| program: initial nested model | 3913 | 771 | 175 | 204 |
+| program: nested immutable updates | 4202 | 581 | 224 | 255 |
+| program: page and handler | 33497 | 1713 | 1314 | 1096 |
+| what is left (start-up statements) | | | | 809 |
+| **sum** | | 3431 | 2020 | 2671 |

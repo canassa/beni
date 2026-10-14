@@ -1,0 +1,11 @@
+results/2026-10-15-azathoth-s4/bundles/helperRows-direct.mjs: minified 2075 B, brotli 11 979 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core: List readers and array operations | 452 | 293 | 134 | 134 |
+| runtime: guard and mount | 617 | 337 | 209 | 211 |
+| runtime: lists and reconciler | 2576 | 1144 | 73 | 105 |
+| runtime: listener and sandbox | 95 | 80 | 13 | 8 |
+| program: page and init | 767 | 395 | 245 | 330 |
+| what is left (start-up statements) | | | | 191 |
+| **sum** | | 2249 | 674 | 979 |

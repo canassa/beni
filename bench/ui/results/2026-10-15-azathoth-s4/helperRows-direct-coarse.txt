@@ -1,0 +1,9 @@
+results/2026-10-15-azathoth-s4/bundles/helperRows-direct.mjs: minified 2075 B, brotli 11 979 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core | 452 | 293 | 134 | 134 |
+| runtime | 3255 | 1421 | 308 | 324 |
+| program | 767 | 395 | 245 | 330 |
+| what is left (start-up statements) | | | | 191 |
+| **sum** | | 2109 | 687 | 979 |

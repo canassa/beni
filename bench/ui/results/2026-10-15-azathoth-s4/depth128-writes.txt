@@ -1,0 +1,37 @@
+program Depth128.main : Tea.sandbox
+  model Depth128.Model
+  init
+    literal ρ
+  key (any)                                       exact (cap k) node ρ; node ρ.root; node ρ.root.child; node ρ.root.child.child; node ρ.root.child.child.child; node ρ.root.child.child.child.child; node ρ.root.child.child.child.child.child; node ρ.root.child.child.child.child.child.child; value ρ.root.child.child.child.child.child.child.child
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 1
+  hole Depth128.beni:1689:15                      literal    reads ρ.root.label
+  hole Depth128.beni:1690:9                       dynamic    reads ρ.root.child.child.child.child.child.child.child; ρ.root.child.child.child.child.child.child.label; ρ.root.child.child.child.child.child.label; ρ.root.child.child.child.child.label; ρ.root.child.child.child.label; ρ.root.child.child.label; ρ.root.child.label
+  hole Depth128.beni:1697:15                      literal    reads ρ.root.child.label
+  hole Depth128.beni:1698:9                       dynamic    reads ρ.root.child.child.child.child.child.child.child; ρ.root.child.child.child.child.child.child.label; ρ.root.child.child.child.child.child.label; ρ.root.child.child.child.child.label; ρ.root.child.child.child.label; ρ.root.child.child.label
+  hole Depth128.beni:1705:15                      literal    reads ρ.root.child.child.label
+  hole Depth128.beni:1706:9                       dynamic    reads ρ.root.child.child.child.child.child.child.child; ρ.root.child.child.child.child.child.child.label; ρ.root.child.child.child.child.child.label; ρ.root.child.child.child.child.label; ρ.root.child.child.child.label
+  hole Depth128.beni:1713:15                      literal    reads ρ.root.child.child.child.label
+  hole Depth128.beni:1714:9                       dynamic    reads ρ.root.child.child.child.child.child.child.child; ρ.root.child.child.child.child.child.child.label; ρ.root.child.child.child.child.child.label; ρ.root.child.child.child.child.label
+  hole Depth128.beni:1721:15                      literal    reads ρ.root.child.child.child.child.label
+  hole Depth128.beni:1722:9                       dynamic    reads ρ.root.child.child.child.child.child.child.child; ρ.root.child.child.child.child.child.child.label; ρ.root.child.child.child.child.child.label
+  hole Depth128.beni:1729:15                      literal    reads ρ.root.child.child.child.child.child.label
+  hole Depth128.beni:1730:9                       dynamic    reads ρ.root.child.child.child.child.child.child.child; ρ.root.child.child.child.child.child.child.label
+  hole Depth128.beni:1737:15                      literal    reads ρ.root.child.child.child.child.child.child.label
+  hole Depth128.beni:1738:9                       dynamic    reads ρ.root.child.child.child.child.child.child.child
+  hole Depth128.beni:2714:9                       dynamic    reads ρ.root.child.child.child.child.child.child.child; ρ.root.child.child.child.child.child.child.label; ρ.root.child.child.child.child.child.label; ρ.root.child.child.child.child.label; ρ.root.child.child.child.label; ρ.root.child.child.label; ρ.root.child.label; ρ.root.label
+  holes 15: static 0, literal 7, static-key 0, dynamic 8
+  site Depth128.beni:1688:5                       unique
+  site Depth128.beni:1696:5                       unique
+  site Depth128.beni:1704:5                       unique
+  site Depth128.beni:1712:5                       unique
+  site Depth128.beni:1720:5                       unique
+  site Depth128.beni:1728:5                       unique
+  site Depth128.beni:1736:5                       unique
+  site Depth128.beni:2712:5                       unique
+  sites 8: unique 8, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 8 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 8 over 1 keys and 15 groups (8.00 per key); every key calls 8 of 15 groups (53%)
+  reconciler 0 of 0 lists
+  patchAll <none>

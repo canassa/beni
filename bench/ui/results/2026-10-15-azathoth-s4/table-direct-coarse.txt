@@ -1,0 +1,9 @@
+results/2026-10-15-azathoth-s4/bundles/table-direct.mjs: minified 10636 B, brotli 11 4102 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core | 2456 | 1101 | 699 | 699 |
+| runtime | 5018 | 2066 | 1532 | 1614 |
+| program | 3752 | 1409 | 1147 | 1267 |
+| what is left (start-up statements) | | | | 522 |
+| **sum** | | 4576 | 3378 | 4102 |

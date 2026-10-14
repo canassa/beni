@@ -1,0 +1,9 @@
+results/2026-10-15-azathoth-s4/bundles/tree-direct.mjs: minified 2717 B, brotli 11 1184 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| runtime: slots and templates | 1166 | 523 | 274 | 274 |
+| runtime: guard, mount, value slot, listener and sandbox | 721 | 376 | 205 | 248 |
+| program: recursive helper and page | 1093 | 534 | 355 | 417 |
+| what is left (start-up statements) | | | | 245 |
+| **sum** | | 1433 | 834 | 1184 |

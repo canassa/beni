@@ -1,0 +1,30 @@
+[
+  [
+    "runtime: slots, templates, queue and mount",
+    "a b c d e f g h i j k l m n o p q r s t u v w x y z A D E"
+  ],
+  [
+    "runtime: keyed list",
+    "F G H I J K L M N O"
+  ],
+  [
+    "runtime: controlled inputs",
+    "P Q R S T U V W X Y Z"
+  ],
+  [
+    "runtime: delegation",
+    "$ _ aa"
+  ],
+  [
+    "core: List and array operations",
+    "ba ca da ea fa ga ha ia"
+  ],
+  [
+    "runtime: event value",
+    "ja"
+  ],
+  [
+    "program: page, update and init",
+    "ka la ma na oa pa ra sa C qa B ta"
+  ]
+]
