@@ -20,8 +20,34 @@
       # until the first non-NixOS checkout, which then got no devShell at all.
       systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system nixpkgs.legacyPackages.${system});
+
+      # The Chromium of `nix develop .#browser`. nixpkgs' wrapper puts the
+      # caller's LD_LIBRARY_PATH in front of the libraries Chromium links,
+      # so a host directory there that holds a libasound.so.2 built for a
+      # newer glibc than the flake's stopped Chromium before `main`
+      # ("version `GLIBC_2.43' not found (required by …/libasound.so.2)"),
+      # and `test-browser` ran in the host's Chrome through `-Dchrome=`
+      # instead. This one loads only its own closure: the two variables
+      # through which the dynamic linker takes a library from outside it
+      # are dropped. `checks.browser-chromium` holds it to that.
+      browserChromium = pkgs: pkgs.writeShellScriptBin "chromium" ''
+        unset LD_LIBRARY_PATH LD_PRELOAD
+        exec ${pkgs.chromium}/bin/chromium "$@"
+      '';
     in
     {
+      # `nix build .#checks.<system>.browser-chromium`: the browser shell's
+      # Chromium starts with an LD_LIBRARY_PATH that names a libasound.so.2
+      # the dynamic linker cannot load. nixpkgs' wrapper alone stops there
+      # ("…/libasound.so.2: file too short", exit 127).
+      checks = forAllSystems (system: pkgs: pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        browser-chromium = pkgs.runCommand "browser-chromium" { } ''
+          mkdir host
+          : > host/libasound.so.2
+          LD_LIBRARY_PATH=$PWD/host ${browserChromium pkgs}/bin/chromium --version > $out
+        '';
+      });
+
       devShells = forAllSystems (system: pkgs: rec {
         default = pkgs.mkShell {
           packages = [
@@ -75,10 +101,12 @@
         # `zig build test-browser`, which runs the `browser/` corpus in a
         # headless browser instead of the happy-dom the gates use
         # (tests/blackbox/browser.zig). nixpkgs builds Chromium for Linux
-        # only; elsewhere, point `-Dchrome=` at an installed Chrome.
+        # only; elsewhere, point `-Dchrome=` at an installed Chrome. The
+        # Chromium is `browserChromium`, which ignores the caller's
+        # LD_LIBRARY_PATH and LD_PRELOAD.
         browser = pkgs.mkShell {
           inputsFrom = [ default ];
-          packages = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.chromium ];
+          packages = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ (browserChromium pkgs) ];
         };
 
         # `nix develop .#compare`: the default shell plus every compiler the
