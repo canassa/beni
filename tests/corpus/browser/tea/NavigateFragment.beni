@@ -1,0 +1,47 @@
+-- A `load` of the page's own address with a fragment stays in the
+-- document (boundary.md §9.8.17), so the page driver, which stops every
+-- navigation to another document and logs it (tests/corpus/README.md),
+-- lets it run: nothing is logged, and the address takes the fragment. The
+-- same fragment again changes nothing. The same address with no fragment
+-- is another document, so the driver stops it and logs it, and the address
+-- keeps its fragment. No follower hears the address here: Chrome fires
+-- `popstate` for a fragment and happy-dom does not.
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Load String
+    | Refused Navigation.Error
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg lines =
+    case msg of
+        Load url →
+            ( lines, Navigation.load url Refused )
+
+        Refused _ →
+            ( lines ++ [ "refused" ], Cmd.none )
+
+
+view : List String → Html Msg
+view lines =
+    <main>
+        <button id="fragment" onClick={Load "#top"}>fragment</button>
+        <button id="whole" onClick={Load "/_page.html"}>whole</button>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

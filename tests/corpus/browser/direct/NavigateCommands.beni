@@ -5,8 +5,9 @@
 -- direct forms — and one that is refused sends its refusal, typed
 -- (CLAUDE.md rule 9): a push to another origin, a replace that does not
 -- resolve, a `javascript:` load. `back` with `0` does nothing and sends
--- nothing. A load that is made leaves the page: the driver stops it and
--- logs it (tests/corpus/README.md), and the address stays.
+-- nothing. A load that is made leaves the page, and so does `reload`: the
+-- driver stops each and logs it (tests/corpus/README.md), and the address
+-- stays (a load that stays in the document: `browser/tea/NavigateFragment`).
 import Browser.Navigation as Navigation exposing (Key)
 import Cmd exposing (Cmd)
 import Html exposing (Html)
@@ -21,6 +22,7 @@ type Msg
     | Back Int
     | Forward Int
     | Load String
+    | Reload
     | Refused String Navigation.Error
     | Changed Url
 
@@ -61,6 +63,9 @@ update msg model =
         Load url →
             ( model, Navigation.load url (Refused "load" _) )
 
+        Reload →
+            ( model, Navigation.reload )
+
         Refused label error →
             ( { model | lines = model.lines ++ [ "${label} refused: ${shown error}" ] }, Cmd.none )
 
@@ -78,6 +83,7 @@ view model =
         <button id="none" onClick={Back 0}>none</button>
         <button id="script" onClick={Load "javascript:alert(1)"}>script</button>
         <button id="load" onClick={Load "/elsewhere?q=1"}>load</button>
+        <button id="reload" onClick={Reload}>reload</button>
         <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 

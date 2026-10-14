@@ -366,7 +366,10 @@ compares instead of `.expected`. The differences known today:
   (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome);
 - leaving the page: happy-dom sees only a navigation through `location`,
   so a form's submission or `window.open(url, "_self")` does nothing
-  there, where Chrome logs `(the host leaves the page for …)`;
+  there, where Chrome logs `(the host leaves the page for …)`; and for a
+  navigation to a fragment the page makes, Chrome fires `popstate` and
+  happy-dom does not, so a follower of the address hears it in Chrome only
+  (`browser/tea/NavigateFragment` has none);
 - steps dispatch untrusted events in both DOMs, and `key` types nothing —
   except `press` and the focus events a `focus()` or `blur()` call fires,
   which are trusted as Chrome makes them: Chrome's `press` is its own
