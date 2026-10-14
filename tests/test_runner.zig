@@ -52,6 +52,12 @@ pub const timing = @import("timing.zig");
 /// when not given, and then the harness asks Node itself.
 pub var node_version: []const u8 = "";
 
+/// `--cache-dir=<dir>`: the build's local cache, which the build runner
+/// hands every test. A test that runs a child `zig build` passes it on, so
+/// the child reuses what this build compiled
+/// (`tests/blackbox/gates_test.zig`). Empty when not given.
+pub var cache_dir: []const u8 = "";
+
 comptime {
     if (builtin.fuzz) @compileError("tests/test_runner.zig does not support -ffuzz builds");
 }
@@ -82,7 +88,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         } else if (std.mem.startsWith(u8, arg, "--node-version=")) {
             node_version = arg["--node-version=".len..];
         } else if (std.mem.startsWith(u8, arg, "--cache-dir=")) {
-            // Only a fuzzing build reads it.
+            cache_dir = arg["--cache-dir=".len..];
         } else {
             std.debug.panic("unrecognized command line argument: {s}", .{arg});
         }

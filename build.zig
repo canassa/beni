@@ -22,7 +22,8 @@
 //!                         <text>, in `test-blackbox` and `test-pending`
 //!   zig build test-blackbox-<file>   one black-box test file (`--list-steps`)
 //! `gates` refuses the two filters: a gate runs everything. It also refuses
-//! `-Doptimize`, and the options below that change the budget's count.
+//! `-Doptimize` and `--release`, and the options below that change the
+//! budget's count.
 //!
 //! Every test of the gates' binaries, and every corpus case, is held to a
 //! budget (`tests/test_runner.zig`): one that retires more than 4 300
@@ -960,7 +961,7 @@ pub fn build(b: *std.Build) void {
     // A `gates` that could not say what CLAUDE.md says a green gate means
     // fails before it runs anything (`gatesRefusal`).
     const gates_step = b.step("gates", "Run test, test-blackbox, fmt-check and beni-fmt-check concurrently");
-    if (gatesRefusal(b, test_filters.len != 0 or corpus_only.len != 0, budget_host)) |why| {
+    if (gatesRefusal(b, test_filters.len != 0 or corpus_only.len != 0, optimize, budget_host)) |why| {
         gates_step.dependOn(&b.addFail(why).step);
         return;
     }
@@ -1042,6 +1043,8 @@ const BudgetHost = struct {
 /// machine and its load, so a host that cannot take that count holds the
 /// tests to no budget, and `gates` refuses to run there (`gatesRefusal`).
 fn budgetHost(b: *std.Build) BudgetHost {
+    // It observes the kernel and the CPU, which the configure cache cannot.
+    b.graph.poisonCache();
     const host = b.graph.host.result;
     if (comptime @import("builtin").os.tag != .linux or @import("builtin").cpu.arch != .x86_64) return .{
         .default_target = .{},
@@ -1107,11 +1110,13 @@ fn setBudget(run: *std.Build.Step.Run, instructions: []const u8) void {
 /// budget*): a filter leaves tests out; another budget, or binaries built
 /// for another CPU or in another mode, hold the tests to another count; and
 /// a host that cannot count holds them to none.
-fn gatesRefusal(b: *std.Build, filtered: bool, host: BudgetHost) ?[]const u8 {
+fn gatesRefusal(b: *std.Build, filtered: bool, optimize: std.lang.Optimize, host: BudgetHost) ?[]const u8 {
     if (filtered) return "`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to `test`, `test-blackbox` or a `test-blackbox-<file>` step";
-    for ([_][]const u8{ "test-budget", "target", "cpu", "optimize" }) |name| {
+    for ([_][]const u8{ "test-budget", "target", "cpu" }) |name| {
         if (b.user_input_options.contains(name)) return b.fmt("`gates` holds every test to the budget on the reference build: drop -D{s}, or give it to `test`, `test-blackbox` or a `test-blackbox-<file>` step", .{name});
     }
+    // `-Doptimize` and `--release=`, which never reaches the options.
+    if (optimize != .debug) return "`gates` holds every test to the budget on the reference build: drop -Doptimize and --release, or give them to `test`, `test-blackbox` or a `test-blackbox-<file>` step";
     if (host.cannot_count) |why| return b.fmt("`gates` cannot check the test budget here: {s}. Run the gates on an x86-64 Linux host that can count it (CLAUDE.md, *Every test has a budget*); `zig build test test-blackbox fmt-check beni-fmt-check` runs the same tests here, with no budget", .{why});
     return null;
 }
