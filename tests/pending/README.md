@@ -171,6 +171,13 @@ External-source projects carry a comment-only `AAFinding.beni`: its first
 the project. `_expected.sources` supplies the real application sources; the
 metadata module does not modify those sources.
 
+*Amended 2026-10-14:* the document-helper lowering now accepts Conduit's
+unchanged application. Reader, Editor and Tour move together to the paired
+`tests/corpus/browser/direct/` corpus, with their external sources, scripts
+and existing budget grants. Both platforms use one golden captured with the
+paired driver's existing comment-sentinel normalization. CK-225 is resolved;
+the built-platform criterion-7 finding is separate and remains recorded.
+
 ### Ownership bridge soundness leads (2026-10-15)
 
 The six `Bridge*.beni` refusals were promoted to `tests/corpus/check/bad/direct/`

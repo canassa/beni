@@ -81,7 +81,7 @@ const dom = @import("platform_browser").dom;
 
 pub const lowering: m.Lowering = .{
     .name = "direct",
-    .targets = .{ .major = 1, .minor = 11 },
+    .targets = .{ .major = 1, .minor = 12 },
     .runtime = &.{
         // `(f, x)`: the dispatch guard (§4.3), which a listener body, the
         // dispatcher and the mount enter program code through.
@@ -250,7 +250,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
         .markup => {},
         // `let`s around markup written in place (S4's amendment, item 4).
         .function => if (p.view_branch) {
-            return branchView(cx, tree, p.constructor);
+            return branchView(cx, tree, p.constructor, p.document_branch);
         } else if (!p.view_lets or p.view_root == null) return cx.programReport(.view, .not_implemented,
             \\`browser-direct` compiles a `view` whose body is markup written in place, or an
             \\`if` or a `case`, after any `let`s, and this one's is neither: its body computes
@@ -322,7 +322,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
 /// view's site is the branch alone — a body with no template and one op,
 /// the branch, which has no markup node (`Node.Index.none`) — and each arm
 /// is a site, or a value slot, as in a hole.
-fn branchView(cx: *m.Context, tree: *const m.Tree, constructor: u32) m.Error!m.Expr {
+fn branchView(cx: *m.Context, tree: *const m.Tree, constructor: u32, document_branch: bool) m.Error!m.Expr {
     const found = cx.programBranch(.none) orelse return cx.programReport(.view, .not_implemented,
         \\`browser-direct` compiles a `view` whose body computes its markup only when it is
         \\an `if` or a `case` (`docs/design/browser-direct.md` §5.5). Write the body as markup
@@ -330,7 +330,7 @@ fn branchView(cx: *m.Context, tree: *const m.Tree, constructor: u32) m.Error!m.E
     );
     var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .bake = bakeOf, .bake_item = bakeItemOf, .bake_list = bakeListOf, .inline_call = Page.inlineOf };
     var vg: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .own_listeners = true };
-    var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .vg = &vg, .view_lets = true, .no_root = true, .constructor = constructor };
+    var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .vg = &vg, .view_lets = true, .no_root = true, .constructor = constructor, .document_branch = document_branch };
     g.user = &page;
     const placeholder: m.Root.Index = @fromBackingInt(@intCast(0));
     try page.ctxs.append(cx.arena, .{ .parent = 0, .node = .none, .root = placeholder });
@@ -782,6 +782,7 @@ const Page = struct {
     /// root, its site holds the branch alone, and its `let`s are no
     /// derived values.
     no_root: bool = false,
+    document_branch: bool = false,
     /// An arm site's check being written: its arm binds from the name the
     /// check is handed — what its branch's value makes now — not from what
     /// its instance keeps.
@@ -1917,7 +1918,11 @@ const Page = struct {
     }
 
     fn title(pg: *Page, blk: m.Block) m.Error!void {
-        const value = try pg.cx.programField(blk, .title, try pg.ident(pg.model));
+        const value = if (pg.document_branch) blk: {
+            const br = pg.root_site.branches[0].?;
+            const held = try pg.jsb().member(try pg.jsb().member(try pg.ref(br.ref, null), "i"), "a");
+            break :blk try pg.jsb().member(try pg.jsb().index(held, try pg.num(1)), "title");
+        } else try pg.cx.programField(blk, .title, try pg.ident(pg.model));
         try pg.jsb().expression(blk, try pg.rt("title", &.{value}));
     }
 
@@ -3804,7 +3809,10 @@ const Page = struct {
         const cx = pg.cx;
         const js = pg.jsb();
         pg.atNode(br.node);
-        if (!br.show) return js.index(from, try pg.num(1));
+        if (!br.show) {
+            const value = try js.index(from, try pg.num(1));
+            return if (pg.document_branch and br.node == .none) js.member(value, "body") else value;
+        }
         var values: std.ArrayList(m.Value.Index) = .empty;
         const sh = pg.tree.show(br.node);
         if (j == 1) try values.append(pg.a(), sh.fallback.?) else if (pg.tree.row(sh.body).function) |f| try values.append(pg.a(), f);

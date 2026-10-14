@@ -3022,3 +3022,50 @@ counts can still be reported, but are not substitutes for those measurements.
 Independent paired pages exercise nested message keys, same-variant rebuilding
 and an opaque update's `*` path while this checker limit remains open. The S5
 timing deferral does not defer ownership or transcript guarantees.
+
+### *Amended 2026-10-14 (document helper branches):* keep the complete arm result
+
+A document view may return a helper-computed document directly or from a branch.
+The compiled view binds its model, outer bindings, decision and taken arm in
+place; it does not call the view at runtime. A helper-returned document stays
+a value: its body uses the existing markup value path, with its own listeners
+and the mount's value dispatcher. The complete document is evaluated once per
+choice and held in one value slot. Source branch changes do not tear down that
+slot: the returned markup kind owns its lifecycle, so another arm returning
+the same helper kind retains focus, as it does on browser-tea. Both body and title read that result, including
+a same-variant rebuild; writing the title must not call the helpers again.
+A document arm is a value computation: its bindings and statements run once
+with the value. Outer view statements retain the mount-only rule of §8.4.
+The verify check may evaluate a quiet choice again but must not repeat effects.
+
+The additive interface 1.12 exposes `Program.document_branch`: a document
+choice is represented by one value arm, `[0, document]`, including a helper
+call with no source branch. The lowering reads
+its body for the value slot and its title after the page writes. This extends
+1.11's document shape facts. Analysis counts remain the independent prediction;
+the built value path and visits must be counted against them at criterion 7.
+A disagreement is a finding to explain, not permission to alter those counts.
+
+### *Amended 2026-10-14 (Conduit built measurements):* criterion 7 fires
+
+The unchanged Reader, Editor and Tour now run on direct and browser-tea in
+development/release against one golden per paired case, with value fuzz.
+The document-helper lowering shares each complete helper result between body
+and title, and preserves markup-kind identity across source arms. Research 94
+records its implementation, validation, raw measurements and remaining Chrome
+harness boundary.
+
+The S0 analysis still predicts 96/97 bounded keys, 667 bounded pairs over
+106 groups and zero value roots. Actual `patchAll` calls agree: Reader 2/18,
+Editor 1/12, Tour 6/32. But a key with no writes, `ClickedLink · Internal`,
+enters 5–24 value-kind group comparisons instead of its predicted zero.
+A root document choice evaluates shared helpers as values on every handler;
+the analysis predicts selective visits to their sites. This is the mechanism
+behind criterion 7, which fires. No count or threshold is adjusted to hide it.
+
+Direct Conduit is 32,411 B brotli versus tea's 31,389. Its feed-tab, favorite
+and editor-keystroke medians are 0.465/0.435/0.480 ms versus
+0.370/0.305/0.420 ms in one rotated Chrome batch; traced orderings agree.
+The empty direct page remains 327 B. **S6 stops on criterion 7**; the second
+full V3 campaign and slice acceptance remain owed. The focused helper and
+nested/opaque-key regressions do not replace that campaign.

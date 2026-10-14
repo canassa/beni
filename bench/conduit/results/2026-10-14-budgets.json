@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-14",
+  "basis": "Observed pre-grant CPU budget failures; final fresh page and value-fuzz comparisons pass under the owner-approved grants. CPU converted using the configured fallback; these are not hardware instruction measurements.",
+  "global": {
+    "millions": 4300,
+    "fallbackMs": 999
+  },
+  "before": {
+    "pageBudgetMillions": 12000,
+    "pageLimitMs": 2787,
+    "pageObservedMs": {
+      "Editor": 3170,
+      "Reader": 3207,
+      "Tour": 3228
+    },
+    "fuzzLimitMs": 999,
+    "fuzzObservedMs": {
+      "Editor": 1011,
+      "Reader": 1017
+    }
+  },
+  "granted": {
+    "pageBudgetMillions": 15300,
+    "readerEditorFuzzMillions": 4900,
+    "tourFuzzMillions": 4300,
+    "sizing": "largest observed failure plus 10%, rounded up"
+  },
+  "scopeProbe": {
+    "globalMillions": 1000,
+    "globalFallbackMs": 232,
+    "withBothGrants": "pass",
+    "withoutFuzzGrant": {
+      "page": "pass",
+      "valueFuzz": "fail",
+      "valueFuzzMs": 622,
+      "limitMs": 232
+    }
+  },
+  "freshValidation": {
+    "pageAndValueFuzz": "pass",
+    "unverifiedNodeRuns": 18,
+    "programRuns": 38,
+    "scope": "browser/direct/Conduit* (three scripts plus four ownership regression pages)"
+  }
+}

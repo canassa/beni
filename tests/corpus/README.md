@@ -548,8 +548,9 @@ its own budget, case by case: a **large program**, or a case whose cost comes fr
 defect with an open issue**, until the case fits 4 300M. The grant is a `.budget` file
 (`_expected.budget` in a project) whose first word is the limit in millions of instructions and
 whose rest says why and when it can go. A file without a reason fails the case. The file sets
-the budget of the page case only: a `browser/direct/` page's `[value fuzz]` case keeps the
-gates' budget, since a grant names the case it was asked for. Granted so far:
+the budget of the page case only. A separately granted `[value fuzz]` case uses
+`.fuzz-budget` (`_expected.fuzz-budget` in a project); without that file it keeps the
+gates' budget. A page grant never extends to fuzz implicitly. Granted so far:
 `browser/tea/ConduitReader`, `ConduitEditor` and `ConduitTour` (12 000M, 2026-10-08): the
 RealWorld app, whose release build alone is ~5 800M because of the release optimiser's
 `specialise` phase (research 62 §1.3). `browser/direct/HttpJson` (6 300M) and `HttpJsonBody`
@@ -557,6 +558,13 @@ RealWorld app, whose release build alone is ~5 800M because of the release optim
 builds in one case, and `Http.expectJson` and `Http.jsonBody` reach the `core/Schema` library
 interpreter, which `specialise` processes in both release builds. Their limits are the count with
 Node running the pages plus 10%.
+
+*Amended 2026-10-14 (the owner, Conduit paired runs):* the three direct Conduit
+page cases are granted 15 300M for four platform/build comparisons and fresh Node
+runs (3.17–3.23 s in the CPU fallback, plus 10%). Reader and Editor's separate
+value-fuzz cases are granted 4 900M (1.01–1.02 s with the fuzzer running, plus
+10%). Tour value fuzz keeps the global budget. These grants name the large
+unchanged application; remove them when its builds fit the global budget.
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds a
 repo-relative directory whose `.beni` files are the program, so several scripts can drive one
@@ -628,3 +636,9 @@ external application. The enforcing `check` and ownership dump use that same
 source directory and the project's `.platform` entries; the intent `.beni`
 file only lets the walker discover the project. Conduit pins its complete
 report this way, independently of its still-pending document helper lowering.
+
+*Amended 2026-10-14 (budget fallback):* the build graph retains the configured
+instruction limit separately when it selects CPU accounting. Owner-granted
+case budgets scale the CPU fallback by that limit, as they do when a running
+instruction counter becomes unavailable. This corrects lost budget provenance
+on hosts without counters; neither the global nor any granted limit changes.

@@ -11,48 +11,37 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
-          <div class="col-md-10 offset-md-1 col-xs-12">
-            <!---->
-          </div>
+          <div class="col-md-10 offset-md-1 col-xs-12"></div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 1 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
@@ -65,31 +54,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
@@ -116,14 +98,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- input #title " "
@@ -136,31 +116,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
@@ -187,14 +160,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click #editor-form>fieldset>button
@@ -207,31 +178,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
@@ -260,14 +224,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- input #title "How to train your dragon, again"
@@ -280,31 +242,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
@@ -333,14 +288,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click #editor-form>fieldset>button
@@ -354,31 +307,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
@@ -405,14 +351,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 2 422 "{\"errors\":{\"title\":[\"has already been taken\"]}}" Content-Type: "application/json"
@@ -425,31 +369,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
@@ -478,14 +415,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- input #title "How to train your dragon, twice"
@@ -498,31 +433,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
@@ -551,14 +479,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click #editor-form>fieldset>button
@@ -572,31 +498,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="editor-page">
       <div class="container page">
         <div class="row">
@@ -623,14 +542,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 3 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon-twice\",\"title\":\"How to train your dragon, twice\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-19T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
@@ -645,40 +562,30 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
-    <!---->
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- location
@@ -694,31 +601,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="article-page">
       <div class="banner">
         <div class="container">
@@ -729,9 +629,7 @@
             </a>
             <div class="info">
               <a class="author" href="/profile/jake">"jake"</a>
-              <!---->
               <span class="date">"2016-02-18T03:22:56.637Z"</span>
-              <!---->
             </div>
             <span>
               <a class="btn btn-outline-secondary btn-sm" href="/editor/how-to-train-your-dragon-twice">
@@ -745,9 +643,6 @@
               </button>
             </span>
           </div>
-          <!---->
-          <!---->
-          <!---->
         </div>
       </div>
       <div class="container page">
@@ -756,12 +651,10 @@
             <div class="article-content">
               <p>"It takes a Jacobian"</p>
             </div>
-            <!---->
             <ul class="tag-list">
               <li class="tag-default tag-pill tag-outline">"dragons"</li>
               <li class="tag-default tag-pill tag-outline">"training"</li>
             </ul>
-            <!---->
           </div>
         </div>
         <hr>
@@ -772,9 +665,7 @@
             </a>
             <div class="info">
               <a class="author" href="/profile/jake">"jake"</a>
-              <!---->
               <span class="date">"2016-02-18T03:22:56.637Z"</span>
-              <!---->
             </div>
             <span>
               <a class="btn btn-outline-secondary btn-sm" href="/editor/how-to-train-your-dragon-twice">
@@ -790,20 +681,16 @@
           </div>
         </div>
         <div class="row">
-          <div class="col-xs-12 col-md-8 offset-md-2">
-            <!---->
-          </div>
+          <div class="col-xs-12 col-md-8 offset-md-2"></div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 5 200 "{\"comments\":[]}" Content-Type: "application/json"
@@ -816,31 +703,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/jake">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "jake"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="article-page">
       <div class="banner">
         <div class="container">
@@ -851,9 +731,7 @@
             </a>
             <div class="info">
               <a class="author" href="/profile/jake">"jake"</a>
-              <!---->
               <span class="date">"2016-02-18T03:22:56.637Z"</span>
-              <!---->
             </div>
             <span>
               <a class="btn btn-outline-secondary btn-sm" href="/editor/how-to-train-your-dragon-twice">
@@ -867,9 +745,6 @@
               </button>
             </span>
           </div>
-          <!---->
-          <!---->
-          <!---->
         </div>
       </div>
       <div class="container page">
@@ -878,12 +753,10 @@
             <div class="article-content">
               <p>"It takes a Jacobian"</p>
             </div>
-            <!---->
             <ul class="tag-list">
               <li class="tag-default tag-pill tag-outline">"dragons"</li>
               <li class="tag-default tag-pill tag-outline">"training"</li>
             </ul>
-            <!---->
           </div>
         </div>
         <hr>
@@ -894,9 +767,7 @@
             </a>
             <div class="info">
               <a class="author" href="/profile/jake">"jake"</a>
-              <!---->
               <span class="date">"2016-02-18T03:22:56.637Z"</span>
-              <!---->
             </div>
             <span>
               <a class="btn btn-outline-secondary btn-sm" href="/editor/how-to-train-your-dragon-twice">
@@ -922,20 +793,16 @@
                 <button class="btn btn-sm btn-primary">"Post Comment"</button>
               </div>
             </form>
-            <!---->
-            <!---->
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- title
