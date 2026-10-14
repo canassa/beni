@@ -287,36 +287,63 @@ function prelude() {
   // Where the host has no `setImmediate` — Chrome — core's scheduler goes on
   // in a message to a `MessagePort`, so the messages the page posted and
   // that were not yet delivered are counted, for `settle`: a post that did
-  // not throw adds one, and every port of a channel the page makes takes one
-  // away when a message, or its `messageerror`, arrives. One that arrives
-  // with nothing counted came from a port the prelude did not see made: it
-  // is an error of the page, since the count could hide a later message.
+  // not throw on a port of a channel the page made adds one, and the other
+  // port takes one away when the host delivers a message, or its
+  // `messageerror`, to it — an event a script dispatched is not a delivery.
+  // The count holds only while those ports stay in this page, so a post that
+  // transfers one — to a worker, a frame, another port, `structuredClone` —
+  // is an error of the page at once, told to the page that made the port in
+  // whichever frame the post runs; and so is a message that arrives with
+  // nothing counted, which only a transferred port could send.
   const ports = { pending: 0 };
   record.ports = ports;
   if (typeof process !== "object") {
-    const Channel = globalThis.MessageChannel;
-    const delivered = () => {
+    const counted = Symbol.for("beni: a MessagePort the page driver counts");
+    const unsure = (what) => `Error: ${what}, so the driver cannot tell when the page has settled`;
+    const delivered = (event) => {
+      if (!event.isTrusted) return;
       if (ports.pending === 0) {
-        record.errors.push("Error: a MessagePort message arrived that the driver did not count as posted, so it cannot tell when the page has settled");
+        record.errors.push(unsure("a MessagePort message arrived that the driver did not count as posted"));
         return;
       }
       ports.pending -= 1;
     };
+    const transfers = (options) => {
+      const list = Array.isArray(options) ? options : options !== null && typeof options === "object" && Array.isArray(options.transfer) ? options.transfer : [];
+      for (const item of list) {
+        if (item !== null && typeof item === "object" && item[counted] !== undefined) {
+          item[counted].errors.push(unsure("the page transferred a MessagePort whose messages the driver counts"));
+        }
+      }
+    };
+    const Channel = globalThis.MessageChannel;
     globalThis.MessageChannel = class MessageChannel extends Channel {
       constructor() {
         super();
         for (const port of [this.port1, this.port2]) {
+          Object.defineProperty(port, counted, { value: record });
           port.addEventListener("message", delivered);
           port.addEventListener("messageerror", delivered);
         }
       }
     };
     const post = MessagePort.prototype.postMessage;
-    MessagePort.prototype.postMessage = function (...args) {
-      const sent = post.apply(this, args);
-      ports.pending += 1;
+    MessagePort.prototype.postMessage = function (message, ...rest) {
+      for (const options of rest) transfers(options);
+      const sent = post.call(this, message, ...rest);
+      if (this[counted] !== undefined) this[counted].ports.pending += 1;
       return sent;
     };
+    // The other ways a post can transfer a port: a worker's, a window's (this
+    // page's, or a frame's, whose own prelude wraps it), and a clone's.
+    for (const [target, name] of [[globalThis.Worker?.prototype, "postMessage"], [globalThis, "postMessage"], [globalThis, "structuredClone"]]) {
+      const original = target?.[name];
+      if (typeof original !== "function") continue;
+      target[name] = function (message, ...rest) {
+        for (const options of rest) transfers(options);
+        return original.call(this, message, ...rest);
+      };
+    }
   }
   // The page's `fetch` is scripted: each request is numbered and logged as
   // it is made, and stays pending until a `respond` or `fail` step answers
