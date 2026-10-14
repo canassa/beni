@@ -167,6 +167,18 @@
 // own `fetch`, not numbered or logged. A request still pending when the
 // script ends fails the run, as an uncaught exception does.
 //
+// The page never leaves its document. A navigation it starts to another
+// document — `location.assign`, `replace` or `reload`, a write to
+// `location.href` — is stopped as it starts and logs `(the host leaves the
+// page for "<url>")`, the address as the fetch log writes one; the address
+// stays and nothing fires. A navigation inside the document (a fragment,
+// `pushState`) runs as the host runs it. Chrome would load the other
+// document, under the driver's feet, and happy-dom, whose window loads
+// nothing, would change only the address. The page's history begins at the
+// page in both: a Chrome target opens at `about:blank`, which the driver
+// drops from its history once the page has loaded, so `back` past the
+// page's first entry does nothing.
+//
 // The two lines are written when the step's own task ends, before any
 // microtask it queued, so what the page logged before and after them says
 // what ran in that task: a render the program ran at once is logged
@@ -330,6 +342,44 @@ function prelude() {
       return array;
     },
   });
+  // The page never leaves its document: a navigation to another one is
+  // stopped and logged. Chrome says which navigations those are, in the
+  // Navigation API's `navigate` event, heard here before the program can
+  // listen. happy-dom has no such event, and every navigation through
+  // `location` writes `href` or calls `reload`, so those two stop one,
+  // deciding as HTML does: the same address with a fragment stays in the
+  // document. An address that does not parse, and a `javascript:` one, are
+  // happy-dom's as before. Its classes are shared by every page of one
+  // process, so they are changed once and log to the current page's record.
+  const leave = (url) => {
+    const where = new URL(url);
+    const to = where.origin === location.origin ? where.pathname + where.search + where.hash : where.href;
+    globalThis.__beniHarness.log.push(`(the host leaves the page for ${JSON.stringify(to)})`);
+  };
+  const place = Object.getPrototypeOf(location);
+  if (globalThis.navigation !== undefined) {
+    navigation.addEventListener("navigate", (event) => {
+      if (event.destination.sameDocument || !event.cancelable) return;
+      event.preventDefault();
+      leave(event.destination.url);
+    });
+  } else if (!Object.hasOwn(place, "__beniLeave")) {
+    const href = Object.getOwnPropertyDescriptor(place, "href");
+    const bare = (url) => url.href.split("#")[0];
+    Object.defineProperty(place, "__beniLeave", { value: leave });
+    Object.defineProperty(place, "href", {
+      ...href,
+      set(url) {
+        const to = URL.canParse(url, this.href) ? new URL(url, this.href) : null;
+        const leaves = to !== null && to.protocol !== "javascript:" && !(to.href.includes("#") && bare(to) === bare(new URL(this.href)));
+        if (leaves) this.__beniLeave(to.href);
+        else href.set.call(this, url);
+      },
+    });
+    place.reload = function () {
+      this.__beniLeave(this.href);
+    };
+  }
   const show = (value) => {
     if (typeof value === "string") return value;
     try {
@@ -1250,7 +1300,8 @@ async function happyDomPage(domPath) {
   const silent = new Console({ stdout: new Writable({ write: (_chunk, _encoding, done) => done() }) });
   // A new window's document is the empty page. It loads nothing from
   // anywhere: the driver imports the program, and no fixture has anything
-  // else to fetch.
+  // else to fetch. A navigation it cannot make changes nothing either, not
+  // even the address (the prelude logs one through `location`).
   const window = new GlobalWindow({
     url: pageUrl,
     console: silent,
@@ -1258,7 +1309,7 @@ async function happyDomPage(domPath) {
       disableJavaScriptFileLoading: true,
       disableCSSFileLoading: true,
       disableIframePageLoading: true,
-      navigation: { disableMainFrameNavigation: true, disableChildFrameNavigation: true, disableChildPageNavigation: true },
+      navigation: { disableMainFrameNavigation: true, disableChildFrameNavigation: true, disableChildPageNavigation: true, disableFallbackToSetURL: true },
     },
   });
   // Node's global object becomes the page's: every property the window
@@ -1362,6 +1413,9 @@ async function chromePage(endpoint) {
   });
   await send("Page.navigate", { url: pageUrl }, sessionId);
   await loaded;
+  // The target opened at `about:blank`: its history begins at the page, as
+  // happy-dom's does, so no traversal leaves the page's document.
+  await send("Page.resetNavigationHistory", {}, sessionId);
   const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions};`;
   return {
     run: async (fn, arg) => {

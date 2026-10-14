@@ -65,7 +65,7 @@
 // a text control's selection); `document.title`; `location.href` less its origin (Chrome serves the
 // two builds from two ports); both
 // storages; every line the driver logged (requests, prevented defaults,
-// links followed, `console.*`), less the lines `ignore` names; and every
+// links followed, pages left, `console.*`), less the lines `ignore` names; and every
 // error the step threw. A step that throws on both pages ends the sequence
 // once those agree (the body only when `crash` is `same`: a crash screen
 // may be a build's own), and the report says how many steps ran. The

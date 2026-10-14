@@ -276,9 +276,17 @@ both visible. A `data:` URL goes to the host's own `fetch` and is neither
 numbered nor logged. A request still pending when the script ends fails the
 case, so no fixture forgets one.
 
-**A successful `load` leaves the page**, which neither DOM can show and the
-driver cannot follow, so no fixture asserts one; a refused `load` is a value
-and is shown.
+**The page never leaves its document.** A navigation the page starts to
+another document — `location.assign`, `replace` or `reload`, a write to
+`location.href`, and so a successful `load` — is stopped as it starts and
+logs `(the host leaves the page for "<url>")`, the address written as the
+fetch log writes one; the address stays and nothing fires
+(`browser/direct/NavigateCommands`). A navigation inside the document (a
+fragment, `pushState`) runs as the host runs it. Chrome would load the new
+document, which the driver cannot follow, and happy-dom, whose window
+loads nothing, would change only the address. The page's history begins
+at the page in both DOMs, so a `back` past its first entry does nothing.
+A refused `load` is a value and is shown.
 
 **The page is an `http` page with fixed entropy.** Its address is
 `http://127.0.0.1:<port>/_page.html` in both DOMs — Chrome loads it, and
@@ -356,6 +364,9 @@ compares instead of `.expected`. The differences known today:
   goes back into the `style` attribute as CSSOM serialises it in
   Chrome, a colour as `rgb(…)`, and as the page wrote it in happy-dom
   (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome);
+- leaving the page: happy-dom sees only a navigation through `location`,
+  so a form's submission or `window.open(url, "_self")` does nothing
+  there, where Chrome logs `(the host leaves the page for …)`;
 - steps dispatch untrusted events in both DOMs, and `key` types nothing —
   except `press` and the focus events a `focus()` or `blur()` call fires,
   which are trusted as Chrome makes them: Chrome's `press` is its own
