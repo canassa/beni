@@ -4522,7 +4522,7 @@ const Walker = struct {
                 const avs = try w.evalOperands(values.items, true);
                 w.popPending(avs.len);
                 const retained = try w.conservativeAV(inst, values.items, avs, &.{}, null, "", false);
-                const events = try w.markupTreeEvents(inst, @fromBackingInt(@intCast(data.lhs)), .{ .insts = values.items, .avs = avs });
+                const events = try w.markupTreeEvents(inst, @fromBackingInt(@intCast(data.lhs)), try MarkupValues.init(w.a, values.items, avs));
                 return w.unionOf(&.{ try w.shift(retained, .{ .kind = .markup_render, .arg = 0 }), try w.shift(events, .{ .kind = .markup_event, .arg = 0 }) });
             },
             else => return &.{},
@@ -4555,6 +4555,8 @@ const Walker = struct {
                             };
                         }
                     }
+                    // Missing Maybe metadata also falls through here: keep
+                    // the whole tracked arrival, never infer an empty slot.
                     if (!try w.trackedVar(v)) return &.{};
                     return av;
                 },
@@ -4647,12 +4649,31 @@ const Walker = struct {
     }
 
     const MarkupValues = struct {
-        insts: []const Inst.Index,
-        avs: []const AV,
+        const Value = struct { inst: Inst.Index, av: AV };
+        entries: []const Value,
+
+        fn init(a: Allocator, insts: []const Inst.Index, avs: []const AV) Allocator.Error!MarkupValues {
+            const entries = try a.alloc(Value, insts.len);
+            for (entries, insts, avs) |*entry, inst, av| entry.* = .{ .inst = inst, .av = av };
+            std.mem.sort(Value, entries, {}, struct {
+                fn less(_: void, x: Value, y: Value) bool {
+                    return x.inst.int() < y.inst.int();
+                }
+            }.less);
+            return .{ .entries = entries };
+        }
 
         fn get(v: MarkupValues, inst: Inst.Index) AV {
-            for (v.insts, v.avs) |i, av| if (i == inst) return av;
-            unreachable; // Bir.markupValues visits every operand in the tree.
+            var lo: usize = 0;
+            var hi = v.entries.len;
+            while (lo < hi) {
+                const mid = lo + (hi - lo) / 2;
+                if (v.entries[mid].inst.int() < inst.int()) lo = mid + 1 else hi = mid;
+            }
+            // Both walks cover the same operands; every get in the full
+            // markup corpus exercises this invariant under runtime safety.
+            std.debug.assert(lo < v.entries.len and v.entries[lo].inst == inst);
+            return v.entries[lo].av;
         }
     };
 
@@ -7034,7 +7055,14 @@ const Walker = struct {
     /// The actual for the callee's function parameter `j`, a value whose
     /// classes are `classes`, checked against what the callee supplies it
     /// (§16.4 item 4).
-    fn checkClasses(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, ff: FunFacts, actual: AV, ictx: InstCtx, classes: []const Class) Allocator.Error!void {
+    fn checkClasses(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, facts: FunFacts, actual: AV, ictx: InstCtx, classes: []const Class) Allocator.Error!void {
+        var ff = facts;
+        if (w.instType(args[j])) |ft| switch (w.store.resolvedContent(ft)) {
+            .structure => |st| if (st == .func) {
+                ff.need = ff.need and try w.o.holdsList(w.store, st.func.result, 0);
+            },
+            else => {},
+        };
         const s = callee.sum;
         const tok = w.token(inst);
         const arena = w.o.out.allocator();
@@ -7098,10 +7126,10 @@ const Walker = struct {
             }
             const writes = c.writesAny();
             if (!ff.seen) {
-                // A tagger's result must be owned even when its calls escape
-                // the local walk; a pure constructor can retain a borrowed list.
-                if (c.asserted and ff.need and !try w.returnsOwned(c, s, avs, j, 0, none))
-                    try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", false);
+                // Need does not depend on seen: retained captures must be
+                // empty at callers, and all other results must be owned.
+                if (ff.need and !try w.taggerReturnsOwned(c, s, avs, j, cls, ictx))
+                    try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", w.frame != 0);
                 if (writes) switch (cls) {
                     .closure => |ci| try w.closures.items[ci].consumed.append(w.a, .{ .kind = .pending, .why = try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}) }),
                     .func => try w.valueLine(tok, name, .pending, try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}), "", false),
@@ -7354,6 +7382,8 @@ const Walker = struct {
             try res.append(keep, .{ .path = try w.o.child(eps, .ctor, c *% 64 +% @as(u32, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
         }
         const out = try w.a.create(Summary);
+        // A constructor has exactly this primitive row, so unseen callback
+        // calls cannot bypass its need check (including a variable-held one).
         out.* = try w.o.normalize(.{ .params = @intCast(ps.len), .uses = uses.items, .res = res.items, .asserted = true });
         return out;
     }
@@ -7414,6 +7444,56 @@ const Walker = struct {
             if (!try w.returnsOwned(c, s, avs, p.a, depth + 1, written)) return false;
         }
         return true;
+    }
+
+    /// A retained tagger capture is never owned. Symbolic captures may be
+    /// required to contain no cell at callers (sep p p); cb self-separation
+    /// instead means fresh across calls, so cannot encode that requirement.
+    fn taggerReturnsOwned(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, j: u32, cls: Class, ictx: InstCtx) Allocator.Error!bool {
+        if (try w.returnsOwned(c, s, avs, j, 0, none)) return true;
+        var res: std.ArrayList(ResEntry) = .empty;
+        for (c.res) |r| {
+            if (r.prov.kind == .cb and r.prov.b == 1 and r.prov.a < w.fn_state.items.len) {
+                // §18.9: retain the actual supplies even when the enclosing
+                // tagger calls were unseen (and so formerly counted zero).
+                if (cls != .closure or w.frame != 0) return false;
+                const params = try w.a.alloc(AV, c.params);
+                for (params, 0..) |*pa, k| {
+                    var parts: std.ArrayList(AV) = .empty;
+                    for (s.supply) |e| {
+                        if (e.fun != j or e.k != k) continue;
+                        try parts.append(w.a, try w.under(try w.instProv(e.prov, ictx), e.path));
+                    }
+                    pa.* = try w.unionOf(parts.items);
+                }
+                try w.applyEnvCalls(cls.closure, null, 0, .{ .inst = ictx.inst, .s = c, .avs = params, .closure = cls.closure, .depth = 0 });
+                w.fn_state.items[r.prov.a].need = true;
+                w.fn_state.items[r.prov.a].seen = false;
+                w.fn_state.items[r.prov.a].calls = .many;
+                continue;
+            }
+            if (r.prov.kind != .env) {
+                try res.append(w.a, r);
+                continue;
+            }
+            if (cls != .closure) return false;
+            const cl = w.closures.items[cls.closure];
+            const captured = if (cl.carried)
+                try w.carriedEnv(cls.closure, r.prov)
+            else if (w.local_av[r.prov.a]) |held|
+                try w.projPath(held, r.prov.path, null)
+            else
+                return false;
+            for (try w.expand(captured)) |e| {
+                const cell_kind = w.cells.items[e.cell].kind;
+                if (cell_kind == .closure or cell_kind == .func) continue;
+                if (cell_kind != .param and cell_kind != .env) return false;
+                if (try w.rely(try w.sepCond(e.cell, e.cell), w.frame) != .ok) return false;
+            }
+        }
+        var conditional = c.*;
+        conditional.res = res.items;
+        return w.returnsOwned(&conditional, s, avs, j, 0, none);
     }
 
     /// §16.4 item 5: whether class `c`, called by `s` as its parameter `j`,

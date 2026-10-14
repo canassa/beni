@@ -145,7 +145,7 @@ module Page
   summary navbarLink: res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1
   summary viewErrors: π1 RA, π2 RA; res ⟨events⟩⋆ ~π1, ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π1 ~π2
   summary loadingError: res ⟨render⟩ fresh1{lost}
-  summary slowThreshold: π1 RA; res #Cmd.0 fresh1{excl π1}, #Cmd.0[*]#Perform.0◇◇ ~π1
+  summary slowThreshold: π1 RA; res #Cmd.0 fresh1{excl π1}, #Cmd.0[*]#Perform.0◇◇ ~π1; xreq sep π1 π1
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module ProfilePage
   97:47 ++ model.errors: accepted param

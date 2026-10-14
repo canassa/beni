@@ -61,7 +61,8 @@ message retaining the list, a For row carrying a list element, and a handler
 returned by a helper with the list captured. ConduitRetainedMarkup holds a
 render-only markup value across an edit: it remains rejected, proving that the
 render slot is excluded only from the event projection, not general alias
-checks. Full diagnostic goldens pin the eight refusals.
+checks. Full diagnostic goldens pin fourteen refusals, including the review additions
+described below.
 
 ## 3. Other verdicts
 
@@ -72,7 +73,7 @@ constructor taggers that retain borrowed lists.
 
 The pending-browser audit finds additional instances of the same limits:
 
-- HttpCancel, HttpFailures, HttpProgress and HttpRequestShape lose their
+- HttpCancel, HttpProgress and HttpRequestShape lose their
   render-only payload rejection and are promoted unchanged.
 - HttpDefect has the same rendered List String shape and is promoted unchanged.
 - HttpMultipart's false rendered-list payload had also flowed through a
@@ -105,9 +106,57 @@ parity, size and timing measurements remain open.
 ## 5. Validation
 
 Native/self-hosted zorg only; LLVM was not used. The four paired cases pass
-happy-dom, Chrome and value fuzz. Six promoted HTTP pages pass all paired
-builds and fuzz. Hash recording verifies 32 Conduit-related and 52 HTTP-related
+happy-dom, Chrome and value fuzz. Five promoted HTTP pages pass all paired
+builds and fuzz. Hash recording verified 32 Conduit-related and 52 HTTP-related
 program runs with no failed JavaScript run. The filtered pending audit matches
 all remaining signatures. Unfiltered gates report **1,295 passed, 15 skipped**
 and only the four authorized macOS baseline failures: two case-folding cases
 and two driver cache-pruning CPU budgets.
+
+## 6. Review and the unseen-lambda counterexample
+
+The review found no blocker but requested confirmation of the constructor
+check's early return and asserted row. Direct and variable-held constructor
+taggers now have matched rejected fixtures: both return a model list their
+work retained, and both fail `need` when the callback calls are unseen. The
+constructor has no captures, writes, once requirement, xreq or inner callback
+calls; its send-position check precedes the early return. No later consumed
+bookkeeping supplies a permission it needs. The asserted flag records its
+exact primitive behavior, not an ownership grant.
+
+Operand lookup now sorts one temporary table by instruction index and uses
+binary search, avoiding repeated linear scans without a hash map over dense
+ids or a large allocation per nested root. Its runtime-safety assertion is
+exercised by the complete markup corpus; both walks use the same BIR operands.
+A missing Maybe constructor stays conservative. A prebuilt program config
+without a literal view field still uses the coarser event projection. A custom
+Slot (Html msg) wrapper retaining a handler list has a rejected twin.
+
+An additional adversarial probe found an existing unseen-lambda hole that
+the old render approximation masked: init could use Cmd.task with a lambda
+tagging its result with a global shared list. The fine render projection
+then accepted the receiver's append. The callback `need` check now applies
+even when `seen` is false. Captured symbolic messages acquire the cell-free
+self-separation requirement specified in the amendment; Page.slowThreshold's
+scalar callers satisfy it. An enclosing callback whose result is forwarded
+acquires `need`, with its actual supply facts preserved even though its calls
+were unseen. Concrete retained lists and shared values remain rejected.
+
+ConduitLambdaTagger, ConduitPassedTagger and ConduitForwardedTagger reject
+the global-list, generic captured-message and generic callback-forwarding
+forms. The unchanged Conduit ownership case still accepts all 26 demands,
+and every pre-existing ownership-corpus demand verdict remains unchanged.
+The new requirements appear in generic helper summaries, rather than adding
+spurious definition-site errors for scalar callers.
+
+The unseen check also exposes HttpFailures' work functions stored in List.map
+callback tuple elements: the existing slot-inside-lambda limit cannot prove
+what those functions return. Its temporary promotion is withdrawn; it stays
+pending with one approximate list_still_used diagnostic at the tagger.
+This replaces its old render-only entry rejection, without changing its
+rejected verdict or source. Five other HTTP pages remain promoted.
+
+Concrete callback result types with no List-bearing descendants need no owned
+result proof. This preserves the Int/String identity taggers in KeyOrder and
+LatestTagger, while unknown, function and opaque result types remain tracked.
+This is a type-based absence of mutable cells, not a relaxed callback loan.

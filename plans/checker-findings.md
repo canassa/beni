@@ -5756,8 +5756,8 @@ to make this phase oracle pass.
 
 *Amended 2026-10-14 (Conduit, extending CK-223):* all four nested errors-list
 rejections are precision limits, now accepted through separate markup slots
-and exact constructor callback result paths. Six unchanged HTTP programs are
-promoted; ten ownership programs remain pending. ApiItems, ApiLogin and
+and exact constructor callback result paths. Five unchanged HTTP programs are
+promoted; eleven ownership programs remain pending. ApiItems, ApiLogin and
 ValueCommands each lose one render-only rejection but retain their other limit.
 Every pre-existing ownership-corpus demand verdict is unchanged (research 93).
 
@@ -5773,3 +5773,12 @@ Reader, Editor and Tour retain their original assets and budgets under
 full application has a separate enforcing ownership case in the corpus.
 This belongs to the continuing Conduit lowering work, not an ownership waiver
 or a reason to wrap or inline the application by hand.
+
+*Amended 2026-10-14 (unseen taggers):* a lambda tagger returning a global
+shared list must not pass need because seen is false. The new render precision
+exposed that pre-existing gap; returned captures now carry cell-free caller
+requirements, and forwarded callbacks retain owned-result obligations and
+supply facts. Scalar result types need no list-ownership check. HttpFailures
+stays pending for its function slots inside List.map callbacks, with one
+approximate diagnostic rather than its former render-only entry rejection.
+No application code or ownership verdict was relaxed to bypass that limit.

@@ -110,3 +110,6 @@ tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 tests/pending/browser/direct/ConduitReader dev: exit=1 codes=not_implemented×1
 tests/pending/browser/direct/ConduitEditor dev: exit=1 codes=not_implemented×1
 tests/pending/browser/direct/ConduitTour dev: exit=1 codes=not_implemented×1
+
+# HttpFailures: work function slots inside a traversal callback remain unmodelled.
+tests/pending/browser/direct/HttpFailures.beni dev: exit=1 codes=list_still_used×1
