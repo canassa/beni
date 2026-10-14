@@ -81,6 +81,33 @@ The builder proof must refer to concrete heap values and the actual `put`/`close
 operations: a list of cell numbers alone is only an auxiliary set lemma. Every
 claimed certificate theorem must name the executable operation it certifies.
 
+A concrete closure description must agree with its abstract declaration and
+with the descriptions of its captures recursively, including closures inside
+captured records or arrays. A shallow footprint match is insufficient: a read-only
+abstract callback and a concrete writing callback can have the same footprint.
+Symbolic inputs remain abstract over code, with their behaviour constrained by
+the guards; unknown joins cannot be called. The once/many honesty test must also descend into captures; a once outer
+closure cannot hide a writing inner closure falsely marked as many. The
+executable falsifier must check this same recursive agreement and deliberately mislabel inner closures as well
+as outer ones. This repairs a hypothesis of the unproved soundness statements;
+it does not certify them or change the executable ownership checker.
+
+The step lemma's environment typing applies to both sides: value observations
+and finite expansions of the actual heap values have the same declared types.
+Dead bindings may have stale contents, but their actual shapes and references
+must still be valid. In particular, `close` reads its source without making it
+live; value-side typing alone admitted an integer or dangling reference there
+and made one interpreter fail while the other succeeded. This is a premise on
+valid configurations, not a new language restriction.
+
+Consuming a known once callback demands every capture write it may perform,
+including writes made by called once closures captured inside it. Resolve the
+captured calls recursively; forward calls of symbolic captured inputs into the
+parent's call row, and enforce their multiplicity when the actual code is known.
+A closure's own synthetic root is not a substitute for its written arrays.
+`close` can revive one of those arrays without a syntactic use at creation, so
+the call must check the actual written cells against its continuation.
+
 ## The summary layer (thesis §3.7, §4.4–§4.7)
 
 `Checker.lean` summarises each declaration once per guard valuation and uses
@@ -127,14 +154,19 @@ preceded it is frozen as `Reinfer.lean` (`--reinfer`, `--cross-check`).
 
 ## Negative controls
 
-`Config.mutant` names a deliberate hole: seven are the review's missed
-mutants, thirteen weaken a summary row. Each required one has a fixed probe in
-`Fixtures.lean` that disagrees under it and is rejected without it;
-`ownership ci` requires the probes and reports the generator's catches.
+`Config.mutant` names a deliberate hole: seven are the first review's missed
+mutants, fourteen weaken a summary row (including `once-through-call`),
+four weaken liveness (`branch-live`, `branch-closure`, `shadowing`,
+`no-scope`), two weaken escapes (`shared-roots`, `shared-fn`) and one the
+call count of a traversal step (`many-off`). Each required one has a fixed
+probe in `Fixtures.lean` that disagrees under it and is rejected without it
+(`no-scope`'s probe runs the checker on a configuration directly, because no
+typed program reaches it); `ownership ci` requires the probes and that the
+generator alone catch every required hole within its budget.
 `ownership controls` runs one normal campaign (20000 trials) per hole and
-fails unless each required hole is caught by the generator alone; holes whose
-generator catch is rare or absent (`callback-escapes`, `forward-guards`, and
-the three known gaps of COVERAGE.md) are reported, not required.
+fails unless each required hole is caught by the generator alone; the holes
+argued equivalent in COVERAGE.md (`callback-requires`, `requires-edge`,
+`transfer-supplies`) and `no-scope` are reported, not required.
 `borrowed-supply` is reported under summaries (live but never seen to
 disagree; COVERAGE.md) and required against the per-call checker.
 `ownership verdict-diff --mutant=…` counts the verdicts a hole changes.
@@ -144,8 +176,38 @@ and runs the unmodified generator on each build.
 ## Soundness statements
 
 `Soundness.lean` names origins by arrays (`Naming`), calls a naming separating
-when origins the checker calls non-aliasing name disjoint arrays, relates an
-abstract value to a concrete one (`Describes`: footprint named, certificate
-nodup), states Lemma 6.7 (`CallSound`, clause 2 as repaired) and the main
-theorem over every fuel bound with an explicit `Invariant`. What is proved and
-what is `sorry` is listed in COVERAGE.md.
+when origins the checker calls non-aliasing name disjoint arrays, finds values
+in a heap by path relationally (`AtPath`, `Reaches`; no fuel), relates an
+abstract value to a concrete one path by path (`Describes`: the arrays at each
+path named by the cells at that path, each exclusive list's value repeating no
+array), states Lemma 6.7 (`CallSound`, clause 2 as repaired: the holders that
+outlive a call are its result and the permanent observers) and the main
+theorem over every fuel bound with an explicit `Invariant` that also relates
+the permanent observers of the two runs and the checker's recorded escapes.
+Both interpreters fail on observing a value deeper than `observationDepth`, so
+correspondence itself has no depth bound. `Falsify.lean` executes the unproved
+statements on concrete configurations. What is proved and what is `sorry`,
+why each `sorry` is believed true and what the falsifier found is in
+COVERAGE.md.
+
+### Call shapes and verification failures
+
+Summary soundness requires the concrete argument count to match the declaration,
+the capture count to match its capture types, and the canonical input count to
+match their concatenation. A falsifier must vary the args/caps boundary independently
+of the naming, rather than assuming every configuration is a logged real call.
+
+Audit command restrictions apply recursively through command wrappers. Executable
+metaprogramming tactics are refused before elaboration; names do not exempt a
+constant from kernel replay. Failed audits retain their exported work and logs.
+CLI commands and options must be recognized and applicable to their mode; empty
+falsification and ignored mutation requests cannot produce success. CI preserves
+original and shrunk counterexamples. Campaign publication waits for every child
+and leaves prior logs unchanged on failure.
+
+Search includes a captured once callback called twice with both results retained,
+a captured list passed to a captured writing callback (its effect is a consumes
+row), and either arm of a function-shape join retained as data. CI's small complete
+grammar is supplemented by a bounded targeted grammar covering these shapes,
+set exclusivity, scalar comparisons, and first-order recursion. Source-mutant
+counts refer to unique edits; historical aliases do not add another hole.

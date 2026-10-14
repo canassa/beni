@@ -1,0 +1,16 @@
+captured once callback called twice: expected=false actual=true
+UNEXPECTED VERDICT; intended verdict retained. types=Except.ok (Ownership.Ty.record [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)])
+STOP fixture observational failure captured once callback called twice: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1],
+                     Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 1, Ownership.Observation.int 1],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+ci-failure-status=1,fixture-evidence-kept

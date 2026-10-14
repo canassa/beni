@@ -1,0 +1,525 @@
+seed=271828 index=3103 family=general
+AST:
+{ declarations := [{ name := "map",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int)]
+                                      (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim (Ownership.Prim.builder (Ownership.Ty.list (Ownership.Ty.int))) [])
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.traverse
+                                   (Ownership.Source.list)
+                                   (Ownership.Atom.var 0)
+                                   (Ownership.Atom.var 2)
+                                   4
+                                   5
+                                   6
+                                   (Ownership.Expr.letE
+                                     7
+                                     (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 5])
+                                     (Ownership.Expr.prim
+                                       (Ownership.Prim.put)
+                                       [Ownership.Atom.var 6, Ownership.Atom.var 7])))
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.close)
+                                   [Ownership.Atom.var 3, Ownership.Atom.var 0])) },
+                   { name := "identL",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.atom (Ownership.Atom.var 0) },
+                   { name := "bump",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 0, Ownership.Atom.int 9] },
+                   { name := "capPush",
+                     parameters := [Ownership.Ty.int],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int)],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 1, Ownership.Atom.var 0] },
+                   { name := "capLen",
+                     parameters := [Ownership.Ty.int],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int)],
+                     result := Ownership.Ty.int,
+                     body := Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 1] },
+                   { name := "capGet",
+                     parameters := [Ownership.Ty.int],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int)],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.atom (Ownership.Atom.var 1) },
+                   { name := "map",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim (Ownership.Prim.builder (Ownership.Ty.list (Ownership.Ty.int))) [])
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.traverse
+                                   (Ownership.Source.list)
+                                   (Ownership.Atom.var 0)
+                                   (Ownership.Atom.var 2)
+                                   4
+                                   5
+                                   6
+                                   (Ownership.Expr.letE
+                                     7
+                                     (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 5])
+                                     (Ownership.Expr.prim
+                                       (Ownership.Prim.put)
+                                       [Ownership.Atom.var 6, Ownership.Atom.var 7])))
+                                 (Ownership.Expr.prim (Ownership.Prim.close) [Ownership.Atom.var 3])) },
+                   { name := "two",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.int,
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 0, Ownership.Atom.int 7])
+                               (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 1]) },
+                   { name := "foldl",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                                    Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)]
+                                      (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.traverse
+                               (Ownership.Source.list)
+                               (Ownership.Atom.var 0)
+                               (Ownership.Atom.var 1)
+                               3
+                               4
+                               5
+                               (Ownership.Expr.app
+                                 (Ownership.Atom.var 2)
+                                 [Ownership.Atom.var 4, Ownership.Atom.var 5]) },
+                   { name := "borrowOrGrow",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 1])
+                               (Ownership.Expr.branch
+                                 (Ownership.Atom.var 2)
+                                 (Ownership.Expr.atom (Ownership.Atom.var 0))
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.push)
+                                   [Ownership.Atom.var 1, Ownership.Atom.int 7])) },
+                   { name := "grow",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 0])
+                               (Ownership.Expr.prim
+                                 (Ownership.Prim.push)
+                                 [Ownership.Atom.var 1, Ownership.Atom.var 2]) },
+                   { name := "initialize",
+                     parameters := [Ownership.Ty.int,
+                                    Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim (Ownership.Prim.builder (Ownership.Ty.list (Ownership.Ty.int))) [])
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.traverse
+                                   (Ownership.Source.range)
+                                   (Ownership.Atom.var 0)
+                                   (Ownership.Atom.var 2)
+                                   4
+                                   5
+                                   6
+                                   (Ownership.Expr.letE
+                                     7
+                                     (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 4])
+                                     (Ownership.Expr.prim
+                                       (Ownership.Prim.put)
+                                       [Ownership.Atom.var 6, Ownership.Atom.var 7])))
+                                 (Ownership.Expr.prim (Ownership.Prim.close) [Ownership.Atom.var 3])) },
+                   { name := "freshRow",
+                     parameters := [Ownership.Ty.int],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.var 0] },
+                   { name := "update",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                                    Ownership.Ty.int,
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int)]
+                                      (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.focus
+                               (Ownership.Atom.var 0)
+                               (Ownership.Atom.var 1)
+                               3
+                               (Ownership.Expr.app (Ownership.Atom.var 2) [Ownership.Atom.var 3]) },
+                   { name := "capStep",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int)],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.letE
+                               3
+                               (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 1])
+                               (Ownership.Expr.branch
+                                 (Ownership.Atom.var 3)
+                                 (Ownership.Expr.atom (Ownership.Atom.var 2))
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.push)
+                                   [Ownership.Atom.var 1, Ownership.Atom.int 7])) },
+                   { name := "readTwo",
+                     parameters := [Ownership.Ty.record
+                                      [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)]],
+                     captures := [],
+                     result := Ownership.Ty.int,
+                     body := Ownership.Expr.letE
+                               1
+                               (Ownership.Expr.prim
+                                 (Ownership.Prim.push)
+                                 [Ownership.Atom.field (Ownership.Atom.var 0) 0, Ownership.Atom.int 5])
+                               (Ownership.Expr.prim
+                                 (Ownership.Prim.length)
+                                 [Ownership.Atom.field (Ownership.Atom.var 0) 1]) },
+                   { name := "capPick",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int)],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.letE
+                               3
+                               (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 0])
+                               (Ownership.Expr.branch
+                                 (Ownership.Atom.var 3)
+                                 (Ownership.Expr.atom (Ownership.Atom.var 2))
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.push)
+                                   [Ownership.Atom.var 1, Ownership.Atom.int 7])) },
+                   { name := "applyThenRead",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int)]
+                                      (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 0])
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 0])
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.push)
+                                   [Ownership.Atom.var 2, Ownership.Atom.var 3])) },
+                   { name := "foldKeep",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                                    Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)]
+                                      (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.letE
+                               3
+                               (Ownership.Expr.traverse
+                                 (Ownership.Source.list)
+                                 (Ownership.Atom.var 0)
+                                 (Ownership.Atom.var 1)
+                                 4
+                                 5
+                                 6
+                                 (Ownership.Expr.app
+                                   (Ownership.Atom.var 2)
+                                   [Ownership.Atom.var 5, Ownership.Atom.var 6]))
+                               (Ownership.Expr.letE
+                                 7
+                                 (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+                                 (Ownership.Expr.letE
+                                   8
+                                   (Ownership.Expr.prim
+                                     (Ownership.Prim.at)
+                                     [Ownership.Atom.var 0, Ownership.Atom.int 0, Ownership.Atom.var 7])
+                                   (Ownership.Expr.letE
+                                     9
+                                     (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 8])
+                                     (Ownership.Expr.prim
+                                       (Ownership.Prim.push)
+                                       [Ownership.Atom.var 3, Ownership.Atom.var 9])))) },
+                   { name := "mapVia",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int)]
+                                      (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.closure 0 [])
+                               (Ownership.Expr.app
+                                 (Ownership.Atom.var 2)
+                                 [Ownership.Atom.var 0, Ownership.Atom.var 1]) },
+                   { name := "twiceVia",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int)]
+                                      (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 0])
+                               (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 2]) },
+                   { name := "applyN",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))]
+                                      (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 0] },
+                   { name := "headBump",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               1
+                               (Ownership.Expr.closure 13 [])
+                               (Ownership.Expr.letE
+                                 2
+                                 (Ownership.Expr.closure 2 [])
+                                 (Ownership.Expr.app
+                                   (Ownership.Atom.var 1)
+                                   [Ownership.Atom.var 0, Ownership.Atom.int 0, Ownership.Atom.var 2])) },
+                   { name := "publish",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.prim (Ownership.Prim.shared) [Ownership.Atom.var 0] },
+                   { name := "pairShared",
+                     parameters := [Ownership.Ty.int],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               1
+                               (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.var 0])
+                               (Ownership.Expr.prim
+                                 (Ownership.Prim.literal (Ownership.Ty.list (Ownership.Ty.int)))
+                                 [Ownership.Atom.var 1, Ownership.Atom.var 1]) },
+                   { name := "pairFresh",
+                     parameters := [Ownership.Ty.int],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               1
+                               (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.var 0])
+                               (Ownership.Expr.letE
+                                 2
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.literal (Ownership.Ty.int))
+                                   [Ownership.Atom.var 0])
+                                 (Ownership.Expr.prim
+                                   (Ownership.Prim.literal (Ownership.Ty.list (Ownership.Ty.int)))
+                                   [Ownership.Atom.var 1, Ownership.Atom.var 2])) },
+                   { name := "initialize",
+                     parameters := [Ownership.Ty.int,
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.int]
+                                      (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim
+                                 (Ownership.Prim.builder (Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))))
+                                 [])
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.traverse
+                                   (Ownership.Source.range)
+                                   (Ownership.Atom.var 0)
+                                   (Ownership.Atom.var 2)
+                                   4
+                                   5
+                                   6
+                                   (Ownership.Expr.letE
+                                     7
+                                     (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 4])
+                                     (Ownership.Expr.prim
+                                       (Ownership.Prim.put)
+                                       [Ownership.Atom.var 6, Ownership.Atom.var 7])))
+                                 (Ownership.Expr.prim (Ownership.Prim.close) [Ownership.Atom.var 3])) },
+                   { name := "identN",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.atom (Ownership.Atom.var 0) },
+                   { name := "capAppend",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int)],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 0])
+                               (Ownership.Expr.prim
+                                 (Ownership.Prim.push)
+                                 [Ownership.Atom.var 1, Ownership.Atom.var 2]) },
+                   { name := "apply1",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int)]
+                                      (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 0] },
+                   { name := "foldl",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                                    Ownership.Ty.int,
+                                    Ownership.Ty.fn
+                                      [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.int]
+                                      (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.int,
+                     body := Ownership.Expr.traverse
+                               (Ownership.Source.list)
+                               (Ownership.Atom.var 0)
+                               (Ownership.Atom.var 1)
+                               3
+                               4
+                               5
+                               (Ownership.Expr.app
+                                 (Ownership.Atom.var 2)
+                                 [Ownership.Atom.var 4, Ownership.Atom.var 5]) },
+                   { name := "capCount",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.int],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int)],
+                     result := Ownership.Ty.int,
+                     body := Ownership.Expr.letE
+                               3
+                               (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 2, Ownership.Atom.var 1])
+                               (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 3]) },
+                   { name := "capApply",
+                     parameters := [Ownership.Ty.int],
+                     captures := [Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 0] },
+                   { name := "readCall",
+                     parameters := [Ownership.Ty.int],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int),
+                                  Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))],
+                     result := Ownership.Ty.int,
+                     body := Ownership.Expr.letE
+                               3
+                               (Ownership.Expr.app (Ownership.Atom.var 2) [Ownership.Atom.var 0])
+                               (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 1]) },
+                   { name := "mkNested",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               1
+                               (Ownership.Expr.closure 5 [Ownership.Atom.var 0])
+                               (Ownership.Expr.closure 32 [Ownership.Atom.var 1]) },
+                   { name := "choose",
+                     parameters := [Ownership.Ty.int,
+                                    Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.branch
+                               (Ownership.Atom.var 0)
+                               (Ownership.Expr.closure 5 [Ownership.Atom.var 1])
+                               (Ownership.Expr.atom (Ownership.Atom.var 2)) },
+                   { name := "invokeIL",
+                     parameters := [Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.app (Ownership.Atom.var 0) [Ownership.Atom.int 9] }],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.traverse
+                (Ownership.Source.list)
+                (Ownership.Atom.var 0)
+                (Ownership.Atom.int 0)
+                10008
+                10009
+                10010
+                (Ownership.Expr.prim (Ownership.Prim.add) [Ownership.Atom.var 10010, Ownership.Atom.var 10009]))
+              (Ownership.Expr.letE
+                2
+                (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [])
+                (Ownership.Expr.letE
+                  3
+                  (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.var 1])
+                  (Ownership.Expr.letE
+                    4
+                    (Ownership.Expr.prim
+                      (Ownership.Prim.literal (Ownership.Ty.list (Ownership.Ty.int)))
+                      [Ownership.Atom.var 3, Ownership.Atom.var 2])
+                    (Ownership.Expr.letE
+                      5
+                      (Ownership.Expr.closure 13 [])
+                      (Ownership.Expr.letE
+                        6
+                        (Ownership.Expr.closure 1 [])
+                        (Ownership.Expr.letE
+                          7
+                          (Ownership.Expr.app
+                            (Ownership.Atom.var 5)
+                            [Ownership.Atom.var 4, Ownership.Atom.int 1, Ownership.Atom.var 6])
+                          (Ownership.Expr.letE
+                            8
+                            (Ownership.Expr.closure 5 [Ownership.Atom.var 0])
+                            (Ownership.Expr.letE
+                              9
+                              (Ownership.Expr.traverse
+                                (Ownership.Source.range)
+                                (Ownership.Atom.int 3)
+                                (Ownership.Atom.int 0)
+                                10072
+                                10073
+                                10074
+                                (Ownership.Expr.letE
+                                  10076
+                                  (Ownership.Expr.prim
+                                    (Ownership.Prim.push)
+                                    [Ownership.Atom.var 0, Ownership.Atom.var 10072])
+                                  (Ownership.Expr.letE
+                                    10077
+                                    (Ownership.Expr.prim (Ownership.Prim.length) [Ownership.Atom.var 10076])
+                                    (Ownership.Expr.prim
+                                      (Ownership.Prim.add)
+                                      [Ownership.Atom.var 10074, Ownership.Atom.var 10077]))))
+                              (Ownership.Expr.prim
+                                (Ownership.Prim.record)
+                                [Ownership.Atom.var 9, Ownership.Atom.var 5])))))))))) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [Ownership.Observation.int 0,
+              Ownership.Observation.list [],
+              Ownership.Observation.int 1,
+              Ownership.Observation.int 1,
+              Ownership.Observation.int 1],
+    finalValue := Ownership.Observation.record [Ownership.Observation.int 3, Ownership.Observation.closure 13 []],
+    externalReads := [] }
+  { reads := [Ownership.Observation.int 0,
+              Ownership.Observation.list [],
+              Ownership.Observation.int 1,
+              Ownership.Observation.int 2,
+              Ownership.Observation.int 3],
+    finalValue := Ownership.Observation.record [Ownership.Observation.int 6, Ownership.Observation.closure 13 []],
+    externalReads := [] }
+baseline checker: rejected

@@ -67,7 +67,8 @@
           assert pkgs.lib.assertMsg (pkgs.lean4.version == leanVersion)
             "ownership: nixpkgs Lean and proofs/ownership/lean-toolchain must agree";
           pkgs.mkShell {
-            packages = [ pkgs.lean4 ];
+            packages = [ pkgs.lean4 pkgs.nodejs_24 ]
+              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.util-linux ];
           };
 
         # `nix develop .#browser`: the default shell plus Chromium, for

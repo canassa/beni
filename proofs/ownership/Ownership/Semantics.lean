@@ -30,6 +30,24 @@ decreasing_by
 
 instance : BEq Observation := ⟨Observation.equal⟩
 
+/-- The nesting depth of an observation: exactly the fuel the in-place
+    `snapshot` needs to produce it (an integer needs 1, a container one more
+    than its deepest item). -/
+def Observation.depth : Observation → Nat
+  | .int _ => 1
+  | .record xs | .list xs | .closure _ xs => 1 + (xs.attach.map fun x => x.val.depth).foldl max 0
+termination_by o => sizeOf o
+decreasing_by
+  all_goals simp_wf
+  all_goals have := List.sizeOf_lt_of_mem x.property
+  all_goals omega
+
+/-- Both interpreters observe values only up to this depth and fail beyond
+    it: the in-place `snapshot` runs out of fuel, and the value interpreter
+    checks the same bound, so a deep value is an explicit failure of both runs
+    rather than a disagreement (or a step the invariant could not relate). -/
+def observationDepth : Nat := 256
+
 structure Trace where
   reads : List Observation
   finalValue : Observation
@@ -51,12 +69,18 @@ def tick : M Unit := do
   if s.fuel == 0 then throw "value execution exhausted fuel"
   set { s with fuel := s.fuel - 1 }
 
-def read (v : Value) : M Unit := modify fun s => { s with reads := s.reads.push v }
+def observable (v : Value) : Except String Unit :=
+  if v.depth > observationDepth then throw "snapshot exhausted depth" else pure ()
+
+def read (v : Value) : M Unit := do
+  observable v
+  modify fun s => { s with reads := s.reads.push v }
 
 /-- A permanent outside reader observes every completed expression. -/
 def observeKept : M Unit := do
   let s ← get
   if !s.kept.isEmpty then
+    s.kept.toList.forM (m := Except String) observable
     set { s with externalReads := s.externalReads.push s.kept.toList }
 
 def atom (env : Env Value) : Atom → Except String Value
@@ -148,6 +172,7 @@ decreasing_by all_goals simp_wf; omega
 
 def run (p : Program) (fuel := 100000) : Except String Trace := do
   let (v, s) ← (eval fuel p.declarations none [] p.main).run { fuel }
+  observable v
   pure { reads := s.reads.toList, finalValue := v, externalReads := s.externalReads.toList }
 
 end ValueSemantics
@@ -180,18 +205,44 @@ decreasing_by
 
 instance : BEq Value := ⟨Value.equal⟩
 
+/-- One call of a declaration, as the in-place run made it: the heap and the
+    permanent observers before and after, the inputs and the result. -/
+structure CallRecord where
+  decl : Nat
+  args : List Value
+  caps : List Value
+  preHeap : Array (List Value)
+  preKept : Array Value
+  postHeap : Array (List Value)
+  postKept : Array Value
+  result : Value
+
 structure State where
   fuel : Nat
   heap : Array (List Value) := #[]
   reads : Array Observation := #[]
   kept : Array Value := #[]
   externalReads : Array (List Observation) := #[]
-  /-- Program-level in-place writes executed (`set`, `push`, focus write-back);
-      builder `put` is excluded. A campaign statistic only, never compared. -/
+  /-- Program-level in-place writes that changed an array (`set`, `push`,
+      focus write-back); builder `put` is excluded. A campaign statistic only,
+      never compared. -/
   writes : Nat := 0
+  /-- When set, every call of a declaration is recorded in `calls` (for the
+      falsifier and campaign statistics); never compared, never read by the
+      interpreter itself. -/
+  logCalls : Bool := false
+  calls : Array CallRecord := #[]
 abbrev M := StateT State (Except String)
 
 def countWrite : M Unit := modify fun s => { s with writes := s.writes + 1 }
+
+/-- Record a finished call of declaration `id` in the call log, when the run
+    asked for one (`pre` is the state before the call). Calls are recorded as
+    they return, so nested calls come before the call that made them. -/
+def logCall (pre : State) (id : Nat) (actuals caps : List Value) (r : Value) : M Unit :=
+  if pre.logCalls then
+    modify fun s => { s with calls := s.calls.push (CallRecord.mk id actuals caps pre.heap pre.kept s.heap s.kept r) }
+  else pure ()
 
 def tick : M Unit := do
   let s ← get
@@ -211,6 +262,14 @@ def write (c : Nat) (xs : List Value) : M Value := do
   modify fun s => { s with heap := s.heap.set! c xs }
   pure (.ref c)
 
+/-- A program-level write (`set`, `push`, focus write-back), counted only
+    when it changes the array: an out-of-range `set` or a focus that stores
+    the same element back is not an in-place write anyone could see. -/
+def writeCounted (c : Nat) (xs : List Value) : M Value := do
+  let old ← array c
+  if !(old == xs) then countWrite
+  write c xs
+
 def snapshot (heap : Array (List Value)) : Nat → Value → Except String Observation
   | 0, _ => throw "snapshot exhausted depth (possibly cyclic heap)"
   | n + 1, v => match v with
@@ -222,14 +281,14 @@ def snapshot (heap : Array (List Value)) : Nat → Value → Except String Obser
       return .list (← xs.mapM (snapshot heap n))
 
 def read (v : Value) : M Unit := do
-  let o ← snapshot (← get).heap 256 v
+  let o ← snapshot (← get).heap observationDepth v
   modify fun s => { s with reads := s.reads.push o }
 
 /-- Keep actual references, not snapshots made when a holder was registered. -/
 def observeKept : M Unit := do
   let s ← get
   if !s.kept.isEmpty then
-    let observations ← s.kept.toList.mapM (m := Except String) (snapshot s.heap 256)
+    let observations ← s.kept.toList.mapM (m := Except String) (snapshot s.heap observationDepth)
     set { s with externalReads := s.externalReads.push observations }
 
 def atom (env : Env Value) : Atom → Except String Value
@@ -262,9 +321,8 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     pure x
   | .set, [.ref c, .int i, v] => do
     let xs ← array c
-    countWrite
-    write c (if i < 0 then xs else xs.set i.toNat v)
-  | .push, [.ref c, v] => do countWrite; write c ((← array c) ++ [v])
+    writeCounted c (if i < 0 then xs else xs.set i.toNat v)
+  | .push, [.ref c, v] => do writeCounted c ((← array c) ++ [v])
   | .put, [.ref c, v] => do write c ((← array c) ++ [v])
   | .copy, [.ref c] => do alloc (← array c)
   | .close, [.ref c] => pure (.ref c)
@@ -291,12 +349,18 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         let .closure id caps ← atom env f | throw "in-place call"
         let actuals ← args.mapM (m := Except String) (atom env)
         let d ← ds[id]?.toExcept "in-place missing declaration"
-        eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+        let pre ← get
+        let r ← eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+        logCall pre id actuals caps r
+        pure r
       | .recur args =>
         let some (id, caps) := self | throw "recursion outside function"
         let actuals ← args.mapM (m := Except String) (atom env)
         let d ← ds[id]?.toExcept "in-place missing declaration"
-        eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+        let pre ← get
+        let r ← eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body
+        logCall pre id actuals caps r
+        pure r
       | .branch a yes no =>
         let .int n ← atom env a | throw "in-place condition"
         eval (depth - 1) ds self env (if n == 0 then yes else no)
@@ -310,7 +374,17 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
           | .range, .int n => pure n.toNat
           | _, _ => throw "in-place traversal"
         let mut a ← atom env init
-        for j in List.range n do
+        -- A list source is read as a runtime iterates an array: its length
+        -- and element `j` are read before step `j`, never taken from a copy
+        -- made when the loop began. If a step grows the source the loop runs
+        -- on, until fuel ends it (each step ticks).
+        for j in [0:n + (← get).fuel + 1] do
+          let more ← match input with
+            | .ref c => do pure (decide (j < (← array c).length))
+            | _ => pure (decide (j < n))
+          if !more then break
+          -- Every step that does not break ticks first: that, not the bound
+          -- above, is what ends a loop over a source that keeps growing.
           tick
           let v ← match input with
             | .ref c => do
@@ -330,8 +404,10 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         | some v =>
           read v
           let w ← eval (depth - 1) ds self ((x, v) :: env) body
-          countWrite
-          write c (xs.set i.toNat w)
+          -- Re-read the container: the body may have written it (through a
+          -- capture), and a runtime stores the element into the array as it
+          -- is now, not into a copy taken before the body ran.
+          writeCounted c ((← array c).set i.toNat w)
     observeKept
     pure result
 termination_by depth
@@ -339,7 +415,7 @@ decreasing_by all_goals simp_wf; omega
 
 def run (p : Program) (fuel := 100000) : Except String Trace := do
   let (v, s) ← (eval fuel p.declarations none [] p.main).run { fuel }
-  let finalValue ← snapshot s.heap 256 v
+  let finalValue ← snapshot s.heap observationDepth v
   pure { reads := s.reads.toList, finalValue, externalReads := s.externalReads.toList }
 
 /-- Number of program-level in-place writes an execution performs. -/

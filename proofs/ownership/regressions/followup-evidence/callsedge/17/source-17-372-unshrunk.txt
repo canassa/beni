@@ -1,0 +1,94 @@
+seed=17 index=372 family=once-many-wrappers
+AST:
+{ declarations := [{ name := "capturedOp",
+                     parameters := [Ownership.Ty.int],
+                     captures := [Ownership.Ty.list (Ownership.Ty.int)],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 1, Ownership.Atom.var 0] },
+                   { name := "factory",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.closure 0 [Ownership.Atom.var 0] },
+                   { name := "wrapper",
+                     parameters := [Ownership.Ty.int],
+                     captures := [Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 0] },
+                   { name := "map",
+                     parameters := [Ownership.Ty.list (Ownership.Ty.int),
+                                    Ownership.Ty.fn [Ownership.Ty.int] (Ownership.Ty.list (Ownership.Ty.int))],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.list (Ownership.Ty.int)),
+                     body := Ownership.Expr.letE
+                               2
+                               (Ownership.Expr.prim (Ownership.Prim.builder (Ownership.Ty.list (Ownership.Ty.int))) [])
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.traverse
+                                   (Ownership.Source.list)
+                                   (Ownership.Atom.var 0)
+                                   (Ownership.Atom.var 2)
+                                   4
+                                   5
+                                   6
+                                   (Ownership.Expr.letE
+                                     7
+                                     (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 5])
+                                     (Ownership.Expr.prim
+                                       (Ownership.Prim.put)
+                                       [Ownership.Atom.var 6, Ownership.Atom.var 7])))
+                                 (Ownership.Expr.prim (Ownership.Prim.close) [Ownership.Atom.var 3])) }],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.int 2])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.closure 1 [])
+              (Ownership.Expr.letE
+                2
+                (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.var 0])
+                (Ownership.Expr.letE
+                  3
+                  (Ownership.Expr.closure 2 [Ownership.Atom.var 2])
+                  (Ownership.Expr.letE
+                    4
+                    (Ownership.Expr.closure 3 [])
+                    (Ownership.Expr.letE
+                      5
+                      (Ownership.Expr.prim
+                        (Ownership.Prim.literal (Ownership.Ty.int))
+                        [Ownership.Atom.int 0, Ownership.Atom.int 1, Ownership.Atom.int 2])
+                      (Ownership.Expr.app (Ownership.Atom.var 4) [Ownership.Atom.var 5, Ownership.Atom.var 3])))))) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [Ownership.Observation.int 3,
+              Ownership.Observation.int 0,
+              Ownership.Observation.int 1,
+              Ownership.Observation.int 2],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 0],
+                     Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 1],
+                     Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+  { reads := [Ownership.Observation.int 3,
+              Ownership.Observation.int 0,
+              Ownership.Observation.int 1,
+              Ownership.Observation.int 2],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 2,
+                        Ownership.Observation.int 0,
+                        Ownership.Observation.int 1,
+                        Ownership.Observation.int 2],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 2,
+                        Ownership.Observation.int 0,
+                        Ownership.Observation.int 1,
+                        Ownership.Observation.int 2],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 2,
+                        Ownership.Observation.int 0,
+                        Ownership.Observation.int 1,
+                        Ownership.Observation.int 2]],
+    externalReads := [] }
+baseline checker: rejected

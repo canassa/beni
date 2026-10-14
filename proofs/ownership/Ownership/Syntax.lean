@@ -163,10 +163,42 @@ def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except Str
     if (← exprType ds self ((x, t) :: env) body) != t then throw "focus type mismatch"
     pure (.list t)
 
-def typecheck (p : Program) : Except String Ty := do
+/-- Ordinary typing only: every declaration body and the main expression. -/
+def typesOf (p : Program) : Except String Ty := do
   for d in p.declarations do
     let t ← exprType p.declarations d (bindArgs (d.parameters ++ d.captures)) d.body
     if t != d.result then throw s!"incorrect result type in {d.name}"
   exprType p.declarations { name := "main", parameters := [], result := .int, body := p.main } [] p.main
+
+/-- No binder rebinds a variable already in scope. beni forbids shadowing, and
+    this core mirrors it: the checker's liveness names variables, and a
+    continuation that uses an outer `x` must not be read as the inner one. A
+    conditional's two arms are separate scopes. -/
+def shadowFree (bound : List Var) : Expr → Except String Unit
+  | .letE v rhs rest => do
+    if bound.contains v then throw s!"shadowing: variable {v} is bound twice"
+    shadowFree bound rhs
+    shadowFree (v :: bound) rest
+  | .branch _ a b => do shadowFree bound a; shadowFree bound b
+  | .traverse _ _ _ i x acc body => do
+    for v in [i, x, acc] do
+      if bound.contains v then throw s!"shadowing: variable {v} is bound twice"
+    if i == x || x == acc || i == acc then throw "shadowing: a traversal binds one variable twice"
+    shadowFree (i :: x :: acc :: bound) body
+  | .focus _ _ x body => do
+    if bound.contains x then throw s!"shadowing: variable {x} is bound twice"
+    shadowFree (x :: bound) body
+  | _ => pure ()
+
+def noShadowing (p : Program) : Except String Unit := do
+  for d in p.declarations do
+    shadowFree (List.range (d.parameters.length + d.captures.length)) d.body
+  shadowFree [] p.main
+
+/-- The core's static check: ordinary typing and no shadowing. -/
+def typecheck (p : Program) : Except String Ty := do
+  let t ← typesOf p
+  noShadowing p
+  pure t
 
 end Ownership

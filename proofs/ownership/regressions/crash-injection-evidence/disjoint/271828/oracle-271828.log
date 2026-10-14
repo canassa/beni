@@ -1,0 +1,7 @@
+source-sweep mismatch index=156 family=declarations baseline-rejected=true
+/home/canassa/tmp/ownership-crash-injection/taskset: line 13: 4027218 Exit 1                     "$OWNERSHIP_REAL_TASKSET" "$@"
+     4027219 Segmentation fault         (core dumped) | ( while IFS= read -r line; do
+    printf '%s\n' "$line"; if [[ "$line" == *'mismatch index='* ]]; then
+        kill -SEGV "$BASHPID";
+    fi;
+done )

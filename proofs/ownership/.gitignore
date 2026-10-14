@@ -1,1 +1,3 @@
 .lake/
+.mutants/
+regressions/*-unshrunk.txt

@@ -1,0 +1,32 @@
+invariant_preserved: { tried := 100000,
+  hypothesisFalse := 0,
+  uncovered := 10413,
+  uncoveredAccepted := 0,
+  closureMislabeled := 7203,
+  lowFuel := 25000,
+  lowFuelBothFail := 1282,
+  aliased := 16679,
+  aliasedAccepted := 5945,
+  nested := 36380,
+  nestedAccepted := 22868,
+  accepted := 66247,
+  valueOk := 64965,
+  withWrite := 21002,
+  observational := 0,
+  naming := 0,
+  errorClause := 0 }
+VACUOUS summary_sound program 8065 decl=initialize: no summary describes args=[Ownership.InPlaceSemantics.Value.int 0,
+ Ownership.InPlaceSemantics.Value.closure 5 [Ownership.InPlaceSemantics.Value.ref 3]] caps=[]
+VACUOUS summary_sound program 71754 decl=higher37: no summary describes args=[Ownership.InPlaceSemantics.Value.ref 17,
+ Ownership.InPlaceSemantics.Value.closure 28 [Ownership.InPlaceSemantics.Value.ref 3]] caps=[]
+summary_sound: { calls := 43910,
+  checked := 57619,
+  vacuous := 1230,
+  guardsDiffer := 413,
+  violations := 0,
+  mapChecked := 4200,
+  vacuousSeparating := 1221,
+  vacuousDescribed := 2,
+  vacuousUnique := 0,
+  vacuousOther := 7 }
+falsify count=100000 seed=271828 clean=true

@@ -1,6 +1,6 @@
 name = "ownership"
 version = "0.1.0"
-defaultTargets = ["Ownership", "ownership", "AxiomCheck"]
+defaultTargets = ["Ownership", "ownership", "AxiomCheck", "audit"]
 
 [[lean_lib]]
 name = "Ownership"
@@ -13,3 +13,10 @@ roots = ["Axioms"]
 [[lean_exe]]
 name = "ownership"
 root = "Main"
+
+# The audit executable: parses every source with Lean's parser and checks the
+# built environment; it imports only Lean and Std (scripts/audit.sh).
+[[lean_exe]]
+name = "audit"
+root = "Audit"
+supportInterpreter = true

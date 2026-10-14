@@ -154,8 +154,11 @@ def Abstract.join (a b : Abstract) : Abstract :=
   | .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex && ey)
   | .function cs xs, .function ds ys => .function (union cs ds) (union xs ys)
   | .symbolic i t cs es, .symbolic j _ ds fs =>
-    if i == j then .symbolic i t (union cs ds) (union es fs) else .list [.unknown] .bottom false
-  | _, _ => .list [.unknown] .bottom false
+    if i == j then .symbolic i t (union cs ds) (union es fs) else .list (union [.unknown] (union a.cells b.cells)) .bottom false
+  -- Values of different shapes (a known closure and a function input, two
+  -- function inputs): unknown, and holding every cell either side holds, so
+  -- a live use of the join still keeps them (it used to drop them all).
+  | _, _ => .list (union [.unknown] (union a.cells b.cells)) .bottom false
 termination_by sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -238,23 +241,53 @@ def atomsUses (xs : List Atom) : Live := xs.flatMap atomUses
 
 def removeVars (xs : List Var) (l : Live) : Live := l.filter fun (v, _) => !xs.contains v
 
-def uses : Expr → Live
+/-- The captures of the closures an expression creates along its let chain
+    and conditional arms (what the `branch-closure` control forgets). -/
+def closureCapUses : Expr → Live
+  | .closure _ xs => atomsUses xs
+  | .letE _ a b | .branch _ a b => closureCapUses a ++ closureCapUses b
+  | _ => []
+
+/-- The uses of an expression. `nonzero := false` is the `branch-live`
+    control's weakened liveness, which ignores a conditional's nonzero arm;
+    one definition, so the control cannot drift from the rule it weakens. -/
+def usesArms (nonzero : Bool) (armClosures : Bool := true) : Expr → Live
   | .atom a => atomUses a
-  | .letE v rhs rest => union (uses rhs) (removeVars [v] (uses rest))
+  | .letE v rhs rest => union (usesArms nonzero armClosures rhs) (removeVars [v] (usesArms nonzero armClosures rest))
   | .prim .close (x :: _) => atomUses x
-  | .prim _ xs | .closure _ xs | .recur xs => atomsUses xs
+  | .prim _ xs | .recur xs => atomsUses xs
+  | .closure _ xs => atomsUses xs
   | .app f xs => union (atomUses f) (atomsUses xs)
-  | .branch c a b => union (atomUses c) (union (uses a) (uses b))
+  | .branch c a b =>
+    -- The `branch-closure` control (`armClosures := false`) drops an arm's
+    -- uses that are captures of the closures the arm creates.
+    let ua := usesArms nonzero armClosures a
+    let ub := if nonzero then usesArms nonzero armClosures b else []
+    let ua := if armClosures then ua else ua.filter fun u => !(closureCapUses a).contains u
+    let ub := if armClosures then ub else ub.filter fun u => !(closureCapUses b).contains u
+    union (atomUses c) (union ua ub)
   | .traverse _ src init i x acc body =>
-    union (atomsUses [src, init]) (removeVars [i, x, acc] (uses body))
-  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (uses body))
+    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero armClosures body))
+  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero armClosures body))
+
+def uses (e : Expr) : Live := usesArms true true e
 
 def isPrefix (a b : Path) : Bool := a == b.take a.length
 
+/-- Every live variable is bound: a checker refuses a continuation whose uses
+    name a variable the environment does not bind, rather than read it as
+    dead (third review, P1). -/
+def liveScope (env : Env Abstract) (l : Live) : Except String Unit :=
+  match l.find? (fun (x, _) => (env.lookup x).isNone) with
+  | some (x, _) => throw s!"liveness: live variable {x} is not in scope"
+  | none => pure ()
+
+/-- The cells live uses hold. An unbound variable (never reached after
+    `liveScope`) would hold anything: ⊤. -/
 def liveCells (env : Env Abstract) (l : Live) : List Origin :=
   l.foldl (fun cs (v, p) =>
     match env.lookup v with
-    | none => cs
+    | none => union cs [.unknown]
     | some a => a.paths.foldl (fun cs (q, ds) =>
         if isPrefix p q || isPrefix q p then union cs ds else cs) cs) []
 

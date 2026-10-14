@@ -5765,3 +5765,126 @@ for ready status and rebase merge, followed by Conduit from current master.
 
 The remaining 1,000-todo misses stay measured evidence; the owner authorized
 composition and in-place updates before the final combined remeasurement.
+
+## 2026-10-12 14:01 CEST — ownership oracle: second review answered
+
+**What I did.** Answered the second adversarial review of `proofs/ownership`. Restated `Invariant`
+(observers related, escaped naming, live field paths, path-wise description, dead bindings stay named,
+unbounded correspondence) and Lemma 6.7 (captures, shared results, observer-only clause 2, guards);
+the review's counterexample is a guarded example proved excluded. Added `ownership falsify`, which
+executes the three sorry statements on random configurations and on every call of generated programs.
+Fixed the in-place focus write-back (stale container) and the traversal length read. The axiom audit
+now covers every constant and scans sources for sorry/admit/native_decide/axiom. A forked agent built
+generator v5 (own declarations, recursion, branch arms), the branch-live control, distinct counts, the
+aliased-write metric and precision, and made `ci` require generator catches.
+
+**What I learned.** Executing a sorry statement is cheap and finds falsehoods fast: eleven ways the
+statements were false or vacuous, and two real summary-checker defects (a once callback called by a
+callee was neither consumed nor had its written captures demanded; `close`'s unused source made the
+second reachable). recwrites and symenv are masked by neighbouring rules; keepsany is argued equivalent.
+
+## 2026-10-12 18:54 CEST — ownership oracle: third review answered
+
+**What I did.** Answered the third review of PR #65. The core now refuses shadowing and a let pins its
+continuation's uses of a rebound name to the outer binding (both checkers had accepted a mismatching
+program); the step lemma assumes the abstract environment covers the live uses and both checkers refuse
+an unresolvable live variable; the axiom audit kernel-replays every constant and refuses skipKernelTC,
+addDecl, run_cmd, implemented_by and extern anywhere under the package; the falsifier checks Lemma 6.7
+on the real interpreter's call log and is two-thirds write-heavy; writes count only when they change an
+array. A forked agent made generated declarations run (96 %), write the caller's arrays (33-35 %) and
+see one array twice (15 %), and made the generator catch branch-closure, shared-roots, shadowing and the
+third review's source holes; the older source sweep was not re-run on the final generator (time bound).
+
+**What I learned.** A liveness set of variable names is only as good as the scoping it assumes: shadowing
+silently re-pointed a live use. A crash in the shrinker had been counting a caught hole as missed.
+
+## 2026-10-12 23:55 CEST — ownership oracle: fourth review answered (round 5)
+
+**What I did.** Answered the fourth review on PR #65. The invariant ties every closure at a field or
+element path to its own declaration (a writing closure described as a reading one made the step lemma
+false); the falsifier mislabels closures, aliases written variables and runs a quarter of samples on
+low fuel. Shrinking no longer overflows the stack (candidates on small fuel) and a mismatch is flushed
+and saved before shrinking; the mutant runner flags crashes. The audit reads compiler attributes of every
+constant and bans elaboration-time code and qualified spellings. A forked agent added many-off,
+shared-fn and no-scope controls, reached xres, tsupplyexcl, callback-escapes and forward-guards, and
+re-ran all 55 source edits on the final generator: 41 caught 3/3, 12 argued equivalent (verdict
+counts), two gaps no generated program can reach (no-scope, hiddencopy).
+
+**What I learned.** A miss and a crash look alike unless the runner says which; two "uncaught" holes
+were crashes. Counting the verdicts a mutant changes turns an equivalence argument into a measurement.
+## 2026-10-14 12:52 CEST — Finish the ownership oracle's closure checks
+
+**What I did**
+
+Combined the two ownership branches with current master in an isolated
+worktree. Fixed transitive once-capture demands through higher-order calls,
+added its failing-before fixture and search moves, and repaired recursive
+closure description/honesty and actual heap typing in the step premises.
+Rebuilt the independent-baseline mutant runner and retained counts and
+original witnesses. On dagon, pinned every descendant to CPUs 0–7: all 62
+source edits on three 20,000-program streams, bound 2 on every edit, and
+bound 3 on four targeted edits. The union catches 47; 12 have written masking
+arguments; three remain search gaps. The 20,965,567-program corrected bound-3
+run, CI, all seeded controls and three 100,000-sample falsifiers pass.
+Injected a crash after the first mismatch and verified failure plus evidence
+retention. Replaced stale coverage/results counts and prepared the committed
+head for the authoritative audit and final checks. Used zorg for the compiler
+gates: only the four owner-identified macOS failures remain.
+
+**What I learned**
+
+Matching an outer closure does not describe its inner code or affinity. A
+higher-order call must demand captured callbacks' own writes recursively,
+not only the outer callback's capture row. A dead close source still needs
+its actual heap type. Random generation's call of an unknown function join
+masks a lost-cell defect; enumeration retaining the join as data reaches it.
+A trace-only oracle cannot expose every false exclusivity certificate, and
+an unchanged checker verdict cannot test an interpreter-copy edit. These
+limits and the three remaining sorries are explicit in the reports.
+
+## 2026-10-14 16:03 CEST — Harden ownership calls, audit and search evidence
+
+**What I did**
+
+Added explicit call-shape premises to the two summary statements and a concrete
+wrong-split regression. Rejected nested executable audit syntax before
+elaboration and checked every recursor against the kernel-regenerated metadata.
+Validated CLI options, preserved failures and supplied Node/taskset in ownership.
+Extended supported capture/count/consume/join generation and added all 144
+targeted programs to CI. Completed the 65-unique-edit sweep on three seeds with
+every Linux descendant pinned to CPUs 0–7: 50 caught, 12 argued equivalent or
+masked, three documented search gaps. Retained logs, verdict deltas and ASTs;
+updated the proof and coverage limits. Preparing the final committed-head checks
+and another review request on PR #65; no merge.
+
+**What I learned**
+
+Naming from a proposed argument/capture split can conceal a false summary
+statement; derive it from the declaration and check lengths independently.
+Lean regenerates nested auxiliary recursors in the kernel even when its
+higher-level replay metadata omits them, so compare complete kernel recursor
+values rather than exempting declarations by name. Captured function values in
+supported shapes reach the missed rules without broadening higher-order limits.
+The main theorem still depends on the unproved step lemma alone.
+
+## 2026-10-14 16:27 CEST — Close the final ownership audit gap before merge
+
+**What I did**
+
+Read the latest PR #65 review after the owner authorized merging. Confirmed in
+the pinned Lean parser that term-level unsafe expressions exist, and reproduced
+that the previous audit accepted `def termUnsafeProbe : Nat := unsafe 0`.
+Rejected the unsafe atom before elaboration and added the failing-before
+black-box refusal. Made audit reject unknown arguments, clarified three source
+sorries versus four dependent constants and compiled guard evaluation, and
+named the keepsep search gap explicitly in the README. The audit executable
+build and refusal checks pass. Preparing the committed-head audit and merge;
+all ownership search semantics and retained mutant counts are unchanged.
+
+**What I learned**
+
+A command-node restriction cannot enforce the unsafe-expression boundary;
+the expression constructor has its own parser and must be checked throughout
+the syntax. The root-file exception already uses the full relative path in
+addition to the basename, contrary to the review's last nit. The latest review
+was an audit inspection, not independent verification of the checker or logs.

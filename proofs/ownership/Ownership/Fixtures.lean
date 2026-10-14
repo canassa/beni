@@ -1,6 +1,7 @@
 import Ownership.Oracle
 import Ownership.Smoke
 import Ownership.GeneratedRegressions
+import Ownership.Targeted
 
 namespace Ownership.Fixtures
 
@@ -392,10 +393,202 @@ def envWriteThenCall : Program := {
   main := .letE 0 list <| .letE 1 (.prim (.literal .int) [.int 5]) <|
     .letE 2 (.closure 0 [v 1]) <| .letE 3 (.closure 1 []) (.app (v 3) [v 0, v 2]) }
 
+/-- A focus body pushes onto the focused container through a capture. The
+    in-place interpreter used to store the element into the array as it was
+    before the body ran, discarding the push, so the two runs agreed even with
+    Disjoint dropped; the write-back now re-reads the container. -/
+def focusStale : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 2 (.prim (.literal .int) [.int 5]) <|
+    .focus (v 1) (.int 0) 3 (.letE 4 (.prim .push [v 1, v 2]) (.atom (v 3))) }
+
+/-- A once closure (it pushes onto its capture) is handed to a callee that
+    calls it once, and is then observed in the result. A direct call consumes
+    a once closure; the summary checker did not consume it when the call was
+    made by a callee, and accepted a program whose runs disagree (value: the
+    closure still captures `[1]`; in place: `[1, 1]`). -/
+def onceThroughCallee : Program := {
+  declarations := [
+    { name := "capAppend", parameters := [.list .int], captures := [.list .int], result := .list .int,
+      body := .letE 2 (.prim .length [v 0]) (.prim .push [v 1, v 2]) },
+    { name := "apply1", parameters := [.list .int, .fn [.list .int] (.list .int)],
+      result := .list .int, body := .app (v 1) [v 0] }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.prim (.literal .int) [.int 7]) <| .letE 3 (.closure 1 []) <|
+    .letE 4 (.app (v 3) [v 2, v 1]) (.prim .record [v 4, v 1]) }
+
+/-- Branch liveness: `x` is read only in the nonzero arm, after it was pushed. -/
+def probeBranchLive : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.prim .push [v 0, .int 5]) <|
+    .branch (.int 1) (.atom (v 1)) (.atom (v 0)) }
+
+/-- `close b xs` with an empty builder returns `xs`'s own array (equal
+    contents); `xs` is the written capture of a once closure, which a callee
+    then calls. `close`'s source is not a use, so creating the closure did not
+    keep `xs` from being named again; demanding the closure's roots at the
+    callee's call is not enough, its written captures must be demanded too,
+    as a direct call demands them (value: `[]`, in place: `[1]`). -/
+def closeThenOnceThroughCallee : Program := {
+  declarations := onceThroughCallee.declarations
+  main := .letE 0 (.prim (.literal .int) []) <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.prim (.builder .int) []) <| .letE 3 (.prim .close [v 2, v 0]) <|
+    .letE 4 (.prim (.literal .int) [.int 7]) <| .letE 5 (.closure 1 []) <|
+    .letE 6 (.app (v 5) [v 4, v 1]) (.prim .record [v 3, v 6]) }
+
+/-- Shadowing (third review): `let 0 = [1]; let 6 = (let 5 = 0; let 0 = [];
+    push 5 1); length 0`. The continuation's `0` is the outer list, but the
+    checker resolved it inside the inner `let`, where `0` is the new empty
+    list, so the push's Dead test passed (value reads 1, in place 2). Refused
+    as shadowing; liveness also resolves it against the outer binding now. -/
+def shadowedLive : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 6 (.letE 5 (.atom (v 0)) (.letE 0 (.prim (.literal .int) []) (.prim .push [v 5, .int 1])))
+      (.prim .length [v 0]) }
+
+/-- The same inside a declaration body, over its parameter `0`. -/
+def shadowedLiveInDecl : Program := {
+  declarations := [{
+      name := "f", parameters := [.list .int], result := .int,
+      body := .letE 6 (.letE 5 (.atom (v 0)) (.letE 0 (.prim (.literal .int) []) (.prim .push [v 5, .int 1])))
+        (.prim .length [v 0]) }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) (.letE 1 (.closure 0 []) (.app (v 1) [v 0])) }
+
+/-- `shared` on a nested list must escape its elements too (third review):
+    the element `[1]` is pushed after its container was published. -/
+def sharedNested : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal (.list .int)) [v 0]) <|
+    .letE 2 (.prim .shared [v 1]) <| .letE 3 (.prim .push [v 0, .int 7]) (.prim .length [v 3]) }
+
+/-- A closure created in a conditional arm captures a list that was pushed
+    before: the capture is a use of the old list (third review). -/
+def branchArmCapture : Program := {
+  declarations := Generator.decls
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim .push [v 0, .int 5]) <|
+    .letE 2 (.branch (.int 0) (.closure Generator.capLen [v 0]) (.closure Generator.capLen [v 0])) <|
+    .app (v 2) [.int 0] }
+
+/-- foldl over two rows calls a once closure (it pushes onto its capture)
+    once per step (fourth review, p9c): the step's single call is many calls. -/
+def onceThroughFold : Program := {
+  declarations := [Library.foldl (.list .int) .int,
+    { name := "pushCap2", parameters := [.list .int, .int], captures := [.list .int], result := .int,
+      body := .letE 3 (.prim .push [v 2, v 1]) (.prim .length [v 3]) }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal .int) [.int 5]) <|
+    .letE 3 (.prim (.literal (.list .int)) [v 1, v 1]) <| .letE 4 (.closure 1 [v 0]) <|
+    .letE 5 (.closure 0 []) (.app (v 5) [v 3, .int 0, v 4]) }
+
+/-- `shared` on a record holding a closure over a list must escape the list
+    (fourth review, p9d); the list is then pushed. -/
+def sharedClosureInRecord : Program := {
+  declarations := [{
+      name := "capLen", parameters := [.int], captures := [.list .int], result := .int,
+      body := .prim .length [v 1] }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.prim .record [v 1, .int 0]) <| .letE 3 (.prim .shared [v 2]) <|
+    .letE 4 (.prim .push [v 0, .int 9]) (.prim .length [v 4]) }
+
+/-- The third review's P1, at the checker: a live variable (`1`, the same
+    array as `0`) that the abstract environment does not bind. No typed
+    program reaches this (every live variable of a typed program is bound),
+    so only this probe can see the `no-scope` control: the checker must
+    refuse it; with the refusal dropped it accepts, and the push changes the
+    array the live `1` holds. Returns (accepted, the runs disagree). -/
+def unboundLive (config : Config) : Bool × Bool :=
+  let heap : Array (List InPlaceSemantics.Value) := #[[.int 0]]
+  let aenv : Env Abstract := [(0, .list [.site [99] 0] .scalar true)]
+  let e : Expr := .prim .push [v 0, .int 1]
+  let accepted := ((inferExpr 200 { declarations := [], config } aenv e [(1, [])] [7]).run {}).isOk
+  let vEnv : Env Observation := [(0, .list [.int 0]), (1, .list [.int 0])]
+  let hEnv : Env InPlaceSemantics.Value := [(0, .ref 0), (1, .ref 0)]
+  let disagree := match (ValueSemantics.eval 50 [] none vEnv e).run { fuel := 50 },
+      (InPlaceSemantics.eval 50 [] none hEnv e).run { fuel := 50, heap } with
+    | .ok _, .ok (_, hs) => (InPlaceSemantics.snapshot hs.heap 10 (.ref 0)).toOption != some (.list [.int 0])
+    | _, _ => false
+  (accepted, disagree)
+
+/-- A loop over a non-exclusive source returns one of its elements as the
+    accumulator, which is then edited in place: the element is not exclusive
+    (the source-level `xres` and `tsupplyexcl` holes both accept it). -/
+def loopPicksElement : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.prim (.literal (.list .int)) [v 0, v 0]) <|
+    .letE 2 (.prim (.literal (.list (.list .int))) [v 1]) <|
+    .letE 3 (.prim (.literal (.list .int)) []) <|
+    .letE 4 (.traverse .list (v 2) (v 3) 10 11 12 (.atom (v 11))) <|
+    .focus (v 4) (.int 0) 5 (.prim .push [v 5, .int 9]) }
+
+/-- Fifth review, P4: one list is `set` into both slots of a nested list,
+    and `map bump` then pushes onto each row. The rows are one array, so the
+    nested list is not exclusive; a `set` that keeps exclusivity whatever it
+    stores (`set-exclusive`) lets map push the array twice. -/
+def setBothSlots : Program := {
+  declarations := [Library.map (.list .int) (.list .int),
+    { name := "bump", parameters := [.list .int], result := .list .int, body := .prim .push [v 0, .int 9] }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal .int) [.int 2]) <|
+    .letE 2 (.prim (.literal (.list .int)) [v 0, v 1]) <| .letE 3 (.prim (.literal .int) [.int 7]) <|
+    .letE 4 (.prim .set [v 2, .int 0, v 3]) <| .letE 5 (.prim .set [v 4, .int 1, v 3]) <|
+    .letE 6 (.closure 1 []) <| .letE 7 (.closure 0 []) (.app (v 7) [v 5, v 6]) }
+
+/-- Fifth review, P5: a closure captures a list `xs` beside a once closure
+    (it pushes onto its own capture); `xs` is pushed, then the closure is
+    called and reads `xs`. The once closure's capture paths still hold `xs`;
+    liveness that drops them (`once-live`) lets the push through. -/
+def onceCapturedBeside : Program := {
+  declarations := [
+    { name := "capPush", parameters := [.int], captures := [.list .int], result := .list .int,
+      body := .prim .push [v 1, v 0] },
+    { name := "readCall", parameters := [.int], captures := [.list .int, .fn [.int] (.list .int)], result := .int,
+      body := .letE 3 (.app (v 2) [v 0]) (.prim .length [v 1]) }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal .int) [.int 5]) <|
+    .letE 2 (.closure 0 [v 1]) <| .letE 3 (.closure 1 [v 0, v 2]) <|
+    .letE 4 (.prim .push [v 0, .int 9]) <| .letE 5 (.app (v 3) [.int 0]) (.prim .record [v 5, v 4]) }
+
+/-- A declaration returns either a closure over its list argument or its
+    function argument (fifth review, P6). The checker joined the two shapes
+    to an unknown value holding no cells, so the list stayed writable while
+    the returned closure over it was live (value: the closure captures `[1]`;
+    in place: `[1, 9]`). The join now keeps both sides' cells. -/
+def closureJoinedWithInput : Program := {
+  declarations := [
+    { name := "capGet", parameters := [.int], captures := [.list .int], result := .list .int, body := .atom (v 1) },
+    { name := "choose", parameters := [.int, .list .int, .fn [.int] (.list .int)], result := .fn [.int] (.list .int),
+      body := .branch (v 0) (.closure 0 [v 1]) (.atom (v 2)) }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim (.literal .int) [.int 2]) <|
+    .letE 2 (.closure 0 [v 1]) <| .letE 3 (.closure 1 []) <| .letE 4 (.app (v 3) [.int 0, v 0, v 2]) <|
+    .letE 5 (.prim .push [v 0, .int 9]) (.prim .record [v 4, v 5]) }
+
+/-- A callee invokes an outer closure, which calls its captured once
+    closure. `close` revives the written array after closure creation; the
+    callee must demand the nested write while that old array is live. -/
+def nestedOnceThroughCallee : Program := {
+  declarations := [
+    { name := "push", parameters := [.int], captures := [.list .int], result := .list .int,
+      body := .prim .push [.var 1, .var 0] },
+    { name := "wrap", parameters := [.int], captures := [.fn [.int] (.list .int)], result := .list .int,
+      body := .app (.var 1) [.var 0] },
+    { name := "invoke", parameters := [.fn [.int] (.list .int)], result := .list .int,
+      body := .app (.var 0) [.int 9] }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.closure 0 [.var 0]) <| .letE 2 (.closure 1 [.var 1]) <|
+    .letE 3 (.prim (.builder .int) []) <| .letE 4 (.prim .put [.var 3, .int 1]) <|
+    .letE 5 (.prim .close [.var 4, .var 0]) <| .letE 6 (.closure 2 []) <|
+    .letE 7 (.app (.var 6) [.var 2]) (.prim .record [.var 5, .var 7]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
+  ("a callee invokes a closure calling a captured once closure", nestedOnceThroughCallee, .onceThroughCall, false),
+  ("one list set into both slots, then map bump", setBothSlots, .setExclusive, false),
+  ("a list captured beside a once closure, pushed, then the closure called", onceCapturedBeside, .onceLive, false),
   ("disjoint", probeDisjoint, .disjoint, false),
+  ("focus body pushes its own container", focusStale, .disjoint, false),
+  ("read only in the nonzero arm after a push", probeBranchLive, .branchLive, false),
+  ("a let shadows a variable its continuation uses", shadowedLive, .shadowing, false),
+  ("the same in a declaration body", shadowedLiveInDecl, .shadowing, false),
+  ("shared on a nested list, then an element pushed", sharedNested, .sharedRoots, false),
+  ("a closure in a conditional arm captures a pushed list", branchArmCapture, .branchClosure, false),
   ("T46 two rows", borrowedAccumulator, .borrowedSupply, true),
   ("traversal over [c, c]", probeTraversalExclusive, .traversalExclusive, false),
   ("captured push per iteration", probeManyCalls, .manyCalls, false),
@@ -411,7 +604,11 @@ def probes : List (String × Program × Mutant × Bool) := [
   ("wrapper returns its argument", probeCallbackAliases, .callbackAliases, false),
   ("map over a captured list", probeCallbackEnv, .callbackEnv, false),
   ("mapVia publishes a row, then the row is pushed", probePublishVia, .callbackEscapes, false),
-  ("mapVia forwards map's guards about its callback", probePublishVia, .forwardGuards, false)]
+  ("mapVia forwards map's guards about its callback", probePublishVia, .forwardGuards, false),
+  ("once closure called by a callee, then observed", onceThroughCallee, .onceThroughCall, false),
+  ("close returns a once closure's capture, a callee calls it", closeThenOnceThroughCallee, .onceThroughCall, false),
+  ("foldl calls a once closure on two rows", onceThroughFold, .manyOff, false),
+  ("shared on a record holding a closure over a list", sharedClosureInRecord, .sharedFn, false)]
 
 def scalarIndexOrder : Program := {
   main := .letE 0 list <| .letE 1 (.prim .at [v 0,.int 0,.int 0]) <|
@@ -504,6 +701,11 @@ structure Fixture where
 
 /-- Expected verdicts are transcribed from Table 6.2, never checker-generated. -/
 def all : List Fixture := [
+  ⟨"captured once callback called twice",Targeted.countBoundary 1 2,false⟩,
+  ⟨"captured once callback called once",Targeted.countBoundary 1 1,true⟩,
+  ⟨"captured writer consumes revived capture",Targeted.consumingCapture 1 Generator.bump,false⟩,
+  ⟨"captured reader shares revived capture",Targeted.consumingCapture 1 Generator.identL,true⟩,
+  ⟨"right-hand join capture kept as data",Targeted.shapeJoin 1 1 .eq 1,false⟩,
   ⟨"T11 ordinary concat contents",concatContents,false⟩,
   ⟨"T37 initialized grid set",initializedGridSet,true⟩,
   ⟨"generated v3 tower old-rule regression",GeneratedRegressions.oldTowerSeed20261011Index7,false⟩,
@@ -564,21 +766,41 @@ def all : List Fixture := [
   ⟨"recursion inside a step (per-call checker accepted it)",recursionInStep,false⟩,
   ⟨"T46 borrowed row read again",borrowedReread,false⟩,
   ⟨"wrapper writes its callback's returned capture",envThroughWrapper,true⟩,
-  ⟨"write through a callback's environment, then call it again",envWriteThenCall,false⟩ ]
+  ⟨"write through a callback's environment, then call it again",envWriteThenCall,false⟩,
+  ⟨"focus body pushes its own container",focusStale,false⟩,
+  ⟨"once closure called by a callee, then observed",onceThroughCallee,false⟩,
+  ⟨"close returns a once closure's capture, a callee calls it",closeThenOnceThroughCallee,false⟩,
+  ⟨"read only in the nonzero arm after a push",probeBranchLive,false⟩,
+  ⟨"a let shadows a variable its continuation uses",shadowedLive,false⟩,
+  ⟨"the same in a declaration body",shadowedLiveInDecl,false⟩,
+  ⟨"shared on a nested list, then an element pushed",sharedNested,false⟩,
+  ⟨"a closure in a conditional arm captures a pushed list",branchArmCapture,false⟩,
+  ⟨"foldl calls a once closure on two rows",onceThroughFold,false⟩,
+  ⟨"shared on a record holding a closure over a list",sharedClosureInRecord,false⟩,
+  ⟨"a loop over a non-exclusive source returns an element, then edited",loopPicksElement,false⟩,
+  ⟨"a closure joined with a function input stays live",closureJoinedWithInput,false⟩,
+  ⟨"a callee invokes a closure calling a captured once closure",nestedOnceThroughCallee,false⟩,
+  ⟨"one list set into both slots, then map bump",setBothSlots,false⟩,
+  ⟨"a list captured beside a once closure, pushed, then the closure called",onceCapturedBeside,false⟩ ]
 
 def run : IO Bool := do
   let mut ok := true
-  for f in all do
-    let typed := typecheck f.program
+  for (f, index) in all.zipIdx do
+    let typed := typesOf f.program
     let verdict := check f.program
     IO.println s!"{f.id}: expected={f.accepted} actual={verdict.isOk} {if verdict.isOk then "" else toString (repr verdict)}"
     if !typed.isOk || verdict.isOk != f.accepted then
       IO.println s!"UNEXPECTED VERDICT; intended verdict retained. types={repr typed}"
+      IO.FS.createDirAll "regressions"
+      IO.FS.writeFile s!"regressions/fixture-{index}-failure.txt"
+        s!"{f.id}\nexpected={f.accepted}\nactual={repr verdict}\ntypes={repr typed}\n{repr f.program}\n"
       ok := false
     if verdict.isOk then
       match Oracle.compare f.program with
       | .equal => pure ()
       | result =>
+        IO.FS.createDirAll "regressions"
+        IO.FS.writeFile s!"regressions/fixture-{index}-failure.txt" s!"{f.id}\n{repr f.program}\n{repr result}\n"
         IO.println s!"STOP fixture observational failure {f.id}: {repr result}"
         return false
   for p in [GeneratedRegressions.oldSeed20261011Index8, GeneratedRegressions.oldSeed20261011Index10, GeneratedRegressions.oldTowerSeed20261011Index7] do
@@ -596,6 +818,13 @@ def run : IO Bool := do
     if !caught then
       IO.println s!"MUTANT NEGATIVE CONTROL FAILED: {m.name}"
       ok := false
+  -- `no-scope` at the checker: no program reaches it (see `unboundLive`).
+  let (correctedAccepts, _) := unboundLive {}
+  let (mutantAccepts, mutantDisagrees) := unboundLive { mutant := some .noScope }
+  IO.println s!"probe unbound live variable under mutant no-scope: corrected accepts={correctedAccepts} mutant accepts={mutantAccepts} disagrees={mutantDisagrees}"
+  if correctedAccepts || !mutantAccepts || !mutantDisagrees then
+    IO.println "MUTANT NEGATIVE CONTROL FAILED: no-scope"
+    ok := false
   -- Both checkers on every verdict fixture: the per-call checker is the
   -- cross-check, and must agree with the intended verdicts too.
   for f in all do

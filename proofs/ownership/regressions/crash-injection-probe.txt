@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -o pipefail
+ulimit -c 0
+if [[ " $* " == *' source-sweep '* ]]; then
+  "$OWNERSHIP_REAL_TASKSET" "$@" | (
+    while IFS= read -r line; do
+      printf '%s\n' "$line"
+      if [[ "$line" == *'mismatch index='* ]]; then kill -SEGV "$BASHPID"; fi
+    done
+  )
+else
+  exec "$OWNERSHIP_REAL_TASKSET" "$@"
+fi

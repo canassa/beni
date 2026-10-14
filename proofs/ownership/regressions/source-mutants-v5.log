@@ -1,0 +1,8 @@
+argrecheck2: seed=20261011 exit=1 first-index=13 family=recursion seed=17 exit=1 first-index=109 family=recursion seed=271828 exit=1 first-index=50 family=recursion caught-seeds=3/3
+pushexcl: seed=20261011 exit=1 first-index=540 family=declarations seed=17 exit=1 first-index=4298 family=declarations seed=271828 exit=1 first-index=1828 family=general caught-seeds=3/3
+resprov: seed=20261011 exit=1 first-index=192 family=library-pipeline seed=17 exit=1 first-index=31 family=library-pipeline seed=271828 exit=1 first-index=152 family=library-pipeline caught-seeds=3/3
+nofix1: seed=20261011 exit=1 first-index=19 family=general seed=17 exit=1 first-index=390 family=general seed=271828 exit=1 first-index=191 family=declarations caught-seeds=3/3
+branchclosure: seed=20261011 exit=1 first-index=202 family=declarations seed=17 exit=1 first-index=41 family=general seed=271828 exit=1 first-index=241 family=general caught-seeds=3/3
+sharedroots: seed=20261011 exit=1 first-index=293 family=general seed=17 exit=1 first-index=106 family=general seed=271828 exit=1 first-index=792 family=declarations caught-seeds=3/3
+hiddencopy: seed=20261011 exit=0 first-index=none seed=17 exit=0 first-index=none seed=271828 exit=0 first-index=none caught-seeds=0/3
+nofix2: BUILD FAILED in this run (two runs built in parallel); last measured on the generator of 0723d842c, before only the copy-then-edit move: seed=20261011 first-index=93 family=general seed=17 first-index=64 family=general seed=271828 first-index=198 family=declarations caught-seeds=3/3

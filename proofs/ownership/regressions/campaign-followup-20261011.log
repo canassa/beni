@@ -1,0 +1,46 @@
+CROSS-CHECK VERDICTS DIFFER index=1243 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=1670 family=declarations this=Except.ok () other=Except.error "limit: recursion changes a tracked shape or exclusivity assumption"
+CROSS-CHECK VERDICTS DIFFER index=1920 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=2029 family=declarations this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=3658 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=5011 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=6087 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=6821 family=declarations this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
+CROSS-CHECK VERDICTS DIFFER index=10006 family=declarations this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
+CROSS-CHECK VERDICTS DIFFER index=10186 family=declarations this=Except.ok () other=Except.error "exclusive contents: positions or nested paths may share"
+CROSS-CHECK VERDICTS DIFFER index=14133 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+CROSS-CHECK VERDICTS DIFFER index=18168 family=general this=Except.ok () other=Except.error "Disjoint: another operand path holds the written cell"
+family=recursive-higher-order-limit depth=3..3 candidates=449 distinct=6 typed=449 accepted=0 distinctAccepted=0 withWrites=0 distinctWithWrites=0 aliasedWrites=0 agreeing=449 agreeingAccepted=0 rejected=449 limits=449 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=once-many-wrappers depth=6..9 candidates=465 distinct=80 typed=465 accepted=269 distinctAccepted=45 withWrites=24 distinctWithWrites=5 aliasedWrites=24 agreeing=382 agreeingAccepted=269 rejected=196 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=recursion depth=4..4 candidates=448 distinct=135 typed=448 accepted=127 distinctAccepted=34 withWrites=110 distinctWithWrites=29 aliasedWrites=110 agreeing=161 agreeingAccepted=127 rejected=321 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=branch-traversal depth=5..5 candidates=447 distinct=10 typed=447 accepted=229 distinctAccepted=5 withWrites=143 distinctWithWrites=3 aliasedWrites=143 agreeing=310 agreeingAccepted=229 rejected=218 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=escape-traversal depth=5..5 candidates=477 distinct=15 typed=477 accepted=0 distinctAccepted=0 withWrites=0 distinctWithWrites=0 aliasedWrites=0 agreeing=0 agreeingAccepted=0 rejected=477 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=indexed-chain depth=6..19 candidates=460 distinct=413 typed=460 accepted=143 distinctAccepted=116 withWrites=143 distinctWithWrites=116 aliasedWrites=143 agreeing=161 agreeingAccepted=143 rejected=317 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=identity-map depth=8..8 candidates=435 distinct=8 typed=435 accepted=210 distinctAccepted=4 withWrites=210 distinctWithWrites=4 aliasedWrites=210 agreeing=210 agreeingAccepted=210 rejected=225 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=fresh-nested depth=6..6 candidates=465 distinct=282 typed=465 accepted=147 distinctAccepted=103 withWrites=147 distinctWithWrites=103 aliasedWrites=147 agreeing=147 agreeingAccepted=147 rejected=318 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=library-pipeline depth=13..17 candidates=482 distinct=279 typed=482 accepted=129 distinctAccepted=69 withWrites=129 distinctWithWrites=69 aliasedWrites=129 agreeing=268 agreeingAccepted=129 rejected=353 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=captures depth=5..5 candidates=458 distinct=20 typed=458 accepted=226 distinctAccepted=10 withWrites=0 distinctWithWrites=0 aliasedWrites=0 agreeing=226 agreeingAccepted=226 rejected=232 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=declarations depth=3..53 candidates=8580 distinct=8580 typed=8580 accepted=789 distinctAccepted=789 withWrites=559 distinctWithWrites=559 aliasedWrites=434 agreeing=1656 agreeingAccepted=789 rejected=7791 limits=130 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=general depth=3..70 candidates=6364 distinct=6352 typed=6364 accepted=561 distinctAccepted=553 withWrites=272 distinctWithWrites=269 aliasedWrites=179 agreeing=820 agreeingAccepted=561 rejected=5803 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+family=fresh-tower depth=6..9 candidates=470 distinct=276 typed=470 accepted=230 distinctAccepted=217 withWrites=230 distinctWithWrites=217 aliasedWrites=230 agreeing=230 agreeingAccepted=230 rejected=240 limits=0 typeErrors=0 executionErrors=0 mismatches=0 summaries-computed=0 summaries-reused=0
+row-hits 31 E∈use(callback arg) yes
+row-hits 284 W∈use(callback arg) yes
+row-hits 599 callback arg∈res yes
+row-hits 1101 callback called through its class
+row-hits 35 calls of a once callback checked
+row-hits 284 edge W ⇒ owned supply checked
+row-hits 29 edge xreq ⇒ exclusive supply checked
+row-hits 82 env∈res yes
+row-hits 571 fresh∈res yes
+row-hits 23 guard forwarded to the caller's own input
+row-hits 31 shared∈res yes
+row-hits 210 summary reused after re-asking its guards
+row-hits 201 supply owned bit cleared at the caller
+row-hits 68 supply owned bit cleared where a step ends
+row-hits 1101 supply resolved at a known callback
+row-hits 23 supply transferred to the caller's own input
+row-hits 29 xreq(callback arg) yes
+row-hits 12 xres no
+row-hits 1101 xres yes
+generator-version=5 seed=20261011 control=soundness-v5 candidates=20000 distinct=16456 typed=20000 accepted=3060 distinctAccepted=1945 withWrites=1967 distinctWithWrites=1374 aliasedWrites=1749 agreeing=5020 agreeingAccepted=3060 rejected=16940 limits=579 typeErrors=0 executionErrors=0 mismatches=0 cross-only-this=12 cross-only-other=0 cross-other-mismatches=0 summaries-computed=7120 summaries-reused=118195 first-mismatch=none elapsed-ms=46389
+summary seed=20261011 accepted=3060 distinct-accepted=1945 with-write=1967 distinct-with-write=1374 aliased-write=1749 (57.1 % of accepted) agreeing=5020 accepted-of-agreeing=3060 precision=60.9 % declarations-accepted=789 run-generated=759 (96.1 %) generated-call-writes-input=287 (36.3 %) generated-calls=1181 same-array-twice=214 (18.1 %) rejected-shadowing=240

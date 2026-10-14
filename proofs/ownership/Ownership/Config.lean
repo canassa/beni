@@ -27,13 +27,29 @@ inductive Mutant where
   | requiresEdge        -- xreq ⇒ exclusive supply is not checked
   | forwardGuards       -- a callee's guards on our own input are not re-asked
   | transferSupplies    -- a callee's supplies to our own input are dropped
+  | onceThroughCall     -- a once callback called by a callee is not consumed at the call
+  -- Liveness (summary checker only).
+  | branchLive          -- liveness ignores the nonzero arm of a conditional
+  | branchClosure       -- liveness ignores the captures of closures a conditional arm creates
+  | shadowing           -- shadowing is allowed and a let resolves its continuation's uses inside
+  -- Escapes.
+  | sharedRoots         -- `shared` escapes only the spine of its operand, not what it contains
+  | sharedFn            -- `shared` does not escape cells captured by a closure held in a record field
+  -- Counting.
+  | manyOff             -- a traversal step that calls a callback once is not counted as many calls
+  -- Scope (probe only: no typed program has an unbound live variable).
+  | noScope             -- an unbound live variable is read as dead instead of refused
+  -- Fifth review.
+  | setExclusive        -- `set` keeps a list exclusive whatever it stores
+  | onceLive            -- liveness drops the capture paths of once closures
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
   [.disjoint, .borrowedSupply, .traversalExclusive, .manyCalls, .copyExclusive,
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
-   .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies]
+   .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
+   .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff, .noScope, .setExclusive, .onceLive]
 
 def Mutant.name : Mutant → String
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
@@ -46,23 +62,31 @@ def Mutant.name : Mutant → String
   | .callbackEnv => "callback-env" | .callbackEscapes => "callback-escapes"
   | .callbackRequires => "callback-requires" | .requiresEdge => "requires-edge"
   | .forwardGuards => "forward-guards" | .transferSupplies => "transfer-supplies"
+  | .onceThroughCall => "once-through-call"
+  | .branchLive => "branch-live" | .branchClosure => "branch-closure"
+  | .shadowing => "shadowing" | .sharedRoots => "shared-roots"
+  | .sharedFn => "shared-fn" | .manyOff => "many-off" | .noScope => "no-scope"
+  | .setExclusive => "set-exclusive" | .onceLive => "once-live"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
-/-- Mutants the generator need not catch within one campaign: `callback-escapes`
-    and `forward-guards` are caught rarely (1–2 seeds of 3) and are required
-    through their fixed probe; `callback-requires`, `requires-edge` and
-    `transfer-supplies` changed no verdict in 20000 trials and have no probe —
-    known gaps (COVERAGE.md). `ownership controls` reports all five. -/
+/-- Mutants the generator need not catch: `callback-requires`, `requires-edge`
+    and `transfer-supplies` change no verdict on any generated program and are
+    argued equivalent in this core (COVERAGE.md, "Equivalent (argued)");
+    `no-scope` cannot be reached by a typed program and is required through its
+    checker-level probe. `ownership controls` reports all four. -/
 def Mutant.generatorOptional : Mutant → Bool
-  | .callbackEscapes | .callbackRequires | .requiresEdge | .forwardGuards | .transferSupplies => true
+  | .callbackRequires | .requiresEdge | .transferSupplies => true
+  | .noScope => true
   | _ => false
 
-/-- Mutants of the summary layer's rows: inert in the per-call checker. -/
+/-- Mutants of the summary layer's rows, and `branch-live`, which only the
+    summary checker implements: inert in the per-call checker. -/
 def Mutant.summaryRow : Mutant → Bool
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
-  | .forwardGuards | .transferSupplies => true
+  | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive | .branchClosure
+  | .shadowing | .sharedRoots | .sharedFn | .manyOff | .noScope | .setExclusive | .onceLive => true
   | _ => false
 
 structure Config where

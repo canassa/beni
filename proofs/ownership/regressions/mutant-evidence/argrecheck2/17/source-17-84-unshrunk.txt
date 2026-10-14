@@ -1,0 +1,40 @@
+seed=17 index=84 family=recursion
+AST:
+{ declarations := [{ name := "recursiveGrow",
+                     parameters := [Ownership.Ty.int, Ownership.Ty.list (Ownership.Ty.int)],
+                     captures := [],
+                     result := Ownership.Ty.list (Ownership.Ty.int),
+                     body := Ownership.Expr.branch
+                               (Ownership.Atom.var 0)
+                               (Ownership.Expr.atom (Ownership.Atom.var 1))
+                               (Ownership.Expr.letE
+                                 3
+                                 (Ownership.Expr.prim (Ownership.Prim.sub) [Ownership.Atom.var 0, Ownership.Atom.int 1])
+                                 (Ownership.Expr.letE
+                                   4
+                                   (Ownership.Expr.prim
+                                     (Ownership.Prim.push)
+                                     [Ownership.Atom.var 1, Ownership.Atom.var 0])
+                                   (Ownership.Expr.recur [Ownership.Atom.var 3, Ownership.Atom.var 4]))) }],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.int 1])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.closure 0 [])
+              (Ownership.Expr.letE
+                2
+                (Ownership.Expr.app (Ownership.Atom.var 1) [Ownership.Atom.int 1, Ownership.Atom.var 0])
+                (Ownership.Expr.prim (Ownership.Prim.record) [Ownership.Atom.var 0, Ownership.Atom.var 2]))) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1],
+                     Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1],
+                     Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+baseline checker: rejected

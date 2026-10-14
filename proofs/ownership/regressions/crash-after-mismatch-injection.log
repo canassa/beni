@@ -1,0 +1,3 @@
+unmutated: enumerate bound=2 enumerated=55966 typed=55966 accepted=31680 with-write=10468 mismatches=0 inconclusive=0 caught=false elapsed-ms=4831
+disjoint: seed=20261011 CRASH-after-mismatch exit=139 first-index=321 [done )] seed=17 CRASH-after-mismatch exit=139 first-index=284 [done )] seed=271828 CRASH-after-mismatch exit=139 first-index=156 [done )] enumerate=caught exit=0 [enumerate bound=2 enumerated=454 typed=454 accepted=371 changed-verdicts=1 with-write=0 mismatches=1 inconclusive=0 caught=true elapsed-ms=61]
+runner-exit=1

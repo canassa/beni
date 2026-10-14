@@ -31,6 +31,10 @@ structure Context where
   /-- Innermost first: the actual function values of the declarations being
       summarised. Only `answer` reads them. -/
   frames : List Frame := []
+  /-- Cells of the continuation's uses of outer variables that an inner `let`
+      has since rebound: live after the current expression whatever the
+      name now means (shadowing is refused, this keeps liveness right anyway). -/
+  pinned : List Origin := []
   deriving Inhabited
 
 structure CacheEntry where
@@ -237,8 +241,23 @@ def keepsShape (a : Abstract) (parameter := 0) : Bool :=
       | .fresh _ => true
       | _ => false
 
-def closureCaps (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
-  let names := (removeVars bound (uses body)).map Prod.fst |>.foldl (fun xs x => union xs [x]) []
+/-- `liveCells`, or the `once-live` control's weakened one: the capture
+    paths of a once closure hold nothing. -/
+def liveCellsWith (cfg : Config) (env : Env Abstract) (l : Live) : List Origin :=
+  if !cfg.has .onceLive then liveCells env l else
+  l.foldl (fun cs (v, p) =>
+    match env.lookup v with
+    | none => union cs [.unknown]
+    | some a => (a.paths.filter fun (q, _) => a.roots.isEmpty ||
+          !(match q with | .capture _ :: _ => true | _ => false)).foldl (fun cs (q, ds) =>
+        if isPrefix p q || isPrefix q p then union cs ds else cs) cs) []
+
+/-- `uses`, or the `branch-live` control's weakened liveness. -/
+def usesWith (cfg : Config) (e : Expr) : Live :=
+  usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) e
+
+def closureCaps (cfg : Config) (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
+  let names := (removeVars bound (usesWith cfg body)).map Prod.fst |>.foldl (fun xs x => union xs [x]) []
   names.filterMap fun v => (env.lookup v).map (v, ·)
 
 def capabilityShape : Abstract → Abstract
@@ -351,7 +370,14 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
     pure (.list [fresh] (xs.foldl Abstract.join .bottom) (storeExclusive ctx xs later []))
   | .builder _, [] => pure (.list [fresh] .bottom true)
   | .shared, [a] => do
-    modifyFacts fun s => { s with escapes := union s.escapes a.cells }
+    let escaped := if ctx.config.has .sharedRoots then a.roots
+      else if ctx.config.has .sharedFn then
+        -- The `shared-fn` control: forget cells under a capture below a field.
+        (a.paths.filter fun (p, _) => !(match p with
+          | .field _ :: q => q.any fun st => match st with | .capture _ => true | _ => false
+          | _ => false)).foldl (fun cs (_, xs) => union cs xs) []
+      else a.cells
+    modifyFacts fun s => { s with escapes := union s.escapes escaped }
     pure (a.mapOrigins fun _ cs => if cs.isEmpty then [] else union cs [.shared])
   | .length, [a] => do noteRead a.roots; pure .scalar
   | .at, [.list cs elem _, _, fallback] => do
@@ -362,6 +388,7 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   | .put, [.list cs elem ex, v] => do
     demand ctx.config cs later (union elem.cells v.cells)
     let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)
+    let exclusive := exclusive || (ctx.config.has .setExclusive && op == .set && ex)
     let stored := if exclusive && op == .put && ctx.config.oldFreshRule then v.grantExclusive else v
     pure (.list cs (elem.join stored) exclusive)
   | .copy, [.list cs elem _] => do
@@ -411,12 +438,21 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
   else
     let f := fuel - 1
     let ctx := { ctx with escaped := union ctx.escaped (← getFacts).escapes }
-    let later := liveCells env after
+    if !ctx.config.has .noScope then liveScope env after
+    let later := union (liveCellsWith ctx.config env after) ctx.pinned
     match e with
     | .atom a => abstractAtom env a
     | .letE v rhs rest =>
-      let a ← inferExpr f ctx env rhs (union after (removeVars [v] (uses rest))) (site ++ [0])
-      inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
+      let a ← inferExpr f ctx env rhs (union after (removeVars [v] (usesWith ctx.config rest))) (site ++ [0])
+      -- The continuation's uses of `v` name the outer binding. Inside `rest`
+      -- `v` is the new one, so their cells are pinned here, resolved
+      -- against the outer environment (the `shadowing` control does not).
+      let outer := after.filter (·.1 == v)
+      if ctx.config.has .shadowing || outer.isEmpty then
+        inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
+      else
+        inferExpr f { ctx with pinned := union ctx.pinned (liveCellsWith ctx.config env outer) } ((v, a) :: env) rest
+          (removeVars [v] after) (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .branch c yes no =>
       let _ ← abstractAtom env c
@@ -485,7 +521,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let _ ← abstractAtom env index
       if input == .bottom then return .bottom
       let .list cs item ex := input | throw "abstract focus"
-      let caps := closureCaps env body [x]
+      let caps := closureCaps ctx.config env body [x]
       let capValues := caps.map Prod.snd
       let element := if ex then item.grantExclusive else item
       let s ← inferScope f ctx [(x, element)] caps body later
@@ -503,7 +539,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         | .list, .bottom => pure ([], Abstract.bottom, true)
         | _, _ => throw "abstract traversal"
       noteRead roots
-      let caps := closureCaps env body [i, x, acc]
+      let caps := closureCaps ctx.config env body [i, x, acc]
       let capValues := caps.map Prod.snd
       let element := if sourceEx then
           (rawElement.grantExclusive).mapOrigins (fun _ cs => cs.map (.position site true))
@@ -572,7 +608,8 @@ def inferScope (fuel : Nat) (parent : Context) (args caps : List (Var × Abstrac
   let es := caps.zipIdx.map fun ((v, a), i) => (v, canonical Origin.capture i a)
   let own := canonicalOwned parent av cv later
   let ctx := { parent with
-    owned := own, recursiveSummary := {}, recursiveCaptures := es.map Prod.snd, inScope := true }
+    owned := own, recursiveSummary := {}, recursiveCaptures := es.map Prod.snd, inScope := true,
+    pinned := [] }
   let (result, facts) ← isolated (inferExpr fuel ctx (ps ++ es) body [] [])
   pure (normalized { facts with result })
 termination_by (fuel, 1)
@@ -589,7 +626,7 @@ def transfer (ctx : Context) (s : Summary) (site : List Nat) (args caps : List A
   modifyFacts fun facts => { facts with
     supplies := union facts.supplies supplies
     consumes := union facts.consumes consumed
-    calls := mergeCalls (· + ·) facts.calls (s.calls.map fun (j, n) => (j, if many && n > 0 then 2 else n))
+    calls := mergeCalls (· + ·) facts.calls (s.calls.map fun (j, n) => (j, if many && n > (if ctx.config.has .manyOff then 1 else 0) then 2 else n))
     guards := union facts.guards s.guards }
 termination_by (0, 0)
 decreasing_by all_goals simp_wf
@@ -633,6 +670,39 @@ def applyCall (ctx : Context) (s : Summary) (site : List Nat) (args caps : List 
 termination_by (0, 1)
 decreasing_by all_goals simp_wf
 
+/-- The capture writes of a once callback, following captured callbacks it
+    calls. A captured function's synthetic root does not name the arrays that
+    its own captures may write; a callee can call it through another closure.
+    Symbolic captured calls are forwarded to the parent so its caller checks
+    them where their actual code is known. -/
+def demandCallbackCaptures (fuel : Nat) (ctx : Context) (id : Nat) (caps : List Abstract)
+    (site : List Nat) (later : List Origin) : CheckM Unit := do
+  if fuel = 0 then throw "limit: capture demand depth"
+  else
+    let f := fuel - 1
+    let d ← ctx.declarations[id]?.toExcept "summary declaration"
+    let ps := d.parameters.zipIdx.map fun (t, i) => canonical Origin.parameter i (typeShape t)
+    let cs ← classOf f ctx.declarations ctx.config ctx.frames id caps ps
+      (canonicalOwned ctx (d.parameters.map typeShape) caps [])
+    for w in cs.writes ++ cs.consumes do
+      if let .capture .. := w then
+        demand ctx.config (instantiateOrigin site [] caps w) later (otherPaths [] caps w)
+    for (slot, count) in cs.calls do
+      if slot < d.parameters.length || count == 0 then continue
+      let k := slot - d.parameters.length
+      match caps[k]? with
+      | some (.symbolic j ..) => recordCall j count
+      | some (.function roots alts) =>
+        if roots.isEmpty then continue
+        if !ctx.config.has .callsEdge && count ≥ 2 then
+          throw "calls edge: a captured once callback is called many times"
+        demand ctx.config roots later (otherPaths [] caps (.capture k []))
+        for (child, nested) in alts do
+          demandCallbackCaptures f ctx child nested site later
+      | _ => pure ()
+termination_by (fuel, 2)
+decreasing_by all_goals simp_wf; omega
+
 /-- A call of a known declaration: its summary is looked up (or computed once)
     for the canonical inputs, with the actual function values in a new frame;
     then the guards it forwarded, its supplies and its calls are resolved. -/
@@ -673,10 +743,23 @@ def callKnown (fuel : Nat) (ctx : Context) (id : Nat) (actuals caps : List Abstr
     for (slot, count) in s.calls do
       match frame.actuals.lookup slot with
       | some (.symbolic j ..) => recordCall j count
-      | some (.function roots _) =>
+      | some (.function roots alts) =>
         if !roots.isEmpty then hit "calls of a once callback checked"
         if count ≥ 2 && !roots.isEmpty && !ctx.config.has .callsEdge then
           throw "calls edge: a once callback is called many times"
+        -- A once callback the callee may call is consumed by this call, as a
+        -- direct call consumes it: its environment may be written, so no
+        -- holder of the closure may be live afterwards.
+        if count ≥ 1 && !roots.isEmpty && !ctx.config.has .onceThroughCall then
+          let self := if slot < n then Origin.parameter slot [] else .capture (slot - n) []
+          demand ctx.config roots later (otherPaths actuals caps self)
+          -- The callee's summary does not show the callback writing its own
+          -- environment, so the captures the closure's calls write are
+          -- demanded here, as `applyCall` demands them at a direct call:
+          -- creation made them dead, but a value built later may name them
+          -- (a `close` returns its source, which is not a use).
+          for (id, fcaps) in alts do
+            demandCallbackCaptures f ctx id fcaps site later
       | _ => pure ()
     applyCall ctx s site actuals caps later
 termination_by (fuel, 2)
@@ -879,7 +962,7 @@ structure Accepted where
   deriving Repr, Inhabited
 
 def check (p : Program) (config : Config := {}) : Except String Accepted := do
-  let _ ← typecheck p
+  let _ ← (if config.has .shadowing then typesOf p else typecheck p)
   let ctx : Context := { declarations := p.declarations, config }
   let (result, st) ← (inferExpr config.inferenceFuel ctx [] p.main [] []).run {}
   pure { result, facts := st.facts, computed := st.computed, reused := st.reused, cache := st.cache, hits := st.hits }

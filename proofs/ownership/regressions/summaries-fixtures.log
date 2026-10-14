@@ -223,3 +223,33 @@ summary of map
 == escape traversal: rejected (Unescaped: program-lifetime holder)
 == recursion inside a step (per-call checker accepted it): rejected (limit: recursive call inside a traversal or focus step)
 == T46 borrowed row read again: rejected (supply edge: a callback writes a supply that is not owned)
+== wrapper writes its callback's returned capture: 3 summaries computed, 31 reused
+summary of capAppend
+  use π0 = R
+  use ◇0 = AW
+  res ε = {◇0} excl
+  guards (0): 
+summary of capAppend
+  use π0 = R
+  use ◇0 = AW
+  res ε = {◇0} excl
+  guards (0): 
+summary of applyThenRead
+  use π1.env = RAW
+  use π0 = R
+  res ε = {π1.env} excl
+  calls slot 1 = ≤1
+  supply to slot 1: arg0 = {π0} owned at [] excl at [ε]
+  guards (10): slot1:W∈use(π0)=[], slot1:E∈use(π0)=[], slot1:xreq(π0)=[], slot1:E∈use(env)=[], slot1:π0∈res()=[], slot1:env∈res()=[1], slot1:fresh∈res()=[], slot1:shared∈res()=[], slot1:⊤∈res()=[], slot1:xres()=[1]
+== write through a callback's environment, then call it again: rejected (Dead: an old holder is live after the demand)
+== focus body pushes its own container: rejected (Disjoint: another operand path holds the written cell)
+== once closure called by a callee, then observed: rejected (Dead: an old holder is live after the demand)
+== close returns a once closure's capture, a callee calls it: rejected (Dead: an old holder is live after the demand)
+== read only in the nonzero arm after a push: rejected (Dead: an old holder is live after the demand)
+== a let shadows a variable its continuation uses: rejected (shadowing: variable 0 is bound twice)
+== the same in a declaration body: rejected (shadowing: variable 0 is bound twice)
+== shared on a nested list, then an element pushed: rejected (Unescaped: program-lifetime holder)
+== a closure in a conditional arm captures a pushed list: rejected (Dead: an old holder is live after the demand)
+== foldl calls a once closure on two rows: rejected (calls edge: a once callback is called many times)
+== shared on a record holding a closure over a list: rejected (Unescaped: program-lifetime holder)
+== a loop over a non-exclusive source returns an element, then edited: rejected (exclusive contents: positions or nested paths may share)

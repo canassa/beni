@@ -1,0 +1,209 @@
+targeted mismatch index=101: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int (-1)],
+                     Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int (-1)]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int (-1)],
+                     Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int (-1)]],
+    externalReads := [] }
+targeted mismatch index=103: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int (-1)],
+                     Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int (-1)]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int (-1)],
+                     Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int (-1)]],
+    externalReads := [] }
+targeted mismatch index=105: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int (-1)],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int (-1),
+                        Ownership.Observation.int (-1),
+                        Ownership.Observation.int (-1)]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int (-1), Ownership.Observation.int (-1), Ownership.Observation.int (-1)],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int (-1),
+                        Ownership.Observation.int (-1),
+                        Ownership.Observation.int (-1)]],
+    externalReads := [] }
+targeted mismatch index=107: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int (-1)],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int (-1),
+                        Ownership.Observation.int (-1),
+                        Ownership.Observation.int (-1)]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int (-1), Ownership.Observation.int (-1), Ownership.Observation.int (-1)],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int (-1),
+                        Ownership.Observation.int (-1),
+                        Ownership.Observation.int (-1)]],
+    externalReads := [] }
+targeted mismatch index=113: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 0],
+                     Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 0]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 0],
+                     Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 0]],
+    externalReads := [] }
+targeted mismatch index=115: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 0],
+                     Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 0]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 0],
+                     Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 0]],
+    externalReads := [] }
+targeted mismatch index=117: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 0],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 0, Ownership.Observation.int 0, Ownership.Observation.int 0]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 0, Ownership.Observation.int 0, Ownership.Observation.int 0],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 0, Ownership.Observation.int 0, Ownership.Observation.int 0]],
+    externalReads := [] }
+targeted mismatch index=119: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 0],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 0, Ownership.Observation.int 0, Ownership.Observation.int 0]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 0, Ownership.Observation.int 0, Ownership.Observation.int 0],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 0, Ownership.Observation.int 0, Ownership.Observation.int 0]],
+    externalReads := [] }
+targeted mismatch index=125: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1],
+                     Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1],
+                     Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+targeted mismatch index=127: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1],
+                     Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1],
+                     Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+targeted mismatch index=129: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 1, Ownership.Observation.int 1],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+targeted mismatch index=131: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 1],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 1, Ownership.Observation.int 1],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 1, Ownership.Observation.int 1]],
+    externalReads := [] }
+targeted mismatch index=137: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 2],
+                     Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2],
+                     Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+targeted mismatch index=139: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 2],
+                     Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2],
+                     Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+targeted mismatch index=141: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 2],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 2, Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 2, Ownership.Observation.int 2, Ownership.Observation.int 2],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 2, Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+targeted mismatch index=143: Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list [Ownership.Observation.int 2],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 2, Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+  { reads := [],
+    finalValue := Ownership.Observation.record
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 2, Ownership.Observation.int 2, Ownership.Observation.int 2],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 2, Ownership.Observation.int 2, Ownership.Observation.int 2]],
+    externalReads := [] }
+targeted programs=144 typed=144 accepted=56 changed-verdicts=24 mismatches=16 inconclusive=0 caught=true

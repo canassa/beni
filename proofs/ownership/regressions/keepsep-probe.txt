@@ -1,0 +1,16 @@
+import Ownership.Falsify
+open Ownership
+
+def pair : Ty := .record [.list .int, .list .int]
+def p : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.prim (.literal .int) [.int 2]) <|
+    .letE 2 (.prim .record [.var 0, .var 1]) <|
+    .letE 3 (.prim (.literal pair) [.var 2]) <|
+    .focus (.var 3) (.int 0) 4
+      (.letE 5 (.prim (.literal .int) [.int 7]) (.prim .record [.var 5, .var 5])) }
+
+#eval match check p, (InPlaceSemantics.eval 1000 [] none [] p.main).run { fuel := 1000 } with
+ | .ok a, .ok (w, s) =>
+   s!"accepted=true result={repr a.result} certificate-error={repr (Falsify.certifiedB s.heap a.result w)}"
+ | a, b => s!"accepted={a.isOk} runs={b.isOk}"
