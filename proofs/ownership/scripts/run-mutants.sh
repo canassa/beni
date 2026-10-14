@@ -2,7 +2,8 @@
 # Source-mutant campaigns over the identical generated stream and the
 # seed-independent bounded grammar. Run inside nix develop .#ownership.
 # scripts/run-mutants.sh <scratch-dir> [count] [seeds...] [-- mutants...]
-# Every descendant shares at most eight Linux CPUs. Logs survive for every
+# Count 0 runs enumeration only; use MUTANT_EVIDENCE_DIR for a separate
+# deeper-bound evidence directory. Every descendant shares at most eight Linux CPUs. Logs survive for every
 # verdict, including misses, build failures, and crashes after a mismatch.
 set -euo pipefail
 ulimit -s unlimited
@@ -34,14 +35,16 @@ base="$scratch/base"
 rm -rf "$base"; mkdir -p "$base"
 cp -r Ownership Main.lean Ownership.lean lakefile.toml lean-toolchain lake-manifest.json "$base/"
 [ ! -d .lake ] || cp -r .lake "$base/"
-evidence="$here/regressions/mutant-evidence"
+evidence=${MUTANT_EVIDENCE_DIR:-"$here/regressions/mutant-evidence"}
 mkdir -p "$evidence"
 # The unedited binary supplies the verdicts; the edited binary cannot be its
 # own corrected checker. Each oracle stream must also have passed normally.
+baseline_pids=()
 for s in "${seeds[@]}"; do
   (cd "$base" && taskset -c "$cores" ./.lake/build/bin/ownership accepted "$count" "$s" > "$scratch/accepted-$s.txt") &
+  baseline_pids+=("$!")
 done
-wait
+for pid in "${baseline_pids[@]}"; do wait "$pid"; done
 if [ "$bound" -gt 0 ]; then
   (cd "$base" && taskset -c "$cores" ./.lake/build/bin/ownership enumerate "$bound" \
     --accepted-out="$scratch/enumerated-accepted.txt" > "$scratch/enumerate-base.log" 2>&1)

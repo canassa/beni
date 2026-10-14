@@ -107,11 +107,13 @@ def checkSources : IO Unit := do
   IO.println s!"audit sources: {files.length} files parsed, {sorries.length} sorry, every command and node allowed"
 
 def checkEnv : IO Unit := do
-  let env ← importModules #[{ module := `Ownership }] {} (loadExts := true)
+  -- Include the executable's modules too: importing only the library
+  -- omitted the generator, fixtures, enumerator and executable falsifier.
+  let env ← importModules #[{ module := `Ownership }, { module := `Main }] {} (loadExts := true)
   let mut names : Array Name := #[]
   for (n, _) in env.constants.toList do
     if let some i := env.getModuleIdxFor? n then
-      if (env.header.moduleNames[i.toNat]!).toString.startsWith "Ownership" then names := names.push n
+      if (env.header.moduleNames[i.toNat]!).toString.startsWith "Ownership" || env.header.moduleNames[i.toNat]! == `Main then names := names.push n
   let mut withSorry : Array Name := #[]
   for n in names do
     let (_, s) := ((CollectAxioms.collect n).run env).run {}
@@ -134,7 +136,7 @@ def checkEnv : IO Unit := do
   -- to the kernel again in a fresh environment holding only its imports.
   let mut replayed := 0
   for (m, i) in env.header.moduleNames.zipIdx do
-    unless m.toString.startsWith "Ownership" do continue
+    unless m.toString.startsWith "Ownership" || m == `Main do continue
     let some data := env.header.moduleData[i]? | continue
     let base ← importModules data.imports {}
     let mut fresh : Std.HashMap Name ConstantInfo := {}
