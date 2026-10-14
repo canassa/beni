@@ -157,12 +157,15 @@
 // such a step reaches its time, and a `requestAnimationFrame` callback only
 // when a `frame` step draws a frame — in Chrome as in happy-dom.
 //
-// A step's page is the page once everything the step set going has run, in
-// both DOMs: its microtasks, then turns of the event loop while core's
-// scheduler has a continuation queued — a `setImmediate` under happy-dom, a
-// message to a `MessagePort` in Chrome, which has no `setImmediate` and
-// whose messages the prelude counts from the post to the delivery. After
-// 1 000 such turns the driver stops waiting, and logs a line that says so.
+// A step's page is the page once all the work core's scheduler queued for
+// the step has run, in both DOMs: its microtasks, then turns of the event
+// loop while the scheduler has a continuation queued — a `setImmediate`
+// under happy-dom, a message to a `MessagePort` in Chrome, which has no
+// `setImmediate` and whose messages the prelude counts from the post to the
+// delivery. After 1 000 such turns the driver stops waiting, and logs a line
+// that says so. Work a page starts outside that scheduler — a
+// `window.postMessage`, a `BroadcastChannel`, a worker's reply, a
+// `requestIdleCallback` — is not waited for.
 //
 // The page's `fetch` is scripted from the start: each call is logged as it
 // is made, `(fetch <n>: <METHOD> <path> <headers> [<body>]
