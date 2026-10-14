@@ -1,0 +1,77 @@
+[
+  {
+    "subject": "browser-tea-Sandbox",
+    "result": {
+      "filter at start": false,
+      "add": true,
+      "counter": true,
+      "toggle": true,
+      "filter by hash": true,
+      "edit": true,
+      "persistence": false,
+      "toggle all": true,
+      "clear completed": true
+    },
+    "errors": []
+  },
+  {
+    "subject": "browser-direct-Sandbox",
+    "result": {
+      "filter at start": false,
+      "add": true,
+      "counter": true,
+      "toggle": true,
+      "filter by hash": true,
+      "edit": true,
+      "persistence": false,
+      "toggle all": true,
+      "clear completed": true
+    },
+    "errors": []
+  },
+  {
+    "subject": "browser-tea-NoEditing",
+    "result": {
+      "filter at start": true,
+      "add": true,
+      "counter": true,
+      "toggle": true,
+      "filter by hash": true,
+      "edit": false,
+      "persistence": true,
+      "toggle all": true,
+      "clear completed": true
+    },
+    "errors": []
+  },
+  {
+    "subject": "browser-direct-NoEditing",
+    "result": {
+      "filter at start": true,
+      "add": true,
+      "counter": true,
+      "toggle": true,
+      "filter by hash": true,
+      "edit": false,
+      "persistence": true,
+      "toggle all": true,
+      "clear completed": true
+    },
+    "errors": []
+  },
+  {
+    "subject": "vanilla-es6",
+    "result": {
+      "filter at start": true,
+      "add": true,
+      "counter": true,
+      "toggle": true,
+      "filter by hash": true,
+      "edit": true,
+      "persistence": true,
+      "toggle all": true,
+      "clear completed": true
+    },
+    "errors": []
+  }
+]

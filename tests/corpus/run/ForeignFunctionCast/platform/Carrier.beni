@@ -1,0 +1,5 @@
+import Source
+import Target
+
+
+pub foreign pure carry : sync (Source.Choice → String) → (Target.Choice → String)

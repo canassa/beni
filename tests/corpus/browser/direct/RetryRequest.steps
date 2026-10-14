@@ -1,0 +1,8 @@
+# The first call fails at 50 ms; the retry waits 100.
+advance 150
+# The second call fails at 200; the retry waits 200.
+advance 250
+timers
+# The third call answers at 450.
+advance 50
+timers

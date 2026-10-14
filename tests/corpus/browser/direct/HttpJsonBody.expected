@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="nan">"nan"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #save
+(fetch 1: POST /notes {"content-type":"application/json"} "{\"note-title\":\"beni\",\"stars\":4.5}")
+(the DOM did not change)
+-- respond 1 201 ""
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="nan">"nan"</button>
+    <ol>
+      <li>"beni: ok"</li>
+    </ol>
+  </main>
+</body>
+-- click #nan
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="nan">"nan"</button>
+    <ol>
+      <li>"beni: ok"</li>
+      <li>"odd: UnprintableBody (PrintFailed at [stars])"</li>
+    </ol>
+  </main>
+</body>

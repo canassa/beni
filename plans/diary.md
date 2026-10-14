@@ -5228,53 +5228,6 @@ the backend emits copies or answers a header over the base (`cons`'s re-cons, `c
 the result must alias the base: dropping that would be unsound for the suffix re-built after `[ a, b, …tail ]`.
 The corpus sweep only loses lines (281 acceptances, 3 pending, 32 rejections); nothing flips.
 
-## 2026-10-12 14:01 CEST — ownership oracle: second review answered
-
-**What I did.** Answered the second adversarial review of `proofs/ownership`. Restated `Invariant`
-(observers related, escaped naming, live field paths, path-wise description, dead bindings stay named,
-unbounded correspondence) and Lemma 6.7 (captures, shared results, observer-only clause 2, guards);
-the review's counterexample is a guarded example proved excluded. Added `ownership falsify`, which
-executes the three sorry statements on random configurations and on every call of generated programs.
-Fixed the in-place focus write-back (stale container) and the traversal length read. The axiom audit
-now covers every constant and scans sources for sorry/admit/native_decide/axiom. A forked agent built
-generator v5 (own declarations, recursion, branch arms), the branch-live control, distinct counts, the
-aliased-write metric and precision, and made `ci` require generator catches.
-
-**What I learned.** Executing a sorry statement is cheap and finds falsehoods fast: eleven ways the
-statements were false or vacuous, and two real summary-checker defects (a once callback called by a
-callee was neither consumed nor had its written captures demanded; `close`'s unused source made the
-second reachable). recwrites and symenv are masked by neighbouring rules; keepsany is argued equivalent.
-
-## 2026-10-12 18:54 CEST — ownership oracle: third review answered
-
-**What I did.** Answered the third review of PR #65. The core now refuses shadowing and a let pins its
-continuation's uses of a rebound name to the outer binding (both checkers had accepted a mismatching
-program); the step lemma assumes the abstract environment covers the live uses and both checkers refuse
-an unresolvable live variable; the axiom audit kernel-replays every constant and refuses skipKernelTC,
-addDecl, run_cmd, implemented_by and extern anywhere under the package; the falsifier checks Lemma 6.7
-on the real interpreter's call log and is two-thirds write-heavy; writes count only when they change an
-array. A forked agent made generated declarations run (96 %), write the caller's arrays (33-35 %) and
-see one array twice (15 %), and made the generator catch branch-closure, shared-roots, shadowing and the
-third review's source holes; the older source sweep was not re-run on the final generator (time bound).
-
-**What I learned.** A liveness set of variable names is only as good as the scoping it assumes: shadowing
-silently re-pointed a live use. A crash in the shrinker had been counting a caught hole as missed.
-
-## 2026-10-12 23:55 CEST — ownership oracle: fourth review answered (round 5)
-
-**What I did.** Answered the fourth review on PR #65. The invariant ties every closure at a field or
-element path to its own declaration (a writing closure described as a reading one made the step lemma
-false); the falsifier mislabels closures, aliases written variables and runs a quarter of samples on
-low fuel. Shrinking no longer overflows the stack (candidates on small fuel) and a mismatch is flushed
-and saved before shrinking; the mutant runner flags crashes. The audit reads compiler attributes of every
-constant and bans elaboration-time code and qualified spellings. A forked agent added many-off,
-shared-fn and no-scope controls, reached xres, tsupplyexcl, callback-escapes and forward-guards, and
-re-ran all 55 source edits on the final generator: 41 caught 3/3, 12 argued equivalent (verdict
-counts), two gaps no generated program can reach (no-scope, hiddencopy).
-
-**What I learned.** A miss and a crash look alike unless the runner says which; two "uncaught" holes
-were crashes. Counting the verdicts a mutant changes turns an equivalence argument into a measurement.
-||||||| 9a5276a06
 ## 2026-10-13 00:41 CEST — Ownership slice 3g: binders, `?`'s early return, fresh fronts, `Result`'s default
 
 **What I did.** Specified and built `ownership-checker.md` §26. Checked whether the Lean model's shadowing defect
@@ -5625,6 +5578,240 @@ black-box coverage is preferable to duplicating it in an ownership regression.
 The two namespace tests prove the supplied-cell boundary, not every possible
 callback condition; the broader oracle proof remains an acknowledged risk.
 
+## 2026-10-13 21:09 CEST — direct browser effects blocked by ownership
+
+**What I did**
+
+Read CLAUDE.md and the browser-direct effects contract and dated amendments. Started
+`browser-direct-s5` from freshly fetched origin/master. Specified and attempted the
+compiled host, copying browser-tea's beni command/subscription driver as required.
+Checking the embedded direct platform rejected the Concurrent appends in keyed and
+keyedNow and the tap append in want, all as list_may_be_shared checker limits. Kept
+the attempted implementation outside the working tree at
+`/tmp/beni-browser-direct-s5-blocked.patch`; no incomplete runtime changes are in this
+branch. Added the reduced subscription-tap page under tests/pending with its error
+signature pinned, and an identical gated browser-tea oracle and transcript. Recorded
+its run hashes with Node 24.19.0, using zorg for builds and tests. The PR records a
+blocker, not a completed effects slice; no merge is requested.
+
+**What I learned**
+
+The copied driver itself must pass ownership checking before the embedded direct
+platform can build. This prevents independently shipping element, document,
+subscriptions or after-render work through the required host. Q5 was already decided;
+subscription fiber policy is not the blocker. A platform-only reproduction can miss
+this failure because its unused driver is trusted or unreachable in the application
+ownership walk; the app-level want reproduction reaches the same diagnostic directly.
+No List.copy, list-mode change or JavaScript rewrite was used to bypass it.
+
+## 2026-10-13 21:12 CEST — gate result prevents opening the effects blocker PR
+
+**What I did**
+
+Ran the full unfiltered `direnv exec . /opt/homebrew/bin/zorg build gates`.
+It ended with four failures: two existing stale-output path tests assume a
+case-sensitive filesystem (PathAlreadyExists creating Zz.mjs/ZZ.mjs hard links,
+and a directory spelling mismatch), and two existing cache-pruning tests exceeded
+the macOS 999 ms CPU fallback budget (1 092 and 1 117 ms). Compiler, platform
+and black-box harness sources are identical to origin/master. The focused pending
+fixture reported its pinned list_may_be_shared; the browser-tea oracle recorded
+three successful Node 24 runs. Prepared the blocker PR body, but did not commit,
+push or open a PR because the gate is not green. This corrects the preceding
+entry's prospective wording about the PR: no PR exists and no review was requested.
+The staged changes remain on browser-direct-s5; unrelated untracked work was left
+alone. Gate log: /tmp/beni-s5-gates.log.
+
+**What I learned**
+
+This host cannot supply the required green gate with the unchanged test harness:
+its case-insensitive APFS and CPU-budget fallback expose two separate test limits.
+They need handling before the requested PR workflow can run. The ownership blocker
+still prevents shipping the specified effects driver; neither blocker was bypassed.
+
+## 2026-10-13 23:05 CEST — preserve the direct browser effects attempt remotely
+
+**What I did**
+
+The owner explicitly requested pushing browser-direct-s5 as work in progress,
+including the pending reproduction and attempted implementation. Copied the
+attempted implementation patch into plans/wip/browser-direct-effects.patch and
+added its base commit, known compilation failures and application instructions.
+Committed the blocker fixtures, oracle hashes, dated amendment, diary and WIP
+artifact together for the branch push. Left unrelated untracked work alone.
+
+**What I learned**
+
+The WIP authorization permits saving this unfinished work despite the previously
+recorded red gate. Preserving the patch against its exact base keeps the attempted
+implementation recoverable without pretending the current runtime supports effects.
+
+## 2026-10-14 10:10 CEST — direct effects and the routing size stop
+
+**What I did**
+
+Merged reviewed ownership PR #88, updated master and rebased browser-direct-s5.
+Restored the specified beni command driver and built the compiled effect host,
+subscriptions, document/application and dispatch-end work. Added paired fixtures
+and pinned fifteen remaining ownership refusals as CK-223. Fixed tuple access,
+incoming-model captures, sibling evidence scope, message record/tuple paths and
+checkbox activation. Recorded native run hashes; checked pending signatures.
+Research 91 and the reproducible TodoMVC size script preserve the negative result.
+
+**What I learned**
+
+The routing variant passes its implemented TodoMVC features, but direct is
+9,691 B brotli against browser-tea's 8,258 B in the same batch. This triggers the
+specified effects stop criterion despite sandbox's improvement. The design
+cannot proceed to Conduit or in-place updates on that result. The editing
+TodoMVC's ownership limit remains separate; copying it would hide the finding.
+
+## 2026-10-14 10:42 CEST — direct effects review boundaries
+
+**What I did**
+
+Opened draft PR #89 and requested review despite its negative size result.
+The review found no definite correctness bug and raised seven boundary checks.
+Verified checkbox activation in headless Chrome; added a paired, value-fuzzed
+subscription whose let-bound model capture is absent from the view. Answered
+state re-entry, evidence-cache restoration, dispatch paths, teardown and the
+shared rendered hook against their implementations and fixtures.
+
+**What I learned**
+
+A subscription can need a new tagger while no DOM group needs a write. The new
+fixture keeps that distinction observable. Restoring a statement-list pointer
+alone cannot restore its evidence cache. The negative routing size result
+remains the design's stop condition after review.
+
+## 2026-10-14 12:52 CEST — foreign reachability and complete browser effects comparison
+
+**What I did**
+
+Corrected PR #89's false size stop with a generic, closed-syntax inert-foreign
+proof, specified first in backend §9. Consumer/return-value regressions lose
+dead constructors; tagged/callback producers remain conservative. Proved the
+consumer fixture fails with the fix disabled. Corrected approximate tagger
+supply diagnostics (before-fix regression proved), without changing ownership
+acceptance. Pinned BikeWars from its external sources, restored a genuinely
+parked rendered-waiter cancellation test, paired DefectAfterRender, and
+explicitly pinned the original turn-render statement oracle's documented
+phase mismatch. Removed inert mounts' unused flush export.
+
+Vendored/checksummed tastejs vanilla-es6, added reproducible size/parity/Chrome
+timing instruments, and recorded 360 real-input samples on five subjects at
+100/1,000 todos. No compiler/test competed with the final timing batch.
+Native zorg gates: 1,295 passed, 15 skipped, the four authorized macOS baseline
+failures only. Full run-hash recording reverified 2,279 programs without a
+failed JavaScript run (the two existing case-folding tests still fail); the
+new after-render pair added eight hashes. Pending signatures match. LLVM
+was not used. Prepared the corrected PR report for push and another review.
+
+**What I learned**
+
+A foreign type annotation is not constructor production. Routing shrank
+9,691 → 7,026 B (tea 8,258); sandbox 5,344 (tea 6,169). The old size-only
+stop is withdrawn, but the full timing result still fails criterion 6 at
+1,000 todos: direct sandbox add/clear and routing clear are slower. Generated
+handlers still pass derived filtered lists to the general reconciler rather
+than exact edits. The editing row retains helper/escaping-markup machinery;
+Hosted.fibered's runtime test hook also keeps a fiber path in release.
+Empty direct is 327 B; its 11 B over master buy queued sends. Timing checkbox
+click alone misses beni's later change handler, and the vanilla baseline needs
+its original change/keypress/load protocol. Every non-Conduit tea fixture
+is now paired or explicitly pending. The PR remains draft and unmerged.
+
+## 2026-10-14 14:01 CEST — preserve nominal casts across foreign forwarding
+
+**What I did**
+
+Answered the review of PR #89 with a stronger typed and whole-sibling proof.
+An identity cast between nominal types can reuse a tag while producing the
+target type; the initial proof incorrectly pruned its arm. A real dev/release
+fixture printed dropped instead of kept with typed-result protection disabled.
+Non-equivalent nominal results now retain the whole annotation, including
+returned callback inputs and record fields. Unclassified code elsewhere in
+a sibling also retains its exposed annotation types; disabling that module
+guard made the mixed-export runtime fixture print the wrong variant.
+
+Added six executable foreign boundary fixtures (casts, wrapped casts, returned
+closures, callback casts, tagged producers and mixed siblings), verified in
+both builds. Scoped the exact-only ownership diagnostic flag with defer.
+Reverified the two page-fuzzer scenarios whose digests changed; their expected
+reports matched, two hashes updated, without a budget change. Final native
+zorg gates again have 1,295 passes, 15 skips and only the four authorized
+macOS baseline failures. No LLVM build. The corrected compiler emits the exact
+same four timed TodoMVC bundles, checked by SHA-256, so no timing was rerun.
+
+**What I learned**
+
+No allocation is not no constructor production: nominal casts and function
+argument casts can preserve representation while changing the type whose
+case arms must survive. An inert export's signature can expose a type to other
+code in its own sibling. Only a wholly closed inert sibling and a matching
+returned-parameter type justify the stronger omission. Foreign-visible tags
+still use dollar keys and source strings in release; runtime fixtures pin it.
+The corrected size stop stays withdrawn, but the complete timing misses stay.
+The PR remains draft and must not be merged under this request.
+
+## 2026-10-14 14:17 CEST — defer the TodoMVC timing condition
+
+**What I did**
+
+Recorded the owner's dated deferral at browser-direct's criterion 6 and
+reconciled the effects report with that decision. Prepared the effects PR
+for ready status and rebase merge, followed by Conduit from current master.
+
+**What I learned**
+
+The remaining 1,000-todo misses stay measured evidence; the owner authorized
+composition and in-place updates before the final combined remeasurement.
+
+## 2026-10-12 14:01 CEST — ownership oracle: second review answered
+
+**What I did.** Answered the second adversarial review of `proofs/ownership`. Restated `Invariant`
+(observers related, escaped naming, live field paths, path-wise description, dead bindings stay named,
+unbounded correspondence) and Lemma 6.7 (captures, shared results, observer-only clause 2, guards);
+the review's counterexample is a guarded example proved excluded. Added `ownership falsify`, which
+executes the three sorry statements on random configurations and on every call of generated programs.
+Fixed the in-place focus write-back (stale container) and the traversal length read. The axiom audit
+now covers every constant and scans sources for sorry/admit/native_decide/axiom. A forked agent built
+generator v5 (own declarations, recursion, branch arms), the branch-live control, distinct counts, the
+aliased-write metric and precision, and made `ci` require generator catches.
+
+**What I learned.** Executing a sorry statement is cheap and finds falsehoods fast: eleven ways the
+statements were false or vacuous, and two real summary-checker defects (a once callback called by a
+callee was neither consumed nor had its written captures demanded; `close`'s unused source made the
+second reachable). recwrites and symenv are masked by neighbouring rules; keepsany is argued equivalent.
+
+## 2026-10-12 18:54 CEST — ownership oracle: third review answered
+
+**What I did.** Answered the third review of PR #65. The core now refuses shadowing and a let pins its
+continuation's uses of a rebound name to the outer binding (both checkers had accepted a mismatching
+program); the step lemma assumes the abstract environment covers the live uses and both checkers refuse
+an unresolvable live variable; the axiom audit kernel-replays every constant and refuses skipKernelTC,
+addDecl, run_cmd, implemented_by and extern anywhere under the package; the falsifier checks Lemma 6.7
+on the real interpreter's call log and is two-thirds write-heavy; writes count only when they change an
+array. A forked agent made generated declarations run (96 %), write the caller's arrays (33-35 %) and
+see one array twice (15 %), and made the generator catch branch-closure, shared-roots, shadowing and the
+third review's source holes; the older source sweep was not re-run on the final generator (time bound).
+
+**What I learned.** A liveness set of variable names is only as good as the scoping it assumes: shadowing
+silently re-pointed a live use. A crash in the shrinker had been counting a caught hole as missed.
+
+## 2026-10-12 23:55 CEST — ownership oracle: fourth review answered (round 5)
+
+**What I did.** Answered the fourth review on PR #65. The invariant ties every closure at a field or
+element path to its own declaration (a writing closure described as a reading one made the step lemma
+false); the falsifier mislabels closures, aliases written variables and runs a quarter of samples on
+low fuel. Shrinking no longer overflows the stack (candidates on small fuel) and a mismatch is flushed
+and saved before shrinking; the mutant runner flags crashes. The audit reads compiler attributes of every
+constant and bans elaboration-time code and qualified spellings. A forked agent added many-off,
+shared-fn and no-scope controls, reached xres, tsupplyexcl, callback-escapes and forward-guards, and
+re-ran all 55 source edits on the final generator: 41 caught 3/3, 12 argued equivalent (verdict
+counts), two gaps no generated program can reach (no-scope, hiddencopy).
+
+**What I learned.** A miss and a crash look alike unless the runner says which; two "uncaught" holes
+were crashes. Counting the verdicts a mutant changes turns an equivalence argument into a measurement.
 ## 2026-10-14 12:52 CEST — Finish the ownership oracle's closure checks
 
 **What I did**

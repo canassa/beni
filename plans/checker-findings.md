@@ -5720,3 +5720,36 @@ Totals:
 - diagnostic-quality: 52 (CK-218 to CK-220 from the review of markup's type-checking; CK-210, CK-213 and CK-214 from the last review; CK-204 to CK-209 from the final review; CK-201 from R15-fix-J; CK-200 from a user's report; CK-195 and CK-197 from R15-fix-I; CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
 - latent: 29 (CK-216 from the review of markup's type-checking; CK-212 from the last review; CK-191 and CK-192 from R15-fix-H; CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
 - Outside the checker (K14): 32 (CK-222; CK-221; CK-212 and CK-213; CK-206 and CK-209; CK-200; CK-190 to CK-193 from R15-fix-H; CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).
+
+## CK-223 — direct effects lose ownership through safe wrappers (2026-10-14)
+
+**Class:** valid-program-rejected. **Status:** open.
+
+The direct platform checks owned message delivery. Sixteen unchanged browser-tea
+pages (including the BikeWars external-source project) are rejected through HTTP, random, command and view summaries; the corpus
+browser-tea originals retain their execution goldens. Direct copies under
+`tests/pending/browser/direct/` preserve the expected behavior and steps;
+`tests/pending/RED` pins each diagnostic. No copy is inserted to bypass checking.
+The full TodoMVC page remains pending; the smaller no-editing routing and
+sandbox benchmark subjects are accepted and measured. RandomValues remains
+a generator-result summary limit, but its diagnostic is corrected to
+`list_may_be_shared`: approximate supplies did not prove a surviving alias.
+BikeWars additionally exposes top-level captures and trail operands retained
+through helpers; its current errors and existing prepend warnings are pinned.
+The pending fixtures distinguish this remaining limit from the dictionary
+accumulator and model-state invariants fixed by PRs #87 and #88.
+
+## CK-224 — direct's mount-only statement oracle cannot share a throws script (2026-10-14)
+
+**Class:** platform-oracle-boundary. **Status:** open (documented semantics).
+
+`browser/tea/DefectInTurnRender` throws from an unused statement of `view`.
+Direct runs that statement only at mount, as `browser-direct.md`'s S4 notes
+and §8.4 specify; its unchanged script therefore fails `throws press #bad`.
+The direct source is accepted, and this is not an ownership checker limit.
+The unchanged source, script and tea golden are explicitly exercised under
+`tests/pending/browser/direct/DefectInTurnRender.beni`; RED pins `PageFailed`.
+The common paired corpus still proves the defect-stop guarantee through
+`DefectInRender`, `DefectInValueHandler` and `DefectInDerived`, whose throw
+is in a value group. No throws assertion or production semantics was weakened
+to make this phase oracle pass.

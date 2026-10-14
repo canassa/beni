@@ -81,11 +81,19 @@ const dom = @import("platform_browser").dom;
 
 pub const lowering: m.Lowering = .{
     .name = "direct",
-    .targets = .{ .major = 1, .minor = 10 },
+    .targets = .{ .major = 1, .minor = 11 },
     .runtime = &.{
         // `(f, x)`: the dispatch guard (§4.3), which a listener body, the
         // dispatcher and the mount enter program code through.
         .{ .name = "send", .arity = 2 },
+        .{ .name = "flush", .arity = 0 },
+        .{ .name = "makeHost", .arity = 1 },
+        .{ .name = "title", .arity = 1 },
+        .{ .name = "commands", .arity = 2 },
+        .{ .name = "subscriptions", .arity = 2 },
+        .{ .name = "address", .arity = 0 },
+        .{ .name = "navigationKey", .arity = 0 },
+        .{ .name = "applicationSubscriptions", .arity = 3 },
         // The sentinel every slot starts at (§5.3).
         .{ .name = "unset", .arity = 0 },
         // The writes `backend.md` §15.3's table names, as `browser`'s `Rt`
@@ -231,14 +239,6 @@ fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr
 
 /// The program hook: the mount of a `Tea.sandbox`.
 fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.Expr {
-    switch (p.constructor) {
-        0 => {},
-        else => return cx.programReport(.call, .not_implemented,
-            \\`browser-direct` does not compile `Tea.element`, `Tea.document` or
-            \\`Tea.application` yet: programs with effects arrive with slice S5
-            \\(`docs/design/browser-direct.md` §10, §14).
-        ++ " " ++ until_then),
-    }
     if (!p.record) return cx.programReport(.call, .view_not_compiled,
         \\This program's record is a value computed when the page runs, so its `view` is
         \\too, and `browser-direct` cannot compile it: the platform has no renderer to hand
@@ -250,7 +250,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
         .markup => {},
         // `let`s around markup written in place (S4's amendment, item 4).
         .function => if (p.view_branch) {
-            return branchView(cx, tree);
+            return branchView(cx, tree, p.constructor);
         } else if (!p.view_lets or p.view_root == null) return cx.programReport(.view, .not_implemented,
             \\`browser-direct` compiles a `view` whose body is markup written in place, or an
             \\`if` or a `case`, after any `let`s, and this one's is neither: its body computes
@@ -279,7 +279,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     // What plans markup on the value path: `dom`'s own, every event on its
     // node (S4's amendment, item 1).
     var vg: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .own_listeners = true };
-    var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .vg = &vg, .view_lets = p.view_lets };
+    var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .vg = &vg, .view_lets = p.view_lets, .constructor = p.constructor };
     g.user = &page;
     try page.ctxs.append(cx.arena, .{ .parent = 0, .node = .none, .root = index });
     var stack: std.ArrayList(m.Root.Index) = .empty;
@@ -312,7 +312,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     for (b.baked_lists.items) |x| {
         if (!cx.build.release or page.hasEvent(tree.root(tree.row(tree.for_(x.what).row).body).node)) adopt = true;
     }
-    if (b.ops.items.len == 0 and !cx.build.fuzz and b.baked_holes.items.len == 0 and b.baked_items.items.len == 0 and !adopt and !p.view_lets) return staticMount(cx, tree, r.node, b.html.items, b.flags);
+    if (p.constructor == 0 and b.ops.items.len == 0 and !cx.build.fuzz and b.baked_holes.items.len == 0 and b.baked_items.items.len == 0 and !adopt and !p.view_lets) return staticMount(cx, tree, r.node, b.html.items, b.flags);
     return page.mount(&b, index, r.node);
 }
 
@@ -322,7 +322,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
 /// view's site is the branch alone — a body with no template and one op,
 /// the branch, which has no markup node (`Node.Index.none`) — and each arm
 /// is a site, or a value slot, as in a hole.
-fn branchView(cx: *m.Context, tree: *const m.Tree) m.Error!m.Expr {
+fn branchView(cx: *m.Context, tree: *const m.Tree, constructor: u32) m.Error!m.Expr {
     const found = cx.programBranch(.none) orelse return cx.programReport(.view, .not_implemented,
         \\`browser-direct` compiles a `view` whose body computes its markup only when it is
         \\an `if` or a `case` (`docs/design/browser-direct.md` §5.5). Write the body as markup
@@ -330,7 +330,7 @@ fn branchView(cx: *m.Context, tree: *const m.Tree) m.Error!m.Expr {
     );
     var g: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .bake = bakeOf, .bake_item = bakeItemOf, .bake_list = bakeListOf, .inline_call = Page.inlineOf };
     var vg: dom.Gen = .{ .cx = cx, .tree = tree, .direct = true, .own_listeners = true };
-    var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .vg = &vg, .view_lets = true, .no_root = true };
+    var page: Page = .{ .cx = cx, .tree = tree, .g = &g, .vg = &vg, .view_lets = true, .no_root = true, .constructor = constructor };
     g.user = &page;
     const placeholder: m.Root.Index = @fromBackingInt(@intCast(0));
     try page.ctxs.append(cx.arena, .{ .parent = 0, .node = .none, .root = placeholder });
@@ -729,6 +729,8 @@ const Page = struct {
     at_root: m.Name = undefined,
     t: m.Name = undefined,
     dispatch: ?m.Name = null,
+    constructor: u32 = 0,
+    host: ?m.Name = null,
     /// Every list, outermost first.
     lists: std.ArrayList(*List) = .empty,
     keys: []const m.Program.Key = &.{},
@@ -1620,9 +1622,13 @@ const Page = struct {
         }
 
         // The model, which every handler replaces (§4.1).
-        const init = try cx.programInit(pg.body);
+        const init = if (pg.constructor == 3) try cx.programStart(pg.body, &.{ try pg.rt("address", &.{}), try pg.rt("navigationKey", &.{}) }) else try cx.programInit(pg.body);
         pg.model = try cx.fresh("$model");
-        try js.let(pg.body, pg.model, init);
+        try js.let(pg.body, pg.model, if (pg.constructor != 0) try js.member(init, "a") else init);
+        if (pg.constructor != 0) {
+            if (pg.dispatch == null) pg.dispatch = try cx.fresh("$dispatch");
+            pg.host = try cx.fresh("$host");
+        }
         const update = try cx.programUpdate(pg.body);
         // The view's derived values' slots (§5.4; S4's amendment, item 4).
         try pg.planLets();
@@ -1802,8 +1808,21 @@ const Page = struct {
             for (params) |*x| x.* = try cx.fresh("$p");
             const blk = try js.block();
             try pg.evaluateIndices(blk, @intCast(k), params);
-            const next = try cx.programArm(@intCast(k), blk, params, try pg.ident(pg.model), update);
-            try js.assign(blk, try pg.ident(pg.model), next);
+            // An update's closures capture its incoming model, even after the
+            // handler installs the replacement. Give them an immutable binding.
+            var incoming = pg.model;
+            if (pg.constructor != 0) {
+                incoming = try cx.fresh("$before");
+                try js.constant(blk, incoming, try pg.ident(pg.model));
+            }
+            const next = try cx.programArm(@intCast(k), blk, params, try pg.ident(incoming), update);
+            var result = next;
+            if (pg.constructor != 0) {
+                const pair = try cx.fresh("$result");
+                try js.constant(blk, pair, next);
+                result = try pg.ident(pair);
+            }
+            try js.assign(blk, try pg.ident(pg.model), if (pg.constructor != 0) try js.member(result, "a") else result);
             // Step 2: the view's derived values its writes conflict with
             // (§5.4; S4's amendment, item 4).
             try pg.deriveLets(blk, @intCast(k));
@@ -1820,6 +1839,11 @@ const Page = struct {
             } else {
                 _ = try pg.visitSite(blk, v, rs, null, false);
                 try pg.sharedVisits(blk, @intCast(k));
+            }
+            if (pg.constructor >= 2) try pg.title(blk);
+            if (pg.constructor != 0) {
+                try js.expression(blk, try pg.rt("commands", &.{ try pg.ident(pg.host.?), try js.member(result, "b") }));
+                if (cx.programSettles(@intCast(k))) try pg.settle(blk);
             }
             h.* = try pg.handlerName(@intCast(k));
             try js.constant(pg.body, h.*, try js.arrow(params, blk));
@@ -1873,8 +1897,28 @@ const Page = struct {
         }
         try js.expression(pg.body, try js.call(try js.member(try pg.ident(pg.at_root), "append"), &.{try pg.ident(pg.frag)}));
 
+        if (pg.constructor >= 2) try pg.title(pg.body);
+        if (pg.constructor != 0) {
+            // The hosted page protocol publishes its optional flush hook.
+            // Inert sandbox pages do not instantiate that protocol.
+            _ = try cx.runtime("flush");
+            try js.constant(pg.body, pg.host.?, try pg.rt("makeHost", &.{try pg.ident(pg.dispatch.?)}));
+            try js.expression(pg.body, try pg.rt("commands", &.{ try pg.ident(pg.host.?), try js.member(init, "b") }));
+            try pg.settle(pg.body);
+        }
         if (!cx.build.release) try pg.writeVerify();
         return js.arrow(&.{ pg.at_root, pg.t }, pg.body);
+    }
+
+    fn settle(pg: *Page, blk: m.Block) m.Error!void {
+        var sub = try pg.cx.programField(blk, .subscriptions, try pg.ident(pg.model));
+        if (pg.constructor == 3) sub = try pg.rt("applicationSubscriptions", &.{ sub, try pg.cx.programField(blk, .onUrlRequest, try pg.ident(pg.model)), try pg.cx.programField(blk, .onUrlChange, try pg.ident(pg.model)) });
+        try pg.jsb().expression(blk, try pg.rt("subscriptions", &.{ try pg.ident(pg.host.?), sub }));
+    }
+
+    fn title(pg: *Page, blk: m.Block) m.Error!void {
+        const value = try pg.cx.programField(blk, .title, try pg.ident(pg.model));
+        try pg.jsb().expression(blk, try pg.rt("title", &.{value}));
     }
 
     // ---- Planning -------------------------------------------------------

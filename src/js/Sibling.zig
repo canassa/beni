@@ -77,6 +77,10 @@ pub const Arity = union(enum) {
 pub const Export = struct {
     name: []const u8,
     arity: Arity,
+    /// A closed syntax proof that this export only forwards supplied values.
+    forwards: bool = false,
+    /// The whole result is this parameter, before considering declared types.
+    forwarded_parameter: ?u32 = null,
     /// Byte offset of the name AS WRITTEN in the file. `boundary.md` §4's
     /// rule is that a diagnostic points at the file whose text is wrong, so
     /// an export nothing declares is underlined HERE and not on some
@@ -109,6 +113,9 @@ pub const Scan = struct {
     /// refused rather than rewritten, because the alternative is a build
     /// that succeeds and a program that cannot load.
     relative_imports: []const Located,
+    /// No imports, initialization, helpers or unclassified exports can
+    /// produce a type exposed by one of this module's inert exports.
+    only_inert_exports: bool = false,
 };
 
 /// Scan `source`. Everything returned is owned by `arena`.
@@ -195,7 +202,7 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
         try seen.put(arena, reference.text, {});
         try unbound.append(arena, reference);
     }
-    return .{ .exports = exports.items, .unbound = unbound.items, .relative_imports = relative.items };
+    return .{ .exports = exports.items, .unbound = unbound.items, .relative_imports = relative.items, .only_inert_exports = onlyInertExports(items) };
 }
 
 /// A specifier that names a file relative to this one. A BARE specifier —
@@ -332,9 +339,17 @@ fn collectExport(
         // from `collectArities`, which saw this same declaration.
         if (i + 1 < items.len and items[i + 1].kind == .ident) {
             const name = items[i + 1].text;
+            // Other export forms stay unknown. Only an immutable direct
+            // binding with the closed expression grammar is a proof.
+            const proof: ForwardProof = if (eql(items[i].text, "const") and i + 2 < items.len and eql(items[i + 2].text, "="))
+                forwardsOnly(items, i + 3)
+            else
+                .{};
             try exports.append(arena, .{
                 .name = name,
                 .arity = arityOf(arities, name),
+                .forwards = proof.inert,
+                .forwarded_parameter = proof.parameter,
                 .offset = items[i + 1].offset,
             });
         }
@@ -342,6 +357,119 @@ fn collectExport(
     }
     return i;
 }
+
+/// Prove a direct arrow is an inert carrier. Everything outside this
+/// grammar is unknown, including calls, reads, templates and tagged objects.
+/// Plain records have no constructor tag; nominal fields in a declared
+/// result still require the typed producer check in Reach.
+const ForwardProof = struct { inert: bool = false, parameter: ?u32 = null, end: usize = 0 };
+
+fn forwardsOnly(items: []const Token, start: usize) ForwardProof {
+    if (start >= items.len) return .{};
+    var begin = start;
+    var end = start + 1;
+    var arrow = end;
+    if (eql(items[start].text, "(")) {
+        end = matching(items, start) orelse return .{};
+        begin += 1;
+        arrow = end + 1;
+        var at = begin;
+        while (at < end) {
+            if (items[at].kind != .ident or isKeyword(items[at].text)) return .{};
+            at += 1;
+            if (at == end) break;
+            if (!eql(items[at].text, ",")) return .{};
+            at += 1;
+            if (at == end) return .{};
+        }
+    } else if (items[start].kind != .ident or isKeyword(items[start].text)) return .{};
+    if (arrow >= items.len or !eql(items[arrow].text, "=>")) return .{};
+    var parser: Forward = .{ .items = items, .params = items[begin..end], .at = arrow + 1 };
+    // A bare `{` after the arrow is a statement block, not an object.
+    if (parser.at < items.len and eql(items[parser.at].text, "{")) return .{};
+    const body_start = parser.at;
+    if (!parser.value(0)) return .{};
+    if (parser.at != items.len and !eql(items[parser.at].text, ";")) return .{};
+    var lo = body_start;
+    var hi = parser.at;
+    while (lo < hi and eql(items[lo].text, "(") and matching(items, lo) == hi - 1) {
+        lo += 1;
+        hi -= 1;
+    }
+    var parameter: ?u32 = null;
+    if (hi == lo + 1 and items[lo].kind == .ident) {
+        var ordinal: u32 = 0;
+        for (items[begin..end]) |param| if (param.kind == .ident) {
+            if (eql(param.text, items[lo].text)) parameter = ordinal;
+            ordinal += 1;
+        };
+    }
+    return .{ .inert = true, .parameter = parameter, .end = parser.at };
+}
+
+fn onlyInertExports(items: []const Token) bool {
+    var at: usize = 0;
+    while (at < items.len) {
+        if (eql(items[at].text, ";")) {
+            at += 1;
+            continue;
+        }
+        if (at + 4 >= items.len or !eql(items[at].text, "export") or
+            !eql(items[at + 1].text, "const") or items[at + 2].kind != .ident or
+            !eql(items[at + 3].text, "=")) return false;
+        const proof = forwardsOnly(items, at + 4);
+        if (!proof.inert) return false;
+        at = proof.end;
+    }
+    return true;
+}
+
+const Forward = struct {
+    items: []const Token,
+    params: []const Token,
+    at: usize,
+
+    fn take(f: *Forward, text: []const u8) bool {
+        if (f.at == f.items.len or !eql(f.items[f.at].text, text)) return false;
+        f.at += 1;
+        return true;
+    }
+
+    fn value(f: *Forward, depth: u32) bool {
+        if (depth >= 32 or f.at == f.items.len) return false;
+        if (f.take("(")) return f.value(depth + 1) and f.take(")");
+        if (f.take("[")) {
+            if (f.take("]")) return true;
+            while (true) {
+                if (!f.value(depth + 1)) return false;
+                if (f.take("]")) return true;
+                if (!f.take(",")) return false;
+                if (f.take("]")) return true;
+            }
+        }
+        if (f.take("{")) {
+            if (f.take("}")) return true;
+            while (true) {
+                if (f.at == f.items.len) return false;
+                const key = f.items[f.at];
+                if (key.kind != .ident or eql(key.text, "$") or eql(key.text, "__proto__")) return false;
+                f.at += 1;
+                if (!f.take(":") or !f.value(depth + 1)) return false;
+                if (f.take("}")) return true;
+                if (!f.take(",")) return false;
+                if (f.take("}")) return true;
+            }
+        }
+        if (f.take("null")) return true;
+        const token = f.items[f.at];
+        if (token.kind != .ident) return false;
+        for (f.params) |param| if (param.kind == .ident and eql(param.text, token.text)) {
+            f.at += 1;
+            return true;
+        };
+        return false;
+    }
+};
 
 /// One entry of an `export { … }` clause, once its two halves are known.
 fn flushClause(

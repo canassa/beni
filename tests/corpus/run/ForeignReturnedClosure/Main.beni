@@ -1,0 +1,23 @@
+-- The forwarded closure later builds Kept. Its ordinary beni producer
+-- must survive even though the foreign never calls the closure itself.
+import Carrier exposing (Choice, Kept, Dropped)
+import Node
+
+
+make : ⊤ → Choice
+make ⊤ = Kept
+
+
+show : Choice → String
+show value =
+    case value of
+        Kept →
+            "kept"
+        Dropped →
+            "dropped"
+
+
+main : Node.Program
+main =
+    callback = Carrier.carry make
+    Node.print (show (callback ⊤))

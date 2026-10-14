@@ -1276,6 +1276,7 @@ criterion 5's bars hold as written.
    constancy, which TodoMVC has none of (research 61), and the architecture buys nothing on a
    list-heavy app whose `For` reaches the reconciler on every list message: the Million failure
    again, seen from the other side.
+   *Amended 2026-10-14 (the owner):* the owner deferred the timing condition. Direct is smaller on both TodoMVC variants and faster at 100 todos; the 1 000-todo misses (3–10%, sub-1.5 ms) come from filtered lists going through the general reconciler, which S6 and S7 address. Re-judged at S8.
 7. **S6**: the S0 numbers re-measured on the built platform disagree with the analysis's — a
    handler calling more groups than its pairs, `patchAll` reached more often than the keys say.
 8. **At every slice**: a transcript that differs between the two platforms, a fuzz sequence that
@@ -2862,3 +2863,128 @@ gated for `browser-tea` under `tests/corpus/browser/tea/ValuePath`. This is a ch
 verified unsafe edit. `browser/direct/Blocks` pins the other value-path shapes this slice reaches.
 `browser/direct/ControlledOptions` copies its options before `List.push`: the old source changed
 that list in place and then read it again in the same record update.
+
+### *Amended 2026-10-13 (effects, blocked by ownership checking):* the unchanged driver
+
+The first effects implementation copied `browser-tea`'s command/subscription driver into
+`browser-direct/Tea.beni`, as §10.1 specifies. Checking the embedded platform rejected three
+appends with `list_may_be_shared`: the `Concurrent` arms of `keyed` and `keyedNow`, and `want`'s
+`List.append taps [ t ]`. Each diagnostic explicitly says this is a checker limit, not proof
+of sharing. The compiler cannot build while the embedded platform is rejected, so no effectful
+constructor can be shipped from that attempt. No `List.copy`, persistent-list substitution or
+JavaScript driver was added to make the check pass (CLAUDE.md rule 10).
+
+`tests/pending/browser/direct/SubscriptionTapAppend` isolates `want`: read the old tap list
+from a dictionary entry, append one tap, and replace the same entry. Its expected transcript
+is the correct result; `tests/pending/RED` pins the direct build's single
+`list_may_be_shared`. The identical browser-tea source is gated under
+`tests/corpus/browser/tea/SubscriptionTapAppend` against that transcript. The two Concurrent
+refusals were observed in the full copied driver; the reduced tap fixture pins the blocker
+needed even by a program with no keyed commands.
+
+**Stopped:** `Tea.element`, `Tea.document`, `Tea.application`, subscriptions and after-render
+work all need the blocked driver. Owned sends, value-taking/navigation commands and command
+policies cannot be exercised through direct until it checks. The TodoMVC effectful parity,
+value-fuzz coverage and the byte/timing measurements remain owed. Q5 is already answered by
+the owner on 2026-10-09 and implemented by browser-tea's listener path (§10.1); no new owner
+choice about subscription fibers is needed. Resuming effects requires fixing the ownership
+checker limits rather than changing the specified driver.
+
+### *Amended 2026-10-14 (effects resumed, as specified):* the compiled host
+
+An effectful mount keeps its model and the command driver's state separately. The driver is
+`browser-tea`'s beni code, with its scope, keyed jobs, outlets and subscription relays unchanged;
+its model field is unit. The compiled handler binds its update result once, installs component 0,
+writes the page and title, performs component 1, then settles subscriptions if their anchored
+reads conflict with the key's writes. Mount writes the initial page before performing its command
+and settling the initial subscriptions. A computed subscriptions function or a capped analysis
+reads the whole model. Captures in subscription taggers count as reads, so kept relays receive
+the latest tagger when those captures change. An effectful program always has a value dispatcher.
+
+The direct host's `send` enters the page's existing guard, including sends from after-render
+work. Its `after` queues work for the dispatch's end. End snapshots the rendered waiters and
+work, resumes waiters in order, then runs work in order; messages they send drain before another
+end. Work queued outside a dispatch starts an otherwise empty guarded dispatch. Controlled
+inputs reconcile before end. `Browser.onRendered` delegates to this phase and `Browser.flush`
+stays a no-op. A defect sets dead before shutdown, drops queued work, removes listeners and
+closes root scopes using the browser platform's existing deadline and cleanup reporting.
+
+`Tea.document` compiles the `body` of a record returned by its view as markup, and its `title`
+as a value against the same model. It writes the title only when the document's title differs.
+There is no runtime view call. `Tea.application` additionally calls init with the current URL
+and navigation key and combines its declared subscriptions with the two navigation subscriptions,
+using the browser platform's existing link interception and navigation errors.
+
+The additive markup interface is version 1.11: `programStart(block, args)` evaluates init once
+with explicit arguments (the existing `programInit` remains the unit form);
+`programField(block, field, model)` evaluates subscriptions, navigation taggers or title in the
+program record's declaration context; `programSettles(key)` answers the subscription conflict.
+The existing init and arm results remain the complete declared result, a pair on effectful
+constructors. Document body extraction is reflected in the existing view shape/root facts.
+
+### *Amended 2026-10-14 (effects oracle boundaries):* dispatch and render phases
+
+S5 retains the instrumented browser-tea fixtures as phase oracles. Q2 and Q3
+make their render-loop instrumentation differ: `FlushLatched` and
+`SyncCommandOrder` have mount-time view statements; `FocusInFlush` writes its
+hole before the later host listener; `DefectQueuedDropped` can finish a direct
+send and its rendered waiter before the next command throws. These fixtures
+keep every assertion with explicit `.tea-expected` transcripts, as the existing
+S4 phase oracles do. Common command, policy, subscription and navigation
+fixtures continue to use one golden and differential value fuzz. The existing paired-page driver ignores renderer comment sentinels, so
+adjacent holes keep a common golden and their value fuzz.
+
+A compiled update's incoming model is bound before installing its result, so
+closures in that result retain the model they received. Shared dispatch evidence
+is scoped to the function that declares it, including sibling compiled handlers;
+a reused statement-list stack address is not evidence of a shared scope. The
+entry runtime exports `flush` only when the lowering reaches it for its active
+host protocol (backend.md §9's optional-runtime-export amendment). Shutdown clears queued messages and after-render work
+before closing scopes, so cleanup cannot resume a stopped page.
+
+### *Amended 2026-10-14 (checkbox activation):* change follows click
+
+A checkbox or radio with a declared change handler must retain its native
+activation value through the preceding click, so the change handler can read
+it. The click capture listener holds its restoration until change or the
+fallback task; change marks it before the handler, and the dispatch reconciles
+against the model afterwards. A control with no change handler still restores
+at click end. This extends S4's controlled restoration contract without changing
+its no-handler or cancelled-click guarantees.
+
+### *Amended 2026-10-14 (effects measured, corrected):* size stop withdrawn; full timing verdict
+
+The earlier 9,691 B routing result included unreached command constructors
+solely because a foreign mount wrapper's annotation named `Cmd`. Backend §9
+now proves inert foreign forwarders generically, without a Tea exception.
+Routing is **7,026 B** versus tea's **8,258** (−14.9%); sandbox is **5,344**
+versus **6,169** (−13.4%). The size-only stop and the decision to omit the
+remaining comparisons are withdrawn. Research 91 and the checked-in raw
+results now report both builds, the pinned tastejs vanilla-es6 subject,
+feature parity, and all three operations at 100 and 1,000 todos, traced and
+untraced in one batch.
+
+The complete result still triggers §13 criterion 6 on timing at 1,000 todos:
+sandbox add is 0.365 versus 0.330 ms, sandbox clear 1.385 versus 1.320, and
+routing clear 1.465 versus 1.415 (direct versus tea). Traced orderings agree;
+the near-tied sandbox toggle is not a win/regression claim. All six
+100-todo comparisons improve. Derived filtered lists still invoke the
+general reconciler on add and clear, losing the original exact edit; the
+editing row keeps its helper/escaping-markup machinery. Routing's runtime
+subscription fiber test hook also retains a fiber path in release, explaining
+part of the remaining absolute byte-target miss. This is a measured
+remaining condition, not the removed constructor-reachability bug. The owner
+deferred this timing condition to S8 (§13 criterion 6, amended 2026-10-14),
+authorizing S6 and S7 to proceed; the measurements remain recorded above.
+
+Coverage now explicitly builds BikeWars on direct and pins its diagnostics,
+restores a real parked-render-waiter cancellation case, and pairs the omitted
+`DefectAfterRender`. Empty direct has no flush export (327 B, versus 347
+before this correction and master's 316; the remaining 11 B buy queued
+sends). RandomValues' exact-sharing diagnostic was a checker bug: approximate
+supplies now yield `list_may_be_shared`, with no relaxed ownership verdict.
+Sixteen tea pages remain pinned for ownership, including full editing
+TodoMVC. The original `DefectInTurnRender` is explicitly pending with its
+unchanged throws script: it compiles but its mount-only unused statement
+does not repeat after a click, as S4's documented phase contract says. It
+is a phase-oracle boundary, not an ownership checker refusal.

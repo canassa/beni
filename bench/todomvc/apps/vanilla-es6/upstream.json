@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/tastejs/todomvc",
+  "commit": "302b409c2b8510dc634fdd0e481196845109dc97",
+  "path": "examples/vanilla-es6",
+  "sha256": {
+    "src/app.js": "208fbe91745a4c267c8c61f7001952938da93d906384774accde66700bf12936",
+    "src/controller.js": "c786ff81d93bae0a47e6e5487f4c537e3add93fd93c263e11ad713a5916d4ebe",
+    "src/helpers.js": "8e9e85a6aa1b8d8ec7ee8fd36720661c31b6ecf9e3f9fd46040910f3ca5a8762",
+    "src/item.js": "e6b9f49f29a6ed6ce8d9d3de2c876bc106571370e1f2318c40028ba29615a9c9",
+    "src/store.js": "08d52ace46406c2b66dd831c26bc0b0f60143169be1fe97558a83834335a7002",
+    "src/template.js": "799e6ccb22293dbdd78b5c76235734a1cf7a2522d3173badf4d0c74fc69cba41",
+    "src/view.js": "629b9cd23ae37eb7ae0bf9c41ec96beb9a8c3a6c1a43ab087be45e160ac3f8d6",
+    "index.html": "8abcb565e24e7fdbe75feb21f986e9b7550173c04122727e4e07e7ec9c4d5f70",
+    "LICENSE.md": "32238c5c6759b589ea768661b6eb0fcb42449b74d57cdf09928743f2e1eb748d"
+  },
+  "license_source": "license.md at the same repository commit"
+}

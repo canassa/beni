@@ -1,0 +1,74 @@
+-- load
+<body>
+  <main>
+    <button id="follow">"follow"</button>
+    <button id="unfollow">"unfollow"</button>
+    <button id="order">"order"</button>
+    <button id="on">"on"</button>
+    <button id="off">"off"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #follow
+<body>
+  <main>
+    <button id="follow">"follow"</button>
+    <button id="unfollow">"unfollow"</button>
+    <button id="order">"order"</button>
+    <button id="on">"on"</button>
+    <button id="off">"off"</button>
+    <ol>
+      <li>"after render: pushed #/early"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /_page.html#/early)
+(the DOM did not change)
+-- click #order
+<body>
+  <main>
+    <button id="follow">"follow"</button>
+    <button id="unfollow">"unfollow"</button>
+    <button id="order">"order"</button>
+    <button id="on">"on"</button>
+    <button id="off">"off"</button>
+    <ol>
+      <li>"after render: pushed #/early"</li>
+      <li>"pushed #/a"</li>
+      <li>"the body behind it"</li>
+      <li>"changed to #/a"</li>
+    </ol>
+  </main>
+</body>
+-- hash "#/later"
+<body>
+  <main>
+    <button id="follow">"follow"</button>
+    <button id="unfollow">"unfollow"</button>
+    <button id="order">"order"</button>
+    <button id="on">"on"</button>
+    <button id="off">"off"</button>
+    <ol>
+      <li>"after render: pushed #/early"</li>
+      <li>"pushed #/a"</li>
+      <li>"the body behind it"</li>
+      <li>"changed to #/a"</li>
+      <li>"changed to #/later"</li>
+    </ol>
+  </main>
+</body>
+-- click #unfollow
+(the DOM did not change)
+-- listeners window popstate
+(listeners: 0)
+(the DOM did not change)
+-- flush #on #off
+(flushed)
+(flushed)
+(the DOM did not change)
+-- listeners window popstate
+(listeners: 0)
+(the DOM did not change)
+-- hash "#/unheard"
+(the DOM did not change)

@@ -1,0 +1,6 @@
+click #inc
+advance 100
+throws click #boom
+# Stopped: neither a click nor a tick is applied.
+click #inc
+advance 100

@@ -143,3 +143,13 @@ promoted it), `050cd2d` with the fix reads GREEN through the same harness. The n
 - **`scenario/CK-42` measured the extra cost of nominal `==`** (until R11; its v2 twin is in
   `perf_test.zig`) over the same program with
   `x == x`; the control's own super-linearity is `scenario/CK-75`.
+
+### Direct effects ownership summaries (CK-223, 2026-10-14)
+
+Fifteen `browser/direct/` fixtures keep the original browser-tea source and
+correct transcript. HTTP wrappers, generated lists, reentrant command sends
+and model/view captures expose conservative ownership summaries. Their direct
+build diagnostic is pinned in `RED`; the browser-tea corpus originals remain
+gated. The full TodoMVC editing page is among them. The routing benchmark
+variant without editing checks; this does not resolve or replace the full
+page's ownership finding.

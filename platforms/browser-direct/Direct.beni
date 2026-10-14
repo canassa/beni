@@ -12,8 +12,16 @@
 --! reconciler (§6.3) and the fibers' teardown (`Task.shutdown`) arrive with
 --! the slices that reach them.
 
+import Browser
+import Browser.Navigation as Navigation
+import Cmd
+import Hosted
 import Js
 import Rt
+import Sub
+import Task
+import Tea
+import Url
 
 
 type alias V =
@@ -69,7 +77,7 @@ send f x =
         Js.finally
             (λ⊤ →
                 _ = Js.apply f [ x ]
-                drain ⊤
+                finish ⊤
                 -- The development verify mode (§8.3): every mounted
                 -- program's page checked against its model, once the
                 -- dispatch's messages have all applied. A release build
@@ -113,9 +121,14 @@ applyFrom q i =
 -- throw.
 stop : ⊤ → ⊤
 stop ⊤ =
+    wasDead = Js.read dead
     Js.write dead True
-    if Js.development ⊤ then
+    Js.write queue Js.null
+    Js.write later (Js.array [])
+    Js.write waiters (Js.array [])
+    if Js.development ⊤ && not wasDead then
         crashScreen ⊤
+    if Js.isNull (Js.read phase) then ⊤ else Task.shutdown 1000 stopped
 
 
 -- An overlay above the page, which it leaves in place to inspect, the same
@@ -142,6 +155,14 @@ crashScreen ⊤ =
 
     _ = Js.call (Js.get document "body") "appendChild" [ screen ]
 
+    add =
+        λmore →
+            shown : String
+            shown = Js.to (Js.get screen "textContent")
+            Js.set screen "textContent" (Js.from (shown ++ more))
+
+    seen = Js.ref 0
+
     report =
         λevent →
             error = Js.get event "error"
@@ -152,13 +173,26 @@ crashScreen ⊤ =
                         [ if Js.isNullish error then Js.get event "message" else error ]
                     )
 
-            shown : String
-            shown = Js.to (Js.get screen "textContent")
-            Js.set screen "textContent" (Js.from (shown ++ message))
+            n = Js.read seen
+            Js.write seen (n + 1)
 
+            add
+                (if n == 0 then
+                    message
+                 else if n == 1 then
+                    "\n\nWhile stopping, cleanup also threw:\n" ++ message
+                 else
+                    "\n" ++ message
+                )
+
+    Js.write screenLine (Js.from add)
+    Js.write screenReport (Js.from report)
     Js.to
         (Js.call (Js.global "window") "addEventListener"
-            [ Js.from "error", Js.from report, Js.from { once = True } ]
+            [ Js.from "error"
+            , Js.from report
+            , Js.from { once = not (Task.cleansUp ⊤) }
+            ]
         )
 
 
@@ -1435,6 +1469,7 @@ pub listenRow : V, V, V, V → ⊤
 listenRow el name h r =
     flags : Int
     flags = Js.to (Js.get h "f")
+    if Js.same name (Js.from "change") then Js.set el "$$changeHandler" (Js.from True)
 
     Js.to
         (Js.call el "addEventListener"
@@ -1454,7 +1489,9 @@ listenRow el name h r =
 --| event (§4.2). One function for every such node of the page, so a node
 --| costs a call (the lean slice's shared listener).
 pub on : V, V, V → ⊤
-on el name h = Js.to (Js.call el "addEventListener" [ name, Js.from λevent → send h event ])
+on el name h =
+    if Js.same name (Js.from "change") then Js.set el "$$changeHandler" (Js.from True)
+    Js.to (Js.call el "addEventListener" [ name, Js.from λevent → send h event ])
 
 
 -- ---- Branches and `Show` (§5.5; S4's amendment, item 3) -----------------
@@ -1789,7 +1826,15 @@ putBack el =
             key : String
             key = Js.to k
             v = Js.get s key
-            if Js.same (Js.get el key) v then ⊤ else Js.set el key v
+            if
+                key == "checked"
+                    && Js.same (Js.get el "$$awaitingChange") (Js.from True)
+            then
+                ⊤
+            else if Js.same (Js.get el key) v then
+                ⊤
+            else
+                Js.set el key v
 
 
 -- `el` and what changes with it with no event of its own, each handed to
@@ -1830,7 +1875,12 @@ holdEdit el =
 putBackHeld : ⊤ → ⊤
 putBackHeld ⊤ =
     held = Js.call heldBack "splice" [ Js.from 0 ]
-    if Js.read dead then ⊤ else Js.each held λel → putBack el
+    if Js.read dead then
+        ⊤
+    else
+        Js.each held λel →
+            Js.set el "$$awaitingChange" (Js.from False)
+            putBack el
 
 
 watching : Js.Ref Bool
@@ -1886,9 +1936,20 @@ edits event =
         if Js.to (Js.get target "localName") == "form" then
             Js.each (Js.get target "elements") λel → affected el markAndHold
     else if type_ ≠ "click" then
+        if type_ == "change" then
+            affected target λel → Js.set el "$$awaitingChange" (Js.from False)
         affected target markEdit
     else if kind == "checkbox" || kind == "radio" then
-        affected target markAndHold
+        if
+            not (Js.isUndefined (Js.get target "$$changeHandler"))
+                || not (Js.isUndefined (Js.get target "$change"))
+                || not (Js.isUndefined (Js.get target "$$change"))
+        then
+            affected target λel →
+                Js.set el "$$awaitingChange" (Js.from True)
+                holdEdit el
+        else
+            affected target markAndHold
 
 
 markAndHold : V → ⊤
@@ -2412,3 +2473,164 @@ fuzzMount dispatch =
                   )
                 ]
             )
+
+
+-- ---- The compiled host and after-render point --------------------------
+
+phase : Js.Ref V
+phase = Js.ref Js.null
+
+
+later : Js.Ref V
+later = Js.ref (Js.array [])
+
+
+waiters : Js.Ref V
+waiters = Js.ref (Js.array [])
+
+
+inAfter : Js.Ref Bool
+inAfter = Js.ref False
+
+
+pub makeHost : V → V
+makeHost dispatch =
+    Js.write phase (Js.from afterPoint)
+    Browser.installRendered (Js.from onRendered)
+    Task.onDefect λ⊤ → stop ⊤
+    self =
+        Js.object
+            [ ( "send", Js.from λmsg → send dispatch msg )
+            , ( "after"
+              , Js.from λwork →
+                  _ = Js.call (Js.read later) "push" [ work ]
+                  send (Js.from λ_ → ⊤) Js.null
+              )
+            ]
+    Js.set self "state" (Js.from (Tea.open (Js.to self)))
+    self
+
+
+pub commands : V, Cmd.Cmd msg → ⊤
+commands self cmd =
+    Js.set self "state" (Js.from (Tea.commands (Js.to self) cmd (Js.to (Js.get self "state"))))
+
+
+pub subscriptions : V, Sub.Sub msg → ⊤
+subscriptions self sub =
+    Js.set self "state" (Js.from (Tea.subscriptions (Js.to self) sub (Js.to (Js.get self "state"))))
+
+
+pub address : ⊤ → Url.Url
+address ⊤ =
+    case Navigation.currentUrl ⊤ of
+        Just url →
+            url
+        Nothing →
+            Hosted.defect
+                "Tea.application needs an http or https address, and this page has none: it was opened from a file. Serve it over HTTP, or use Tea.document and Browser.Navigation.currentUrl, whose Nothing such a page can handle."
+
+
+pub navigationKey : ⊤ → Navigation.Key
+navigationKey ⊤ = Navigation.key ⊤
+
+
+pub applicationSubscriptions :
+      Sub.Sub msg
+    , sync (Browser.UrlRequest → msg)
+    , sync (Url.Url → msg)
+    → Sub.Sub msg
+applicationSubscriptions sub request changed =
+    Sub.batch [ sub, Navigation.onUrlRequest request, Navigation.onUrlChange changed ]
+
+
+finish : ⊤ → ⊤
+finish ⊤ =
+    drain ⊤
+    if Js.isNull (Js.read phase) then
+        ⊤
+    else
+        _ = Js.apply (Js.read phase) []
+        if
+            Js.isNull (Js.read queue)
+                && Js.to (Js.get (Js.read later) "length") == 0
+                && Js.to (Js.get (Js.read waiters) "length") == 0
+        then
+            ⊤
+        else
+            finish ⊤
+
+
+afterPoint : ⊤ → ⊤
+afterPoint ⊤ =
+    resumes = Js.read waiters
+    work = Js.read later
+    Js.write waiters (Js.array [])
+    Js.write later (Js.array [])
+    Js.write inAfter True
+    Js.finally
+        (λ⊤ →
+            Js.each resumes λresume → Js.to (Js.apply resume [ Js.null ])
+            Js.each work λf → Js.to (Js.apply f [])
+        )
+        λ⊤ → Js.write inAfter False
+
+
+onRendered : Task.Resume ⊤ → (⊤ → ⊤)
+onRendered resume =
+    if not (Js.read running) || Js.read inAfter then
+        _ = Js.apply (Js.from resume) [ Js.null ]
+        Js.to Js.null
+    else
+        _ = Js.call (Js.read waiters) "push" [ Js.from resume ]
+        λ⊤ →
+            i : Int
+            i = Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
+            if i ≥ 0 then
+                Js.to (Js.call (Js.read waiters) "splice" [ Js.from i, Js.from 1 ])
+
+
+stopped : Int → ⊤
+stopped cut =
+    line = "Cleanups cut short while stopping:"
+
+    if cut == 0 then
+        ⊤
+    else
+        Js.to (Js.call (Js.global "console") "warn" [ Js.from line, Js.from cut ])
+
+    if Js.development ⊤ then
+        if cut == 0 then
+            ⊤
+        else
+            Js.to
+                (Js.apply (Js.read screenLine)
+                    [ Js.from
+                        ("\n\n${line} "
+                            ++ Js.to (Js.apply (Js.global "String") [ Js.from cut ])
+                        )
+                    ]
+                )
+
+        Js.to
+            (Js.call (Js.global "window") "removeEventListener"
+                [ Js.from "error", Js.read screenReport ]
+            )
+
+
+-- The crash screen's: what adds a line to it, and its `error` listener.
+screenLine : Js.Ref V
+screenLine = Js.ref Js.null
+
+
+screenReport : Js.Ref V
+screenReport = Js.ref Js.null
+
+
+pub title : String → ⊤
+title value = Hosted.title value
+
+
+--| Direct writes have already completed; there is no render queue to flush.
+pub flush : ⊤ → ⊤
+flush ⊤ = ⊤

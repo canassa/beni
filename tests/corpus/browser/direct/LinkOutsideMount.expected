@@ -1,0 +1,46 @@
+-- load
+<body>
+  <main>
+    <a id="outside" href="/outside">"outside"</a>
+    <div id="app">
+      <section>
+        <a id="inside" href="/inside">"inside"</a>
+        <ol></ol>
+      </section>
+    </div>
+  </main>
+</body>
+-- click #outside
+(click's default prevented)
+<body>
+  <main>
+    <a id="outside" href="/outside">"outside"</a>
+    <div id="app">
+      <section>
+        <a id="inside" href="/inside">"inside"</a>
+        <ol>
+          <li>"Internal /outside"</li>
+        </ol>
+      </section>
+    </div>
+  </main>
+</body>
+-- click #inside
+(click's default prevented)
+<body>
+  <main>
+    <a id="outside" href="/outside">"outside"</a>
+    <div id="app">
+      <section>
+        <a id="inside" href="/inside">"inside"</a>
+        <ol>
+          <li>"Internal /outside"</li>
+          <li>"Internal /inside"</li>
+        </ol>
+      </section>
+    </div>
+  </main>
+</body>
+-- location
+(location: /_page.html)
+(the DOM did not change)

@@ -380,6 +380,17 @@ field names and string tags in every build, and a type of one constructor with o
 its object, where elsewhere a release build represents it by its field (*amended 2026-10-02*;
 `backend.md` §9, *A type of one constructor with one field is its field*).
 
+*Amended 2026-10-14 (inert foreign reachability):* absence of tag construction
+is not permission to forget a differently typed result. A foreign can convert
+between nominal types with matching representations by returning its argument,
+so its annotation constructors remain reachable for nominal result casts
+unless the whole returned parameter
+has the same declared constructor-bearing type structure. This includes returned callbacks and nested nominal
+fields in a result record. Unclassified code anywhere in the same sibling
+retains the types its module annotations expose. Backend §9's forwarding proof changes reachability,
+not these boundary representations: visible tags still use `$` and source strings
+in release; record fields carry no constructor tag.
+
 **A type variable is opaque.** A sibling handed a value at a type variable (`foreign key : k ->
 Key`), and platform code that turns one into a `Js.Value` (`Js.from msg` with `msg : msg`), may
 store it, return it, compare it with `===`, and walk it reflectively — `Basics.eq`'s
@@ -2073,6 +2084,15 @@ and the SVG root, as built*)*, additive within 1.10:
   calls — what a verify mode asks before it makes a component's markup again. `true` when not
   known and for a hole's call. `cx.reachesDebug` now also follows the function of each component
   in markup a value makes.
+
+**Version 1.11** (*amended 2026-10-14*, additive, gated on nothing): the compiled
+host contract in `browser-direct.md`'s effects amendment. `programStart(block, args)` evaluates
+init once with the supplied arguments; `programInit` keeps its unit form. `programField(block,
+field, model)` evaluates `subscriptions`, `onUrlRequest`, `onUrlChange` or the document `title`
+against the supplied model in the record's declaration context. `programSettles(key)` reports
+whether subscription reads conflict with that key's writes, conservatively true for unknown
+reads. Effectful init/arm results are their declared model/command pair. Document view shape
+facts describe its record's body, which is compiled without a runtime view call.
 
 #### 9.4.7 Diagnostics
 

@@ -1,0 +1,36 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="boom">"boom"</button>
+    <ul></ul>
+  </main>
+</body>
+-- click #start
+(the DOM did not change)
+-- timers
+(timers: 3)
+(the DOM did not change)
+-- listeners window resize
+(listeners: 1)
+(the DOM did not change)
+-- throws click #boom
+(threw: Error: TODO: update threw)
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="boom">"boom"</button>
+    <ul></ul>
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: update threw"</div>
+</body>
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- listeners window resize
+(listeners: 0)
+(the DOM did not change)
+-- advance 1000
+(the DOM did not change)
+-- event window resize
+(the DOM did not change)

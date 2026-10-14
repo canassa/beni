@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <input id="name" .value="">
+    <ol></ol>
+  </main>
+</body>
+-- type #name "abc"
+<body>
+  <main>
+    <input id="name" .value="ABC">
+    <ol>
+      <li>"a"</li>
+      <li>"Ab"</li>
+      <li>"ABc"</li>
+    </ol>
+  </main>
+</body>

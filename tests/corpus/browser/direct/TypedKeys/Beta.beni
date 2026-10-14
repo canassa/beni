@@ -1,0 +1,5 @@
+-- A key type built exactly as `Alpha.Key` is: one constructor named `Key`
+-- holding an `Int`.
+
+pub type Key
+    = Key Int

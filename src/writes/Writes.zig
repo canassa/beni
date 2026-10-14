@@ -433,6 +433,7 @@ pub const Program = struct {
     vlets: []Hole = &.{},
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
+    subscription_reads: []const u32 = &.{rho_path},
     /// The markup roots the view walk reached, in the order it met them
     /// (`Hole.site` indexes this; the dump sorts by position).
     sites: []const Site = &.{},
@@ -3985,7 +3986,7 @@ pub fn conflicts(a: *const Writes, r: u32, ws: []const Write) bool {
 // Programs (§1.1)
 // ---------------------------------------------------------------------------
 
-const Fields = struct { m: u32, frame_decl: u32, init: ?Inst.Index = null, update: ?Inst.Index = null, view: ?Inst.Index = null };
+const Fields = struct { m: u32, frame_decl: u32, init: ?Inst.Index = null, update: ?Inst.Index = null, view: ?Inst.Index = null, subscriptions: ?Inst.Index = null };
 
 fn programKind(a: *Writes, m: u32, inst: Inst.Index) ?ProgramKind {
     const t = a.valueTarget(m, inst) orelse return null;
@@ -4022,6 +4023,7 @@ fn programRecord(a: *Writes, m: u32, d: u32, arg: Inst.Index) ?Fields {
             if (std.mem.eql(u8, name, "init")) out.init = fld.value;
             if (std.mem.eql(u8, name, "update")) out.update = fld.value;
             if (std.mem.eql(u8, name, "view")) out.view = fld.value;
+            if (std.mem.eql(u8, name, "subscriptions")) out.subscriptions = fld.value;
         }
         return out;
     }
@@ -4335,6 +4337,17 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         try a.keyTree(kind, update_fun, 0, &path_steps, &keys, &leaves);
         prog.keys = keys.items;
     }
+    // Subscription values include the captures of their taggers.
+    if (view_fields) |fs| if (fs.subscriptions) |si| {
+        var frame = try a.newFrame(fs.m, fs.frame_decl, 0);
+        a.ctx = .{ .mode = .closed };
+        const fun = try a.eval(&frame, si, 0);
+        const result = a.applyDirect(fun, &.{try a.mkSame(rho_path)}, 0) catch |err| switch (err) {
+            error.WorkCap => none,
+            else => |e| return e,
+        };
+        if (result != none) prog.subscription_reads = try a.arena().dupe(u32, a.deps_t.get(try a.deps(result)));
+    };
     // The view (§3.6).
     if (view_fields) |fs| if (fs.view) |vi| if (a.isFunctionField(fs.m, vi)) {
         var frame = try a.newFrame(fs.m, fs.frame_decl, 0);

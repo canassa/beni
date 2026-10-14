@@ -821,6 +821,7 @@ const Emitter = struct {
     module_uses: std.ArrayList([]const u8) = .empty,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
+    forwarding_foreigns: [][]Reach.ForeignProof = &.{},
     /// `--release` of an application that does not reach `Debug`: what
     /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
     /// Null renames no field and gives no type integer tags.
@@ -1124,6 +1125,8 @@ const Emitter = struct {
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn checkSiblings(e: *Emitter) !void {
+        e.forwarding_foreigns = try e.scratch.alloc([]Reach.ForeignProof, e.graph().count());
+        @memset(e.forwarding_foreigns, &.{});
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
@@ -1171,6 +1174,25 @@ const Emitter = struct {
             };
 
             const found = try Sibling.scan(e.scratch, bytes);
+            for (found.exports) |export_| if (found.only_inert_exports and export_.forwards) {
+                var occurrences: u32 = 0;
+                for (found.exports) |other| if (std.mem.eql(u8, other.name, export_.name)) {
+                    occurrences += 1;
+                };
+                if (occurrences != 1) continue;
+                const plain = for (declared.items) |entry| {
+                    if (std.mem.eql(u8, entry.name, export_.name)) break entry.evidence == 0;
+                } else false;
+                for (b.decls, 0..) |decl, di| {
+                    if (decl.kind == .foreign_value and std.mem.eql(u8, export_.name, e.session.interner.slice(b.symbol(decl.name)))) {
+                        if (e.forwarding_foreigns[m.int()].len == 0) {
+                            e.forwarding_foreigns[m.int()] = try e.scratch.alloc(Reach.ForeignProof, b.decls.len);
+                            @memset(e.forwarding_foreigns[m.int()], .{});
+                        }
+                        e.forwarding_foreigns[m.int()][di] = .{ .inert = true, .parameter = if (plain) export_.forwarded_parameter else null };
+                    }
+                }
+            };
             try e.compareExports(file, sibling_path, bytes, declared.items, found.exports);
             // The next two faults are the `.js` file's own, so they are
             // reported IN it: path, line, column and an excerpt with the
@@ -2442,6 +2464,14 @@ const Emitter = struct {
             }
             out.keys = keys;
             out.steps = steps;
+            const settles = try a.alloc(bool, keys.len);
+            for (key_writes, settles) |kw, *settles_key| {
+                settles_key.* = for (prog.subscription_reads) |r| {
+                    if (w.conflicts(r, kw)) break true;
+                } else false;
+            }
+            out.settles = settles;
+
             // The holes, by read set: equal sets are one group — and, since
             // version 1.8, equal bound depths (a row's own read and the
             // whole list's are two groups).
@@ -2536,10 +2566,10 @@ const Emitter = struct {
         std.mem.reverse(u32, chain.items);
         var out: std.ArrayList(Lower.Direct.Access) = .empty;
         for (chain.items) |s| switch (w.pathKind(s)) {
-            .ctor => try out.append(e.scratch, .{ .ctor = e.directCtor(w, w.pathA(s)), .field = w.pathB(s) }),
-            // A message reached through a tuple or a record: a dispatcher
-            // cannot follow it, so it tests nothing below (its keys then
-            // need the decision only a later step can make).
+            .ctor => try out.append(e.scratch, .{ .ctor = .{ .ctor = e.directCtor(w, w.pathA(s)), .field = w.pathB(s) } }),
+            .field => try out.append(e.scratch, .{ .record = @fromBackingInt(w.pathA(s)) }),
+            .tuple => try out.append(e.scratch, .{ .tuple = w.pathA(s) }),
+            .tag => {},
             else => return &.{},
         };
         return out.items;
@@ -2779,6 +2809,7 @@ const Emitter = struct {
             .extra_roots = e.extra_roots,
             .plans = e.session.checked.plans,
             .schema_library = e.options.schema_library,
+            .forwarding_foreigns = e.forwarding_foreigns,
         };
         e.schema_graph = .{
             .graph = e.graph(),

@@ -1,0 +1,15 @@
+-- load
+(fetch 1: GET /slow {})
+<body>
+  <p>"waiting"</p>
+</body>
+-- advance 499
+(the DOM did not change)
+-- advance 1
+(fetch 1 aborted: AbortError)
+<body>
+  <p>"timed out"</p>
+</body>
+-- timers
+(timers: 0)
+(the DOM did not change)

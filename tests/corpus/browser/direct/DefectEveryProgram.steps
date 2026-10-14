@@ -1,0 +1,5 @@
+click #inc
+timers
+throws click #boom
+timers
+click #inc

@@ -146,6 +146,14 @@ flush ⊤ =
 --| none is queued. Returns what stops the wait.
 pub onRendered : Task.Resume ⊤ → (⊤ → ⊤)
 onRendered resume =
+    if Js.isNull (Js.read directRendered) then
+        loopRendered resume
+    else
+        Js.to (Js.apply (Js.read directRendered) [ Js.from resume ])
+
+
+loopRendered : Task.Resume ⊤ → (⊤ → ⊤)
+loopRendered resume =
     if
         Js.isNull (Js.read loop)
             || not (Js.to (Js.apply (Js.read setPhase) [ Js.from afterRender ]))
@@ -346,3 +354,12 @@ host p root flushing phase stop =
                         )
                         λ⊤ → Js.write busy False
         }
+
+
+-- The compiled platform supplies its synchronous after-render point.
+directRendered : Js.Ref Js.Value
+directRendered = Js.ref Js.null
+
+
+pub installRendered : Js.Value → ⊤
+installRendered callback = Js.write directRendered callback

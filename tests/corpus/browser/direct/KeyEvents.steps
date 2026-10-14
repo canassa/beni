@@ -1,0 +1,7 @@
+type #new "milk"
+key #new Enter
+key #new a ctrl code:KeyA
+# Shift+Enter is not "add": its default stands.
+key #new Enter shift code:Enter
+key #new x alt meta code:KeyX
+click #click

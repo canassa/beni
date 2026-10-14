@@ -1,0 +1,8 @@
+# Two ticks, at 100 and 200.
+advance 250
+# Off: nothing more, however far the clock moves.
+click #toggle
+advance 1000
+# On again at 1250: the next tick is at 1350.
+click #toggle
+advance 150
