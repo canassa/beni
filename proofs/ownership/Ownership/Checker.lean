@@ -374,7 +374,7 @@ def factOf (s : Summary) : Fact → List Nat
     | .list _ _ ex => if ex.spine then [1] else []
     | _ => [1]
   | .xres q => match s.result.atPath q with
-    | .list _ _ ex => if ex then [1] else []
+    | .list _ _ ex => if ex.deep then [1] else []
     | _ => [1]
   | .escapesEnv => if s.escapes.any (fun c => match c with | .capture .. => true | _ => false) then [1] else []
   | .once => []
@@ -526,7 +526,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let before ← getFacts
       let a ← inferExpr f ctx env yes after (site ++ [0])
       let left ← getFacts
-      modifyFacts fun _ => if ctx.config.has .branchEscapes then {} else before
+      modifyFacts fun _ => if ctx.config.has .branchEscapes then { before with escapes := [] } else before
       let b ← inferExpr f ctx env no after (site ++ [1])
       let right ← getFacts
       modifyFacts fun _ => left.join right

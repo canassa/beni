@@ -127,6 +127,15 @@ checkpoint. The final default-seed CI catches both required holes as well.
 No original required control was downgraded to optional. Historical streams
 require their historical source revisions.
 
+The PR review found no blocking defect. Its `xres` readability suggestion is
+applied as `ex.deep`; the separate spine query is unchanged. The escape mutant
+now drops only incoming escapes, preserving prior calls and uses. The
+[focused control](regressions/branch-escapes-review-sync.log) still catches
+three disagreements among 348 typed programs. The
+[full Lean build](regressions/lean-build-review-final-sync.log) was repeated
+for these review changes. A fresh audit follows in the PR review response.
+All 159 numbered headings of ownership-checker.md are unchanged from master.
+
 The 65-source-edit matrix below is **historical round-6 evidence**, not a new
 source-mutant sweep on this checker. The sync's current evidence is the runtime
 flag campaigns and mandatory enumerator controls above. Finite campaigns and
