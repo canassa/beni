@@ -9,7 +9,10 @@
 -- made the command declares hears the first `Sending`: `#upload`'s update
 -- renders before the body first runs (a click), and `#chain`'s second
 -- request is made by an answer's update, in a drain, which renders when
--- the drain ends.
+-- the drain ends. A `track` that has left hears nothing of a later
+-- request of its name (`#again`). A tracked command starts its request
+-- after the untracked command of its batch (`#batch`, §9.8.19 (c)). A
+-- 404 reports every value, then its `BadStatus` (`#missing`).
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Http
@@ -24,6 +27,9 @@ type Msg
     | Nobody
     | Broken
     | Empty
+    | Again
+    | Batch
+    | Missing
     | Progressed String Http.Progress
     | Answered String (Result Http.Error String)
 
@@ -90,6 +96,20 @@ update msg model =
         Empty →
             ( model, posted "/empty" "e" (Just "both") )
 
+        Again →
+            ( model, posted "/again" "a" (Just "upload") )
+
+        Batch →
+            ( model
+            , Cmd.batch
+                [ posted "/batch-tracked" "t" (Just "nobody")
+                , posted "/batch-untracked" "u" Nothing
+                ]
+            )
+
+        Missing →
+            ( model, posted "/missing" "m" (Just "edge") )
+
         Progressed name p →
             ( said model "${name}: ${progress p}", Cmd.none )
 
@@ -108,6 +128,9 @@ answer url result =
         Ok text →
             "${url}: ok ${text}"
 
+        Err (Http.BadStatus code) →
+            "${url}: bad status ${String.fromInt code}"
+
         Err _ →
             "${url}: failed"
 
@@ -117,6 +140,7 @@ subscriptions model =
     Sub.batch
         [ Http.track "both" (Progressed "first" _)
         , Http.track "other" (Progressed "other" _)
+        , Http.track "edge" (Progressed "edge" _)
         , Http.track "both" (Progressed "second" _)
         , if model.watching then Http.track "upload" (Progressed "upload" _) else Sub.none
         , if model.chained then Http.track "chain" (Progressed "chain" _) else Sub.none
@@ -132,6 +156,9 @@ view model =
         <button id="nobody" onClick={Nobody}>nobody</button>
         <button id="broken" onClick={Broken}>broken</button>
         <button id="empty" onClick={Empty}>empty</button>
+        <button id="again" onClick={Again}>again</button>
+        <button id="batch" onClick={Batch}>batch</button>
+        <button id="missing" onClick={Missing}>missing</button>
         <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 

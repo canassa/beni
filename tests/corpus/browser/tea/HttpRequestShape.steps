@@ -16,3 +16,7 @@ click #send
 click #riskySend
 respond 8 200 "eight"
 respond 9 200 "nine"
+click #trackedSend
+click #trackedRiskySend
+respond 10 200 "ten"
+respond 11 200 "eleven"

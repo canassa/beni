@@ -1,0 +1,6 @@
+# `init`'s request, its body empty: `Sending 0/0` twice, then the rest.
+respond 1 200 "booted"
+# A tracked request that times out: its first value, then `Timeout`.
+click #slow
+advance 499
+advance 1

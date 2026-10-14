@@ -1,0 +1,56 @@
+-- load
+(fetch 1: GET /boot {})
+<body>
+  <main>
+    <button id="slow">"slow"</button>
+    <ol>
+      <li>"boot: Sending 0/0"</li>
+    </ol>
+  </main>
+</body>
+-- respond 1 200 "booted"
+<body>
+  <main>
+    <button id="slow">"slow"</button>
+    <ol>
+      <li>"boot: Sending 0/0"</li>
+      <li>"boot: Sending 0/0"</li>
+      <li>"boot: Receiving 0/?"</li>
+      <li>"boot: Receiving 6/?"</li>
+      <li>"/boot: ok booted"</li>
+    </ol>
+  </main>
+</body>
+-- click #slow
+(fetch 2: POST /slow {"content-type":"text/plain"} "s")
+<body>
+  <main>
+    <button id="slow">"slow"</button>
+    <ol>
+      <li>"boot: Sending 0/0"</li>
+      <li>"boot: Sending 0/0"</li>
+      <li>"boot: Receiving 0/?"</li>
+      <li>"boot: Receiving 6/?"</li>
+      <li>"/boot: ok booted"</li>
+      <li>"slow: Sending 0/1"</li>
+    </ol>
+  </main>
+</body>
+-- advance 499
+(the DOM did not change)
+-- advance 1
+(fetch 2 aborted: TimeoutError)
+<body>
+  <main>
+    <button id="slow">"slow"</button>
+    <ol>
+      <li>"boot: Sending 0/0"</li>
+      <li>"boot: Sending 0/0"</li>
+      <li>"boot: Receiving 0/?"</li>
+      <li>"boot: Receiving 6/?"</li>
+      <li>"/boot: ok booted"</li>
+      <li>"slow: Sending 0/1"</li>
+      <li>"/slow: timeout"</li>
+    </ol>
+  </main>
+</body>

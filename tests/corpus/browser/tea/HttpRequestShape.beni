@@ -5,8 +5,8 @@
 -- as the `Content-Type` unless the program names one, which wins, no body
 -- and no `Content-Type` for `emptyBody`, and the credentials: `include`
 -- for `riskyRequest` and the command `riskySend` (boundary.md §9.8.19),
--- `same-origin`, which the log leaves out, for the command `send`. Each
--- answer is shown as it comes.
+-- `same-origin`, which the log leaves out, for the command `send`, with a
+-- tracker name as without one. Each answer is shown as it comes.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Http
@@ -122,6 +122,34 @@ update msg lines =
                 (Got "riskySend" _)
             )
 
+        Send "trackedSend" →
+            ( lines
+            , Http.send
+                { method = "PUT"
+                , headers = []
+                , url = "/tracked-send"
+                , body = Http.stringBody "text/plain" "t"
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Just "shape"
+                }
+                (Got "trackedSend" _)
+            )
+
+        Send "trackedRiskySend" →
+            ( lines
+            , Http.riskySend
+                { method = "PUT"
+                , headers = []
+                , url = "/tracked-risky-send"
+                , body = Http.stringBody "text/plain" "tr"
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Just "shape"
+                }
+                (Got "trackedRiskySend" _)
+            )
+
         Send name →
             ( lines, Cmd.task (work name) (Got name _) )
 
@@ -131,7 +159,19 @@ update msg lines =
 
 -- One button for each way of sending, in the order the steps click them.
 names : List String
-names = [ "get", "headers", "post", "typed", "patch", "delete", "risky", "send", "riskySend" ]
+names =
+    [ "get"
+    , "headers"
+    , "post"
+    , "typed"
+    , "patch"
+    , "delete"
+    , "risky"
+    , "send"
+    , "riskySend"
+    , "trackedSend"
+    , "trackedRiskySend"
+    ]
 
 
 view : List String → Html Msg
