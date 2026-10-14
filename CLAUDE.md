@@ -360,12 +360,14 @@ a transcript of the page after each step. The gates run it under happy-dom
 in Node — one vendored, checksummed file, `tests/browser/happy-dom.mjs`, no
 network — with run hashes like `run/`'s; `zig build test-browser` runs the
 same fixtures in headless Chrome. On Linux, run it as `nix develop .#browser
--c zig build test-browser`: the shell's Chromium is the flake's own and
-ignores the caller's `LD_LIBRARY_PATH` and `LD_PRELOAD`, so a host library
-built for a newer glibc cannot stop it; `nix build
-.#checks.x86_64-linux.browser-chromium` checks that. Use `-Dchrome=` only
-where nixpkgs has no Chromium. `tests/corpus/README.md` has the script
-language and the known differences between the two DOMs.
+-c zig build test-browser`. The shell's Chromium is the flake's own, and it
+ignores the caller's `LD_LIBRARY_PATH`. Thus a host library directory on
+that path, such as an `alsa-lib` for a newer glibc, cannot stop it. A
+directory that holds glibc's own libraries stops the shell's programs before
+Chromium starts, and no wrapper can prevent that. `nix build
+.#checks.x86_64-linux.browser-chromium` checks the shell's Chromium. Use
+`-Dchrome=` only where nixpkgs has no Chromium. `tests/corpus/README.md` has
+the script language and the known differences between the two DOMs.
 
 **Coverage** (`zig build coverage`, x86-64 Linux, about 4 s plus a two-minute
 instrumented LLVM compile after an edit) reports the lines the black-box tests
