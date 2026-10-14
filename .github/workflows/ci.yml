@@ -2,13 +2,15 @@
 # push to master, with the Zig and Node that flake.nix pins, so CI and every
 # developer run the same toolchain.
 #
-# CI does not hold the tests to the instruction budget: `-Dtest-budget=0`,
-# the owner's decision of 2026-10-14. The budget stays a local gate,
-# `zig build gates` on an x86-64 Linux host that can count instructions. A
-# GitHub-hosted x86-64 runner cannot: it has no hardware instruction counter,
-# and `perf_event_open` gives ENOENT there, also as root. Its CPU-time
-# fallback failed 3, 55 and 56 tests and cases of one master commit on three
-# runs, and the run with 3 passed both cases that the instruction count fails.
+# CI does not enforce the instruction budget (`-Dtest-budget=0`); the budget
+# stays a local gate, `zig build gates` on an x86-64 Linux host. Jayson Reis
+# decided this on 2026-10-14 at 17:36 UTC, and Cesar Canassa, the repository
+# owner, agreed in a note at 17:34 UTC: "cancel the self-hosted solution.
+# disable the CPU counter in the CI". A GitHub-hosted x86-64 runner has no
+# hardware instruction counter (`perf_event_open` gives ENOENT, also as
+# root), and its CPU-time fallback failed 3, 55 and 56 tests and cases of one
+# master commit on three runs; the run with 3 passed both cases that the
+# instruction count failed.
 name: ci
 
 on:
@@ -37,8 +39,19 @@ jobs:
         with:
           persist-credentials: false
 
+      # The installer the action runs, pinned: this release's asset, checked
+      # against the SHA-256 that GitHub publishes for it. The action's own
+      # pin (`source-tag` with `source-checksums-url`) needs a checksums file,
+      # and the release has none. Given a binary, the action also does not
+      # cache its own copy, which it did in every pull request's cache scope.
+      - name: nix-installer v3.23.2
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
+          source-binary: ${{ runner.temp }}/nix-installer
           diagnostic-endpoint: ""
 
       # The dev shell's closure: Node 24, the stdenv, and Zig 0.17.0, which
@@ -52,8 +65,12 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
 
+      # The profile is a garbage-collector root for the shell's closure, so
+      # the bound on the saved store removes only what this flake no longer
+      # needs.
       - name: dev shell
-        run: nix develop --command true
+        id: dev-shell
+        run: nix develop --profile "$RUNNER_TEMP/dev-shell" --command true
 
       # Zig's local and global caches, from master's newest build.
       - name: restore the Zig caches
@@ -66,10 +83,13 @@ jobs:
           key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
           restore-keys: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
 
-      # Zig never prunes its cache, and each run adds to the restored one.
-      # Past 3 GiB, start this run from nothing, so a saved entry stays
-      # near one cold build (1.6 GiB, 273 MiB compressed).
+      # Zig never prunes its cache, and each master run saves the restored
+      # cache plus its own additions. When a master run restores more than
+      # 3 GiB, it starts from nothing, so a saved entry is at most 3 GiB plus
+      # one run's additions. A pull request saves nothing and keeps what it
+      # restored.
       - name: bound the Zig caches
+        if: ${{ github.event_name == 'push' }}
         run: |
           du -sh .zig-cache ~/.cache/zig 2>/dev/null || true
           if [ "$(du -sc .zig-cache ~/.cache/zig 2>/dev/null | tail -1 | cut -f1)" -gt $((3 * 1024 * 1024)) ]; then
@@ -81,12 +101,16 @@ jobs:
         run: nix develop --command zig build test test-blackbox fmt-check beni-fmt-check -Dtest-budget=0
 
       # Only a push to master saves, also when a test fails, so every pull
-      # request starts from master's newest build and none of them evicts it.
+      # request starts from master's newest build. A pull request's run
+      # writes no cache entry, and its scope is its own: it cannot change
+      # what master restores. The store is saved only when the dev shell
+      # came up, at most 2 GiB (a cold store is 1.4 GB).
       - name: save the Nix store
-        if: ${{ !cancelled() && github.event_name == 'push' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
         uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
           primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          gc-max-store-size-linux: 2G
 
       # The key is new for each commit. It exists already only on a re-run,
       # and then there is nothing to save.
