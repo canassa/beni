@@ -20,12 +20,12 @@
 //! `BENI_TEST_BUDGET_INSTRUCTIONS=<n>` is the budget of every test: one
 //! that passes but retired more user-space instructions than that, its own
 //! and those of every thread and process it created, fails, named with its
-//! count (`timing.Counter`). Where no instruction counter can be opened the
-//! budget is `BENI_TEST_BUDGET_CPU_MS` of CPU time instead, user plus
-//! system from `getrusage`, and the process says so once. `build.zig` sets
-//! both on every run of the gates' binaries (`-Dtest-budget=`); unset,
-//! nothing is enforced. A test that runs independent cases holds each to
-//! the budget instead (`timing.budget_unit`).
+//! count (`timing.Counter`). Where no instruction counter can be opened,
+//! the process stops before its first test: there is no other unit
+//! (`timing.Unit`). `build.zig` sets it on every run of the gates'
+//! binaries (`-Dtest-budget=`) on a host that can count; unset, nothing is
+//! enforced. A test that runs independent cases holds each to the budget
+//! instead (`timing.budget_unit`).
 //!
 //! `--node-version=<text>` hands the black-box harness the Node version the
 //! build asked for once (`node_version`).
@@ -184,7 +184,7 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     const cpu_us = started.cpuUs();
     const spent = (timing.testSpent() -% spent_before) -| timing.cases_spent.load(.monotonic);
     // The budget (`timing.budget_unit`): instructions, which a loaded
-    // machine does not inflate, or CPU time where they cannot be counted.
+    // machine does not inflate.
     if (status == .pass and timing.budget_unit != .none and spent > timing.budget_limit) {
         const got = timing.describe(spent);
         const limit = timing.describe(timing.budget_limit);
