@@ -482,9 +482,9 @@ type Timer
 
 
 -- How the body is read: as text at once, or chunk by chunk with the
--- tracker told of each. Only `request`, `riskyRequest` and a command with
--- a tracker name make a `Tracked`, so a program that never tracks ships
--- no chunked read.
+-- tracker told of each. `request`, `riskyRequest` and `send`'s tracked arm
+-- make a `Tracked`: a program that only gets and posts ships no chunked
+-- read, nor, under `--release`, one whose commands have no tracker name.
 type Reading
     = Plain
     | Tracked (Progress → ⊤)
