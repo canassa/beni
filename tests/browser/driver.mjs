@@ -249,7 +249,9 @@ enableCompileCache(cacheDir);
 // Installed before the program runs: console output and uncaught exceptions
 // are recorded, in order, for the driver to collect after each phase.
 function prelude() {
-  const record = { log: [], errors: [] };
+  // `unsettled` is set once a settle of the page reaches its cap: the step
+  // has failed, and every later settle of the page waits one turn.
+  const record = { log: [], errors: [], unsettled: false };
   globalThis.__beniHarness = record;
   // Every page starts with empty storage: Chrome keeps an origin's
   // across the pages of one run, happy-dom's window starts empty.
@@ -1579,9 +1581,15 @@ async function runPage(entry, fiber) {
   const phase = async (title, act, throws = false) => {
     transcript.push(`-- ${title}`);
     const fault = await act();
-    await page.run(settle);
+    const settled = await page.run(settle);
     const { log, errors } = await page.run(drain);
     transcript.push(...log);
+    // A page that did not settle fails its step, `throws` or not: the cap's
+    // error is the driver's, never one the step was to make the page throw.
+    if (!settled) {
+      await finish(1, `${title}: the page did not settle:\n${errors.join("\n")}`);
+      return false;
+    }
     if (throws) {
       if (errors.length === 0) {
         await finish(1, `${title}: the step was to make the page throw, and it did not`);

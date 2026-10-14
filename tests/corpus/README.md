@@ -284,8 +284,9 @@ fibers than 64 therefore shows them all run
 
 After 1 000 turns the driver stops waiting and fails the step: `Error: the
 page still had a setImmediate to run after 1 000 turns` (`a message to
-deliver` in Chrome), `core's scheduler never ran dry`. The step fires no
-later timer, frame or chunk, and a later settle of that page waits one
+deliver` in Chrome), `core's scheduler never ran dry` — a `throws` step
+too, which does not take the cap for the throw it expects. The step fires
+no later timer, frame or chunk, and a later settle of that page waits one
 turn, so a page that keeps the scheduler busy forever costs one capped
 settle — about 4 s in Chrome, which holds a nested timer to 4 ms — and not
 one per timer. (Such a page also grows core's queue without end, and V8
