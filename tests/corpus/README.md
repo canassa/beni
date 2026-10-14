@@ -520,7 +520,8 @@ removed. The count is taken only on x86-64 Linux, of binaries built for the refe
 does not follow the features of the host's CPU; on another machine no case is held to it and
 `zig build gates` refuses to run. To see what each case costs, run `zig build
 test-blackbox-corpus -Dcorpus=<path> -Dtest-budget=1`: every case then fails with its count,
-except a case with its own `.budget` file, which keeps that limit. The owner may grant a case
+except a case with its own `.budget` file, which keeps that limit. To count a granted case,
+move its `.budget` file aside for that run, and put it back after. The owner may grant a case
 its own budget, case by case: a **large program**, or a case whose cost comes from a **compiler
 defect with an open issue**, until the case fits 4 300M. The grant is a `.budget` file
 (`_expected.budget` in a project) whose first word is the limit in millions of instructions and
