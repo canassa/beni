@@ -345,22 +345,31 @@ with its limit and reason (`tests/corpus/README.md`, *Budgets*). Conduit's three
 and `browser/direct/HttpJson` and `HttpJsonBody` (2026-10-14, compiler defect #105) are the only
 ones.
 
-**One test has one count, so the budget has one verdict** (2026-10-14). The
-count is the kernel's hardware count of user-space instructions
-(`perf_event_open`) on **x86-64 Linux**, and every binary the gates run is
-built for one reference CPU, `x86_64_v3+sha`, whatever CPU the host has. A
-count taken anywhere else is a different number: a baseline-CPU build of the
-same commit put six more corpus cases over the budget (most of it the
-run-hash check's SHA-256 in software), and CPU time, the old fallback, passed
-`browser/direct/HttpJson` at 111% of the budget on macOS and failed tests
-there that cost 7% of it. So **`zig build gates` refuses to run where it
-cannot take the count** — another OS or architecture, `perf_event_paranoid`
-above 2, a virtual machine with no PMU (GitHub's hosted x86-64 runners), a
-CPU without the reference's features — and it refuses `-Dtest-budget`,
-`-Dtarget`, `-Dcpu`, `-Doptimize` and `--release` as it refuses the filters. On such a
-machine the other test steps hold no test to the budget and say so once; the
-gate of a change runs on an x86-64 Linux host. A case's count moves by under
-1% from run to run, with load and with the core count.
+**The budget has one unit and one reference build** (2026-10-14). The count
+is the kernel's hardware count of user-space instructions (`perf_event_open`)
+on **x86-64 Linux**, and every binary the build makes is built for one
+reference CPU, `x86_64_v3+sha`, whatever CPU the host has. The reference is the
+self-hosted gate: `zig build gates -Dllvm` builds the compiler the tests spawn
+with LLVM, which counts another number, so a case can pass it and fail
+`zig build gates`. Before, one case could get two verdicts. CPU time, the old
+fallback, passed on macOS `browser/direct/HttpJson`, which costs 111% of the
+budget on Linux, and failed tests there that cost 7% of it. And a build for the
+host's own CPU followed its features: built for a baseline CPU, the compiler
+and the harness put seven more corpus cases over the budget, most of it the
+run-hash check's SHA-256 in software. On the one host measured (a Zen 2), the
+pinned build counted within 0.13% of the native one, and a case moved by under
+1% from run to run, with load and with the core count. Processes the build
+does not compile still follow the host: Node, when a run hash is stale, and the
+configure step of a child `zig build`. **`zig build gates` refuses to run
+where it cannot take the count** — another OS or architecture,
+`perf_event_paranoid` above 2, a virtual machine with no PMU (GitHub's hosted
+x86-64 runners), a hybrid Intel CPU (a plain counter misses what its E-cores
+run), a CPU without the reference's features — and it refuses `-Dtest-budget`,
+`-Dtarget`, `-Dcpu`, `-Doptimize` and `--release` as it refuses the filters.
+On such a host the other test steps hold no test to the budget and say so
+once. **A session on such a host** runs `zig build test test-blackbox
+fmt-check beni-fmt-check`, opens the PR, and states in its body that the gate
+is owed on an x86-64 Linux host.
 
 **Node runs only on unverified JavaScript.** Each program a test runs has a
 recorded SHA-256 of its emitted output, its expected result and the Node
@@ -565,8 +574,10 @@ The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
 (`canassa/beni`); nothing is pushed to `master` directly.
 
 1. Branch from an up-to-date `origin/master`, one slice per branch, named for
-   what it does. Run `zig build gates` green before opening the PR (rule 4); a
-   branch that rebased past a run-hash change re-records its hashes first.
+   what it does. Run `zig build gates` green before opening the PR (rule 4;
+   on a host that cannot count the budget, *Every test has a budget* says
+   what to do instead); a branch that rebased past a run-hash change
+   re-records its hashes first.
 2. Open the PR with `gh pr create`. The body says what changes and why, the
    measurements a claim rests on, any known debt accepted on purpose, and
    anything the reviewer should look at twice.
