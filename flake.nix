@@ -22,29 +22,33 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system nixpkgs.legacyPackages.${system});
 
       # The Chromium of `nix develop .#browser`. nixpkgs' wrapper puts the
-      # caller's LD_LIBRARY_PATH in front of the libraries Chromium links,
-      # so a host directory there that holds a libasound.so.2 built for a
-      # newer glibc than the flake's stopped Chromium before `main`
-      # ("version `GLIBC_2.43' not found (required by …/libasound.so.2)"),
-      # and `test-browser` ran in the host's Chrome through `-Dchrome=`
-      # instead. This one loads only its own closure: the two variables
-      # through which the dynamic linker takes a library from outside it
-      # are dropped. `checks.browser-chromium` holds it to that.
+      # caller's LD_LIBRARY_PATH in front of the libraries Chromium links.
+      # Where the login environment points that at an alsa-lib built for a
+      # newer glibc than the flake's, Chromium stopped before `main` and
+      # `test-browser` ran in the host's Chrome through `-Dchrome=`
+      # (bench/ui/results/2026-10-08-scaling.md). This one unsets
+      # LD_LIBRARY_PATH first, so a host library directory there cannot
+      # stop it unless the directory holds glibc's own libraries: those
+      # stop this script's bash, and `node`, before any wrapper runs.
+      # `checks.browser-chromium` runs the shell's `chromium` against it.
       browserChromium = pkgs: pkgs.writeShellScriptBin "chromium" ''
-        unset LD_LIBRARY_PATH LD_PRELOAD
+        unset LD_LIBRARY_PATH
         exec ${pkgs.chromium}/bin/chromium "$@"
       '';
     in
     {
-      # `nix build .#checks.<system>.browser-chromium`: the browser shell's
-      # Chromium starts with an LD_LIBRARY_PATH that names a libasound.so.2
-      # the dynamic linker cannot load. nixpkgs' wrapper alone stops there
-      # ("…/libasound.so.2: file too short", exit 127).
+      # `nix build .#checks.<system>.browser-chromium`: the `chromium` that
+      # `devShells.<system>.browser` puts on PATH starts with an
+      # LD_LIBRARY_PATH that names a libasound.so.2 the dynamic linker
+      # cannot load. nixpkgs' own Chromium stops there ("…/libasound.so.2:
+      # file too short", exit 127).
       checks = forAllSystems (system: pkgs: pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-        browser-chromium = pkgs.runCommand "browser-chromium" { } ''
+        browser-chromium = pkgs.runCommand "browser-chromium" {
+          nativeBuildInputs = self.devShells.${system}.browser.nativeBuildInputs;
+        } ''
           mkdir host
           : > host/libasound.so.2
-          LD_LIBRARY_PATH=$PWD/host ${browserChromium pkgs}/bin/chromium --version > $out
+          LD_LIBRARY_PATH=$PWD/host chromium --version > $out
         '';
       });
 
@@ -103,7 +107,7 @@
         # (tests/blackbox/browser.zig). nixpkgs builds Chromium for Linux
         # only; elsewhere, point `-Dchrome=` at an installed Chrome. The
         # Chromium is `browserChromium`, which ignores the caller's
-        # LD_LIBRARY_PATH and LD_PRELOAD.
+        # LD_LIBRARY_PATH.
         browser = pkgs.mkShell {
           inputsFrom = [ default ];
           packages = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ (browserChromium pkgs) ];
