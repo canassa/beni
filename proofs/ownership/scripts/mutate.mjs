@@ -115,6 +115,12 @@ export const mutants = {
     "      let out"],
   // An indexed read's result forgets the element cells.
   atelem: ["Checker.lean", "pure (elem.join fallback)", "pure (fallback.join (elem.mapOrigins fun _ _ => []))"],
+  // The third review's shadowing hole disables both layers together.
+  shadowing: [
+    ["Checker.lean", "  let _ ← (if config.has .shadowing then typesOf p else typecheck p)",
+      "  let _ ← typesOf p"],
+    ["Checker.lean", "      if ctx.config.has .shadowing || outer.isEmpty then",
+      "      if true then"]],
   // The fifth review's holes. A `set` keeps its list exclusive whatever it
   // stores (also `--mutant=set-exclusive`).
   setexcl: ["Checker.lean", "    let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)",
