@@ -6,8 +6,11 @@
 //
 //   node bench.mjs [--subjects=beni,solid2,p2] [--benchmarks=04_select1k,...]
 //                  [--n=10] [--out=out/cpu.json] [--taskset=4-7] [--chrome=<path>]
+//                  [--unthrottled]
 //
-// `--taskset` pins Chrome (and so its renderers) to those CPUs. The output
+// `--taskset` pins Chrome (and so its renderers) to those CPUs.
+// `--unthrottled` measures every operation at rate 1, research 84 §4's
+// primary figure for an operation under about 1 ms of script. The output
 // is every sample; `report.mjs` turns it into tables.
 
 import { execSync } from "node:child_process";
@@ -34,6 +37,7 @@ const benchmarks = pick(allBenchmarks, "id", arg("benchmarks", null));
 const n = Number(arg("n", "10"));
 const out = join(root, arg("out", "out/cpu.json"));
 const taskset = arg("taskset", null);
+const unthrottled = process.argv.includes("--unthrottled");
 
 const browser = await launch({ chrome: arg("chrome", undefined), taskset });
 const { server, origin } = await serve(allSubjects);
@@ -47,13 +51,15 @@ const result = {
   beni: built.beni,
   cpu: execSync("grep -m1 'model name' /proc/cpuinfo").toString().split(":")[1].trim(),
   taskset,
+  unthrottled,
   started: new Date().toISOString(),
   n,
   batches: [],
   samples: [],
 };
 
-const measure = async (subject, bench) => {
+const measure = async (subject, bench0) => {
+  const bench = unthrottled ? { ...bench0, throttle: 1 } : bench0;
   const page = await browser.newPage(`${origin}/s/${subject.name}/`);
   try {
     await bench.init(page);

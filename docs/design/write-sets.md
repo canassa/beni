@@ -663,6 +663,20 @@ skips work on `===` (§15.4), long before this analysis; the rows restate them a
 A reader who finds a row the sibling does not honour has found a defect in the sibling, not in
 the row.
 
+*Amended 2026-10-13 (the owner's decision to drop the identity promises of the functions that
+build, `language.md` §6.8; `backend.md` §4, *Identity*):* `map`, `indexedMap`, `filter`, `slice`,
+`take`, `reverse`, the sorts, `concat` and `append` with an empty side return a fresh list now. **No
+row changes, and none was wrong**: a term is a fact about a *value* — what the new model holds at a
+path, in terms of what the old one held — and a fresh list with the same elements, `===` one by
+one and in the same order, is the same value. `List.map xs f` with `f` the identity is still
+`Same(p)`, and `xs ++ []` still `Lst(p, append)` with nothing appended, which the append script's
+guard (`browser-direct.md` §6.2) leaves alone. What the rows rest on is element identity
+(`backend.md` §4, invariant 6), which stays, and no `browser-direct` script or guard compares a
+list with the one it replaced (§6.2, *A script is guarded by its tag's own condition*). The
+"rests on" column's sentences about a list returned itself (`map` returning `xs`, `xs ++ []`
+being `xs`) now read as "is equal element for element"; `run/ListIndexedIdentity` and
+`run/ListIdentity` pin the new behaviour, `run/WriteRowsIdentity` the element identities.
+
 ## 4. Functions, recursion and nested dispatch
 
 ### 4.1 Summaries
@@ -1987,3 +2001,34 @@ same path), its row path, its key paths, an `each` hole's path and K3's rows.
   its path's visit computed. A path is never shared by two calls: each entry is a node of one
   module's markup, and the walk enters each call once per visit of its node.
 
+
+### *Amended 2026-10-13 (the direct platform's S4):* a `let`'s facts per call
+
+The direct platform computes a constant `let` of `view` that only markup reads once per key whose
+writes conflict with what it reads (`browser-direct.md` §5.4), so the pass records that read set,
+as it records a hole's (§3.6) and once per call path (*a hole's facts per call*): in view mode, for
+the app's modules, every `let_def` with no parameters the walk evaluates adds the anchors of its
+value's term to an entry keyed by its module, its value's instruction and the call path, kept apart
+from the holes (`Program.vlets`) so that nothing printed moves. The consumer numbers their read
+sets with the holes' (`boundary.md` §9.4.6, version 1.10's `programLet`); a view cut short reads
+ρ for them as for every hole. Soundness is a hole's: a value that reads the `let` reads its term, so
+its anchors are in the hole's read set too, and a key that changes the `let`'s value conflicts with
+both.
+
+
+### *Amended 2026-10-13 (the direct platform's S4 review):* a `Show`'s arms, and a handler's reads
+
+Two read sets the pass under-recorded, each found by a page that went stale on `browser-direct`:
+
+- **A `Show`'s arms.** The `Show`'s `each` hole (its `when`) is the direct platform's branch facts
+  for the `Show`: what chooses its arm again. Its fallback and its body are its arms, and a body or
+  fallback that is a markup value (a lambda computing markup, `Html.text model.status`) is redrawn
+  only when the `Show`'s facts conflict. The pass now folds the fallback's term and the body's
+  result into that hole too (`browser/direct/ShowValueArms`). It over-calls the arm computation by
+  the arms' reads, as an `Alt`'s facts do (§3.6).
+- **A handler's reads.** An event item's value is no hole: the direct platform reads a handler's
+  arguments when the event fires. But markup that is a value — a `let` holding a button, a value
+  slot — holds its handlers' values, made when it is made. The handler's term now joins the markup's
+  dependencies (`d`), so a derived value or a value slot holding it is made again when what its
+  handler sends changes (`browser/direct/LetMarkupHandler`); no hole is recorded for it. Conduit's
+  `writes/` golden widened by exactly those reads.

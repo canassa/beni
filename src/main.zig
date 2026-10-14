@@ -503,35 +503,14 @@ fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, std
 /// included when the path names its directory, and never under `.`.
 fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
     const Ownership = beni.own.Ownership;
-    const n = session.graph.count();
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     const target = storePath(&buffer, dump.file);
-    const birs = gpa.alloc(*const beni.Bir, n) catch return fail(stderr, "beni: out of memory", .{});
-    defer gpa.free(birs);
-    const names = gpa.alloc([]const u8, n) catch return fail(stderr, "beni: out of memory", .{});
-    defer gpa.free(names);
-    const packages = gpa.alloc(SourceStore.Package, n) catch return fail(stderr, "beni: out of memory", .{});
-    defer gpa.free(packages);
-    const spans = gpa.alloc(beni.lex.Token.Spans, n) catch return fail(stderr, "beni: out of memory", .{});
-    defer gpa.free(spans);
-    // Each module's platform package by its manifest name: the entry rows
-    // are keyed by it (ownership-checker.md §20.2).
-    const platform_names = gpa.alloc([]const u8, n) catch return fail(stderr, "beni: out of memory", .{});
-    defer gpa.free(platform_names);
-    for (0..n) |i| {
-        const m: beni.resolve.Graph.Index = @fromBackingInt(@intCast(i));
-        const f = session.graph.moduleFile(m);
-        birs[i] = session.artifacts.bir(f);
-        names[i] = session.store.moduleName(f);
-        packages[i] = session.graph.modulePackage(m);
-        spans[i] = session.artifacts.spans(f);
-        platform_names[i] = "";
-        if (packages[i] != .platform) continue;
-        const chain = session.options.chain orelse continue;
-        if (f.int() >= session.file_layers.len) continue;
-        const layer = session.file_layers[f.int()];
-        if (layer < chain.layers.len) platform_names[i] = chain.layers[layer].name;
-    }
+    // The per-module tables `check` and `build` hand the pass, from the same
+    // function (ownership-checker.md §28.3): the dump reads nothing from the
+    // checked core, so no module has a block.
+    var ins = beni.own.Enforce.inputs(gpa, session, &.{}) catch return fail(stderr, "beni: out of memory", .{});
+    defer ins.deinit(gpa);
+    const names = ins.names;
     // The targets, in path order (fast-compiler.md §10).
     var targets: std.ArrayList(u32) = .empty;
     defer targets.deinit(gpa);
@@ -543,33 +522,7 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
         targets.append(gpa, @intCast(m.int())) catch return fail(stderr, "beni: out of memory", .{});
     }
     if (targets.items.len == 0) return fail(stderr, "beni: dump needs at least one module", .{});
-    const Pos = struct {
-        fn get(ctx: *const anyopaque, module: u32, tok: u32) Ownership.Position {
-            const s: *const Session = @ptrCast(@alignCast(ctx));
-            const f = s.graph.moduleFile(@fromBackingInt(@intCast(module)));
-            const line_starts = s.store.lineStarts(f);
-            const sp = s.artifacts.spans(f);
-            // `0:0`, never a plausible position: a golden must show it.
-            if (line_starts.len == 0 or tok >= sp.len()) return .{ .line = 0, .col = 0 };
-            const pos = @import("diagnostic").position(line_starts, s.store.bytes(f), sp.starts[tok]);
-            return .{ .line = pos.line, .col = pos.col };
-        }
-    };
-    const input: Ownership.Input = .{
-        .gpa = gpa,
-        .graph = &session.graph,
-        .birs = birs,
-        .provenance = session.resolution.provenance,
-        .dispatch = session.checked.dispatch,
-        .modules = session.checked.modules,
-        .types = &session.checked.types,
-        .interner = &session.interner,
-        .module_names = names,
-        .packages = packages,
-        .spans = spans,
-        .positions = .{ .ctx = session, .get = Pos.get },
-        .platform_names = platform_names,
-    };
+    const input: Ownership.Input = ins.input(gpa, session);
     const Run = struct {
         fn go(own: *Ownership, ts: []const u32) std.mem.Allocator.Error![]const Ownership.ModuleReport {
             return own.run(ts);

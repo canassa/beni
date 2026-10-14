@@ -17,7 +17,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `bir/` | `dump --stage=bir` | `<name>.bir` | lowering golden: resolution, desugaring, interface skeleton |
 | `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
 | `writes/` | `check`, then `dump --stage=writes`, both `--platform=browser-tea` | `<name>.writes` | the write-set pass (`write-sets.md` §8.1): per message key its write set and class, per view hole its class and reads; a project may name its sources elsewhere (`_expected.sources`), carry the hidden `--writes-work` cap (`.writes-work`), and be the gate of §8.2 (`.gate`: its `keys` lines must show two thirds bounded) |
-| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership` |
+| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file naming `browser-direct`, which edits lists in place, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line (§28.10) |
 | `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
 | `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
 | `build/bad-release/<Dir>/` | the same, **plus `--release`** | `<Dir>/_expected.diag` | must build clean WITHOUT the flag and fail with it (`backend.md` §9's refusal of `Debug`) |
@@ -137,6 +137,14 @@ project) against it, one step per line, `#` for a comment:
     mouse <selector> <name>     a bubbling `MouseEvent` of that name
                                 (`mouseover`, `mouseout`, `mousemove`, …),
                                 button 0
+    drag <selector> <name>      a bubbling drag event of that name
+                                (`dragstart`, `drag`, `dragenter`,
+                                `dragover`, `dragleave`, `drop`,
+                                `dragend`): a `MouseEvent` in both DOMs,
+                                with no `dataTransfer`, cancelable but for
+                                `dragleave` and `dragend`; one whose
+                                default a handler prevented logs
+                                `(drop's default prevented)` (or its name's)
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable
@@ -393,7 +401,7 @@ separate, DOM-free comparison of template strings and walks:
 are under `direct/` of three kinds, built with `--platform=browser-direct`:
 `emit/direct/` and `emit/release/direct/` are application builds (rooted
 at `main`, not `--library`), the first goldening the module, the second
-the release file whole; `build/bad/direct/` projects need no `platform/`
+the release file whole; `build/bad/direct/` projects need no `platform/` (one whose golden holds only the ownership checker's codes is also built for `browser-tea`, which must succeed silently: `ownership-checker.md` §28.10)
 of their own; and every `browser/direct/` page is built **for both
 platforms** from its one source — `browser-direct` and `browser-tea`, dev
 and release, four pages — against one golden, since the two platforms are

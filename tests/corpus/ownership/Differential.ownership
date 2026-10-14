@@ -1,36 +1,36 @@
 module Differential
-  35:14 construction l: accepted param
-  43:9 call List.foldl xs: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what List.foldl supplies it)
-  43:35 List.insertAt acc: accepted callback-param (List.foldl supplies it owned)
-  49:19 construction xs: accepted param
-  53:10 call Differential.addOne Differential.empty: rejected top-level: Differential.empty is a top-level value (Differential.addOne writes π1)
-  53:24 call Differential.addOne Differential.empty: rejected top-level: Differential.empty is a top-level value (Differential.addOne writes π1)
-  59:5 List.update rows: accepted fresh
-  59:5 List.update rows[*].a: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what List.update supplies it)
-  59:41 construction r.a: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list
-  66:19 construction a.todos: accepted call
-  81:13 construction s: rejected alias: kept holds it and is read at 82:14
-  83:14 construction copied: accepted call
-  88:16 List.update rows: accepted param
-  88:16 List.update rows[*].tags: accepted param (<lambda> writes what List.update supplies it)
-  88:55 construction r.tags: accepted callback-param (List.update supplies it owned)
-  92:30 call Differential.t40 <literal>: accepted fresh (Differential.t40 writes π1)
-  92:30 call Differential.t40 <literal>[*].tags: accepted fresh (Differential.t40 writes π1[*].tags)
-  96:18 call List.map cards[*].tags: accepted param (<lambda> writes what List.map supplies it)
-  98:24 construction c.tags: accepted callback-param (List.map supplies it owned)
-  104:30 call Differential.t42 <literal>[*].tags: accepted fresh (Differential.t42 writes π1[*].tags)
-  110:18 call Differential.t42 <literal>[*].tags: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t42 writes π1[*].tags)
-  116:15 construction all: rejected call: visible may hold it through the call at 115:15, and is read at 117:25 (approx)
-  123:15 construction all: accepted param
-  128:14 List.update rows: accepted param
-  128:14 List.update rows[*][*]: accepted param (<lambda> writes what List.update supplies it)
-  134:17 construction r: accepted callback-param (List.update supplies it owned)
-  138:30 call Differential.t57 <literal>: accepted fresh (Differential.t57 writes π1)
-  138:30 call Differential.t57 <literal>[*][*]: accepted fresh (Differential.t57 writes π1[*][*])
-  144:18 call Differential.t57 <literal>: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t57 writes π1)
-  144:18 call Differential.t57 <literal>[*][*]: accepted fresh (Differential.t57 writes π1[*][*])
-  150:18 call Differential.t57 <literal>: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t57 writes π1)
-  150:18 call Differential.t57 <literal>[*][*]: accepted fresh (Differential.t57 writes π1[*][*])
+  39:14 construction l: accepted param
+  47:9 call List.foldl xs: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what List.foldl supplies it)
+  47:35 List.insertAt acc: accepted callback-param (List.foldl supplies it owned)
+  53:19 construction xs: accepted param
+  57:10 call Differential.addOne Differential.empty: rejected top-level: Differential.empty is a top-level value (Differential.addOne writes π1)
+  57:24 call Differential.addOne Differential.empty: rejected top-level: Differential.empty is a top-level value (Differential.addOne writes π1)
+  63:5 List.update rows: accepted fresh
+  63:5 List.update rows[*].a: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what List.update supplies it)
+  63:41 construction r.a: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list
+  70:19 construction a.todos: accepted call
+  85:13 construction s: rejected alias: kept holds it and is read at 86:14
+  87:14 construction copied: accepted call
+  92:16 List.update rows: accepted param
+  92:16 List.update rows[*].tags: accepted param (<lambda> writes what List.update supplies it)
+  92:55 construction r.tags: accepted callback-param (List.update supplies it owned)
+  96:30 call Differential.t40 <literal>: accepted fresh (Differential.t40 writes π1)
+  96:30 call Differential.t40 <literal>[*].tags: accepted fresh (Differential.t40 writes π1[*].tags)
+  100:18 call List.map cards[*].tags: accepted param (<lambda> writes what List.map supplies it)
+  102:24 construction c.tags: accepted callback-param (List.map supplies it owned)
+  108:30 call Differential.t42 <literal>[*].tags: accepted fresh (Differential.t42 writes π1[*].tags)
+  114:18 call Differential.t42 <literal>[*].tags: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t42 writes π1[*].tags)
+  120:15 construction all: accepted param
+  127:15 construction all: accepted param
+  132:14 List.update rows: accepted param
+  132:14 List.update rows[*][*]: accepted param (<lambda> writes what List.update supplies it)
+  138:17 construction r: accepted callback-param (List.update supplies it owned)
+  142:30 call Differential.t57 <literal>: accepted fresh (Differential.t57 writes π1)
+  142:30 call Differential.t57 <literal>[*][*]: accepted fresh (Differential.t57 writes π1[*][*])
+  148:18 call Differential.t57 <literal>: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t57 writes π1)
+  148:18 call Differential.t57 <literal>[*][*]: accepted fresh (Differential.t57 writes π1[*][*])
+  154:18 call Differential.t57 <literal>: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t57 writes π1)
+  154:18 call Differential.t57 <literal>[*][*]: accepted fresh (Differential.t57 writes π1[*][*])
   summary addOne: π1 RAW; res π1
   summary init: res .todos fresh1
   summary t1: π1 RAW, π1[*] A; res [*] ~π1[*], ~π1
@@ -42,7 +42,7 @@ module Differential
   summary t33Pushed: π1 RW, π1[*] R
   summary t40: π1 RAW, π1[*] RA, π1[*].tags AW; res [*] ~π1[*], [*].tags ~π1[*].tags, π1{excl π1[*].tags}; xreq excl π1
   summary t40Distinct: unused
-  summary t42: π1 RA, π1[*] RA, π1[*].tags AW; res [*] ~fresh2{excl π1} ~π1[*], [*].tags ~π1[*].tags, ~fresh1{excl π1} ~π1; xreq excl π1
+  summary t42: π1 R, π1[*] A, π1[*].tags AW; res [*] ~fresh2{excl π1} ~π1[*], [*].tags ~π1[*].tags, fresh1{excl π1}; xreq excl π1
   summary t42Distinct: unused
   summary t42Repeated: unused
   summary t52: π1 RW, π1[*] R
@@ -51,10 +51,9 @@ module Differential
   summary t57Distinct: unused
   summary t57Repeated: unused
   summary t57RepeatedRows: unused
-  demands 32: accepted 22 (fresh 8, call 2, param 8, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 10
-total 32: accepted 22 (fresh 8, call 2, param 8, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 10
+  demands 32: accepted 23 (fresh 8, call 2, param 9, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 32: accepted 23 (fresh 8, call 2, param 9, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
 cause top-level 2
 cause disjoint 2
 cause alias 1
-cause call 1
 cause exclusive 4

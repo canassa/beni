@@ -5274,3 +5274,353 @@ counts), two gaps no generated program can reach (no-scope, hiddencopy).
 
 **What I learned.** A miss and a crash look alike unless the runner says which; two "uncaught" holes
 were crashes. Counting the verdicts a mutant changes turns an equivalence argument into a measurement.
+||||||| 9a5276a06
+## 2026-10-13 00:41 CEST — Ownership slice 3g: binders, `?`'s early return, fresh fronts, `Result`'s default
+
+**What I did.** Specified and built `ownership-checker.md` §26. Checked whether the Lean model's shadowing defect
+has a counterpart in `src/own/`: it does not — the walk keys everything by BIR local index, which lowering never
+reuses — and `Walker.bindLocal` now asserts each index is bound once per walk (10 965 dumps, no trap). The binder
+review found a real hole instead: `e?` returns `Err x` from its definition and the walk dropped it, so a caller
+could write a list a returned `Err` held; the payload now joins the frame's result. A prepend whose front item is
+a fresh list the base cannot reach no longer aliases the base. `Result.withDefault (Result.map …)` is two arms;
+`andThen` stays refused. Fixtures `Binders`, `Question`, `PrependFresh`, `ResultDefault`; research 86; §26.7
+lists every rule since 3b the Lean oracle does not model.
+
+**What I learned.** Research 85 and §25.7 claimed §25.4's argument covers `Maybe.andThen`; it does not — `f` can
+edit and then answer `Nothing`, and the default is read after. Bike Wars is now 4 of 15 rejected, 2 correct and
+2 position, no limits; nothing else measured moves. The reach check in the fresh-front rule is load-bearing:
+without it `List.drop base 1` after storing the item in `base` re-conses for real and would be accepted.
+
+## 2026-10-13 00:44 CEST — The second external port: rvcas/sternhalma, raw, and its ownership count
+
+**What I did.** Ported Lucas's Sternhalma (Chinese Checkers, Elm 0.19.1, commit `ffb3f91b`, BSD-3-Clause)
+to `examples/sternhalma` module by module, following Bike Wars' precedent: `PORTING.md` lists every kind of
+change, the licence and attribution headers are kept, and the raw port is its own commit. Elm's `Array`
+is `List` (`List.get`/`List.set`, the conversions dropped). The game is played by drag and drop, which beni
+could not express: the html vocabulary had no drag events and there is no general `on`, so I declared
+`onDragStart`, `onDragEnd`, `onDragOver` and `onDrop` (delegated) as `onMouseMove` was declared, amended
+`boundary.md` §9.8.10, and gave the page driver a `drag` step (re-recording the browser run hashes, whose
+digest holds the driver's bytes). The port's own `index.html` loads Tailwind's browser build, since beni has
+no CSS pipeline. A play script (two players, steps, a rejected drop, a cancelled drag, a multi-jump, New
+Game) passes in development and release. Research 88 counts the ownership dump: 12 demands, 4 rejected
+(3 `top-level`, 1 `call`), identical on both platforms; three probe edits clear them all.
+
+**What I learned.** The play script cannot be a corpus case: the case's floor is over the 4 300M budget
+before any move (dev build 608M, release 1 219M, two loads of a 121-cell page under happy-dom, the
+dev-against-release fuzz; a one-click script is 4 592M, the whole script 4 992M). I held it in
+`examples/sternhalma/play/` and reported it rather than raise the budget. With prepends no longer demands
+(slice 3f), the remaining rejections are the things a port keeps from Elm: a board written at the top level
+(Change 4, two lines of it a real wrong answer under in-place editing) and `filter`'s identity promise on a
+local fold. `browser-direct` refuses the port at `Tea.document` (S5) and markup held as a value (S4).
+
+## 2026-10-13 01:20 CEST — js-framework-benchmark on a quiet machine
+
+**What I did.** Re-ran research 83's official js-framework-benchmark run on azathoth (Xeon E-2386G,
+idle), because dagon's three passes were taken at load 33–41. Fresh clone with only the
+`js-framework-benchmark` submodule, `nix develop`, a ReleaseFast beni, dagon's exact Chrome
+154.0.8037.97 store path copied with `nix copy`, `--taskset=1-5,7-11` (five whole cores, core 0
+left to the OS). The owner narrowed the field to vanillajs, Solid, beni-direct and beni-tea while
+an eight-framework pass was half done; it was stopped and discarded, and two full passes of the
+four ran at the runner's default counts, 31 minutes each, load never above 1.33. Results in
+`bench/jfb/results/2026-10-13-azathoth/`, write-up in research 83 §7.
+
+**What I learned.** Quiet, the official weighted geomean is vanillajs 1.00, beni-direct 1.02,
+beni-tea 1.03, Solid 1.9.3 1.09, identical in both passes; medians moved at most 4 % and most IQRs
+are ±1 %. Dagon's "beni-tea ahead of vanillajs" was load on two vanillajs cells. beni is within
+6 % (direct) and 11 % (tea, on `swap`) of vanillajs per operation and ahead of or level with Solid 1
+on all nine. `create10k` is beni's largest `script` gap to vanillajs (41.3 against 35.2 ms).
+Solid/vanilla here is 1.08, exactly the published table's ratio. The emitted pages are
+byte-identical between `86d161d0b` (dagon's) and `161eae05`, so the two runs measured the same code.
+
+## 2026-10-13 03:42 CEST — one walk per page-fuzz check
+
+**What I did.** Merged the page fuzzer's three walks of the body (the driver's `serialise`,
+`fuzzState`'s properties, `fuzzOffer`'s targets and shown values) into `serialise`, which gathers
+them when the fuzzer asks; `fuzzState` keeps the title, address, storages and pending requests.
+The walk now follows siblings instead of spreading `childNodes` and reads each getter once.
+Proved identity with a throwaway trace patch (hashes of every compared view, every action line,
+every report) over a 20-seed, 60-step sweep of the browser corpus run straight from the
+`corpus_test` binary: 126 fuzz runs, 269 868 checks, identical record sets before and after.
+Re-recorded the browser run hashes (only hashes moved).
+
+**What I learned.** Per check on sternhalma's board: 12.5M → 7.3M instructions (serialise
+alone 6.6M → 4.9M; settle is ~0.1M, not 2.2M). The fuzz part of sternhalma's case fell
+~2 190M → ~1 820M, but the case as a whole only 5 197M → 4 790M: two builds (1 827M), Node and
+happy-dom, five loads of the 121-cell board and the program's own work make up the rest, so it
+still does not fit 4 300M and stays in `examples/sternhalma/play/`. Conduit's cases moved within
+noise and the whole browser corpus with every page run 516.6G → 512.1G: most pages are small.
+Skipping a check after a step that "did nothing" was not done — a mutation observer misses
+`.value`, `.checked`, selection, focus, title, storage and logs. `zig build fuzz`'s sweep times
+out 22 `browser/tea` cases at the 60 s case limit under load: their driver run is not given the
+ten-fold timeout the value-fuzz path gets. In Chrome 1xx here, `BikeWars` (style colours as
+`rgb()`) and `SettlesManyFibers` (fibers done in one turn) differ on master as well.
+
+## 2026-10-13 04:36 CEST — the list identity promises dropped
+
+**What I did.** On the owner's decision, made every `core/List` function that builds — `map`, `indexedMap`,
+`filter`, `slice`, `take`, `reverse`, the sorts, `concat`, `concatMap`, `append` with an empty side — and
+`Basics.append`'s list half return a fresh list, at the same cost; removed `identical`, `kept`, their emitter
+operators and asserted rows, the `K` bit, and §25.3's record rule. Spec first: `language.md` §6.8,
+`backend.md` §4 and §15, `browser-direct.md` §6.2, `write-sets.md` §3.7, and `ownership-checker.md` §27, which
+supersedes thesis O2. Fixtures re-pinned to copies; research 90 measures it. PR opened, not merged.
+
+**What I learned.** The summaries came out `fresh` from the bodies with no checker change, and two binaries
+with §25.3's record rule and §16.4's type filter switched off moved no line of 1 299 units, so the record rule
+was O2's alone. Rejections fell 233 → 221 with none added; Sternhalma's S3 clears; Bike Wars, Conduit, the table
+app and TodoMVC do not move. `browser-tea` loses only the skip of a `For` over a list `view` rebuilds unchanged —
+≈ 10 µs on FilteredFor's new `tick` at 1 000 rows. Writers keep returning their input: under in-place writes
+that is what a writer returns anyway. The flake's Chromium does not start here (glibc); Chrome 154 via
+`-Dchrome` passes all but BikeWars, whose golden has happy-dom's `#222` where Chrome writes `rgb(34, 34, 34)`.
+
+## 2026-10-13 04:50 CEST — Ownership checker slice 4: enforcement
+
+**What I did.** Specified and built `ownership-checker.md` §28. A platform declares `"lists": "in-place"`
+(`browser-direct` does); there `check` and `build` run the ownership pass after the module check and every
+rejected or pending line is an error — four codes, one diagnostic per root cause, messages in thesis Chapter 8's
+shape with their own excerpts and a `List.copy` line (`src/own/Message.zig`, `Enforce.zig`). Summaries cross module
+boundaries as a *summary block* (`src/own/summary_bytes.zig`), a fifth cache-entry section, so the checked core
+carries core's and the platforms' summaries; an enforcing run treats an entry without one as a miss and publishes
+each non-pack module's interface hash folded with its key. Ten `build/bad/direct/Ownership*` fixtures, each also
+built clean on `browser-tea` by the harness; the `ownership/` kind now checks that `check` fails exactly when the
+dump rejects. Three `browser/direct/` pages failed for real reasons and take the copy their error asks for (a fourth, `KeyedEnds`, stopped failing when master dropped the identity promises). Research 89.
+
+**What I learned.** The entry protocol, not the library, is what the pass costs on Conduit: shipping core's
+summaries took the dump's 33 ms to the build's 28 ms, but `entryCall` alone is 22 % of the process, so the 10 %
+target holds on the pages, TodoMVC and the table app and fails on Conduit (+112 %) and Bike Wars (+18 %) —
+reported, not worked around. Sealing a whole module per cross-module request pushed a corpus case over the budget;
+sealing per declaration costs nothing and still checks the codec on every summary the tests read. `ForForms` is real
+sharing the checker can only call a limit, because the entry's fixpoint joins `update`'s arms. Two practical traps:
+a shared `~/.cache/zig` lock stalled builds for minutes (a private `ZIG_GLOBAL_CACHE_DIR` fixed it), and a BIR
+`let_def` carries whatever token lowering met last, so a binder's name has to be found from its `=`.
+
+## 2026-10-13 20:13 CEST — Resume browser-direct S4 on macOS
+
+**What I did.** Fetched the pushed S4 branch into a separate worktree and rebased its 12 commits onto current master. Kept master's ownership fixture check and S4's release-refusal check in the corpus harness; kept master's conflicting generated hashes pending a full re-record. Read the S4 amendments and added the specified `Blocks` page as a direct-platform fixture, pending validation.
+
+**What I learned.** This host has 12 logical CPUs and no Linux `taskset`, so it cannot run heavy jobs pinned to cores 8–23 as the session requires. The required zorg builds, hashes, measurements and gates await access to the Linux runner or a changed CPU constraint. The direct `Blocks` fixture was missing despite its place in S4's explicit corpus list.
+
+## 2026-10-13 20:20 CEST — S4 validation stops at an ownership limit
+
+**What I did.** Validated the missing direct `Blocks` fixture with zorg and Node 24; its development, release and value-fuzz cases pass on both platforms with one golden. Ran `test-run-hashes` after rebasing. Fixed `ControlledOptions`'s real unsafe edit with `List.copy` and verified its filtered corpus case. Kept all build caches under `~/.cache` and skipped benchmarks as requested.
+
+**What I learned.** The new ownership enforcement refuses `browser/direct/ValuePath` at `Tea.sandbox`: the checker says it cannot prove the recursive tree's child list unshared. This is its stated `list_may_be_shared` limit, not evidence of an unsafe edit, so rule 10 calls for reporting the limit instead of changing the fixture's design. The full hash recording also fails two unrelated case-folding black-box tests on this macOS filesystem. The run hashes it did record remain in the worktree for a later complete run; no gates or PR are possible from this result.
+
+## 2026-10-13 20:29 CEST — Keep the tree page gated on tea
+
+**What I did.** Moved the direct ValuePath page into `tests/pending/`, where the pending walker pins `dev: exit=1 codes=list_may_be_shared×1`. Kept the same source and steps as a gated browser-tea page, with its own transcript and run hash. Added the missing direct Blocks fixture, fixed ControlledOptions' unsafe in-place edit with `List.copy`, and recorded hashes with zorg. Benchmarks were skipped as requested.
+
+**What I learned.** The pending page harness needed JSON diagnostics and a build-failure signature to distinguish this checker limit from another refusal. The unfiltered macOS gate had four failures: two existing case-folding tests and two browser-driver cases over the 999 ms CPU fallback budget; the corpus and formatting checks passed. The user explicitly asked to leave the case-folding failures alone and commit this work.
+
+## 2026-10-13 23:33 CEST — ownership proofs for direct browser lists
+
+**What I did**
+
+Started ownership-browser-direct from freshly fetched origin/master; fetched the
+browser-direct-s5 reproduction without moving its unfinished effects implementation.
+Specified two checker refinements as dated ownership-contract amendments. Escape
+checks now ignore mutually exclusive earlier arms, while summaries still join all
+escapes. The model entry solves fresh update-result conditions as an inductive must
+invariant instead of letting an uninitialised result poison its own preservation
+condition. Bumped ownership blocks to version 2 to invalidate the old rules.
+
+Promoted ValuePath from pending and imported/promoted the tap reproduction from the
+S5 branch. Added accepted pages and rejected twins for fiber/queued escapes, child
+lists duplicated at init and by update, and dictionary tap lists shared at two keys
+and in an old snapshot. The dictionary helper preserves its borrowed tap container
+with an explicit shallow copy; tap and tagger identities remain intact. Dict.update
+alone was investigated: the complete driver still could not prove its deep
+exclusivity requirement over opaque keys/taps, so no such assertion was added.
+
+Verified all previous ownership goldens unchanged. The copied complete driver failed
+at three sites before the changes, only want after the branch refinement, and none
+with the borrowed-container fix. Stashing the two checker files proved ConcurrentJobs
+and ValuePath fail before the checker fixes; both now pass their browser-tea/direct
+pages and value fuzz. Full run-hash recording updated corpus records, but the step
+ended at the two known macOS case-folding failures. Full gates and LLVM validation
+follow; the owner's four known macOS failures are left untouched.
+
+**What I learned**
+
+A sibling arm's escape is not a holder in the arm that writes, but its summary must
+remain escaped for callers that cannot choose an arm. Recursive list exclusivity
+is a preservation invariant and must start future fresh allocations optimistically,
+then monotonically lower their conditions; unknown and escaped inputs cannot inherit
+that proof. A borrowed dictionary value is a different issue: the generic helper
+permits aliased entries and retained old dictionaries, so intentional persistence
+requires a new outer tap list. The accepted alias twin observes 2:1:1 for the changed
+entry, untouched entry and old dictionary; the uncopied twin remains rejected.
+
+## 2026-10-13 23:43 CEST — ownership validation completed on both code generators
+
+**What I did**
+
+Completed unfiltered zorg build gates and zorg build gates -Dllvm. Each has exactly
+the four owner-acknowledged macOS failures, with 1 292 tests passing and 15 skipped;
+no additional failure appeared. The case-folding and CPU-budget tests are unchanged.
+The pending suite passes with the resolved cases promoted. Existing ownership
+goldens and runtime transcripts remain unchanged; refreshed browser-tea development
+and differential hashes include its changed source map. Prepared the PR with the
+per-case classification, explicit borrow-preserving copy, soundness arguments and
+before/after evidence. S5's work stays on browser-direct-s5.
+
+**What I learned**
+
+The exception the owner supplied permits this PR while preserving the four known
+Mac failures. Both code generators agree on the new acceptances and the rejected
+sharing twins; the whole copied driver can now be checked for the direct platform.
+
+## 2026-10-14 00:15 CEST — correct the subscription-fold classification and address review
+
+**What I did**
+
+Rechecked the complete copied driver with Dict.update using the latest checker.
+It still rejects the List.foldl call to want. Removed the platform List.copy,
+restored browser-tea's original helper, and changed the isolated helper fixture
+to destructive focus. The actual builder starts empty and threads replacements;
+the generic aliased-input twin does not prove sharing in that builder.
+
+Added a focused opaque-tap fold under tests/pending/browser/direct/SubscriptionTapFold,
+with list_may_be_shared pinned, plus a browser-tea oracle. The pending suite,
+isolated focus helper, oracle and unsafe alias variant pass their checks. Corrected
+the dated design amendment and PR #87; it is now a draft with the fold limit explicit.
+
+Addressed the review with condition-only instantiation, safety assertions for
+unchanged demands/uses/escapes, named namespaces and Escape fields, exclusion of
+initial and unknown callback cells from optimistic seeds, a rejected unknown-tree
+result and a recursive escape twin. All existing ownership goldens stay unchanged.
+
+Full run-hash recording passed the corpus, failing only the two known case-folding
+tests. Restoring the platform source also restored all pre-existing corpus hashes.
+Native unfiltered zorg build gates has exactly the four owner-acknowledged Mac
+failures: 1 292 pass, 15 skip. LLVM validation is in progress.
+
+**What I learned**
+
+The earlier diary and PR statements that the tap copy fixed real runtime sharing
+were incorrect. The complete copied driver is not fully accepted: two Concurrent
+limits are fixed, while the focused subscription fold remains a checker limit.
+A fresh outer dictionary does not establish deep exclusivity of opaque captures;
+the intended proof must distinguish the written containers from those captures.
+No platform copy may bypass that limitation. Direct subscriptions in S5 still wait
+on it. The unknown-tree twin is defensive coverage, not a demonstrated pre-fix
+bypass of the new unknown-cell guard.
+
+## 2026-10-14 00:19 CEST — corrected ownership PR validation completed
+
+**What I did**
+
+Completed LLVM unfiltered zorg build gates on the corrected tree: exactly the
+four known Mac failures, 1 292 passing and 15 skipped, matching native. Kept PR #87
+as a draft because the subscription fold remains pending. Prepared the correction
+commit and answers to all review findings; no merge.
+
+**What I learned**
+
+Both code generators agree on the resolved cases and rejected unsafe variants.
+The copy-free subscription fold remains a pinned checker limit, not evidence of
+real sharing. The final PR diff restores the platform and pre-existing hashes.
+
+## 2026-10-14 00:24 CEST — finish review coverage and prepare the authorised merge
+
+**What I did**
+
+The follow-up review found no checker blocker. Added its requested non-recursive
+callee/caller twin: fork may escape in one arm, and afterCall still rejects the
+subsequent append. Moved entryRes documentation below the namespace constants and
+made the pending README explicitly describe why both runtime builder forms block S5.
+
+Native gates found the four known Mac failures plus a time-report CPU-budget
+overrun at 1 005 ms against 999; the isolated time-report test passed unchanged.
+The owner explicitly said to ignore that overrun, skip more LLVM gates, and merge
+once review is done. Preparing that merge with the subscription fold still pending.
+
+**What I learned**
+
+Both the recursive and non-recursive twins now pin conservative escape summaries
+across calls. The remaining fold limitation stays explicit after the scoped fixes
+land; merging them does not make direct subscriptions ready.
+
+## 2026-10-14 01:56 CEST — preserve fresh fold accumulator ownership
+
+**What I did**
+
+Continued ownership-fold-invariant from up-to-date origin/master. Specified the
+fold invariant and its Lean-oracle risk, then implemented separate container
+conditions for all four List/Dict folds and focused edits. Tea.want uses
+Dict.update without copying its tap list. Promoted SubscriptionTapFold and added
+three page variants, a four-fold ownership report, and five rejected build twins.
+
+Recovered the pre-fix regression logs: the subscription builder fails on master,
+and the capture-after-append closure twin incorrectly succeeds there. Corrected
+recursive summary convergence to compare the new container conditions, with a
+focused unit check. Every pre-existing ownership golden remains unchanged.
+
+Native zorg build gates with pinned Node 24: 1 293 pass, 15 skip, exactly the four
+acknowledged macOS failures (two case-folding, two browser-driver CPU budgets).
+Run hashes were recorded in the preceding work; the corpus passed and the only
+recording failures were the two known case-folding tests. No LLVM validation.
+Preparing the PR and the requested Claude review; no merge is authorised.
+
+**What I learned**
+
+The needed invariant owns each edited list container, not the opaque taps'
+captures. A shared descendant still requires its own proof before a nested write.
+Separation checks must inspect every other result position, including retained
+closures and positions preceding the written root. A deep condition that has
+already failed must not hide a container condition still weakening in recursion.
+
+## 2026-10-14 02:11 CEST — answer the fold ownership review
+
+**What I did**
+
+Opened PR #88 and requested @claude review. The review found no definite
+soundness bug and identified six points to check. Replaced numeric future-cell
+selection with recording callback allocations during shape instantiation;
+supplies and projected arrivals do not record allocations. Kept initial
+reachability and escape exclusions. Added the optional requirement-list
+invariant assertion and removed the unused accumulator parameter.
+
+Added two pure summary-instantiation tests through entryResMode. An init cell
+numbered 100001 is supplied to a fold in namespace 200000: a failed condition
+stays failed and an owned one stays owned. The focused tests pass. Full native
+zorg build gates with Node 24 has 1 295 passing, 15 skipped and exactly the four
+known macOS failures. All existing ownership goldens still pass unchanged.
+
+Recorded the Lean sync and a dedicated fold-round-cap corpus fixture in queue
+row 85; the cap-specific fixture remains follow-up, not claimed coverage. A
+single native ReleaseSafe ownership dump of bench/corpus recorded about 119 ms
+summed over ownership events; this is no before/after performance claim. Prepared
+answers to every review finding and requested inspection of the changes and the
+new corpus fixtures. The PR remains unmerged; LLVM stays excluded by the owner.
+
+**What I learned**
+
+An allocation's role must come from its provenance, not a numeric namespace.
+Entry namespaces are much larger than the callback stride. Even there, a supplied
+cell must retain its established condition. The namespace tests exercise the
+actual entry result-instantiation path as a pure algorithm boundary; the corpus
+continues to supply the runtime and rejection regressions.
+
+## 2026-10-14 02:15 CEST — complete the fold ownership PR review
+
+**What I did**
+
+Pushed the structural allocation recorder and entry-namespace tests to PR #88,
+then answered every first-review finding. Claude's follow-up read the changes,
+the namespace tests and the three new accepted pages, found no soundness bug,
+and confirmed the structural selection and namespace coverage. Answered every
+follow-up point, including the exact unit-test gap and the List.foldl seed.
+
+Kept the new pages focused on ownership: CallbackOrderFoldr already pins both
+List and Dict direction with exact callback transcripts, and passed in the full
+gates. Final native zorg gates remain 1 295 pass, 15 skip and the four unchanged
+Mac failures. No further code change, LLVM run or merge. Lean modelling and
+cap-exhaustion coverage stay explicit follow-up in queue row 85.
+
+**What I learned**
+
+The review confirms that seeding recorded callback allocations, excluding
+supplied cells, makes id collisions conservative. Existing order-sensitive
+black-box coverage is preferable to duplicating it in an ownership regression.
+The two namespace tests prove the supplied-cell boundary, not every possible
+callback condition; the broader oracle proof remains an acknowledged risk.

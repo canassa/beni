@@ -1,0 +1,68 @@
+-- A fold transfers its accumulator once. All four library folds preserve
+-- the written list containers of an empty dictionary; opaque taps need
+-- not own their captures. The negative twins refute the induction step.
+import Dict exposing (Dict)
+import Sub
+import Task
+
+
+want k kind t d = Dict.update d k λcurrent →
+    ( first, taps ) = Maybe.withDefault current ( kind, [] )
+    Just ( first, List.append taps [ t ] )
+
+
+pub listLeft : List (k × kind × tap) → Dict k (kind × List tap)
+    where k.compare : k, k → Order
+listLeft declared = List.foldl declared Dict.empty λ( k, kind, t ) d → want k kind t d
+
+
+pub listRight : List (k × kind × tap) → Dict k (kind × List tap)
+    where k.compare : k, k → Order
+listRight declared = List.foldr declared Dict.empty λ( k, kind, t ) d → want k kind t d
+
+
+pub dictLeft : Dict a (k × kind × tap) → Dict k (kind × List tap)
+    where k.compare : k, k → Order
+dictLeft declared = Dict.foldl declared Dict.empty λ_ ( k, kind, t ) d → want k kind t d
+
+
+pub dictRight : Dict a (k × kind × tap) → Dict k (kind × List tap)
+    where k.compare : k, k → Order
+dictRight declared = Dict.foldr declared Dict.empty λ_ ( k, kind, t ) d → want k kind t d
+
+
+pub subscribed ⊤ =
+    sub = Sub.listen 1 (λ_ → ⊤) λ_ → {}
+    listLeft (Sub.taps (Sub.batch [ sub, sub ]))
+
+
+pub escaped xs = List.foldl xs [] λx acc →
+    _ = Task.spawn λ⊤ → List.length acc
+    [ …acc, x ]
+
+
+-- The result keeps a closure holding the list the next iteration edits.
+pub captured xs = List.foldr xs { values = [], readers = [] } λx acc →
+    reader = λ⊤ → List.length acc.values
+    { values = [ …acc.values, x ], readers = [ …acc.readers, reader ] }
+
+
+-- One grown list is placed at two dictionary keys.
+pub duplicated xs = List.foldl xs Dict.empty λx acc →
+    grown = Dict.update acc 1 λold → Just (List.append (Maybe.withDefault old []) [ x ])
+    taps = Maybe.withDefault (Dict.get grown 1) []
+    Dict.insert grown 2 taps
+
+
+shared = Dict.insert Dict.empty 1 [ 0 ]
+
+
+pub sharedStart xs = List.foldr xs shared λx acc →
+    Dict.update acc 1 λold → Just (List.append (Maybe.withDefault old []) [ x ])
+
+
+-- Capturing after the first append must refute the next iteration too.
+pub capturedAfter xs = List.foldr xs { values = [], readers = [] } λx acc →
+    grown = [ …acc.values, x ]
+    reader = λ⊤ → List.length grown
+    { values = grown, readers = [ …acc.readers, reader ] }

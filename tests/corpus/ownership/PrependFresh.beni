@@ -1,0 +1,89 @@
+-- ownership: a prepend whose front item is a list made after its base cannot
+-- be its base (`ownership-checker.md` §26.3; research 85 §6 item 1). Core's
+-- `cons` answers the base's own array only by a re-cons — when the item put
+-- in front is `Js.same` as the element stored just before the base's view —
+-- and a new array the base cannot reach is no element of it. So extending the
+-- result, with the base read afterwards, is accepted: `literalFront` (a list
+-- literal), `calledFront` (a callee's fresh list) and `bikeWars` (research
+-- 82's `Bike.update` line 56, `[ frontWall other, …omitLastSections trail ]
+-- ++ …`, which slice 3f left approximate).
+--
+-- Still rejected, `call`, approximately, where the item may be stored before
+-- the view: `storedBefore` puts a list it made into the base first, and
+-- `List.drop base 1` is then a view whose previous element is that list, so
+-- the prepend re-conses onto the base's array; `baseHolds` hands the item to
+-- the call that makes the base; `elementFront` takes the item out of the
+-- base; `intFront` puts an `Int` in front, which `Js.same` compares by value.
+pub literalFront : Int, List (List Int) → Int
+literalFront x s =
+    top = [ [ x ], …s ]
+    grown = [ …top, [ x ] ]
+    List.length grown + List.length s
+
+
+make : Int → List Int
+make x = [ x, x ]
+
+
+pub calledFront : Int, List (List Int) → Int
+calledFront x s =
+    top = [ make x, …s ]
+    grown = [ …top, [ x ] ]
+    List.length grown + List.length s
+
+
+omitLast : List (List Int) → List (List Int)
+omitLast trail =
+    case trail of
+        [ first, …rest ] →
+            [ List.drop first 2, …rest ]
+
+        other →
+            other
+
+
+pub bikeWars : Int, List (List Int), List (List Int) → Int
+bikeWars x trail other =
+    walls = [ make x, …omitLast trail ] ++ other
+    List.length walls + List.length trail
+
+
+pub storedBefore : Int → Int
+storedBefore x =
+    v = [ x ]
+    base = [ v, [ x, x ] ]
+    top = [ v, …List.drop base 1 ]
+    grown = [ …top, [ x ] ]
+    List.length grown + List.length base
+
+
+holdIn : List Int, List (List Int) → List (List Int)
+holdIn v s = [ [ 0 ], v, …s ]
+
+
+pub baseHolds : Int, List (List Int) → Int
+baseHolds x s =
+    v = [ x ]
+    base = holdIn v s
+    top = [ v, …List.drop base 2 ]
+    grown = [ …top, [ x ] ]
+    List.length grown + List.length base
+
+
+pub elementFront : List (List Int) → Int
+elementFront s =
+    case s of
+        [ h, …_ ] →
+            top = [ h, …List.drop s 1 ]
+            grown = [ …top, h ]
+            List.length grown + List.length s
+
+        [] →
+            0
+
+
+pub intFront : List Int → Int
+intFront s =
+    top = [ 0, …List.drop s 1 ]
+    grown = [ …top, 1 ]
+    List.length grown + List.length s

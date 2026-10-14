@@ -28,7 +28,7 @@ pub const usage =
     \\  serve    build --watch, and serve the output over HTTP with live reload
     \\  check   parse, lower and resolve every module against core; report diagnostics
     \\  fmt      format in place, or --check to verify, or --stdout to print
-    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes)
+    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership)
     \\  version  print the version
     \\  help     print this text
     \\
@@ -75,7 +75,7 @@ pub const usage =
     \\  --stdout                  print the formatted text instead of writing it
     \\
     \\dump options:
-    \\  --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes
+    \\  --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership
     \\                            which representation to print (required)
     \\  --positions               include source positions
     \\  --platform=<name>         as check's, for the stages that resolve imports (interface, raw,
@@ -92,8 +92,8 @@ pub const DiagnosticsFormat = enum { text, json };
 /// see a difference in the bytes `fast-compiler.md` §8.1 hashes.
 /// It exists so a test can assert "the same at every `--jobs`" about the
 /// record and not about a printer.
-/// `ownership` is hidden — parsed, but in no usage text — until the checker
-/// it reports leaves report mode (`ownership-checker.md` §2.4).
+/// `ownership` was hidden until the checker it reports became `check`'s and
+/// `build`'s on an in-place platform (`ownership-checker.md` §2.4, §28.3).
 pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership };
 
 /// Options every subcommand accepts.
@@ -1088,7 +1088,7 @@ const DumpSpecific = struct {
         if (std.mem.eql(u8, name, "--platform")) {
             if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
         } else if (std.mem.eql(u8, name, "--stage")) {
-            const v = value orelse return needsValue(name, "tokens|ast|bir|interface|raw|types|graph|dispatch|writes");
+            const v = value orelse return needsValue(name, "tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership");
             self.stage = std.meta.stringToEnum(Stage, v) orelse
                 return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir, interface, raw, types, graph, dispatch or writes)", .{v});
             self.consumed = true;
@@ -1133,7 +1133,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     var s: Scanner(DumpSpecific) = .{};
     defer s.positionals.deinit(gpa);
     if (try s.scan(gpa, args)) |u| return .{ .usage = u };
-    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes", .{}) };
+    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership", .{}) };
     // A platform is a package of MODULES, so it changes what an import
     // resolves to and nothing else. The stages below it are a function of
     // one file's own bytes, and accepting the flag there would be a flag
@@ -1141,7 +1141,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     // (backend.md §2).
     if (s.specific.platform != null and !stageResolvesImports(stage)) {
         return .{ .usage = .init(
-            "beni: --platform has no effect on --stage={t}; it applies to interface, raw, types, graph, dispatch and writes",
+            "beni: --platform has no effect on --stage={t}; it applies to interface, raw, types, graph, dispatch, writes and ownership",
             .{stage},
         ) };
     }
@@ -1283,7 +1283,7 @@ test "dump: stage, positions, exactly one file" {
         .file = "src/Main.beni",
     } }, &.{ "dump", "src/Main.beni", "--positions", "--core", "--root=src", "--stage=tokens" });
     try expectCommand(.{ .dump = .{ .stage = .bir, .file = "M.beni" } }, &.{ "dump", "--stage=bir", "M.beni" });
-    // Hidden (ownership-checker.md §2.4): parsed, but in no usage text.
+    // Listed since slice 4 (ownership-checker.md §2.4, §28.3).
     try expectCommand(.{ .dump = .{ .stage = .ownership, .file = "src" } }, &.{ "dump", "--stage=ownership", "src" });
     // Hidden too (§16.11): the totals alone, and only for that stage.
     try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_totals = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-totals", "src" });
@@ -1291,8 +1291,8 @@ test "dump: stage, positions, exactly one file" {
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .graph, .file = "src" } }, &.{ "dump", "--stage=graph", "src" });
-    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes", &.{ "dump", "Main.beni" });
-    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes", &.{ "dump", "--stage", "Main.beni" });
+    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership", &.{ "dump", "Main.beni" });
+    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership", &.{ "dump", "--stage", "Main.beni" });
     try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast, bir, interface, raw, types, graph, dispatch or writes)", &.{ "dump", "--stage=cst", "Main.beni" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast", "A.beni", "B.beni" });
@@ -1385,15 +1385,15 @@ test "check and dump take --platform; fmt does not, and neither does a per-file 
         }
     }
     try expectUsage(
-        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph, dispatch and writes",
+        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph, dispatch, writes and ownership",
         &.{ "dump", "--stage=ast", "--platform=node", "M.beni" },
     );
     try expectUsage(
-        "beni: --platform has no effect on --stage=tokens; it applies to interface, raw, types, graph, dispatch and writes",
+        "beni: --platform has no effect on --stage=tokens; it applies to interface, raw, types, graph, dispatch, writes and ownership",
         &.{ "dump", "--platform=node", "--stage=tokens", "M.beni" },
     );
     try expectUsage(
-        "beni: --platform has no effect on --stage=bir; it applies to interface, raw, types, graph, dispatch and writes",
+        "beni: --platform has no effect on --stage=bir; it applies to interface, raw, types, graph, dispatch, writes and ownership",
         &.{ "dump", "--stage=bir", "--platform=node", "M.beni" },
     );
     // `fmt` resolves nothing: formatting is per file.

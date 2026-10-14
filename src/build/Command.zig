@@ -83,6 +83,9 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // builds a library and never a program.
     if (!build.library and chain.first("program") == null) return platform.reportNoProgram(stderr, build.platform);
     options.chain = &chain;
+    // `ownership-checker.md` §28.3: the pass runs when the chain edits
+    // lists in place, and not otherwise.
+    options.ownership = true;
 
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();

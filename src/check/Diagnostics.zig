@@ -58,11 +58,11 @@ pub const Item = struct {
     /// `warning` only for `ambiguous_method_receiver` (§10.9); a warning
     /// never changes the exit code.
     severity: diagnostic.Severity = .@"error",
-    /// The token to underline, when it is not the one `region`'s
-    /// instruction came from. A message ABOUT a declaration —
-    /// `ambiguous_method_receiver`, `constrained_constant` — points at its
-    /// NAME, and no instruction carries that token.
+    /// The token to underline, when it is not `region`'s, through
+    /// `last_token` (an ownership error's edit, `ownership-checker.md`
+    /// §28.6). A message ABOUT a declaration points at its NAME.
     token: ?u32 = null,
+    last_token: ?u32 = null,
     /// Owned by the session allocator.
     message: []const u8,
 };

@@ -373,6 +373,9 @@ pub fn run(
     // before finding out would leave an `out/` that looks fresh and is not.
     // Nothing is emitted until the whole project is known to emit.
     try e.emitModules(entry);
+    // A module the lowering refused (`not_implemented`) roots none of the
+    // runtime the entry would import, so a release build cannot spell it.
+    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
     // A scope-hoisted build wrote the hand-written files and the entry into
     // its one file already (§9, *One scope-hoisted file under `--release`*).
     if (!e.hoisted) {
@@ -2470,6 +2473,21 @@ const Emitter = struct {
                     .path = try a.dupe(u64, h.path),
                 };
             }
+            // Version 1.10: each `let`'s read set, a group as a hole's is.
+            const lets = try a.alloc(Lower.Direct.Let, prog.vlets.len);
+            for (prog.vlets, lets) |h, *o| {
+                const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
+                const bounds: []const u8 = if (prog.view_capped) &unbound else h.bound;
+                const group: u32 = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
+                    if (std.mem.eql(u32, g, reads) and std.mem.eql(u8, gb, bounds)) break @intCast(gi);
+                } else blk: {
+                    try groups.append(a, reads);
+                    try group_bounds.append(a, bounds);
+                    break :blk @intCast(groups.items.len - 1);
+                };
+                o.* = .{ .module = h.module, .inst = h.token, .path = try a.dupe(u64, h.path), .group = group };
+            }
+            out.lets = lets;
             const conflicts = try a.alloc(bool, groups.items.len * keys.len);
             for (groups.items, 0..) |g, gi| for (key_writes, 0..) |kw, ki| {
                 conflicts[gi * keys.len + ki] = for (g) |r| {

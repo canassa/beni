@@ -1,0 +1,65 @@
+-- Mutually exclusive escapes do not reject a sibling append; a real
+-- escape before the append remains rejected. Summaries still join E.
+import Task exposing (Fiber)
+
+
+type Policy
+    = Restart
+    | Concurrent
+
+
+pub choose : Policy, List Int → List Int × Fiber Int
+choose policy runs =
+    old = List.filter runs λ_ → True
+    case policy of
+        Restart →
+            ( [], Task.spawn λ⊤ → List.length old )
+        Concurrent →
+            ( [ …old, 2 ], Task.spawn λ⊤ → 0 )
+
+
+pub unsafe : List Int → List Int × Fiber Int
+unsafe runs =
+    old = List.filter runs λ_ → True
+    fiber = Task.spawn λ⊤ → List.length old
+    ( [ …old, 2 ], fiber )
+
+
+-- An escape in an earlier case can execute before this append.
+pub joined : Policy, List Int → List Int × Fiber Int
+joined policy runs =
+    old = List.filter runs λ_ → True
+    fiber =
+        case policy of
+            Restart →
+                Task.spawn λ⊤ → List.length old
+            Concurrent →
+                Task.spawn λ⊤ → 0
+    ( [ …old, 2 ], fiber )
+
+
+-- A tail call can run the other arm later; the summary's E/W is not local.
+pub repeat : Bool, List Int → List Int
+repeat hold xs =
+    if hold then
+        _ = Task.spawn λ⊤ → List.length xs
+        repeat False xs
+    else
+        [ …xs, 2 ]
+
+
+-- A caller cannot discard an escape in either arm of its callee.
+pub fork : Policy, List Int → Fiber Int
+fork policy xs =
+    case policy of
+        Restart →
+            Task.spawn λ⊤ → List.length xs
+        Concurrent →
+            Task.spawn λ⊤ → 0
+
+
+pub afterCall : Policy, List Int → List Int × Fiber Int
+afterCall policy runs =
+    old = List.filter runs λ_ → True
+    fiber = fork policy old
+    ( [ …old, 2 ], fiber )

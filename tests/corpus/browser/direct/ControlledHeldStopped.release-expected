@@ -1,0 +1,15 @@
+-- load
+<body>
+  <main>
+    <input id="box" type="checkbox" .value="on" .checked=false>
+  </main>
+</body>
+-- throws click #box
+(threw: Error: TODO: handler threw)
+<body>
+  <main>
+    <input id="box" type="checkbox" .value="on" .checked=true>
+  </main>
+</body>
+-- advance 0
+(the DOM did not change)

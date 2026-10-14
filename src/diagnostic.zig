@@ -412,6 +412,16 @@ pub const Code = enum {
     /// approved), where no position takes it, or with one it cannot hold.
     /// Lowering's.
     misplaced_ownership_word,
+    /// Appended on 2026-10-13 with the ownership checker's enforcement
+    /// (ownership-checker.md §28): only on a platform that edits lists in
+    /// place. A list changed in place while something the text shows still
+    /// reads it; a top-level value's list changed; `view` changing the model
+    /// it is handed to read only; an edit the checker could not prove safe.
+    /// The checker's, all errors.
+    list_still_used,
+    top_level_list_changed,
+    view_changes_model,
+    list_may_be_shared,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -589,6 +599,10 @@ pub fn title(code: Code) []const u8 {
         .program_mounted_twice => "PROGRAM MOUNTED TWICE",
         .prepend_in_loop => "PREPEND IN LOOP",
         .misplaced_ownership_word => "MISPLACED OWNERSHIP WORD",
+        .list_still_used => "LIST CHANGED WHILE STILL IN USE",
+        .top_level_list_changed => "TOP-LEVEL LIST CHANGED",
+        .view_changes_model => "VIEW CHANGES THE MODEL",
+        .list_may_be_shared => "LIST MAY BE SHARED",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

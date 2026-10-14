@@ -1,0 +1,22 @@
+-- `list_still_used` (ownership-checker.md §28.5–§28.6; thesis §3.3, the
+-- second consequence): `List.push xs n` writes `xs`'s array on
+-- `browser-direct`, and the next line reads `xs` — in place it would read
+-- the pushed list. Real sharing, so the message names the read and writes
+-- the fix, `List.push (List.copy xs) n`. On `browser-tea` nothing is
+-- written in place and the program builds.
+import Html exposing (Html)
+import Tea
+
+
+grownBy : List Int, Int → Int
+grownBy xs n =
+    ys = List.push xs n
+    List.length ys + List.length xs
+
+
+view : Int → Html Int
+view n = <p>{String.fromInt n}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → grownBy [ 1, 2 ] 3, update = λ_ m → m, view = view }

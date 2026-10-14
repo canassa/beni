@@ -222,42 +222,42 @@ const ListScripts$main = Tea$sandbox(($root$1, $t$2) => {
     Direct$append($L$79, $xs$142);
   }
   $root$1.append($r$23);
-  const $check$145 = ($r$143) => {
-    const $it$144 = $r$143.it;
-    if (!Direct$same($it$144, $r$143.s0)) {
-      Direct$wrong("the text hole at ListScripts.beni:96:61", $r$143.s0, $it$144);
+  const $check$146 = ($r$143) => {
+    const $it$145 = $r$143.it;
+    if (!Direct$same($it$145, $r$143.s0)) {
+      Direct$wrong("the text hole at ListScripts.beni:96:61", $r$143.s0, $it$145);
     }
-    if ($r$143.w1.data !== `${$it$144}`) {
-      Direct$wrong("the text hole at ListScripts.beni:96:61 in the document", $r$143.w1.data, `${$it$144}`);
+    if ($r$143.w1.data !== `${$it$145}`) {
+      Direct$wrong("the text hole at ListScripts.beni:96:61 in the document", $r$143.w1.data, `${$it$145}`);
     }
   };
-  const $check$150 = ($r$146) => {
-    const $it$147 = $r$146.it;
-    const $t$148 = $it$147.label;
-    const $t$149 = $model$20.mark;
-    if (!Direct$same($t$148, $r$146.s1)) {
-      Direct$wrong("the text hole at ListScripts.beni:92:49", $r$146.s1, $t$148);
+  const $check$152 = ($r$147) => {
+    const $it$149 = $r$147.it;
+    const $t$150 = $it$149.label;
+    const $t$151 = $model$20.mark;
+    if (!Direct$same($t$150, $r$147.s1)) {
+      Direct$wrong("the text hole at ListScripts.beni:92:49", $r$147.s1, $t$150);
     }
-    if ($r$146.x1.data !== `${$t$148}`) {
-      Direct$wrong("the text hole at ListScripts.beni:92:49 in the document", $r$146.x1.data, `${$t$148}`);
+    if ($r$147.x1.data !== `${$t$150}`) {
+      Direct$wrong("the text hole at ListScripts.beni:92:49 in the document", $r$147.x1.data, `${$t$150}`);
     }
-    if (!Direct$same($t$149, $r$146.s2)) {
-      Direct$wrong("the text hole at ListScripts.beni:92:58", $r$146.s2, $t$149);
+    if (!Direct$same($t$151, $r$147.s2)) {
+      Direct$wrong("the text hole at ListScripts.beni:92:58", $r$147.s2, $t$151);
     }
-    if ($r$146.x2.data !== `${$t$149}`) {
-      Direct$wrong("the text hole at ListScripts.beni:92:58 in the document", $r$146.x2.data, `${$t$149}`);
+    if ($r$147.x2.data !== `${$t$151}`) {
+      Direct$wrong("the text hole at ListScripts.beni:92:58 in the document", $r$147.x2.data, `${$t$151}`);
     }
   };
   Direct$verify(() => {
     {
-      const $t$151 = $model$20.rows;
-      const $xs$152 = $t$151;
-      Direct$verifyList($L$75, $xs$152, $check$150, "the `For` at ListScripts.beni:91:14", false);
+      const $t$153 = $model$20.rows;
+      const $xs$154 = $t$153;
+      Direct$verifyList($L$75, $xs$154, $check$152, "the `For` at ListScripts.beni:91:14", false);
     }
     {
-      const $t$153 = $model$20.plain;
-      const $xs$154 = $t$153;
-      Direct$verifyList($L$79, $xs$154, $check$145, "the `For` at ListScripts.beni:96:14", false);
+      const $t$155 = $model$20.plain;
+      const $xs$156 = $t$155;
+      Direct$verifyList($L$79, $xs$156, $check$146, "the `For` at ListScripts.beni:96:14", false);
     }
   });
 });

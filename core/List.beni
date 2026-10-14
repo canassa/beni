@@ -7,10 +7,10 @@
 --! O(1)", on a list that has been written to — `length` is O(1), and a list
 --! grows at its end in amortised O(1): `push`, `[ …xs, x ]`. Its front has
 --! no room, so `[ x, …xs ]` copies the list. Each function's doc comment
---! says what it costs, and which results are the very list it was given
---! rather than an equal copy
---! (`backend.md` §4, *Identity*), which is what lets a view skip what did
---! not change.
+--! says what it costs. A function that reads a list and builds another —
+--! `map`, `filter`, `slice`, `concat`, `reverse`, the sorts, `++` — returns
+--! a fresh list, never the one it was given, even when the two would be
+--! equal (`backend.md` §4, *Identity*, amended 2026-10-13).
 --!
 --! Argument order here is **subject first and function last**: the value the
 --! function is about comes first, so `xs ▷ map f` inserts it at the front,
@@ -31,7 +31,7 @@
 --! `base`, `offset` and `at`, building its result in a core-private
 --! `Builder`, so a callback that suspends parks the loop (`language.md`
 --! §6.8, *Callbacks*). What stays `foreign` — `length`, `at`, `put`,
---! `identical`, `kept`, `half` — the code generator writes in place.
+--! `half` — the code generator writes in place.
 --!
 --! `List a` is equal to another list when they have the same elements in the
 --! same order, by each element's own `eq` — which is what makes `==` on a
@@ -141,19 +141,19 @@ pushFrom b i c =
 --|
 --|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
 --|
---| `append xs []` is `xs` itself and `append [] ys` is `ys` itself. When `xs`
---| has been written to, or has 32 elements or more while `ys` has fewer,
---| each element of `ys` is pushed onto it: O(length of `ys`), so
+--| When `xs` has been written to, or has 32 elements or more while `ys`
+--| has fewer, each element of `ys` is pushed onto it: O(length of `ys`), so
 --| `[ …xs, x ]` costs what `push xs x` does. Otherwise the result is a
---| fresh list, O(length of both).
+--| fresh list, O(length of both) — `append xs []` and `append [] ys`
+--| included, which are copies and never the list itself.
 pub append : List a, List a → List a
 append xs ys = Js.pure λ⊤ →
     n = length xs
     m = length ys
     if m == 0 then
-        xs
+        copy xs
     else if n == 0 then
-        ys
+        copy ys
     else
         x = Js.from xs
         trie = isTrie x
@@ -323,7 +323,7 @@ pop xs = Js.pure λ⊤ →
 --| The elements from index `from` up to but not including `to`, as Elm's
 --| `Array.slice`: a negative index counts from the end, both are clamped to
 --| the list, and `from` at or past `to` is `[]`. A slice of the whole list
---| is the list itself.
+--| is a copy of it.
 --|
 --|     slice [ 0, 1, 2, 3, 4 ] 1 3 == [ 1, 2 ]
 --|     slice [ 0, 1, 2, 3, 4 ] 1 (-1) == [ 1, 2, 3 ]
@@ -335,9 +335,7 @@ slice xs from to =
     n = length xs
     f = clampIndex from n
     t = clampIndex to n
-    if f == 0 && t == n then
-        xs
-    else if f ≥ t then
+    if f ≥ t then
         []
     else
         sliceOf xs f t
@@ -551,20 +549,6 @@ close b v =
         v
     else
         done (putAll (Js.to (Js.from b)) n (base v) (offset v) (offset v + length v)) (n + length v)
-
-
---| Whether two values are the same reference, which beni's `==` cannot
---| ask: what `map` keeps its input's identity by. Of two types, because
---| `map`'s element and result types are two, and the same reference in
---| both is exactly the case it is asked about.
-foreign pure identical : a, b → Bool
-
-
---| `original` when `same`, otherwise `built`: `map`'s answer. `same` says
---| every element of `built` is the element of `original` at its index —
---| `identical` held for each — so `original` has `built`'s elements and is
---| a `List b` at run time, which the type checker cannot see.
-foreign pure kept : Bool, List a, List b → List b
 
 
 --| `n // 2` for a non-negative `n`, without `Basics`' sibling.
@@ -1118,78 +1102,49 @@ initializeHelp i n func b =
 --|     map [ 1, 4, 9 ] negate == [ -1, -4, -9 ]
 --|
 --| `func` is called on the first element first (`checker.md` Appendix B).
---| When every result is the very element it was given, the result is `xs`
---| itself and not an equal copy (`backend.md` §4, *Identity*): one
---| comparison per element, and a view showing the list skips it. O(n), and
---| the result reads at O(1).
+--| The result is a fresh list, even when every result is the element it
+--| was given (`backend.md` §4, *Identity*). O(n), and the result reads at
+--| O(1).
 pub map : List a, (a → b) → List b
-map xs func =
-    a = base xs
-    r = mapHelp a (offset xs) 0 (length xs) func (builder (length xs)) True
-    kept (identical r a) xs r
+map xs func = mapHelp (base xs) (offset xs) 0 (length xs) func (builder (length xs))
 
 
 --| Every loop below reads element `i` of its list as `at a (o + i)`, `a`
 --| and `o` being the list's `base` and `offset`; a loop that hands the
---| element to a callback reads it with `traverseAt`. When every result was
---| the element it was given, `mapHelp` answers its array `a` itself, which
---| is how `map` knows to answer `xs` (`ownership-checker.md` §18.5, the
---| exempt comparison).
-mapHelp : List a, Int, Int, Int, (a → b), Builder b, Bool → List b
-mapHelp a o i n func b same =
+--| element to a callback reads it with `traverseAt`.
+mapHelp : List a, Int, Int, Int, (a → b), Builder b → List b
+mapHelp a o i n func b =
     if i < n then
-        x = traverseAt a (o + i)
-        y = func x
-        mapHelp a o (i + 1) n func (put b i y) (same && identical x y)
+        mapHelp a o (i + 1) n func (put b i (func (traverseAt a (o + i))))
     else
-        kept same a (done b n)
+        done b n
 
 
 --| Same as `map` but the function is also given the index of each element,
---| starting at zero. The result is `xs` itself when every result is the
---| element it was given, as `map`'s is.
+--| starting at zero. The result is a fresh list, as `map`'s is.
 --|
 --|     indexedMap [ "a", "b" ] (λi x → ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
 pub indexedMap : List a, (Int, a → b) → List b
-indexedMap xs func =
-    a = base xs
-    r = indexedMapHelp a (offset xs) 0 (length xs) func (builder (length xs)) True
-    kept (identical r a) xs r
+indexedMap xs func = indexedMapHelp (base xs) (offset xs) 0 (length xs) func (builder (length xs))
 
 
-indexedMapHelp : List a, Int, Int, Int, (Int, a → b), Builder b, Bool → List b
-indexedMapHelp a o i n func b same =
+indexedMapHelp : List a, Int, Int, Int, (Int, a → b), Builder b → List b
+indexedMapHelp a o i n func b =
     if i < n then
-        x = traverseAt a (o + i)
-        y = func i x
-        indexedMapHelp a o (i + 1) n func (put b i y) (same && identical x y)
+        indexedMapHelp a o (i + 1) n func (put b i (func i (traverseAt a (o + i))))
     else
-        kept same a (done b n)
+        done b n
 
 
 --| Keep the elements that pass the test.
 --|
 --|     filter [ 1, 2, 3, 4 ] (λn → Int.mod n 2 == 0) == [ 2, 4 ]
 --|
---| `isGood` is asked about the first element first. When it keeps every
---| element the result is `xs` itself, not an equal copy (`backend.md` §4,
---| *Identity*). O(n).
+--| `isGood` is asked about the first element first. The result is a fresh
+--| list, even when it keeps every element (`backend.md` §4, *Identity*).
+--| O(n).
 pub filter : List a, (a → Bool) → List a
-filter xs isGood = filterFirst xs (base xs) (offset xs) 0 (length xs) isGood
-
-
---| Up to the first element `isGood` rejects: nothing is built before it,
---| and when there is none the result is `xs` itself. The `i` kept before it
---| are copied into a builder with room for all but the one rejected.
-filterFirst : List a, List a, Int, Int, Int, (a → Bool) → List a
-filterFirst xs a o i n isGood =
-    if i < n then
-        if isGood (at a (o + i)) then
-            filterFirst xs a o (i + 1) n isGood
-        else
-            filterHelp a o (i + 1) n isGood (putAll (builder (n - 1)) 0 a o (o + i)) i
-    else
-        xs
+filter xs isGood = filterHelp (base xs) (offset xs) 0 (length xs) isGood (builder (length xs)) 0
 
 
 --| `j` is how many were kept: the builder has room for all that are left.
@@ -1232,14 +1187,10 @@ filterMapHelp a o i n func b j =
 --|
 --|     reverse [ 1, 2, 3 ] == [ 3, 2, 1 ]
 --|
---| A list of fewer than two elements is its own reverse, and is returned
---| itself (`backend.md` §4, *Identity*). O(n).
+--| A fresh list, even of fewer than two elements (`backend.md` §4,
+--| *Identity*). O(n).
 pub reverse : List a → List a
-reverse xs =
-    if length xs < 2 then
-        xs
-    else
-        reverseHelp (base xs) (offset xs + length xs - 1) 0 (length xs) (builder (length xs))
+reverse xs = reverseHelp (base xs) (offset xs + length xs - 1) 0 (length xs) (builder (length xs))
 
 
 --| `top` is the index in `a` of the list's last element.
@@ -1340,22 +1291,15 @@ putAll b j a i stop =
 --|
 --|     concat [ [ 1, 2 ], [ 3 ], [] ] == [ 1, 2, 3 ]
 --|
---| When exactly one of the lists is not empty the result is that list
---| itself (`backend.md` §4, *Identity*); otherwise it is a fresh list made
---| its final size, O(total): one count, then one copy loop per list.
+--| A fresh list made its final size, even when only one of the lists is
+--| not empty (`backend.md` §4, *Identity*), O(total): one count, then one
+--| copy loop per list.
 pub concat : List (List a) → List a
 concat ls =
     a = base ls
     o = offset ls
     n = totalFrom a o 0
-    if n == 0 then
-        []
-    else
-        first = at a (firstFrom a o)
-        if length first == n then
-            first
-        else
-            done (concatFrom a o (builder n) 0) n
+    done (concatFrom a o (builder n) 0) n
 
 
 --| How many elements the lists `a[i] …` to the end of `a` hold together. A
@@ -1367,17 +1311,6 @@ totalFrom a i n =
         totalFrom a (i + 1) (n + length (at a i))
     else
         n
-
-
---| Where the first list of `a[i] …` that is not empty is, one of which is:
---| when it holds every element, it is the only one, and `concat` is that
---| list.
-firstFrom : List (List a), Int → Int
-firstFrom a i =
-    if length (at a i) ≠ 0 then
-        i
-    else
-        firstFrom a (i + 1)
 
 
 --| The lists `a[i] …` written into `b` from `j` on.
@@ -1395,8 +1328,8 @@ concatFrom a i b j =
 --|     concatMap [ 1, 2 ] (λx → [ x, x ]) == [ 1, 1, 2, 2 ]
 --|
 --| `func` is called on the first element first, and once per element. It
---| is `concat (map xs func)`: when exactly one of the answers is not empty
---| the result is that answer itself. The answers are kept in a list of
+--| is `concat (map xs func)`, a fresh list even when exactly one of the
+--| answers is not empty. The answers are kept in a list of
 --| their own first, so the result is made its final size once, which is
 --| faster than growing it as the answers come.
 pub concatMap : List a, (a → List b) → List b
@@ -1644,17 +1577,13 @@ sort xs = sortWith xs λx y → x.compare y
 --| which is inherent to a sort.
 --|
 --| Ties are `EQ` on the key, and the merge takes the left element on `EQ`,
---| so this is as stable as `sortWith` is. A list of fewer than two elements
---| is returned itself, after its one key is read (`backend.md` §4,
---| *Identity*).
+--| so this is as stable as `sortWith` is. The result is a fresh list, even
+--| of fewer than two elements (`backend.md` §4, *Identity*).
 pub sortBy : List a, (a → b) → List a
     where b.compare : b, b → Order
 sortBy xs toKey =
     decorated = map xs λx → ( toKey x, x )
-    if length decorated < 2 then
-        xs
-    else
-        map (sortWith decorated λ( left, _ ) ( right, _ ) → left.compare right) λ( _, x ) → x
+    map (sortWith decorated λ( left, _ ) ( right, _ ) → left.compare right) λ( _, x ) → x
 
 
 --| Sort values with an ordering function you write yourself, which is how
@@ -1667,14 +1596,11 @@ sortBy xs toKey =
 --| (`checker.md` Appendix B) — the merge takes the LEFT element on anything
 --| but `GT`, and the front half, the first ⌊n / 2⌋ elements, stays in front.
 --| The order in which `cmp` is asked, and how many times, stays unspecified.
---| A list of fewer than two elements is returned itself (`backend.md` §4,
---| *Identity*). O(n log n), recursing to a depth of log₂ n.
+--| The result is a fresh list, even of fewer than two elements
+--| (`backend.md` §4, *Identity*). O(n log n), recursing to a depth of
+--| log₂ n.
 pub sortWith : List a, (a, a → Order) → List a
-sortWith xs cmp =
-    if length xs < 2 then
-        xs
-    else
-        sortRange xs 0 (length xs) cmp
+sortWith xs cmp = sortRange xs 0 (length xs) cmp
 
 
 --| Elements `lo` up to `hi` of `xs`, sorted: the front half first, then the
@@ -1747,8 +1673,8 @@ tail xs =
 --|
 --|     take [ 1, 2, 3 ] 2 == [ 1, 2 ]
 --|
---| When `n` covers the whole list the result is the list itself
---| (`backend.md` §4, *Identity*). O(n), a fresh list otherwise.
+--| O(n), a fresh list even when `n` covers the whole list (`backend.md` §4,
+--| *Identity*).
 pub take : List a, Int → List a
 take xs n =
     if n ≤ 0 then

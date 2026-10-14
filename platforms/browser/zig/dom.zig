@@ -104,9 +104,8 @@ fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {
 }
 
 fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr {
-    const r = tree.root(index);
     var g: Gen = .{ .cx = cx, .tree = tree };
-    const block_ = if (cx.grouped(index)) try g.groupedBlock(r, index) else try g.block(&.{r.node}, r.site.inst, null);
+    const block_ = try g.rootBlock(index);
     // `--fuzz` (browser-direct.md §8.3): the page fuzzer's guarded send,
     // made sure of wherever markup is evaluated; no other build has it.
     if (cx.build.fuzz) return g.rt("fuzzInstall", &.{block_});
@@ -435,6 +434,12 @@ pub const Gen = struct {
     inline_call: ?*const fn (g: *Gen, n: m.Node.Index) m.Error!?Inline = null,
     ctx: u32 = 0,
     user: ?*anyopaque = null,
+    /// `browser-direct`'s value path (browser-direct.md's S4 amendment,
+    /// item 1): every event listens on its own node, `listen(el, name,
+    /// flags)` — the form of an event that is not delegated — so the DOM's
+    /// bubbling orders it against that platform's own listeners, and no
+    /// document listener exists. `browser` never sets it.
+    own_listeners: bool = false,
 
     pub const Inline = struct { node: m.Node.Index, ctx: u32 };
 
@@ -526,6 +531,22 @@ pub const Gen = struct {
             .{ .key = "t", .value = try g.ident(kind) },
             .{ .key = "v", .value = try g.jsb().array(values) },
         });
+    }
+
+    /// What markup root `index` evaluates to: a grouped root's block of its
+    /// inputs, or the block of its values evaluated where it stands.
+    pub fn rootBlock(g: *Gen, index: m.Root.Index) m.Error!m.Expr {
+        const r = g.tree.root(index);
+        if (g.cx.grouped(index)) return g.groupedBlock(r, index);
+        return g.block(&.{r.node}, r.site.inst, null);
+    }
+
+    /// `browser-direct`'s value path (browser-direct.md's S4 amendment,
+    /// item 1): the block of `nodes` of root site `site` — a whole `For`, a
+    /// component's children — planned as a kind of their own, named by
+    /// `sub`, its values the enclosing markup's, evaluated where it is.
+    pub fn valueBlock(g: *Gen, nodes: []const m.Node.Index, site: u32, sub: m.Node.Index) m.Error!m.Expr {
+        return g.block(nodes, site, sub);
     }
 
     // ---- Grouped roots (backend.md §15.4, *A root computes its own values*)
@@ -639,7 +660,7 @@ pub const Gen = struct {
     /// Every value a node reads, its children's included, but not a row's
     /// or a `Show`'s body (placed where the row is) nor a row's captures,
     /// whose reads are its inputs (language.md §11.9).
-    fn nodeValues(g: *Gen, n: m.Node.Index, within: bool, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+    pub fn nodeValues(g: *Gen, n: m.Node.Index, within: bool, out: *std.ArrayList(m.Value.Index)) m.Error!void {
         const a_ = g.a();
         const t = g.tree;
         switch (t.kind(n)) {
@@ -2060,7 +2081,7 @@ pub const Gen = struct {
         var flags: u32 = 0;
         if (facts.prevent_default) flags |= 1;
         if (facts.stop_propagation) flags |= 2;
-        if (facts.delegated) {
+        if (facts.delegated and !g.own_listeners) {
             if (flags != 0) try js.assign(f.block, try g.member(try g.node(f, x.t), try g.print("{s}F", .{key})), try g.num(flags));
         } else {
             try js.expression(f.block, try g.rt("listen", &.{ try g.node(f, x.t), try g.str(dom_name), try g.num(flags) }));
@@ -2117,7 +2138,7 @@ pub const Gen = struct {
     /// itself when the write is an attribute the HTML standard lets change
     /// a control's value or checkedness (`resetting`). An event's handler,
     /// a class or a style changes nothing a control shows.
-    fn controlsOver(g: *Gen, b: *const Body, op: Op) m.Error![]const u32 {
+    pub fn controlsOver(g: *Gen, b: *const Body, op: Op) m.Error![]const u32 {
         var out: std.ArrayList(u32) = .empty;
         var at: ?u32 = switch (op.what) {
             .attribute => |x| blk: {
@@ -2137,7 +2158,7 @@ pub const Gen = struct {
     }
 
     /// Whether a `stateful` attribute is written on template node `t`.
-    fn controlled(g: *Gen, b: *const Body, t: u32) bool {
+    pub fn controlled(g: *Gen, b: *const Body, t: u32) bool {
         for (b.ops.items) |op| switch (op.what) {
             .attribute => |x| if (x.t == t and g.stateful(x.item)) return true,
             else => {},
@@ -2408,7 +2429,7 @@ pub const Gen = struct {
 
     /// A `stateful` attribute's write: `control(el, "prop", v)`, which
     /// keeps `v` on the element and writes it when the page's differs.
-    fn writeControl(g: *Gen, into: m.Block, el: m.Expr, it: m.Item, v: m.Expr) m.Error!void {
+    pub fn writeControl(g: *Gen, into: m.Block, el: m.Expr, it: m.Item, v: m.Expr) m.Error!void {
         const prop = g.tree.string(g.tree.attributeFacts(it.attribute).property.?);
         try g.jsb().expression(into, try g.rt("control", &.{ el, try g.str(prop), try g.propertyValue(it, v) }));
     }

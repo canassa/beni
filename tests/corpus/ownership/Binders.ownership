@@ -1,0 +1,31 @@
+module Binders
+  28:22 List.push inner: rejected alias: kept holds it and is read at 29:9
+  33:27 List.push xs: accepted param
+  39:5 call Binders.sink held: rejected alias: xs holds it and is read at 40:5 (Binders.sink writes π1)
+  47:26 List.push rest: rejected alias: xs holds it and is read at 47:46
+  55:12 List.push xs: rejected later-use: xs is read again at 56:28
+  62:18 List.push items: rejected alias: model.items holds it and is read at 62:39
+  68:13 List.push xs: rejected later-use: xs is read again at 69:5
+  78:13 call <lambda> <construction>: accepted callback-param (<lambda> writes π1)
+  78:18 construction acc: accepted callback-param (decided at its calls)
+  79:18 call <lambda> xs: rejected later-use: xs is read again at 79:29 (<lambda> writes π1)
+  84:18 List.push xs: rejected later-use: xs is read again at 85:25
+  90:30 List.push model.items: rejected later-use: model.items is read again at 91:30
+  97:24 List.push xs: rejected later-use: xs is read again at 97:42
+  103:18 List.push xs: accepted param
+  summary nested: π1 RW
+  summary sink: π1 RW
+  summary statement: π1 RW
+  summary spreadArm: π1 RW
+  summary placeholder: π1 RW
+  summary accessor: π1.items RW
+  summary section: π1 RW, π1[*] R
+  summary localGroup: π1 RW
+  summary pipeline: π1 RW, π1[*] R
+  summary update: π1.items RW, π1.items[*] R, π1.other R
+  summary bind: π2 RW
+  summary distinct: π1 RW, π2 R
+  demands 14: accepted 4 (fresh 0, call 0, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
+total 14: accepted 4 (fresh 0, call 0, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
+cause later-use 6
+cause alias 4

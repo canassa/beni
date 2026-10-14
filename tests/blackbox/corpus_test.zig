@@ -1689,6 +1689,63 @@ const Case = struct {
             return error.MissingDiagGolden;
         }
         try c.expectGolden("diag", built.stderr);
+
+        // `ownership-checker.md` §28.10: a `browser-direct` fixture whose
+        // golden holds only the ownership checker's codes fails because
+        // lists are edited in place there; on `browser-tea`, where nothing
+        // is, the same project must build with no diagnostic at all.
+        if (c.fixture.platform) |name| if (std.mem.eql(u8, name, "browser-direct") and ownershipOnly(built.stderr)) {
+            var tea: std.ArrayList([]const u8) = .empty;
+            try tea.appendSlice(c.arena, &.{ "build", "--diagnostics=json", "--platform=browser-tea", "--out=tea" });
+            try tea.appendSlice(c.arena, sources.items);
+            const ok = try w.runWith(try c.argv(tea.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
+            if (ok.exit_code != 0 or ok.stderr.len != 0) {
+                detail(
+                    "{s}: an ownership fixture must build CLEAN on browser-tea, where nothing is edited in place; it exited {d}\n--- stderr ---\n{s}\n",
+                    .{ c.fixture.name, ok.exit_code, ok.stderr },
+                );
+                return error.TeaBuildFailed;
+            }
+        };
+
+        // A `browser-direct` refusal is the lowering's, met while modules
+        // are lowered; under `--release` the build must stop there too, with
+        // the same report, and never go on to spell a runtime nothing
+        // rooted (it panicked doing so for a refused `Tea.element`).
+        if (!c.kind.isRelease() and std.mem.indexOf(u8, dir_path, "/bad/direct/") != null) {
+            var rel: std.ArrayList([]const u8) = .empty;
+            try rel.appendSlice(c.arena, args.items[0..3]);
+            try rel.appendSlice(c.arena, &.{ "--out=out", "--release" });
+            try rel.appendSlice(c.arena, sources.items);
+            const r = try w.runWith(try c.argv(rel.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
+            if (r.exit_code != 1 or !std.mem.eql(u8, r.stderr, built.stderr) or w.exists("out")) {
+                detail(
+                    "{s}: under --release a browser-direct refusal must be the same refusal, nothing written; it exited {d}\n--- stderr ---\n{s}\n",
+                    .{ c.fixture.name, r.exit_code, r.stderr },
+                );
+                return error.ReleaseRefusalDiffers;
+            }
+        }
+    }
+
+    /// Whether a JSON diagnostic list names the ownership checker's codes
+    /// and no others (`ownership-checker.md` §28.6).
+    fn ownershipOnly(stderr: []const u8) bool {
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared" };
+        var any = false;
+        var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
+        _ = it.next();
+        while (it.next()) |rest| {
+            const end = std.mem.indexOfScalar(u8, rest, '"') orelse return false;
+            const code = rest[0..end];
+            var known = false;
+            for (codes) |k| if (std.mem.eql(u8, k, code)) {
+                known = true;
+            };
+            if (!known) return false;
+            any = true;
+        }
+        return any;
     }
 
     fn format(c: Case) !void {
@@ -2075,6 +2132,7 @@ const Case = struct {
             const release = pass == .release or pass == .tea_release;
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{ "build", if (tea) tea_arg else platform_arg });
+            if (c.cfg.mode == .pending) try args.append(c.arena, "--diagnostics=json");
             if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
             try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
@@ -2176,6 +2234,7 @@ const Case = struct {
         const pass_name = @tagName(pass);
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
+            if (c.cfg.mode == .pending) classify("{s}: {s}", .{ pass_name, failSignature(c.arena, built) });
             detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass_name, built.stdout, built.stderr });
             because("[{s}] build exit {d}: {s}: {s}", .{ pass_name, built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
             return error.BuildFailed;
@@ -2329,12 +2388,13 @@ const Case = struct {
         // One path: a project's directory, whose modules import each other,
         // or the one file.
         try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) tea_arg else platform_arg });
-        // A project with a platform of its own names its modules: `.`
-        // would take the platform's files for the project's.
+        // A project with a platform of its own and one module names it:
+        // `.` would take the platform's files for the project's.
         // Any other project's modules are dumped from a directory holding
         // only them: the world is the worker's, shared by every case it
-        // runs, so `.` would also take the modules earlier cases left.
-        if (c.fixture.project and hasPlatformDir(try c.fixturePath())) {
+        // runs, so `.` would also take the modules earlier cases left (and
+        // `dump` takes one path).
+        if (c.fixture.project and sources.len == 1 and hasPlatformDir(try c.fixturePath())) {
             try dump.appendSlice(c.arena, sources);
         } else if (c.fixture.project) {
             const dir = "_msg-types";
@@ -2726,14 +2786,29 @@ const Case = struct {
             while (names.next()) |name| {
                 any = true;
                 const flag = try std.fmt.allocPrint(c.arena, "--platform={s}", .{name});
-                const checked = try c.compiler(&.{ "check", flag, path });
-                try expectExit(0, checked);
-                if (checked.stderr.len != 0) {
-                    detail("{s}: an ownership fixture must check clean under {s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, name, checked.stderr });
-                    return error.GoodFixtureHasDiagnostics;
-                }
+                const checked = try c.compiler(&.{ "check", "--diagnostics=json", flag, path });
                 const r = try c.compiler(&.{ "dump", "--stage=ownership", flag, path });
                 try expectExit(0, r);
+                // `ownership-checker.md` §28.10, the dump against the build:
+                // on a platform that edits lists in place `check` fails
+                // exactly when the report has a rejected or pending line,
+                // with the ownership checker's codes and no others, and
+                // elsewhere it is silent whatever the report says.
+                const enforces = std.mem.eql(u8, name, "browser-direct");
+                const refused = enforces and (std.mem.indexOf(u8, r.stdout, ": rejected ") != null or std.mem.indexOf(u8, r.stdout, ": pending") != null);
+                if (refused) {
+                    try expectExit(1, checked);
+                    if (!ownershipOnly(checked.stderr)) {
+                        detail("{s}: under {s}, the report's rejections must be the check's only errors\n--- stderr ---\n{s}\n", .{ c.fixture.name, name, checked.stderr });
+                        return error.OwnershipErrorsDisagree;
+                    }
+                } else {
+                    try expectExit(0, checked);
+                    if (!std.mem.eql(u8, std.mem.trim(u8, checked.stderr, " \r\n"), "[]") and checked.stderr.len != 0) {
+                        detail("{s}: an ownership fixture must check clean under {s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, name, checked.stderr });
+                        return error.GoodFixtureHasDiagnostics;
+                    }
+                }
                 // A test platform is named by its directory
                 // (`tests/platforms/page`); its golden by the last part.
                 try c.expectGolden(try std.fmt.allocPrint(c.arena, "{s}.ownership", .{std.fs.path.basename(name)}), r.stdout);

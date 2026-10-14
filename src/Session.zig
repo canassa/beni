@@ -81,6 +81,7 @@ const platform_packages = @import("platform_packages");
 const platform_chain = @import("platform.zig");
 const Manifest = @import("js/Manifest.zig");
 const artifact_bytes = @import("frontend/artifact_bytes.zig");
+const Enforce = @import("own/Enforce.zig");
 
 const Session = @This();
 
@@ -182,8 +183,20 @@ pack: CorePack.Pack = .empty,
 /// that lowered the file, so the slots need no lock and their order is the
 /// file order whatever `--jobs` was.
 pack_frontend: []?[]u8 = &.{},
+/// `Options.ownership` on a chain that edits lists in place
+/// (`ownership-checker.md` §28.3): this run enforces.
+enforce_ownership: bool = false,
+/// Owned. Per module, the summary block its cache entry carries
+/// (`ownership-checker.md` §28.4), or null; empty unless the pass wrote any.
+ownership_blocks: []?[]u8 = &.{},
 
 pub const DiagnosticsFormat = enum { text, json };
+
+pub fn freeOwnershipBlocks(session: *Session) void {
+    for (session.ownership_blocks) |slot| if (slot) |bytes| session.gpa.free(bytes);
+    session.gpa.free(session.ownership_blocks);
+    session.ownership_blocks = &.{};
+}
 
 pub const Options = struct {
     /// Worker count, at least 1. `1` runs on the calling thread.
@@ -346,6 +359,11 @@ pub const Options = struct {
     /// module's solved types, which only a module this run checks keeps
     /// (`ownership-checker.md` §16.9). No `check` or `build` sets it.
     no_pack: bool = false,
+    /// `check` and `build`: run the ownership checker after the module
+    /// check when the chain says `"lists": "in-place"`, and make what it
+    /// rejects errors (`ownership-checker.md` §28.3). On any other chain it
+    /// does nothing at all.
+    ownership: bool = false,
     /// With `pack_out`: the build id of the compiler that will carry the
     /// pack, which every key is computed with in place of this one's.
     pack_build_id: ?[16]u8 = null,
@@ -531,6 +549,13 @@ pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
     };
     errdefer session.interner.deinit(gpa);
     session.build_id_bytes = keyBuildId(options);
+    // §28.3: the pass reads solved types, so a run that enforces, and the
+    // maker of the checked core, which writes every core and platform
+    // module's summary block (§28.7), keep the type stores.
+    if (options.ownership) if (options.chain) |c| {
+        session.enforce_ownership = c.inPlace();
+    };
+    if (session.enforce_ownership or options.pack_out != null) session.options.keep_type_stores = true;
     // A core read from `--core-root` is not the core the pack was checked
     // from, and a run that makes a pack reads only the rows it was handed.
     if (options.pack_out != null) {
@@ -566,6 +591,7 @@ pub fn deinit(session: *Session) void {
     gpa.free(session.iface_hashes);
     gpa.free(session.digests);
     gpa.free(session.compare_keys);
+    session.freeOwnershipBlocks();
     session.keys.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
@@ -2163,6 +2189,7 @@ fn checkSerial(session: *Session) RunError!void {
         .digest = session.digests,
         .hit = hit,
         .compare = session.compare_keys,
+        .ownership = session.enforce_ownership,
     };
 
     session.checked.deinit(gpa);
@@ -2197,6 +2224,20 @@ fn checkSerial(session: *Session) RunError!void {
     // reaches the trace.
     inline for (@typeInfo(Check.Counters).@"struct".field_names) |field_name| {
         session.profile.addCounter(@field(Profile.Counter, field_name), @field(session.checked.counters, field_name));
+    }
+    // The ownership checker (`ownership-checker.md` §28.3): after the check,
+    // before its diagnostics are reported and its entries written, and only
+    // on a program the check found no error in.
+    if (session.enforce_ownership or session.options.pack_out != null) {
+        var clean = std.mem.indexOfScalar(bool, quiet, true) == null;
+        for (session.checked.diagnostics) |item| {
+            if (item.severity == .@"error") clean = false;
+        }
+        if (clean) {
+            const token = session.profile.begin();
+            try Enforce.run(session, cached);
+            session.profile.end(0, token, .ownership, Profile.Event.no_file, 0);
+        }
     }
     try session.reportCheckDiagnostics();
     try session.storeEntries(cached);
@@ -2335,6 +2376,7 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
         .dispatch = sidecar,
         .schema_plan = plan,
         .diagnostics = diagnostics,
+        .ownership = if (m.int() < session.ownership_blocks.len) session.ownership_blocks[m.int()] orelse &.{} else &.{},
     });
 }
 
@@ -2522,7 +2564,9 @@ fn reportCheckDiagnostics(session: *Session) RunError!void {
             try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, item.message);
             continue;
         }
-        const start, const end = session.tokenSpan(file, token);
+        const start, var end = session.tokenSpan(file, token);
+        // An ownership error underlines its whole edit (`ownership-checker.md` §28.6).
+        if (item.last_token) |last| _, end = session.tokenSpan(file, @max(token, last));
         try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, item.message);
     }
 }
@@ -3042,6 +3086,11 @@ fn lookupSource(context: *const anyopaque, d: *const diagnostic.Diagnostic) ?[]c
     const session: *const Session = @ptrCast(@alignCast(context));
     for (session.late_sources) |entry| {
         if (sameSpan(entry.span, d.span)) return entry.source;
+    }
+    // An ownership message holds its own places (`ownership-checker.md` §28.6).
+    switch (d.code) {
+        .list_still_used, .top_level_list_changed, .view_changes_model, .list_may_be_shared => return null,
+        else => {},
     }
     const index = session.store.find(d.span.file) orelse return null;
     return session.store.bytes(index);

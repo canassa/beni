@@ -62,6 +62,9 @@ pub const Loaded = struct {
     plan: SchemaPlan,
     /// Borrowed from `bytes`.
     diagnostics: []const entry_bytes.Diagnostic,
+    /// Owned: the summary block (`ownership-checker.md` §28.4), copied out
+    /// of `bytes`; empty when the entry has none.
+    ownership: []u8 = &.{},
 
     pub const empty: Loaded = .{
         .bytes = &.{},
@@ -77,6 +80,7 @@ pub const Loaded = struct {
         l.sidecar.deinit(gpa);
         l.plan.deinit(gpa);
         gpa.free(@constCast(l.diagnostics));
+        gpa.free(l.ownership);
         l.* = empty;
     }
 };
@@ -204,6 +208,7 @@ fn decode(
             return null;
         },
     };
+    out.ownership = try gpa.dupe(u8, entry.ownership);
     if (!matchesShell(&out.record, shell)) {
         out.deinit(gpa);
         return null;

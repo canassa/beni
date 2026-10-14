@@ -1,0 +1,30 @@
+-- The focused subscription fold proves its fresh accumulator containers
+-- owned at each step. The builder starts empty and threads replacements.
+-- Opaque taps may share captures; the freshly built tap-list containers do not.
+-- The browser-tea twin renders two declarations under one key.
+import Dict
+import Sub
+import Tea
+
+
+want k kind t d = Dict.update d k λcurrent →
+    ( first, taps ) = Maybe.withDefault current ( kind, [] )
+    Just ( first, List.append taps [ t ] )
+
+
+build declared = List.foldl declared Dict.empty λ( k, kind, t ) d → want k kind t d
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                sub = Sub.listen 1 (λ_ → ⊤) λ_ → {}
+                build (Sub.taps (Sub.batch [ sub, sub ]))
+        , update = λ_ model → model
+        , view =
+            λmodel →
+                sizes = List.map (Dict.values model) λ( _, taps ) → List.length taps
+                <p>{List.sum sizes}</p>
+        }

@@ -1,0 +1,22 @@
+module ResultDefault
+  22:36 List.push model.items: accepted param
+  28:23 call ResultDefault.handle model.items: accepted once
+  33:60 call ResultDefault.handle model.items: accepted once
+  40:13 call ResultDefault.handle model.items: accepted param (ResultDefault.handle writes π1.items)
+  48:46 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 49:30
+  54:39 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 54:56
+  61:22 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 59:5
+  74:22 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 72:5
+  84:68 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 84:17
+  summary handle: π1.items RAW, π1.items[*] A, π1.other RA; res .items π1.items, .items[*] ~π1.items[*], .other π1.other
+  summary step: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
+  summary stepLambda: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
+  summary stepCase: π2 A, π2.items RAW, π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2
+  summary readAfter: π2 R, π2.items RW, π2.items[*] R
+  summary defaultReads: π2 R, π2.items RAW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.items ~π2.other
+  summary resultAndThen: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
+  summary maybeAndThen: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
+  summary mixed: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
+  demands 9: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 5
+total 9: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 5
+cause later-use 5

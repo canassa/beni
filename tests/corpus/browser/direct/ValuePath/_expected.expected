@@ -1,0 +1,881 @@
+-- load
+<body>
+  <main>
+    <p id="ticks">"0"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"0"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-2">
+          "remove "
+          "2"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"0"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 2 of 0"</h2>
+          <button id="open2">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #tick
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"0"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-2">
+          "remove "
+          "2"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"0"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 2 of 0"</h2>
+          <button id="open2">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #a
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-2">
+          "remove "
+          "2"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"0"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 2 of 0"</h2>
+          <button id="open2">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #t-x
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul></ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-2">
+          "remove "
+          "2"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"0"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 2 of 0"</h2>
+          <button id="open2">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #t-x0
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul>
+                  <li>
+                    <button id="t-x00">"x00"</button>
+                    <ul></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-2">
+          "remove "
+          "2"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"0"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 2 of 0"</h2>
+          <button id="open2">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #t-r
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul>
+                  <li>
+                    <button id="t-x00">"x00"</button>
+                    <ul></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>
+            <button id="t-r1">"r1"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-2">
+          "remove "
+          "2"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"0"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 2 of 0"</h2>
+          <button id="open2">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #rm-2
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul>
+                  <li>
+                    <button id="t-x00">"x00"</button>
+                    <ul></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>
+            <button id="t-r1">"r1"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"0"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #relabel
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul>
+                  <li>
+                    <button id="t-x00">"x00"</button>
+                    <ul></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>
+            <button id="t-r1">"r1"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label!"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"0"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #step
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul>
+                  <li>
+                    <button id="t-x00">"x00"</button>
+                    <ul></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>
+            <button id="t-r1">"r1"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label!"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"2"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 0"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 0"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 0"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #open
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul>
+                  <li>
+                    <button id="t-x00">"x00"</button>
+                    <ul></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>
+            <button id="t-r1">"r1"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label!"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"2"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 1"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 1"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 1"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #open
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul>
+                  <li>
+                    <button id="t-x00">"x00"</button>
+                    <ul></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>
+            <button id="t-r1">"r1"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label!"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"2"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 2"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 2"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 2"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #open3
+<body>
+  <main>
+    <p id="ticks">"1"</p>
+    <button id="tick">"tick"</button>
+    <button id="a">"1"</button>
+    <ul id="tree">
+      <li>
+        <button id="t-r">"r"</button>
+        <ul>
+          <li>
+            <button id="t-x">"x"</button>
+            <ul>
+              <li>
+                <button id="t-x0">"x0"</button>
+                <ul>
+                  <li>
+                    <button id="t-x00">"x00"</button>
+                    <ul></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>
+            <button id="t-r1">"r1"</button>
+            <ul></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li>
+        <button id="rm-1">
+          "remove "
+          "1"
+        </button>
+      </li>
+      <li>
+        <button id="rm-3">
+          "remove "
+          "3"
+        </button>
+      </li>
+    </ol>
+    <p id="label">"label!"</p>
+    <button id="relabel">"relabel"</button>
+    <p id="steps">"2"</p>
+    <button id="step">
+      "step by "
+      "2"
+    </button>
+    <section>
+      <h2>"opened 3"</h2>
+      <button id="open">"open"</button>
+    </section>
+    <ul id="cards">
+      <li>
+        <section>
+          <h2>"card 1 of 3"</h2>
+          <button id="open1">"open"</button>
+        </section>
+      </li>
+      <li>
+        <section>
+          <h2>"card 3 of 3"</h2>
+          <button id="open3">"open"</button>
+        </section>
+      </li>
+    </ul>
+  </main>
+</body>

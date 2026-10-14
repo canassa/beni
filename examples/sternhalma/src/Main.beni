@@ -1,0 +1,486 @@
+-- Sternhalma, by Lucas (https://github.com/rvcas/sternhalma, commit
+-- ffb3f91bd1b2be28015f4c69beaadbb5763bb0f4), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Board exposing (Board, Cell)
+import Cmd exposing (Cmd)
+import Hex
+import Html exposing (Event, Html)
+import Move
+import Sub exposing (Sub)
+import Tea exposing (Document)
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = init
+        , subscriptions = λ_ → Sub.none
+        , update = update
+        , view = view
+        }
+
+
+-- MODEL
+
+type alias PlayerId =
+    Int
+
+
+type alias Player =
+    id : PlayerId
+    color : String
+
+
+type alias GameState =
+    totalPlayers : Int
+    players : List Player
+    board : Board
+    currentPlayer : Int
+    dragging : Maybe Cell
+    winner : Maybe PlayerId
+
+
+type Model
+    = SelectPlayers
+    | Playing GameState
+
+
+init : ⊤ → Model × Cmd Msg
+init _ = ( SelectPlayers, Cmd.none )
+
+
+initGame : Int → GameState
+initGame count =
+    { totalPlayers = count
+    , players = generatePlayers count
+    , board = setupBoard count
+    , currentPlayer = 0
+    , dragging = Nothing
+    , winner = Nothing
+    }
+
+
+-- Players
+
+generatePlayers : Int → List Player
+generatePlayers count =
+    List.range 0 (count - 1)
+        ▷ List.map λid → Player id (playerColor id)
+
+
+playerColor : Int → String
+playerColor id =
+    case id of
+        0 →
+            "bg-red-400"
+
+        1 →
+            "bg-purple-500"
+
+        2 →
+            "bg-yellow-600"
+
+        3 →
+            "bg-blue-300"
+
+        4 →
+            "bg-green-500"
+
+        _ →
+            "bg-yellow-300"
+
+
+-- Board Setup
+
+setupBoard : Int → Board
+setupBoard totalPlayers =
+    board = Board.init
+    playerIds = List.range 0 (totalPlayers - 1)
+    List.foldl playerIds board λplayerId b → placePlayerPieces totalPlayers playerId b
+
+
+placePlayerPieces : Int, PlayerId, Board → Board
+placePlayerPieces totalPlayers playerId board =
+    case Board.homeTriangle totalPlayers playerId of
+        Nothing →
+            board
+
+        Just triangle →
+            triangleCells =
+                board.cells
+                    ▷ List.filter λc → Board.triangleOf c.coord == Just triangle
+            List.foldl triangleCells board λcell b → Board.setOccupant cell.index (Just playerId) b
+
+
+-- UPDATE
+
+type Msg
+    = SetPlayers Int
+    | Reset
+    | DragStart Cell
+    | DragEnd
+    | DragOver
+    | Drop Cell
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        SetPlayers count →
+            ( Playing (initGame count), Cmd.none )
+
+        Reset →
+            ( SelectPlayers, Cmd.none )
+
+        DragStart cell →
+            case model of
+                SelectPlayers →
+                    ( model, Cmd.none )
+
+                Playing state →
+                    if cell.occupant == Just state.currentPlayer && state.winner == Nothing then
+                        ( Playing { state | dragging = Just cell }, Cmd.none )
+                    else
+                        ( model, Cmd.none )
+
+        DragEnd →
+            case model of
+                SelectPlayers →
+                    ( model, Cmd.none )
+
+                Playing state →
+                    ( Playing { state | dragging = Nothing }, Cmd.none )
+
+        DragOver →
+            ( model, Cmd.none )
+
+        Drop targetCell →
+            case model of
+                SelectPlayers →
+                    ( model, Cmd.none )
+
+                Playing state →
+                    case state.dragging of
+                        Nothing →
+                            ( model, Cmd.none )
+
+                        Just fromCell →
+                            if
+                                Move.canMove
+                                    state.totalPlayers
+                                    state.currentPlayer
+                                    fromCell
+                                    targetCell
+                                    state.board
+                            then
+                                newBoard =
+                                    Board.setOccupant
+                                        targetCell.index
+                                        (Just state.currentPlayer)
+                                        (Board.setOccupant fromCell.index Nothing state.board)
+                                winner = checkWinner state.totalPlayers state.currentPlayer newBoard
+                                nextPlayer =
+                                    if winner ≠ Nothing then
+                                        state.currentPlayer
+                                    else
+                                        Int.mod (state.currentPlayer + 1) state.totalPlayers
+                                ( Playing
+                                    { state
+                                        | board = newBoard
+                                        , currentPlayer = nextPlayer
+                                        , dragging = Nothing
+                                        , winner = winner
+                                    }
+                                , Cmd.none
+                                )
+                            else
+                                ( Playing { state | dragging = Nothing }, Cmd.none )
+
+
+checkWinner : Int, PlayerId, Board → Maybe PlayerId
+checkWinner totalPlayers playerId board =
+    Board.goalTriangle totalPlayers playerId
+        ▷ Maybe.andThen (checkWinnerHelp playerId board _)
+
+
+checkWinnerHelp : PlayerId, Board, Board.Triangle → Maybe PlayerId
+checkWinnerHelp playerId board goalTri =
+    piecesInGoal =
+        board.cells
+            ▷ List.filter λc →
+                c.occupant
+                    == Just playerId
+                    && Board.triangleOf c.coord
+                        == Just goalTri
+            ▷ List.length
+    if piecesInGoal == 10 then
+        Just playerId
+    else
+        Nothing
+
+
+-- VIEW
+
+view : Model → Document Msg
+view model =
+    { title = "Sternhalma"
+    , body =
+        <main class="container mx-auto min-h-screen flex flex-col justify-center items-center py-8">
+            <div class="relative">
+                {viewBoard model}
+                <div class="absolute left-full top-0 ml-8 flex flex-col gap-4 whitespace-nowrap">
+                    {case model of
+                        SelectPlayers →
+                            viewPlayerSelect
+
+                        Playing state →
+                            viewPlayingInfo state
+                    }
+                </div>
+            </div>
+        </main>
+    }
+
+
+viewPlayerSelect : Html Msg
+viewPlayerSelect =
+    <div class="flex flex-col gap-3">
+        <div class="font-mono text-lg">Select Number of Players</div>
+        <div class="flex flex-col gap-2 items-center">
+            {List.map [ 2, 3, 4, 6 ] viewPlayerButton}
+        </div>
+    </div>
+
+
+viewPlayerButton : Int → Html Msg
+viewPlayerButton count =
+    <button
+        class="rounded-full h-12 w-12 font-mono text-white text-sm shadow-lg hover:scale-110 transition-transform ${playerColor (count - 2)}"
+        onClick={SetPlayers count}
+    >
+        {Html.text (String.fromInt count)}
+    </button>
+
+
+viewPlayingInfo : GameState → Html Msg
+viewPlayingInfo state =
+    <div class="flex flex-col gap-4">
+        {viewGameInfo state}
+        <button class="px-4 py-2 bg-gray-200 rounded font-mono hover:bg-gray-300" onClick={Reset}>
+            New Game
+        </button>
+    </div>
+
+
+viewGameInfo : GameState → Html Msg
+viewGameInfo state =
+    currentPlayerColor =
+        List.get state.players state.currentPlayer
+            ▷ Maybe.map λp → p.color
+            ▷ Maybe.withDefault ""
+    <div class="font-mono">
+        {case state.winner of
+            Just winnerId →
+                winnerColor =
+                    List.get state.players winnerId
+                        ▷ Maybe.map λp → p.color
+                        ▷ Maybe.withDefault ""
+                <div class="flex items-center gap-2 text-xl">
+                    <div class={"w-6 h-6 rounded-full " ++ winnerColor} />
+                    {Html.text ("Player " ++ String.fromInt (winnerId + 1) ++ " wins!")}
+                </div>
+
+            Nothing →
+                <div class="flex items-center gap-2">
+                    Current Player:
+                    <div class={"w-6 h-6 rounded-full " ++ currentPlayerColor} />
+                </div>
+        }
+    </div>
+
+
+viewBoard : Model → Html Msg
+viewBoard model =
+    board =
+        case model of
+            SelectPlayers →
+                Board.init
+
+            Playing state →
+                state.board
+    rows = Board.cellsGroupedByRow board
+    hexSize = 28.0
+    <div class="relative" style={[ ( "width", "600px" ), ( "height", "600px" ) ]}>
+        {List.concatMap rows (List.map _ (viewCell model hexSize _))}
+    </div>
+
+
+viewCell : Model, Float, Cell → Html Msg
+viewCell model hexSize cell =
+    ( px, py ) = Hex.toPixel hexSize cell.coord
+    centerX = 300
+    centerY = 300
+    x = centerX + px
+    y = centerY + py
+    <div
+        class="absolute transform -translate-x-1/2 -translate-y-1/2"
+        style={[ ( "left", String.fromFloat x ++ "px" ), ( "top", String.fromFloat y ++ "px" ) ]}
+    >
+        {case model of
+            SelectPlayers →
+                viewEmptyCellStatic cell
+
+            Playing state →
+                case cell.occupant of
+                    Just playerId →
+                        isCurrentPlayerPiece = playerId == state.currentPlayer
+                        isDraggable = isCurrentPlayerPiece && state.winner == Nothing
+                        viewPiece state playerId isDraggable cell
+
+                    Nothing →
+                        viewEmptyCell state cell
+        }
+    </div>
+
+
+viewPiece : GameState, PlayerId, Bool, Cell → Html Msg
+viewPiece state playerId isDraggable cell =
+    player = List.get state.players playerId
+    color = player ▷ Maybe.map .color ▷ Maybe.withDefault "bg-gray-400"
+    opacity =
+        if isDraggable then
+            ""
+        else
+            "opacity-50"
+    cursor =
+        if isDraggable then
+            "cursor-move"
+        else
+            "cursor-default"
+    <div
+        class={"w-12 h-12 rounded-full border border-black "
+                  ++ color
+                  ++ " "
+                  ++ opacity
+                  ++ " "
+                  ++ cursor
+              }
+        draggable={boolToString isDraggable}
+        onDragStart={onDragStart (DragStart cell)}
+        onDragEnd={onDragEnd DragEnd}
+    />
+
+
+triangleColor : Int, Cell → String
+triangleColor totalPlayers cell =
+    isActiveTriangle triangle =
+        case totalPlayers of
+            2 →
+                triangle == Board.Top || triangle == Board.Bottom
+
+            3 →
+                triangle == Board.TopLeft || triangle == Board.TopRight || triangle == Board.Bottom
+
+            4 →
+                triangle == Board.TopLeft
+                    || triangle == Board.TopRight
+                    || triangle == Board.BottomLeft
+                    || triangle == Board.BottomRight
+
+            6 →
+                True
+
+            _ →
+                False
+    baseColor triangle =
+        case triangle of
+            Board.Top →
+                "bg-red-100"
+
+            Board.TopRight →
+                "bg-purple-100"
+
+            Board.BottomRight →
+                "bg-yellow-100"
+
+            Board.Bottom →
+                "bg-blue-100"
+
+            Board.BottomLeft →
+                "bg-green-100"
+
+            Board.TopLeft →
+                "bg-orange-100"
+    case Board.triangleOf cell.coord of
+        Just triangle →
+            if isActiveTriangle triangle then
+                baseColor triangle
+            else
+                baseColor triangle ++ " opacity-30"
+
+        Nothing →
+            "bg-white"
+
+
+viewEmptyCellStatic : Cell → Html Msg
+viewEmptyCellStatic cell =
+    <div class={"w-12 h-12 rounded-full border border-black " ++ triangleColor 6 cell} />
+
+
+viewEmptyCell : GameState, Cell → Html Msg
+viewEmptyCell state cell =
+    isDropTarget =
+        case state.dragging of
+            Just fromCell →
+                Move.canMove state.totalPlayers state.currentPlayer fromCell cell state.board
+
+            Nothing →
+                False
+    highlight =
+        if isDropTarget then
+            "ring-2 ring-green-500"
+        else
+            ""
+    <div
+        class={"w-12 h-12 rounded-full border border-black "
+                  ++ triangleColor state.totalPlayers cell
+                  ++ " "
+                  ++ highlight
+              }
+        onDragOver={onDragOver DragOver}
+        onDrop={onDrop (Drop cell)}
+    />
+
+
+-- Helpers
+
+boolToString : Bool → String
+boolToString b =
+    if b then
+        "true"
+    else
+        "false"
+
+
+onDragStart : msg → (Event → msg)
+onDragStart msg = λ_ → msg
+
+
+onDragEnd : msg → (Event → msg)
+onDragEnd msg = λ_ → msg
+
+
+onDragOver : msg → (Event → msg)
+onDragOver msg =
+    λevent →
+        Html.preventDefault event
+        msg
+
+
+onDrop : msg → (Event → msg)
+onDrop msg =
+    λevent →
+        Html.preventDefault event
+        msg

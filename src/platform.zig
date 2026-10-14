@@ -73,6 +73,15 @@ pub const Chain = struct {
         return null;
     }
 
+    /// Whether the chain edits lists in place (`boundary.md` §5.2,
+    /// `ownership-checker.md` §28.2): its first `"lists"`, down the chain.
+    pub fn inPlace(chain: *const Chain) bool {
+        for (chain.layers) |layer| {
+            if (layer.manifest.lists) |l| return l == .@"in-place";
+        }
+        return false;
+    }
+
     /// As `first`, for one field of `"markup"` (§9.2).
     pub fn firstMarkup(chain: *const Chain, comptime field: []const u8) ?Found {
         for (chain.layers, 0..) |layer, i| {

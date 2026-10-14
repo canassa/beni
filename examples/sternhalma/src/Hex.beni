@@ -1,0 +1,95 @@
+-- Sternhalma, by Lucas (https://github.com/rvcas/sternhalma, commit
+-- ffb3f91bd1b2be28015f4c69beaadbb5763bb0f4), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+--! Hex coordinate system using cube coordinates.
+--!     Constraint: x + y + z = 0
+--!     We store (x, z) and derive y = -x - z
+
+pub type alias Coord =
+    x : Int
+    z : Int
+
+
+--| Create a coordinate. We use x and z, y is implicit (-x - z).
+pub coord : Int, Int → Coord
+coord x z = { x = x, z = z }
+
+
+--| Get the implicit y coordinate
+y : Coord → Int
+y c = -c.x - c.z
+
+
+pub type Direction
+    = TopRight
+    | Right
+    | BottomRight
+    | BottomLeft
+    | Left
+    | TopLeft
+
+
+pub allDirections : List Direction
+allDirections = [ TopRight, Right, BottomRight, BottomLeft, Left, TopLeft ]
+
+
+--| Get the neighbor in a given direction
+pub neighbor : Direction, Coord → Coord
+neighbor dir c =
+    case dir of
+        TopRight →
+            { x = c.x, z = c.z + 1 }
+
+        Right →
+            { x = c.x + 1, z = c.z }
+
+        BottomRight →
+            { x = c.x + 1, z = c.z - 1 }
+
+        BottomLeft →
+            { x = c.x, z = c.z - 1 }
+
+        Left →
+            { x = c.x - 1, z = c.z }
+
+        TopLeft →
+            { x = c.x - 1, z = c.z + 1 }
+
+
+--| Get all 6 neighbors
+pub neighbors : Coord → List Coord
+neighbors c = List.map allDirections λd → neighbor d c
+
+
+--| Hex distance between two coordinates
+pub distance : Coord, Coord → Int
+distance a b =
+    dx = abs (a.x - b.x)
+    dz = abs (a.z - b.z)
+    dy = abs (y a - y b)
+    max dx (max dz dy)
+
+
+--| Get the middle coordinate between two coords at distance 2.
+--|     Returns Nothing if they're not exactly 2 apart or not aligned.
+pub middle : Coord, Coord → Maybe Coord
+middle a b =
+    if distance a b == 2 then
+        mx = a.x + b.x
+        mz = a.z + b.z
+        if Int.mod mx 2 == 0 && Int.mod mz 2 == 0 then
+            Just { x = mx // 2, z = mz // 2 }
+        else
+            Nothing
+    else
+        Nothing
+
+
+--| Convert hex coord to pixel position for rendering.
+--|     Uses pointy-top orientation.
+pub toPixel : Float, Coord → Float × Float
+toPixel size c =
+    x_ = size * sqrt 3 * (toFloat c.x + toFloat c.z / 2)
+    y_ = size * 1.5 * toFloat c.z
+    ( x_, y_ )

@@ -13,6 +13,7 @@
 --! the slices that reach them.
 
 import Js
+import Rt
 
 
 type alias V =
@@ -1370,7 +1371,16 @@ walk list key event top node buffer =
 
         r = Js.get node "$r"
 
-        if not (Js.isUndefined r) && not (Js.same (Js.get r "l") list) then
+        -- A row of another list: one whose number is not this list's, or a
+        -- row of the list of that number in another program mounted below
+        -- this list's parent — a list's number is its program's, and two
+        -- programs number theirs alike — which a mount node between the row
+        -- and this list's parent tells (S4's review, `NestedPrograms`).
+        if
+            not (Js.isUndefined r)
+                && (not (Js.same (Js.get r "l") list) || mountBetween (Js.get node "parentNode") top
+                   )
+        then
             Js.set buffer "length" (Js.from 0)
             walk list key event top (Js.get node "parentNode") buffer
         else
@@ -1384,6 +1394,19 @@ walk list key event top node buffer =
                 walk list key event top (Js.get node "parentNode") buffer
             else
                 fire buffer r event 0
+
+
+-- Whether a program's mount node stands from `node` up to `top`, `top`
+-- left out: a row's parent is its list's parent, or an arm's nodes or the
+-- mount node between, so the walk is a step or two.
+mountBetween : V, V → Bool
+mountBetween node top =
+    if Js.isNullish node || Js.same node top then
+        False
+    else if not (Js.isUndefined (Js.get node "$$root")) then
+        True
+    else
+        mountBetween (Js.get node "parentNode") top
 
 
 -- Run the collected bodies, innermost first: each one's `preventDefault`
@@ -1408,8 +1431,8 @@ fire buffer r event i =
 --| `(el, name, h, r)`: a row node's own listener, for an event that does
 --| not bubble (§4.2): body `h` run with the row's instance `r`, its flags
 --| applied in the listener.
-pub listen : V, V, V, V → ⊤
-listen el name h r =
+pub listenRow : V, V, V, V → ⊤
+listenRow el name h r =
     flags : Int
     flags = Js.to (Js.get h "f")
 
@@ -1432,6 +1455,460 @@ listen el name h r =
 --| costs a call (the lean slice's shared listener).
 pub on : V, V, V → ⊤
 on el name h = Js.to (Js.call el "addEventListener" [ name, Js.from λevent → send h event ])
+
+
+-- ---- Branches and `Show` (§5.5; S4's amendment, item 3) -----------------
+--
+-- A branch's state is `{ k, i, s, p, n, m, y }`: the number of the arm it
+-- shows (-1: nothing), that arm's instance, the comment its arms are
+-- written after, the parent and the marker they are written before (as a
+-- slot's: a null parent is the marker's), each arm's `make`, and a
+-- `Show`'s key. An arm's instance holds the clone of its template (`e`),
+-- which is put on the page once, and its branch (`b`). A page with no
+-- branch ships none of this.
+
+--| `(parent, marker, makes)`: a branch's state, its comment put where its
+--| arms go.
+pub branch : V, V, V → V
+branch parent marker makes =
+    start = Js.call (Js.global "document") "createComment" [ Js.from "" ]
+    host = if Js.isNull parent then Js.get marker "parentNode" else parent
+    _ = Js.call host "insertBefore" [ start, marker ]
+
+    Js.object
+        [ ( "k", Js.from (0 - 1) )
+        , ( "i", Js.null )
+        , ( "s", start )
+        , ( "p", parent )
+        , ( "n", marker )
+        , ( "m", makes )
+        , ( "y", unset )
+        ]
+
+
+--| `(b, n, u, a)`: arm `n` shown — the arm shown torn down, its nodes
+--| taken out and its instance dropped, and arm `n` made, from the instance
+--| `u` the branch is in and `a`, what the branch's value made of the arm's
+--| values, and put where the arms go; -1 shows nothing.
+pub arm : V, Int, V, V → ⊤
+arm b n u a =
+    k : Int
+    k = Js.to (Js.get b "k")
+    if k ≥ 0 then clearAfter (Js.get b "s") (Js.get b "n")
+    if n < 0 then
+        Js.set b "i" Js.null
+    else
+        i = Js.apply (Js.at (Js.get b "m") n) [ u, b, a ]
+        Js.set i "b" b
+        clone = Js.get i "e"
+
+        if not (Js.isNullish clone) then
+            Js.to
+                (Js.call (Js.get (Js.get b "s") "parentNode") "insertBefore" [ clone, Js.get b "n" ]
+                )
+        Js.set b "i" i
+    Js.set b "k" (Js.from n)
+
+
+-- Every node after `start` up to `end` (the parent's last, for null) taken
+-- out of the page.
+clearAfter : V, V → ⊤
+clearAfter start end =
+    next = Js.get start "nextSibling"
+
+    if Js.isNull next || Js.same next end then
+        ⊤
+    else
+        _ = Js.call next "remove" []
+        clearAfter start end
+
+
+--| `(t, flags)`: an arm's template — the template element `t`'s parsed
+--| content, copied out of it (the next parse replaces it), and out of the
+--| `<svg>` an SVG root other than `<svg>` is parsed in (`dom`'s flag 2).
+pub armTemplate : V, Int → V
+armTemplate t flags =
+    f = Js.call (Js.get t "content") "cloneNode" [ Js.from True ]
+
+    if Js.bitAnd flags 2 ≠ 0 then
+        w = Js.get f "firstChild"
+        unwrap f w
+        Js.to (Js.call w "remove" [])
+    f
+
+
+unwrap : V, V → ⊤
+unwrap f w =
+    c = Js.get w "firstChild"
+
+    if Js.isNull c then
+        ⊤
+    else
+        _ = Js.call f "insertBefore" [ c, w ]
+        unwrap f w
+
+
+--| `(a, b)`: whether a keyed `Show`'s key is the one it shows: by
+--| SameValueZero, as a rekey compares keys (`NaN` is itself).
+pub sameKey : V, V → Bool
+sameKey a b =
+    Js.same a b
+        || (Js.typeIs a "number"
+               && Js.typeIs b "number"
+               && not (Js.same a a)
+               && not (Js.same b b)
+           )
+
+
+-- ---- The value path (S4's amendment, item 1) ----------------------------
+--
+-- Markup this platform does not write in place is `dom`'s kinds and blocks
+-- (`backend.md` §15.3–§15.5), unchanged: the functions of `browser`'s `Rt`
+-- that touch only the DOM run them, taken as they are — they keep no
+-- page-wide state. What enters program code or keeps state for the page is
+-- this module's: a kind's events (`listen`), its controls (`control`,
+-- `edited`).
+
+--| `(html, flags)`: a kind's template cloner (`Rt.template`).
+pub template : String, Int → (⊤ → V)
+template html flags = Rt.template html flags
+
+
+--| `(parent, marker, cx)`: a slot (`Rt.slot`) — a value slot of this
+--| platform's own markup, made at mount with no context, or a kind's.
+pub slot : V, V, V → V
+slot parent marker cx = Rt.slot parent marker cx
+
+
+--| `(slot, block)`: an `Html` hole (`Rt.childHtml`).
+pub childHtml : V, V → ⊤
+childHtml s b = Rt.childHtml s b
+
+
+--| `(slot, block or null)`: a `Maybe Html` hole (`Rt.childMaybe`).
+pub childMaybe : V, V → ⊤
+childMaybe s b = Rt.childMaybe s b
+
+
+--| `(slot, list)`: a `List Html` hole (`Rt.childList`).
+pub childList : V, V → ⊤
+childList s list = Rt.childList s list
+
+
+--| `(slot, items, keyOf, row, inputs)`: a kind's keyed `For` (`Rt.forKeyed`).
+pub forKeyed : V, V, V, V, V → ⊤
+forKeyed s items key r inputs = Rt.forKeyed s items key r inputs
+
+
+--| `(slot, items, row, inputs)`: a kind's positional `For`.
+pub forPosition : V, V, V, V → ⊤
+forPosition s items r inputs = Rt.forPosition s items r inputs
+
+
+--| `(slot, key, block)`: a kind's keyed `Show` showing its body.
+pub show : V, V, V → ⊤
+show s key b = Rt.show s key b
+
+
+--| `(slot, fallback or null)`: a kind's `Show` on `Nothing`.
+pub hide : V, V → ⊤
+hide s f = Rt.hide s f
+
+
+--| `(slot)`: what a skipped slot of a kind shows, patched again where it
+--| must be (`Rt.restate`).
+pub restate : V → ⊤
+restate s = Rt.restate s
+
+
+--| `Html.text`: the text, as a text hole shows it.
+pub text : V → V
+text s = Rt.text s
+
+
+--| `Html.map`: the same markup, its messages passed through `f`.
+pub map : V, V → V
+map html f = Rt.map html f
+
+
+--| `(el, name, flags)`: a kind's handler node listening on itself, for
+--| every event (§4.2, as amended for S4): the DOM's bubbling orders it
+--| against this platform's own listeners as Elm orders handlers, and no
+--| document listener exists. The declaration's `preventDefault` (1) and
+--| `stopPropagation` (2) run in the listener, synchronously; the body —
+--| the message the node holds, or makes of the event's payload, passed
+--| through each `Html.map` it is inside, innermost first — runs inside
+--| `send`, and goes to the dispatcher of the program whose mount node is
+--| nearest above the node.
+pub listen : V, String, Int → ⊤
+listen el name flags =
+    key = "$$${name}"
+    payload = "${key}X"
+
+    Js.to
+        (Js.call el "addEventListener"
+            [ Js.from name
+            , Js.from λevent →
+                -- A stopped page runs nothing of a handler, its flags
+                -- included, as `browser`'s `Rt.fire` does.
+                if Js.read dead || Js.isUndefined (Js.get el key) then
+                    ⊤
+                else
+                    if Js.bitAnd flags 1 ≠ 0 then
+                        Js.to (Js.call event "preventDefault" [])
+                    if Js.bitAnd flags 2 ≠ 0 then
+                        Js.to (Js.call event "stopPropagation" [])
+                    -- What the node holds is read now, as the event fires:
+                    -- its program's mount, its handler, its payload's
+                    -- extractor and its maps. A body queued behind a running
+                    -- dispatch (a blur a handler's removal fires) runs after
+                    -- the dispatch may have patched the node or taken it off
+                    -- the page, and is delivered where the browser fired it
+                    -- (the 2026-10-10 amendment); only the message is
+                    -- queued, made inside the guard.
+                    root = mountAbove (Js.get el "parentNode")
+                    h = Js.get el key
+                    x = Js.get el payload
+                    cx = Js.get el "$$cx"
+
+                    if Js.isNull root then
+                        ⊤
+                    else
+                        send (Js.from λev → deliver root h x cx ev) event
+            ]
+        )
+
+
+-- The message handler `h` is, or makes of the event's payload by `x`, through
+-- every `Html.map` context from `cx` out, sent to the dispatcher of the mount
+-- node `root` (`$$root`).
+deliver : V, V, V, V, V → ⊤
+deliver root h x cx event =
+    msg =
+        through
+            cx
+            (if Js.isUndefined x then
+                h
+             else
+                Js.apply h [ Js.apply x [ event ] ]
+            )
+
+    Js.to (Js.call root "$$root" [ msg ])
+
+
+-- `msg` through each context from `c` out. (`isNullish`: a node outside
+-- every `Html.map` has no `$$cx`, and the outermost context's `up` is null.)
+through : V, V → V
+through c msg =
+    if Js.isNullish c then
+        msg
+    else
+        through (Js.get c "up") (Js.call c "f" [ msg ])
+
+
+-- The nearest mount node from `n` up, or null.
+mountAbove : V → V
+mountAbove n =
+    if Js.isNull n || not (Js.isUndefined (Js.get n "$$root")) then
+        n
+    else
+        mountAbove (Js.get n "parentNode")
+
+
+-- ---- Controlled inputs (§8.1; S4's amendment, item 2) -------------------
+--
+-- A controlled element keeps the model's value of each `stateful` property
+-- it has as `$$s[prop]`. What may have changed one without the model — an
+-- edit, or a write of the runtime's — is marked, page-wide, and put back
+-- at the end of the dispatch: the first mark of a dispatch queues the
+-- reconcile behind what the dispatch has queued (§4.3), so it runs as the
+-- queue drains and before the verify mode, and a mark a later message
+-- makes queues it again. A page with no `stateful` attribute calls none of
+-- this, and ships none of it.
+
+-- The controls marked since the last reconcile.
+marked : V
+marked = Js.construct (Js.global "Set") []
+
+
+-- A reconcile is queued and has not run.
+pending : Js.Ref Bool
+pending = Js.ref False
+
+
+--| `(el, prop, v)`: a `stateful` attribute's value, kept on the element and
+--| written when the page's is not it, so an edit the model took is not
+--| written back. The first call listens for what changes a control
+--| without the model.
+pub control : V, String, V → ⊤
+control el prop v =
+    if Js.isUndefined (Js.get el "$$s") then
+        Js.set el "$$s" (Js.object [])
+        if Js.read watching then ⊤ else watchEdits ⊤
+    Js.set (Js.get el "$$s") prop v
+    if Js.same (Js.get el prop) v then ⊤ else Js.set el prop v
+
+
+--| `(el)`: a controlled element a write of the runtime's may have changed —
+--| another of its attributes, or something inside it.
+pub edited : V → ⊤
+edited el = mark el
+
+
+-- `el` marked, and the reconcile queued if it is not.
+mark : V → ⊤
+mark el =
+    _ = Js.call marked "add" [ el ]
+
+    if Js.read pending then
+        ⊤
+    else
+        Js.write pending True
+        if Js.isNull (Js.read queue) then
+            Js.write queue (Js.array [])
+        _ = Js.call (Js.read queue) "push" [ Js.from reconcileMarks, Js.null ]
+        ⊤
+
+
+-- Every marked control put back to the model, and the marks cleared.
+reconcileMarks : V → ⊤
+reconcileMarks _ =
+    Js.write pending False
+    Js.each marked λel → putBack el
+    Js.to (Js.call marked "clear" [])
+
+
+-- Each property a control keeps written back where the page's differs.
+putBack : V → ⊤
+putBack el =
+    s = Js.get el "$$s"
+    if Js.isUndefined s then
+        ⊤
+    else
+        Js.each (Js.call (Js.global "Object") "keys" [ s ]) λk →
+            key : String
+            key = Js.to k
+            v = Js.get s key
+            if Js.same (Js.get el key) v then ⊤ else Js.set el key v
+
+
+-- `el` and what changes with it with no event of its own, each handed to
+-- `f`: every radio named as it is — a superset of its group — and every
+-- option of a select.
+affected : V, (V → ⊤) → ⊤
+affected el f =
+    f el
+    tag : String
+    tag = Js.to (Js.get el "localName")
+    if tag == "select" then
+        Js.each (Js.get el "options") f
+    else if
+        tag == "input" && Js.to (Js.get el "type") == "radio" && Js.to (Js.get el "name") ≠ ""
+    then
+        Js.each (Js.call (Js.global "document") "getElementsByName" [ Js.get el "name" ]) f
+
+
+-- A control the user may have changed: marked, when it is one.
+markEdit : V → ⊤
+markEdit el = if Js.isUndefined (Js.get el "$$s") then ⊤ else mark el
+
+
+-- Controls changed after the dispatch of the event that marked them — a
+-- `reset` resets them then, a click whose default was prevented puts a box
+-- back then — put back in a task after it, unless the page has stopped.
+heldBack : V
+heldBack = Js.array []
+
+
+holdEdit : V → ⊤
+holdEdit el =
+    if Js.to (Js.get heldBack "length") == 0 then
+        Js.to (Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → putBackHeld ⊤, Js.from 0 ])
+    Js.to (Js.call heldBack "push" [ el ])
+
+
+putBackHeld : ⊤ → ⊤
+putBackHeld ⊤ =
+    held = Js.call heldBack "splice" [ Js.from 0 ]
+    if Js.read dead then ⊤ else Js.each held λel → putBack el
+
+
+watching : Js.Ref Bool
+watching = Js.ref False
+
+
+-- The listeners: in the capture phase, so a control is marked before any
+-- handler's message runs, whether or not it has a handler; and in the
+-- bubble phase on the document, after every element's listener, a send
+-- that does nothing, so the reconcile runs after every edit, handled or
+-- not (§8.1's no-op send).
+watchEdits : ⊤ → ⊤
+watchEdits ⊤ =
+    Js.write watching True
+    document = Js.global "document"
+    Js.each (Js.array [ Js.from "input", Js.from "change", Js.from "click", Js.from "reset" ]) λname →
+        _ = Js.call document "addEventListener" [ name, Js.from edits, Js.from True ]
+        Js.to
+            (Js.call document "addEventListener"
+                [ name, Js.from λevent → send (Js.from noop) event ]
+            )
+    Js.to
+        (Js.call (Js.global "window") "addEventListener"
+            [ Js.from "pageshow", Js.from λ_ → pageShown ⊤ ]
+        )
+
+
+-- The body of the no-op send.
+noop : V → ⊤
+noop _ = ⊤
+
+
+-- What an event says may have changed without the model: its control,
+-- for `input` and `change`; a checkbox or radio, for `click`, which
+-- changed before the click was dispatched and may be put back after it;
+-- every control of the form, for `reset`, which resets them after it.
+-- (The target may be any element, the document or the window: each branch
+-- reads only what is `undefined` where it is missing, and only a form has
+-- its `elements` iterated.)
+edits : V → ⊤
+edits event =
+    -- Controls held for the task are marked again by every later edit:
+    -- the dispatch it ends in puts them back before the task does, as a
+    -- render does on `browser-tea` (S4's review: in Chrome the reset's own
+    -- reconcile ran before the reset, and took their marks).
+    Js.each heldBack markEdit
+    target = Js.get event "target"
+    type_ : String
+    type_ = Js.to (Js.get event "type")
+    kind : String
+    kind = Js.to (Js.get target "type")
+    if type_ == "reset" then
+        if Js.to (Js.get target "localName") == "form" then
+            Js.each (Js.get target "elements") λel → affected el markAndHold
+    else if type_ ≠ "click" then
+        affected target markEdit
+    else if kind == "checkbox" || kind == "radio" then
+        affected target markAndHold
+
+
+markAndHold : V → ⊤
+markAndHold el =
+    markEdit el
+    holdEdit el
+
+
+-- The page is shown, after the browser restored what its form controls
+-- held on a reload or a history step: every control put back.
+pageShown : ⊤ → ⊤
+pageShown ⊤ =
+    if Js.read dead then
+        ⊤
+    else
+        Js.each
+            (Js.call (Js.global "document") "querySelectorAll"
+                [ Js.from "input,select,textarea,option" ]
+            )
+            λel → putBack el
 
 
 -- ---- The development verify mode (§8.3) ---------------------------------
@@ -1474,6 +1951,13 @@ same a b =
         False
     else if isList a || isList b then
         isList a && isList b && sameElements (elements a) (elements b)
+    else if isBlock a || isBlock b then
+        -- A markup value, `dom`'s block `{ t, v }`, by its kind: its values
+        -- are its root's inputs, whole locals, which a derived value that
+        -- reads only some of their paths keeps from when it was computed,
+        -- rightly (S4's amendment, items 1 and 4, as built). What it shows
+        -- is the page's, which the check reads where it is shown.
+        isBlock a && isBlock b && Js.same (Js.get a "t") (Js.get b "t")
     else
         keys = Js.call (Js.global "Object") "keys" [ a ]
         n : Int
@@ -1481,6 +1965,16 @@ same a b =
         other : Int
         other = Js.to (Js.get (Js.call (Js.global "Object") "keys" [ b ]) "length")
         n == other && sameFields keys a b 0 n
+
+
+-- A markup value: `dom`'s block, whose kind `t` has its `m` and its `p`.
+isBlock : V → Bool
+isBlock v =
+    t = Js.get v "t"
+    Js.typeIs t "object"
+        && not (Js.isNull t)
+        && Js.typeIs (Js.get t "m") "function"
+        && Js.typeIs (Js.get t "p") "function"
 
 
 -- A list by `backend.md` §4's protocol: an array, or a view or a trie.
@@ -1604,6 +2098,237 @@ verifyList list xs check what structural =
                         (Js.from "the key map of ${whatText} at a row's key")
                         (Js.call x "get" [ keyOf list r ])
                         (Js.get r "it")
+
+
+--| `(slot, value, kind, what)`: the verify mode's check of a value slot (S4's
+--| amendment, item 1, as built): the value computed again, a block — or,
+--| for kind 1, a `Maybe Html`'s block or null, for kind 2 a `List Html` — and
+--| the instance the slot shows: the same kind, by identity, and the same
+--| page — a fresh instance of the value, mounted off the page, reads as
+--| the slot's nodes do. An instance that is live (`l`: it holds a value
+--| made on every render) is checked by its kind only.
+pub verifySlot : V, V, Int, V → ⊤
+verifySlot s b kind what =
+    if kind == 2 then
+        items = Rt.elements b
+        shown = if Js.isNull (Js.get s "u") then Js.array [] else Js.get s "u"
+        n = count items
+        whatText : String
+        whatText = Js.to what
+
+        if count shown ≠ n then
+            wrong (Js.from "the number of blocks ${whatText}") (Js.from (count shown)) (Js.from n)
+        else
+            verifyEach s shown items what 0 n
+    else if kind == 1 && Js.isNull b then
+        if Js.isNull (Js.get s "i") then ⊤ else wrong what (Js.get s "i") Js.null
+    else
+        verifyShown s (Js.get s "i") b what
+
+
+verifyEach : V, V, V, V, Int, Int → ⊤
+verifyEach s shown items what j n =
+    if j < n then
+        verifyShown s (Js.at shown j) (Js.at items j) what
+        verifyEach s shown items what (j + 1) n
+
+
+verifyShown : V, V, V, V → ⊤
+verifyShown s i b what =
+    whatText : String
+    whatText = Js.to what
+
+    if Js.isNull i then
+        wrong what Js.null b
+    else if not (Js.same (Js.get b "t") (Js.get i "t")) then
+        wrong (Js.from "the kind of markup ${whatText}") (Js.get i "t") (Js.get b "t")
+    else if Js.to (Js.get i "l") then
+        ⊤
+    else
+        fresh = Rt.unit b (Js.get s "cx")
+
+        if not (samePage (Rt.first i) (Rt.last i) (Rt.first fresh) (Rt.last fresh)) then
+            page = written (Rt.first i) (Rt.last i) ""
+            model = written (Rt.first fresh) (Rt.last fresh) ""
+            wrong what (Js.from page) (Js.from model)
+
+
+-- Whether the nodes from `a` to `aEnd` show what those from `b` to `bEnd`
+-- do — the page's against a fresh mount's (S4's review): node by node, each
+-- element by `sameElement`.
+samePage : V, V, V, V → Bool
+samePage a aEnd b bEnd =
+    if not (sameNode a b) then
+        False
+    else if Js.same a aEnd || Js.same b bEnd then
+        Js.same a aEnd && Js.same b bEnd
+    else
+        samePage (Js.get a "nextSibling") aEnd (Js.get b "nextSibling") bEnd
+
+
+-- A text's or a comment's data; an element by `sameElement`.
+sameNode : V, V → Bool
+sameNode a b =
+    if Js.isNull a || Js.isNull b then
+        Js.isNull a && Js.isNull b
+    else
+        kind : Int
+        kind = Js.to (Js.get a "nodeType")
+
+        if kind ≠ Js.to (Js.get b "nodeType") then
+            False
+        else if kind == 1 then
+            sameElement a b
+        else
+            Js.same (Js.get a "data") (Js.get b "data")
+
+
+-- An element of the page against the fresh mount's `b`: the same name and
+-- namespace; every attribute `b` has, the page's equal — a class list and
+-- a style's declarations as sets, since a patch appends a class switched
+-- on and a property set again, and adds an attribute that turns on after
+-- the others; and the same children. Not compared: an attribute only the
+-- page has — the host's or an extension's, or one a missed removal left,
+-- which is a limit of the check (its opposite, an attribute missed, is
+-- caught); `open` on `details` and `dialog`, which the user changes and the
+-- program keeps nowhere but its model (§8.1); and the children of an
+-- element the user edits (`contenteditable`).
+sameElement : V, V → Bool
+sameElement a b =
+    if
+        not (Js.same (Js.get a "localName") (Js.get b "localName"))
+            || not (Js.same (Js.get a "namespaceURI") (Js.get b "namespaceURI"))
+    then
+        False
+    else
+        name : String
+        name = Js.to (Js.get b "localName")
+        attrs = Js.get b "attributes"
+
+        if
+            not (sameAttributes a b attrs (name == "details" || name == "dialog") 0 (count attrs))
+        then
+            False
+        else if editable b then
+            True
+        else
+            sameChildren (Js.get a "firstChild") (Js.get b "firstChild")
+
+
+sameChildren : V, V → Bool
+sameChildren a b =
+    if Js.isNull a || Js.isNull b then
+        Js.isNull a && Js.isNull b
+    else if not (sameNode a b) then
+        False
+    else
+        sameChildren (Js.get a "nextSibling") (Js.get b "nextSibling")
+
+
+-- An element whose content the user edits.
+editable : V → Bool
+editable el =
+    v = Js.call el "getAttribute" [ Js.from "contenteditable" ]
+    not (Js.isNull v) && not (Js.same v (Js.from "false"))
+
+
+sameAttributes : V, V, V, Bool, Int, Int → Bool
+sameAttributes a b attrs openable i n =
+    if i ≥ n then
+        True
+    else
+        one = Js.at attrs i
+        key : String
+        key = Js.to (Js.get one "name")
+        mine = Js.call a "getAttribute" [ Js.from key ]
+        theirs = Js.get one "value"
+
+        agrees =
+            if openable && key == "open" then
+                True
+            else if Js.isNull mine then
+                False
+            else if key == "class" then
+                sameTokens mine theirs
+            else if key == "style" then
+                sameStyle (Js.get a "style") (Js.get b "style")
+            else
+                Js.same mine theirs
+
+        agrees && sameAttributes a b attrs openable (i + 1) n
+
+
+-- Two class lists as sets of names.
+sameTokens : V, V → Bool
+sameTokens x y =
+    xs = tokens x
+    ys = tokens y
+    n : Int
+    n = Js.to (Js.get xs "size")
+    m : Int
+    m = Js.to (Js.get ys "size")
+    n == m
+        && Js.to
+            (Js.call (Js.call (Js.global "Array") "from" [ xs ]) "every"
+                [ Js.from λt → Js.call ys "has" [ t ] ]
+            )
+
+
+tokens : V → V
+tokens s =
+    names = Js.construct (Js.global "Set") []
+
+    Js.each (Js.call s "split" [ spaces ]) λname →
+        if Js.same name (Js.from "") then
+            ⊤
+        else
+            Js.to (Js.call names "add" [ name ])
+    names
+
+
+-- Two styles' declarations as sets: each property's value and priority.
+sameStyle : V, V → Bool
+sameStyle x y =
+    n : Int
+    n = Js.to (Js.get x "length")
+    m : Int
+    m = Js.to (Js.get y "length")
+    n == m && sameDeclarations x y 0 n
+
+
+sameDeclarations : V, V, Int, Int → Bool
+sameDeclarations x y i n =
+    if i ≥ n then
+        True
+    else
+        prop = Js.at y i
+
+        Js.same (Js.call x "getPropertyValue" [ prop ]) (Js.call y "getPropertyValue" [ prop ])
+            && Js.same
+                (Js.call x "getPropertyPriority" [ prop ])
+                (Js.call y "getPropertyPriority" [ prop ])
+            && sameDeclarations x y (i + 1) n
+
+
+-- The nodes from `node` to `end`, as text: an element's markup, a text
+-- node's or a comment's data.
+written : V, V, String → String
+written node end acc =
+    one : String
+    one =
+        if Js.to (Js.get node "nodeType") == 1 then
+            Js.to (Js.get node "outerHTML")
+        else
+            name : String
+            name = Js.to (Js.get node "nodeName")
+            data : String
+            data = Js.to (Js.get node "data")
+            "${name}(${data})"
+
+    if Js.same node end then
+        acc ++ one
+    else
+        written (Js.get node "nextSibling") end (acc ++ one)
 
 
 -- How many of the nodes from `node` on are rows `list` made.

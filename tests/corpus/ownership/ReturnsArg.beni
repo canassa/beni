@@ -5,8 +5,9 @@
 -- `xs` is dead the extension is accepted, `param`: the cell is the
 -- parameter's, and `aliasedDead`'s callers must pass it unique.
 -- `either`'s result path names two provenances, its argument and a fresh
--- list (an identity promise, thesis §3.8), so a rejection through it is the
--- approximate `call` cause (§16.4 item 7).
+-- list (its two arms, the shape core's identity promises had until
+-- 2026-10-13), so a rejection through it is the approximate `call` cause
+-- (§16.4 item 7).
 same : List Int → List Int
 same xs = xs
 

@@ -3,7 +3,10 @@
 // the middle todo's `done` with the filter at All (the row's class changes;
 // the filtered list is a new list of the same items but one); `#filter`
 // switches the filter between All and Active (half the rows leave, then come
-// back). There is no P3 page for this shape: research 60 wrote none.
+// back); `#tick` changes a counter no todo reads, with the filter at All —
+// TodoMVC's typing in its new-todo field, where `view` filters an unchanged
+// list again (research 90). There is no P3 page for this shape: research 60
+// wrote none.
 
 import { beniHeader, scriptRoot, solidHeader, solidMount } from "./common.mjs";
 
@@ -23,6 +26,7 @@ export const beni = (n) => `${beniHeader(`filtered list, ${n} todos`)}type Filte
 type Msg
     = Toggle Int
     | Cycle
+    | Tick
 
 
 type alias Todo =
@@ -34,6 +38,7 @@ type alias Todo =
 type alias Model =
     todos : List Todo
     filter : Filter
+    ticks : Int
 
 
 visible : Filter, Todo → Bool
@@ -63,12 +68,17 @@ update msg model =
                 Active →
                     { model | filter = All }
 
+        Tick →
+            { model | ticks = model.ticks + 1 }
+
 
 view : Model → Html Msg
 view model =
     <div class="container">
         <button type="button" id="go" onClick={Toggle ${target(n) + 1}}>go</button>
         <button type="button" id="filter" onClick={Cycle}>filter</button>
+        <button type="button" id="tick" onClick={Tick}>tick</button>
+        <p id="ticks">{model.ticks}</p>
         <ul>
             <For each={List.filter model.todos (visible model.filter _)} keyed={.id}>
                 {λt →
@@ -89,6 +99,7 @@ main =
         { init =
             λ⊤ → { todos = List.initialize ${n} λi → { id = i + 1, title = "todo \${i + 1}", done = Int.mod i 2 == 1 }
             , filter = All
+            , ticks = 0
             }
         , update = update
         , view = view
@@ -104,12 +115,15 @@ const App = () => {
     return { id: i + 1, title: \`todo \${i + 1}\`, done, setDone };
   });
   const [filter, setFilter] = createSignal("all");
+  const [ticks, setTicks] = createSignal(0);
   const shown = createMemo(() => (filter() === "all" ? todos : todos.filter((t) => !t.done())));
   const toggle = (t) => t.setDone(!t.done());
   return (
     <div class="container">
       <button type="button" id="go" onClick={() => toggle(todos[${target(n)}])}>go</button>
       <button type="button" id="filter" onClick={() => setFilter(filter() === "all" ? "active" : "all")}>filter</button>
+      <button type="button" id="tick" onClick={() => setTicks(ticks() + 1)}>tick</button>
+      <p id="ticks">{ticks()}</p>
       <ul>
         <For each={shown()}>
           {(t) => (
@@ -127,7 +141,7 @@ const App = () => {
 
 ${solidMount("<App />")}`;
 
-const shell = `<button type="button" id="go">go</button><button type="button" id="filter">filter</button><ul></ul>`;
+const shell = `<button type="button" id="go">go</button><button type="button" id="filter">filter</button><button type="button" id="tick">tick</button><p id="ticks">0</p><ul></ul>`;
 const rowHtml = "<li><input><span> </span><button>toggle</button></li>";
 
 // Vanilla: an array of todos and an array of their <li>, written directly;
@@ -163,6 +177,12 @@ for (let i = 0; i < ${n}; i++) {
   ul.appendChild(li);
 }
 document.getElementById("go").addEventListener("click", () => toggle(${target(n)}));
+const ticksText = document.getElementById("ticks").firstChild;
+let ticks = 0;
+document.getElementById("tick").addEventListener("click", () => {
+  ticks++;
+  ticksText.data = ticks;
+});
 document.getElementById("filter").addEventListener("click", () => {
   active = !active;
   if (active) {

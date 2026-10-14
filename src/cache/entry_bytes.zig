@@ -14,8 +14,11 @@
 //! sections  in table order, each 4-byte aligned
 //! ```
 //!
-//! Four sections, in this order and no other: `interface`, `dispatch`,
-//! `schema_plan`, `diagnostics`.
+//! Five sections, in this order and no other: `interface`, `dispatch`,
+//! `schema_plan`, `diagnostics`, `ownership`. The last is the module's
+//! ownership summary block (`ownership-checker.md` §28.4,
+//! `own/summary_bytes.zig`), empty when the run that wrote the entry did
+//! not summarise the module.
 //!
 //! **`interface` is the bytes `iface_bytes.write` produced, verbatim**, so
 //! `iface_bytes.hash` over that section IS the interface hash the firewall
@@ -68,14 +71,17 @@ pub const magic = "BENICAC\x00";
 /// 9: the embedded interface became `iface_bytes` format 11, a class's
 /// `sensitive` bit, and the `dispatch` section `dispatch_bytes` format 7,
 /// the effect lowering columns (§16.2).
-pub const format_version: u32 = 9;
+/// 10: a fifth section, `ownership`, the module's summary block
+/// (`ownership-checker.md` §28.4).
+pub const format_version: u32 = 10;
 
-/// The four sections, in this order and no other.
+/// The five sections, in this order and no other.
 pub const Section = enum(u32) {
     interface,
     dispatch,
     schema_plan,
     diagnostics,
+    ownership,
 
     pub const count: u32 = @typeInfo(Section).@"enum".field_names.len;
 };
@@ -90,7 +96,7 @@ pub const ReadError = error{
     BadEntry,
 } || Allocator.Error;
 
-/// What an entry holds, as four opaque byte strings plus the key it was
+/// What an entry holds, as five opaque byte strings plus the key it was
 /// written for. Borrowed from the file's bytes on the way in and out.
 pub const Entry = struct {
     key: [16]u8,
@@ -102,6 +108,9 @@ pub const Entry = struct {
     schema_plan: []const u8,
     /// `writeDiagnostics`' output.
     diagnostics: []const u8,
+    /// `summary_bytes.write`'s output, or empty: a run that did not
+    /// summarise the module wrote none.
+    ownership: []const u8 = &.{},
 
     fn section(e: *const Entry, s: Section) []const u8 {
         return switch (s) {
@@ -109,6 +118,7 @@ pub const Entry = struct {
             .dispatch => e.dispatch,
             .schema_plan => e.schema_plan,
             .diagnostics => e.diagnostics,
+            .ownership => e.ownership,
         };
     }
 };
@@ -186,6 +196,7 @@ pub fn read(bytes: []const u8) ReadError!Entry {
             .dispatch => entry.dispatch = slice,
             .schema_plan => entry.schema_plan = slice,
             .diagnostics => entry.diagnostics = slice,
+            .ownership => entry.ownership = slice,
         }
     }
     return entry;
@@ -313,6 +324,7 @@ fn sampleEntry() Entry {
         .dispatch = "sidecar",
         .schema_plan = "plan",
         .diagnostics = "rows and a blob!!",
+        .ownership = "summaries",
     };
 }
 
@@ -328,6 +340,7 @@ test "an entry round-trips, sections and key alike" {
     try testing.expectEqualStrings(entry.dispatch, back.dispatch);
     try testing.expectEqualStrings(entry.schema_plan, back.schema_plan);
     try testing.expectEqualStrings(entry.diagnostics, back.diagnostics);
+    try testing.expectEqualStrings(entry.ownership, back.ownership);
 
     // Writing the loaded entry again gives the same bytes, which is what
     // makes two processes that compute one key write one file.
@@ -336,7 +349,7 @@ test "an entry round-trips, sections and key alike" {
     try testing.expectEqualSlices(u8, bytes, again);
 }
 
-test "an entry with four empty sections round-trips" {
+test "an entry with five empty sections round-trips" {
     // The floor: a module with no `pub` declaration, no dispatch and no
     // diagnostic. Nothing here may need a section to be non-empty.
     const gpa = testing.allocator;
@@ -353,6 +366,7 @@ test "an entry with four empty sections round-trips" {
     try testing.expectEqual(@as(usize, 0), back.dispatch.len);
     try testing.expectEqual(@as(usize, 0), back.schema_plan.len);
     try testing.expectEqual(@as(usize, 0), back.diagnostics.len);
+    try testing.expectEqual(@as(usize, 0), back.ownership.len);
 }
 
 test "an entry written for another key is a miss, not an entry" {

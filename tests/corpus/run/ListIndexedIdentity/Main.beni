@@ -1,28 +1,32 @@
--- The operations of `core/List` that return their input ITSELF when the
--- result would equal it (`backend.md` §4, *Identity*; `language.md` §6.8),
--- observed through a test platform's `refEq`: a markup lowering skips a
--- hole or a row only for the very same value, so a list a program did not
--- change must not come back as an equal copy.
+-- Which operations of `core/List` give back their input ITSELF when the
+-- result would equal it, and which build a fresh list, observed through a
+-- test platform's `refEq` (`backend.md` §4, *Identity*; `language.md`
+-- §6.8).
+--
+-- The writers, and `drop`, give back the input (`same`):
 --
 --   * every write out of range: `set`, `update`, `swap`, `insertAt`,
 --     `removeAt`, with a negative index and one at or past the end
 --     (`insertAt` at `length` is in range: it appends);
---   * `swap xs i i`;
---   * `slice` and `take` covering the whole list, `drop xs 0`;
+--   * `swap xs i i`, and `set`, `update` and `swap` that write the value
+--     already there (the same value, `===`, not an equal one), on a plain
+--     list and on a list written to past its threshold alike;
 --   * `pop []`;
---   * `filter` keeping every element;
---   * `reverse`, `sort` and `sortWith` of fewer than two elements.
+--   * `drop xs 0`, a view by representation.
 --
--- The trailing `copied` lines are the other side of each rule: a write in
--- range, a partial `slice` and a `filter` that drops one are new lists.
+-- A writer's result is its input whether or not it wrote anything, as it
+-- is when it writes in place; nothing else is promised of these lines.
 --
--- Since lists became arrays (`plans/list-arrays.md`, slice 2) two more
--- rules hold, and are pinned here: `set`, `update` and `swap` that write
--- the value already there (the same value, `===`, not an equal one) return
--- the list itself, on a plain list and on a list written to past its
--- threshold alike; and `map` and `indexedMap` whose every result is the
--- element they were given return their input (O4, taken as recommended).
--- The cons-cell core could keep neither: beni code cannot ask `===`.
+-- The functions that read a list and build another give a fresh list
+-- (`copied`) even when it would equal their input — the owner's decision
+-- of 2026-10-13, which reversed the identity promises these lines pinned
+-- as `same` until then: `slice` and `take` covering the whole list,
+-- `filter` keeping every element, `reverse`, `sort`, `sortWith` and
+-- `sortBy` of fewer than two elements, and `map` and `indexedMap` whose
+-- every result is the element they were given.
+--
+-- The trailing `copied` lines are a write in range, a partial `slice`, a
+-- `filter` that drops one and a `map` that changes one.
 import Identity
 import List
 import Node

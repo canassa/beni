@@ -112,5 +112,7 @@ view model =
     </main>
 
 
+-- `List.copy`: `rows` is a top-level value, and on `browser-direct` the
+-- model's list is changed in place (ownership-checker.md §28.5).
 main : Browser.Program
-main = Tea.sandbox { init = λ⊤ → { rows = rows, mark = 0 }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { rows = List.copy rows, mark = 0 }, update = update, view = view }

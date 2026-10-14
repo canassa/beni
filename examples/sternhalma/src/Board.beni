@@ -1,0 +1,356 @@
+-- Sternhalma, by Lucas (https://github.com/rvcas/sternhalma, commit
+-- ffb3f91bd1b2be28015f4c69beaadbb5763bb0f4), ported to beni module by
+-- module; BSD-3-Clause, `../LICENSE`. What the port changed is
+-- `../PORTING.md`.
+
+import Dict exposing (Dict)
+import Hex exposing (Coord, coord)
+
+
+type alias PlayerId =
+    Int
+
+
+pub type alias Cell =
+    index : Int
+    coord : Coord
+    occupant : Maybe PlayerId
+
+
+pub type alias Board =
+    cells : List Cell
+    coordToIndex : Dict (Int × Int) Int
+
+
+pub type Triangle
+    = Top
+    | TopRight
+    | BottomRight
+    | Bottom
+    | BottomLeft
+    | TopLeft
+
+
+--| Generate the 6-pointed star board with exactly 121 cells.
+--|     The star consists of:
+--|     - Central hexagon (radius 4) = 61 cells
+--|     - 6 triangular points (10 cells each) = 60 cells
+--|     Total = 121 cells
+pub init : Board
+init =
+    allCoords = centralHexagon ++ allTriangleCoords
+    indexed = List.indexedMap allCoords λidx c →
+        { index = idx
+        , coord = c
+        , occupant = Nothing
+        }
+    coordToIndex = List.foldl indexed Dict.empty λcell dict →
+        Dict.insert dict ( cell.coord.x, cell.coord.z ) cell.index
+    { cells = indexed
+    , coordToIndex = coordToIndex
+    }
+
+
+--| Central hexagon of radius 4 (61 cells).
+--|     Generated using cube coordinate constraints.
+centralHexagon : List Coord
+centralHexagon =
+    radius = 4
+    List.range (-radius) radius
+        ▷ List.concatMap λx →
+            zMin = max (-radius) (-x - radius)
+            zMax = min radius (-x + radius)
+            List.range zMin zMax
+                ▷ List.map λz → coord x z
+
+
+--| All 6 triangle points (10 cells each = 60 total)
+allTriangleCoords : List Coord
+allTriangleCoords =
+    List.concatMap [ Top, TopRight, BottomRight, Bottom, BottomLeft, TopLeft ] triangleCoords
+
+
+--| Generate coordinates for a single triangle point (10 cells).
+--|     Each triangle extends from the hexagon edge outward.
+--|
+--|     The central hexagon at radius 4 has these edge cells:
+--|     - Top edge (z = -4): x from 0 to 4
+--|     - Bottom edge (z = 4): x from -4 to 0
+--|     - TopRight edge: where x = 4, z from -4 to 0
+--|     - BottomLeft edge: where x = -4, z from 0 to 4
+--|     - TopLeft edge: where y = 4 (i.e., -x-z = 4), so z from -4 to 0, x from 0 to -4
+--|     - BottomRight edge: where y = -4, z from 0 to 4, x from 0 to 4
+triangleCoords : Triangle → List Coord
+triangleCoords triangle =
+    case triangle of
+        Top →
+            -- Extends upward from z = -4 edge (x from 0 to 4)
+            -- Triangle centered over hexagon edge
+            [ coord 1 (-5)
+            , coord 2 (-5)
+            , coord 3 (-5)
+            , coord 4 (-5)
+            , coord 2 (-6)
+            , coord 3 (-6)
+            , coord 4 (-6)
+            , coord 3 (-7)
+            , coord 4 (-7)
+            , coord 4 (-8)
+            ]
+
+        Bottom →
+            -- Extends downward from z = 4 edge (x from -4 to 0)
+            -- Opposite of Top
+            [ coord (-4) 5
+            , coord (-3) 5
+            , coord (-2) 5
+            , coord (-1) 5
+            , coord (-4) 6
+            , coord (-3) 6
+            , coord (-2) 6
+            , coord (-4) 7
+            , coord (-3) 7
+            , coord (-4) 8
+            ]
+
+        TopRight →
+            -- Extends from x = 4 edge (z from -4 to 0)
+            -- Base of 4 at x = 5, tapering to 1 at x = 8
+            [ coord 5 (-4)
+            , coord 5 (-3)
+            , coord 5 (-2)
+            , coord 5 (-1)
+            , coord 6 (-4)
+            , coord 6 (-3)
+            , coord 6 (-2)
+            , coord 7 (-4)
+            , coord 7 (-3)
+            , coord 8 (-4)
+            ]
+
+        BottomLeft →
+            -- Extends from x = -4 edge (z from 0 to 4)
+            -- Opposite of TopRight
+            [ coord (-5) 1
+            , coord (-5) 2
+            , coord (-5) 3
+            , coord (-5) 4
+            , coord (-6) 2
+            , coord (-6) 3
+            , coord (-6) 4
+            , coord (-7) 3
+            , coord (-7) 4
+            , coord (-8) 4
+            ]
+
+        BottomRight →
+            -- Extends from y = -4 edge (where x+z = 4)
+            -- Hexagon edge: (0,4), (1,3), (2,2), (3,1), (4,0)
+            -- Triangle extends where x+z > 4
+            -- Row 1 (x+z=5): (1,4), (2,3), (3,2), (4,1) - 4 cells
+            -- Row 2 (x+z=6): (2,4), (3,3), (4,2) - 3 cells
+            -- Row 3 (x+z=7): (3,4), (4,3) - 2 cells
+            -- Row 4 (x+z=8): (4,4) - 1 cell
+            [ coord 1 4
+            , coord 2 3
+            , coord 3 2
+            , coord 4 1
+            , coord 2 4
+            , coord 3 3
+            , coord 4 2
+            , coord 3 4
+            , coord 4 3
+            , coord 4 4
+            ]
+
+        TopLeft →
+            -- Extends from y = 4 edge (where x+z = -4)
+            -- Hexagon edge: (-4,0), (-3,-1), (-2,-2), (-1,-3), (0,-4)
+            -- Triangle extends where x+z < -4
+            -- Row 1 (x+z=-5): (-1,-4), (-2,-3), (-3,-2), (-4,-1) - 4 cells
+            -- Row 2 (x+z=-6): (-2,-4), (-3,-3), (-4,-2) - 3 cells
+            -- Row 3 (x+z=-7): (-3,-4), (-4,-3) - 2 cells
+            -- Row 4 (x+z=-8): (-4,-4) - 1 cell
+            [ coord (-1) (-4)
+            , coord (-2) (-3)
+            , coord (-3) (-2)
+            , coord (-4) (-1)
+            , coord (-2) (-4)
+            , coord (-3) (-3)
+            , coord (-4) (-2)
+            , coord (-3) (-4)
+            , coord (-4) (-3)
+            , coord (-4) (-4)
+            ]
+
+
+--| Determine which triangle a coordinate belongs to, if any
+pub triangleOf : Coord → Maybe Triangle
+triangleOf c =
+    if List.member (triangleCoords Top) c then
+        Just Top
+    else if List.member (triangleCoords TopRight) c then
+        Just TopRight
+    else if List.member (triangleCoords BottomRight) c then
+        Just BottomRight
+    else if List.member (triangleCoords Bottom) c then
+        Just Bottom
+    else if List.member (triangleCoords BottomLeft) c then
+        Just BottomLeft
+    else if List.member (triangleCoords TopLeft) c then
+        Just TopLeft
+    else
+        Nothing
+
+
+--| Get the opposite triangle
+pub oppositeTriangle : Triangle → Triangle
+oppositeTriangle t =
+    case t of
+        Top →
+            Bottom
+
+        Bottom →
+            Top
+
+        TopRight →
+            BottomLeft
+
+        BottomLeft →
+            TopRight
+
+        TopLeft →
+            BottomRight
+
+        BottomRight →
+            TopLeft
+
+
+--| Home triangle for a player based on player count
+pub homeTriangle : Int, Int → Maybe Triangle
+homeTriangle totalPlayers playerId =
+    case totalPlayers of
+        2 →
+            case playerId of
+                0 →
+                    Just Top
+
+                1 →
+                    Just Bottom
+
+                _ →
+                    Nothing
+
+        3 →
+            case playerId of
+                0 →
+                    Just TopLeft
+
+                1 →
+                    Just TopRight
+
+                2 →
+                    Just Bottom
+
+                _ →
+                    Nothing
+
+        4 →
+            case playerId of
+                0 →
+                    Just TopLeft
+
+                1 →
+                    Just TopRight
+
+                2 →
+                    Just BottomRight
+
+                3 →
+                    Just BottomLeft
+
+                _ →
+                    Nothing
+
+        6 →
+            case playerId of
+                0 →
+                    Just Top
+
+                1 →
+                    Just TopRight
+
+                2 →
+                    Just BottomRight
+
+                3 →
+                    Just Bottom
+
+                4 →
+                    Just BottomLeft
+
+                5 →
+                    Just TopLeft
+
+                _ →
+                    Nothing
+
+        _ →
+            Nothing
+
+
+--| Goal triangle for a player (opposite of home)
+pub goalTriangle : Int, Int → Maybe Triangle
+goalTriangle totalPlayers playerId =
+    homeTriangle totalPlayers playerId
+        ▷ Maybe.map oppositeTriangle
+
+
+pub getCell : Int, Board → Maybe Cell
+getCell index board = List.get board.cells index
+
+
+pub getCellByCoord : Coord, Board → Maybe Cell
+getCellByCoord c board =
+    Dict.get board.coordToIndex ( c.x, c.z )
+        ▷ Maybe.andThen λidx → getCell idx board
+
+
+pub isValidCoord : Coord, Board → Bool
+isValidCoord c board = Dict.member board.coordToIndex ( c.x, c.z )
+
+
+pub setOccupant : Int, Maybe PlayerId, Board → Board
+setOccupant index occupant board =
+    case List.get board.cells index of
+        Just cell →
+            { board | cells = List.set board.cells index { cell | occupant = occupant } }
+
+        Nothing →
+            board
+
+
+--| Get neighboring cells that exist on the board
+pub neighborCells : Cell, Board → List Cell
+neighborCells cell board =
+    Hex.neighbors cell.coord
+        ▷ List.filterMap λc → getCellByCoord c board
+
+
+--| Group cells by row for rendering (sorted by z coordinate, then x)
+pub cellsGroupedByRow : Board → List (List Cell)
+cellsGroupedByRow board =
+    board.cells
+        ▷ List.sortBy λc → ( c.coord.z, c.coord.x )
+        ▷ groupByRow
+
+
+groupByRow : List Cell → List (List Cell)
+groupByRow cells =
+    case cells of
+        [] →
+            []
+
+        [ first, …rest ] →
+            ( sameRow, remaining ) = List.partition rest λc → c.coord.z == first.coord.z
+            [ [ first, …sameRow ], …groupByRow remaining ]

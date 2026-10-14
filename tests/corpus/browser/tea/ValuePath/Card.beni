@@ -1,0 +1,11 @@
+-- See Main.beni: markup of another module, which `Main` cannot write in
+-- place.
+import Html exposing (Html)
+
+
+pub counter : String, Int, msg → Html msg
+counter id n msg = <button id={id} onClick={msg}>{n}</button>
+
+
+pub step : Int → Html Int
+step n = <button id="step" onClick={n}>step by {n}</button>

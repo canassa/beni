@@ -1,14 +1,12 @@
--- ownership: `map`'s identity promise is named only where it can fire
--- (`ownership-checker.md` §25.3; thesis §3.8, "the promise is named only
--- where it can fire"). Research 82's R4 maps `Explosion` records to
--- `Obstacle` records (`Bike.update`, line 60): two closed records with
--- different fields are never one object, so the map's result is a new
--- list and appending onto it while the explosions are read afterwards is
--- accepted (`obstacles`). Where the callback's result may be its element
--- the promise stands, and the same append is rejected, approximately:
--- a map from a record type to itself (`moved`), and a map whose element
--- is a nominal type of one constructor with one field, which the release
--- representation makes its field (`unwrapped`, thesis §3.1).
+-- ownership: `map`'s result is a new list whatever its types
+-- (`ownership-checker.md` §27). Research 82's R4 maps `Explosion` records
+-- to `Obstacle` records (`Bike.update`, line 60); appending onto the map
+-- while the explosions are read afterwards is accepted (`obstacles`), and
+-- so are the two maps whose callback may return its element: from a
+-- record type to itself (`moved`), and from a one-field wrapper to its
+-- field (`unwrapped`). Until the owner dropped `map`'s identity promise on
+-- 2026-10-13 those two were rejected, approximately, and the first was
+-- accepted only by §25.3's rule for closed records, withdrawn with it.
 type alias Explosion =
     center : Int
     size : Int

@@ -1,0 +1,21 @@
+module PrependFresh
+  20:15 construction top: accepted fresh
+  31:15 construction top: accepted fresh
+  47:41 ++ <construction>: accepted fresh
+  56:15 construction top: rejected call: base may hold it through the call at 55:17, and is read at 57:25 (approx)
+  69:15 construction top: rejected call: base may hold it through the call at 67:12, and is read at 70:25 (approx)
+  78:23 construction top: rejected call: s may hold it through the call at 77:25, and is read at 79:33 (approx)
+  88:15 construction top: rejected call: s may hold it through the call at 87:17, and is read at 89:25 (approx)
+  summary literalFront: π2 R, π2[*] R
+  summary make: res fresh1
+  summary calledFront: π2 R, π2[*] R
+  summary omitLast: π1 RA, π1[*] RA, π1[*][*] RA; res [*] ~fresh1{excl π1} ~π1[*]{excl π1}, [*][*] π1[*][*]{excl π1}, fresh2{lost} π1
+  summary bikeWars: π2 R, π2[*] R, π2[*][*] R, π3 R, π3[*] R
+  summary storedBefore: unused
+  summary holdIn: π1 RA, π2 RA, π2[*] A; res [*] fresh1 π1 π2[*], fresh2{excl π1, excl π2, sep π1 π2[*]} ~π2
+  summary baseHolds: π2 Rw, π2[*] R
+  summary elementFront: π1 Rw, π1[*] R
+  summary intFront: π1 Rw, π1[*] R
+  demands 7: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 7: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause call 4

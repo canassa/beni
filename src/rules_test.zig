@@ -72,7 +72,21 @@ const allowlist = [_]Allowed{
     .{ .path = "check/Report.zig", .needle = "error_regions: U32Set", .why = "the error path: the instructions already reported" },
     .{ .path = "js/Lower.zig", .needle = "calls: U32Set", .why = "the calls one derived body makes" },
     .{ .path = "js/Lower.zig", .needle = "requests: U32Set", .why = "the derived rows one module requests" },
+    .{ .path = "own/summary_bytes.zig", .needle = "path_index: std.AutoHashMapUnmanaged(u32, u32)", .why = own_block },
+    .{ .path = "own/summary_bytes.zig", .needle = "module_index: std.AutoHashMapUnmanaged(u32, u32)", .why = own_block },
+    .{ .path = "own/summary_bytes.zig", .needle = "string_index: std.AutoHashMapUnmanaged(u32, u32)", .why = own_block },
+    .{ .path = "own/summary_bytes.zig", .needle = "var seen_path: std.AutoHashMapUnmanaged(u32, void)", .why = own_block },
+    .{ .path = "own/summary_bytes.zig", .needle = "var seen_module: std.AutoHashMapUnmanaged(u32, void)", .why = own_block },
+    .{ .path = "own/summary_bytes.zig", .needle = "var seen_string: std.AutoHashMapUnmanaged(u32, void)", .why = own_block },
+    .{ .path = "own/summary_bytes.zig", .needle = "var key_of: std.AutoHashMapUnmanaged(u32, []const u8)", .why = own_block },
+    .{ .path = "own/summary_bytes.zig", .needle = "key_of: *const std.AutoHashMapUnmanaged(u32, []const u8)", .why = own_block },
 };
+
+/// `own/summary_bytes.zig` writes one block per sealed declaration
+/// (`ownership-checker.md` §28.3): the handful of paths, modules and field
+/// names one summary names, out of session-wide id spaces a column would
+/// have to span on every write.
+const own_block = "a summary block's few paths, modules and field names, from session-wide id spaces, once per block written";
 
 /// The spellings of a hash map type whose first argument is its key.
 const keyed = [_][]const u8{ "HashMapUnmanaged(", "HashMap(", "int_hash.Map(" };

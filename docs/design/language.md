@@ -983,7 +983,7 @@ syntax*, below); the costs are the array's, after the flip.
 | `[ x, y ] ->` | `xs` has exactly two elements | O(1) |
 | `[ x, ...xs ]` as an expression | a **new list**: `x`, then every element of `xs` | *Amended 2026-10-01 (E1tp):* **amortised O(1)**, as `List.push` is at the other end; at most 31 elements copied when `xs` was prepended onto before; O(length of `xs`) once when `xs` is a list of 32 or more nothing has written to (it is converted, and everything built from it after is cheap). *Was, under E1t:* O(length of `xs`), a copy. *Amended 2026-10-11, the owner:* **O(length of `xs`), a copy, again** — the representation reserves no room in front (*`[ x, …xs ]` copies*, below); O(1) only when it re-conses what a pattern just matched |
 | `[ ...xs, x ]` as an expression | a new list: every element of `xs`, then `x` | *Amended 2026-10-01 (E1tp):* what `List.push xs x` costs — amortised O(1). *Was:* O(length of `xs`) |
-| `[ ...xs, ...ys ]` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is | *Amended 2026-10-01 (E1tp):* O(length of `ys`) when `xs` has been written to, or has 32 elements or more while `ys` has fewer — each of `ys` is pushed — and O(length of both) otherwise |
+| `[ ...xs, ...ys ]` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is (*amended 2026-10-13:* a copy of the other side when one is empty, never either list itself; *`core/List`* below) | *Amended 2026-10-01 (E1tp):* O(length of `ys`) when `xs` has been written to, or has 32 elements or more while `ys` has fewer — each of `ys` is pushed — and O(length of both) otherwise |
 | `xs ++ ys` | the same list as `[ ...xs, ...ys ]` | O(length of both), always: `++` is `Basics.append`, which serves strings too and cannot reach the list's representation (`backend.md` §4). *Amended 2026-10-01 (O6, the manager on the owner's delegation, reversible):* a `++` on two lists calls `List.append` and costs what `[ ...xs, ...ys ]` does; this row still holds for a `++` over `appendable` |
 
 **`[ x, …xs ]` copies; build at the end.** *Amended 2026-10-11, the owner; it supersedes the
@@ -1162,7 +1162,7 @@ million elements — and is what an indexed read costs on a list that has been w
 | `length`, `isEmpty` | **O(1)** | `length` was O(n) |
 | `head`, `last`, `get : List a, Int -> Maybe a` | near O(1) | `last` and `get` *new*; `get` is `Nothing` out of range |
 | `tail`, `drop` | O(1) | a view of the list, sharing its elements (it keeps the whole list alive, as a substring may). *Amended 2026-10-01 (E1tp):* of a list that has been written to, the same list without its first elements, sharing its structure — O(1) and a copy of at most 31 elements — and prepending onto it is as cheap as onto the list itself |
-| `take`, `slice : List a, Int, Int -> List a` | O(k) | `slice` *new*, Elm's `Array.slice`: a negative index counts from the end; the list itself when the result is all of it |
+| `take`, `slice : List a, Int, Int -> List a` | O(k) | `slice` *new*, Elm's `Array.slice`: a negative index counts from the end; the list itself when the result is all of it (*amended 2026-10-13:* a copy, never the list itself, *What an operation returns unchanged* below) |
 | `set : List a, Int, a -> List a`, `update : List a, Int, (a -> a) -> List a` | a copy up to 256 elements; above, near O(1) after one O(n) conversion per list | *new*; out of range, the list unchanged |
 | `push : List a, a -> List a` | a copy below 32 elements; above, amortised O(1) after one O(n) conversion per list | *new*; the end is where a list grows. Pushing twice onto one version (after an undo) copies at most 31 elements, never the list |
 | `pop : List a -> List a` | as `set` | *new*; the last element removed; `[]` unchanged |
@@ -1185,6 +1185,25 @@ xs i i`, anything out of range, a `slice` or `take` of everything, `drop xs 0`, 
 everything, `map` whose every result is the element it was given, and `xs ++ []` among them — so a
 view that shows the list skips it (§11.12). *The `map` rule costs one comparison per element and is
 proposed as a guarantee (`plans/list-arrays.md` §1, O4).*
+
+*Amended 2026-10-13 (the owner's decision): the identity promises of the functions that build are
+dropped.* A function that reads a list and builds another — `map`, `indexedMap`, `filter`,
+`slice`, `take`, `reverse`, `sort`, `sortBy`, `sortWith`, `concat`, `concatMap`, and `++` (`append`)
+with either side empty — **always returns a fresh list**, even when it would equal its input:
+`filter` that keeps everything, `map` whose every result is its element, a `slice` or `take` of
+everything, `xs ++ []`, `[] ++ ys`, `concat` of one non-empty list, and `reverse` or a sort of fewer
+than two elements are copies now, and each function keeps its cost. The promises served one
+consumer, `browser-tea`'s renderer, which skips a `For` whose list is the same object as at the
+last render; that renderer is to be deleted once `browser-direct`, which re-renders from
+compile-time write sets and not from identity, proves out, and the owner accepted that it skips
+less meanwhile. What they cost was the ownership checker's precision: a result that may be its
+input aliases it, so an edit of a filtered or mapped copy while its source is still read was
+rejected (`ownership-checker.md` §27, which supersedes thesis O2's "the promises are kept").
+**What stays**: every element a function passes through is its input's own value (`backend.md`
+§4, invariant 6); a writer — `set`, `update`, `swap`, `insertAt`, `removeAt`, `pop` — returns its
+input when it has nothing to write, as it does when it writes in place; and `drop`, `tail` and a
+pattern's `rest` are views of their list by representation (O(1)), so `drop xs 0` is `xs`. The
+paragraph above stands for those.
 
 **Callbacks.** Every function that takes a callback calls it on the first element first, except
 `foldr`, which calls it on the last first (`checker.md` Appendix B), and each is written in beni over
@@ -1367,6 +1386,7 @@ unit_spelling_removed  never_spelling_removed  if_without_else_not_unit  unit_di
 view_not_compiled  program_mounted_twice
 prepend_in_loop
 misplaced_ownership_word
+list_still_used  top_level_list_changed  view_changes_model  list_may_be_shared
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1407,7 +1427,8 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `unit_spelling_removed` … `unit_discarded` | `⊤` and `⊥` | the line before the last, appended on 2026-10-02, again never inserted, with §12.10 (built the same day). **`unit_spelling_removed`** is the parser's, at the `(` of a `()` in a type, an expression or a pattern; **`never_spelling_removed`** lowering's, at a `Never` that names `Basics`' empty type; both go on as `⊤` and `⊥`, so one stale spelling costs one message. **`if_without_else_not_unit`** is the checker's, at the `then` branch of an `if` without `else` whose type is not `⊤`. **`unit_discarded`** is a `warning`, the checker's, for the root package only, at a `_ =` in front of a `⊤` |
 | `view_not_compiled`, `program_mounted_twice` | the program hook | the line before the last, appended on 2026-10-09, again never inserted, with [`boundary.md`](boundary.md) §9.4.6's version 1.6 and `browser-direct`'s slice S0. Both are `build`'s, raised for a lowering that compiles whole programs. **`view_not_compiled`** is a program whose `view` no compiler can reach as markup — a `view` a call computes, a program constructor used as a value — on a platform with no run-time renderer to hand it to ([`browser-direct.md`](browser-direct.md) §11.1): the one refusal of a program shape left, an error because no fallback exists, and its message names `browser-tea`, which renders any `view`. **`program_mounted_twice`** is one top-level program value placed twice among `main`'s placements on a platform whose programs keep their state per program value ([`browser-direct.md`](browser-direct.md) §8.2): two mounts would share one model and show each other's writes, so it is an error, and the message names the escape, a program built by a function |
 | `prepend_in_loop` | the list representation | the line before the last, appended on 2026-10-11, again never inserted, with the owner's decision that a prepend copies (§6.8, *`[ x, …xs ]` copies*). A `warning`, the checker's, on by default for the root package only ([`checker-v2.md`](checker-v2.md) §35): a list built by putting elements in front of an accumulator a loop carries — a parameter a function hands back to itself, or the accumulator a `List.foldl` or `List.foldr` callback receives and returns — which copies the accumulator at every step. Its message shows the push form, `[ …acc, x ]`, which needs no `List.reverse`, and names the escape: bind the new list to a name first. Not at a one-off prepend, a list pattern or a push |
-| `misplaced_ownership_word` | ownership words | the last line, appended on 2026-10-12, again never inserted, with ownership words (§5.4; [`ownership-checker.md`](ownership-checker.md) §24.4). Lowering's, at the word, which is dropped: a word in a package that may not write `foreign` (one message per signature: Change 5(b), words on application code, is not approved), inside a type rather than in front of a parameter or the result, a function's word on a value, a result's word on a parameter or a parameter's on the result, or a word that cannot hold beside another written there (`borrowed` with any other, `once` with `many`, `exclusive` without `fresh`, …) |
+| `misplaced_ownership_word` | ownership words | the line before the last, appended on 2026-10-12, again never inserted, with ownership words (§5.4; [`ownership-checker.md`](ownership-checker.md) §24.4). Lowering's, at the word, which is dropped: a word in a package that may not write `foreign` (one message per signature: Change 5(b), words on application code, is not approved), inside a type rather than in front of a parameter or the result, a function's word on a value, a result's word on a parameter or a parameter's on the result, or a word that cannot hold beside another written there (`borrowed` with any other, `once` with `many`, `exclusive` without `fresh`, …) |
+| `list_still_used` … `list_may_be_shared` | the ownership checker | the last line, appended on 2026-10-13, again never inserted, with the checker's enforcement ([`ownership-checker.md`](ownership-checker.md) §28). The checker's, all four `error`s, and only on a platform that declares `"lists": "in-place"` ([`boundary.md`](boundary.md) §5.2): everywhere else nothing is written in place and the checker is silent. **`list_still_used`** is a list changed in place while something the text shows still holds it and reads it afterwards — real sharing; **`top_level_list_changed`** a top-level value's list changed, which every part of the program shares; **`view_changes_model`** `view` or `subscriptions` changing the model the runtime hands them to read only; **`list_may_be_shared`** an edit the checker could not prove safe — a limit of the checker, which the message names — or a function that changes a list it is handed and goes where the checker cannot see every call of it. Each message names the places, says what the program would see, and writes the fix with `List.copy` |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment
@@ -2089,7 +2110,8 @@ same value as another view of the same list at the same position**, and every pl
 check treats them as one (`backend.md` §4, *Identity*, and §15.5's `same`). Everything else above
 holds unchanged for a list — a list that is not rebuilt is the same object, an untouched field
 holding one keeps it, and the operations `backend.md` §4 lists return their input itself when their
-result would equal it. *This narrows W27's wording for one case and is the owner's to confirm
+result would equal it (*amended 2026-10-13:* the writers and the views only; a function that builds
+returns a fresh list, §6.8). *This narrows W27's wording for one case and is the owner's to confirm
 (`plans/list-arrays.md` §1, O3).* *Amended 2026-10-01 (E1tp):* on a list that has been written to,
 a pattern's tail is not a view but a smaller header over the same structure; the promise holds for
 it wherever the match shares that structure, and does not hold for the tail that goes past the

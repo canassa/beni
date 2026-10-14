@@ -1,0 +1,19 @@
+-- A `let` of a `view` whose body is an `if` or a `case`, which may have an
+-- effect, is evaluated wherever the values of the branch's arms are — not
+-- once per message — so it is refused, as `ViewLetEffect`'s is:
+-- `not_implemented` at the `let` (docs/design/browser-direct.md §5.4, §8.4;
+-- S4's amendment, as amended by its review).
+import Html exposing (Html)
+import Random
+import Tea
+
+
+view : Int → Html {}
+view n =
+    r = n + Random.value (Random.int 1 1000000)
+
+    if n > 0 then <b>{r}</b> else <i>{r}</i>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λ_ m → m, view = view }

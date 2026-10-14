@@ -51,6 +51,10 @@
 //!   2026-10-01: a template file relative to the package root in which
 //!   `{{entry}}` stands for the entry file, written as `index.html`. Inherited
 //!   down the chain like every output key; an APP manifest's replaces it.
+//! - `lists` — `"in-place"`, since 2026-10-13 (`boundary.md` §5.2,
+//!   `ownership-checker.md` §28.2): the chain's code may write a list's
+//!   array in place, so `check` and `build` run the ownership checker and
+//!   its rejections are errors. No other value; inherited first-found.
 //! - `build` — an app's defaults for `build` and `serve` (`frontend.md`
 //!   §10.1): `platform`, `paths` and `out`, each used when the command line
 //!   does not say. A platform package's is ignored.
@@ -82,6 +86,7 @@ platforms: []const []const u8 = &.{},
 reexports: []const []const u8 = &.{},
 markup: Markup = .{},
 html: ?[]const u8 = null,
+lists: ?Lists = null,
 build: Build = .{},
 
 /// `"build"`'s three fields (`frontend.md` §10.1), each absent unless
@@ -92,6 +97,10 @@ pub const Build = struct {
     out: ?[]const u8 = null,
     base: ?[]const u8 = null,
 };
+
+/// `"lists"` (`boundary.md` §5.2): what the chain's code may do with a
+/// list's array. One value; any other is a malformed manifest.
+pub const Lists = enum { @"in-place" };
 
 /// `"markup"`'s four fields (`boundary.md` §9.2), each absent unless written.
 pub const Markup = struct {
@@ -121,6 +130,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         reexports: ?[]const []const u8 = null,
         markup: ?Markup = null,
         html: ?[]const u8 = null,
+        lists: ?Lists = null,
         build: ?Build = null,
     };
     const parsed = std.json.parseFromSliceLeaky(Schema, arena, bytes, .{
@@ -140,6 +150,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .reexports = parsed.reexports orelse &.{},
         .markup = parsed.markup orelse .{},
         .html = parsed.html,
+        .lists = parsed.lists,
         .build = parsed.build orelse .{},
     };
 }
@@ -237,6 +248,22 @@ test "a page shell, and a project's build defaults" {
     try testing.expectEqual(@as(?[]const u8, null), bare.build.platform);
     try testing.expectError(error.Malformed, parse(arena.allocator(),
         \\{ "build": { "paths": "src" } }
+    ));
+}
+
+test "a platform that edits lists in place says so, in one word" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const m = try parse(arena.allocator(),
+        \\{ "platform": true, "name": "direct", "lists": "in-place" }
+    );
+    try testing.expectEqual(Lists.@"in-place", m.lists.?);
+    try testing.expectEqual(@as(?Lists, null), (try parse(arena.allocator(), "{}")).lists);
+    try testing.expectError(error.Malformed, parse(arena.allocator(),
+        \\{ "lists": "values" }
+    ));
+    try testing.expectError(error.Malformed, parse(arena.allocator(),
+        \\{ "lists": true }
     ));
 }
 

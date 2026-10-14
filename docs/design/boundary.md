@@ -782,6 +782,14 @@ module's output. A chain that names neither is refused before a source is read, 
 with no `"program"` asks the module for no `run`. `browser` is such a platform since this
 amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, and is deleted.
 
+**Whether the platform edits lists in place is part of that shape, and it is `"lists"`** (*added
+2026-10-13*, [`ownership-checker.md`](ownership-checker.md) §28.2). `"lists": "in-place"` says that the
+code the chain emits may write a list's array where the ownership checker accepted the edit, so
+`check` and `build` run the checker on every program built for it, and every edit it cannot prove
+safe is an error; no other value is accepted, and a chain that does not say it edits nothing in place
+and runs no checker at all. Inherited first-found down the chain like every field (§9.1).
+`browser-direct` declares it; no other platform the binary carries does.
+
 ### 5.3 One project, several platforms
 
 The full-stack case is a first-class requirement, not an afterthought: a browser client and a server
@@ -1972,6 +1980,100 @@ two more facts of an edit. Valid inside `Lowering.program` only.
 
 `direct` targets 1.9.
 
+**Version 1.10** (*amended 2026-10-13*, additive and gated on nothing; `browser-direct.md`'s S4
+amendment, as built for its value path and controlled inputs, then for its branches and derived
+values): the calls a program lowering compiles branches, `Show` and a `view`'s `let`s with,
+valid inside `Lowering.program` only, one field of `Program`, one change to what a program
+lowering's hook leaves unwritten, and one to `rootValues`.
+
+- **`cx.programBranch(node) ?Program.Branch`**, for an `html` hole of markup the program
+  writes: when its value, its `let`s peeled, is an `if` or a `case` — a branch, which
+  `browser-direct.md`'s S4 amendment (item 3) compiles in place — rather than markup on the value
+  path (item 1), its arms in order, an arm whose body is itself a `case` replaced by that
+  `case`'s arms (`else if`). Each `Program.Arm` says what its result is past the arm's `let`s —
+  `markup` (a root written in place), `call` (a function of this module whose body after its
+  `let`s is markup, under no `Html.map`: the callee's root) or `value` (anything else) — whether
+  no value takes it (`dead`: a constructor nothing builds) and whether it has `let`s its result
+  does not need (`statements`). Null for any other node. *(Built for item 3, 2026-10-13: this
+  entry first said `bool`.)*
+- **`cx.programBranchArm(block, node) Expr`**: the number of the arm the branch's value takes
+  now — its scrutinee, the decision and the `let`s around it evaluated into `block` where the
+  hole's root's values may be, the arms' own `let`s not.
+- **`cx.programBranchEnter(block, node, k, made, held) ?Expr`**, left with
+  `programInlineLeave`: arm `k` entered. Without a block, only the facts change: `programHole`,
+  `programList`, `programEdits` answer for the arm's holes, on the call path the pass walked them
+  by (the hole's token added). With one, the hole's value is evaluated into `block` again — the
+  scrutinee and the decision up to the arm — with the arm's result made the array of what binds
+  its values: the inputs of its markup root, then read under names of their own, or the
+  arguments of its call, then bound to the callee's parameters as a call written in place is
+  (1.9); with `made`, the arm's `let`s its result does not need run too. It returns that array,
+  which a lowering may keep and hand back as `held`: when `held` is not `null` at run time it
+  binds them instead and the value is not evaluated — an arm its branch tore down, whose
+  variables the value no longer gives.
+- **`cx.programBranchValue(block, node, k) Expr`**: arm `k`'s result evaluated into `block` as a
+  markup value, where the branch's value takes that arm.
+- **`cx.programShowFallback(node) ?Root.Index`**: the markup root a `Show`'s fallback is, when it
+  is markup written there whose values can be evaluated apart; and **`cx.programNestedEnter(r)`**,
+  left with `programInlineLeave`: the inputs of root `r`, markup nested in a value of the root
+  being evaluated, read under the names their locals have there.
+- **`Program.view_lets`**: `view` is a function whose body is `let`s around markup written in
+  place; `Program.view_root` then names that markup's root, and `view` stays `.function`, so a
+  lowering before 1.10 sees what it saw. The `let`s the root takes are its own (`Root.lets`);
+  `cx.programViewEnter` evaluates the others but the statements, and
+  **`cx.programViewStatements(block) bool`**, inside it, evaluates those — a `let_stmt`, a `_ =` —
+  where the page is made, and says whether there were any.
+- **`cx.programLet(r, k) Program.HoleFacts`**: the read set of root `r`'s `k`-th `let`, on the
+  current call path, numbered as a hole's (`programCalls`): what a derived value is computed
+  again for (`browser-direct.md` §5.4). The write-set pass records it for every constant `let`
+  the view walk evaluates, once per call path (`write-sets.md` §3.6, as amended for S4).
+- **`cx.rootValues` binds a `let` it evaluates.** A `let` of root `r` among `values`
+  (`Root.lets`) is read under the name its value was bound to by the values evaluated after it,
+  until `r`'s inputs are unbound, as `cx.bindLet` binds one — when `r` is the root whose inputs
+  were bound last. Before, a lowering that evaluated a root's `let`s through `rootValues` and
+  bound none read an unbound name (`browser/direct/HelperLet`: a helper written in place whose
+  markup reads its own `let`).
+- **A consumed declaration the hook's code names is written after all.** Version 1.9's rule
+  leaves a markup helper that only consumed declarations name unwritten, since the hook writes
+  each of its calls in place. A program lowering that puts markup on the value path calls such
+  a helper instead (`List.map xs row`, a helper that calls itself, an `Html.map` of one), so a
+  consumed declaration whose name the code a lowering wrote asks for is lowered after the
+  module's other declarations, in its place, and whatever it names in turn.
+
+With `Lowering.no_markup_values` left unset, a program lowering is handed markup roots that are
+values (`Lowering.root`) as any lowering is, and its markup runtime is held to the vocabulary's
+primitives (§9.4.5). `direct` targets 1.10, and no longer sets `no_markup_values`.
+
+*Amended 2026-10-13 (S4's review; `browser-direct.md`, *slice S4, review fixes, programs, defects
+and the SVG root, as built*)*, additive within 1.10:
+
+- **`cx.programBranchChoose(block, node) Expr`**: the branch's value evaluated **once** — the
+  scrutinee, the decision and the taken arm's `let`s but those that are statements — as an array
+  `[j, …]`: the arm taken, then what binds that arm's values (its markup root's inputs, or its
+  call's arguments), or, for an arm that is a value (`Arm.What.value`), that markup value. A
+  lowering keeps it, so nothing of the hole's value runs twice for one choice of arm.
+- **`cx.programBranchBind(block, node, k, from, made)`**, left with `programInlineLeave`: arm `k`
+  entered as `programBranchEnter` enters it, its locals bound from `from` — what
+  `programBranchChoose` returned when it took arm `k` — and nothing evaluated again; with `made`, a
+  call arm's callee's `let`s its markup does not read run too.
+- **`cx.programBranchStatements(block, node, k)`**: arm `k`'s `let`s that are statements, where its
+  markup is made (`browser-direct.md` §8.4) — the hole's value evaluated for them, the arm's other
+  `let`s left out but those a statement reads; nothing runs when the value takes another arm.
+  `programBranchArm`, `programBranchValue` and `programBranchEnter` with a block stay, unused by
+  `direct`.
+- **`Program.view_branch`**: `view` is a function whose body past its `let`s is an `if` or a
+  `case`. The branch has no markup node: `programBranch` and the calls above take
+  `Node.Index.none` for it, `programBranchEnter`/`Bind` extend no call path for it (the pass walked
+  its arms on the root's), and `programViewEnter` binds `view`'s parameter and `let`s with no root.
+  A `let` of such a `view` that may have an effect is refused (`not_implemented`), as one a root
+  does not take is.
+- **`Program.Branch.debug`, `.effect`**: whether evaluating the branch's value may call `Debug`,
+  or may have another effect — what a branch with no hole value answers in place of
+  `reachesDebug` and `Tree.everyRender`.
+- **`Program.Callee.debug`**: a component's function may call `Debug`, directly or through what it
+  calls — what a verify mode asks before it makes a component's markup again. `true` when not
+  known and for a hole's call. `cx.reachesDebug` now also follows the function of each component
+  in markup a value makes.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -2657,6 +2759,15 @@ Elm reads an event with a `Json.Decode.Decoder`; **beni has no decoder library u
 these accessors are what Elm's `targetValue` and `keyCode` decoders are, and a "decoder" is a
 function `Event -> msg`. Elm's `preventDefaultOn` returns the decision with the message; a beni
 handler may call an impure function, so it calls `preventDefault` instead.
+
+*Amended 2026-10-13:* **the drag-and-drop events** `onDragStart`, `onDragEnd`, `onDragOver` and
+`onDrop` join the vocabulary, `delegated` since all four bubble, each handed the `Event`. They are
+added as `onMouseMove` was (§9.9 (c)): for a program that needs them and that Elm writes with
+`Html.Events.on "dragstart"` and `preventDefaultOn "dragover"` (the port of rvcas/sternhalma,
+research 88). A drop target allows the drop by calling `Html.preventDefault` in its `onDragOver`
+handler, as Elm's `preventDefaultOn` returns `True`. Nothing reads the drag's `dataTransfer` yet;
+the other drag events (`drag`, `dragenter`, `dragleave`) wait for a use, and Elm's general `on`
+stays the open question it is.
 
 `Browser.Events` gains **`onKeyDown`, `onKeyUp`, `onKeyPress : (Html.Event -> msg) -> Sub msg`**,
 Elm's three, each taking the function a handler would be (`onKeyDown (λevent -> Pressed

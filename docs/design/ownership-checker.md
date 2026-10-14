@@ -31,6 +31,18 @@ HTTP decoders followed through `Expect` — is specified in §24 and built.*
 copies), `map`'s identity promise read with the record types, and `Maybe.withDefault (Maybe.map m f) d` walked as
 the two arms it means — is specified in §25 and built.*
 
+*Amended 2026-10-12: slice 3g — the argument that no compiler-made binding can make a later read resolve to the
+wrong binding, the early return of `?` (a defect that argument's review found), a prepend whose front item is a
+list made after its base, and `Result.withDefault (Result.map m f) d` — is specified in §26 and built, with the
+rules not yet modelled in the Lean oracle listed in §26.7.*
+
+*Amended 2026-10-13: the owner dropped the identity promises of `core/List`'s functions that build, reversing
+thesis O2 — `map`, `filter` and their kin return a fresh list, their summaries say so, and `identical`, `kept`,
+the exempt comparison and §25.3 are gone — in §27.*
+*Amended 2026-10-13: slice 4 — enforcement: a platform that edits lists in place declares it, and on such a
+platform `check` and `build` run the pass and every rejected or pending line is an error with an Elm-quality
+message; core's and the platforms' summaries ship in the checked core — is specified in §28.*
+
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
 argument. It is the contract the compiler implements: which IR the pass reads, which abstract
@@ -114,6 +126,10 @@ The thesis's decision is that only `browser-direct` writes lists in place (Chang
 `core/`, and the dump runs under any `--platform` (§9). Slice 5 is the first that is
 platform-specific.
 
+*Amended 2026-10-13 (slice 4, §28.2): whether a verdict is an error is the platform's — a platform declares that it
+edits lists in place (`"lists": "in-place"`), and only on such a platform do `check` and `build` run the pass. The
+verdicts themselves still do not depend on the platform, but for §20.2's entry rows.*
+
 ---
 
 ## 2. Where it runs
@@ -171,6 +187,9 @@ build that the report does not change the output; a dump writes no output to cha
 `--platform`, `--core` and `--core-root`. It takes a file or a directory (§9.1). The stage is
 **hidden** — parsed, but listed in no usage text and no error message — until slice 4 makes the
 checker a diagnostic; `--writes-work` and `--allow-debug` are hidden the same way.
+
+*Amended 2026-10-13 (slice 4, §28.3): the stage is listed in `dump`'s usage text; `--ownership-totals` and
+`--ownership-flips` stay hidden, the first being for scripts and the second for tests.*
 
 ---
 
@@ -310,6 +329,9 @@ Thesis Table 3.2, as slice 1 computes them. `A(e)` is the abstract value of `e`.
 | markup | a conservative call over its value instructions (§6.1), result type `Html` | its values |
 | interpolation, arithmetic, comparison | conservative calls; a crossing result has `∅` | their operands |
 
+*Amended 2026-10-12 (slice 3g, §26.2):* `e?` on a `Result` also returns: `A(e)`'s `Err` payload, under `Err`, joins
+the result of the definition the `?` targets.
+
 ## 6. Calls in slice 1
 
 ### 6.1 The conservative call — exactly
@@ -342,6 +364,8 @@ one of §6.2's rows:
    So `List.length xs` holds nothing; `List.map xs String.fromInt : List String` is a fresh list that
    cannot be `xs : List Int`; `List.filter xs p` may be `xs` (thesis §3.8's identity promise falls out
    of the rule); and `List.map xs (λ_ → ys)` may hold `ys` at `⋆`.
+   *Amended 2026-10-13 (§27):* `filter`'s promise is gone, and its summary says `res ε = fresh₁`; the
+   rule still says "may be `xs`" of a callee with no summary, which is what it is for.
 
 Read the other way, slice 1 assumes of every callee what a summary would say of the worst pure
 function of that type: it may return any argument it was given, and it makes its result. It does
@@ -393,6 +417,8 @@ is *after* a demand when its point is greater and the two are not in different a
 
 *Amended 2026-10-12 (slice 3f, §25.4):* so is `Maybe.withDefault (Maybe.map m f) d` with `m` and `d` variable
 paths and `f` a lambda or a top-level value: the call of `Maybe.map` is one arm, the read of `d` the other.
+
+*Amended 2026-10-12 (slice 3g, §26.4):* and `Result.withDefault (Result.map m f) d`, under the same restrictions.
 
 ### 7.3 Frames
 
@@ -630,6 +656,9 @@ place — with thesis Chapter 8's fixed shape: three places, a consequence, a ma
 §8.3, Table 8.1). The stability policy of thesis §8.5 begins: every later release runs the previous
 release's accepted corpus.
 
+*Amended 2026-10-13: §28 is the slice-4 contract as built. The message shape is thesis Chapter 8's; the
+stability policy of thesis §8.5 is not started (§28.11).*
+
 ### 13.4 Slice 5 — in-place code on `browser-direct`
 
 Thesis §9.5, Table 9.1: on `browser-direct`, an accepted demand is the in-place operation; the trie
@@ -841,10 +870,13 @@ value holds closures or top-level functions, or of a function parameter — whos
    object (`done` hands the one over as the other), so the filter never separates them.
    *Amended 2026-10-12 (slice 3f, §25.3):* two closed record types are one object only when they name the
    same fields, each pair of which may be one object; `List.map explosions toObstacle` is never `explosions`.
+   *Withdrawn 2026-10-13 (§27.4):* `map` is fresh, and the record rule went with its promise.
 7. **Derivations** (thesis §8.4): an instantiated entry is exact when its `res` path names one provenance;
    when it names two or more — the two outcomes of an identity promise, `List.filter`'s `{fresh, π₁}`,
    arms joined path-insensitively — every entry instantiated from it is approximate, tagged with the call,
    and a rejection through it is the `call` cause.
+   *Amended 2026-10-13 (§27):* no core function has an identity promise now, and `filter`'s result is
+   `{fresh₁}`; arms joined path-insensitively — `if c then [ 0 ] else xs` — are what still names two.
 
 A call whose callee has no summary is §6.1's conservative call, unchanged (§15 decision 2).
 
@@ -953,8 +985,8 @@ Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2
 | `builder n` | `res ε = fresh₁` | §6.5, the builder |
 | `put b i x` | π₁ `RAW`; π₃ `A`; `res ε = π₁`, `[*] = π₁[*], π₃` | §6.5, the builder's fill: a write in place, so a demand on the builder |
 | `done b n` | π₁ `RAW`; `res ε = π₁`, `[*] = π₁[*]` | §6.5, the hand-over, which sets the array's length |
-| `identical x y` | nothing | §6.5, the identity primitives: compares references, dereferences neither |
-| `kept same xs ys` | π₂ `A`, π₃ `A`; `res ε = π₂, π₃`, `[*] = π₂[*], π₃[*]` | §6.5, `map`'s return of its input |
+| `identical x y` | nothing | §6.5, the identity primitives: compares references, dereferences neither. *Removed 2026-10-13 with the primitive (§27)* |
+| `kept same xs ys` | π₂ `A`, π₃ `A`; `res ε = π₂, π₃`, `[*] = π₂[*], π₃[*]` | §6.5, `map`'s return of its input. *Removed 2026-10-13 with the primitive (§27)* |
 
 `swap`, `update`, `close`, `slice`, `take`, `drop`, `map` and the rest are inferred over these. Two
 consequences are findings, not rows:
@@ -1230,6 +1262,8 @@ result is the element it was given. Their loops now answer the array `a` they tr
 result, never read, and no use at the call. It is the one exempt site — it chooses between two results that
 hold the same elements at every position when it chooses the first; no other row has `K`, and `K` is never
 inferred.
+*Withdrawn 2026-10-13 (§27):* `map` and `indexedMap` return a fresh list always. `identical`, `kept`, their rows
+and the `K` bit are gone, so there is no exempt comparison; `mapHelp` and `indexedMapHelp` answer their builder.
 
 **The rewrite.** `foldl`, `foldr`, `map`, `indexedMap` and `filterMap` read their element with `traverseAt`
 where they read it with `at`; `mapHelp` and `indexedMapHelp` no longer take `xs`; `update` is `focus`;
@@ -1377,7 +1411,13 @@ a platform declare its rows, the checker asserts them:
 | `browser` | `Browser.program` | **template** |
 
 A constructor is the declaration of that name, in the module of that name, of the platform package of that name
-(the chain layer's manifest `"name"`). Any other program constructor — `Browser.hosted`, which a program never
+(the chain layer's manifest `"name"`).
+
+*Amended 2026-10-13 (slice 4, §28.2):* the direct row is chosen by the property, not by the name: `Tea.sandbox`,
+`element`, `document` and `application` of a platform package whose own manifest declares `"lists": "in-place"` have
+the direct row, whatever the package is called, so that the row survives `browser-direct`'s rename to `browser-tea`.
+The template rows keep their names (`browser-tea`'s `Tea`, `browser`'s `Browser.program`) and apply only to a
+package that does not declare the property. Any other program constructor — `Browser.hosted`, which a program never
 meets, or a test platform's — has no row: the functions it is handed stay `pending` (§16.5).
 
 **Which platform.** Thesis §7 checks every program against the direct row "so that a source has one verdict on
@@ -2275,6 +2315,9 @@ A **prepend** is a construction (§3.2) whose items all precede its one spread, 
 `[*] = π₂[*], π₁`, with `fresh₁`'s condition `excl π₁, excl π₂, sep π₁ π₂[*]`. Its two provenances at `ε` make
 a demand through it approximate, as item 2 says of the construction.
 
+*Amended 2026-10-12 (slice 3g, §26.3):* item 2's base cells are left out when the front item is a list made after
+the base.
+
 **The backend agrees** (checked for slice 3f, research 85 §2). Every prepend is emitted as a call of
 `List.cons`, which is `pushFrom` onto a new `[ x ]`, one `concat` into a new array, or a re-cons that answers a
 header over the base's array and writes nothing (`core/List.beni`). A function's result `[ f x, …go rest ]` is
@@ -2287,6 +2330,9 @@ existed before it, on any platform, today. **Slice 5 must keep it so**: a prepen
 `emit/PrependShapes` pins the shapes.
 
 ### 25.3 `map` across types
+
+*Withdrawn 2026-10-13 (§27.4): `map` returns a fresh list, so nothing here is needed; the text is kept as the
+record.*
 
 §6.1 item 3's "may be one object" decides the type filter of §16.4 item 6. A record value is one run-time
 object of one type, so **two closed records** — their extension chains end in the empty record — **may share
@@ -2338,7 +2384,7 @@ approximate step (`… may hold it through the call at L:C`), as a call with an 
 | Fixture | Pins | Expected |
 |---|---|---|
 | `ownership/Prepend` | §25.2; research 82 R1 (`Helpers` 51), R4 (`Bike` 60); T33 | a prepend and `List.cons` onto a list read afterwards: no line; the suffix re-built after `[ a, b, …tail ]`: its walk writes nothing; a prepend onto `map`'s result: no line; T33's stack: accepted; `[ …s, 0 ]` and `[ x, …s, x ]` with `s` read afterwards: `later-use`; extending a prepend's result with its base read afterwards: `call`, approximate; with the base dead: accepted |
-| `ownership/MapAcrossTypes` | §25.3; research 82 R4 | an append onto a map between two closed records: accepted; onto a map from a record type to itself, and from a one-field wrapper to its field: `call`, approximate |
+| `ownership/MapAcrossTypes` | §25.3; research 82 R4 | an append onto a map between two closed records: accepted; onto a map from a record type to itself, and from a one-field wrapper to its field: `call`, approximate. *Amended 2026-10-13 (§27):* all three accepted, `map` being fresh |
 | `ownership/MaybeDefault` | §25.4; research 82 R5 (`Game` 127) | the pipeline, the lambda and the `case`: accepted; the old model read after the expression, an eager handler, a default that is not a variable, an edit while computing `m`, `Maybe.andThen`: `later-use` |
 | `ownership/Differential` | T33 against the Lean model | the prepend form accepted, with no Lean counterpart (the model has no prepend); `t33Pushed`, the model's projection onto a push: kept rejected, copied accepted, as in the model |
 | `ownership/Recursion`, `ownership/Split` | §25.2 through a recursion and a split | `appendTo` reads `ys` and may return it; `bumpHead` writes its rows, not its spine |
@@ -2351,3 +2397,770 @@ approximate step (`… may hold it through the call at L:C`), as a call with an 
    `Bike.update`'s `[ frontWall other, …omitLastSections current.trail ] ++ …` and the line it causes in
    `Game.stepGame` (research 85 §3). The domain has no notion of "made after"; not built.
 2. **`Maybe.andThen` and `Result`.** §25.4's argument covers them; they wait for a program that needs them.
+
+*Amended 2026-10-12 (slice 3g, §26.8):* item 1 is built for a front item that is a list made after the base
+(§26.3). Item 2 is half built: `Result.map` with `Result.withDefault` is §26.4's; `andThen`, of either module, is
+**refused** — §25.4's argument does not cover it, because its `f` may answer `Nothing` or `Err` after it ran.
+
+---
+
+## 26. Slice 3g — binders, `?`'s early return, a prepend of fresh items, `Result`'s default (normative from 2026-10-12)
+
+*Amends §5 (the `e?` row), §7.2, §25.2 item 2 and §25.7. Sections 1–25 keep their numbers and text; where this
+section changes a rule, it wins. Research 86 measures it.*
+
+### 26.1 A later read resolves to the binding it reads
+
+The Lean reference model found a soundness defect in its own checker (PR #65): with shadowing, a `let` handed the
+outer continuation's live set to the inner scope, so liveness took a later read of the outer name for a read of
+the inner binding, and the Dead check passed. beni's source refuses shadowing (`language.md` §7), but the
+compiler makes bindings of its own. This section is the argument that none of them can make a later read resolve
+to the wrong binding in `src/own/`.
+
+**How the checker names a variable.** Never by name. BIR's `local` instruction carries a **local index**,
+declaration-relative, which lowering resolved lexically (`Lower.lookupLocal`) when it wrote the instruction.
+Every binder — written or compiler-made — gets its index from `Lower.bindLocal`, which appends to the
+declaration's `locals` table: the index is the binder's position in it, so **no two binders of a declaration
+share an index**, whatever their names. The walk keys every fact about a variable by that index: its value
+(`local_av`), its frame and branch context (`local_frame`, `local_ctx`), every read (`Use.local`), every holder
+of a demand (`Holder.local`), every capture (`Capture.local`) and the `env` cell of a capture (`Cell.a`). The Dead
+check (§8.1 item 5) compares a holder's index with a read's index, in the same frame, at a later point, in a
+compatible branch. Liveness is not computed backwards from continuations, so there is no live set for an inner
+scope to inherit.
+
+**Why one index is one binding.** BIR is a tree, and the walk evaluates each instruction once per walk of its
+frame, so each binder binds its index once. The one re-walk is a local-function group's fixpoint rounds
+(§18.7), and `restore` returns `local_av`, `local_frame` and `local_ctx` to the snapshot taken before the first
+round. A lambda's or local function's body is a frame of its own, walked once (§7.3); its locals are bound in it
+and nowhere else. `Walker.bindLocal` asserts the property under `std.debug.runtime_safety`, the build every test
+runs: binding an index already bound in the walk traps. A run of `dump --stage=ownership` over core, every corpus
+`.beni` file under each platform, and the applications (research 86 §2) never trips it.
+
+**Every binder kind**, and what lowering makes of it:
+
+| Binder | Lowered to | Indices |
+|---|---|---|
+| `x = e`, `f a = e` in a block or `let` | `let_def` | one, `bindVar` |
+| a pattern in a block or `let` | `let_pattern` | one per variable |
+| a statement | `let_stmt` | none |
+| `case` arms: `pat_var`, `pat_as`, `pat_record`, `pat_ctor`, `pat_tuple`, `[ x, …rest ]` | patterns | one per variable; a spread's binds a view (§5) |
+| lambda and local-function parameters | patterns | one per variable |
+| the `_` placeholder (`f a _`) | a lambda over a `fresh` local | one, `freshLocal` |
+| `.field` | `λr → r.field` over a `fresh` local | one |
+| `(==)` and its relatives | `λa b → a == b` over two `fresh` locals | two |
+| `x ← f a` | `f a (λx → rest)` | the written `x`'s, inside the lambda |
+| `▷`, `◁` | the call, its arguments lowered in source order | none |
+| `{ r \| f = y }` | `record_update` over the resolved `r` | none |
+| `[ x, …xs ]`, `++` | nested `List.cons` / `List.append` calls | none |
+| `if` without `else` | a `case` on `Bool` | none |
+| `e?` | one `try` instruction | none — but it returns from its definition (§26.2) |
+
+Inlining, decision trees for patterns and every other rewrite happen after BIR, on JsIr (`backend.md` §3), and
+the checker never sees them. **Slice 5's obligation**: a rewrite of JsIr that duplicates, reorders or renames a
+binding the checker reasoned about must keep each read in its order relative to the in-place write it was
+checked against.
+
+`ownership/Binders` puts each binder kind between a write and a later read of the original binding — the Lean
+probe itself is `nested` — and each is rejected, naming the original.
+
+### 26.2 `?` returns its `Err` payload
+
+Reviewing the binders found a real defect, the last row of the table above. `e?` on a `Result` means "the `Ok`
+payload, or return `Err x` from the definition the `?` targets" (`language.md` §6.6). §5 gave `A(e?)` and nothing
+else: the early return was dropped, so a definition's summary did not say that its result may hold its
+argument's `Err` payload. `pick r = n = r?; Ok (n + 1)` had an empty `res`, and a caller that wrote `xs` while
+reading the `Err xs` that `pick (Err xs)` returned was **accepted**: in place on `browser-direct`, the read would
+have seen the write.
+
+**The rule.** At `e?` where `e`'s solved type is core's `Result x a`, the walk adds `A(e)` projected on `Err`'s
+payload and placed back under `Err` to the result of the frame being walked. That frame is the definition the
+`?` targets: a `?` under a lambda is refused (`question_in_lambda`), and a `let` constant is not a frame. The
+entries are exact — on that path the payload is what is returned. A `Maybe`'s `Nothing` holds nothing, and a
+payload type that crosses (§4.4) adds nothing. Nothing else changes: on the path that continues the payload is
+not returned, and on the path that returns nothing after the `?` runs, so the early return adds no read inside
+the frame.
+
+`ownership/Question` pins it: `keepsErr`, a local function's `?` (`local`) and a statement `?` (`statement`) are
+rejected `alias`. Before, `keepsErr` and `statement` were accepted, and `local` was rejected only because its
+result held `xs` at a `⋆` under `Ok`. A `Maybe` and a `String` error stay accepted.
+
+### 26.3 A prepend of a list made after its base
+
+§25.2 item 2 gave a prepend's result the base's own cells, approximately, because core's `cons` may re-cons: it
+answers a value over the base's array when the item put in front is `Js.same` as the element stored just before
+the base's view (`b[o − 1]`), or as the one in a trie head's slack slot (`reconsed`, `core/List.beni`). Either
+element was stored in an array the base shares before the base existed as that view: it is an element of a list
+whose array the base's cells name, and the domain names it at the base's cells' `[*]` (a view is its scrutinee's
+cells, §5; a callee's view result names its argument, as `List.drop`'s and `tail`'s rows do).
+
+**The rule.** In a prepend `[ x₁, …, xₖ, …b ]`, the result holds its new cell and not the base's when the front
+item `xₖ`, the one put directly before the base:
+
+1. has a `List` type — a list is compared by identity, unlike an `Int` or a `String`, which `Js.same` compares by
+   value;
+2. has at least one entry at `ε`, and each is **exact** and is a `site` (a list literal's new array) or a callee's
+   fresh `result` (a summary's `fresh`, never §6.1's assumed one), not escaped (§4.3);
+3. is not reached by `A(b)` — closures expanded, approximate and `⋆` entries included.
+
+The base's elements are still the result's elements, exactly, and the new cell's condition is §25.2's.
+
+*Soundness.* By 1 and 2 the item is a new array, made by a literal or a callee, which only its own holders can
+name; by 3 no cell of the base holds it, at any path. The element a re-cons compares with is held by the base's
+cells, so it is not the item: the innermost `cons` builds a new plain array at offset 0, and each outer `cons` —
+a construction's other items — copies too, since a re-cons needs a view past offset 0 or a trie. The rule rests on
+`cons`'s body and on `Js.same` being identity on arrays; `cons` is on the trusted surface (§20.9) through §25.2,
+and a change to its re-cons conditions must revisit this rule. `List.cons x xs` written as a call keeps its
+asserted row (§25.2); only the construction is narrowed.
+
+*Not "made after" in general.* The domain still has no time. An item that is a parameter, a capture, a taken
+element, a top-level value or a callback's result may be stored before the view, and so may a fresh list the
+base's computation was handed (`ownership/PrependFresh`: `storedBefore`, where the re-cons really happens, and
+`baseHolds`).
+
+### 26.4 `Result.withDefault (Result.map m f) d`
+
+§25.4's shape, for core's `Result`: `Result.map` (`core/Result.beni`) calls `f` exactly when `m` is `Ok` and
+answers `Err x` when it is not; `Result.withDefault` answers `d` exactly when its argument is `Err`. The same
+restrictions hold — `m` and `d` variable paths, `f` a lambda or a top-level value — and the two calls must be one
+module's. Both bodies join the trusted surface beside `Maybe`'s.
+
+**`andThen` is refused, in both modules.** `Maybe.andThen m f` calls `f` when `m` is `Just` and answers whatever
+`f` answers, which may be `Nothing`; `withDefault` then reads `d` on a run where `f` ran. The same holds for
+`Result.andThen` and `Err`. §25.7 item 2 said §25.4's argument covers them; it does not. Accepting them would read
+the old model after an edit whenever `f` edits and then fails. `ownership/ResultDefault` pins both, with an `f`
+that edits and answers `Nothing` or `Err`, as `later-use`.
+
+### 26.5 The report
+
+Unchanged in form. A definition whose `?` returns a payload prints it in its summary (`res #Err.0 π1#Err.0`); a
+prepend whose front item was made after its base names no approximate step.
+
+### 26.6 Testing
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `ownership/Binders` | §26.1 | every binder kind between a write and a later read of the original: rejected, naming the original; `distinct`: accepted |
+| `ownership/Question` | §26.2 | `keepsErr`, `local`, `statement`: `alias` (the first and last accepted before); `maybeOk`, `stringOk`: accepted; `twoFrames`: each `?` returns from its own definition |
+| `ownership/PrependFresh` | §26.3; research 82 `Bike` 56 | a literal, a callee's fresh list, and the Bike Wars line in front: accepted; an item stored in the base first (`storedBefore`), handed to the base's call (`baseHolds`), taken from the base (`elementFront`), an `Int` (`intFront`): `call`, approximate |
+| `ownership/ResultDefault` | §26.4 | the pipeline and the lambda: accepted; `andThen` of either module with an `f` that edits and fails, a read after, a default that is an expression, a `Maybe.map` converted first: `later-use` |
+
+### 26.7 Not yet modelled in the Lean oracle
+
+The owner's process rule (2026-10-12): every checker rule a slice adds or changes is modelled in the Lean oracle
+(`proofs/ownership/`) or listed here, with the soundness risk of leaving it unmodelled. The oracle's language has
+`let`, primitives, closures, calls, recursion, a branch on an integer, traversals and focus (`Syntax.lean`); it
+has no list patterns, no constructors or sum types, no records, no early return and no prepend. No rule below is
+modelled. A later sync round consumes this list, §26.2 first: it is the one rule here that closes a soundness
+hole rather than adding precision.
+
+| Rule | Where | What is unsound if the rule is wrong |
+|---|---|---|
+| A binding resolves by its local index (§26.1) | `Walker.bindLocal`, `resolveRaw` | a later read taken for another binding's, the oracle's own defect. Argued from lowering and asserted at run time; the oracle's fix is the same discipline, a distinct name per binder |
+| `?` returns its `Err` payload (§26.2) | `earlyReturn`, `withEarly` | a caller writes a list a returned `Err` holds |
+| A prepend of a list made after its base (§26.3) | `madeAfter` | a write onto the prepend's result reaches the base through a re-cons the rule took to be impossible |
+| `Result.withDefault (Result.map …)` as two arms (§26.4) | `isMaybeJoin` | the default read on a run where `f` edited it |
+| A prepend reads its base, and its result may share the base's array (§25.2) | `prepended` | slice 5 writing a prepend's base, or a write onto the result reaching a base still read |
+| `Maybe.withDefault (Maybe.map …)` as two arms (§25.4) | `isMaybeJoin`, `joinArm` | as §26.4 |
+| `map` across closed record types (§25.3) | `recordsMayShare` | an identity promise dropped where the result may be its input. *Removed 2026-10-13 with §25.3 (§27.4)* |
+| Ownership words on `foreign` signatures, and the thesis row for a `foreign` with none (§24) | `wordsRow` | a word claiming less than the JavaScript does: a write or an escape the checker does not see |
+| The decoder followed through `Expect` (§24.9) | `carry`, `carriedEnv` | a decoder's captures held past the call that runs it |
+| The entry protocol, its rows and `init` (§20, §22) | `entryCall` | the runtime keeping or reading the model the direct row hands over |
+| Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload read after the send gave it up |
+| `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written |
+| Fold accumulator container invariant (2026-10-14 amendment) | callback result instantiation and container conditions | a shared start, escaped accumulator or duplicated result position incorrectly treated as owned across iterations; confusing a container proof with deep ownership of opaque descendants would permit nested alias writes |
+
+### 26.8 Open questions
+
+1. **`List.cons` written as a call** keeps its approximate row; only the construction is narrowed (§26.3). No
+   measured program writes the call with a fresh front item.
+2. **Fresh items that are not lists.** A record or a constructor value made after the base cannot be `Js.same` as
+   a stored element either, but the domain gives a record no cell of its own, so §26.3 cannot see that it is new.
+   No measured program needs it.
+
+---
+
+## 27. The identity promises dropped (the owner, 2026-10-13; normative from 2026-10-13)
+
+*Amends §6.1 item 3, §16.4 items 6–7, §16.8, §18.5, §25.1, §25.3 and §25.6. Sections 1–26 keep their numbers and
+text; where this section changes a rule, it wins. It supersedes thesis O2 (`docs/thesis/ownership/ch-changes.tex`,
+"O2: decided—the identity promises are kept"), whose text is not edited: the thesis records the decision as it
+was taken, and this section records its reversal. Research 90 measures it.*
+
+### 27.1 The decision
+
+The owner, 2026-10-13: **drop the list identity promises now.** Until then `List.filter` that kept every element,
+`List.map` and `indexedMap` whose every result was `===` its element, `slice` and `take` of everything, `xs ++ []`
+and `[] ++ ys`, `concat` and `concatMap` of one non-empty list, and `reverse`, `sort`, `sortBy` and `sortWith` of
+fewer than two elements returned **their input itself**. From now on they return a **fresh list**, each at the
+cost it had (`language.md` §6.8, *What an operation returns unchanged*; `backend.md` §4, *Identity*, both
+amended). The reason: the promises served one consumer, `browser-tea`'s renderer, which skips a `For` whose list
+is the same object as at the last render; `browser-tea` is to be deleted once `browser-direct` — which re-renders
+from compile-time write sets, not from identity — proves out, and the owner accepts that `browser-tea` skips less
+meanwhile. beni has no users, so nothing else is owed.
+
+What the promises cost here is thesis O2's own list: a result that may be its input aliases it (`res ε = {fresh₁,
+π₁}`), so an edit of the result's spine while the source is read later — the splices of thesis Table 6.3, a
+filtered copy kept beside its source and extended (T52), research 88's S3 — was rejected, approximately, through
+the call (§16.4 item 7).
+
+### 27.2 What the checker infers now
+
+Nothing in `src/own/` was added for the change: the bodies changed, and the summaries are read off the bodies
+(§16.8: `map` and its family, `filter`, `slice` are inferred). `beni dump --stage=ownership core/List.beni`
+before and after:
+
+| Function | `res ε` before | after |
+|---|---|---|
+| `map`, `indexedMap` | `~fresh₁ ~π₁` | `fresh₁` |
+| `filter` | `~fresh₁ ~π₁` | `fresh₁` |
+| `slice` | `fresh₁ π₁` | `fresh₁` |
+| `take` | `fresh₁ ~fresh₂ ~π₁` | `fresh₁` |
+| `reverse` | `fresh₁ π₁` | `fresh₁` |
+| `sort` | `~fresh₁ ~fresh₂ ~π₁` | `fresh₁` |
+| `sortWith` | `~fresh₁ ~fresh₂ π₁` | `fresh₁` |
+| `sortBy` | `~fresh₂ π₁` | `fresh₂` |
+| `concat` | `fresh₁ π₁[*]` | `fresh₁` |
+| `concatMap` | `~cb₂ ~fresh₁ ~π₁[*]` | `fresh₂` |
+
+Each also loses its `A` on π₁ (and on π₁`[*]` where the result held the input's elements only through the
+promise): the parameter is read, not kept. `map`'s and `indexedMap`'s result elements are still `cb₂`, and
+`filter`'s, `slice`'s and the sorts' still `π₁[*]` — element identity (`backend.md` §4, invariant 6) is not a
+promise this section drops, so an edit *inside* an element of a filtered list still demands the source's element,
+as thesis O2 says it must.
+
+`append`'s row is asserted (§16.8) and does not change: π₁ `RAW`; `res ε = π₁`. Its body now copies `xs` when
+`ys` is empty and `ys` when `xs` is, so the row's "`[] ++ ys` is the base, not `ys`" (§16.8, *with its decided
+change*) is what the body does: before this section the body returned `ys` itself there, which the row did not
+name. No in-place write existed for that to break.
+
+### 27.3 What is removed
+
+- **`identical` and `kept`**, `core/List`'s two core-private `foreign`s that carried `map`'s promise, with their
+  sibling exports, their two `Operator` entries (`backend.md` §4, *`List.beni`'s loops read and write in place*)
+  and their asserted rows (§16.8's table).
+- **The exempt comparison** (§18.5) and the **`K`** bit it introduced: no row has `K`, so `noUse` is "no bits".
+- `filterFirst`, the loop that walked `filter`'s input without building until the first rejected element, and
+  `firstFrom`, which found `concat`'s one non-empty list.
+
+### 27.4 What stays, and why
+
+- **The writers' rows.** `set`, `update`, `swap`, `insertAt`, `removeAt`, `pop` and `push` still return their
+  input when they have nothing to write. A writer's result is its input — `res ε = π₁` — whether it wrote in place
+  or not; that is the meaning of the row, and making a no-op copy would not change it.
+- **Views.** `drop`, `tail`, `view` and a pattern's `rest` share their base's array by representation, O(1)
+  (§16.8's `view` row: `res ε = π₁, fresh₁`). `drop xs 0` is `xs` for the same reason.
+- **§16.4 item 6's type filter.** It was written with the identity promises as its example, and with none left
+  in core it decides no line of any program research 90 measured: a binary with the filter disabled gives the same
+  verdict on every line of the 1 299 units of research 90 §2, and the whole of `zig build test-blackbox` passes
+  without it: **no test reaches it now.** Only a summary whose result is a coercion through `Js` could make it
+  fire, and only core and the platforms may import `Js`, so no fixture can be written for it from a program.
+  It is known debt, kept for one reason: it is `instRes` and `applySummary`'s tail, the walk slice 4 is
+  changing, and removing it there now would collide with that work. It goes in the first change after slice 4
+  lands, unless a platform summary gives it a fixture first.
+- **§25.3 is withdrawn.** Two closed records with different fields are no longer told apart by §6.1's "may be one
+  object": the rule existed for `map`'s promise (§25.1: "`map`'s identity promise is named only where it can
+  fire"), and a binary without it gives the same verdict on every line research 90 measured, as research 85
+  §1.2 found of every line but `map`'s. `recordsMayShare` and `closedFields` are removed, and a record against a
+  record may share, as before slice 3f — coarser, and sound.
+- **Element identity**, at `[*]`, as above.
+
+### 27.5 Testing
+
+| Fixture | Pins | Expected |
+|---|---|---|
+| `run/ListIndexedIdentity` | §27.1, `backend.md` §4 | the builders' lines `copied` (slice and take of everything, filter of all, reverse and the sorts of fewer than two, map and indexedMap of the identity); the writers' and `drop 0` lines `same` |
+| `run/ListIdentity` | §27.1 | the elements passed through `same`; `append xs []`, `append [] ys`, `concat` of one, `concatMap` alone, `sort` of one `copied` |
+| `run/ListScalarView` | `backend.md` §8 | `whole at the start` still `same`: the probe returns the list a walk was given without `append`, which copies now |
+| `ownership/Conservative` | §27.2 | T52's shape (`filtered`) and `mirrored`'s `reverse` accepted |
+| `ownership/Disjoint` | §16.4, thesis Table 3.1's pending row | the held call temporary through a helper of two arms (`forCall`): `call`, approximate; through `List.reverse` (`forFresh`): accepted |
+| `ownership/Differential` | T52 against the Lean model | `t52` accepted, the model's copied projection |
+| `ownership/MapAcrossTypes` | §25.3, §27.2 | all three appends accepted |
+
+---
+
+## 28. Slice 4 — enforcement (normative from 2026-10-13)
+
+*Amends §1.3, §2.4, §9.2, §13.3, §16.9, §16.10 and §20.2. Sections 1–27 keep their numbers and text; where this
+section changes a rule, it wins. Research 89 measures it.*
+
+### 28.1 The decisions it builds
+
+- **An unsafe in-place edit is a compile error** (the owner, 2026-10-11; thesis Change 2): never a silent copy and
+  never a slower algorithm. The fix a message offers is an explicit `List.copy`, or a restructuring.
+- **Errors only where lists are edited in place** (the owner, 2026-10-12): on every other platform nothing is
+  edited in place, so the checker is silent there — no error and no warning. The rule is a property a platform
+  declares (§28.2), not a platform's name: `browser-direct` is expected to take `browser-tea`'s name.
+- **beni has no users**: no flag turns enforcement off, and nothing is deprecated first.
+
+| Piece | Slice 4 |
+|---|---|
+| A platform declares that it edits lists in place | **built**: `"lists": "in-place"` (§28.2; `boundary.md` §5.2) |
+| The pass in `check` and `build` | **built**, on such a platform only, after the module check (§28.3) |
+| Summaries across a module boundary at build time | **built** as a *summary block* per module, in the cache entry and the checked core (§28.4); not yet in the interface record (§16.10, §28.11) |
+| Rejections and pending lines as errors | **built**: every one, exact, approximate and position alike (§28.5) |
+| Messages in thesis Chapter 8's shape | **built**: three places, a consequence, a `List.copy` fix and a verdict line (§28.6) |
+| Core and the platforms checked once, when beni is built | **built**: the checked core carries their blocks, and refuses an in-place chain with a rejection (§28.7) |
+| The stability policy (thesis §8.5) | not started (§28.11) |
+| In-place code | slice 5 (§13.4) |
+
+### 28.2 Which platform
+
+A platform package's manifest may say
+
+```json
+"lists": "in-place"
+```
+
+and it is then an **in-place platform**: the code it emits may write a list's array where §8's verdict accepted
+the demand (slice 5), so an accepted demand is a promise the build relies on and a rejected one is a program the
+build cannot compile. `"in-place"` is the only value; any other is the chain's exit-2 `malformed` failure, as any
+manifest field of the wrong shape is (`boundary.md` §5.3). The field is inherited first-found down the chain like
+every other (`boundary.md` §9.1), so a platform layered on an in-place platform is one. `browser-direct` declares
+it; `browser-tea`, `browser`, `html` and `node` do not, and `tests/platforms/*` do not.
+
+The entry rows of §20.2 read the same property, of the package that declares the program constructor (§20.2's
+amendment).
+
+### 28.3 When the pass runs
+
+**`check` and `build`, when the chain is in-place, and the run's own check produced no error.** The pass
+reads solved types (§2.3), and a module with a type error has none worth reading; one message at a time is
+Elm's rule (`Check.Options.quiet`), and the ownership errors of a program follow its type errors as type errors
+follow its parse errors. A run with no platform, or with a platform that is not in-place, runs no pass, keeps no
+type store and allocates no `inst_type` table: it is byte for byte what it was.
+
+**Where.** After `Check.run` returns, on one thread, before the check's diagnostics are reported and before the
+cache entries are written — so an ownership error is one of the module's diagnostics, and a module with one is
+never cached (`Session.storeEntries`' rule). Moving the pass onto the DAG, beside the module's check, is §16.9's
+design; §28.11 says why this slice does not.
+
+**What it walks.** The run keeps every checked module's type store (§2.3). Each module the run checked is walked
+from its BIR; every module the run installed — from the checked core, or from the cache directory — is read from
+its summary block (§28.4). **A module sees another only through a block**, also when both were checked in this
+run: the first time a caller in another module asks for a declaration's summary, that summary is **sealed** —
+written as a one-row block and read back in place of what the walk gave — and under runtime safety, the build every
+test runs, the two must be equal field by field or the compiler stops. So the block loses nothing, a verdict does
+not depend on whether an import was checked or installed, and the dump (§9.1), which seals the same way, prints the
+verdicts a build enforces: every `tests/corpus/ownership/` golden is unchanged by the slice. Sealing is per
+declaration, not per module, because a report that summarised the whole of every module it touches went over the
+test budget on `EntryValueCommand` (4 651 million instructions); per declaration it summarises no more of the
+library than before. *One known way a block and a walk could still differ*: the cap on guard atoms (§16.7) keeps
+the first eight in an order by id, and a session that computed the summary itself assigns other ids than one that
+read it; no measured summary reaches the cap.
+
+**What it reports.** The modules of the app's packages that the run checked: an installed app module was cached
+clean, which by §28.5 means without an ownership error. Core and the platforms are not reported — their verdicts
+are the checked core's (§28.7).
+
+### 28.4 The summary block
+
+A module's summaries, as bytes: every top-level declaration with a summary (§16.2) — functions, values with no
+parameters, asserted and worded rows alike — with the one fact about a value with no parameters that a caller in
+another module reads besides its summary, whether its type may hold a list (§23.6's view footer). The block names
+nothing by a session's id:
+
+- a **module** by its package and dotted name, through a table at the block's head;
+- a **declaration** by its index in its module's BIR, and a **constructor** by its module and its index in that
+  module's constructor table — both functions of the module's source, which the key covers;
+- a **path** step by step (§4.1), a field by its name, a constructor step by its constructor and argument;
+- a **local** of a carried lambda (§24.9) by its index in the declaration, as BIR numbers it.
+
+The format is versioned with the rule set (`summary_bytes.version`, thesis §8.5): a block of another version is
+absent. Reading a block re-interns its paths, re-sorts each summary by this run's ids (§16.6's normal form) and
+re-merges nothing.
+
+**Where it is kept.** In the module's **cache entry**, as a fifth section (`entry_bytes` format 10), written by
+every run that summarises the module and empty otherwise; so also in the checked core, whose rows are entries.
+Not in the interface record, which §16.10 specifies for the slice that moves the pass onto the DAG.
+
+**What the key must cover.** A module's verdicts are a function of its source and of its imports' blocks, and a
+block is a function of the module's source and of *its* imports' blocks. The firewall's import term — the
+interface hash and the dependency digest (`fast-compiler.md` §8) — does not cover a block, so **in a run that
+enforces**, two rules keep a hit sound:
+
+1. **An entry with no block is a miss.** An entry a run that did not enforce wrote — the same key, since nothing
+   in a module's own terms says whether the run enforces — is checked again, and its entry rewritten with a block.
+2. **Every module the run did not install from the checked core publishes, for its importers' keys, the hash of
+   its interface record followed by its own key**, in place of the interface hash. Its key covers its source and,
+   by induction, every import's; so an importer's key moves whenever any block it can read may have moved — the
+   transitive recipe, for in-place builds only. A module from the checked core publishes its interface hash as
+   always: its block is fixed by the build id, and its importers' keys inside core must stay the checked core's.
+
+The price is the firewall, on in-place builds only: an edit to a module's body re-checks every module that
+imports it, directly or not, where a build elsewhere re-checks only those whose imports' interfaces moved. §28.11
+item 1 is how it comes back.
+
+### 28.5 What is an error
+
+**Every rejected line and every pending line of a reported module is an `error`.** One sentence per kind, each
+against CLAUDE.md rule 7's test — what guarantee does the error buy?
+
+- **Exact rejections** (`later-use`, `alias`, `captured`, `held-operand`, `disjoint`, and `once`, `supply`, `need`,
+  `exclusive` when exact): real sharing the text shows. Writing in place would make an old value observable; the
+  guarantee is value semantics, and an error is the only alternative to a silent copy, which the owner refused.
+- **Position rejections** (`top-level`, `read-only`, and `platform` should a template row ever meet an in-place
+  build): the language's rule for which lists may be written — a top-level value is shared by every part of the
+  program and never changes; the model `view` reads is the runtime's to keep. Writing either in place breaks the
+  same guarantee, on every run that reaches the write.
+- **Approximate rejections** (`unknown`, `escaped`, `captured-edit`, `element`, `call`, `supply`, `need`, `limit`,
+  `exclusive`, `once`, `payload` when approximate): the checker could not prove the write safe. Accepting them would
+  write in place a list the checker cannot show unique — the guarantee lost exactly where the analysis is weakest —
+  and copying them silently is what the owner refused. So they are errors too, and their message says that it is a
+  limit, not proof of sharing (thesis §8.4), and how to make the program provable or copy.
+- **Pending lines** (§16.5): a function that writes a parameter in place has gone where the checker cannot see
+  every call of it. A build cannot leave an obligation undischarged, so a pending line is a rejection, with the
+  approximate rejection's code: its message names where the function left the checker's sight.
+
+**Acceptances are not errors**, including one that rests on a callee with no summary (`assumed`, §15 decision 2): a
+writing function value that reaches such a callee is pending where it gets there (§16.5), so the obligation is
+reported once, at that place.
+
+**One diagnostic per root cause.** Lines of one module with the same position, verdict, cause and detail are one
+diagnostic, listing every base — the entry's lines for several model paths that one top-level list or one view
+event reaches are one message, not one per path. Lines at different positions are different diagnostics.
+
+### 28.6 Diagnostics
+
+Four codes, appended to `language.md` §10's catalogue:
+
+| Code | Title | Lines |
+|---|---|---|
+| `list_still_used` | `LIST CHANGED WHILE STILL IN USE` | exact rejections, and `platform` |
+| `top_level_list_changed` | `TOP-LEVEL LIST CHANGED` | `top-level` |
+| `view_changes_model` | `VIEW CHANGES THE MODEL` | `read-only` |
+| `list_may_be_shared` | `LIST MAY BE SHARED` | approximate rejections and pending lines |
+
+All four are `error`s, the checker's, and only on an in-place platform. The diagnostic's span is the edit — a
+construction from its `[` to its `]`, a `++` chain, a writer's call, a call that writes an argument, a send — and
+its file the module's.
+
+**The message has thesis §8.3's fixed shape**:
+
+1. **One sentence** naming the operation, the list, and why that is a problem here. A construction "adds to the end
+   of `acc` itself"; a `++` "adds to the end of `a` itself"; a writer "changes `xs` in place"; a call whose callee
+   writes its argument names the callee; an entry line names `update`; a send "gives up" its payload.
+2. **The places, in source order**, each as `N|` and the line, a caret run under the place and a label: the place
+   that keeps the list ("`saved` keeps the list here", "`show` holds the list here", "this value, computed first,
+   still holds the list"), the edit ("the list is changed in place here"), and the later use ("and `saved` is read
+   here, after the change", "`show` is called here, after the change"). A place in another file is preceded by the
+   file's path. Line numbers are right-aligned to the widest.
+3. **The consequence**, one sentence: what the later use would see if the change happened in place.
+4. **The fix**, a replacement line: the edit's line with its base wrapped in `List.copy` — `[ …List.copy acc, x ]`,
+   `List.copy a ++ b`, `List.push (List.copy xs) 4` — which is always correct, since it changes a list nobody else
+   holds; and, where one exists, a fix without the copy (read before the change; build the list in `init`). A base
+   that is not written in the source (a temporary, a record's path) gets the fix in prose.
+5. **The verdict line**: "This is sharing the checker can see: …" for an exact rejection, "This is a limit of the
+   checker, not proof of sharing: …" naming the limit (thesis Table 8.1) for an approximate one or a pending line,
+   and for a position rejection the language's rule it follows.
+
+The trailing excerpt every other diagnostic gets is not printed: the message holds its places. A JSON diagnostic
+carries the same message.
+
+Example, a later read through another name (`build/bad/direct/OwnershipAlias`):
+
+```
+-- LIST CHANGED WHILE STILL IN USE ----------------------------- Main.beni:25:20
+
+`[ …model.todos, n ]` adds to the end of `model.todos` itself, but `saved` still
+holds the old list and is read afterwards.
+
+24|            saved = model.todos
+               ^^^^^ `saved` keeps the list here
+25|            next = [ …model.todos, n ]
+                      ^^^^^^^^^^^^^^^^^^^ the list is changed in place here
+26|            { model | todos = next, before = List.length saved }
+                                                            ^^^^^ and `saved` is read here, after the change
+
+If the list were changed in place, `saved` would see the change when it is read
+on line 26.
+
+To change a copy and leave `model.todos` as it was, copy it there:
+
+25|            next = [ …List.copy model.todos, n ]
+
+Or, if `saved` only needs the list as it was, read it before line 25.
+
+This is sharing the checker can see: `saved` is read on line 26, after the
+change.
+```
+
+A limit of the checker (`build/bad/direct/OwnershipLimit`):
+
+```
+-- LIST MAY BE SHARED ------------------------------------------ Main.beni:23:12
+
+`[ …picked, 9 ]` adds to the end of `picked` itself, and the checker cannot show
+that nothing else still holds the list.
+
+21|shown rows =
+         ^^^^ `rows` keeps the list here
+22|    picked = orFallback rows
+                ^^^^^^^^^^ `rows` may hold the list through this call
+23|    more = [ …picked, 9 ]
+              ^^^^^^^^^^^^^^ the list is changed in place here
+24|    List.length more + List.length rows
+                                      ^^^^ and `rows` is read here, after the change
+
+To be safe, change a copy:
+
+23|    more = [ …List.copy picked, 9 ]
+
+This is a limit of the checker, not proof of sharing: rows may hold it through
+the call at 22:14, and is read at 24:24.
+```
+
+### 28.7 Core and the platforms
+
+Their summaries are computed once, when beni is built: the maker of the checked core (`src/core_pack_main.zig`)
+keeps type stores and runs the pass over every module it checks, so every core and platform row of the checked core
+carries its block, and a build reads them instead of summarising the library again — the cost §18.11 and §18.13
+item 4 measured, two thirds of the pass on Conduit. Core's blocks are computed in the run that checks core alone; a
+platform's in the run for its chain, over core's rows.
+
+**Core must have no rejected or pending line, and an in-place chain's platform modules neither**: they are
+privileged code (CLAUDE.md rule 6), shipped in the binary, which no program can repair with a `List.copy`. The maker
+reports core's modules in the run that checks core, and a platform's in the run for its chain when the chain is
+in-place, so a line there is one of the run's errors, and fails the build of beni with its message, as a core that
+does not check does. On 2026-10-13 core and
+`browser-direct`'s chain have none: 117 and 5 lines, all accepted.
+
+### 28.8 Cost
+
+The target: the pass adds at most 10 % to `check` on Conduit and the corpus pages, on `browser-direct`, and leaves
+the 100 000-line benchmark's check throughput where it was. The benchmark has no platform, so it runs no pass and
+keeps no store. Research 89 gives the figures.
+
+*As built (research 89 §3):* met on the corpus pages (+2.6 %), TodoMVC (+6.0 %) and the table app (+5.6 %); the
+100 000-line check moves −0.006 %; a `browser-tea` check +0.04 %. **Missed on Bike Wars (+18 %) and Conduit
+(+112 %)**: what dominates there is not the library, which the blocks removed, but the entry protocol's fixpoint
+(§20.4) over a wide model — on Conduit `entryCall` is 22 % of the process. Reported, not worked around (CLAUDE.md
+rule 10); §28.11 item 4.
+
+### 28.9 What does not change
+
+Emitted JavaScript, interfaces and run hashes: the pass writes nothing a build emits. Builds on every platform
+that is not in-place, byte for byte, including their cache keys and entries but for the entry's format version. The
+verdicts: the dump's lines are the same as before the slice, the sealing (§28.3) changing none — `tests/corpus/
+ownership/` is the check. **Determinism**: the pass is serial and walks in graph order (§10); a block is a function
+of the module's source and its imports' blocks; the determinism test runs `check --platform=browser-direct` at
+`--jobs=1` and `--jobs=8` and compares its diagnostics.
+
+### 28.10 Testing
+
+- **`build/bad/direct/Ownership…`**, one project per kind of error: `OwnershipLaterUse`, `OwnershipAlias`,
+  `OwnershipCaptured`, `OwnershipHeldOperand`, `OwnershipTopLevel`, `OwnershipView`, `OwnershipLimit` (an
+  approximate rejection), `OwnershipEscaped`, `OwnershipPending`, and `OwnershipGrouped` (one diagnostic for several
+  model paths). Each is built for `browser-direct` and fails with its golden; **each is also built for
+  `browser-tea`, which must succeed with no diagnostic at all** — the corpus harness does that for every
+  `build/bad/direct/` project whose golden holds only the four codes of §28.6.
+- **Every `browser/direct/` page still builds**: they are built for `browser-direct` already. A page that a rule
+  rejects is either a real unsafe edit, reported and fixed with the message's own fix, or a checker limit (research
+  89 §3).
+- **The dump against the build**: the `ownership/` corpus kind checks each `browser-direct` fixture with `check`
+  as well as dumping it, and the check must fail, with the four codes and no others, exactly when the dump has a
+  rejected or pending line (`tests/blackbox/corpus_test.zig`, `ownershipReport`).
+- **The block**: every summary a report reads across a module boundary is sealed (§28.3), and under runtime safety
+  the read-back must equal the walk's; the corpus's ownership goldens, unchanged by sealing, are the semantic check.
+- **The cache**: an enforcing run after a run on another platform checks again (rule 1 of §28.4); a body edit that
+  makes a leaf write its argument fails its warm importer (rule 2) — `tests/blackbox/cache_test.zig`.
+- **Determinism**: `blackbox_test.zig`'s ownership errors at `--jobs=1` and `--jobs=8`, twice each.
+- **The checked core**: its refusal is a core or platform module with an error, which the maker already refuses
+  with the diagnostics; core and `browser-direct`'s chain have no rejected line to refuse today.
+
+### 28.11 Open questions
+
+1. **The pass on the DAG, and the block in the interface.** §16.9 and §16.10 put the summaries in the interface
+   record, computed by the worker that checked the module; the firewall then holds on in-place builds as
+   elsewhere, a summary change being a signature change. This slice runs the pass after the check instead, on one
+   thread, because the pass's state — its path table, its constructor ids, its on-demand recursion — is the whole
+   program's, and making it per module is a refactor of the pass rather than of the build. The cost of not doing it
+   is the firewall on in-place builds (§28.4) and a serial pass; research 89 measures the second.
+2. **Stability** (thesis §8.5): every later release runs the previous release's accepted corpus. Not started: the
+   corpus is this repository's, whose goldens already pin every verdict.
+3. **Machine-applicable fixes.** The `List.copy` line is written for a person; a `--fix` that inserts it is the
+   formatter's, not this slice's.
+4. **The entry fixpoint's cost** (§28.8): instantiating `update`'s whole result each round over a wide model. A
+   result split by the message's constructor (O6) or a memo of a class's instantiation at a model already seen would
+   bring Conduit toward the 10 % target; either changes verdict-making code and is measured against every entry
+   golden on its own.
+5. **Model paths in messages** are printed as the report prints them (`model#Article.0.errors`); a rendering for
+   people is a message-only change.
+
+### *Amended 2026-10-13 (enforcement precision):* escapes in alternative arms
+
+The Unescaped check at a demand uses only earlier escapes whose branch context is
+compatible with that demand's context (§7.2). An escape in `Restart` cannot reject a
+write in the sibling `Concurrent` arm of the same `case`. An escape before the case,
+in an enclosing compatible arm, or in an arm whose case has already joined still
+rejects the write. Nested cases use the same context-compatibility relation as Dead.
+The escape index keeps the events' contexts; summary read-off still joins every arm's
+E/J bits and classifies a returned cell escaped if any arm escapes it. Nothing changes
+the conservative contract a caller sees.
+
+**Soundness.** Two distinct arms of one case cannot execute in one invocation. Removing
+an escape from an incompatible arm therefore removes no runtime holder at the demand.
+The rule does not infer mutual exclusion between unrelated cases, test values across
+calls, or an asynchronous body's choices: those remain compatible or are joined by a
+callee's summary. The unsafe twin starts a fiber holding the list and then appends in
+the same execution; it remains rejected. The accepted twin places that escape and the
+append in different arms. This resolves the command driver's two Concurrent-arm limits
+without dropping an escape from the driver's published summary.
+
+### *Amended 2026-10-13 (enforcement precision):* the model's exclusivity invariant
+
+The entry protocol's shape fixpoint (§20.4) is followed by a must-fact fixpoint for
+the conditions of update's fresh result cells. Init's cells keep their established
+conditions. Update's own fresh cells start at the holding condition, then every
+reachable update result's summary condition is instantiated and conjoined, repeatedly,
+until no cell's condition changes. An unknown result, escaped cell or explicit loss
+in a summary is never seeded as a proven exclusive input. On exhaustion of the
+32-round backstop, update's fresh conditions become lost; a partial proof accepts
+nothing. The conditions are then used by the ordinary entry demands.
+
+**Soundness.** Exclusivity at entry is an inductive invariant: init establishes it,
+and every update arm must preserve it. Fresh allocations of a future update are not
+unknown external cells. Starting those allocations at the holding end of the must
+lattice and monotonically lowering them computes the greatest invariant satisfying
+all reachable summary constraints, including the constraints coming from init and
+from aliasing paths. The previous single evaluation fed an uninitialised fresh cell's
+lost condition into its own preservation constraint, and rejected a recursive tree
+whose grow operation preserves exclusive child lists. Lists duplicated at two
+positions, retained elsewhere in the model, introduced by a sharing update arm or
+obtained from an unknown source still fail the existing separation/exclusivity tests.
+No recursive type is trusted exclusive merely because of its declaration.
+
+### *Amended 2026-10-14 (the subscription tap builder):* fresh folds remain a limit
+
+The runtime's `wanted` dictionary starts at `Dict.empty` each render. Each fold
+iteration consumes the previous accumulator and returns its replacement; the
+builder does not retain dictionary snapshots or reuse one tap-list container at
+different keys. A generic aliased-input twin does not establish sharing in this
+runtime builder. The earlier classification as real sharing was incorrect.
+
+`Dict.update`, implemented through `Dict.focus`, is the intended expression of
+ownership transfer: remove the selected entry, hand its value to the callback,
+and restore the replacement. The isolated `want` helper checks without a copy.
+The complete driver's `List.foldl` still rejects the call to `want`, because it
+cannot establish the supplied accumulator's deep exclusivity. Opaque taps and
+keys can share captured values; this does not imply that the freshly allocated
+tap-list containers share. The current proof domain fails to separate those facts.
+
+This is an unresolved checker limit, pinned by the focused subscription fold in
+`tests/pending/browser/direct/SubscriptionTapFold`. No `List.copy` is added to the
+platform to bypass it. The platform's original get/append/insert implementation
+is retained until the focused builder can be checked; the dependent direct
+subscription implementation remains blocked. A future precision change must
+prove ownership of the actual written containers while preserving rejection of
+aliased containers, retained accumulators and escaping callbacks. Freshness of
+the outer dictionary alone is insufficient to assert deep exclusivity.
+
+### *Amended 2026-10-13 (summary blocks):* invalidate the old precision rules
+
+The ownership block version (§28.4) advances from 1 to 2. Its binary layout stays
+unchanged; the rule set changed, so cached blocks from the previous checker are not
+reused. The existing ownership corpus keeps every prior golden. New accepted and
+rejected twins pin alternative-arm escapes, real escapes before a write, duplicated
+recursive children at init and through update, and intentionally shared dictionary
+tap lists (a rejected generic helper, not evidence of runtime sharing). The full copied driver is also checked through the embedded-platform
+maker: three refusals before the changes, only the borrowed tap refusal after the
+branch fix, and the focused rewrite still rejects the fold
+accumulator. The third driver refusal remains pending; no platform copy is retained.
+
+### *Amended 2026-10-14 (review of enforcement precision):* condition-only rounds
+
+Condition rounds instantiate summaries without recording escapes or function-value
+boundary diagnostics; only the final ordinary evaluation records those effects.
+Runtime-safety assertions require the demand, use and escape lists to stay unchanged
+through a condition round. Callback-result instantiation propagates this mode.
+Unknown callback results (fresh number zero) and any cell already reachable at init
+are excluded from optimistic seeding, also when a callback uses a lower namespace.
+The entry namespaces have named constants shared by the shape and condition passes.
+The unknown-tree-result twin installs an opaque callback's result into the model and
+then grows it: it stays rejected. The recursive escape twin spawns a reader in one
+arm and tail-calls into the appending arm; the call remains rejected through the
+function's joined E/W summary, even though the append alone in its arm is accepted.
+
+### *Amended 2026-10-14 (fold invariants):* owned accumulator edits
+
+A fold supplies one accumulator to its callback and uses that callback's result
+as the next accumulator. This applies to `List.foldl`, `List.foldr`, `Dict.foldl`
+and `Dict.foldr`; iteration order does not change the ownership argument.
+The initial accumulator establishes the invariant: `Dict.empty`, an empty list,
+a literal or a proven fresh call result establishes ownership only for the
+containers it actually makes, not for shared values stored inside it.
+
+The callback must preserve the ownership of every container it writes. Each
+such result container is either freshly allocated or the owned container it
+received, with separation from the other result positions. No callback arm may
+escape that container, capture it in a retained closure, store it at a second
+position, or replace it with a borrowed/shared/unknown container. Its existing
+Known, Unescaped, Disjoint and Dead obligations still apply. Unknown callback
+classes, coarsened summaries and exhausted solvers establish no invariant.
+A fresh outer dictionary alone proves nothing about its stored lists.
+
+**The written footprint.** Exclusivity of a list's container is distinguished
+from deep exclusivity of everything it holds. Appending a tap changes the list
+container, not the opaque tap's captures. A result/supply condition may therefore
+state container exclusivity at a path, retaining separation between the different
+positions represented by that path. This fact never licenses a write below that
+path. Destructive focus may use it only for the callback's actual write footprint;
+a callback that writes a nested child requires that child's own condition.
+Deep conditions retain their existing meaning. Dictionary focus still removes
+one selected value before its callback runs, and its replacement must preserve
+separation from the retained entries. Shared captures of taps do not establish
+sharing of their enclosing list containers, nor are those captures asserted owned.
+
+The fold first computes the finite shape of its callback results. It then solves
+container conditions as a greatest must-invariant: future fresh allocations start
+at the holding condition, while the initial accumulator's established constraints,
+shared/unknown arrivals and escapes are never optimistically reseeded. Callback
+result conditions are instantiated and conjoined until stable. The proof rounds
+record neither escapes nor diagnostics; final checking records those effects normally. Exhaustion loses
+the candidate facts. The invariant is used for callback demands and retained in
+the result's container conditions, never as an unconditional deep-exclusive row.
+Shape instantiation records the cells made by the callback's fresh result
+provenances. Only recorded cells that occur in the shape may be seeded;
+instantiating supplies and projecting arrivals records no allocation. Numeric
+namespace ranges establish no ownership, and any cell reachable from an initial
+argument is still never reseeded.
+
+**Soundness.** Induct on the number of callback invocations. The initial value
+establishes the base. Given owned written containers, destructive edits transfer
+those containers once, and a fresh replacement has no earlier holder. Separation
+of result positions and the callback's non-escape obligations establish the next
+step. Duplicate placement, retained closures and escaped containers refute that
+step; a shared initial value refutes the base. The greatest must-fixpoint checks
+all callback classes and result arms rather than trusting the loop's syntax.
+Unwritten opaque descendants are not mutated by this proof; a later nested write
+must separately establish ownership of its target. Dictionary representative
+separation remains load-bearing, including when two keys share the same list.
+
+The subscription fold previously left pending is promoted only after this proof
+accepts its copy-free `Dict.update` builder. Rejected twins pin escaped, captured,
+duplicated and shared-start accumulators for both fold directions and families.
+Ownership summary blocks change version when the container conditions are added;
+old cached summaries cannot supply the new proof.
+
+**Summary representation.** Ownership blocks are version 3. Each result entry
+stores both its existing deep condition and its container condition. The latter
+uses path-qualified `spine`, `sep_spine` and `keep_spine` atoms; they are collected,
+joined and serialized canonically like deep conditions. The path of a focus's
+`keep_spine` atom selects its replacement's root. A parent provenance that only
+stands for that root is insufficient to certify the replacement. Coarsened or
+limited callback/supply rows cannot use the narrower focus proof. Existing deep
+proofs remain available when the narrower proof cannot establish separation.
+Recursive summary convergence compares both conditions: an unchanged deep
+condition cannot hide a container condition that is still weakening.
+
+A scoped `returns owned` check examines aliases at **every** other result position,
+including an earlier position and one outside the written footprint. Restricting
+that comparison to the written paths misses a closure stored beside the written
+list: its first construction may pass, but the retained closure sees a later fold
+step mutate what it captured. The capture-after-append twin pins this boundary.
+
+This amendment resolves the earlier dated subscription-fold limit. The library's
+`Tea.want` now uses `Dict.update`, with no copy. Existing ownership corpus verdicts
+remain unchanged; new container facts do not replace the existing deep proofs.
+The new capture-after-append rejection closes an existing unsound acceptance:
+master accepted that retained-closure twin. Its negative regression fails with
+the fix set aside; no pre-existing golden is changed.

@@ -426,6 +426,11 @@ pub const Program = struct {
     /// per call*): the consumer's, which no dump prints. `Hole.list` here
     /// indexes `vholes`.
     vholes: []Hole = &.{},
+    /// Each constant `let` the view walk evaluated, once per call path, as
+    /// a hole whose `token` is the `let`'s value instruction in `module`:
+    /// what a derived value reads (browser-direct.md §5.4). The consumer's;
+    /// no dump prints it.
+    vlets: []Hole = &.{},
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
     /// The markup roots the view walk reached, in the order it met them
@@ -585,6 +590,10 @@ hole_index: std.HashMapUnmanaged(HoleKey, u32, std.hash_map.AutoContext(HoleKey)
 /// and the call paths: each one's entries, and its extensions by one entry.
 vholes: std.ArrayList(HoleAcc) = .empty,
 vhole_index: std.HashMapUnmanaged(VHoleKey, u32, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
+/// Each constant `let` the view walk evaluated, per call path, as a hole
+/// whose token is its value's instruction (`Program.vlets`).
+vlets: std.ArrayList(HoleAcc) = .empty,
+vlet_index: std.HashMapUnmanaged(VHoleKey, u32, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
 call_paths: std.ArrayList([]const u64) = .empty,
 call_path_next: std.HashMapUnmanaged(PathStep, u32, std.hash_map.AutoContext(PathStep), std.hash_map.default_max_load_percentage) = .empty,
 /// The S0 stats (browser-direct.md §11): the markup roots the view walk
@@ -701,6 +710,13 @@ pub fn deinit(a: *Writes) void {
     }
     a.vholes.deinit(gpa);
     a.vhole_index.deinit(gpa);
+    for (a.vlets.items) |*h| {
+        h.reads.deinit(gpa);
+        h.key_paths.deinit(gpa);
+        h.bound.deinit(gpa);
+    }
+    a.vlets.deinit(gpa);
+    a.vlet_index.deinit(gpa);
     for (a.call_paths.items) |p| gpa.free(p);
     a.call_paths.deinit(gpa);
     a.call_path_next.deinit(gpa);
@@ -2007,6 +2023,7 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
                         const ld = b.extraData(@fromBackingInt(idata.lhs), Bir.LetDef);
                         if (ld.params_start == ld.params_end) {
                             f.env[ld.local] = try a.eval(f, @fromBackingInt(idata.rhs), g);
+                            try a.recordLet(f, @fromBackingInt(idata.rhs), f.env[ld.local]);
                         } else {
                             f.env[ld.local] = try a.mkFun(.letdef, f.m, f.decl, item.int(), f.env);
                         }
@@ -3471,8 +3488,12 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
                 const item = b.extraData(at, Bir.MarkupItem);
                 const v = item.value.unwrap() orelse continue;
                 const t = try a.eval(f, v, g);
-                if (a.isEvent(f.m, @backingInt(at))) continue;
                 d.* = try a.depsUnion(d.*, try a.deps(t));
+                // A handler is no hole, but markup that is a value holds
+                // it: what it reads is the markup's (write-sets.md, *a
+                // handler's reads*), so a `let` or a value slot holding it
+                // is made again when they change.
+                if (a.isEvent(f.m, @backingInt(at))) continue;
                 try a.recordHole(f, item.token, .attribute, v, t, false);
             }
             const children = b.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex);
@@ -3543,7 +3564,14 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
                 const form: Form = if (b.markupKind(node) == .show) .show else if (fm.mode == .literal_false) .for_positional else .for_keyed;
                 try a.noteEach(f, fm.token, form, list);
             }
-            if (fm.fallback.unwrap()) |fb| d.* = try a.depsUnion(d.*, try a.deps(try a.eval(f, fb, g)));
+            const is_show = b.markupKind(node) == .show;
+            if (fm.fallback.unwrap()) |fb| {
+                const ft = try a.eval(f, fb, g);
+                d.* = try a.depsUnion(d.*, try a.deps(ft));
+                // A `Show`'s fallback is one of its arms: what it reads is
+                // the `Show`'s too (write-sets.md, *a `Show`'s arms*).
+                if (is_show and fm.list.unwrap() != null) try a.recordHole(f, fm.token, .each, fm.list.unwrap().?, ft, false);
+            }
             if (fm.row == Bir.none_extra) return;
             const row = b.extraData(@fromBackingInt(fm.row), Bir.MarkupRow);
             const fun = try a.eval(f, row.function, g);
@@ -3608,6 +3636,8 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
             };
             const r = try a.apply(fun, args[0..@min(arity, 2)], g);
             d.* = try a.depsUnion(d.*, try a.deps(r));
+            // A `Show`'s body is its other arm (*a `Show`'s arms*).
+            if (is_show and fm.list.unwrap() != null) try a.recordHole(f, fm.token, .each, fm.list.unwrap().?, r, false);
         },
     }
 }
@@ -3728,6 +3758,19 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
         try a.vholes.append(a.gpa, .{ .module = f.m, .token = token, .kind = kind, .alone = alone, .site = a.cur_site, .path = a.ctx.call_path });
     }
     try a.accumulate(&a.vholes.items[vgop.value_ptr.*], f, kind, inst, t, a.ctx.veach, true);
+}
+
+/// A constant `let` of the view walk, its value `t` at value instruction
+/// `inst`: its reads, once per call path, as a hole's are (`Program.vlets`).
+fn recordLet(a: *Writes, f: *Frame, inst: Inst.Index, t: u32) Error!void {
+    if (a.ctx.mode != .view) return;
+    if (a.in.packages[f.m] != .app) return;
+    const gop = try a.vlet_index.getOrPut(a.gpa, .{ .module = f.m, .token = inst.int(), .path = a.ctx.call_path });
+    if (!gop.found_existing) {
+        gop.value_ptr.* = @intCast(a.vlets.items.len);
+        try a.vlets.append(a.gpa, .{ .module = f.m, .token = inst.int(), .kind = .child, .alone = false, .site = a.cur_site, .path = a.ctx.call_path });
+    }
+    try a.accumulate(&a.vlets.items[gop.value_ptr.*], f, .child, inst, t, a.ctx.veach, true);
 }
 
 /// One visit's facts into a hole's: its reads and their bound depths, its
@@ -4186,6 +4229,13 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     }
     a.vholes.clearRetainingCapacity();
     a.vhole_index.clearRetainingCapacity();
+    for (a.vlets.items) |*h| {
+        h.reads.deinit(a.gpa);
+        h.key_paths.deinit(a.gpa);
+        h.bound.deinit(a.gpa);
+    }
+    a.vlets.clearRetainingCapacity();
+    a.vlet_index.clearRetainingCapacity();
     for (a.sites.items) |*st| st.holders.deinit(a.gpa);
     a.sites.clearRetainingCapacity();
     a.site_index.clearRetainingCapacity();
@@ -4298,9 +4348,10 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     a.ctx = .{ .mode = .closed };
     prog.holes = try a.finishHoles(a.holes.items, init_model, false);
     prog.vholes = try a.finishHoles(a.vholes.items, init_model, true);
+    prog.vlets = try a.finishHoles(a.vlets.items, none, true);
     // A view cut short says so, and every hole it met reads ρ: the top,
     // never a partial read set (§6.1).
-    if (prog.view_capped) for ([_][]Hole{ prog.holes, prog.vholes }) |list| for (list) |*h| {
+    if (prog.view_capped) for ([_][]Hole{ prog.holes, prog.vholes, prog.vlets }) |list| for (list) |*h| {
         h.reads = try a.arena().dupe(u32, &.{rho_path});
         h.bound = try a.arena().dupe(u8, &.{0});
         h.bake = false;

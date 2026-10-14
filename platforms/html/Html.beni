@@ -1349,6 +1349,18 @@ pub event "onClick" delegated : Event
 pub event "onDblClick" delegated : Event
 
 
+pub event "onDragEnd" delegated : Event
+
+
+pub event "onDragOver" delegated : Event
+
+
+pub event "onDragStart" delegated : Event
+
+
+pub event "onDrop" delegated : Event
+
+
 pub event "onFocus" : Event
 
 
