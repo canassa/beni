@@ -1,0 +1,39 @@
+-- load
+<body>
+  <main>
+    <button id="boom">"boom"</button>
+    <section id="second">
+      <button id="inc">"0"</button>
+    </section>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="boom">"boom"</button>
+    <section id="second">
+      <button id="inc">"1"</button>
+    </section>
+  </main>
+</body>
+-- timers
+(timers: 2)
+(the DOM did not change)
+-- throws click #boom
+console.info: first released: Cancelled
+console.info: second released: Cancelled
+(threw: Error: TODO: the first program's update threw)
+<body>
+  <main>
+    <button id="boom">"boom"</button>
+    <section id="second">
+      <button id="inc">"1"</button>
+    </section>
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: the first program's update threw"</div>
+</body>
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- click #inc
+(the DOM did not change)

@@ -1,0 +1,41 @@
+-- load
+<body>
+  <button id="inc">
+    "count "
+    "0"
+  </button>
+</body>
+-- title
+(title: "Even 0")
+(the DOM did not change)
+-- click #inc
+<body>
+  <button id="inc">
+    "count "
+    "1"
+  </button>
+</body>
+-- title
+(title: "Even 0")
+(the DOM did not change)
+-- click #inc
+<body>
+  <button id="inc">
+    "count "
+    "2"
+  </button>
+</body>
+-- title
+(title: "Even 2")
+(the DOM did not change)
+-- flush #inc
+(flushed)
+<body>
+  <button id="inc">
+    "count "
+    "3"
+  </button>
+</body>
+-- title
+(title: "Even 2")
+(the DOM did not change)

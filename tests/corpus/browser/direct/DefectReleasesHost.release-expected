@@ -1,0 +1,29 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="boom">"boom"</button>
+    <ul></ul>
+  </main>
+</body>
+-- click #start
+(the DOM did not change)
+-- timers
+(timers: 3)
+(the DOM did not change)
+-- listeners window resize
+(listeners: 1)
+(the DOM did not change)
+-- throws click #boom
+(threw: Error: TODO: update threw)
+(the DOM did not change)
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- listeners window resize
+(listeners: 0)
+(the DOM did not change)
+-- advance 1000
+(the DOM did not change)
+-- event window resize
+(the DOM did not change)

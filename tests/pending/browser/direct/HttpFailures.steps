@@ -1,0 +1,11 @@
+click #refused
+click #down
+fail 1
+click #missing
+respond 2 404 "no such thing"
+click #slow
+advance 499
+advance 1
+click #stall
+respond 4 200 chunks "half of" open
+advance 500

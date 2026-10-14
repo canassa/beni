@@ -1,0 +1,95 @@
+-- load
+<body>
+  <main>
+    <button id="poke">
+      "poke "
+      "0"
+    </button>
+    <div id="a">
+      <span>"first child of a"</span>
+      <button id="up">
+        "up "
+        "0"
+      </button>
+    </div>
+    <div id="b">
+      <button id="rename">"x"</button>
+    </div>
+  </main>
+</body>
+-- click #up
+<body>
+  <main>
+    <button id="poke">
+      "poke "
+      "0"
+    </button>
+    <div id="a">
+      <span>"first child of a"</span>
+      <button id="up">
+        "up "
+        "10"
+      </button>
+    </div>
+    <div id="b">
+      <button id="rename">"x"</button>
+    </div>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="poke">
+      "poke "
+      "0"
+    </button>
+    <div id="a">
+      <span>"first child of a"</span>
+      <button id="up">
+        "up "
+        "10"
+      </button>
+    </div>
+    <div id="b">
+      <button id="rename">"xy"</button>
+    </div>
+  </main>
+</body>
+-- click #poke
+<body>
+  <main>
+    <button id="poke">
+      "poke "
+      "1"
+    </button>
+    <div id="a">
+      <span>"first child of a"</span>
+      <button id="up">
+        "up "
+        "10"
+      </button>
+    </div>
+    <div id="b">
+      <button id="rename">"xy"</button>
+    </div>
+  </main>
+</body>
+-- click #up
+<body>
+  <main>
+    <button id="poke">
+      "poke "
+      "1"
+    </button>
+    <div id="a">
+      <span>"first child of a"</span>
+      <button id="up">
+        "up "
+        "20"
+      </button>
+    </div>
+    <div id="b">
+      <button id="rename">"xy"</button>
+    </div>
+  </main>
+</body>

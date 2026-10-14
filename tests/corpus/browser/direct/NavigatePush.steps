@@ -1,0 +1,17 @@
+location
+click #push
+location
+click #relative
+location
+click #replace
+location
+click #two
+location
+back
+location
+back
+location
+forward
+location
+click #none
+location

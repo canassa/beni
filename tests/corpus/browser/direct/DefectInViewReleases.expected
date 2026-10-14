@@ -1,0 +1,27 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="break">"break"</button>
+  </main>
+</body>
+-- click #start
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- throws click #break
+console.info: released: Cancelled
+(threw: Error: TODO: view threw)
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="break">"break"</button>
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: view threw"</div>
+</body>
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

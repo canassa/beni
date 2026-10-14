@@ -1,0 +1,18 @@
+-- load
+<body>
+  <p>"asleep"</p>
+</body>
+-- advance 1
+(the DOM did not change)
+-- advance 2147483646
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- advance 6
+<body>
+  <p>"woke"</p>
+</body>
+-- timers
+(timers: 0)
+(the DOM did not change)

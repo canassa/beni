@@ -1,0 +1,35 @@
+-- load
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="missing">"missing"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #ok
+(fetch 1: GET /ok {})
+(the DOM did not change)
+-- respond 1 200 "fine" Content-Type: "text/plain" X-Tag: "a" X-Tag: "b" X-Empty: ""
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="missing">"missing"</button>
+    <ol>
+      <li>"good 200 [] /ok {content-type=text/plain; x-empty=; x-tag=a, b} fine"</li>
+    </ol>
+  </main>
+</body>
+-- click #missing
+(fetch 2: GET /missing {})
+(the DOM did not change)
+-- respond 2 404 "not here" Content-Type: "text/plain"
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="missing">"missing"</button>
+    <ol>
+      <li>"good 200 [] /ok {content-type=text/plain; x-empty=; x-tag=a, b} fine"</li>
+      <li>"bad 404 [] /missing {content-type=text/plain} not here"</li>
+    </ol>
+  </main>
+</body>

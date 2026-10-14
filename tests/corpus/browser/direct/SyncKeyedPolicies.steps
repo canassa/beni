@@ -1,0 +1,17 @@
+# Two messages in one task, with no fiber (`d`) and in fibers (`f`).
+click #restart-d 2
+click #restart-f 2
+click #ignore-d 2
+click #ignore-f 2
+click #queue-d 2
+click #queue-f 2
+click #concurrent-d 2
+click #concurrent-f 2
+# Asked for and cancelled in one update: it never runs.
+click #cancel-d
+click #cancel-f
+# A body that never waits replaces one that waits: after its cleanup.
+click #sleep
+click #replace-d
+click #sleep
+click #replace-f

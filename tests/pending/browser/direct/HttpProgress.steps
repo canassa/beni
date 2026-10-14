@@ -1,0 +1,8 @@
+click #sized
+respond 1 200 chunks "one " "two " "three" Content-Length: "13"
+click #unsized
+respond 2 200 chunks "a" "b" "c"
+click #short
+respond 3 200 chunks "abc" "def" Content-Length: "4"
+click #head
+respond 4 200 "" Content-Length: "100"

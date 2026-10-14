@@ -1855,6 +1855,7 @@ const Emitter = struct {
         if (entry != null) {
             if (e.suppliedAs("run") != null) try names.append(e.scratch, "run");
             if (e.suppliedAs("start") != null and try e.startData() != null) try names.append(e.scratch, "start");
+            if (e.suppliedAs("flush") != null) try names.append(e.scratch, "flush");
         } else {
             // A build with no entry file (`--library`): the page's own
             // entry mounts the exported program, so the program runtime's
@@ -2442,6 +2443,14 @@ const Emitter = struct {
             }
             out.keys = keys;
             out.steps = steps;
+            const settles = try a.alloc(bool, keys.len);
+            for (key_writes, settles) |kw, *settles_key| {
+                settles_key.* = for (prog.subscription_reads) |r| {
+                    if (w.conflicts(r, kw)) break true;
+                } else false;
+            }
+            out.settles = settles;
+
             // The holes, by read set: equal sets are one group — and, since
             // version 1.8, equal bound depths (a row's own read and the
             // whole list's are two groups).
@@ -2536,10 +2545,10 @@ const Emitter = struct {
         std.mem.reverse(u32, chain.items);
         var out: std.ArrayList(Lower.Direct.Access) = .empty;
         for (chain.items) |s| switch (w.pathKind(s)) {
-            .ctor => try out.append(e.scratch, .{ .ctor = e.directCtor(w, w.pathA(s)), .field = w.pathB(s) }),
-            // A message reached through a tuple or a record: a dispatcher
-            // cannot follow it, so it tests nothing below (its keys then
-            // need the decision only a later step can make).
+            .ctor => try out.append(e.scratch, .{ .ctor = .{ .ctor = e.directCtor(w, w.pathA(s)), .field = w.pathB(s) } }),
+            .field => try out.append(e.scratch, .{ .record = @fromBackingInt(w.pathA(s)) }),
+            .tuple => try out.append(e.scratch, .{ .tuple = w.pathA(s) }),
+            .tag => {},
             else => return &.{},
         };
         return out.items;

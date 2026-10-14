@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <button id="fetch">"fetch"</button>
+    <ul></ul>
+  </main>
+</body>
+-- click #fetch
+<body>
+  <main>
+    <button id="fetch">"fetch"</button>
+    <ul>
+      <li>"bad url: bad url http://[::1"</li>
+      <li>"text: ok hello"</li>
+      <li>"whatever: ok ()"</li>
+    </ul>
+  </main>
+</body>

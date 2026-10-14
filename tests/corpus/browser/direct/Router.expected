@@ -1,0 +1,174 @@
+-- url "/blog/42"
+-- load
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Blog 42"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Blog 42")
+(the DOM did not change)
+-- click #home
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Home"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Home")
+(the DOM did not change)
+-- location
+(location: /)
+(the DOM did not change)
+-- click #blog
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Blog 7"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Blog 7")
+(the DOM did not change)
+-- click #comment
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Comment 3 by Jürgen"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Comment 3 by Jürgen")
+(the DOM did not change)
+-- location
+(location: /user/J%C3%BCrgen/comment/3)
+(the DOM did not change)
+-- click #search
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Search top hat"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Search top hat")
+(the DOM did not change)
+-- click #lost
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Not found"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Not found")
+(the DOM did not change)
+-- location
+(location: /nowhere)
+(the DOM did not change)
+-- back
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Search top hat"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Search top hat")
+(the DOM did not change)
+-- location
+(location: /search?q=top+hat)
+(the DOM did not change)
+-- back
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Comment 3 by Jürgen"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Comment 3 by Jürgen")
+(the DOM did not change)
+-- forward
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="comment" href="/user/J%C3%BCrgen/comment/3">"comment"</a>
+      <a id="search" href="/search?q=top+hat">"search"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+    </nav>
+    <h1>"Search top hat"</h1>
+    <ol></ol>
+  </main>
+</body>
+-- title
+(title: "Search top hat")
+(the DOM did not change)
+-- location
+(location: /search?q=top+hat)
+(the DOM did not change)

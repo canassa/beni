@@ -1,0 +1,31 @@
+-- load
+<body>
+  <main>
+    <button id="boom">"boom"</button>
+    <section id="second">
+      <button id="inc">"0"</button>
+    </section>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="boom">"boom"</button>
+    <section id="second">
+      <button id="inc">"1"</button>
+    </section>
+  </main>
+</body>
+-- timers
+(timers: 2)
+(the DOM did not change)
+-- throws click #boom
+console.info: first released: Cancelled
+console.info: second released: Cancelled
+(threw: Error: TODO: the first program's update threw)
+(the DOM did not change)
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- click #inc
+(the DOM did not change)

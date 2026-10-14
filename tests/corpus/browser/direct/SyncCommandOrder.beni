@@ -1,0 +1,109 @@
+-- A command whose body never waits runs with no fiber, where its fiber
+-- would have started (boundary.md §9.8.11), so a page does everything in
+-- the order it did when every body had a fiber. Both buttons ask for the
+-- same three bodies in one batch: the first and the third never wait, and
+-- the second waits once, between its two lines. `#direct` asks for them as
+-- they are, so the first and the third run with no fiber; `#fibers` asks
+-- for the same bodies with a wait on a branch no run takes, so all three
+-- run in fibers. The first body's message asks for one more body, which
+-- never waits. Both clicks log one order:
+--
+--   - `update`, then the render it queued, then the bodies — a body's
+--     message never arrives inside the update that asked for it;
+--   - the bodies in the order asked, the waiting one's second line after
+--     the third body and after the body the first one's message asked for;
+--   - every message a body sends applied at once, between two bodies, and
+--     one render after all of them.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Run Bool
+    | Sent Bool String
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Run fibers →
+            Log.info "update: run"
+            ( n
+            , if fibers then
+                bodies True λ⊤ → pause False
+              else
+                bodies False λ⊤ → ⊤
+            )
+
+        Sent fibers what →
+            Log.info "update: ${what}"
+            ( n + 1
+            , if what == "first" then
+                more fibers
+              else
+                Cmd.none
+            )
+
+
+-- Waits only when asked to, which no run does: what makes a body that
+-- calls it one that may wait.
+pause : Bool → ⊤
+pause yes =
+    if yes then
+        Task.yieldNow ⊤
+
+
+bodies : Bool, (⊤ → ⊤) → Cmd Msg
+bodies fibers hold =
+    Cmd.batch
+        [ Cmd.perform λsend → say send fibers hold "first"
+        , Cmd.perform λsend → waiting send fibers
+        , Cmd.perform λsend → say send fibers hold "third"
+        ]
+
+
+more : Bool → Cmd Msg
+more fibers =
+    if fibers then
+        Cmd.perform λsend → say send fibers (λ⊤ → pause False) "more"
+    else
+        Cmd.perform λsend → say send fibers (λ⊤ → ⊤) "more"
+
+
+say : Cmd.Send Msg, Bool, (⊤ → ⊤), String → ⊤
+say send fibers hold what =
+    hold ⊤
+    Log.info "body: ${what}"
+    send (Sent fibers what)
+
+
+waiting : Cmd.Send Msg, Bool → ⊤
+waiting send fibers =
+    Log.info "body: second starts"
+    Task.yieldNow ⊤
+    Log.info "body: second resumes"
+    send (Sent fibers "second")
+
+
+view : Int → Html Msg
+view n =
+    Log.info "view"
+    <main>
+        <button id="direct" onClick={Run False}>direct</button>
+        <button id="fibers" onClick={Run True}>fibers</button>
+        <p id="count">{String.fromInt n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

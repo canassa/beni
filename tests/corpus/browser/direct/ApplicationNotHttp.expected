@@ -1,0 +1,6 @@
+-- file
+-- throws load
+(threw: Error: Tea.application needs an http or https address, and this page has none: it was opened from a file. Serve it over HTTP, or use Tea.document and Browser.Navigation.currentUrl, whose Nothing such a page can handle.)
+<body>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: Tea.application needs an http or https address, and this page has none: it was opened from a file. Serve it over HTTP, or use Tea.document and Browser.Navigation.currentUrl, whose Nothing such a page can handle."</div>
+</body>
