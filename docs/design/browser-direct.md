@@ -3069,3 +3069,19 @@ and editor-keystroke medians are 0.465/0.435/0.480 ms versus
 The empty direct page remains 327 B. **S6 stops on criterion 7**; the second
 full V3 campaign and slice acceptance remain owed. The focused helper and
 nested/opaque-key regressions do not replace that campaign.
+
+### *Amended 2026-10-15 (document-helper review):* shape and synchronous lifetime
+
+A whole-document `case` is distinct from a record whose `body` is a `case`.
+The latter retains the existing compiled arm sites; the complete-document
+value slot applies only to the former and to a direct document helper call.
+Whole-document cases previously failed record-only body extraction.
+
+A helper may run synchronous effects (including logging); helper and arm
+statements run once with the chosen value, and the quiet verify check excludes
+them. A helper that may suspend is refused transitively by the existing `sync`
+view boundary of `Tea.document` and `Tea.application`, before lowering. Body
+mount/visit populates or replaces the complete-document slot before title reads
+it. A throw unwinds that guarded mount/handler and cannot reach the later title
+write. The mismatch measured in research 94 is §4.1 step 3(d) and §5.2's
+selective shared-site visit protocol, not permission to broaden the prediction.

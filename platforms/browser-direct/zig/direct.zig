@@ -1919,6 +1919,9 @@ const Page = struct {
 
     fn title(pg: *Page, blk: m.Block) m.Error!void {
         const value = if (pg.document_branch) blk: {
+            // mountSite/visitSite fills this sole value slot before title.
+            // A throw unwinds the guarded mount/handler before reaching here.
+            std.debug.assert(pg.root_site.branches.len == 1);
             const br = pg.root_site.branches[0].?;
             const held = try pg.jsb().member(try pg.jsb().member(try pg.ref(br.ref, null), "i"), "a");
             break :blk try pg.jsb().member(try pg.jsb().index(held, try pg.num(1)), "title");
