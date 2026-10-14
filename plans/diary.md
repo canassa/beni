@@ -5752,3 +5752,16 @@ returned-parameter type justify the stronger omission. Foreign-visible tags
 still use dollar keys and source strings in release; runtime fixtures pin it.
 The corrected size stop stays withdrawn, but the complete timing misses stay.
 The PR remains draft and must not be merged under this request.
+
+## 2026-10-14 14:17 CEST — defer the TodoMVC timing condition
+
+**What I did**
+
+Recorded the owner's dated deferral at browser-direct's criterion 6 and
+reconciled the effects report with that decision. Prepared the effects PR
+for ready status and rebase merge, followed by Conduit from current master.
+
+**What I learned**
+
+The remaining 1,000-todo misses stay measured evidence; the owner authorized
+composition and in-place updates before the final combined remeasurement.
