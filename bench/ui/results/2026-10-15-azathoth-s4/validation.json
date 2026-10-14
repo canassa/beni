@@ -22,5 +22,12 @@
     "skipped": 15,
     "failed": 4,
     "log": "gates-macos.log"
+  },
+  "reviewFollowupGate": {
+    "command": "zorg build gates",
+    "host": "azathoth",
+    "exit": 0,
+    "log": "review-gates.log",
+    "changes": "report/data clarification only; helper implementation unchanged"
   }
 }

@@ -66,6 +66,9 @@ to maintain or replacements for the benchmark's source.
   sampling profiles, with uncompressed SHA-256s in `profile-hashes.json`.
   `profile-summary.mjs` reads the compressed or plain JSON and regenerates
   the named-function summaries; idle/native-unattributed time stays separate.
+  `profile-resolution.json` records actual between-sample resolution (78 µs
+  median, versus 25 requested) and the sparse fixed-function hit counts.
+  The small-function averages are not per-function cost measurements.
 - `profile-rendering.mjs`: all requested candidates at live, helper-row,
   derived, depth and width endpoints, P3 where available; exact warm-up and
   one profiled real click on each of twenty fresh pages. These profiles are

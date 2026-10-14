@@ -14,10 +14,13 @@ All figures below are **[measured]**, except explicitly marked explanations or o
 
 **S4 does not meet its three speed targets.** At the required endpoints, direct/vanilla is
 **1.50× on live rows 10,000** (0.105/0.070 ms), **1.317× on derived 100,000** (0.270/0.205 ms),
-and **2.123× at depth 128** (0.563/0.265 ms), against **1.15×, 1.15× and 1.3×**. Live and
-derived have bounded per-message work; their residual cost is the fixed guarded handler/model/
-hole path, not a scan or sort. Depth is worse: the eight-step analysis cap widens the write,
-and the emitted handler calls 121 groups and evaluates 8,107 child-property accesses.
+and **2.123× at depth 128** (0.563/0.265 ms), against **1.15×, 1.15× and 1.3×**. The inspected live/derived handlers contain no row walk or sort, but this does not account
+for all measured host work. Derived rises 23% across three decades of N, which remains
+unexplained; a small endpoint slope does not establish flat elapsed time. The native/JS split
+of these gaps is unresolved. Depth's extra work is concrete in the emitted code: the eight-step
+analysis cap widens the write, producing 121 group calls and 8,107 child-property accesses.
+That is an inferred explanation consistent with the measured slowdown, not a measured
+microsecond decomposition of it.
 These misses are reported without replacing the program, the output or the thresholds.
 
 **Criterion 5 still fires on bytes.** The table app is **4,102 B brotli**, versus the 2,830 B bar;
@@ -86,7 +89,7 @@ uses untraced real clicks: two independently mounted pages, five warm-up clicks 
 12 measured clicks per page, **24 samples per point**. The 24 clicks are clustered in two pages,
 not 24 independently compiled or mounted programs. The cross-origin isolated server preserves
 `performance.now()` resolution. The untraced interval is window capture through the microtask
-queued at window bubble, including the platform's queued work, excluding layout/paint.
+queued at window bubble, including the platform's queued work, without waiting for layout/paint; synchronous host work inside the interval is included.
 
 The table uses the existing trace-derived `script` column at rate 1. It must not be compared
 numerically with the untraced sweep intervals. `stream` is the harness's exception: two traced
@@ -105,7 +108,12 @@ continued through 01:04 CEST (exact UTC timestamps remain in each epoch).
 
 Raw results, commands, byte maps and the release bundles behind the part measurements are in
 [`bench/ui/results/2026-10-15-azathoth-s4/`](../../../bench/ui/results/2026-10-15-azathoth-s4/).
-An IQR describes sample spread, not a confidence interval for a ratio.
+All ratios use the **unrounded pooled-sample medians**; displayed medians are rounded to
+three decimals. For example, helper rows uses approximately 0.1225/0.0725 = 1.689655, not
+0.123/0.073. Counts establish completeness, not independence: ordinary sweep clicks remain
+clustered within two pages. An IQR describes sample spread, not a confidence interval for a
+ratio. Live/derived/helper-row endpoint IQRs are separate in this batch, but the exact ratios
+of these small intervals are softer than their directional ordering, with 5 µs clock quantization.
 The harness changes add Solid 2 to scaling sizes, accept checked JSON binding maps for the
 part reporter, and list absent static P3 subjects as skipped rather than timing an empty page.
 They change no timed program or timing interval.
@@ -156,9 +164,9 @@ the slower path is not identified as the shared row-data builder.
 
 The emitted update calls `da(P, rows, F)`: it walks all 1,000 instance references, then calls a
 separate row writer for the 100 changes. P3 also walks the list, but its prefix pass marks rows
-and one render loop writes the marked labels. Direct's specialized walk/indirect writer path
-costs more in this exact warm-up, despite avoiding the general reconciler. The profiles localize
-that residual; they do not establish a JIT-tier explanation or a precise decomposition of the
+and one render loop writes the marked labels. The primary update ordering and the named samples are consistent with the specialized
+walk/indirect-writer path explaining a residual despite avoiding the general reconciler.
+The profiler does not isolate the cost difference of the individual functions; they do not establish a JIT-tier explanation or a precise decomposition of the
 0.196 ms median gap. Most busy profile time is native/unattributed `(program)` and includes
 layout after the click. Those samples, idle and the profiler's own overhead are retained and
 excluded from the named-JS figures, not folded into a new speed comparison. Raw profiles and
@@ -210,7 +218,7 @@ with duplicate assignments rejected; the matching bundles are archived so renami
 silently invalidate a map.
 
 | page / platform | whole | core Δ | runtime Δ | program Δ |
-|---|--:|--:|--:|--:|--:|
+|---|--:|--:|--:|--:|
 | table / tea | 5206 | 746 | 2249 | 1439 |
 | table / direct | 4102 | 699 | 1532 | 1147 |
 | live / tea | 3867 | 86 | 2586 | 494 |
@@ -253,7 +261,11 @@ this is visible in the archived bundle's `t`/`sa` path, not inferred from an old
 The general rank-correct reconciler/row-patch part costs **607 B** in context; delegation/listeners
 **167 B**, guard/queue/mount **184 B**, the page/handlers/init **712 B**, and row-building data
 **341 B**. These are individual deltas, not an additive explanation of the entire 4,102 B.
-Core's **699 B** and the **3,403 B non-core remainder** are the arithmetic criterion 5 names.
+Core's **699 B** is the authoritative criterion figure: **remove the entire core group once**
+and recompress the whole. Adding the finer core deltas (594 + 72 + 0 = 666 B) is a different
+operation; those separately recompressed deltas do not add. Neither does the core peel total
+(688 B) replace that grouped leave-one-out operation. The **3,403 B non-core remainder** is
+4,102 − 699, the arithmetic criterion 5 names.
 No in-place list or record-update implementation was substituted for the compiler's output.
 
 The live page's **429 B** controlled-input delta buys edited-set restoration, including click/
@@ -443,23 +455,29 @@ P3 is unavailable for filtered, width, derived, helper rows and tree.
 
 
 - **Live 10,000:** 0.105 [0.094–0.111] versus vanilla 0.070 [0.065–0.075] ms,
-  **1.50×**, above 1.15×; direct is faster than tea's 0.133 ms. The `Go` handler is one model
+  **1.50×**, above 1.15×; direct is faster than tea's 0.132 ms in the rounded table. The `Go` handler is one model
   spread and one tick-group call; the edited set is empty and no row walk runs. The control
   capture listener and guarded dispatch are still reached. See `fixed-paths.json` and the profiles.
 - **Derived 100,000:** 0.270 [0.234–0.315] versus 0.205 [0.190–0.216] ms,
   **1.317×**, above 1.15×. The endpoint slope from N=100 to 100,000 is approximately 0.03:
-  the work is flat, but flat is not the same as within the ratio bar. Its handler calls only
+  that low slope is the harness's descriptive statistic, not proof of flat elapsed cost. Direct
+  grows from 0.220 to 0.270 ms (+23%) while vanilla stays near 0.20 ms. The growth is unexplained:
+  heap/cache/GC effects or other host work have not been isolated. Neither the flatness condition
+  nor the ratio bar is accepted from this evidence. Its handler calls only
   the tick group; the sort/filter/take computation runs at mount, not per tick.
 - **Depth 128:** **2.123×**, above 1.3×, with separate IQRs from both vanilla and P3.
   Direct worsens from 1.12× at depth 1 to 1.40× at 32 and 1.71× at 64. The k-cap and repeated
-  paths are the mechanism (§3), not a DOM operation growing with depth. Bytes grow from
+  paths provide the source-level growth explanation (§3); their exact time contribution was
+  not isolated. Vanilla's depth-128 median rises to 0.265 ms from roughly 0.21 elsewhere, with
+  a wide IQR. Using 0.21 would give approximately 2.68×; the miss survives, its exact multiple
+  depends on that baseline. Bytes grow from
   **516 to 2671 B**, **16.97 B per added level** over this interval, above the 4 B hypothesis.
 - **Helper rows 10,000:** 0.123 versus 0.073 ms, **1.690×**, above the static-heavy 1.15× bar;
   this page has no controlled inputs. Its unrelated handler likewise spreads the model and
-  calls one tick group; it does not traverse the rows. The residual constant path is therefore
-  not explained by controlled restoration alone. **Helper tree depth 12** is 0.225 versus
-  0.200 ms, **1.125×**, within that bar, with overlapping IQRs. Neither grows with tree size
-  per message in this batch.
+  calls one tick group; it does not traverse the rows. The handler itself adds a small record spread and one group call, without a row traversal.
+  That is not a priced explanation of the entire elapsed gap. In particular, no isolating
+  measurement attributes this helper-row gap to a spread or to controlled restoration. **Helper tree depth 12** is 0.225 versus
+  0.200 ms, **1.125×**, within that bar, with overlapping IQRs. Neither shows increasing elapsed cost with N/depth in this batch; this is not a host-work proof.
 - **Width 1,024:** **1.235 versus 0.200 ms**, **6.175×**, above the pre-S7 1.3× bar. The
   archived bundle has a 1,024-property model and exactly one data setter; its handler is
   `e = { ...e, a: e.a + 1 }; q()`. It copies the entire wide record, not the whole view.
@@ -477,24 +495,33 @@ P3 is unavailable for filtered, width, derived, helper rows and tree.
   The derived list uses the general reconciler; this is informative rendering coverage, not
   the full TodoMVC application or a substitute for S5's recorded TodoMVC campaign.
 
-The live/derived/helper-row misses are bounded fixed paths, not hidden O(N) rendering. That
-localizes the problem without pretending each nanosecond belongs to a particular guard or
-spread: source structure proves which work executes, and the diagnostic profiles separately
-sample that path. No profiling result replaces the comparison medians or lowers a threshold.
+`fixed-paths.json` records four handlers only. It proves their explicit bodies contain a
+small model spread and a group call, not a row walk or sort. It does not establish the work
+inside the callee, guard, control capture, or browser. The matching archived bundles permit
+inspection of those callees, but the elapsed/native part has not been decomposed. Thus the
+remaining live/derived/helper-row gaps are localized to the dispatch/one-hole operation;
+calling them a measured constant framework tax or attributing them to a small-record spread
+would overstate the evidence. No profiling result replaces the comparison medians or lowers a threshold.
 
 The endpoint investigation uses 20 fresh pages per available candidate and the same five
-warm-up clicks, with one profiled real click at each endpoint (540 profiles total). All five
+warm-up clicks, with one profiled real click at each endpoint (540 profiles total), requesting
+**25 µs sampling intervals**. The requested interval is not the delivered resolution: actual
+`timeDeltas` are retained: the median delivered between-sample interval is **78 µs** (IQR
+77–78), excluding each profile's first startup delta. In live direct, the tick writer has
+**6 hits across 20 pages**, capture 3, update 2 and guard 1 (0.30/0.15/0.10/0.05 hits/page),
+recorded in `profile-resolution.json`. Averaged sub-interval figures are not twenty resolved
+measurements of function cost; their sampling uncertainty is substantial. All five
 requested candidates participate; P3 additionally participates on live and depth, where its
-page exists. In live-10k, direct's tick writer samples **22.5 µs self/page**, the control-capture
-listener **10.4 µs**, model update **8.65 µs**, and the guard **4.2 µs**. No list walk appears.
-Derived samples concentrate in the model update (**13.15 µs**) and one tick writer (**9.15 µs**),
-with guard/listener samples and no sort. Helper rows samples likewise stay in the one writer
-and fixed update/listener. Width's wide-record handler alone samples **565 µs/page**, against
+page exists. The named live/derived samples identify tick-writer, update, capture and guard functions;
+no sort or row-walk function appears in those sparse samples. That absence alone cannot rule
+out unsampled work. The small handler bodies supply the narrower structural evidence.
+Helper rows' named samples likewise identify the writer and update/listener, without pricing
+the complete elapsed gap. Width's wide-record handler alone samples **565 µs/page**, against
 **12 µs** in its one hole writer; it is not 1,024 DOM patches.
 
 These profiles confirm the executed paths and localize the work, but **do not price every
 microsecond of the untraced median gap**: sampling, native/unattributed work and page warm-up
-matter, especially on helper rows. Source proves the absence of a row traversal/sort; the
+matter, especially on helper rows. The inspected handler bodies contain no explicit row traversal/sort; the
 remaining guarded record-update/one-hole path is still slower than vanilla's mutable counter.
 That is a remaining fixed-cost miss, not permission to call the 1.15× targets met. The
 native/JS split of that residual remains unresolved; no invented fraction is assigned to a
@@ -561,9 +588,9 @@ work is outside the measured revision, and none of these applications was edited
 | check | result in this batch | mechanism / limit |
 |---|---|---|
 | S4 live-10k ≤ 1.15× | **miss, 1.50×**; bytes 2,681 > 1,100 | fixed guarded update/one-hole path; control capture, no row scan |
-| S4 derived-100k flat and ≤ 1.15× | flat, **ratio misses at 1.317×**; bytes 1,403 > 1,000 | derived computation skipped on tick; fixed update/one-hole path remains |
+| S4 derived-100k flat and ≤ 1.15× | **ratio misses at 1.317×**; +23% elapsed growth unexplained; bytes 1,403 > 1,000 | derived computation skipped on tick; fixed update/one-hole path remains |
 | S4 depth-128 ≤ 1.3× | **miss, 2.123×**; marginal 16.97 > 4 B/level | k=8 widening, 121 groups / 8,107 child reads plus nested model copies |
-| helper rows / tree ≤ 1.15× | helper rows **miss, 1.690×**; tree passes, 1.125× | no per-message traversal; residual fixed cost / spread, overlapping tree IQRs |
+| helper rows / tree ≤ 1.15× | helper rows **miss, 1.690×**; tree passes, 1.125× | handler has one group call; precise elapsed gap unresolved, overlapping tree IQRs |
 | width-1024 ≤ 1.3× before S7 | **miss, 6.175×** | whole wide record copied; one DOM writer |
 | earlier holes / rows speed checks | pass at required endpoints | holes 0.939×; row edit 1.278×; row swap 1.130×, tied with P3 |
 | criterion 5 / table vanilla bars | eight point ratios meet; update is 1.2016075× | update is at the boundary; no claim that its tiny excess beyond 1.2 is resolved |
@@ -574,9 +601,9 @@ work is outside the measured revision, and none of these applications was edited
 
 The S4 amendment explicitly says it has no new numbered kill criterion of its own. Its speed
 and byte hypotheses nevertheless miss. **The existing table kill criterion remains fired**,
-and correctness debt prevents treating the slice as closed. The endpoint profiles localize the
-constant paths but leave the exact native share of their small absolute gaps open; the depth
-and width growth mechanisms and the byte miss are concrete.
+and correctness debt prevents treating the slice as closed. The endpoint profiles identify named dispatch functions but leave the native share and
+small-function sampling uncertainty open; the emitted extra work at depth, the wide-record copy and the byte miss are concrete.
+Their exact contributions to elapsed time are not a measured decomposition.
 
 No threshold has been moved. The existing owner deferrals remain exactly what
 [`browser-direct.md` §13](../browser-direct.md#13-targets-and-kill-criteria) records; this report
