@@ -12,55 +12,42 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
-      <!---->
       <div class="container page">
         <div class="row">
-          <div class="col-md-9">
-            <!---->
-          </div>
+          <div class="col-md-9"></div>
           <div class="col-md-3">
             <div class="sidebar">
               <p>"Popular Tags"</p>
-              <!---->
             </div>
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 1 200 "{\"articles\":[],\"articlesCount\":25}" Content-Type: "application/json"
@@ -73,33 +60,25 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
-      <!---->
       <div class="container page">
         <div class="row">
           <div class="col-md-9">
@@ -114,12 +93,7 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
               <ul class="pagination">
                 <li class="page-item active">
                   <a class="page-link" href="" id="page-1">"1"</a>
@@ -131,26 +105,22 @@
                   <a class="page-link" href="" id="page-3">"3"</a>
                 </li>
               </ul>
-              <!---->
             </div>
           </div>
           <div class="col-md-3">
             <div class="sidebar">
               <p>"Popular Tags"</p>
-              <!---->
             </div>
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 2 200 "{\"tags\":[\"dragons\",\"beni\"]}" Content-Type: "application/json"
@@ -163,33 +133,25 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
-      <!---->
       <div class="container page">
         <div class="row">
           <div class="col-md-9">
@@ -204,12 +166,7 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
               <ul class="pagination">
                 <li class="page-item active">
                   <a class="page-link" href="" id="page-1">"1"</a>
@@ -221,7 +178,6 @@
                   <a class="page-link" href="" id="page-3">"3"</a>
                 </li>
               </ul>
-              <!---->
             </div>
           </div>
           <div class="col-md-3">
@@ -236,14 +192,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click #page-3
@@ -263,33 +217,25 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
-      <!---->
       <div class="container page">
         <div class="row">
           <div class="col-md-9">
@@ -307,12 +253,7 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
               <ul class="pagination">
                 <li class="page-item active">
                   <a class="page-link" href="" id="page-1">"1"</a>
@@ -324,7 +265,6 @@
                   <a class="page-link" href="" id="page-3">"3"</a>
                 </li>
               </ul>
-              <!---->
             </div>
           </div>
           <div class="col-md-3">
@@ -339,14 +279,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 3 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
@@ -362,33 +300,25 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
-      <!---->
       <div class="container page">
         <div class="row">
           <div class="col-md-9">
@@ -406,14 +336,7 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
-              <!---->
-              <!---->
             </div>
           </div>
           <div class="col-md-3">
@@ -428,14 +351,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click .nav-link[href="/profile/ada"]
@@ -451,40 +372,30 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item active">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
-    <!---->
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 5 200 "{\"profile\":{\"username\":\"ada\",\"bio\":\"hi\",\"image\":null,\"following\":false}}" Content-Type: "application/json"
@@ -497,33 +408,25 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item active">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="profile-page">
-      <!---->
       <div class="user-info">
         <div class="container">
           <div class="row">
@@ -531,28 +434,22 @@
               <img class="user-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
               <h4>"ada"</h4>
               <p>"hi"</p>
-              <!---->
-              <!---->
             </div>
           </div>
         </div>
       </div>
       <div class="container">
         <div class="row">
-          <div class="col-xs-12 col-md-10 offset-md-1">
-            <!---->
-          </div>
+          <div class="col-xs-12 col-md-10 offset-md-1"></div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 6 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
@@ -565,33 +462,25 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item active">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="profile-page">
-      <!---->
       <div class="user-info">
         <div class="container">
           <div class="row">
@@ -599,8 +488,6 @@
               <img class="user-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
               <h4>"ada"</h4>
               <p>"hi"</p>
-              <!---->
-              <!---->
             </div>
           </div>
         </div>
@@ -619,27 +506,18 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
-              <!---->
-              <!---->
             </div>
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click .articles-toggle>.feed-toggle>ul>li:nth-child(2)>a
@@ -654,33 +532,25 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item active">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="profile-page">
-      <!---->
       <div class="user-info">
         <div class="container">
           <div class="row">
@@ -688,8 +558,6 @@
               <img class="user-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
               <h4>"ada"</h4>
               <p>"hi"</p>
-              <!---->
-              <!---->
             </div>
           </div>
         </div>
@@ -708,27 +576,18 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
-              <!---->
-              <!---->
             </div>
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 7 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
@@ -748,50 +607,40 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="settings-page">
       <div class="container page">
         <div class="row">
           <div class="col-md-6 offset-md-3 col-xs-12">
             <h1 class="text-xs-center">"Your Settings"</h1>
             <ul class="error-messages"></ul>
-            <!---->
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 8 200 "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":null,\"image\":null}}" Content-Type: "application/json"
@@ -804,31 +653,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="settings-page">
       <div class="container page">
         <div class="row">
@@ -859,14 +701,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- input #bio "Countess"
@@ -879,31 +719,24 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="settings-page">
       <div class="container page">
         <div class="row">
@@ -934,14 +767,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click #settings-form>fieldset>button
@@ -959,55 +790,42 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
-      <!---->
       <div class="container page">
         <div class="row">
-          <div class="col-md-9">
-            <!---->
-          </div>
+          <div class="col-md-9"></div>
           <div class="col-md-3">
             <div class="sidebar">
               <p>"Popular Tags"</p>
-              <!---->
             </div>
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- location
@@ -1026,33 +844,25 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
-      <!---->
       <div class="container page">
         <div class="row">
           <div class="col-md-9">
@@ -1067,33 +877,23 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
-              <!---->
-              <!---->
             </div>
           </div>
           <div class="col-md-3">
             <div class="sidebar">
               <p>"Popular Tags"</p>
-              <!---->
             </div>
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 11 200 "{\"tags\":[]}" Content-Type: "application/json"
@@ -1106,33 +906,25 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/editor">"New Article"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/settings">"Settings"</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/profile/ada">
               <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
-              <!---->
               "ada"
-              <!---->
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/logout">"Sign out"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
-      <!---->
       <div class="container page">
         <div class="row">
           <div class="col-md-9">
@@ -1147,14 +939,7 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
-              <!---->
-              <!---->
             </div>
           </div>
           <div class="col-md-3">
@@ -1166,14 +951,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click .nav-link[href="/logout"]
@@ -1189,20 +972,15 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
       <div class="banner">
         <div class="container">
@@ -1212,26 +990,21 @@
       </div>
       <div class="container page">
         <div class="row">
-          <div class="col-md-9">
-            <!---->
-          </div>
+          <div class="col-md-9"></div>
           <div class="col-md-3">
             <div class="sidebar">
               <p>"Popular Tags"</p>
-              <!---->
             </div>
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- location
@@ -1250,20 +1023,15 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
       <div class="banner">
         <div class="container">
@@ -1282,33 +1050,23 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
-              <!---->
-              <!---->
             </div>
           </div>
           <div class="col-md-3">
             <div class="sidebar">
               <p>"Popular Tags"</p>
-              <!---->
             </div>
           </div>
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- respond 13 200 "{\"tags\":[]}" Content-Type: "application/json"
@@ -1321,20 +1079,15 @@
           <li class="nav-item active">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="home-page">
       <div class="banner">
         <div class="container">
@@ -1353,14 +1106,7 @@
                   </li>
                 </ul>
               </div>
-              <!---->
-              <!---->
-              <!---->
               <div class="article-preview">"No articles are here... yet."</div>
-              <!---->
-              <!---->
-              <!---->
-              <!---->
             </div>
           </div>
           <div class="col-md-3">
@@ -1372,14 +1118,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click .nav-link[href="/register"]
@@ -1393,20 +1137,15 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="cred-page">
       <div class="container page">
         <div class="row">
@@ -1432,14 +1171,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click #register-form>button
@@ -1452,20 +1189,15 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="cred-page">
       <div class="container page">
         <div class="row">
@@ -1495,14 +1227,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- input #username "bo"
@@ -1515,20 +1245,15 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="cred-page">
       <div class="container page">
         <div class="row">
@@ -1558,14 +1283,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- input #email "bo@example.com"
@@ -1578,20 +1301,15 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="cred-page">
       <div class="container page">
         <div class="row">
@@ -1621,14 +1339,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- input #password "abc"
@@ -1641,20 +1357,15 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="cred-page">
       <div class="container page">
         <div class="row">
@@ -1684,14 +1395,12 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>
 -- click #register-form>button
@@ -1704,20 +1413,15 @@
           <li class="nav-item">
             <a class="nav-link" href="/">"Home"</a>
           </li>
-          <!---->
           <li class="nav-item">
             <a class="nav-link" href="/login">"Sign in"</a>
           </li>
-          <!---->
           <li class="nav-item active">
             <a class="nav-link" href="/register">"Sign up"</a>
           </li>
-          <!---->
-          <!---->
         </ul>
       </div>
     </nav>
-    <!---->
     <div class="cred-page">
       <div class="container page">
         <div class="row">
@@ -1745,13 +1449,11 @@
         </div>
       </div>
     </div>
-    <!---->
     <footer>
       <div class="container">
         <a class="logo-font" href="/">"conduit"</a>
         <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
       </div>
     </footer>
-    <!---->
   </div>
 </body>

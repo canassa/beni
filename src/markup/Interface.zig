@@ -37,7 +37,7 @@ const std = @import("std");
 /// `programBranchEnter`, `programBranchValue`, `programShowFallback`,
 /// `programNestedEnter`, `programViewStatements`, `programLet`,
 /// `Program.view_lets`).
-pub const version: Version = .{ .major = 1, .minor = 11 };
+pub const version: Version = .{ .major = 1, .minor = 12 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -162,6 +162,8 @@ pub const Program = struct {
     /// `Node.Index.none` for it, and `programViewEnter` binds `view`'s
     /// parameter and its `let`s with no root. `view_root` is null.
     view_branch: bool = false,
+    /// 1.12: the root value slot keeps complete helper/branch documents for body and title.
+    document_branch: bool = false,
     /// What `update` is: `markup` and `function` alike are functions this
     /// module declares or the record writes; `other_module` or `computed`.
     update: Shape,

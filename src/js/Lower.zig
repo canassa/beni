@@ -11238,6 +11238,7 @@ pub const Lowerer = struct {
             .view_root = if (pc.record) view_root else null,
             .view_lets = pc.record and view == .function and view_root != null,
             .view_branch = pc.record and view == .function and view_root == null and l.viewBranchOf(pc) != null,
+            .document_branch = l.documentBranchOf(pc),
             .update = if (pc.record) update else .computed,
         };
         // A `view` whose body is a branch evaluates its `let`s wherever the
@@ -12135,6 +12136,7 @@ pub const Lowerer = struct {
         value: Inst.Index,
         bodies: []const Inst.Index,
         results: []const Inst.Index,
+        document: bool = false,
     };
 
     /// What `exprValue` lowers an arm's body or result as.
@@ -12180,15 +12182,16 @@ pub const Lowerer = struct {
         };
         var i = value;
         while (l.bir.instTag(i) == .let) i = @fromBackingInt(@intCast(l.bir.instData(i).rhs));
-        if (l.bir.instTag(i) != .case) return null;
+        const document = node == .none and l.documentBranchOf(l.program_now.?);
+        if (l.bir.instTag(i) != .case and !document) return null;
         var bodies: std.ArrayList(Inst.Index) = .empty;
-        try l.flattenArms(i, &bodies);
+        if (l.bir.instTag(i) == .case) try l.flattenArms(i, &bodies) else try bodies.append(l.scratch, i);
         const results = try l.scratch.alloc(Inst.Index, bodies.items.len);
         for (bodies.items, results) |b, *r| {
             r.* = b;
             while (l.bir.instTag(r.*) == .let) r.* = @fromBackingInt(@intCast(l.bir.instData(r.*).rhs));
         }
-        return .{ .value = value, .bodies = bodies.items, .results = results };
+        return .{ .value = value, .bodies = bodies.items, .results = results, .document = document };
     }
 
     /// The program's `view`'s body past its `let`s, when it is a `case` —
@@ -12203,8 +12206,17 @@ pub const Lowerer = struct {
         const function = l.fieldFunction(pc, pc.view) orelse return null;
         var at = function.body;
         while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+        if (l.documentBranchOf(pc)) return at;
         if (pc.constructor >= 2) at = l.documentPart(at, "body") orelse return null;
         return if (l.bir.instTag(at) == .case) at else null;
+    }
+
+    fn documentBranchOf(l: *Lowerer, pc: *const ProgramCall) bool {
+        if (pc.constructor < 2) return false;
+        const function = l.fieldFunction(pc, pc.view) orelse return false;
+        var at = function.body;
+        while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+        return l.bir.instTag(at) == .case or l.bir.instTag(at) == .call;
     }
 
     fn flattenArms(l: *Lowerer, case: Inst.Index, out: *std.ArrayList(Inst.Index)) Allocator.Error!void {
@@ -12238,6 +12250,11 @@ pub const Lowerer = struct {
     /// its `let`s, is a `case` — which an `if` is too — and its arms.
     fn directBranch(l: *Lowerer, node: beni_markup.Node.Index) ?beni_markup.Program.Branch {
         const arms = (l.branchArms(node) catch return null) orelse return null;
+        if (arms.document) return .{
+            .arms = &.{.{ .what = .value, .dead = false, .statements = false }},
+            .debug = l.instReachesDebug(arms.value),
+            .effect = l.mayHaveEffect(arms.value),
+        };
         const out = l.scratch.alloc(beni_markup.Program.Arm, arms.bodies.len) catch return null;
         for (out, arms.bodies, arms.results) |*o, b, r| {
             const what = l.armWhat(r);
@@ -12336,8 +12353,8 @@ pub const Lowerer = struct {
                 l.arm_override = null;
                 defer l.arm_override = ov;
                 var cells: std.ArrayList(Node.Index) = .empty;
-                try cells.append(l.scratch, try l.numberOf(@intCast(j), p));
-                switch (l.armWhat(inst)) {
+                try cells.append(l.scratch, try l.numberOf(if (ov.arms.document) 0 else @intCast(j), p));
+                switch (if (ov.arms.document) @as(beni_markup.Program.Arm.What, .value) else l.armWhat(inst)) {
                     .markup => |root_index| {
                         const st = l.mk.?;
                         const root = st.built.tree.root(root_index);
@@ -12532,7 +12549,7 @@ pub const Lowerer = struct {
         const arms = try l.branchArms(node) orelse return l.nullNode(p);
         const ov: ArmOverride = .{ .arms = arms, .mode = .choose };
         var skip: std.ArrayList(Inst.Index) = .empty;
-        for (arms.bodies) |b| try skip.appendSlice(l.scratch, l.armStatements(b));
+        if (!arms.document) for (arms.bodies) |b| try skip.appendSlice(l.scratch, l.armStatements(b));
         return l.ident(try l.lowerBranch(block, &ov, skip.items, null), p);
     }
 
