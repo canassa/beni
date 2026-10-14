@@ -103,16 +103,28 @@ def closuresAt (heap : Heap) : Nat → Value → Path → List (Path × Value)
 def shallowB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option String :=
   (coversB γ heap a v).orElse fun _ => certifiedB heap a v
 
-/-- `ClosuresDescribed` as a test. -/
+/-- Recursive closure agreement, following the same fields, elements and
+    captures as `ClosureAgreement`. Exhausting the bound fails explicitly. -/
+def closureAgreementB (γ : FNaming) (heap : Heap) : Nat → Abstract → Value → Bool
+  | 0, _, _ => false
+  | n + 1, a, w =>
+    if isTop a then true else
+    match w with
+    | .int _ => true
+    | .record xs => xs.zipIdx.all fun (x, i) => closureAgreementB γ heap n (a.atPath [.field i]) x
+    | .ref c => match heap[c]? with
+      | some xs => xs.all fun x => closureAgreementB γ heap n (a.atPath [.element]) x
+      | none => false
+    | .closure id caps => match a with
+      | .symbolic .. => true
+      | .function _ alts => alts.any fun (i, cs) =>
+          i == id && cs.length == caps.length && (cs.zip caps).all fun (ca, cv) =>
+            (shallowB γ heap ca cv).isNone && closureAgreementB γ heap n ca cv
+      | _ => false
+
 def closuresB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option String :=
-  match (closuresAt heap depthFuel v []).find? (fun (q, w) => match a.atPath q, w with
-      | .symbolic .., .closure _ _ => false
-      | .list cs _ _, .closure _ _ => !cs.contains .unknown
-      | .function _ alts, .closure id caps => !alts.any fun (i, cs) =>
-          i == id && cs.length == caps.length && (cs.zip caps).all fun (ca, cv) => (shallowB γ heap ca cv).isNone
-      | _, _ => true) with
-  | some (q, w) => some s!"closure {repr w} at {repr q} is not one of {repr (a.atPath q)}"
-  | none => none
+  if closureAgreementB γ heap depthFuel a v then none
+  else some s!"closure descriptions in {repr v} are not one of {repr a} recursively (or depth bound exhausted)"
 
 def describesB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option String :=
   ((shallowB γ heap a v).orElse fun _ => closuresB γ heap a v)
@@ -311,8 +323,12 @@ def config (distinct : Bool := false) : Generator.Gen Setup := do
           -- or `capPush`), described through both levels.
           let c ← leafFor x 0
           let inner ← pick [3, 5] 5
-          let roots := if inner == 3 then [Origin.site [2000 + x] 0] else []
-          let innerAbs := Abstract.function roots [(inner, [← leafAbs c])]
+          -- Deliberately mislabel some inner closures too: matching the
+          -- outer code and the inner footprint alone is insufficient.
+          let swap ← coin 5
+          let absInner := if swap then 8 - inner else inner
+          let roots := if absInner == 3 then [Origin.site [2000 + x] 0] else []
+          let innerAbs := Abstract.function roots [(absInner, [← leafAbs c])]
           pure (.closure 11 [.closure inner [.ref c]], .function roots [(11, [innerAbs])], fIL)
       | _ => do
           let c ← leafFor x 0
@@ -562,7 +578,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
         some "the checker accepted an expression whose live uses it cannot resolve")
   if let some why := invariantB vs hs cfg.env (union (uses e) after) cfg.aenv cfg.escapes cfg.γ then
     -- A closure described as another declaration is meant to fail here.
-    if (why.splitOn "is not one of").length > 1 then
+    if (why.splitOn "not one of").length > 1 then
       return ({ t with closureMislabeled := t.closureMislabeled + 1 }, none)
     return ({ t with hypothesisFalse := t.hypothesisFalse + 1 }, some s!"hypothesis does not hold by construction: {why}")
   let typed := (exprType decls (mainDecl e) cfg.types e).isOk &&
@@ -793,3 +809,32 @@ private def depthValue : Value := .record [.ref 1, .int 3]
   | .error _ => false
 
 end Ownership.Falsify
+
+namespace Ownership.Falsify.NestedCaptureRegression
+
+/-- Both callbacks capture the same array, but only declaration 3 writes.
+    The outer declaration is accurate; its captured callback is mislabeled.
+    The old shallow description admitted this configuration and the main
+    expression, whose two resulting observations differ. -/
+def cell : Abstract := .list [.site [99] 0] .scalar true
+def inner : Abstract := .function [] [(5, [cell])]
+def outer : Abstract := .function [] [(11, [inner])]
+def heap : Array (List InPlaceSemantics.Value) := #[[.int 1]]
+def concrete : InPlaceSemantics.Value := .closure 11 [.closure 3 [.ref 0]]
+def observed : Observation := .closure 11 [.closure 3 [.list [.int 1]]]
+def bindings : Bindings := [(0, observed, concrete), (1, .list [.int 1], .ref 0)]
+def abstractEnv : Env Abstract := [(0, outer), (1, cell)]
+def naming : FNaming := [(0, [.site [99] 0])]
+def expression : Expr := .letE 2 (.app (.var 0) [.int 9]) (.prim .record [.var 1, .var 2])
+
+#guard honestB decls outer
+#guard (exprType decls (Soundness.mainDecl expression) [(0, fIL), (1, Generator.tL)] expression).isOk
+#guard ((inferExpr 200 { declarations := decls, config := {} } abstractEnv expression [] []).run {}).isOk
+#guard (invariantB { fuel := 100 } { fuel := 100, heap } bindings (uses expression) abstractEnv [] naming).isSome
+#guard (describesB naming heap outer concrete).isSome
+#guard match (ValueSemantics.eval 100 decls none (Soundness.valueEnv bindings) expression).run { fuel := 100 },
+             (InPlaceSemantics.eval 100 decls none (Soundness.heapEnv bindings) expression).run { fuel := 100, heap } with
+  | .ok (o, _), .ok (w, st) => (InPlaceSemantics.snapshot st.heap 100 w).toOption != some o
+  | _, _ => false
+
+end Ownership.Falsify.NestedCaptureRegression

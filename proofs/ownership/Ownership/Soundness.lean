@@ -183,6 +183,31 @@ def CertifiedExclusive (heap : Heap) (a : Abstract) (v : Value) : Prop :=
 def DescribesShallow (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
   Covers γ heap a v ∧ CertifiedExclusive heap a v
 
+/-- Agreement on closure code throughout a concrete value, including its
+    captured values. Matching only the outer declaration and the captures'
+    footprints lets a writing inner closure masquerade as a read-only one.
+    This finite witness follows records, heap contents and closure captures;
+    symbolic inputs are constrained by guards, and unknown joins cannot be
+    called. Each known closure also certifies its captures shallowly. -/
+inductive ClosureAgreement (γ : Naming) (heap : Heap) : Abstract → Value → Prop where
+  | int (a : Abstract) (n : Int) : ClosureAgreement γ heap a (.int n)
+  | record {a : Abstract} {xs : List Value} :
+      (∀ i x, xs[i]? = some x → ClosureAgreement γ heap (a.atPath [.field i]) x) →
+      ClosureAgreement γ heap a (.record xs)
+  | array {a : Abstract} {c : Nat} {xs : List Value} :
+      heap[c]? = some xs → (∀ x ∈ xs, ClosureAgreement γ heap (a.atPath [.element]) x) →
+      ClosureAgreement γ heap a (.ref c)
+  | known {roots : List Origin} {alts : List (Nat × List Abstract)}
+      {id : Nat} {caps : List Value} {abs : List Abstract} :
+      (id, abs) ∈ alts → abs.length = caps.length →
+      (∀ k : Nat, DescribesShallow γ heap (abs[k]?.getD .bottom) (caps[k]?.getD (.int 0))) →
+      (∀ k : Nat, ClosureAgreement γ heap (abs[k]?.getD .bottom) (caps[k]?.getD (.int 0))) →
+      ClosureAgreement γ heap (.function roots alts) (.closure id caps)
+  | symbolic (slot : Nat) (ty : Ty) (roots es : List Origin) (id : Nat) (caps : List Value) :
+      ClosureAgreement γ heap (.symbolic slot ty roots es) (.closure id caps)
+  | unknown {cs : List Origin} (elem : Abstract) (ex : Bool) (v : Value) :
+      cs.contains .unknown = true → ClosureAgreement γ heap (.list cs elem ex) v
+
 /-- A concrete closure is one of the alternatives of an abstract function
     value — the same declaration — its captures described by that
     alternative's (their arrays named, their certificates holding). -/
@@ -190,7 +215,8 @@ def DescribesClosure (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Pr
   match a, v with
   | .function _ alts, .closure id caps => ∃ capsAbs, (id, capsAbs) ∈ alts ∧
       capsAbs.length = caps.length ∧
-      ∀ k : Nat, DescribesShallow γ heap (capsAbs[k]?.getD .bottom) (caps[k]?.getD (.int 0))
+      ∀ k : Nat, DescribesShallow γ heap (capsAbs[k]?.getD .bottom) (caps[k]?.getD (.int 0)) ∧
+        ClosureAgreement γ heap (capsAbs[k]?.getD .bottom) (caps[k]?.getD (.int 0))
   -- A symbolic input stands for any closure of its type; what it may do is
   -- fixed by the guards a summary records (`GuardsHold`), not here.
   | .symbolic .., .closure _ _ => True
@@ -206,16 +232,13 @@ def DescribesClosure (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Pr
 def shapePath (q : Path) : Bool :=
   q.all fun s => match s with | .field _ | .element => true | _ => false
 
-/-- Every closure found at a field or element path is one the abstract
-    value at that path lists, with its own declaration (fourth review, P7: a
-    closure of `capPush`, which writes its capture, described as one of
-    `capGet`, which does not, made the step lemma false). -/
+/-- Closure declarations and captured descriptions agree recursively,
+    through fields, elements and capture chains. -/
 def ClosuresDescribed (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
-  ∀ q id caps, shapePath q = true → AtPath heap v q (.closure id caps) →
-    DescribesClosure γ heap (a.atPath q) (.closure id caps)
+  ClosureAgreement γ heap a v
 
-/-- `a` describes `v`: arrays named path by path, certificates holding, and
-    every closure at a field or element path one of `a`'s alternatives there. -/
+/-- Arrays are named, certificates hold, and every known closure agrees on
+    its declaration and its captures recursively. -/
 def Describes (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
   DescribesShallow γ heap a v ∧ ClosuresDescribed γ heap a v
 
@@ -257,9 +280,7 @@ theorem builder_alloc_describes (γ : Naming) (s : State) (site : List Nat)
     subst hw
     rw [represents_empty_ref hr lookup]
     simp
-  · intro q id caps _ h
-    obtain ⟨_, hw⟩ := atPath_empty_ref lookup h
-    cases hw
+  · exact ClosureAgreement.array lookup (by intro x hx; simp at hx)
 
 /-! ## Summary soundness (Lemma 6.7) -/
 

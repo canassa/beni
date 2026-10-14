@@ -81,6 +81,16 @@ The builder proof must refer to concrete heap values and the actual `put`/`close
 operations: a list of cell numbers alone is only an auxiliary set lemma. Every
 claimed certificate theorem must name the executable operation it certifies.
 
+A concrete closure description must agree with its abstract declaration and
+with the descriptions of its captures recursively, including closures inside
+captured records or arrays. A shallow footprint match is insufficient: a read-only
+abstract callback and a concrete writing callback can have the same footprint.
+Symbolic inputs remain abstract over code, with their behaviour constrained by
+the guards; unknown joins cannot be called. The executable falsifier must check
+this same recursive agreement and deliberately mislabel inner closures as well
+as outer ones. This repairs a hypothesis of the unproved soundness statements;
+it does not certify them or change the executable ownership checker.
+
 ## The summary layer (thesis §3.7, §4.4–§4.7)
 
 `Checker.lean` summarises each declaration once per guard valuation and uses
