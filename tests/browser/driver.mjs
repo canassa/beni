@@ -357,6 +357,9 @@ function prelude() {
     globalThis.__beniHarness.log.push(`(the host leaves the page for ${JSON.stringify(to)})`);
   };
   const place = Object.getPrototypeOf(location);
+  // The only navigation to another document Chrome does not let a page
+  // cancel is a traversal, and the history holds no other document
+  // (`chromePage`).
   if (globalThis.navigation !== undefined) {
     navigation.addEventListener("navigate", (event) => {
       if (event.destination.sameDocument || !event.cancelable) return;
