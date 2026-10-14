@@ -3003,3 +3003,22 @@ cannot run on direct: the document view's branches return helper-computed
 documents, and the program hook reports `not_implemented` at Main.beni:257:18.
 Their unchanged scripts, sources, goldens and budgets remain pending with that
 lowering diagnostic. No source wrapping or copied list bypasses the gap.
+
+
+### *Amended 2026-10-14 (Conduit validation):* preserve the ownership blocker
+
+The original Conduit application currently fails direct's ownership enforcement:
+`Main.update` cannot prove that view-event payloads do not retain the nested
+`errors` lists in Article, Home's loaded feed, Profile, and Profile's loaded
+feed. The ownership dump marks all four rejections as approximate `payload`,
+not demonstrated sharing. The three unchanged Reader, Editor and Tour projects
+are exercised under `tests/pending/browser/direct/`, with `list_may_be_shared`
+pinned and their original sources, budgets, scripts and browser-tea goldens
+preserved. No copied lists or modified application subject bypass this check.
+
+This blocks Conduit's direct transcripts, timed messages, bundle bytes and the
+built-platform comparison of S0's dispatch counts; analysis and browser-tea
+counts can still be reported, but are not substitutes for those measurements.
+Independent paired pages exercise nested message keys, same-variant rebuilding
+and an opaque update's `*` path while this checker limit remains open. The S5
+timing deferral does not defer ownership or transcript guarantees.
