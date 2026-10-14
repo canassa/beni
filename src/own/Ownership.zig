@@ -1101,6 +1101,81 @@ test "recursive summaries keep iterating when only container ownership changes" 
     try std.testing.expect(summaryEql(after, after));
 }
 
+/// A pure summary-instantiation scenario supplementing the corpus: a fold
+/// evaluated by the entry protocol receives an init cell numbered above 100000.
+fn testFoldAtEntry(initial_sc: XSum) !struct { initial: u32, result: u32 } {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const graph: Graph = .{ .modules = .empty, .deps = &.{}, .order = &.{}, .diagnostics = &.{}, .name_rows = &.{}, .rows = &.{}, .cycle_members = &.{} };
+    const types = Types.empty;
+    const interner: InternPool.Global = .{};
+    var o: Ownership = .init(.{
+        .gpa = gpa,
+        .graph = &graph,
+        .birs = &.{},
+        .provenance = &.{},
+        .dispatch = &.{},
+        .modules = &.{},
+        .types = &types,
+        .interner = &interner,
+        .module_names = &.{},
+        .packages = &.{},
+        .spans = &.{},
+        .positions = .{ .ctx = &graph, .get = struct {
+            fn get(_: *const anyopaque, _: u32, _: u32) Position {
+                return .{ .line = 0, .col = 0 };
+            }
+        }.get },
+    });
+    defer o.deinit();
+    try o.seedPaths();
+    const bir: Bir = .{ .insts = .empty, .extra = &.{}, .string_bytes = &.{}, .symbols = &.{}, .decls = &.{}, .ctors = &.{}, .locals = &.{}, .refs = &.{}, .imports = &.{}, .exposed = &.{}, .interface = &.{}, .diagnostics = &.{}, .module_doc_start = 0, .module_doc_end = 0 };
+    var store: TypeStore = .init(gpa);
+    defer store.deinit();
+    var w: Walker = .{ .o = &o, .m = 0, .bir = &bir, .decl = std.mem.zeroes(Bir.Decl), .decl_index = 0, .store = &store, .inst_type = &.{}, .local_type = &.{}, .a = arena.allocator(), .mode = .summary };
+    try w.conds.appendSlice(w.a, &.{ .{ .atoms = &.{} }, .{ .atoms = &.{} }, .{ .atoms = &.{} } });
+    const acc = Prov{ .kind = .param, .a = 1 };
+    const condition: XSum = .{ .atoms = &.{.{ .kind = .spine, .a = acc }} };
+    // A callback either transfers its accumulator or returns a new container
+    // carrying the same exclusivity obligation; no supplied cell is an allocation.
+    const callback: Summary = .{
+        .params = 2,
+        .uses = &.{.{ .param = 1, .path = eps, .bits = bit_w }},
+        .res = &.{
+            .{ .path = eps, .prov = acc, .xc = .{ .no = 1 }, .sc = condition },
+            .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 }, .sc = condition },
+        },
+    };
+    try w.closures.append(w.a, .{ .captures = &.{}, .class = &callback });
+    const actual = try w.single(.{ .kind = .closure, .a = 0 });
+    const initial_summary: Summary = .{ .params = 0, .res = &.{.{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 }, .sc = initial_sc }} };
+    const entry_class = [_]Walker.Class{.{ .closure = 0 }};
+    const initial = try w.entryResMode(@fromBackingInt(0), .{ .classes = &entry_class, .sums = &.{&initial_summary} }, &.{}, Walker.entry_init_ns, true, false);
+    try std.testing.expectEqual(@as(u32, 100001), w.cells.items[initial[0].cell].b);
+    const fold: Summary = .{
+        .params = 3,
+        .funs = &.{.{ .param = 2, .calls = .many }},
+        .supply = &.{
+            .{ .fun = 2, .k = 1, .path = eps, .prov = acc, .owned = true },
+            .{ .fun = 2, .k = 1, .path = eps, .prov = .{ .kind = .cb, .a = 2 }, .owned = true },
+        },
+        .res = &.{.{ .path = eps, .prov = .{ .kind = .cb, .a = 2 } }},
+    };
+    const result = try w.entryResMode(@fromBackingInt(0), .{ .classes = &entry_class, .sums = &.{&fold} }, &.{ &.{}, initial, actual }, Walker.entry_view_ns, true, false);
+    return .{ .initial = try w.spineCond(initial), .result = try w.spineCond(result) };
+}
+
+test "a fold inside an entry instantiation does not seed its shared init cell" {
+    const actual = try testFoldAtEntry(.{ .no = 2 });
+    try std.testing.expectEqualDeep(@as(@TypeOf(actual), .{ .initial = cond_shared, .result = cond_shared }), actual);
+}
+
+test "a fold inside an entry instantiation preserves its fresh init cell" {
+    const actual = try testFoldAtEntry(.{});
+    try std.testing.expectEqualDeep(@as(@TypeOf(actual), .{ .initial = cond_yes, .result = cond_yes }), actual);
+}
+
 /// The conjunction of two conditions (§18.2): failing exactly beats failing
 /// approximately, and a holding condition rests on both atom sets.
 fn xsumAnd(a: Allocator, x: XSum, y: XSum) Allocator.Error!XSum {
@@ -6021,6 +6096,9 @@ const Walker = struct {
         /// At the call itself: the arguments' types and the result's.
         arg_types: []const ?Var = &.{},
         result_ty: ?Var = null,
+        /// Allocations represented by fresh result provenance while computing
+        /// a callback's shape. Supplies and projected arrivals do not add cells.
+        callback_fresh: ?*std.ArrayList(u32) = null,
         /// The traversal primitive's own result: a taken element stays
         /// taken (§18.5). Anywhere else a supply or result that names one
         /// instantiates to the element itself.
@@ -6092,6 +6170,9 @@ const Walker = struct {
                 const k = (if (ctx.depth == 0) base_k else base_k + callback_ns_stride * ctx.depth) + ctx.fresh_ns;
                 const ty: Var.Optional = if (ctx.depth == 0) w.instTypeOpt(ctx.inst) else .none;
                 const av = try w.single(.{ .kind = .result, .a = ctx.inst.int(), .b = @max(k, 1), .ty = ty });
+                if (p.kind == .fresh) if (ctx.callback_fresh) |made| for (av) |e| {
+                    if (std.mem.indexOfScalar(u32, made.items, e.cell) == null) try made.append(w.a, e.cell);
+                };
                 if (p.kind == .esc and ctx.effects) try w.escape(av, w.point);
                 return av;
             },
@@ -6138,7 +6219,7 @@ const Walker = struct {
         }
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return w.unknownCb(j, ctx);
-        if (try w.foldAccumulator(j, classes, ctx)) |k| return w.instFold(j, k, classes, ctx);
+        if (try w.foldAccumulator(j, classes, ctx) != null) return w.instFold(j, classes, ctx);
         var x: AV = &.{};
         var rounds: u32 = 0;
         while (rounds < 4) : (rounds += 1) {
@@ -6209,13 +6290,14 @@ const Walker = struct {
 
     /// Cells use the usual least fixpoint; container conditions use the
     /// greatest must-invariant. Initial/shared cells are never reseeded.
-    fn instFold(w: *Walker, j: u32, acc: u32, classes: []const Class, ctx: InstCtx) Allocator.Error!AV {
-        _ = acc;
+    fn instFold(w: *Walker, j: u32, classes: []const Class, ctx: InstCtx) Allocator.Error!AV {
         var shape: AV = &.{};
+        var made: std.ArrayList(u32) = .empty;
         var inner = ctx;
         inner.self_j = j;
         inner.conds = ctx.conds;
         inner.effects = ctx.effects;
+        inner.callback_fresh = &made;
         var stable = false;
         for (0..4) |_| {
             inner.self_av = shape;
@@ -6229,20 +6311,25 @@ const Walker = struct {
         if (!stable) return w.unionOf(&.{ shape, try w.single(.{ .kind = .top, .a = 0 }) });
         if (!ctx.conds) return shape;
         var future: std.ArrayList(u32) = .empty;
-        for (shape) |e| {
-            const c = w.cells.items[e.cell];
-            if (c.kind != .result or c.a != ctx.inst.int() or c.b == 0 or c.b < callback_ns_stride * (ctx.depth + 1) or try w.isEscaped(e.cell)) continue;
-            // Fresh cells of the initial arguments keep their established facts.
+        for (made.items) |cell_id| {
+            if (try w.isEscaped(cell_id)) continue;
+            const in_shape = for (shape) |e| {
+                if (e.cell == cell_id) break true;
+            } else false;
+            if (!in_shape) continue;
+            // A supplied cell never receives a seed, even if abstract fresh
+            // ids collide or an entry's namespace numbers exceed the stride.
             var initial = false;
-            for (ctx.avs) |av| if ((try w.reaches(av, &.{e})) != null) {
+            for (ctx.avs) |av| if ((try w.reaches(av, &.{.{ .path = eps, .cell = cell_id }})) != null) {
                 initial = true;
                 break;
             };
-            if (initial or std.mem.indexOfScalar(u32, future.items, e.cell) != null) continue;
-            try future.append(w.a, e.cell);
-            w.cell_spine.items[e.cell] = cond_yes;
+            if (initial) continue;
+            try future.append(w.a, cell_id);
+            w.cell_spine.items[cell_id] = cond_yes;
         }
         inner.self_av = shape;
+        inner.callback_fresh = null;
         inner.conds = true;
         inner.effects = false;
         var settled = false;
@@ -6251,17 +6338,21 @@ const Walker = struct {
             const escapes_before = w.escaped.items.len;
             const uses = w.uses.items.len;
             const demands = w.demands.items.len;
+            const reqs = w.reqs.items.len;
             _ = try w.instCbOnce(j, classes, inner);
             if (std.debug.runtime_safety) {
                 std.debug.assert(escapes_before == w.escaped.items.len);
                 std.debug.assert(uses == w.uses.items.len);
                 std.debug.assert(demands == w.demands.items.len);
+                std.debug.assert(reqs == w.reqs.items.len);
             }
             if (std.mem.eql(u32, before, w.cell_spine.items)) {
                 settled = true;
                 break;
             }
         }
+        // Only future cells received optimistic seeds. Every other condition
+        // was only weakened by conjunction, so exhaustion keeps those safe facts.
         if (!settled) for (future.items) |c| try w.lowerSpine(c, cond_lost);
         inner.effects = ctx.effects;
         return w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
@@ -6271,6 +6362,8 @@ const Walker = struct {
         var out: std.ArrayList(Entry) = .empty;
         var deeper = ctx;
         deeper.depth += 1;
+        // Merely supplying a cell is not a callback allocation.
+        deeper.callback_fresh = null;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return w.unknownCb(j, ctx);
             // The callback's parameters are what the callee supplies it.
@@ -6283,7 +6376,7 @@ const Walker = struct {
                 }
                 pa.* = try w.unionOf(parts.items);
             }
-            const sub: InstCtx = .{ .inst = ctx.inst, .s = c, .avs = params, .closure = if (cls == .closure) cls.closure else none, .depth = ctx.depth + 1, .conds = ctx.conds, .effects = ctx.effects };
+            const sub: InstCtx = .{ .inst = ctx.inst, .s = c, .avs = params, .closure = if (cls == .closure) cls.closure else none, .depth = ctx.depth + 1, .conds = ctx.conds, .effects = ctx.effects, .callback_fresh = ctx.callback_fresh };
             try out.appendSlice(w.a, try w.instRes(c, sub));
         }
         return w.norm(out.items);

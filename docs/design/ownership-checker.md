@@ -3118,6 +3118,11 @@ result conditions are instantiated and conjoined until stable. The proof rounds
 record neither escapes nor diagnostics; final checking records those effects normally. Exhaustion loses
 the candidate facts. The invariant is used for callback demands and retained in
 the result's container conditions, never as an unconditional deep-exclusive row.
+Shape instantiation records the cells made by the callback's fresh result
+provenances. Only recorded cells that occur in the shape may be seeded;
+instantiating supplies and projecting arrivals records no allocation. Numeric
+namespace ranges establish no ownership, and any cell reachable from an initial
+argument is still never reseeded.
 
 **Soundness.** Induct on the number of callback invocations. The initial value
 establishes the base. Given owned written containers, destructive edits transfer
