@@ -2,6 +2,6 @@ module EntryPush
   27:31 List.push model.items: accepted param
   42:8 entry EntryPush.update model.items: accepted entry
   summary update: π2.items RAW, π2.items[*] A; res .items fresh1 π2.items, .items[*] ~π2.items[*]
-  summary view: π1.count R, π1.items R; res fresh1{lost}
+  summary view: π1.count R, π1.items R; res ⟨render⟩ fresh1{lost}
   demands 2: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
 total 2: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0

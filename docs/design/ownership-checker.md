@@ -2567,6 +2567,8 @@ hole rather than adding precision.
 | The entry protocol, its rows and `init` (§20, §22) | `entryCall` | the runtime keeping or reading the model the direct row hands over |
 | Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload read after the send gave it up |
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written |
+| Constructor callbacks carried as zero-capture classes (2026-10-14 amendment) | §23.5's constructor row propagated through helper arguments and opaque slots | a constructor argument omitted from the result would hide a list the constructed message retains |
+| Markup render/event opaque slots (2026-10-14 amendment) | markup transfer, row/tagger result instantiation, entry view-message projection | a rendered list incorrectly omitted from general alias checks; a handler capture or fresh message result incorrectly classified as render-only; an unknown/capped value incorrectly treated as having no event slot |
 | Fold accumulator container invariant (2026-10-14 amendment) | callback result instantiation and container conditions | a shared start, escaped accumulator or duplicated result position incorrectly treated as owned across iterations; confusing a container proof with deep ownership of opaque descendants would permit nested alias writes |
 
 ### 26.8 Open questions
@@ -3176,3 +3178,62 @@ remain unchanged; new container facts do not replace the existing deep proofs.
 The new capture-after-append rejection closes an existing unsound acceptance:
 master accepted that retained-closure twin. Its negative regression fails with
 the fix set aside; no pre-existing golden is changed.
+
+### *Amended 2026-10-14 (markup slots):* rendered data is not an event payload
+
+The platform-declared markup type has two internal opaque slots in the sense
+of Change 9: `render` retains everything the previous conservative markup
+transfer retained, and `events` retains the cells its event messages and
+handlers may hold. These are analysis paths, not JavaScript fields. General
+alias, escape, disjointness and later-read checks continue to see both slots.
+Only the entry's view-event payload projection excludes a proven render slot.
+Unknown values, wildcard paths and exhausted precision remain conservative.
+The ownership summary-block version advances for this rule and slot encoding.
+
+A markup event stores its message or handler's captures in `events`. A child
+markup hole projects the child's event slot, including through `Maybe` and
+`List` markup. Text and ordinary attributes retain their operands in `render`.
+For and Show rows use the ordinary callback result summaries on borrowed
+elements; their returned markup contributes its event slot. An unknown row
+retains its arguments and captures conservatively. Components not analysed as
+ordinary calls retain their operands conservatively. The declared `text` and
+`map` markup primitives obey the same slots: map preserves its child's event
+slot and includes its tagger's captures and possible result cells. Neither a
+tagging callback nor a row receives an ownership permission from this rule.
+
+**Soundness.** Induct on the markup tree and its helper/callback summaries.
+Only event attributes, a child's event slot, and mapped event results can
+produce a message. Render-only operands remain live aliases in the complete
+markup value, so editing while that value is held still fails. At an entry,
+rendering is read-only under the existing platform protocol; reading a list
+for a For does not hand its container to an event. A row does receive an
+element, so its event results and retained captures remain borrowed. All
+opaque symbolic arrivals are projected by slot rather than discarded: a
+caller with unknown markup must still supply its event descendants. Summary
+instantiation preserves those projections across imports and carried lambdas.
+A wildcard loses the distinction and keeps both possibilities. Thus dropping a
+proven render-only path from the event projection drops no list a handler can
+send or retain; actual message lists still trigger §23.6, including lists made
+in the view, captured by a handler, or produced by a mapped tagger.
+
+Conduit's Article, Home/Feed, Profile and Profile/Feed errors are checker
+limits: `Page.viewErrors` renders List String and its sole button stores the
+crossing dismiss constructor. Neither its rows nor the dismiss message holds
+the container. Each page appends errors from owned HTTP failure delivery.
+No application change is required. Accepted fixtures reproduce all four
+nested paths; rejected twins retain the corresponding list in an event or
+handler. The unchanged application now has a corpus ownership report and enforcing
+check with all 26 demands accepted. Its three browser scripts remain pending
+for a separate document-helper lowering gap, pinned as `not_implemented`,
+not as an ownership rejection (research 93).
+
+Constructor-valued callbacks use §23.5's existing exact constructor row as a
+zero-capture carried class through helper arguments and markup slots.
+The existing constructor/tagger checking path still runs, including when the
+callee loses sight of its callback calls: the exact constructor row
+checks `need` independently of `seen`, so it cannot send a borrowed list as
+owned. Other callback classes retain their existing checking protocol.
+Their result retains each potentially list-bearing argument under its own
+constructor argument step; they neither read captures nor allocate an unknown
+list. Treating a list-bearing argument as crossing would be unsound, so the
+row retains the existing `holdsList` test and unresolved types stay tracked.

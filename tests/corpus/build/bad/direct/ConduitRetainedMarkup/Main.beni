@@ -1,0 +1,31 @@
+-- Rendering-only slots still retain aliases for ordinary later-read checks.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Grow
+
+
+type alias Model =
+    errors : List String
+    picture : Maybe (Html Msg)
+
+
+viewErrors : List String → Html Msg
+viewErrors errors = <For each={errors} keyed={False}>{λerror → <p>{error}</p>}</For>
+
+
+update : Msg, Model → Model
+update _ model =
+    picture = viewErrors model.errors
+    errors = List.push model.errors "more"
+    { model | errors = errors, picture = Just picture }
+
+
+view : Model → Html Msg
+view model = <main><button onClick={Grow}>grow</button>{model.picture}</main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { errors = [], picture = Nothing }, update = update, view = view }

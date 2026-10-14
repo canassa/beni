@@ -351,7 +351,7 @@ pub const Prov = struct {
 pub const XAtom = struct {
     kind: enum(u8) { excl, sep, keep, spine, keep_spine, sep_spine },
     a: Prov,
-    b: Prov = .{ .kind = .top },
+    b: Prov = .{ .kind = .top, .a = 0 },
 
     fn eql(x: XAtom, y: XAtom) bool {
         return x.kind == y.kind and x.a.eql(y.a) and x.b.eql(y.b);
@@ -1436,7 +1436,7 @@ fn pessimistic(o: *Ownership, s: Summary, why: Limit) Allocator.Error!Summary {
     const keep = o.keep.allocator();
     const uses = try keep.alloc(UseEntry, s.params);
     for (uses, 0..) |*u, i| u.* = .{ .param = @intCast(i), .path = eps, .bits = bit_r | bit_a | bit_e | bit_w };
-    const res = try keep.dupe(ResEntry, &.{.{ .path = eps, .prov = .{ .kind = .top }, .approx = true, .xc = .{ .no = 1 } }});
+    const res = try keep.dupe(ResEntry, &.{.{ .path = eps, .prov = .{ .kind = .top, .a = 0 }, .approx = true, .xc = .{ .no = 1 } }});
     const funs = try keep.alloc(FunFacts, s.funs.len);
     for (funs, s.funs) |*f, g| f.* = .{ .param = g.param, .calls = .many, .need = true, .seen = false };
     return .{ .params = s.params, .uses = uses, .res = res, .funs = funs, .limit = why, .asserted = s.asserted, .once = s.once };
@@ -1602,7 +1602,7 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
                 for (0..arity) |k| try supply.append(keep, if (has(words, .owned))
                     .{ .fun = i, .k = @intCast(k), .path = eps, .prov = .{ .kind = .fresh }, .owned = true }
                 else
-                    .{ .fun = i, .k = @intCast(k), .path = eps, .prov = .{ .kind = .top }, .owned = false });
+                    .{ .fun = i, .k = @intCast(k), .path = eps, .prov = .{ .kind = .top, .a = 0 }, .owned = false });
             }
             // A function kept by JavaScript escapes what it captured (§18.6).
             if (kept) try uses.append(keep, .{ .param = i, .path = eps, .bits = bit_r | bit_j }) else if (calls != .zero) try uses.append(keep, .{ .param = i, .path = eps, .bits = bit_r });
@@ -1632,7 +1632,7 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     } else if (result_words & W.escaped.bit() != 0) {
         try res.append(keep, .{ .path = eps, .prov = .{ .kind = .esc, .a = 1 }, .xc = lost });
     } else if (result_words & W.unknown.bit() != 0 or !returned) {
-        try res.append(keep, .{ .path = eps, .prov = .{ .kind = .top }, .xc = lost });
+        try res.append(keep, .{ .path = eps, .prov = .{ .kind = .top, .a = 0 }, .xc = lost });
     }
     var out = try o.normalize(.{
         .params = n,
@@ -2008,7 +2008,7 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
 // Paths (§4.1)
 // ---------------------------------------------------------------------------
 
-pub const StepKind = enum(u8) { field, tuple, ctor, elem, env, any };
+pub const StepKind = enum(u8) { field, tuple, ctor, elem, env, any, markup_render, markup_event };
 
 const Paths = struct {
     parent: std.ArrayList(u32) = .empty,
@@ -2312,6 +2312,8 @@ fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error
         },
         .elem => try w.writeAll("[*]"),
         .env => try w.writeAll("◇"),
+        .markup_render => try w.writeAll("⟨render⟩"),
+        .markup_event => try w.writeAll("⟨events⟩"),
         .any => try w.writeAll("⋆"),
     };
 }
@@ -4443,7 +4445,8 @@ const Walker = struct {
                 if (try w.o.ensureSummary(t.m, t.d)) |s| return w.sharedOf(s, t, inst);
                 return w.single(.{ .kind = .shared, .a = t.m, .b = t.d, .ty = w.instTypeOpt(inst) });
             },
-            .int, .float, .char, .string, .chunk, .unit, .ctor, .ext_ctor, .@"error" => return &.{},
+            .ctor, .ext_ctor => return (try w.constructorValue(inst)) orelse &.{},
+            .int, .float, .char, .string, .chunk, .unit, .@"error" => return &.{},
             .interp => {
                 const parts = b.extraSlice(Bir.inlineRange(data), Inst.Index);
                 const avs = try w.evalOperands(parts, false);
@@ -4516,10 +4519,201 @@ const Walker = struct {
             .markup => {
                 var values: std.ArrayList(Inst.Index) = .empty;
                 try b.markupValues(w.a, @fromBackingInt(@intCast(data.lhs)), &values);
-                return w.conservative(inst, values.items, &.{}, null, "", false);
+                const avs = try w.evalOperands(values.items, true);
+                w.popPending(avs.len);
+                const retained = try w.conservativeAV(inst, values.items, avs, &.{}, null, "", false);
+                const events = try w.markupTreeEvents(inst, @fromBackingInt(@intCast(data.lhs)), .{ .insts = values.items, .avs = avs });
+                return w.unionOf(&.{ try w.shift(retained, .{ .kind = .markup_render, .arg = 0 }), try w.shift(events, .{ .kind = .markup_event, .arg = 0 }) });
             },
             else => return &.{},
         }
+    }
+
+    /// Change 9's opaque markup slots. Unknown types/paths keep §6.1's aliases.
+    fn markupEvents(w: *Walker, av: AV, ty: ?Var, inst: Inst.Index, depth: u32) Allocator.Error!AV {
+        const v = ty orelse return av;
+        if (depth >= k_limit) return av;
+        switch (w.store.resolvedContent(v)) {
+            .structure => |st| switch (st) {
+                .app => |app| {
+                    const gm = w.o.in.graph.markup;
+                    if (gm.type_module.unwrap()) |m| if (gm.type_name.unwrap()) |n| {
+                        const id = w.o.in.types.find(w.o.in.graph, .platform, m, n);
+                        if (app.type == id and id != .none) return w.proj(av, .{ .kind = .markup_event, .arg = 0 }, null);
+                    };
+                    const args = w.store.vars(app.args);
+                    if (args.len == 1 and app.type == w.o.in.types.well_known.list)
+                        return w.markupEvents(try w.proj(av, .{ .kind = .elem, .arg = 0 }, args[0]), args[0], inst, depth + 1);
+                    if (args.len == 1 and app.type == w.o.in.types.well_known.maybe) {
+                        const e = w.o.in.types.entries[app.type.int()];
+                        const b = w.o.in.birs[e.module.int()];
+                        for (b.declCtors(b.decls[e.decl.int()])) |c| {
+                            if (!std.mem.eql(u8, w.o.in.interner.slice(b.symbol(c.name)), "Just")) continue;
+                            for (b.ctors, 0..) |cc, ci| if (cc.name == c.name) {
+                                const ctor = try w.o.ctorId(e.module.int(), @intCast(ci));
+                                return w.markupEvents(try w.proj(av, .{ .kind = .ctor, .arg = ctor *% 64 }, args[0]), args[0], inst, depth + 1);
+                            };
+                        }
+                    }
+                    if (!try w.trackedVar(v)) return &.{};
+                    return av;
+                },
+                .record => |record| {
+                    var parts: std.ArrayList(AV) = .empty;
+                    for (w.store.fields(record.fields)) |f| try parts.append(w.a, try w.markupEvents(try w.proj(av, .{ .kind = .field, .arg = @backingInt(f.name) }, f.value), f.value, inst, depth + 1));
+                    if (try w.trackedVar(record.ext)) try parts.append(w.a, av);
+                    return w.unionOf(parts.items);
+                },
+                .unit, .empty_record => return &.{},
+                else => return av,
+            },
+            else => return av,
+        }
+    }
+
+    fn viewResultType(w: *Walker, arg: Inst.Index) ?Var {
+        if (w.bir.instTag(arg) != .record) return null;
+        for (w.bir.extraSlice(Bir.inlineRange(w.bir.instData(arg)), Bir.Field)) |f| {
+            if (!std.mem.eql(u8, w.o.in.interner.slice(w.bir.symbol(f.name)), "view")) continue;
+            const v = w.instType(f.value) orelse return null;
+            return switch (w.store.resolvedContent(v)) {
+                .structure => |st| if (st == .func) st.func.result else null,
+                else => null,
+            };
+        }
+        return null;
+    }
+
+    fn constructorValue(w: *Walker, inst: Inst.Index) Allocator.Error!?AV {
+        const sum = (try w.ctorClass(inst)) orelse return null;
+        const ci: u32 = @intCast(w.closures.items.len);
+        try w.closures.append(w.a, .{ .captures = &.{}, .class = sum, .carried = true, .frame = none });
+        return try w.single(.{ .kind = .closure, .a = ci });
+    }
+
+    fn markupCallback(w: *Walker, inst: Inst.Index, function: Inst.Index, f: AV, avs: []const AV) Allocator.Error!AV {
+        if (try w.ctorClass(function)) |sum| {
+            if (sum.params != avs.len) return w.single(.{ .kind = .top, .a = 0 });
+            return w.instRes(sum, .{ .inst = inst, .s = sum, .avs = avs, .depth = 1 });
+        }
+        if (w.fnParamOf(f) orelse try w.slotOf(f)) |j| {
+            if (w.frame != 0) return w.single(.{ .kind = .top, .a = 0 });
+            w.fn_state.items[j].calls = .many;
+            w.cb_args[function.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
+            for (avs, 0..) |av, k| if (av.len != 0) {
+                try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = none, .owned = false, .cond = try w.deepCond(av) });
+            };
+            return w.single(.{ .kind = .cbres, .a = j, .b = function.int() });
+        }
+        const classes = try w.classesOf(f);
+        if (classes.len == 0) return w.unionOf(&.{ try w.anywhere(try w.unionOf(&.{ f, try w.unionOf(avs) }), inst), try w.single(.{ .kind = .top, .a = 0 }) });
+        var out: std.ArrayList(AV) = .empty;
+        for (classes) |cls| {
+            const sum = (try w.classSummary(cls)) orelse return w.single(.{ .kind = .top, .a = 0 });
+            if (sum.params != avs.len) return w.single(.{ .kind = .top, .a = 0 });
+            try out.append(w.a, try w.instRes(sum, .{ .inst = inst, .s = sum, .avs = avs, .closure = if (cls == .closure) cls.closure else none, .depth = 1 }));
+        }
+        return w.unionOf(out.items);
+    }
+
+    /// Keep outer captures symbolic while reading a row's nested handlers.
+    /// Expanding them to the enclosing declaration's parameters would read
+    /// those parameters off in the row's frame, losing them to top.
+    fn markupHeld(w: *Walker, av: AV, inst: Inst.Index) Allocator.Error!AV {
+        var out: std.ArrayList(AV) = .empty;
+        var seen: std.ArrayList(u32) = .empty;
+        try w.markupHeldInto(av, &out, &seen);
+        return w.anywhere(try w.unionOf(out.items), inst);
+    }
+
+    fn markupHeldInto(w: *Walker, av: AV, out: *std.ArrayList(AV), seen: *std.ArrayList(u32)) Allocator.Error!void {
+        for (av) |e| {
+            const c = w.cells.items[e.cell];
+            if (c.kind == .func) continue;
+            if (c.kind != .closure) {
+                try out.append(w.a, try w.a.dupe(Entry, &.{e}));
+                continue;
+            }
+            if (std.mem.indexOfScalar(u32, seen.items, c.a) != null) continue;
+            try seen.append(w.a, c.a);
+            for (w.closures.items[c.a].captures) |cap| {
+                if (w.frame != 0 and w.local_frame[cap.local] != w.frame) {
+                    try out.append(w.a, try w.single(.{ .kind = .env, .a = cap.local, .path = cap.path }));
+                } else if (w.local_av[cap.local]) |held| {
+                    try w.markupHeldInto(try w.projPath(held, cap.path, null), out, seen);
+                } else try out.append(w.a, try w.single(.{ .kind = .top, .a = 0 }));
+            }
+        }
+    }
+
+    const MarkupValues = struct {
+        insts: []const Inst.Index,
+        avs: []const AV,
+
+        fn get(v: MarkupValues, inst: Inst.Index) AV {
+            for (v.insts, v.avs) |i, av| if (i == inst) return av;
+            unreachable; // Bir.markupValues visits every operand in the tree.
+        }
+    };
+
+    fn markupTreeEvents(w: *Walker, inst: Inst.Index, root: Bir.ExtraIndex, vals: MarkupValues) Allocator.Error!AV {
+        const b = w.bir;
+        var parts: std.ArrayList(AV) = .empty;
+        switch (b.markupKind(root)) {
+            .text => {},
+            .hole => {
+                const value = b.extraData(root, Bir.MarkupHole).value;
+                try parts.append(w.a, try w.markupEvents(vals.get(value), w.instType(value), inst, 0));
+            },
+            .element => {
+                const e = b.extraData(root, Bir.MarkupElement);
+                for (b.extraSlice(.{ .start = e.items_start, .end = e.items_end }, Bir.ExtraIndex)) |at| {
+                    const item = b.extraData(at, Bir.MarkupItem);
+                    const value = item.value.unwrap() orelse continue;
+                    var known = false;
+                    if (w.m < w.o.in.dispatch.len) for (w.o.in.dispatch[w.m].markup) |fact| {
+                        if (fact.node != @backingInt(at)) continue;
+                        known = true;
+                        if (fact.kind == .event) try parts.append(w.a, try w.markupHeld(vals.get(value), inst));
+                    };
+                    if (!known) try parts.append(w.a, try w.markupHeld(vals.get(value), inst));
+                }
+                for (b.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex)) |node| try parts.append(w.a, try w.markupTreeEvents(inst, node, vals));
+            },
+            .fragment => {
+                const f = b.extraData(root, Bir.MarkupFragment);
+                for (b.extraSlice(.{ .start = f.children_start, .end = f.children_end }, Bir.ExtraIndex)) |node| try parts.append(w.a, try w.markupTreeEvents(inst, node, vals));
+            },
+            .@"for", .show => {
+                const form = b.extraData(root, Bir.MarkupForm);
+                if (form.fallback.unwrap()) |fallback| try parts.append(w.a, try w.markupEvents(vals.get(fallback), w.instType(fallback), inst, 0));
+                if (form.row != Bir.none_extra) {
+                    const row = b.extraData(@fromBackingInt(form.row), Bir.MarkupRow);
+                    const list = if (form.list.unwrap()) |value| vals.get(value) else &.{};
+                    // Unknown Show rows keep their input; For only hands over elements.
+                    const element = if (b.markupKind(root) == .@"for") try w.proj(list, .{ .kind = .elem, .arg = 0 }, null) else try w.anywhere(list, inst);
+                    var arity: u8 = 1;
+                    if (w.m < w.o.in.dispatch.len) for (w.o.in.dispatch[w.m].markup) |fact| {
+                        if (fact.node == @backingInt(root)) arity = fact.arity;
+                    };
+                    const result = try w.markupCallback(inst, row.function, vals.get(row.function), if (arity == 2) &.{ element, &.{} } else &.{element});
+                    // The row's result type belongs to this module's store.
+                    const ft = w.instType(row.function);
+                    const rt: ?Var = if (ft) |v| switch (w.store.resolvedContent(v)) {
+                        .structure => |st| if (st == .func) st.func.result else null,
+                        else => null,
+                    } else null;
+                    try parts.append(w.a, try w.markupEvents(result, rt, inst, 0));
+                }
+            },
+            .component => {
+                var values: std.ArrayList(Inst.Index) = .empty;
+                try b.markupValues(w.a, root, &values);
+                for (values.items) |value| try parts.append(w.a, try w.markupHeld(vals.get(value), inst));
+                try parts.append(w.a, try w.single(.{ .kind = .top, .a = 0 }));
+            },
+        }
+        return w.anywhere(try w.unionOf(parts.items), inst);
     }
 
     /// §26.2: `e?` on a `Result` returns `Err x` from the definition it
@@ -5124,6 +5318,23 @@ const Walker = struct {
     fn callTarget(w: *Walker, inst: Inst.Index, t: Target, args: []const Inst.Index) Allocator.Error!AV {
         // A top-level value whose value is a function has no parameters to
         // apply a summary to: its call is §6.1's.
+        if (w.o.in.birs[t.m].decls[t.d].kind == .vocab_markup) {
+            const name = w.targetName(t);
+            if (std.mem.eql(u8, name, "text") and args.len == 1) {
+                const retained = try w.conservative(inst, args, &.{}, null, "", false);
+                return w.shift(retained, .{ .kind = .markup_render, .arg = 0 });
+            }
+            if (std.mem.eql(u8, name, "map") and args.len == 2) {
+                const avs = try w.evalOperands(args, true);
+                w.popPending(avs.len);
+                const retained = try w.conservativeAV(inst, args, avs, &.{}, null, "", false);
+                const child_events = try w.markupEvents(avs[0], w.instType(args[0]), inst, 0);
+                const mapper = avs[1];
+                const mapped = try w.markupCallback(inst, args[1], mapper, &.{child_events});
+                const events = try w.anywhere(try w.unionOf(&.{ child_events, mapped, try w.markupHeld(mapper, inst) }), inst);
+                return w.unionOf(&.{ try w.shift(retained, .{ .kind = .markup_render, .arg = 0 }), try w.shift(events, .{ .kind = .markup_event, .arg = 0 }) });
+            }
+        }
         const has_params = w.o.in.birs[t.m].decls[t.d].params > 0;
         // `Js.maySuspend f` reads the static bit the checker inferred for
         // `f` and nothing of its value: no use, and `f` stays in sight
@@ -5381,7 +5592,7 @@ const Walker = struct {
         // Fresh update results participate in the model's inductive
         // exclusivity invariant. Init's conditions are never reseeded.
         try w.entryConditions(inst, upd, payload, m0, model);
-        const view_msgs: AV = if (msg_tracked) try w.viewMessages(inst, view, model, true) else &.{};
+        const view_msgs: AV = if (msg_tracked) try w.viewMessages(inst, view, model, true, w.viewResultType(arg)) else &.{};
         const msg = try w.unionOf(&.{ payload, view_msgs });
         res = try w.entryRes(inst, upd, &.{ msg, model }, 0);
         // (a) What every call the runtime makes escapes.
@@ -5507,15 +5718,18 @@ const Walker = struct {
 
     /// §20.5, §23.6: the cells the messages `view` builds may carry, anywhere
     /// in a message: its result's cells, closures expanded, but its own root.
-    fn viewMessages(w: *Walker, inst: Inst.Index, view: EntryFn, model: AV, conds: bool) Allocator.Error!AV {
+    fn viewMessages(w: *Walker, inst: Inst.Index, view: EntryFn, model: AV, conds: bool, result_ty: ?Var) Allocator.Error!AV {
         if (view.sums.len == 0) return &.{};
         // The model's own cells, and every list the view made: a markup value
         // keeps its handlers from one dispatch to the next (P3), so a list a
         // handler's message holds may be handed over twice. The markup's own
         // node — what the view returns at its root — is no message.
         var held: std.ArrayList(Entry) = .empty;
-        for (try w.entryResWith(inst, view, &.{model}, entry_view_ns, conds)) |e| {
-            if (e.path == eps and (try w.reaches(model, &.{e})) == null) continue;
+        const result = try w.entryResWith(inst, view, &.{model}, entry_view_ns, conds);
+        for (try w.markupEvents(result, result_ty, inst, 0)) |e| {
+            // A precise slot projection contains messages, never the markup
+            // root. Unknown projected arrivals must remain borrowed too.
+            if (result_ty == null and e.path == eps and (try w.reaches(model, &.{e})) == null) continue;
             try held.append(w.a, e);
         }
         // A top-level value whose type can hold no list — a footer, an icon
@@ -5679,6 +5893,10 @@ const Walker = struct {
     fn conservative(w: *Walker, inst: Inst.Index, args: []const Inst.Index, callee_av: AV, callee: ?Inst.Index, name: []const u8, foreign: bool) Allocator.Error!AV {
         const avs = try w.evalOperands(args, true);
         w.popPending(avs.len);
+        return w.conservativeAV(inst, args, avs, callee_av, callee, name, foreign);
+    }
+
+    fn conservativeAV(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee: ?Inst.Index, name: []const u8, foreign: bool) Allocator.Error!AV {
         w.point += 1;
         const tok = w.token(inst);
         for (args) |x| try w.useOperand(x, tok, &.{});
@@ -6823,7 +7041,7 @@ const Walker = struct {
         // §23.4: what is handed a send must be seen to send only what it owns.
         if (ff.send != none) try w.checkSender(inst, callee, args[j], classes, ff.send);
         // §23.5: a constructor handed as a tagger returns what it is given.
-        if (classes.len == 0 and ff.need) if (try w.ctorClass(args[j])) |c| {
+        if (ff.need) if (try w.ctorClass(args[j])) |c| {
             if (!try w.returnsOwned(c, s, avs, j, 0, none)) {
                 // Approximate when only an approximate step made it so: a
                 // value from JavaScript, a conservative call's result.
@@ -6854,7 +7072,8 @@ const Walker = struct {
                     .prelim = .{ .cause = .need, .detail = why, .approx = approx },
                 });
             }
-        } else if (ff.need) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
+            return;
+        } else if (classes.len == 0) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
         var reported = false;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse {
@@ -6879,6 +7098,10 @@ const Walker = struct {
             }
             const writes = c.writesAny();
             if (!ff.seen) {
+                // A tagger's result must be owned even when its calls escape
+                // the local walk; a pure constructor can retain a borrowed list.
+                if (c.asserted and ff.need and !try w.returnsOwned(c, s, avs, j, 0, none))
+                    try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", false);
                 if (writes) switch (cls) {
                     .closure => |ci| try w.closures.items[ci].consumed.append(w.a, .{ .kind = .pending, .why = try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}) }),
                     .func => try w.valueLine(tok, name, .pending, try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}), "", false),
@@ -7131,7 +7354,7 @@ const Walker = struct {
             try res.append(keep, .{ .path = try w.o.child(eps, .ctor, c *% 64 +% @as(u32, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
         }
         const out = try w.a.create(Summary);
-        out.* = try w.o.normalize(.{ .params = @intCast(ps.len), .uses = uses.items, .res = res.items });
+        out.* = try w.o.normalize(.{ .params = @intCast(ps.len), .uses = uses.items, .res = res.items, .asserted = true });
         return out;
     }
 

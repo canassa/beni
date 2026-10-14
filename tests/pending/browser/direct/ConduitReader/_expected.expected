@@ -1,0 +1,1488 @@
+-- url "/login"
+-- load
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign in"</h1>
+            <p class="text-xs-center">
+              <a href="/register">"Need an account?"</a>
+            </p>
+            <ul class="error-messages"></ul>
+            <form id="login-form">
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign in"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #email "ada@example.com"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign in"</h1>
+            <p class="text-xs-center">
+              <a href="/register">"Need an account?"</a>
+            </p>
+            <ul class="error-messages"></ul>
+            <form id="login-form">
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="ada@example.com">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign in"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #password "lovelace"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item active">
+            <a class="nav-link" href="/login">"Sign in"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/register">"Sign up"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="cred-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Sign in"</h1>
+            <p class="text-xs-center">
+              <a href="/register">"Need an account?"</a>
+            </p>
+            <ul class="error-messages"></ul>
+            <form id="login-form">
+              <fieldset class="form-group">
+                <input id="email" class="form-control form-control-lg" placeholder="Email" .value="ada@example.com">
+              </fieldset>
+              <fieldset class="form-group">
+                <input id="password" class="form-control form-control-lg" type="password" placeholder="Password" .value="lovelace">
+              </fieldset>
+              <button class="btn btn-lg btn-primary pull-xs-right">"Sign in"</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #login-form>button
+(fetch 1: POST /api/users/login {"content-type":"application/json"} "{\"user\":{\"email\":\"ada@example.com\",\"password\":\"lovelace\"}}")
+(the DOM did not change)
+-- respond 1 200 "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":null,\"image\":null}}" Content-Type: "application/json"
+(fetch 2: GET /api/articles/feed?limit=10&offset=0 {"authorization":"Token t0k3n"})
+(fetch 3: GET /api/tags {})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <!---->
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- location
+(location: /)
+(the DOM did not change)
+-- storage local
+(localStorage: {"conduit":"{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":null,\"image\":null}}"})
+(the DOM did not change)
+-- respond 2 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <!---->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 3 200 "{\"tags\":[\"dragons\",\"beni\"]}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <div class="tag-list">
+                <a class="tag-pill tag-default" href="" id="tag-dragons">"dragons"</a>
+                <a class="tag-pill tag-default" href="" id="tag-beni">"beni"</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click .feed-toggle>ul>li:nth-child(2)>a
+(click's default prevented)
+(fetch 4: GET /api/articles?limit=10&offset=0 {"authorization":"Token t0k3n"})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-preview">"No articles are here... yet."</div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <div class="tag-list">
+                <a class="tag-pill tag-default" href="" id="tag-dragons">"dragons"</a>
+                <a class="tag-pill tag-default" href="" id="tag-beni">"beni"</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 4 200 "{\"articles\":[{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}],\"articlesCount\":1}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="home-page">
+      <!---->
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-9">
+            <div class="feed">
+              <div class="feed-toggle">
+                <ul class="nav nav-pills outline-active">
+                  <li class="nav-item">
+                    <a class="nav-link" href="">"Your Feed"</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link active" href="">"Global Feed"</a>
+                  </li>
+                </ul>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <div class="article-list">
+                <div class="article-preview">
+                  <div class="article-meta">
+                    <a href="/profile/jake">
+                      <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+                    </a>
+                    <div class="info">
+                      <a class="author" href="/profile/jake">"jake"</a>
+                      <!---->
+                      <span class="date">"2016-02-18T03:22:56.637Z"</span>
+                      <!---->
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm pull-xs-right">
+                      <i class="ion-heart"></i>
+                      " 0"
+                    </button>
+                  </div>
+                  <a class="preview-link" href="/article/how-to-train-your-dragon">
+                    <h1>"How to train your dragon"</h1>
+                    <p>"Ever wonder how?"</p>
+                    <span>"Read more..."</span>
+                    <ul class="tag-list">
+                      <li class="tag-default tag-pill tag-outline">"dragons"</li>
+                    </ul>
+                    <!---->
+                  </a>
+                </div>
+              </div>
+              <!---->
+              <!---->
+              <!---->
+              <!---->
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="sidebar">
+              <p>"Popular Tags"</p>
+              <div class="tag-list">
+                <a class="tag-pill tag-default" href="" id="tag-dragons">"dragons"</a>
+                <a class="tag-pill tag-default" href="" id="tag-beni">"beni"</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click .preview-link
+(click's default prevented)
+(fetch 5: GET /api/articles/how-to-train-your-dragon {"authorization":"Token t0k3n"})
+(fetch 6: GET /api/articles/how-to-train-your-dragon/comments {"authorization":"Token t0k3n"})
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <!---->
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 5 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\\n\\nAnd a dragon\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="article-page">
+      <div class="banner">
+        <div class="container">
+          <h1>"How to train your dragon"</h1>
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-outline-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 0"
+              </button>
+              <!---->
+            </span>
+          </div>
+          <!---->
+          <!---->
+          <!---->
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row article-content">
+          <div class="col-md-12">
+            <div class="article-content">
+              <p>"It takes a Jacobian"</p>
+              <p>"And a dragon"</p>
+            </div>
+            <!---->
+            <ul class="tag-list">
+              <li class="tag-default tag-pill tag-outline">"dragons"</li>
+            </ul>
+            <!---->
+          </div>
+        </div>
+        <hr>
+        <div class="article-actions">
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-outline-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 0"
+              </button>
+              <!---->
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-xs-12 col-md-8 offset-md-2">
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 6 200 "{\"comments\":[]}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="article-page">
+      <div class="banner">
+        <div class="container">
+          <h1>"How to train your dragon"</h1>
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-outline-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 0"
+              </button>
+              <!---->
+            </span>
+          </div>
+          <!---->
+          <!---->
+          <!---->
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row article-content">
+          <div class="col-md-12">
+            <div class="article-content">
+              <p>"It takes a Jacobian"</p>
+              <p>"And a dragon"</p>
+            </div>
+            <!---->
+            <ul class="tag-list">
+              <li class="tag-default tag-pill tag-outline">"dragons"</li>
+            </ul>
+            <!---->
+          </div>
+        </div>
+        <hr>
+        <div class="article-actions">
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-outline-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 0"
+              </button>
+              <!---->
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-xs-12 col-md-8 offset-md-2">
+            <form id="comment-form" class="card comment-form">
+              <div class="card-block">
+                <textarea id="comment" class="form-control" placeholder="Write a comment..." rows="3" .value=""></textarea>
+              </div>
+              <div class="card-footer">
+                <img class="comment-author-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+                <button class="btn btn-sm btn-primary">"Post Comment"</button>
+              </div>
+            </form>
+            <!---->
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click .banner>.container>.article-meta>span>button:nth-child(2)
+(fetch 7: POST /api/articles/how-to-train-your-dragon/favorite {"authorization":"Token t0k3n"})
+(the DOM did not change)
+-- respond 7 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\\n\\nAnd a dragon\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":true,\"favoritesCount\":1,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="article-page">
+      <div class="banner">
+        <div class="container">
+          <h1>"How to train your dragon"</h1>
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 1"
+              </button>
+              <!---->
+            </span>
+          </div>
+          <!---->
+          <!---->
+          <!---->
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row article-content">
+          <div class="col-md-12">
+            <div class="article-content">
+              <p>"It takes a Jacobian"</p>
+              <p>"And a dragon"</p>
+            </div>
+            <!---->
+            <ul class="tag-list">
+              <li class="tag-default tag-pill tag-outline">"dragons"</li>
+            </ul>
+            <!---->
+          </div>
+        </div>
+        <hr>
+        <div class="article-actions">
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 1"
+              </button>
+              <!---->
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-xs-12 col-md-8 offset-md-2">
+            <form id="comment-form" class="card comment-form">
+              <div class="card-block">
+                <textarea id="comment" class="form-control" placeholder="Write a comment..." rows="3" .value=""></textarea>
+              </div>
+              <div class="card-footer">
+                <img class="comment-author-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+                <button class="btn btn-sm btn-primary">"Post Comment"</button>
+              </div>
+            </form>
+            <!---->
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- input #comment "Thank you!"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="article-page">
+      <div class="banner">
+        <div class="container">
+          <h1>"How to train your dragon"</h1>
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 1"
+              </button>
+              <!---->
+            </span>
+          </div>
+          <!---->
+          <!---->
+          <!---->
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row article-content">
+          <div class="col-md-12">
+            <div class="article-content">
+              <p>"It takes a Jacobian"</p>
+              <p>"And a dragon"</p>
+            </div>
+            <!---->
+            <ul class="tag-list">
+              <li class="tag-default tag-pill tag-outline">"dragons"</li>
+            </ul>
+            <!---->
+          </div>
+        </div>
+        <hr>
+        <div class="article-actions">
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 1"
+              </button>
+              <!---->
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-xs-12 col-md-8 offset-md-2">
+            <form id="comment-form" class="card comment-form">
+              <div class="card-block">
+                <textarea id="comment" class="form-control" placeholder="Write a comment..." rows="3" .value="Thank you!"></textarea>
+              </div>
+              <div class="card-footer">
+                <img class="comment-author-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+                <button class="btn btn-sm btn-primary">"Post Comment"</button>
+              </div>
+            </form>
+            <!---->
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- click #comment-form>.card-footer>button
+(fetch 8: POST /api/articles/how-to-train-your-dragon/comments {"authorization":"Token t0k3n","content-type":"application/json"} "{\"comment\":{\"body\":\"Thank you!\"}}")
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="article-page">
+      <div class="banner">
+        <div class="container">
+          <h1>"How to train your dragon"</h1>
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 1"
+              </button>
+              <!---->
+            </span>
+          </div>
+          <!---->
+          <!---->
+          <!---->
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row article-content">
+          <div class="col-md-12">
+            <div class="article-content">
+              <p>"It takes a Jacobian"</p>
+              <p>"And a dragon"</p>
+            </div>
+            <!---->
+            <ul class="tag-list">
+              <li class="tag-default tag-pill tag-outline">"dragons"</li>
+            </ul>
+            <!---->
+          </div>
+        </div>
+        <hr>
+        <div class="article-actions">
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 1"
+              </button>
+              <!---->
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-xs-12 col-md-8 offset-md-2">
+            <form id="comment-form" class="card comment-form">
+              <div class="card-block">
+                <textarea id="comment" class="form-control" placeholder="Write a comment..." rows="3" disabled="" .value="Thank you!"></textarea>
+              </div>
+              <div class="card-footer">
+                <img class="comment-author-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+                <button class="btn btn-sm btn-primary" disabled="">"Post Comment"</button>
+              </div>
+            </form>
+            <!---->
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>
+-- respond 8 200 "{\"comment\":{\"id\":1,\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:22:56.637Z\",\"body\":\"Thank you!\",\"author\":{\"username\":\"ada\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+<body>
+  <div class="app">
+    <nav class="navbar navbar-light">
+      <div class="container">
+        <a class="navbar-brand" href="/">"conduit"</a>
+        <ul class="nav navbar-nav pull-xs-right">
+          <li class="nav-item">
+            <a class="nav-link" href="/">"Home"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/editor">"New Article"</a>
+          </li>
+          <!---->
+          <li class="nav-item">
+            <a class="nav-link" href="/settings">"Settings"</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/profile/ada">
+              <img class="user-pic" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+              <!---->
+              "ada"
+              <!---->
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">"Sign out"</a>
+          </li>
+          <!---->
+          <!---->
+        </ul>
+      </div>
+    </nav>
+    <!---->
+    <div class="article-page">
+      <div class="banner">
+        <div class="container">
+          <h1>"How to train your dragon"</h1>
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 1"
+              </button>
+              <!---->
+            </span>
+          </div>
+          <!---->
+          <!---->
+          <!---->
+        </div>
+      </div>
+      <div class="container page">
+        <div class="row article-content">
+          <div class="col-md-12">
+            <div class="article-content">
+              <p>"It takes a Jacobian"</p>
+              <p>"And a dragon"</p>
+            </div>
+            <!---->
+            <ul class="tag-list">
+              <li class="tag-default tag-pill tag-outline">"dragons"</li>
+            </ul>
+            <!---->
+          </div>
+        </div>
+        <hr>
+        <div class="article-actions">
+          <div class="article-meta">
+            <a href="/profile/jake">
+              <img class="" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+            </a>
+            <div class="info">
+              <a class="author" href="/profile/jake">"jake"</a>
+              <!---->
+              <span class="date">"2016-02-18T03:22:56.637Z"</span>
+              <!---->
+            </div>
+            <span>
+              <button class="btn btn-sm action-btn btn-outline-secondary">
+                <i class="ion-plus-round"></i>
+                " Follow jake"
+              </button>
+              <!---->
+              " "
+              <!---->
+              <button class="btn btn-primary btn-sm ">
+                <i class="ion-heart"></i>
+                " 1"
+              </button>
+              <!---->
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-xs-12 col-md-8 offset-md-2">
+            <form id="comment-form" class="card comment-form">
+              <div class="card-block">
+                <textarea id="comment" class="form-control" placeholder="Write a comment..." rows="3" .value=""></textarea>
+              </div>
+              <div class="card-footer">
+                <img class="comment-author-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+                <button class="btn btn-sm btn-primary">"Post Comment"</button>
+              </div>
+            </form>
+            <!---->
+            <div class="card">
+              <div class="card-block">
+                <p class="card-text">"Thank you!"</p>
+              </div>
+              <div class="card-footer">
+                <a class="comment-author" href="/profile/ada">
+                  <img class="comment-author-img" src="https://static.productionready.io/images/smiley-cyrus.jpg">
+                </a>
+                " "
+                <a class="comment-author" href="/profile/ada">"ada"</a>
+                <span class="date">"2016-02-18T03:22:56.637Z"</span>
+                <!---->
+                <span class="mod-options">
+                  <i class="ion-trash-a"></i>
+                </span>
+                <!---->
+              </div>
+            </div>
+            <!---->
+          </div>
+        </div>
+      </div>
+    </div>
+    <!---->
+    <footer>
+      <div class="container">
+        <a class="logo-font" href="/">"conduit"</a>
+        <span class="attribution">"An interactive learning project from Thinkster. Code & design licensed under MIT."</span>
+      </div>
+    </footer>
+    <!---->
+  </div>
+</body>

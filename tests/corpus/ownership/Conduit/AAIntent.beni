@@ -1,0 +1,2 @@
+-- The unchanged Conduit application: all four nested errors lists stay exclusive.
+-- Its document helper still requires a separate direct lowering extension.

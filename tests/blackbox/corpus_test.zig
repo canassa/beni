@@ -2778,7 +2778,10 @@ const Case = struct {
     /// the entry protocol's verdicts are the build's platform's
     /// (ownership-checker.md §20.2, §20.10).
     fn ownershipReport(c: Case) !void {
-        const path = try c.fixturePath();
+        const path = if (c.goldenExists("sources"))
+            std.mem.trim(u8, try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("sources"), c.arena, .limited(4096)), " \t\r\n")
+        else
+            try c.fixturePath();
         if (c.goldenExists("platform")) {
             const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("platform"), c.arena, .limited(4096));
             var names = std.mem.tokenizeAny(u8, text, " \t\r\n");

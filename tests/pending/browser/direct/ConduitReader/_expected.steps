@@ -1,0 +1,20 @@
+# Sign in, read the feed, open an article, favorite it and comment on it.
+url "/login"
+input #email "ada@example.com"
+input #password "lovelace"
+click #login-form>button
+respond 1 200 "{\"user\":{\"email\":\"ada@example.com\",\"token\":\"t0k3n\",\"username\":\"ada\",\"bio\":null,\"image\":null}}" Content-Type: "application/json"
+location
+storage local
+respond 2 200 "{\"articles\":[],\"articlesCount\":0}" Content-Type: "application/json"
+respond 3 200 "{\"tags\":[\"dragons\",\"beni\"]}" Content-Type: "application/json"
+click .feed-toggle>ul>li:nth-child(2)>a
+respond 4 200 "{\"articles\":[{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}],\"articlesCount\":1}" Content-Type: "application/json"
+click .preview-link
+respond 5 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\\n\\nAnd a dragon\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+respond 6 200 "{\"comments\":[]}" Content-Type: "application/json"
+click .banner>.container>.article-meta>span>button:nth-child(2)
+respond 7 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\\n\\nAnd a dragon\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":true,\"favoritesCount\":1,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+input #comment "Thank you!"
+click #comment-form>.card-footer>button
+respond 8 200 "{\"comment\":{\"id\":1,\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:22:56.637Z\",\"body\":\"Thank you!\",\"author\":{\"username\":\"ada\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"

@@ -153,3 +153,11 @@ build diagnostic is pinned in `RED`; the browser-tea corpus originals remain
 gated. The full TodoMVC editing page is among them. The routing benchmark
 variant without editing checks; this does not resolve or replace the full
 page's ownership finding.
+
+*Amended 2026-10-14:* markup render/event slots resolve Conduit's four nested
+errors lists. Six unchanged HTTP pages move to the paired corpus. Ten direct
+ownership programs remain; ApiItems, ApiLogin and ValueCommands each retain
+one diagnostic. The three Conduit scripts are pending for document-helper
+lowering instead (`not_implemented`, CK-225). The complete application is
+ownership-checked in `tests/corpus/ownership/Conduit/` through its original
+external sources; the scripts have not been rewritten to bypass lowering.

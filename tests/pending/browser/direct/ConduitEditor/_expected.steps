@@ -1,0 +1,18 @@
+# Signed in from an earlier visit, edit an article: a blank title is refused
+# before anything is sent, the server refuses the next save with a 422, and
+# the third save goes through and opens the article.
+url "/editor/how-to-train-your-dragon"
+store local "conduit" "{\"user\":{\"email\":\"jake@example.com\",\"token\":\"j4k3\",\"username\":\"jake\",\"bio\":null,\"image\":null}}"
+respond 1 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+input #title " "
+click #editor-form>fieldset>button
+input #title "How to train your dragon, again"
+click #editor-form>fieldset>button
+respond 2 422 "{\"errors\":{\"title\":[\"has already been taken\"]}}" Content-Type: "application/json"
+input #title "How to train your dragon, twice"
+click #editor-form>fieldset>button
+respond 3 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon-twice\",\"title\":\"How to train your dragon, twice\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-19T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+location
+respond 4 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon-twice\",\"title\":\"How to train your dragon, twice\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\",\"tagList\":[\"dragons\",\"training\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-19T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+respond 5 200 "{\"comments\":[]}" Content-Type: "application/json"
+title
