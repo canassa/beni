@@ -34,3 +34,10 @@ directory there is a project as above, its entry module named after it.
 code only core and platform packages may write (`Js`), under the release
 optimiser, where the claim is usually "the same JavaScript the hand-written
 runtime writes for this" (`plans/browser-decisions.md`, R47-3).
+
+**`tea/` holds release applications built for `browser-tea`**, their golden
+`_main.mjs` whole, as under `app/`: what a page of The Elm Architecture
+ships once its program, `Tea` and the `browser` layer are one file. The
+claim is about a platform module's arms — which ones the optimiser folds
+away for this program, and which tags stay integers (`boundary.md`
+§9.8.19 (e)).

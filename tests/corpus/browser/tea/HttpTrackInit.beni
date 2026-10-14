@@ -1,0 +1,114 @@
+-- A tracked command from `init`, a tracked request with an empty body,
+-- and one that times out (boundary.md §9.8.19). `init`'s `send` reports
+-- every value to the `track` of the first `subscriptions`. Its body is
+-- empty, so it reports `Sending 0/0` twice: once before the request goes
+-- and once when the answer's headers arrive. elm/http 2.0 reports no
+-- `Sending` without a body, which §9.8.19 (f) lists as a departure. A
+-- tracked request that times out reports its first `Sending`, and then
+-- its answer is `Timeout`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Slow
+    | Progressed String Http.Progress
+    | Answered String (Result Http.Error String)
+
+
+progress : Http.Progress → String
+progress p =
+    case p of
+        Http.Sending s →
+            "Sending ${String.fromInt s.sent}/${String.fromInt s.size}"
+
+        Http.Receiving r →
+            size =
+                case r.size of
+                    Just n →
+                        String.fromInt n
+
+                    Nothing →
+                        "?"
+            "Receiving ${String.fromInt r.received}/${size}"
+
+
+answer : String, Result Http.Error String → String
+answer url result =
+    case result of
+        Ok text →
+            "${url}: ok ${text}"
+
+        Err Http.Timeout →
+            "${url}: timeout"
+
+        Err _ →
+            "${url}: failed"
+
+
+booted : Cmd Msg
+booted =
+    Http.send
+        { method = "GET"
+        , headers = []
+        , url = "/boot"
+        , body = Http.emptyBody
+        , expect = Http.expectString
+        , timeout = Nothing
+        , tracker = Just "boot"
+        }
+        (Answered "/boot" _)
+
+
+slow : Cmd Msg
+slow =
+    Http.send
+        { method = "POST"
+        , headers = []
+        , url = "/slow"
+        , body = Http.stringBody "text/plain" "s"
+        , expect = Http.expectString
+        , timeout = Just (Time.millis 500)
+        , tracker = Just "slow"
+        }
+        (Answered "/slow" _)
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg lines =
+    case msg of
+        Slow →
+            ( lines, slow )
+
+        Progressed name p →
+            ( List.push lines "${name}: ${progress p}", Cmd.none )
+
+        Answered url result →
+            ( List.push lines (answer url result), Cmd.none )
+
+
+subscriptions : List String → Sub Msg
+subscriptions _ =
+    Sub.batch [ Http.track "boot" (Progressed "boot" _), Http.track "slow" (Progressed "slow" _) ]
+
+
+view : List String → Html Msg
+view lines =
+    <main>
+        <button id="slow" onClick={Slow}>slow</button>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], booted )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

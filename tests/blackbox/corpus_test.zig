@@ -41,6 +41,7 @@
 //!                                   is a shape claim about the optimiser (§9)
 //!   emit/release/app/X.beni + X.js  a release APPLICATION: the golden is its
 //!                                   one scope-hoisted file, `_main.mjs` (§9)
+//!   emit/release/tea/X.beni + X.js  the same, built for `browser-tea`
 //!   check/depth/XOk.beni            checks clean: one level UNDER a guard
 //!   check/depth/XDeep.beni + .diag  one level OVER it, and says so
 //!   build/bad/X/ (a directory)      a whole project that must FAIL to build:
@@ -575,6 +576,21 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         try collect(arena, release_direct, false, false, &fixtures, true);
         for (fixtures.items[release_start..]) |*fixture| {
             fixture.platform = "browser-direct";
+            fixture.app = true;
+            fixture.release = true;
+        }
+    }
+    // `emit/release/tea/`: release applications built for `browser-tea`,
+    // their golden `_main.mjs` whole — what a page of The Elm Architecture
+    // ships once its program, `Tea` and the `browser` layer are one file
+    // (`backend.md` §9): which arms of a platform module the optimiser
+    // folds away, and which tags stay integers.
+    if (kind == .emit) {
+        const tea_dir = try std.fs.path.join(arena, &.{ kind_dir, "release", "tea" });
+        const start = fixtures.items.len;
+        try collect(arena, tea_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser-tea";
             fixture.app = true;
             fixture.release = true;
         }
@@ -1119,8 +1135,8 @@ const Fixture = struct {
     /// The embedded platform the fixture is built for, when its directory
     /// names one: `browser` under `emit/dom/`, `emit/release/dom/` or
     /// `browser/dom/`, whose `dom` lowering compiles the markup, and
-    /// `browser-tea` under `browser/tea/`, the same lowering beneath The Elm
-    /// Architecture.
+    /// `browser-tea` under `browser/tea/` and `emit/release/tea/`, the same
+    /// lowering beneath The Elm Architecture.
     platform: ?[]const u8 = null,
     /// Under `browser/direct/`: built for `browser-direct` and again for
     /// `browser-tea`, both pages against one golden (`browser-direct.md`

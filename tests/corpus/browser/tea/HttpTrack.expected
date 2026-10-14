@@ -7,6 +7,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol></ol>
   </main>
 </body>
@@ -20,6 +23,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
     </ol>
@@ -34,6 +40,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -58,6 +67,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -80,6 +92,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -108,6 +123,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -137,6 +155,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -170,6 +191,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -204,6 +228,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -237,6 +264,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -271,6 +301,9 @@
     <button id="nobody">"nobody"</button>
     <button id="broken">"broken"</button>
     <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
     <ol>
       <li>"upload: Sending 0/6"</li>
       <li>"upload: Sending 6/6"</li>
@@ -298,6 +331,242 @@
       <li>"first: Receiving 0/?"</li>
       <li>"second: Receiving 0/?"</li>
       <li>"/empty: ok "</li>
+    </ol>
+  </main>
+</body>
+-- click #again
+(fetch 8: POST /again {"content-type":"text/plain"} "a")
+(the DOM did not change)
+-- respond 8 200 "again"
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+      <li>"/nobody: ok n"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"first: Sending 1/1"</li>
+      <li>"second: Sending 1/1"</li>
+      <li>"first: Receiving 0/?"</li>
+      <li>"second: Receiving 0/?"</li>
+      <li>"/empty: ok "</li>
+      <li>"/again: ok again"</li>
+    </ol>
+  </main>
+</body>
+-- click #batch
+(fetch 9: POST /batch-untracked {"content-type":"text/plain"} "u")
+(fetch 10: POST /batch-tracked {"content-type":"text/plain"} "t")
+(the DOM did not change)
+-- respond 9 200 "u"
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+      <li>"/nobody: ok n"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"first: Sending 1/1"</li>
+      <li>"second: Sending 1/1"</li>
+      <li>"first: Receiving 0/?"</li>
+      <li>"second: Receiving 0/?"</li>
+      <li>"/empty: ok "</li>
+      <li>"/again: ok again"</li>
+      <li>"/batch-untracked: ok u"</li>
+    </ol>
+  </main>
+</body>
+-- respond 10 200 "t"
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+      <li>"/nobody: ok n"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"first: Sending 1/1"</li>
+      <li>"second: Sending 1/1"</li>
+      <li>"first: Receiving 0/?"</li>
+      <li>"second: Receiving 0/?"</li>
+      <li>"/empty: ok "</li>
+      <li>"/again: ok again"</li>
+      <li>"/batch-untracked: ok u"</li>
+      <li>"/batch-tracked: ok t"</li>
+    </ol>
+  </main>
+</body>
+-- click #missing
+(fetch 11: POST /missing {"content-type":"text/plain"} "m")
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+      <li>"/nobody: ok n"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"first: Sending 1/1"</li>
+      <li>"second: Sending 1/1"</li>
+      <li>"first: Receiving 0/?"</li>
+      <li>"second: Receiving 0/?"</li>
+      <li>"/empty: ok "</li>
+      <li>"/again: ok again"</li>
+      <li>"/batch-untracked: ok u"</li>
+      <li>"/batch-tracked: ok t"</li>
+      <li>"edge: Sending 0/1"</li>
+    </ol>
+  </main>
+</body>
+-- respond 11 404 "nope"
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <button id="again">"again"</button>
+    <button id="batch">"batch"</button>
+    <button id="missing">"missing"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+      <li>"/nobody: ok n"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"first: Sending 1/1"</li>
+      <li>"second: Sending 1/1"</li>
+      <li>"first: Receiving 0/?"</li>
+      <li>"second: Receiving 0/?"</li>
+      <li>"/empty: ok "</li>
+      <li>"/again: ok again"</li>
+      <li>"/batch-untracked: ok u"</li>
+      <li>"/batch-tracked: ok t"</li>
+      <li>"edge: Sending 0/1"</li>
+      <li>"edge: Sending 1/1"</li>
+      <li>"edge: Receiving 0/?"</li>
+      <li>"edge: Receiving 4/?"</li>
+      <li>"/missing: bad status 404"</li>
     </ol>
   </main>
 </body>

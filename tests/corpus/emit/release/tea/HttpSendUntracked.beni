@@ -1,0 +1,54 @@
+-- A page whose one `Http.send` has `tracker = Nothing` (boundary.md
+-- §9.8.19 (e)). Under `--release` the tracked arm of the command folds
+-- away, so the page ships no tracker table (`new Map`), no render wait
+-- (`onRendered`), no chunked read (`getReader`) and no string tag of
+-- `Progress` or `Maybe`. `HttpSendTracked` is the same page with a
+-- tracker name and a `track`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type Msg
+    = Save
+    | Saved (Result Http.Error String)
+
+
+update : Msg, String → String × Cmd Msg
+update msg text =
+    case msg of
+        Save →
+            ( text
+            , Http.send
+                { method = "PUT"
+                , headers = []
+                , url = "/save"
+                , body = Http.stringBody "text/plain" text
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+                Saved
+            )
+
+        Saved (Ok answer) →
+            ( answer, Cmd.none )
+
+        Saved (Err _) →
+            ( "failed", Cmd.none )
+
+
+view : String → Html Msg
+view text = <button onClick={Save}>{text}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

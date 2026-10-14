@@ -395,7 +395,9 @@ records.
 `--platform=browser`; those under `browser/tea/` are built with
 `--platform=browser-tea`, The Elm Architecture written in beni over it.
 `emit/dom/` and `emit/release/dom/` are `emit/`
-fixtures built the same way, the shapes of what the lowering emits. The
+fixtures built the same way, the shapes of what the lowering emits, and
+`emit/release/tea/` holds release applications built for `browser-tea`,
+their golden `_main.mjs` whole. The
 steps, the transcript, the run hashes and `test-browser` are the kind's
 own. The differential oracle against dom-expressions' fixtures is a
 separate, DOM-free comparison of template strings and walks:

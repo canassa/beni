@@ -1,0 +1,65 @@
+-- `HttpSendUntracked` with `tracker = Just "save"` and an `Http.track`
+-- subscription of the name (boundary.md §9.8.19 (e)). The page ships the
+-- tracker table, the render wait and the chunked read. A progress value
+-- crosses into the table at a type variable, so the `Maybe` of
+-- `Receiving`'s size keeps integer tags, and the only string tag is the
+-- private key of the `track` subscription.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Save
+    | Saved (Result Http.Error String)
+    | Progressed Http.Progress
+
+
+update : Msg, String → String × Cmd Msg
+update msg text =
+    case msg of
+        Save →
+            ( text
+            , Http.send
+                { method = "PUT"
+                , headers = []
+                , url = "/save"
+                , body = Http.stringBody "text/plain" text
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Just "save"
+                }
+                Saved
+            )
+
+        Saved (Ok answer) →
+            ( answer, Cmd.none )
+
+        Saved (Err _) →
+            ( "failed", Cmd.none )
+
+        Progressed (Http.Sending s) →
+            ( String.fromFloat (Http.fractionSent s), Cmd.none )
+
+        Progressed (Http.Receiving r) →
+            ( String.fromFloat (Http.fractionReceived r), Cmd.none )
+
+
+subscriptions : String → Sub Msg
+subscriptions _ = Http.track "save" Progressed
+
+
+view : String → Html Msg
+view text = <button onClick={Save}>{text}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

@@ -17,3 +17,14 @@ respond 6 200 "n"
 # A 204's null body: the last values and the answer with no wait between.
 click #empty
 respond 7 204 ""
+# The "upload" track left with `#upload`'s answer: a later request of the
+# name reports to nobody.
+click #again
+respond 8 200 "again"
+# The tracked command of a batch starts after the untracked one.
+click #batch
+respond 9 200 "u"
+respond 10 200 "t"
+# A 404: every value, then the answer's `BadStatus`.
+click #missing
+respond 11 404 "nope"
