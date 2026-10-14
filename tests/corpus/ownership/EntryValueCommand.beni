@@ -57,6 +57,7 @@ values msg model =
                 , body = Http.stringBody "text/plain" (joined model.items)
                 , expect = Http.expectWhatever
                 , timeout = Nothing
+                , tracker = Nothing
                 }
                 λ_ → Done
             )

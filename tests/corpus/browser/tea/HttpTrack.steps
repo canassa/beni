@@ -1,0 +1,19 @@
+# A `track` the click's update declares hears the first `Sending`; the
+# answer comes after the last value.
+click #upload
+respond 1 200 chunks "one " "two " "three" Content-Length: "13"
+# An answer's update makes a tracked request and declares its `track`.
+click #chain
+respond 2 200 "first"
+respond 3 200 chunks "a" "b"
+# Two declarations of one name, each value through both in order; the
+# name "other" hears nothing.
+click #broken
+fail 4
+click #untracked
+respond 5 200 "u"
+click #nobody
+respond 6 200 "n"
+# A 204's null body: the last values and the answer with no wait between.
+click #empty
+respond 7 204 ""

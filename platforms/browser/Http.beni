@@ -12,11 +12,16 @@
 --!     Search q →
 --!         ( model, Cmd.keyed SearchKey Cmd.Restart λsend →
 --!             send (Found (Http.get { url = "/api/search?q=" ++ q, expect = Http.expectString })) )
+--!
+--! or `send` and `riskySend`, elm/http's commands, whose progress a
+--! `track` subscription hears (§9.8.19).
 
+import Browser
 import Cmd exposing (Cmd)
 import Dict exposing (Dict)
 import Js
 import Schema exposing (Schema)
+import Sub exposing (Sub)
 import Task exposing (Resume)
 import Time exposing (Duration)
 
@@ -286,12 +291,13 @@ pub post : { url : String, body : Body, expect : Expect x a } → Result x a
 post r = transfer bodyChecks "same-origin" "POST" [] r.url r.body r.expect NoTimer Plain
 
 
---| The command form of `request`, as elm/http's `send` was: the request
---| is a value, built and encoded when the command is made — its body
---| `jsonBody`'s text, never a function that reads the model when the
+--| The command form of `request`, as elm/http 2.0's `request` was: the
+--| request is a value, built and encoded when the command is made — its
+--| body `jsonBody`'s text, never a function that reads the model when the
 --| request runs (`docs/design/boundary.md` §9.8.16) — and its answer is
---| sent through `tag`. It has no `tracker`: a body that tracks progress
---| calls `request` itself.
+--| sent through `tag`. With `tracker = Just name`, every `track name`
+--| subscription of the page hears its progress, each value before the
+--| answer (§9.8.19).
 --|
 --|     Save →
 --|         ( model
@@ -302,6 +308,7 @@ post r = transfer bodyChecks "same-origin" "POST" [] r.url r.body r.expect NoTim
 --|             , body = Http.jsonBody noteSchema model.note
 --|             , expect = Http.expectWhatever
 --|             , timeout = Nothing
+--|             , tracker = Just "save"
 --|             }
 --|             Saved
 --|         )
@@ -312,15 +319,125 @@ pub send :
       , body : Body
       , expect : Expect x a
       , timeout : Maybe Duration
+      , tracker : Maybe String
       }
     , (Result x a → msg)
     → Cmd msg
-send r tag =
-    Cmd.task
-        (λ⊤ →
+send r tag = Cmd.task (λ⊤ → commanded "same-origin" r) tag
+
+
+--| `send` with the browser's credentials — cookies, authorization — sent
+--| to any origin: `credentials` is `include`, as `riskyRequest`'s.
+pub riskySend :
+      { method : String
+      , headers : List Header
+      , url : String
+      , body : Body
+      , expect : Expect x a
+      , timeout : Maybe Duration
+      , tracker : Maybe String
+      }
+    , (Result x a → msg)
+    → Cmd msg
+riskySend r tag = Cmd.task (λ⊤ → commanded "include" r) tag
+
+
+--| The progress of every `send` and `riskySend` whose `tracker` is `Just
+--| name`, each value through `tag` (§9.8.19). A request reports a value to
+--| the subscriptions live when it has one, and every value reaches
+--| `update` before the request's answer. A `track` declared by the
+--| `update` that made the command hears the first value. The names are
+--| the page's: two programs on one page that track one name hear each
+--| other's requests.
+--|
+--|     subscriptions model =
+--|         Http.track "upload" GotProgress
+pub track : String, (Progress → msg) → Sub msg
+track name tag = Sub.on (Track name) (listening name _) tag
+
+
+-- ---- Tracked commands (§9.8.19) ---------------------------------------------
+
+-- A `track` subscription's key: its name.
+type Key
+    = Track String
+
+
+-- The page's `track` listeners (§9.8.19 (b)): null until the first is
+-- added, then a `Map` from each tracker name to the `Set` of the
+-- listeners of its live subscriptions, in the order added. A name with
+-- none is not in it. Made by the first listener, so a page that never
+-- tracks makes none.
+trackers : Js.Ref Js.Value
+trackers = Js.ref Js.null
+
+
+-- A `track` subscription's listener: added to its name's set, and what
+-- removes it. A set left empty leaves the table, unless a later listener
+-- of the name already holds a new one. Generic, as `publish` is, so that
+-- what it is handed crosses into JavaScript at a type variable and pins
+-- no tag of `Progress` (§4, *What JavaScript may read of a beni value*).
+listening : String, (a → ⊤) → (⊤ → ⊤)
+listening name emit =
+    if Js.isNull (Js.read trackers) then
+        Js.write trackers (Js.construct (Js.global "Map") [])
+    table = Js.read trackers
+    key = Js.from name
+    found = Js.call table "get" [ key ]
+
+    set =
+        if Js.isUndefined found then
+            fresh = Js.construct (Js.global "Set") []
+            _ = Js.call table "set" [ key, fresh ]
+            fresh
+        else
+            found
+    listener = Js.from emit
+    _ = Js.call set "add" [ listener ]
+
+    λ⊤ →
+        _ = Js.call set "delete" [ listener ]
+        if Js.to (Js.get set "size") == 0 && Js.same (Js.call table "get" [ key ]) set then
+            _ = Js.call table "delete" [ key ]
+            ⊤
+        else
+            ⊤
+
+
+-- Hand a value to every listener of `name`, in the order they were added:
+-- a tracked command's tracker.
+publish : String, a → ⊤
+publish name value =
+    table = Js.read trackers
+    listeners = if Js.isNull table then Js.undefined else Js.call table "get" [ Js.from name ]
+    if Js.isUndefined listeners then
+        ⊤
+    else
+        Js.each listeners λlistener → Js.to (Js.apply listener [ Js.from value ])
+
+
+-- What a command sends: `request`'s record with a tracker name.
+type alias Sent x a =
+    method : String
+    headers : List Header
+    url : String
+    body : Body
+    expect : Expect x a
+    timeout : Maybe Duration
+    tracker : Maybe String
+
+
+-- The request of `send` and `riskySend`. Untracked, the direct form's.
+-- Tracked (§9.8.19 (c)): once the subscriptions of the update that made
+-- the command are live, with its progress handed to its name's listeners,
+-- and behind their last delivery.
+commanded : String, Sent x a → Result x a
+commanded credentials r =
+    case r.tracker of
+        Nothing →
             transfer
                 problemOf
-                "same-origin"
+                credentials
                 r.method
                 r.headers
                 r.url
@@ -328,8 +445,31 @@ send r tag =
                 r.expect
                 (timerOf r.timeout)
                 Plain
-        )
-        tag
+
+        Just name →
+            ready ⊤
+            result =
+                transfer
+                    problemOf
+                    credentials
+                    r.method
+                    r.headers
+                    r.url
+                    r.body
+                    r.expect
+                    (timerOf r.timeout)
+                    (Tracked (publish name _))
+            Task.yieldNow ⊤
+            result
+
+
+-- Wait for the after-render phase of the flush the page has queued, which
+-- settles the subscriptions of the update that made the command, then let
+-- the work that adds their listeners, queued by that flush, run first.
+ready : ⊤ → ⊤
+ready ⊤ =
+    Task.callback λresume → Browser.onRendered resume
+    Task.yieldNow ⊤
 
 
 -- ---- What a request does (§9.8.12 (b)) ------------------------------------
@@ -342,8 +482,9 @@ type Timer
 
 
 -- How the body is read: as text at once, or chunk by chunk with the
--- tracker told of each. Only `request` and `riskyRequest` make a
--- `Tracked`, so a program that never tracks ships no chunked read.
+-- tracker told of each. Only `request`, `riskyRequest` and a command with
+-- a tracker name make a `Tracked`, so a program that never tracks ships
+-- no chunked read.
 type Reading
     = Plain
     | Tracked (Progress → ⊤)

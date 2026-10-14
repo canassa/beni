@@ -1,0 +1,303 @@
+-- load
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #upload
+(fetch 1: POST /upload {"content-type":"text/plain"} "héllo")
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+    </ol>
+  </main>
+</body>
+-- respond 1 200 chunks "one " "two " "three" Content-Length: "13"
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+    </ol>
+  </main>
+</body>
+-- click #chain
+(fetch 2: POST /first {"content-type":"text/plain"} "1")
+(the DOM did not change)
+-- respond 2 200 "first"
+(fetch 3: POST /second {"content-type":"text/plain"} "22")
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+    </ol>
+  </main>
+</body>
+-- respond 3 200 chunks "a" "b"
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+    </ol>
+  </main>
+</body>
+-- click #broken
+(fetch 4: POST /broken {"content-type":"text/plain"} "b")
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+    </ol>
+  </main>
+</body>
+-- fail 4
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+    </ol>
+  </main>
+</body>
+-- click #untracked
+(fetch 5: POST /untracked {"content-type":"text/plain"} "u")
+(the DOM did not change)
+-- respond 5 200 "u"
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+    </ol>
+  </main>
+</body>
+-- click #nobody
+(fetch 6: POST /nobody {"content-type":"text/plain"} "n")
+(the DOM did not change)
+-- respond 6 200 "n"
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+      <li>"/nobody: ok n"</li>
+    </ol>
+  </main>
+</body>
+-- click #empty
+(fetch 7: POST /empty {"content-type":"text/plain"} "e")
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+      <li>"/nobody: ok n"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+    </ol>
+  </main>
+</body>
+-- respond 7 204 ""
+<body>
+  <main>
+    <button id="upload">"upload"</button>
+    <button id="chain">"chain"</button>
+    <button id="untracked">"untracked"</button>
+    <button id="nobody">"nobody"</button>
+    <button id="broken">"broken"</button>
+    <button id="empty">"empty"</button>
+    <ol>
+      <li>"upload: Sending 0/6"</li>
+      <li>"upload: Sending 6/6"</li>
+      <li>"upload: Receiving 0/13"</li>
+      <li>"upload: Receiving 4/13"</li>
+      <li>"upload: Receiving 8/13"</li>
+      <li>"upload: Receiving 13/13"</li>
+      <li>"/upload: ok one two three"</li>
+      <li>"/first: ok first"</li>
+      <li>"chain: Sending 0/2"</li>
+      <li>"chain: Sending 2/2"</li>
+      <li>"chain: Receiving 0/?"</li>
+      <li>"chain: Receiving 1/?"</li>
+      <li>"chain: Receiving 2/?"</li>
+      <li>"/second: ok ab"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"/broken: failed"</li>
+      <li>"/untracked: ok u"</li>
+      <li>"/nobody: ok n"</li>
+      <li>"first: Sending 0/1"</li>
+      <li>"second: Sending 0/1"</li>
+      <li>"first: Sending 1/1"</li>
+      <li>"second: Sending 1/1"</li>
+      <li>"first: Receiving 0/?"</li>
+      <li>"second: Receiving 0/?"</li>
+      <li>"/empty: ok "</li>
+    </ol>
+  </main>
+</body>

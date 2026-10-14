@@ -1,0 +1,146 @@
+-- The command form's tracker (boundary.md §9.8.19): a `send` with
+-- `tracker = Just name` reports its progress — §9.8.12 (e)'s values, in
+-- their order — to every live `Http.track name` subscription of the page,
+-- each declaration through its own tagger, in declaration order; a name
+-- with no subscription, and `tracker = Nothing`, report to nobody. Every
+-- value reaches `update` before the answer: after a success, after a
+-- failure, and after a 204, whose null body leaves no wait between the
+-- last value and the answer (`#empty`). A `track` that the update which
+-- made the command declares hears the first `Sending`: `#upload`'s update
+-- renders before the body first runs (a click), and `#chain`'s second
+-- request is made by an answer's update, in a drain, which renders when
+-- the drain ends.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Upload
+    | Chain
+    | Untracked
+    | Nobody
+    | Broken
+    | Empty
+    | Progressed String Http.Progress
+    | Answered String (Result Http.Error String)
+
+
+type alias Model =
+    lines : List String
+    watching : Bool
+    chained : Bool
+
+
+progress : Http.Progress → String
+progress p =
+    case p of
+        Http.Sending s →
+            "Sending ${String.fromInt s.sent}/${String.fromInt s.size}"
+
+        Http.Receiving r →
+            size =
+                case r.size of
+                    Just n →
+                        String.fromInt n
+
+                    Nothing →
+                        "?"
+            "Receiving ${String.fromInt r.received}/${size}"
+
+
+posted : String, String, Maybe String → Cmd Msg
+posted url text tracker =
+    Http.send
+        { method = "POST"
+        , headers = []
+        , url = url
+        , body = Http.stringBody "text/plain" text
+        , expect = Http.expectString
+        , timeout = Nothing
+        , tracker = tracker
+        }
+        (Answered url _)
+
+
+said : Model, String → Model
+said model line = { model | lines = List.push model.lines line }
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Upload →
+            ( { model | watching = True }, posted "/upload" "héllo" (Just "upload") )
+
+        Chain →
+            ( model, posted "/first" "1" Nothing )
+
+        Untracked →
+            ( model, posted "/untracked" "u" Nothing )
+
+        Nobody →
+            ( model, posted "/nobody" "n" (Just "nobody") )
+
+        Broken →
+            ( model, posted "/broken" "b" (Just "both") )
+
+        Empty →
+            ( model, posted "/empty" "e" (Just "both") )
+
+        Progressed name p →
+            ( said model "${name}: ${progress p}", Cmd.none )
+
+        Answered "/first" result →
+            ( said { model | chained = True } (answer "/first" result)
+            , posted "/second" "22" (Just "chain")
+            )
+
+        Answered url result →
+            ( said { model | watching = False } (answer url result), Cmd.none )
+
+
+answer : String, Result Http.Error String → String
+answer url result =
+    case result of
+        Ok text →
+            "${url}: ok ${text}"
+
+        Err _ →
+            "${url}: failed"
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    Sub.batch
+        [ Http.track "both" (Progressed "first" _)
+        , Http.track "other" (Progressed "other" _)
+        , Http.track "both" (Progressed "second" _)
+        , if model.watching then Http.track "upload" (Progressed "upload" _) else Sub.none
+        , if model.chained then Http.track "chain" (Progressed "chain" _) else Sub.none
+        ]
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="upload" onClick={Upload}>upload</button>
+        <button id="chain" onClick={Chain}>chain</button>
+        <button id="untracked" onClick={Untracked}>untracked</button>
+        <button id="nobody" onClick={Nobody}>nobody</button>
+        <button id="broken" onClick={Broken}>broken</button>
+        <button id="empty" onClick={Empty}>empty</button>
+        <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { lines = [], watching = False, chained = False }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }
