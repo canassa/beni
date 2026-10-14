@@ -13,9 +13,9 @@ const testing = std.testing;
 const world = @import("world.zig");
 const World = world.World;
 
-/// The one fixture the walker runs: a small `parse/good` file, one
-/// `dump` of it.
-const fixture = "tests/corpus/parse/good/BlankLines.beni";
+/// The smallest parse fixture still records one compiler call, one case
+/// and every report table. Parsing content is covered by the parser corpus.
+const fixture = "tests/corpus/parse/good/Empty.beni";
 
 test "the time report of one corpus fixture has every table and names the fixture" {
     // ┌─────────────────────────────────────────┐

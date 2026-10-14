@@ -61,7 +61,7 @@ message retaining the list, a For row carrying a list element, and a handler
 returned by a helper with the list captured. ConduitRetainedMarkup holds a
 render-only markup value across an edit: it remains rejected, proving that the
 render slot is excluded only from the event projection, not general alias
-checks. Full diagnostic goldens pin fourteen refusals, including the review additions
+checks. Full diagnostic goldens pin fifteen refusals, including the review additions
 described below.
 
 ## 3. Other verdicts
@@ -109,9 +109,10 @@ Native/self-hosted zorg only; LLVM was not used. The four paired cases pass
 happy-dom, Chrome and value fuzz. Five promoted HTTP pages pass all paired
 builds and fuzz. Hash recording verified 32 Conduit-related and 52 HTTP-related
 program runs with no failed JavaScript run. The filtered pending audit matches
-all remaining signatures. Unfiltered gates report **1,295 passed, 15 skipped**
-and only the four authorized macOS baseline failures: two case-folding cases
-and two driver cache-pruning CPU budgets.
+all remaining signatures. The final unfiltered gates report **1,297 passed,
+15 skipped**, with only the two authorized macOS case-folding failures. Both
+driver cache-pruning CPU-budget tests pass in this run; earlier runs also
+reported those two known baseline failures.
 
 ## 6. Review and the unseen-lambda counterexample
 
@@ -156,7 +157,20 @@ pending with one approximate list_still_used diagnostic at the tagger.
 This replaces its old render-only entry rejection, without changing its
 rejected verdict or source. Five other HTTP pages remain promoted.
 
-Concrete callback result types with no List-bearing descendants need no owned
-result proof. This preserves the Int/String identity taggers in KeyOrder and
+Concrete crossing callback result types need no owned-result proof. This preserves the Int/String identity taggers in KeyOrder and
 LatestTagger, while unknown, function and opaque result types remain tracked.
 This is a type-based absence of mutable cells, not a relaxed callback loan.
+
+The second review also pins a generic identity callback supplied a borrowed
+List in ConduitIdentityTagger. Bare type variables and open record extensions
+remain tracked. The scalar-result exemption uses tracked rather than holdsList,
+so returned functions and their captures still need the ownership proof.
+An invalid forwarded callback index fails closed, and the deliberate unseen
+protocol merge is documented in the checker.
+
+The final full gate also exposed the time-report test crossing its macOS CPU
+fallback by 13–82 ms. It now uses the existing empty parse fixture, the
+smallest input that still records a compiler call and exercises every report
+assertion. BlankLines remains independently covered by the parser corpus;
+no budget or report assertion changed, and the four baseline failures are
+untouched.

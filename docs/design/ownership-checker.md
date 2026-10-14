@@ -3271,10 +3271,10 @@ result even when the tagger forwards only a projection. Keyboard.downs'
 Browser.Events callback is this generic forwarding shape; its actual scalar
 message constructors satisfy the requirement.
 
-A concrete callback result whose solved type holds no List needs no owned
+A concrete callback result whose solved type is crossing needs no owned
 result proof: there is no tracked cell to donate. This uses the existing
-recursive holdsList test, including opaque types, function captures and type
-parameters. Unresolved result types remain tracked. This keeps specialized
+recursive tracked test, including opaque types, function captures and type
+parameters. Functions remain tracked even though holdsList excludes them. Unresolved result types remain tracked. This keeps specialized
 identity taggers on Int and String valid. A work function stored inside a
 traversal callback remains the existing §24.9 slot-inside-lambda limit: its
 result ownership cannot yet be propagated, so HttpFailures remains pending

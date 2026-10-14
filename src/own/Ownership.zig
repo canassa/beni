@@ -7059,7 +7059,7 @@ const Walker = struct {
         var ff = facts;
         if (w.instType(args[j])) |ft| switch (w.store.resolvedContent(ft)) {
             .structure => |st| if (st == .func) {
-                ff.need = ff.need and try w.o.holdsList(w.store, st.func.result, 0);
+                ff.need = ff.need and try w.o.tracked(w.store, st.func.result, 0);
             },
             else => {},
         };
@@ -7453,7 +7453,8 @@ const Walker = struct {
         if (try w.returnsOwned(c, s, avs, j, 0, none)) return true;
         var res: std.ArrayList(ResEntry) = .empty;
         for (c.res) |r| {
-            if (r.prov.kind == .cb and r.prov.b == 1 and r.prov.a < w.fn_state.items.len) {
+            if (r.prov.kind == .cb and r.prov.b == 1) {
+                if (r.prov.a >= w.fn_state.items.len) return false;
                 // §18.9: retain the actual supplies even when the enclosing
                 // tagger calls were unseen (and so formerly counted zero).
                 if (cls != .closure or w.frame != 0) return false;
@@ -7468,6 +7469,8 @@ const Walker = struct {
                 }
                 try w.applyEnvCalls(cls.closure, null, 0, .{ .inst = ictx.inst, .s = c, .avs = params, .closure = cls.closure, .depth = 0 });
                 w.fn_state.items[r.prov.a].need = true;
+                // Deferred tagger calls cannot inherit a locally seen
+                // call's supply/loan proof; keep the combined protocol unseen.
                 w.fn_state.items[r.prov.a].seen = false;
                 w.fn_state.items[r.prov.a].calls = .many;
                 continue;
@@ -7486,6 +7489,8 @@ const Walker = struct {
                 return false;
             for (try w.expand(captured)) |e| {
                 const cell_kind = w.cells.items[e.cell].kind;
+                // expand has already added captured descendants; code itself
+                // holds no mutable cell. Each descendant is checked below.
                 if (cell_kind == .closure or cell_kind == .func) continue;
                 if (cell_kind != .param and cell_kind != .env) return false;
                 if (try w.rely(try w.sepCond(e.cell, e.cell), w.frame) != .ok) return false;
